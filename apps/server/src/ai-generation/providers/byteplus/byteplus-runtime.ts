@@ -17,12 +17,20 @@ import type {
 
 export const BYTEPLUS_IMAGE_SCHEMA_VERSION = '2026-08-10';
 
+export type BytePlusReferenceTransport = 'public_url' | 'modelark_asset_uri';
+
 export interface BytePlusImageRuntimeConfig {
   provider: 'byteplus-modelark';
   endpointId: string;
   type: AiJobType;
   family: AiModelFamily;
   generationModes: AiGenerationMode[];
+  /**
+   * Wire representation for provider-registered reference media. Public URLs
+   * are the only valid transport for Seedream; Seedance can address active
+   * ModelArk private-library mirrors through `asset://<externalAssetId>`.
+   */
+  referenceTransport: BytePlusReferenceTransport;
   name: string;
   description: string;
   enabled: boolean;
@@ -90,6 +98,7 @@ export function createBytePlusImageRuntimeConfig(
     type: 'image',
     family: 'image',
     generationModes: args.generationModes,
+    referenceTransport: 'public_url',
     name: args.name,
     description: args.description,
     enabled: args.enabled,
@@ -140,6 +149,7 @@ export function createBytePlusVideoRuntimeConfig(
     type: 'video',
     family: 'video',
     generationModes: args.generationModes,
+    referenceTransport: 'modelark_asset_uri',
     name: args.name,
     description: args.description,
     enabled: args.enabled,

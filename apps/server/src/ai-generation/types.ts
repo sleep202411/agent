@@ -57,12 +57,13 @@ export type {
   AiUiSchema,
 } from '@repo/shared';
 
-export type AiJobType = 'image' | 'video';
+export type AiJobType = 'image' | 'video' | 'audio';
 
 /** Runtime capability bucket used by catalog adapters (incl. unsupported). */
 export type AiRuntimeModelCapability =
   | 'image_generation'
   | 'video_generation'
+  | 'audio_generation'
   | 'unsupported';
 
 export type AiCatalogSource =
@@ -71,6 +72,8 @@ export type AiCatalogSource =
   | 'env-override'
   | 'fal-config'
   | 'byteplus-config'
+  | 'byteplus-speech-config'
+  | 'google-vertex-config'
   | 'bailian-config'
   | 'replicate-config'
   | 'agnes-config'
@@ -106,12 +109,16 @@ export type AiEtaConfidence = 'low' | 'medium' | 'high';
  * modules without schema migrations. ProviderRegistry validates the
  * value is registered at request time.
  *
- * Active generation adapters: fal-ai, byteplus-modelark, aliyun-bailian,
- * agnes-ai, minimax. Older job rows may still store removed vendor strings
+ * Active generation adapters: fal-ai, byteplus-modelark,
+ * byteplus-seed-speech, aliyun-bailian, google-vertex, agnes-ai, minimax.
+ * Older job rows may still store removed vendor strings
  * as free-form provider column values (read-only history).
  */
 export type AiProvider = string;
-export type AiQueueName = 'ai-image-generation' | 'ai-video-generation';
+export type AiQueueName =
+  | 'ai-image-generation'
+  | 'ai-video-generation'
+  | 'ai-audio-generation';
 export type AiQuotaDimension = 'image' | 'chat' | 'workflow' | 'upload';
 
 export type AiRoutingStrategy =
@@ -280,6 +287,9 @@ export interface AiModelDefinition extends SharedAiModelDefinition {
     imageToImage?: boolean;
     textToVideo?: boolean;
     imageToVideo?: boolean;
+    textToAudio?: boolean;
+    imageToAudio?: boolean;
+    audioToAudio?: boolean;
     supportsSeed?: boolean;
     supportsCancel?: boolean;
     maxOutputs: number;
@@ -343,6 +353,7 @@ export interface AiJobError {
     | 'CHARACTER_REVOKED'
     | 'CHARACTER_ASSET_NOT_READY'
     | 'MEDIA_ASSET_NOT_READY'
+    | 'MEDIA_STORAGE_UNAVAILABLE'
     | 'UNKNOWN';
   message: string;
   userMessage: string;

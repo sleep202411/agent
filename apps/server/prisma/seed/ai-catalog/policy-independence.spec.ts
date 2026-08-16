@@ -1,5 +1,6 @@
 import { IMAGE_MODELS } from './image-models';
 import { VIDEO_MODELS } from './video-models';
+import { AUDIO_MODELS } from './audio-models';
 import { buildEntitlementPolicy, buildQueuePolicy } from './defaults';
 
 /**
@@ -30,12 +31,14 @@ describe('entitlement and queue policy are independent', () => {
 
   it('passes the declared plan through to the gate verbatim', () => {
     expect(buildEntitlementPolicy(null)).toMatchObject({ requiredPlan: null });
-    expect(buildEntitlementPolicy('pro')).toMatchObject({ requiredPlan: 'pro' });
+    expect(buildEntitlementPolicy('pro')).toMatchObject({
+      requiredPlan: 'pro',
+    });
   });
 });
 
 describe('the shipped catalogue', () => {
-  const ALL = [...IMAGE_MODELS, ...VIDEO_MODELS];
+  const ALL = [...IMAGE_MODELS, ...VIDEO_MODELS, ...AUDIO_MODELS];
 
   /**
    * Models are open today and paid for in compute points. This is not a style

@@ -4,8 +4,8 @@
  * One clean entry per canonical model — NO policy boilerplate here (that lives
  * in `defaults.ts` and is merged by `seed-catalog.ts`). The `providers` array
  * lists ONLY provider entries that map to a reconciled `AiProviderAccount`
- * (active: `fal-ai`, `aliyun-bailian`, `byteplus-modelark`, `agnes-ai`,
- * `minimax`). Each entry seeds an `AiProviderEndpoint` + a runtime-valid
+ * (active: `fal-ai`, `aliyun-bailian`, `byteplus-modelark`, `google-vertex`,
+ * `agnes-ai`, `minimax`). Each entry seeds an `AiProviderEndpoint` + a runtime-valid
  * `AiProviderModelBinding`. A model whose only upstream providers have no
  * reconciled account carries `providers: []` and is seeded as
  * canonical-only (no binding — valid, just can't generate yet).
@@ -32,6 +32,8 @@ import {
   HUNYUAN_WORLD_PRODUCT_PRICING,
   NANO_BANANA_2_PARAMETER_POLICY,
   NANO_BANANA_2_PRODUCT_PRICING,
+  NANO_BANANA_2_LITE_PARAMETER_POLICY,
+  NANO_BANANA_2_LITE_PRODUCT_PRICING,
   NANO_BANANA_PARAMETER_POLICY,
   NANO_BANANA_PRODUCT_PRICING,
   NANO_BANANA_PRO_PARAMETER_POLICY,
@@ -72,7 +74,9 @@ import {
 export type ProviderKey =
   | 'fal-ai'
   | 'byteplus-modelark'
+  | 'byteplus-seed-speech'
   | 'aliyun-bailian'
+  | 'google-vertex'
   | 'agnes-ai'
   | 'minimax';
 
@@ -180,6 +184,108 @@ const PROVIDER_IMAGE_OUTPUT_SCHEMA = {
     },
   },
 } as const satisfies Prisma.InputJsonObject;
+
+const GOOGLE_GEMINI_IMAGE_INPUT_SCHEMA = {
+  type: 'object',
+  required: ['model', 'contents', 'config'],
+  properties: {
+    model: { type: 'string' },
+    contents: { type: 'array' },
+    config: {
+      type: 'object',
+      properties: {
+        responseModalities: { type: 'array', items: { type: 'string' } },
+        imageConfig: {
+          type: 'object',
+          properties: {
+            aspectRatio: { type: 'string' },
+            imageSize: { type: 'string' },
+            outputMimeType: { type: 'string' },
+          },
+        },
+      },
+    },
+  },
+} as const satisfies Prisma.InputJsonObject;
+
+const GOOGLE_GEMINI_IMAGE_OUTPUT_SCHEMA = {
+  type: 'object',
+  properties: {
+    candidates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          content: {
+            type: 'object',
+            properties: { parts: { type: 'array' } },
+          },
+          finishReason: { type: 'string' },
+        },
+      },
+    },
+    responseId: { type: 'string' },
+    usageMetadata: { type: 'object' },
+  },
+} as const satisfies Prisma.InputJsonObject;
+
+function googleGeminiImageSnapshot(model: string): Prisma.InputJsonObject {
+  const modelCards: Record<string, string> = {
+    'gemini-2.5-flash-image':
+      'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/2-5-flash-image',
+    'gemini-3.1-flash-lite-image':
+      'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-lite-image',
+    'gemini-3.1-flash-image':
+      'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-1-flash-image',
+    'gemini-3-pro-image':
+      'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-pro-image',
+  };
+  const modelCard = modelCards[model];
+  if (!modelCard) {
+    throw new Error(`Missing official Google image model card for ${model}.`);
+  }
+  const lifecycle: Record<string, string> =
+    model === 'gemini-2.5-flash-image'
+      ? {
+          stage: 'ga',
+          releasedAt: '2025-10-02',
+          retirementAt: '2026-10-02',
+        }
+      : model === 'gemini-3.1-flash-lite-image'
+        ? { stage: 'ga', releasedAt: '2026-06-30' }
+        : {
+            stage: 'ga',
+            releasedAt: '2026-05-28',
+            retirementNotBefore: '2027-05-28',
+          };
+  return {
+    service: 'Vertex AI generateContent',
+    model,
+    apiVersion: 'v1',
+    authentication: 'Application Default Credentials',
+    callMode: 'sync',
+    lifecycle,
+    docs: [
+      {
+        title: `${model} model card`,
+        url: modelCard,
+      },
+      {
+        title: 'Generate images with Gemini',
+        url: 'https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/image-generation',
+      },
+      {
+        title: 'Google Gen AI SDK for JavaScript',
+        url: 'https://googleapis.github.io/js-genai/',
+      },
+    ],
+    pricing: {
+      source: 'provider_usage',
+      unit: 'input_and_output_tokens',
+      url: 'https://cloud.google.com/vertex-ai/generative-ai/pricing',
+    },
+  };
+}
 
 const BAILIAN_MULTIMODAL_INPUT_SCHEMA = {
   type: 'object',
@@ -918,13 +1024,29 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     recommended: false,
     providers: [
       {
+        provider: 'google-vertex',
+        endpointId: 'gemini-2.5-flash-image',
+        modes: [T2I, I2I],
+        priority: 10,
+        weight: 100,
+        providerInputSchema: GOOGLE_GEMINI_IMAGE_INPUT_SCHEMA,
+        providerOutputSchema: GOOGLE_GEMINI_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: googleGeminiImageSnapshot('gemini-2.5-flash-image'),
+        maxConcurrentRequests: 2,
+        requestTimeoutSeconds: 300,
+        failureThreshold: 3,
+      },
+      {
         provider: 'fal-ai',
         endpointId: 'fal-ai/nano-banana',
-        priority: 10,
+        priority: 30,
         weight: 100,
       },
     ],
-    providerAliases: ['fal/fal-ai/nano-banana'],
+    providerAliases: [
+      'google-vertex/gemini-2.5-flash-image',
+      'fal/fal-ai/nano-banana',
+    ],
   },
   {
     slug: 'quick-image-1-0',
@@ -967,6 +1089,40 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     providerAliases: ['agnes/agnes-image-2.1-flash'],
   },
   {
+    slug: 'nano-banana-2-lite',
+    displayName: 'Nano Banana 2 Lite',
+    family: 'nano-banana',
+    vendor: 'Google',
+    description:
+      'Google ultra-low-latency image generation and editing at native 1K resolution with up to 14 visual references.',
+    modes: [T2I, I2I],
+    requiredPlan: null,
+    cost: 10,
+    parameterPolicy: NANO_BANANA_2_LITE_PARAMETER_POLICY,
+    productPricing: NANO_BANANA_2_LITE_PRODUCT_PRICING,
+    group: 'recommended',
+    sortOrder: 68,
+    recommended: false,
+    providers: [
+      {
+        provider: 'google-vertex',
+        endpointId: 'gemini-3.1-flash-lite-image',
+        modes: [T2I, I2I],
+        priority: 10,
+        weight: 100,
+        providerInputSchema: GOOGLE_GEMINI_IMAGE_INPUT_SCHEMA,
+        providerOutputSchema: GOOGLE_GEMINI_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: googleGeminiImageSnapshot(
+          'gemini-3.1-flash-lite-image',
+        ),
+        maxConcurrentRequests: 2,
+        requestTimeoutSeconds: 300,
+        failureThreshold: 3,
+      },
+    ],
+    providerAliases: ['google-vertex/gemini-3.1-flash-lite-image'],
+  },
+  {
     slug: 'nano-banana-2',
     displayName: 'Nano Banana 2',
     family: 'nano-banana',
@@ -983,13 +1139,26 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     recommended: true,
     providers: [
       {
-        provider: 'fal-ai',
-        endpointId: 'fal-ai/nano-banana-2',
+        provider: 'google-vertex',
+        endpointId: 'gemini-3.1-flash-image',
+        modes: [T2I, I2I],
         priority: 10,
         weight: 100,
+        providerInputSchema: GOOGLE_GEMINI_IMAGE_INPUT_SCHEMA,
+        providerOutputSchema: GOOGLE_GEMINI_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: googleGeminiImageSnapshot('gemini-3.1-flash-image'),
+        // Fourteen 7 MB inline references expand under base64. Bound each
+        // endpoint so valid worst-case requests stay within the 1 GiB server
+        // pod limit instead of turning provider capability into an OOM path.
+        maxConcurrentRequests: 2,
+        requestTimeoutSeconds: 300,
+        failureThreshold: 3,
       },
     ],
-    providerAliases: ['fal/fal-ai/nano-banana-2'],
+    providerAliases: [
+      'google-vertex/gemini-3.1-flash-image',
+      'fal/fal-ai/nano-banana-2',
+    ],
   },
   {
     slug: 'nano-banana-pro',
@@ -1008,13 +1177,25 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     recommended: false,
     providers: [
       {
-        provider: 'fal-ai',
-        endpointId: 'fal-ai/nano-banana-pro',
+        provider: 'google-vertex',
+        endpointId: 'gemini-3-pro-image',
+        modes: [T2I, I2I],
         priority: 10,
         weight: 100,
+        providerInputSchema: GOOGLE_GEMINI_IMAGE_INPUT_SCHEMA,
+        providerOutputSchema: GOOGLE_GEMINI_IMAGE_OUTPUT_SCHEMA,
+        catalogSnapshot: googleGeminiImageSnapshot('gemini-3-pro-image'),
+        // Same inline-memory bound as Nano Banana 2; this is an application
+        // execution limit, not an invented Google API quota.
+        maxConcurrentRequests: 2,
+        requestTimeoutSeconds: 300,
+        failureThreshold: 3,
       },
     ],
-    providerAliases: ['fal/fal-ai/nano-banana-pro'],
+    providerAliases: [
+      'google-vertex/gemini-3-pro-image',
+      'fal/fal-ai/nano-banana-pro',
+    ],
   },
   {
     slug: 'seedream-4.5',

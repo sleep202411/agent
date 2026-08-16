@@ -46,6 +46,10 @@ import {
   PlayableVideoProbeService,
   type PlayableVideoProbeResult,
 } from '../media/playable-video-probe.service';
+import {
+  PlayableAudioProbeService,
+  type PlayableAudioProbeResult,
+} from '../media/playable-audio-probe.service';
 import { AiGenerationBillingWalletService } from './billing-wallet.service';
 import { AiGenerationOutboxService } from './outbox.service';
 import {
@@ -64,6 +68,7 @@ import {
   createAiWorker,
   AI_QUEUE_IMAGE,
   AI_QUEUE_VIDEO,
+  AI_QUEUE_AUDIO,
   type AiQueueJobData,
 } from './queue';
 import { AiGenerationQueueService } from './queue.service';
@@ -73,6 +78,7 @@ import {
   type RecordAiJobAttemptInput,
 } from './repository';
 import type { AiJob, AiJobError, AiJobOutput } from './types';
+import { AiReferenceUrlPreparerService } from './reference-url-preparer.service';
 
 // Azure preview pools (gpt-image-2 in particular) return 429
 // `EngineOverloaded` when the global shared pool is full. It's not a
@@ -97,6 +103,10 @@ const IMAGE_WORKER_CONCURRENCY = Math.max(
 const VIDEO_WORKER_CONCURRENCY = Math.max(
   1,
   Number(process.env.AI_WORKER_VIDEO_CONCURRENCY ?? 2),
+);
+const AUDIO_WORKER_CONCURRENCY = Math.max(
+  1,
+  Number(process.env.AI_WORKER_AUDIO_CONCURRENCY ?? 8),
 );
 
 // SIGTERM drain budget — how long we wait for in-flight provider
@@ -143,6 +153,8 @@ export class AiGenerationWorkerService
     private readonly documents: DocumentsService,
     private readonly mediaAssetReadiness: MediaAssetReadinessService,
     private readonly videoProbe: PlayableVideoProbeService,
+    private readonly audioProbe: PlayableAudioProbeService,
+    private readonly referenceUrls: AiReferenceUrlPreparerService,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -274,6 +286,12 @@ export class AiGenerationWorkerService
         connection,
         VIDEO_WORKER_CONCURRENCY,
       ),
+      createAiWorker(
+        AI_QUEUE_AUDIO,
+        (job) => this.processQueueJob(job),
+        connection,
+        AUDIO_WORKER_CONCURRENCY,
+      ),
     );
     for (const w of this.workers) {
       w.on('failed', (job, err) => {
@@ -288,7 +306,7 @@ export class AiGenerationWorkerService
       });
     }
     this.logger.log(
-      `AiGenerationWorker subscribed to BullMQ (image=${IMAGE_WORKER_CONCURRENCY}, video=${VIDEO_WORKER_CONCURRENCY}); providers=${this.providers
+      `AiGenerationWorker subscribed to BullMQ (image=${IMAGE_WORKER_CONCURRENCY}, video=${VIDEO_WORKER_CONCURRENCY}, audio=${AUDIO_WORKER_CONCURRENCY}); providers=${this.providers
         .list()
         .map((p) => p.provider)
         .join(',')}`,
@@ -1035,12 +1053,41 @@ export class AiGenerationWorkerService
       return;
     }
 
-    // Reference media lives on public storage URLs (the moderation takedown
-    // mechanism makes blocked objects unreachable at the storage layer), so the
-    // normalized input is passed to the provider as-is — no per-request signing.
-    let providerInput = job.normalizedInput;
+    // Canvas URLs are display caches, not durable identity. Re-resolve every
+    // assetId from its current placement on every attempt so storage/CDN moves,
+    // moderation changes, and long-lived documents cannot send stale URLs to a
+    // provider. These are public direct URLs, not per-request signatures.
+    let providerInput: Record<string, unknown>;
+    try {
+      providerInput = await this.referenceUrls.prepareReferences(
+        job.normalizedInput,
+      );
+    } catch (err) {
+      const payload =
+        err instanceof ReferencePreparationError
+          ? err.jobError
+          : {
+              code: 'MEDIA_ASSET_NOT_READY' as const,
+              message:
+                err instanceof Error
+                  ? err.message
+                  : 'Reference media preparation failed.',
+              userMessage:
+                'A referenced asset is unavailable. Choose another asset and try again.',
+              retryable: false,
+              createdAt: new Date().toISOString(),
+            };
+      await this.recordAttemptSafe(job, {
+        status: 'failed',
+        providerEndpoint: job.deployment,
+        error: payload,
+        completedAt: new Date().toISOString(),
+      });
+      await this.markFailed(job, payload);
+      return;
+    }
 
-    // Pre-start reference seam (design §3.4): provider-hosted references
+    // Provider-specific seam (design §3.4): provider-hosted references
     // (asset:// mirrors, character status) are re-validated on EVERY attempt —
     // the submit-time readiness check can go stale in queue. Terminal by
     // contract: a typed failure releases the billing hold and never requeues.
@@ -1583,6 +1630,7 @@ export class AiGenerationWorkerService
       let checksumSha256: string;
       let result: OutputStorageResult;
       let actualVideo: PlayableVideoProbeResult | null = null;
+      let actualAudio: PlayableAudioProbeResult | null = null;
       if (outputType === 'video') {
         // Every video takes one byte-truth path: spool, hash, ffprobe, then
         // upload. Provider width/height/duration and requested audio flags are
@@ -1619,6 +1667,40 @@ export class AiGenerationWorkerService
         } finally {
           await unlink(spoolPath).catch(() => {});
         }
+      } else if (outputType === 'audio') {
+        const spoolPath = join(
+          tmpdir(),
+          `ai-output-${job.id}-${raw.index}-${newShortId()}.spool`,
+        );
+        try {
+          const spooled = raw.buffer
+            ? await this.spoolBufferToFile(raw.buffer, spoolPath)
+            : raw.providerUrl
+              ? await this.spoolProviderUrlToFile(raw.providerUrl, spoolPath)
+              : null;
+          if (!spooled) {
+            throw new Error(`no bytes available for output index ${raw.index}`);
+          }
+          checksumSha256 = spooled.sha256;
+          actualAudio = await this.audioProbe.probeFile(spoolPath);
+          const normalizedRaw = {
+            ...raw,
+            ext: actualAudio.fileExtension,
+          };
+          result = await storage.uploadFromFile({
+            filePath: spoolPath,
+            sizeBytes: spooled.bytes,
+            key: this.outputKey(job, normalizedRaw, checksumSha256, {
+              yyyy,
+              mm,
+              dd,
+            }),
+            contentType: actualAudio.contentType,
+            filename: `${job.id}-${raw.index}.${actualAudio.fileExtension}`,
+          });
+        } finally {
+          await unlink(spoolPath).catch(() => {});
+        }
       } else {
         let body = raw.buffer;
         if (!body && raw.providerUrl) {
@@ -1636,12 +1718,15 @@ export class AiGenerationWorkerService
         });
       }
       const contentHash = checksumSha256.slice(0, 12);
-      const contentType = actualVideo?.contentType ?? raw.mimeType;
+      const contentType =
+        actualVideo?.contentType ?? actualAudio?.contentType ?? raw.mimeType;
       const width = actualVideo?.width ?? raw.width;
       const height = actualVideo?.height ?? raw.height;
       const durationSeconds =
-        actualVideo?.durationSeconds ?? raw.durationSeconds;
-      const durationMs = actualVideo?.durationMs;
+        actualVideo?.durationSeconds ??
+        actualAudio?.durationSeconds ??
+        raw.durationSeconds;
+      const durationMs = actualVideo?.durationMs ?? actualAudio?.durationMs;
       const assetId = await this.store.createAiOutputAsset(job, {
         type: outputType,
         url: result.url,
@@ -1660,6 +1745,13 @@ export class AiGenerationWorkerService
               videoCodec: actualVideo.videoCodec,
               audioCodecs: actualVideo.audioCodecs,
               browserSafeMp4: actualVideo.browserSafeMp4,
+            }
+          : undefined,
+        audioMetadata: actualAudio
+          ? {
+              audioCodec: actualAudio.audioCodec,
+              sampleRate: actualAudio.sampleRate,
+              channels: actualAudio.channels,
             }
           : undefined,
         checksumSha256,
@@ -1798,6 +1890,7 @@ function severityForAiFailure(code: AiJobError['code']): AlertSeverity {
     case 'PROVIDER_429':
     case 'PROVIDER_5XX':
     case 'PROVIDER_TIMEOUT':
+    case 'MEDIA_STORAGE_UNAVAILABLE':
     case 'UNKNOWN':
       return 'error';
     case 'VALIDATION_ERROR':

@@ -848,7 +848,7 @@ function secondsToMs(value: unknown): number | null {
   return Math.round(parsed * 1000);
 }
 
-function extFromMime(mime: string, type: 'image' | 'video'): string {
+function extFromMime(mime: string, type: 'image' | 'video' | 'audio'): string {
   const normalized = mime.toLowerCase();
   if (normalized.includes('webp')) return 'webp';
   if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
@@ -857,5 +857,5 @@ function extFromMime(mime: string, type: 'image' | 'video'): string {
   if (normalized.includes('quicktime')) return 'mov';
   if (normalized.includes('webm')) return 'webm';
   if (normalized.includes('mp4')) return 'mp4';
-  return type === 'video' ? 'mp4' : 'png';
+  return type === 'video' ? 'mp4' : type === 'audio' ? 'mp3' : 'png';
 }

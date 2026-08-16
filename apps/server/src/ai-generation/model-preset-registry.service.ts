@@ -156,11 +156,16 @@ export class AiModelPresetRegistryService {
   queueNameFor(queueName: string, type: AiJobType): AiQueueName {
     if (
       queueName === 'ai-image-generation' ||
-      queueName === 'ai-video-generation'
+      queueName === 'ai-video-generation' ||
+      queueName === 'ai-audio-generation'
     ) {
       return queueName;
     }
-    return type === 'video' ? 'ai-video-generation' : 'ai-image-generation';
+    return type === 'video'
+      ? 'ai-video-generation'
+      : type === 'audio'
+        ? 'ai-audio-generation'
+        : 'ai-image-generation';
   }
 
   presetId(preset: AiModelPresetConfig): string {
@@ -351,15 +356,23 @@ export class AiModelPresetRegistryService {
   ): AiQueuePolicy {
     const queueName =
       model?.queue.queueName ??
-      (type === 'video' ? 'ai-video-generation' : 'ai-image-generation');
+      (type === 'video'
+        ? 'ai-video-generation'
+        : type === 'audio'
+          ? 'ai-audio-generation'
+          : 'ai-image-generation');
     return {
       queueName,
       globalConcurrency:
-        model?.queue.globalConcurrency ?? (type === 'video' ? 2 : 4),
-      perUserRunning: model?.queue.perUserRunning ?? (type === 'video' ? 1 : 2),
+        model?.queue.globalConcurrency ??
+        (type === 'video' ? 2 : type === 'audio' ? 8 : 4),
+      perUserRunning:
+        model?.queue.perUserRunning ??
+        (type === 'video' ? 1 : type === 'audio' ? 4 : 2),
       perUserQueued: model?.queue.perUserQueued ?? 10,
       priority: 0,
-      maxProviderRuntimeSeconds: type === 'video' ? 45 * 60 : 10 * 60,
+      maxProviderRuntimeSeconds:
+        type === 'video' ? 45 * 60 : type === 'audio' ? 5 * 60 : 10 * 60,
       maxQueueWaitSeconds: undefined,
     };
   }

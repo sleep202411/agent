@@ -19,7 +19,7 @@ import type { StoryAgentRunRealtimeEvent } from "./story-agent.js";
 
 export interface AiJobUpdatePayload {
   id: string;
-  type: "image" | "video";
+  type: "image" | "video" | "audio";
   workspaceId?: string | null;
   projectId?: string | null;
   documentId?: string | null;
@@ -37,7 +37,7 @@ export interface AiJobUpdatePayload {
   outputs: Array<{
     id: string;
     assetId?: string;
-    type: "image" | "video";
+    type: "image" | "video" | "audio";
     url: string;
     accessUrl?: string;
     width?: number;

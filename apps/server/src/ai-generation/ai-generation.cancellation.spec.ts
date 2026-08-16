@@ -278,6 +278,7 @@ function serviceWith(input: {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 

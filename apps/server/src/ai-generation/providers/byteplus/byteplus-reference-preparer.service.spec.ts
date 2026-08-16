@@ -1,5 +1,7 @@
 import { BytePlusReferencePreparerService } from './byteplus-reference-preparer.service';
 
+const PROVIDER_ASSET_TRANSPORT = 'modelark_asset_uri' as const;
+
 /** In-memory stand-in for the prisma queries the preparer runs. */
 function makeService(opts: {
   /** validate-pass rows keyed by externalAssetId. */
@@ -74,6 +76,7 @@ describe('BytePlusReferencePreparer — AIGC upgrade (virtual)', () => {
       'user-1',
       'proj-1',
       'ws-1',
+      PROVIDER_ASSET_TRANSPORT,
     );
     expect((out.referenceImages as Array<{ url: string }>)[0].url).toBe(
       'asset://asset-20260410114236-8cdfz',
@@ -87,6 +90,7 @@ describe('BytePlusReferencePreparer — AIGC upgrade (virtual)', () => {
       'user-1',
       'proj-1',
       'ws-1',
+      PROVIDER_ASSET_TRANSPORT,
     );
     expect((out.referenceImages as Array<{ url: string }>)[0].url).toBe(
       VIRTUAL_IMAGE_REF.url,
@@ -112,6 +116,7 @@ describe('BytePlusReferencePreparer — AIGC upgrade (virtual)', () => {
       'user-1',
       'proj-1',
       'ws-1',
+      PROVIDER_ASSET_TRANSPORT,
     );
 
     expect((out.referenceVideos as Array<{ url: string }>)[0].url).toBe(
@@ -127,10 +132,33 @@ describe('BytePlusReferencePreparer — AIGC upgrade (virtual)', () => {
       'user-1',
       'proj-1',
       'ws-1',
+      PROVIDER_ASSET_TRANSPORT,
     );
     expect(out.referenceImages).toEqual([plain]);
     // No character-stamped candidates → the upgrade query never runs.
     expect(prisma.aiProviderExternalAsset.findMany).not.toHaveBeenCalled();
+  });
+
+  it('keeps registered image media on public HTTPS URLs for image generation', async () => {
+    const { service, prisma } = makeService({
+      mediaRows: [
+        {
+          mediaAssetId: 'asset-img-1',
+          externalAssetId: 'asset-image-provider-1',
+        },
+      ],
+    });
+
+    const out = await service.prepareReferences(
+      { referenceImages: [VIRTUAL_IMAGE_REF] },
+      'user-1',
+      'proj-1',
+      'ws-1',
+      'public_url',
+    );
+
+    expect(out.referenceImages).toEqual([VIRTUAL_IMAGE_REF]);
+    expect(prisma.aiProviderMediaAssetMirror.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -157,7 +185,13 @@ describe('BytePlusReferencePreparer — asset:// validation (real_person v2)', (
     const { service } = makeService({ assetRows: [activeAssetRow()] });
     const input = { referenceImages: [{ url: 'asset://asset-live-1' }] };
     await expect(
-      service.prepareReferences(input, 'user-1', 'proj-1', 'ws-personal-1'),
+      service.prepareReferences(
+        input,
+        'user-1',
+        'proj-1',
+        'ws-personal-1',
+        PROVIDER_ASSET_TRANSPORT,
+      ),
     ).resolves.toBe(input);
   });
 
@@ -168,7 +202,13 @@ describe('BytePlusReferencePreparer — asset:// validation (real_person v2)', (
     });
     const input = { referenceImages: [{ url: 'asset://asset-live-1' }] };
     await expect(
-      service.prepareReferences(input, 'editor-liz', 'proj-1', 'ws-team'),
+      service.prepareReferences(
+        input,
+        'editor-liz',
+        'proj-1',
+        'ws-team',
+        PROVIDER_ASSET_TRANSPORT,
+      ),
     ).resolves.toBe(input);
   });
 
@@ -183,6 +223,7 @@ describe('BytePlusReferencePreparer — asset:// validation (real_person v2)', (
         'editor-liz',
         'proj-1',
         'ws-team',
+        PROVIDER_ASSET_TRANSPORT,
       ),
     ).rejects.toMatchObject({ jobError: { code: 'CHARACTER_REVOKED' } });
   });
@@ -212,6 +253,7 @@ describe('BytePlusReferencePreparer — asset:// validation (real_person v2)', (
         'user-1',
         'proj-1',
         'ws-personal-1',
+        PROVIDER_ASSET_TRANSPORT,
       ),
     ).rejects.toMatchObject({ jobError: { code: 'CHARACTER_REVOKED' } });
   });
@@ -224,9 +266,26 @@ describe('BytePlusReferencePreparer — asset:// validation (real_person v2)', (
         'user-1',
         'proj-1',
         'ws-personal-1',
+        PROVIDER_ASSET_TRANSPORT,
       ),
     ).rejects.toMatchObject({
       jobError: { code: 'CHARACTER_ASSET_NOT_READY' },
+    });
+  });
+
+  it('rejects private ModelArk references for a public-url-only model', async () => {
+    const { service } = makeService({ assetRows: [activeAssetRow()] });
+
+    await expect(
+      service.prepareReferences(
+        { referenceImages: [{ url: 'asset://asset-live-1' }] },
+        'user-1',
+        'proj-1',
+        'ws-personal-1',
+        'public_url',
+      ),
+    ).rejects.toMatchObject({
+      jobError: { code: 'VALIDATION_ERROR' },
     });
   });
 });

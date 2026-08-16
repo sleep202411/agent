@@ -342,18 +342,33 @@ export class BailianProviderAdapter implements ProviderAdapter {
   } {
     const pricing = runtime.providerPricing;
     if (!pricing) return { costAccounting: null, pricingSnapshot: null };
-    const unitPrice = numberFromRecord(pricing, 'unitPrice');
+    const usage = recordValue(response.usage);
+    const unit = stringFromRecord(pricing, 'unit') ?? 'image';
+    const resolution = resolutionFromUsage(usage, pricing);
+    const unitPriceByResolution = recordValue(pricing.unitPriceByResolution);
+    const unitPrice =
+      (resolution
+        ? (numberFromRecord(unitPriceByResolution, resolution.toUpperCase()) ??
+          numberFromRecord(unitPriceByResolution, resolution))
+        : undefined) ?? numberFromRecord(pricing, 'unitPrice');
     if (unitPrice == null) {
       return { costAccounting: null, pricingSnapshot: pricing };
     }
-    const usage = recordValue(response.usage);
     const billableUnits =
-      numberFromRecord(usage, 'image_count') ??
-      numberFromRecord(response.output, 'image_count') ??
-      outputCount;
+      unit === 'second'
+        ? (numberFromRecord(usage, 'output_video_duration') ??
+          numberFromRecord(usage, 'duration') ??
+          numberFromRecord(response.output, 'duration'))
+        : (numberFromRecord(usage, 'image_count') ??
+          numberFromRecord(response.output, 'image_count') ??
+          outputCount);
+    if (billableUnits == null) {
+      return { costAccounting: null, pricingSnapshot: pricing };
+    }
     const currency = stringFromRecord(pricing, 'currency') ?? 'CNY';
-    const unit = stringFromRecord(pricing, 'unit') ?? 'image';
-    const providerCost = unitPrice * Math.max(1, billableUnits);
+    const providerCost = roundProviderCost(
+      unitPrice * Math.max(1, billableUnits),
+    );
     const capturedAt = new Date().toISOString();
     return {
       costAccounting: {
@@ -364,8 +379,10 @@ export class BailianProviderAdapter implements ProviderAdapter {
         billableUnits,
         unitPrice,
         unit,
+        resolution,
         currency,
         providerCost,
+        ...(currency === 'USD' ? { providerCostUsd: providerCost } : {}),
         capturedAt,
       },
       pricingSnapshot: {
@@ -542,7 +559,26 @@ function stringFromRecord(
   return typeof raw === 'string' && raw.trim() ? raw.trim() : undefined;
 }
 
-function extFromMime(mime: string, type: 'image' | 'video'): string {
+function roundProviderCost(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
+}
+
+function resolutionFromUsage(
+  usage: Record<string, unknown> | null,
+  pricing: Record<string, unknown>,
+): string | undefined {
+  const raw = usage?.SR ?? usage?.resolution;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return `${Math.floor(raw)}P`;
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const normalized = raw.trim();
+    return /^\d+$/.test(normalized) ? `${normalized}P` : normalized;
+  }
+  return stringFromRecord(pricing, 'defaultResolution');
+}
+
+function extFromMime(mime: string, type: 'image' | 'video' | 'audio'): string {
   const normalized = mime.toLowerCase();
   if (normalized.includes('webp')) return 'webp';
   if (normalized.includes('jpeg') || normalized.includes('jpg')) return 'jpg';
@@ -551,5 +587,5 @@ function extFromMime(mime: string, type: 'image' | 'video'): string {
   if (normalized.includes('quicktime')) return 'mov';
   if (normalized.includes('webm')) return 'webm';
   if (normalized.includes('mp4')) return 'mp4';
-  return type === 'video' ? 'mp4' : 'png';
+  return type === 'video' ? 'mp4' : type === 'audio' ? 'mp3' : 'png';
 }

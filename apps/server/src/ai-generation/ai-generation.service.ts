@@ -22,6 +22,7 @@ import { newUuidV7 } from '../common/id';
 import { EntitlementService } from '../entitlements';
 import { StudioDocumentAccessService } from '../documents/studio-document-access.service';
 import { StoryPermissionService } from '../story-studio/story-permission.service';
+import { MediaAccessService } from '../media/media-access.service';
 import { WorkspacesService, WorkspacePermissionService } from '../workspaces';
 import {
   ProjectSkillSelectionSchema,
@@ -120,6 +121,7 @@ export class AiGenerationService {
     private readonly promptCompiler: AiPromptCompilerService,
     private readonly characterGeneration: CharacterGenerationService,
     private readonly projectSkills: ProjectSkillsResolver,
+    private readonly mediaAccess: MediaAccessService,
   ) {}
 
   /**
@@ -291,6 +293,10 @@ export class AiGenerationService {
     });
     const normalizedInput = promptCompilation.normalizedInput;
     const prompt = promptCompilation.snapshot.displayText;
+    await this.requireReferenceAccess(
+      user.userId,
+      promptCompilation.snapshot.references,
+    );
     const idempotencyKey = body.idempotencyKey?.trim() || randomUUID();
 
     const existing = await this.store.findByIdempotency(
@@ -803,6 +809,19 @@ export class AiGenerationService {
       return null;
     }
 
+    if (input.type === 'audio') {
+      if (
+        input.frozen ||
+        (selection.includeInstallationIds?.length ?? 0) > 0 ||
+        (selection.excludeInstallationIds?.length ?? 0) > 0
+      ) {
+        throw new BadRequestException({
+          code: 'PROJECT_SKILL_SCOPE_UNSUPPORTED',
+          msg: 'Project Skills do not currently support audio generation.',
+        });
+      }
+      return null;
+    }
     const scope =
       input.type === 'image' ? 'image_generation' : 'video_generation';
     if (input.frozen) {
@@ -1298,6 +1317,30 @@ export class AiGenerationService {
         }`,
       );
     }
+  }
+
+  /**
+   * Reference authorization belongs to request acceptance, not asynchronous
+   * provider execution. Once accepted, the immutable job + reference usage
+   * ledger is the grant that worker retries consume; workers only re-resolve
+   * storage location and lifecycle state.
+   */
+  private async requireReferenceAccess(
+    userId: string,
+    references: AiPromptReferenceBinding[],
+  ): Promise<void> {
+    const assetIds = [
+      ...new Set(
+        references.flatMap((reference) =>
+          reference.assetId ? [reference.assetId] : [],
+        ),
+      ),
+    ];
+    await Promise.all(
+      assetIds.map((assetId) =>
+        this.mediaAccess.requireUseAccessById(userId, assetId),
+      ),
+    );
   }
 
   private async recordTraceSafe(
