@@ -480,19 +480,32 @@ export class AliyunOssStorageService extends OutputStorageService {
   }
 }
 
-function responseOptionsForRead(input: CreateReadUrlInput) {
+/**
+ * Query overrides for a signed OSS GET.
+ *
+ * Do NOT send `response-content-type`. On the CN public CNAME
+ * (`oss.fizzspace.cn`) Aliyun rejects it with InvalidRequest /
+ * `Can not override response header on content-type` (EC 0017-00000902),
+ * so every playable video 302 from `/aurora` 400s in the browser. The
+ * object already has the real Content-Type from upload. Cache-control
+ * and content-disposition overrides are still allowed.
+ */
+export function ossSignedReadQueries(
+  input: CreateReadUrlInput,
+): { queries: Record<string, string> } | undefined {
   const queries: Record<string, string> = {};
   if (input.cacheControl) {
     queries['response-cache-control'] = input.cacheControl;
-  }
-  if (input.contentType) {
-    queries['response-content-type'] = input.contentType;
   }
   if (input.filename) {
     queries['response-content-disposition'] =
       `inline; filename="${input.filename}"`;
   }
   return Object.keys(queries).length > 0 ? { queries } : undefined;
+}
+
+function responseOptionsForRead(input: CreateReadUrlInput) {
+  return ossSignedReadQueries(input);
 }
 
 /**
