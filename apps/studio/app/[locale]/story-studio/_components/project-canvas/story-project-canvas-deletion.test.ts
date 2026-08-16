@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
-import { buildStoryCanvasModel, syntheticDecisionNodeId } from "./story-project-canvas-model";
+import { buildStoryCanvasModel } from "./story-project-canvas-model";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 
 describe("deleteStoryCanvasElements", () => {
@@ -13,23 +13,51 @@ describe("deleteStoryCanvasElements", () => {
     expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
   });
 
-  it("deleting a decision converts its source to a natural terminal", () => {
-    const content = choiceDraft();
+  it("deleting a world node removes the node and every incoming reference", () => {
+    const content = worldDraft();
     const model = buildStoryCanvasModel(content, "en-US");
-    const decision = model.nodes.find((node) => node.id === syntheticDecisionNodeId("clip:a"))!;
-    const result = deleteStoryCanvasElements(content, { nodes: [decision], edges: [] });
+    const target = model.nodes.find((node) => node.id === "world:rain")!;
+
+    const result = deleteStoryCanvasElements(content, { nodes: [target], edges: [] });
+
+    expect(result.graph.nodes.map((node) => node.nodeId)).toEqual(["clip:a", "clip:b"]);
     expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
   });
 
-  it("ignores a defensive delete request for a read-only character card", () => {
+  it("deleting an inline choice edge removes only that interaction outcome", () => {
+    const content = choiceDraft();
+    const model = buildStoryCanvasModel(content, "en-US");
+    const choiceEdge = model.edges.find((edge) => edge.data.kind === "choice")!;
+    const result = deleteStoryCanvasElements(content, { nodes: [], edges: [choiceEdge] });
+    expect(result.graph.nodes[0]?.exit).toMatchObject({ kind: "choice", choices: [] });
+  });
+
+  it("deleting a hotspot branch keeps the hotspot and changes it to continue locally", () => {
     const content = draft();
-    content.storyBible.characters = [
-      { id: "hero", name: { "en-US": "Hero" }, summary: "", images: [], voice: null },
+    const source = content.graph.nodes[0]!;
+    if (source.kind !== "clip") throw new Error("Expected clip fixture.");
+    source.interactions = [
+      {
+        kind: "hotspot",
+        interactionId: "open-door",
+        label: { "en-US": "Open door" },
+        trigger: { kind: "tap" },
+        rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+        startMs: 0,
+        endMs: 1_000,
+        outcomes: { success: { kind: "goto", nodeId: "clip:b" } },
+      },
     ];
     const model = buildStoryCanvasModel(content, "en-US");
-    const characterNode = model.nodes.find((node) => node.data.kind === "character")!;
+    const edge = model.edges.find((candidate) => candidate.data.kind === "interaction")!;
 
-    expect(deleteStoryCanvasElements(content, { nodes: [characterNode], edges: [] })).toBe(content);
+    const result = deleteStoryCanvasElements(content, { nodes: [], edges: [edge] });
+
+    const remaining = result.graph.nodes[0];
+    expect(remaining?.kind).toBe("clip");
+    expect(remaining?.kind === "clip" ? remaining.interactions : []).toEqual([
+      expect.objectContaining({ outcomes: { success: { kind: "continue" } } }),
+    ]);
   });
 });
 
@@ -43,9 +71,16 @@ function draft(): InteractiveStoryDraftContent {
           kind: "clip",
           nodeId: "clip:a",
           clipKey: "A",
+          interactions: [],
           exit: { kind: "auto", nextNodeId: "clip:b" },
         },
-        { kind: "clip", nodeId: "clip:b", clipKey: "B", exit: { kind: "auto", nextNodeId: null } },
+        {
+          kind: "clip",
+          nodeId: "clip:b",
+          clipKey: "B",
+          interactions: [],
+          exit: { kind: "auto", nextNodeId: null },
+        },
       ],
     },
     productionNotes: [],
@@ -61,4 +96,39 @@ function choiceDraft(): InteractiveStoryDraftContent {
     choices: [{ choiceId: "go", label: { "en-US": "Go" }, nextNodeId: "clip:b" }],
   };
   return value;
+}
+
+function worldDraft(): InteractiveStoryDraftContent {
+  return {
+    storyBible: { logline: "", synopsis: "", characters: [] },
+    graph: {
+      entryNodeId: "clip:a",
+      nodes: [
+        {
+          kind: "clip",
+          nodeId: "clip:a",
+          clipKey: "A",
+          interactions: [],
+          exit: { kind: "auto", nextNodeId: "world:rain" },
+        },
+        {
+          kind: "world",
+          nodeId: "world:rain",
+          worldId: null,
+          name: "Rain world",
+          entryInstruction: "Reach the gate.",
+          maxExperienceSeconds: 60,
+          exit: { kind: "auto", nextNodeId: "clip:b" },
+        },
+        {
+          kind: "clip",
+          nodeId: "clip:b",
+          clipKey: "B",
+          interactions: [],
+          exit: { kind: "auto", nextNodeId: null },
+        },
+      ],
+    },
+    productionNotes: [],
+  };
 }

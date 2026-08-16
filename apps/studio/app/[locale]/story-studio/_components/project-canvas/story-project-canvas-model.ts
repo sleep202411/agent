@@ -4,16 +4,38 @@ import type {
   InteractiveStoryDraftContent,
   StoryFrameProfile,
   StoryGraphNode,
+  StoryInteractionAction,
+  StoryInteractionOutcomes,
+  StoryInteractionTrigger,
 } from "@/lib/story-projects-api";
+import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 
-type StoryCanvasNodeKind = "clip" | "decision" | "character";
+type StoryCanvasNodeKind = "clip" | "world";
 type StoryCanvasExitKind = "auto" | "choice";
 
-interface StoryCanvasChoiceData {
+export interface StoryCanvasChoiceData {
   choiceId: string;
   label: string;
   targetNodeId: string;
+  targetTitle: string | null;
+}
+
+export interface StoryCanvasInteractionData {
+  interactionId: string;
+  label: string;
+  startMs: number;
+  endMs: number;
+  trigger: StoryInteractionTrigger;
+  outcomes: {
+    success: StoryCanvasInteractionOutcomeData;
+    failure?: StoryCanvasInteractionOutcomeData;
+    timeout?: StoryCanvasInteractionOutcomeData;
+  };
+}
+
+export interface StoryCanvasInteractionOutcomeData {
+  action: StoryInteractionAction;
   targetTitle: string | null;
 }
 
@@ -22,14 +44,17 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   title: string;
   eyebrow: string;
   nodeId: string;
-  sourceNodeId?: string;
   decisionId?: string;
   clipKey?: string;
+  worldId?: string | null;
+  world?: WorldModelWorld | null;
+  worldEntryInstruction?: string;
+  maxExperienceSeconds?: 60 | 90 | 120;
   /** First appearance-reference image, shown as the card avatar. */
-  characterImageUrl?: string;
   exitKind?: StoryCanvasExitKind;
   continuationTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
+  interactions?: StoryCanvasInteractionData[];
   clipVideo?: StoryClipVideoSummary;
   frameAspectRatio?: "16:9" | "9:16";
   summary?: string;
@@ -39,8 +64,13 @@ export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
 
 type StoryCanvasEdgeData =
   | { kind: "continuation" }
-  | { kind: "decision"; decisionId: string; sourceNodeId: string }
-  | { kind: "choice"; sourceNodeId: string; choiceId: string };
+  | { kind: "choice"; sourceNodeId: string; choiceId: string }
+  | {
+      kind: "interaction";
+      sourceNodeId: string;
+      interactionId: string;
+      outcome: keyof StoryInteractionOutcomes;
+    };
 
 export type StoryCanvasEdge = Edge & { data: StoryCanvasEdgeData };
 
@@ -57,23 +87,15 @@ interface CanvasConnection {
 
 const COLUMN_GAP = 420;
 const ROW_GAP = 220;
-// The cast lane is a dedicated column to the LEFT of the story entry,
-// kept clear of the right-hand story-flow lane (COLUMN_GAP steps rightward).
-const CAST_COLUMN_GAP = 480;
-const CAST_ROW_GAP = 150;
-const SYNTHETIC_DECISION_NODE_PREFIX = "__decision__:";
-// Character nodes are a read-only canvas projection of storyBible.characters.
-// The prefix keeps their synthetic ids from colliding with graph node ids.
-const SYNTHETIC_CHARACTER_NODE_PREFIX = "character:";
 
 export interface StoryCanvasCopy {
   clip: string;
-  decision?: string;
+  world: string;
 }
 
 const DEFAULT_COPY: StoryCanvasCopy = {
   clip: "Clip",
-  decision: "Decision",
+  world: "World",
 };
 
 /**
@@ -84,22 +106,49 @@ export function buildStoryCanvasModel(
   content: InteractiveStoryDraftContent,
   locale: string,
   clips: StoryClipVideoSummary[] = [],
-  copy: StoryCanvasCopy = DEFAULT_COPY,
-  frameProfile: StoryFrameProfile = "landscape_16_9"
+  copyOverrides: Partial<StoryCanvasCopy> = DEFAULT_COPY,
+  frameProfile: StoryFrameProfile = "landscape_16_9",
+  worlds: WorldModelWorld[] = []
 ): { nodes: StoryCanvasNode[]; edges: StoryCanvasEdge[] } {
+  const copy = { ...DEFAULT_COPY, ...copyOverrides };
   const frameAspectRatioOf = (profile: StoryFrameProfile): "16:9" | "9:16" =>
     profile === "portrait_9_16" ? "9:16" : "16:9";
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
   const clipOrdinalsByNodeId = new Map<string, number>();
   let nextClipOrdinal = 0;
   content.graph.nodes.forEach((node) => {
+    if (node.kind !== "clip") return;
     clipOrdinalsByNodeId.set(node.nodeId, ++nextClipOrdinal);
   });
   const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
+  const worldsById = new Map(worlds.map((world) => [world.id, world]));
   let clipOrdinal = 0;
 
   const projections: CanvasProjection[] = [
-    ...content.graph.nodes.flatMap<CanvasProjection>((node, index) => {
+    ...content.graph.nodes.map<CanvasProjection>((node, index) => {
+      if (node.kind === "world") {
+        const worldOrdinal = content.graph.nodes
+          .slice(0, index + 1)
+          .filter((candidate) => candidate.kind === "world").length;
+        const world = node.worldId ? (worldsById.get(node.worldId) ?? null) : null;
+        return {
+          id: node.nodeId,
+          order: index,
+          data: {
+            kind: "world",
+            title: node.name?.trim() || world?.name?.trim() || `${copy.world} ${worldOrdinal}`,
+            eyebrow: `${copy.world} ${String(worldOrdinal).padStart(2, "0")}`,
+            nodeId: node.nodeId,
+            worldId: node.worldId,
+            world,
+            worldEntryInstruction: node.entryInstruction,
+            maxExperienceSeconds: node.maxExperienceSeconds,
+            exitKind: "auto",
+            continuationTargetNodeId: node.exit.nextNodeId ?? undefined,
+            summary: world?.prompt,
+          },
+        };
+      }
       const choices =
         node.exit.kind === "choice"
           ? node.exit.choices.map((choice) => ({
@@ -113,12 +162,30 @@ export function buildStoryCanvasModel(
               ),
             }))
           : undefined;
+      const interactions = node.interactions.map((interaction) => ({
+        interactionId: interaction.interactionId,
+        label: localizedText(interaction.label, locale, interaction.interactionId),
+        startMs: interaction.startMs,
+        endMs: interaction.endMs,
+        trigger: interaction.trigger,
+        outcomes: mapInteractionOutcomes(interaction.outcomes, (action) => ({
+          action,
+          targetTitle:
+            action.kind === "goto"
+              ? graphNodeDisplayTitle(
+                  graphNodesById.get(action.nodeId),
+                  copy.clip,
+                  clipOrdinalsByNodeId.get(action.nodeId)
+                )
+              : null,
+        })),
+      }));
 
       clipOrdinal += 1;
       const clip = clipsByGraphNodeId.get(node.nodeId);
       const clipProjection: CanvasProjection = {
         id: node.nodeId,
-        order: index * 2,
+        order: index,
         data: {
           kind: "clip",
           title: node.name?.trim() || `${copy.clip} ${clipOrdinal}`,
@@ -126,102 +193,41 @@ export function buildStoryCanvasModel(
           nodeId: node.nodeId,
           clipKey: node.clipKey,
           exitKind: node.exit.kind,
+          decisionId: node.exit.kind === "choice" ? node.exit.decisionId : undefined,
+          choices,
+          interactions,
           continuationTargetNodeId:
             node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
           clipVideo: clip,
           frameAspectRatio: frameAspectRatioOf(frameProfile),
         },
       };
-
-      if (node.exit.kind !== "choice") return [clipProjection];
-      const decisionLabel = copy.decision ?? DEFAULT_COPY.decision!;
-      const decisionNodeId = syntheticDecisionNodeId(node.nodeId);
-      return [
-        clipProjection,
-        {
-          id: decisionNodeId,
-          order: index * 2 + 1,
-          data: {
-            kind: "decision",
-            title: localizedText(node.exit.prompt, locale, ""),
-            eyebrow: decisionLabel,
-            nodeId: decisionNodeId,
-            sourceNodeId: node.nodeId,
-            decisionId: node.exit.decisionId,
-            exitKind: "choice",
-            choices,
-          },
-        },
-      ];
+      if (node.exit.kind === "choice") {
+        clipProjection.data.summary = localizedText(node.exit.prompt, locale, "");
+      }
+      return clipProjection;
     }),
   ];
-
-  // Character cards are a projection of storyBible.characters. They never
-  // enter the story-flow layout graph (below); they live in a dedicated cast
-  // lane left of the entry scene.
-  const characterProjections: CanvasProjection[] = content.storyBible.characters.map(
-    (character, index) => ({
-      id: characterCanvasNodeId(character.id),
-      order: content.graph.nodes.length * 2 + index,
-      data: {
-        kind: "character",
-        title: localizedText(character.name, locale, ""),
-        eyebrow: "",
-        nodeId: characterCanvasNodeId(character.id),
-        characterImageUrl: character.images[0]?.url,
-        summary: character.summary,
-      },
-    })
-  );
 
   const connections = buildConnections(content.graph.nodes, graphNodesById, locale);
   const storyEdges = connections
     .sort((left, right) => left.order - right.order || left.edge.id.localeCompare(right.edge.id))
     .map(({ edge }) => edge);
   const layoutSeedNodeId = content.graph.entryNodeId;
-  // Only executable story-flow projections and edges feed the layered layout;
-  // read-only character cards are placed afterwards in their own visual lane.
   const positions = buildLayeredPositions(projections, storyEdges, layoutSeedNodeId);
-  seedCastLanePositions(positions, characterProjections, layoutSeedNodeId);
 
   const edges = storyEdges;
 
-  const nodes = [...projections, ...characterProjections]
+  const nodes = [...projections]
     .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
     .map<StoryCanvasNode>((projection) => ({
       id: projection.id,
       type: "storyCanvas",
       position: positions.get(projection.id) ?? { x: 0, y: 0 },
-      connectable: projection.data.kind === "clip",
-      deletable: projection.data.kind === "clip",
-      draggable: projection.data.kind === "clip",
-      focusable: projection.data.kind === "clip",
-      selectable: projection.data.kind === "clip",
       data: projection.data,
     }));
 
   return { nodes, edges };
-}
-
-/**
- * Places character cards in a tidy vertical column to the LEFT of the entry
- * scene, centred on the anchor's row. Character cards cannot be manually
- * repositioned; their placement is always derived from the current story.
- */
-function seedCastLanePositions(
-  positions: Map<string, { x: number; y: number }>,
-  characterProjections: CanvasProjection[],
-  layoutSeedNodeId: string | null
-): void {
-  if (characterProjections.length === 0) return;
-  const anchor = (layoutSeedNodeId ? positions.get(layoutSeedNodeId) : undefined) ?? { x: 0, y: 0 };
-  const laneX = anchor.x - CAST_COLUMN_GAP;
-  characterProjections.forEach((projection, index) => {
-    positions.set(projection.id, {
-      x: laneX,
-      y: anchor.y + (index - (characterProjections.length - 1) / 2) * CAST_ROW_GAP,
-    });
-  });
 }
 
 function buildConnections(
@@ -233,6 +239,44 @@ function buildConnections(
   let order = 0;
 
   for (const node of graphNodes) {
+    if (node.kind === "world") {
+      if (!node.exit.nextNodeId || !graphNodesById.has(node.exit.nextNodeId)) continue;
+      connections.push({
+        order: order++,
+        edge: {
+          id: `continuation:${node.nodeId}:${node.exit.nextNodeId}`,
+          source: node.nodeId,
+          target: node.exit.nextNodeId,
+          sourceHandle: "completion",
+          targetHandle: "in",
+          data: { kind: "continuation" },
+        },
+      });
+      continue;
+    }
+    for (const interaction of node.interactions) {
+      for (const [outcome, action] of interactionOutcomeEntries(interaction.outcomes)) {
+        if (action.kind !== "goto" || !graphNodesById.has(action.nodeId)) continue;
+        connections.push({
+          order: order++,
+          edge: {
+            id: `interaction:${node.nodeId}:${interaction.interactionId}:${outcome}:${action.nodeId}`,
+            source: node.nodeId,
+            target: action.nodeId,
+            sourceHandle: `interaction:${interaction.interactionId}:${outcome}`,
+            targetHandle: "in",
+            label: localizedText(interaction.label, locale, interaction.interactionId),
+            data: {
+              kind: "interaction",
+              sourceNodeId: node.nodeId,
+              interactionId: interaction.interactionId,
+              outcome,
+            },
+          },
+        });
+      }
+    }
+
     if (node.exit.kind === "auto") {
       if (!node.exit.nextNodeId || !graphNodesById.has(node.exit.nextNodeId)) continue;
       connections.push({
@@ -250,29 +294,13 @@ function buildConnections(
     }
 
     if (node.exit.kind === "choice") {
-      const decisionNodeId = syntheticDecisionNodeId(node.nodeId);
-      connections.push({
-        order: order++,
-        edge: {
-          id: `decision:${node.nodeId}:${node.exit.decisionId}`,
-          source: node.nodeId,
-          target: decisionNodeId,
-          sourceHandle: "completion",
-          targetHandle: "decision-in",
-          data: {
-            kind: "decision",
-            decisionId: node.exit.decisionId,
-            sourceNodeId: node.nodeId,
-          },
-        },
-      });
       for (const choice of node.exit.choices) {
         if (!graphNodesById.has(choice.nextNodeId)) continue;
         connections.push({
           order: order++,
           edge: {
             id: `choice:${node.nodeId}:${choice.choiceId}:${choice.nextNodeId}`,
-            source: decisionNodeId,
+            source: node.nodeId,
             target: choice.nextNodeId,
             sourceHandle: `choice:${choice.choiceId}`,
             targetHandle: "in",
@@ -289,6 +317,28 @@ function buildConnections(
   }
 
   return connections;
+}
+
+function interactionOutcomeEntries(
+  outcomes: StoryInteractionOutcomes
+): Array<[keyof StoryInteractionOutcomes, StoryInteractionAction]> {
+  const entries: Array<[keyof StoryInteractionOutcomes, StoryInteractionAction]> = [
+    ["success", outcomes.success],
+  ];
+  if (outcomes.failure) entries.push(["failure", outcomes.failure]);
+  if (outcomes.timeout) entries.push(["timeout", outcomes.timeout]);
+  return entries;
+}
+
+function mapInteractionOutcomes<T>(
+  outcomes: StoryInteractionOutcomes,
+  map: (action: StoryInteractionAction) => T
+): { success: T; failure?: T; timeout?: T } {
+  return {
+    success: map(outcomes.success),
+    ...(outcomes.failure ? { failure: map(outcomes.failure) } : {}),
+    ...(outcomes.timeout ? { timeout: map(outcomes.timeout) } : {}),
+  };
 }
 
 function buildLayeredPositions(
@@ -352,12 +402,12 @@ function buildLayeredPositions(
   idsByLayer.forEach((ids, layer) => {
     ids.sort(byProjectionOrder);
     // Advance by each card's own height. A uniform row gap silently buried the
-    // bottom of every tall card — a decision with three options is nearly twice
-    // a clip — and the default layout runs before React Flow can measure, so the
+    // bottom of every tall card — a clip with several interaction anchors is
+    // nearly twice as tall — and the default layout runs before React Flow can measure, so the
     // estimate has to come from the projection itself.
     // Every column is centred on one shared horizontal axis: a two-card column
     // and a nine-card column read as one balanced band instead of both hanging
-    // from the top. Centring uses real card heights, so a tall decision card
+    // from the top. Centring uses real card heights, so a tall interactive clip
     // still clears its neighbour.
     const heights = ids.map((id) => estimateStoryNodeHeight(projectionById.get(id)!.data));
     const total = heights.reduce((sum, height) => sum + height, 0) + ROW_GAP * (ids.length - 1);
@@ -430,17 +480,6 @@ function graphNodeDisplayTitle(
   clipOrdinal?: number
 ): string | null {
   if (!node) return null;
+  if (node.kind === "world") return node.name?.trim() || node.nodeId;
   return node.name?.trim() || (clipOrdinal ? `${clipLabel} ${clipOrdinal}` : node.clipKey);
-}
-
-export function syntheticDecisionNodeId(sourceNodeId: string): string {
-  return `${SYNTHETIC_DECISION_NODE_PREFIX}${sourceNodeId}`;
-}
-
-export function isSyntheticDecisionNodeId(canvasNodeId: string): boolean {
-  return canvasNodeId.startsWith(SYNTHETIC_DECISION_NODE_PREFIX);
-}
-
-export function characterCanvasNodeId(characterId: string): string {
-  return `${SYNTHETIC_CHARACTER_NODE_PREFIX}${characterId}`;
 }

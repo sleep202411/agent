@@ -1,53 +1,50 @@
 import { describe, expect, it } from "vitest";
-import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
-import {
-  buildStoryCanvasModel,
-  characterCanvasNodeId,
-  syntheticDecisionNodeId,
-} from "./story-project-canvas-model";
+import type { InteractiveStoryDraftContent, StoryClipGraphNode } from "@/lib/story-projects-api";
+import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
 describe("film-only story canvas projection", () => {
-  it("projects clips, choices and cast members", () => {
-    const model = buildStoryCanvasModel(draft(), "en-US", [], {
-      clip: "Clip",
-      decision: "Decision",
+  it("projects clips and choices without cast members", () => {
+    const model = buildStoryCanvasModel(draft(), "en-US", [], { clip: "Clip" });
+    expect(model.nodes.map((node) => node.id)).toEqual(["clip:a", "clip:b"]);
+    expect(model.nodes.map((node) => node.data.kind)).toEqual(["clip", "clip"]);
+    expect(model.nodes[0]?.data).toMatchObject({
+      exitKind: "choice",
+      summary: "Where next?",
+      choices: [{ choiceId: "go", targetNodeId: "clip:b" }],
     });
-    expect(model.nodes.map((node) => node.id)).toEqual([
-      "clip:a",
-      syntheticDecisionNodeId("clip:a"),
-      "clip:b",
-      characterCanvasNodeId("hero"),
-    ]);
-    expect(model.nodes.map((node) => node.data.kind)).toEqual([
-      "clip",
-      "decision",
-      "clip",
-      "character",
-    ]);
     expect(model.nodes.every((node) => node.dragHandle === undefined)).toBe(true);
   });
 
-  it("projects choice flow through the synthetic decision card", () => {
+  it("projects choice flow directly from its owning clip", () => {
     const model = buildStoryCanvasModel(draft(), "en-US");
-    expect(model.edges.map((edge) => edge.data.kind)).toEqual(["decision", "choice"]);
+    expect(model.edges.map((edge) => edge.data.kind)).toEqual(["choice"]);
+    expect(model.edges[0]).toMatchObject({ source: "clip:a", target: "clip:b" });
   });
 
-  it("projects cast cards as non-interactive display nodes outside story wiring", () => {
-    const model = buildStoryCanvasModel(draft(), "en-US");
-    const characterNode = model.nodes.find((node) => node.data.kind === "character");
+  it("keeps local hotspot actions inline and projects only cross-clip actions as edges", () => {
+    const content = draft();
+    const source = content.graph.nodes[0]!;
+    if (source.kind !== "clip") throw new Error("Expected clip fixture.");
+    source.interactions = [
+      hotspot("continue", { kind: "continue" }),
+      hotspot("rewind", { kind: "seek", timeMs: 500 }),
+      hotspot("branch", { kind: "goto", nodeId: "clip:b" }),
+    ];
 
-    expect(characterNode).toMatchObject({
-      connectable: false,
-      deletable: false,
-      draggable: false,
-      focusable: false,
-      selectable: false,
-    });
-    expect(
-      model.edges.some(
-        (edge) => edge.source === characterNode?.id || edge.target === characterNode?.id
-      )
-    ).toBe(false);
+    const model = buildStoryCanvasModel(content, "en-US");
+    expect(model.nodes[0]?.data.interactions).toHaveLength(3);
+    expect(model.edges.filter((edge) => edge.data.kind === "interaction")).toEqual([
+      expect.objectContaining({
+        source: "clip:a",
+        target: "clip:b",
+        sourceHandle: "interaction:branch:success",
+      }),
+    ]);
+  });
+
+  it("omits story-bible characters from the canvas entirely", () => {
+    const model = buildStoryCanvasModel(draft(), "en-US");
+    expect(model.nodes.some((node) => node.id.startsWith("character:"))).toBe(false);
   });
 });
 
@@ -65,6 +62,7 @@ function draft(): InteractiveStoryDraftContent {
           kind: "clip",
           nodeId: "clip:a",
           clipKey: "A",
+          interactions: [],
           exit: {
             kind: "choice",
             decisionId: "decision:a",
@@ -76,10 +74,27 @@ function draft(): InteractiveStoryDraftContent {
           kind: "clip",
           nodeId: "clip:b",
           clipKey: "B",
+          interactions: [],
           exit: { kind: "auto", nextNodeId: null },
         },
       ],
     },
     productionNotes: [],
+  };
+}
+
+function hotspot(
+  interactionId: string,
+  action: StoryClipGraphNode["interactions"][number]["outcomes"]["success"]
+): StoryClipGraphNode["interactions"][number] {
+  return {
+    kind: "hotspot",
+    interactionId,
+    label: { "en-US": interactionId },
+    trigger: { kind: "tap" },
+    rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.2 },
+    startMs: 0,
+    endMs: 1_000,
+    outcomes: { success: action },
   };
 }
