@@ -40,6 +40,7 @@ import { ExpandEditor } from "./expand-editor";
 import { MotionEditor } from "./motion-editor";
 import { Icon720 } from "./panorama-viewer";
 import { PortPlus } from "./ports";
+import { useCanvasDocumentId, withCanvasDocumentContext } from "./canvas-document-context";
 import { useRetryUpload, useUploadEntry } from "./upload-state-context";
 import { MediaAssetReadinessControlForAsset } from "./media-asset-readiness";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
@@ -66,8 +67,9 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   const { patchNodeData, renameAssetsByMediaAssetId } = useCanvasGraphContext();
   const uploading = upload?.status === "uploading";
   const failed = upload?.status === "failed";
+  const documentId = useCanvasDocumentId();
   // Show the local blob preview until the durable URL lands in data.src.
-  const src = upload?.objectUrl ?? data.src;
+  const src = upload?.objectUrl ?? withCanvasDocumentContext(data.src, documentId);
   const title = data.label ?? t("image.title");
 
   const onDownload = useCallback(() => {

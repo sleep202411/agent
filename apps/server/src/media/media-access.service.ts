@@ -23,6 +23,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
 import { WorkspacePermissionService } from '../workspaces';
 import { CrewAssetAccessService } from '../crews/assets/asset-access.service';
+import { StudioDocumentAccessService } from '../documents/studio-document-access.service';
 import {
   isPeerViewable,
   requireModerationApproval,
@@ -73,6 +74,16 @@ export type MediaAssetAccessSubject = Pick<
   | 'metadata'
 >;
 
+/**
+ * Optional consumption context. `documentId` is the canvas edition of the
+ * reference-reaches-context rule: an asset referenced by a Studio document is
+ * viewable by anyone who can read that document, no matter how the asset got
+ * there or whose personal scope it lives in.
+ */
+export interface MediaAccessContext {
+  documentId?: string | null;
+}
+
 @Injectable()
 export class MediaAccessService {
   constructor(
@@ -80,6 +91,7 @@ export class MediaAccessService {
     private readonly storageAccess: MediaStorageAccessService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly crewAssetAccess: CrewAssetAccessService,
+    private readonly documentAccess: StudioDocumentAccessService,
   ) {}
 
   async issueAccessUrl(
@@ -96,7 +108,9 @@ export class MediaAccessService {
     query: MediaAssetAccessQueryDto,
   ): Promise<MediaAssetAccessResponseDto> {
     const asset = await this.loadAsset(assetId);
-    await this.requireUseAccess(userId, asset);
+    await this.requireUseAccess(userId, asset, {
+      documentId: query.documentId,
+    });
 
     return this.issueStorageUrl(asset, query, {
       allowInactivePlacements: false,
@@ -117,6 +131,7 @@ export class MediaAccessService {
   async requireUseAccess(
     userId: string | null | undefined,
     asset: MediaAssetAccessSubject,
+    context?: MediaAccessContext,
   ): Promise<void> {
     if (
       asset.status === MediaAssetStatus.deleted ||
@@ -151,12 +166,65 @@ export class MediaAccessService {
       });
     }
 
-    await this.requireAccess(userId, asset);
+    try {
+      await this.requireAccess(userId, asset);
+    } catch (err) {
+      // Ownership/membership denials (only) may be rescued by canvas context;
+      // the moderation and lifecycle gates above are a different axis and
+      // already threw. 401 (signed-out) and 404 pass through untouched.
+      if (
+        !(err instanceof ForbiddenException) ||
+        userId == null ||
+        !context?.documentId ||
+        !(await this.hasCanvasReferenceAccess(
+          userId,
+          context.documentId,
+          asset.id,
+        ))
+      ) {
+        throw err;
+      }
+    }
   }
 
-  async requireUseAccessById(userId: string, assetId: string): Promise<void> {
+  async requireUseAccessById(
+    userId: string,
+    assetId: string,
+    context?: MediaAccessContext,
+  ): Promise<void> {
     const asset = await this.loadAsset(assetId);
-    await this.requireUseAccess(userId, asset);
+    await this.requireUseAccess(userId, asset, context);
+  }
+
+  /**
+   * Reference-reaches-context, canvas edition (matches the character-cast
+   * grant below): whoever can read a Studio document may consume every asset
+   * that document references. The document snapshot itself is the authority —
+   * no side-table, no mint step; putting an asset on a canvas IS the act of
+   * sharing it with the canvas's audience, and removing it ends the grant on
+   * the next request. Containment is a full-UUID string check against the
+   * snapshot JSON: asset ids are UUIDs, so a substring collision between two
+   * distinct ids is impossible.
+   */
+  private async hasCanvasReferenceAccess(
+    userId: string,
+    documentId: string,
+    assetId: string,
+  ): Promise<boolean> {
+    let snapshot: unknown;
+    try {
+      const document = await this.documentAccess.requireDocument(
+        userId,
+        documentId,
+        'read',
+      );
+      snapshot = document.contentSnapshot;
+    } catch {
+      // Not readable (or gone) — the context cannot widen anything.
+      return false;
+    }
+    if (snapshot == null) return false;
+    return JSON.stringify(snapshot).includes(assetId);
   }
 
   async issueAdminAccessUrl(
