@@ -55,6 +55,12 @@
         "FD_GLOBAL_ANDROID_PACKAGE": "com.fizzdragon"
       }
     },
+    "production-global-apk": {
+      "extends": "production-global",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production-cn": {
       "autoIncrement": true,
       "android": {
