@@ -8,7 +8,7 @@
 #
 # Produces signed, store-ready artifacts in $FD_OUT_DIR named
 #   FizzDragon-<version>-<build>-<variant>.{aab,apk,ipa}
-# where variant ∈ {global, cn-ios, cn-huawei, cn-xiaomi}.
+# where variant ∈ {global, global-transsion, cn-ios, cn-huawei, cn-xiaomi}.
 #
 # Signing secrets + material paths come from a GITIGNORED env file
 # (apps/mobile/.env.release.local — see .env.release.example). No secret lives
@@ -19,6 +19,8 @@
 # Version + build number come from app.config.js (single source of truth).
 # CN Android is DUAL-package: 华为 = cn.fizzdragon, 小米 = cn.feiteng.fizzspace
 # (软著 bound to the feiteng package; do NOT merge — see app/signing/README.md).
+# Global Android produces BOTH Google Play (.aab) and Transsion PalmStore (.apk)
+# from one prebuild (same package + upload keystore).
 # ============================================================================
 set -euo pipefail
 
@@ -79,9 +81,10 @@ prebuild() { # region platform androidPackage
   npx expo prebuild --platform "$platform" --clean --no-install >/tmp/fd-prebuild-$region-$platform.log 2>&1
 }
 
-build_android() { # variant region package keystore storepass alias keypass task ext gradleOut
-  local variant="$1" region="$2" pkg="$3" ks="$4" sp="$5" al="$6" kp="$7" task="$8" ext="$9" gout="${10}"
-  prebuild "$region" android "$pkg"
+# Run a gradle release task against an already-prebuilt android/ tree and copy
+# the artifact. Used after a single prebuild to emit both .aab and .apk.
+gradle_release() { # variant package keystore storepass alias keypass task ext gradleOut
+  local variant="$1" pkg="$2" ks="$3" sp="$4" al="$5" kp="$6" task="$7" ext="$8" gout="$9"
   echo "  [$(date +%T)] gradlew $task ($variant)"
   ( cd android && ./gradlew "$task" --no-daemon \
       -PFIZZDRAGON_UPLOAD_STORE_FILE="$ks" -PFIZZDRAGON_UPLOAD_STORE_PASSWORD="$sp" \
@@ -91,6 +94,12 @@ build_android() { # variant region package keystore storepass alias keypass task
   cp "android/$gout" "$out"
   local md5; md5="$("$APKSIGNER" verify --print-certs "$out" 2>/dev/null | grep -i 'MD5' | grep -oE '[a-f0-9]{32}' || echo '?')"
   RESULT="$RESULT\n  ✓ $variant ($pkg) sig=$md5 → $(basename "$out")"
+}
+
+build_android() { # variant region package keystore storepass alias keypass task ext gradleOut
+  local variant="$1" region="$2" pkg="$3" ks="$4" sp="$5" al="$6" kp="$7" task="$8" ext="$9" gout="${10}"
+  prebuild "$region" android "$pkg"
+  gradle_release "$variant" "$pkg" "$ks" "$sp" "$al" "$kp" "$task" "$ext" "$gout"
 }
 
 build_ios() { # variant region bundleId signStyle team profileOrEmpty
@@ -139,7 +148,14 @@ PLIST
   RESULT="$RESULT\n  ✓ $variant ($bundle) → $(basename "$out")"
 }
 
-run_global_android() { build_android global global "${FD_GLOBAL_ANDROID_PACKAGE:-com.fizzdragon}" "$FD_GP_KEYSTORE" "$FD_GP_STORE_PASS" "$FD_GP_KEY_ALIAS" "$FD_GP_KEY_PASS" bundleRelease aab app/build/outputs/bundle/release/app-release.aab; }
+run_global_android() {
+  local pkg="${FD_GLOBAL_ANDROID_PACKAGE:-com.fizzdragon}"
+  local ks="$FD_GP_KEYSTORE" sp="$FD_GP_STORE_PASS" al="$FD_GP_KEY_ALIAS" kp="$FD_GP_KEY_PASS"
+  # One clean prebuild, then both store formats (Play wants AAB; Transsion wants APK).
+  prebuild global android "$pkg"
+  gradle_release global            "$pkg" "$ks" "$sp" "$al" "$kp" bundleRelease   aab app/build/outputs/bundle/release/app-release.aab
+  gradle_release global-transsion  "$pkg" "$ks" "$sp" "$al" "$kp" assembleRelease apk app/build/outputs/apk/release/app-release.apk
+}
 run_cn_android()     {
   build_android cn-huawei cn "${FD_CN_HUAWEI_PACKAGE:-cn.fizzdragon}"        "$FD_CN_KEYSTORE" "$FD_CN_STORE_PASS" "$FD_CN_KEY_ALIAS" "$FD_CN_KEY_PASS" assembleRelease apk app/build/outputs/apk/release/app-release.apk
   build_android cn-xiaomi cn "${FD_CN_XIAOMI_PACKAGE:-cn.feiteng.fizzspace}" "$FD_CN_KEYSTORE" "$FD_CN_STORE_PASS" "$FD_CN_KEY_ALIAS" "$FD_CN_KEY_PASS" assembleRelease apk app/build/outputs/apk/release/app-release.apk

@@ -13,14 +13,18 @@ Output → `$FD_OUT_DIR` (default `~/Desktop/FizzDragon-builds/`), named
 
 ## What gets built
 
-| region | platform | variant         | identifier                 | store            | signing                                |
-| ------ | -------- | --------------- | -------------------------- | ---------------- | -------------------------------------- |
-| global | android  | `global.aab`    | `com.fizzdragon`           | Google Play      | `android-global-googleplay` upload key |
-| global | ios      | `global.ipa`    | `com.fizzdragon.app`       | App Store (intl) | manual, team `273BAZ5UTL` + profile    |
-| cn     | android  | `cn-huawei.apk` | `cn.fizzdragon`            | 华为             | `android-cn` 沸腾繁星 key              |
-| cn     | android  | `cn-xiaomi.apk` | **`cn.feiteng.fizzspace`** | 小米             | `android-cn` 沸腾繁星 key              |
-| cn     | ios      | `cn-ios.ipa`    | `cn.fizzspaceapp`          | App Store (中国) | automatic, team `H5FAJB56F4`           |
+| region | platform | variant                | identifier                 | store            | signing                                |
+| ------ | -------- | ---------------------- | -------------------------- | ---------------- | -------------------------------------- |
+| global | android  | `global.aab`           | `com.fizzdragon`           | Google Play      | `android-global-googleplay` upload key |
+| global | android  | `global-transsion.apk` | `com.fizzdragon`           | 传音 PalmStore   | same Google Play upload key            |
+| global | ios      | `global.ipa`           | `com.fizzdragon.app`       | App Store (intl) | manual, team `273BAZ5UTL` + profile    |
+| cn     | android  | `cn-huawei.apk`        | `cn.fizzdragon`            | 华为             | `android-cn` 沸腾繁星 key              |
+| cn     | android  | `cn-xiaomi.apk`        | **`cn.feiteng.fizzspace`** | 小米             | `android-cn` 沸腾繁星 key              |
+| cn     | ios      | `cn-ios.ipa`           | `cn.fizzspaceapp`          | App Store (中国) | automatic, team `H5FAJB56F4`           |
 
+> **Global Android emits both formats from one prebuild:** `.aab` for Play and
+> `.apk` for Transsion (and any other APK-only store). Same package + keystore.
+>
 > **CN Android is dual-package and must NOT be merged.** 华为 认证 is on
 > `cn.fizzdragon`; 小米 软著 is bound to the legacy `cn.feiteng.fizzspace`. Both
 > are signed with the same `android-cn` key. See `app/signing/README.md`.
@@ -41,8 +45,12 @@ Output → `$FD_OUT_DIR` (default `~/Desktop/FizzDragon-builds/`), named
 
 1. Bump in `app.config.js`: `version` (e.g. `2.0.1`) and `ios.buildNumber` /
    `android.versionCode` (must be **higher than every build already uploaded** —
-   App Store/Play/华为/小米 each reject a re-used build number).
+   App Store/Play/传音/华为/小米 each reject a re-used build number).
 2. `npm run build:release all all`
+   - Global Android only: `npm run build:release -- global android` → Desktop gets
+     both `…-global.aab` (Play) and `…-global-transsion.apk` (传音).
+   - Cloud APK (传音, same signing as local once EAS credentials match):  
+     `npx eas-cli build --profile production-global-apk --platform android`
 3. Upload each artifact to its store. For **iOS**, App Store Connect pulls the icon
    from the build; for **Android**, also upload a **512×512 PNG** app icon
    (generate from `assets/images/icon.png`: `sips -z 512 512 …`).
