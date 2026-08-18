@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTranslations } from "next-intl";
-import { useWorkspace } from "@/app/_components/workspace-context";
+import { useBillingWorkspace } from "@/app/_components/workspace-context";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
 import { PageHeader, TeamBadge } from "../_components/settings-ui";
 import { TeamCreditsPanel } from "../_components/team-credits-panel";
@@ -18,7 +18,10 @@ import { CurrentPlanPanel } from "../_components/current-plan-panel";
  */
 export default function BillingSettingsPage() {
   const t = useTranslations("settings");
-  const { activeWorkspace: ws } = useWorkspace();
+  // Payer-rule mirror: the page always shows/recharges the pot the user pays
+  // from — team pot when a team is active, otherwise the user's OWN personal
+  // pot (never a host workspace they were invited into).
+  const ws = useBillingWorkspace();
   const [subscriptionOpen, setSubscriptionOpen] = useState(false);
   const canManageBilling = ws?.role === "owner" || ws?.role === "admin" || ws?.role === "billing";
 
