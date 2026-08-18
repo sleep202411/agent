@@ -324,27 +324,29 @@ async function resolvePayerTx(
   tx: WalletTx,
   job: ChargeableJob,
 ): Promise<Payer> {
-  // compute_point is uniformly workspace-owned: a job always charges the pot of
-  // the workspace it ran in. job.workspaceId is set for every job at create time
-  // (the server resolves the personal workspace when no team is in context), so
-  // the workspace branch is the live path. billingScope stays as metadata-only
-  // analytics: team workspaces read 'workspace_team', personal reads 'user'.
+  // job.workspaceId is the job's ACCESS scope (the project's home workspace) —
+  // it must not double as the payer. Team pots are shared on purpose: a job
+  // that runs in a TEAM workspace charges that team's pot. A job that runs in
+  // a PERSONAL workspace charges the ACTOR's own personal pot — an invited
+  // collaborator in someone else's personal project spends their own credits,
+  // never the host's (for the owner both resolve to the same pot). Settle and
+  // release never re-resolve the payer — they follow the job's recorded hold —
+  // so in-flight jobs are unaffected by this rule.
   if (job.workspaceId) {
     const workspace = await tx.workspace.findUnique({
       where: { id: job.workspaceId },
       select: { id: true, type: true },
     });
-    if (workspace) {
+    if (workspace?.type === WorkspaceType.team) {
       return {
         ownerType: WalletOwnerType.workspace,
         ownerId: workspace.id,
-        billingScope:
-          workspace.type === WorkspaceType.team ? 'workspace_team' : 'user',
+        billingScope: 'workspace_team',
       };
     }
   }
-  // Defensive fallback (unreachable in normal flow): no workspace on the job →
-  // charge the user's personal-workspace pot if it exists.
+  // Personal host (or no workspace on the job): charge the actor's own
+  // personal-workspace pot.
   const personal = await tx.workspace.findFirst({
     where: {
       ownerUserId: job.userId,
