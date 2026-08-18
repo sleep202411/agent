@@ -2498,8 +2498,12 @@
       "placeholder": "寫下你的劇本——流水線會從這裡讀取原文…"
     },
     "assetsPage": {
-      "emptyTitle": "這裡還沒有內容",
-      "emptyBody": "資產視圖尚未構建。角色、場景與道具將在這裡管理。"
+      "tabs": {
+        "all": "全部",
+        "character": "角色",
+        "scene": "場景",
+        "prop": "道具"
+      }
     },
     "storyboardPage": {
       "emptyTitle": "這裡還沒有內容",

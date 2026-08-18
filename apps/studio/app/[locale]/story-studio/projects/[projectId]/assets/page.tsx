@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { StoryStepEmptyPage } from "../../../_components/story-step-empty-page";
+import { StoryAssetsGallery } from "../../../_components/story-assets-gallery";
 
 export const metadata: Metadata = {
   title: "Assets · Interactive Film Studio",
@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function StoryProjectAssetsPage() {
-  return <StoryStepEmptyPage step="assets" />;
+  return <StoryAssetsGallery />;
 }

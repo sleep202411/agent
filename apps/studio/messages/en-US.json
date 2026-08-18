@@ -2498,8 +2498,12 @@
       "placeholder": "Write your script — the pipeline reads it from here…"
     },
     "assetsPage": {
-      "emptyTitle": "Nothing here yet",
-      "emptyBody": "The assets view has not been built. Characters, scenes, and props will be managed here."
+      "tabs": {
+        "all": "All",
+        "character": "Characters",
+        "scene": "Scenes",
+        "prop": "Props"
+      }
     },
     "storyboardPage": {
       "emptyTitle": "Nothing here yet",
