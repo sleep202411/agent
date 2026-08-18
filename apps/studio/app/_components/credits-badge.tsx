@@ -5,7 +5,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
-import { useActiveWorkspace, useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import {
+  useActiveWorkspace,
+  useActiveWorkspaceId,
+  useBillingWorkspace,
+} from "@/app/_components/workspace-context";
 import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { openSettings } from "@/lib/settings-hash";
 import { cn } from "@/lib/utils";
@@ -75,9 +79,12 @@ async function getComputeWalletBalance(
 
 export function useComputeWalletBalance(enabled = true) {
   const { user } = useAuth();
-  // Scopes to the active workspace's compute pot (workspace-owned); null only on
-  // first paint before the app-wide provider resolves, where it reads personal.
-  const workspaceId = useActiveWorkspaceId();
+  // Scopes to the pot the CURRENT USER pays from (mirrors the server payer
+  // rule): a team active workspace reads the shared team pot; any other
+  // context reads the caller's own personal pot — including when visiting
+  // someone else's personal workspace as an invited collaborator, where
+  // reading the host's wallet would 403.
+  const workspaceId = useBillingWorkspace()?.id ?? null;
   return useQuery({
     queryKey: computeWalletBalanceKey(workspaceId),
     queryFn: () => getComputeWalletBalance(workspaceId),

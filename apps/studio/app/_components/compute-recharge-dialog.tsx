@@ -20,7 +20,7 @@ import {
   useComputeWalletBalance,
 } from "@/app/_components/credits-badge";
 import { useIsCnSite } from "@/app/_components/region-provider";
-import { useActiveWorkspace, useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useBillingWorkspace } from "@/app/_components/workspace-context";
 import { ApiRequestError } from "@/lib/api";
 import {
   createComputeCustomRecharge,
@@ -64,8 +64,10 @@ export function ComputeRechargeDialog({
   const queryClient = useQueryClient();
   const wallet = useComputeWalletBalance(open);
   const isCn = useIsCnSite();
-  const activeWorkspace = useActiveWorkspace();
-  const activeWorkspaceId = useActiveWorkspaceId();
+  // Recharge targets the pot the user actually pays from (payer-rule mirror):
+  // a team active workspace tops up the shared pot; anywhere else tops up the
+  // caller's OWN personal pot — never a host's pot they happen to be visiting.
+  const billingWorkspace = useBillingWorkspace();
   const sym = isCn ? "¥" : "$";
   const minorPerPoint = isCn ? 7 : 1;
   const effectiveAvailable = available ?? wallet.data?.available ?? null;
@@ -101,9 +103,9 @@ export function ComputeRechargeDialog({
   }, [close, open]);
 
   const canRecharge =
-    !activeWorkspace ||
-    activeWorkspace.type !== "team" ||
-    Boolean(activeWorkspace.role && CAN_RECHARGE_TEAM_ROLES.has(activeWorkspace.role));
+    !billingWorkspace ||
+    billingWorkspace.type !== "team" ||
+    Boolean(billingWorkspace.role && CAN_RECHARGE_TEAM_ROLES.has(billingWorkspace.role));
 
   const amountNum = Number(amount);
   const amountValid = Number.isInteger(amountNum) && amountNum >= 10 && amountNum <= 5000;
@@ -118,7 +120,7 @@ export function ComputeRechargeDialog({
     mutationFn: () =>
       createComputeCustomRecharge({
         amountDollars: amountNum,
-        workspaceId: activeWorkspaceId ?? undefined,
+        workspaceId: billingWorkspace?.id ?? undefined,
         idempotencyKey: crypto.randomUUID(),
         ...urls(),
       }),

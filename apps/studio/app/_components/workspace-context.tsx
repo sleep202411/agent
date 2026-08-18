@@ -58,6 +58,24 @@ export function useActiveWorkspace(): WorkspaceRef | null {
   return useContext(WorkspaceContext)?.activeWorkspace ?? null;
 }
 
+/**
+ * The workspace whose compute pot the CURRENT USER pays from and should see —
+ * mirrors the server's payer rule (billing-wallet `resolvePayerTx`): a TEAM
+ * active workspace bills its shared pot; every other context — the user's own
+ * personal workspace, or visiting someone else's personal workspace as an
+ * invited collaborator — bills the caller's OWN personal pot. Never resolves
+ * to another user's personal workspace (guests reading a host's wallet 403,
+ * which the balance chrome used to render as "—"). Null (no provider / list
+ * still loading) is safe: the server treats a missing workspace header as
+ * "the caller's personal pot".
+ */
+export function useBillingWorkspace(): WorkspaceRef | null {
+  const value = useContext(WorkspaceContext);
+  const active = value?.activeWorkspace ?? null;
+  if (active?.type === "team") return active;
+  return value?.workspaces.find((w) => w.type === "personal" && w.role === "owner") ?? null;
+}
+
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
