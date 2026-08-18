@@ -2506,8 +2506,10 @@
       }
     },
     "storyboardPage": {
-      "emptyTitle": "Nothing here yet",
-      "emptyBody": "The storyboard view has not been built. Per-node keyframes and shot videos will be produced here."
+      "emptyChapter": "No scenes in this chapter yet.",
+      "slotEmpty": "Empty",
+      "ready": "Ready",
+      "story": "Story"
     },
     "canvas": {
       "back": "Back to Interactive Film Studio",
@@ -2522,7 +2524,8 @@
         "navigation": "Story project navigation",
         "world": "World",
         "media": "Media",
-        "agent": "Agent"
+        "agent": "Agent",
+        "catalog": "Catalog"
       },
       "chapters": {
         "action": "Chapters",
@@ -3107,7 +3110,11 @@
       "tidy": {
         "action": "Tidy layout"
       },
-      "share": "Share"
+      "share": "Share",
+      "catalogPanel": {
+        "choice": "Choice",
+        "end": "END"
+      }
     },
     "workbench": {
       "back": "Back to Interactive Film Studio",

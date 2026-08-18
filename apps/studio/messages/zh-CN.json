@@ -2506,8 +2506,10 @@
       }
     },
     "storyboardPage": {
-      "emptyTitle": "这里还没有内容",
-      "emptyBody": "分镜视图尚未构建。逐节点的首帧图与镜头视频将在这里生产。"
+      "emptyChapter": "本章还没有场景。",
+      "slotEmpty": "待生成",
+      "ready": "已就绪",
+      "story": "剧情"
     },
     "canvas": {
       "back": "返回影游工作室",
@@ -2522,7 +2524,8 @@
         "navigation": "影游项目导航",
         "world": "世界",
         "media": "素材",
-        "agent": "智能体"
+        "agent": "智能体",
+        "catalog": "目录"
       },
       "chapters": {
         "action": "章节",
@@ -3107,7 +3110,11 @@
       "tidy": {
         "action": "整理画布"
       },
-      "share": "共创"
+      "share": "共创",
+      "catalogPanel": {
+        "choice": "选择",
+        "end": "结局"
+      }
     },
     "workbench": {
       "back": "返回影游工作室",

@@ -122,6 +122,7 @@ interface AgentOsPanelProps {
   open: boolean;
   onClose: () => void;
   className?: string;
+  variant?: "floating" | "docked";
 }
 
 /** Agent OS side panel — one durable conversation boundary per project. */
@@ -138,6 +139,7 @@ function AgentOsProjectSession({
   open,
   onClose,
   className,
+  variant,
 }: AgentOsPanelProps) {
   const t = useTranslations("agentOs");
   const ts = useTranslations("project.skills");
@@ -572,6 +574,7 @@ function AgentOsProjectSession({
   return (
     <FizzAgentSurface
       className={className}
+      variant={variant}
       open={open}
       title={t("title")}
       subtitle={workerStatus}

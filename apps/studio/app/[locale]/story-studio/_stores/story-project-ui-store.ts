@@ -12,6 +12,9 @@ interface StoryProjectUIState {
   agentOpen: boolean;
   toggleAgent: () => void;
   closeAgent: () => void;
+  /** Chapter/scene catalog panel (docked next to the rail) open. */
+  catalogOpen: boolean;
+  toggleCatalog: () => void;
   /** Chapter the canvas is editing — context hint for the agent panel. */
   activeChapterId: string | null;
   setActiveChapterId: (chapterId: string | null) => void;
@@ -23,6 +26,9 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
       agentOpen: false,
       toggleAgent: () => set((state) => ({ agentOpen: !state.agentOpen }), false, "toggleAgent"),
       closeAgent: () => set({ agentOpen: false }, false, "closeAgent"),
+      catalogOpen: false,
+      toggleCatalog: () =>
+        set((state) => ({ catalogOpen: !state.catalogOpen }), false, "toggleCatalog"),
       activeChapterId: null,
       setActiveChapterId: (chapterId) =>
         set({ activeChapterId: chapterId }, false, "setActiveChapterId"),

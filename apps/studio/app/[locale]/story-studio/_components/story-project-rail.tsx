@@ -4,6 +4,7 @@ import type { ComponentType } from "react";
 import {
   IconArrowLeft,
   IconBook2,
+  IconListTree,
   IconMovie,
   IconShare3,
   IconSparkles,
@@ -30,6 +31,8 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
   const agentOpen = useStoryProjectUiStore((state) => state.agentOpen);
   const toggleAgent = useStoryProjectUiStore((state) => state.toggleAgent);
+  const catalogOpen = useStoryProjectUiStore((state) => state.catalogOpen);
+  const toggleCatalog = useStoryProjectUiStore((state) => state.toggleCatalog);
 
   if (!RAIL_SEGMENTS.has(segment ?? "")) return null;
 
@@ -48,6 +51,12 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
         </Link>
       </div>
       <nav className="flex min-h-0 flex-1 flex-col items-center gap-2 px-1.5 py-2">
+        <RailButton
+          icon={IconListTree}
+          label={t("sidebar.catalog")}
+          active={catalogOpen}
+          onClick={toggleCatalog}
+        />
         {/* Chapters lives on the canvas (its dropdown needs the draft data);
             from other steps the button navigates there. */}
         <RailLink

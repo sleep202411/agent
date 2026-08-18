@@ -1,4 +1,5 @@
 import { StoryProjectAgentPanel } from "@/app/[locale]/story-studio/_components/story-project-agent-panel";
+import { StoryProjectCatalog } from "@/app/[locale]/story-studio/_components/story-project-catalog";
 import { StoryProjectHeader } from "@/app/[locale]/story-studio/_components/story-project-header";
 import { StoryProjectRail } from "@/app/[locale]/story-studio/_components/story-project-rail";
 import { StoryProjectWorkspaceGate } from "@/app/[locale]/story-studio/_components/story-project-workspace-gate";
@@ -23,8 +24,13 @@ export default async function StoryProjectLayout({
         {/* Header */}
         <StoryProjectHeader projectId={projectId} />
         <section className="flex min-h-0 min-w-0 flex-1">
-          {/* Sidebar */}
-          <StoryProjectRail projectId={projectId} />
+          <div className="flex min-h-0 shrink-0">
+            {/* Sidebar */}
+            <StoryProjectRail projectId={projectId} />
+            {/* Side Panel — rail-toggled panels dock here (catalog for now). */}
+            <StoryProjectCatalog projectId={projectId} />
+          </div>
+
           <div className="flex min-w-0 flex-1">{children}</div>
           <StoryProjectAgentPanel projectId={projectId} />
         </section>

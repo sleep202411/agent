@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
-import { StoryStepEmptyPage } from "../../../_components/story-step-empty-page";
+import { StoryStoryboardView } from "../../../_components/story-storyboard-view";
 
 export const metadata: Metadata = {
   title: "Storyboard · Interactive Film Studio",
-  description: "Produce per-node keyframes and shot videos.",
+  description: "Per-scene production status: prose and the current video.",
 };
 
-export default function StoryProjectStoryboardPage() {
-  return <StoryStepEmptyPage step="storyboard" />;
+export default async function StoryProjectStoryboardPage({
+  params,
+}: {
+  params: Promise<{ projectId: string }>;
+}) {
+  const { projectId } = await params;
+  return <StoryStoryboardView projectId={projectId} />;
 }

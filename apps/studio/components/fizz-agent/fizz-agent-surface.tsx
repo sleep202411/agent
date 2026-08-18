@@ -45,6 +45,8 @@ export interface FizzAgentSurfaceProps {
   onNewConversation?: () => void;
   onOpenChange: (open: boolean) => void;
   className?: string;
+  /** "floating" is the default rounded card; "docked" squares it off to sit flush against the viewport edge. */
+  variant?: "floating" | "docked";
 }
 
 /**
@@ -70,6 +72,7 @@ export function FizzAgentSurface({
   onNewConversation,
   onOpenChange,
   className,
+  variant = "floating",
 }: FizzAgentSurfaceProps) {
   if (!open) return null;
 
@@ -82,7 +85,10 @@ export function FizzAgentSurface({
       <aside
         aria-label={labels.surface}
         role="complementary"
-        className="liquid-rim flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden rounded-[26px] bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200"
+        className={cn(
+          "flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200",
+          variant === "docked" ? "rounded-none" : "liquid-rim rounded-[26px]"
+        )}
       >
         <header className="flex h-14 shrink-0 items-center gap-3 px-4">
           <div className="min-w-0 flex-1">

@@ -17,6 +17,8 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
 
   return (
     <AgentOsPanel
+      className="p-0"
+      variant="docked"
       projectId={projectId}
       projectKind="story"
       workbenchMode="story"
