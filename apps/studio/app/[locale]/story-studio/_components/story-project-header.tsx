@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { useWorkspace } from "@/app/_components/workspace-context";
+import { cn } from "@/lib/utils";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
 import { StoryProductionSteps } from "./story-production-steps";
 import { StoryProjectHeaderActions } from "./story-project-header-actions";
@@ -27,6 +28,8 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio");
   // Ref-registered so the canvas can portal its chapter switcher in here.
   const setHeaderContextSlot = useStoryProjectUiStore((state) => state.setHeaderContextSlot);
+  // Phones give the chat view the whole screen — the bar only shows with work.
+  const mobileView = useStoryProjectUiStore((state) => state.mobileView);
   const { activeWorkspace } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
   const active = STEP_BY_SEGMENT[segment as keyof typeof STEP_BY_SEGMENT];
@@ -44,7 +47,12 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
     // Occupying top bar, monochrome solid background + hairline divider per
     // DESIGN.md. `@container`: portaled toolbar labels collapse to icon-only
     // when space is tight.
-    <header className="@container relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[oklch(0.185_0_0)] px-4">
+    <header
+      className={cn(
+        "@container relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[oklch(0.185_0_0)] px-4",
+        mobileView === "chat" && "max-md:hidden"
+      )}
+    >
       <div className="flex min-w-0 items-center gap-3">
         <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
           {workbenchQuery.data?.project.title ?? t(`canvas.steps.${active}`)}

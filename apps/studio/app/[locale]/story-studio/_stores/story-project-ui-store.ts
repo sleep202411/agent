@@ -24,6 +24,13 @@ export interface StoryLiveDraftSignals {
  * state convention in apps/studio/AGENTS.md.
  */
 interface StoryProjectUIState {
+  /**
+   * Which surface the phone layout shows — chat (the full-screen agent
+   * conversation, the mobile default) or the current step page. Desktop shows
+   * both and ignores this.
+   */
+  mobileView: "chat" | "work";
+  setMobileView: (view: "chat" | "work") => void;
   /** Chapter/scene catalog panel (docked next to the rail) open. */
   catalogOpen: boolean;
   toggleCatalog: () => void;
@@ -73,6 +80,8 @@ interface StoryProjectUIState {
 export const useStoryProjectUiStore = create<StoryProjectUIState>()(
   devtools(
     (set) => ({
+      mobileView: "chat",
+      setMobileView: (view) => set({ mobileView: view }, false, "setMobileView"),
       catalogOpen: false,
       toggleCatalog: () =>
         set((state) => ({ catalogOpen: !state.catalogOpen }), false, "toggleCatalog"),

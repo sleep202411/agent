@@ -1,14 +1,18 @@
 import { StoryProjectAgentPanel } from "@/app/[locale]/story-studio/_components/story-project-agent-panel";
 import { StoryProjectCatalog } from "@/app/[locale]/story-studio/_components/story-project-catalog";
 import { StoryProjectHeader } from "@/app/[locale]/story-studio/_components/story-project-header";
+import { StoryProjectMobileNav } from "@/app/[locale]/story-studio/_components/story-project-mobile-nav";
 import { StoryProjectRail } from "@/app/[locale]/story-studio/_components/story-project-rail";
+import { StoryProjectWorkView } from "@/app/[locale]/story-studio/_components/story-project-work-view";
 import { StoryProjectWorkspaceGate } from "@/app/[locale]/story-studio/_components/story-project-workspace-gate";
 
 /**
  * Project layout — owns the whole project chrome: header (title + production
- * stepper), the left rail, and the single FizzAgent panel. Pages render only
- * their content. The canvas keeps its own richer chrome and the playtest
- * stays chrome-free (header/rail self-hide on those segments).
+ * stepper), the left rail, the single FizzAgent panel, and the phone bottom
+ * bar. Pages render only their content; the playtest stays chrome-free (all
+ * chrome self-hides on that segment). Below md the layout flips to
+ * conversation-first: the agent panel is the full-screen default and the
+ * bottom bar switches between it and the step pages.
  */
 export default async function StoryProjectLayout({
   children,
@@ -20,7 +24,7 @@ export default async function StoryProjectLayout({
   const { projectId } = await params;
   return (
     <StoryProjectWorkspaceGate projectId={projectId}>
-      <div className="flex h-screen flex-col overflow-hidden bg-[var(--canvas-background)] text-white">
+      <div className="flex h-dvh flex-col overflow-hidden bg-[var(--canvas-background)] text-white">
         {/* Header */}
         <StoryProjectHeader projectId={projectId} />
         <section className="flex min-h-0 min-w-0 flex-1">
@@ -31,9 +35,10 @@ export default async function StoryProjectLayout({
             <StoryProjectCatalog projectId={projectId} />
           </div>
 
-          <div className="flex min-w-0 flex-1">{children}</div>
+          <StoryProjectWorkView>{children}</StoryProjectWorkView>
           <StoryProjectAgentPanel projectId={projectId} />
         </section>
+        <StoryProjectMobileNav projectId={projectId} />
       </div>
     </StoryProjectWorkspaceGate>
   );

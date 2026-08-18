@@ -3113,6 +3113,10 @@
       "catalogPanel": {
         "choice": "选择",
         "end": "结局"
+      },
+      "mobileNav": {
+        "label": "制作导航",
+        "chat": "对话"
       }
     },
     "workbench": {

@@ -88,7 +88,7 @@ export function FizzAgentSurface({
         role="complementary"
         className={cn(
           "flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200",
-          variant === "docked" ? "rounded-none" : "liquid-rim rounded-[26px]"
+          variant === "docked" ? "rounded-none max-md:w-full" : "liquid-rim rounded-[26px]"
         )}
       >
         <header className="flex h-14 shrink-0 items-center gap-3 px-4">

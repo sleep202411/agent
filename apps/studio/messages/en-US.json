@@ -3113,6 +3113,10 @@
       "catalogPanel": {
         "choice": "Choice",
         "end": "END"
+      },
+      "mobileNav": {
+        "label": "Production navigation",
+        "chat": "Chat"
       }
     },
     "workbench": {

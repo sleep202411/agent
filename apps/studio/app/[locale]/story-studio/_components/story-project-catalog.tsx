@@ -66,7 +66,7 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   return (
     <nav
       aria-label={t("sidebar.catalog")}
-      className="w-64 shrink-0 overflow-y-auto border-r border-white/8 bg-[#0C0C0D] px-3 py-5"
+      className="w-64 shrink-0 overflow-y-auto border-r border-white/8 bg-[#0C0C0D] px-3 py-5 max-md:hidden"
     >
       <p className="px-2 text-[11px] font-semibold tracking-[0.14em] text-white/30 uppercase">
         {t("sidebar.catalog")}

@@ -47,7 +47,7 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   return (
     <aside
       aria-label={t("sidebar.navigation")}
-      className="relative z-50 flex h-full w-16 shrink-0 flex-col border-r border-white/10 bg-[#0A0A0A]"
+      className="relative z-50 flex h-full w-16 shrink-0 flex-col border-r border-white/10 bg-[#0A0A0A] max-md:hidden"
     >
       <div className="flex h-16 shrink-0 items-center justify-center">
         <Link
