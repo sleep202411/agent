@@ -2497,6 +2497,12 @@
     "canvas": {
       "back": "Back to Interactive Film Studio",
       "mode": "Story canvas",
+      "steps": {
+        "script": "Script",
+        "tree": "Plot Tree",
+        "assets": "Assets",
+        "storyboard": "Storyboard"
+      },
       "sidebar": {
         "navigation": "Story project navigation",
         "world": "World",

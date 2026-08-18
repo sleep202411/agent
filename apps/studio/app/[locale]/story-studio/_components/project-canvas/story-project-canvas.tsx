@@ -3007,42 +3007,9 @@ function StoryProjectCanvasInner({
           );
         }}
       />
-      <div className="relative min-w-0 flex-1">
-        {worldRun ? (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={t("worldNode.run")}
-            className="fixed inset-0 z-[200] bg-black"
-          >
-            <WorldModelExperienceRenderer
-              config={{
-                projectId,
-                worldId: worldRun.worldId,
-                entryInstruction: worldRun.entryInstruction,
-                maxExperienceSeconds: worldRun.maxExperienceSeconds,
-                autoplay: true,
-              }}
-              active
-              onCompleted={() => setWorldRun(null)}
-              onError={(error) => {
-                toast.error(storyApiErrorMessage(error, t("worldNode.runError")));
-                setWorldRun(null);
-              }}
-            />
-            <button
-              type="button"
-              aria-label={t("worldNode.exitRun")}
-              title={t("worldNode.exitRun")}
-              onClick={() => setWorldRun(null)}
-              className="absolute top-5 right-5 grid size-11 place-items-center rounded-full border border-white/12 bg-black/55 text-white/78 backdrop-blur-xl transition hover:bg-white/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
-            >
-              <IconX className="size-5" />
-            </button>
-          </div>
-        ) : null}
-
+      <div className="flex min-w-0 flex-1 flex-col">
         <CanvasHeader
+          projectId={projectId}
           title={project.title}
           chapterTitle={workbenchProjection.chapter.title}
           canEdit={canEdit}
@@ -3061,329 +3028,364 @@ function StoryProjectCanvasInner({
           onPreview={() => void openWorkingPreview()}
           onPublish={publication.open}
         />
-
-        <ShareDialog
-          scope={{ kind: "story-project", id: projectId, name: project.title }}
-          canManage={project.capabilities.includes("story.admin")}
-          open={shareOpen}
-          onOpenChange={setShareOpen}
-        />
-
-        {leaveDialog}
-
-        <StoryPublicationDialog
-          state={publication.state}
-          draftRevision={draftRevision}
-          canMutate={editPolicy.canPublish}
-          disabledReason={publication.disabledReason}
-          onClose={publication.close}
-          onConfirm={() => {
-            if (editPolicy.canPublish) void publication.confirm();
-          }}
-          onRetry={() => {
-            if (editPolicy.canPublish) void publication.retry();
-          }}
-        />
-
-        <section
-          ref={canvasSectionRef}
-          // Inspectors are floating overlays over the canvas region.
-          className="absolute inset-0"
-          onDoubleClick={(event) => {
-            if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
-              return;
-            }
-            event.preventDefault();
-            openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-          }}
-        >
-          <CanvasBackdrop />
-          <MediaHoverPreviewProvider>
-            <StoryCanvasChoiceContext.Provider value={choiceContext}>
-              <StoryCanvasWorldContext.Provider value={worldContext}>
-                <StoryCanvasFocusContext.Provider value={focusedNodeId}>
-                  <StoryCanvasReactFlow
-                    nodes={layeredCanvasNodes}
-                    edges={canvasEdges}
-                    onNodesChange={onCanvasNodesChange}
-                    onEdgesChange={(changes) =>
-                      onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
-                    }
-                    onConnect={connectStoryNodes}
-                    onConnectEnd={finishConnectionOnBlankCanvas}
-                    onInteractionStart={closeCreatorMenu}
-                    isValidConnection={isValidStoryConnection}
-                    onDelete={deleteStoryElements}
-                    onSelectionChange={onCanvasSelectionChange}
-                    onSelectionStart={onCanvasSelectionStart}
-                    onSelectionEnd={onCanvasSelectionEnd}
-                    onNodeDragStart={() => {
-                      didDragNodeRef.current = false;
-                      dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
-                        ? readHistorySnapshot()
-                        : null;
-                    }}
-                    onNodeDrag={() => {
-                      // A real move occurred: the following pointer-up is a drag, not
-                      // a click, so it must not open the inspector.
-                      didDragNodeRef.current = true;
-                    }}
-                    onNodeDragStop={(_event, draggedNode, draggedNodes) => {
-                      const beforeDrag = dragStartHistorySnapshotRef.current;
-                      dragStartHistorySnapshotRef.current = null;
-                      const movedNodes = new Map(
-                        [...draggedNodes, draggedNode].map((node) => [node.id, node])
-                      );
-                      commitCanvasLayout(
-                        canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
-                        beforeDrag
-                      );
-                    }}
-                    onNodeClick={(event, node) => {
-                      closeCreatorMenu();
-                      const outcome = resolveStoryCanvasNodeClick({
-                        nodeId: node.id,
-                        nodeSelected: Boolean(node.selected),
-                        shiftKey: event.shiftKey,
-                        didDrag: didDragNodeRef.current,
-                        currentSelection: latestCanvasSelectionRef.current,
-                      });
-                      didDragNodeRef.current = false;
-                      // A pointer-up that ended a drag never opens the inspector.
-                      if (outcome.kind === "drag-suppressed") return;
-                      if (outcome.kind === "toggle-off") {
-                        requestedCanvasFocusRef.current = null;
-                        latestCanvasSelectionRef.current = outcome.remainingNodeIds;
-                        reconcileCanvasFocus(outcome.remainingNodeIds);
-                        return;
-                      }
-                      // An explicit click is the only path that may open a node
-                      // inspector. Player-choice projections deliberately resolve
-                      // to "closed" because their editor lives on the card.
-                      requestedCanvasFocusRef.current = outcome.nodeId;
-                      setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
-                    }}
-                    onNodeDoubleClick={(event, node) => {
-                      if (node.data.kind !== "clip") return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      openProductionCanvas(node.id);
-                    }}
-                    onPaneClick={() => {
-                      selectCanvasNodeExclusively(null);
-                      closeCreatorMenu();
-                    }}
-                    onPaneContextMenu={(event) => {
-                      if (!mutationBarrier.permits("layout")) return;
-                      event.preventDefault();
-                      openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
-                    }}
-                    onMoveStart={closeCreatorMenu}
-                    nodeTypes={NODE_TYPES}
-                    defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
-                    colorMode="dark"
-                    proOptions={{ hideAttribution: true }}
-                    minZoom={0.16}
-                    maxZoom={1.4}
-                    defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
-                    nodesDraggable={canMutateCanvasLayout}
-                    nodesConnectable={canMutateCanvasLayout}
-                    edgesReconnectable={false}
-                    edgesFocusable={canMutateCanvasLayout}
-                    deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
-                    selectNodesOnDrag
-                    zoomOnDoubleClick={false}
-                    fitView={canvasNodes.length > 0}
-                    fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
-                    className="relative z-10"
-                    style={{ backgroundColor: "transparent" }}
-                  >
-                    {model.nodes.length > 0 ? (
-                      <MiniMap
-                        pannable
-                        position="bottom-left"
-                        className={cn(
-                          "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
-                          // Clear the full-width canvas's left inspector overlay.
-                          inspectorOpen ? "left-[452px]!" : "left-20!"
-                        )}
-                        bgColor="oklch(0.24 0 0 / 0.82)"
-                        maskColor="rgba(0,0,0,0.46)"
-                        nodeColor="rgba(255,255,255,0.42)"
-                        nodeStrokeWidth={0}
-                      />
-                    ) : null}
-                    <CanvasControls
-                      position="bottom-left"
-                      onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
-                      className={cn(
-                        "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
-                        // Clear the full-width canvas's left inspector overlay.
-                        inspectorOpen ? "left-[392px]!" : "left-5!"
-                      )}
-                    />
-                  </StoryCanvasReactFlow>
-                </StoryCanvasFocusContext.Provider>
-              </StoryCanvasWorldContext.Provider>
-            </StoryCanvasChoiceContext.Provider>
-          </MediaHoverPreviewProvider>
-
-          {canMutateCanvasLayout ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
-
-          {canMutateCanvasLayout ? (
-            <CanvasHistoryControls
-              canUndo={history.canUndo}
-              canRedo={history.canRedo}
-              undo={undoStoryCanvas}
-              redo={redoStoryCanvas}
-              undoLabel={canvasT("undo")}
-              redoLabel={canvasT("redo")}
-              className="absolute right-5 bottom-5 z-20 bg-[oklch(0.24_0_0/0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px] backdrop-saturate-150"
-            />
-          ) : null}
-
-          {canMutateCanvasLayout && creatorMenu ? (
-            <StoryNodeCreator
-              position={{ left: creatorMenu.left, top: creatorMenu.top }}
-              onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
-              onCancel={closeCreatorMenu}
-            />
-          ) : null}
-        </section>
-
-        {canMutateCanvasLayout && pendingCompletionDrop ? (
-          <StoryConnectionCreator
-            position={pendingCompletionDrop.clientPosition}
-            onCreate={createCompletionStep}
-            onCancel={() => setPendingCompletionDrop(null)}
-          />
-        ) : null}
-
-        {inspectorOpen ? (
-          <StoryNodeInspector
-            content={content}
-            selectedNode={focusedNode}
-            clipMedia={
-              focusedNode?.data.kind === "clip"
-                ? {
-                    clip: focusedClipVideo ?? null,
-                    canEdit: canManageClipMedia,
-                    disabledReason: clipMediaDisabledReason,
-                    candidateAssets: candidateAssets.items,
-                    candidateAssetsLoading: candidateAssets.loading,
-                    candidateAssetsError: candidateAssets.failed
-                      ? candidateAssets.error || t("inspector.media.candidateLoadError")
-                      : null,
-                    onRetryCandidates: () => void candidateAssets.refresh(),
-                    onSelectCandidate: selectCandidateClipVideo,
-                    onClearSelection: clearSelectedClipVideo,
-                    onUpload: uploadSelectedClipVideo,
-                  }
-                : undefined
-            }
-            onUpdateClipMeta={(nodeId, patch) =>
-              applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
-                mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
-              })
-            }
-            showFoundation={inspectorTarget.kind === "foundation"}
-            canEdit={canMutateCanvasLayout}
-            coverMedia={{
-              cover: project.cover,
-              candidateAssets: candidateAssets.items,
-              candidateAssetsLoading: candidateAssets.loading,
-              candidateAssetsError: candidateAssets.failed
-                ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
-                : null,
-              disabledReason: coverMediaDisabledReason,
-              onRetryCandidates: () => void candidateAssets.refresh(),
-              onSelectCandidate: selectProjectCover,
-              onClearSelection: () => updateProjectCover(null),
-              onUpload: uploadProjectCover,
-            }}
-            onUpdateFoundation={updateFoundation}
-            onCloseNode={() => selectCanvasNodeExclusively(null)}
-            chapterTargets={workbenchProjection.chapters
-              .map((chapter) => ({
-                id: chapter.id,
-                title: chapter.title,
-                entryNodeId: chapter.entryNodeId,
-              }))
-              .filter(
-                (chapter) =>
-                  chapter.id !== workbenchProjection.chapter.id && chapter.entryNodeId !== null
-              )}
-            onConnectChapter={connectChapterTarget}
-            onSetSceneExit={setSceneExit}
-            onEditInteractions={setInteractionEditorNodeId}
-            onDeleteSelected={() => {
-              if (focusedNode) deleteStoryElements({ nodes: [focusedNode], edges: [] });
-            }}
-          />
-        ) : null}
-
-        {interactionEditorNode ? (
-          <StoryInteractionEditor
-            node={interactionEditorNode}
-            nodes={content.graph.nodes}
-            clip={interactionEditorClip}
-            frameProfile={project.frameProfile}
-            drafts={storyInteractionDrafts(interactionEditorNode, authoringLocale)}
-            onDraftsChange={(drafts) =>
-              applyGraphMutation(
-                (current) =>
-                  replaceStoryNodeInteractions(
-                    current,
-                    interactionEditorNode.nodeId,
-                    drafts.map((draft) => ({
-                      kind: "hotspot" as const,
-                      interactionId: draft.id,
-                      label: { [authoringLocale]: draft.label },
-                      trigger: storyInteractionTriggerDocument(draft.trigger),
-                      rect: draft.rect,
-                      startMs: Math.round(draft.startSeconds * 1_000),
-                      endMs: Math.round(draft.endSeconds * 1_000),
-                      ...(draft.branchAtSeconds !== null
-                        ? { branchAtMs: Math.round(draft.branchAtSeconds * 1_000) }
-                        : {}),
-                      outcomes: storyInteractionOutcomesDocument(draft.outcomes),
-                    }))
-                  ),
-                { mergeKey: `interactions:${interactionEditorNode.nodeId}` }
-              )
-            }
-            onClose={() => setInteractionEditorNodeId(null)}
-          />
-        ) : null}
-
-        {graphError ? (
-          <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
-            <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
-            <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
-            <button
-              type="button"
-              onClick={() => setGraphError(null)}
-              className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/42 transition hover:bg-white/[0.1] hover:text-white"
-              aria-label={t("graphError.dismiss")}
+        <div className="relative min-w-0 flex-1">
+          {worldRun ? (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("worldNode.run")}
+              className="fixed inset-0 z-[200] bg-black"
             >
-              <IconX className="size-3.5" />
-            </button>
-          </FrostedPanel>
-        ) : null}
+              <WorldModelExperienceRenderer
+                config={{
+                  projectId,
+                  worldId: worldRun.worldId,
+                  entryInstruction: worldRun.entryInstruction,
+                  maxExperienceSeconds: worldRun.maxExperienceSeconds,
+                  autoplay: true,
+                }}
+                active
+                onCompleted={() => setWorldRun(null)}
+                onError={(error) => {
+                  toast.error(storyApiErrorMessage(error, t("worldNode.runError")));
+                  setWorldRun(null);
+                }}
+              />
+              <button
+                type="button"
+                aria-label={t("worldNode.exitRun")}
+                title={t("worldNode.exitRun")}
+                onClick={() => setWorldRun(null)}
+                className="absolute top-5 right-5 grid size-11 place-items-center rounded-full border border-white/12 bg-black/55 text-white/78 backdrop-blur-xl transition hover:bg-white/14 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70"
+              >
+                <IconX className="size-5" />
+              </button>
+            </div>
+          ) : null}
 
-        {conflict ? (
-          <ConflictBanner
-            onExportLocal={exportLocalDraftAfterConflict}
-            onLoadLatest={loadLatestAfterConflict}
+          <ShareDialog
+            scope={{ kind: "story-project", id: projectId, name: project.title }}
+            canManage={project.capabilities.includes("story.admin")}
+            open={shareOpen}
+            onOpenChange={setShareOpen}
           />
-        ) : null}
-        {!conflict && layoutConflict ? (
-          <ConflictBanner
-            description={t("layoutConflict.description")}
-            onExportLocal={exportLocalLayoutAfterConflict}
-            onLoadLatest={loadLatestLayoutAfterConflict}
+
+          {leaveDialog}
+
+          <StoryPublicationDialog
+            state={publication.state}
+            draftRevision={draftRevision}
+            canMutate={editPolicy.canPublish}
+            disabledReason={publication.disabledReason}
+            onClose={publication.close}
+            onConfirm={() => {
+              if (editPolicy.canPublish) void publication.confirm();
+            }}
+            onRetry={() => {
+              if (editPolicy.canPublish) void publication.retry();
+            }}
           />
-        ) : null}
+
+          <section
+            ref={canvasSectionRef}
+            // Inspectors are floating overlays over the canvas region.
+            className="absolute inset-0"
+            onDoubleClick={(event) => {
+              if (!mutationBarrier.permits("layout") || !isCanvasPaneTarget(event.target)) {
+                return;
+              }
+              event.preventDefault();
+              openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+            }}
+          >
+            <CanvasBackdrop />
+            <MediaHoverPreviewProvider>
+              <StoryCanvasChoiceContext.Provider value={choiceContext}>
+                <StoryCanvasWorldContext.Provider value={worldContext}>
+                  <StoryCanvasFocusContext.Provider value={focusedNodeId}>
+                    <StoryCanvasReactFlow
+                      nodes={layeredCanvasNodes}
+                      edges={canvasEdges}
+                      onNodesChange={onCanvasNodesChange}
+                      onEdgesChange={(changes) =>
+                        onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
+                      }
+                      onConnect={connectStoryNodes}
+                      onConnectEnd={finishConnectionOnBlankCanvas}
+                      onInteractionStart={closeCreatorMenu}
+                      isValidConnection={isValidStoryConnection}
+                      onDelete={deleteStoryElements}
+                      onSelectionChange={onCanvasSelectionChange}
+                      onSelectionStart={onCanvasSelectionStart}
+                      onSelectionEnd={onCanvasSelectionEnd}
+                      onNodeDragStart={() => {
+                        didDragNodeRef.current = false;
+                        dragStartHistorySnapshotRef.current = mutationBarrier.permits("layout")
+                          ? readHistorySnapshot()
+                          : null;
+                      }}
+                      onNodeDrag={() => {
+                        // A real move occurred: the following pointer-up is a drag, not
+                        // a click, so it must not open the inspector.
+                        didDragNodeRef.current = true;
+                      }}
+                      onNodeDragStop={(_event, draggedNode, draggedNodes) => {
+                        const beforeDrag = dragStartHistorySnapshotRef.current;
+                        dragStartHistorySnapshotRef.current = null;
+                        const movedNodes = new Map(
+                          [...draggedNodes, draggedNode].map((node) => [node.id, node])
+                        );
+                        commitCanvasLayout(
+                          canvasNodes.map((node) => movedNodes.get(node.id) ?? node),
+                          beforeDrag
+                        );
+                      }}
+                      onNodeClick={(event, node) => {
+                        closeCreatorMenu();
+                        const outcome = resolveStoryCanvasNodeClick({
+                          nodeId: node.id,
+                          nodeSelected: Boolean(node.selected),
+                          shiftKey: event.shiftKey,
+                          didDrag: didDragNodeRef.current,
+                          currentSelection: latestCanvasSelectionRef.current,
+                        });
+                        didDragNodeRef.current = false;
+                        // A pointer-up that ended a drag never opens the inspector.
+                        if (outcome.kind === "drag-suppressed") return;
+                        if (outcome.kind === "toggle-off") {
+                          requestedCanvasFocusRef.current = null;
+                          latestCanvasSelectionRef.current = outcome.remainingNodeIds;
+                          reconcileCanvasFocus(outcome.remainingNodeIds);
+                          return;
+                        }
+                        // An explicit click is the only path that may open a node
+                        // inspector. Player-choice projections deliberately resolve
+                        // to "closed" because their editor lives on the card.
+                        requestedCanvasFocusRef.current = outcome.nodeId;
+                        setInspectorTarget(storyNodeInspectorTarget(outcome.nodeId));
+                      }}
+                      onNodeDoubleClick={(event, node) => {
+                        if (node.data.kind !== "clip") return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openProductionCanvas(node.id);
+                      }}
+                      onPaneClick={() => {
+                        selectCanvasNodeExclusively(null);
+                        closeCreatorMenu();
+                      }}
+                      onPaneContextMenu={(event) => {
+                        if (!mutationBarrier.permits("layout")) return;
+                        event.preventDefault();
+                        openCreatorMenuAtClientPosition({ x: event.clientX, y: event.clientY });
+                      }}
+                      onMoveStart={closeCreatorMenu}
+                      nodeTypes={NODE_TYPES}
+                      defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+                      colorMode="dark"
+                      proOptions={{ hideAttribution: true }}
+                      minZoom={0.16}
+                      maxZoom={1.4}
+                      defaultViewport={{ x: 80, y: 160, zoom: 0.48 }}
+                      nodesDraggable={canMutateCanvasLayout}
+                      nodesConnectable={canMutateCanvasLayout}
+                      edgesReconnectable={false}
+                      edgesFocusable={canMutateCanvasLayout}
+                      deleteKeyCode={canMutateCanvasLayout ? CANVAS_DELETE_KEY_CODES : null}
+                      selectNodesOnDrag
+                      zoomOnDoubleClick={false}
+                      fitView={canvasNodes.length > 0}
+                      fitViewOptions={{ padding: 0.16, maxZoom: 0.78 }}
+                      className="relative z-10"
+                      style={{ backgroundColor: "transparent" }}
+                    >
+                      {model.nodes.length > 0 ? (
+                        <MiniMap
+                          pannable
+                          position="bottom-left"
+                          className={cn(
+                            "canvas-wheel-zoom bottom-5! m-0! overflow-hidden rounded-[18px] bg-[oklch(0.24_0_0/0.82)]! shadow-[0_18px_60px_rgba(0,0,0,0.4)] backdrop-blur-[30px]! backdrop-saturate-150!",
+                            // Clear the full-width canvas's left inspector overlay.
+                            inspectorOpen ? "left-[452px]!" : "left-20!"
+                          )}
+                          bgColor="oklch(0.24 0 0 / 0.82)"
+                          maskColor="rgba(0,0,0,0.46)"
+                          nodeColor="rgba(255,255,255,0.42)"
+                          nodeStrokeWidth={0}
+                        />
+                      ) : null}
+                      <CanvasControls
+                        position="bottom-left"
+                        onTidy={canMutateCanvasLayout ? tidyStoryCanvas : undefined}
+                        className={cn(
+                          "bottom-5! overflow-hidden rounded-full bg-[oklch(0.24_0_0/0.82)]! p-1! shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px]! backdrop-saturate-150! [&_button]:size-9!",
+                          // Clear the full-width canvas's left inspector overlay.
+                          inspectorOpen ? "left-[392px]!" : "left-5!"
+                        )}
+                      />
+                    </StoryCanvasReactFlow>
+                  </StoryCanvasFocusContext.Provider>
+                </StoryCanvasWorldContext.Provider>
+              </StoryCanvasChoiceContext.Provider>
+            </MediaHoverPreviewProvider>
+
+            {canMutateCanvasLayout ? <StoryNodeDock onCreate={createStoryElementFromDock} /> : null}
+
+            {canMutateCanvasLayout ? (
+              <CanvasHistoryControls
+                canUndo={history.canUndo}
+                canRedo={history.canRedo}
+                undo={undoStoryCanvas}
+                redo={redoStoryCanvas}
+                undoLabel={canvasT("undo")}
+                redoLabel={canvasT("redo")}
+                className="absolute right-5 bottom-5 z-20 bg-[oklch(0.24_0_0/0.82)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] backdrop-blur-[30px] backdrop-saturate-150"
+              />
+            ) : null}
+
+            {canMutateCanvasLayout && creatorMenu ? (
+              <StoryNodeCreator
+                position={{ left: creatorMenu.left, top: creatorMenu.top }}
+                onCreate={(kind) => createStoryElement(kind, creatorMenu.flowPosition)}
+                onCancel={closeCreatorMenu}
+              />
+            ) : null}
+          </section>
+
+          {canMutateCanvasLayout && pendingCompletionDrop ? (
+            <StoryConnectionCreator
+              position={pendingCompletionDrop.clientPosition}
+              onCreate={createCompletionStep}
+              onCancel={() => setPendingCompletionDrop(null)}
+            />
+          ) : null}
+
+          {inspectorOpen ? (
+            <StoryNodeInspector
+              content={content}
+              selectedNode={focusedNode}
+              clipMedia={
+                focusedNode?.data.kind === "clip"
+                  ? {
+                      clip: focusedClipVideo ?? null,
+                      canEdit: canManageClipMedia,
+                      disabledReason: clipMediaDisabledReason,
+                      candidateAssets: candidateAssets.items,
+                      candidateAssetsLoading: candidateAssets.loading,
+                      candidateAssetsError: candidateAssets.failed
+                        ? candidateAssets.error || t("inspector.media.candidateLoadError")
+                        : null,
+                      onRetryCandidates: () => void candidateAssets.refresh(),
+                      onSelectCandidate: selectCandidateClipVideo,
+                      onClearSelection: clearSelectedClipVideo,
+                      onUpload: uploadSelectedClipVideo,
+                    }
+                  : undefined
+              }
+              onUpdateClipMeta={(nodeId, patch) =>
+                applyGraphMutation((current) => updateStoryClipMeta(current, nodeId, patch), {
+                  mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
+                })
+              }
+              showFoundation={inspectorTarget.kind === "foundation"}
+              canEdit={canMutateCanvasLayout}
+              coverMedia={{
+                cover: project.cover,
+                candidateAssets: candidateAssets.items,
+                candidateAssetsLoading: candidateAssets.loading,
+                candidateAssetsError: candidateAssets.failed
+                  ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
+                  : null,
+                disabledReason: coverMediaDisabledReason,
+                onRetryCandidates: () => void candidateAssets.refresh(),
+                onSelectCandidate: selectProjectCover,
+                onClearSelection: () => updateProjectCover(null),
+                onUpload: uploadProjectCover,
+              }}
+              onUpdateFoundation={updateFoundation}
+              onCloseNode={() => selectCanvasNodeExclusively(null)}
+              chapterTargets={workbenchProjection.chapters
+                .map((chapter) => ({
+                  id: chapter.id,
+                  title: chapter.title,
+                  entryNodeId: chapter.entryNodeId,
+                }))
+                .filter(
+                  (chapter) =>
+                    chapter.id !== workbenchProjection.chapter.id && chapter.entryNodeId !== null
+                )}
+              onConnectChapter={connectChapterTarget}
+              onSetSceneExit={setSceneExit}
+              onEditInteractions={setInteractionEditorNodeId}
+              onDeleteSelected={() => {
+                if (focusedNode) deleteStoryElements({ nodes: [focusedNode], edges: [] });
+              }}
+            />
+          ) : null}
+
+          {interactionEditorNode ? (
+            <StoryInteractionEditor
+              node={interactionEditorNode}
+              nodes={content.graph.nodes}
+              clip={interactionEditorClip}
+              frameProfile={project.frameProfile}
+              drafts={storyInteractionDrafts(interactionEditorNode, authoringLocale)}
+              onDraftsChange={(drafts) =>
+                applyGraphMutation(
+                  (current) =>
+                    replaceStoryNodeInteractions(
+                      current,
+                      interactionEditorNode.nodeId,
+                      drafts.map((draft) => ({
+                        kind: "hotspot" as const,
+                        interactionId: draft.id,
+                        label: { [authoringLocale]: draft.label },
+                        trigger: storyInteractionTriggerDocument(draft.trigger),
+                        rect: draft.rect,
+                        startMs: Math.round(draft.startSeconds * 1_000),
+                        endMs: Math.round(draft.endSeconds * 1_000),
+                        ...(draft.branchAtSeconds !== null
+                          ? { branchAtMs: Math.round(draft.branchAtSeconds * 1_000) }
+                          : {}),
+                        outcomes: storyInteractionOutcomesDocument(draft.outcomes),
+                      }))
+                    ),
+                  { mergeKey: `interactions:${interactionEditorNode.nodeId}` }
+                )
+              }
+              onClose={() => setInteractionEditorNodeId(null)}
+            />
+          ) : null}
+
+          {graphError ? (
+            <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
+              <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
+              <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
+              <button
+                type="button"
+                onClick={() => setGraphError(null)}
+                className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/42 transition hover:bg-white/[0.1] hover:text-white"
+                aria-label={t("graphError.dismiss")}
+              >
+                <IconX className="size-3.5" />
+              </button>
+            </FrostedPanel>
+          ) : null}
+
+          {conflict ? (
+            <ConflictBanner
+              onExportLocal={exportLocalDraftAfterConflict}
+              onLoadLatest={loadLatestAfterConflict}
+            />
+          ) : null}
+          {!conflict && layoutConflict ? (
+            <ConflictBanner
+              description={t("layoutConflict.description")}
+              onExportLocal={exportLocalLayoutAfterConflict}
+              onLoadLatest={loadLatestLayoutAfterConflict}
+            />
+          ) : null}
+        </div>
       </div>
       <AgentOsPanel
         projectId={projectId}
@@ -3492,6 +3494,7 @@ function formatInteractionTime(timeMs: number): string {
 const HEADER_LABEL_CLASS = "@max-[1000px]:sr-only";
 
 function CanvasHeader({
+  projectId,
   title,
   chapterTitle,
   canEdit,
@@ -3503,6 +3506,7 @@ function CanvasHeader({
   onPreview,
   onPublish,
 }: {
+  projectId: string;
   title: string;
   chapterTitle: string;
   canEdit: boolean;
@@ -3515,6 +3519,7 @@ function CanvasHeader({
   onPublish: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
+  const stagesT = useTranslations("storyStudio.canvas.steps");
   const publishButton = (
     <Button
       type="button"
@@ -3541,9 +3546,11 @@ function CanvasHeader({
     </Button>
   );
   return (
-    // `@container`: toolbar labels collapse to icon-only when space is tight.
-    <header className="@container pointer-events-none absolute inset-x-0 top-0 z-40 flex h-16 items-center justify-between gap-3 px-3 py-2">
-      <div className="pointer-events-auto flex h-12 min-w-0 items-center gap-3">
+    // Occupying top bar (the canvas region starts below it), monochrome solid
+    // background + hairline divider per DESIGN.md. `@container`: toolbar labels
+    // collapse to icon-only when space is tight.
+    <header className="@container relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[oklch(0.185_0_0)] px-4">
+      <div className="flex min-w-0 items-center gap-3">
         <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
           {title}
         </h1>
@@ -3551,7 +3558,45 @@ function CanvasHeader({
         <span className="max-w-56 truncate text-xs font-medium text-white/52">{chapterTitle}</span>
       </div>
 
-      <div className="liquid-rim pointer-events-auto relative flex h-12 shrink-0 items-center gap-0.5 rounded-[18px] bg-white/[0.055] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.14),inset_0_-1px_0_rgba(0,0,0,0.3),0_16px_48px_-18px_rgba(0,0,0,0.68)] backdrop-blur-2xl backdrop-saturate-[1.8]">
+      {/* Numbered production stepper — the canvas IS the Plot Tree step; the
+          other steps live on the workbench routes. Centered between the title
+          (left) and the preview/publish actions (right). */}
+      <nav
+        aria-label={stagesT("tree")}
+        className="absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center md:flex"
+      >
+        {/* Steps 1/3/4 are disabled until their production pages exist — no
+            fake entrances. Only the Plot Tree (this canvas) is live. */}
+        <span aria-disabled="true" className="inline-flex items-center gap-2 opacity-45">
+          <span className="grid size-5 place-items-center rounded-full bg-white/10 text-[10px] font-semibold tabular-nums text-white/55">
+            1
+          </span>
+          <span className="text-xs font-medium text-white/55">{stagesT("script")}</span>
+        </span>
+        <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" />
+        <span aria-current="page" className="inline-flex items-center gap-2">
+          <span className="grid size-5 place-items-center rounded-full bg-white text-[10px] font-semibold tabular-nums text-black">
+            2
+          </span>
+          <span className="text-xs font-semibold text-white">{stagesT("tree")}</span>
+        </span>
+        <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" />
+        <span aria-disabled="true" className="inline-flex items-center gap-2 opacity-45">
+          <span className="grid size-5 place-items-center rounded-full bg-white/10 text-[10px] font-semibold tabular-nums text-white/55">
+            3
+          </span>
+          <span className="text-xs font-medium text-white/55">{stagesT("assets")}</span>
+        </span>
+        <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" />
+        <span aria-disabled="true" className="inline-flex items-center gap-2 opacity-45">
+          <span className="grid size-5 place-items-center rounded-full bg-white/10 text-[10px] font-semibold tabular-nums text-white/55">
+            4
+          </span>
+          <span className="text-xs font-medium text-white/55">{stagesT("storyboard")}</span>
+        </span>
+      </nav>
+
+      <div className="flex shrink-0 items-center gap-0.5">
         {/* Was hidden while a draft preview could only ever start at the story's
             first scene, which made it useless for a multi-chapter work. It now
             previews the chapter being edited, and a missing clip stands in

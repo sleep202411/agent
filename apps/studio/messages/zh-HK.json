@@ -2497,6 +2497,12 @@
     "canvas": {
       "back": "返回影遊工作室",
       "mode": "故事畫布",
+      "steps": {
+        "script": "劇本",
+        "tree": "情節樹",
+        "assets": "資產",
+        "storyboard": "分鏡"
+      },
       "sidebar": {
         "navigation": "影遊專案導覽",
         "world": "世界",
