@@ -120,7 +120,8 @@ interface AgentOsPanelProps {
   workbenchContext?: AgentOsWorkbenchContext;
   onMutationCompleted?: () => void | Promise<void>;
   open: boolean;
-  onClose: () => void;
+  /** Omit to make the panel permanent — no close control is rendered. */
+  onClose?: () => void;
   className?: string;
   variant?: "floating" | "docked";
 }
@@ -662,9 +663,13 @@ function AgentOsProjectSession({
           </AlertDialogContent>
         </AlertDialog>
       }
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) onClose();
-      }}
+      onOpenChange={
+        onClose
+          ? (nextOpen) => {
+              if (!nextOpen) onClose();
+            }
+          : undefined
+      }
       composer={
         <div className="space-y-2">
           <input

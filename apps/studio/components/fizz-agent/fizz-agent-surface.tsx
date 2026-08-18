@@ -43,7 +43,8 @@ export interface FizzAgentSurfaceProps {
    * a surface with no thread has nothing to retire.
    */
   onNewConversation?: () => void;
-  onOpenChange: (open: boolean) => void;
+  /** Omit to make the surface permanent — no close control is rendered. */
+  onOpenChange?: (open: boolean) => void;
   className?: string;
   /** "floating" is the default rounded card; "docked" squares it off to sit flush against the viewport edge. */
   variant?: "floating" | "docked";
@@ -135,14 +136,16 @@ export function FizzAgentSurface({
             </AlertDialog>
           ) : null}
 
-          <button
-            type="button"
-            aria-label={labels.close}
-            onClick={() => onOpenChange(false)}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-          >
-            <IconX aria-hidden="true" className="size-4" />
-          </button>
+          {onOpenChange ? (
+            <button
+              type="button"
+              aria-label={labels.close}
+              onClick={() => onOpenChange(false)}
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+            >
+              <IconX aria-hidden="true" className="size-4" />
+            </button>
+          ) : null}
         </header>
 
         <div className="min-h-0 flex-1">{children}</div>

@@ -34,14 +34,11 @@ import {
   IconArrowDown,
   IconArrowLeft,
   IconArrowUp,
-  IconCheck,
   IconChevronDown,
-  IconCloudUpload,
   IconDownload,
   IconFocusCentered,
   IconLoader2,
   IconMovie,
-  IconPlayerPlay,
   IconPlus,
   IconRefresh,
   IconTrash,
@@ -81,9 +78,8 @@ import { resolveCanvasVideoControlDensity } from "@/components/media/studio-vide
 import { WorldModelExperienceRenderer } from "@/components/experience-runtime/world-model-experience-renderer";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link, useRouter } from "@/i18n/navigation";
-import { StoryProductionSteps } from "../story-production-steps";
+import { createPortal } from "react-dom";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
@@ -97,7 +93,6 @@ import {
   createStoryChapter,
   draftRevisionConflict,
   getStoryCanvasLayout,
-  getStoryExperienceCurrentRelease,
   getStoryWorkbench,
   putStoryClipCurrentVideo,
   putStoryCanvasLayout,
@@ -135,11 +130,9 @@ import {
 import { storyVideoCardMetadata } from "./story-video-card-metadata";
 import {
   CLOSED_STORY_CANVAS_INSPECTOR,
-  STORY_FOUNDATION_INSPECTOR,
   reconcileStoryCanvasInspectorTarget,
   storyCanvasInspectorNodeId,
   storyNodeInspectorTarget,
-  type StoryCanvasInspectorTarget,
 } from "./story-canvas-inspector-target";
 import {
   confirmsOwnCanvasLayoutWrite,
@@ -153,7 +146,7 @@ import {
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-draft-reconcile";
-import { StoryCanvasSidebar } from "./story-canvas-sidebar";
+import { StoryChapterDropdown, type StoryChapterDropdownProps } from "./story-chapter-dropdown";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
   coordinateStoryCanvasNavigation,
@@ -173,7 +166,6 @@ import {
   storyProjectionQueryOptions,
 } from "./story-canvas-edit-policy";
 import { useLastDefinedData } from "./use-last-defined-data";
-import { isExactCurrentStoryRelease } from "./story-current-release";
 import {
   addChoiceOption,
   connectSceneContinuation,
@@ -217,10 +209,8 @@ import {
   applyActiveStoryCanvasCapabilities,
   STORY_WORLD_EXPERIENCE_AVAILABLE,
 } from "./story-world-feature-policy";
-import { StoryPublicationDialog } from "./story-publication-dialog";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import { projectConfirmedClipCurrentVideo } from "./story-workbench-current-video";
-import { useStoryPublication } from "./use-story-publication";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type FoundationField = "logline" | "synopsis";
@@ -357,7 +347,6 @@ function StoryProjectCanvasInner({
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
-  const agentT = useTranslations("agentOs");
   const router = useRouter();
   const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
   const queryClient = useQueryClient();
@@ -365,16 +354,18 @@ function StoryProjectCanvasInner({
   const workspaceId = activeWorkspace?.id ?? null;
   const [content, setContent] = useState<InteractiveStoryDraftContent | null>(null);
   const [contentChapterId, setContentChapterId] = useState<string | null>(null);
-  const [inspectorTarget, setInspectorTarget] = useState<StoryCanvasInspectorTarget>(
-    CLOSED_STORY_CANVAS_INSPECTOR
-  );
-  const [shareOpen, setShareOpen] = useState(false);
+  // Inspector + share live in the shared store so the layout rail's World and
+  // Share buttons can drive them; the canvas stays the only writer otherwise.
+  const inspectorTarget = useStoryProjectUiStore((state) => state.inspectorTarget);
+  const setInspectorTarget = useStoryProjectUiStore((state) => state.setInspectorTarget);
+  const shareOpen = useStoryProjectUiStore((state) => state.shareOpen);
+  const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
+  const setBackGuard = useStoryProjectUiStore((state) => state.setBackGuard);
+  const setDraftBarrier = useStoryProjectUiStore((state) => state.setDraftBarrier);
+  const setGuardedNavigate = useStoryProjectUiStore((state) => state.setGuardedNavigate);
   const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
   // Project-level agent panel (mounted in the [projectId] layout) — the canvas
-  // only toggles it and feeds the active-chapter context via the shared store.
-  const agentOpen = useStoryProjectUiStore((state) => state.agentOpen);
-  const toggleAgent = useStoryProjectUiStore((state) => state.toggleAgent);
-  const closeAgent = useStoryProjectUiStore((state) => state.closeAgent);
+  // only feeds it the active-chapter context via the store.
   const setActiveChapterId = useStoryProjectUiStore((state) => state.setActiveChapterId);
   const [worldRun, setWorldRun] = useState<StoryWorldRunState | null>(null);
   const [interactionEditorNodeId, setInteractionEditorNodeId] = useState<string | null>(null);
@@ -393,7 +384,6 @@ function StoryProjectCanvasInner({
   const [conflict, setConflict] = useState<DraftRevisionConflict | null>(null);
   const [layoutConflict, setLayoutConflict] = useState<CanvasLayoutRevisionConflict | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
-  const [workingPreviewPending, setWorkingPreviewPending] = useState(false);
   const [pendingLeaveRisk, setPendingLeaveRisk] = useState<StoryCanvasLeaveRisk | null>(null);
   const [recoveryExported, setRecoveryExported] = useState(false);
   const [draftSnapshotCoordinator] = useState(() => new StoryDraftSnapshotCoordinator());
@@ -505,16 +495,19 @@ function StoryProjectCanvasInner({
         return next;
       });
     },
-    [setCanvasNodes]
+    [setCanvasNodes, setInspectorTarget]
   );
 
-  const reconcileCanvasFocus = useCallback((selectedNodeIds: readonly string[]) => {
-    const preferredNodeId = requestedCanvasFocusRef.current;
-    requestedCanvasFocusRef.current = null;
-    setInspectorTarget((current) =>
-      reconcileStoryCanvasInspectorTarget(current, selectedNodeIds, preferredNodeId)
-    );
-  }, []);
+  const reconcileCanvasFocus = useCallback(
+    (selectedNodeIds: readonly string[]) => {
+      const preferredNodeId = requestedCanvasFocusRef.current;
+      requestedCanvasFocusRef.current = null;
+      setInspectorTarget((current) =>
+        reconcileStoryCanvasInspectorTarget(current, selectedNodeIds, preferredNodeId)
+      );
+    },
+    [setInspectorTarget]
+  );
 
   const onCanvasSelectionChange = useCallback(
     ({ nodes: selectedNodes }: OnSelectionChangeParams<StoryCanvasNode, StoryCanvasEdge>) => {
@@ -620,17 +613,26 @@ function StoryProjectCanvasInner({
   useEffect(() => {
     setActiveChapterId(activeChapterIdForAgent);
   }, [setActiveChapterId, activeChapterIdForAgent]);
-  const currentReleaseQuery = useQuery({
-    queryKey: ["story-studio", "current-release", workspaceId, projectId],
-    queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
-    retry: 1,
-    staleTime: 15_000,
-    refetchInterval: 30_000,
-    refetchOnWindowFocus: true,
-  });
   const project = workbenchProjection?.project ?? null;
   const video = workbenchProjection?.video ?? null;
+  // Publish the live authoring head while mounted so the layout header's
+  // preview/publish actions track unsaved edits, conflicts and video swaps.
+  const setLiveDraft = useStoryProjectUiStore((state) => state.setLiveDraft);
+  const liveDraftReady = Boolean(workbenchProjection);
+  const videoSnapshotHash = video?.snapshotHash ?? null;
+  useEffect(() => {
+    if (!liveDraftReady) {
+      setLiveDraft(null);
+      return;
+    }
+    setLiveDraft({
+      revision: draftRevision,
+      settled: saveState === "idle" || saveState === "saved",
+      conflicted: Boolean(conflict),
+      videoSnapshotHash,
+    });
+  }, [liveDraftReady, draftRevision, saveState, conflict, videoSnapshotHash, setLiveDraft]);
+  useEffect(() => () => setLiveDraft(null), [setLiveDraft]);
   const authoringLocale = project?.defaultLocale ?? "en-US";
   const worldsQuery = useQuery({
     queryKey: worldModelQueryKeys.worlds(projectId),
@@ -714,7 +716,7 @@ function StoryProjectCanvasInner({
     setContentChapterId(workbench.chapter.id);
     setContent(adoptedContent);
     setSaveState("idle");
-  }, [history, workbenchProjection]);
+  }, [history, setInspectorTarget, workbenchProjection]);
 
   const clearSaveRetry = useCallback((resetAttempts = false) => {
     if (saveRetryTimerRef.current !== null) {
@@ -935,13 +937,6 @@ function StoryProjectCanvasInner({
       }),
     [clearSaveRetry, commonT, draftSnapshotCoordinator, saveError, waitForSaveToSettle, workspaceId]
   );
-
-  const publication = useStoryPublication({
-    workspaceId,
-    projectId,
-    capabilities: project?.capabilities ?? [],
-    withSavedDraftSnapshot,
-  });
 
   useEffect(() => {
     latestContentRef.current = content;
@@ -1474,7 +1469,15 @@ function StoryProjectCanvasInner({
       const nextLayout = canvasLayoutPayload(nextNodes);
       void persistLayoutRef.current(nextLayout);
     }
-  }, [contentChapterId, history, layoutProjection, model, setCanvasNodes, workbenchProjection]);
+  }, [
+    contentChapterId,
+    history,
+    layoutProjection,
+    model,
+    setCanvasNodes,
+    setInspectorTarget,
+    workbenchProjection,
+  ]);
 
   const clearLayoutSaveRetry = useCallback((resetAttempts = false) => {
     if (layoutRetryTimerRef.current !== null) {
@@ -1672,37 +1675,6 @@ function StoryProjectCanvasInner({
       window.removeEventListener("popstate", guardHistoryTraversal, { capture: true });
     };
   }, [queueBlockedNavigation, readLeaveRisk]);
-
-  const openWorkingPreview = useCallback(async () => {
-    if (!workspaceId || workingPreviewPending) return;
-    setWorkingPreviewPending(true);
-    try {
-      await withSavedDraftSnapshot(async () => {
-        requestStoryCanvasNavigation(null, () => {
-          const chapterQuery = resolvedChapterId
-            ? `?chapter=${encodeURIComponent(resolvedChapterId)}`
-            : "";
-          router.push(
-            `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
-          );
-        });
-      });
-    } catch (error) {
-      if (!disposedRef.current)
-        toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
-    } finally {
-      if (!disposedRef.current) setWorkingPreviewPending(false);
-    }
-  }, [
-    resolvedChapterId,
-    projectId,
-    requestStoryCanvasNavigation,
-    router,
-    t,
-    withSavedDraftSnapshot,
-    workingPreviewPending,
-    workspaceId,
-  ]);
 
   const flushLayoutBeforeLeaving = useCallback(
     (keepalive: boolean) => {
@@ -2696,6 +2668,40 @@ function StoryProjectCanvasInner({
     [requestStoryCanvasNavigation, router]
   );
 
+  // Guarded programmatic navigation for the header's preview action — same
+  // leave protection as Back, minus a link event.
+  const guardedNavigate = useCallback(
+    (proceed: () => void) => {
+      requestStoryCanvasNavigation(null, proceed);
+    },
+    [requestStoryCanvasNavigation]
+  );
+
+  // Hand the canvas-owned pieces of the shared chrome to the store while
+  // mounted (Back leave guard, draft save barrier, guarded navigation); reset
+  // everything on unmount so the next visit starts clean.
+  useEffect(() => {
+    setBackGuard(guardBackNavigation);
+    setDraftBarrier(withSavedDraftSnapshot);
+    setGuardedNavigate(guardedNavigate);
+    return () => {
+      setBackGuard(null);
+      setDraftBarrier(null);
+      setGuardedNavigate(null);
+      setShareOpen(false);
+      setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
+    };
+  }, [
+    guardBackNavigation,
+    guardedNavigate,
+    withSavedDraftSnapshot,
+    setBackGuard,
+    setDraftBarrier,
+    setGuardedNavigate,
+    setShareOpen,
+    setInspectorTarget,
+  ]);
+
   const navigateToChapter = useCallback(
     (chapterId: string) => {
       if (chapterId === resolvedChapterId) return;
@@ -2917,26 +2923,6 @@ function StoryProjectCanvasInner({
     );
   };
 
-  // Both hashes here were produced in THIS session, by one server version: the
-  // publish response's and the workbench projection's. Unlike the authority
-  // check below, no stored hash is involved, so the `has_audio` digest change
-  // cannot reach this comparison.
-  const locallyConfirmedCurrentDraftPublished = Boolean(
-    (saveState === "idle" || saveState === "saved") &&
-    publication.lastSucceeded?.sourceDraftRevision === draftRevision &&
-    publication.lastSucceeded.build.videoSnapshotHash === video?.snapshotHash
-  );
-  // This one DOES compare a stored `story_builds.video_snapshot_hash` against a
-  // freshly computed one. Retiring `has_audio` redefined that digest, so every
-  // project published before the cutover reads as not-current until it is
-  // published again — deliberately, and truthfully; the reasoning is on
-  // `isExactCurrentStoryRelease`.
-  const authorityConfirmedCurrentDraftPublished =
-    (saveState === "idle" || saveState === "saved") &&
-    isExactCurrentStoryRelease(currentReleaseQuery.data, {
-      draftRevision,
-      videoSnapshotHash: video?.snapshotHash ?? "",
-    });
   const worldContext: StoryCanvasWorldContextValue = {
     projectId,
     worlds: worldsQuery.data ?? [],
@@ -2974,67 +2960,27 @@ function StoryProjectCanvasInner({
     },
   };
   return (
-    <main className="flex h-screen min-w-[1120px] overflow-hidden bg-[var(--canvas-background)] text-white">
-      <StoryCanvasSidebar
-        agentLabel={agentT("title")}
-        agentOpen={agentOpen}
-        foundationOpen={inspectorTarget.kind === "foundation"}
-        chapterDropdown={{
-          open: chapterDropdownOpen,
-          chapters: workbenchProjection.chapters,
-          activeChapterId: workbenchProjection.chapter.id,
-          canEdit,
-          creating: chapterCreatePending,
-          pendingChapterId: chapterMutationPendingId,
-          onOpenChange: (open) => {
-            setChapterDropdownOpen(open);
-            if (open) {
-              closeAgent();
-              setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
-            }
-          },
-          onSelect: navigateToChapter,
-          onCreate: createChapter,
-          onRename: renameChapter,
-          onMove: moveChapter,
-          onArchive: archiveChapter,
-        }}
-        onBackNavigate={guardBackNavigation}
-        onOpenMediaCreation={() => openProductionCanvas()}
-        onShare={() => setShareOpen(true)}
-        onToggleAgent={() => {
-          setChapterDropdownOpen(false);
-          toggleAgent();
-        }}
-        onToggleFoundation={() => {
-          setChapterDropdownOpen(false);
-          setInspectorTarget((current) =>
-            current.kind === "foundation"
-              ? CLOSED_STORY_CANVAS_INSPECTOR
-              : STORY_FOUNDATION_INSPECTOR
-          );
-        }}
-      />
+    <main className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--canvas-background)] text-white">
       <div className="flex min-w-0 flex-1 flex-col">
-        <CanvasHeader
-          projectId={projectId}
-          title={project.title}
+        <CanvasHeaderPortals
           chapterTitle={workbenchProjection.chapter.title}
-          canEdit={canEdit}
-          previewPending={workingPreviewPending}
-          publishPending={publication.isPending}
-          published={
-            authorityConfirmedCurrentDraftPublished ||
-            (!currentReleaseQuery.data && locallyConfirmedCurrentDraftPublished)
-          }
-          canPublish={
-            editPolicy.canPublish && publication.canPublish && !currentReleaseQuery.isLoading
-          }
-          publishDisabledReason={
-            currentReleaseQuery.isLoading ? t("publish.statusChecking") : publication.disabledReason
-          }
-          onPreview={() => void openWorkingPreview()}
-          onPublish={publication.open}
+          chapterDropdown={{
+            open: chapterDropdownOpen,
+            chapters: workbenchProjection.chapters,
+            activeChapterId: workbenchProjection.chapter.id,
+            canEdit,
+            creating: chapterCreatePending,
+            pendingChapterId: chapterMutationPendingId,
+            onOpenChange: (open) => {
+              setChapterDropdownOpen(open);
+              if (open) setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
+            },
+            onSelect: navigateToChapter,
+            onCreate: createChapter,
+            onRename: renameChapter,
+            onMove: moveChapter,
+            onArchive: archiveChapter,
+          }}
         />
         <div className="relative min-w-0 flex-1">
           {worldRun ? (
@@ -3079,20 +3025,6 @@ function StoryProjectCanvasInner({
           />
 
           {leaveDialog}
-
-          <StoryPublicationDialog
-            state={publication.state}
-            draftRevision={draftRevision}
-            canMutate={editPolicy.canPublish}
-            disabledReason={publication.disabledReason}
-            onClose={publication.close}
-            onConfirm={() => {
-              if (editPolicy.canPublish) void publication.confirm();
-            }}
-            onRetry={() => {
-              if (editPolicy.canPublish) void publication.retry();
-            }}
-          />
 
           <section
             ref={canvasSectionRef}
@@ -3485,128 +3417,45 @@ function formatInteractionTime(timeMs: number): string {
   return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
 
-/**
- * Toolbar label visibility. Below this container width the full-label pill
- * overflows the header row, so labels collapse to sr-only and the buttons run
- * icon-only. Applies to the canvas-header preview and publish actions.
- */
-const HEADER_LABEL_CLASS = "@max-[1000px]:sr-only";
-
-function CanvasHeader({
-  projectId,
-  title,
+function CanvasHeaderPortals({
   chapterTitle,
-  canEdit,
-  previewPending,
-  publishPending,
-  published,
-  canPublish,
-  publishDisabledReason,
-  onPreview,
-  onPublish,
+  chapterDropdown,
 }: {
-  projectId: string;
-  title: string;
   chapterTitle: string;
-  canEdit: boolean;
-  previewPending: boolean;
-  publishPending: boolean;
-  published: boolean;
-  canPublish: boolean;
-  publishDisabledReason: string | null;
-  onPreview: () => void;
-  onPublish: () => void;
+  chapterDropdown: StoryChapterDropdownProps;
 }) {
   const t = useTranslations("storyStudio.canvas");
-  const publishButton = (
-    <Button
-      type="button"
-      variant="ghost"
-      size="lg"
-      onClick={onPublish}
-      disabled={!canPublish || publishPending || published}
-      className="h-9 gap-2 rounded-[14px] bg-transparent px-3 font-semibold text-white/68 hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed"
-    >
-      {publishPending ? (
-        <IconLoader2 className="size-4 animate-spin" />
-      ) : published ? (
-        <IconCheck className="size-4" />
-      ) : (
-        <IconCloudUpload className="size-4" />
-      )}
-      <span className={HEADER_LABEL_CLASS}>
-        {publishPending
-          ? t("publish.actionPending")
-          : published
-            ? t("publish.actionPublished")
-            : t("publish.action")}
-      </span>
-    </Button>
-  );
-  return (
-    // Occupying top bar (the canvas region starts below it), monochrome solid
-    // background + hairline divider per DESIGN.md. `@container`: toolbar labels
-    // collapse to icon-only when space is tight.
-    <header className="@container relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[oklch(0.185_0_0)] px-4">
-      <div className="flex min-w-0 items-center gap-3">
-        <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
-          {title}
-        </h1>
-        <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.1]" />
-        <span className="max-w-56 truncate text-xs font-medium text-white/52">{chapterTitle}</span>
-      </div>
-
-      {/* Numbered production stepper — the canvas IS the Plot Tree step.
-          Centered between the title (left) and the actions (right). */}
-      <StoryProductionSteps
-        projectId={projectId}
-        active="tree"
-        className="absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:flex"
+  // The layout's StoryProjectHeader owns the top bar; the canvas contributes
+  // its chapter switcher through the ref-registered context slot.
+  const contextSlot = useStoryProjectUiStore((state) => state.headerContextSlot);
+  if (!contextSlot) return null;
+  return createPortal(
+    <>
+      <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.1]" />
+      {/* Chapter switcher — moved here from the retired canvas sidebar. */}
+      <StoryChapterDropdown
+        {...chapterDropdown}
+        contentSide="bottom"
+        contentAlign="start"
+        trigger={
+          <button
+            type="button"
+            aria-label={t("chapters.action")}
+            aria-pressed={chapterDropdown.open}
+            className={cn(
+              "flex min-w-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none",
+              chapterDropdown.open
+                ? "bg-white/[0.08] text-white"
+                : "text-white/52 hover:bg-white/[0.08] hover:text-white"
+            )}
+          >
+            <span className="max-w-56 truncate">{chapterTitle}</span>
+            <IconChevronDown className="size-3.5 shrink-0 opacity-60" />
+          </button>
+        }
       />
-
-      <div className="flex shrink-0 items-center gap-0.5">
-        {/* Was hidden while a draft preview could only ever start at the story's
-            first scene, which made it useless for a multi-chapter work. It now
-            previews the chapter being edited, and a missing clip stands in
-            rather than failing the compile, so an unfinished chapter is walkable. */}
-        <button
-          type="button"
-          onClick={onPreview}
-          disabled={previewPending}
-          className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white disabled:cursor-wait disabled:opacity-50"
-        >
-          {previewPending ? (
-            <IconLoader2 className="size-4 animate-spin" />
-          ) : (
-            <IconPlayerPlay className="size-4" />
-          )}
-          <span className={HEADER_LABEL_CLASS}>{t("workingPreview.action")}</span>
-        </button>
-        {!canPublish && publishDisabledReason ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span
-                tabIndex={0}
-                className="inline-flex rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
-                aria-label={`${t("publish.action")}: ${publishDisabledReason}`}
-              >
-                {publishButton}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={8}>
-              {publishDisabledReason}
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          publishButton
-        )}
-        {!canEdit ? (
-          <span className="inline-flex h-9 items-center gap-1.5 rounded-[14px] bg-white px-3 text-[11px] font-semibold text-black">
-            {t("readOnly")}
-          </span>
-        ) : null}
-      </div>
-    </header>
+    </>,
+    contextSlot
   );
 }
 

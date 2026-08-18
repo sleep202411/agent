@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { getStoryWorkbench, type StoryGraphNode } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
-const CATALOG_SEGMENTS = new Set(["script", "assets", "storyboard"]);
+const CATALOG_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
 
 /**
  * Chapter/scene catalog docked next to the rail (opened by the rail's Catalog

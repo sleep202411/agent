@@ -7,32 +7,40 @@ import {
   IconListTree,
   IconMovie,
   IconShare3,
-  IconSparkles,
   IconWorld,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
+import {
+  CLOSED_STORY_CANVAS_INSPECTOR,
+  STORY_FOUNDATION_INSPECTOR,
+} from "./project-canvas/story-canvas-inspector-target";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 type RailIcon = ComponentType<{ className?: string; stroke?: number }>;
 
-const RAIL_SEGMENTS = new Set(["script", "assets", "storyboard"]);
+const RAIL_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
 
 /**
- * Project rail rendered by the [projectId] layout for the step pages. The
- * canvas still ships its own rail with the full chapter/world/share wiring —
- * merging the two is the remaining Stage-2 step — and the playtest stays
- * chrome-free, so this hides itself on those segments.
+ * Project rail rendered by the [projectId] layout — the one navigation column
+ * for every production step, canvas included. World/Share act on canvas-owned
+ * surfaces (inspector, share dialog) through the shared store, so they are
+ * only live on the canvas segment. The playtest stays chrome-free.
  */
 export function StoryProjectRail({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
+  const onCanvas = segment === "canvas";
   const t = useTranslations("storyStudio.canvas");
-  const agentOpen = useStoryProjectUiStore((state) => state.agentOpen);
-  const toggleAgent = useStoryProjectUiStore((state) => state.toggleAgent);
   const catalogOpen = useStoryProjectUiStore((state) => state.catalogOpen);
   const toggleCatalog = useStoryProjectUiStore((state) => state.toggleCatalog);
+  const foundationOpen = useStoryProjectUiStore(
+    (state) => state.inspectorTarget.kind === "foundation"
+  );
+  const setInspectorTarget = useStoryProjectUiStore((state) => state.setInspectorTarget);
+  const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
+  const backGuard = useStoryProjectUiStore((state) => state.backGuard);
 
   if (!RAIL_SEGMENTS.has(segment ?? "")) return null;
 
@@ -44,6 +52,7 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
       <div className="flex h-16 shrink-0 items-center justify-center">
         <Link
           href="/story-studio"
+          onNavigate={backGuard ?? undefined}
           aria-label={t("back")}
           className="flex size-11 items-center justify-center rounded-lg text-white/90 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none"
         >
@@ -64,16 +73,39 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           icon={IconBook2}
           label={t("chapters.action")}
         />
-        <RailDisabled icon={IconWorld} label={t("sidebar.world")} />
-        <RailDisabled icon={IconMovie} label={t("sidebar.media")} />
-        <RailButton
-          icon={IconSparkles}
-          label={t("sidebar.agent")}
-          active={agentOpen}
-          onClick={toggleAgent}
+        {onCanvas ? (
+          <RailButton
+            icon={IconWorld}
+            label={t("sidebar.world")}
+            active={foundationOpen}
+            onClick={() =>
+              setInspectorTarget((current) =>
+                current.kind === "foundation"
+                  ? CLOSED_STORY_CANVAS_INSPECTOR
+                  : STORY_FOUNDATION_INSPECTOR
+              )
+            }
+          />
+        ) : (
+          <RailDisabled icon={IconWorld} label={t("sidebar.world")} />
+        )}
+        {/* Material canvas — the free creative canvas scoped to this project. */}
+        <RailLink
+          href={`/story-studio/projects/${projectId}/workbench/canvas`}
+          icon={IconMovie}
+          label={t("sidebar.media")}
         />
         <div className="flex-1" />
-        <RailDisabled icon={IconShare3} label={t("share")} />
+        {onCanvas ? (
+          <RailButton
+            icon={IconShare3}
+            label={t("share")}
+            active={false}
+            onClick={() => setShareOpen(true)}
+          />
+        ) : (
+          <RailDisabled icon={IconShare3} label={t("share")} />
+        )}
       </nav>
     </aside>
   );
