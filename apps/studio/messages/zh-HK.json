@@ -2494,6 +2494,18 @@
       "resolving": "正在開啟該故事項目…",
       "switching": "正在切換到該故事所屬的工作區…"
     },
+    "scriptPage": {
+      "emptyTitle": "這裡還沒有內容",
+      "emptyBody": "劇本視圖尚未構建。章節正文的撰寫與審閱將在這裡進行。"
+    },
+    "assetsPage": {
+      "emptyTitle": "這裡還沒有內容",
+      "emptyBody": "資產視圖尚未構建。角色、場景與道具將在這裡管理。"
+    },
+    "storyboardPage": {
+      "emptyTitle": "這裡還沒有內容",
+      "emptyBody": "分鏡視圖尚未構建。逐節點的首幀圖與鏡頭視頻將在這裡生產。"
+    },
     "canvas": {
       "back": "返回影遊工作室",
       "mode": "故事畫布",

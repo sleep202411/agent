@@ -83,6 +83,7 @@ import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link, useRouter } from "@/i18n/navigation";
+import { StoryProductionSteps } from "../story-production-steps";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
@@ -3519,7 +3520,6 @@ function CanvasHeader({
   onPublish: () => void;
 }) {
   const t = useTranslations("storyStudio.canvas");
-  const stagesT = useTranslations("storyStudio.canvas.steps");
   const publishButton = (
     <Button
       type="button"
@@ -3558,43 +3558,13 @@ function CanvasHeader({
         <span className="max-w-56 truncate text-xs font-medium text-white/52">{chapterTitle}</span>
       </div>
 
-      {/* Numbered production stepper — the canvas IS the Plot Tree step; the
-          other steps live on the workbench routes. Centered between the title
-          (left) and the preview/publish actions (right). */}
-      <nav
-        aria-label={stagesT("tree")}
-        className="absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center md:flex"
-      >
-        {/* Steps 1/3/4 are disabled until their production pages exist — no
-            fake entrances. Only the Plot Tree (this canvas) is live. */}
-        <span aria-disabled="true" className="inline-flex items-center gap-2 opacity-45">
-          <span className="grid size-5 place-items-center rounded-full bg-white/10 text-[10px] font-semibold tabular-nums text-white/55">
-            1
-          </span>
-          <span className="text-xs font-medium text-white/55">{stagesT("script")}</span>
-        </span>
-        <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" />
-        <span aria-current="page" className="inline-flex items-center gap-2">
-          <span className="grid size-5 place-items-center rounded-full bg-white text-[10px] font-semibold tabular-nums text-black">
-            2
-          </span>
-          <span className="text-xs font-semibold text-white">{stagesT("tree")}</span>
-        </span>
-        <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" />
-        <span aria-disabled="true" className="inline-flex items-center gap-2 opacity-45">
-          <span className="grid size-5 place-items-center rounded-full bg-white/10 text-[10px] font-semibold tabular-nums text-white/55">
-            3
-          </span>
-          <span className="text-xs font-medium text-white/55">{stagesT("assets")}</span>
-        </span>
-        <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" />
-        <span aria-disabled="true" className="inline-flex items-center gap-2 opacity-45">
-          <span className="grid size-5 place-items-center rounded-full bg-white/10 text-[10px] font-semibold tabular-nums text-white/55">
-            4
-          </span>
-          <span className="text-xs font-medium text-white/55">{stagesT("storyboard")}</span>
-        </span>
-      </nav>
+      {/* Numbered production stepper — the canvas IS the Plot Tree step.
+          Centered between the title (left) and the actions (right). */}
+      <StoryProductionSteps
+        projectId={projectId}
+        active="tree"
+        className="absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:flex"
+      />
 
       <div className="flex shrink-0 items-center gap-0.5">
         {/* Was hidden while a draft preview could only ever start at the story's

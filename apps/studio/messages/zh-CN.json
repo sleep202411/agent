@@ -2494,6 +2494,18 @@
       "resolving": "正在打开该故事项目…",
       "switching": "正在切换到该故事所属的工作区…"
     },
+    "scriptPage": {
+      "emptyTitle": "这里还没有内容",
+      "emptyBody": "剧本视图尚未构建。章节正文的撰写与审阅将在这里进行。"
+    },
+    "assetsPage": {
+      "emptyTitle": "这里还没有内容",
+      "emptyBody": "资产视图尚未构建。角色、场景与道具将在这里管理。"
+    },
+    "storyboardPage": {
+      "emptyTitle": "这里还没有内容",
+      "emptyBody": "分镜视图尚未构建。逐节点的首帧图与镜头视频将在这里生产。"
+    },
     "canvas": {
       "back": "返回影游工作室",
       "mode": "故事画布",

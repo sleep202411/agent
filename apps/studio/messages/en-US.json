@@ -2494,6 +2494,18 @@
       "resolving": "Opening this story project…",
       "switching": "Switching to the workspace this story belongs to…"
     },
+    "scriptPage": {
+      "emptyTitle": "Nothing here yet",
+      "emptyBody": "The script view has not been built. Chapter text will be authored and reviewed here."
+    },
+    "assetsPage": {
+      "emptyTitle": "Nothing here yet",
+      "emptyBody": "The assets view has not been built. Characters, scenes, and props will be managed here."
+    },
+    "storyboardPage": {
+      "emptyTitle": "Nothing here yet",
+      "emptyBody": "The storyboard view has not been built. Per-node keyframes and shot videos will be produced here."
+    },
     "canvas": {
       "back": "Back to Interactive Film Studio",
       "mode": "Story canvas",
