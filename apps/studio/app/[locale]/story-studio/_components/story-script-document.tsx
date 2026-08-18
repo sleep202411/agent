@@ -15,7 +15,6 @@ import { ensureStoryScriptDocument } from "@/lib/collab/projects-api";
 import { RICH_TEXT_DOC_ROOT_SCHEMA } from "@/lib/collab/protocol";
 import { useCollabDoc } from "@/lib/collab/use-collab-doc";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
-import { StoryProductionSteps } from "./story-production-steps";
 
 /**
  * Script step — free-form rich-text writing. The script is the pipeline's
@@ -54,18 +53,6 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
 
   return (
     <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
-      <header className="relative z-40 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-white/8 bg-[oklch(0.185_0_0)] px-4">
-        <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
-          {workbenchQuery.data?.project.title ?? t("canvas.steps.script")}
-        </h1>
-        <StoryProductionSteps
-          projectId={projectId}
-          active="script"
-          className="absolute top-1/2 left-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:flex"
-        />
-        <span aria-hidden="true" />
-      </header>
-
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {documentQuery.isError ? (
           <div className="flex h-full items-center justify-center">

@@ -54,7 +54,7 @@ import { toast } from "sonner";
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
-import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
+import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
@@ -370,7 +370,12 @@ function StoryProjectCanvasInner({
   );
   const [shareOpen, setShareOpen] = useState(false);
   const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
-  const [agentOpen, setAgentOpen] = useState(false);
+  // Project-level agent panel (mounted in the [projectId] layout) — the canvas
+  // only toggles it and feeds the active-chapter context via the shared store.
+  const agentOpen = useStoryProjectUiStore((state) => state.agentOpen);
+  const toggleAgent = useStoryProjectUiStore((state) => state.toggleAgent);
+  const closeAgent = useStoryProjectUiStore((state) => state.closeAgent);
+  const setActiveChapterId = useStoryProjectUiStore((state) => state.setActiveChapterId);
   const [worldRun, setWorldRun] = useState<StoryWorldRunState | null>(null);
   const [interactionEditorNodeId, setInteractionEditorNodeId] = useState<string | null>(null);
   const [chapterCreatePending, setChapterCreatePending] = useState(false);
@@ -610,6 +615,11 @@ function StoryProjectCanvasInner({
   const projectionPair = useLastDefinedData(projectionPairCandidate);
   const workbenchProjection = projectionPair?.workbench;
   const layoutProjection = projectionPair?.layout;
+  // Feed the project-level agent panel its chapter context.
+  const activeChapterIdForAgent = workbenchProjection?.chapter.id ?? null;
+  useEffect(() => {
+    setActiveChapterId(activeChapterIdForAgent);
+  }, [setActiveChapterId, activeChapterIdForAgent]);
   const currentReleaseQuery = useQuery({
     queryKey: ["story-studio", "current-release", workspaceId, projectId],
     queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
@@ -2927,9 +2937,6 @@ function StoryProjectCanvasInner({
       draftRevision,
       videoSnapshotHash: video?.snapshotHash ?? "",
     });
-  const refreshAfterAgentMutation = async () => {
-    await Promise.all([workbenchQuery.refetch(), layoutQuery.refetch()]);
-  };
   const worldContext: StoryCanvasWorldContextValue = {
     projectId,
     worlds: worldsQuery.data ?? [],
@@ -2982,7 +2989,7 @@ function StoryProjectCanvasInner({
           onOpenChange: (open) => {
             setChapterDropdownOpen(open);
             if (open) {
-              setAgentOpen(false);
+              closeAgent();
               setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
             }
           },
@@ -2997,7 +3004,7 @@ function StoryProjectCanvasInner({
         onShare={() => setShareOpen(true)}
         onToggleAgent={() => {
           setChapterDropdownOpen(false);
-          setAgentOpen((current) => !current);
+          toggleAgent();
         }}
         onToggleFoundation={() => {
           setChapterDropdownOpen(false);
@@ -3388,15 +3395,6 @@ function StoryProjectCanvasInner({
           ) : null}
         </div>
       </div>
-      <AgentOsPanel
-        projectId={projectId}
-        projectKind="story"
-        workbenchMode="story"
-        workbenchContext={{ chapterId: workbenchProjection.chapter.id }}
-        onMutationCompleted={refreshAfterAgentMutation}
-        open={agentOpen}
-        onClose={() => setAgentOpen(false)}
-      />
     </main>
   );
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { StoryProjectCanvas } from "../../../../_components/project-canvas/story-project-canvas";
+import { StoryProjectCanvas } from "../../../_components/project-canvas/story-project-canvas";
 
 export const metadata: Metadata = {
   title: "Story Canvas · Interactive Film Studio",

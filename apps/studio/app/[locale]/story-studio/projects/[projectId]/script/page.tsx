@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { StoryScriptDocument } from "../../../../_components/story-script-document";
+import { StoryScriptDocument } from "../../../_components/story-script-document";
 
 export const metadata: Metadata = {
   title: "Script · Interactive Film Studio",

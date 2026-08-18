@@ -1,9 +1,13 @@
+import { StoryProjectAgentPanel } from "@/app/[locale]/story-studio/_components/story-project-agent-panel";
+import { StoryProjectHeader } from "@/app/[locale]/story-studio/_components/story-project-header";
+import { StoryProjectRail } from "@/app/[locale]/story-studio/_components/story-project-rail";
 import { StoryProjectWorkspaceGate } from "@/app/[locale]/story-studio/_components/story-project-workspace-gate";
 
 /**
- * Immersive project routes (canvas, playtest). The gate resolves the project's
- * own workspace before the route loads so a shared link opens for an invited
- * member, whose active workspace is their personal one until we switch it.
+ * Project layout — owns the whole project chrome: header (title + production
+ * stepper), the left rail, and the single FizzAgent panel. Pages render only
+ * their content. The canvas keeps its own richer chrome and the playtest
+ * stays chrome-free (header/rail self-hide on those segments).
  */
 export default async function StoryProjectLayout({
   children,
@@ -13,5 +17,18 @@ export default async function StoryProjectLayout({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-  return <StoryProjectWorkspaceGate projectId={projectId}>{children}</StoryProjectWorkspaceGate>;
+  return (
+    <StoryProjectWorkspaceGate projectId={projectId}>
+      <div className="flex h-screen flex-col overflow-hidden bg-[var(--canvas-background)] text-white">
+        {/* Header */}
+        <StoryProjectHeader projectId={projectId} />
+        <section className="flex min-h-0 min-w-0 flex-1">
+          {/* Sidebar */}
+          <StoryProjectRail projectId={projectId} />
+          <div className="flex min-w-0 flex-1">{children}</div>
+          <StoryProjectAgentPanel projectId={projectId} />
+        </section>
+      </div>
+    </StoryProjectWorkspaceGate>
+  );
 }
