@@ -2494,9 +2494,8 @@
       "resolving": "正在打开该故事项目…",
       "switching": "正在切换到该故事所属的工作区…"
     },
-    "scriptPage": {
-      "emptyTitle": "这里还没有内容",
-      "emptyBody": "剧本视图尚未构建。章节正文的撰写与审阅将在这里进行。"
+    "scriptDoc": {
+      "placeholder": "写下你的剧本——流水线会从这里读取原文…"
     },
     "assetsPage": {
       "emptyTitle": "这里还没有内容",

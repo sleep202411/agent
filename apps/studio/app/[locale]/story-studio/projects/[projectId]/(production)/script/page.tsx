@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { StoryStepEmptyPage } from "../../../../_components/story-step-empty-page";
+import { StoryScriptDocument } from "../../../../_components/story-script-document";
 
 export const metadata: Metadata = {
   title: "Script · Interactive Film Studio",
@@ -12,5 +12,5 @@ export default async function StoryProjectScriptPage({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-  return <StoryStepEmptyPage projectId={projectId} step="script" />;
+  return <StoryScriptDocument projectId={projectId} />;
 }

@@ -2494,9 +2494,8 @@
       "resolving": "Opening this story project…",
       "switching": "Switching to the workspace this story belongs to…"
     },
-    "scriptPage": {
-      "emptyTitle": "Nothing here yet",
-      "emptyBody": "The script view has not been built. Chapter text will be authored and reviewed here."
+    "scriptDoc": {
+      "placeholder": "Write your script — the pipeline reads it from here…"
     },
     "assetsPage": {
       "emptyTitle": "Nothing here yet",

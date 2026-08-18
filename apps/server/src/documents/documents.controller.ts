@@ -125,6 +125,21 @@ export class DocumentsController {
     };
   }
 
+  @Post('story-projects/:projectId/documents/script/ensure')
+  async ensureStoryScriptDocument(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(StoryCanvasDocumentParamsSchema))
+    params: StoryCanvasDocumentParams,
+  ) {
+    return {
+      code: 200,
+      data: await this.documents.ensureStoryScriptDocument(
+        user,
+        params.projectId,
+      ),
+    };
+  }
+
   @Patch('documents/:documentId')
   async updateDocument(
     @CurrentUser() user: AuthUser,

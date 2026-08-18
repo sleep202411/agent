@@ -1,12 +1,11 @@
 "use client";
 
-import { IconBook2, IconMovie, IconPhoto } from "@tabler/icons-react";
+import { IconMovie, IconPhoto } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { StoryProductionSteps } from "./story-production-steps";
 
 const STEP_META = {
-  script: { icon: IconBook2, ns: "scriptPage" },
   assets: { icon: IconPhoto, ns: "assetsPage" },
   storyboard: { icon: IconMovie, ns: "storyboardPage" },
 } as const;

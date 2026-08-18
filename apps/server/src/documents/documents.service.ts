@@ -267,9 +267,30 @@ export class DocumentsService {
 
   /** Idempotent bootstrap for Story's shared canvas/storyboard document. */
   async ensureStoryCanvasDocument(user: AuthUser, storyProjectId: string) {
+    return this.ensureStoryDocument(user, storyProjectId, {
+      type: StudioDocumentType.canvas,
+      lockKey: 'story-canvas',
+      reason: 'initial_story_canvas',
+    });
+  }
+
+  /** The project's free-form script (the pipeline's source text). */
+  async ensureStoryScriptDocument(user: AuthUser, storyProjectId: string) {
+    return this.ensureStoryDocument(user, storyProjectId, {
+      type: StudioDocumentType.script,
+      lockKey: 'story-script',
+      reason: 'initial_story_script',
+    });
+  }
+
+  private async ensureStoryDocument(
+    user: AuthUser,
+    storyProjectId: string,
+    kind: { type: StudioDocumentType; lockKey: string; reason: string },
+  ) {
     // An archived Story project still opens read-only (the same contract
-    // `StoryProjectsService.workbench` honours), so an existing canvas has to
-    // resolve here. Creating one below stays behind the un-widened
+    // `StoryProjectsService.workbench` honours), so an existing document has
+    // to resolve here. Creating one below stays behind the un-widened
     // `story.edit` gate, which keeps archived projects unwritable.
     const { project } = await this.storyPermissions.requireProject(
       user.userId,
@@ -280,7 +301,7 @@ export class DocumentsService {
     const existing = await this.prisma.studioDocument.findFirst({
       where: {
         storyProjectId,
-        type: StudioDocumentType.canvas,
+        type: kind.type,
         status: StudioDocumentStatus.active,
         deletedAt: null,
       },
@@ -295,15 +316,15 @@ export class DocumentsService {
       storyProjectId,
       'story.edit',
     );
-    const initialState = encodeInitialState(StudioDocumentType.canvas, {});
+    const initialState = encodeInitialState(kind.type, {});
     const document = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`studio-document:story-canvas:${storyProjectId}`})::bigint)
+        SELECT pg_advisory_xact_lock(hashtext(${`studio-document:${kind.lockKey}:${storyProjectId}`})::bigint)
       `;
       const found = await tx.studioDocument.findFirst({
         where: {
           storyProjectId,
-          type: StudioDocumentType.canvas,
+          type: kind.type,
           status: StudioDocumentStatus.active,
           deletedAt: null,
         },
@@ -314,7 +335,7 @@ export class DocumentsService {
         data: {
           workspaceId: project.workspaceId,
           storyProjectId,
-          type: StudioDocumentType.canvas,
+          type: kind.type,
           title: project.title,
           contentSnapshot:
             initialState.snapshot as unknown as Prisma.InputJsonValue,
@@ -332,7 +353,7 @@ export class DocumentsService {
           source: StudioDocumentVersionSource.system,
           snapshot: created.contentSnapshot as Prisma.InputJsonValue,
           crdtState: created.crdtState,
-          metadata: { reason: 'initial_story_canvas' },
+          metadata: { reason: kind.reason },
           createdById: user.userId,
         },
       });

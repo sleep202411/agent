@@ -224,6 +224,14 @@ export async function ensureStoryCanvasDocument(storyProjectId: string): Promise
   return data.document;
 }
 
+/** The project's free-form script — the pipeline's source text (Y.Text body). */
+export async function ensureStoryScriptDocument(storyProjectId: string): Promise<ModeDocumentRef> {
+  const data = await api.post<{ document: ModeDocumentRef }>(
+    `/aurora/story-projects/${storyProjectId}/documents/script/ensure`
+  );
+  return data.document;
+}
+
 export async function getDocument(documentId: string): Promise<ModeDocumentRef> {
   const data = await api.get<{ document: ModeDocumentRef }>(`/aurora/documents/${documentId}`);
   return data.document;
