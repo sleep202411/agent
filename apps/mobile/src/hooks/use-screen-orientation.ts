@@ -7,12 +7,11 @@ import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { Dimensions, Platform, type LayoutChangeEvent } from "react-native";
 
 /**
- * How long to wait for a rotation to start landing before re-issuing the lock.
+ * How long to wait for a rotation to land after a single lock.
  * `getOrientationAsync` only reports the new value once the transition
  * completes, so a lock that is working still looks unapplied for a few hundred ms.
+ * Never re-lock when this elapses — that snaps iOS back through portrait on play enter.
  */
-const ORIENTATION_SETTLE_MS = 700;
-/** Fallback so a gate cannot hang when rotation is disabled (Simulator). */
 const ORIENTATION_WAIT_TIMEOUT_MS = 1_200;
 /**
  * NativeTabs re-layouts after its remount, which Dimensions cannot report —
@@ -140,21 +139,25 @@ function applyOrientation(target: OrientationTarget, reason: string): Promise<bo
 
 async function runOrientationRequest(request: OrientationRequest): Promise<boolean> {
   if (request.cancelled) return false;
-  if (await lockOrientation(request)) {
-    if (await awaitOrientationMatch(request, ORIENTATION_SETTLE_MS)) {
-      return confirmOrientation(request);
-    }
+  // Lock exactly once. A second `lockAsync` while iOS is still animating
+  // `requestGeometryUpdate` snaps through the previous orientation first —
+  // landscape → portrait → landscape on play enter (release builds hit this often).
+  if (!(await lockOrientation(request))) return false;
+  if (request.cancelled) return false;
+  if (await awaitOrientationMatch(request, ORIENTATION_WAIT_TIMEOUT_MS)) {
+    return confirmOrientation(request);
   }
   if (request.cancelled) return false;
-  // Retry once, and only because the rotation never arrived at all. The wait
-  // before it is load-bearing: iOS applies the lock through
-  // `requestGeometryUpdate` plus a device-orientation nudge, and re-issuing that
-  // while the animation is still running snaps the window back through the old
-  // orientation first — the landscape → portrait → landscape bounce. Nothing
-  // stricter than "did it move" may gate this call for the same reason.
-  if (!(await lockOrientation(request))) return false;
-  if (!(await awaitOrientationMatch(request, ORIENTATION_WAIT_TIMEOUT_MS))) return false;
-  return confirmOrientation(request);
+  if (request.target === "landscape") {
+    console.warn(
+      `[orientation] ${request.reason} slow; lock held — waiting on layout, not re-locking`
+    );
+    return true;
+  }
+  console.warn(
+    `[orientation] ${request.reason} did not settle within ${ORIENTATION_WAIT_TIMEOUT_MS}ms`
+  );
+  return false;
 }
 
 /** Writes the lock unless the request has already been superseded. */
@@ -348,12 +351,10 @@ export function usePlayScreenOrientation() {
         if (layoutFallback) clearTimeout(layoutFallback);
         setRotationSettled(false);
         setAwaitStageLandscape(false);
-        // Safety net for leaves that bypass prevent-remove (replace / reset).
-        if (allowLeaveRef.current) return;
-        const shouldRemount = rotatedRef.current;
-        void restorePortraitForExit("play portrait (blur)").then(() => {
-          if (shouldRemount) remountTabs();
-        });
+        // Portrait restore on exit is owned by usePreventRemove. Restoring here
+        // on every blur fired during stack enter transitions on release iOS and
+        // cancelled the in-flight landscape lock — the same landscape → portrait
+        // → landscape bounce users saw in store builds.
       };
     }, [])
   );
