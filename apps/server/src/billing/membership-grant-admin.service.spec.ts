@@ -1,12 +1,22 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   BillingSubjectType,
   EntitlementGrantStatus,
+  WorkspaceStatus,
+  WorkspaceType,
   type EntitlementGrant,
 } from '@prisma/client';
 import { MembershipGrantAdminService } from './membership-grant-admin.service';
 import type { PrismaService } from '../infra/db/db.module';
 import type { EntitlementService } from '../entitlements';
+
+jest.mock('./entitlement-realtime', () => ({
+  enqueueEntitlementChanged: jest.fn().mockResolvedValue(undefined),
+}));
 
 // Relative to the real clock on purpose. This was a hard-coded
 // '2026-07-17T12:00:00Z' while the service reads the real clock, so every
@@ -37,23 +47,34 @@ function grantRow(overrides: Partial<EntitlementGrant> = {}): EntitlementGrant {
 
 describe('MembershipGrantAdminService', () => {
   let prisma: {
+    $transaction: jest.Mock;
     entitlementGrant: {
       findMany: jest.Mock;
       findUnique: jest.Mock;
-      update: jest.Mock;
+      updateMany: jest.Mock;
     };
+    workspace: { findFirst: jest.Mock };
   };
-  let entitlements: { grantComplimentary: jest.Mock };
+  let entitlements: {
+    grantComplimentary: jest.MockedFunction<
+      EntitlementService['grantComplimentary']
+    >;
+  };
   let service: MembershipGrantAdminService;
 
   beforeEach(() => {
     prisma = {
+      $transaction: jest.fn(),
       entitlementGrant: {
         findMany: jest.fn(),
         findUnique: jest.fn(),
-        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      workspace: { findFirst: jest.fn() },
     };
+    prisma.$transaction.mockImplementation((run: (tx: unknown) => unknown) =>
+      Promise.resolve(run(prisma)),
+    );
     entitlements = { grantComplimentary: jest.fn() };
     service = new MembershipGrantAdminService(
       prisma as unknown as PrismaService,
@@ -63,18 +84,20 @@ describe('MembershipGrantAdminService', () => {
 
   describe('grant', () => {
     it('delegates to grantComplimentary with admin_manual source and a fresh sourceId per call', async () => {
-      entitlements.grantComplimentary.mockImplementation(async (input) =>
-        grantRow({ sourceId: input.sourceId }),
+      entitlements.grantComplimentary.mockImplementation((input) =>
+        Promise.resolve(grantRow({ sourceId: input.sourceId })),
       );
 
       await service.grant('admin-1', {
-        userId: 'user-1',
+        subjectType: 'user',
+        subjectId: 'user-1',
         planKey: 'pro',
         durationDays: 7,
         note: '临时提并发',
       });
       await service.grant('admin-1', {
-        userId: 'user-1',
+        subjectType: 'user',
+        subjectId: 'user-1',
         planKey: 'pro',
         durationDays: 7,
         note: '临时提并发',
@@ -99,18 +122,67 @@ describe('MembershipGrantAdminService', () => {
     it('surfaces the note from grant metadata in the returned view', async () => {
       entitlements.grantComplimentary.mockResolvedValue(grantRow());
       const view = await service.grant('admin-1', {
-        userId: 'user-1',
+        subjectType: 'user',
+        subjectId: 'user-1',
         planKey: 'pro',
         durationDays: 7,
         note: '临时提并发',
       });
       expect(view.note).toBe('临时提并发');
-      expect(view.activeNow).toBe(true);
+      expect(view.effectiveStatus).toBe(EntitlementGrantStatus.active);
+    });
+
+    it('grants a team plan to an active team workspace', async () => {
+      prisma.workspace.findFirst.mockResolvedValue({
+        type: WorkspaceType.team,
+        status: WorkspaceStatus.active,
+      });
+      entitlements.grantComplimentary.mockResolvedValue(
+        grantRow({
+          subjectType: BillingSubjectType.workspace,
+          subjectId: '01900000-0000-7000-8000-000000000010',
+          planKey: 'team',
+        }),
+      );
+
+      await service.grant('admin-1', {
+        subjectType: 'workspace',
+        subjectId: '01900000-0000-7000-8000-000000000010',
+        planKey: 'team',
+        durationDays: 30,
+        note: '企业客户补发',
+      });
+
+      expect(entitlements.grantComplimentary).toHaveBeenCalledWith(
+        expect.objectContaining({
+          subjectType: BillingSubjectType.workspace,
+          subjectId: '01900000-0000-7000-8000-000000000010',
+          planKey: 'team',
+        }),
+      );
+    });
+
+    it('rejects a team plan target that is not a team workspace', async () => {
+      prisma.workspace.findFirst.mockResolvedValue({
+        type: WorkspaceType.personal,
+        status: WorkspaceStatus.active,
+      });
+
+      await expect(
+        service.grant('admin-1', {
+          subjectType: 'workspace',
+          subjectId: '01900000-0000-7000-8000-000000000010',
+          planKey: 'team',
+          durationDays: 30,
+          note: '企业客户补发',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(entitlements.grantComplimentary).not.toHaveBeenCalled();
     });
   });
 
-  describe('listForUser', () => {
-    it('marks expired and revoked grants as not active now', async () => {
+  describe('listForSubject', () => {
+    it('derives operator-facing active, expired, revoked, and pending statuses from time', async () => {
       prisma.entitlementGrant.findMany.mockResolvedValue([
         grantRow(),
         grantRow({
@@ -122,9 +194,22 @@ describe('MembershipGrantAdminService', () => {
           status: EntitlementGrantStatus.revoked,
           revokedAt: NOW,
         }),
+        grantRow({
+          id: '01900000-0000-7000-8000-000000000004',
+          startsAt: new Date(Date.now() + DAY_MS),
+          endsAt: new Date(Date.now() + 8 * DAY_MS),
+        }),
       ]);
-      const views = await service.listForUser('user-1');
-      expect(views.map((v) => v.activeNow)).toEqual([true, false, false]);
+      const views = await service.listForSubject({
+        subjectType: 'user',
+        subjectId: 'user-1',
+      });
+      expect(views.map((v) => v.effectiveStatus)).toEqual([
+        EntitlementGrantStatus.active,
+        EntitlementGrantStatus.expired,
+        EntitlementGrantStatus.revoked,
+        EntitlementGrantStatus.pending,
+      ]);
       expect(prisma.entitlementGrant.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: {
@@ -139,22 +224,9 @@ describe('MembershipGrantAdminService', () => {
   describe('revoke', () => {
     it('revokes an active admin-issued grant', async () => {
       prisma.entitlementGrant.findUnique.mockResolvedValue(grantRow());
-      prisma.entitlementGrant.update.mockResolvedValue(
-        grantRow({
-          status: EntitlementGrantStatus.revoked,
-          revokedAt: NOW,
-        }),
-      );
       const view = await service.revoke(grantRow().id);
-      expect(view.status).toBe(EntitlementGrantStatus.revoked);
-      expect(view.activeNow).toBe(false);
-      expect(prisma.entitlementGrant.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
-            status: EntitlementGrantStatus.revoked,
-          }),
-        }),
-      );
+      expect(view.effectiveStatus).toBe(EntitlementGrantStatus.revoked);
+      expect(prisma.entitlementGrant.updateMany).toHaveBeenCalledTimes(1);
     });
 
     it('rejects unknown grants', async () => {
@@ -171,7 +243,7 @@ describe('MembershipGrantAdminService', () => {
       await expect(service.revoke(grantRow().id)).rejects.toBeInstanceOf(
         BadRequestException,
       );
-      expect(prisma.entitlementGrant.update).not.toHaveBeenCalled();
+      expect(prisma.entitlementGrant.updateMany).not.toHaveBeenCalled();
     });
 
     it('refuses to revoke a grant that is not active', async () => {
@@ -181,6 +253,31 @@ describe('MembershipGrantAdminService', () => {
       await expect(service.revoke(grantRow().id)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+
+    it('allows a scheduled admin grant to be cancelled before it starts', async () => {
+      prisma.entitlementGrant.findUnique.mockResolvedValue(
+        grantRow({
+          startsAt: new Date(Date.now() + DAY_MS),
+          endsAt: new Date(Date.now() + 8 * DAY_MS),
+        }),
+      );
+
+      const view = await service.revoke(grantRow().id);
+
+      expect(view.effectiveStatus).toBe(EntitlementGrantStatus.revoked);
+      expect(prisma.entitlementGrant.updateMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to revoke a grant whose time window has already ended', async () => {
+      prisma.entitlementGrant.findUnique.mockResolvedValue(
+        grantRow({ endsAt: new Date(Date.now() - DAY_MS) }),
+      );
+
+      await expect(service.revoke(grantRow().id)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(prisma.entitlementGrant.updateMany).not.toHaveBeenCalled();
     });
   });
 });

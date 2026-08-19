@@ -6,6 +6,7 @@ import { useTranslations } from "next-intl";
 import { AccountMenu } from "./account-menu";
 import { SubscriptionDialog } from "./subscription-dialog";
 import { useAuth } from "./auth-provider";
+import { formatEntitlementPlanName, useMyEntitlement } from "./entitlement-context";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 
 /**
@@ -14,6 +15,7 @@ import { WorkspaceSwitcher } from "./workspace-switcher";
  */
 export function StudioHeader() {
   const { user, loading, signIn } = useAuth();
+  const entitlement = useMyEntitlement();
   const [pricingOpen, setPricingOpen] = useState(false);
   const ta = useTranslations("auth");
 
@@ -28,7 +30,15 @@ export function StudioHeader() {
           </>
         ) : user ? (
           <>
-            <UpgradeButton onClick={() => setPricingOpen(true)} />
+            {entitlement.isLoading ? (
+              <div className="h-8 w-20 animate-pulse rounded-[12px] bg-white/[0.06]" />
+            ) : (
+              <MembershipButton
+                planKey={entitlement.data?.entitlement.planKey ?? null}
+                unavailable={entitlement.isError}
+                onClick={() => setPricingOpen(true)}
+              />
+            )}
             <WorkspaceSwitcher />
             <AccountMenu
               fallback="initial"
@@ -37,7 +47,7 @@ export function StudioHeader() {
           </>
         ) : (
           <>
-            <UpgradeButton onClick={() => setPricingOpen(true)} />
+            <MembershipButton planKey="free" onClick={() => setPricingOpen(true)} />
             <button
               type="button"
               onClick={signIn}
@@ -54,17 +64,35 @@ export function StudioHeader() {
   );
 }
 
-function UpgradeButton({ onClick }: { onClick: () => void }) {
+function MembershipButton({
+  planKey,
+  unavailable = false,
+  onClick,
+}: {
+  planKey: string | null;
+  unavailable?: boolean;
+  onClick: () => void;
+}) {
   const t = useTranslations("account");
+  const isPaid = Boolean(planKey && planKey !== "free");
+  const label = unavailable
+    ? t("billing")
+    : isPaid
+      ? formatEntitlementPlanName(planKey!)
+      : t("upgrade");
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] bg-[#E52227] px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white shadow-[0_0_18px_rgb(229_34_39/0.22)] transition hover:bg-[#c91e22]"
+      className={
+        isPaid || unavailable
+          ? "flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] bg-white/[0.08] px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white transition hover:bg-white/[0.12]"
+          : "flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] bg-[#E52227] px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white shadow-[0_0_18px_rgb(229_34_39/0.22)] transition hover:bg-[#c91e22]"
+      }
     >
       <IconCrown className="size-4 text-white" stroke={2} />
-      {t("upgrade")}
+      {label}
     </button>
   );
 }

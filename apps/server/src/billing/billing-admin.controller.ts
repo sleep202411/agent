@@ -513,7 +513,7 @@ export class BillingAdminController {
   ) {
     return {
       code: 200,
-      data: await this.membershipGrants.listForUser(query.userId),
+      data: await this.membershipGrants.listForSubject(query),
     };
   }
 
@@ -533,7 +533,8 @@ export class BillingAdminController {
       'entitlement_grant',
       data.id,
       {
-        userId: body.userId,
+        subjectType: body.subjectType,
+        subjectId: body.subjectId,
         planKey: body.planKey,
         durationDays: body.durationDays,
         note: body.note,
@@ -557,7 +558,11 @@ export class BillingAdminController {
       'admin.billing.membership_grant.revoke',
       'entitlement_grant',
       params.grantId,
-      { planKey: data.planKey },
+      {
+        subjectType: data.subjectType,
+        subjectId: data.subjectId,
+        planKey: data.planKey,
+      },
     );
     return { code: 200, data };
   }

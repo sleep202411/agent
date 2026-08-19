@@ -138,10 +138,9 @@ secrets:
       env: BAILIAN_API_KEY
     - kv: byteplus-modelark-api-key
       env: BYTEPLUS_MODELARK_API_KEY
-    # Seed Speech is intentionally fail-closed until a dedicated key has been
-    # provisioned in Key Vault. Do not reuse the ModelArk inference key.
-    # - kv: byteplus-seed-speech-api-key
-    #   env: BYTEPLUS_SEED_SPEECH_API_KEY
+    # Seed Speech — dedicated BytePlus voice key, not the ModelArk inference key.
+    - kv: byteplus-seed-speech-api-key
+      env: BYTEPLUS_SEED_SPEECH_API_KEY
     # MiniMax Open Platform (MiniMax-H3 video). PREREQUISITE: create
     # `minimax-api-key` in Key Vault BEFORE deploying — CSI is fail-closed.
     - kv: minimax-api-key
@@ -296,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: e5e3540cf35c837db269541386431b4d4e2a5958
+    tag: cac2f8377413f9869a83a55f19b69291fb8aed64
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -322,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 4053d33960935f5f8c0c9bc97ece976ce421233f
+    tag: b2b8f0c943f23845c51791d79d5cb45e3dd9ef16
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -348,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 2984e3b8862c73830f7396ed5304eb539f155e61
+    tag: 97e6755cb056dee47aaa2dd5539700209763c794
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -403,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 16295af714d07178745d02864d73ddb7fb56938b
+    tag: 97e6755cb056dee47aaa2dd5539700209763c794
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -429,6 +428,9 @@ server:
     # Never default this in code: an omitted value must fail the server at boot
     # instead of silently resolving .com/.cn data against another region.
     LEGACY_OSS_BASE_URL: https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com
+    # Region-owned banner bucket that holds crew logos (relative keys). The admin
+    # DTOs resolve crew.logo to an absolute URL with this base.
+    BANNER_BASE_URL: https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com
     # Public, versioned preview media for the Git-governed Project Skill catalog.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://r2.fizzdragon.com/product-skills/previews/v1
     FAL_ENABLED: "true"
@@ -462,9 +464,7 @@ server:
     MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE: https://r2.fizzdragon.com
     BAILIAN_ENABLED: "true"
     BYTEPLUS_MODELARK_ENABLED: "true"
-    # Enable only after `byteplus-seed-speech-api-key` exists and its mapping
-    # above is uncommented; the application fails boot on a missing key.
-    BYTEPLUS_SEED_SPEECH_ENABLED: "false"
+    BYTEPLUS_SEED_SPEECH_ENABLED: "true"
     # MiniMax-H3 video (api.minimax.io). Key from KV: minimax-api-key.
     MINIMAX_ENABLED: "true"
     # BytePlus ModelArk ASSETS plane — register canvas MediaAssets as AIGC assets.

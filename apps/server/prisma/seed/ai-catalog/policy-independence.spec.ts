@@ -31,9 +31,7 @@ describe('entitlement and queue policy are independent', () => {
 
   it('passes the declared plan through to the gate verbatim', () => {
     expect(buildEntitlementPolicy(null)).toMatchObject({ requiredPlan: null });
-    expect(buildEntitlementPolicy('pro')).toMatchObject({
-      requiredPlan: 'pro',
-    });
+    expect(buildEntitlementPolicy('pro')).toMatchObject({ requiredPlan: 'pro' });
   });
 });
 

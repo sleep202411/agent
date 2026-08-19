@@ -1105,8 +1105,7 @@ export type BillingSubscriptionParams = z.infer<
 
 // --- Membership grants (admin 手动开会员) ----------------------------------
 
-export const GrantMembershipSchema = z.object({
-  userId: z.string().trim().min(1).max(64),
+const MembershipGrantShape = {
   /** Shape only — WHICH keys are grantable is decided against active
    *  billing_membership_plans rows in EntitlementService.grantComplimentary. An
    *  enum here was a second copy of the plan table and drifted from it. */
@@ -1114,12 +1113,35 @@ export const GrantMembershipSchema = z.object({
   durationDays: z.coerce.number().int().min(1).max(366),
   /** Required — lands in grant metadata and the audit log. */
   note: z.string().trim().min(1).max(500),
-});
+} satisfies z.ZodRawShape;
+
+export const GrantMembershipSchema = z.discriminatedUnion('subjectType', [
+  z.object({
+    ...MembershipGrantShape,
+    subjectType: z.literal('user'),
+    subjectId: z.string().trim().min(1).max(64),
+  }),
+  z.object({
+    ...MembershipGrantShape,
+    subjectType: z.literal('workspace'),
+    subjectId: z.string().uuid(),
+  }),
+]);
 export type GrantMembershipInput = z.infer<typeof GrantMembershipSchema>;
 
-export const ListMembershipGrantsQuerySchema = z.object({
-  userId: z.string().trim().min(1).max(64),
-});
+export const ListMembershipGrantsQuerySchema = z.discriminatedUnion(
+  'subjectType',
+  [
+    z.object({
+      subjectType: z.literal('user'),
+      subjectId: z.string().trim().min(1).max(64),
+    }),
+    z.object({
+      subjectType: z.literal('workspace'),
+      subjectId: z.string().uuid(),
+    }),
+  ],
+);
 export type ListMembershipGrantsQuery = z.infer<
   typeof ListMembershipGrantsQuerySchema
 >;

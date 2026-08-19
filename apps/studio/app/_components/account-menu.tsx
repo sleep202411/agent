@@ -17,6 +17,7 @@ import {
 import { encodeUserId } from "@repo/shared";
 import { toast } from "sonner";
 import { useAuth } from "./auth-provider";
+import { formatEntitlementPlanName, useMyEntitlement } from "./entitlement-context";
 import { useComputeWalletBalance } from "./credits-badge";
 import { SubscriptionDialog } from "./subscription-dialog";
 import { cn } from "@/lib/utils";
@@ -69,6 +70,7 @@ export function AccountMenu({
     startLocaleTransition(() => router.replace(pathname, { locale: next }));
   };
   const { user, loading, signIn, signOut } = useAuth();
+  const entitlement = useMyEntitlement();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
   const [menuOpen, setMenuOpen] = useState(false);
   const comingSoon = (label: string) => toast.info(t("comingSoon", { label }));
@@ -112,6 +114,14 @@ export function AccountMenu({
   const name = user?.nickName || user?.email || user?.phone || t("account");
   const contact = user?.email || user?.phone || "";
   const publicUserId = encodeUserId(user?.id);
+  const planKey = entitlement.data?.entitlement.planKey ?? null;
+  const planActionLabel = entitlement.isLoading
+    ? t("planLoading")
+    : entitlement.isError || !planKey
+      ? t("billing")
+      : planKey === "free"
+        ? t("upgrade")
+        : t("currentPlan", { plan: formatEntitlementPlanName(planKey) });
 
   const copyPublicUserId = async () => {
     if (!publicUserId) return;
@@ -232,7 +242,7 @@ export function AccountMenu({
             </div>
           </div>
           <div className="mt-2 flex items-center gap-2">
-            <PillButton label={t("upgrade")} onClick={openSubscription} />
+            <PillButton label={planActionLabel} onClick={openSubscription} />
             <PillButton label={t("usageAnalytics")} onClick={openUsageAnalytics} />
           </div>
 

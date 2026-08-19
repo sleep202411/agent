@@ -9,6 +9,7 @@ import {
   type EntitlementGrant,
   type Prisma,
 } from '@prisma/client';
+import { enqueueEntitlementChanged } from '../billing/entitlement-realtime';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
@@ -330,43 +331,47 @@ export class EntitlementService {
     // Store the key the same way resolution reads it, so the row the grant was
     // validated against is the row that later resolves its benefits.
     const planKey = this.normalizePlanKey(input.planKey);
-    await this.assertGrantablePlan(planKey, input.subjectType);
-    const now = new Date();
-    const latest = await this.prisma.entitlementGrant.findFirst({
-      where: {
-        subjectType: input.subjectType,
-        subjectId: input.subjectId,
-        planKey,
-        status: EntitlementGrantStatus.active,
-      },
-      orderBy: [{ endsAt: 'desc' }],
-      select: { endsAt: true },
-    });
-    const startsAt =
-      latest?.endsAt && latest.endsAt > now ? latest.endsAt : now;
-    const endsAt = new Date(
-      startsAt.getTime() + input.durationDays * 24 * 60 * 60 * 1000,
-    );
-    return this.prisma.entitlementGrant.upsert({
-      where: {
-        sourceType_sourceId: {
+    return this.prisma.$transaction(async (tx) => {
+      await this.assertGrantablePlan(planKey, input.subjectType, tx);
+      const now = new Date();
+      const latest = await tx.entitlementGrant.findFirst({
+        where: {
+          subjectType: input.subjectType,
+          subjectId: input.subjectId,
+          planKey,
+          status: EntitlementGrantStatus.active,
+        },
+        orderBy: [{ endsAt: 'desc' }],
+        select: { endsAt: true },
+      });
+      const startsAt =
+        latest?.endsAt && latest.endsAt > now ? latest.endsAt : now;
+      const endsAt = new Date(
+        startsAt.getTime() + input.durationDays * 24 * 60 * 60 * 1000,
+      );
+      const grant = await tx.entitlementGrant.upsert({
+        where: {
+          sourceType_sourceId: {
+            sourceType: input.sourceType,
+            sourceId: input.sourceId,
+          },
+        },
+        create: {
+          subjectType: input.subjectType,
+          subjectId: input.subjectId,
+          planKey,
+          status: EntitlementGrantStatus.active,
           sourceType: input.sourceType,
           sourceId: input.sourceId,
+          startsAt,
+          endsAt,
+          metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
         },
-      },
-      create: {
-        subjectType: input.subjectType,
-        subjectId: input.subjectId,
-        planKey,
-        status: EntitlementGrantStatus.active,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId,
-        startsAt,
-        endsAt,
-        metadata: (input.metadata ?? {}) as Prisma.InputJsonValue,
-      },
-      // Idempotent: re-granting the same source is a no-op.
-      update: {},
+        // Idempotent: re-granting the same source is a no-op.
+        update: {},
+      });
+      await enqueueEntitlementChanged(tx, grant, 'fulfilled');
+      return grant;
     });
   }
 
@@ -384,8 +389,9 @@ export class EntitlementService {
   private async assertGrantablePlan(
     planKey: string,
     subjectType: BillingSubjectType,
+    tx: Prisma.TransactionClient,
   ): Promise<void> {
-    const plan = await this.prisma.billingMembershipPlan.findUnique({
+    const plan = await tx.billingMembershipPlan.findUnique({
       where: { planKey },
       select: { status: true, archivedAt: true, subjectType: true },
     });

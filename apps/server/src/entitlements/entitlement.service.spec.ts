@@ -11,6 +11,11 @@ import {
   DEFAULT_TEAM_SEAT_POLICY,
   PERSONAL_WORKSPACE_SEAT_POLICY,
 } from './seat-policy';
+import { enqueueEntitlementChanged } from '../billing/entitlement-realtime';
+
+jest.mock('../billing/entitlement-realtime', () => ({
+  enqueueEntitlementChanged: jest.fn().mockResolvedValue(undefined),
+}));
 
 const NOW = '2026-06-12T12:00:00.000Z';
 
@@ -244,7 +249,8 @@ describe('EntitlementService.grantComplimentary', () => {
   };
 
   function grantPrismaMock(planRow: unknown) {
-    return {
+    const prisma = {
+      $transaction: jest.fn(),
       billingMembershipPlan: {
         findUnique: jest.fn().mockResolvedValue(planRow),
       },
@@ -253,6 +259,10 @@ describe('EntitlementService.grantComplimentary', () => {
         upsert: jest.fn((args: { create: { planKey: string } }) => args.create),
       },
     };
+    prisma.$transaction.mockImplementation((run: (tx: unknown) => unknown) =>
+      Promise.resolve(run(prisma)),
+    );
+    return prisma;
   }
 
   it('grants against an active plan row on the same subject axis', async () => {
@@ -262,6 +272,11 @@ describe('EntitlementService.grantComplimentary', () => {
     await service.grantComplimentary(input);
 
     expect(prisma.entitlementGrant.upsert).toHaveBeenCalledTimes(1);
+    expect(enqueueEntitlementChanged).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ planKey: 'pro' }),
+      'fulfilled',
+    );
   });
 
   it('rejects a non-canonical plan key before looking up a plan row', async () => {
