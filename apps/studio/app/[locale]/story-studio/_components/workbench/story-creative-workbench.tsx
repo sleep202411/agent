@@ -119,6 +119,7 @@ export function StoryCreativeWorkbench({
   return (
     <ProjectProvider
       projectId={projectId}
+      workspaceId={workspaceId}
       owner={{ kind: "story_project", projectId }}
       uploadKinds={STORY_UPLOAD_KINDS}
       role={role}

@@ -5,11 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { IconBolt } from "@tabler/icons-react";
 import { api } from "@/lib/api";
-import {
-  useActiveWorkspace,
-  useActiveWorkspaceId,
-  useBillingWorkspace,
-} from "@/app/_components/workspace-context";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { openSettings } from "@/lib/settings-hash";
 import { cn } from "@/lib/utils";
@@ -79,12 +75,13 @@ async function getComputeWalletBalance(
 
 export function useComputeWalletBalance(enabled = true) {
   const { user } = useAuth();
-  // Scopes to the pot the CURRENT USER pays from (mirrors the server payer
-  // rule): a team active workspace reads the shared team pot; any other
-  // context reads the caller's own personal pot — including when visiting
-  // someone else's personal workspace as an invited collaborator, where
-  // reading the host's wallet would 403.
-  const workspaceId = useBillingWorkspace()?.id ?? null;
+  // Scopes to the pot the CURRENT USER pays from FOR THE OPEN PROJECT (mirrors
+  // the server payer rule, keyed on the project's workspace): a team project
+  // reads the shared team pot; a personal project reads the caller's own
+  // personal pot — including when collaborating in someone else's personal
+  // project, where reading the host's wallet would 403. Outside any project it
+  // falls back to the global billing workspace.
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   return useQuery({
     queryKey: computeWalletBalanceKey(workspaceId),
     queryFn: () => getComputeWalletBalance(workspaceId),
@@ -104,7 +101,9 @@ export function useComputeWalletBalance(enabled = true) {
  */
 function useWalletRealtime() {
   const { user } = useAuth();
-  const workspaceId = useActiveWorkspaceId();
+  // Subscribe to the same pot the badge shows (the open project's payer pot),
+  // so a wallet_changed on it refreshes this balance.
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   const queryClient = useQueryClient();
   useEffect(() => {
     if (!user) return;
@@ -125,11 +124,11 @@ function useWalletRealtime() {
 /** Compute-credits balance pill (header + canvas chrome). */
 export function CreditsBadge({ className }: { className?: string }) {
   const t = useTranslations("shell");
-  // A team workspace spends the shared workspace pot; personal spends the
-  // personal pot. Tag only a real TEAM workspace (the personal workspace also has
-  // an id, so gate on the type — not merely on having a workspace).
-  const activeWorkspace = useActiveWorkspace();
-  const isTeam = activeWorkspace?.type === "team";
+  // Tag the pill "team" only when the pot funding this context is a real TEAM
+  // pot — i.e. the open project lives in a team workspace (or, outside a
+  // project, a team workspace is active). Keyed on the same payer resolution as
+  // the balance so the tag and the number never disagree.
+  const isTeam = useProjectPayerWorkspace()?.type === "team";
   useWalletRealtime();
   const { data } = useComputeWalletBalance();
   const title =

@@ -25,7 +25,7 @@ import {
   computeWalletBalanceQueryKey,
   useComputeWalletBalance,
 } from "@/app/_components/credits-badge";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import {
   buildReferenceInputForMode,
   buildPromptDocument,
@@ -578,8 +578,11 @@ export function CanvasGenerationProvider({
 
   // Realtime: route job updates back to their card by jobId; reconcile on
   // (re)connect so a reconnect after sleep/disconnect back-fills missed updates.
-  // One socket per active workspace (carries that workspace's wallet channel).
-  const workspaceId = useActiveWorkspaceId();
+  // Scoped to the project's PAYER workspace, not the global active selection:
+  // it is always a workspace I am a member of (so negotiate never 403s), it
+  // carries this project's job + wallet channels when I belong to the project's
+  // workspace, and it matches the credits badge's socket so they share one.
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   useEffect(() => {
     const client = getAssetsRealtimeKernel({
       workspaceId: workspaceId ?? undefined,

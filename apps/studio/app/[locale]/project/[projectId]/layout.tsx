@@ -55,6 +55,7 @@ export default function ProjectLayout({
 
   const [name, setName] = useState("");
   const [role, setRole] = useState<ProjectRole | null>(null);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const setShellInset = useCallback(() => {}, []);
 
@@ -76,6 +77,7 @@ export default function ProjectLayout({
       .then((project) => {
         if (cancelled) return;
         setRole(project.role ?? null);
+        setWorkspaceId(project.workspaceId);
         if (dirtyRef.current) return;
         committedRef.current = project.name;
         setName(project.name);
@@ -170,6 +172,7 @@ export default function ProjectLayout({
   return (
     <ProjectProvider
       projectId={projectId}
+      workspaceId={workspaceId}
       role={role}
       openShare={openShare}
       setShellInset={setShellInset}

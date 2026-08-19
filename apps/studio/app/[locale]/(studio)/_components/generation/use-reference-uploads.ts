@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import type { FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
 import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
@@ -45,11 +45,11 @@ const LABEL_PREFIX: Record<FizzAiReferenceKind, string> = {
  * labels (Image1/Video1/…) assigned per kind.
  */
 export function useReferenceUploads() {
-  // Uploads must carry the active workspace so the asset belongs to the team,
-  // not to the uploader's personal scope — a personal-private asset is
-  // invisible to every other member (and unusable as their generation
-  // reference).
-  const workspaceId = useActiveWorkspaceId();
+  // Uploads carry the project's member-accessible workspace (its team pot, or
+  // my own personal one when the project is personal) — the upload endpoint is
+  // workspace-membership gated, so this is always a workspace I can write to,
+  // never the global active selection a second tab may have switched away.
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   const [items, setItems] = useState<ReferenceUpload[]>([]);
   const aborts = useRef(new Map<string, AbortController>());
   const itemsRef = useRef(items);
