@@ -107,7 +107,7 @@ export function CrewModerationPanel() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="剧组巡查"
+        title="剧组审核"
         description="巡查全部剧组并对违规剧组下架。下架后该剧组从大厅、详情、招募全部隐藏;可随时恢复。"
       />
 
@@ -147,7 +147,7 @@ export function CrewModerationPanel() {
             <thead>
               <tr className="border-b border-slate-200 text-left text-[12px] text-slate-500">
                 <th className="px-4 py-2 font-medium">剧组</th>
-                <th className="px-4 py-2 font-medium">房主</th>
+                <th className="px-4 py-2 font-medium">所有者</th>
                 <th className="px-4 py-2 font-medium">成员</th>
                 <th className="px-4 py-2 font-medium">审核状态</th>
                 <th className="px-4 py-2 font-medium">创建时间</th>

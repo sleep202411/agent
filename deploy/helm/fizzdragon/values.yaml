@@ -428,6 +428,9 @@ server:
     # Never default this in code: an omitted value must fail the server at boot
     # instead of silently resolving .com/.cn data against another region.
     LEGACY_OSS_BASE_URL: https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com
+    # Region-owned banner bucket that holds crew logos (relative keys). The admin
+    # DTOs resolve crew.logo to an absolute URL with this base.
+    BANNER_BASE_URL: https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com
     # Public, versioned preview media for the Git-governed Project Skill catalog.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://r2.fizzdragon.com/product-skills/previews/v1
     FAL_ENABLED: "true"

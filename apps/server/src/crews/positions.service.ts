@@ -27,7 +27,7 @@ import type {
   UpdatePositionInput,
 } from './dto';
 import { newCrewDomainId } from './id';
-import { toPositionDTO } from './mappers';
+import { resolveCrewLogoUrl, toPositionDTO } from './mappers';
 import { CrewAuthorizationService } from './crew-authorization.service';
 
 @Injectable()
@@ -256,7 +256,7 @@ export class PositionsService {
         id: row.id,
         crewId: row.crewId,
         crewName: row.crew.name,
-        crewLogo: row.crew.logo,
+        crewLogo: resolveCrewLogoUrl(row.crew.logo),
         positionType: row.positionType,
         description: row.description,
         status: row.status,
@@ -295,7 +295,7 @@ export class PositionsService {
       id: updated.id,
       crewId: updated.crewId,
       crewName: updated.crew.name,
-      crewLogo: updated.crew.logo,
+      crewLogo: resolveCrewLogoUrl(updated.crew.logo),
       positionType: updated.positionType,
       description: updated.description,
       status: updated.status,

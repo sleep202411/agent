@@ -30,6 +30,18 @@ import { isCrewPolicyKey, isPresetPosition } from '@repo/shared/crew';
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 const isoReq = (d: Date) => d.toISOString();
 
+/**
+ * Crew logos are stored as relative keys in the region's banner bucket (the web
+ * client historically prefixed them). Resolve to an absolute URL server-side so
+ * admin surfaces get a ready-to-render URL. Absolute inputs pass through; if the
+ * base env is missing we return the raw key rather than crash a display path.
+ */
+export function resolveCrewLogoUrl(logo: string): string {
+  if (!logo || /^https?:\/\//i.test(logo)) return logo;
+  const base = process.env.BANNER_BASE_URL?.replace(/\/+$/, '');
+  return base ? `${base}/${logo.replace(/^\/+/, '')}` : logo;
+}
+
 /** Admin patrol row — the fields a moderator needs to decide + act. */
 export interface AdminCrewListItem {
   id: string;
@@ -52,7 +64,7 @@ export function toAdminCrewDTO(
   return {
     id: c.id,
     name: c.name,
-    logo: c.logo,
+    logo: resolveCrewLogoUrl(c.logo),
     ownerUserId: c.ownership?.member.userId ?? null,
     listingStatus: c.listingStatus,
     moderationStatus: c.moderationStatus,

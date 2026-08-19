@@ -222,6 +222,9 @@ server:
     # bucket. This explicit override prevents the CN cell from ever inheriting
     # the .com Singapore bucket when resolving those keys.
     LEGACY_OSS_BASE_URL: https://shotive.oss-cn-hangzhou.aliyuncs.com
+    # CN banner bucket for crew logos (relative keys). Admin DTOs resolve
+    # crew.logo with this base; never inherit the .com Singapore banner bucket.
+    BANNER_BASE_URL: https://banner.fizzspace.cn
     # CN-local CDN mirror for the Git-governed Project Skill preview media.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://media.fizzspace.cn/product-skills/previews/v1
     # Mirrors prod-cn .env (2026-06-10).
