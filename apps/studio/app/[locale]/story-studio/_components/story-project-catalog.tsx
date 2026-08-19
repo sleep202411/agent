@@ -9,26 +9,27 @@ import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { getStoryWorkbench, type StoryGraphNode } from "@/lib/story-projects-api";
-import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 const CATALOG_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
 
 /**
- * Chapter/scene catalog docked next to the rail (opened by the rail's Catalog
- * button). Gamebook flattening: nodes render once, in array (authoring)
- * order — branching never nests, it shows as an unnumbered choice row whose
- * options jump to their target rows; endings carry an END badge.
+ * Chapter/scene catalog — one tenant of the side-panel dock, mounted by
+ * StoryProjectSidePanel only while it is the active panel. Gamebook flattening:
+ * nodes render once, in array (authoring) order — branching never nests, it
+ * shows as an unnumbered choice row whose options jump to their target rows;
+ * endings carry an END badge.
  */
 export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
-  const catalogOpen = useStoryProjectUiStore((state) => state.catalogOpen);
   const t = useTranslations("storyStudio.canvas");
   const locale = useLocale();
   const searchParams = useSearchParams();
   const activeNodeId = searchParams.get("node");
   const { activeWorkspace } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
-  const enabled = catalogOpen && CATALOG_SEGMENTS.has(segment ?? "");
+  // The dock only mounts this panel when catalog is the active tenant, so
+  // visibility here is just: is the catalog meaningful on this segment?
+  const enabled = CATALOG_SEGMENTS.has(segment ?? "");
 
   const workbenchQuery = useQuery({
     queryKey: ["story-studio", "script-workbench", workspaceId, projectId],

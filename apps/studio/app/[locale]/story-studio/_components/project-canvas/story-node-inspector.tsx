@@ -20,12 +20,7 @@ import type {
 } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
 import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
-import {
-  StoryFoundationLibrary,
-  type StoryFoundationCoverMediaProps,
-} from "./story-foundation-library";
 
-type FoundationField = "logline" | "synopsis";
 type StoryChapterTarget = {
   id: string;
   title: string;
@@ -46,10 +41,7 @@ const SCENE_EXIT_KINDS: readonly SceneExitKind[] = ["auto", "choice"];
 interface StoryNodeInspectorProps {
   content: InteractiveStoryDraftContent;
   selectedNode: StoryCanvasNode | null;
-  showFoundation: boolean;
   canEdit: boolean;
-  coverMedia: StoryFoundationCoverMediaProps;
-  onUpdateFoundation: (field: FoundationField, value: string) => void;
   onCloseNode: () => void;
   chapterTargets?: StoryChapterTarget[];
   onConnectChapter?: (nodeId: string, targetNodeId: string, title: string) => void;
@@ -62,10 +54,7 @@ interface StoryNodeInspectorProps {
 export function StoryNodeInspector({
   content,
   selectedNode,
-  showFoundation,
   canEdit,
-  coverMedia,
-  onUpdateFoundation,
   onCloseNode,
   chapterTargets = [],
   onConnectChapter = () => undefined,
@@ -83,69 +72,55 @@ export function StoryNodeInspector({
 
   const editableGraphNode = graphNode?.kind === "clip" ? graphNode : null;
 
-  if (!showFoundation && !editableGraphNode) return null;
+  if (!editableGraphNode || !canvasData) return null;
 
   return (
     <aside className="absolute top-16 bottom-3 left-3 z-30 flex w-[368px] flex-col overflow-hidden rounded-[24px] bg-[oklch(0.205_0_0/0.72)] shadow-[18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
       <div className="pointer-events-none absolute inset-0 z-10 rounded-[inherit] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]" />
-      {showFoundation ? (
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-          <StoryFoundationLibrary
-            content={content}
-            canEdit={canEdit}
-            coverMedia={coverMedia}
-            onUpdateFoundation={onUpdateFoundation}
-            onClose={onCloseNode}
-          />
+      <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5 pb-1">
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold tracking-[0.12em] text-white/34 uppercase">
+            {t("inspector.eyebrow")}
+          </p>
+          <h2 className="mt-1 truncate text-base font-semibold">{canvasData.title}</h2>
+          <p className="mt-1 text-[10px] text-white/34">{t(`nodeKinds.${canvasData.kind}`)}</p>
         </div>
-      ) : canvasData && editableGraphNode ? (
-        <>
-          <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5 pb-1">
-            <div className="min-w-0">
-              <p className="text-[10px] font-semibold tracking-[0.12em] text-white/34 uppercase">
-                {t("inspector.eyebrow")}
-              </p>
-              <h2 className="mt-1 truncate text-base font-semibold">{canvasData.title}</h2>
-              <p className="mt-1 text-[10px] text-white/34">{t(`nodeKinds.${canvasData.kind}`)}</p>
-            </div>
-            <button
-              type="button"
-              onClick={onCloseNode}
-              className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48 transition hover:bg-white/[0.1] hover:text-white"
-              aria-label={t("inspector.close")}
-            >
-              <IconX className="size-4" />
-            </button>
-          </div>
+        <button
+          type="button"
+          onClick={onCloseNode}
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48 transition hover:bg-white/[0.1] hover:text-white"
+          aria-label={t("inspector.close")}
+        >
+          <IconX className="size-4" />
+        </button>
+      </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-            <GraphNodeEditor
-              content={content}
-              node={editableGraphNode}
-              canEdit={canEdit}
-              clipMedia={clipMedia}
-              onUpdateClipMeta={onUpdateClipMeta}
-              chapterTargets={chapterTargets}
-              onConnectChapter={onConnectChapter}
-              onSetSceneExit={onSetSceneExit}
-              onEditInteractions={onEditInteractions}
-            />
-          </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
+        <GraphNodeEditor
+          content={content}
+          node={editableGraphNode}
+          canEdit={canEdit}
+          clipMedia={clipMedia}
+          onUpdateClipMeta={onUpdateClipMeta}
+          chapterTargets={chapterTargets}
+          onConnectChapter={onConnectChapter}
+          onSetSceneExit={onSetSceneExit}
+          onEditInteractions={onEditInteractions}
+        />
+      </div>
 
-          <div className="shrink-0 grid gap-2 border-t border-white/[0.06] px-5 py-4">
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={!canEdit}
-              onClick={onDeleteSelected}
-              className="w-full"
-            >
-              <IconTrash className="size-4" />
-              {t("inspector.delete")}
-            </Button>
-          </div>
-        </>
-      ) : null}
+      <div className="shrink-0 grid gap-2 border-t border-white/[0.06] px-5 py-4">
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={!canEdit}
+          onClick={onDeleteSelected}
+          className="w-full"
+        >
+          <IconTrash className="size-4" />
+          {t("inspector.delete")}
+        </Button>
+      </div>
     </aside>
   );
 }

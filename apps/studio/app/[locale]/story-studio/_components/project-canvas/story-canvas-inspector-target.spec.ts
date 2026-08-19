@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   CLOSED_STORY_CANVAS_INSPECTOR,
-  STORY_FOUNDATION_INSPECTOR,
   reconcileStoryCanvasInspectorTarget,
   storyCanvasInspectorNodeId,
   storyNodeInspectorTarget,
@@ -14,15 +13,9 @@ describe("story canvas inspector target", () => {
     });
   });
 
-  it("keeps the film foundation open while node selection stays empty", () => {
-    expect(reconcileStoryCanvasInspectorTarget(STORY_FOUNDATION_INSPECTOR, [])).toBe(
-      STORY_FOUNDATION_INSPECTOR
-    );
-  });
-
-  it("replaces the film foundation only on an explicit node click (preferred id)", () => {
+  it("opens a node inspector on an explicit node click (preferred id)", () => {
     expect(
-      reconcileStoryCanvasInspectorTarget(STORY_FOUNDATION_INSPECTOR, ["clip:a"], "clip:a")
+      reconcileStoryCanvasInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR, ["clip:a"], "clip:a")
     ).toEqual({
       kind: "node",
       nodeId: "clip:a",
@@ -32,9 +25,6 @@ describe("story canvas inspector target", () => {
   it("never opens a node inspector from a marquee selection alone", () => {
     // A box/marquee selection carries no preferred (clicked) node, so it must
     // not pop the drawer open on a node the user did not click.
-    expect(reconcileStoryCanvasInspectorTarget(STORY_FOUNDATION_INSPECTOR, ["clip:a"])).toBe(
-      STORY_FOUNDATION_INSPECTOR
-    );
     expect(reconcileStoryCanvasInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR, ["clip:a"])).toEqual({
       kind: "closed",
     });
@@ -61,7 +51,6 @@ describe("story canvas inspector target", () => {
 
   it("exposes a node id only for node inspectors", () => {
     expect(storyCanvasInspectorNodeId(storyNodeInspectorTarget("clip:a"))).toBe("clip:a");
-    expect(storyCanvasInspectorNodeId(STORY_FOUNDATION_INSPECTOR)).toBeNull();
     expect(storyCanvasInspectorNodeId(CLOSED_STORY_CANVAS_INSPECTOR)).toBeNull();
   });
 });

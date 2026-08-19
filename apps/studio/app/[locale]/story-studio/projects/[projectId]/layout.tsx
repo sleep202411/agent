@@ -1,8 +1,8 @@
 import { StoryProjectAgentPanel } from "@/app/[locale]/story-studio/_components/story-project-agent-panel";
-import { StoryProjectCatalog } from "@/app/[locale]/story-studio/_components/story-project-catalog";
 import { StoryProjectHeader } from "@/app/[locale]/story-studio/_components/story-project-header";
 import { StoryProjectMobileNav } from "@/app/[locale]/story-studio/_components/story-project-mobile-nav";
 import { StoryProjectRail } from "@/app/[locale]/story-studio/_components/story-project-rail";
+import { StoryProjectSidePanel } from "@/app/[locale]/story-studio/_components/story-project-side-panel";
 import { StoryProjectWorkView } from "@/app/[locale]/story-studio/_components/story-project-work-view";
 import { StoryProjectWorkspaceGate } from "@/app/[locale]/story-studio/_components/story-project-workspace-gate";
 
@@ -31,8 +31,9 @@ export default async function StoryProjectLayout({
           <div className="flex min-h-0 shrink-0">
             {/* Sidebar */}
             <StoryProjectRail projectId={projectId} />
-            {/* Side Panel — rail-toggled panels dock here (catalog for now). */}
-            <StoryProjectCatalog projectId={projectId} />
+            {/* Side Panel — the dock for rail-toggled panels (catalog here; the
+                world panel docks into the same slot from the canvas). */}
+            <StoryProjectSidePanel projectId={projectId} />
           </div>
 
           <StoryProjectWorkView>{children}</StoryProjectWorkView>

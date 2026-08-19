@@ -174,19 +174,7 @@ function inspectorProps(
 ): Omit<ComponentProps<typeof StoryNodeInspector>, "selectedNode"> {
   return {
     content,
-    showFoundation: false,
     canEdit: true,
-    coverMedia: {
-      cover: null,
-      candidateAssets: [],
-      candidateAssetsLoading: false,
-      candidateAssetsError: null,
-      onRetryCandidates: vi.fn(),
-      onSelectCandidate: vi.fn(),
-      onClearSelection: vi.fn(),
-      onUpload: vi.fn(),
-    },
-    onUpdateFoundation: vi.fn(),
     onCloseNode: vi.fn(),
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),

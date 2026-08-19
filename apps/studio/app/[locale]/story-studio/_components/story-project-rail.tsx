@@ -13,10 +13,6 @@ import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
-import {
-  CLOSED_STORY_CANVAS_INSPECTOR,
-  STORY_FOUNDATION_INSPECTOR,
-} from "./project-canvas/story-canvas-inspector-target";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 type RailIcon = ComponentType<{ className?: string; stroke?: number }>;
@@ -33,12 +29,8 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
   const onCanvas = segment === "canvas";
   const t = useTranslations("storyStudio.canvas");
-  const catalogOpen = useStoryProjectUiStore((state) => state.catalogOpen);
-  const toggleCatalog = useStoryProjectUiStore((state) => state.toggleCatalog);
-  const foundationOpen = useStoryProjectUiStore(
-    (state) => state.inspectorTarget.kind === "foundation"
-  );
-  const setInspectorTarget = useStoryProjectUiStore((state) => state.setInspectorTarget);
+  const sidePanel = useStoryProjectUiStore((state) => state.sidePanel);
+  const toggleSidePanel = useStoryProjectUiStore((state) => state.toggleSidePanel);
   const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
   const backGuard = useStoryProjectUiStore((state) => state.backGuard);
 
@@ -63,8 +55,8 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
         <RailButton
           icon={IconListTree}
           label={t("sidebar.catalog")}
-          active={catalogOpen}
-          onClick={toggleCatalog}
+          active={sidePanel === "catalog"}
+          onClick={() => toggleSidePanel("catalog")}
         />
         {/* Chapters lives on the canvas (its dropdown needs the draft data);
             from other steps the button navigates there. */}
@@ -77,14 +69,8 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           <RailButton
             icon={IconWorld}
             label={t("sidebar.world")}
-            active={foundationOpen}
-            onClick={() =>
-              setInspectorTarget((current) =>
-                current.kind === "foundation"
-                  ? CLOSED_STORY_CANVAS_INSPECTOR
-                  : STORY_FOUNDATION_INSPECTOR
-              )
-            }
+            active={sidePanel === "world"}
+            onClick={() => toggleSidePanel("world")}
           />
         ) : (
           <RailDisabled icon={IconWorld} label={t("sidebar.world")} />

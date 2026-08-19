@@ -196,6 +196,7 @@ import {
 import type { StoryCandidateAssetUploadState } from "./story-candidate-asset-picker-dialog";
 import { useStoryCandidateAssets } from "./use-story-candidate-assets";
 import { StoryNodeInspector, type SceneExitIntent } from "./story-node-inspector";
+import { StoryProjectWorldPanel } from "./story-project-world-panel";
 import { StoryWorldBindingControl, StoryWorldNodeEditor } from "./story-world-node-editor";
 import { StoryInteractionEditor } from "./story-interaction-editor";
 import { migrateLegacyStoryHotspotIds } from "./story-interaction-ids";
@@ -358,6 +359,8 @@ function StoryProjectCanvasInner({
   // Share buttons can drive them; the canvas stays the only writer otherwise.
   const inspectorTarget = useStoryProjectUiStore((state) => state.inspectorTarget);
   const setInspectorTarget = useStoryProjectUiStore((state) => state.setInspectorTarget);
+  const sidePanel = useStoryProjectUiStore((state) => state.sidePanel);
+  const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
   const shareOpen = useStoryProjectUiStore((state) => state.shareOpen);
   const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
   const setBackGuard = useStoryProjectUiStore((state) => state.setBackGuard);
@@ -1844,7 +1847,7 @@ function StoryProjectCanvasInner({
     () => model?.nodes.find((node) => node.id === focusedNodeId) ?? null,
     [focusedNodeId, model?.nodes]
   );
-  const inspectorOpen = inspectorTarget.kind === "foundation" || focusedNode?.data.kind === "clip";
+  const inspectorOpen = focusedNode?.data.kind === "clip";
   const focusedClipVideo =
     focusedNode?.data.kind === "clip" ? (focusedNode.data.clipVideo ?? null) : null;
   const focusedGraphNodeId = focusedNode?.data.kind === "clip" ? focusedNode.data.nodeId : null;
@@ -2961,6 +2964,27 @@ function StoryProjectCanvasInner({
   };
   return (
     <main className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--canvas-background)] text-white">
+      {sidePanel === "world" ? (
+        <StoryProjectWorldPanel
+          content={content}
+          canEdit={canMutateCanvasLayout}
+          coverMedia={{
+            cover: project.cover,
+            candidateAssets: candidateAssets.items,
+            candidateAssetsLoading: candidateAssets.loading,
+            candidateAssetsError: candidateAssets.failed
+              ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
+              : null,
+            disabledReason: coverMediaDisabledReason,
+            onRetryCandidates: () => void candidateAssets.refresh(),
+            onSelectCandidate: selectProjectCover,
+            onClearSelection: () => updateProjectCover(null),
+            onUpload: uploadProjectCover,
+          }}
+          onUpdateFoundation={updateFoundation}
+          onClose={() => setSidePanel(null)}
+        />
+      ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
         <CanvasHeaderPortals
           chapterTitle={workbenchProjection.chapter.title}
@@ -3227,22 +3251,7 @@ function StoryProjectCanvasInner({
                   mergeKey: `clip-meta:${nodeId}:${Object.keys(patch).sort().join(",")}`,
                 })
               }
-              showFoundation={inspectorTarget.kind === "foundation"}
               canEdit={canMutateCanvasLayout}
-              coverMedia={{
-                cover: project.cover,
-                candidateAssets: candidateAssets.items,
-                candidateAssetsLoading: candidateAssets.loading,
-                candidateAssetsError: candidateAssets.failed
-                  ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
-                  : null,
-                disabledReason: coverMediaDisabledReason,
-                onRetryCandidates: () => void candidateAssets.refresh(),
-                onSelectCandidate: selectProjectCover,
-                onClearSelection: () => updateProjectCover(null),
-                onUpload: uploadProjectCover,
-              }}
-              onUpdateFoundation={updateFoundation}
               onCloseNode={() => selectCanvasNodeExclusively(null)}
               chapterTargets={workbenchProjection.chapters
                 .map((chapter) => ({

@@ -7,6 +7,13 @@ import {
 import type { StoryCanvasNavigationEvent } from "../_components/project-canvas/story-canvas-leave-guard";
 import type { SavedDraftSnapshotRunner } from "../_components/project-canvas/use-story-publication";
 
+/**
+ * The rail-toggled panel docked in the side-panel slot: the catalog
+ * (chapter/scene list) or the world (story bible). One dock, one tenant; null
+ * is closed.
+ */
+export type StorySidePanel = "catalog" | "world" | null;
+
 /** Live authoring-head signals the canvas publishes while mounted. */
 export interface StoryLiveDraftSignals {
   revision: number;
@@ -31,16 +38,22 @@ interface StoryProjectUIState {
    */
   mobileView: "chat" | "work";
   setMobileView: (view: "chat" | "work") => void;
-  /** Chapter/scene catalog panel (docked next to the rail) open. */
-  catalogOpen: boolean;
-  toggleCatalog: () => void;
+  /**
+   * Which rail-toggled panel is docked in the side-panel slot (catalog or
+   * world), or null when closed. Drives — and is highlighted by — the rail's
+   * Catalog and World buttons.
+   */
+  sidePanel: StorySidePanel;
+  setSidePanel: (panel: StorySidePanel) => void;
+  /** Open `panel`, or close it if it is already the docked one. */
+  toggleSidePanel: (panel: Exclude<StorySidePanel, null>) => void;
   /** Chapter the canvas is editing — context hint for the agent panel. */
   activeChapterId: string | null;
   setActiveChapterId: (chapterId: string | null) => void;
   /**
-   * Canvas inspector — foundation (world) panel, node editor, or closed. Lives
-   * here rather than in the canvas so the rail's World button can toggle and
-   * highlight it.
+   * Canvas node inspector — the floating editor for the selected scene, or
+   * closed. Reconciled from ReactFlow selection. The world (story bible) panel
+   * is a docked side panel now (see `sidePanel`), no longer an inspector kind.
    */
   inspectorTarget: StoryCanvasInspectorTarget;
   setInspectorTarget: (
@@ -82,9 +95,14 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
     (set) => ({
       mobileView: "chat",
       setMobileView: (view) => set({ mobileView: view }, false, "setMobileView"),
-      catalogOpen: false,
-      toggleCatalog: () =>
-        set((state) => ({ catalogOpen: !state.catalogOpen }), false, "toggleCatalog"),
+      sidePanel: null,
+      setSidePanel: (panel) => set({ sidePanel: panel }, false, "setSidePanel"),
+      toggleSidePanel: (panel) =>
+        set(
+          (state) => ({ sidePanel: state.sidePanel === panel ? null : panel }),
+          false,
+          "toggleSidePanel"
+        ),
       activeChapterId: null,
       setActiveChapterId: (chapterId) =>
         set({ activeChapterId: chapterId }, false, "setActiveChapterId"),
