@@ -2525,7 +2525,7 @@
       },
       "sidebar": {
         "navigation": "影游项目导航",
-        "world": "世界",
+        "world": "概览",
         "media": "素材",
         "catalog": "目录"
       },
@@ -2774,8 +2774,8 @@
         "synopsisPlaceholder": "描述完整影视弧线，包括核心转折，以及每条路线如何抵达终止片段。"
       },
       "filmFoundation": {
-        "eyebrow": "世界观",
-        "title": "世界观",
+        "eyebrow": "基本信息",
+        "title": "基本信息",
         "description": "支撑每个影视分支的前提、梗概、角色与封面；修改会自动保存到草稿。",
         "cover": {
           "title": "封面图",

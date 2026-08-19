@@ -2525,7 +2525,7 @@
       },
       "sidebar": {
         "navigation": "影遊專案導覽",
-        "world": "世界",
+        "world": "概覽",
         "media": "素材",
         "catalog": "目錄"
       },
@@ -2774,8 +2774,8 @@
         "synopsisPlaceholder": "描述完整影視弧線，包括核心轉折，以及每條路線如何抵達終止片段。"
       },
       "filmFoundation": {
-        "eyebrow": "世界觀",
-        "title": "世界觀",
+        "eyebrow": "基本資訊",
+        "title": "基本資訊",
         "description": "支撐每個影視分支的前提、梗概、角色與封面；修改會自動儲存到草稿。",
         "cover": {
           "title": "封面圖",

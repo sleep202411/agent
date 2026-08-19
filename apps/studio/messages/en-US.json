@@ -2525,7 +2525,7 @@
       },
       "sidebar": {
         "navigation": "Story project navigation",
-        "world": "World",
+        "world": "Overview",
         "media": "Media",
         "catalog": "Catalog"
       },
@@ -2774,8 +2774,8 @@
         "synopsisPlaceholder": "Describe the complete cinematic arc, including the central turn and how each route reaches a terminal clip."
       },
       "filmFoundation": {
-        "eyebrow": "Worldbuilding",
-        "title": "Worldbuilding",
+        "eyebrow": "Basics",
+        "title": "Basics",
         "description": "The premise, synopsis, cast, and cover that ground every cinematic branch. Changes autosave to the draft.",
         "cover": {
           "title": "Cover image",
