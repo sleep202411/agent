@@ -59,6 +59,7 @@ import {
   COMPUTE_POINT_FIAT_CURRENCY,
   COMPUTE_POINTS_PER_USD_CENT,
   decodeUserId,
+  encodeUserId,
 } from '@repo/shared';
 import { createHash, randomUUID } from 'crypto';
 import type { AuthUser } from '../auth';
@@ -1704,10 +1705,16 @@ export class BillingService {
     }
     const query = input.query?.trim();
     if (query) {
+      // ownerUserId is stored raw; the operator may type the raw id, or paste
+      // the encoded public id they see elsewhere — match on both.
+      const decodedId = decodeUserId(query);
       const or: Prisma.WorkspaceWhereInput[] = [
         { name: { contains: query, mode: 'insensitive' } },
         { ownerUserId: query },
       ];
+      if (/^\d+$/.test(decodedId) && decodedId !== query) {
+        or.push({ ownerUserId: decodedId });
+      }
       if (
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
           query,
@@ -1719,16 +1726,19 @@ export class BillingService {
     }
 
     // "This person's workspaces" = owned OR joined. Owning without a member row
-    // is possible on older data, so both arms are needed.
-    const relatedUserId = input.relatedUserId?.trim();
-    if (relatedUserId) {
+    // is possible on older data, so both arms are needed. The UI passes the
+    // encoded public id; decode to the real id the workspace table stores.
+    const rawRelatedUserId = input.relatedUserId?.trim()
+      ? decodeUserId(input.relatedUserId.trim())
+      : undefined;
+    if (rawRelatedUserId) {
       where.AND = [
         {
           OR: [
-            { ownerUserId: relatedUserId },
+            { ownerUserId: rawRelatedUserId },
             {
               members: {
-                some: { userId: relatedUserId, removedAt: null },
+                some: { userId: rawRelatedUserId, removedAt: null },
               },
             },
           ],
@@ -1750,10 +1760,10 @@ export class BillingService {
         _count: { select: { members: true } },
         // Only that user's own membership row, so each workspace can say what
         // they are in it (owner / admin / member).
-        ...(relatedUserId
+        ...(rawRelatedUserId
           ? {
               members: {
-                where: { userId: relatedUserId, removedAt: null },
+                where: { userId: rawRelatedUserId, removedAt: null },
                 select: { role: true, status: true },
                 take: 1,
               },
@@ -1787,17 +1797,18 @@ export class BillingService {
           name: workspace.name,
           type: workspace.type,
           status: workspace.status,
-          ownerUserId: workspace.ownerUserId,
+          // Encoded public id — the raw owner id stays server-side.
+          ownerUserId: encodeUserId(workspace.ownerUserId),
           memberCount: workspace._count.members,
           createdAt: workspace.createdAt.toISOString(),
           hasWallet: Boolean(account),
           availableBalance: account ? account.availableBalance.toString() : '0',
           heldBalance: account ? account.heldBalance.toString() : '0',
           // Present only when the caller asked about a specific user.
-          ...(relatedUserId
+          ...(rawRelatedUserId
             ? {
                 relatedUserRole:
-                  workspace.ownerUserId === relatedUserId
+                  workspace.ownerUserId === rawRelatedUserId
                     ? 'owner'
                     : (membership?.role ?? null),
               }

@@ -102,4 +102,5 @@ const LOCAL_DEV_ADMIN_PERMISSIONS = [
   "certificate.manage",
   "user.read",
   "user.write",
+  "crew.manage",
 ];

@@ -4352,6 +4352,14 @@ enum CrewListingStatus {
   listed
 }
 
+/// Platform moderation state, set by admins (post-hoc review), independent of
+/// the owner-controlled `listingStatus`. A `taken_down` crew is removed from
+/// every public surface (hall, detail, recruitment) regardless of listing.
+enum CrewModerationStatus {
+  ok
+  taken_down
+}
+
 enum WorkMode {
   remote
   hybrid
@@ -4617,6 +4625,12 @@ model Crew {
   listingStatus       CrewListingStatus @default(unlisted) @map("listing_status")
   /// First/most recent time the owner made the crew visible in the hall.
   listedAt            DateTime?         @map("listed_at") @db.Timestamptz(6)
+  /// Admin moderation state (post-hoc). `taken_down` hides the crew from every
+  /// public surface. Stamped by the acting admin for the audit trail.
+  moderationStatus    CrewModerationStatus @default(ok) @map("moderation_status")
+  moderatedAt         DateTime?         @map("moderated_at") @db.Timestamptz(6)
+  moderatedByAdminId  String?           @map("moderated_by_admin_id") @db.Uuid
+  moderationReason    String?           @map("moderation_reason") @db.VarChar(500)
   /// Team collaboration home. A crew owns exactly one team workspace and
   /// one main production project; task projects branch from this context.
   workspaceId         String?           @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
@@ -4663,6 +4677,7 @@ model Crew {
   /// Public listing: WHERE listing_status='listed' AND deleted_at IS NULL
   /// ORDER BY listed_at DESC / created_at DESC.
   @@index([listingStatus, deletedAt, listedAt(sort: Desc), createdAt(sort: Desc)], map: "crews_feed_idx")
+  @@index([moderationStatus, createdAt(sort: Desc)], map: "crews_moderation_idx")
   @@map("crews")
 }
 
@@ -4825,6 +4840,14 @@ model CrewPosition {
   /// Auto-archive at this date (cron flips status → frozen). Nullable.
   closeDate DateTime? @map("close_date") @db.Date
 
+  /// Admin moderation state (post-hoc), independent of the recruiting `status`.
+  /// `taken_down` hides the posting from every public surface. Reuses the crew
+  /// moderation enum.
+  moderationStatus   CrewModerationStatus @default(ok) @map("moderation_status")
+  moderatedAt        DateTime?            @map("moderated_at") @db.Timestamptz(6)
+  moderatedByAdminId String?              @map("moderated_by_admin_id") @db.Uuid
+  moderationReason   String?              @map("moderation_reason") @db.VarChar(500)
+
   createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt DateTime? @map("deleted_at") @db.Timestamptz(6)
 
@@ -4841,6 +4864,7 @@ model CrewPosition {
   @@index([workMode, status, deletedAt], map: "crew_positions_work_mode_idx")
   /// Auto-archive cron scan.
   @@index([closeDate, status], map: "crew_positions_close_date_idx")
+  @@index([moderationStatus, createdAt(sort: Desc)], map: "crew_positions_moderation_idx")
   @@map("crew_positions")
 }
 

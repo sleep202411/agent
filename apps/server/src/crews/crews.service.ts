@@ -29,6 +29,7 @@ import {
 } from '@nestjs/common';
 import {
   CrewMembershipStatus,
+  type CrewModerationStatus,
   IpReportStatus,
   IpTargetType,
   IpUserBlockTargetType,
@@ -51,7 +52,7 @@ import type {
 } from './dto';
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 import { newCrewDomainId, newCrewId } from './id';
-import { toCrewDTO } from './mappers';
+import { toAdminCrewDTO, toCrewDTO } from './mappers';
 import {
   CREW_PRODUCTION_TEMPLATE_VERSION,
   createDefaultProductionDocument,
@@ -241,6 +242,7 @@ export class CrewsService {
       where: {
         deletedAt: null,
         listingStatus: 'listed',
+        moderationStatus: 'ok',
         ...(blockedIds.length ? { id: { notIn: blockedIds } } : {}),
       },
       orderBy: [{ listedAt: 'desc' }, { createdAt: 'desc' }],
@@ -269,6 +271,12 @@ export class CrewsService {
       include: CREW_OWNER_INCLUDE,
     });
     if (!crew) throw new NotFoundException('Crew not found');
+    // Admin takedown removes the crew from every public surface — even the
+    // owner sees a plain 404 (the owner-facing "your crew was taken down"
+    // notice is a separate, later concern).
+    if (crew.moderationStatus === 'taken_down') {
+      throw new NotFoundException('Crew not found');
+    }
     if (viewerId && (await this.isCrewBlockedBy(id, viewerId))) {
       throw new NotFoundException('Crew not found');
     }
@@ -296,6 +304,75 @@ export class CrewsService {
       openPositionPreview: counts.openPositionPreview.get(id) ?? [],
       pendingApplicationCount,
     });
+  }
+
+  /**
+   * Admin patrol list — every crew (listed or not, taken down or not), newest
+   * first, so a moderator can browse and act. Bypasses all viewer-visibility
+   * gates by design; the controller enforces AdminAuthGuard + CrewManage.
+   */
+  async adminList(opts: {
+    q?: string;
+    moderationStatus?: CrewModerationStatus;
+    limit?: number;
+    cursor?: string;
+  }) {
+    const limit = clampPageSize(opts.limit);
+    const q = opts.q?.trim();
+    const where: Prisma.CrewWhereInput = {
+      deletedAt: null,
+      ...(opts.moderationStatus
+        ? { moderationStatus: opts.moderationStatus }
+        : {}),
+      ...(q
+        ? { OR: [{ id: q }, { name: { contains: q, mode: 'insensitive' } }] }
+        : {}),
+    };
+    const rows = await this.prisma.crew.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }],
+      take: limit + 1,
+      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      include: CREW_OWNER_INCLUDE,
+    });
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    const counts = await this.countsFor(slice.map((c) => c.id));
+    return {
+      items: slice.map((c) => toAdminCrewDTO(c, counts.members.get(c.id) ?? 0)),
+      nextCursor: hasMore ? slice[slice.length - 1].id : null,
+    };
+  }
+
+  /**
+   * Set a crew's platform moderation state (takedown / restore). Post-hoc: the
+   * crew was live; this pulls it from — or returns it to — every public
+   * surface. Stamps the acting admin + reason for the audit trail.
+   */
+  async setModeration(
+    crewId: string,
+    status: CrewModerationStatus,
+    opts: { adminId: string; reason?: string },
+  ) {
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { id: true, moderationStatus: true },
+    });
+    if (!crew) throw new NotFoundException('Crew not found');
+    const isTakedown = status === 'taken_down';
+    const reason = opts.reason?.trim() || null;
+    const updated = await this.prisma.crew.update({
+      where: { id: crewId },
+      data: {
+        moderationStatus: status,
+        moderatedAt: new Date(),
+        moderatedByAdminId: opts.adminId,
+        moderationReason: isTakedown ? reason : null,
+      },
+      include: CREW_OWNER_INCLUDE,
+    });
+    const counts = await this.countsFor([crewId]);
+    return toAdminCrewDTO(updated, counts.members.get(crewId) ?? 0);
   }
 
   /**
@@ -787,7 +864,11 @@ export class CrewsService {
       where: {
         userId,
         status: CrewMembershipStatus.active,
-        crew: { deletedAt: null, listingStatus: 'listed' },
+        crew: {
+          deletedAt: null,
+          listingStatus: 'listed',
+          moderationStatus: 'ok',
+        },
       },
       orderBy: { joinedAt: 'desc' },
       include: { crew: { include: CREW_OWNER_INCLUDE } },

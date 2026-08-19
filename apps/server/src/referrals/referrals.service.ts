@@ -30,6 +30,7 @@ import {
 } from '../entitlements/entitlement.service';
 import { JavaUserLookupService } from '../integrations/java/user-lookup.service';
 import { WalletLedgerService, WorkspacesService } from '../workspaces';
+import { decodeUserId, encodeUserId } from '@repo/shared';
 import type { RowDataPacket } from 'mysql2';
 import type {
   CreateReferralMilestoneInput,
@@ -418,7 +419,8 @@ export class ReferralsService {
     const users = await this.lookupLegacyUsers(rows.map((r) => r.userId));
     return rows.map((r) => ({
       id: r.id,
-      userId: r.userId,
+      // Encoded public id out; the map lookup + storage stay on the raw id.
+      userId: encodeUserId(r.userId),
       commissionBps: r.commissionBps,
       note: r.note,
       nickName: users.get(r.userId)?.nickName ?? null,
@@ -432,7 +434,8 @@ export class ReferralsService {
     adminId: string,
     input: UpsertReferralCommissionRateInput,
   ) {
-    const userId = input.userId.trim();
+    // The dialog sends the encoded public id; store/query on the real id.
+    const userId = decodeUserId(input.userId.trim());
     // Reject unknown ids up front — a typo'd whitelist row would silently
     // never match any attribution. A bridge outage must NOT masquerade as
     // "unknown user" (that reads as an admin typo): surface it as a 503.
@@ -471,7 +474,7 @@ export class ReferralsService {
 
   async removeCommissionRate(userId: string) {
     await this.prisma.referralCommissionRate.deleteMany({
-      where: { programKey: PROGRAM_KEY, userId },
+      where: { programKey: PROGRAM_KEY, userId: decodeUserId(userId) },
     });
     return this.listCommissionRates();
   }
@@ -492,6 +495,9 @@ export class ReferralsService {
     const q = query.trim();
     if (!q) return [];
     const like = `%${q}%`;
+    // Match on the decoded public id too, so an admin can paste the id they see.
+    const decodedId = decodeUserId(q);
+    const publicIdMatch = /^\d+$/.test(decodedId) && decodedId !== q;
     try {
       const rows = await this.legacy.query<
         RowDataPacket & {
@@ -503,11 +509,14 @@ export class ReferralsService {
       >(
         `SELECT id, nick_name, email, phone FROM client_user
            WHERE phone LIKE ? OR email LIKE ? OR nick_name LIKE ? OR CAST(id AS CHAR) LIKE ?
+                 ${publicIdMatch ? 'OR id = ?' : ''}
            ORDER BY id DESC LIMIT 10`,
-        [like, like, like, like],
+        publicIdMatch
+          ? [like, like, like, like, decodedId]
+          : [like, like, like, like],
       );
       return rows.map((r) => ({
-        userId: String(r.id),
+        userId: encodeUserId(String(r.id)),
         nickName: r.nick_name ?? null,
         email: r.email ?? null,
         phone: r.phone ?? null,

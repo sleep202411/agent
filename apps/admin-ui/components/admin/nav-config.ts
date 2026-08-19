@@ -12,7 +12,9 @@ import {
   IconDeviceMobile,
   IconFileAnalytics,
   IconFlag,
+  IconBriefcase,
   IconLayoutCards,
+  IconMasksTheater,
   IconNews,
   IconPackage,
   IconPhoto,
@@ -114,6 +116,13 @@ export const GLOBAL_NAV: GlobalNavEntry[] = [
     label: "用户管理",
     icon: IconUserSearch,
     permission: "user.read",
+  },
+  {
+    key: "/crews",
+    href: "/crews",
+    label: "剧组管理",
+    icon: IconMasksTheater,
+    permission: "crew.manage",
   },
   {
     key: "/users",
@@ -422,6 +431,25 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "积分流水",
           icon: IconReceipt2,
           permission: "user.read",
+        },
+      ],
+    },
+  ],
+  "/crews": [
+    {
+      label: "剧组运营",
+      items: [
+        {
+          href: "/crews",
+          label: "剧组审核",
+          icon: IconShieldLock,
+          permission: "crew.manage",
+        },
+        {
+          href: "/crews/positions",
+          label: "岗位管理",
+          icon: IconBriefcase,
+          permission: "crew.manage",
         },
       ],
     },

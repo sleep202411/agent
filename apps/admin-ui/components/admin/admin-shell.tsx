@@ -82,7 +82,9 @@ export function AdminShell({
   }
 
   function isModuleItemActive(href: string) {
-    return pathname === href || pathname.startsWith(`${href}/`);
+    // Only the longest-matching item is active, so an index route (/crews) does
+    // not stay lit on a sibling child route (/crews/positions).
+    return activeModuleItem?.href === href;
   }
 
   // Combined desktop rail offset so the content area clears both rails.
