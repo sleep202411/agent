@@ -94,6 +94,64 @@ export const TransferCrewOwnerSchema = z.object({
 });
 export type TransferCrewOwnerInput = z.infer<typeof TransferCrewOwnerSchema>;
 
+// ─── Admin moderation ───────────────────────────────────────
+
+/** Admin crew patrol list — search + moderation-status filter, cursor paged. */
+export const ListAdminCrewsQuerySchema = z
+  .object({
+    /** Free-text match on crew name or exact id. */
+    q: z.string().trim().max(128).optional(),
+    /** Filter by platform moderation state. Omit for all. */
+    moderationStatus: z.enum(['ok', 'taken_down']).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    cursor: z.string().trim().min(1).max(64).optional(),
+  })
+  .strict();
+export type ListAdminCrewsQuery = z.infer<typeof ListAdminCrewsQuerySchema>;
+
+/** Set a crew's moderation state (takedown / restore) with an audit reason. */
+export const SetCrewModerationSchema = z
+  .object({
+    status: z.enum(['ok', 'taken_down']),
+    /** Required when taking down; the reason is stamped for the audit trail. */
+    reason: z.string().trim().max(500).optional(),
+  })
+  .strict()
+  .refine((v) => v.status !== 'taken_down' || !!v.reason?.trim(), {
+    message: 'A reason is required when taking a crew down.',
+    path: ['reason'],
+  });
+export type SetCrewModerationInput = z.infer<typeof SetCrewModerationSchema>;
+
+/** Admin recruitment-posting patrol — search + status filter, cursor paged. */
+export const ListAdminPositionsQuerySchema = z
+  .object({
+    /** Free-text match on crew name, position type, or exact position id. */
+    q: z.string().trim().max(128).optional(),
+    moderationStatus: z.enum(['ok', 'taken_down']).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    cursor: z.string().trim().min(1).max(64).optional(),
+  })
+  .strict();
+export type ListAdminPositionsQuery = z.infer<
+  typeof ListAdminPositionsQuerySchema
+>;
+
+/** Set a recruitment posting's moderation state (takedown / restore). */
+export const SetPositionModerationSchema = z
+  .object({
+    status: z.enum(['ok', 'taken_down']),
+    reason: z.string().trim().max(500).optional(),
+  })
+  .strict()
+  .refine((v) => v.status !== 'taken_down' || !!v.reason?.trim(), {
+    message: 'A reason is required when taking a posting down.',
+    path: ['reason'],
+  });
+export type SetPositionModerationInput = z.infer<
+  typeof SetPositionModerationSchema
+>;
+
 // ─── Position CRUD ──────────────────────────────────────────
 
 /// Salary block validated as a unit so we can express "max >= min"

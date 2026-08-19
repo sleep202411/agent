@@ -17,7 +17,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { type CrewModerationStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { assertAllowedCurrency, toSmallestUnit } from '../common/currency';
 import type {
@@ -44,9 +44,13 @@ export class PositionsService {
   ) {
     const crew = await this.prisma.crew.findFirst({
       where: { id: crewId, deletedAt: null },
-      select: { listingStatus: true },
+      select: { listingStatus: true, moderationStatus: true },
     });
     if (!crew) throw new NotFoundException('Crew not found');
+    // A taken-down crew leaks nothing — its positions 404 for everyone.
+    if (crew.moderationStatus === 'taken_down') {
+      throw new NotFoundException('Crew not found');
+    }
 
     const viewer = viewerId
       ? await this.authorization.resolve(crewId, viewerId)
@@ -62,6 +66,8 @@ export class PositionsService {
     const where = {
       crewId,
       deletedAt: null,
+      // Admin-taken-down postings are invisible on every public surface.
+      moderationStatus: 'ok',
       ...(canManage ? {} : { status: { not: 'frozen' as const } }),
     } satisfies Prisma.CrewPositionWhereInput;
     if (query.cursor) {
@@ -135,6 +141,7 @@ export class PositionsService {
     const where = {
       deletedAt: null,
       status: 'open',
+      moderationStatus: 'ok',
       OR: [{ closeDate: null }, { closeDate: { gte: today } }],
       ...(query.employment.length
         ? { employmentType: { in: query.employment } }
@@ -147,7 +154,11 @@ export class PositionsService {
       // must not surface in the public plaza, otherwise a clicker
       // lands on a 404 crew-detail page (crews.detail rejects
       // non-member viewers for unlisted crews).
-      crew: { deletedAt: null, listingStatus: 'listed' },
+      crew: {
+        deletedAt: null,
+        listingStatus: 'listed',
+        moderationStatus: 'ok',
+      },
     } satisfies Prisma.CrewPositionWhereInput;
     const direction = query.sort === 'oldest' ? 'asc' : 'desc';
     if (query.cursor) {
@@ -200,6 +211,100 @@ export class PositionsService {
       nextCursor:
         rows.length > limit ? (page[page.length - 1]?.id ?? null) : null,
       total,
+    };
+  }
+
+  /**
+   * Admin patrol — every recruitment posting across all crews, newest first,
+   * for post-hoc moderation. Bypasses viewer-visibility gates by design; the
+   * controller enforces AdminAuthGuard + CrewManage.
+   */
+  async adminList(opts: {
+    q?: string;
+    moderationStatus?: CrewModerationStatus;
+    limit?: number;
+    cursor?: string;
+  }) {
+    const limit = Math.min(Math.max(opts.limit ?? 30, 1), 100);
+    const q = opts.q?.trim();
+    const where: Prisma.CrewPositionWhereInput = {
+      deletedAt: null,
+      ...(opts.moderationStatus
+        ? { moderationStatus: opts.moderationStatus }
+        : {}),
+      ...(q
+        ? {
+            OR: [
+              { id: q },
+              { positionType: { contains: q, mode: 'insensitive' } },
+              { crew: { name: { contains: q, mode: 'insensitive' } } },
+            ],
+          }
+        : {}),
+    };
+    const rows = await this.prisma.crewPosition.findMany({
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
+      include: { crew: { select: { id: true, name: true, logo: true } } },
+    });
+    const hasMore = rows.length > limit;
+    const slice = hasMore ? rows.slice(0, limit) : rows;
+    return {
+      items: slice.map((row) => ({
+        id: row.id,
+        crewId: row.crewId,
+        crewName: row.crew.name,
+        crewLogo: row.crew.logo,
+        positionType: row.positionType,
+        description: row.description,
+        status: row.status,
+        moderationStatus: row.moderationStatus,
+        moderationReason: row.moderationReason,
+        moderatedAt: row.moderatedAt ? row.moderatedAt.toISOString() : null,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      nextCursor: hasMore ? slice[slice.length - 1].id : null,
+    };
+  }
+
+  /** Take a posting down / restore it, with an audit reason. Post-hoc. */
+  async setModeration(
+    positionId: string,
+    status: CrewModerationStatus,
+    opts: { adminId: string; reason?: string },
+  ) {
+    const position = await this.prisma.crewPosition.findFirst({
+      where: { id: positionId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!position) throw new NotFoundException('Position not found');
+    const reason = opts.reason?.trim() || null;
+    const updated = await this.prisma.crewPosition.update({
+      where: { id: positionId },
+      data: {
+        moderationStatus: status,
+        moderatedAt: new Date(),
+        moderatedByAdminId: opts.adminId,
+        moderationReason: status === 'taken_down' ? reason : null,
+      },
+      include: { crew: { select: { id: true, name: true, logo: true } } },
+    });
+    return {
+      id: updated.id,
+      crewId: updated.crewId,
+      crewName: updated.crew.name,
+      crewLogo: updated.crew.logo,
+      positionType: updated.positionType,
+      description: updated.description,
+      status: updated.status,
+      moderationStatus: updated.moderationStatus,
+      moderationReason: updated.moderationReason,
+      moderatedAt: updated.moderatedAt
+        ? updated.moderatedAt.toISOString()
+        : null,
+      createdAt: updated.createdAt.toISOString(),
     };
   }
 

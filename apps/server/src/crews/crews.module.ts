@@ -22,6 +22,7 @@ import { CrewAgreementSendWorker } from './agreements/agreement-send.worker';
 import { BoldSignAgreementProvider } from './agreements/boldsign-agreement.provider';
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 import { CrewsAdminController } from './crews-admin.controller';
+import { CrewPositionsAdminController } from './crew-positions-admin.controller';
 import { CrewsController } from './crews.controller';
 import { CrewsService } from './crews.service';
 import { MembersController } from './members.controller';
@@ -68,6 +69,7 @@ import { CrewProductionService } from './production/production.service';
   controllers: [
     CrewsController,
     CrewsAdminController,
+    CrewPositionsAdminController,
     PositionsController,
     PositionsDiscoveryController,
     ApplicationsController,

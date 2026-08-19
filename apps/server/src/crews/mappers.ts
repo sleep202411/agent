@@ -30,6 +30,40 @@ import { isCrewPolicyKey, isPresetPosition } from '@repo/shared/crew';
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
 const isoReq = (d: Date) => d.toISOString();
 
+/** Admin patrol row — the fields a moderator needs to decide + act. */
+export interface AdminCrewListItem {
+  id: string;
+  name: string;
+  logo: string;
+  ownerUserId: string | null;
+  listingStatus: string;
+  moderationStatus: 'ok' | 'taken_down';
+  moderatedAt: string | null;
+  moderatedByAdminId: string | null;
+  moderationReason: string | null;
+  memberCount: number;
+  createdAt: string;
+}
+
+export function toAdminCrewDTO(
+  c: CrewWithOwnership,
+  memberCount: number,
+): AdminCrewListItem {
+  return {
+    id: c.id,
+    name: c.name,
+    logo: c.logo,
+    ownerUserId: c.ownership?.member.userId ?? null,
+    listingStatus: c.listingStatus,
+    moderationStatus: c.moderationStatus,
+    moderatedAt: iso(c.moderatedAt),
+    moderatedByAdminId: c.moderatedByAdminId,
+    moderationReason: c.moderationReason,
+    memberCount,
+    createdAt: isoReq(c.createdAt),
+  };
+}
+
 interface CrewExtras {
   memberCount?: number;
   openPositionCount?: number;

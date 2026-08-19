@@ -13,6 +13,7 @@ import {
   AgentUserStatus,
   Prisma,
 } from '@prisma/client';
+import { decodeUserId, encodeUserId } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
 import type {
   CompleteAgentRunInput,
@@ -169,7 +170,11 @@ export class AgentUsersService {
   }
 
   async createAdmin(input: CreateAdminAgentUserInput, adminId: string) {
-    this.assertIdentityBinding(input.identityStatus, input.platformUserId);
+    // Dialog sends the encoded public id; bind on the raw C-end id.
+    const platformUserId = input.platformUserId
+      ? decodeUserId(input.platformUserId)
+      : (input.platformUserId ?? null);
+    this.assertIdentityBinding(input.identityStatus, platformUserId);
     const now = new Date();
     try {
       const agent = await this.prisma.agentUser.create({
@@ -179,7 +184,7 @@ export class AgentUsersService {
           avatarUrl: input.avatarUrl ?? null,
           status: input.status as AgentUserStatus,
           identityStatus: input.identityStatus as AgentUserIdentityStatus,
-          platformUserId: input.platformUserId ?? null,
+          platformUserId,
           simulatedEmail: input.simulatedEmail ?? null,
           locale: input.locale,
           region: input.region ?? null,
@@ -217,7 +222,9 @@ export class AgentUsersService {
     const nextPlatformUserId =
       input.platformUserId === undefined
         ? existing.platformUserId
-        : input.platformUserId;
+        : input.platformUserId
+          ? decodeUserId(input.platformUserId)
+          : input.platformUserId;
     this.assertIdentityBinding(nextIdentityStatus, nextPlatformUserId);
 
     const nextStatus = input.status ?? existing.status;
@@ -577,11 +584,16 @@ export class AgentUsersService {
       ...(query.region ? { region: query.region } : {}),
     };
     if (query.q) {
+      const decodedId = decodeUserId(query.q);
       where.OR = [
         { handle: { contains: query.q, mode: 'insensitive' } },
         { displayName: { contains: query.q, mode: 'insensitive' } },
         { simulatedEmail: { contains: query.q, mode: 'insensitive' } },
         { platformUserId: { contains: query.q, mode: 'insensitive' } },
+        // Also match the raw id an admin's pasted encoded public id decodes to.
+        ...(/^\d+$/.test(decodedId) && decodedId !== query.q
+          ? [{ platformUserId: decodedId }]
+          : []),
       ];
     }
     return where;
@@ -708,6 +720,8 @@ export class AgentUsersService {
   }
 
   private toAgentUserDto(agent: Prisma.AgentUserGetPayload<object>) {
+    // The bound platform user id is a raw C-end id — expose only the encoded
+    // public id; null stays null.
     return {
       id: agent.id,
       handle: agent.handle,
@@ -715,7 +729,9 @@ export class AgentUsersService {
       avatarUrl: agent.avatarUrl,
       status: agent.status,
       identityStatus: agent.identityStatus,
-      platformUserId: agent.platformUserId,
+      platformUserId: agent.platformUserId
+        ? encodeUserId(agent.platformUserId)
+        : null,
       simulatedEmail: agent.simulatedEmail,
       locale: agent.locale,
       region: agent.region,

@@ -5,7 +5,14 @@
 // 行内预填该用户)。数据经 LegacyMysql 桥(/admin/legacy-points/users),不经 Prisma。
 
 import { useCallback, useEffect, useState } from "react";
-import { IconSearch, IconCoins, IconCrown, IconEye } from "@tabler/icons-react";
+import {
+  IconSearch,
+  IconCoins,
+  IconCrown,
+  IconEye,
+  IconPencil,
+  IconBan,
+} from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
   ErrorBanner,
@@ -17,6 +24,7 @@ import {
 } from "./shared";
 import { GrantPointsDialog } from "./grant-points-dialog";
 import { GrantMembershipDialog } from "./grant-membership-dialog";
+import { ClientUserModerationDialog, type ClientUserTarget } from "./client-user-moderation-dialog";
 import { MemberWorkspacesDrawer } from "./member-workspaces-drawer";
 
 interface MemberSummary {
@@ -60,6 +68,12 @@ export function MemberDirectoryPanel() {
   const [viewing, setViewing] = useState<MemberSummary | null>(null);
   const [membershipOpen, setMembershipOpen] = useState(false);
   const [membershipIdentifier, setMembershipIdentifier] = useState<string | undefined>(undefined);
+  // C-end user moderation (edit profile / block) — actions go through the Java
+  // admin API. `mode` null closes the shared dialog.
+  const [moderation, setModeration] = useState<{
+    mode: "edit" | "block";
+    user: ClientUserTarget;
+  } | null>(null);
 
   const load = useCallback(async (query: string, pageNum: number) => {
     setLoading(true);
@@ -214,6 +228,40 @@ export function MemberDirectoryPanel() {
                           <IconCoins className="size-3.5" />
                           加积分
                         </Button>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          onClick={() =>
+                            setModeration({
+                              mode: "edit",
+                              user: { userId: m.userId, nickName: m.nickName },
+                            })
+                          }
+                        >
+                          <IconPencil className="size-3.5" />
+                          编辑
+                        </Button>
+                        {m.accountStatus === 5 ? (
+                          <span className="inline-flex h-6 items-center rounded-md border border-red-200 bg-red-50 px-2 text-[11px] font-medium text-red-700">
+                            已屏蔽
+                          </span>
+                        ) : (
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="destructive"
+                            onClick={() =>
+                              setModeration({
+                                mode: "block",
+                                user: { userId: m.userId, nickName: m.nickName },
+                              })
+                            }
+                          >
+                            <IconBan className="size-3.5" />
+                            屏蔽
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -275,6 +323,13 @@ export function MemberDirectoryPanel() {
         open={membershipOpen}
         initialIdentifier={membershipIdentifier}
         onClose={() => setMembershipOpen(false)}
+      />
+
+      <ClientUserModerationDialog
+        mode={moderation?.mode ?? null}
+        user={moderation?.user ?? null}
+        onClose={() => setModeration(null)}
+        onDone={() => void load(activeQuery, page)}
       />
     </div>
   );

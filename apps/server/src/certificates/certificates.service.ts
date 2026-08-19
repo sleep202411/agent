@@ -13,6 +13,7 @@ import {
   MediaStorageProvider,
   Prisma,
 } from '@prisma/client';
+import { decodeUserId, encodeUserId } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { OutputStorageService } from '../infra/storage/storage.types';
@@ -184,7 +185,8 @@ export class CertificatesService {
     query: ListAdminCertificatesQuery,
   ): Promise<AdminCertificateListDTO> {
     const where: Prisma.UserCertificateWhereInput = {};
-    if (query.userId) where.userId = query.userId;
+    // The filter arrives as the encoded public id; certificates store the raw id.
+    if (query.userId) where.userId = decodeUserId(query.userId);
     if (query.certNo) {
       where.certNo = { contains: query.certNo, mode: 'insensitive' };
     }
@@ -215,6 +217,8 @@ export class CertificatesService {
   ): Promise<AdminCertificateDTO> {
     await this.assertUsableImageAsset(input.imageAssetId);
     const issuedAt = input.issuedAt ?? new Date();
+    // The dialog sends the encoded public id; store the raw id.
+    const userId = decodeUserId(input.userId);
 
     // Operator-pinned number (e.g. the one already printed on the artwork):
     // store it verbatim. The unique index is the source of truth — a clash
@@ -223,7 +227,7 @@ export class CertificatesService {
       try {
         const cert = await this.prisma.userCertificate.create({
           data: {
-            userId: input.userId,
+            userId,
             certNo: input.certNo,
             title: input.title,
             issuer: input.issuer,
@@ -252,7 +256,7 @@ export class CertificatesService {
       try {
         const cert = await this.prisma.userCertificate.create({
           data: {
-            userId: input.userId,
+            userId,
             certNo,
             title: input.title,
             issuer: input.issuer,
@@ -460,7 +464,8 @@ export class CertificatesService {
   private adminCertificateDto(cert: CertificateWithAsset): AdminCertificateDTO {
     return {
       id: cert.id,
-      userId: cert.userId,
+      // Encoded public id out; the row stores the raw id.
+      userId: encodeUserId(cert.userId),
       certNo: cert.certNo,
       title: cert.title,
       issuer: cert.issuer,
