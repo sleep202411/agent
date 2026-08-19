@@ -1,4 +1,5 @@
 import {
+  STORY_AGENT_BRIEF_MAX_CHARS,
   StoryAgentCharacterSchema,
   StoryAgentClipKeySchema,
   StoryAgentGraphNodeSchema,
@@ -143,6 +144,27 @@ const StoryMutationOutputSchema = z
   })
   .strict();
 
+/**
+ * Kick off the deterministic five-baton authoring pipeline from a brief. Unlike
+ * the fine-grained mutation tools, this does not touch the draft directly — it
+ * files an async authoring run that lands as a reviewable proposal, so no
+ * baseDraftRevision is required.
+ */
+export const StoryAuthorInputSchema = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    summary: z.string().trim().min(1).max(4_000),
+    brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
+  })
+  .strict();
+
+const StoryAuthorOutputSchema = z
+  .object({
+    runId: z.string().uuid(),
+    status: z.string(),
+  })
+  .strict();
+
 export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.read",
@@ -256,5 +278,14 @@ export const STORY_AGENT_OS_TOOLS = [
     risk: "critical",
     inputSchema: StoryApplyPatchInputSchema,
     outputSchema: StoryMutationOutputSchema,
+  },
+  {
+    id: "story.author",
+    description:
+      "Draft an interactive story from a brief. Hands title + summary + the source brief (a script or idea) to the deterministic five-baton authoring pipeline (bible → structure → branches → scenes → validate), which files a reviewable proposal for the whole tree with no dangling references. Use this to CREATE a story from scratch; use the fine-grained story.* tools only to edit an existing tree. Runs asynchronously and returns a run reference the author confirms later.",
+    kind: "command",
+    risk: "critical",
+    inputSchema: StoryAuthorInputSchema,
+    outputSchema: StoryAuthorOutputSchema,
   },
 ] as const satisfies readonly ToolDefinition[];

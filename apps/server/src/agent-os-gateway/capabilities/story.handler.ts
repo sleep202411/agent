@@ -10,6 +10,7 @@ import {
   StoryAddBranchInputSchema,
   StoryAddSceneInputSchema,
   StoryApplyPatchInputSchema,
+  StoryAuthorInputSchema,
   StoryEditNodeInputSchema,
   StoryPutInteractionInputSchema,
   StoryRemoveInteractionInputSchema,
@@ -35,6 +36,7 @@ import {
   StoryPatchExecutionError,
   type StoryAgentCanvasLayoutSnapshot,
 } from '../../story-studio/story-agent-patch.executor';
+import { StoryAgentRunService } from '../../story-studio/story-agent-run.service';
 import { StoryProjectWriteGuardService } from '../../story-studio/story-project-write-guard.service';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
 import type {
@@ -54,6 +56,7 @@ const STORY_TOOL_IDS = new Set([
   'story.setEntry',
   'story.reorder',
   'story.applyPatch',
+  'story.author',
 ]);
 
 type StoryNode = InteractiveStoryDraftContent['graph']['nodes'][number];
@@ -71,6 +74,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     private readonly prisma: PrismaService,
     private readonly projects: AgentOsProjectContextService,
     private readonly writeGuard: StoryProjectWriteGuardService,
+    private readonly agentRuns: StoryAgentRunService,
   ) {}
 
   supports(toolId: string): boolean {
@@ -214,6 +218,26 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           args.baseDraftRevision,
           () => args.operations,
         );
+      }
+      case 'story.author': {
+        const args = StoryAuthorInputSchema.parse(input.arguments);
+        const context = await this.projects.requireWrite(
+          input.actorId,
+          input.projectId,
+        );
+        const run = await this.agentRuns.createAuthoringRun(
+          { userId: input.actorId },
+          context.workspaceId,
+          input.projectId,
+          {
+            chapterId,
+            title: args.title,
+            summary: args.summary,
+            brief: args.brief,
+            idempotencyKey: `agent-os:${randomUUID()}`,
+          },
+        );
+        return { runId: run.id, status: run.status };
       }
       default:
         throw new Error(`Story handler does not implement ${input.toolId}`);

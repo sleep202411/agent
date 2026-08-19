@@ -359,6 +359,14 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.reorder",
     z.object({ ...storyBase, nodeIds: z.array(storyStableId).max(500) })
   );
+  const storyAuthor = bindStoryTool(
+    "story.author",
+    z.object({
+      title: z.string().trim().min(1).max(160),
+      summary: z.string().trim().min(1).max(4_000),
+      brief: z.string().trim().min(1).max(8_000),
+    })
+  );
   const storyApplyPatch = tool(
     async (raw, config) => {
       const body = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
@@ -432,6 +440,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.setEntry": storySetEntry,
     "story.reorder": storyReorder,
     "story.applyPatch": storyApplyPatch,
+    "story.author": storyAuthor,
   } as const;
 
   const allowed = new Set(toolIds);
