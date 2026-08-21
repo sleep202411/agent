@@ -204,14 +204,21 @@ describe('Java points bridge compatibility contract', () => {
       CommunityGrantSchema.safeParse({ ...base, userId: 'creator-10086' })
         .success,
     ).toBe(false);
-    // 121-char key would overflow VarChar columns after server-side prefixing.
+    // 181-char key would overflow VarChar columns after server-side prefixing.
     expect(
       CommunityGrantSchema.safeParse({
         ...base,
         userId: '10086',
-        idempotencyKey: 'k'.repeat(121),
+        idempotencyKey: 'k'.repeat(181),
       }).success,
     ).toBe(false);
+    expect(
+      CommunityGrantSchema.safeParse({
+        ...base,
+        userId: '10086',
+        idempotencyKey: 'k'.repeat(180),
+      }).success,
+    ).toBe(true);
     // ISO8601 with timezone parses to a Date; date-only and null are handled.
     expect(
       CommunityGrantSchema.parse({

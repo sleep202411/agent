@@ -1906,12 +1906,14 @@ model WalletTransaction {
   id             String                  @id @default(uuid(7)) @db.Uuid
   status         WalletTransactionStatus @default(posted)
   sourceType     String                  @map("source_type") @db.VarChar(64)
-  sourceId       String?                 @map("source_id") @db.VarChar(128)
-  idempotencyKey String                  @map("idempotency_key") @db.VarChar(160)
+  /// Fits the Java bridge's raw caller key (≤180) — see internal-points.dto.ts.
+  sourceId       String?                 @map("source_id") @db.VarChar(200)
+  /// Fits the longest prefixed bridge key: `community_grant:<userId≤18>:<key≤180>` = 215.
+  idempotencyKey String                  @map("idempotency_key") @db.VarChar(240)
   actorUserId    String?                 @map("actor_user_id") @db.VarChar(64)
   workspaceId    String?                 @map("workspace_id") @db.Uuid
   projectId      String?                 @map("project_id") @db.Uuid
-  description    String?                 @db.VarChar(255)
+  description    String?                 @db.VarChar(500)
   metadata       Json                    @default("{}") @db.JsonB
   createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   postedAt       DateTime?               @default(now()) @map("posted_at") @db.Timestamptz(6)
@@ -1973,7 +1975,8 @@ model WalletCreditGrant {
   validFrom       DateTime                @default(now()) @map("valid_from") @db.Timestamptz(6)
   expiresAt       DateTime?               @map("expires_at") @db.Timestamptz(6)
   sourceType      String                  @map("source_type") @db.VarChar(64)
-  sourceId        String?                 @map("source_id") @db.VarChar(128)
+  /// Widened with wallet_transactions.source_id — holds the same raw bridge key.
+  sourceId        String?                 @map("source_id") @db.VarChar(200)
   metadata        Json                    @default("{}") @db.JsonB
   createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
