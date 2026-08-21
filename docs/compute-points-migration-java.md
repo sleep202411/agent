@@ -74,8 +74,8 @@ curl -X POST "https://fizzdragon.com/aurora/internal/points/migrate" \
 | ---------------- | ----------------- | --------------------------- |
 | `userId`         | string(1–64)      | 用户 ID                     |
 | `amount`         | int ≥ 1           | 扣减积分数                  |
-| `reason`         | string(≤255),可选 | 业务备注(写入流水,便于排查) |
-| `idempotencyKey` | string(1–120)     | 业务幂等键,必填且需稳定唯一 |
+| `reason`         | string(≤500),可选 | 业务备注(写入流水,便于排查) |
+| `idempotencyKey` | string(1–180)     | 业务幂等键,必填且需稳定唯一 |
 
 响应 `data`:`{ "userId": "10086", "deducted": "50", "balance": "1150", "deduped": false }`
 

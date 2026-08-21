@@ -1,13 +1,14 @@
 import { z } from 'zod';
 
 const userId = z.string().trim().min(1).max(64);
-// Column budget, not taste: the raw key lands in source_id VarChar(128) and the
-// longest prefixed form (`community_grant:<userId≤18>:<key>`) must fit
-// idempotency_key VarChar(160) — 16+18+1+120=155. A doc-legal-but-overlong key
-// would otherwise 500 on write, and the documented same-key retry loops forever.
-const idempotencyKey = z.string().trim().min(1).max(120);
-// description column is VarChar(255).
-const reason = z.string().trim().max(255).optional();
+// Column budget, not taste: the raw key lands in source_id VarChar(200) and the
+// longest prefixed form (`community_grant:<userId≤18>:<key≤180>` = 215) must fit
+// idempotency_key VarChar(240). Widen the columns BEFORE raising these caps — a
+// doc-legal-but-overlong key 500s on write, and the documented same-key retry
+// loops forever.
+const idempotencyKey = z.string().trim().min(1).max(180);
+// description column is VarChar(500).
+const reason = z.string().trim().max(500).optional();
 
 /** Ingest a user's current Java balance into the PG wallet. Idempotent per user.
  *  `balance` may be negative — a legacy overdrawn balance is FORGIVEN (the new
