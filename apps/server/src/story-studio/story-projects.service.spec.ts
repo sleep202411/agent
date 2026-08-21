@@ -4,10 +4,12 @@ import {
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantStatus,
+  StoryDurationPreset,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
   StoryRevisionSource,
+  StoryVisualStyle,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
 } from '@prisma/client';
@@ -97,6 +99,9 @@ function projectRow(overrides: Record<string, unknown> = {}) {
     id: PROJECT_ID,
     workspaceId: WORKSPACE_ID,
     frameProfile: StoryFrameProfile.landscape_16_9,
+    durationPreset: null,
+    visualStyle: null,
+    creativeProfileConfirmedAt: null,
     status: StoryProjectStatus.active,
     visibility: 'private',
     title: 'Branching Film Test',
@@ -531,6 +536,81 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
   });
 
+  it('changes the frame profile during setup before video or build production begins', async () => {
+    const current = summaryProject();
+    const saved = summaryProject({
+      frameProfile: StoryFrameProfile.portrait_9_16,
+      durationPreset: StoryDurationPreset.short_5_15,
+      visualStyle: StoryVisualStyle.cinematic_realism,
+      creativeProfileConfirmedAt: NOW,
+      version: 1,
+    });
+    const tx = {
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(current),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+      storyProject: { findUnique: jest.fn().mockResolvedValue(saved) },
+    });
+
+    await expect(
+      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        expectedProjectVersion: 0,
+        frameProfile: 'portrait_9_16',
+        durationPreset: 'short_5_15',
+        visualStyle: 'cinematic_realism',
+        confirmCreativeProfile: true,
+      }),
+    ).resolves.toMatchObject({
+      frameProfile: 'portrait_9_16',
+      frameProfileMutable: true,
+    });
+    expect(tx.storyProject.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          frameProfile: 'portrait_9_16',
+          durationPreset: 'short_5_15',
+          visualStyle: 'cinematic_realism',
+        }) as unknown,
+      }),
+    );
+  });
+
+  it('locks the frame profile after a current video has been selected', async () => {
+    const current = summaryProject({
+      videoSelections: [
+        { graphNodeId: 'node.opening', currentAssetId: MEDIA_ASSET_ID },
+      ],
+    });
+    const tx = {
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue(current),
+        updateMany: jest.fn(),
+      },
+    };
+    const { service } = serviceWith({
+      $transaction: transactionMock(tx),
+    });
+
+    await expect(
+      apiError(
+        service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+          expectedProjectVersion: 0,
+          frameProfile: 'portrait_9_16',
+          durationPreset: 'short_5_15',
+          visualStyle: 'cinematic_realism',
+          confirmCreativeProfile: true,
+        }),
+      ),
+    ).resolves.toMatchObject({
+      code: 'STORY_FRAME_PROFILE_LOCKED',
+    });
+    expect(tx.storyProject.updateMany).not.toHaveBeenCalled();
+  });
+
   it('lists joined projects across tenants, excluding the ones you own', async () => {
     // The three properties that make "Shared with me" both useful and safe. A
     // workspace id in this predicate would defeat the point; dropping the role
@@ -619,7 +699,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service, workspacePermissions } = serviceWith(prisma);
 
     const result = await service.create(USER as never, WORKSPACE_ID, {
-      frameProfile: 'landscape_16_9',
       title: 'Branching Film Test',
       defaultLocale: 'zh-CN',
       visibility: 'private',
@@ -631,6 +710,11 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       WorkspaceMemberRole.editor,
     );
     expect(create).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        frameProfile: StoryFrameProfile.landscape_16_9,
+      }) as unknown,
+    });
     expect(tx.storyChapter.create).toHaveBeenCalledWith({
       data: {
         storyProjectId: PROJECT_ID,
@@ -797,9 +881,20 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           MEDIA_ASSET_ID,
         )
         .then(() => 'resolved')
-        .catch((error: { response?: { message?: string } }) =>
-          String(error.response?.message ?? error),
-        );
+        .catch((error: unknown) => {
+          if (error instanceof HttpException) {
+            const response = error.getResponse();
+            if (
+              typeof response === 'object' &&
+              response !== null &&
+              'message' in response &&
+              typeof response.message === 'string'
+            ) {
+              return response.message;
+            }
+          }
+          return error instanceof Error ? error.message : 'Unknown error';
+        });
     };
     const base = {
       id: MEDIA_ASSET_ID,

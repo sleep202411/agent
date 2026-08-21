@@ -43,6 +43,12 @@ export type AgentOsAttachmentSummary = {
   createdAt: string;
 };
 
+/** Ordered, bounded transcript metadata carried by one Agent user turn. */
+export type AgentOsRunAttachment = Pick<
+  AgentOsAttachmentSummary,
+  'id' | 'filename'
+>;
+
 /**
  * Project-scoped file attachments for Agent OS.
  * Product path: browser uploads a file → tools read by attachmentId.
@@ -78,7 +84,11 @@ export class AgentOsAttachmentService {
       size: number;
       buffer: Buffer;
     },
-    options?: { sectionSize?: number },
+    options?: {
+      sectionSize?: number;
+      attachmentId?: string;
+      transaction?: Prisma.TransactionClient;
+    },
   ): Promise<AgentOsAttachmentSummary> {
     const project = await this.projects.requireWrite(userId, projectId);
     if (!file?.buffer?.length) {
@@ -131,9 +141,10 @@ export class AgentOsAttachmentService {
     const sectionSize = options?.sectionSize ?? DEFAULT_SECTION_SIZE;
     const sections = splitSections(textContent, sectionSize);
 
-    const row = await this.prisma.agentOsAttachment.create({
+    const db = options?.transaction ?? this.prisma;
+    const row = await db.agentOsAttachment.create({
       data: {
-        id: randomUUID(),
+        id: options?.attachmentId ?? randomUUID(),
         projectKind: project.projectKind,
         platformProjectId:
           project.projectKind === 'platform' ? project.projectId : null,
@@ -199,7 +210,7 @@ export class AgentOsAttachmentService {
     projectKind: AgentProjectKind,
     projectId: string,
     attachmentIds: readonly string[] | undefined,
-  ): Promise<string[] | undefined> {
+  ): Promise<AgentOsRunAttachment[] | undefined> {
     if (!attachmentIds?.length) return undefined;
     const uniqueIds = [...new Set(attachmentIds)];
     if (uniqueIds.length > MAX_AGENT_OS_ATTACHMENTS_PER_RUN) {
@@ -213,7 +224,7 @@ export class AgentOsAttachmentService {
         id: { in: uniqueIds },
         ...attachmentIdentityWhere(projectKind, projectId),
       },
-      select: { id: true, status: true, errorMessage: true },
+      select: { id: true, filename: true, status: true, errorMessage: true },
     });
     const byId = new Map(rows.map((row) => [row.id, row]));
     const missingId = uniqueIds.find((id) => !byId.has(id));
@@ -234,7 +245,10 @@ export class AgentOsAttachmentService {
           `Attachment ${unavailable.id} is not ready for reading.`,
       });
     }
-    return uniqueIds;
+    return uniqueIds.map((id) => {
+      const row = byId.get(id)!;
+      return { id: row.id, filename: row.filename };
+    });
   }
 
   private toSummary(row: {

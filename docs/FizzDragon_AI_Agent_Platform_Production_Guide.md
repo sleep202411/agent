@@ -1357,6 +1357,7 @@ fizz.agent.v1
 ```ts
 type AgentEvent =
   | RunStarted
+  | UserMessage
   | MessageStarted
   | MessageDelta
   | MessageCompleted
@@ -1368,6 +1369,8 @@ type AgentEvent =
   | ToolProposed
   | ApprovalRequired
   | ApprovalResolved
+  | UserInputRequired
+  | UserInputResolved
   | ToolStarted
   | ToolProgress
   | ToolCompleted
@@ -1407,6 +1410,24 @@ interface AgentEventEnvelope<T> {
 ```
 
 `sequence` 必须单调递增。
+
+`runId`、`turnId` 与 `messageId` 不得混用：一个 `runId` 可以跨越多次
+HITL 暂停；每次持久化的用户提交开启一个新的 `turnId`（即 UI 中的一次
+Assistant 回复组）；每个流式/完成文本段使用独立 `messageId`。结构化操作卡
+只占据输入区，提交结果必须先成为 `UserMessage`，再以同一 `runId` 恢复执行。
+
+Gateway 中的事件存储必须是 append-only。Worker 上报的完整 journal 只能在
+校验已有 prefix 后追加 suffix，不能覆盖已有事件或回退终态。PostgreSQL 提交
+完成后再通过带租约、可重试的 outbox 投递 Ably；Ably 消息使用稳定事件 id，
+因此重复投递可幂等去重。
+
+长任务的“产物可审阅”与“业务写入完成”必须是两个不同状态。以 Story 提案为例：
+后台完成提案后，原 `runId` 从 `waiting_for_external` 恢复，写入 Assistant 结果，
+随后通过 `ToolProposed + ApprovalRequired` 进入 `waiting_for_approval`，不得提前
+写 `RunCompleted`。用户 Apply / Discard 会以新的持久 `UserMessage + turnId` 解析
+该审批；Apply 再次进入同一 Story job 的 `waiting_for_external`，只有项目写事务
+成功后才能写最终结果和 `RunCompleted`。Discard 不执行项目写，但作为一次被
+Agent 正常处理的用户决定，以 Assistant 回复和 `RunCompleted` 收口。
 
 前端 reconnect：
 

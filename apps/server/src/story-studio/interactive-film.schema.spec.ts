@@ -195,7 +195,7 @@ describe('interactive film draft contract', () => {
 
   it('accepts every hotspot trigger and repairs unavailable outcome targets without blocking playback', () => {
     const valid = filmDraft();
-    const validClip = valid.graph.nodes[0]!;
+    const validClip = valid.graph.nodes[0];
     if (validClip.kind !== 'clip') throw new Error('Expected clip fixture.');
     validClip.interactions = [
       {
@@ -241,26 +241,26 @@ describe('interactive film draft contract', () => {
     ).toBe(true);
 
     const invalid = structuredClone(valid);
-    const invalidClip = invalid.graph.nodes[0]!;
+    const invalidClip = invalid.graph.nodes[0];
     if (invalidClip.kind !== 'clip') throw new Error('Expected clip fixture.');
-    invalidClip.interactions[2]!.outcomes.success = {
+    invalidClip.interactions[2].outcomes.success = {
       kind: 'goto',
       nodeId: 'missing',
     };
     const normalized =
       createPlayableInteractiveStoryDraftContentSchema('en-US').parse(invalid);
-    const normalizedClip = normalized.graph.nodes[0]!;
+    const normalizedClip = normalized.graph.nodes[0];
     if (normalizedClip.kind !== 'clip') {
       throw new Error('Expected normalized clip fixture.');
     }
-    expect(normalizedClip.interactions[2]!.outcomes.success).toEqual({
+    expect(normalizedClip.interactions[2].outcomes.success).toEqual({
       kind: 'continue',
     });
   });
 
   it('rejects hotspot geometry that escapes the normalized video frame', () => {
     const invalid = filmDraft();
-    const invalidClip = invalid.graph.nodes[0]!;
+    const invalidClip = invalid.graph.nodes[0];
     if (invalidClip.kind !== 'clip') throw new Error('Expected clip fixture.');
     invalidClip.interactions = [
       {
@@ -298,7 +298,7 @@ describe('interactive film draft contract', () => {
 
   it('defaults press-hold timeline control off and accepts the explicit flag', () => {
     const draft = filmDraft();
-    const clip = draft.graph.nodes[0]!;
+    const clip = draft.graph.nodes[0];
     if (clip.kind !== 'clip') throw new Error('Expected clip fixture.');
     clip.interactions = [
       {
@@ -313,28 +313,28 @@ describe('interactive film draft contract', () => {
       },
     ];
     const parsed = InteractiveStoryDraftContentSchema.parse(draft);
-    const parsedClip = parsed.graph.nodes[0]!;
+    const parsedClip = parsed.graph.nodes[0];
     if (parsedClip.kind !== 'clip') throw new Error('Expected clip fixture.');
-    expect(parsedClip.interactions[0]!.trigger).toEqual({
+    expect(parsedClip.interactions[0].trigger).toEqual({
       kind: 'press-hold',
       durationMs: 1_000,
       controlTimeline: false,
     });
 
     const explicit = structuredClone(draft);
-    const explicitClip = explicit.graph.nodes[0]!;
+    const explicitClip = explicit.graph.nodes[0];
     if (explicitClip.kind !== 'clip') throw new Error('Expected clip fixture.');
     (
-      explicitClip.interactions[0]!.trigger as { controlTimeline: boolean }
+      explicitClip.interactions[0].trigger as { controlTimeline: boolean }
     ).controlTimeline = true;
     const parsedExplicit = InteractiveStoryDraftContentSchema.parse(explicit);
-    const parsedExplicitClip = parsedExplicit.graph.nodes[0]!;
+    const parsedExplicitClip = parsedExplicit.graph.nodes[0];
     if (parsedExplicitClip.kind !== 'clip') {
       throw new Error('Expected clip fixture.');
     }
     expect(
       (
-        parsedExplicitClip.interactions[0]!.trigger as {
+        parsedExplicitClip.interactions[0].trigger as {
           controlTimeline: boolean;
         }
       ).controlTimeline,
@@ -344,7 +344,7 @@ describe('interactive film draft contract', () => {
   it('accepts a safe branch frame at or after the window end and rejects earlier cuts', () => {
     const withBranchAt = (branchAtMs: number) => {
       const draft = filmDraft();
-      const clip = draft.graph.nodes[0]!;
+      const clip = draft.graph.nodes[0];
       if (clip.kind !== 'clip') throw new Error('Expected clip fixture.');
       clip.interactions = [
         {

@@ -4,6 +4,8 @@ export type AgentOsRunStatus =
   | "queued"
   | "running"
   | "waiting_for_approval"
+  | "waiting_for_input"
+  | "waiting_for_external"
   | "paused"
   | "completed"
   | "failed"
@@ -29,28 +31,54 @@ export interface AgentOsPendingApproval {
   title: string;
   description: string;
   approvalId: string;
+  /** Protocol v1.1+: the Assistant UI turn this decision resumes. */
+  turnId?: string;
+}
+
+export interface AgentOsUserInputOption {
+  value: string;
+  label: string;
+  description?: string;
+}
+
+export interface AgentOsUserInputQuestion {
+  id: string;
+  header: string;
+  question: string;
+  options: AgentOsUserInputOption[];
+}
+
+export interface AgentOsPendingUserInput {
+  kind: "user_input";
+  requestId: string;
+  toolCallId: string;
+  formId?: string;
+  knownValues?: Record<string, string>;
+  questions: AgentOsUserInputQuestion[];
+  /** Protocol v1.1+: the Assistant UI turn which requested the answer. */
+  turnId?: string;
+  /** Model-authored acknowledgement to begin the resumed Assistant turn. */
+  resumeAcknowledgement?: string;
+}
+
+/** Durable domain job which owns the open turn while the Agent worker is paused. */
+export interface AgentOsPendingExternal {
+  kind: "external_job";
+  jobId: string;
+  startedMessage: string;
+  turnId: string;
+  toolCallId: string;
+  toolId: string;
 }
 
 export interface AgentOsRunResponse {
   runId: string;
   status: AgentOsRunStatus;
   pendingApproval?: AgentOsPendingApproval;
+  pendingUserInput?: AgentOsPendingUserInput;
+  pendingExternal?: AgentOsPendingExternal;
   events?: AgentOsEvent[];
   assistantText?: string;
-  characters?: unknown[];
-}
-
-export interface AgentOsCharacterRow {
-  id: string;
-  name: string;
-  summary: string;
-}
-
-export interface AgentOsShotRow {
-  id: string;
-  title: string;
-  prompt: string;
-  notes?: string;
 }
 
 export interface AgentOsAttachmentSummary {
@@ -72,9 +100,12 @@ export type AgentOsWorkbenchContext = Readonly<Record<string, string>>;
 
 export interface AgentOsStartRunInput {
   projectId: string;
+  conversationId: string;
+  clientSubmissionId: string;
+  turnId: string;
+  messageId: string;
   message: string;
   modelProfileId: string;
-  conversationId?: string;
   /** Uploaded attachment ids (file upload API) for this turn. */
   attachmentIds?: string[];
   permissionMode?: AgentOsPermissionMode;
@@ -92,7 +123,26 @@ export interface AgentOsStartRunInput {
 
 export interface AgentOsApprovalInput {
   runId: string;
+  approvalId: string;
+  /** Stable UUID reused when this semantic decision is retried. */
+  responseId: string;
   decision: "approve" | "reject";
+  /** User-visible transcript copy only; the structured decision is authoritative. */
+  responseText: string;
+  /** Used by the server to own durable Assistant acknowledgement copy. */
+  locale: "en-US" | "zh-CN" | "zh-HK";
+  projectId: string;
+  conversationId: string;
+  modelProfileId: string;
+  permissionMode?: AgentOsPermissionMode;
+}
+
+export interface AgentOsUserInputResponse {
+  runId: string;
+  requestId: string;
+  /** Stable UUID for this semantic answer; reused by transport retries. */
+  responseId: string;
+  answers: Record<string, string>;
   projectId: string;
   conversationId: string;
   modelProfileId: string;
@@ -108,12 +158,21 @@ export class AgentOsApiClient {
     if (!input.modelProfileId.trim()) {
       return Promise.reject(new Error("modelProfileId is required"));
     }
+    if (input.message.length > 20_000) {
+      return Promise.reject(new Error("message must contain at most 20,000 characters"));
+    }
+    if (!input.message.trim() && !input.attachmentIds?.length) {
+      return Promise.reject(new Error("message or attachmentIds is required"));
+    }
     return api.post<AgentOsRunResponse>("/aurora/agent-os/runs", {
       data: {
         projectId: input.projectId,
+        conversationId: input.conversationId,
+        clientSubmissionId: input.clientSubmissionId,
+        turnId: input.turnId,
+        messageId: input.messageId,
         message: input.message,
         modelProfileId: input.modelProfileId,
-        conversationId: input.conversationId,
         attachmentIds: input.attachmentIds,
         permissionMode: input.permissionMode,
         workbenchMode: input.workbenchMode,
@@ -135,7 +194,36 @@ export class AgentOsApiClient {
       `/aurora/agent-os/runs/${encodeURIComponent(input.runId)}/approvals`,
       {
         data: {
+          approvalId: input.approvalId,
+          responseId: input.responseId,
           decision: input.decision,
+          responseText: input.responseText,
+          locale: input.locale,
+          projectId: input.projectId,
+          conversationId: input.conversationId,
+          modelProfileId: input.modelProfileId,
+          permissionMode: input.permissionMode,
+        },
+        timeout: 10 * 60_000,
+        signal,
+      }
+    );
+  }
+
+  resolveUserInput(
+    input: AgentOsUserInputResponse,
+    signal?: AbortSignal
+  ): Promise<AgentOsRunResponse> {
+    if (!input.modelProfileId.trim()) {
+      return Promise.reject(new Error("modelProfileId is required"));
+    }
+    return api.post<AgentOsRunResponse>(
+      `/aurora/agent-os/runs/${encodeURIComponent(input.runId)}/user-input`,
+      {
+        data: {
+          requestId: input.requestId,
+          responseId: input.responseId,
+          answers: input.answers,
           projectId: input.projectId,
           conversationId: input.conversationId,
           modelProfileId: input.modelProfileId,
@@ -157,6 +245,8 @@ export class AgentOsApiClient {
     status: AgentOsRunStatus;
     events: AgentOsEvent[];
     pendingApproval?: AgentOsPendingApproval | null;
+    pendingUserInput?: AgentOsPendingUserInput | null;
+    pendingExternal?: AgentOsPendingExternal | null;
     assistantText?: string | null;
     source?: string;
   }> {
@@ -207,27 +297,6 @@ export class AgentOsApiClient {
     return api.post(`/aurora/agent-os/realtime/token`, {
       data: { projectId, conversationId },
       timeout: 15_000,
-      signal,
-    });
-  }
-
-  listCharacters(
-    projectId: string,
-    signal?: AbortSignal
-  ): Promise<{
-    revision: number;
-    characters: AgentOsCharacterRow[];
-  }> {
-    return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/characters`, {
-      signal,
-    });
-  }
-
-  listAttachments(
-    projectId: string,
-    signal?: AbortSignal
-  ): Promise<{ attachments: AgentOsAttachmentSummary[] }> {
-    return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/attachments`, {
       signal,
     });
   }
@@ -337,6 +406,8 @@ export interface AgentOsConversationRun {
   modelProfileId: string;
   events: AgentOsEvent[];
   pendingApproval: AgentOsPendingApproval | null;
+  pendingUserInput: AgentOsPendingUserInput | null;
+  pendingExternal: AgentOsPendingExternal | null;
   assistantText: string | null;
   createdAt: string;
   updatedAt: string;

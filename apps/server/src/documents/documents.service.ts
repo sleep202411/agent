@@ -511,6 +511,19 @@ export class DocumentsService {
     user: AuthUser,
     documentId: string,
     input: AppendDocumentOperationInput,
+    options?: {
+      /** Acquire cross-domain locks before the document advisory lock. */
+      onTransactionStart?: (tx: Prisma.TransactionClient) => Promise<void>;
+      /**
+       * Trusted server hook for a cross-domain receipt. It runs after the
+       * operation/document writes but before commit, under the document lock.
+       */
+      onBeforeCommit?: (
+        tx: Prisma.TransactionClient,
+        operation: StudioDocumentOperation,
+        context: { replayed: boolean },
+      ) => Promise<void>;
+    },
   ) {
     await this.documentAccess.requireDocument(user.userId, documentId, 'edit');
 
@@ -526,6 +539,7 @@ export class DocumentsService {
     const isCrdt = operationType === StudioDocumentOperationType.yjs_update;
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await options?.onTransactionStart?.(tx);
       // Serialize sequence assignment per document. The body is intentionally
       // tiny (find + small op insert + counter bump) so the lock is held
       // briefly; the expensive merge happens off the hot path in compaction.
@@ -551,7 +565,10 @@ export class DocumentsService {
         const existing = await tx.studioDocumentOperation.findFirst({
           where: { documentId, idempotencyKey: input.idempotencyKey },
         });
-        if (existing) return { operation: existing, scheduleCompaction: false };
+        if (existing) {
+          await options?.onBeforeCommit?.(tx, existing, { replayed: true });
+          return { operation: existing, scheduleCompaction: false };
+        }
       }
 
       if (
@@ -605,6 +622,8 @@ export class DocumentsService {
           version: { increment: 1 },
         },
       });
+
+      await options?.onBeforeCommit?.(tx, created, { replayed: false });
 
       return { operation: created, scheduleCompaction: isCrdt };
     });

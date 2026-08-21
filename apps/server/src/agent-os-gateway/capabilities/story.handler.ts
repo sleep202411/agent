@@ -11,6 +11,12 @@ import {
   StoryAddSceneInputSchema,
   StoryApplyPatchInputSchema,
   StoryAuthorInputSchema,
+  StoryConfirmCreativeProfileInputSchema,
+  StoryCreativeProfileLanguageSchema,
+  isCompleteStoryCreativeProfileInputRequest,
+  STORY_CREATIVE_PROFILE_FORM_ID,
+  STORY_CREATIVE_PROFILE_QUESTION_OPTIONS,
+  type StoryCreativeProfileQuestionId,
   StoryEditNodeInputSchema,
   StoryPutInteractionInputSchema,
   StoryRemoveInteractionInputSchema,
@@ -24,6 +30,7 @@ import {
   StoryPatchOperationsSchema,
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
+import { AgentOsRunJournalService } from '../../agent-os-journal/agent-os-run-journal.service';
 import { PrismaService } from '../../infra/db/db.module';
 import { canonicalJsonHash } from '../../story-studio/canonical-json';
 import {
@@ -32,6 +39,11 @@ import {
   type InteractiveStoryDraftContent,
 } from '../../story-studio/interactive-film.schema';
 import {
+  StoryDurationPresetSchema,
+  StoryFrameProfileSchema,
+  StoryVisualStyleSchema,
+} from '../../story-studio/dto';
+import {
   executeStoryPatch,
   StoryPatchExecutionError,
   type StoryAgentCanvasLayoutSnapshot,
@@ -39,6 +51,7 @@ import {
 import { StoryAgentRunService } from '../../story-studio/story-agent-run.service';
 import { StoryProjectWriteGuardService } from '../../story-studio/story-project-write-guard.service';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
+import { AgentOsToolExecutionReceiptService } from '../agent-os-tool-execution-receipt.service';
 import type {
   AgentOsCapabilityExecuteInput,
   AgentOsCapabilityHandler,
@@ -46,6 +59,7 @@ import type {
 
 const STORY_TOOL_IDS = new Set([
   'story.read',
+  'story.confirmCreativeProfile',
   'story.updateBible',
   'story.addScene',
   'story.addBranch',
@@ -72,9 +86,11 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly journal: AgentOsRunJournalService,
     private readonly projects: AgentOsProjectContextService,
     private readonly writeGuard: StoryProjectWriteGuardService,
     private readonly agentRuns: StoryAgentRunService,
+    private readonly receipts: AgentOsToolExecutionReceiptService,
   ) {}
 
   supports(toolId: string): boolean {
@@ -82,6 +98,13 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
   }
 
   async execute(input: AgentOsCapabilityExecuteInput): Promise<unknown> {
+    if (input.toolId === 'story.confirmCreativeProfile') {
+      const args = StoryConfirmCreativeProfileInputSchema.parse(
+        input.arguments,
+      );
+      return this.confirmCreativeProfile(input, args);
+    }
+
     const chapterId = requiredChapterId(input.workbenchContext);
     switch (input.toolId) {
       case 'story.read':
@@ -234,10 +257,38 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             title: args.title,
             summary: args.summary,
             brief: args.brief,
-            idempotencyKey: `agent-os:${randomUUID()}`,
+            idempotencyKey: input.idempotencyKey,
+            conversationId: input.conversationId,
+            sourceAgentRunId: input.runId,
+            sourceAgentTurnId: input.turnId,
+            sourceAgentToolCallId: input.toolCallId,
+            sourceStartedMessage: args.startedMessage,
+            sourceCompletionMessage: args.completionMessage,
+          },
+          {
+            canonicalizeAndFence: async (tx, request) => {
+              await this.receipts.fenceBusinessMutationInTx(tx, input);
+              return {
+                ...request,
+                initiatedBySessionId: input.conversationId,
+              };
+            },
           },
         );
-        return { runId: run.id, status: run.status };
+        return {
+          runId: run.id,
+          // This is the stable tool receipt, not a second lifecycle read. An
+          // idempotent retry may observe the Story row after it has already
+          // reached proposed/failed; it must still return the same handoff so
+          // the Agent run can durably enter waiting_for_external and receive
+          // the queued terminal continuation.
+          status: 'authoring' as const,
+          agentHandoff: {
+            kind: 'external_job' as const,
+            jobId: run.id,
+            startedMessage: args.startedMessage,
+          },
+        };
       }
       default:
         throw new Error(`Story handler does not implement ${input.toolId}`);
@@ -249,11 +300,16 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     projectId: string,
     chapterId: string,
   ) {
-    await this.projects.authorizeRead(actorId, {
-      projectId,
-      projectKind: 'story',
-    });
-    const state = await this.loadStoryDraft(projectId, chapterId);
+    const context = await this.projects.requireRead(actorId, projectId);
+    const [state, authoringRun] = await Promise.all([
+      this.loadStoryDraft(projectId, chapterId),
+      this.agentRuns.getLatestRun(
+        { userId: actorId },
+        context.workspaceId,
+        projectId,
+        chapterId,
+      ),
+    ]);
     return {
       chapterId: state.chapter.id,
       draftRevision: state.revision,
@@ -269,7 +325,168 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       },
       graph: state.content.graph,
       productionNotes: state.content.productionNotes,
+      creativeProfile: {
+        frameProfile: state.project.frameProfile,
+        durationPreset: state.project.durationPreset,
+        visualStyle: state.project.visualStyle,
+        storyLanguage: state.project.defaultLocale,
+        confirmed: state.project.creativeProfileConfirmedAt !== null,
+      },
+      authoringRun: authoringRun
+        ? { runId: authoringRun.id, status: authoringRun.status }
+        : null,
     };
+  }
+
+  private async confirmCreativeProfile(
+    input: AgentOsCapabilityExecuteInput,
+    args: ReturnType<typeof StoryConfirmCreativeProfileInputSchema.parse>,
+  ) {
+    await this.projects.authorizeWrite(input.actorId, {
+      projectId: input.projectId,
+      projectKind: 'story',
+    });
+
+    const frameProfile = StoryFrameProfileSchema.parse(args.aspectRatio);
+    const durationPreset = StoryDurationPresetSchema.parse(args.targetRuntime);
+    const visualStyle = StoryVisualStyleSchema.parse(args.visualDirection);
+    const storyLanguage = StoryCreativeProfileLanguageSchema.parse(
+      args.storyLanguage,
+    );
+    if (args.requestId) {
+      const run = await this.prisma.agentOsRun.findFirst({
+        where: {
+          id: input.runId,
+          projectId: input.projectId,
+          conversationId: input.conversationId,
+          actorId: input.actorId,
+        },
+        select: { id: true },
+      });
+      if (!run) {
+        throw new NotFoundException({
+          code: 'AGENT_OS_RUN_NOT_FOUND',
+          message: 'The Agent run that requested this input was not found.',
+        });
+      }
+      const values = creativeProfileValuesFromJournal(
+        await this.journal.getRunEvents(run.id),
+        args.requestId,
+      );
+      const submitted: Record<StoryCreativeProfileQuestionId, string> = {
+        aspect_ratio: frameProfile,
+        target_runtime: durationPreset,
+        visual_direction: visualStyle,
+        story_language: storyLanguage,
+      };
+      for (const [questionId, value] of Object.entries(values)) {
+        if (submitted[questionId as StoryCreativeProfileQuestionId] !== value) {
+          throw new UnprocessableEntityException({
+            code: 'STORY_CREATIVE_PROFILE_INPUT_MISMATCH',
+            message:
+              'The creative profile values must match the creator answers in this Agent run.',
+            requestId: args.requestId,
+            questionId,
+          });
+        }
+      }
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await this.receipts.fenceBusinessMutationInTx(tx, input);
+      await this.writeGuard.acquireAgentOsMutationFence(tx, input.projectId);
+      const project = await tx.storyProject.findUnique({
+        where: { id: input.projectId },
+        select: {
+          frameProfile: true,
+          durationPreset: true,
+          visualStyle: true,
+          defaultLocale: true,
+          creativeProfileConfirmedAt: true,
+          builds: { select: { id: true }, take: 1 },
+          videoSelections: {
+            where: { currentAssetId: { not: null } },
+            select: { id: true },
+            take: 1,
+          },
+        },
+      });
+      if (!project) {
+        throw new NotFoundException({
+          code: 'STORY_PROJECT_NOT_FOUND',
+          message: 'Story project not found.',
+        });
+      }
+
+      if (project.creativeProfileConfirmedAt) {
+        if (
+          project.frameProfile === frameProfile &&
+          project.durationPreset === durationPreset &&
+          project.visualStyle === visualStyle &&
+          project.defaultLocale === storyLanguage
+        ) {
+          const result = {
+            frameProfile,
+            durationPreset,
+            visualStyle,
+            storyLanguage,
+            confirmedAt: project.creativeProfileConfirmedAt.toISOString(),
+          };
+          await this.receipts.completeSuccessInTx(tx, input, result);
+          return result;
+        }
+        throw new ConflictException({
+          code: 'STORY_CREATIVE_PROFILE_ALREADY_CONFIRMED',
+          message:
+            'The project creative profile was already confirmed with different values.',
+        });
+      }
+
+      if (
+        project.frameProfile !== frameProfile &&
+        (project.builds.length > 0 || project.videoSelections.length > 0)
+      ) {
+        throw new ConflictException({
+          code: 'STORY_FRAME_PROFILE_LOCKED',
+          message:
+            'The aspect ratio can change only before a video is selected or a build is created for this project.',
+          projectId: input.projectId,
+          frameProfile: project.frameProfile,
+        });
+      }
+
+      const confirmedAt = new Date();
+      const updated = await tx.storyProject.updateMany({
+        where: {
+          id: input.projectId,
+          creativeProfileConfirmedAt: null,
+        },
+        data: {
+          frameProfile,
+          durationPreset,
+          visualStyle,
+          defaultLocale: storyLanguage,
+          creativeProfileConfirmedAt: confirmedAt,
+          version: { increment: 1 },
+        },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException({
+          code: 'STORY_CREATIVE_PROFILE_CONFLICT',
+          message:
+            'The project creative profile changed concurrently. Read it again and retry.',
+        });
+      }
+      const result = {
+        frameProfile,
+        durationPreset,
+        visualStyle,
+        storyLanguage,
+        confirmedAt: confirmedAt.toISOString(),
+      };
+      await this.receipts.completeSuccessInTx(tx, input, result);
+      return result;
+    });
   }
 
   private async mutateStory(
@@ -284,6 +501,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     });
 
     return this.prisma.$transaction(async (tx) => {
+      await this.receipts.fenceBusinessMutationInTx(tx, input);
       await this.writeGuard.acquireAgentOsMutationFence(tx, input.projectId);
       const state = await this.loadStoryDraftInTx(
         tx,
@@ -416,13 +634,15 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         data: { updatedAt: new Date() },
       });
 
-      return {
+      const result = {
         chapterId: state.chapter.id,
         draftRevision: state.revision + 1,
         contentHash: canonicalJsonHash(patched.draft),
         affectedNodeIds: patched.affectedNodeIds,
         createdNodeIds: patched.createdNodeIds,
       };
+      await this.receipts.completeSuccessInTx(tx, input, result);
+      return result;
     });
   }
 
@@ -508,6 +728,13 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         isFirst: chapterIndex === 0,
         nodeIds: chapterNodeIds,
       },
+      project: {
+        frameProfile: project.frameProfile,
+        durationPreset: project.durationPreset,
+        visualStyle: project.visualStyle,
+        defaultLocale: project.defaultLocale,
+        creativeProfileConfirmedAt: project.creativeProfileConfirmedAt,
+      },
     };
   }
 }
@@ -521,6 +748,115 @@ interface StoryDraftState {
   layout: StoryAgentCanvasLayoutSnapshot;
   layoutRow: { revision: number } | null;
   chapter: { id: string; isFirst: boolean; nodeIds: string[] };
+  project: {
+    frameProfile: 'landscape_16_9' | 'portrait_9_16';
+    durationPreset: 'short_5_15' | 'medium_15_30' | 'long_30_60' | null;
+    visualStyle:
+      | 'cinematic_realism'
+      | 'stylized_3d'
+      | 'graphic_novel'
+      | 'anime_cinematic'
+      | null;
+    defaultLocale: string;
+    creativeProfileConfirmedAt: Date | null;
+  };
+}
+
+export function creativeProfileValuesFromJournal(
+  value: unknown,
+  requestId: string,
+): Record<StoryCreativeProfileQuestionId, string> {
+  if (!Array.isArray(value)) {
+    throw unresolvedCreativeProfileRequest(requestId);
+  }
+  const events = value
+    .flatMap((item) =>
+      item && typeof item === 'object' && !Array.isArray(item)
+        ? [item as Record<string, unknown>]
+        : [],
+    )
+    .sort(
+      (a, b) =>
+        (typeof a.sequence === 'number' ? a.sequence : 0) -
+        (typeof b.sequence === 'number' ? b.sequence : 0),
+    );
+  let requestedQuestionIds: StoryCreativeProfileQuestionId[] | null = null;
+  let knownValues: Partial<
+    Record<StoryCreativeProfileQuestionId, string>
+  > | null = null;
+  for (const event of events) {
+    const data =
+      event.data && typeof event.data === 'object' && !Array.isArray(event.data)
+        ? (event.data as Record<string, unknown>)
+        : null;
+    if (!data || data.requestId !== requestId) continue;
+    if (
+      event.type === 'UserInputRequired' &&
+      isStoryCreativeProfileRequest(data)
+    ) {
+      requestedQuestionIds = (data.questions as Array<{ id: string }>).map(
+        (question) => question.id as StoryCreativeProfileQuestionId,
+      );
+      knownValues = {
+        ...(data.knownValues as Partial<
+          Record<StoryCreativeProfileQuestionId, string>
+        >),
+      };
+      continue;
+    }
+    if (
+      !requestedQuestionIds ||
+      !knownValues ||
+      event.type !== 'UserInputResolved'
+    ) {
+      continue;
+    }
+    const answers =
+      data.answers &&
+      typeof data.answers === 'object' &&
+      !Array.isArray(data.answers)
+        ? (data.answers as Record<string, unknown>)
+        : null;
+    if (!answers) break;
+    const resolved: Partial<Record<StoryCreativeProfileQuestionId, string>> = {
+      ...knownValues,
+    };
+    for (const questionId of requestedQuestionIds) {
+      const answer = answers[questionId];
+      if (typeof answer !== 'string') {
+        throw unresolvedCreativeProfileRequest(requestId);
+      }
+      resolved[questionId] = answer;
+    }
+    if (Object.keys(answers).length !== requestedQuestionIds.length) {
+      throw unresolvedCreativeProfileRequest(requestId);
+    }
+    if (
+      !STORY_CREATIVE_PROFILE_QUESTION_OPTIONS.every(
+        ([questionId]) => typeof resolved[questionId] === 'string',
+      )
+    ) {
+      throw unresolvedCreativeProfileRequest(requestId);
+    }
+    return resolved as Record<StoryCreativeProfileQuestionId, string>;
+  }
+  throw unresolvedCreativeProfileRequest(requestId);
+}
+
+function isStoryCreativeProfileRequest(data: Record<string, unknown>): boolean {
+  return (
+    data.formId === STORY_CREATIVE_PROFILE_FORM_ID &&
+    isCompleteStoryCreativeProfileInputRequest(data.questions, data.knownValues)
+  );
+}
+
+function unresolvedCreativeProfileRequest(requestId: string) {
+  return new UnprocessableEntityException({
+    code: 'STORY_CREATIVE_PROFILE_INPUT_UNRESOLVED',
+    message:
+      'The creative profile must come from a resolved story_creative_profile input request in this Agent run.',
+    requestId,
+  });
 }
 
 function requiredChapterId(

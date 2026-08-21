@@ -256,11 +256,11 @@ agentOsSecrets:
     # internal token with it and stopping the worker from booting.
     - kv: ably-api-key
       env: ABLY_API_KEY
-    # Durable LangGraph checkpoints. Create the vault entry first, then
-    # uncomment: the saver runs CREATE SCHEMA / CREATE TABLE on first use, so
-    # that role needs DDL on schema `agent_os`. No migrator Job owns it.
-    # - kv: agent-os-checkpoint-database-url
-    #   env: AGENT_OS_CHECKPOINT_DATABASE_URL
+    # Durable LangGraph checkpoints and the execution-fence authority. The
+    # worker refuses to boot without this scoped DSN; it must address the same
+    # PostgreSQL database as public.agent_os_runs and allow DDL in agent_os.
+    - kv: agent-os-checkpoint-database-url
+      env: AGENT_OS_CHECKPOINT_DATABASE_URL
 # The same vault entry projected a second time, for the Nest pod. Separate group
 # for the same fail-closed reason: the server must not lose its own secrets
 # because an Agent OS entry is missing.
@@ -535,11 +535,9 @@ server:
 # ---------------------------------------------------------------------------
 agentOs:
   enabled: true
-  # MUST remain 1, and the template refuses anything else. Run snapshots, the
-  # live event journal and pending approvals live in the worker PROCESS, so a
-  # second replica answers /events and /cancel for runs it never started — and
-  # the gateway silently falls back to the Postgres journal, so the symptom is
-  # "chat feels laggy", not an error anyone would report.
+  # Runs, HITL commands, dispatch leases, journal suffixes and checkpoints are
+  # PostgreSQL-authoritative. Replicas coordinate through fenced dispatch and
+  # the per-conversation checkpoint execution lock.
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
@@ -553,6 +551,10 @@ agentOs:
     baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
   checkpoint:
     schema: agent_os
+    # Per-pod budget: saver transactions are short; guard sessions are pinned
+    # only while a graph owns a conversation. Keep explicit for replica sizing.
+    poolMax: 10
+    lockPoolMax: 20
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { cpu: 2000m, memory: 2Gi }

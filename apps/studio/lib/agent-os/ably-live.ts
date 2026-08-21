@@ -2,8 +2,10 @@
 
 import {
   AGENT_OS_ABLY_EVENT_NAME,
+  AGENT_OS_ABLY_RESYNC_NAME,
   AGENT_OS_ABLY_SNAPSHOT_NAME,
   agentOsConversationChannel,
+  type AgentOsAblyResyncPointer,
   type AgentOsAblyRunSnapshot,
 } from "@repo/shared";
 import type { AgentOsEvent } from "@/lib/agent-os/api-client";
@@ -12,6 +14,8 @@ import { agentOsApi } from "@/lib/agent-os/api-client";
 export type AgentOsLiveHandlers = {
   onEvent: (event: AgentOsEvent) => void;
   onSnapshot: (snapshot: AgentOsAblyRunSnapshot) => void;
+  onResync: (pointer: AgentOsAblyResyncPointer) => void;
+  onDiscontinuity: () => void;
 };
 
 type RealtimeGrant = Awaited<ReturnType<typeof agentOsApi.realtimeToken>>;
@@ -25,6 +29,8 @@ export class AgentOsAblyLive {
   private conversationId: string | null = null;
   private handlers: AgentOsLiveHandlers | null = null;
   private connected = false;
+  /** Invalidates every async stage of an older attach attempt. */
+  private generation = 0;
 
   get isLive(): boolean {
     return this.connected;
@@ -43,16 +49,22 @@ export class AgentOsAblyLive {
     this.detach();
     this.handlers = input.handlers;
     this.conversationId = input.conversationId;
-    return this.open(input.projectId, input.conversationId);
+    return this.open(input.projectId, input.conversationId, this.generation);
   }
 
-  private async open(projectId: string, conversationId: string): Promise<boolean> {
+  private async open(
+    projectId: string,
+    conversationId: string,
+    generation: number
+  ): Promise<boolean> {
+    let live: import("ably").Realtime | null = null;
     try {
       let seeded: RealtimeGrant | null = await agentOsApi.realtimeToken(projectId, conversationId);
       const channelName = seeded.channel || agentOsConversationChannel(conversationId);
       const { Realtime } = await import("ably");
+      if (!this.isCurrentAttempt(generation, conversationId)) return false;
 
-      const live = new Realtime({
+      const attemptLive = new Realtime({
         authCallback: (_params, callback) => {
           const pending = seeded
             ? Promise.resolve(seeded)
@@ -65,30 +77,47 @@ export class AgentOsAblyLive {
           );
         },
       });
+      live = attemptLive;
 
-      this.client = live;
+      this.client = attemptLive;
 
       await new Promise<void>((resolve, reject) => {
         const timeout = setTimeout(() => {
           reject(new Error("Ably connect timeout"));
         }, 8_000);
-        live.connection.once("connected", () => {
+        attemptLive.connection.once("connected", () => {
           clearTimeout(timeout);
           resolve();
         });
-        live.connection.once("failed", () => {
+        attemptLive.connection.once("failed", () => {
           clearTimeout(timeout);
           reject(new Error("Ably connection failed"));
         });
+        attemptLive.connection.once("closed", () => {
+          clearTimeout(timeout);
+          reject(new Error("Ably connection closed before attach"));
+        });
       });
 
-      if (this.conversationId !== conversationId) {
-        live.close();
+      if (!this.isCurrentAttempt(generation, conversationId, attemptLive)) {
+        attemptLive.close();
         return false;
       }
 
-      const channel = live.channels.get(channelName);
+      const channel = attemptLive.channels.get(channelName);
+      const handleChannelState = (change: { resumed: boolean }) => {
+        if (!this.isCurrentAttempt(generation, conversationId, attemptLive)) return;
+        if (isAgentOsChannelDiscontinuity(change)) {
+          this.handlers?.onDiscontinuity();
+        }
+      };
+      // Register before subscribe implicitly attaches the channel. A fresh
+      // attach is also `resumed:false`; HTTP journal catch-up is deliberately
+      // safe and idempotent in that case.
+      channel.on("attached", handleChannelState);
+      channel.on("update", handleChannelState);
       channel.subscribe(AGENT_OS_ABLY_EVENT_NAME, (message) => {
+        if (!this.isCurrentAttempt(generation, conversationId, attemptLive)) return;
         const data = message.data as AgentOsEvent | undefined;
         if (!data || typeof data !== "object" || typeof data.sequence !== "number") {
           return;
@@ -96,14 +125,24 @@ export class AgentOsAblyLive {
         this.handlers?.onEvent(data);
       });
       channel.subscribe(AGENT_OS_ABLY_SNAPSHOT_NAME, (message) => {
+        if (!this.isCurrentAttempt(generation, conversationId, attemptLive)) return;
         const data = message.data as AgentOsAblyRunSnapshot | undefined;
         if (!data || typeof data !== "object" || typeof data.runId !== "string") {
           return;
         }
         this.handlers?.onSnapshot(data);
       });
+      channel.subscribe(AGENT_OS_ABLY_RESYNC_NAME, (message) => {
+        if (!this.isCurrentAttempt(generation, conversationId, attemptLive)) return;
+        const data = message.data;
+        if (!isAgentOsAblyResyncPointer(data) || data.conversationId !== conversationId) {
+          return;
+        }
+        this.handlers?.onResync(data);
+      });
 
-      live.connection.on((change) => {
+      attemptLive.connection.on((change) => {
+        if (!this.isCurrentAttempt(generation, conversationId, attemptLive)) return;
         if (change.current === "connected") this.connected = true;
         if (
           change.current === "failed" ||
@@ -116,23 +155,77 @@ export class AgentOsAblyLive {
       this.connected = true;
       return true;
     } catch {
-      this.connected = false;
-      this.detach();
+      if (live) {
+        try {
+          live.close();
+        } catch {
+          /* ignore */
+        }
+      }
+      if (this.isCurrentAttempt(generation, conversationId, live)) {
+        this.connected = false;
+        this.handlers = null;
+        this.conversationId = null;
+        this.client = null;
+        this.generation += 1;
+      }
       return false;
     }
   }
 
   detach(): void {
+    this.generation += 1;
     this.connected = false;
     this.handlers = null;
     this.conversationId = null;
-    if (this.client) {
+    const live = this.client;
+    this.client = null;
+    if (live) {
       try {
-        this.client.close();
+        live.close();
       } catch {
         /* ignore */
       }
-      this.client = null;
     }
   }
+
+  private isCurrentAttempt(
+    generation: number,
+    conversationId: string,
+    live?: import("ably").Realtime | null
+  ): boolean {
+    return (
+      this.generation === generation &&
+      this.conversationId === conversationId &&
+      (live == null || this.client === live)
+    );
+  }
+}
+
+export function isAgentOsAblyResyncPointer(value: unknown): value is AgentOsAblyResyncPointer {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const pointer = value as Record<string, unknown>;
+  if (
+    pointer.version !== 1 ||
+    typeof pointer.runId !== "string" ||
+    pointer.runId.length === 0 ||
+    typeof pointer.conversationId !== "string" ||
+    pointer.conversationId.length === 0 ||
+    !Number.isInteger(pointer.sequence) ||
+    Number(pointer.sequence) < 1 ||
+    !Number.isInteger(pointer.afterSequence) ||
+    Number(pointer.afterSequence) !== Number(pointer.sequence) - 1
+  ) {
+    return false;
+  }
+  if (pointer.kind === "snapshot_oversized") return true;
+  return (
+    pointer.kind === "event_oversized" &&
+    typeof pointer.eventId === "string" &&
+    pointer.eventId.length > 0
+  );
+}
+
+export function isAgentOsChannelDiscontinuity(change: { resumed: boolean }): boolean {
+  return change.resumed === false;
 }

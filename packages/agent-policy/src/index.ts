@@ -23,7 +23,8 @@ export type ApprovalRequirement =
   | { required: false }
   | {
       required: true;
-      actions: ReadonlyArray<"approve" | "edit_and_approve" | "reject">;
+      /** Actions implemented end-to-end by the current Gateway and clients. */
+      actions: ReadonlyArray<"approve" | "reject">;
       reason: string;
     };
 
@@ -54,7 +55,7 @@ export function requiresApproval(input: {
   if (risk === "critical") {
     return {
       required: true,
-      actions: ["approve", "edit_and_approve", "reject"],
+      actions: ["approve", "reject"],
       reason: "Critical operations always require explicit approval.",
     };
   }
@@ -63,7 +64,7 @@ export function requiresApproval(input: {
     if (risk === "reversible" || risk === "sensitive") {
       return {
         required: true,
-        actions: ["approve", "edit_and_approve", "reject"],
+        actions: ["approve", "reject"],
         reason: "Permission mode is ask — every write requires approval.",
       };
     }
@@ -73,7 +74,7 @@ export function requiresApproval(input: {
     if (risk === "sensitive") {
       return {
         required: true,
-        actions: ["approve", "edit_and_approve", "reject"],
+        actions: ["approve", "reject"],
         reason: "Sensitive operations require approval in smart mode.",
       };
     }

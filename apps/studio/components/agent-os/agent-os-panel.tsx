@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslations } from "next-intl";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
 import {
   IconAlertCircle,
@@ -41,15 +41,25 @@ import {
 import {
   agentOsApi,
   type AgentOsAttachmentSummary,
+  type AgentOsPendingApproval,
   type AgentOsPermissionMode,
   type AgentOsSkillMeta,
   type AgentOsWorkbenchContext,
   type AgentOsWorkbenchMode,
 } from "@/lib/agent-os/api-client";
 import { cn } from "@/lib/utils";
+import {
+  agentActivityLabelKey,
+  resolveAgentOsActivityStatus,
+  type AgentOsActivityStatus,
+} from "./agent-os-activity";
+import { deriveActiveTurnId } from "./agent-os-timeline";
 import { AgentOsTranscript } from "./agent-os-transcript";
+import { AgentOsApprovalComposer } from "./agent-os-approval-composer";
+import { AgentOsUserInputCard } from "./agent-os-user-input-card";
+import { type ApprovalPayloadLabels } from "./approval-payload";
 import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
-import { useAgentOsRun } from "./use-agent-os-run";
+import { deriveAgentActivity, useAgentOsRun } from "./use-agent-os-run";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { listProjectSkillInstallations } from "@/lib/project-skills-api";
@@ -124,6 +134,18 @@ interface AgentOsPanelProps {
   onClose?: () => void;
   className?: string;
   variant?: "floating" | "docked";
+  /** Wrap or replace the composer while a blocking decision is pending. */
+  composerGate?: (composer: ReactNode) => ReactNode;
+  /** Host renderer for a domain-rich approval; null falls back to the generic card. */
+  approvalGate?: (input: {
+    approval: AgentOsPendingApproval;
+    busy: boolean;
+    onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<void>;
+  }) => ReactNode | null;
+  /** Host-owned work that participates in the Agent's single activity line. */
+  activityStatus?: AgentOsActivityStatus | null;
+  /** Host-derived copy for the current product phase. */
+  composerPlaceholder?: string;
 }
 
 /** Agent OS side panel — one durable conversation boundary per project. */
@@ -141,7 +163,16 @@ function AgentOsProjectSession({
   onClose,
   className,
   variant,
+  composerGate,
+  approvalGate,
+  activityStatus,
+  composerPlaceholder,
 }: AgentOsPanelProps) {
+  const rawLocale = useLocale();
+  if (rawLocale !== "en-US" && rawLocale !== "zh-CN" && rawLocale !== "zh-HK") {
+    throw new Error(`Unsupported Agent transcript locale: ${rawLocale}`);
+  }
+  const transcriptLocale = rawLocale;
   const t = useTranslations("agentOs");
   const ts = useTranslations("project.skills");
   const openSkills = useProjectUIStore((state) => state.openSkills);
@@ -158,7 +189,29 @@ function AgentOsProjectSession({
     error: projectSkillsQuery.isError,
     retry: () => void projectSkillsQuery.refetch(),
   };
-  const { state, send, resolveApproval, newChat, stop } = useAgentOsRun(projectId);
+  const { state, send, resolveApproval, resolveUserInput, newChat, stop } =
+    useAgentOsRun(projectId);
+  const agentActivity = deriveAgentActivity(state.events, state.status, state.pendingExternal);
+  const activeTurnId = state.runId ? deriveActiveTurnId(state.events, state.runId) : null;
+  const effectiveActivityStatus = resolveAgentOsActivityStatus({
+    status: state.status,
+    runId: state.runId,
+    activeTurnId,
+    pendingExternalJobId: state.pendingExternal?.jobId ?? null,
+    host: activityStatus ?? null,
+    derived: agentActivity
+      ? {
+          label: t(`activity.${agentActivityLabelKey(agentActivity)}`),
+          mode:
+            agentActivity.kind === "waiting_for_input" ||
+            agentActivity.kind === "waiting_for_approval"
+              ? "waiting"
+              : "working",
+          turnId: agentActivity.turnId,
+          runId: state.runId,
+        }
+      : null,
+  });
   const [draft, setDraft] = useState("");
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -319,7 +372,11 @@ function AgentOsProjectSession({
     const prev = prevStatusRef.current;
     prevStatusRef.current = state.status;
     const finishedWork =
-      (prev === "running" || prev === "waiting_for_approval") && state.status === "completed";
+      (prev === "running" ||
+        prev === "waiting_for_approval" ||
+        prev === "waiting_for_input" ||
+        prev === "waiting_for_external") &&
+      state.status === "completed";
     if (!finishedWork || !state.runId) return;
     if (lastSyncedRunRef.current === state.runId) return;
     lastSyncedRunRef.current = state.runId;
@@ -387,9 +444,7 @@ function AgentOsProjectSession({
       ? t("pollLost")
       : state.errorCode === "AGENT_OS_POLL_TIMEOUT"
         ? t("pollTimeout")
-        : state.errorCode === "AGENT_OS_RUN_ORPHANED"
-          ? t("runOrphaned")
-          : (state.error ?? null)
+        : (state.error ?? null)
     : state.error;
   const projectSkillIssue = projectSkills.error
     ? toAgentOsIssue(
@@ -406,7 +461,12 @@ function AgentOsProjectSession({
       : null);
 
   const turnBusy =
-    busy || uploading || state.status === "running" || state.status === "waiting_for_approval";
+    busy ||
+    uploading ||
+    state.status === "running" ||
+    state.status === "waiting_for_approval" ||
+    state.status === "waiting_for_input" ||
+    state.status === "waiting_for_external";
 
   // Known-offline is the one state where sending cannot work. `null` is "not
   // checked yet" — do not lock the composer on an unanswered probe.
@@ -550,10 +610,13 @@ function AgentOsProjectSession({
     }
   };
 
-  const onApprove = async (decision: "approve" | "reject") => {
+  const onApprove = async (
+    decision: "approve" | "reject",
+    responseText?: string
+  ): Promise<void> => {
     const approvalId = state.pendingApproval?.approvalId;
     // Provisional ids are UI-only until ApprovalRequired lands with a real UUID.
-    if (approvalId && (approvalId.startsWith("pending:") || !/^[0-9a-f-]{36}$/i.test(approvalId))) {
+    if (!approvalId || approvalId.startsWith("pending:") || !/^[0-9a-f-]{36}$/i.test(approvalId)) {
       reportIssue(null, t("approvalNotReady"));
       return;
     }
@@ -561,9 +624,27 @@ function AgentOsProjectSession({
     try {
       // Feedback lives in the transcript (decision bubble + stream / cancel),
       // not a floating toast.
-      await resolveApproval({ decision, modelProfileId, permissionMode });
+      await resolveApproval({
+        approvalId,
+        decision,
+        responseText: responseText ?? (decision === "approve" ? t("approved") : t("rejected")),
+        locale: transcriptLocale,
+        modelProfileId,
+        permissionMode,
+      });
     } catch (error) {
       reportIssue(error, t("approvalFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onResolveUserInput = async (requestId: string, answers: Record<string, string>) => {
+    setBusy(true);
+    try {
+      await resolveUserInput({ requestId, answers, modelProfileId, permissionMode });
+    } catch (error) {
+      reportIssue(error, t("userInput.failed"));
     } finally {
       setBusy(false);
     }
@@ -572,10 +653,73 @@ function AgentOsProjectSession({
   const workerStatus =
     workerOk === false ? t("workerOffline") : workerOk === true ? t("workerOnline") : t("subtitle");
 
+  // Approval payload detail belongs only to the blocking composer decision.
+  const payloadLabels: ApprovalPayloadLabels = {
+    creates: (count) => t("approvalCreates", { count }),
+    updates: (count) => t("approvalUpdates", { count }),
+    deletes: (count) => t("approvalDeletes", { count }),
+    andMore: (count) => t("approvalAndMore", { count }),
+    showDetails: t("approvalShowDetails"),
+    hideDetails: t("approvalHideDetails"),
+    untitled: t("approvalUntitled"),
+    storyBible: t("approvalStoryBible"),
+    storyEntry: t("approvalStoryEntry"),
+    sceneOrder: t("approvalSceneOrder"),
+    storyScene: t("approvalStoryScene"),
+  };
+
+  // Every user decision replaces the input box (Claude/Codex
+  // approve-to-continue). Agent OS HITL wins over any host gate (for example
+  // story's proposal gate): the graph is paused, so this is the only way
+  // forward. Neither question nor approval cards ever enter the transcript.
+  const combinedComposerGate = (composerNode: ReactNode): ReactNode => {
+    const gated = composerGate ? composerGate(composerNode) : composerNode;
+    const inputRequest = state.pendingUserInput;
+    if (inputRequest) {
+      return (
+        <AgentOsUserInputCard
+          key={inputRequest.requestId}
+          request={inputRequest}
+          busy={busy}
+          labels={{
+            step: (current, total) => t("userInput.step", { current, total }),
+            back: t("userInput.back"),
+            continue: t("userInput.continue"),
+            submit: t("userInput.submit"),
+            submitting: t("userInput.submitting"),
+          }}
+          onSubmit={(answers) => void onResolveUserInput(inputRequest.requestId, answers)}
+        />
+      );
+    }
+    const approval = state.pendingApproval;
+    if (!approval) return gated;
+    const hostApproval = approvalGate?.({
+      approval,
+      busy,
+      onResolve: onApprove,
+    });
+    if (hostApproval != null) return hostApproval;
+    return (
+      <AgentOsApprovalComposer
+        approval={approval}
+        busy={busy}
+        labels={{
+          title: t("approvalRequired"),
+          approve: t("approve"),
+          reject: t("reject"),
+          payload: payloadLabels,
+        }}
+        onApprove={(decision) => void onApprove(decision)}
+      />
+    );
+  };
+
   return (
     <FizzAgentSurface
       className={className}
       variant={variant}
+      composerGate={combinedComposerGate}
       open={open}
       title={t("title")}
       subtitle={workerStatus}
@@ -594,7 +738,7 @@ function AgentOsProjectSession({
         setLatestIssue(null);
         newChat();
       }}
-      busy={busy}
+      busy={turnBusy}
       headerActions={
         <AlertDialog>
           <AlertDialogTrigger asChild>
@@ -606,7 +750,7 @@ function AgentOsProjectSession({
                 "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
                 diagnosticIssue
                   ? "bg-red-500/12 text-red-300 hover:bg-red-500/20 hover:text-red-200"
-                  : "bg-white/[0.035] text-white/54 hover:bg-white/[0.08] hover:text-white"
+                  : "bg-white/[0.05] text-white/72 hover:bg-white/[0.1] hover:text-white"
               )}
             >
               {diagnosticIssue ? (
@@ -709,18 +853,26 @@ function AgentOsProjectSession({
             onChange={setDraft}
             onSubmit={() => void onSend()}
             onStop={() => {
-              stop(t("stopped"));
-              setBusy(false);
+              void stop(t("stopped"))
+                .catch((error) => reportIssue(error, t("stopFailed")))
+                .finally(() => setBusy(false));
             }}
-            busy={turnBusy}
-            sendDisabled={!canSend && !turnBusy}
+            busy={
+              busy ||
+              uploading ||
+              state.status === "running" ||
+              state.status === "waiting_for_external"
+            }
+            sendDisabled={!canSend}
             canSendWithoutText={pendingFiles.some((file) => file.status === "ready")}
-            placeholder={t(
-              workbenchMode === "story" ? "composerPlaceholderStory" : "composerPlaceholder"
-            )}
+            placeholder={
+              composerPlaceholder ??
+              t(workbenchMode === "story" ? "composerPlaceholderStory" : "composerPlaceholder")
+            }
             inputLabel={t("message")}
             sendLabel={t("send")}
             stopLabel={t("stop")}
+            stopAvailable={state.pendingExternal?.toolId !== "story.applyProposal"}
             autoFocus
             appearance="fizz-agent"
             leadingAction={
@@ -730,7 +882,7 @@ function AgentOsProjectSession({
                 onClick={() => fileInputRef.current?.click()}
                 aria-label={t("attachFile")}
                 title={t("attachFile")}
-                className="grid size-8 shrink-0 place-items-center rounded-full text-white/48 transition-colors hover:bg-white/[0.06] hover:text-white/78 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
+                className="grid size-8 shrink-0 place-items-center rounded-full text-white/72 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
               >
                 <IconPaperclip aria-hidden="true" className="size-4" stroke={1.8} />
               </button>
@@ -765,7 +917,7 @@ function AgentOsProjectSession({
               <div className="grid gap-1.5">
                 {invocableSkills.length > 0 ? (
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] text-white/35">{t("skillsLabel")}</span>
+                    <span className="text-[10px] text-white/65">{t("skillsLabel")}</span>
                     {invocableSkills.map((skill) => {
                       const isTurn = turnSkillIds.includes(skill.id);
                       const active = isTurn;
@@ -781,7 +933,7 @@ function AgentOsProjectSession({
                             "rounded-full px-2 py-0.5 text-[10px] transition-colors",
                             active
                               ? "bg-white/15 text-white/90"
-                              : "bg-white/[0.05] text-white/50 hover:bg-white/[0.09] hover:text-white/75"
+                              : "bg-white/[0.06] text-white/78 hover:bg-white/[0.1] hover:text-white"
                           )}
                         >
                           {skill.name}
@@ -797,7 +949,7 @@ function AgentOsProjectSession({
                       disabled={turnBusy}
                       aria-label={t("chooseProjectSkills")}
                       title={t("chooseProjectSkills")}
-                      className="ring-brand-yellow/25 hover:bg-brand-yellow/[0.055] hover:ring-brand-yellow/45 inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 rounded-lg bg-transparent px-2.5 text-[11px] font-medium text-white/70 ring-1 ring-inset outline-none transition-colors hover:text-white/92 focus-visible:ring-2 focus-visible:ring-white/45 disabled:opacity-45"
+                      className="ring-brand-yellow/25 hover:bg-brand-yellow/[0.055] hover:ring-brand-yellow/45 inline-flex h-7 max-w-full shrink-0 items-center gap-1.5 rounded-lg bg-transparent px-2.5 text-[11px] font-medium text-white/88 ring-1 ring-inset outline-none transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white/45 disabled:opacity-45"
                     >
                       <IconPuzzle
                         aria-hidden="true"
@@ -812,7 +964,7 @@ function AgentOsProjectSession({
                       ) : null}
                       <IconChevronDown
                         aria-hidden="true"
-                        className="size-3 text-white/35"
+                        className="size-3 text-white/60"
                         stroke={1.8}
                       />
                     </DropdownMenuTrigger>
@@ -822,11 +974,11 @@ function AgentOsProjectSession({
                       sideOffset={8}
                       className="liquid-rim max-h-72 w-[min(320px,calc(100vw-24px))] rounded-2xl bg-[oklch(0.18_0_0_/_0.98)] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_24px_72px_rgba(0,0,0,0.68)] backdrop-blur-[36px]"
                     >
-                      <DropdownMenuLabel className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-white/38">
+                      <DropdownMenuLabel className="px-2.5 pt-2 pb-1 text-[10px] font-medium text-white/65">
                         {t("projectSkillsLabel")}
                       </DropdownMenuLabel>
                       {projectSkills.loading ? (
-                        <p className="px-2.5 py-2 text-[11px] text-white/42">
+                        <p className="px-2.5 py-2 text-[11px] text-white/68">
                           {t("skillsLoading")}
                         </p>
                       ) : projectSkills.error ? (
@@ -834,8 +986,8 @@ function AgentOsProjectSession({
                           onSelect={() => projectSkills.retry()}
                           className="min-h-9 rounded-xl px-2.5 py-2 focus:bg-white/[0.06]"
                         >
-                          <span className="text-white/70">{t("skillCatalogFailed")}</span>
-                          <span className="ml-auto text-[10px] text-white/38">
+                          <span className="text-white/88">{t("skillCatalogFailed")}</span>
+                          <span className="ml-auto text-[10px] text-white/65">
                             {t("skillsRetry")}
                           </span>
                         </DropdownMenuItem>
@@ -863,7 +1015,7 @@ function AgentOsProjectSession({
                                 )}
                                 stroke={1.8}
                               />
-                              <span className="min-w-0 flex-1 truncate text-white/78">{name}</span>
+                              <span className="min-w-0 flex-1 truncate text-white/90">{name}</span>
                               {isDefault ? (
                                 <span className="text-brand-yellow/55 text-[10px]">
                                   {t("skillDefaultBadge")}
@@ -873,14 +1025,14 @@ function AgentOsProjectSession({
                           );
                         })
                       ) : (
-                        <p className="px-2.5 py-2 text-[11px] text-white/42">{t("skillsEmpty")}</p>
+                        <p className="px-2.5 py-2 text-[11px] text-white/68">{t("skillsEmpty")}</p>
                       )}
                       <DropdownMenuSeparator className="my-1 bg-white/[0.08]" />
                       <DropdownMenuItem
                         onSelect={() => openSkills()}
                         className="min-h-9 rounded-xl px-2.5 py-2 focus:bg-white/[0.06]"
                       >
-                        <span className="text-white/78">{t("browseSkills")}</span>
+                        <span className="text-white/90">{t("browseSkills")}</span>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -896,7 +1048,7 @@ function AgentOsProjectSession({
                     {pendingFiles.map((file) => (
                       <span
                         key={file.id}
-                        className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/75"
+                        className="inline-flex max-w-full items-center gap-1 rounded-full bg-white/[0.08] px-2 py-0.5 text-[10px] text-white/88"
                       >
                         <span className="truncate">{file.filename}</span>
                         <button
@@ -918,39 +1070,21 @@ function AgentOsProjectSession({
       }
     >
       <AgentOsTranscript
-        projectId={projectId}
         messages={state.messages}
         status={state.status}
         error={runErrorText}
         busy={busy}
-        pendingApprovalActive={Boolean(state.pendingApproval)}
-        onApprove={(decision) => void onApprove(decision)}
+        activityStatus={effectiveActivityStatus}
         labels={{
           transcript: t("transcriptLabel"),
           scrollToLatest: t("scrollToLatest"),
           user: t("roleUser"),
           assistant: t("roleAssistant"),
-          system: t("roleSystem"),
-          tool: t("roleTool"),
           thinking: t("thinking"),
-          approve: t("approve"),
-          reject: t("reject"),
-          scriptAttached: (chars) => t("scriptAttached", { chars }),
-          plan: t("event.PlanCreated"),
-          showOnCanvas: t("showOnCanvas"),
-          payload: {
-            creates: (count) => t("approvalCreates", { count }),
-            updates: (count) => t("approvalUpdates", { count }),
-            deletes: (count) => t("approvalDeletes", { count }),
-            andMore: (count) => t("approvalAndMore", { count }),
-            showDetails: t("approvalShowDetails"),
-            hideDetails: t("approvalHideDetails"),
-            untitled: t("approvalUntitled"),
-            storyBible: t("approvalStoryBible"),
-            storyEntry: t("approvalStoryEntry"),
-            sceneOrder: t("approvalSceneOrder"),
-            storyScene: t("approvalStoryScene"),
-          },
+          waitingForInput: t("waitingForInput"),
+          waitingForApproval: t("waitingForApproval"),
+          approved: t("approved"),
+          rejected: t("rejected"),
         }}
         empty={
           <div className="w-full max-w-80 space-y-3">
@@ -960,7 +1094,7 @@ function AgentOsProjectSession({
               tabIndex={-1}
               className="pointer-events-none mx-auto mb-1"
             />
-            <p className="text-xs/relaxed text-white/40">
+            <p className="text-xs/relaxed text-white/78">
               {t(workbenchMode === "story" ? "emptyHintStory" : "emptyHint")}
             </p>
             <div className="flex flex-wrap justify-center gap-1.5">
@@ -969,7 +1103,7 @@ function AgentOsProjectSession({
                   key={key}
                   type="button"
                   onClick={() => setDraft(t(key))}
-                  className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[11px] text-white/65 transition hover:bg-white/[0.09] hover:text-white/90"
+                  className="rounded-full bg-white/[0.07] px-2.5 py-1 text-[11px] text-white/90 transition hover:bg-white/[0.12] hover:text-white"
                 >
                   {t(key)}
                 </button>

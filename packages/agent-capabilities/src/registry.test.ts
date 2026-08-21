@@ -24,8 +24,20 @@ describe("agent capability registry", () => {
   it("mounts the Story capability set only for Story projects", () => {
     expect(listModeDefinitions("story").map((definition) => definition.mode)).toEqual(["story"]);
     expect(requireModeDefinition("story", "story").toolIds).toContain("story.addBranch");
+    expect(requireModeDefinition("story", "story").toolIds).toContain("request_user_input");
+    expect(requireModeDefinition("story", "story").toolIds).toContain(
+      "story.confirmCreativeProfile"
+    );
     expect(() => requireModeDefinition("platform", "story")).toThrow();
     expect(() => requireModeDefinition("story", "canvas")).toThrow();
+  });
+
+  it("asks only for missing creative-profile decisions while the profile is unconfirmed", () => {
+    const instructions = requireModeDefinition("story", "story").instructions;
+    expect(instructions).toContain("ONLY the missing questions");
+    expect(instructions).toContain("story_language (zh-CN / zh-HK / en-US)");
+    expect(instructions).toContain("If none are missing, do not call");
+    expect(instructions).toContain("never ask the creator to confirm them again");
   });
 
   it("owns each mode's exact tool subset", () => {

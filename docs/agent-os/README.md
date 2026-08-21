@@ -19,7 +19,7 @@ OS is the only path for new Agent capability.
 | Control plane                | Agent Gateway (Nest later; local HTTP for Phase 1 dev)   |
 | Interactive runtime          | **LangGraph.js** (`createReactAgent` + tool `interrupt`) |
 | Long-running work            | **Temporal** (later phases)                              |
-| Realtime transport           | **Ably AI Transport** later (events journal first)       |
+| Realtime transport           | **Ably**, fed by the PostgreSQL event outbox             |
 | Models                       | **LiteLLM** via `@repo/model-router`                     |
 | Protocol                     | **`fizz.agent.v1`** (`@repo/agent-protocol`)             |
 | Business writes              | Domain Command APIs only — never LLM → SQL               |

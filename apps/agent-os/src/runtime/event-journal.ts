@@ -3,6 +3,7 @@ import {
   AgentEventTypeSchema,
   FIZZ_AGENT_PROTOCOL_VERSION,
   assertMonotonicSequence,
+  parseAgentEventDataForWrite,
   type AgentEventEnvelope,
   type AgentEventType,
 } from "@repo/agent-protocol";
@@ -18,14 +19,12 @@ export interface AppendEventInput {
 }
 
 /**
- * In-process sequence journal. Gateway persists to PostgreSQL;
- * optional onAppend fans out to Ably for low-latency UI.
+ * In-process sequence journal. The worker reports committed snapshots to the
+ * Gateway; only the Gateway may publish realtime events.
  */
 export class EventJournal {
   private sequence = 0;
   private readonly events: AgentEventEnvelope[] = [];
-
-  constructor(private readonly onAppend?: (event: AgentEventEnvelope) => void) {}
 
   get lastSequence(): number {
     return this.sequence;
@@ -59,6 +58,10 @@ export class EventJournal {
   }
 
   append(input: AppendEventInput): AgentEventEnvelope {
+    // Validate before reserving a sequence; rejected writes must not create a
+    // silent gap that later readers mistake for event loss.
+    const type = AgentEventTypeSchema.parse(input.type);
+    const data = parseAgentEventDataForWrite(type, input.data);
     const next = this.sequence + 1;
     if (this.sequence > 0) {
       assertMonotonicSequence(this.sequence, next);
@@ -73,16 +76,11 @@ export class EventJournal {
       conversationId: input.conversationId,
       sequence: next,
       timestamp: input.timestamp ?? new Date().toISOString(),
-      type: AgentEventTypeSchema.parse(input.type),
-      data: input.data,
+      type,
+      data,
     });
 
     this.events.push(envelope);
-    try {
-      this.onAppend?.(envelope);
-    } catch {
-      /* publisher must never break the turn */
-    }
     return envelope;
   }
 }

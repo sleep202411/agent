@@ -1092,6 +1092,8 @@ export const StoryAgentRunDtoSchema = z
     projectId: StoryAgentUuidSchema,
     chapterId: StoryAgentUuidSchema,
     initiator: StoryAgentInitiatorSchema,
+    /** True when proposal/failure decisions are owned by the Agent OS transcript. */
+    agentOsManaged: z.boolean(),
     confirmedByUserId: StoryAgentActorIdSchema.nullable(),
     cancelledByUserId: StoryAgentActorIdSchema.nullable(),
     proposal: StoryAgentRunProposalSchema,

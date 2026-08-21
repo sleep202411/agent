@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DocumentsModule } from '../documents/documents.module';
+import { AgentOsJournalModule } from '../agent-os-journal/agent-os-journal.module';
 import { AblyTokenCredentialsModule } from '../infra/realtime/ably-token-credentials';
 import { StoryStudioModule } from '../story-studio/story-studio.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
@@ -13,7 +14,9 @@ import { AgentOsGatewayController } from './agent-os-gateway.controller';
 import { AgentOsGatewayService } from './agent-os-gateway.service';
 import { AgentOsInternalController } from './agent-os-internal.controller';
 import { AgentOsProjectContextService } from './agent-os-project-context.service';
-import { AgentOsRunJournalService } from './agent-os-run-journal.service';
+import { AgentOsRunStartDispatcherService } from './agent-os-run-start-dispatcher.service';
+import { AgentOsRunContinuationDispatcherService } from './agent-os-run-continuation-dispatcher.service';
+import { AgentOsToolExecutionReceiptService } from './agent-os-tool-execution-receipt.service';
 import { AgentOsWorkerClient } from './agent-os-worker.client';
 import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
 import { AttachmentAgentCapabilityHandler } from './capabilities/attachment.handler';
@@ -23,6 +26,7 @@ import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
 @Module({
   imports: [
     StoryStudioModule,
+    AgentOsJournalModule,
     WorkspacesModule,
     AblyTokenCredentialsModule,
     DocumentsModule,
@@ -36,10 +40,12 @@ import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
   providers: [
     AgentOsGatewayConfigService,
     AgentOsWorkerClient,
+    AgentOsRunStartDispatcherService,
+    AgentOsRunContinuationDispatcherService,
     AgentOsGatewayService,
     AgentOsDomainService,
     AgentOsProjectContextService,
-    AgentOsRunJournalService,
+    AgentOsToolExecutionReceiptService,
     AgentOsAttachmentService,
     AgentOsAblyTokenIssuer,
     AgentOsCanvasShotsService,
@@ -51,7 +57,7 @@ import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
     AgentOsGatewayService,
     AgentOsDomainService,
     AgentOsProjectContextService,
-    AgentOsRunJournalService,
+    AgentOsJournalModule,
     AgentOsAttachmentService,
   ],
 })

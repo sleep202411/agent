@@ -103,12 +103,27 @@ describe("current-draft Story production routes", () => {
     });
   });
 
-  it("creates a film project with its required frame contract", async () => {
+  it("rejects a partial creative profile from the API", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      items: [
+        {
+          ...storyProject(),
+          durationPreset: "short_5_15",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    await expect(listStoryProjects("workspace-1", { limit: 100 })).rejects.toThrow(
+      "Story Studio API contract is out of date."
+    );
+  });
+
+  it("creates an empty project without pretending the Agent intake is already answered", async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ project: storyProject() });
 
     await expect(
       createStoryProject("workspace-1", {
-        frameProfile: "portrait_9_16",
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
@@ -117,7 +132,6 @@ describe("current-draft Story production routes", () => {
     ).resolves.toMatchObject({ frameProfile: "landscape_16_9" });
     expect(api.post).toHaveBeenCalledWith("/aurora/story-projects", {
       data: {
-        frameProfile: "portrait_9_16",
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
@@ -477,6 +491,10 @@ function storyProject(): StoryProjectSummary {
     id: "project-film",
     workspaceId: "workspace-1",
     frameProfile: "landscape_16_9",
+    frameProfileMutable: true,
+    durationPreset: null,
+    visualStyle: null,
+    creativeProfileConfirmedAt: null,
     status: "active",
     visibility: "private",
     title: "Moving Pictures",

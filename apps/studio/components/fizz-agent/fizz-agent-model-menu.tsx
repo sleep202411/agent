@@ -42,7 +42,7 @@ export function FizzAgentModelMenu({
         disabled={disabled}
         aria-label={label}
         className={cn(
-          "inline-flex h-8 max-w-40 items-center gap-1.5 rounded-full px-2.5 text-[11px] text-white/52 outline-none transition-colors hover:bg-white/[0.06] hover:text-white/78 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45",
+          "inline-flex h-8 max-w-40 items-center gap-1.5 rounded-full px-2.5 text-[11px] text-white/82 outline-none transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45",
           className
         )}
       >
@@ -64,9 +64,9 @@ export function FizzAgentModelMenu({
               className="min-h-12 items-start rounded-xl px-3 py-2.5 pr-9 focus:bg-white/[0.06]"
             >
               <span className="min-w-0">
-                <span className="block text-xs font-medium text-white/88">{option.label}</span>
+                <span className="block text-xs font-medium text-white">{option.label}</span>
                 {option.hint ? (
-                  <span className="mt-0.5 block text-[11px]/relaxed text-white/42">
+                  <span className="mt-0.5 block text-[11px]/relaxed text-white/65">
                     {option.hint}
                   </span>
                 ) : null}

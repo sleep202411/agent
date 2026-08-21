@@ -16,6 +16,7 @@ import {
   buildPutInteractionOperations,
   buildRemoveInteractionOperations,
   buildRemoveSubtreeOperations,
+  creativeProfileValuesFromJournal,
 } from './story.handler';
 
 function node(
@@ -49,8 +50,39 @@ function draft(
   };
 }
 
+const CREATIVE_PROFILE_QUESTIONS = [
+  {
+    id: 'aspect_ratio',
+    options: [{ value: 'portrait_9_16' }, { value: 'landscape_16_9' }],
+  },
+  {
+    id: 'target_runtime',
+    options: [
+      { value: 'short_5_15' },
+      { value: 'medium_15_30' },
+      { value: 'long_30_60' },
+    ],
+  },
+  {
+    id: 'visual_direction',
+    options: [
+      { value: 'cinematic_realism' },
+      { value: 'stylized_3d' },
+      { value: 'graphic_novel' },
+      { value: 'anime_cinematic' },
+    ],
+  },
+  {
+    id: 'story_language',
+    options: [{ value: 'zh-CN' }, { value: 'zh-HK' }, { value: 'en-US' }],
+  },
+] as const;
+
 describe('StoryAgentCapabilityHandler', () => {
   const handler = new StoryAgentCapabilityHandler(
+    {} as never,
+    {} as never,
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -58,11 +90,368 @@ describe('StoryAgentCapabilityHandler', () => {
 
   it('claims only the new Story capability family', () => {
     expect(handler.supports('story.read')).toBe(true);
+    expect(handler.supports('story.confirmCreativeProfile')).toBe(true);
     expect(handler.supports('story.addBranch')).toBe(true);
     expect(handler.supports('story.putInteraction')).toBe(true);
     expect(handler.supports('story.removeInteraction')).toBe(true);
     expect(handler.supports('characters.upsert')).toBe(false);
     expect(handler.supports('canvas.applyPatch')).toBe(false);
+  });
+
+  it('returns the stable external-job handoff when an idempotent retry already reached proposed', async () => {
+    const createAuthoringRun = jest.fn().mockResolvedValue({
+      id: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+      status: 'proposed',
+    });
+    const requireWrite = jest.fn().mockResolvedValue({
+      workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+    });
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {} as never,
+      { requireWrite } as never,
+      {} as never,
+      { createAuthoringRun } as never,
+      { fenceBusinessMutationInTx: jest.fn() } as never,
+    );
+    const input = {
+      toolId: 'story.author',
+      runId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+      conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+      turnId: '019a034d-34a7-7542-a554-4a7dbdb247dd',
+      toolCallId: 'call_story_author_1',
+      actorId: 'creator-1',
+      projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+      skillResolutionId: '019a034d-37f5-7d82-9075-a502131a0a69',
+      skillVersionIds: [],
+      workbenchContext: {
+        chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+      },
+      idempotencyKey:
+        '019a034d-36a6-70df-91b1-1d030480f7d4:019a034d-31a5-7d7f-8329-a91739a701b0:call_story_author_1:v1',
+      arguments: {
+        title: 'The Last Watch',
+        summary: 'A final imperial guard chooses whom to save.',
+        brief:
+          'Create an interactive film set on the final night of Ming rule.',
+        startedMessage:
+          'I have the direction and am shaping the interactive-film proposal now.',
+        completionMessage:
+          'The Last Watch proposal is ready for you to review.',
+      },
+    } as const;
+
+    await expect(scoped.execute(input)).resolves.toEqual({
+      runId: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+      status: 'authoring',
+      agentHandoff: {
+        kind: 'external_job',
+        jobId: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+        startedMessage:
+          'I have the direction and am shaping the interactive-film proposal now.',
+      },
+    });
+    expect(createAuthoringRun).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+      '019a034d-36a6-70df-91b1-1d030480f7d4',
+      expect.objectContaining({
+        idempotencyKey: input.idempotencyKey,
+        conversationId: input.conversationId,
+        sourceAgentRunId: input.runId,
+        sourceAgentTurnId: input.turnId,
+        sourceAgentToolCallId: input.toolCallId,
+        sourceStartedMessage: input.arguments.startedMessage,
+        sourceCompletionMessage: input.arguments.completionMessage,
+      }),
+      expect.objectContaining({
+        canonicalizeAndFence: expect.any(Function),
+      }),
+    );
+  });
+
+  it('validates creative-profile answers from the append-only run journal', async () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    const getRunEvents = jest.fn().mockResolvedValue([
+      {
+        sequence: 1,
+        type: 'UserInputRequired',
+        data: {
+          requestId,
+          formId: 'story_creative_profile',
+          knownValues: {},
+          questions: CREATIVE_PROFILE_QUESTIONS,
+        },
+      },
+      {
+        sequence: 2,
+        type: 'UserInputResolved',
+        data: {
+          requestId,
+          answers: {
+            aspect_ratio: 'landscape_16_9',
+            target_runtime: 'medium_15_30',
+            visual_direction: 'stylized_3d',
+            story_language: 'zh-CN',
+          },
+        },
+      },
+    ]);
+    const tx = {
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue({
+          frameProfile: 'landscape_16_9',
+          durationPreset: null,
+          visualStyle: null,
+          defaultLocale: 'en-US',
+          creativeProfileConfirmedAt: null,
+          builds: [],
+          videoSelections: [],
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const prisma = {
+      agentOsRun: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: '019a034d-31a5-7d7f-8329-a91739a701b0',
+        }),
+      },
+      $transaction: jest
+        .fn()
+        .mockImplementation((callback: (value: typeof tx) => unknown) =>
+          callback(tx),
+        ),
+    };
+    const authorizeWrite = jest.fn().mockResolvedValue(undefined);
+    const acquireAgentOsMutationFence = jest.fn().mockResolvedValue(undefined);
+    const scoped = new StoryAgentCapabilityHandler(
+      prisma as never,
+      { getRunEvents } as never,
+      { authorizeWrite } as never,
+      { acquireAgentOsMutationFence } as never,
+      {} as never,
+      {
+        fenceBusinessMutationInTx: jest.fn().mockResolvedValue(undefined),
+        completeSuccessInTx: jest.fn().mockResolvedValue(undefined),
+      } as never,
+    );
+
+    await expect(
+      scoped.execute({
+        toolId: 'story.confirmCreativeProfile',
+        runId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+        conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+        turnId: '019a034d-34a7-7542-a554-4a7dbdb247dd',
+        toolCallId: 'call_confirm_profile_1',
+        actorId: 'creator-1',
+        projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+        skillResolutionId: '019a034d-37f5-7d82-9075-a502131a0a69',
+        skillVersionIds: [],
+        idempotencyKey: 'confirm-profile-key-1',
+        arguments: {
+          requestId,
+          aspectRatio: 'landscape_16_9',
+          targetRuntime: 'medium_15_30',
+          visualDirection: 'stylized_3d',
+          storyLanguage: 'zh-CN',
+        },
+      }),
+    ).resolves.toMatchObject({
+      frameProfile: 'landscape_16_9',
+      durationPreset: 'medium_15_30',
+      visualStyle: 'stylized_3d',
+      storyLanguage: 'zh-CN',
+    });
+    expect(prisma.agentOsRun.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: '019a034d-31a5-7d7f-8329-a91739a701b0',
+        projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+        conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+        actorId: 'creator-1',
+      },
+      select: { id: true },
+    });
+    expect(getRunEvents).toHaveBeenCalledWith(
+      '019a034d-31a5-7d7f-8329-a91739a701b0',
+    );
+  });
+
+  it('accepts creative profile values only from the matching resolved Agent request', () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    expect(
+      creativeProfileValuesFromJournal(
+        [
+          {
+            sequence: 1,
+            type: 'UserInputRequired',
+            data: {
+              requestId,
+              formId: 'story_creative_profile',
+              knownValues: {},
+              questions: CREATIVE_PROFILE_QUESTIONS,
+            },
+          },
+          {
+            sequence: 2,
+            type: 'UserInputResolved',
+            data: {
+              requestId,
+              answers: {
+                aspect_ratio: 'landscape_16_9',
+                target_runtime: 'medium_15_30',
+                visual_direction: 'stylized_3d',
+                story_language: 'zh-CN',
+              },
+            },
+          },
+        ] as never,
+        requestId,
+      ),
+    ).toEqual({
+      aspect_ratio: 'landscape_16_9',
+      target_runtime: 'medium_15_30',
+      visual_direction: 'stylized_3d',
+      story_language: 'zh-CN',
+    });
+  });
+
+  it('rejects a creative-profile request when the model omits formId', () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    expect(() =>
+      creativeProfileValuesFromJournal(
+        [
+          {
+            sequence: 1,
+            type: 'UserInputRequired',
+            data: {
+              requestId,
+              knownValues: {},
+              questions: CREATIVE_PROFILE_QUESTIONS,
+            },
+          },
+          {
+            sequence: 2,
+            type: 'UserInputResolved',
+            data: {
+              requestId,
+              answers: {
+                aspect_ratio: 'landscape_16_9',
+                target_runtime: 'medium_15_30',
+                visual_direction: 'stylized_3d',
+                story_language: 'zh-HK',
+              },
+            },
+          },
+        ] as never,
+        requestId,
+      ),
+    ).toThrow('creative profile must come from a resolved');
+  });
+
+  it('accepts only the missing creative-profile questions in canonical order', () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    expect(
+      creativeProfileValuesFromJournal(
+        [
+          {
+            sequence: 1,
+            type: 'UserInputRequired',
+            data: {
+              requestId,
+              formId: 'story_creative_profile',
+              knownValues: {
+                aspect_ratio: 'landscape_16_9',
+                visual_direction: 'stylized_3d',
+              },
+              questions: [
+                CREATIVE_PROFILE_QUESTIONS[1],
+                CREATIVE_PROFILE_QUESTIONS[3],
+              ],
+            },
+          },
+          {
+            sequence: 2,
+            type: 'UserInputResolved',
+            data: {
+              requestId,
+              answers: {
+                target_runtime: 'medium_15_30',
+                story_language: 'en-US',
+              },
+            },
+          },
+        ] as never,
+        requestId,
+      ),
+    ).toEqual({
+      aspect_ratio: 'landscape_16_9',
+      target_runtime: 'medium_15_30',
+      visual_direction: 'stylized_3d',
+      story_language: 'en-US',
+    });
+  });
+
+  it('rejects creative-profile questions that are out of canonical order', () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    expect(() =>
+      creativeProfileValuesFromJournal(
+        [
+          {
+            sequence: 1,
+            type: 'UserInputRequired',
+            data: {
+              requestId,
+              formId: 'story_creative_profile',
+              knownValues: {
+                aspect_ratio: 'landscape_16_9',
+                visual_direction: 'stylized_3d',
+              },
+              questions: [
+                CREATIVE_PROFILE_QUESTIONS[3],
+                CREATIVE_PROFILE_QUESTIONS[1],
+              ],
+            },
+          },
+          {
+            sequence: 2,
+            type: 'UserInputResolved',
+            data: {
+              requestId,
+              answers: {
+                story_language: 'en-US',
+                target_runtime: 'medium_15_30',
+              },
+            },
+          },
+        ] as never,
+        requestId,
+      ),
+    ).toThrow('creative profile must come from a resolved');
+  });
+
+  it('rejects answers that were not preceded by the matching operation-card request', () => {
+    const requestId = '11111111-1111-4111-8111-111111111111';
+    expect(() =>
+      creativeProfileValuesFromJournal(
+        [
+          {
+            sequence: 1,
+            type: 'UserInputResolved',
+            data: {
+              requestId,
+              answers: {
+                aspect_ratio: 'landscape_16_9',
+                target_runtime: 'medium_15_30',
+                visual_direction: 'stylized_3d',
+                story_language: 'en-US',
+              },
+            },
+          },
+        ] as never,
+        requestId,
+      ),
+    ).toThrow('creative profile must come from a resolved');
   });
 
   it('creates a complete branch atomically with no dangling targets', () => {
@@ -210,6 +599,7 @@ describe('StoryAgentCapabilityHandler', () => {
     expect(replacedOpening.interactions[0]?.trigger).toEqual({
       kind: 'press-hold',
       durationMs: 700,
+      controlTimeline: false,
     });
   });
 

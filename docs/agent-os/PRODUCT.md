@@ -15,7 +15,8 @@ Claude Code / Codex:
 - User sends **one message** (optional attachments).
 - Agent **plans, calls tools, observes results, continues**.
 - Side effects land in the **project database** via Domain Commands.
-- UI shows **steps, tools, diffs/approvals, duration** — not only chat bubbles.
+- UI shows a compact, live execution state plus durable conversation and
+  decision surfaces; raw tool logs do not overwhelm the creator.
 - Refresh / stop / approve must be **correct and durable** (see STABILITY.md).
 
 **Not** a chat wrapper that only returns analysis text.
@@ -50,8 +51,8 @@ User: "Analyze characters from this script and write them into my project."
 
 Agent must:
   1. Resolve scene (project, permissions, attachment refs)
-  2. Read script content via tools (bounded sections — never dump 100k words
-     blindly into one prompt when a retrieval tool exists)
+  2. Read script content via tools (bounded sections — never dump an entire
+     long script blindly into one prompt when a retrieval tool exists)
   3. Analyze / structure character list (model)
   4. Propose writes (preview / Plan + ToolProposed)
   5. Pass Policy (sensitive write → approval when required)
@@ -83,6 +84,19 @@ Read nodes / selection → analyze → propose create nodes/edges (patch)
 
 Both A and B share the same runtime: **tool loop + policy + domain + events**.
 
+## Start submission contract
+
+- The browser creates stable conversation, submission, turn, and message ids
+  before POSTing. Network retry reuses them; a deliberate later send does not.
+- User text is accepted up to 20,000 characters and rejected above that limit.
+  It is never clipped into a different model request.
+- Text may be empty only when at least one attachment is present. The transcript
+  then shows attachment chips without fabricating words the user did not type.
+- The durable `UserMessage` stores only ordered attachment id/filename
+  summaries. File bytes and extracted content remain tool data, not chat data.
+- The first durable receipt clears the short-lived browser submission outbox;
+  refresh and response-loss retries recover the same run from PostgreSQL.
+
 ## Tool philosophy
 
 | Kind    | Examples                                               | Side effects |
@@ -93,18 +107,44 @@ Both A and B share the same runtime: **tool loop + policy + domain + events**.
 Commands always carry:
 
 - `idempotencyKey`
+- stable `toolCallId` (the second unique receipt key)
 - actor + project scope from Gateway (never trusted from model alone)
 - base revision / expected version when mutating aggregates
+- one system-owned execution proof while the command is in flight: initial
+  start or post-HITL continuation, never both and never model-authored
 
-## UX bar (inspired by execution agents)
+The Domain stores a fingerprinted command receipt in the same transaction as
+the product write. Retrying an exact command returns the stored result; reusing
+either identity for a different payload fails closed. Network ambiguity stays
+inside that tool call until the receipt becomes definite, so the Assistant
+cannot report failure for a mutation that actually committed.
 
-Minimum Agent Panel surfaces:
+## UX interaction contract
 
-- Chat (final + clarifications)
-- Plan / steps with timing
-- Tool activity (name, status, error)
-- Approval card when required
-- Artifacts / entity change summary
-- Cancel / later: Steer
+The panel has four distinct layers; they must not be merged for implementation
+convenience:
 
-Do not collapse the entire process into a single assistant bubble.
+1. **Transcript** — durable user and Assistant messages in strict order.
+2. **Activity** — one ephemeral live row whose label changes as planning, tools,
+   and external work advance. It is not a transcript message or a checklist.
+3. **Decision surface** — Question, Approval, or Draft card replaces/overlays the
+   composer while action is required. Cards never become chat-history rows.
+4. **Composer** — ordinary input only when the run is ready to accept it.
+
+When a Decision surface replaces the ordinary composer, it is a labelled
+interactive region with a live announcement. Keyboard focus moves to its title
+or first actionable control; after submission or dismissal, focus returns to
+the ordinary composer. A waiting-for-input / waiting-for-approval activity line
+remains visible above the gate without pretending that tools are still running.
+
+An Assistant turn may contain an immediate acknowledgement, activity, and a
+later final result while remaining one visual response group. The acknowledgement
+does not claim success; the final result is emitted only after the authoritative
+tool or background job succeeds. Every card submission is rendered and
+persisted as the next user message before Agent OS resumes.
+
+For Story authoring, “Draft ready” means ready for review, not applied and not
+terminal. Its Draft card is the rich rendering of a durable Agent approval.
+Discard closes the run without changing the project; Apply acknowledges the
+decision, returns to the single live activity row, and completes only after the
+Story transaction has committed the proposal.

@@ -1317,20 +1317,191 @@ model AgentOsRun {
   modelProfileId   String   @map("model_profile_id") @db.VarChar(64)
   status           String   @db.VarChar(32)
   lastSequence     Int      @default(0) @map("last_sequence")
-  events           Json     @default("[]") @db.JsonB
   pendingApproval  Json?    @map("pending_approval") @db.JsonB
+  pendingExternal  Json?    @map("pending_external") @db.JsonB
+  /// Short-lived, row-locked claim for one structured-input response. The
+  /// durable UserInputResolved event remains the final idempotency authority;
+  /// this lease only prevents two Gateway pods dispatching it concurrently.
+  inputResponseId             String?   @map("input_response_id") @db.Uuid
+  inputRequestId              String?   @map("input_request_id") @db.Uuid
+  inputAnswersFingerprint     String?   @map("input_answers_fingerprint") @db.VarChar(64)
+  inputResponseLeaseId        String?   @map("input_response_lease_id") @db.Uuid
+  inputResponseLeaseExpiresAt DateTime? @map("input_response_lease_expires_at") @db.Timestamptz(6)
+  /// Short-lived, row-locked claim for one generic tool-approval response.
+  /// The append-only ApprovalResolved/UserMessage pair remains authoritative;
+  /// this lease fences concurrent Gateway/Worker pods before graph resume.
+  approvalResponseId             String?   @map("approval_response_id") @db.Uuid
+  approvalId                     String?   @map("approval_id") @db.Uuid
+  approvalFingerprint            String?   @map("approval_fingerprint") @db.VarChar(64)
+  approvalResponseLeaseId        String?   @map("approval_response_lease_id") @db.Uuid
+  approvalResponseLeaseExpiresAt DateTime? @map("approval_response_lease_expires_at") @db.Timestamptz(6)
+  /// Durable start command/outbox. Admission commits this row before any
+  /// Worker HTTP call, so a Gateway crash cannot strand an unstarted run.
+  startCommand             Json?   @map("start_command") @db.JsonB
+  /// Version 2 reserves the exact first user event before Worker dispatch.
+  /// Version 1 identifies historical rows created before durable admission.
+  startAdmissionVersion    Int     @default(1) @map("start_admission_version")
+  clientSubmissionId       String? @map("client_submission_id") @db.Uuid
+  startTurnId              String? @map("start_turn_id") @db.Uuid
+  startUserMessageId       String? @map("start_user_message_id") @db.Uuid
+  submissionFingerprint    String? @map("submission_fingerprint") @db.VarChar(64)
+  /// Stable semantic token plus a monotonically fenced execution attempt.
+  /// The command remains recoverable until the initial graph reaches a
+  /// checkpoint-backed pause or terminal outcome.
+  startExecutionToken          String?   @map("start_execution_token") @db.Uuid
+  startExecutionAttemptId      String?   @map("start_execution_attempt_id") @db.Uuid
+  startExecutionEpoch          Int       @default(0) @map("start_execution_epoch")
+  startExecutionOwnerId        String?   @map("start_execution_owner_id") @db.Uuid
+  startExecutionLeaseExpiresAt DateTime? @map("start_execution_lease_expires_at") @db.Timestamptz(6)
+  startExecutionHeartbeatAt    DateTime? @map("start_execution_heartbeat_at") @db.Timestamptz(6)
+  startExecutionCheckpointId   String?   @map("start_execution_checkpoint_id") @db.VarChar(160)
+  startExecutionCheckpointNamespace String? @map("start_execution_checkpoint_namespace") @db.VarChar(200)
+  startExecutionCheckpointThreadId String? @map("start_execution_checkpoint_thread_id") @db.Uuid
+  startExecutionCheckpointMessageId String? @map("start_execution_checkpoint_message_id") @db.Uuid
+  startExecutionCheckpointedAt DateTime? @map("start_execution_checkpointed_at") @db.Timestamptz(6)
+  startExecutionFinishedAt     DateTime? @map("start_execution_finished_at") @db.Timestamptz(6)
+  startDispatchNextAttemptAt  DateTime? @map("start_dispatch_next_attempt_at") @db.Timestamptz(6)
+  startDispatchLastError      String?   @map("start_dispatch_last_error") @db.Text
+  startDispatchedAt           DateTime? @map("start_dispatched_at") @db.Timestamptz(6)
+  /// Durable HITL continuation outbox. A resolved approval/input response and
+  /// this command commit in the same journal transaction; execution is leased
+  /// independently from initial start and remains recoverable until a newer
+  /// graph checkpoint proves the resumed node reached a pause or terminal.
+  continuationCommand             Json?     @map("continuation_command") @db.JsonB
+  continuationExecutionToken      String?   @map("continuation_execution_token") @db.Uuid
+  continuationExecutionAttemptId  String?   @map("continuation_execution_attempt_id") @db.Uuid
+  continuationExecutionEpoch      Int       @default(0) @map("continuation_execution_epoch")
+  continuationExecutionOwnerId    String?   @map("continuation_execution_owner_id") @db.Uuid
+  continuationExecutionLeaseExpiresAt DateTime? @map("continuation_execution_lease_expires_at") @db.Timestamptz(6)
+  continuationExecutionHeartbeatAt DateTime? @map("continuation_execution_heartbeat_at") @db.Timestamptz(6)
+  continuationExecutionCheckpointId String? @map("continuation_execution_checkpoint_id") @db.VarChar(160)
+  continuationExecutionCheckpointNamespace String? @map("continuation_execution_checkpoint_namespace") @db.VarChar(200)
+  continuationExecutionCheckpointThreadId String? @map("continuation_execution_checkpoint_thread_id") @db.Uuid
+  continuationExecutionCheckpointedAt DateTime? @map("continuation_execution_checkpointed_at") @db.Timestamptz(6)
+  continuationExecutionFinishedAt DateTime? @map("continuation_execution_finished_at") @db.Timestamptz(6)
+  continuationDispatchNextAttemptAt DateTime? @map("continuation_dispatch_next_attempt_at") @db.Timestamptz(6)
+  continuationDispatchLastError String? @map("continuation_dispatch_last_error") @db.Text
+  continuationDispatchedAt DateTime? @map("continuation_dispatched_at") @db.Timestamptz(6)
   assistantText    String?  @map("assistant_text") @db.Text
   projectKind      String?  @map("project_kind") @db.VarChar(32)
   workbenchMode    String?  @map("workbench_mode") @db.VarChar(64)
   workbenchContext Json?    @map("workbench_context") @db.JsonB
   skillSnapshot    Json?    @map("skill_snapshot") @db.JsonB
+  /// Cross-pod lease for draining this run's committed events to realtime.
+  /// PostgreSQL remains authoritative; duplicate publishes are harmless
+  /// because every event has a stable Ably message id.
+  realtimePublishLeaseId        String?   @map("realtime_publish_lease_id") @db.Uuid
+  realtimePublishLeaseExpiresAt DateTime? @map("realtime_publish_lease_expires_at") @db.Timestamptz(6)
+  realtimeSnapshotSequence      Int       @default(0) @map("realtime_snapshot_sequence")
   createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  events                       AgentOsRunEvent[]
+  externalHandoffRegistrations AgentOsExternalHandoffRegistration[]
+  toolExecutionReceipts        AgentOsToolExecutionReceipt[]
 
   @@index([projectId, createdAt(sort: Desc)], map: "agent_os_runs_project_recent_idx")
   @@index([actorId, createdAt(sort: Desc)], map: "agent_os_runs_actor_recent_idx")
   @@index([projectId, conversationId, createdAt], map: "agent_os_runs_project_conversation_idx")
+  @@unique([actorId, projectId, clientSubmissionId], map: "agent_os_runs_actor_project_submission_unique")
+  @@index([continuationDispatchNextAttemptAt, createdAt], map: "agent_os_runs_continuation_dispatch_idx")
   @@map("agent_os_runs")
+}
+
+/// Durable, exactly-once receipt for an Agent OS command tool invocation.
+///
+/// The receipt is claimed before execution and completed in the same database
+/// transaction as the product mutation. Completed receipts are the response-
+/// loss replay authority; the expiring lease only serializes live executors.
+model AgentOsToolExecutionReceipt {
+  id                      String    @id @default(uuid(7)) @db.Uuid
+  runId                   String    @map("run_id") @db.Uuid
+  conversationId          String    @map("conversation_id") @db.Uuid
+  turnId                  String    @map("turn_id") @db.Uuid
+  toolCallId              String    @map("tool_call_id") @db.VarChar(256)
+  toolId                  String    @map("tool_id") @db.VarChar(128)
+  projectId               String    @map("project_id") @db.Uuid
+  actorId                 String    @map("actor_id") @db.VarChar(128)
+  idempotencyKey          String    @map("idempotency_key") @db.VarChar(512)
+  requestFingerprint      String    @map("request_fingerprint") @db.VarChar(64)
+  /// executing | completed
+  status                  String    @db.VarChar(16)
+  leaseId                 String?   @map("lease_id") @db.Uuid
+  leaseExpiresAt          DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  response                Json?     @db.JsonB
+  startExecutionToken     String?   @map("start_execution_token") @db.Uuid
+  startExecutionAttemptId String?   @map("start_execution_attempt_id") @db.Uuid
+  startExecutionEpoch     Int?      @map("start_execution_epoch")
+  startExecutionOwnerId   String?   @map("start_execution_owner_id") @db.Uuid
+  continuationExecutionToken String? @map("continuation_execution_token") @db.Uuid
+  continuationExecutionAttemptId String? @map("continuation_execution_attempt_id") @db.Uuid
+  continuationExecutionEpoch Int? @map("continuation_execution_epoch")
+  continuationExecutionOwnerId String? @map("continuation_execution_owner_id") @db.Uuid
+  completedAt             DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  run AgentOsRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, toolCallId], map: "agent_os_tool_receipts_run_call_unique")
+  @@unique([runId, idempotencyKey], map: "agent_os_tool_receipts_run_key_unique")
+  @@index([runId, status, createdAt], map: "agent_os_tool_receipts_run_status_idx")
+  @@map("agent_os_tool_execution_receipts")
+}
+
+/// Append-only Agent OS event journal. `AgentOsRun` stores the current run
+/// projection; this table is the durable transcript/orchestration source.
+/// Events are immutable and ordered by the per-run sequence allocated by the
+/// Agent OS runtime or by an external-job continuation under a row lock.
+model AgentOsRunEvent {
+  id              String   @id @db.VarChar(128)
+  runId           String   @map("run_id") @db.Uuid
+  conversationId  String   @map("conversation_id") @db.Uuid
+  sequence        Int
+  protocolVersion String   @map("protocol_version") @db.VarChar(32)
+  sessionId       String   @map("session_id") @db.VarChar(180)
+  type            String   @db.VarChar(64)
+  data            Json     @db.JsonB
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
+  recordedAt      DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  realtimePublishedAt DateTime? @map("realtime_published_at") @db.Timestamptz(6)
+  realtimePublishAttempts Int @default(0) @map("realtime_publish_attempts")
+  realtimePublishLastError String? @map("realtime_publish_last_error") @db.Text
+
+  run AgentOsRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, sequence], map: "agent_os_run_events_run_sequence_unique")
+  @@index([conversationId, occurredAt, id], map: "agent_os_run_events_conversation_timeline_idx")
+  // The realtime pending index is partial (`WHERE realtime_published_at IS NULL`)
+  // and therefore lives in SQL migration only; Prisma cannot represent that
+  // predicate without incorrectly modelling it as a full index.
+  @@map("agent_os_run_events")
+}
+
+/// Immutable receipt that a privileged domain tool accepted a long-running
+/// external job. It is written in the same transaction as the domain job, so a
+/// worker crash before `RunPaused` can be reconciled from PostgreSQL instead of
+/// stranding the originating conversation.
+model AgentOsExternalHandoffRegistration {
+  id                    String   @id @default(uuid(7)) @db.Uuid
+  externalJobId         String   @unique(map: "agent_os_external_handoffs_job_unique") @map("external_job_id") @db.Uuid
+  sourceAgentRunId      String   @map("source_agent_run_id") @db.Uuid
+  sourceAgentTurnId     String   @map("source_agent_turn_id") @db.Uuid
+  sourceAgentToolCallId String   @map("source_agent_tool_call_id") @db.VarChar(256)
+  sourceConversationId  String   @map("source_conversation_id") @db.Uuid
+  sourceToolId          String   @map("source_tool_id") @db.VarChar(128)
+  decisionContractVersion Int    @default(2) @map("decision_contract_version")
+  startedMessage        String   @map("started_message") @db.Text
+  completionMessage     String   @map("completion_message") @db.Text
+  storyAgentRunId       String   @unique(map: "agent_os_external_handoffs_story_run_unique") @map("story_agent_run_id") @db.Uuid
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  storyAgentRun StoryAgentRun @relation(fields: [storyAgentRunId], references: [id], onDelete: Restrict)
+  sourceAgentRun AgentOsRun    @relation(fields: [sourceAgentRunId], references: [id], onDelete: Restrict)
+
+  @@unique([sourceAgentRunId, sourceAgentToolCallId], map: "agent_os_external_handoffs_source_tool_unique")
+  @@index([sourceAgentRunId, createdAt], map: "agent_os_external_handoffs_source_run_idx")
+  @@map("agent_os_external_handoff_registrations")
 }
 
 model StudioDocument {
@@ -4590,62 +4761,62 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
-  id                  String            @id
-  name                String            @db.VarChar(128)
-  description         String            @db.Text
+  id                  String               @id
+  name                String               @db.VarChar(128)
+  description         String               @db.Text
   /// Square logo (UI crops to circle). The durable brand asset —
   /// shows up in plaza cards, member chips, notifications, nav.
   /// Visitor-page hero visual comes from `showcaseWorks[0]`; the
   /// logo enlarges into a gradient empty-state when no showcase is
   /// set yet (no separate `cover` asset — by design).
-  logo                String            @map("logo") @db.VarChar(512)
+  logo                String               @map("logo") @db.VarChar(512)
   /// Optional one-line hook shown under crew name in hero. ≤140
   /// chars. Owner-curated.
-  tagline             String?           @db.VarChar(140)
+  tagline             String?              @db.VarChar(140)
   /// Predefined genre tags from CREW_GENRES in @repo/shared/crew.
   /// E.g. ["animation", "shortform", "documentary"]. Max 5.
-  genres              String[]          @default([])
+  genres              String[]             @default([])
   /// Predefined style tags from CREW_STYLES in @repo/shared/crew.
   /// E.g. ["2d", "3d", "live_action", "ai_assisted"]. Max 5.
-  styles              String[]          @default([])
+  styles              String[]             @default([])
   /// External social channels. Shape:
   ///   [{ platform: "bilibili"|"weibo"|..., url: "https://..." }]
   /// Validated server-side against SOCIAL_PLATFORMS. Max 10 entries.
-  socialLinks         Json?             @map("social_links") @db.JsonB
+  socialLinks         Json?                @map("social_links") @db.JsonB
   /// Curated work showcase. Shape:
   ///   [{ thumbnailUrl, title, externalUrl?, viewCount? }]
   /// First entry is featured as the visitor-page hero background.
   /// Max 10 entries.
-  showcaseWorks       Json?             @map("showcase_works") @db.JsonB
+  showcaseWorks       Json?                @map("showcase_works") @db.JsonB
   /// Immutable creator identity for audit only. Current ownership lives in
   /// CrewOwnership and is never inferred from this field.
-  createdByUserId     String            @map("created_by_user_id")
+  createdByUserId     String               @map("created_by_user_id")
   /// User-controlled discovery state. New crews start unlisted; only
   /// listed crews appear in the public Crew Hall.
-  listingStatus       CrewListingStatus @default(unlisted) @map("listing_status")
+  listingStatus       CrewListingStatus    @default(unlisted) @map("listing_status")
   /// First/most recent time the owner made the crew visible in the hall.
-  listedAt            DateTime?         @map("listed_at") @db.Timestamptz(6)
+  listedAt            DateTime?            @map("listed_at") @db.Timestamptz(6)
   /// Admin moderation state (post-hoc). `taken_down` hides the crew from every
   /// public surface. Stamped by the acting admin for the audit trail.
   moderationStatus    CrewModerationStatus @default(ok) @map("moderation_status")
-  moderatedAt         DateTime?         @map("moderated_at") @db.Timestamptz(6)
-  moderatedByAdminId  String?           @map("moderated_by_admin_id") @db.Uuid
-  moderationReason    String?           @map("moderation_reason") @db.VarChar(500)
+  moderatedAt         DateTime?            @map("moderated_at") @db.Timestamptz(6)
+  moderatedByAdminId  String?              @map("moderated_by_admin_id") @db.Uuid
+  moderationReason    String?              @map("moderation_reason") @db.VarChar(500)
   /// Team collaboration home. A crew owns exactly one team workspace and
   /// one main production project; task projects branch from this context.
-  workspaceId         String?           @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
-  productionProjectId String?           @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
+  workspaceId         String?              @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
+  productionProjectId String?              @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
   /// User-selected FizzStudio project that consumes this crew's asset library.
   /// This is intentionally separate from productionProjectId: linking an
   /// existing Studio project must never mutate the crew's task/canvas trunk.
-  studioProjectId     String?           @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
+  studioProjectId     String?              @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// crewsService.update(id, patch, expectedVersion).
-  version             Int               @default(0)
-  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt           DateTime?         @map("deleted_at") @db.Timestamptz(6)
+  version             Int                  @default(0)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt           DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
   positions           CrewPosition[]
   members             CrewMember[]
@@ -7819,12 +7990,31 @@ enum StoryProjectStatus {
   archived
 }
 
-/// Immutable project-wide picture contract. Every Story Studio project owns
-/// exactly one profile for its whole lifecycle and every selected or generated
-/// video must match it.
+/// Project-wide picture contract. It is selectable during setup, then becomes
+/// immutable once a video is selected or a build exists. Every selected or
+/// generated video must match it.
 enum StoryFrameProfile {
   landscape_16_9
   portrait_9_16
+}
+
+/// Editorial duration target for one interactive-film project. The ranges are
+/// part of the stored contract rather than UI copy so an Agent run can replay
+/// the exact creative direction it authored against.
+enum StoryDurationPreset {
+  short_5_15
+  medium_15_30
+  long_30_60
+}
+
+/// Curated project-wide visual direction. This intentionally stays small: the
+/// Agent can elaborate within a preset, while the project retains one durable
+/// style contract instead of persisting a provider-specific model taxonomy.
+enum StoryVisualStyle {
+  cinematic_realism
+  stylized_3d
+  graphic_novel
+  anime_cinematic
 }
 
 enum StoryVisibility {
@@ -7872,6 +8062,11 @@ enum StoryAgentRunStatus {
   failed
   cancelled
   stale
+}
+
+enum StoryAgentProposalDecision {
+  approve
+  reject
 }
 
 enum StoryBuildStatus {
@@ -7973,23 +8168,26 @@ enum WorldModelTravelStatus {
 }
 
 model StoryProject {
-  id              String             @id @default(uuid(7)) @db.Uuid
-  workspaceId     String             @map("workspace_id") @db.Uuid
-  frameProfile    StoryFrameProfile  @map("frame_profile")
-  status          StoryProjectStatus @default(active)
-  visibility      StoryVisibility    @default(private)
-  title           String             @db.VarChar(160)
-  summary         String?            @db.Text
-  defaultLocale   String             @default("en-US") @map("default_locale") @db.VarChar(16)
-  coverAssetId    String?            @map("cover_asset_id") @db.Uuid
-  tags            Json               @default("[]") @db.JsonB
-  sourceIpId      String?            @map("source_ip_id") @db.Uuid
-  nextBuildNumber Int                @default(1) @map("next_build_number")
-  version         Int                @default(0)
-  createdByUserId String             @map("created_by_user_id") @db.VarChar(64)
-  archivedAt      DateTime?          @map("archived_at") @db.Timestamptz(6)
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                         String               @id @default(uuid(7)) @db.Uuid
+  workspaceId                String               @map("workspace_id") @db.Uuid
+  frameProfile               StoryFrameProfile    @map("frame_profile")
+  durationPreset             StoryDurationPreset? @map("duration_preset")
+  visualStyle                StoryVisualStyle?    @map("visual_style")
+  creativeProfileConfirmedAt DateTime?            @map("creative_profile_confirmed_at") @db.Timestamptz(6)
+  status                     StoryProjectStatus   @default(active)
+  visibility                 StoryVisibility      @default(private)
+  title                      String               @db.VarChar(160)
+  summary                    String?              @db.Text
+  defaultLocale              String               @default("en-US") @map("default_locale") @db.VarChar(16)
+  coverAssetId               String?              @map("cover_asset_id") @db.Uuid
+  tags                       Json                 @default("[]") @db.JsonB
+  sourceIpId                 String?              @map("source_ip_id") @db.Uuid
+  nextBuildNumber            Int                  @default(1) @map("next_build_number")
+  version                    Int                  @default(0)
+  createdByUserId            String               @map("created_by_user_id") @db.VarChar(64)
+  archivedAt                 DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace               Workspace                     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   cover                   MediaAsset?                   @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
@@ -8156,6 +8354,38 @@ model StoryAgentRun {
   initiatedByUserId    String              @map("initiated_by_user_id") @db.VarChar(64)
   initiatedBySessionId String?             @map("initiated_by_session_id") @db.VarChar(64)
   conversationId       String?             @map("conversation_id") @db.VarChar(180)
+  /// Versioned decision contract. Existing rows are migrated to v1 and every
+  /// newly-created run uses v2; only Agent-origin v2 rows participate in the
+  /// durable approval continuation below.
+  decisionContractVersion Int               @default(2) @map("decision_contract_version")
+  /// Durable origin for an Agent OS external-job handoff. The migration
+  /// enforces these five source fields as an all-or-none tuple.
+  sourceAgentRunId           String?   @map("source_agent_run_id") @db.Uuid
+  sourceAgentTurnId          String?   @map("source_agent_turn_id") @db.Uuid
+  sourceAgentToolCallId      String?   @map("source_agent_tool_call_id") @db.VarChar(256)
+  sourceStartedMessage       String?   @map("source_started_message") @db.Text
+  sourceCompletionMessage    String?   @map("source_completion_message") @db.Text
+  sourceProposalReadyDeliveredAt DateTime? @map("source_proposal_ready_delivered_at") @db.Timestamptz(6)
+  sourceTerminalDeliveredAt      DateTime? @map("source_terminal_delivered_at") @db.Timestamptz(6)
+  sourceApprovalId               String?   @map("source_approval_id") @db.Uuid
+  sourceApprovalResponseId       String?   @map("source_approval_response_id") @db.Uuid
+  sourceApprovalResponseText     String?   @map("source_approval_response_text") @db.VarChar(300)
+  sourceApprovalLocale           String?   @map("source_approval_locale") @db.VarChar(16)
+  sourceApprovalDecisionTurnId   String?   @map("source_approval_decision_turn_id") @db.Uuid
+  sourceApprovalDecision         StoryAgentProposalDecision? @map("source_approval_decision")
+  sourceApprovalDecidedAt        DateTime? @map("source_approval_decided_at") @db.Timestamptz(6)
+  sourceApprovalDecidedByUserId  String?   @map("source_approval_decided_by_user_id") @db.VarChar(64)
+  /// Legacy v1 terminal-delivery marker. V2 uses the proposal-ready and
+  /// terminal markers independently so an approval pause is never terminal.
+  sourceResultDeliveredAt    DateTime? @map("source_result_delivered_at") @db.Timestamptz(6)
+  /// Cross-pod delivery claim for the Story -> Agent OS continuation outbox.
+  /// All retry scheduling uses PostgreSQL time; a crashed pod simply loses this
+  /// lease and another pod resumes the same deterministic continuation.
+  sourceResultDeliveryAttempts       Int       @default(0) @map("source_result_delivery_attempts")
+  sourceResultDeliveryNextAttemptAt  DateTime? @map("source_result_delivery_next_attempt_at") @db.Timestamptz(6)
+  sourceResultDeliveryLeaseOwner     String?   @map("source_result_delivery_lease_owner") @db.VarChar(160)
+  sourceResultDeliveryLeaseExpiresAt DateTime? @map("source_result_delivery_lease_expires_at") @db.Timestamptz(6)
+  sourceResultDeliveryLastError      String?   @map("source_result_delivery_last_error") @db.Text
   confirmedByUserId    String?             @map("confirmed_by_user_id") @db.VarChar(64)
   cancelledByUserId    String?             @map("cancelled_by_user_id") @db.VarChar(64)
 
@@ -8209,6 +8439,7 @@ model StoryAgentRun {
   activeWriteState StoryProjectWriteState? @relation("StoryProjectActiveAgentRun")
   revertsRun       StoryAgentRun?          @relation("StoryAgentRunUndo", fields: [revertsRunId], references: [id], onDelete: Restrict)
   undoRuns         StoryAgentRun[]         @relation("StoryAgentRunUndo")
+  externalHandoffRegistration AgentOsExternalHandoffRegistration?
 
   @@unique([id, storyProjectId], map: "story_agent_runs_id_project_unique")
   @@index([storyChapterId, status, createdAt(sort: Desc)], map: "story_agent_runs_chapter_status_recent_idx")
@@ -8217,6 +8448,8 @@ model StoryAgentRun {
   @@index([status, expiresAt, id], map: "story_agent_runs_proposal_expiry_idx")
   @@index([initiatedByUserId, createdAt(sort: Desc)], map: "story_agent_runs_initiator_recent_idx")
   @@index([revertsRunId], map: "story_agent_runs_reverts_idx")
+  @@unique([sourceApprovalResponseId], map: "story_agent_runs_source_approval_response_unique")
+  @@unique([sourceAgentRunId, sourceApprovalId], map: "story_agent_runs_source_approval_unique")
   @@map("story_agent_runs")
 }
 

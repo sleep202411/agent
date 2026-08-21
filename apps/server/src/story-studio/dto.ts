@@ -38,6 +38,21 @@ export const StoryFrameProfileSchema = z.enum([
 ]);
 export type StoryFrameProfile = z.infer<typeof StoryFrameProfileSchema>;
 
+export const StoryDurationPresetSchema = z.enum([
+  'short_5_15',
+  'medium_15_30',
+  'long_30_60',
+]);
+export type StoryDurationPreset = z.infer<typeof StoryDurationPresetSchema>;
+
+export const StoryVisualStyleSchema = z.enum([
+  'cinematic_realism',
+  'stylized_3d',
+  'graphic_novel',
+  'anime_cinematic',
+]);
+export type StoryVisualStyle = z.infer<typeof StoryVisualStyleSchema>;
+
 export const STORY_FRAME_PROFILE_CONTRACTS = {
   landscape_16_9: {
     aspectRatio: '16:9',
@@ -272,7 +287,6 @@ export type StoryBuildListQuery = z.infer<typeof StoryBuildListQuerySchema>;
 
 export const CreateStoryProjectSchema = z
   .object({
-    frameProfile: StoryFrameProfileSchema,
     title: StoryTitleSchema,
     summary: StorySummarySchema.optional(),
     defaultLocale: z.string().trim().min(2).max(16),
@@ -293,8 +307,37 @@ export const PatchStoryProjectSchema = z
     defaultLocale: z.string().trim().min(2).max(16).optional(),
     visibility: StoryVisibilitySchema.optional(),
     tags: StoryTagsSchema.optional(),
+    frameProfile: StoryFrameProfileSchema.optional(),
+    durationPreset: StoryDurationPresetSchema.optional(),
+    visualStyle: StoryVisualStyleSchema.optional(),
+    /**
+     * A creator confirms the complete profile atomically. The server owns the
+     * timestamp; clients cannot file partial or silently-defaulted direction.
+     */
+    confirmCreativeProfile: z.literal(true).optional(),
   })
   .strict()
+  .superRefine((value, context) => {
+    const touchesCreativeProfile =
+      value.frameProfile !== undefined ||
+      value.durationPreset !== undefined ||
+      value.visualStyle !== undefined ||
+      value.confirmCreativeProfile !== undefined;
+    if (
+      touchesCreativeProfile &&
+      (value.frameProfile === undefined ||
+        value.durationPreset === undefined ||
+        value.visualStyle === undefined ||
+        value.confirmCreativeProfile !== true)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['confirmCreativeProfile'],
+        message:
+          'Confirm frameProfile, durationPreset, and visualStyle together as one creative profile.',
+      });
+    }
+  })
   .refine(
     (value) =>
       Object.keys(value).some((key) => key !== 'expectedProjectVersion'),
@@ -670,6 +713,10 @@ export interface StoryProjectSummaryDto {
   id: string;
   workspaceId: string;
   frameProfile: StoryFrameProfile;
+  frameProfileMutable: boolean;
+  durationPreset: StoryDurationPreset | null;
+  visualStyle: StoryVisualStyle | null;
+  creativeProfileConfirmedAt: string | null;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;

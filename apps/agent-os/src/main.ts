@@ -37,14 +37,14 @@ export function agentOsIdentity(): {
   };
 }
 
-function main(): void {
+async function main(): Promise<void> {
   // Fail here rather than per-request: a worker that cannot reach the platform
   // must not accept runs it would silently write to a throwaway store, and the
   // internal token is the only thing guarding its privileged writes.
   const domainMode = resolveWorkerDomainMode();
   const identity = { ...agentOsIdentity(), domainMode };
   process.stdout.write(`${JSON.stringify({ level: "info", msg: "agent-os.boot", ...identity })}\n`);
-  listenAgentOsHttp();
+  await listenAgentOsHttp();
 }
 
 const isEntrypoint =
@@ -55,5 +55,14 @@ const isEntrypoint =
     process.argv[1].endsWith("\\main.js"));
 
 if (isEntrypoint) {
-  main();
+  void main().catch((error) => {
+    process.stderr.write(
+      `${JSON.stringify({
+        level: "error",
+        msg: "agent-os.boot.failed",
+        error: error instanceof Error ? error.message : String(error),
+      })}\n`
+    );
+    process.exitCode = 1;
+  });
 }

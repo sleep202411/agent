@@ -3,9 +3,11 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
 import {
   StoryAgentRunKind,
   StoryAgentRunStatus,
+  StoryDurationPreset,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
+  StoryVisualStyle,
 } from '@prisma/client';
 import type {
   StoryPatchBrief,
@@ -17,6 +19,10 @@ import {
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
 } from './dto';
+import {
+  storyProposalApprovalId,
+  storyProposalDecisionTurnId,
+} from '../agent-os-journal/agent-os-run-journal.service';
 import {
   type StoryAgentProposalAuthority,
   StoryAgentRunService,
@@ -49,6 +55,9 @@ const BRIEF_TEXT =
   'Open the story bible with a premise about a dream that remembers its author.';
 const DOCUMENT_ID = '0197f4a2-0800-7000-8000-00000000000d';
 const BRIEF_CONVERSATION_ID = `story-canvas:${PROJECT_ID}:${CHAPTER_ID}`;
+const SOURCE_AGENT_RUN_ID = '0197f4a2-0800-7000-8000-00000000000e';
+const SOURCE_AGENT_TURN_ID = '0197f4a2-0800-7000-8000-00000000000f';
+const SOURCE_AGENT_CONVERSATION_ID = '0197f4a2-0800-7000-8000-000000000010';
 
 const changedOverviewOperation = {
   operationId: OPERATION_ID,
@@ -93,6 +102,409 @@ describe('StoryAgentRunService', () => {
     );
     expect(realtime.enqueue).toHaveBeenCalledTimes(1);
     expect(realtime.publishCommitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('derives a bounded stable database key from a long original tool idempotency key', async () => {
+    const createdRows: Array<Record<string, unknown>> = [];
+    const { service } = serviceWith(proposalTransaction(createdRows));
+    const originalKey = `${PROJECT_ID}:${RUN_ID}:${'tool-call'.repeat(30)}:v1`;
+
+    await service.createAuthoringRun(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      briefInput({ idempotencyKey: originalKey }),
+    );
+
+    const stored = String(createdRows[0]?.idempotencyKey);
+    expect(stored).toMatch(
+      new RegExp(`^story-agent:proposal:${PROJECT_ID}:sha256:[0-9a-f]{64}$`),
+    );
+    expect(stored.length).toBeLessThanOrEqual(240);
+  });
+
+  it('rejects authoring until the creator confirms a complete creative profile', async () => {
+    const createdRows: Array<Record<string, unknown>> = [];
+    const tx = proposalTransaction(createdRows, {
+      project: canonicalProjectRow({
+        durationPreset: null,
+        visualStyle: null,
+        creativeProfileConfirmedAt: null,
+      }),
+    });
+    const { service } = serviceWith(tx);
+
+    await expect(
+      service.createAuthoringRun(USER, WORKSPACE_ID, PROJECT_ID, briefInput()),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_CREATIVE_PROFILE_REQUIRED',
+      }),
+    });
+    expect(createdRows).toHaveLength(0);
+  });
+
+  it('persists the complete originating Agent OS handoff identity and copy', async () => {
+    const createdRows: Array<Record<string, unknown>> = [];
+    const tx = proposalTransaction(createdRows);
+    const { service } = serviceWith(tx);
+    const source = {
+      conversationId: SOURCE_AGENT_CONVERSATION_ID,
+      sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+      sourceAgentTurnId: SOURCE_AGENT_TURN_ID,
+      sourceAgentToolCallId: 'call_story_author_1',
+      sourceStartedMessage: 'I am shaping the proposal now.',
+      sourceCompletionMessage: 'The proposal is ready for review.',
+    };
+
+    await service.createAuthoringRun(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      briefInput(source),
+    );
+
+    expect(createdRows[0]).toEqual(
+      expect.objectContaining({
+        ...source,
+        sourceResultDeliveredAt: null,
+        requestFingerprint: briefFingerprint(source),
+      }),
+    );
+    expect(tx.agentOsRun.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: SOURCE_AGENT_RUN_ID,
+        projectId: PROJECT_ID,
+        conversationId: SOURCE_AGENT_CONVERSATION_ID,
+        actorId: USER.userId,
+        projectKind: 'story',
+        status: {
+          in: [
+            'queued',
+            'running',
+            'waiting_for_approval',
+            'waiting_for_input',
+            'waiting_for_external',
+            'paused',
+          ],
+        },
+      },
+      select: { id: true },
+    });
+    expect(tx.agentOsExternalHandoffRegistration.create).toHaveBeenCalledWith({
+      data: {
+        externalJobId: RUN_ID,
+        storyAgentRunId: RUN_ID,
+        decisionContractVersion: 2,
+        sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+        sourceAgentTurnId: SOURCE_AGENT_TURN_ID,
+        sourceAgentToolCallId: 'call_story_author_1',
+        sourceConversationId: SOURCE_AGENT_CONVERSATION_ID,
+        sourceToolId: 'story.author',
+        startedMessage: 'I am shaping the proposal now.',
+        completionMessage: 'The proposal is ready for review.',
+      },
+    });
+  });
+
+  it('replays an accepted source handoff after its Agent run becomes terminal', async () => {
+    const source = {
+      conversationId: SOURCE_AGENT_CONVERSATION_ID,
+      sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+      sourceAgentTurnId: SOURCE_AGENT_TURN_ID,
+      sourceAgentToolCallId: 'call_story_author_1',
+      sourceStartedMessage: 'I am shaping the proposal now.',
+      sourceCompletionMessage: 'The proposal is ready for review.',
+    };
+    const tx = proposalTransaction([], {
+      existing: authoringRunRow({
+        ...source,
+        requestFingerprint: briefFingerprint(source),
+      }),
+    });
+    tx.agentOsRun.findFirst.mockResolvedValue(null);
+    const { service } = serviceWith(tx);
+
+    await expect(
+      service.createAuthoringRun(
+        USER,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        briefInput(source),
+      ),
+    ).resolves.toMatchObject({ id: RUN_ID, status: 'authoring' });
+
+    expect(tx.agentOsRun.findFirst).not.toHaveBeenCalled();
+    expect(tx.agentOsExternalHandoffRegistration.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a v2 proposal through one durable Story and Agent decision transaction', async () => {
+    const approvalId = storyProposalApprovalId(RUN_ID);
+    const responseId = '0197f4a2-0800-7000-8000-000000000011';
+    const fixture = agentOsDecisionTransaction();
+    const { service, realtime, agentOsJournal } = serviceWith(fixture.tx);
+    const dispatch = agentDispatch('completed', 'Proposal discarded.');
+    agentOsJournal.appendStoryProposalDecisionInTransaction.mockResolvedValue(
+      dispatch,
+    );
+
+    const result = await service.resolveAgentOsProposalDecision({
+      user: USER,
+      workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
+      agentRunId: SOURCE_AGENT_RUN_ID,
+      conversationId: SOURCE_AGENT_CONVERSATION_ID,
+      storyRunId: RUN_ID,
+      approvalId,
+      responseId,
+      responseText: 'Discard this proposal.',
+      locale: 'en-US',
+      decision: 'reject',
+    });
+
+    expect(fixture.tx.storyAgentRun.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: RUN_ID },
+        data: expect.objectContaining({
+          status: StoryAgentRunStatus.cancelled,
+          sourceApprovalId: approvalId,
+          sourceApprovalResponseId: responseId,
+          sourceApprovalResponseText: 'Discard this proposal.',
+          sourceApprovalLocale: 'en-US',
+          sourceApprovalDecisionTurnId: storyProposalDecisionTurnId(responseId),
+          sourceApprovalDecision: 'reject',
+          sourceTerminalDeliveredAt: NOW,
+        }),
+      }),
+    );
+    expect(
+      agentOsJournal.appendStoryProposalDecisionInTransaction,
+    ).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        approvalTurnId: SOURCE_AGENT_TURN_ID,
+        responseId,
+        locale: 'en-US',
+        decision: 'reject',
+        userText: 'Discard this proposal.',
+      }),
+    );
+    expect(result).toMatchObject({
+      runId: SOURCE_AGENT_RUN_ID,
+      status: 'completed',
+      assistantText: 'Proposal discarded.',
+    });
+    expect(realtime.publishCommitted).toHaveBeenCalledTimes(1);
+    expect(agentOsJournal.publishCommitted).toHaveBeenCalledWith(dispatch);
+  });
+
+  it('treats an approval response id as the exact idempotency identity', async () => {
+    const approvalId = storyProposalApprovalId(RUN_ID);
+    const responseId = '0197f4a2-0800-7000-8000-000000000011';
+    const decided = agentManagedProposalRow({
+      status: StoryAgentRunStatus.cancelled,
+      sourceApprovalId: approvalId,
+      sourceApprovalResponseId: responseId,
+      sourceApprovalResponseText: 'Discard this proposal.',
+      sourceApprovalLocale: 'zh-CN',
+      sourceApprovalDecisionTurnId: storyProposalDecisionTurnId(responseId),
+      sourceApprovalDecision: 'reject',
+      sourceApprovalDecidedAt: NOW,
+      sourceApprovalDecidedByUserId: USER.userId,
+      sourceTerminalDeliveredAt: NOW,
+    });
+    const fixture = agentOsDecisionTransaction(decided);
+    const { service, agentOsJournal } = serviceWith(fixture.tx);
+    const dispatch = agentDispatch('completed', '故事提案已放弃。');
+    agentOsJournal.snapshotRunInTransaction.mockResolvedValue(dispatch);
+
+    await expect(
+      service.resolveAgentOsProposalDecision({
+        user: USER,
+        workspaceId: WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        agentRunId: SOURCE_AGENT_RUN_ID,
+        conversationId: SOURCE_AGENT_CONVERSATION_ID,
+        storyRunId: RUN_ID,
+        approvalId,
+        responseId,
+        responseText: 'Discard this proposal.',
+        locale: 'zh-CN',
+        decision: 'reject',
+      }),
+    ).resolves.toMatchObject({ status: 'completed' });
+    expect(fixture.tx.storyAgentRun.update).not.toHaveBeenCalled();
+
+    await expect(
+      service.resolveAgentOsProposalDecision({
+        user: USER,
+        workspaceId: WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        agentRunId: SOURCE_AGENT_RUN_ID,
+        conversationId: SOURCE_AGENT_CONVERSATION_ID,
+        storyRunId: RUN_ID,
+        approvalId,
+        responseId: '0197f4a2-0800-7000-8000-000000000012',
+        responseText: 'Discard this proposal.',
+        locale: 'zh-CN',
+        decision: 'reject',
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_AGENT_APPROVAL_ALREADY_RESOLVED',
+      }),
+    });
+  });
+
+  it('writes applying and the complete v2 approval tuple atomically', async () => {
+    const approvalId = storyProposalApprovalId(RUN_ID);
+    const responseId = '0197f4a2-0800-7000-8000-000000000013';
+    const fixture = agentOsDecisionTransaction();
+    const { service, agentOsJournal } = serviceWith(fixture.tx);
+    agentOsJournal.appendStoryProposalDecisionInTransaction.mockResolvedValue(
+      agentDispatch('waiting_for_external', '正在应用故事提案。'),
+    );
+
+    await service.resolveAgentOsProposalDecision({
+      user: USER,
+      workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
+      agentRunId: SOURCE_AGENT_RUN_ID,
+      conversationId: SOURCE_AGENT_CONVERSATION_ID,
+      storyRunId: RUN_ID,
+      approvalId,
+      responseId,
+      responseText: '应用这个提案。',
+      locale: 'zh-CN',
+      decision: 'approve',
+    });
+
+    const applyingWrites = fixture.tx.storyAgentRun.update.mock.calls.filter(
+      ([call]) => call.data.status === StoryAgentRunStatus.applying,
+    );
+    expect(applyingWrites).toHaveLength(1);
+    expect(applyingWrites[0]?.[0].data).toEqual(
+      expect.objectContaining({
+        status: StoryAgentRunStatus.applying,
+        sourceApprovalId: approvalId,
+        sourceApprovalResponseId: responseId,
+        sourceApprovalResponseText: '应用这个提案。',
+        sourceApprovalLocale: 'zh-CN',
+        sourceApprovalDecisionTurnId: storyProposalDecisionTurnId(responseId),
+        sourceApprovalDecision: 'approve',
+      }),
+    );
+    expect(
+      fixture.tx.storyAgentRun.update.mock.calls.some(
+        ([call]) =>
+          call.data.sourceApprovalId === approvalId &&
+          call.data.status === undefined,
+      ),
+    ).toBe(false);
+  });
+
+  it('atomically cancels initial v2 authoring but refuses Stop after proposal application commits', async () => {
+    const fixture = agentOsDecisionTransaction(
+      agentManagedProposalRow({
+        status: StoryAgentRunStatus.authoring,
+        proposal: briefRecord(),
+        sourceProposalReadyDeliveredAt: null,
+        leaseOwner: WORKER_ID,
+        leaseAcquiredAt: NOW,
+        leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+      }),
+    );
+    const { service, agentOsJournal } = serviceWith(fixture.tx);
+    const dispatch = agentDispatch('cancelled', 'Authoring stopped.');
+    agentOsJournal.cancelRunInTransaction.mockResolvedValue(dispatch);
+
+    await expect(
+      service.cancelAgentOsAuthoring({
+        user: USER,
+        workspaceId: WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        agentRunId: SOURCE_AGENT_RUN_ID,
+        conversationId: SOURCE_AGENT_CONVERSATION_ID,
+        storyRunId: RUN_ID,
+        reason: 'Stopped by creator',
+      }),
+    ).resolves.toMatchObject({ status: 'cancelled' });
+    expect(fixture.tx.storyAgentRun.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: StoryAgentRunStatus.cancelled,
+          sourceTerminalDeliveredAt: NOW,
+          leaseOwner: null,
+        }),
+      }),
+    );
+    expect(agentOsJournal.cancelRunInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      { runId: SOURCE_AGENT_RUN_ID, reason: 'Stopped by creator' },
+    );
+
+    const committedFixture = agentOsDecisionTransaction(
+      agentManagedProposalRow({
+        status: StoryAgentRunStatus.applying,
+        sourceApprovalId: storyProposalApprovalId(RUN_ID),
+      }),
+    );
+    const committed = serviceWith(committedFixture.tx);
+    await expect(
+      committed.service.cancelAgentOsAuthoring({
+        user: USER,
+        workspaceId: WORKSPACE_ID,
+        projectId: PROJECT_ID,
+        agentRunId: SOURCE_AGENT_RUN_ID,
+        conversationId: SOURCE_AGENT_CONVERSATION_ID,
+        storyRunId: RUN_ID,
+      }),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'OPERATION_COMMITTED' }),
+    });
+    expect(
+      committed.agentOsJournal.cancelRunInTransaction,
+    ).not.toHaveBeenCalled();
+  });
+
+  it('rejects a partial Agent OS source tuple before creating a run', async () => {
+    const createdRows: Array<Record<string, unknown>> = [];
+    const { service } = serviceWith(proposalTransaction(createdRows));
+
+    await expect(
+      service.createAuthoringRun(
+        USER,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        briefInput({ sourceAgentRunId: SOURCE_AGENT_RUN_ID }),
+      ),
+    ).rejects.toThrow(
+      'Agent OS source run, turn, tool call, started message, and completion message must be supplied together.',
+    );
+    expect(createdRows).toHaveLength(0);
+  });
+
+  it('rejects a complete Agent OS source tuple without its conversation', async () => {
+    const createdRows: Array<Record<string, unknown>> = [];
+    const { service } = serviceWith(proposalTransaction(createdRows));
+
+    await expect(
+      service.createAuthoringRun(
+        USER,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        briefInput({
+          sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+          sourceAgentTurnId: SOURCE_AGENT_TURN_ID,
+          sourceAgentToolCallId: 'call_story_author_1',
+          sourceStartedMessage: 'I am shaping the proposal now.',
+          sourceCompletionMessage: 'The proposal is ready for review.',
+        }),
+      ),
+    ).rejects.toThrow(
+      'An Agent OS source handoff requires its originating conversation.',
+    );
+    expect(createdRows).toHaveLength(0);
   });
 
   it('persists the brief documentId after verifying conversation-scoped ownership', async () => {
@@ -236,6 +648,13 @@ describe('StoryAgentRunService', () => {
       id: DOCUMENT_ID,
       name: '剧本.docx',
       text: 'INT. FOREST GATE - NIGHT\nThe gate creaks open.',
+    });
+    expect(load.job.creativeProfile).toEqual({
+      frameProfile: StoryFrameProfile.landscape_16_9,
+      durationPreset: StoryDurationPreset.short_5_15,
+      visualStyle: StoryVisualStyle.cinematic_realism,
+      storyLanguage: 'en-US',
+      confirmedAt: NOW.toISOString(),
     });
     expect(tx.copilotDocument.findUnique).toHaveBeenCalledWith({
       where: { id: DOCUMENT_ID },
@@ -567,9 +986,9 @@ describe('StoryAgentRunService', () => {
         }),
       }),
     );
-    expect(tx.storyAgentRun.updateMany).toHaveBeenCalledWith(
+    expect(tx.storyAgentRun.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ id: { in: [OTHER_RUN_ID] } }),
+        where: { id: OTHER_RUN_ID },
         data: expect.objectContaining({
           status: StoryAgentRunStatus.stale,
           errorCode: 'STORY_AGENT_SUPERSEDED_IN_CONVERSATION',
@@ -577,6 +996,56 @@ describe('StoryAgentRunService', () => {
       }),
     );
     expect(realtime.enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('closes a superseded v2 proposal approval and stamps Story terminal delivery atomically', async () => {
+    const createdRows: Array<Record<string, unknown>> = [];
+    const awaitingApproval = agentManagedProposalRow({
+      id: OTHER_RUN_ID,
+      conversationId: 'story-canvas:conversation-2',
+    });
+    const tx = proposalTransaction(createdRows);
+    tx.storyAgentRun.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: OTHER_RUN_ID }])
+      .mockResolvedValueOnce([awaitingApproval]);
+    const { service, agentOsJournal } = serviceWith(tx);
+    const dispatch = agentDispatch('cancelled', 'Proposal superseded.');
+    agentOsJournal.appendStoryProposalClosureInTransaction.mockResolvedValue(
+      dispatch,
+    );
+
+    await service.createAuthoringRun(
+      USER,
+      WORKSPACE_ID,
+      PROJECT_ID,
+      briefInput({
+        idempotencyKey: 'tool-call-v2-superseding',
+        conversationId: 'story-canvas:conversation-2',
+      }),
+    );
+
+    expect(
+      agentOsJournal.appendStoryProposalClosureInTransaction,
+    ).toHaveBeenCalledWith(tx, {
+      runId: SOURCE_AGENT_RUN_ID,
+      turnId: SOURCE_AGENT_TURN_ID,
+      storyRunId: OTHER_RUN_ID,
+      approvalId: storyProposalApprovalId(OTHER_RUN_ID),
+      outcome: 'cancelled',
+      code: 'STORY_AGENT_SUPERSEDED_IN_CONVERSATION',
+      text: 'A newer proposal from the same conversation superseded this proposal.',
+    });
+    expect(tx.storyAgentRun.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: OTHER_RUN_ID },
+        data: expect.objectContaining({
+          status: StoryAgentRunStatus.stale,
+          sourceTerminalDeliveredAt: NOW,
+        }),
+      }),
+    );
+    expect(agentOsJournal.publishCommitted).toHaveBeenCalledWith(dispatch);
   });
 
   it('refuses the 65th active pre-confirm run for one project', async () => {
@@ -812,6 +1281,10 @@ describe('StoryAgentRunService', () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
       storyAgentRun: {
+        findUnique: jest.fn().mockResolvedValue({
+          decisionContractVersion: 1,
+          sourceAgentRunId: null,
+        }),
         updateMany,
         findUniqueOrThrow: jest.fn().mockResolvedValue(
           authoringFailedRunRow({
@@ -860,6 +1333,10 @@ describe('StoryAgentRunService', () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
       storyAgentRun: {
+        findUnique: jest.fn().mockResolvedValue({
+          decisionContractVersion: 1,
+          sourceAgentRunId: null,
+        }),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         findUniqueOrThrow,
       },
@@ -880,6 +1357,10 @@ describe('StoryAgentRunService', () => {
     const tx = {
       $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
       storyAgentRun: {
+        findUnique: jest.fn().mockResolvedValue({
+          decisionContractVersion: 1,
+          sourceAgentRunId: null,
+        }),
         updateMany,
         findUniqueOrThrow: jest.fn().mockResolvedValue(
           authoringFailedRunRow({
@@ -1232,8 +1713,9 @@ describe('StoryAgentRunService', () => {
       tx,
       PROJECT_ID,
     );
-    expect(storyAgentRun.updateMany).toHaveBeenCalledWith(
+    expect(storyAgentRun.update).toHaveBeenCalledWith(
       expect.objectContaining({
+        where: { id: OTHER_RUN_ID },
         data: expect.objectContaining({
           status: StoryAgentRunStatus.stale,
           errorCode: 'STORY_AGENT_SUPERSEDED',
@@ -1625,40 +2107,70 @@ function serviceWith(
   const writeGuard = {
     assertAgentClaimAllowed: jest.fn().mockResolvedValue(undefined),
   };
+  const agentOsJournal = {
+    snapshotRunInTransaction: jest.fn(),
+    appendStoryProposalDecisionInTransaction: jest.fn(),
+    cancelRunInTransaction: jest.fn(),
+    appendStoryProposalClosureInTransaction: jest.fn(),
+    publishCommitted: jest.fn().mockResolvedValue(undefined),
+  };
   return {
     service: new StoryAgentRunService(
       prisma as never,
       permissions as never,
       realtime as never,
       writeGuard as never,
+      agentOsJournal as never,
     ),
     prisma,
     realtime,
     permissions,
     writeGuard,
+    agentOsJournal,
   };
 }
 
 function proposalTransaction(
   createdRows: Array<Record<string, unknown>>,
-  options: { existing?: ReturnType<typeof runRow> } = {},
+  options: {
+    existing?: ReturnType<typeof runRow>;
+    project?: ReturnType<typeof canonicalProjectRow>;
+  } = {},
 ) {
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([freeWriteState()]),
     storyProject: {
-      findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+      findFirst: jest
+        .fn()
+        .mockResolvedValue(options.project ?? canonicalProjectRow()),
     },
     storyAgentRun: {
       findUnique: jest.fn().mockResolvedValue(options.existing ?? null),
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      update: jest
+        .fn()
+        .mockImplementation(
+          ({ where, data }: { where: { id: string }; data: object }) =>
+            runRow({ id: where.id, ...data }),
+        ),
       create: jest
         .fn()
         .mockImplementation(({ data }: { data: Record<string, unknown> }) => {
           createdRows.push(data);
           return runRow(data);
         }),
+    },
+    agentOsRun: {
+      findFirst: jest.fn().mockResolvedValue({ id: SOURCE_AGENT_RUN_ID }),
+    },
+    agentOsExternalHandoffRegistration: {
+      create: jest
+        .fn()
+        .mockImplementation(
+          ({ data }: { data: Record<string, unknown> }) => data,
+        ),
     },
   };
   return tx;
@@ -1689,6 +2201,89 @@ function completeTransaction(
   };
 }
 
+function agentManagedProposalRow(overrides: Record<string, unknown> = {}) {
+  return runRow({
+    decisionContractVersion: 2,
+    conversationId: SOURCE_AGENT_CONVERSATION_ID,
+    sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+    sourceAgentTurnId: SOURCE_AGENT_TURN_ID,
+    sourceAgentToolCallId: 'call_story_author_1',
+    sourceStartedMessage: 'I am shaping the proposal now.',
+    sourceCompletionMessage: 'The proposal is ready for review.',
+    sourceProposalReadyDeliveredAt: NOW,
+    ...overrides,
+  });
+}
+
+function agentOsDecisionTransaction(
+  initial: ReturnType<typeof runRow> = agentManagedProposalRow(),
+) {
+  let current = initial;
+  const storyAgentRun = {
+    findFirst: jest.fn(({ where }: { where: Record<string, unknown> }) => {
+      if (where.id === RUN_ID) return Promise.resolve(current);
+      if (where.status === StoryAgentRunStatus.applying) {
+        return Promise.resolve(null);
+      }
+      if (where.status === StoryAgentRunStatus.authoring) {
+        return Promise.resolve(null);
+      }
+      if (where.status === StoryAgentRunStatus.proposed) {
+        return Promise.resolve(
+          current.status === StoryAgentRunStatus.proposed ? current : null,
+        );
+      }
+      return Promise.resolve(null);
+    }),
+    findUnique: jest.fn(({ where }: { where: Record<string, unknown> }) => {
+      if ('sourceApprovalResponseId' in where) {
+        return Promise.resolve(
+          current.sourceApprovalResponseId === where.sourceApprovalResponseId
+            ? { id: current.id }
+            : null,
+        );
+      }
+      return Promise.resolve(current);
+    }),
+    findMany: jest.fn().mockResolvedValue([]),
+    updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    update: jest.fn(({ data }: { data: Record<string, unknown> }) => {
+      current = { ...current, ...data };
+      return Promise.resolve(current);
+    }),
+  };
+  return {
+    tx: {
+      $queryRaw: jest.fn().mockResolvedValue([freeWriteState()]),
+      storyProject: {
+        findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+      },
+      storyProjectWriteState: {
+        update: jest.fn().mockResolvedValue(undefined),
+      },
+      storyAgentRun,
+    },
+    current: () => current,
+  };
+}
+
+function agentDispatch(
+  status: 'completed' | 'cancelled' | 'waiting_for_external',
+  assistantText: string,
+) {
+  return {
+    events: [],
+    snapshot: {
+      runId: SOURCE_AGENT_RUN_ID,
+      status,
+      pendingApproval: null,
+      pendingUserInput: null,
+      pendingExternal: null,
+      assistantText,
+    },
+  };
+}
+
 function freeWriteState() {
   return {
     storyProjectId: PROJECT_ID,
@@ -1711,12 +2306,21 @@ function expiredReservedWriteState() {
   };
 }
 
-function canonicalProjectRow() {
+function canonicalProjectRow(
+  overrides: Partial<{
+    durationPreset: StoryDurationPreset | null;
+    visualStyle: StoryVisualStyle | null;
+    creativeProfileConfirmedAt: Date | null;
+  }> = {},
+) {
   return {
     id: PROJECT_ID,
     workspaceId: WORKSPACE_ID,
     title: 'Dream',
     frameProfile: StoryFrameProfile.landscape_16_9,
+    durationPreset: StoryDurationPreset.short_5_15,
+    visualStyle: StoryVisualStyle.cinematic_realism,
+    creativeProfileConfirmedAt: NOW,
     defaultLocale: 'en-US',
     draft: {
       revision: 7,
@@ -1737,6 +2341,7 @@ function canonicalProjectRow() {
         },
       },
     ],
+    ...overrides,
   };
 }
 
@@ -1772,6 +2377,11 @@ function briefFingerprint(overrides: Record<string, unknown> = {}): string {
     documentId: null,
     initiatedBySessionId: null,
     conversationId: null,
+    sourceAgentRunId: null,
+    sourceAgentTurnId: null,
+    sourceAgentToolCallId: null,
+    sourceStartedMessage: null,
+    sourceCompletionMessage: null,
     ...overrides,
   });
 }
@@ -1826,6 +2436,28 @@ function runRow(overrides: Record<string, unknown> = {}) {
     initiatedByUserId: USER.userId,
     initiatedBySessionId: null,
     conversationId: null,
+    sourceAgentRunId: null,
+    sourceAgentTurnId: null,
+    sourceAgentToolCallId: null,
+    sourceStartedMessage: null,
+    sourceCompletionMessage: null,
+    decisionContractVersion: 1,
+    sourceProposalReadyDeliveredAt: null,
+    sourceTerminalDeliveredAt: null,
+    sourceApprovalId: null,
+    sourceApprovalResponseId: null,
+    sourceApprovalResponseText: null,
+    sourceApprovalLocale: null,
+    sourceApprovalDecisionTurnId: null,
+    sourceApprovalDecision: null,
+    sourceApprovalDecidedAt: null,
+    sourceApprovalDecidedByUserId: null,
+    sourceResultDeliveredAt: null,
+    sourceResultDeliveryAttempts: 0,
+    sourceResultDeliveryNextAttemptAt: null,
+    sourceResultDeliveryLeaseOwner: null,
+    sourceResultDeliveryLeaseExpiresAt: null,
+    sourceResultDeliveryLastError: null,
     baseDraftRevision: 7,
     baseLayoutRevision: 3,
     resultDraftRevision: null,

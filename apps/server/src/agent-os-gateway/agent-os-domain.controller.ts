@@ -60,12 +60,18 @@ export class AgentOsDomainController {
     }
     return this.domain.execute({
       toolId,
+      runId: parsed.data.runId,
+      conversationId: parsed.data.conversationId,
+      turnId: parsed.data.turnId,
+      toolCallId: parsed.data.toolCallId,
       actorId: parsed.data.actorId,
       projectId: parsed.data.projectId,
       skillResolutionId: parsed.data.skillResolutionId,
       skillVersionIds: parsed.data.skillVersionIds,
       workbenchContext: parsed.data.workbenchContext,
       idempotencyKey: parsed.data.idempotencyKey,
+      startExecution: parsed.data.startExecution,
+      continuationExecution: parsed.data.continuationExecution,
       arguments: parsed.data.arguments,
     });
   }

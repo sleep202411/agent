@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { resolveSkillMounts } from "@repo/agent-skills";
 
-import { buildLangChainTools, type ToolRuntimeContext } from "./build-langchain-tools.js";
+import {
+  buildLangChainTools,
+  userInputResumePayload,
+  type ToolRuntimeContext,
+} from "./build-langchain-tools.js";
+import { AgentOsExecutionSupersededError } from "../runtime/http-domain-port.js";
 
 const runtime = {
   runId: "r1",
@@ -55,6 +60,8 @@ describe("skill mounts (system workbench skills)", () => {
     const tools = buildLangChainTools(runtime, mount.toolIds);
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("story_read");
+    expect(names).toContain("request_user_input");
+    expect(names).toContain("story_confirmCreativeProfile");
     expect(names).toContain("story_addScene");
     expect(names).toContain("story_addBranch");
     expect(names).toContain("story_putInteraction");
@@ -63,6 +70,33 @@ describe("skill mounts (system workbench skills)", () => {
     expect(names).not.toContain("canvas_applyPatch");
     expect(names).not.toContain("characters_upsert");
     expect(mount.instructions).toMatch(/intent-level tools/i);
+  });
+
+  it("returns complete creative-profile answers without allowing known values to be overwritten", () => {
+    expect(
+      userInputResumePayload(
+        {
+          aspect_ratio: "landscape_16_9",
+          visual_direction: "cinematic_realism",
+        },
+        {
+          requestId: "11111111-1111-4111-8111-111111111111",
+          answers: {
+            aspect_ratio: "portrait_9_16",
+            target_runtime: "short_5_15",
+            story_language: "zh-CN",
+          },
+        }
+      )
+    ).toEqual({
+      requestId: "11111111-1111-4111-8111-111111111111",
+      answers: {
+        aspect_ratio: "landscape_16_9",
+        target_runtime: "short_5_15",
+        visual_direction: "cinematic_realism",
+        story_language: "zh-CN",
+      },
+    });
   });
 
   it("optional invocable skills add tools/instructions without replacing the workbench", () => {
@@ -85,5 +119,32 @@ describe("skill mounts (system workbench skills)", () => {
     expect(names).toContain("script_readSection");
     expect(mount.instructions).toMatch(/Long script analysis/i);
     expect(mount.instructions).toMatch(/Cinematic shot language/i);
+  });
+
+  it("does not emit ToolFailed when a stale execution is fenced", async () => {
+    const onToolEvent = vi.fn();
+    const fencedRuntime = {
+      ...runtime,
+      turnId: "11111111-1111-4111-8111-111111111111",
+      skillResolutionId: "33333333-3333-4333-8333-333333333333",
+      skillVersionIds: [],
+      permissionMode: "full",
+      domain: {
+        execute: vi.fn(async () => {
+          throw new AgentOsExecutionSupersededError(
+            "AGENT_OS_CONTINUATION_EXECUTION_FENCED",
+            "another epoch owns the run"
+          );
+        }),
+      },
+      onToolEvent,
+    } as unknown as ToolRuntimeContext;
+    const list = buildLangChainTools(fencedRuntime, ["characters.list"])[0]!;
+
+    await expect(
+      list.invoke({}, { toolCall: { id: "stale-call" } } as never)
+    ).rejects.toBeInstanceOf(AgentOsExecutionSupersededError);
+    expect(onToolEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "ToolStarted" }));
+    expect(onToolEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "ToolFailed" }));
   });
 });

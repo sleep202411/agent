@@ -144,10 +144,13 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
         <span className="rounded-full bg-white/[0.05] px-3 py-1.5">
           {t(`visibility.${workbench.project.visibility}`)}
         </span>
-        <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
-          {t(`frameProfiles.${workbench.project.frameProfile}.label`)} ·{" "}
-          {t(`frameProfiles.${workbench.project.frameProfile}.dimensions`)}
-        </span>
+        {workbench.project.creativeProfileConfirmedAt ? (
+          <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
+            {`${t(`frameProfiles.${workbench.project.frameProfile}.label`)} · ${t(
+              `frameProfiles.${workbench.project.frameProfile}.dimensions`
+            )}`}
+          </span>
+        ) : null}
       </div>
     </header>
   );
@@ -243,7 +246,7 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
               value={String(sceneNodes)}
             />
           </div>
-          {workbench.project.frameProfile ? (
+          {workbench.project.creativeProfileConfirmedAt ? (
             <div className="mt-4 rounded-xl bg-black/20 px-4 py-3 text-[11px] text-white/45">
               {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].width} ×{" "}
               {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].height}

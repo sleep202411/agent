@@ -11,10 +11,14 @@ import {
 } from '@nestjs/common';
 import {
   Prisma,
+  StoryAgentProposalDecision,
   StoryAgentRunKind,
   StoryAgentRunStatus,
+  type StoryDurationPreset,
   StoryProjectStatus,
+  type StoryVisualStyle,
 } from '@prisma/client';
+import type { AgentEventEnvelope, AgentRunStatus } from '@repo/agent-protocol';
 import { COPILOT_DOCUMENT_MAX_TEXT_CHARS } from '@repo/shared';
 import {
   STORY_AGENT_BRIEF_MAX_CHARS,
@@ -40,6 +44,12 @@ import {
 } from '@repo/shared/story-agent';
 import { z } from 'zod';
 import type { AuthUser } from '../auth';
+import {
+  AgentOsRunJournalService,
+  storyProposalApprovalId,
+  storyProposalDecisionTurnId,
+  type AgentOsJournalDispatch,
+} from '../agent-os-journal/agent-os-run-journal.service';
 import { PrismaService } from '../infra/db/db.module';
 import { canonicalJsonHash, canonicalJsonString } from './canonical-json';
 import {
@@ -88,7 +98,7 @@ const STORY_AGENT_AUTHORING_TTL_MS = 15 * 60 * 1_000;
  * spends paid model inference outside the chat-turn quota, so it must be
  * durably bounded.
  */
-const STORY_AGENT_MAX_AUTHORING_ATTEMPTS = 5;
+export const STORY_AGENT_MAX_AUTHORING_ATTEMPTS = 5;
 
 /** Statuses of runs that occupy a creator conversation scope before confirm. */
 const PRE_CONFIRM_STATUSES = [
@@ -97,7 +107,7 @@ const PRE_CONFIRM_STATUSES = [
   StoryAgentRunStatus.proposed,
 ] as const;
 
-const StoryAgentIdempotencyKeySchema = z.string().trim().min(1).max(160);
+const StoryAgentIdempotencyKeySchema = z.string().trim().min(1).max(512);
 
 export const StoryAgentAuthoringSnapshotSchema = z
   .object({
@@ -132,8 +142,51 @@ export const CreateStoryAgentBriefInputSchema = z
     idempotencyKey: StoryAgentIdempotencyKeySchema,
     initiatedBySessionId: z.string().trim().min(1).max(64).optional(),
     conversationId: z.string().trim().min(1).max(180).optional(),
+    /** Originating Agent OS execution. Present as one complete handoff tuple. */
+    sourceAgentRunId: z.uuid().optional(),
+    sourceAgentTurnId: z.uuid().optional(),
+    sourceAgentToolCallId: z.string().trim().min(1).max(256).optional(),
+    sourceStartedMessage: z.string().trim().min(1).max(2_000).optional(),
+    sourceCompletionMessage: z.string().trim().min(1).max(2_000).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, context) => {
+    const values = [
+      input.sourceAgentRunId,
+      input.sourceAgentTurnId,
+      input.sourceAgentToolCallId,
+      input.sourceStartedMessage,
+      input.sourceCompletionMessage,
+    ];
+    const supplied = values.filter((value) => value !== undefined).length;
+    if (supplied !== 0 && supplied !== values.length) {
+      context.addIssue({
+        code: 'custom',
+        path: ['sourceAgentRunId'],
+        message:
+          'Agent OS source run, turn, tool call, started message, and completion message must be supplied together.',
+      });
+    }
+    if (supplied === values.length && input.conversationId === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['conversationId'],
+        message:
+          'An Agent OS source handoff requires its originating conversation.',
+      });
+    }
+    if (
+      supplied === values.length &&
+      !z.string().uuid().safeParse(input.conversationId).success
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['conversationId'],
+        message:
+          'An Agent OS source handoff requires its UUID conversation identity.',
+      });
+    }
+  });
 
 export type CreateStoryAgentBriefInput = z.infer<
   typeof CreateStoryAgentBriefInputSchema
@@ -182,6 +235,14 @@ export interface StoryAgentAuthoringJob {
   chapterId: string;
   workspaceId: string;
   brief: StoryPatchBrief;
+  /** Confirmed project truth used by every authoring baton. */
+  creativeProfile: {
+    frameProfile: string;
+    durationPreset: StoryDurationPreset;
+    visualStyle: StoryVisualStyle;
+    storyLanguage: string;
+    confirmedAt: string;
+  };
   /** Canonical project + draft JSON the author must work from. */
   contextJson: string;
   /**
@@ -211,6 +272,9 @@ interface CanonicalAuthoringState {
     workspaceId: string;
     title: string;
     frameProfile: string;
+    durationPreset: StoryDurationPreset | null;
+    visualStyle: StoryVisualStyle | null;
+    creativeProfileConfirmedAt: string | null;
     defaultLocale: string;
   };
   chapter: {
@@ -243,6 +307,22 @@ interface CanonicalAuthoringState {
 interface ServiceTransition<T> {
   value: T;
   dispatches: StoryAgentRealtimeDispatch[];
+  agentDispatches?: AgentOsJournalDispatch[];
+}
+
+interface CrossDomainDispatches {
+  story: StoryAgentRealtimeDispatch[];
+  agent: AgentOsJournalDispatch[];
+}
+
+export interface StoryAgentOsCoordinatorResult {
+  runId: string;
+  status: AgentRunStatus;
+  events: AgentEventEnvelope[];
+  pendingApproval: unknown;
+  pendingUserInput: unknown;
+  pendingExternal: unknown;
+  assistantText: string | null;
 }
 
 class StoryAgentCasLostError extends Error {
@@ -259,6 +339,7 @@ export class StoryAgentRunService {
     private readonly permissions: StoryPermissionService,
     private readonly realtime: StoryAgentRunRealtimeService,
     private readonly writeGuard: StoryProjectWriteGuardService,
+    private readonly agentOsJournal: AgentOsRunJournalService,
   ) {}
 
   /** Canonical, schema-validated context for the server-side Story Copilot. */
@@ -373,6 +454,15 @@ export class StoryAgentRunService {
           ...(requestedInput.conversationId
             ? { conversationId: requestedInput.conversationId }
             : {}),
+          ...(requestedInput.sourceAgentRunId
+            ? {
+                sourceAgentRunId: requestedInput.sourceAgentRunId,
+                sourceAgentTurnId: requestedInput.sourceAgentTurnId,
+                sourceAgentToolCallId: requestedInput.sourceAgentToolCallId,
+                sourceStartedMessage: requestedInput.sourceStartedMessage,
+                sourceCompletionMessage: requestedInput.sourceCompletionMessage,
+              }
+            : {}),
           ...(authoritative.initiatedBySessionId
             ? { initiatedBySessionId: authoritative.initiatedBySessionId }
             : {}),
@@ -388,6 +478,11 @@ export class StoryAgentRunService {
           documentId: input.documentId ?? null,
           initiatedBySessionId: input.initiatedBySessionId ?? null,
           conversationId: input.conversationId ?? null,
+          sourceAgentRunId: input.sourceAgentRunId ?? null,
+          sourceAgentTurnId: input.sourceAgentTurnId ?? null,
+          sourceAgentToolCallId: input.sourceAgentToolCallId ?? null,
+          sourceStartedMessage: input.sourceStartedMessage ?? null,
+          sourceCompletionMessage: input.sourceCompletionMessage ?? null,
         });
         canonicalFingerprint = fingerprint;
         // A source document must be a durable row owned by the initiating
@@ -423,6 +518,43 @@ export class StoryAgentRunService {
           };
         }
 
+        // Validate a new cross-domain handoff against the authoritative Agent
+        // run in the same transaction that creates both the Story job and its
+        // immutable inbox receipt. This deliberately happens after the
+        // idempotent-replay fast path: an already accepted tool call must keep
+        // returning its durable receipt even after the originating run later
+        // becomes terminal.
+        if (input.sourceAgentRunId) {
+          const sourceRun = await tx.agentOsRun.findFirst({
+            where: {
+              id: input.sourceAgentRunId,
+              projectId,
+              conversationId: input.conversationId!,
+              actorId: user.userId,
+              projectKind: 'story',
+              status: {
+                in: [
+                  'queued',
+                  'running',
+                  'waiting_for_approval',
+                  'waiting_for_input',
+                  'waiting_for_external',
+                  'paused',
+                ],
+              },
+            },
+            select: { id: true },
+          });
+          if (!sourceRun) {
+            throw new ConflictException({
+              code: 'STORY_AGENT_SOURCE_RUN_INVALID',
+              message:
+                'The Story authoring handoff does not belong to an active Agent OS run in this project conversation.',
+              runId: input.sourceAgentRunId,
+            });
+          }
+        }
+
         this.assertProjectHasNoActiveRun(writeState);
         // Enqueue-time canonical read: validates the project is authorable and
         // records provisional base revisions. The authoritative base is re-read
@@ -433,24 +565,26 @@ export class StoryAgentRunService {
           projectId,
           input.chapterId,
         );
+        requireCreativeProfile(state.project);
         const dispatches: StoryAgentRealtimeDispatch[] = [];
-        dispatches.push(
-          ...(await this.expireDueProposalsForProject(
-            tx,
-            projectId,
-            writeState.databaseNow,
-            STORY_AGENT_MAX_PROPOSED_RUNS_PER_PROJECT,
-          )),
+        const agentDispatches: AgentOsJournalDispatch[] = [];
+        const expired = await this.expireDueProposalsForProject(
+          tx,
+          projectId,
+          writeState.databaseNow,
+          STORY_AGENT_MAX_PROPOSED_RUNS_PER_PROJECT,
         );
-        dispatches.push(
-          ...(await this.supersedeProposalScope(
-            tx,
-            projectId,
-            user.userId,
-            input.conversationId ?? null,
-            writeState.databaseNow,
-          )),
+        dispatches.push(...expired.story);
+        agentDispatches.push(...expired.agent);
+        const superseded = await this.supersedeProposalScope(
+          tx,
+          projectId,
+          user.userId,
+          input.conversationId ?? null,
+          writeState.databaseNow,
         );
+        dispatches.push(...superseded.story);
+        agentDispatches.push(...superseded.agent);
         const activeCount = await tx.storyAgentRun.count({
           where: {
             storyProjectId: projectId,
@@ -486,6 +620,23 @@ export class StoryAgentRunService {
             initiatedByUserId: user.userId,
             initiatedBySessionId: input.initiatedBySessionId ?? null,
             conversationId: input.conversationId ?? null,
+            decisionContractVersion: 2,
+            sourceAgentRunId: input.sourceAgentRunId ?? null,
+            sourceAgentTurnId: input.sourceAgentTurnId ?? null,
+            sourceAgentToolCallId: input.sourceAgentToolCallId ?? null,
+            sourceStartedMessage: input.sourceStartedMessage ?? null,
+            sourceCompletionMessage: input.sourceCompletionMessage ?? null,
+            sourceProposalReadyDeliveredAt: null,
+            sourceTerminalDeliveredAt: null,
+            sourceApprovalId: null,
+            sourceApprovalResponseId: null,
+            sourceApprovalResponseText: null,
+            sourceApprovalLocale: null,
+            sourceApprovalDecisionTurnId: null,
+            sourceApprovalDecision: null,
+            sourceApprovalDecidedAt: null,
+            sourceApprovalDecidedByUserId: null,
+            sourceResultDeliveredAt: null,
             baseDraftRevision: state.draftRow.revision,
             baseLayoutRevision: state.layoutRow.revision,
             proposal: brief as unknown as Prisma.InputJsonObject,
@@ -501,21 +652,54 @@ export class StoryAgentRunService {
           },
           include: RUN_INCLUDE,
         });
+        if (input.sourceAgentRunId) {
+          await tx.agentOsExternalHandoffRegistration.create({
+            data: {
+              // The Story run is the external job. Keeping both columns makes
+              // the generic Agent OS inbox explicit while a database check
+              // prevents either identity from drifting independently.
+              externalJobId: created.id,
+              storyAgentRunId: created.id,
+              sourceAgentRunId: input.sourceAgentRunId,
+              sourceAgentTurnId: input.sourceAgentTurnId!,
+              sourceAgentToolCallId: input.sourceAgentToolCallId!,
+              sourceConversationId: input.conversationId!,
+              sourceToolId: 'story.author',
+              decisionContractVersion: 2,
+              startedMessage: input.sourceStartedMessage!,
+              completionMessage: input.sourceCompletionMessage!,
+            },
+          });
+        }
         const dto = this.toDto(created);
         return {
           value: dto,
           dispatches: [...dispatches, await this.realtime.enqueue(tx, dto)],
+          agentDispatches,
         };
       });
-      await this.publishAll(transition.dispatches);
+      await this.publishTransition(transition);
       return transition.value;
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
       if (!canonicalFingerprint) throw error;
-      const existing = await this.prisma.storyAgentRun.findUnique({
+      let existing = await this.prisma.storyAgentRun.findUnique({
         where: { idempotencyKey },
         include: RUN_INCLUDE,
       });
+      if (
+        !existing &&
+        requestedInput.sourceAgentRunId &&
+        requestedInput.sourceAgentToolCallId
+      ) {
+        existing = await this.prisma.storyAgentRun.findFirst({
+          where: {
+            sourceAgentRunId: requestedInput.sourceAgentRunId,
+            sourceAgentToolCallId: requestedInput.sourceAgentToolCallId,
+          },
+          include: RUN_INCLUDE,
+        });
+      }
       if (!existing) throw error;
       return this.assertIdempotentReplay(
         existing,
@@ -613,6 +797,366 @@ export class StoryAgentRunService {
     return run ? this.toDto(run) : null;
   }
 
+  /**
+   * Resolve the rich Story proposal card as one cross-domain transaction.
+   * Story state is locked before the Agent journal, preserving the global
+   * write-state -> Story run -> Agent run lock order on every pod.
+   */
+  async resolveAgentOsProposalDecision(input: {
+    user: AuthUser;
+    workspaceId: string;
+    projectId: string;
+    agentRunId: string;
+    conversationId: string;
+    storyRunId: string;
+    approvalId: string;
+    responseId: string;
+    decision: 'approve' | 'reject';
+    responseText: string;
+    locale: 'en-US' | 'zh-CN' | 'zh-HK';
+  }): Promise<StoryAgentOsCoordinatorResult> {
+    const responseText = z
+      .string()
+      .trim()
+      .min(1)
+      .max(300)
+      .parse(input.responseText);
+    const locale = z.enum(['en-US', 'zh-CN', 'zh-HK']).parse(input.locale);
+    const copy = storyProposalDecisionCopy(locale, input.decision);
+    await this.requireScopedCapabilityWithoutWriteGuard(
+      input.user,
+      input.workspaceId,
+      input.projectId,
+      'story.edit',
+    );
+
+    const transition = await this.prisma.$transaction(async (tx) => {
+      const writeState = await this.lockWriteState(tx, input.projectId);
+      await this.lockStoryAgentRun(tx, input.storyRunId);
+      const run = await this.requireRun(
+        tx,
+        input.workspaceId,
+        input.projectId,
+        input.storyRunId,
+      );
+      this.assertAgentOsV2Identity(run, input);
+
+      const expectedApprovalId = storyProposalApprovalId(run.id);
+      if (input.approvalId !== expectedApprovalId) {
+        throw new ConflictException({
+          code: 'STORY_AGENT_APPROVAL_ID_MISMATCH',
+          message: 'This approval does not belong to the Story proposal.',
+          runId: run.id,
+        });
+      }
+
+      const responseOwner = await tx.storyAgentRun.findUnique({
+        where: { sourceApprovalResponseId: input.responseId },
+        select: { id: true },
+      });
+      if (responseOwner && responseOwner.id !== run.id) {
+        throw new ConflictException({
+          code: 'STORY_AGENT_APPROVAL_RESPONSE_CONFLICT',
+          message:
+            'This proposal response id was already used for another Story decision.',
+        });
+      }
+
+      if (run.sourceApprovalId !== null) {
+        const sameApproval = run.sourceApprovalId === input.approvalId;
+        const sameDecision =
+          run.sourceApprovalResponseId === input.responseId &&
+          run.sourceApprovalResponseText === responseText &&
+          run.sourceApprovalLocale === locale &&
+          run.sourceApprovalDecision === input.decision &&
+          run.sourceApprovalDecidedByUserId === input.user.userId;
+        if (sameApproval && sameDecision) {
+          const agentDispatch =
+            await this.agentOsJournal.snapshotRunInTransaction(
+              tx,
+              input.agentRunId,
+            );
+          return {
+            agentDispatch,
+            agentDispatches: [agentDispatch],
+            storyDispatches: [] as StoryAgentRealtimeDispatch[],
+          };
+        }
+        throw new ConflictException({
+          code: 'STORY_AGENT_APPROVAL_ALREADY_RESOLVED',
+          message:
+            'This Story proposal approval was already resolved with a different decision.',
+          runId: run.id,
+        });
+      }
+
+      if (
+        run.sourceProposalReadyDeliveredAt === null ||
+        run.sourceTerminalDeliveredAt !== null
+      ) {
+        throw new ConflictException({
+          code: 'STORY_AGENT_APPROVAL_NOT_PENDING',
+          message: 'This Story proposal is not awaiting an Agent OS decision.',
+          runId: run.id,
+        });
+      }
+      if (run.status !== StoryAgentRunStatus.proposed) {
+        throw new ConflictException({
+          code: 'STORY_AGENT_RUN_NOT_CONFIRMABLE',
+          message: `A ${run.status} Story Agent run cannot resolve a proposal approval.`,
+          runId: run.id,
+        });
+      }
+      if (run.expiresAt <= writeState.databaseNow) {
+        throw new ConflictException({
+          code: 'STORY_AGENT_PROPOSAL_EXPIRED',
+          message: 'This Story proposal expired before the decision arrived.',
+          runId: run.id,
+        });
+      }
+
+      this.assertProjectHasNoActiveRun(writeState);
+      await this.requireCanonicalProposedHead(
+        tx,
+        input.workspaceId,
+        input.projectId,
+        run.storyChapterId,
+        run.id,
+        writeState.databaseNow,
+      );
+
+      const storyDispatches: StoryAgentRealtimeDispatch[] = [];
+      const closureAgentDispatches: AgentOsJournalDispatch[] = [];
+      let agentDispatch: AgentOsJournalDispatch;
+      const decisionTurnId = storyProposalDecisionTurnId(input.responseId);
+      if (input.decision === 'approve') {
+        const proposal = this.parseFullProposal(run.proposal);
+        const state = await this.loadCanonicalState(
+          tx,
+          input.workspaceId,
+          input.projectId,
+          run.storyChapterId,
+        );
+        if (
+          state.draftRow.revision !== proposal.baseDraftRevision ||
+          state.draftRow.contentHash !== proposal.baseContentHash ||
+          state.layoutRow.revision !== proposal.baseLayoutRevision
+        ) {
+          throw new ConflictException({
+            code: 'STORY_AGENT_BASE_CHANGED',
+            message:
+              'The story draft or canvas layout changed after this proposal was created.',
+            runId: run.id,
+          });
+        }
+        await this.writeGuard.assertAgentClaimAllowed(tx, input.projectId);
+        const superseded = await this.supersedeOtherProposals(
+          tx,
+          input.projectId,
+          run.id,
+          writeState.databaseNow,
+        );
+        storyDispatches.push(...superseded.story);
+        closureAgentDispatches.push(...superseded.agent);
+        const applying = await this.claimProjectForRun(
+          tx,
+          run,
+          writeState,
+          input.user.userId,
+          {
+            sourceApprovalId: input.approvalId,
+            sourceApprovalResponseId: input.responseId,
+            sourceApprovalResponseText: responseText,
+            sourceApprovalLocale: locale,
+            sourceApprovalDecisionTurnId: decisionTurnId,
+            sourceApprovalDecision: StoryAgentProposalDecision.approve,
+            sourceApprovalDecidedAt: writeState.databaseNow,
+            sourceApprovalDecidedByUserId: input.user.userId,
+          },
+        );
+        agentDispatch =
+          await this.agentOsJournal.appendStoryProposalDecisionInTransaction(
+            tx,
+            {
+              runId: input.agentRunId,
+              approvalTurnId: run.sourceAgentTurnId!,
+              storyRunId: run.id,
+              approvalId: input.approvalId,
+              responseId: input.responseId,
+              decision: 'approve',
+              locale,
+              userText: responseText,
+              assistantText: copy.assistantText,
+              applyStartedMessage: copy.applyStartedMessage,
+            },
+          );
+        storyDispatches.push(await this.realtime.enqueue(tx, applying));
+      } else {
+        const cancelled = await tx.storyAgentRun.update({
+          where: { id: run.id },
+          data: {
+            status: StoryAgentRunStatus.cancelled,
+            completedAt: writeState.databaseNow,
+            cancelledAt: writeState.databaseNow,
+            cancelledByUserId: input.user.userId,
+            sourceApprovalId: input.approvalId,
+            sourceApprovalResponseId: input.responseId,
+            sourceApprovalResponseText: responseText,
+            sourceApprovalLocale: locale,
+            sourceApprovalDecisionTurnId: decisionTurnId,
+            sourceApprovalDecision: StoryAgentProposalDecision.reject,
+            sourceApprovalDecidedAt: writeState.databaseNow,
+            sourceApprovalDecidedByUserId: input.user.userId,
+            sourceTerminalDeliveredAt: writeState.databaseNow,
+            sourceResultDeliveryNextAttemptAt: null,
+            sourceResultDeliveryLeaseOwner: null,
+            sourceResultDeliveryLeaseExpiresAt: null,
+            sourceResultDeliveryLastError: null,
+          },
+          include: RUN_INCLUDE,
+        });
+        agentDispatch =
+          await this.agentOsJournal.appendStoryProposalDecisionInTransaction(
+            tx,
+            {
+              runId: input.agentRunId,
+              approvalTurnId: run.sourceAgentTurnId!,
+              storyRunId: run.id,
+              approvalId: input.approvalId,
+              responseId: input.responseId,
+              decision: 'reject',
+              locale,
+              userText: responseText,
+              assistantText: copy.assistantText,
+            },
+          );
+        storyDispatches.push(
+          await this.realtime.enqueue(tx, this.toDto(cancelled)),
+        );
+      }
+      return {
+        agentDispatch,
+        agentDispatches: [...closureAgentDispatches, agentDispatch],
+        storyDispatches,
+      };
+    });
+
+    await Promise.all([
+      this.publishAll(transition.storyDispatches),
+      ...transition.agentDispatches.map((dispatch) =>
+        this.agentOsJournal.publishCommitted(dispatch),
+      ),
+    ]);
+    return agentCoordinatorResult(transition.agentDispatch);
+  }
+
+  /** Atomically stop initial Story authoring and its originating Agent run. */
+  async cancelAgentOsAuthoring(input: {
+    user: AuthUser;
+    workspaceId: string;
+    projectId: string;
+    agentRunId: string;
+    conversationId: string;
+    storyRunId: string;
+    reason?: string;
+  }): Promise<StoryAgentOsCoordinatorResult> {
+    await this.requireScopedCapabilityWithoutWriteGuard(
+      input.user,
+      input.workspaceId,
+      input.projectId,
+      'story.edit',
+    );
+    const transition = await this.prisma.$transaction(async (tx) => {
+      const writeState = await this.lockWriteState(tx, input.projectId);
+      await this.lockStoryAgentRun(tx, input.storyRunId);
+      const run = await this.requireRun(
+        tx,
+        input.workspaceId,
+        input.projectId,
+        input.storyRunId,
+      );
+      this.assertAgentOsV2Identity(run, input);
+
+      if (
+        run.sourceApprovalId !== null ||
+        run.sourceProposalReadyDeliveredAt !== null ||
+        run.status === StoryAgentRunStatus.applying ||
+        run.status === StoryAgentRunStatus.succeeded ||
+        run.status === StoryAgentRunStatus.failed
+      ) {
+        throw new ConflictException({
+          code: 'OPERATION_COMMITTED',
+          message:
+            'Story proposal application has already been committed and cannot be stopped.',
+          runId: run.id,
+        });
+      }
+
+      if (
+        run.status === StoryAgentRunStatus.cancelled &&
+        run.sourceTerminalDeliveredAt !== null
+      ) {
+        const agentDispatch =
+          await this.agentOsJournal.snapshotRunInTransaction(
+            tx,
+            input.agentRunId,
+          );
+        return {
+          agentDispatch,
+          storyDispatches: [] as StoryAgentRealtimeDispatch[],
+        };
+      }
+      if (
+        run.status !== StoryAgentRunStatus.authoring &&
+        run.status !== StoryAgentRunStatus.authoring_failed &&
+        run.status !== StoryAgentRunStatus.proposed
+      ) {
+        throw new ConflictException({
+          code: 'STORY_AGENT_RUN_NOT_CANCELLABLE',
+          message: `A ${run.status} Story authoring job cannot be stopped.`,
+          runId: run.id,
+        });
+      }
+      this.assertProjectHasNoActiveRun(writeState);
+      const cancelled = await tx.storyAgentRun.update({
+        where: { id: run.id },
+        data: {
+          status: StoryAgentRunStatus.cancelled,
+          completedAt: writeState.databaseNow,
+          cancelledAt: writeState.databaseNow,
+          cancelledByUserId: input.user.userId,
+          sourceTerminalDeliveredAt: writeState.databaseNow,
+          leaseOwner: null,
+          leaseAcquiredAt: null,
+          leaseExpiresAt: null,
+          sourceResultDeliveryNextAttemptAt: null,
+          sourceResultDeliveryLeaseOwner: null,
+          sourceResultDeliveryLeaseExpiresAt: null,
+          sourceResultDeliveryLastError: null,
+        },
+        include: RUN_INCLUDE,
+      });
+      const agentDispatch = await this.agentOsJournal.cancelRunInTransaction(
+        tx,
+        {
+          runId: input.agentRunId,
+          reason: input.reason ?? 'Story authoring stopped by user',
+        },
+      );
+      return {
+        agentDispatch,
+        storyDispatches: [
+          await this.realtime.enqueue(tx, this.toDto(cancelled)),
+        ],
+      };
+    });
+    await Promise.all([
+      this.publishAll(transition.storyDispatches),
+      this.agentOsJournal.publishCommitted(transition.agentDispatch),
+    ]);
+    return agentCoordinatorResult(transition.agentDispatch);
+  }
+
   async confirm(
     user: AuthUser,
     workspaceId: string,
@@ -631,6 +1175,7 @@ export class StoryAgentRunService {
     const transition = await this.prisma.$transaction(async (tx) => {
       const writeState = await this.lockWriteState(tx, projectId);
       const run = await this.requireRun(tx, workspaceId, projectId, runId);
+      this.rejectLegacyDecisionForAgentOsV2(run);
       if (run.status === StoryAgentRunStatus.succeeded) {
         return { value: this.toDto(run), dispatches: [] };
       }
@@ -698,14 +1243,13 @@ export class StoryAgentRunService {
       // durable-lease check closes the inverse TOCTOU: an Agent can never
       // overtake an accepted external command.
       await this.writeGuard.assertAgentClaimAllowed(tx, projectId);
-      dispatches.push(
-        ...(await this.supersedeOtherProposals(
-          tx,
-          projectId,
-          run.id,
-          writeState.databaseNow,
-        )),
+      const superseded = await this.supersedeOtherProposals(
+        tx,
+        projectId,
+        run.id,
+        writeState.databaseNow,
       );
+      dispatches.push(...superseded.story);
       const applying = await this.claimProjectForRun(
         tx,
         run,
@@ -713,9 +1257,13 @@ export class StoryAgentRunService {
         user.userId,
       );
       dispatches.push(await this.realtime.enqueue(tx, applying));
-      return { value: applying, dispatches };
+      return {
+        value: applying,
+        dispatches,
+        agentDispatches: superseded.agent,
+      };
     });
-    await this.publishAll(transition.dispatches);
+    await this.publishTransition(transition);
     return transition.value;
   }
 
@@ -734,6 +1282,7 @@ export class StoryAgentRunService {
     const transition = await this.prisma.$transaction(async (tx) => {
       const writeState = await this.lockWriteState(tx, projectId);
       const current = await this.requireRun(tx, workspaceId, projectId, runId);
+      this.rejectLegacyDecisionForAgentOsV2(current);
       if (current.status === StoryAgentRunStatus.cancelled) {
         return { value: this.toDto(current), dispatches: [] };
       }
@@ -972,13 +1521,21 @@ export class StoryAgentRunService {
         const applying = this.toDto(
           await this.requireRun(tx, workspaceId, projectId, created.id),
         );
-        dispatches.push(
-          ...(await this.supersedeOtherProposals(tx, projectId, null, now)),
+        const superseded = await this.supersedeOtherProposals(
+          tx,
+          projectId,
+          null,
+          now,
         );
+        dispatches.push(...superseded.story);
         dispatches.push(await this.realtime.enqueue(tx, applying));
-        return { value: applying, dispatches };
+        return {
+          value: applying,
+          dispatches,
+          agentDispatches: superseded.agent,
+        };
       });
-      await this.publishAll(transition.dispatches);
+      await this.publishTransition(transition);
       return transition.value;
     } catch (error) {
       if (!isUniqueConstraintError(error)) throw error;
@@ -1502,6 +2059,7 @@ export class StoryAgentRunService {
       return { kind: 'failed' };
     }
     let state: CanonicalAuthoringState;
+    let creativeProfile: StoryAgentAuthoringJob['creativeProfile'];
     try {
       state = await this.loadCanonicalState(
         this.prisma,
@@ -1509,6 +2067,7 @@ export class StoryAgentRunService {
         run.storyProjectId,
         run.storyChapterId,
       );
+      creativeProfile = requireCreativeProfile(state.project);
     } catch (error) {
       await this.failAuthoring(runId, workerId, {
         code: errorCode(error, 'STORY_AGENT_CANONICAL_STATE_INVALID'),
@@ -1579,6 +2138,7 @@ export class StoryAgentRunService {
         chapterId: run.storyChapterId,
         workspaceId: run.workspaceId,
         brief: briefResult.data,
+        creativeProfile,
         contextJson,
         document,
         snapshot: Object.freeze({
@@ -1706,16 +2266,15 @@ export class StoryAgentRunService {
         }
 
         const dispatches: StoryAgentRealtimeDispatch[] = [];
-        dispatches.push(
-          ...(await this.supersedeProposalScope(
-            tx,
-            run.storyProjectId,
-            run.initiatedByUserId,
-            run.conversationId,
-            writeState.databaseNow,
-            run.id,
-          )),
+        const superseded = await this.supersedeProposalScope(
+          tx,
+          run.storyProjectId,
+          run.initiatedByUserId,
+          run.conversationId,
+          writeState.databaseNow,
+          run.id,
         );
+        dispatches.push(...superseded.story);
         const landed = await tx.storyAgentRun.update({
           where: { id: run.id },
           data: {
@@ -1738,10 +2297,14 @@ export class StoryAgentRunService {
         });
         const dto = this.toDto(landed);
         dispatches.push(await this.realtime.enqueue(tx, dto));
-        return { value: { kind: 'completed', run: dto }, dispatches };
+        return {
+          value: { kind: 'completed', run: dto },
+          dispatches,
+          agentDispatches: superseded.agent,
+        };
       },
     );
-    await this.publishAll(transition.dispatches);
+    await this.publishTransition(transition);
     return transition.value;
   }
 
@@ -1752,6 +2315,13 @@ export class StoryAgentRunService {
     error: { code: string; detail: string },
   ): Promise<void> {
     const transition = await this.prisma.$transaction(async (tx) => {
+      const origin = await tx.storyAgentRun.findUnique({
+        where: { id: runId },
+        select: { decisionContractVersion: true, sourceAgentRunId: true },
+      });
+      const agentOsManaged =
+        origin?.decisionContractVersion === 2 &&
+        origin.sourceAgentRunId !== null;
       const now = await databaseNow(tx);
       // Atomic CAS: cancellation/supersession racing this call must win.
       const updated = await tx.storyAgentRun.updateMany({
@@ -1764,6 +2334,12 @@ export class StoryAgentRunService {
           status: StoryAgentRunStatus.authoring_failed,
           errorCode: error.code.slice(0, 96),
           errorDetail: error.detail.slice(0, 4_000),
+          // V2 Agent-origin failures terminate through the continuation
+          // worker immediately; they never surface the legacy Retry/Discard
+          // card outside the Agent transcript state machine.
+          ...(agentOsManaged
+            ? { authoringAttempts: STORY_AGENT_MAX_AUTHORING_ATTEMPTS }
+            : {}),
           leaseOwner: null,
           leaseAcquiredAt: null,
           leaseExpiresAt: null,
@@ -1802,6 +2378,7 @@ export class StoryAgentRunService {
     const transition = await this.prisma.$transaction(async (tx) => {
       const writeState = await this.lockWriteState(tx, projectId);
       const run = await this.requireRun(tx, workspaceId, projectId, runId);
+      this.rejectLegacyDecisionForAgentOsV2(run);
       if (run.status === StoryAgentRunStatus.authoring) {
         return { value: this.toDto(run), dispatches: [] };
       }
@@ -1927,9 +2504,13 @@ export class StoryAgentRunService {
           1,
           candidate.id,
         );
-        return { value: undefined, dispatches };
+        return {
+          value: undefined,
+          dispatches: dispatches.story,
+          agentDispatches: dispatches.agent,
+        };
       });
-      await this.publishAll(transition.dispatches);
+      await this.publishTransition(transition);
     }
   }
 
@@ -1982,7 +2563,7 @@ export class StoryAgentRunService {
     projectId: string,
     exceptRunId: string | null,
     now: Date,
-  ): Promise<StoryAgentRealtimeDispatch[]> {
+  ): Promise<CrossDomainDispatches> {
     const candidates = await tx.storyAgentRun.findMany({
       where: {
         storyProjectId: projectId,
@@ -1993,7 +2574,7 @@ export class StoryAgentRunService {
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take: STORY_AGENT_MAX_PROPOSED_RUNS_PER_PROJECT + 1,
     });
-    if (candidates.length === 0) return [];
+    if (candidates.length === 0) return { story: [], agent: [] };
     if (candidates.length > STORY_AGENT_MAX_PROPOSED_RUNS_PER_PROJECT) {
       throw canonicalStateCorrupt(
         'STORY_AGENT_PROJECT_PROPOSAL_LIMIT_CORRUPT',
@@ -2019,7 +2600,7 @@ export class StoryAgentRunService {
     conversationId: string | null,
     now: Date,
     exceptRunId?: string,
-  ): Promise<StoryAgentRealtimeDispatch[]> {
+  ): Promise<CrossDomainDispatches> {
     const candidates = await tx.storyAgentRun.findMany({
       where: {
         storyProjectId: projectId,
@@ -2056,7 +2637,7 @@ export class StoryAgentRunService {
     now: Date,
     limit: number,
     runId?: string,
-  ): Promise<StoryAgentRealtimeDispatch[]> {
+  ): Promise<CrossDomainDispatches> {
     const candidates = await tx.storyAgentRun.findMany({
       where: {
         storyProjectId: projectId,
@@ -2088,36 +2669,67 @@ export class StoryAgentRunService {
     candidateIds: string[],
     now: Date,
     error: { code: string; detail: string },
-  ): Promise<StoryAgentRealtimeDispatch[]> {
-    if (candidateIds.length === 0) return [];
-    await tx.storyAgentRun.updateMany({
+  ): Promise<CrossDomainDispatches> {
+    if (candidateIds.length === 0) return { story: [], agent: [] };
+    const candidates = await tx.storyAgentRun.findMany({
       where: {
         id: { in: candidateIds },
         status: { in: [...PRE_CONFIRM_STATUSES] },
-      },
-      data: {
-        status: StoryAgentRunStatus.stale,
-        completedAt: now,
-        errorCode: error.code,
-        errorDetail: error.detail,
-        leaseOwner: null,
-        leaseAcquiredAt: null,
-        leaseExpiresAt: null,
-      },
-    });
-    const superseded = await tx.storyAgentRun.findMany({
-      where: {
-        id: { in: candidateIds },
-        status: StoryAgentRunStatus.stale,
       },
       include: RUN_INCLUDE,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     });
     const dispatches: StoryAgentRealtimeDispatch[] = [];
-    for (const row of superseded) {
+    const agentDispatches: AgentOsJournalDispatch[] = [];
+    for (const candidate of candidates) {
+      const closesAgentApproval =
+        candidate.decisionContractVersion === 2 &&
+        candidate.sourceAgentRunId !== null &&
+        candidate.sourceAgentTurnId !== null &&
+        candidate.sourceProposalReadyDeliveredAt !== null &&
+        candidate.sourceTerminalDeliveredAt === null &&
+        candidate.sourceApprovalId === null;
+      if (closesAgentApproval) {
+        agentDispatches.push(
+          await this.agentOsJournal.appendStoryProposalClosureInTransaction(
+            tx,
+            {
+              runId: candidate.sourceAgentRunId!,
+              turnId: candidate.sourceAgentTurnId!,
+              storyRunId: candidate.id,
+              approvalId: storyProposalApprovalId(candidate.id),
+              outcome: 'cancelled',
+              code: error.code,
+              text: error.detail,
+            },
+          ),
+        );
+      }
+      const row = await tx.storyAgentRun.update({
+        where: { id: candidate.id },
+        data: {
+          status: StoryAgentRunStatus.stale,
+          completedAt: now,
+          errorCode: error.code,
+          errorDetail: error.detail,
+          leaseOwner: null,
+          leaseAcquiredAt: null,
+          leaseExpiresAt: null,
+          ...(closesAgentApproval
+            ? {
+                sourceTerminalDeliveredAt: now,
+                sourceResultDeliveryNextAttemptAt: null,
+                sourceResultDeliveryLeaseOwner: null,
+                sourceResultDeliveryLeaseExpiresAt: null,
+                sourceResultDeliveryLastError: null,
+              }
+            : {}),
+        },
+        include: RUN_INCLUDE,
+      });
       dispatches.push(await this.realtime.enqueue(tx, this.toDto(row)));
     }
-    return dispatches;
+    return { story: dispatches, agent: agentDispatches };
   }
 
   private executeApplyProposal(
@@ -2145,6 +2757,16 @@ export class StoryAgentRunService {
     run: RunWithActiveLock,
     writeState: LockedWriteStateRow,
     confirmedByUserId: string,
+    approvalDecision?: {
+      sourceApprovalId: string;
+      sourceApprovalResponseId: string;
+      sourceApprovalResponseText: string;
+      sourceApprovalLocale: 'en-US' | 'zh-CN' | 'zh-HK';
+      sourceApprovalDecisionTurnId: string;
+      sourceApprovalDecision: StoryAgentProposalDecision;
+      sourceApprovalDecidedAt: Date;
+      sourceApprovalDecidedByUserId: string;
+    },
   ): Promise<StoryAgentRunDto> {
     if (writeState.activeAgentRunId !== null) {
       throw storyAgentLocked(writeState);
@@ -2162,6 +2784,7 @@ export class StoryAgentRunService {
         leaseExpiresAt: plusMs(now, PENDING_LEASE_TTL_MS),
         confirmedByUserId,
         confirmedAt: now,
+        ...approvalDecision,
       },
     });
     await tx.storyProjectWriteState.update({
@@ -2186,6 +2809,18 @@ export class StoryAgentRunService {
     // Undo, human write, or system reconciliation. Recovery code is solely
     // responsible for terminalizing a run whose durable authority is lost.
     throw storyAgentLocked(writeState);
+  }
+
+  private rejectLegacyDecisionForAgentOsV2(run: RunWithActiveLock): void {
+    if (run.sourceAgentRunId === null || run.decisionContractVersion !== 2) {
+      return;
+    }
+    throw new ConflictException({
+      code: 'STORY_AGENT_DECISION_REQUIRES_AGENT_OS',
+      message:
+        'This proposal belongs to an Agent OS turn and must be resolved through its durable approval.',
+      runId: run.id,
+    });
   }
 
   private async finishUnstartedAsStale(
@@ -2264,6 +2899,9 @@ export class StoryAgentRunService {
         workspaceId: true,
         title: true,
         frameProfile: true,
+        durationPreset: true,
+        visualStyle: true,
+        creativeProfileConfirmedAt: true,
         defaultLocale: true,
         draft: true,
         chapters: {
@@ -2356,6 +2994,10 @@ export class StoryAgentRunService {
         workspaceId: project.workspaceId,
         title: project.title,
         frameProfile: project.frameProfile,
+        durationPreset: project.durationPreset,
+        visualStyle: project.visualStyle,
+        creativeProfileConfirmedAt:
+          project.creativeProfileConfirmedAt?.toISOString() ?? null,
         defaultLocale: project.defaultLocale,
       },
       chapter: {
@@ -2476,6 +3118,45 @@ export class StoryAgentRunService {
       });
     }
     return run;
+  }
+
+  private async lockStoryAgentRun(
+    tx: Prisma.TransactionClient,
+    runId: string,
+  ): Promise<void> {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "story_agent_runs" WHERE "id" = ${runId}::uuid FOR UPDATE`,
+    );
+  }
+
+  private assertAgentOsV2Identity(
+    run: RunWithActiveLock,
+    input: {
+      user: AuthUser;
+      workspaceId: string;
+      projectId: string;
+      agentRunId: string;
+      conversationId: string;
+      storyRunId: string;
+    },
+  ): void {
+    if (
+      run.id !== input.storyRunId ||
+      run.workspaceId !== input.workspaceId ||
+      run.storyProjectId !== input.projectId ||
+      run.initiatedByUserId !== input.user.userId ||
+      run.decisionContractVersion !== 2 ||
+      run.sourceAgentRunId !== input.agentRunId ||
+      run.sourceAgentTurnId === null ||
+      run.sourceAgentToolCallId === null ||
+      run.conversationId !== input.conversationId
+    ) {
+      throw new ConflictException({
+        code: 'STORY_AGENT_OS_DECISION_IDENTITY_MISMATCH',
+        message:
+          'The Story proposal does not belong to this Agent run, conversation, project, and creator.',
+      });
+    }
   }
 
   /**
@@ -2663,6 +3344,8 @@ export class StoryAgentRunService {
     }
     return StoryAgentRunDtoSchema.parse({
       id: row.id,
+      agentOsManaged:
+        row.decisionContractVersion === 2 && row.sourceAgentRunId !== null,
       kind: row.kind,
       status: row.status,
       workspaceId: row.workspaceId,
@@ -2710,6 +3393,67 @@ export class StoryAgentRunService {
       dispatches.map((dispatch) => this.realtime.publishCommitted(dispatch)),
     );
   }
+
+  private async publishTransition<T>(
+    transition: ServiceTransition<T>,
+  ): Promise<void> {
+    await Promise.all([
+      this.publishAll(transition.dispatches),
+      ...(transition.agentDispatches ?? []).map((dispatch) =>
+        this.agentOsJournal.publishCommitted(dispatch),
+      ),
+    ]);
+  }
+}
+
+function agentCoordinatorResult(
+  dispatch: AgentOsJournalDispatch,
+): StoryAgentOsCoordinatorResult {
+  return {
+    runId: dispatch.snapshot.runId,
+    status: dispatch.snapshot.status as AgentRunStatus,
+    events: dispatch.events,
+    pendingApproval: dispatch.snapshot.pendingApproval ?? null,
+    pendingUserInput: dispatch.snapshot.pendingUserInput ?? null,
+    pendingExternal: dispatch.snapshot.pendingExternal ?? null,
+    assistantText: dispatch.snapshot.assistantText ?? null,
+  };
+}
+
+function storyProposalDecisionCopy(
+  locale: 'en-US' | 'zh-CN' | 'zh-HK',
+  decision: 'approve' | 'reject',
+): { assistantText: string; applyStartedMessage?: string } {
+  if (locale === 'zh-CN') {
+    return decision === 'approve'
+      ? {
+          assistantText: '已收到你的确认。我正在将故事提案应用到画布。',
+          applyStartedMessage: '正在应用已确认的故事提案。',
+        }
+      : {
+          assistantText: '故事提案已放弃。你可以继续告诉我下一步想如何调整。',
+        };
+  }
+  if (locale === 'zh-HK') {
+    return decision === 'approve'
+      ? {
+          assistantText: '已收到你的確認。我正在將故事提案套用到畫布。',
+          applyStartedMessage: '正在套用已確認的故事提案。',
+        }
+      : {
+          assistantText: '故事提案已捨棄。你可以繼續告訴我下一步想如何調整。',
+        };
+  }
+  return decision === 'approve'
+    ? {
+        assistantText:
+          'I received your approval. I’m applying the story proposal now.',
+        applyStartedMessage: 'Applying the approved story proposal.',
+      }
+    : {
+        assistantText:
+          'The story proposal was discarded. Tell me what you’d like to change next.',
+      };
 }
 
 function emptyTransition(): ServiceTransition<void> {
@@ -2752,7 +3496,11 @@ async function requireBriefDocumentScope(
 }
 
 function proposalIdempotencyKey(projectId: string, key: string): string {
-  return `story-agent:proposal:${projectId}:${normalizeIdempotencyKey(key)}`;
+  const namespace = `story-agent:proposal:${projectId}:`;
+  const normalized = normalizeIdempotencyKey(key);
+  const candidate = `${namespace}${normalized}`;
+  if (candidate.length <= 240) return candidate;
+  return `${namespace}sha256:${canonicalJsonHash({ idempotencyKey: normalized })}`;
 }
 
 function undoIdempotencyKey(runId: string, key: string): string {
@@ -2967,6 +3715,30 @@ function assertRunNodeIdCapacity(
     affectedNodeIds: affectedNodeIds.length,
     createdNodeIds: createdNodeIds.length,
   });
+}
+
+function requireCreativeProfile(
+  project: CanonicalAuthoringState['project'],
+): StoryAgentAuthoringJob['creativeProfile'] {
+  if (
+    project.durationPreset === null ||
+    project.visualStyle === null ||
+    project.creativeProfileConfirmedAt === null
+  ) {
+    throw new UnprocessableEntityException({
+      code: 'STORY_CREATIVE_PROFILE_REQUIRED',
+      message:
+        'Confirm the project creative direction and story language in FizzAgent before drafting a story.',
+      projectId: project.id,
+    });
+  }
+  return {
+    frameProfile: project.frameProfile,
+    durationPreset: project.durationPreset,
+    visualStyle: project.visualStyle,
+    storyLanguage: project.defaultLocale,
+    confirmedAt: project.creativeProfileConfirmedAt,
+  };
 }
 
 function iso(value: Date | null): string | null {

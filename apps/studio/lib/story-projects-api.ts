@@ -15,6 +15,12 @@ export const STORY_CANVAS_LAYOUT_SCHEMA_VERSION = "story-canvas-layout-v3" as co
 export type StoryProjectStatus = "active" | "archived";
 export type StoryVisibility = "private" | "unlisted" | "public";
 export type StoryFrameProfile = "landscape_16_9" | "portrait_9_16";
+export type StoryDurationPreset = "short_5_15" | "medium_15_30" | "long_30_60";
+export type StoryVisualStyle =
+  | "cinematic_realism"
+  | "stylized_3d"
+  | "graphic_novel"
+  | "anime_cinematic";
 
 export const STORY_FRAME_PROFILE_CONTRACTS = {
   landscape_16_9: { aspectRatio: "16:9", width: 1920, height: 1080 },
@@ -129,6 +135,10 @@ export interface StoryProjectSummary {
   id: string;
   workspaceId: string;
   frameProfile: StoryFrameProfile;
+  frameProfileMutable: boolean;
+  durationPreset: StoryDurationPreset | null;
+  visualStyle: StoryVisualStyle | null;
+  creativeProfileConfirmedAt: string | null;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;
@@ -536,7 +546,6 @@ export interface StoryChapter {
 }
 
 export interface CreateStoryProjectInput {
-  frameProfile: StoryFrameProfile;
   title: string;
   summary?: string | null;
   defaultLocale: string;
@@ -889,6 +898,10 @@ export async function updateStoryProject(
     defaultLocale?: string;
     visibility?: StoryVisibility;
     tags?: string[];
+    frameProfile?: StoryFrameProfile;
+    durationPreset?: StoryDurationPreset;
+    visualStyle?: StoryVisualStyle;
+    confirmCreativeProfile?: true;
   }
 ): Promise<StoryProjectSummary> {
   return api.patch<StoryProjectSummary>(`/aurora/story-projects/${encodeURIComponent(projectId)}`, {
@@ -1202,8 +1215,29 @@ function assertProjectSummary(value: unknown): asserts value is StoryProjectSumm
     throw new Error("Story Studio API returned an invalid project.");
   }
   const project = value as Partial<StoryProjectSummary>;
+  const creativeProfileEmpty =
+    project.durationPreset === null &&
+    project.visualStyle === null &&
+    project.creativeProfileConfirmedAt === null;
+  const creativeProfileComplete =
+    project.durationPreset != null &&
+    project.visualStyle != null &&
+    project.creativeProfileConfirmedAt != null;
   if (
     (project.frameProfile !== "landscape_16_9" && project.frameProfile !== "portrait_9_16") ||
+    typeof project.frameProfileMutable !== "boolean" ||
+    (project.durationPreset !== null &&
+      project.durationPreset !== "short_5_15" &&
+      project.durationPreset !== "medium_15_30" &&
+      project.durationPreset !== "long_30_60") ||
+    (project.visualStyle !== null &&
+      project.visualStyle !== "cinematic_realism" &&
+      project.visualStyle !== "stylized_3d" &&
+      project.visualStyle !== "graphic_novel" &&
+      project.visualStyle !== "anime_cinematic") ||
+    (project.creativeProfileConfirmedAt !== null &&
+      !validIsoTimestamp(project.creativeProfileConfirmedAt)) ||
+    (!creativeProfileEmpty && !creativeProfileComplete) ||
     !Array.isArray(project.capabilities) ||
     !project.production ||
     typeof project.production !== "object" ||

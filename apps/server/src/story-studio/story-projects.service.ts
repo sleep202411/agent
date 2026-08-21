@@ -16,6 +16,7 @@ import {
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
+  StoryFrameProfile,
   StoryRevisionSource,
   StudioDocumentType,
   StudioDocumentVersionSource,
@@ -128,6 +129,16 @@ type ProjectSummaryRow = Prisma.StoryProjectGetPayload<{
   include: typeof PROJECT_SUMMARY_INCLUDE;
 }>;
 
+function storyFrameProfileCanChange(row: ProjectSummaryRow): boolean {
+  // The frame is part of setup until production has a concrete dependency on
+  // it. Empty selection rows and text-only draft work deliberately do not lock
+  // the creator into the project's initial ratio.
+  return (
+    row.builds.length === 0 &&
+    row.videoSelections.every((selection) => selection.currentAssetId === null)
+  );
+}
+
 const STORY_VIDEO_SELECTION_INCLUDE =
   Prisma.validator<Prisma.StoryVideoSelectionInclude>()({
     currentAsset: {
@@ -234,7 +245,10 @@ export class StoryProjectsService {
       const project = await tx.storyProject.create({
         data: {
           workspaceId,
-          frameProfile: input.frameProfile,
+          // The empty canvas needs a projection shape before the Agent intake
+          // runs. This value is provisional: the creator's Q1 answer replaces
+          // it atomically with duration + visual direction before authoring.
+          frameProfile: StoryFrameProfile.landscape_16_9,
           status: StoryProjectStatus.active,
           visibility: input.visibility,
           title: input.title,
@@ -502,6 +516,22 @@ export class StoryProjectsService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      if (input.confirmCreativeProfile && input.frameProfile !== undefined) {
+        const current = await this.loadProjectSummary(projectId, tx);
+        if (
+          current.version === input.expectedProjectVersion &&
+          input.frameProfile !== current.frameProfile &&
+          !storyFrameProfileCanChange(current)
+        ) {
+          throw new ConflictException({
+            code: 'STORY_FRAME_PROFILE_LOCKED',
+            message:
+              'The aspect ratio can change only before a video is selected or a build is created for this project.',
+            projectId,
+            frameProfile: current.frameProfile,
+          });
+        }
+      }
       if (input.coverAssetId !== undefined && input.coverAssetId !== null) {
         // A cover must be a STILL. Every place a cover is consumed needs one: the
         // player paints it as the pre-playback backdrop from an image asset, the
@@ -553,6 +583,14 @@ export class StoryProjectsService {
             : {}),
           ...(input.tags !== undefined
             ? { tags: input.tags as Prisma.InputJsonArray }
+            : {}),
+          ...(input.confirmCreativeProfile
+            ? {
+                frameProfile: input.frameProfile,
+                durationPreset: input.durationPreset,
+                visualStyle: input.visualStyle,
+                creativeProfileConfirmedAt: new Date(),
+              }
             : {}),
           version: { increment: 1 },
         },
@@ -1715,6 +1753,11 @@ export class StoryProjectsService {
       id: row.id,
       workspaceId: row.workspaceId,
       frameProfile: row.frameProfile,
+      frameProfileMutable: storyFrameProfileCanChange(row),
+      durationPreset: row.durationPreset,
+      visualStyle: row.visualStyle,
+      creativeProfileConfirmedAt:
+        row.creativeProfileConfirmedAt?.toISOString() ?? null,
       status: row.status,
       visibility: row.visibility,
       title: row.title,

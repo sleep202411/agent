@@ -5,11 +5,13 @@ import {
   StoryAgentRunStatus,
   StoryBuildKind,
   StoryBuildStatus,
+  StoryDurationPreset,
   StoryExperiencePublicationStatus,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
   StoryRevisionSource,
+  StoryVisualStyle,
   StoryVisibility,
   WorkspaceMemberRole,
   WorkspaceType,
@@ -19,6 +21,10 @@ import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import type { AuthUser } from '../auth';
+import {
+  AgentOsRunJournalService,
+  storyProposalApprovalId,
+} from '../agent-os-journal/agent-os-run-journal.service';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { canonicalJsonHash } from './canonical-json';
 import {
@@ -28,6 +34,7 @@ import {
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
 } from './dto';
 import type { StoryAgentRunRealtimeService } from './story-agent-run-realtime.service';
+import { StoryAgentRunContinuationWorkerService } from './story-agent-run-continuation-worker.service';
 import { StoryAgentRunService } from './story-agent-run.service';
 import type { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
@@ -366,6 +373,350 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       runs.filter((run) => run.status === StoryAgentRunStatus.stale),
     ).toHaveLength(1);
     expect(state.activeAgentRunId).toBeNull();
+  });
+
+  it('lets only one continuation worker across pods append and deliver an external Story job', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const handoff = await createExternalHandoffFixture(prisma, fixture);
+    const schedule = jest.fn();
+    const journal = new AgentOsRunJournalService(
+      prisma as unknown as PrismaService,
+      { schedule } as never,
+    );
+    const firstPod = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      journal,
+    );
+    const secondPod = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      journal,
+    );
+
+    await Promise.all([firstPod.drainOnce(1), secondPod.drainOnce(1)]);
+
+    const storyRun = await prisma.storyAgentRun.findUniqueOrThrow({
+      where: { id: handoff.storyRunId },
+    });
+    expect(storyRun.sourceProposalReadyDeliveredAt).not.toBeNull();
+    expect(storyRun.sourceTerminalDeliveredAt).toBeNull();
+    expect(storyRun.sourceResultDeliveryAttempts).toBe(0);
+    expect(storyRun.sourceResultDeliveryLeaseOwner).toBeNull();
+    await expect(
+      prisma.agentOsRun.findUniqueOrThrow({
+        where: { id: handoff.agentRunId },
+      }),
+    ).resolves.toMatchObject({
+      status: 'waiting_for_approval',
+      lastSequence: 7,
+    });
+    await expect(
+      prisma.agentOsRunEvent.count({
+        where: { runId: handoff.agentRunId },
+      }),
+    ).resolves.toBe(7);
+    expect(schedule).toHaveBeenCalledTimes(1);
+    expect(schedule).toHaveBeenCalledWith(handoff.agentRunId);
+  });
+
+  it('atomically closes the Story row and Agent approval when a pending v2 proposal expires', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const handoff = await createExternalHandoffFixture(prisma, fixture);
+    const worker = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      fixture.agentOsJournal,
+    );
+    await worker.drainOnce(1);
+    await expect(
+      prisma.agentOsRun.findUniqueOrThrow({
+        where: { id: handoff.agentRunId },
+      }),
+    ).resolves.toMatchObject({ status: 'waiting_for_approval' });
+
+    await prisma.$transaction(async (tx) => {
+      const [clock] = await tx.$queryRaw<Array<{ now: Date }>>`
+        SELECT transaction_timestamp() AS "now"
+      `;
+      await tx.storyAgentRun.update({
+        where: { id: handoff.storyRunId },
+        data: {
+          proposedAt: new Date(clock.now.getTime() - 120_000),
+          expiresAt: new Date(clock.now.getTime() - 60_000),
+        },
+      });
+    });
+
+    await fixture.service.expireProposals(1);
+
+    const [storyRun, agentRun, terminalEvents] = await Promise.all([
+      prisma.storyAgentRun.findUniqueOrThrow({
+        where: { id: handoff.storyRunId },
+      }),
+      prisma.agentOsRun.findUniqueOrThrow({
+        where: { id: handoff.agentRunId },
+      }),
+      prisma.agentOsRunEvent.findMany({
+        where: {
+          runId: handoff.agentRunId,
+          type: { in: ['ToolFailed', 'RunCancelled'] },
+        },
+        orderBy: { sequence: 'asc' },
+        select: { type: true },
+      }),
+    ]);
+    expect(storyRun).toMatchObject({
+      status: StoryAgentRunStatus.stale,
+      errorCode: 'STORY_AGENT_PROPOSAL_EXPIRED',
+      sourceApprovalId: null,
+    });
+    expect(storyRun.sourceTerminalDeliveredAt).toBeInstanceOf(Date);
+    expect(agentRun).toMatchObject({
+      status: 'cancelled',
+      pendingApproval: null,
+    });
+    expect(terminalEvents).toEqual([
+      { type: 'ToolFailed' },
+      { type: 'RunCancelled' },
+    ]);
+  });
+
+  it('commits exactly one durable response when two pods race the same v2 approval', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const handoff = await createExternalHandoffFixture(prisma, fixture);
+    const worker = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      fixture.agentOsJournal,
+    );
+    await worker.drainOnce(1);
+
+    const approvalId = storyProposalApprovalId(handoff.storyRunId);
+    const firstResponseId = randomUUID();
+    const secondResponseId = randomUUID();
+    const decisions = await Promise.allSettled([
+      fixture.service.resolveAgentOsProposalDecision({
+        user: fixture.user,
+        workspaceId: fixture.workspaceId,
+        projectId: fixture.projectId,
+        agentRunId: handoff.agentRunId,
+        conversationId: handoff.conversationId,
+        storyRunId: handoff.storyRunId,
+        approvalId,
+        responseId: firstResponseId,
+        responseText: 'Discard this proposal.',
+        locale: 'en-US',
+        decision: 'reject',
+      }),
+      fixture.service.resolveAgentOsProposalDecision({
+        user: fixture.user,
+        workspaceId: fixture.workspaceId,
+        projectId: fixture.projectId,
+        agentRunId: handoff.agentRunId,
+        conversationId: handoff.conversationId,
+        storyRunId: handoff.storyRunId,
+        approvalId,
+        responseId: secondResponseId,
+        responseText: '放弃这个提案。',
+        locale: 'zh-CN',
+        decision: 'reject',
+      }),
+    ]);
+
+    expect(
+      decisions.filter((result) => result.status === 'fulfilled'),
+    ).toHaveLength(1);
+    expect(
+      decisions.filter((result) => result.status === 'rejected'),
+    ).toHaveLength(1);
+    const storyRun = await prisma.storyAgentRun.findUniqueOrThrow({
+      where: { id: handoff.storyRunId },
+    });
+    expect(storyRun).toMatchObject({
+      status: StoryAgentRunStatus.cancelled,
+      sourceApprovalId: approvalId,
+      sourceApprovalDecision: 'reject',
+    });
+    expect(storyRun.sourceTerminalDeliveredAt).toBeInstanceOf(Date);
+    expect([firstResponseId, secondResponseId]).toContain(
+      storyRun.sourceApprovalResponseId,
+    );
+    await expect(
+      prisma.agentOsRun.findUniqueOrThrow({
+        where: { id: handoff.agentRunId },
+      }),
+    ).resolves.toMatchObject({ status: 'completed' });
+    const decisionEvents = await prisma.agentOsRunEvent.groupBy({
+      by: ['type'],
+      where: {
+        runId: handoff.agentRunId,
+        type: { in: ['UserMessage', 'ApprovalResolved', 'RunCompleted'] },
+      },
+      _count: { _all: true },
+    });
+    expect(
+      Object.fromEntries(
+        decisionEvents.map((event) => [event.type, event._count._all]),
+      ),
+    ).toEqual({ UserMessage: 1, ApprovalResolved: 1, RunCompleted: 1 });
+  });
+
+  it('repairs a crash before RunPaused and commits the handoff plus approval pause atomically', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const handoff = await createExternalHandoffFixture(prisma, fixture, {
+      leaveHandoffUnreconciled: true,
+    });
+    const schedule = jest.fn();
+    const journal = new AgentOsRunJournalService(
+      prisma as unknown as PrismaService,
+      { schedule } as never,
+    );
+    const worker = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      journal,
+    );
+
+    await worker.drainOnce(1);
+
+    const deliveredStoryRun = await prisma.storyAgentRun.findUniqueOrThrow({
+      where: { id: handoff.storyRunId },
+    });
+    expect(deliveredStoryRun).toMatchObject({
+      sourceResultDeliveryAttempts: 0,
+      sourceTerminalDeliveredAt: null,
+      sourceResultDeliveryLeaseOwner: null,
+      sourceResultDeliveryLastError: null,
+    });
+    expect(deliveredStoryRun.sourceProposalReadyDeliveredAt).toBeInstanceOf(
+      Date,
+    );
+    const agentRun = await prisma.agentOsRun.findUniqueOrThrow({
+      where: { id: handoff.agentRunId },
+    });
+    expect(agentRun).toMatchObject({
+      status: 'waiting_for_approval',
+      lastSequence: 13,
+    });
+    await expect(
+      prisma.agentOsRunEvent.findMany({
+        where: { runId: handoff.agentRunId },
+        orderBy: { sequence: 'asc' },
+        select: { sequence: true, type: true },
+      }),
+    ).resolves.toEqual([
+      { sequence: 1, type: 'RunStarted' },
+      { sequence: 2, type: 'ToolCompleted' },
+      { sequence: 3, type: 'MessageStarted' },
+      { sequence: 4, type: 'MessageDelta' },
+      { sequence: 5, type: 'MessageCompleted' },
+      { sequence: 6, type: 'RunPaused' },
+      { sequence: 7, type: 'RunResumed' },
+      { sequence: 8, type: 'MessageStarted' },
+      { sequence: 9, type: 'MessageDelta' },
+      { sequence: 10, type: 'MessageCompleted' },
+      { sequence: 11, type: 'ToolProposed' },
+      { sequence: 12, type: 'ApprovalRequired' },
+      { sequence: 13, type: 'RunPaused' },
+    ]);
+    expect(schedule).toHaveBeenCalledTimes(1);
+    expect(schedule).toHaveBeenCalledWith(handoff.agentRunId);
+  });
+
+  it('rolls back journal append and delivery CAS together, then replays after a crash', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const handoff = await createExternalHandoffFixture(prisma, fixture);
+    const durableJournal = new AgentOsRunJournalService(
+      prisma as unknown as PrismaService,
+      { schedule: jest.fn() } as never,
+    );
+    const faultAfterAppend = new Error('fault after journal append');
+    const crashingWorker = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      {
+        reconcileExternalHandoffInTransaction: (
+          tx: Prisma.TransactionClient,
+          externalJobId: string,
+        ) =>
+          durableJournal.reconcileExternalHandoffInTransaction(
+            tx,
+            externalJobId,
+          ),
+        appendStoryProposalReadyInTransaction: jest
+          .fn()
+          .mockImplementation(
+            async (
+              tx: Prisma.TransactionClient,
+              input: Parameters<
+                AgentOsRunJournalService['appendStoryProposalReadyInTransaction']
+              >[1],
+            ) => {
+              await durableJournal.appendStoryProposalReadyInTransaction(
+                tx,
+                input,
+              );
+              throw faultAfterAppend;
+            },
+          ),
+        publishCommitted: jest.fn(),
+      } as never,
+    );
+
+    await crashingWorker.drainOnce(1);
+
+    await expect(
+      prisma.agentOsRun.findUniqueOrThrow({
+        where: { id: handoff.agentRunId },
+      }),
+    ).resolves.toMatchObject({
+      status: 'waiting_for_external',
+      lastSequence: 0,
+    });
+    await expect(
+      prisma.agentOsRunEvent.count({
+        where: { runId: handoff.agentRunId },
+      }),
+    ).resolves.toBe(0);
+    const afterCrash = await prisma.storyAgentRun.findUniqueOrThrow({
+      where: { id: handoff.storyRunId },
+    });
+    expect(afterCrash.sourceProposalReadyDeliveredAt).toBeNull();
+    expect(afterCrash.sourceTerminalDeliveredAt).toBeNull();
+    expect(afterCrash.sourceResultDeliveryLeaseOwner).toBeNull();
+    expect(afterCrash.sourceResultDeliveryNextAttemptAt).not.toBeNull();
+    expect(afterCrash.sourceResultDeliveryLastError).toContain(
+      faultAfterAppend.message,
+    );
+
+    await prisma.storyAgentRun.update({
+      where: { id: handoff.storyRunId },
+      data: { sourceResultDeliveryNextAttemptAt: null },
+    });
+    const schedule = jest.fn();
+    const healthyJournal = new AgentOsRunJournalService(
+      prisma as unknown as PrismaService,
+      { schedule } as never,
+    );
+    const healthyWorker = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      healthyJournal,
+    );
+    await healthyWorker.drainOnce(1);
+
+    const recoveredStoryRun = await prisma.storyAgentRun.findUniqueOrThrow({
+      where: { id: handoff.storyRunId },
+    });
+    expect(recoveredStoryRun).toMatchObject({
+      sourceResultDeliveryAttempts: 0,
+      sourceTerminalDeliveredAt: null,
+      sourceResultDeliveryLeaseOwner: null,
+      sourceResultDeliveryLastError: null,
+    });
+    expect(recoveredStoryRun.sourceProposalReadyDeliveredAt).toBeInstanceOf(
+      Date,
+    );
+    await expect(
+      prisma.agentOsRunEvent.count({
+        where: { runId: handoff.agentRunId },
+      }),
+    ).resolves.toBe(7);
+    expect(schedule).toHaveBeenCalledWith(handoff.agentRunId);
   });
 
   it('lets a new worker reclaim an expired lease and rejects the old worker commit', async () => {
@@ -987,6 +1338,9 @@ async function createFixture(
     data: {
       workspaceId: workspace.id,
       frameProfile: StoryFrameProfile.landscape_16_9,
+      durationPreset: StoryDurationPreset.short_5_15,
+      visualStyle: StoryVisualStyle.cinematic_realism,
+      creativeProfileConfirmedAt: new Date(),
       status: StoryProjectStatus.active,
       visibility: StoryVisibility.private,
       title: prefix,
@@ -1058,11 +1412,16 @@ async function createFixture(
   const writeGuard = new StoryProjectWriteGuardService(
     prisma as unknown as PrismaService,
   );
+  const agentOsJournal = new AgentOsRunJournalService(
+    prisma as unknown as PrismaService,
+    { schedule: jest.fn() } as never,
+  );
   const service = new StoryAgentRunService(
     prisma as unknown as PrismaService,
     permissions,
     realtime,
     writeGuard,
+    agentOsJournal,
   );
 
   return {
@@ -1072,6 +1431,7 @@ async function createFixture(
     projectId: project.id,
     chapterId: chapter.id,
     service,
+    agentOsJournal,
     /**
      * Drive the full authoring pipeline to a reviewable proposal: file the
      * drafting brief, claim it as a worker, and land authored operations
@@ -1121,6 +1481,113 @@ async function createFixture(
       }
       return completion.run;
     },
+  };
+}
+
+async function createExternalHandoffFixture(
+  prisma: ReturnType<typeof buildPrisma>,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  options: { leaveHandoffUnreconciled?: boolean } = {},
+) {
+  const agentRunId = randomUUID();
+  const conversationId = randomUUID();
+  const turnId = randomUUID();
+  const toolCallId = `call_story_author_${randomUUID()}`;
+  const startedMessage = 'I am shaping your interactive-film proposal now.';
+  const completionMessage =
+    'Your interactive-film proposal is ready to review.';
+  await prisma.agentOsRun.create({
+    data: {
+      id: agentRunId,
+      projectId: fixture.projectId,
+      conversationId,
+      actorId: fixture.user.userId,
+      modelProfileId: 'integration-test',
+      status: 'running',
+      projectKind: 'story',
+      workbenchMode: 'story.canvas',
+    },
+  });
+  const storyRun = await fixture.service.createAuthoringRun(
+    fixture.user,
+    fixture.workspaceId,
+    fixture.projectId,
+    {
+      chapterId: fixture.chapterId,
+      title: 'A durable external handoff',
+      summary: 'Prove cross-pod continuation delivery.',
+      brief:
+        'Create a concise interactive-film proposal for the current project.',
+      idempotencyKey: `${fixture.prefix}:external:${toolCallId}`,
+      conversationId,
+      sourceAgentRunId: agentRunId,
+      sourceAgentTurnId: turnId,
+      sourceAgentToolCallId: toolCallId,
+      sourceStartedMessage: startedMessage,
+      sourceCompletionMessage: completionMessage,
+    },
+  );
+  const storyProposalUpdate = prisma.storyAgentRun.update({
+    where: { id: storyRun.id },
+    data: {
+      status: StoryAgentRunStatus.proposed,
+      authoringStages: Prisma.DbNull,
+      leaseOwner: null,
+      leaseAcquiredAt: null,
+      leaseExpiresAt: null,
+    },
+  });
+  if (options.leaveHandoffUnreconciled) {
+    await prisma.$transaction([
+      storyProposalUpdate,
+      prisma.agentOsRunEvent.create({
+        data: {
+          id: randomUUID(),
+          runId: agentRunId,
+          conversationId,
+          sequence: 1,
+          protocolVersion: 'fizz.agent.v1',
+          sessionId: `agent-os:v1:conversation:${conversationId}`,
+          type: 'RunStarted',
+          data: {
+            turnId,
+            status: 'running',
+            workspaceType: 'story',
+            modelProfileId: 'integration-test',
+          },
+          occurredAt: new Date(),
+        },
+      }),
+      prisma.agentOsRun.update({
+        where: { id: agentRunId },
+        data: { status: 'running', lastSequence: 1 },
+      }),
+    ]);
+  } else {
+    await prisma.$transaction([
+      storyProposalUpdate,
+      prisma.agentOsRun.update({
+        where: { id: agentRunId },
+        data: {
+          status: 'waiting_for_external',
+          pendingExternal: {
+            kind: 'external_job',
+            jobId: storyRun.id,
+            startedMessage,
+            turnId,
+            toolCallId,
+            toolId: 'story.author',
+          },
+        },
+      }),
+    ]);
+  }
+  return {
+    agentRunId,
+    storyRunId: storyRun.id,
+    conversationId,
+    turnId,
+    toolCallId,
   };
 }
 
@@ -1238,6 +1705,7 @@ function storyAgentServiceBoundToTransaction(
     {} as StoryPermissionService,
     realtime,
     new StoryProjectWriteGuardService(prisma),
+    {} as never,
   );
 }
 
@@ -1355,6 +1823,55 @@ async function assertStoryAgentMigrationPresent(
       'Local PostgreSQL is missing Story Agent proposal lifecycle hardening. Run the local migration command first.',
     );
   }
+  const continuation = await prisma.$queryRaw<
+    Array<{
+      registrationTable: string | null;
+      deliveryAttempts: string | null;
+      deliveryPendingIndex: string | null;
+      sourceToolIndex: string | null;
+      sourceRunForeignKey: string | null;
+    }>
+  >`
+    SELECT
+      to_regclass(
+        'public.agent_os_external_handoff_registrations'
+      )::text AS "registrationTable",
+      (
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'story_agent_runs'
+          AND column_name = 'source_result_delivery_attempts'
+      ) AS "deliveryAttempts",
+      to_regclass(
+        'public.story_agent_runs_agent_os_delivery_pending_idx'
+      )::text AS "deliveryPendingIndex",
+      to_regclass(
+        'public.agent_os_external_handoffs_source_tool_unique'
+      )::text AS "sourceToolIndex",
+      (
+        SELECT constraint_name
+        FROM information_schema.table_constraints
+        WHERE table_schema = 'public'
+          AND table_name = 'agent_os_external_handoff_registrations'
+          AND constraint_name = 'agent_os_external_handoffs_source_run_fkey'
+      ) AS "sourceRunForeignKey"
+  `;
+  if (
+    continuation[0]?.registrationTable !==
+      'agent_os_external_handoff_registrations' ||
+    continuation[0]?.deliveryAttempts !== 'source_result_delivery_attempts' ||
+    continuation[0]?.deliveryPendingIndex !==
+      'story_agent_runs_agent_os_delivery_pending_idx' ||
+    continuation[0]?.sourceToolIndex !==
+      'agent_os_external_handoffs_source_tool_unique' ||
+    continuation[0]?.sourceRunForeignKey !==
+      'agent_os_external_handoffs_source_run_fkey'
+  ) {
+    throw new Error(
+      'Local PostgreSQL is missing durable Story -> Agent OS handoff registration or delivery leasing. Run the local migration command first.',
+    );
+  }
 }
 
 async function removeAbandonedFixtures(
@@ -1392,8 +1909,14 @@ async function cleanupFixtures(
         lockExpiresAt: null,
       },
     });
+    await prisma.agentOsExternalHandoffRegistration.deleteMany({
+      where: { storyAgentRun: { storyProjectId: { in: projectIds } } },
+    });
     await prisma.storyAgentRun.deleteMany({
       where: { storyProjectId: { in: projectIds } },
+    });
+    await prisma.agentOsRun.deleteMany({
+      where: { projectId: { in: projectIds } },
     });
     await prisma.storyProject.deleteMany({
       where: { id: { in: projectIds } },

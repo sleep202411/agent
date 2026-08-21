@@ -2411,6 +2411,58 @@
     "confirmRemoveEdge": "Delete this connection?"
   },
   "storyStudio": {
+    "authoringRun": {
+      "title": {
+        "authoring": "Drafting…",
+        "proposed": "Draft ready",
+        "applying": "Applying…",
+        "failed": "Drafting failed"
+      },
+      "stages": {
+        "foundation": "World",
+        "structure": "Structure",
+        "branch": "Branches",
+        "scene": "Scenes",
+        "validate": "Validate"
+      },
+      "activity": {
+        "foundation": "Building the story world…",
+        "structure": "Structuring the narrative…",
+        "branch": "Designing story branches…",
+        "scene": "Writing the scenes…",
+        "validate": "Checking story continuity…",
+        "applying": "Applying the draft to the canvas…"
+      },
+      "applyingHint": "Applying the draft to the canvas…",
+      "apply": "Apply to canvas",
+      "discard": "Discard",
+      "discarding": "Discarding…",
+      "failedHint": "Drafting didn't finish. You can retry.",
+      "retry": "Retry",
+      "viewAll": "View all",
+      "proposalLoading": "Loading the Story proposal…",
+      "proposalUnavailable": "The proposal could not be loaded. Refresh it or discard it to continue.",
+      "proposal": {
+        "eyebrow": "Story proposal",
+        "description": "Review the complete story structure before applying it to the canvas.",
+        "metrics": {
+          "scenes": "Scenes",
+          "branches": "Branches",
+          "endings": "Endings",
+          "interactions": "Interactions"
+        },
+        "sections": {
+          "summary": "Story overview",
+          "characters": "Characters",
+          "structure": "Scene and branch structure",
+          "productionNotes": "Production notes"
+        },
+        "untitledScene": "Untitled scene",
+        "continuesTo": "Continues to {scene}",
+        "ending": "Ending",
+        "noScenes": "This proposal contains no scene changes."
+      }
+    },
     "metaTitle": "Interactive Film Studio",
     "metaDescription": "Author, produce, review, and release cinematic interactive stories.",
     "eyebrow": "Interactive story production",
@@ -2459,7 +2511,7 @@
     },
     "create": {
       "title": "Create a story project",
-      "description": "Create a private, versioned cinematic draft in the active workspace."
+      "description": "Create an empty project, then develop it through a natural conversation with FizzAgent. It asks for decisions only when they are needed."
     },
     "edit": {
       "title": "Edit project details"
@@ -2468,11 +2520,7 @@
       "title": "Title",
       "titlePlaceholder": "Untitled interactive story",
       "summary": "Summary",
-      "summaryPlaceholder": "Describe the premise and intended experience.",
-      "frameProfile": "Video format",
-      "frameProfileHint": "Every generated clip in this project uses this fixed format.",
-      "storyLocale": "Story language",
-      "storyLocaleHint": "(authoring & publish primary language)"
+      "summaryPlaceholder": "Describe the premise and intended experience."
     },
     "frameProfiles": {
       "landscape_16_9": {
@@ -3347,9 +3395,6 @@
     "permHint_ask": "Approve every write before it runs",
     "permHint_smart": "Auto-run safe ops; ask only for sensitive writes",
     "permHint_full": "Auto-run writes; still stop on critical actions",
-    "scriptOptional": "Attach file",
-    "scriptPlaceholder": "",
-    "scriptAttached": "Attachment · {chars} chars",
     "attachFile": "Attach file",
     "uploading": "Uploading…",
     "removeAttachment": "Remove attachment",
@@ -3378,6 +3423,7 @@
     "send": "Send",
     "stop": "Stop",
     "stopped": "Stopped listening to this turn",
+    "stopFailed": "Could not stop the current turn.",
     "newChat": "New chat",
     "newConversationDialog": {
       "title": "Start a new conversation?",
@@ -3399,28 +3445,51 @@
         "idle": "Idle",
         "running": "Running",
         "waiting_for_approval": "Waiting for approval",
+        "waiting_for_input": "Waiting for your answer",
+        "waiting_for_external": "Working in the background",
         "completed": "Completed",
         "failed": "Failed",
         "cancelled": "Cancelled"
       }
     },
-    "thinking": "Working…",
+    "thinking": "Thinking…",
+    "waitingForInput": "Waiting for your answer…",
+    "waitingForApproval": "Waiting for your approval…",
+    "activity": {
+      "thinking": "Thinking…",
+      "planning": "Planning the next steps…",
+      "waitingForInput": "Waiting for your answer…",
+      "waitingForApproval": "Waiting for your approval…",
+      "readingProject": "Reading the project…",
+      "updatingProject": "Updating the project…",
+      "readingStory": "Reading the story…",
+      "confirmingCreativeDirection": "Confirming the creative direction…",
+      "preparingStoryDraft": "Preparing the story draft…",
+      "updatingStory": "Updating the story…",
+      "designingBranches": "Designing story branches…",
+      "writingScenes": "Writing scenes…",
+      "readingCanvas": "Reading the canvas…",
+      "updatingCanvas": "Updating the canvas…",
+      "readingSource": "Reading the source material…",
+      "savingSource": "Saving the source material…",
+      "readingCharacters": "Reviewing the characters…",
+      "updatingCharacters": "Updating the characters…",
+      "readingStoryboard": "Reviewing the storyboard…",
+      "updatingStoryboard": "Updating the storyboard…"
+    },
     "transcriptLabel": "FizzAgent conversation",
     "scrollToLatest": "Scroll to latest",
     "roleUser": "You",
     "roleAssistant": "FizzAgent",
-    "roleSystem": "System",
-    "roleTool": "Tool",
     "suggestCharacters": "Extract characters from this script",
     "suggestShots": "Break this script into 10 storyboard shots",
     "suggestBoth": "Store script, then characters + shots",
     "suggestStoryContinue": "Continue the story with a new scene",
     "suggestStoryBranch": "Add a meaningful choice and two branches",
     "suggestStoryPolish": "Review and polish the current chapter",
-    "run": "Send",
-    "reset": "New chat",
     "approve": "Approve write",
     "reject": "Reject",
+    "approvalRequired": "Review this change",
     "approved": "Write approved",
     "rejected": "Write rejected",
     "runFailed": "Agent failed",
@@ -3431,32 +3500,16 @@
     "approvalSceneOrder": "Scene order",
     "approvalStoryScene": "Story scene",
     "approvalNotReady": "Approval is still preparing — wait a moment and try again",
-    "event": {
-      "RunStarted": "Run started",
-      "PlanCreated": "Plan",
-      "ToolProposed": "Tool proposed",
-      "ToolStarted": "Tool started",
-      "ToolCompleted": "Tool completed",
-      "ToolFailed": "Tool failed",
-      "ApprovalRequired": "Approval required",
-      "ApprovalResolved": "Approval resolved",
-      "MessageCompleted": "Message",
-      "RunPaused": "Paused",
-      "RunCompleted": "Completed",
-      "RunFailed": "Failed",
-      "RunCancelled": "Cancelled",
-      "ProjectPatchApplied": "Project updated"
+    "userInput": {
+      "step": "STEP {current}/{total}",
+      "back": "Back",
+      "continue": "Continue",
+      "submit": "Confirm",
+      "submitting": "Confirming…",
+      "failed": "Could not submit these answers"
     },
-    "projectArtifacts": "Project artifacts",
-    "characters": "Characters",
-    "shots": "Storyboard shots",
-    "refreshArtifacts": "Refresh",
-    "artifactsEmpty": "No characters or shots written yet. Chat and approve writes.",
-    "artifactsLoadFailed": "Could not load project artifacts",
     "workerOnline": "Worker online",
     "workerOffline": "Unavailable right now — retrying automatically",
-    "shotsSynced": "Storyboard updated · {created} new · {updated} updated",
-    "charactersWritten": "{count, plural, one {# character stored in project} other {# characters stored in project}}",
     "approvalCreates": "Creates {count}",
     "approvalUpdates": "Updates {count}",
     "approvalDeletes": "Deletes {count}",
@@ -3465,8 +3518,6 @@
     "approvalHideDetails": "Hide full request",
     "approvalUntitled": "Untitled",
     "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check.",
-    "showOnCanvas": "Show on canvas",
-    "pollTimeout": "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check.",
-    "runOrphaned": "This turn was interrupted before it finished — the agent process restarted. Send your message again to retry."
+    "pollTimeout": "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check."
   }
 }

@@ -10,10 +10,8 @@
     "dev": "tsx watch --env-file=.env src/main.ts",
     "start": "node --env-file=.env dist/main.js",
     "smoke:qwen": "tsx --env-file=.env scripts/smoke-qwen.mts",
-    "live:golden": "tsx --env-file=.env scripts/live-golden-qwen.mts",
     "test": "vitest run",
-    "lint": "echo \"agent-os lint: pending eslint wiring\"",
-    "probe:models": "tsx --env-file=.env scripts/probe-models.mts"
+    "lint": "echo \"agent-os lint: pending eslint wiring\""
   },
   "dependencies": {
     "@langchain/core": "^1.2.5",
@@ -28,11 +26,12 @@
     "@repo/agent-tools": "*",
     "@repo/model-router": "*",
     "@repo/shared": "*",
-    "ably": "^2.26.0",
+    "pg": "^8.21.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^22.10.7",
+    "@types/pg": "^8.16.0",
     "tsx": "^4.21.0",
     "typescript": "5.9.2",
     "vitest": "^4.0.18"

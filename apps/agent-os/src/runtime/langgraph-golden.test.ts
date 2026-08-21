@@ -1,24 +1,35 @@
 import { AIMessage } from "@langchain/core/messages";
 import { fakeModel } from "@langchain/core/testing";
 import { MemorySaver } from "@langchain/langgraph";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   projectSkillSnapshotChecksum,
   type ProjectSkillResolutionSnapshot,
 } from "@repo/agent-skills";
+import type { DomainPort } from "@repo/agent-tools";
 
 import { InMemoryStoryDomain } from "./in-memory-domain.js";
+import { HttpDomainPort } from "./http-domain-port.js";
 import { LangGraphRunService } from "./langgraph-run-service.js";
 
 const PROJECT = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 const ATTACHMENT = "00000000-0000-4000-8000-000000000001";
+const originalFetch = globalThis.fetch;
 
-function emptySkillMountSnapshot(workbenchMode: string): ProjectSkillResolutionSnapshot {
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+  vi.restoreAllMocks();
+});
+
+function emptySkillMountSnapshot(
+  workbenchMode: string,
+  ownerKind: "platform" | "story" = "platform"
+): ProjectSkillResolutionSnapshot {
   const unsigned = {
     schemaVersion: "project-skill-resolution/v1" as const,
     resolutionId: "50000000-0000-7000-8000-000000000001",
-    ownerKind: "platform" as const,
+    ownerKind,
     projectId: PROJECT,
     projectRevision: 0,
     scope: "agent_prompt" as const,
@@ -30,10 +41,471 @@ function emptySkillMountSnapshot(workbenchMode: string): ProjectSkillResolutionS
   return { ...unsigned, checksum: projectSkillSnapshotChecksum(unsigned) };
 }
 
+async function admitAndExecuteApproval(
+  service: LangGraphRunService,
+  input: Parameters<LangGraphRunService["beginResumeApproval"]>[0]
+) {
+  const admitted = await service.beginResumeApproval(input);
+  const command = admitted.continuationCommand;
+  if (!command && ["completed", "failed", "cancelled"].includes(admitted.status)) {
+    return admitted;
+  }
+  if (!command || command.kind !== "approval") {
+    throw new Error("Approval response did not create a durable continuation command");
+  }
+  await executeAdmittedContinuation(service, admitted, input, command.decision);
+  return service.getSnapshot(input.runId)!;
+}
+
+async function admitAndExecuteUserInput(
+  service: LangGraphRunService,
+  input: Parameters<LangGraphRunService["beginResumeUserInput"]>[0]
+) {
+  const admitted = await service.beginResumeUserInput(input);
+  const command = admitted.continuationCommand;
+  if (!command && ["completed", "failed", "cancelled"].includes(admitted.status)) {
+    return admitted;
+  }
+  if (!command || command.kind !== "user_input") {
+    throw new Error("User-input response did not create a durable continuation command");
+  }
+  await executeAdmittedContinuation(service, admitted, input, {
+    requestId: command.requestId,
+    answers: command.answers,
+  });
+  return service.getSnapshot(input.runId)!;
+}
+
+async function executeAdmittedContinuation(
+  service: LangGraphRunService,
+  admitted: NonNullable<ReturnType<LangGraphRunService["getSnapshot"]>>,
+  input: {
+    runId: string;
+    conversationId: string;
+    projectId: string;
+    actorId: string;
+    sessionId: string;
+    modelProfileId: string;
+    model: unknown;
+    domain: unknown;
+    checkpointer: unknown;
+  },
+  resume: unknown
+) {
+  const command = admitted.continuationCommand;
+  if (!command) throw new Error("Continuation command is missing");
+  const runtime = service as unknown as {
+    runGraphTurn(args: Record<string, unknown>): Promise<void>;
+  };
+  await runtime.runGraphTurn({
+    input: {
+      runId: input.runId,
+      conversationId: input.conversationId,
+      projectId: input.projectId,
+      actorId: input.actorId,
+      sessionId: input.sessionId,
+      message: "",
+      modelProfileId: input.modelProfileId,
+      projectKind: admitted.projectKind,
+      workbenchMode: admitted.workbenchMode,
+      workbenchContext: admitted.workbenchContext,
+      permissionMode: admitted.permissionMode ?? "smart",
+      skillMountSnapshot: admitted.skillMountSnapshot,
+      model: input.model,
+      domain: input.domain,
+      checkpointer: input.checkpointer,
+    },
+    journal: admitted.journal,
+    turnId: command.turnId,
+    resume,
+    signal: new AbortController().signal,
+    continuationCommand: command,
+  });
+  // The production dispatcher supplies a continuation execution proof and
+  // the Gateway clears the command with the checkpoint-backed boundary. This
+  // local golden helper bypasses that transport layer, so mirror only that
+  // postcondition before exercising exact-response replay assertions.
+  const finished = service.getSnapshot(input.runId);
+  if (finished && finished.status !== "running") {
+    finished.continuationCommand = undefined;
+  }
+}
+
 describe("LangGraph golden path: script → characters", () => {
+  it("pauses for Agent-requested structured input and resumes the same run", async () => {
+    let receiptPolls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      receiptPolls += 1;
+      return receiptPolls <= 4
+        ? new Response(
+            JSON.stringify({
+              ok: false,
+              code: "AGENT_OS_TOOL_EXECUTION_IN_FLIGHT",
+              message: "the post-answer write is still committing",
+              retryable: true,
+            }),
+            { status: 409, headers: { "content-type": "application/json" } }
+          )
+        : new Response(
+            JSON.stringify({
+              ok: true,
+              data: {
+                sectionCount: 1,
+                attachmentId: "77777777-7777-4777-8777-777777777777",
+              },
+            }),
+            { status: 200, headers: { "content-type": "application/json" } }
+          );
+    });
+    const domain = new HttpDomainPort({
+      baseUrl: "http://gateway.test",
+      internalToken: "internal-test-token",
+    });
+    const model = fakeModel()
+      .respondWithTools([
+        {
+          name: "request_user_input",
+          id: "tc-user-input",
+          args: {
+            leadIn: "Before I continue, choose the frame for this story.",
+            resumeAcknowledgement: "Thanks — I have the frame and will continue.",
+            formId: "creative_brief",
+            questions: [
+              {
+                id: "aspect_ratio",
+                header: "Aspect ratio",
+                question: "Which frame should the story use?",
+                options: [
+                  { value: "portrait_9_16", label: "9:16 portrait" },
+                  { value: "landscape_16_9", label: "16:9 landscape" },
+                ],
+              },
+            ],
+          },
+        },
+      ])
+      .respondWithTools([
+        {
+          name: "script_store",
+          id: "tc-store-after-input",
+          args: { text: "A complete script supplied after the creative-profile answer." },
+        },
+      ])
+      .respond(new AIMessage("I have the frame and can continue."));
+    const service = new LangGraphRunService();
+    const checkpointer = new MemorySaver();
+    const runId = crypto.randomUUID();
+    const chapterId = crypto.randomUUID();
+    const sessionId = `agent-os:v1:conversation:${CONVERSATION}`;
+
+    const paused = await service.start({
+      runId,
+      conversationId: CONVERSATION,
+      projectId: PROJECT,
+      projectKind: "story",
+      actorId: "user-1",
+      sessionId,
+      message: "Create an interactive film",
+      modelProfileId: "qwen-plus",
+      workbenchMode: "story",
+      workbenchContext: { chapterId },
+      skillMountSnapshot: emptySkillMountSnapshot("story", "story"),
+      model,
+      domain,
+      checkpointer,
+      permissionMode: "full",
+    });
+
+    expect(paused.status).toBe("waiting_for_input");
+    expect(paused.pendingUserInput).toMatchObject({
+      formId: "creative_brief",
+      toolCallId: "tc-user-input",
+    });
+    expect(paused.journal.all().map((event) => event.type)).toContain("UserInputRequired");
+    const requestId = paused.pendingUserInput!.requestId;
+    const responseId = crypto.randomUUID();
+    const pausedEvents = paused.journal.all();
+    const requiredEventIndex = pausedEvents.findIndex(
+      (event) => event.type === "UserInputRequired"
+    );
+    const leadInCompletedIndex = pausedEvents.findIndex(
+      (event) =>
+        event.type === "MessageCompleted" &&
+        event.data.text === "Before I continue, choose the frame for this story."
+    );
+    expect(leadInCompletedIndex).toBeGreaterThanOrEqual(0);
+    expect(leadInCompletedIndex).toBeLessThan(requiredEventIndex);
+    const leadInCompletion = pausedEvents[leadInCompletedIndex]!;
+    expect(
+      pausedEvents.find(
+        (event) =>
+          event.type === "MessageStarted" &&
+          event.data.messageId === leadInCompletion.data.messageId
+      )?.data.segmentKind
+    ).toBe("lead_in");
+
+    const resumed = await admitAndExecuteUserInput(service, {
+      runId,
+      sessionId,
+      conversationId: CONVERSATION,
+      requestId,
+      responseId,
+      answers: { aspect_ratio: "landscape_16_9" },
+      modelProfileId: "qwen-plus",
+      model,
+      domain,
+      checkpointer,
+      projectId: PROJECT,
+      projectKind: "story",
+      workbenchMode: "story",
+      workbenchContext: { chapterId },
+      actorId: "user-1",
+    });
+
+    expect(resumed.status).toBe("completed");
+    expect(resumed.pendingUserInput).toBeUndefined();
+    const resumedEvents = resumed.journal.all();
+    const resumedTypes = resumedEvents.map((event) => event.type);
+    const requiredIndex = resumedTypes.lastIndexOf("UserInputRequired");
+    const answerIndex = resumedEvents.findIndex(
+      (event) =>
+        event.type === "UserMessage" &&
+        (event.data.interaction as { kind?: string } | undefined)?.kind === "user_input"
+    );
+    const resolvedIndex = resumedTypes.lastIndexOf("UserInputResolved");
+    const runResumedIndex = resumedTypes.lastIndexOf("RunResumed");
+    expect(answerIndex).toBeGreaterThan(requiredIndex);
+    expect(resolvedIndex).toBeGreaterThan(answerIndex);
+    expect(runResumedIndex).toBeGreaterThan(resolvedIndex);
+    const initialUserTurnId = resumedEvents.find(
+      (event) => event.type === "UserMessage" && event.data.interaction === undefined
+    )?.data.turnId;
+    const answerTurnId = resumedEvents[answerIndex]?.data.turnId;
+    expect(answerTurnId).not.toBe(initialUserTurnId);
+    const acknowledgementIndex = resumedEvents.findIndex(
+      (event, index) =>
+        index > runResumedIndex &&
+        event.type === "MessageCompleted" &&
+        event.data.text === "Thanks — I have the frame and will continue."
+    );
+    expect(acknowledgementIndex).toBe(runResumedIndex + 3);
+    expect(resumedEvents[runResumedIndex + 1]).toMatchObject({
+      type: "MessageStarted",
+      data: { turnId: answerTurnId, segmentKind: "acknowledgement" },
+    });
+    expect(resumedEvents[runResumedIndex + 2]).toMatchObject({
+      type: "MessageDelta",
+      data: {
+        turnId: answerTurnId,
+        delta: "Thanks — I have the frame and will continue.",
+      },
+    });
+    expect(resumedEvents[answerIndex]?.data).toMatchObject({
+      text: "Aspect ratio: 16:9 landscape",
+      interaction: {
+        kind: "user_input",
+        requestId,
+        responseId,
+        answers: { aspect_ratio: "landscape_16_9" },
+      },
+    });
+    expect(resumed.assistantText).toContain("continue");
+    const startedIds = resumedEvents
+      .filter((event) => event.type === "MessageStarted")
+      .map((event) => event.data.messageId);
+    const completedIds = resumedEvents
+      .filter((event) => event.type === "MessageCompleted")
+      .map((event) => event.data.messageId);
+    expect(new Set(startedIds).size).toBe(startedIds.length);
+    expect(completedIds).toEqual(startedIds);
+    expect(
+      resumedEvents.every(
+        (event) => typeof event.data.turnId === "string" && event.data.turnId.length > 0
+      )
+    ).toBe(true);
+    expect(
+      resumedEvents.filter(
+        (event) => event.type === "ToolCompleted" && event.data.toolId === "script.store"
+      )
+    ).toHaveLength(1);
+    expect(
+      resumedEvents.filter(
+        (event) => event.type === "ToolFailed" && event.data.toolId === "script.store"
+      )
+    ).toHaveLength(0);
+    expect(resumedTypes).not.toContain("RunFailed");
+    expect(receiptPolls).toBe(5);
+
+    const eventCount = resumedEvents.length;
+    const retry = await admitAndExecuteUserInput(service, {
+      runId,
+      sessionId,
+      conversationId: CONVERSATION,
+      requestId,
+      responseId,
+      answers: { aspect_ratio: "landscape_16_9" },
+      modelProfileId: "qwen-plus",
+      model,
+      domain,
+      checkpointer,
+      projectId: PROJECT,
+      projectKind: "story",
+      workbenchMode: "story",
+      workbenchContext: { chapterId },
+      actorId: "user-1",
+    });
+    expect(retry.status).toBe("completed");
+    expect(retry.journal.all()).toHaveLength(eventCount);
+    await expect(
+      admitAndExecuteUserInput(service, {
+        runId,
+        sessionId,
+        conversationId: CONVERSATION,
+        requestId,
+        responseId,
+        answers: { aspect_ratio: "portrait_9_16" },
+        modelProfileId: "qwen-plus",
+        model,
+        domain,
+        checkpointer,
+        projectId: PROJECT,
+        projectKind: "story",
+        workbenchMode: "story",
+        workbenchContext: { chapterId },
+        actorId: "user-1",
+      })
+    ).rejects.toThrow(/different answers/);
+  });
+
+  it("pauses on a generic external-job handoff for the Gateway continuation", async () => {
+    const jobId = "77777777-7777-4777-8777-777777777777";
+    const startedMessage = "The story pipeline is running; I’ll bring the proposal back here.";
+    const completionMessage = "The complete interactive-story proposal is ready for review.";
+    const model = fakeModel()
+      .respondWithTools([
+        {
+          name: "story_author",
+          id: "tc-story-author",
+          args: {
+            title: "Night Watch",
+            summary: "A guard chooses between duty and family.",
+            brief: "Build a branching historical story.",
+            startedMessage,
+            completionMessage,
+          },
+        },
+      ])
+      .respond(new AIMessage("This text must not close the run before the external job."));
+    const domain: DomainPort = {
+      async execute(toolId, input, context) {
+        expect(toolId).toBe("story.author");
+        expect(context.turnId).toBeTruthy();
+        expect(input).toMatchObject({ startedMessage, completionMessage });
+        return {
+          ok: true,
+          data: {
+            runId: jobId,
+            status: "authoring",
+            agentHandoff: { kind: "external_job", jobId, startedMessage },
+          },
+        };
+      },
+    };
+    const service = new LangGraphRunService();
+    const runId = crypto.randomUUID();
+    const sessionId = `agent-os:v1:conversation:${CONVERSATION}`;
+    const waiting = await service.start({
+      runId,
+      conversationId: CONVERSATION,
+      projectId: PROJECT,
+      projectKind: "story",
+      actorId: "user-1",
+      sessionId,
+      message: "Create the story",
+      modelProfileId: "qwen-plus",
+      workbenchMode: "story",
+      skillMountSnapshot: emptySkillMountSnapshot("story", "story"),
+      model,
+      domain,
+      checkpointer: new MemorySaver(),
+    });
+
+    expect(waiting.status).toBe("waiting_for_external");
+    expect(waiting.pendingExternal).toMatchObject({
+      kind: "external_job",
+      jobId,
+      toolCallId: "tc-story-author",
+    });
+    const waitingEvents = waiting.journal.all();
+    const toolCompletedIndex = waitingEvents.findIndex(
+      (event) => event.type === "ToolCompleted" && event.data.toolId === "story.author"
+    );
+    const receiptIndex = waitingEvents.findIndex(
+      (event) => event.type === "MessageCompleted" && event.data.text === startedMessage
+    );
+    const pausedIndex = waitingEvents.findIndex(
+      (event) => event.type === "RunPaused" && event.data.status === "waiting_for_external"
+    );
+    expect(toolCompletedIndex).toBeGreaterThanOrEqual(0);
+    expect(receiptIndex).toBeGreaterThan(toolCompletedIndex);
+    expect(pausedIndex).toBeGreaterThan(receiptIndex);
+    expect(waitingEvents.some((event) => event.type === "RunCompleted")).toBe(false);
+    expect(new Set(waitingEvents.map((event) => event.data.turnId)).size).toBe(1);
+    const receipt = waitingEvents[receiptIndex]!;
+    expect(
+      waitingEvents.find(
+        (event) =>
+          event.type === "MessageStarted" && event.data.messageId === receipt.data.messageId
+      )?.data.segmentKind
+    ).toBe("acknowledgement");
+  });
+
   it("interrupts on characters_upsert, then writes after approve", async () => {
-    const domain = new InMemoryStoryDomain();
-    domain.setScript("林黛玉与贾宝玉在贾府相遇。王熙凤协理宁国府。", 80);
+    const store = new InMemoryStoryDomain();
+    store.setScript("林黛玉与贾宝玉在贾府相遇。王熙凤协理宁国府。", 80);
+    const receiptDomain = new HttpDomainPort({
+      baseUrl: "http://gateway.test",
+      internalToken: "internal-test-token",
+    });
+    let receiptPolls = 0;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      receiptPolls += 1;
+      if (receiptPolls <= 4) {
+        return new Response(
+          JSON.stringify({
+            ok: false,
+            code: "AGENT_OS_TOOL_EXECUTION_IN_FLIGHT",
+            message: "the approved write committed but its response is not durable yet",
+            retryable: true,
+          }),
+          { status: 409, headers: { "content-type": "application/json" } }
+        );
+      }
+      const body = JSON.parse(String(init?.body)) as {
+        runId: string;
+        turnId: string;
+        conversationId: string;
+        projectId: string;
+        actorId: string;
+        skillResolutionId: string;
+        skillVersionIds: string[];
+        idempotencyKey: string;
+        toolCallId: string;
+        arguments: unknown;
+      };
+      const result = await store.execute("characters.upsert", body.arguments, body);
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const domain: DomainPort = {
+      async execute(toolId, input, context) {
+        return toolId === "characters.upsert"
+          ? receiptDomain.execute(toolId, input, context)
+          : store.execute(toolId, input, context);
+      },
+    };
 
     const model = fakeModel()
       .respondWithTools([
@@ -98,14 +570,22 @@ describe("LangGraph golden path: script → characters", () => {
     expect(first.pendingApproval?.toolId).toBe("characters.upsert");
     // Workbench mode must survive HITL pause (resume remounts tools from this field).
     expect(first.workbenchMode).toBe("storyboard");
-    expect(domain.characters.size).toBe(0);
+    expect(store.characters.size).toBe(0);
     expect(first.journal.all().map((e) => e.type)).toContain("ApprovalRequired");
+    expect(
+      first.journal.all().find((event) => event.type === "ApprovalRequired")?.data.actions
+    ).toEqual(["approve", "reject"]);
+    const approvalId = first.pendingApproval!.approvalId;
 
-    const second = await service.resumeApproval({
+    const second = await admitAndExecuteApproval(service, {
       runId,
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       conversationId: CONVERSATION,
+      approvalId,
+      responseId: crypto.randomUUID(),
       decision: "approve",
+      responseText: "Approved",
+      locale: "en-US",
       modelProfileId: "qwen-plus",
       model,
       domain,
@@ -117,12 +597,62 @@ describe("LangGraph golden path: script → characters", () => {
 
     expect(second.status).toBe("completed");
     expect(second.workbenchMode).toBe("storyboard");
-    expect(domain.characters.size).toBe(2);
-    expect(domain.characters.get("lin-daiyu")?.name["zh-CN"]).toBe("林黛玉");
+    expect(store.characters.size).toBe(2);
+    expect(store.characters.get("lin-daiyu")?.name["zh-CN"]).toBe("林黛玉");
     expect(second.assistantText).toMatch(/角色/);
-    expect(second.journal.all().map((e) => e.type)).toContain("RunCompleted");
+    const secondEvents = second.journal.all();
+    const secondTypes = secondEvents.map((e) => e.type);
+    expect(secondTypes).toContain("RunCompleted");
+    const approvalAnswerIndex = secondEvents.findIndex(
+      (event) =>
+        event.type === "UserMessage" &&
+        (event.data.interaction as { kind?: string } | undefined)?.kind === "approval"
+    );
+    expect(approvalAnswerIndex).toBeGreaterThan(secondTypes.lastIndexOf("ApprovalRequired"));
+    expect(secondTypes.lastIndexOf("ApprovalResolved")).toBeGreaterThan(approvalAnswerIndex);
+    expect(secondTypes.lastIndexOf("RunResumed")).toBeGreaterThan(
+      secondTypes.lastIndexOf("ApprovalResolved")
+    );
+    expect(secondEvents[approvalAnswerIndex]?.data).toMatchObject({
+      text: "Approved",
+      interaction: {
+        kind: "approval",
+        approvalId,
+        decision: "approve",
+      },
+    });
+    const approvalTurnId = secondEvents[approvalAnswerIndex]?.data.turnId;
+    const acknowledgementStarted = secondEvents.find(
+      (event) =>
+        event.type === "MessageStarted" &&
+        event.data.turnId === approvalTurnId &&
+        event.data.segmentKind === "acknowledgement"
+    );
+    expect(acknowledgementStarted).toBeDefined();
+    expect(
+      secondEvents.find(
+        (event) =>
+          event.type === "MessageCompleted" &&
+          event.data.turnId === approvalTurnId &&
+          event.data.messageId === acknowledgementStarted?.data.messageId
+      )?.data.text
+    ).toBe("I have your approval and will continue with the action.");
+    expect(secondEvents.find((event) => event.type === "ApprovalResolved")?.data.responseId).toBe(
+      (secondEvents[approvalAnswerIndex]?.data.interaction as { responseId?: string }).responseId
+    );
     // After approve, the write tool finishes and lands ToolCompleted in the journal.
-    expect(second.journal.all().map((e) => e.type)).toContain("ToolCompleted");
+    expect(
+      secondEvents.filter(
+        (event) => event.type === "ToolCompleted" && event.data.toolId === "characters.upsert"
+      )
+    ).toHaveLength(1);
+    expect(
+      secondEvents.filter(
+        (event) => event.type === "ToolFailed" && event.data.toolId === "characters.upsert"
+      )
+    ).toHaveLength(0);
+    expect(secondTypes).not.toContain("RunFailed");
+    expect(receiptPolls).toBe(5);
   });
 
   it("preserves non-default workbench mode (brief) across HITL pause + approve", async () => {
@@ -175,11 +705,15 @@ describe("LangGraph golden path: script → characters", () => {
     expect(paused.status).toBe("waiting_for_approval");
     expect(paused.workbenchMode).toBe("brief");
 
-    const done = await service.resumeApproval({
+    const done = await admitAndExecuteApproval(service, {
       runId,
       sessionId: `agent-os:v1:conversation:${conversationId}`,
       conversationId,
+      approvalId: paused.pendingApproval!.approvalId,
+      responseId: crypto.randomUUID(),
       decision: "approve",
+      responseText: "Approved",
+      locale: "en-US",
       modelProfileId: "qwen-plus",
       model,
       domain,
@@ -240,11 +774,15 @@ describe("LangGraph golden path: script → characters", () => {
 
     expect(paused.status).toBe("waiting_for_approval");
 
-    const rejected = await service.resumeApproval({
+    const rejected = await admitAndExecuteApproval(service, {
       runId,
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       conversationId: CONVERSATION,
+      approvalId: paused.pendingApproval!.approvalId,
+      responseId: crypto.randomUUID(),
       decision: "reject",
+      responseText: "Rejected",
+      locale: "en-US",
       modelProfileId: "qwen-plus",
       model,
       domain,
@@ -359,11 +897,15 @@ describe("LangGraph golden path: script → characters", () => {
     expect(rehydrated).toBe(true);
     expect(after.getSnapshot(runId)?.pendingApproval?.toolId).toBe("characters.upsert");
 
-    const resumed = await after.resumeApproval({
+    const resumed = await admitAndExecuteApproval(after, {
       runId,
       sessionId,
       conversationId: CONVERSATION,
+      approvalId: after.getSnapshot(runId)!.pendingApproval!.approvalId,
+      responseId: crypto.randomUUID(),
       decision: "approve",
+      responseText: "Approved",
+      locale: "en-US",
       modelProfileId: "qwen-plus",
       model,
       domain,
@@ -461,7 +1003,7 @@ describe("LangGraph cancel", () => {
     const checkpointer = new MemorySaver();
     const runId = crypto.randomUUID();
 
-    const begun = service.beginStart({
+    const begun = await service.beginStart({
       runId,
       conversationId: CONVERSATION,
       projectId: PROJECT,
@@ -479,7 +1021,7 @@ describe("LangGraph cancel", () => {
     });
     expect(begun.status).toBe("running");
 
-    const cancelled = service.cancel(runId, "Stopped");
+    const cancelled = await service.cancel(runId, "Stopped");
     expect(cancelled?.status).toBe("cancelled");
     expect(service.getSnapshot(runId)?.status).toBe("cancelled");
     expect(cancelled?.journal.all().map((e) => e.type)).toContain("RunCancelled");
@@ -488,7 +1030,7 @@ describe("LangGraph cancel", () => {
     );
 
     // Idempotent: already terminal stays cancelled
-    const again = service.cancel(runId);
+    const again = await service.cancel(runId);
     expect(again?.status).toBe("cancelled");
   });
 });
@@ -557,11 +1099,15 @@ describe("LangGraph golden path: script → storyboard shots", () => {
     expect(first.pendingApproval?.toolId).toBe("storyboard.upsertShots");
     expect(domain.shots.size).toBe(0);
 
-    const second = await service.resumeApproval({
+    const second = await admitAndExecuteApproval(service, {
       runId,
       sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
       conversationId: CONVERSATION,
+      approvalId: first.pendingApproval!.approvalId,
+      responseId: crypto.randomUUID(),
       decision: "approve",
+      responseText: "Approved",
+      locale: "en-US",
       modelProfileId: "qwen-plus",
       model,
       domain,

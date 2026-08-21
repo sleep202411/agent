@@ -58,13 +58,15 @@ export class StoryAuthoringPipelineService {
     const model = createStoryAuthoringModel();
     const { job, signal } = request;
     const source = buildSourceBlock(job);
+    const projectContext = projectContextBlock(job);
+    const creativeProfile = creativeProfileBlock(job);
 
     await request.onStage?.('foundation');
     const bible = await runStoryAuthoringStage<StoryBibleDraft>(model, {
       stage: 'foundation',
       schema: StoryBibleDraftSchema,
       system: FOUNDATION_SYSTEM,
-      prompt: `${source}\n\n${briefBlock(job)}\n\nProduce the story bible now.`,
+      prompt: `${source}\n\n${projectContext}\n\n${creativeProfile}\n\n${briefBlock(job)}\n\nProduce the story bible now.`,
       maxOutputTokens: STAGE_MAX_OUTPUT_TOKENS,
       timeoutMs: STAGE_TIMEOUT_MS,
       maxAttempts: STAGE_MAX_ATTEMPTS,
@@ -78,7 +80,7 @@ export class StoryAuthoringPipelineService {
       stage: 'structure',
       schema: StorySkeletonSchema,
       system: STRUCTURE_SYSTEM,
-      prompt: `${source}\n\n${bibleContext(bible)}\n\n${briefBlock(job)}\n\nProduce the node skeleton now.`,
+      prompt: `${source}\n\n${projectContext}\n\n${creativeProfile}\n\n${bibleContext(bible)}\n\n${briefBlock(job)}\n\nProduce the node skeleton now.`,
       maxOutputTokens: STAGE_MAX_OUTPUT_TOKENS,
       timeoutMs: STAGE_TIMEOUT_MS,
       maxAttempts: STAGE_MAX_ATTEMPTS,
@@ -96,7 +98,7 @@ export class StoryAuthoringPipelineService {
       stage: 'branch',
       schema: StoryBranchPlanSchema,
       system: BRANCH_SYSTEM,
-      prompt: `${bibleContext(bible)}\n\n${skeletonContext(skeleton)}\n\nProduce the branch plan now.`,
+      prompt: `${creativeProfile}\n\n${bibleContext(bible)}\n\n${skeletonContext(skeleton)}\n\nProduce the branch plan now.`,
       maxOutputTokens: STAGE_MAX_OUTPUT_TOKENS,
       timeoutMs: STAGE_TIMEOUT_MS,
       maxAttempts: STAGE_MAX_ATTEMPTS,
@@ -110,7 +112,13 @@ export class StoryAuthoringPipelineService {
     // Per-node, bounded-concurrency prose. One giant "write every node" call
     // produces a huge response the dedicated MaaS endpoint resets mid-stream
     // ("other side closed"); small per-node calls are robust and parallelizable.
-    const prose = await this.writeScenes(model, bible, skeleton, signal);
+    const prose = await this.writeScenes(
+      model,
+      bible,
+      skeleton,
+      creativeProfile,
+      signal,
+    );
 
     await request.onStage?.('validate');
     const operations = assembleOperations({
@@ -135,6 +143,7 @@ export class StoryAuthoringPipelineService {
     model: LanguageModel,
     bible: StoryBibleDraft,
     skeleton: StorySkeleton,
+    creativeProfile: string,
     signal: AbortSignal,
   ): Promise<StorySceneProse> {
     const scenes: StorySceneProse['scenes'] = [];
@@ -150,6 +159,7 @@ export class StoryAuthoringPipelineService {
           schema: StorySceneProseNodeSchema,
           system: SCENE_SYSTEM,
           prompt: [
+            creativeProfile,
             bibleContext(bible),
             `Write the editorial copy for this clip (id "${node.id}"). Beat: ${node.beat}`,
             'Return only this node; use its exact id.',
@@ -368,6 +378,43 @@ function briefBlock(job: StoryAgentAuthoringJob): string {
   ].join('\n');
 }
 
+function projectContextBlock(job: StoryAgentAuthoringJob): string {
+  return `<canonical_project_context>\n${job.contextJson}\n</canonical_project_context>`;
+}
+
+function creativeProfileBlock(job: StoryAgentAuthoringJob): string {
+  const duration = {
+    short_5_15: '5–15 minutes',
+    medium_15_30: '15–30 minutes',
+    long_30_60: '30–60 minutes',
+  }[job.creativeProfile.durationPreset];
+  const visualStyle = {
+    cinematic_realism: 'cinematic realism',
+    stylized_3d: 'stylized 3D',
+    graphic_novel: 'graphic novel',
+    anime_cinematic: 'cinematic anime',
+  }[job.creativeProfile.visualStyle];
+  const frame =
+    job.creativeProfile.frameProfile === 'portrait_9_16'
+      ? '9:16 portrait'
+      : '16:9 landscape';
+  const storyLanguage =
+    {
+      'zh-CN': 'Simplified Chinese (zh-CN)',
+      'zh-HK': 'Traditional Chinese (zh-HK)',
+      'en-US': 'English (en-US)',
+    }[job.creativeProfile.storyLanguage] ?? job.creativeProfile.storyLanguage;
+  return [
+    '<confirmed_creative_profile>',
+    `Frame: ${frame}`,
+    `Target runtime: ${duration}`,
+    `Visual direction: ${visualStyle}`,
+    `Story language: ${storyLanguage}`,
+    'Treat these values as project truth. Write all authored narrative text and every localized-text value in the confirmed story language. Use its locale code as the localized-text key. Pace the branch count and scene density to the target runtime, and keep visual language compatible with the confirmed direction.',
+    '</confirmed_creative_profile>',
+  ].join('\n');
+}
+
 function bibleContext(bible: StoryBibleDraft): string {
   return `<story_bible>\n${JSON.stringify(bible)}\n</story_bible>`;
 }
@@ -379,7 +426,7 @@ function skeletonContext(skeleton: StorySkeleton): string {
 // ── Per-baton system prompts ────────────────────────────────────────────────
 
 const LOCALE_NOTE =
-  'Localized text values are objects mapping a locale code to a string, e.g. {"zh-CN":"…"}. Use the same language as the source material.';
+  'Localized text values are objects mapping the confirmed story-language locale code to a string, e.g. {"zh-CN":"…"}. The confirmed story language overrides the source document language.';
 
 const FOUNDATION_SYSTEM = [
   'You are the Story Architect for an interactive film. From the source material and brief, distill a one-line logline, a concise cinematic synopsis, and the principal characters. Keep the product entirely clip-based; playback ends naturally on a terminal clip.',

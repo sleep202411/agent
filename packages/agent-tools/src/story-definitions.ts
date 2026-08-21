@@ -5,12 +5,15 @@ import {
   StoryAgentGraphNodeSchema,
   StoryAgentHotspotInteractionSchema,
   StoryAgentLocalizedTextSchema,
+  StoryAgentRunStatusSchema,
   StoryAgentStableIdSchema,
   StoryPatchOperationsSchema,
 } from "@repo/shared/story-agent";
 import { z } from "zod";
 
 import type { ToolDefinition } from "./types.js";
+import { AgentExternalJobHandoffSchema } from "./handoff.js";
+import { StoryCreativeProfileLanguageSchema } from "./story-creative-profile.js";
 
 const StorySceneDraftSchema = z
   .object({
@@ -155,13 +158,43 @@ export const StoryAuthorInputSchema = z
     title: z.string().trim().min(1).max(160),
     summary: z.string().trim().min(1).max(4_000),
     brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
+    /** Natural assistant handoff shown as soon as the background job starts. */
+    startedMessage: z.string().trim().min(1).max(2_000),
+    /** Natural assistant result shown when the reviewable proposal is ready. */
+    completionMessage: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+export const StoryConfirmCreativeProfileInputSchema = z
+  .object({
+    requestId: z.string().uuid().optional(),
+    aspectRatio: z.enum(["landscape_16_9", "portrait_9_16"]),
+    targetRuntime: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
+    visualDirection: z.enum([
+      "cinematic_realism",
+      "stylized_3d",
+      "graphic_novel",
+      "anime_cinematic",
+    ]),
+    storyLanguage: StoryCreativeProfileLanguageSchema,
+  })
+  .strict();
+
+const StoryCreativeProfileOutputSchema = z
+  .object({
+    frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]),
+    durationPreset: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
+    visualStyle: z.enum(["cinematic_realism", "stylized_3d", "graphic_novel", "anime_cinematic"]),
+    storyLanguage: StoryCreativeProfileLanguageSchema,
+    confirmedAt: z.string().datetime(),
   })
   .strict();
 
 const StoryAuthorOutputSchema = z
   .object({
     runId: z.string().uuid(),
-    status: z.string(),
+    status: z.literal("authoring"),
+    agentHandoff: AgentExternalJobHandoffSchema,
   })
   .strict();
 
@@ -169,7 +202,7 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.read",
     description:
-      "Read the active Story chapter, including story bible, graph topology, production notes, revision, and content hash. Call before every Story write.",
+      "Read the active Story chapter and current durable authoring-run status, including story bible, graph topology, production notes, revision, and content hash. Call before every Story write and before claiming that a background authoring run is active.",
     kind: "query",
     risk: "read",
     inputSchema: StoryReadInputSchema,
@@ -188,8 +221,41 @@ export const STORY_AGENT_OS_TOOLS = [
           nodes: z.array(StoryAgentGraphNodeSchema),
         }),
         productionNotes: z.array(z.string()),
+        creativeProfile: z
+          .object({
+            frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]),
+            durationPreset: z.enum(["short_5_15", "medium_15_30", "long_30_60"]).nullable(),
+            visualStyle: z
+              .enum(["cinematic_realism", "stylized_3d", "graphic_novel", "anime_cinematic"])
+              .nullable(),
+            storyLanguage: z.string().min(2).max(16),
+            confirmed: z.boolean(),
+          })
+          .strict(),
+        /**
+         * Current durable authoring lifecycle. Conversation text is historical
+         * and can say "drafting" long after a creator discarded that run; the
+         * model must use this projection instead of inferring job state from
+         * an earlier assistant message.
+         */
+        authoringRun: z
+          .object({
+            runId: z.string().uuid(),
+            status: StoryAgentRunStatusSchema,
+          })
+          .strict()
+          .nullable(),
       })
       .strict(),
+  },
+  {
+    id: "story.confirmCreativeProfile",
+    description:
+      "Atomically confirm the Story project's complete aspect ratio, runtime, visual direction, and story language. Use values the creator already supplied directly, plus answers from a story_creative_profile interaction when some values were missing. Pass that interaction's requestId when one was used; the server validates every requested answer against these values.",
+    kind: "command",
+    risk: "reversible",
+    inputSchema: StoryConfirmCreativeProfileInputSchema,
+    outputSchema: StoryCreativeProfileOutputSchema,
   },
   {
     id: "story.updateBible",
@@ -282,9 +348,12 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.author",
     description:
-      "Draft an interactive story from a brief. Hands title + summary + the source brief (a script or idea) to the deterministic five-baton authoring pipeline (bible → structure → branches → scenes → validate), which files a reviewable proposal for the whole tree with no dangling references. Use this to CREATE a story from scratch; use the fine-grained story.* tools only to edit an existing tree. Runs asynchronously and returns a run reference the author confirms later.",
+      "Draft an interactive story from a brief. Hands title + summary + the source brief (a script or idea) to the deterministic five-baton authoring pipeline (bible → structure → branches → scenes → validate), which files a reviewable proposal for the whole tree with no dangling references. Use this to CREATE a story from scratch; use the fine-grained story.* tools only to edit an existing tree. Provide a concise, natural startedMessage acknowledging the handoff and a concise completionMessage for when the proposal is ready. Runs asynchronously and returns a durable external-job handoff the author confirms later.",
     kind: "command",
-    risk: "critical",
+    // Reversible, not critical: it writes nothing — it files a proposal the
+    // author applies or discards in the panel — so it auto-runs instead of
+    // gating behind a raw-JSON tool approval that duplicates that decision.
+    risk: "reversible",
     inputSchema: StoryAuthorInputSchema,
     outputSchema: StoryAuthorOutputSchema,
   },

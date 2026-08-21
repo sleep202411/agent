@@ -2411,6 +2411,58 @@
     "confirmRemoveEdge": "刪除這條連線？"
   },
   "storyStudio": {
+    "authoringRun": {
+      "title": {
+        "authoring": "正在起草…",
+        "proposed": "起草完成",
+        "applying": "套用中…",
+        "failed": "起草失敗"
+      },
+      "stages": {
+        "foundation": "世界觀",
+        "structure": "結構",
+        "branch": "分支",
+        "scene": "場景",
+        "validate": "校驗"
+      },
+      "activity": {
+        "foundation": "正在構建故事世界…",
+        "structure": "正在搭建敘事結構…",
+        "branch": "正在設計故事分支…",
+        "scene": "正在編寫故事場景…",
+        "validate": "正在檢查故事連續性…",
+        "applying": "正在把草案套用到畫布…"
+      },
+      "applyingHint": "正在把草案套用到畫布…",
+      "apply": "套用到畫布",
+      "discard": "丟棄",
+      "discarding": "正在丟棄…",
+      "failedHint": "起草未能完成，可以重試。",
+      "retry": "重試",
+      "viewAll": "查看全部",
+      "proposalLoading": "正在載入故事提案…",
+      "proposalUnavailable": "無法載入這份提案。請重新整理，或丟棄提案以繼續。",
+      "proposal": {
+        "eyebrow": "故事結構提案",
+        "description": "套用到畫布前，請審閱完整的故事結構。",
+        "metrics": {
+          "scenes": "場景",
+          "branches": "分支",
+          "endings": "結局",
+          "interactions": "互動"
+        },
+        "sections": {
+          "summary": "故事概覽",
+          "characters": "角色",
+          "structure": "場景與分支結構",
+          "productionNotes": "製作說明"
+        },
+        "untitledScene": "未命名場景",
+        "continuesTo": "繼續至 {scene}",
+        "ending": "結局",
+        "noScenes": "這份提案不包含場景變更。"
+      }
+    },
     "metaTitle": "影遊工作室",
     "metaDescription": "創作、製作、審核並發佈電影化互動故事。",
     "eyebrow": "互動故事製作",
@@ -2459,7 +2511,7 @@
     },
     "create": {
       "title": "建立故事專案",
-      "description": "在目前工作區建立一份私人、可追溯的互動影遊草稿。"
+      "description": "先建立一個空專案，再透過與 FizzAgent 的自然對話逐步開發；只有確實需要你的決定時，它才會提問。"
     },
     "edit": {
       "title": "編輯專案資料"
@@ -2468,11 +2520,7 @@
       "title": "標題",
       "titlePlaceholder": "未命名互動故事",
       "summary": "簡介",
-      "summaryPlaceholder": "描述故事前提與目標體驗。",
-      "frameProfile": "影片畫幅",
-      "frameProfileHint": "專案內所有生成影片片段都會使用此固定畫幅。",
-      "storyLocale": "故事語言",
-      "storyLocaleHint": "（寫作與發佈的主語言）"
+      "summaryPlaceholder": "描述故事前提與目標體驗。"
     },
     "frameProfiles": {
       "landscape_16_9": {
@@ -3347,9 +3395,6 @@
     "permHint_ask": "每次寫入前都需批准",
     "permHint_smart": "安全操作自動執行，敏感寫入才詢問",
     "permHint_full": "寫入自動執行，僅 critical 操作攔截",
-    "scriptOptional": "新增附件",
-    "scriptPlaceholder": "",
-    "scriptAttached": "附件 · {chars} 字",
     "attachFile": "新增附件",
     "uploading": "上傳中…",
     "removeAttachment": "移除附件",
@@ -3378,6 +3423,7 @@
     "send": "傳送",
     "stop": "停止",
     "stopped": "已停止接收本輪輸出",
+    "stopFailed": "無法停止目前回合。",
     "newChat": "新對話",
     "newConversationDialog": {
       "title": "開始新對話？",
@@ -3399,28 +3445,51 @@
         "idle": "空閒",
         "running": "運行中",
         "waiting_for_approval": "等待審批",
+        "waiting_for_input": "等待你的回答",
+        "waiting_for_external": "正在背景處理",
         "completed": "已完成",
         "failed": "失敗",
         "cancelled": "已取消"
       }
     },
-    "thinking": "處理中…",
+    "thinking": "思考中…",
+    "waitingForInput": "等待你的回答…",
+    "waitingForApproval": "等待你的確認…",
+    "activity": {
+      "thinking": "思考中…",
+      "planning": "正在規劃下一步…",
+      "waitingForInput": "等待你的回答…",
+      "waitingForApproval": "等待你的確認…",
+      "readingProject": "正在讀取專案…",
+      "updatingProject": "正在更新專案…",
+      "readingStory": "正在讀取故事…",
+      "confirmingCreativeDirection": "正在確認創作方向…",
+      "preparingStoryDraft": "正在準備故事草案…",
+      "updatingStory": "正在更新故事…",
+      "designingBranches": "正在設計故事分支…",
+      "writingScenes": "正在編寫場景…",
+      "readingCanvas": "正在讀取畫布…",
+      "updatingCanvas": "正在更新畫布…",
+      "readingSource": "正在讀取來源素材…",
+      "savingSource": "正在儲存來源素材…",
+      "readingCharacters": "正在檢查角色…",
+      "updatingCharacters": "正在更新角色…",
+      "readingStoryboard": "正在檢查分鏡…",
+      "updatingStoryboard": "正在更新分鏡…"
+    },
     "transcriptLabel": "FizzAgent 對話",
     "scrollToLatest": "滾到最新",
     "roleUser": "你",
     "roleAssistant": "FizzAgent",
-    "roleSystem": "系統",
-    "roleTool": "工具",
     "suggestCharacters": "根據劇本提取角色並寫入",
     "suggestShots": "把劇本拆成 10 個分鏡鏡頭",
     "suggestBoth": "先存劇本，再寫角色和分鏡",
     "suggestStoryContinue": "為當前故事續寫一個新場景",
     "suggestStoryBranch": "新增一個關鍵選擇和兩條分支",
     "suggestStoryPolish": "檢查並潤色當前章節",
-    "run": "傳送",
-    "reset": "新對話",
     "approve": "批准寫入",
     "reject": "拒絕",
+    "approvalRequired": "請確認這項變更",
     "approved": "已批准寫入",
     "rejected": "已拒絕寫入",
     "runFailed": "Agent 失敗",
@@ -3431,32 +3500,16 @@
     "approvalSceneOrder": "場景順序",
     "approvalStoryScene": "故事場景",
     "approvalNotReady": "審批資訊還在準備中，請稍後再點",
-    "event": {
-      "RunStarted": "開始運行",
-      "PlanCreated": "計劃",
-      "ToolProposed": "提議工具",
-      "ToolStarted": "工具開始",
-      "ToolCompleted": "工具完成",
-      "ToolFailed": "工具失敗",
-      "ApprovalRequired": "需要審批",
-      "ApprovalResolved": "審批已處理",
-      "MessageCompleted": "回覆",
-      "RunPaused": "已暫停",
-      "RunCompleted": "已完成",
-      "RunFailed": "失敗",
-      "RunCancelled": "已取消",
-      "ProjectPatchApplied": "項目已更新"
+    "userInput": {
+      "step": "步驟 {current}/{total}",
+      "back": "上一步",
+      "continue": "繼續",
+      "submit": "確認",
+      "submitting": "確認中…",
+      "failed": "無法提交這些回答"
     },
-    "projectArtifacts": "項目產物",
-    "characters": "角色",
-    "shots": "分鏡鏡頭",
-    "refreshArtifacts": "重新整理",
-    "artifactsEmpty": "尚未寫入角色或分鏡。在對話中提出任務並批准寫入。",
-    "artifactsLoadFailed": "無法載入項目產物",
     "workerOnline": "Worker 在線",
     "workerOffline": "目前無法使用——正在自動重試",
-    "shotsSynced": "分鏡已同步 · 新增 {created} · 更新 {updated}",
-    "charactersWritten": "已寫入項目 {count} 個角色",
     "approvalCreates": "新增 {count} 項",
     "approvalUpdates": "修改 {count} 項",
     "approvalDeletes": "刪除 {count} 項",
@@ -3465,8 +3518,6 @@
     "approvalHideDetails": "收起完整請求",
     "approvalUntitled": "未命名",
     "pollLost": "與伺服器失去聯繫，已停止追蹤今次對話。它可能仍在執行——重新傳送或重新開啟面板即可查看。",
-    "showOnCanvas": "在畫布中查看",
-    "pollTimeout": "已停止追蹤今次對話（超過 10 分鐘）。它可能仍在執行——重新開啟面板即可查看。",
-    "runOrphaned": "今次對話在完成前被中斷——agent 程序重新啟動了。重新傳送訊息即可重試。"
+    "pollTimeout": "已停止追蹤今次對話（超過 10 分鐘）。它可能仍在執行——重新開啟面板即可查看。"
   }
 }

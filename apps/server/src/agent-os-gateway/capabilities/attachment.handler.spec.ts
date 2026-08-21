@@ -22,11 +22,25 @@ function makeHandler() {
   const projects = {
     authorizeRead: jest.fn().mockResolvedValue(undefined),
   };
+  const tx = {};
+  const prisma = {
+    $transaction: jest
+      .fn()
+      .mockImplementation((callback: (value: typeof tx) => unknown) =>
+        callback(tx),
+      ),
+  };
+  const receipts = {
+    fenceBusinessMutationInTx: jest.fn().mockResolvedValue(undefined),
+    completeSuccessInTx: jest.fn().mockResolvedValue(undefined),
+  };
   const handler = new AttachmentAgentCapabilityHandler(
     attachments as never,
     projects as never,
+    prisma as never,
+    receipts as never,
   );
-  return { handler, attachments, projects };
+  return { handler, attachments, projects, receipts, tx };
 }
 
 describe('AttachmentAgentCapabilityHandler', () => {
@@ -35,6 +49,10 @@ describe('AttachmentAgentCapabilityHandler', () => {
     const result = await handler.execute(
       {
         toolId: 'script.readSection',
+        runId: '00000000-0000-4000-8000-000000000010',
+        conversationId: '00000000-0000-4000-8000-000000000011',
+        turnId: '00000000-0000-4000-8000-000000000012',
+        toolCallId: 'tool-call-1',
         actorId: 'actor-1',
         projectId: STORY_PROJECT.projectId,
         skillResolutionId: '00000000-0000-4000-8000-000000000001',
@@ -70,6 +88,10 @@ describe('AttachmentAgentCapabilityHandler', () => {
     await handler.execute(
       {
         toolId: 'script.store',
+        runId: '00000000-0000-4000-8000-000000000010',
+        conversationId: '00000000-0000-4000-8000-000000000011',
+        turnId: '00000000-0000-4000-8000-000000000012',
+        toolCallId: 'tool-call-2',
         actorId: 'actor-1',
         projectId: STORY_PROJECT.projectId,
         skillResolutionId: '00000000-0000-4000-8000-000000000001',
@@ -83,7 +105,10 @@ describe('AttachmentAgentCapabilityHandler', () => {
       'actor-1',
       STORY_PROJECT.projectId,
       expect.objectContaining({ mimetype: 'text/plain' }),
-      { sectionSize: 2_000 },
+      expect.objectContaining({
+        sectionSize: 2_000,
+        transaction: expect.anything(),
+      }),
     );
   });
 });

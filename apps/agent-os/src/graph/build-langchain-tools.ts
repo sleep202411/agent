@@ -3,8 +3,10 @@ import { interrupt } from "@langchain/langgraph";
 import { requiresApproval, type AgentMode, type PermissionMode } from "@repo/agent-policy";
 import {
   buildToolIdempotencyKey,
+  agentExternalJobHandoffFromResult,
   getTool,
   parseToolInput,
+  parseToolOutput,
   type DomainPort,
 } from "@repo/agent-tools";
 import { STORY_PATCH_OPERATION_LABELS } from "@repo/shared/story-agent";
@@ -14,6 +16,7 @@ import { toLangChainToolName } from "./tool-name.js";
 
 export interface ToolRuntimeContext {
   runId: string;
+  turnId: string;
   conversationId: string;
   projectId: string;
   actorId: string;
@@ -23,17 +26,33 @@ export interface ToolRuntimeContext {
   agentMode: AgentMode;
   permissionMode: PermissionMode;
   domain: DomainPort;
+  startExecution?: {
+    executionToken: string;
+    executionAttemptId: string;
+    executionEpoch: number;
+    executionOwnerId: string;
+  };
+  continuationExecution?: {
+    executionToken: string;
+    executionAttemptId: string;
+    executionEpoch: number;
+    executionOwnerId: string;
+  };
+  /** Cancels an in-flight Domain receipt poll when the creator stops the run. */
+  abortSignal?: AbortSignal;
   /** Journal fan-out for ToolStarted / ToolCompleted / ToolFailed. */
   onToolEvent?: (event: {
     type: "ToolStarted" | "ToolCompleted" | "ToolFailed";
     toolId: string;
     toolCallId: string;
     data?: Record<string, unknown>;
-  }) => void;
+  }) => void | Promise<void>;
 }
 
 export type ApprovalInterruptValue = {
   kind: "tool_approval";
+  approvalId: string;
+  turnId: string;
   toolId: string;
   toolCallId: string;
   arguments: unknown;
@@ -41,12 +60,110 @@ export type ApprovalInterruptValue = {
   description: string;
 };
 
+export type UserInputInterruptValue = {
+  kind: "user_input";
+  requestId: string;
+  turnId: string;
+  toolCallId: string;
+  leadIn: string;
+  resumeAcknowledgement: string;
+  formId?: string;
+  knownValues?: Record<string, string>;
+  questions: Array<{
+    id: string;
+    header: string;
+    question: string;
+    options: Array<{ value: string; label: string; description?: string }>;
+  }>;
+};
+
+/**
+ * Reconstruct the complete structured answer returned to the model.
+ *
+ * The transcript keeps only what the creator actually answered. The tool
+ * result additionally restores server-validated values already known before
+ * the pause, so the next model step cannot forget them or overwrite them with
+ * an unexpected resume payload.
+ */
+export function userInputResumePayload(
+  knownValues: Readonly<Record<string, string>> | undefined,
+  response: { requestId: string; answers?: Readonly<Record<string, string>> }
+): { requestId: string; answers: Record<string, string> } {
+  return {
+    requestId: response.requestId,
+    answers: {
+      ...(response.answers ?? {}),
+      ...(knownValues ?? {}),
+    },
+  };
+}
+
 /**
  * Bind registry tools into LangChain StructuredTools for the mounted skill set.
  * Sensitive commands use LangGraph `interrupt()` for product approval (HITL).
  * Tools not listed in the skill mount are never bound — the model cannot call them.
  */
 export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readonly string[]) {
+  const userInputKey = z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z][A-Za-z0-9_-]*$/);
+  const requestUserInput = tool(
+    async (raw, config) => {
+      const parsed = parseToolInput("request_user_input", raw) as Omit<
+        UserInputInterruptValue,
+        "kind" | "requestId" | "turnId" | "toolCallId"
+      >;
+      const response = interrupt({
+        kind: "user_input",
+        requestId: crypto.randomUUID(),
+        turnId: runtime.turnId,
+        toolCallId: toolCallIdFromConfig(config) ?? crypto.randomUUID(),
+        leadIn: parsed.leadIn,
+        resumeAcknowledgement: parsed.resumeAcknowledgement,
+        ...(parsed.formId ? { formId: parsed.formId } : {}),
+        ...(parsed.knownValues ? { knownValues: parsed.knownValues } : {}),
+        questions: parsed.questions,
+      } satisfies UserInputInterruptValue) as {
+        requestId: string;
+        answers?: Record<string, string>;
+      };
+      return JSON.stringify(userInputResumePayload(parsed.knownValues, response));
+    },
+    {
+      name: toLangChainToolName("request_user_input"),
+      description: getTool("request_user_input").description,
+      schema: z.object({
+        leadIn: z.string().trim().min(1).max(1_000),
+        resumeAcknowledgement: z.string().trim().min(1).max(1_000),
+        formId: userInputKey.optional(),
+        knownValues: z.record(userInputKey).optional(),
+        questions: z
+          .array(
+            z.object({
+              id: userInputKey,
+              header: z.string().trim().min(1).max(40),
+              question: z.string().trim().min(1).max(500),
+              options: z
+                .array(
+                  z.object({
+                    value: userInputKey,
+                    label: z.string().trim().min(1).max(80),
+                    description: z.string().trim().min(1).max(180).optional(),
+                  })
+                )
+                .min(2)
+                .max(5),
+            })
+          )
+          .min(1)
+          .max(4),
+      }),
+    }
+  );
+
   const storeScript = tool(
     async (raw, config) => {
       return executeBound("script.store", raw, runtime, toolCallIdFromConfig(config));
@@ -284,6 +401,21 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     );
 
   const storyRead = bindStoryTool("story.read", z.object({}));
+  const storyConfirmCreativeProfile = bindStoryTool(
+    "story.confirmCreativeProfile",
+    z.object({
+      requestId: z.string().uuid().optional(),
+      aspectRatio: z.enum(["landscape_16_9", "portrait_9_16"]),
+      targetRuntime: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
+      visualDirection: z.enum([
+        "cinematic_realism",
+        "stylized_3d",
+        "graphic_novel",
+        "anime_cinematic",
+      ]),
+      storyLanguage: z.enum(["zh-CN", "zh-HK", "en-US"]),
+    })
+  );
   const storyUpdateBible = bindStoryTool(
     "story.updateBible",
     z.object({
@@ -365,6 +497,8 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
       title: z.string().trim().min(1).max(160),
       summary: z.string().trim().min(1).max(4_000),
       brief: z.string().trim().min(1).max(8_000),
+      startedMessage: z.string().trim().min(1).max(2_000),
+      completionMessage: z.string().trim().min(1).max(2_000),
     })
   );
   const storyApplyPatch = tool(
@@ -420,6 +554,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
   );
 
   const byRegistryId = {
+    request_user_input: requestUserInput,
     "script.store": storeScript,
     "script.readSection": readSection,
     "characters.list": listCharacters,
@@ -430,6 +565,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "canvas.read": canvasRead,
     "canvas.applyPatch": canvasApplyPatch,
     "story.read": storyRead,
+    "story.confirmCreativeProfile": storyConfirmCreativeProfile,
     "story.updateBible": storyUpdateBible,
     "story.addScene": storyAddScene,
     "story.addBranch": storyAddBranch,
@@ -494,7 +630,7 @@ async function executeBound(
         code: "DISCUSS_WRITE_FORBIDDEN",
         message: gate.reason,
       };
-      emit?.({
+      await emit?.({
         type: "ToolFailed",
         toolId,
         toolCallId: callId,
@@ -504,6 +640,8 @@ async function executeBound(
     }
     const decision = interrupt({
       kind: "tool_approval",
+      approvalId: crypto.randomUUID(),
+      turnId: runtime.turnId,
       toolId,
       toolCallId: callId,
       arguments: parsed,
@@ -519,7 +657,7 @@ async function executeBound(
         code: "APPROVAL_REJECTED",
         message: "User rejected the tool call.",
       };
-      emit?.({
+      await emit?.({
         type: "ToolFailed",
         toolId,
         toolCallId: callId,
@@ -529,7 +667,7 @@ async function executeBound(
     }
   }
 
-  emit?.({
+  await emit?.({
     type: "ToolStarted",
     toolId,
     toolCallId: callId,
@@ -539,6 +677,7 @@ async function executeBound(
   try {
     const result = await runtime.domain.execute(toolId, parsed, {
       runId: runtime.runId,
+      turnId: runtime.turnId,
       conversationId: runtime.conversationId,
       projectId: runtime.projectId,
       actorId: runtime.actorId,
@@ -551,6 +690,9 @@ async function executeBound(
         runId: runtime.runId,
         toolCallId: callId,
       }),
+      startExecution: runtime.startExecution,
+      continuationExecution: runtime.continuationExecution,
+      abortSignal: runtime.abortSignal,
     });
 
     if (result && typeof result === "object" && "ok" in result && result.ok === false) {
@@ -560,7 +702,7 @@ async function executeBound(
         message?: string;
         retryable?: boolean;
       };
-      emit?.({
+      await emit?.({
         type: "ToolFailed",
         toolId,
         toolCallId: callId,
@@ -571,11 +713,13 @@ async function executeBound(
         },
       });
     } else {
-      const data =
+      const rawData =
         result && typeof result === "object" && "data" in result
           ? (result as { data: unknown }).data
           : result;
-      emit?.({
+      const data = parseToolOutput(toolId, rawData);
+      const agentHandoff = agentExternalJobHandoffFromResult(data);
+      await emit?.({
         type: "ToolCompleted",
         toolId,
         toolCallId: callId,
@@ -584,14 +728,21 @@ async function executeBound(
             data && typeof data === "object" && !Array.isArray(data)
               ? (data as Record<string, unknown>)
               : { value: data },
+          ...(agentHandoff ? { agentHandoff } : {}),
         },
       });
     }
 
     return JSON.stringify(result);
   } catch (error) {
+    if (error instanceof Error && error.name === "AgentOsExecutionSupersededError") {
+      // The database lease moved to another Worker. Do not emit ToolFailed and
+      // do not return a ToolMessage: either would pollute the shared
+      // checkpoint with a stale owner's invented outcome.
+      throw error;
+    }
     const message = error instanceof Error ? error.message : String(error);
-    emit?.({
+    await emit?.({
       type: "ToolFailed",
       toolId,
       toolCallId: callId,

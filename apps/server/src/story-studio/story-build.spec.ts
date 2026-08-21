@@ -242,7 +242,7 @@ describe('compileStoryBuild', () => {
         maxExperienceSeconds: 90,
         exit: { kind: 'auto', nextNodeId: 'left' },
       },
-      content.graph.nodes[1]!,
+      content.graph.nodes[1],
     ];
     const worlds: StoryBuildWorldInput[] = [
       { graphNodeId: 'world', worldId: WORLD_ID, status: 'ready' },

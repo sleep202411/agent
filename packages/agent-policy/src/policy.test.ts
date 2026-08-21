@@ -45,6 +45,17 @@ describe("requiresApproval", () => {
     ).toBe(true);
   });
 
+  it("advertises only approval actions implemented end to end", () => {
+    for (const input of [
+      { mode: "AUTOPILOT", permissionMode: "full", risk: "critical" },
+      { mode: "ASSIST", permissionMode: "ask", risk: "reversible" },
+      { mode: "ASSIST", permissionMode: "smart", risk: "sensitive" },
+    ] as const) {
+      const result = requiresApproval(input);
+      expect(result).toMatchObject({ required: true, actions: ["approve", "reject"] });
+    }
+  });
+
   it("maps canvas.applyPatch to sensitive", () => {
     expect(riskForCanvasTool("canvas.applyPatch")).toBe("sensitive");
     expect(riskForCanvasTool("canvas.read")).toBe("read");

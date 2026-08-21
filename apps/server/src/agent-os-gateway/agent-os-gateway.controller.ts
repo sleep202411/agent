@@ -17,6 +17,7 @@ import { AgentOsAttachmentService } from './agent-os-attachment.service';
 import {
   AgentOsApprovalBodySchema,
   AgentOsStartRunBodySchema,
+  AgentOsUserInputBodySchema,
 } from './agent-os-gateway.dto';
 import { ok } from './agent-os-envelope';
 import { AgentOsGatewayService } from './agent-os-gateway.service';
@@ -111,6 +112,22 @@ export class AgentOsGatewayController {
       });
     }
     return ok(await this.gateway.resolveApproval(user, runId, parsed.data));
+  }
+
+  @Post('runs/:runId/user-input')
+  async resolveUserInput(
+    @CurrentUser() user: AuthUser,
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() body: unknown,
+  ) {
+    const parsed = AgentOsUserInputBodySchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        code: 'AGENT_OS_INVALID_BODY',
+        message: parsed.error.message,
+      });
+    }
+    return ok(await this.gateway.resolveUserInput(user, runId, parsed.data));
   }
 
   @Get('runs/:runId/events')

@@ -222,7 +222,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
 
   it('passes timeline control and safe branch frames through to compiled gestures', () => {
     const value = release();
-    value.nodes[0]!.interactions = [
+    value.nodes[0].interactions = [
       {
         kind: 'hotspot',
         interactionId: 'charge',
@@ -280,7 +280,7 @@ describe('Story Runtime Manifest v2 compiler', () => {
 
   it('lowers hotspot triggers and outcome routes without fake scene branches', () => {
     const value = release();
-    value.nodes[0]!.interactions = [
+    value.nodes[0].interactions = [
       {
         kind: 'hotspot',
         interactionId: 'continue',
