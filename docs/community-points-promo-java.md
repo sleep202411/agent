@@ -7,7 +7,7 @@
 `POST {BASE_URL}/internal/points/community/grant`
 
 - `.com`:`https://fizzdragon.com/aurora`
-- `.cn`:`https://fizzstudio.fizzspace.cn/aurora`(本期先只开 .com)
+- `.cn`:`https://fizzstudio.fizzspace.cn/aurora`(两侧均已上线 2026-08-21)
 
 认证:请求头 `x-service-token`,密钥同现有算力积分桥(`INTERNAL_SERVICE_TOKEN`),无需新配置。
 
