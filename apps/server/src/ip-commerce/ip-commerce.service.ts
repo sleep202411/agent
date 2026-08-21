@@ -4365,6 +4365,30 @@ export class IpCommerceService {
       WalletOwnerType.user,
       user.userId,
     );
+    // Honest balance: sweep lapsed community credit grants (expiring promo
+    // grants) before reporting, so an expired grant never shows as spendable.
+    // Best-effort — a sweep hiccup must not break the wallet read.
+    const community = accounts.find(
+      (account) =>
+        account.currency === WalletCurrencyType.community_point &&
+        account.balanceKind === WalletBalanceKind.consumable,
+    );
+    if (community) {
+      const { expired } = await this.walletLedger
+        .expireLapsedGrants(community.id)
+        .catch(() => ({ expired: 0n }));
+      if (expired > 0n) {
+        const fresh = await this.prisma.walletAccount.findUnique({
+          where: { id: community.id },
+          select: {
+            availableBalance: true,
+            heldBalance: true,
+            updatedAt: true,
+          },
+        });
+        if (fresh) Object.assign(community, fresh);
+      }
+    }
     return {
       accounts: accounts.map((account) => ({
         id: account.id,
