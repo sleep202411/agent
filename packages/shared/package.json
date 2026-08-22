@@ -98,6 +98,10 @@
       "types": "./dist/story-authoring-pipeline.d.ts",
       "default": "./dist/story-authoring-pipeline.js"
     },
+    "./story-production": {
+      "types": "./dist/story-production.d.ts",
+      "default": "./dist/story-production.js"
+    },
     "./copilot-documents": {
       "types": "./dist/copilot-documents.d.ts",
       "default": "./dist/copilot-documents.js"

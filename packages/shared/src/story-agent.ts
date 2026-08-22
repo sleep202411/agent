@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { findUnprojectableChecks } from "./zod-json-schema-fidelity.js";
+import { StoryProductionPlanSchema } from "./story-production.js";
 
 export const STORY_PATCH_SCHEMA_VERSION = "story-patch-v1" as const;
 
@@ -964,6 +965,8 @@ export const STORY_AUTHORING_STAGE_KEYS = [
   "structure",
   "branch",
   "scene",
+  "assets",
+  "storyboard",
   "validate",
 ] as const;
 export type StoryAuthoringStageKey = (typeof STORY_AUTHORING_STAGE_KEYS)[number];
@@ -1048,15 +1051,222 @@ export const StoryPatchBriefSchema = z
   .strict();
 export type StoryPatchBrief = z.infer<typeof StoryPatchBriefSchema>;
 
+export const STORY_SCREENPLAY_SCHEMA_VERSION = "interactive-screenplay-v1" as const;
+export const STORY_SCREENPLAY_PROPOSAL_SCHEMA_VERSION = "story-screenplay-proposal-v1" as const;
+export const STORY_SCREENPLAY_DOCUMENT_SCHEMA_VERSION = "story-screenplay-document-v1" as const;
+
+export const StoryScreenplayDialogueLineSchema = z
+  .object({
+    characterId: StoryAgentStableIdSchema.nullable(),
+    speaker: z.string().trim().min(1).max(120),
+    parenthetical: z.string().trim().min(1).max(240).optional(),
+    text: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+export const StoryScreenplaySceneSchema = z
+  .object({
+    nodeId: StoryAgentStableIdSchema,
+    clipKey: StoryAgentClipKeySchema,
+    name: z.string().trim().max(120).optional(),
+    heading: z.string().trim().min(1).max(240),
+    beat: z.string().trim().min(1).max(500),
+    action: z.string().trim().min(1).max(12_000),
+    dialogue: z.array(StoryScreenplayDialogueLineSchema).max(120),
+    exit: StoryAgentGraphNodeSchema.shape.exit,
+  })
+  .strict();
+
+export const StoryScreenplaySchema = z
+  .object({
+    schemaVersion: z.literal(STORY_SCREENPLAY_SCHEMA_VERSION),
+    storyLanguage: z.string().trim().min(2).max(16),
+    title: z.string().trim().min(1).max(160),
+    logline: z.string().trim().min(1).max(1_000),
+    synopsis: z.string().trim().min(1).max(20_000),
+    characters: z.array(StoryAgentCharacterSchema).max(100),
+    entrySceneId: StoryAgentStableIdSchema,
+    scenes: z.array(StoryScreenplaySceneSchema).min(1).max(200),
+  })
+  .strict()
+  .superRefine((screenplay, context) => {
+    const ids = new Set(screenplay.scenes.map((scene) => scene.nodeId));
+    if (!ids.has(screenplay.entrySceneId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["entrySceneId"],
+        message: "The screenplay entry scene must exist in scenes.",
+      });
+    }
+    screenplay.scenes.forEach((scene, sceneIndex) => {
+      const targets =
+        scene.exit.kind === "auto"
+          ? scene.exit.nextNodeId === null
+            ? []
+            : [scene.exit.nextNodeId]
+          : scene.exit.choices.map((choice) => choice.nextNodeId);
+      targets.forEach((target) => {
+        if (!ids.has(target)) {
+          context.addIssue({
+            code: "custom",
+            path: ["scenes", sceneIndex, "exit"],
+            message: `Scene exit targets missing scene "${target}".`,
+          });
+        }
+      });
+    });
+  });
+export type StoryScreenplay = z.infer<typeof StoryScreenplaySchema>;
+
+/**
+ * The single creator-visible screenplay document. This deliberately models
+ * only the rich-text structure supported by Script today. Semantic scene,
+ * branch, and character data stays in `screenplay` for validation and Plot
+ * Tree compilation; it must never become a second review surface.
+ */
+export const StoryScreenplayDocumentBlockSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("heading"),
+      level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
+      text: z.string().trim().min(1).max(12_000),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("paragraph"),
+      text: z.string().trim().min(1).max(12_000),
+    })
+    .strict(),
+]);
+
+export const StoryScreenplayDocumentSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_SCREENPLAY_DOCUMENT_SCHEMA_VERSION),
+    blocks: z.array(StoryScreenplayDocumentBlockSchema).min(1).max(10_000),
+  })
+  .strict();
+export type StoryScreenplayDocument = z.infer<typeof StoryScreenplayDocumentSchema>;
+
+/**
+ * Build the exact document shown in review and committed to Script. New
+ * proposals persist this result. The exported builder is also the one bounded
+ * compatibility path for proposals authored before the document field
+ * existed, so old durable proposals remain reviewable without a second UI.
+ */
+export function buildStoryScreenplayDocument(screenplay: StoryScreenplay): StoryScreenplayDocument {
+  const labels =
+    screenplay.storyLanguage === "zh-CN" || screenplay.storyLanguage === "zh-HK"
+      ? { synopsis: "故事梗概", characters: "角色" }
+      : { synopsis: "Synopsis", characters: "Characters" };
+  const sceneNames = new Map(
+    screenplay.scenes.map((scene) => [scene.nodeId, scene.name?.trim() || scene.heading])
+  );
+  const blocks: StoryScreenplayDocument["blocks"] = [
+    { kind: "heading", level: 1, text: screenplay.title },
+    { kind: "paragraph", text: screenplay.logline },
+    { kind: "heading", level: 2, text: labels.synopsis },
+    { kind: "paragraph", text: screenplay.synopsis },
+  ];
+  if (screenplay.characters.length > 0) {
+    blocks.push({ kind: "heading", level: 2, text: labels.characters });
+    for (const character of screenplay.characters) {
+      const displayName = localizedStoryText(character.name) || character.id;
+      blocks.push({
+        kind: "paragraph",
+        text: `${displayName}${character.summary ? ` — ${character.summary}` : ""}`,
+      });
+    }
+  }
+  for (const [index, scene] of screenplay.scenes.entries()) {
+    blocks.push({
+      kind: "heading",
+      level: 2,
+      text: `${index + 1}. ${scene.heading}`,
+    });
+    blocks.push({ kind: "paragraph", text: scene.action });
+    for (const line of scene.dialogue) {
+      blocks.push({ kind: "paragraph", text: line.speaker.toUpperCase() });
+      if (line.parenthetical) {
+        blocks.push({ kind: "paragraph", text: `(${line.parenthetical})` });
+      }
+      blocks.push({ kind: "paragraph", text: line.text });
+    }
+    if (scene.exit.kind === "choice") {
+      blocks.push({ kind: "paragraph", text: localizedStoryText(scene.exit.prompt) });
+      for (const choice of scene.exit.choices) {
+        blocks.push({
+          kind: "paragraph",
+          text: `• ${localizedStoryText(choice.label)} → ${
+            sceneNames.get(choice.nextNodeId) ?? choice.nextNodeId
+          }`,
+        });
+      }
+    }
+  }
+  return StoryScreenplayDocumentSchema.parse({
+    schemaVersion: STORY_SCREENPLAY_DOCUMENT_SCHEMA_VERSION,
+    blocks,
+  });
+}
+
+function localizedStoryText(value: Readonly<Record<string, string>>): string {
+  return value["en-US"] ?? value["zh-CN"] ?? value["zh-HK"] ?? Object.values(value)[0] ?? "";
+}
+
+export const StoryScreenplayProposalSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_SCREENPLAY_PROPOSAL_SCHEMA_VERSION),
+    draftSchemaVersion: z.literal(STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION),
+    baseDraftRevision: z.number().int().nonnegative(),
+    baseContentHash: z.string().regex(/^[a-f0-9]{64}$/),
+    baseLayoutRevision: z.number().int().nonnegative(),
+    /** The exact collaborative Script head the proposal was authored against. */
+    baseScriptDocumentId: StoryAgentUuidSchema.nullable(),
+    baseScriptSequence: z.number().int().nonnegative(),
+    baseScriptHash: z.string().regex(/^[a-f0-9]{64}$/),
+    title: z.string().trim().min(1).max(160),
+    summary: z.string().trim().min(1).max(4_000),
+    screenplay: StoryScreenplaySchema,
+    /**
+     * Chapter-local production specifications derived from the screenplay.
+     * They contain prompts, timings, and stable logical references only — no
+     * generated media and no second branching graph. Optional solely for
+     * durable screenplay proposals authored before production-plan-v1.
+     */
+    productionPlan: StoryProductionPlanSchema.optional(),
+    /**
+     * Persisted by every new writer. Optional only so durable v1 proposals
+     * created before screenplay-document-v1 can be projected through the same
+     * canonical builder and remain actionable.
+     */
+    document: StoryScreenplayDocumentSchema.optional(),
+  })
+  .strict();
+export type StoryScreenplayProposal = z.infer<typeof StoryScreenplayProposalSchema>;
+
 /** A run's durable proposal column: a drafting brief until authoring lands. */
 export const StoryAgentRunProposalSchema = z.union([
   StoryPatchProposalSchema,
+  StoryScreenplayProposalSchema,
   StoryPatchBriefSchema,
 ]);
 export type StoryAgentRunProposal = z.infer<typeof StoryAgentRunProposalSchema>;
 
 export function isStoryPatchBrief(proposal: StoryAgentRunProposal): proposal is StoryPatchBrief {
   return proposal.schemaVersion === STORY_PATCH_BRIEF_SCHEMA_VERSION;
+}
+
+export function isStoryScreenplayProposal(
+  proposal: StoryAgentRunProposal
+): proposal is StoryScreenplayProposal {
+  return proposal.schemaVersion === STORY_SCREENPLAY_PROPOSAL_SCHEMA_VERSION;
+}
+
+export function storyScreenplayDocument(
+  proposal: StoryScreenplayProposal
+): StoryScreenplayDocument {
+  return proposal.document ?? buildStoryScreenplayDocument(proposal.screenplay);
 }
 
 /** Statuses a run may hold while its proposal column is still a brief. */
@@ -1132,11 +1342,19 @@ export const StoryAgentRunDtoSchema = z
       }
     } else {
       if (AUTHORING_PHASE_STATUSES.has(run.status)) {
-        addRunIssue(
-          context,
-          ["proposal"],
-          `A ${run.status} run must still carry its drafting brief.`
-        );
+        // The staged screenplay approval re-arms the SAME run into the
+        // downstream authoring phase while it still carries the approved
+        // screenplay proposal; that continuation is confirmed by definition.
+        // An unconfirmed authoring-phase run must still carry its brief.
+        const confirmedScreenplayContinuation =
+          isStoryScreenplayProposal(run.proposal) && run.confirmedAt !== null;
+        if (!confirmedScreenplayContinuation) {
+          addRunIssue(
+            context,
+            ["proposal"],
+            `A ${run.status} run must still carry its drafting brief.`
+          );
+        }
       }
       if (run.baseDraftRevision !== run.proposal.baseDraftRevision) {
         addRunIssue(
@@ -1217,12 +1435,16 @@ export const StoryAgentRunDtoSchema = z
     }
 
     switch (run.status) {
+      // The staged screenplay approval re-arms the SAME run back into
+      // `authoring` for downstream reconciliation, so a recorded confirmation
+      // is legal in both authoring states. The confirmed/authoring-route
+      // invariant is enforced by the database decision-lifecycle constraint;
+      // this DTO refine keeps only the pairing rule (confirmedByUserId and
+      // confirmedAt together), asserted above.
       case "authoring":
         requireNullRunFields(
           run,
           [
-            "confirmedByUserId",
-            "confirmedAt",
             "cancelledByUserId",
             "cancelledAt",
             "startedAt",
@@ -1239,8 +1461,6 @@ export const StoryAgentRunDtoSchema = z
         requireNullRunFields(
           run,
           [
-            "confirmedByUserId",
-            "confirmedAt",
             "cancelledByUserId",
             "cancelledAt",
             "startedAt",

@@ -4,6 +4,7 @@ import {
   StoryAgentClipKeySchema,
   StoryAgentLocalizedTextSchema,
   StoryAgentStableIdSchema,
+  StoryScreenplayDialogueLineSchema,
 } from "./story-agent.js";
 
 // Stage keys + progress schema live in story-agent.ts (the DTO home) to avoid a
@@ -17,8 +18,9 @@ export {
 
 /**
  * Contracts for the deterministic authoring pipeline that replaces the single
- * whole-document author. Each stage (baton) emits one declarative product; a
- * deterministic assembler turns the four products into StoryPatchOperations.
+ * whole-document author. Each stage (baton) emits one declarative product; the
+ * first four batons assemble the reviewable screenplay, and only after the
+ * creator approves it are the Plot operations and production specs derived.
  *
  * The point is correctness by construction: the skeleton is validated for
  * referential integrity BEFORE any scene copy is written, so a dangling edge cannot
@@ -117,7 +119,11 @@ export const StorySceneProseNodeSchema = z
   .object({
     nodeId: StoryAgentStableIdSchema,
     name: z.string().trim().max(120).optional(),
-    description: z.string().trim().max(4_000),
+    /** Screenplay scene heading, e.g. "INT. FORBIDDEN CITY – NIGHT". */
+    heading: z.string().trim().min(1).max(240),
+    /** Complete playable action for the scene, not a graph-card synopsis. */
+    action: z.string().trim().min(1).max(12_000),
+    dialogue: z.array(StoryScreenplayDialogueLineSchema).max(120),
   })
   .strict();
 

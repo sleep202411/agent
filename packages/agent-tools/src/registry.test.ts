@@ -161,7 +161,7 @@ describe("agent-tools registry", () => {
     ).toThrow();
   });
 
-  it("requires story.read to project the durable authoring lifecycle", () => {
+  it("requires story.read to project durable lifecycle and canonical production readiness", () => {
     const output = {
       chapterId: "00000000-0000-4000-8000-000000000001",
       draftRevision: 0,
@@ -169,6 +169,21 @@ describe("agent-tools registry", () => {
       storyBible: { logline: "", synopsis: "", characters: [] },
       graph: { entryNodeId: null, nodes: [] },
       productionNotes: [],
+      productionState: {
+        projectId: "00000000-0000-4000-8000-000000000003",
+        chapterId: "00000000-0000-4000-8000-000000000001",
+        profile: { status: "current" },
+        script: { status: "missing", documentId: null, sequence: null },
+        plotTree: { status: "missing", nodeCount: 0 },
+        assets: { status: "missing", currentCount: 0, staleCount: 0 },
+        storyboard: {
+          status: "missing",
+          sequenceCount: 0,
+          staleCount: 0,
+          missingPlotNodeIds: [],
+        },
+        ready: false,
+      },
       creativeProfile: {
         frameProfile: "landscape_16_9",
         durationPreset: "medium_15_30",
@@ -183,8 +198,34 @@ describe("agent-tools registry", () => {
     };
     expect(parseToolOutput("story.read", output)).toMatchObject({
       authoringRun: { status: "cancelled" },
+      productionState: { script: { status: "missing" }, ready: false },
     });
     expect(() => parseToolOutput("story.read", { ...output, authoringRun: undefined })).toThrow();
+    expect(() =>
+      parseToolOutput("story.read", { ...output, productionState: undefined })
+    ).toThrow();
+    expect(() =>
+      parseToolOutput("story.read", {
+        ...output,
+        productionState: { ...output.productionState, ready: true },
+      })
+    ).toThrow(/ready must exactly reflect/);
+    expect(() =>
+      parseToolOutput("story.read", {
+        ...output,
+        productionState: {
+          ...output.productionState,
+          script: { status: "stale", documentId: null, sequence: null },
+        },
+      })
+    ).toThrow(/requires its canonical document id and sequence/);
+  });
+
+  it("makes the Server production-state projection the story.read routing authority", () => {
+    const description = getTool("story.read").description;
+    expect(description).toContain("Server-owned productionState");
+    expect(description).toContain("before story.author");
+    expect(description).toContain("selects create, incremental completion, or no-op");
   });
 
   it("accepts a four-step creative profile but keeps user-input forms bounded", () => {
@@ -333,8 +374,9 @@ describe("agent-tools registry", () => {
       title: "The Last Watch",
       summary: "A final imperial guard chooses whom to save.",
       brief: "Create an interactive film set on the final night of Ming rule.",
-      startedMessage: "I have your direction and am shaping the proposal now.",
-      completionMessage: "The proposal is ready for you to review.",
+      startedMessage: "I have your direction and am preparing the production plan now.",
+      completionMessage:
+        "The screenplay is ready for your review. No media has been generated; use Generate when you want to create it.",
     };
     expect(parseToolInput("story.author", input)).toEqual(input);
     expect(() =>
@@ -358,6 +400,23 @@ describe("agent-tools registry", () => {
       status: "authoring",
       agentHandoff: { kind: "external_job" },
     });
+  });
+
+  it("describes story.author as an intent-gated incremental production plan", () => {
+    const description = getTool("story.author").description;
+    expect(description).toContain("Never call for greetings");
+    expect(description).toContain("Call story.read first");
+    expect(description).toContain("reuses every valid chapter stage");
+    expect(description).toContain("Only when no valid Script exists");
+    expect(description).toContain("single canonical Plot topology");
+    expect(description).toContain("one Storyboard sequence per Plot node");
+    expect(description).toContain("zero generated media");
+    expect(description).toContain("creator must use Generate later");
+    expect(description).toContain("say only that the screenplay is ready for creator review");
+    expect(description).toContain("never present production specifications as a second review");
+    expect(description).toContain("authoritative Server apply continuation");
+    expect(description).not.toContain("five-baton");
+    expect(description).not.toContain("proposal for the whole tree");
   });
 
   it("builds stable idempotency keys", () => {
