@@ -1148,7 +1148,16 @@ function CoreVideoRenderer({
   // ratio, is centered in the responsive stage, and scales down to fit without
   // ever cropping. Everything else fills a fixed full-bleed frame.
   const native = config.fit === "native";
-  const player = (
+  const stillImage = Boolean(media.variant.mediaType?.toLowerCase().startsWith("image/"));
+  const player = stillImage ? (
+    <ExperienceStillSegment
+      uri={media.variant.uri}
+      title={copy.videoLabel(renderer.instanceId)}
+      fit={config.fit === "native" ? "contain" : config.fit}
+      held={terminalMode?.kind === "held"}
+      onDisplayed={handleEnd}
+    />
+  ) : (
     <ExperienceMediaPlayer
       source={{ src: media.variant.uri, type: media.variant.mediaType }}
       title={copy.videoLabel(renderer.instanceId)}
@@ -1202,6 +1211,47 @@ function CoreVideoRenderer({
     <div className="absolute inset-0" style={{ zIndex: renderer.layer }}>
       {player}
     </div>
+  );
+}
+
+/**
+ * A storyboard still on the sequence timeline: the image "plays" by finishing
+ * the moment it is displayed, handing control to the clip's endBehavior —
+ * `hold-last-frame` with a duration holds the frame and then advances, exactly
+ * like a video that just ended. `held` keeps the frame without re-firing.
+ */
+function ExperienceStillSegment({
+  uri,
+  title,
+  fit,
+  held,
+  onDisplayed,
+}: {
+  uri: string;
+  title: string;
+  fit: "cover" | "contain";
+  held: boolean;
+  onDisplayed: () => void;
+}) {
+  const displayedUriRef = useRef<string | null>(null);
+  const fireOnce = () => {
+    if (held || displayedUriRef.current === uri) return;
+    displayedUriRef.current = uri;
+    onDisplayed();
+  };
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={uri}
+      alt={title}
+      onLoad={fireOnce}
+      ref={(element) => {
+        // A cached image can be complete before onLoad ever fires.
+        if (element?.complete) fireOnce();
+      }}
+      className="absolute inset-0 size-full"
+      style={{ objectFit: fit }}
+    />
   );
 }
 

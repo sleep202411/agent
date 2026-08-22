@@ -50,7 +50,9 @@ const ExperienceCoreVideoEndBehaviorSchema = z.discriminatedUnion("behavior", [
   z
     .object({
       behavior: z.literal("hold-last-frame"),
-      durationMs: z.number().int().min(100).max(10_000).optional(),
+      // Still-image segments hold for their full storyboard clip length, so
+      // the cap covers long held shots, not just brief end-frame beats.
+      durationMs: z.number().int().min(100).max(120_000).optional(),
     })
     .strict(),
   z
