@@ -1310,100 +1310,100 @@ model AgentOsAttachment {
 
 /// Agent OS run event journal (reconnect / audit). Sequence is per-run monotonic.
 model AgentOsRun {
-  id               String   @id @db.Uuid
-  projectId        String   @map("project_id") @db.Uuid
-  conversationId   String   @map("conversation_id") @db.Uuid
-  actorId          String   @map("actor_id") @db.VarChar(64)
-  modelProfileId   String   @map("model_profile_id") @db.VarChar(64)
-  status           String   @db.VarChar(32)
-  lastSequence     Int      @default(0) @map("last_sequence")
-  pendingApproval  Json?    @map("pending_approval") @db.JsonB
-  pendingExternal  Json?    @map("pending_external") @db.JsonB
+  id                                       String    @id @db.Uuid
+  projectId                                String    @map("project_id") @db.Uuid
+  conversationId                           String    @map("conversation_id") @db.Uuid
+  actorId                                  String    @map("actor_id") @db.VarChar(64)
+  modelProfileId                           String    @map("model_profile_id") @db.VarChar(64)
+  status                                   String    @db.VarChar(32)
+  lastSequence                             Int       @default(0) @map("last_sequence")
+  pendingApproval                          Json?     @map("pending_approval") @db.JsonB
+  pendingExternal                          Json?     @map("pending_external") @db.JsonB
   /// Short-lived, row-locked claim for one structured-input response. The
   /// durable UserInputResolved event remains the final idempotency authority;
   /// this lease only prevents two Gateway pods dispatching it concurrently.
-  inputResponseId             String?   @map("input_response_id") @db.Uuid
-  inputRequestId              String?   @map("input_request_id") @db.Uuid
-  inputAnswersFingerprint     String?   @map("input_answers_fingerprint") @db.VarChar(64)
-  inputResponseLeaseId        String?   @map("input_response_lease_id") @db.Uuid
-  inputResponseLeaseExpiresAt DateTime? @map("input_response_lease_expires_at") @db.Timestamptz(6)
+  inputResponseId                          String?   @map("input_response_id") @db.Uuid
+  inputRequestId                           String?   @map("input_request_id") @db.Uuid
+  inputAnswersFingerprint                  String?   @map("input_answers_fingerprint") @db.VarChar(64)
+  inputResponseLeaseId                     String?   @map("input_response_lease_id") @db.Uuid
+  inputResponseLeaseExpiresAt              DateTime? @map("input_response_lease_expires_at") @db.Timestamptz(6)
   /// Short-lived, row-locked claim for one generic tool-approval response.
   /// The append-only ApprovalResolved/UserMessage pair remains authoritative;
   /// this lease fences concurrent Gateway/Worker pods before graph resume.
-  approvalResponseId             String?   @map("approval_response_id") @db.Uuid
-  approvalId                     String?   @map("approval_id") @db.Uuid
-  approvalFingerprint            String?   @map("approval_fingerprint") @db.VarChar(64)
-  approvalResponseLeaseId        String?   @map("approval_response_lease_id") @db.Uuid
-  approvalResponseLeaseExpiresAt DateTime? @map("approval_response_lease_expires_at") @db.Timestamptz(6)
+  approvalResponseId                       String?   @map("approval_response_id") @db.Uuid
+  approvalId                               String?   @map("approval_id") @db.Uuid
+  approvalFingerprint                      String?   @map("approval_fingerprint") @db.VarChar(64)
+  approvalResponseLeaseId                  String?   @map("approval_response_lease_id") @db.Uuid
+  approvalResponseLeaseExpiresAt           DateTime? @map("approval_response_lease_expires_at") @db.Timestamptz(6)
   /// Durable start command/outbox. Admission commits this row before any
   /// Worker HTTP call, so a Gateway crash cannot strand an unstarted run.
-  startCommand             Json?   @map("start_command") @db.JsonB
+  startCommand                             Json?     @map("start_command") @db.JsonB
   /// Version 2 reserves the exact first user event before Worker dispatch.
   /// Version 1 identifies historical rows created before durable admission.
-  startAdmissionVersion    Int     @default(1) @map("start_admission_version")
-  clientSubmissionId       String? @map("client_submission_id") @db.Uuid
-  startTurnId              String? @map("start_turn_id") @db.Uuid
-  startUserMessageId       String? @map("start_user_message_id") @db.Uuid
-  submissionFingerprint    String? @map("submission_fingerprint") @db.VarChar(64)
+  startAdmissionVersion                    Int       @default(1) @map("start_admission_version")
+  clientSubmissionId                       String?   @map("client_submission_id") @db.Uuid
+  startTurnId                              String?   @map("start_turn_id") @db.Uuid
+  startUserMessageId                       String?   @map("start_user_message_id") @db.Uuid
+  submissionFingerprint                    String?   @map("submission_fingerprint") @db.VarChar(64)
   /// Stable semantic token plus a monotonically fenced execution attempt.
   /// The command remains recoverable until the initial graph reaches a
   /// checkpoint-backed pause or terminal outcome.
-  startExecutionToken          String?   @map("start_execution_token") @db.Uuid
-  startExecutionAttemptId      String?   @map("start_execution_attempt_id") @db.Uuid
-  startExecutionEpoch          Int       @default(0) @map("start_execution_epoch")
-  startExecutionOwnerId        String?   @map("start_execution_owner_id") @db.Uuid
-  startExecutionLeaseExpiresAt DateTime? @map("start_execution_lease_expires_at") @db.Timestamptz(6)
-  startExecutionHeartbeatAt    DateTime? @map("start_execution_heartbeat_at") @db.Timestamptz(6)
-  startExecutionCheckpointId   String?   @map("start_execution_checkpoint_id") @db.VarChar(160)
-  startExecutionCheckpointNamespace String? @map("start_execution_checkpoint_namespace") @db.VarChar(200)
-  startExecutionCheckpointThreadId String? @map("start_execution_checkpoint_thread_id") @db.Uuid
-  startExecutionCheckpointMessageId String? @map("start_execution_checkpoint_message_id") @db.Uuid
-  startExecutionCheckpointedAt DateTime? @map("start_execution_checkpointed_at") @db.Timestamptz(6)
-  startExecutionFinishedAt     DateTime? @map("start_execution_finished_at") @db.Timestamptz(6)
-  startDispatchNextAttemptAt  DateTime? @map("start_dispatch_next_attempt_at") @db.Timestamptz(6)
-  startDispatchLastError      String?   @map("start_dispatch_last_error") @db.Text
-  startDispatchedAt           DateTime? @map("start_dispatched_at") @db.Timestamptz(6)
+  startExecutionToken                      String?   @map("start_execution_token") @db.Uuid
+  startExecutionAttemptId                  String?   @map("start_execution_attempt_id") @db.Uuid
+  startExecutionEpoch                      Int       @default(0) @map("start_execution_epoch")
+  startExecutionOwnerId                    String?   @map("start_execution_owner_id") @db.Uuid
+  startExecutionLeaseExpiresAt             DateTime? @map("start_execution_lease_expires_at") @db.Timestamptz(6)
+  startExecutionHeartbeatAt                DateTime? @map("start_execution_heartbeat_at") @db.Timestamptz(6)
+  startExecutionCheckpointId               String?   @map("start_execution_checkpoint_id") @db.VarChar(160)
+  startExecutionCheckpointNamespace        String?   @map("start_execution_checkpoint_namespace") @db.VarChar(200)
+  startExecutionCheckpointThreadId         String?   @map("start_execution_checkpoint_thread_id") @db.Uuid
+  startExecutionCheckpointMessageId        String?   @map("start_execution_checkpoint_message_id") @db.Uuid
+  startExecutionCheckpointedAt             DateTime? @map("start_execution_checkpointed_at") @db.Timestamptz(6)
+  startExecutionFinishedAt                 DateTime? @map("start_execution_finished_at") @db.Timestamptz(6)
+  startDispatchNextAttemptAt               DateTime? @map("start_dispatch_next_attempt_at") @db.Timestamptz(6)
+  startDispatchLastError                   String?   @map("start_dispatch_last_error") @db.Text
+  startDispatchedAt                        DateTime? @map("start_dispatched_at") @db.Timestamptz(6)
   /// Durable HITL continuation outbox. A resolved approval/input response and
   /// this command commit in the same journal transaction; execution is leased
   /// independently from initial start and remains recoverable until a newer
   /// graph checkpoint proves the resumed node reached a pause or terminal.
-  continuationCommand             Json?     @map("continuation_command") @db.JsonB
-  continuationExecutionToken      String?   @map("continuation_execution_token") @db.Uuid
-  continuationExecutionAttemptId  String?   @map("continuation_execution_attempt_id") @db.Uuid
-  continuationExecutionEpoch      Int       @default(0) @map("continuation_execution_epoch")
-  continuationExecutionOwnerId    String?   @map("continuation_execution_owner_id") @db.Uuid
-  continuationExecutionLeaseExpiresAt DateTime? @map("continuation_execution_lease_expires_at") @db.Timestamptz(6)
-  continuationExecutionHeartbeatAt DateTime? @map("continuation_execution_heartbeat_at") @db.Timestamptz(6)
-  continuationExecutionCheckpointId String? @map("continuation_execution_checkpoint_id") @db.VarChar(160)
-  continuationExecutionCheckpointNamespace String? @map("continuation_execution_checkpoint_namespace") @db.VarChar(200)
-  continuationExecutionCheckpointThreadId String? @map("continuation_execution_checkpoint_thread_id") @db.Uuid
-  continuationExecutionCheckpointedAt DateTime? @map("continuation_execution_checkpointed_at") @db.Timestamptz(6)
-  continuationExecutionFinishedAt DateTime? @map("continuation_execution_finished_at") @db.Timestamptz(6)
-  continuationDispatchNextAttemptAt DateTime? @map("continuation_dispatch_next_attempt_at") @db.Timestamptz(6)
-  continuationDispatchLastError String? @map("continuation_dispatch_last_error") @db.Text
-  continuationDispatchedAt DateTime? @map("continuation_dispatched_at") @db.Timestamptz(6)
-  assistantText    String?  @map("assistant_text") @db.Text
-  projectKind      String?  @map("project_kind") @db.VarChar(32)
-  workbenchMode    String?  @map("workbench_mode") @db.VarChar(64)
-  workbenchContext Json?    @map("workbench_context") @db.JsonB
-  skillSnapshot    Json?    @map("skill_snapshot") @db.JsonB
+  continuationCommand                      Json?     @map("continuation_command") @db.JsonB
+  continuationExecutionToken               String?   @map("continuation_execution_token") @db.Uuid
+  continuationExecutionAttemptId           String?   @map("continuation_execution_attempt_id") @db.Uuid
+  continuationExecutionEpoch               Int       @default(0) @map("continuation_execution_epoch")
+  continuationExecutionOwnerId             String?   @map("continuation_execution_owner_id") @db.Uuid
+  continuationExecutionLeaseExpiresAt      DateTime? @map("continuation_execution_lease_expires_at") @db.Timestamptz(6)
+  continuationExecutionHeartbeatAt         DateTime? @map("continuation_execution_heartbeat_at") @db.Timestamptz(6)
+  continuationExecutionCheckpointId        String?   @map("continuation_execution_checkpoint_id") @db.VarChar(160)
+  continuationExecutionCheckpointNamespace String?   @map("continuation_execution_checkpoint_namespace") @db.VarChar(200)
+  continuationExecutionCheckpointThreadId  String?   @map("continuation_execution_checkpoint_thread_id") @db.Uuid
+  continuationExecutionCheckpointedAt      DateTime? @map("continuation_execution_checkpointed_at") @db.Timestamptz(6)
+  continuationExecutionFinishedAt          DateTime? @map("continuation_execution_finished_at") @db.Timestamptz(6)
+  continuationDispatchNextAttemptAt        DateTime? @map("continuation_dispatch_next_attempt_at") @db.Timestamptz(6)
+  continuationDispatchLastError            String?   @map("continuation_dispatch_last_error") @db.Text
+  continuationDispatchedAt                 DateTime? @map("continuation_dispatched_at") @db.Timestamptz(6)
+  assistantText                            String?   @map("assistant_text") @db.Text
+  projectKind                              String?   @map("project_kind") @db.VarChar(32)
+  workbenchMode                            String?   @map("workbench_mode") @db.VarChar(64)
+  workbenchContext                         Json?     @map("workbench_context") @db.JsonB
+  skillSnapshot                            Json?     @map("skill_snapshot") @db.JsonB
   /// Cross-pod lease for draining this run's committed events to realtime.
   /// PostgreSQL remains authoritative; duplicate publishes are harmless
   /// because every event has a stable Ably message id.
-  realtimePublishLeaseId        String?   @map("realtime_publish_lease_id") @db.Uuid
-  realtimePublishLeaseExpiresAt DateTime? @map("realtime_publish_lease_expires_at") @db.Timestamptz(6)
-  realtimeSnapshotSequence      Int       @default(0) @map("realtime_snapshot_sequence")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  realtimePublishLeaseId                   String?   @map("realtime_publish_lease_id") @db.Uuid
+  realtimePublishLeaseExpiresAt            DateTime? @map("realtime_publish_lease_expires_at") @db.Timestamptz(6)
+  realtimeSnapshotSequence                 Int       @default(0) @map("realtime_snapshot_sequence")
+  createdAt                                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                                DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   events                       AgentOsRunEvent[]
   externalHandoffRegistrations AgentOsExternalHandoffRegistration[]
   toolExecutionReceipts        AgentOsToolExecutionReceipt[]
 
+  @@unique([actorId, projectId, clientSubmissionId], map: "agent_os_runs_actor_project_submission_unique")
   @@index([projectId, createdAt(sort: Desc)], map: "agent_os_runs_project_recent_idx")
   @@index([actorId, createdAt(sort: Desc)], map: "agent_os_runs_actor_recent_idx")
   @@index([projectId, conversationId, createdAt], map: "agent_os_runs_project_conversation_idx")
-  @@unique([actorId, projectId, clientSubmissionId], map: "agent_os_runs_actor_project_submission_unique")
   @@index([continuationDispatchNextAttemptAt, createdAt], map: "agent_os_runs_continuation_dispatch_idx")
   @@map("agent_os_runs")
 }
@@ -1414,32 +1414,32 @@ model AgentOsRun {
 /// transaction as the product mutation. Completed receipts are the response-
 /// loss replay authority; the expiring lease only serializes live executors.
 model AgentOsToolExecutionReceipt {
-  id                      String    @id @default(uuid(7)) @db.Uuid
-  runId                   String    @map("run_id") @db.Uuid
-  conversationId          String    @map("conversation_id") @db.Uuid
-  turnId                  String    @map("turn_id") @db.Uuid
-  toolCallId              String    @map("tool_call_id") @db.VarChar(256)
-  toolId                  String    @map("tool_id") @db.VarChar(128)
-  projectId               String    @map("project_id") @db.Uuid
-  actorId                 String    @map("actor_id") @db.VarChar(128)
-  idempotencyKey          String    @map("idempotency_key") @db.VarChar(512)
-  requestFingerprint      String    @map("request_fingerprint") @db.VarChar(64)
+  id                             String    @id @default(uuid(7)) @db.Uuid
+  runId                          String    @map("run_id") @db.Uuid
+  conversationId                 String    @map("conversation_id") @db.Uuid
+  turnId                         String    @map("turn_id") @db.Uuid
+  toolCallId                     String    @map("tool_call_id") @db.VarChar(256)
+  toolId                         String    @map("tool_id") @db.VarChar(128)
+  projectId                      String    @map("project_id") @db.Uuid
+  actorId                        String    @map("actor_id") @db.VarChar(128)
+  idempotencyKey                 String    @map("idempotency_key") @db.VarChar(512)
+  requestFingerprint             String    @map("request_fingerprint") @db.VarChar(64)
   /// executing | completed
-  status                  String    @db.VarChar(16)
-  leaseId                 String?   @map("lease_id") @db.Uuid
-  leaseExpiresAt          DateTime? @map("lease_expires_at") @db.Timestamptz(6)
-  response                Json?     @db.JsonB
-  startExecutionToken     String?   @map("start_execution_token") @db.Uuid
-  startExecutionAttemptId String?   @map("start_execution_attempt_id") @db.Uuid
-  startExecutionEpoch     Int?      @map("start_execution_epoch")
-  startExecutionOwnerId   String?   @map("start_execution_owner_id") @db.Uuid
-  continuationExecutionToken String? @map("continuation_execution_token") @db.Uuid
-  continuationExecutionAttemptId String? @map("continuation_execution_attempt_id") @db.Uuid
-  continuationExecutionEpoch Int? @map("continuation_execution_epoch")
-  continuationExecutionOwnerId String? @map("continuation_execution_owner_id") @db.Uuid
-  completedAt             DateTime? @map("completed_at") @db.Timestamptz(6)
-  createdAt               DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt               DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  status                         String    @db.VarChar(16)
+  leaseId                        String?   @map("lease_id") @db.Uuid
+  leaseExpiresAt                 DateTime? @map("lease_expires_at") @db.Timestamptz(6)
+  response                       Json?     @db.JsonB
+  startExecutionToken            String?   @map("start_execution_token") @db.Uuid
+  startExecutionAttemptId        String?   @map("start_execution_attempt_id") @db.Uuid
+  startExecutionEpoch            Int?      @map("start_execution_epoch")
+  startExecutionOwnerId          String?   @map("start_execution_owner_id") @db.Uuid
+  continuationExecutionToken     String?   @map("continuation_execution_token") @db.Uuid
+  continuationExecutionAttemptId String?   @map("continuation_execution_attempt_id") @db.Uuid
+  continuationExecutionEpoch     Int?      @map("continuation_execution_epoch")
+  continuationExecutionOwnerId   String?   @map("continuation_execution_owner_id") @db.Uuid
+  completedAt                    DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt                      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   run AgentOsRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
@@ -1454,19 +1454,19 @@ model AgentOsToolExecutionReceipt {
 /// Events are immutable and ordered by the per-run sequence allocated by the
 /// Agent OS runtime or by an external-job continuation under a row lock.
 model AgentOsRunEvent {
-  id              String   @id @db.VarChar(128)
-  runId           String   @map("run_id") @db.Uuid
-  conversationId  String   @map("conversation_id") @db.Uuid
-  sequence        Int
-  protocolVersion String   @map("protocol_version") @db.VarChar(32)
-  sessionId       String   @map("session_id") @db.VarChar(180)
-  type            String   @db.VarChar(64)
-  data            Json     @db.JsonB
-  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(6)
-  recordedAt      DateTime @default(now()) @map("recorded_at") @db.Timestamptz(6)
-  realtimePublishedAt DateTime? @map("realtime_published_at") @db.Timestamptz(6)
-  realtimePublishAttempts Int @default(0) @map("realtime_publish_attempts")
-  realtimePublishLastError String? @map("realtime_publish_last_error") @db.Text
+  id                       String    @id @db.VarChar(128)
+  runId                    String    @map("run_id") @db.Uuid
+  conversationId           String    @map("conversation_id") @db.Uuid
+  sequence                 Int
+  protocolVersion          String    @map("protocol_version") @db.VarChar(32)
+  sessionId                String    @map("session_id") @db.VarChar(180)
+  type                     String    @db.VarChar(64)
+  data                     Json      @db.JsonB
+  occurredAt               DateTime  @map("occurred_at") @db.Timestamptz(6)
+  recordedAt               DateTime  @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  realtimePublishedAt      DateTime? @map("realtime_published_at") @db.Timestamptz(6)
+  realtimePublishAttempts  Int       @default(0) @map("realtime_publish_attempts")
+  realtimePublishLastError String?   @map("realtime_publish_last_error") @db.Text
 
   run AgentOsRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 
@@ -1483,20 +1483,20 @@ model AgentOsRunEvent {
 /// worker crash before `RunPaused` can be reconciled from PostgreSQL instead of
 /// stranding the originating conversation.
 model AgentOsExternalHandoffRegistration {
-  id                    String   @id @default(uuid(7)) @db.Uuid
-  externalJobId         String   @unique(map: "agent_os_external_handoffs_job_unique") @map("external_job_id") @db.Uuid
-  sourceAgentRunId      String   @map("source_agent_run_id") @db.Uuid
-  sourceAgentTurnId     String   @map("source_agent_turn_id") @db.Uuid
-  sourceAgentToolCallId String   @map("source_agent_tool_call_id") @db.VarChar(256)
-  sourceConversationId  String   @map("source_conversation_id") @db.Uuid
-  sourceToolId          String   @map("source_tool_id") @db.VarChar(128)
-  decisionContractVersion Int    @default(2) @map("decision_contract_version")
-  startedMessage        String   @map("started_message") @db.Text
-  completionMessage     String   @map("completion_message") @db.Text
-  storyAgentRunId       String   @unique(map: "agent_os_external_handoffs_story_run_unique") @map("story_agent_run_id") @db.Uuid
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  id                      String   @id @default(uuid(7)) @db.Uuid
+  externalJobId           String   @unique(map: "agent_os_external_handoffs_job_unique") @map("external_job_id") @db.Uuid
+  sourceAgentRunId        String   @map("source_agent_run_id") @db.Uuid
+  sourceAgentTurnId       String   @map("source_agent_turn_id") @db.Uuid
+  sourceAgentToolCallId   String   @map("source_agent_tool_call_id") @db.VarChar(256)
+  sourceConversationId    String   @map("source_conversation_id") @db.Uuid
+  sourceToolId            String   @map("source_tool_id") @db.VarChar(128)
+  decisionContractVersion Int      @default(2) @map("decision_contract_version")
+  startedMessage          String   @map("started_message") @db.Text
+  completionMessage       String   @map("completion_message") @db.Text
+  storyAgentRunId         String   @unique(map: "agent_os_external_handoffs_story_run_unique") @map("story_agent_run_id") @db.Uuid
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  storyAgentRun StoryAgentRun @relation(fields: [storyAgentRunId], references: [id], onDelete: Restrict)
+  storyAgentRun  StoryAgentRun @relation(fields: [storyAgentRunId], references: [id], onDelete: Restrict)
   sourceAgentRun AgentOsRun    @relation(fields: [sourceAgentRunId], references: [id], onDelete: Restrict)
 
   @@unique([sourceAgentRunId, sourceAgentToolCallId], map: "agent_os_external_handoffs_source_tool_unique")
@@ -1509,6 +1509,7 @@ model StudioDocument {
   workspaceId          String               @map("workspace_id") @db.Uuid
   platformProjectId    String?              @map("platform_project_id") @db.Uuid
   storyProjectId       String?              @map("story_project_id") @db.Uuid
+  storyChapterId       String?              @map("story_chapter_id") @db.Uuid
   sectionId            String?              @map("section_id") @db.Uuid
   type                 StudioDocumentType
   status               StudioDocumentStatus @default(active)
@@ -1538,15 +1539,17 @@ model StudioDocument {
   workspace       Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   platformProject PlatformProject?        @relation(fields: [platformProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
   storyProject    StoryProject?           @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  storyChapter    StoryChapter?           @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade, map: "studio_documents_story_chapter_project_fkey")
   section         PlatformProjectSection? @relation(fields: [sectionId, platformProjectId], references: [id, projectId], onDelete: Restrict)
 
-  versions       StudioDocumentVersion[]
-  operations     StudioDocumentOperation[]
-  presences      StudioDocumentPresence[]
-  commentThreads StudioDocumentCommentThread[]
-  assets         ProjectAsset[]
-  aiJobs         AiJob[]
-  crewTaskCanvas CrewTask?                     @relation("CrewTaskCanvasDocument")
+  versions             StudioDocumentVersion[]
+  operations           StudioDocumentOperation[]
+  presences            StudioDocumentPresence[]
+  commentThreads       StudioDocumentCommentThread[]
+  assets               ProjectAsset[]
+  aiJobs               AiJob[]
+  crewTaskCanvas       CrewTask?                     @relation("CrewTaskCanvasDocument")
+  derivedStoryChapters StoryChapter[]                @relation("StoryChapterSourceScriptDocument")
 
   /// Exactly one project owner is enforced by SQL. Active singleton/slug
   /// uniqueness is likewise enforced by partial indexes per owner kind.
@@ -1554,6 +1557,7 @@ model StudioDocument {
   @@unique([collaborationRoomId], map: "studio_documents_room_unique")
   @@index([platformProjectId, type, updatedAt(sort: Desc)], map: "studio_documents_platform_project_type_recent_idx")
   @@index([storyProjectId, type, updatedAt(sort: Desc)], map: "studio_documents_story_project_type_recent_idx")
+  @@index([storyChapterId, type, updatedAt(sort: Desc)], map: "studio_documents_story_chapter_type_recent_idx")
   @@index([sectionId, type, updatedAt(sort: Desc)], map: "studio_documents_section_type_recent_idx")
   @@index([workspaceId, updatedAt(sort: Desc)], map: "studio_documents_workspace_recent_idx")
   @@index([status, updatedAt(sort: Desc)], map: "studio_documents_status_recent_idx")
@@ -1579,7 +1583,9 @@ model StudioDocumentVersion {
   document                 StudioDocument       @relation(fields: [documentId], references: [id], onDelete: Cascade)
   crewTaskSubmissions      CrewTaskSubmission[] @relation("CrewTaskSubmissionCanvasVersion")
   crewTaskProductionMerges CrewTaskSubmission[] @relation("CrewTaskSubmissionProductionVersion")
+  derivedStoryChapters     StoryChapter[]       @relation("StoryChapterSourceScriptVersion")
 
+  @@unique([id, documentId], map: "studio_document_versions_id_document_unique")
   @@unique([documentId, versionNumber], map: "studio_document_versions_doc_number_unique")
   @@index([documentId, createdAt(sort: Desc)], map: "studio_document_versions_doc_recent_idx")
   @@map("studio_document_versions")
@@ -6447,19 +6453,20 @@ model AiJob {
   /// raw Prisma callers must do the same.
   deletedAt             DateTime?             @map("deleted_at") @db.Timestamptz(6)
 
-  outputs                AiJobOutput[]
-  attempts               AiJobAttempt[]
-  events                 AiEventOutbox[]
-  costLedger             AiCostLedgerEntry[]
-  traceEvents            AiProviderTraceEvent[]
-  mediaAssetUsages       MediaAssetUsage[]
-  storyReferenceVersions StoryReferenceVersion[]
-  canonicalModel         AiCanonicalModel?       @relation(fields: [canonicalModelId], references: [id], onDelete: SetNull)
-  providerBinding        AiProviderModelBinding? @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
-  workspace              Workspace?              @relation(fields: [workspaceId], references: [id])
-  project                PlatformProject?        @relation(fields: [projectId], references: [id])
-  storyProject           StoryProject?           @relation(fields: [storyProjectId], references: [id])
-  document               StudioDocument?         @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+  outputs                    AiJobOutput[]
+  attempts                   AiJobAttempt[]
+  events                     AiEventOutbox[]
+  costLedger                 AiCostLedgerEntry[]
+  traceEvents                AiProviderTraceEvent[]
+  mediaAssetUsages           MediaAssetUsage[]
+  storyReferenceVersions     StoryReferenceVersion[]
+  storyProductionGenerations StoryProductionGeneration[]
+  canonicalModel             AiCanonicalModel?           @relation(fields: [canonicalModelId], references: [id], onDelete: SetNull)
+  providerBinding            AiProviderModelBinding?     @relation(fields: [providerBindingId], references: [id], onDelete: SetNull)
+  workspace                  Workspace?                  @relation(fields: [workspaceId], references: [id])
+  project                    PlatformProject?            @relation(fields: [projectId], references: [id])
+  storyProject               StoryProject?               @relation(fields: [storyProjectId], references: [id])
+  document                   StudioDocument?             @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
@@ -6512,12 +6519,15 @@ model AiJobOutput {
   /// generated even after the user hides a gallery item.
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  job                    AiJob                   @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  asset                  MediaAsset?             @relation(fields: [assetId], references: [id], onDelete: SetNull)
-  mediaAssetUsages       MediaAssetUsage[]
-  storyReferenceVersions StoryReferenceVersion[]
+  job                          AiJob                             @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  asset                        MediaAsset?                       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  mediaAssetUsages             MediaAssetUsage[]
+  storyReferenceVersions       StoryReferenceVersion[]
+  storyAssetMediaVersions      StoryAssetMediaVersion[]          @relation("StoryAssetMediaVersionAiOutput")
+  storyStoryboardMediaVersions StoryStoryboardClipMediaVersion[] @relation("StoryStoryboardMediaVersionAiOutput")
 
   @@unique([jobId, outputIndex], name: "uniq_job_output_index", map: "ai_outputs_job_index_unique")
+  @@unique([id, jobId], map: "ai_outputs_id_job_unique")
   @@index([jobId], map: "ai_outputs_job_idx")
   @@index([assetId], map: "ai_outputs_asset_idx")
   @@index([contentHash], map: "ai_outputs_content_hash_idx")
@@ -7423,31 +7433,33 @@ model MediaAsset {
   updatedAt          DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt          DateTime?                  @map("deleted_at") @db.Timestamptz(6)
 
-  workspace                        Workspace?                   @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  workspace                        Workspace?                        @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
   aiJobOutputs                     AiJobOutput[]
-  certificateImages                UserCertificate[]            @relation("UserCertificateImage")
-  ipCovers                         Ip[]                         @relation("IpCoverAsset")
-  ipLocalizationCovers             IpLocalization[]             @relation("IpLocalizationCoverAsset")
-  ipTrailers                       Ip[]                         @relation("IpTrailerAsset")
-  ipEpisodeCovers                  IpEpisode[]                  @relation("IpEpisodeCoverAsset")
-  ipEpisodeMedia                   IpEpisode[]                  @relation("IpEpisodeMediaAsset")
-  ipEpisodeTrailers                IpEpisode[]                  @relation("IpEpisodeTrailerAsset")
-  ipLibraryAssets                  IpAsset[]                    @relation("IpLibraryMediaAsset")
-  ipDiscoveryImages                IpDiscoveryRecommendation[]  @relation("IpDiscoveryImageAsset")
-  ipDiscoveryMobileImages          IpDiscoveryRecommendation[]  @relation("IpDiscoveryMobileImageAsset")
-  ipDiscoveryTrailerMedia          IpDiscoveryRecommendation[]  @relation("IpDiscoveryTrailerMediaAsset")
-  ipReportEvidence                 IpContentReport[]            @relation("IpReportEvidenceAsset")
+  certificateImages                UserCertificate[]                 @relation("UserCertificateImage")
+  ipCovers                         Ip[]                              @relation("IpCoverAsset")
+  ipLocalizationCovers             IpLocalization[]                  @relation("IpLocalizationCoverAsset")
+  ipTrailers                       Ip[]                              @relation("IpTrailerAsset")
+  ipEpisodeCovers                  IpEpisode[]                       @relation("IpEpisodeCoverAsset")
+  ipEpisodeMedia                   IpEpisode[]                       @relation("IpEpisodeMediaAsset")
+  ipEpisodeTrailers                IpEpisode[]                       @relation("IpEpisodeTrailerAsset")
+  ipLibraryAssets                  IpAsset[]                         @relation("IpLibraryMediaAsset")
+  ipDiscoveryImages                IpDiscoveryRecommendation[]       @relation("IpDiscoveryImageAsset")
+  ipDiscoveryMobileImages          IpDiscoveryRecommendation[]       @relation("IpDiscoveryMobileImageAsset")
+  ipDiscoveryTrailerMedia          IpDiscoveryRecommendation[]       @relation("IpDiscoveryTrailerMediaAsset")
+  ipReportEvidence                 IpContentReport[]                 @relation("IpReportEvidenceAsset")
   variants                         MediaAssetVariant[]
   placements                       MediaObjectPlacement[]
   usages                           MediaAssetUsage[]
-  characterCovers                  StudioCharacter[]            @relation("CharacterCover")
+  characterCovers                  StudioCharacter[]                 @relation("CharacterCover")
   characterMedia                   CharacterMedia[]
   providerMirrors                  AiProviderMediaAssetMirror[]
-  storyProjectCovers               StoryProject[]               @relation("StoryProjectCover")
-  storyReferenceVersions           StoryReferenceVersion[]      @relation("StoryReferenceAsset")
-  storyVideoSelectionCurrentVideos StoryVideoSelection[]        @relation("StoryVideoSelectionCurrentAsset")
-  storyBuildAssets                 StoryBuildAsset[]            @relation("StoryBuildAssetMedia")
-  storyCandidateAssets             StoryCandidateAsset[]        @relation("StoryCandidateAssetMedia")
+  storyProjectCovers               StoryProject[]                    @relation("StoryProjectCover")
+  storyReferenceVersions           StoryReferenceVersion[]           @relation("StoryReferenceAsset")
+  storyVideoSelectionCurrentVideos StoryVideoSelection[]             @relation("StoryVideoSelectionCurrentAsset")
+  storyBuildAssets                 StoryBuildAsset[]                 @relation("StoryBuildAssetMedia")
+  storyCandidateAssets             StoryCandidateAsset[]             @relation("StoryCandidateAssetMedia")
+  storyAssetSpecMediaVersions      StoryAssetMediaVersion[]          @relation("StoryAssetSpecCreativeMedia")
+  storyStoryboardMediaVersions     StoryStoryboardClipMediaVersion[] @relation("StoryStoryboardClipCreativeMedia")
   moderationCases                  MediaModerationCase[]
   moderationActions                MediaModerationAction[]
   processingJobs                   MediaProcessingJob[]
@@ -7487,14 +7499,16 @@ model MediaAssetVariant {
   updatedAt       DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime?               @map("deleted_at") @db.Timestamptz(6)
 
-  asset                            MediaAsset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  placements                       MediaObjectPlacement[]
-  usages                           MediaAssetUsage[]
-  moderationActions                MediaModerationAction[]
-  processingJobs                   MediaProcessingJob[]    @relation("MediaProcessingSourceVariant")
-  storyReferenceVersions           StoryReferenceVersion[] @relation("StoryReferenceVariant")
-  storyVideoSelectionCurrentVideos StoryVideoSelection[]   @relation("StoryVideoSelectionCurrentVariant")
-  storyBuildAssets                 StoryBuildAsset[]       @relation("StoryBuildAssetVariant")
+  asset                              MediaAsset                        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  placements                         MediaObjectPlacement[]
+  usages                             MediaAssetUsage[]
+  moderationActions                  MediaModerationAction[]
+  processingJobs                     MediaProcessingJob[]              @relation("MediaProcessingSourceVariant")
+  storyReferenceVersions             StoryReferenceVersion[]           @relation("StoryReferenceVariant")
+  storyVideoSelectionCurrentVideos   StoryVideoSelection[]             @relation("StoryVideoSelectionCurrentVariant")
+  storyBuildAssets                   StoryBuildAsset[]                 @relation("StoryBuildAssetVariant")
+  storyAssetSpecPreferredRenditions  StoryAssetMediaVersion[]          @relation("StoryAssetSpecPreferredRendition")
+  storyStoryboardPreferredRenditions StoryStoryboardClipMediaVersion[] @relation("StoryStoryboardClipPreferredRendition")
 
   @@unique([assetId, variantKey], map: "media_asset_variants_asset_key_unique")
   @@unique([id, assetId], map: "media_asset_variants_id_asset_unique")
@@ -8064,6 +8078,13 @@ enum StoryAgentRunStatus {
   stale
 }
 
+/// Server-selected authoring admission route. Models and browsers never set it.
+enum StoryAgentAuthoringMode {
+  screenplay_required
+  downstream_reconcile
+  noop
+}
+
 enum StoryAgentProposalDecision {
   approve
   reject
@@ -8147,6 +8168,61 @@ enum StoryReferenceVersionStatus {
   failed
 }
 
+/// Lifecycle of an editable, chapter-scoped production specification. Media
+/// generation has its own lifecycle; these values describe only whether the
+/// specification still matches the Plot source from which it was planned.
+enum StoryProductionSpecStatus {
+  current
+  stale
+  archived
+}
+
+/// Whether the current specification came from the planner or is a creator
+/// value explicitly rebased onto the latest approved plan.
+enum StoryProductionPlanDisposition {
+  planned
+  user_override
+}
+
+/// A durable logical asset can exist before any image or video is generated.
+/// Creative outputs live in StoryAssetMediaVersion; MediaAssetVariant remains
+/// the technical rendition layer (thumbnail, poster, HLS, transcode, ...).
+enum StoryAssetSpecKind {
+  character
+  location
+  prop
+}
+
+enum StoryStoryboardClipKind {
+  image
+  video
+}
+
+/// Explicit media kind requested by one Story production generation command.
+/// Audio is intentionally excluded until Story production owns an audio spec.
+enum StoryProductionGenerationKind {
+  image
+  video
+}
+
+enum StoryProductionGenerationTargetKind {
+  asset_spec
+  storyboard_clip
+}
+
+enum StoryStoryboardBindingMode {
+  follow_selected
+  pinned
+}
+
+enum StoryStoryboardCueKind {
+  decision
+  interaction
+  dialogue
+  audio
+  overlay
+}
+
 enum WorldModelWorldStatus {
   generating
   ready
@@ -8189,8 +8265,8 @@ model StoryProject {
   createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                  DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  workspace               Workspace                     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  cover                   MediaAsset?                   @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
+  workspace               Workspace                         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  cover                   MediaAsset?                       @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
   members                 StoryProjectMember[]
   invites                 StoryProjectInvite[]
   draft                   StoryDraft?
@@ -8210,13 +8286,23 @@ model StoryProject {
   videoBuildClips         StoryVideoBuildClip[]
   storyBuildAssets        StoryBuildAsset[]
   candidateAssets         StoryCandidateAsset[]
+  assetSpecs              StoryAssetSpec[]
+  assetMediaVersions      StoryAssetMediaVersion[]
+  storyboardSequences     StoryStoryboardSequence[]
+  storyboardClips         StoryStoryboardClip[]
+  storyboardBindings      StoryStoryboardClipAssetBinding[]
+  storyboardMediaVersions StoryStoryboardClipMediaVersion[]
+  storyboardCues          StoryStoryboardCue[]
+  productionGenerations   StoryProductionGeneration[]
+  productionMutations     StoryProductionMutationReceipt[]
+  productionPlanSnapshots StoryProductionPlanSnapshot[]
   videoUploadSessions     StoryVideoUploadSession[]
   agentOsAttachments      AgentOsAttachment[]
   aiJobs                  AiJob[]
   skillState              ProjectSkillState?
   skillInstallations      ProjectSkillInstallation[]
   skillAudits             ProjectSkillAudit[]
-  skillCatalogItems       SkillCatalogItem[]            @relation("SkillCatalogStoryProject")
+  skillCatalogItems       SkillCatalogItem[]                @relation("SkillCatalogStoryProject")
   worldModelWorlds        WorldModelWorld[]
   worldModelSessions      WorldModelSession[]
   worldModelTravels       WorldModelTravel[]
@@ -8345,49 +8431,49 @@ model StoryProjectWriteState {
 /// change. Conversation messages remain user-private; the validated proposal,
 /// lifecycle, exact base/result revisions and undo material live here.
 model StoryAgentRun {
-  id                   String              @id @default(uuid(7)) @db.Uuid
-  storyProjectId       String              @map("story_project_id") @db.Uuid
-  storyChapterId       String              @map("story_chapter_id") @db.Uuid
-  workspaceId          String              @map("workspace_id") @db.Uuid
-  kind                 StoryAgentRunKind   @default(apply)
-  status               StoryAgentRunStatus @default(proposed)
-  initiatedByUserId    String              @map("initiated_by_user_id") @db.VarChar(64)
-  initiatedBySessionId String?             @map("initiated_by_session_id") @db.VarChar(64)
-  conversationId       String?             @map("conversation_id") @db.VarChar(180)
+  id                                 String                      @id @default(uuid(7)) @db.Uuid
+  storyProjectId                     String                      @map("story_project_id") @db.Uuid
+  storyChapterId                     String                      @map("story_chapter_id") @db.Uuid
+  workspaceId                        String                      @map("workspace_id") @db.Uuid
+  kind                               StoryAgentRunKind           @default(apply)
+  status                             StoryAgentRunStatus         @default(proposed)
+  initiatedByUserId                  String                      @map("initiated_by_user_id") @db.VarChar(64)
+  initiatedBySessionId               String?                     @map("initiated_by_session_id") @db.VarChar(64)
+  conversationId                     String?                     @map("conversation_id") @db.VarChar(180)
   /// Versioned decision contract. Existing rows are migrated to v1 and every
   /// newly-created run uses v2; only Agent-origin v2 rows participate in the
   /// durable approval continuation below.
-  decisionContractVersion Int               @default(2) @map("decision_contract_version")
+  decisionContractVersion            Int                         @default(2) @map("decision_contract_version")
   /// Durable origin for an Agent OS external-job handoff. The migration
   /// enforces these five source fields as an all-or-none tuple.
-  sourceAgentRunId           String?   @map("source_agent_run_id") @db.Uuid
-  sourceAgentTurnId          String?   @map("source_agent_turn_id") @db.Uuid
-  sourceAgentToolCallId      String?   @map("source_agent_tool_call_id") @db.VarChar(256)
-  sourceStartedMessage       String?   @map("source_started_message") @db.Text
-  sourceCompletionMessage    String?   @map("source_completion_message") @db.Text
-  sourceProposalReadyDeliveredAt DateTime? @map("source_proposal_ready_delivered_at") @db.Timestamptz(6)
-  sourceTerminalDeliveredAt      DateTime? @map("source_terminal_delivered_at") @db.Timestamptz(6)
-  sourceApprovalId               String?   @map("source_approval_id") @db.Uuid
-  sourceApprovalResponseId       String?   @map("source_approval_response_id") @db.Uuid
-  sourceApprovalResponseText     String?   @map("source_approval_response_text") @db.VarChar(300)
-  sourceApprovalLocale           String?   @map("source_approval_locale") @db.VarChar(16)
-  sourceApprovalDecisionTurnId   String?   @map("source_approval_decision_turn_id") @db.Uuid
-  sourceApprovalDecision         StoryAgentProposalDecision? @map("source_approval_decision")
-  sourceApprovalDecidedAt        DateTime? @map("source_approval_decided_at") @db.Timestamptz(6)
-  sourceApprovalDecidedByUserId  String?   @map("source_approval_decided_by_user_id") @db.VarChar(64)
+  sourceAgentRunId                   String?                     @map("source_agent_run_id") @db.Uuid
+  sourceAgentTurnId                  String?                     @map("source_agent_turn_id") @db.Uuid
+  sourceAgentToolCallId              String?                     @map("source_agent_tool_call_id") @db.VarChar(256)
+  sourceStartedMessage               String?                     @map("source_started_message") @db.Text
+  sourceCompletionMessage            String?                     @map("source_completion_message") @db.Text
+  sourceProposalReadyDeliveredAt     DateTime?                   @map("source_proposal_ready_delivered_at") @db.Timestamptz(6)
+  sourceTerminalDeliveredAt          DateTime?                   @map("source_terminal_delivered_at") @db.Timestamptz(6)
+  sourceApprovalId                   String?                     @map("source_approval_id") @db.Uuid
+  sourceApprovalResponseId           String?                     @map("source_approval_response_id") @db.Uuid
+  sourceApprovalResponseText         String?                     @map("source_approval_response_text") @db.VarChar(300)
+  sourceApprovalLocale               String?                     @map("source_approval_locale") @db.VarChar(16)
+  sourceApprovalDecisionTurnId       String?                     @map("source_approval_decision_turn_id") @db.Uuid
+  sourceApprovalDecision             StoryAgentProposalDecision? @map("source_approval_decision")
+  sourceApprovalDecidedAt            DateTime?                   @map("source_approval_decided_at") @db.Timestamptz(6)
+  sourceApprovalDecidedByUserId      String?                     @map("source_approval_decided_by_user_id") @db.VarChar(64)
   /// Legacy v1 terminal-delivery marker. V2 uses the proposal-ready and
   /// terminal markers independently so an approval pause is never terminal.
-  sourceResultDeliveredAt    DateTime? @map("source_result_delivered_at") @db.Timestamptz(6)
+  sourceResultDeliveredAt            DateTime?                   @map("source_result_delivered_at") @db.Timestamptz(6)
   /// Cross-pod delivery claim for the Story -> Agent OS continuation outbox.
   /// All retry scheduling uses PostgreSQL time; a crashed pod simply loses this
   /// lease and another pod resumes the same deterministic continuation.
-  sourceResultDeliveryAttempts       Int       @default(0) @map("source_result_delivery_attempts")
-  sourceResultDeliveryNextAttemptAt  DateTime? @map("source_result_delivery_next_attempt_at") @db.Timestamptz(6)
-  sourceResultDeliveryLeaseOwner     String?   @map("source_result_delivery_lease_owner") @db.VarChar(160)
-  sourceResultDeliveryLeaseExpiresAt DateTime? @map("source_result_delivery_lease_expires_at") @db.Timestamptz(6)
-  sourceResultDeliveryLastError      String?   @map("source_result_delivery_last_error") @db.Text
-  confirmedByUserId    String?             @map("confirmed_by_user_id") @db.VarChar(64)
-  cancelledByUserId    String?             @map("cancelled_by_user_id") @db.VarChar(64)
+  sourceResultDeliveryAttempts       Int                         @default(0) @map("source_result_delivery_attempts")
+  sourceResultDeliveryNextAttemptAt  DateTime?                   @map("source_result_delivery_next_attempt_at") @db.Timestamptz(6)
+  sourceResultDeliveryLeaseOwner     String?                     @map("source_result_delivery_lease_owner") @db.VarChar(160)
+  sourceResultDeliveryLeaseExpiresAt DateTime?                   @map("source_result_delivery_lease_expires_at") @db.Timestamptz(6)
+  sourceResultDeliveryLastError      String?                     @map("source_result_delivery_last_error") @db.Text
+  confirmedByUserId                  String?                     @map("confirmed_by_user_id") @db.VarChar(64)
+  cancelledByUserId                  String?                     @map("cancelled_by_user_id") @db.VarChar(64)
 
   baseDraftRevision    Int  @map("base_draft_revision")
   baseLayoutRevision   Int  @map("base_layout_revision")
@@ -8406,18 +8492,19 @@ model StoryAgentRun {
   affectedNodeIds      Json    @default("[]") @map("affected_node_ids") @db.JsonB
   createdNodeIds       Json    @default("[]") @map("created_node_ids") @db.JsonB
 
-  summary            String? @db.Text
-  authoringAttempts  Int     @default(0) @map("authoring_attempts")
+  summary            String?                  @db.Text
+  authoringAttempts  Int                      @default(0) @map("authoring_attempts")
   // Per-baton pipeline progress while status=authoring: an ordered array of
   // {key,status} the run-card renders as a stage checklist. Null outside the
   // authoring window. Intermediate stage products are NOT persisted — a lease
   // reclaim reruns the whole (bounded) pipeline.
-  authoringStages    Json?   @map("authoring_stages") @db.JsonB
-  errorCode          String? @map("error_code") @db.VarChar(96)
-  errorDetail        String? @map("error_detail") @db.Text
-  idempotencyKey     String  @unique @map("idempotency_key") @db.VarChar(240)
-  requestFingerprint String  @map("request_fingerprint") @db.VarChar(64)
-  revertsRunId       String? @map("reverts_run_id") @db.Uuid
+  authoringStages    Json?                    @map("authoring_stages") @db.JsonB
+  authoringMode      StoryAgentAuthoringMode? @map("authoring_mode")
+  errorCode          String?                  @map("error_code") @db.VarChar(96)
+  errorDetail        String?                  @map("error_detail") @db.Text
+  idempotencyKey     String                   @unique @map("idempotency_key") @db.VarChar(240)
+  requestFingerprint String                   @map("request_fingerprint") @db.VarChar(64)
+  revertsRunId       String?                  @map("reverts_run_id") @db.Uuid
 
   fencingToken    BigInt?   @map("fencing_token")
   leaseOwner      String?   @map("lease_owner") @db.VarChar(160)
@@ -8434,22 +8521,22 @@ model StoryAgentRun {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project          StoryProject            @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
-  chapter          StoryChapter            @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
-  activeWriteState StoryProjectWriteState? @relation("StoryProjectActiveAgentRun")
-  revertsRun       StoryAgentRun?          @relation("StoryAgentRunUndo", fields: [revertsRunId], references: [id], onDelete: Restrict)
-  undoRuns         StoryAgentRun[]         @relation("StoryAgentRunUndo")
+  project                     StoryProject                        @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  chapter                     StoryChapter                        @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
+  activeWriteState            StoryProjectWriteState?             @relation("StoryProjectActiveAgentRun")
+  revertsRun                  StoryAgentRun?                      @relation("StoryAgentRunUndo", fields: [revertsRunId], references: [id], onDelete: Restrict)
+  undoRuns                    StoryAgentRun[]                     @relation("StoryAgentRunUndo")
   externalHandoffRegistration AgentOsExternalHandoffRegistration?
 
   @@unique([id, storyProjectId], map: "story_agent_runs_id_project_unique")
+  @@unique([sourceApprovalResponseId], map: "story_agent_runs_source_approval_response_unique")
+  @@unique([sourceAgentRunId, sourceApprovalId], map: "story_agent_runs_source_approval_unique")
   @@index([storyChapterId, status, createdAt(sort: Desc)], map: "story_agent_runs_chapter_status_recent_idx")
   @@index([storyProjectId, status, createdAt(sort: Desc)], map: "story_agent_runs_project_status_recent_idx")
   @@index([storyProjectId, kind, status, resultDraftRevision, resultLayoutRevision, completedAt(sort: Desc), id(sort: Desc)], map: "story_agent_runs_undo_head_idx")
   @@index([status, expiresAt, id], map: "story_agent_runs_proposal_expiry_idx")
   @@index([initiatedByUserId, createdAt(sort: Desc)], map: "story_agent_runs_initiator_recent_idx")
   @@index([revertsRunId], map: "story_agent_runs_reverts_idx")
-  @@unique([sourceApprovalResponseId], map: "story_agent_runs_source_approval_response_unique")
-  @@unique([sourceAgentRunId, sourceApprovalId], map: "story_agent_runs_source_approval_unique")
   @@map("story_agent_runs")
 }
 
@@ -8506,20 +8593,39 @@ model StoryVideoUploadSession {
 }
 
 model StoryChapter {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  storyProjectId  String    @map("story_project_id") @db.Uuid
-  title           String    @db.VarChar(160)
-  rank            Int
-  nodeIds         Json      @default("[]") @map("node_ids") @db.JsonB
-  entryNodeId     String?   @map("entry_node_id") @db.VarChar(120)
-  createdByUserId String    @map("created_by_user_id") @db.VarChar(64)
-  archivedAt      DateTime? @map("archived_at") @db.Timestamptz(6)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                     String    @id @default(uuid(7)) @db.Uuid
+  storyProjectId         String    @map("story_project_id") @db.Uuid
+  title                  String    @db.VarChar(160)
+  rank                   Int
+  nodeIds                Json      @default("[]") @map("node_ids") @db.JsonB
+  entryNodeId            String?   @map("entry_node_id") @db.VarChar(120)
+  /// Exact approved Script head from which this chapter's current graph was derived.
+  /// Null is reserved for chapters that have not approved a screenplay yet.
+  sourceScriptDocumentId String?   @map("source_script_document_id") @db.Uuid
+  sourceScriptVersionId  String?   @map("source_script_version_id") @db.Uuid
+  sourceScriptSequence   Int?      @map("source_script_sequence")
+  sourceScriptHash       String?   @map("source_script_hash") @db.VarChar(64)
+  createdByUserId        String    @map("created_by_user_id") @db.VarChar(64)
+  archivedAt             DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project      StoryProject       @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  canvasLayout StoryCanvasLayout?
-  agentRuns    StoryAgentRun[]
+  project                 StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  canvasLayout            StoryCanvasLayout?
+  agentRuns               StoryAgentRun[]
+  documents               StudioDocument[]
+  sourceScriptDocument    StudioDocument?                   @relation("StoryChapterSourceScriptDocument", fields: [sourceScriptDocumentId], references: [id], onDelete: Restrict)
+  sourceScriptVersion     StudioDocumentVersion?            @relation("StoryChapterSourceScriptVersion", fields: [sourceScriptVersionId, sourceScriptDocumentId], references: [id, documentId], onDelete: Restrict)
+  assetSpecs              StoryAssetSpec[]
+  assetMediaVersions      StoryAssetMediaVersion[]
+  storyboardSequences     StoryStoryboardSequence[]
+  storyboardClips         StoryStoryboardClip[]
+  storyboardBindings      StoryStoryboardClipAssetBinding[]
+  storyboardMedia         StoryStoryboardClipMediaVersion[]
+  storyboardCues          StoryStoryboardCue[]
+  productionGenerations   StoryProductionGeneration[]
+  productionMutations     StoryProductionMutationReceipt[]
+  productionPlanSnapshots StoryProductionPlanSnapshot[]
 
   @@unique([id, storyProjectId], map: "story_chapters_id_project_unique")
   @@index([storyProjectId, rank], map: "story_chapters_project_rank_idx")
@@ -8622,6 +8728,378 @@ model StoryCandidateAsset {
   @@index([storyProjectId, addedAt(sort: Desc)], map: "story_candidate_assets_project_recent_idx")
   @@index([mediaAssetId], map: "story_candidate_assets_media_idx")
   @@map("story_candidate_assets")
+}
+
+/// Immutable record of an approved production plan, referenced by stale
+/// targets so conflict resolution always applies the exact plan it offered.
+model StoryProductionPlanSnapshot {
+  id                String   @id @default(uuid(7)) @db.Uuid
+  storyProjectId    String   @map("story_project_id") @db.Uuid
+  storyChapterId    String   @map("story_chapter_id") @db.Uuid
+  sourceFingerprint String   @map("source_fingerprint") @db.VarChar(64)
+  planFingerprint   String   @map("plan_fingerprint") @db.VarChar(64)
+  productionPlan    Json     @map("production_plan") @db.JsonB
+  createdByUserId   String   @map("created_by_user_id") @db.VarChar(64)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project                    StoryProject              @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter                    StoryChapter              @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  pendingAssetSpecs          StoryAssetSpec[]          @relation("StoryAssetSpecPendingPlan")
+  pendingStoryboardSequences StoryStoryboardSequence[] @relation("StoryStoryboardSequencePendingPlan")
+
+  @@unique([storyChapterId, planFingerprint], map: "story_production_plan_snapshots_chapter_fingerprint_unique")
+  @@unique([id, storyChapterId, storyProjectId], map: "story_production_plan_snapshots_scope_unique")
+  @@index([storyProjectId, storyChapterId, createdAt(sort: Desc)], map: "story_production_plan_snapshots_chapter_recent_idx")
+  @@map("story_production_plan_snapshots")
+}
+
+/// Chapter-owned logical asset definition. This row is deliberately useful
+/// while `selectedMediaVersionId` is null, which is what makes an empty asset
+/// a stable @ reference for Storyboard clips.
+model StoryAssetSpec {
+  id                       String                         @id @default(uuid(7)) @db.Uuid
+  storyProjectId           String                         @map("story_project_id") @db.Uuid
+  storyChapterId           String                         @map("story_chapter_id") @db.Uuid
+  stableKey                String                         @map("stable_key") @db.VarChar(120)
+  kind                     StoryAssetSpecKind
+  sourceCharacterId        String?                        @map("source_character_id") @db.VarChar(120)
+  sourceNodeIds            Json                           @map("source_node_ids") @db.JsonB
+  name                     String                         @db.VarChar(240)
+  description              String?                        @db.Text
+  imagePrompt              String                         @map("image_prompt") @db.Text
+  videoPrompt              String?                        @map("video_prompt") @db.Text
+  negativePrompt           String?                        @map("negative_prompt") @db.Text
+  generationConfig         Json                           @default("{}") @map("generation_config") @db.JsonB
+  sourceFingerprint        String                         @map("source_fingerprint") @db.VarChar(64)
+  pendingSourceFingerprint String?                        @map("pending_source_fingerprint") @db.VarChar(64)
+  pendingPlanSnapshotId    String?                        @map("pending_plan_snapshot_id") @db.Uuid
+  planDisposition          StoryProductionPlanDisposition @default(planned) @map("plan_disposition")
+  status                   StoryProductionSpecStatus      @default(current)
+  version                  Int                            @default(0)
+  selectedMediaVersionId   String?                        @map("selected_media_version_id") @db.Uuid
+  userModifiedAt           DateTime?                      @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId     String?                        @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId          String                         @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt            DateTime                       @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt                DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project              StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter              StoryChapter                      @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  mediaVersions        StoryAssetMediaVersion[]          @relation("StoryAssetSpecMediaVersions")
+  selectedMediaVersion StoryAssetMediaVersion?           @relation("StoryAssetSpecSelectedMediaVersion", fields: [selectedMediaVersionId, id, storyChapterId, storyProjectId], references: [id, assetSpecId, storyChapterId, storyProjectId], onDelete: NoAction)
+  storyboardBindings   StoryStoryboardClipAssetBinding[]
+  generations          StoryProductionGeneration[]
+  pendingPlanSnapshot  StoryProductionPlanSnapshot?      @relation("StoryAssetSpecPendingPlan", fields: [pendingPlanSnapshotId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: NoAction)
+
+  @@unique([storyChapterId, stableKey], map: "story_asset_specs_chapter_key_unique")
+  @@unique([id, storyChapterId, storyProjectId], map: "story_asset_specs_scope_unique")
+  @@unique([selectedMediaVersionId, id, storyChapterId, storyProjectId], map: "story_asset_specs_selected_version_scope_unique")
+  @@index([storyProjectId, storyChapterId, kind, status], map: "story_asset_specs_chapter_kind_status_idx")
+  @@map("story_asset_specs")
+}
+
+/// One creative output for a StoryAssetSpec. The optional technical variant
+/// points at a preferred delivery rendition of the same MediaAsset.
+model StoryAssetMediaVersion {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  storyProjectId     String    @map("story_project_id") @db.Uuid
+  storyChapterId     String    @map("story_chapter_id") @db.Uuid
+  assetSpecId        String    @map("asset_spec_id") @db.Uuid
+  versionNumber      Int       @map("version_number")
+  mediaAssetId       String    @map("media_asset_id") @db.Uuid
+  preferredVariantId String?   @map("preferred_variant_id") @db.Uuid
+  sourceFingerprint  String    @map("source_fingerprint") @db.VarChar(64)
+  generationSnapshot Json      @default("{}") @map("generation_snapshot") @db.JsonB
+  generationId       String?   @map("generation_id") @db.Uuid
+  aiJobId            String?   @map("ai_job_id") @db.Uuid
+  aiJobOutputId      String?   @unique(map: "story_asset_media_versions_ai_output_unique") @map("ai_job_output_id")
+  createdByUserId    String    @map("created_by_user_id") @db.VarChar(64)
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project          StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter          StoryChapter                      @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  assetSpec        StoryAssetSpec                    @relation("StoryAssetSpecMediaVersions", fields: [assetSpecId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade)
+  mediaAsset       MediaAsset                        @relation("StoryAssetSpecCreativeMedia", fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  preferredVariant MediaAssetVariant?                @relation("StoryAssetSpecPreferredRendition", fields: [preferredVariantId, mediaAssetId], references: [id, assetId], onDelete: Restrict)
+  selectedForSpec  StoryAssetSpec[]                  @relation("StoryAssetSpecSelectedMediaVersion")
+  pinnedByBindings StoryStoryboardClipAssetBinding[]
+  generation       StoryProductionGeneration?        @relation("StoryAssetMediaVersionGeneration", fields: [generationId, aiJobId], references: [id, aiJobId], onDelete: NoAction, map: "story_asset_media_versions_generation_job_fkey")
+  aiJobOutput      AiJobOutput?                      @relation("StoryAssetMediaVersionAiOutput", fields: [aiJobOutputId, aiJobId], references: [id, jobId], onDelete: Restrict, map: "story_asset_media_versions_ai_output_job_fkey")
+
+  @@unique([assetSpecId, versionNumber], map: "story_asset_media_versions_spec_number_unique")
+  @@unique([id, assetSpecId, storyChapterId, storyProjectId], map: "story_asset_media_versions_scope_unique")
+  @@index([storyProjectId, storyChapterId, createdAt(sort: Desc)], map: "story_asset_media_versions_chapter_recent_idx")
+  @@index([mediaAssetId], map: "story_asset_media_versions_media_idx")
+  @@index([generationId], map: "story_asset_media_versions_generation_idx")
+  @@index([aiJobId], map: "story_asset_media_versions_ai_job_idx")
+  @@map("story_asset_media_versions")
+}
+
+/// The one Storyboard timeline owned by one chapter Plot node. Plot topology
+/// remains authoritative in StoryDraft; this sequence owns only presentation.
+model StoryStoryboardSequence {
+  id                       String                         @id @default(uuid(7)) @db.Uuid
+  storyProjectId           String                         @map("story_project_id") @db.Uuid
+  storyChapterId           String                         @map("story_chapter_id") @db.Uuid
+  plotNodeId               String                         @map("plot_node_id") @db.VarChar(120)
+  stableKey                String                         @map("stable_key") @db.VarChar(120)
+  title                    String?                        @db.VarChar(240)
+  description              String?                        @db.Text
+  suggestedDurationMs      Int                            @map("suggested_duration_ms")
+  durationMs               Int                            @map("duration_ms")
+  sourceFingerprint        String                         @map("source_fingerprint") @db.VarChar(64)
+  pendingSourceFingerprint String?                        @map("pending_source_fingerprint") @db.VarChar(64)
+  pendingPlanSnapshotId    String?                        @map("pending_plan_snapshot_id") @db.Uuid
+  planDisposition          StoryProductionPlanDisposition @default(planned) @map("plan_disposition")
+  status                   StoryProductionSpecStatus      @default(current)
+  version                  Int                            @default(0)
+  userModifiedAt           DateTime?                      @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId     String?                        @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId          String                         @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt            DateTime                       @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt                DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project             StoryProject                 @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter             StoryChapter                 @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  clips               StoryStoryboardClip[]
+  cues                StoryStoryboardCue[]
+  pendingPlanSnapshot StoryProductionPlanSnapshot? @relation("StoryStoryboardSequencePendingPlan", fields: [pendingPlanSnapshotId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: NoAction)
+
+  @@unique([storyChapterId, plotNodeId], map: "story_storyboard_sequences_chapter_plot_unique")
+  @@unique([storyChapterId, stableKey], map: "story_storyboard_sequences_chapter_key_unique")
+  @@unique([id, storyChapterId, storyProjectId], map: "story_storyboard_sequences_scope_unique")
+  @@index([storyProjectId, storyChapterId, status], map: "story_storyboard_sequences_chapter_status_idx")
+  @@map("story_storyboard_sequences")
+}
+
+/// One timed visual item inside a StoryboardSequence. A Plot node may use one
+/// image, several videos, or any image/video combination without a Frame cap.
+model StoryStoryboardClip {
+  id                       String                    @id @default(uuid(7)) @db.Uuid
+  storyProjectId           String                    @map("story_project_id") @db.Uuid
+  storyChapterId           String                    @map("story_chapter_id") @db.Uuid
+  sequenceId               String                    @map("sequence_id") @db.Uuid
+  stableKey                String                    @map("stable_key") @db.VarChar(120)
+  title                    String                    @db.VarChar(160)
+  rank                     Int
+  kind                     StoryStoryboardClipKind
+  track                    String                    @db.VarChar(64)
+  startMs                  Int                       @map("start_ms")
+  durationMs               Int                       @map("duration_ms")
+  description              String?                   @db.Text
+  imagePrompt              String?                   @map("image_prompt") @db.Text
+  videoPrompt              String?                   @map("video_prompt") @db.Text
+  negativePrompt           String?                   @map("negative_prompt") @db.Text
+  generationConfig         Json                      @default("{}") @map("generation_config") @db.JsonB
+  sourceFingerprint        String                    @map("source_fingerprint") @db.VarChar(64)
+  pendingSourceFingerprint String?                   @map("pending_source_fingerprint") @db.VarChar(64)
+  status                   StoryProductionSpecStatus @default(current)
+  version                  Int                       @default(0)
+  selectedMediaVersionId   String?                   @map("selected_media_version_id") @db.Uuid
+  userModifiedAt           DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId     String?                   @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId          String                    @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt            DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt                DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project              StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter              StoryChapter                      @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  sequence             StoryStoryboardSequence           @relation(fields: [sequenceId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade)
+  assetBindings        StoryStoryboardClipAssetBinding[]
+  mediaVersions        StoryStoryboardClipMediaVersion[] @relation("StoryStoryboardClipMediaVersions")
+  selectedMediaVersion StoryStoryboardClipMediaVersion?  @relation("StoryStoryboardClipSelectedMediaVersion", fields: [selectedMediaVersionId, id, storyChapterId, storyProjectId], references: [id, storyboardClipId, storyChapterId, storyProjectId], onDelete: NoAction)
+  cues                 StoryStoryboardCue[]
+  generations          StoryProductionGeneration[]
+
+  @@unique([sequenceId, stableKey], map: "story_storyboard_clips_sequence_key_unique")
+  @@unique([sequenceId, rank], map: "story_storyboard_clips_sequence_rank_unique")
+  @@unique([id, sequenceId, storyChapterId, storyProjectId], map: "story_storyboard_clips_sequence_scope_unique")
+  @@unique([id, storyChapterId, storyProjectId], map: "story_storyboard_clips_scope_unique")
+  @@unique([selectedMediaVersionId, id, storyChapterId, storyProjectId], map: "story_storyboard_clips_selected_version_scope_unique")
+  @@index([storyProjectId, storyChapterId, sequenceId, rank], map: "story_storyboard_clips_chapter_sequence_idx")
+  @@map("story_storyboard_clips")
+}
+
+/// Structured @AssetSpec reference. `follow_selected` is valid while the
+/// AssetSpec is empty; `pinned` must name one creative version of that spec.
+model StoryStoryboardClipAssetBinding {
+  id                       String                     @id @default(uuid(7)) @db.Uuid
+  storyProjectId           String                     @map("story_project_id") @db.Uuid
+  storyChapterId           String                     @map("story_chapter_id") @db.Uuid
+  storyboardClipId         String                     @map("storyboard_clip_id") @db.Uuid
+  assetSpecId              String                     @map("asset_spec_id") @db.Uuid
+  role                     String                     @db.VarChar(64)
+  mode                     StoryStoryboardBindingMode @default(follow_selected)
+  pinnedMediaVersionId     String?                    @map("pinned_media_version_id") @db.Uuid
+  required                 Boolean                    @default(true)
+  rank                     Int                        @default(0)
+  sourceFingerprint        String                     @map("source_fingerprint") @db.VarChar(64)
+  pendingSourceFingerprint String?                    @map("pending_source_fingerprint") @db.VarChar(64)
+  status                   StoryProductionSpecStatus  @default(current)
+  version                  Int                        @default(0)
+  userModifiedAt           DateTime?                  @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId     String?                    @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId          String                     @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt            DateTime                   @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project            StoryProject            @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter            StoryChapter            @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  storyboardClip     StoryStoryboardClip     @relation(fields: [storyboardClipId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade)
+  assetSpec          StoryAssetSpec          @relation(fields: [assetSpecId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade)
+  pinnedMediaVersion StoryAssetMediaVersion? @relation(fields: [pinnedMediaVersionId, assetSpecId, storyChapterId, storyProjectId], references: [id, assetSpecId, storyChapterId, storyProjectId], onDelete: Restrict)
+
+  @@unique([storyboardClipId, assetSpecId, role], map: "story_storyboard_bindings_clip_asset_role_unique")
+  @@unique([id, storyChapterId, storyProjectId], map: "story_storyboard_bindings_scope_unique")
+  @@index([storyProjectId, storyChapterId, storyboardClipId, rank], map: "story_storyboard_bindings_chapter_clip_idx")
+  @@map("story_storyboard_clip_asset_bindings")
+}
+
+/// A creative output generated for one Storyboard clip. This is distinct from
+/// both an AssetSpec's media versions and MediaAssetVariant renditions.
+model StoryStoryboardClipMediaVersion {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  storyProjectId     String    @map("story_project_id") @db.Uuid
+  storyChapterId     String    @map("story_chapter_id") @db.Uuid
+  storyboardClipId   String    @map("storyboard_clip_id") @db.Uuid
+  versionNumber      Int       @map("version_number")
+  mediaAssetId       String    @map("media_asset_id") @db.Uuid
+  preferredVariantId String?   @map("preferred_variant_id") @db.Uuid
+  sourceFingerprint  String    @map("source_fingerprint") @db.VarChar(64)
+  generationSnapshot Json      @default("{}") @map("generation_snapshot") @db.JsonB
+  generationId       String?   @map("generation_id") @db.Uuid
+  aiJobId            String?   @map("ai_job_id") @db.Uuid
+  aiJobOutputId      String?   @unique(map: "story_storyboard_media_versions_ai_output_unique") @map("ai_job_output_id")
+  createdByUserId    String    @map("created_by_user_id") @db.VarChar(64)
+  archivedAt         DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project          StoryProject               @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter          StoryChapter               @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  storyboardClip   StoryStoryboardClip        @relation("StoryStoryboardClipMediaVersions", fields: [storyboardClipId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade)
+  mediaAsset       MediaAsset                 @relation("StoryStoryboardClipCreativeMedia", fields: [mediaAssetId], references: [id], onDelete: Restrict)
+  preferredVariant MediaAssetVariant?         @relation("StoryStoryboardClipPreferredRendition", fields: [preferredVariantId, mediaAssetId], references: [id, assetId], onDelete: Restrict)
+  selectedForClip  StoryStoryboardClip[]      @relation("StoryStoryboardClipSelectedMediaVersion")
+  generation       StoryProductionGeneration? @relation("StoryStoryboardMediaVersionGeneration", fields: [generationId, aiJobId], references: [id, aiJobId], onDelete: NoAction, map: "story_storyboard_media_versions_generation_job_fkey")
+  aiJobOutput      AiJobOutput?               @relation("StoryStoryboardMediaVersionAiOutput", fields: [aiJobOutputId, aiJobId], references: [id, jobId], onDelete: Restrict, map: "story_storyboard_media_versions_ai_output_job_fkey")
+
+  @@unique([storyboardClipId, versionNumber], map: "story_storyboard_media_versions_clip_number_unique")
+  @@unique([id, storyboardClipId, storyChapterId, storyProjectId], map: "story_storyboard_media_versions_scope_unique")
+  @@index([storyProjectId, storyChapterId, createdAt(sort: Desc)], map: "story_storyboard_media_versions_chapter_recent_idx")
+  @@index([mediaAssetId], map: "story_storyboard_media_versions_media_idx")
+  @@index([generationId], map: "story_storyboard_media_versions_generation_idx")
+  @@index([aiJobId], map: "story_storyboard_media_versions_ai_job_idx")
+  @@map("story_storyboard_clip_media_versions")
+}
+
+/// Timed presentation metadata. Plot exits and choices remain authoritative
+/// in StoryDraft; a cue only places that decision or interaction on a sequence.
+model StoryStoryboardCue {
+  id                       String                    @id @default(uuid(7)) @db.Uuid
+  storyProjectId           String                    @map("story_project_id") @db.Uuid
+  storyChapterId           String                    @map("story_chapter_id") @db.Uuid
+  sequenceId               String                    @map("sequence_id") @db.Uuid
+  storyboardClipId         String?                   @map("storyboard_clip_id") @db.Uuid
+  stableKey                String                    @map("stable_key") @db.VarChar(120)
+  kind                     StoryStoryboardCueKind
+  plotDecisionId           String?                   @map("plot_decision_id") @db.VarChar(120)
+  atMs                     Int                       @map("at_ms")
+  durationMs               Int?                      @map("duration_ms")
+  payload                  Json                      @default("{}") @db.JsonB
+  sourceFingerprint        String                    @map("source_fingerprint") @db.VarChar(64)
+  pendingSourceFingerprint String?                   @map("pending_source_fingerprint") @db.VarChar(64)
+  status                   StoryProductionSpecStatus @default(current)
+  version                  Int                       @default(0)
+  userModifiedAt           DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId     String?                   @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId          String                    @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt            DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt                DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project        StoryProject            @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter        StoryChapter            @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  sequence       StoryStoryboardSequence @relation(fields: [sequenceId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade)
+  storyboardClip StoryStoryboardClip?    @relation(fields: [storyboardClipId, sequenceId, storyChapterId, storyProjectId], references: [id, sequenceId, storyChapterId, storyProjectId], onDelete: Cascade)
+
+  @@unique([sequenceId, stableKey], map: "story_storyboard_cues_sequence_key_unique")
+  @@unique([id, storyChapterId, storyProjectId], map: "story_storyboard_cues_scope_unique")
+  @@index([storyProjectId, storyChapterId, sequenceId, atMs], map: "story_storyboard_cues_chapter_sequence_idx")
+  @@map("story_storyboard_cues")
+}
+
+/// One explicit, user-triggered request to generate media for a persisted
+/// Story production target. The logical AssetSpec / StoryboardClip never owns
+/// generated URLs; this row is the durable correlation authority between the
+/// target snapshot, the generic AiJob and the creative media version(s).
+model StoryProductionGeneration {
+  id                      String                              @id @default(uuid(7)) @db.Uuid
+  storyProjectId          String                              @map("story_project_id") @db.Uuid
+  storyChapterId          String                              @map("story_chapter_id") @db.Uuid
+  targetKind              StoryProductionGenerationTargetKind @map("target_kind")
+  generationKind          StoryProductionGenerationKind       @map("generation_kind")
+  assetSpecId             String?                             @map("asset_spec_id") @db.Uuid
+  storyboardClipId        String?                             @map("storyboard_clip_id") @db.Uuid
+  aiJobId                 String                              @unique(map: "story_production_generations_ai_job_unique") @map("ai_job_id") @db.Uuid
+  actorUserId             String                              @map("actor_user_id") @db.VarChar(64)
+  idempotencyKey          String                              @map("idempotency_key") @db.VarChar(160)
+  requestFingerprint      String                              @map("request_fingerprint") @db.VarChar(64)
+  targetVersion           Int                                 @map("target_version")
+  targetSourceFingerprint String                              @map("target_source_fingerprint") @db.VarChar(64)
+  promptSnapshot          Json                                @map("prompt_snapshot") @db.JsonB
+  submissionSnapshot      Json                                @map("submission_snapshot") @db.JsonB
+  retryOfGenerationId     String?                             @map("retry_of_generation_id") @db.Uuid
+  materializedAt          DateTime?                           @map("materialized_at") @db.Timestamptz(6)
+  materializationError    Json?                               @map("materialization_error") @db.JsonB
+  reconcileAttempts       Int                                 @default(0) @map("reconcile_attempts")
+  lastReconciledAt        DateTime?                           @map("last_reconciled_at") @db.Timestamptz(6)
+  nextReconcileAt         DateTime?                           @map("next_reconcile_at") @db.Timestamptz(6)
+  createdAt               DateTime                            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  project                 StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade, map: "story_production_generations_project_fkey")
+  chapter                 StoryChapter                      @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade, map: "story_production_generations_chapter_scope_fkey")
+  assetSpec               StoryAssetSpec?                   @relation(fields: [assetSpecId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade, map: "story_production_generations_asset_scope_fkey")
+  storyboardClip          StoryStoryboardClip?              @relation(fields: [storyboardClipId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: Cascade, map: "story_production_generations_clip_scope_fkey")
+  aiJob                   AiJob                             @relation(fields: [aiJobId], references: [id], onDelete: Restrict, map: "story_production_generations_ai_job_fkey")
+  retryOfGeneration       StoryProductionGeneration?        @relation("StoryProductionGenerationRetry", fields: [retryOfGenerationId], references: [id], onDelete: Cascade, map: "story_production_generations_retry_fkey")
+  retries                 StoryProductionGeneration[]       @relation("StoryProductionGenerationRetry")
+  assetMediaVersions      StoryAssetMediaVersion[]          @relation("StoryAssetMediaVersionGeneration")
+  storyboardMediaVersions StoryStoryboardClipMediaVersion[] @relation("StoryStoryboardMediaVersionGeneration")
+
+  @@unique([id, aiJobId], map: "story_production_generations_id_job_unique")
+  @@unique([storyChapterId, actorUserId, idempotencyKey], map: "story_production_generations_actor_key_unique")
+  @@index([storyProjectId, storyChapterId, targetKind, assetSpecId, storyboardClipId, createdAt(sort: Desc)], map: "story_production_generations_target_recent_idx")
+  @@index([materializedAt, nextReconcileAt, createdAt], map: "story_production_generations_reconcile_idx")
+  @@index([retryOfGenerationId], map: "story_production_generations_retry_idx")
+  @@map("story_production_generations")
+}
+
+/// Durable HTTP mutation replay authority. CAS protects concurrent edits;
+/// this receipt lets a client retry a committed request after losing its HTTP
+/// response without manufacturing a second mutation.
+model StoryProductionMutationReceipt {
+  id                 String   @id @default(uuid(7)) @db.Uuid
+  storyProjectId     String   @map("story_project_id") @db.Uuid
+  storyChapterId     String   @map("story_chapter_id") @db.Uuid
+  actorUserId        String   @map("actor_user_id") @db.VarChar(64)
+  idempotencyKey     String   @map("idempotency_key") @db.VarChar(160)
+  operation          String   @db.VarChar(96)
+  requestFingerprint String   @map("request_fingerprint") @db.VarChar(64)
+  response           Json     @db.JsonB
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter StoryChapter @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+
+  @@unique([storyChapterId, actorUserId, idempotencyKey], map: "story_production_mutations_actor_key_unique")
+  @@index([storyProjectId, storyChapterId, createdAt(sort: Desc)], map: "story_production_mutations_chapter_recent_idx")
+  @@map("story_production_mutation_receipts")
 }
 
 model StoryRevision {

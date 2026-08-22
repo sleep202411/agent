@@ -3,6 +3,7 @@ import { DocumentsModule } from '../documents/documents.module';
 import { AgentOsJournalModule } from '../agent-os-journal/agent-os-journal.module';
 import { AblyTokenCredentialsModule } from '../infra/realtime/ably-token-credentials';
 import { StoryStudioModule } from '../story-studio/story-studio.module';
+import { StoryProductionPlanModule } from '../story-studio/story-production-plan.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { ProjectSkillsModule } from '../project-skills';
 import { AgentOsAttachmentService } from './agent-os-attachment.service';
@@ -26,6 +27,7 @@ import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
 @Module({
   imports: [
     StoryStudioModule,
+    StoryProductionPlanModule,
     AgentOsJournalModule,
     WorkspacesModule,
     AblyTokenCredentialsModule,

@@ -13,19 +13,33 @@ import {
   StoryRevisionSource,
   StoryVisualStyle,
   StoryVisibility,
+  StudioDocumentOperationType,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   WorkspaceMemberRole,
   WorkspaceType,
 } from '@prisma/client';
-import type { StoryAgentRunDto } from '@repo/shared/story-agent';
+import {
+  STORY_SCREENPLAY_SCHEMA_VERSION,
+  buildStoryScreenplayDocument,
+  type StoryAgentRunDto,
+  type StoryScreenplay,
+} from '@repo/shared/story-agent';
+import {
+  STORY_PRODUCTION_PLAN_SCHEMA_VERSION,
+  type StoryProductionPlan,
+} from '@repo/shared/story-production';
 import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
+import * as Y from 'yjs';
 import type { AuthUser } from '../auth';
 import {
   AgentOsRunJournalService,
   storyProposalApprovalId,
 } from '../agent-os-journal/agent-os-run-journal.service';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
+import { ensureStoryScriptDocumentInTransaction } from '../documents/story-script-document';
 import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -38,6 +52,8 @@ import { StoryAgentRunContinuationWorkerService } from './story-agent-run-contin
 import { StoryAgentRunService } from './story-agent-run.service';
 import type { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
+import { StoryProductionPlanService } from './story-production-plan.service';
+import { readStoryScriptHead } from './story-script-stage';
 
 loadEnv({
   path: resolve(__dirname, '../../.env'),
@@ -91,6 +107,46 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     await cleanupFixtures(prisma, [...fixtureWorkspaceIds]);
     await removeAbandonedFixtures(prisma);
     await prisma.$disconnect();
+  });
+
+  it('converges concurrent legacy Script provisioning on one durable chapter identity', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+
+    const [first, second] = await Promise.all([
+      prisma.$transaction((tx) =>
+        ensureStoryScriptDocumentInTransaction(tx, {
+          workspaceId: fixture.workspaceId,
+          storyProjectId: fixture.projectId,
+          storyChapterId: fixture.chapterId,
+          actorUserId: fixture.user.userId,
+        }),
+      ),
+      prisma.$transaction((tx) =>
+        ensureStoryScriptDocumentInTransaction(tx, {
+          workspaceId: fixture.workspaceId,
+          storyProjectId: fixture.projectId,
+          storyChapterId: fixture.chapterId,
+          actorUserId: fixture.user.userId,
+        }),
+      ),
+    ]);
+
+    expect(first.document.id).toBe(second.document.id);
+    expect([first.created, second.created].sort()).toEqual([false, true]);
+    await expect(
+      prisma.studioDocument.count({
+        where: {
+          storyProjectId: fixture.projectId,
+          storyChapterId: fixture.chapterId,
+          type: StudioDocumentType.script,
+        },
+      }),
+    ).resolves.toBe(1);
+    await expect(
+      prisma.studioDocumentVersion.count({
+        where: { documentId: first.document.id },
+      }),
+    ).resolves.toBe(1);
   });
 
   it('reports stale_base instead of landing operations when a human write advances the head during drafting', async () => {
@@ -168,6 +224,470 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         },
       }),
     ).resolves.toBe(0);
+  });
+
+  it('persists the approved screenplay before deriving the Plot Tree and records exact lineage', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const filed = await fixture.service.createAuthoringRun(
+      fixture.user,
+      fixture.workspaceId,
+      fixture.projectId,
+      {
+        chapterId: fixture.chapterId,
+        title: 'The sealed order',
+        summary: 'Review the screenplay before deriving the graph.',
+        brief: 'Write a one-scene interactive screenplay.',
+        idempotencyKey: `${fixture.prefix}:screenplay`,
+        conversationId: `${fixture.prefix}:conversation:screenplay`,
+      },
+    );
+    const authorWorker = `${fixture.prefix}:author:screenplay`;
+    expect(await fixture.service.claimAuthoringRuns(authorWorker, 1)).toEqual([
+      { id: filed.id },
+    ]);
+    const loaded = await fixture.service.loadAuthoringJob(
+      filed.id,
+      authorWorker,
+    );
+    if (loaded.kind !== 'job')
+      throw new Error(`Expected job, got ${loaded.kind}.`);
+
+    const screenplay: StoryScreenplay = {
+      schemaVersion: STORY_SCREENPLAY_SCHEMA_VERSION,
+      storyLanguage: 'en-US',
+      title: 'The Sealed Order',
+      logline: 'A city guard must choose between duty and mercy.',
+      synopsis: 'At a city gate, one sealed order decides who may escape.',
+      characters: [
+        {
+          id: 'guard',
+          name: { 'en-US': 'Guard' },
+          summary: 'A weary officer at the city gate.',
+        },
+      ],
+      entrySceneId: 'city-gate',
+      scenes: [
+        {
+          nodeId: 'city-gate',
+          clipKey: 'CITY_GATE',
+          name: 'The order',
+          heading: 'EXT. CITY GATE – NIGHT',
+          beat: 'The guard opens the order.',
+          action: 'Rain strikes the paper while the refugees wait.',
+          dialogue: [
+            {
+              characterId: 'guard',
+              speaker: 'GUARD',
+              text: 'Open the gate.',
+            },
+          ],
+          exit: { kind: 'auto', nextNodeId: null },
+        },
+      ],
+    };
+    const productionPlan: StoryProductionPlan = {
+      schemaVersion: STORY_PRODUCTION_PLAN_SCHEMA_VERSION,
+      assetSpecs: [
+        {
+          stableKey: 'asset.character.guard',
+          kind: 'character',
+          name: 'Guard',
+          description: 'A weary city guard in rain-dark armour.',
+          imagePrompt: 'A neutral full-body reference of the city guard.',
+          sourceCharacterId: 'guard',
+          sourceNodeIds: ['city-gate'],
+        },
+      ],
+      storyboardSequences: [
+        {
+          plotNodeId: 'city-gate',
+          title: 'The order',
+          description: 'The guard opens the sealed order in the rain.',
+          durationMs: 10_000,
+          clips: [
+            {
+              stableKey: 'shot.city-gate.main',
+              kind: 'video',
+              title: 'The sealed order',
+              description: 'The guard opens the sealed order in the rain.',
+              startMs: 0,
+              durationMs: 10_000,
+              videoPrompt:
+                'A cinematic @asset.character.guard opens a sealed order in heavy rain.',
+            },
+          ],
+          cues: [],
+        },
+      ],
+    };
+    const completed = await fixture.service.completeAuthoring(
+      filed.id,
+      authorWorker,
+      {
+        screenplay,
+        authoredAgainst: loaded.job.snapshot,
+      },
+    );
+    expect(completed.kind).toBe('completed');
+    if (completed.kind !== 'completed') return;
+    expect(completed.run.proposal).toMatchObject({
+      screenplay,
+      document: buildStoryScreenplayDocument(screenplay),
+    });
+    expect(completed.run.proposal).not.toHaveProperty('productionPlan');
+
+    // Opening the Script page after drafting goes through the exact same
+    // ensure path. It must return the identity pinned in the proposal instead
+    // of creating a new empty document that would make approval stale.
+    const ensuredAfterDraft = await prisma.$transaction((tx) =>
+      ensureStoryScriptDocumentInTransaction(tx, {
+        workspaceId: fixture.workspaceId,
+        storyProjectId: fixture.projectId,
+        storyChapterId: fixture.chapterId,
+        actorUserId: fixture.user.userId,
+      }),
+    );
+    expect(loaded.job.snapshot.scriptDocumentId).not.toBeNull();
+    expect(ensuredAfterDraft).toMatchObject({
+      created: false,
+      document: { id: loaded.job.snapshot.scriptDocumentId },
+    });
+
+    await fixture.service.confirm(
+      fixture.user,
+      fixture.workspaceId,
+      fixture.projectId,
+      filed.id,
+      `${fixture.prefix}:confirm:screenplay`,
+    );
+    const applyWorker = `${fixture.prefix}:apply:screenplay`;
+    expect(await fixture.service.claimApplyingRuns(applyWorker, 1)).toEqual([
+      { id: filed.id },
+    ]);
+    await fixture.service.executeClaimedRun(filed.id, applyWorker);
+
+    const [scriptOnlyRun, scriptOnlyDocument, scriptOnlyDraft] =
+      await Promise.all([
+        prisma.storyAgentRun.findUniqueOrThrow({ where: { id: filed.id } }),
+        prisma.studioDocument.findFirstOrThrow({
+          where: {
+            storyProjectId: fixture.projectId,
+            storyChapterId: fixture.chapterId,
+            type: StudioDocumentType.script,
+          },
+        }),
+        prisma.storyDraft.findUniqueOrThrow({
+          where: { storyProjectId: fixture.projectId },
+        }),
+      ]);
+    expect(scriptOnlyRun).toMatchObject({
+      status: StoryAgentRunStatus.authoring,
+      authoringMode: 'downstream_reconcile',
+    });
+    expect(scriptOnlyDocument.currentSequence).toBe(1);
+    expect(
+      InteractiveStoryDraftContentSchema.parse(
+        scriptOnlyDraft.content,
+      ).graph.nodes.some((node) => node.nodeId === 'city-gate'),
+    ).toBe(false);
+    await expect(
+      prisma.storyAssetSpec.count({
+        where: { storyChapterId: fixture.chapterId },
+      }),
+    ).resolves.toBe(0);
+    await expect(
+      prisma.storyStoryboardSequence.count({
+        where: { storyChapterId: fixture.chapterId },
+      }),
+    ).resolves.toBe(0);
+
+    // The same durable run is recoverable after the Script-only commit. A
+    // different worker/pod may claim it and derive downstream production from
+    // the exact approved snapshot; no second approval is opened.
+    const downstreamWorker = `${fixture.prefix}:author:downstream`;
+    expect(
+      await fixture.service.claimAuthoringRuns(downstreamWorker, 1),
+    ).toEqual([{ id: filed.id }]);
+    const downstream = await fixture.service.loadAuthoringJob(
+      filed.id,
+      downstreamWorker,
+    );
+    if (downstream.kind !== 'job') {
+      throw new Error(`Expected downstream job, got ${downstream.kind}.`);
+    }
+    expect(downstream.job).toMatchObject({
+      mode: 'downstream_reconcile',
+      approvedScreenplay: { screenplay },
+      scriptSource: null,
+    });
+    await expect(
+      fixture.service.completeAutomaticAuthoring(filed.id, downstreamWorker, {
+        mode: 'downstream_reconcile',
+        productionPlan,
+        authoredAgainst: downstream.job.snapshot,
+      }),
+    ).resolves.toMatchObject({
+      kind: 'completed',
+      run: { status: StoryAgentRunStatus.applying },
+    });
+    const downstreamApplyWorker = `${fixture.prefix}:apply:downstream`;
+    expect(
+      await fixture.service.claimApplyingRuns(downstreamApplyWorker, 1),
+    ).toEqual([{ id: filed.id }]);
+    await fixture.service.executeClaimedRun(filed.id, downstreamApplyWorker);
+
+    const [run, script, draft, chapter, assetSpecs, storyboardSequences] =
+      await Promise.all([
+        prisma.storyAgentRun.findUniqueOrThrow({ where: { id: filed.id } }),
+        prisma.studioDocument.findFirstOrThrow({
+          where: {
+            storyProjectId: fixture.projectId,
+            storyChapterId: fixture.chapterId,
+            type: StudioDocumentType.script,
+          },
+          include: { operations: { orderBy: { sequence: 'asc' } } },
+        }),
+        prisma.storyDraft.findUniqueOrThrow({
+          where: { storyProjectId: fixture.projectId },
+        }),
+        prisma.storyChapter.findUniqueOrThrow({
+          where: { id: fixture.chapterId },
+        }),
+        prisma.storyAssetSpec.findMany({
+          where: { storyChapterId: fixture.chapterId },
+        }),
+        prisma.storyStoryboardSequence.findMany({
+          where: { storyChapterId: fixture.chapterId },
+          include: {
+            clips: { include: { assetBindings: true } },
+            cues: true,
+          },
+        }),
+      ]);
+    const currentVersion = await prisma.studioDocumentVersion.findUniqueOrThrow(
+      {
+        where: { id: script.currentVersionId! },
+      },
+    );
+    expect(run.status).toBe(StoryAgentRunStatus.succeeded);
+    expect(assetSpecs).toHaveLength(1);
+    expect(assetSpecs[0]).toMatchObject({
+      stableKey: 'asset.character.guard',
+      selectedMediaVersionId: null,
+    });
+    expect(storyboardSequences).toHaveLength(1);
+    expect(storyboardSequences[0]).toMatchObject({
+      plotNodeId: 'city-gate',
+      durationMs: 10_000,
+      clips: [
+        expect.objectContaining({
+          stableKey: 'shot.city-gate.main',
+          assetBindings: [
+            expect.objectContaining({
+              mode: 'follow_selected',
+              pinnedMediaVersionId: null,
+            }),
+          ],
+        }),
+      ],
+    });
+    expect(script).toMatchObject({
+      currentSequence: 1,
+      title: screenplay.title,
+      storyChapterId: fixture.chapterId,
+    });
+    await expect(
+      prisma.studioDocument.count({
+        where: {
+          storyProjectId: fixture.projectId,
+          type: StudioDocumentType.script,
+        },
+      }),
+    ).resolves.toBe(1);
+    expect(currentVersion).toMatchObject({
+      source: StudioDocumentVersionSource.ai,
+      sourceId: filed.id,
+      sequence: 1,
+      snapshot: {
+        screenplay,
+        document: buildStoryScreenplayDocument(screenplay),
+      },
+    });
+    expect(script.operations).toHaveLength(1);
+    expect(script.operations[0]).toMatchObject({
+      sequence: 1,
+      operationType: StudioDocumentOperationType.yjs_update,
+      idempotencyKey: `story-screenplay:${filed.id}`,
+    });
+    expect(chapter).toMatchObject({
+      sourceScriptDocumentId: script.id,
+      sourceScriptVersionId: script.currentVersionId,
+      sourceScriptSequence: 1,
+    });
+    const draftContent = InteractiveStoryDraftContentSchema.parse(
+      draft.content,
+    );
+    const compiledScene = draftContent.graph.nodes.find(
+      (node) => node.nodeId === 'city-gate',
+    );
+    expect(compiledScene?.kind).toBe('clip');
+    if (compiledScene?.kind !== 'clip') {
+      throw new Error('Expected the compiled city-gate Plot clip.');
+    }
+    expect(compiledScene.description).toContain('EXT. CITY GATE – NIGHT');
+    await expect(
+      fixture.productionPlans.getProductionState(
+        fixture.user,
+        fixture.workspaceId,
+        fixture.projectId,
+        fixture.chapterId,
+      ),
+    ).resolves.toMatchObject({ ready: true });
+
+    const ydoc = new Y.Doc();
+    if (script.crdtState) Y.applyUpdate(ydoc, script.crdtState);
+    for (const operation of script.operations) {
+      if (operation.yjsUpdate) Y.applyUpdate(ydoc, operation.yjsUpdate);
+    }
+    const scriptJson = ydoc.getXmlFragment('content').toJSON();
+    let previousBlockIndex = -1;
+    for (const block of buildStoryScreenplayDocument(screenplay).blocks) {
+      const blockIndex = scriptJson.indexOf(block.text, previousBlockIndex + 1);
+      expect(blockIndex).toBeGreaterThan(previousBlockIndex);
+      previousBlockIndex = blockIndex;
+    }
+    ydoc.destroy();
+
+    // A later human Script edit invalidates only the structured lineage. The
+    // exact collaborative Script becomes the next downstream source; the
+    // Agent must not reopen screenplay approval or append another Script
+    // operation while rebuilding Plot/specs.
+    const manualDoc = new Y.Doc();
+    if (script.crdtState) Y.applyUpdate(manualDoc, script.crdtState);
+    for (const operation of script.operations) {
+      if (operation.yjsUpdate) Y.applyUpdate(manualDoc, operation.yjsUpdate);
+    }
+    const priorVector = Y.encodeStateVector(manualDoc);
+    const paragraph = new Y.XmlElement('paragraph');
+    const paragraphText = new Y.XmlText();
+    paragraphText.insert(
+      0,
+      'CREATOR NOTE: The refugees carry a blue lantern through the rain.',
+    );
+    paragraph.insert(0, [paragraphText]);
+    manualDoc
+      .getXmlFragment('content')
+      .insert(manualDoc.getXmlFragment('content').length, [paragraph]);
+    const manualUpdate = Y.encodeStateAsUpdate(manualDoc, priorVector);
+    manualDoc.destroy();
+    await prisma.$transaction(async (tx) => {
+      await tx.studioDocumentOperation.create({
+        data: {
+          documentId: script.id,
+          sequence: 2,
+          operationType: StudioDocumentOperationType.yjs_update,
+          actorUserId: fixture.user.userId,
+          idempotencyKey: `${fixture.prefix}:manual-script-edit`,
+          baseSequence: 1,
+          yjsUpdate: Buffer.from(manualUpdate),
+          metadata: { source: 'creator' },
+        },
+      });
+      await tx.studioDocument.update({
+        where: { id: script.id },
+        data: {
+          currentSequence: 2,
+          updatedById: fixture.user.userId,
+        },
+      });
+    });
+    const editedHead = await prisma.$transaction((tx) =>
+      readStoryScriptHead(tx, fixture.projectId, fixture.chapterId),
+    );
+    expect(editedHead).toMatchObject({
+      documentId: script.id,
+      sequence: 2,
+      hasContent: true,
+    });
+
+    const manualRun = await fixture.service.createAuthoringRun(
+      fixture.user,
+      fixture.workspaceId,
+      fixture.projectId,
+      {
+        chapterId: fixture.chapterId,
+        title: 'Rebuild from creator Script',
+        summary: 'Use the current Script exactly as the source.',
+        brief: 'Reconcile downstream production from the current Script.',
+        idempotencyKey: `${fixture.prefix}:manual-reconcile`,
+        conversationId: `${fixture.prefix}:conversation:manual-reconcile`,
+      },
+    );
+    const manualWorker = `${fixture.prefix}:author:manual-reconcile`;
+    expect(await fixture.service.claimAuthoringRuns(manualWorker, 1)).toEqual([
+      { id: manualRun.id },
+    ]);
+    const manualJob = await fixture.service.loadAuthoringJob(
+      manualRun.id,
+      manualWorker,
+    );
+    if (manualJob.kind !== 'job') {
+      throw new Error(`Expected manual Script job, got ${manualJob.kind}.`);
+    }
+    expect(manualJob.job).toMatchObject({
+      mode: 'downstream_reconcile',
+      approvedScreenplay: null,
+      scriptSource: {
+        documentId: script.id,
+        sequence: 2,
+        hash: editedHead.hash,
+        hasContent: true,
+      },
+    });
+    expect(manualJob.job.scriptSource?.sourceText).toContain(
+      'CREATOR NOTE: The refugees carry a blue lantern',
+    );
+    await expect(
+      fixture.service.completeAutomaticAuthoring(manualRun.id, manualWorker, {
+        mode: 'downstream_reconcile',
+        screenplay,
+        productionPlan,
+        authoredAgainst: manualJob.job.snapshot,
+      }),
+    ).resolves.toMatchObject({
+      kind: 'completed',
+      run: { status: StoryAgentRunStatus.applying },
+    });
+    const manualApplyWorker = `${fixture.prefix}:apply:manual-reconcile`;
+    expect(
+      await fixture.service.claimApplyingRuns(manualApplyWorker, 1),
+    ).toEqual([{ id: manualRun.id }]);
+    await fixture.service.executeClaimedRun(manualRun.id, manualApplyWorker);
+
+    const [manualCompleted, preservedScript, preservedHead, productionState] =
+      await Promise.all([
+        prisma.storyAgentRun.findUniqueOrThrow({
+          where: { id: manualRun.id },
+        }),
+        prisma.studioDocument.findUniqueOrThrow({
+          where: { id: script.id },
+          include: { operations: true },
+        }),
+        prisma.$transaction((tx) =>
+          readStoryScriptHead(tx, fixture.projectId, fixture.chapterId),
+        ),
+        fixture.productionPlans.getProductionState(
+          fixture.user,
+          fixture.workspaceId,
+          fixture.projectId,
+          fixture.chapterId,
+        ),
+      ]);
+    expect(manualCompleted.status).toBe(StoryAgentRunStatus.succeeded);
+    expect(preservedScript.currentSequence).toBe(2);
+    expect(preservedScript.operations).toHaveLength(2);
+    expect(preservedHead.hash).toBe(editedHead.hash);
+    expect(productionState.ready).toBe(true);
   });
 
   it('applies an Agent change to one chapter without replacing scenes owned by another chapter', async () => {
@@ -1395,6 +1915,7 @@ async function createFixture(
       role: StoryProjectMemberRole.owner,
       capabilities: ['story.read', 'story.edit', 'story.generate'],
     }),
+    requireProjectInTransaction: jest.fn().mockResolvedValue(undefined),
   } as unknown as StoryPermissionService;
   const realtime = {
     enqueue: jest
@@ -1416,12 +1937,20 @@ async function createFixture(
     prisma as unknown as PrismaService,
     { schedule: jest.fn() } as never,
   );
+  const productionPlans = new StoryProductionPlanService(
+    prisma as unknown as PrismaService,
+    permissions,
+    writeGuard,
+  );
   const service = new StoryAgentRunService(
     prisma as unknown as PrismaService,
     permissions,
     realtime,
     writeGuard,
     agentOsJournal,
+    { scheduleCompaction: jest.fn() } as never,
+    { publishDocumentOperation: jest.fn() } as never,
+    productionPlans,
   );
 
   return {
@@ -1431,6 +1960,7 @@ async function createFixture(
     projectId: project.id,
     chapterId: chapter.id,
     service,
+    productionPlans,
     agentOsJournal,
     /**
      * Drive the full authoring pipeline to a reviewable proposal: file the
@@ -1706,6 +2236,8 @@ function storyAgentServiceBoundToTransaction(
     realtime,
     new StoryProjectWriteGuardService(prisma),
     {} as never,
+    { scheduleCompaction: jest.fn() } as never,
+    { publishDocumentOperation: jest.fn() } as never,
   );
 }
 

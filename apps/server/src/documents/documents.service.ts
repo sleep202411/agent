@@ -29,6 +29,10 @@ import { encodeDocumentSnapshot } from './document-crdt';
 import { rootSchemaFor } from './document-modes';
 import { resolveSyncWindow } from './document-sync';
 import { StudioDocumentAccessService } from './studio-document-access.service';
+import {
+  ensureStoryScriptDocumentInTransaction,
+  StoryScriptChapterNotFoundError,
+} from './story-script-document';
 import type {
   AddCommentInput,
   AppendDocumentOperationInput,
@@ -274,13 +278,97 @@ export class DocumentsService {
     });
   }
 
-  /** The project's free-form script (the pipeline's source text). */
-  async ensureStoryScriptDocument(user: AuthUser, storyProjectId: string) {
-    return this.ensureStoryDocument(user, storyProjectId, {
-      type: StudioDocumentType.script,
-      lockKey: 'story-script',
-      reason: 'initial_story_script',
+  /** One chapter's free-form screenplay (the chapter pipeline's source). */
+  async ensureStoryScriptDocument(
+    user: AuthUser,
+    storyProjectId: string,
+    storyChapterId: string,
+  ) {
+    const { project } = await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    const chapter = await this.prisma.storyChapter.findFirst({
+      where: {
+        id: storyChapterId,
+        storyProjectId,
+        archivedAt: null,
+      },
+      select: { id: true, title: true },
     });
+    if (!chapter) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        msg: 'The active story chapter was not found.',
+      });
+    }
+
+    const existing = await this.prisma.studioDocument.findFirst({
+      where: {
+        storyProjectId,
+        storyChapterId,
+        type: StudioDocumentType.script,
+        status: StudioDocumentStatus.active,
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) {
+      return { document: this.documentDto(existing, { detail: true }) };
+    }
+
+    await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.edit',
+    );
+    let ensured: Awaited<
+      ReturnType<typeof ensureStoryScriptDocumentInTransaction>
+    >;
+    try {
+      ensured = await this.prisma.$transaction((tx) =>
+        ensureStoryScriptDocumentInTransaction(tx, {
+          workspaceId: project.workspaceId,
+          storyProjectId,
+          storyChapterId,
+          actorUserId: user.userId,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof StoryScriptChapterNotFoundError) {
+        throw new NotFoundException({
+          code: 'STORY_CHAPTER_NOT_FOUND',
+          msg: 'The active story chapter was not found.',
+        });
+      }
+      throw error;
+    }
+    const { document } = ensured;
+
+    if (ensured.created) {
+      await this.audit.record({
+        workspaceId: document.workspaceId,
+        projectId: null,
+        actorUserId: user.userId,
+        action: 'studio_document.created',
+        entityType: 'studio_document',
+        entityId: document.id,
+        after: document,
+        metadata: {
+          ownerKind: 'story_chapter',
+          storyProjectId,
+          storyChapterId,
+        },
+      });
+    }
+    return { document: this.documentDto(document, { detail: true }) };
+  }
+
+  /** Schedule compaction after a trusted cross-domain Yjs operation commits. */
+  scheduleCompaction(documentId: string): void {
+    this.compaction.schedule(documentId);
   }
 
   private async ensureStoryDocument(
@@ -957,6 +1045,7 @@ export class DocumentsService {
           },
       platformProjectId: document.platformProjectId,
       storyProjectId: document.storyProjectId,
+      storyChapterId: document.storyChapterId,
       sectionId: document.sectionId,
       type: document.type,
       status: document.status,

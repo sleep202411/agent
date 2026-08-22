@@ -50,6 +50,9 @@ const AUTHORING_SNAPSHOT = {
   draftRevision: 7,
   draftContentHash: canonicalJsonHash(EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT),
   layoutRevision: 3,
+  scriptDocumentId: null,
+  scriptSequence: 0,
+  scriptHash: canonicalJsonHash({ state: null, sequence: 0 }),
 } as const;
 const BRIEF_TEXT =
   'Open the story bible with a premise about a dream that remembers its author.';
@@ -620,13 +623,26 @@ describe('StoryAgentRunService', () => {
       leaseOwner: WORKER_ID,
       leaseExpiresAt: new Date(NOW.getTime() + 30_000),
     });
+    const emptyScriptDocument = {
+      id: '0197f4a2-0800-7000-8000-000000000011',
+      currentSequence: 0,
+      crdtState: Buffer.from([0, 0]),
+    };
     const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
       storyAgentRun: {
         findUnique: jest.fn().mockResolvedValue(authoringRun),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       storyProject: {
         findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+      },
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({ title: 'Chapter 1' }),
+      },
+      studioDocument: {
+        findFirst: jest.fn().mockResolvedValue(emptyScriptDocument),
       },
       copilotDocument: {
         findUnique: jest.fn().mockResolvedValue({
@@ -676,8 +692,14 @@ describe('StoryAgentRunService', () => {
       leaseOwner: WORKER_ID,
       leaseExpiresAt: new Date(NOW.getTime() + 30_000),
     });
+    const emptyScriptDocument = {
+      id: '0197f4a2-0800-7000-8000-000000000011',
+      currentSequence: 0,
+      crdtState: Buffer.from([0, 0]),
+    };
     const updateMany = jest.fn().mockResolvedValue({ count: 1 });
     const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
       $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
       storyAgentRun: {
         findUnique: jest.fn().mockResolvedValue(authoringRun),
@@ -694,6 +716,12 @@ describe('StoryAgentRunService', () => {
       },
       storyProject: {
         findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+      },
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({ title: 'Chapter 1' }),
+      },
+      studioDocument: {
+        findFirst: jest.fn().mockResolvedValue(emptyScriptDocument),
       },
       copilotDocument: {
         findUnique: jest.fn().mockResolvedValue({
@@ -2068,6 +2096,18 @@ function serviceWith(
   tx: Record<string, unknown>,
   options: { capabilities?: string[] } = {},
 ) {
+  tx.storyChapter ??= {
+    findFirst: jest.fn().mockResolvedValue(null),
+  };
+  tx.studioDocument ??= {
+    findFirst: jest.fn().mockResolvedValue(null),
+  };
+  tx.studioDocumentOperation ??= {
+    findMany: jest.fn().mockResolvedValue([]),
+  };
+  tx.studioDocumentVersion ??= {
+    findFirst: jest.fn().mockResolvedValue(null),
+  };
   const prisma = {
     $transaction: jest.fn(
       (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
@@ -2079,6 +2119,9 @@ function serviceWith(
     storyDraft: (tx.storyDraft ?? {}) as Record<string, unknown>,
     storyAgentRun: (tx.storyAgentRun ?? {}) as Record<string, unknown>,
     copilotDocument: (tx.copilotDocument ?? {}) as Record<string, unknown>,
+    studioDocument: (tx.studioDocument ?? {
+      findFirst: jest.fn().mockResolvedValue(null),
+    }) as Record<string, unknown>,
   };
   const permissions = {
     requireProject: jest.fn().mockResolvedValue({
@@ -2114,6 +2157,23 @@ function serviceWith(
     appendStoryProposalClosureInTransaction: jest.fn(),
     publishCommitted: jest.fn().mockResolvedValue(undefined),
   };
+  const productionPlans = {
+    getProductionStateInTransaction: jest.fn().mockResolvedValue({
+      projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
+      profile: { status: 'current' },
+      script: { status: 'missing', documentId: null, sequence: null },
+      plotTree: { status: 'missing', nodeCount: 0 },
+      assets: { status: 'missing', currentCount: 0, staleCount: 0 },
+      storyboard: {
+        status: 'missing',
+        sequenceCount: 0,
+        staleCount: 0,
+        missingPlotNodeIds: [],
+      },
+      ready: false,
+    }),
+  };
   return {
     service: new StoryAgentRunService(
       prisma as never,
@@ -2121,6 +2181,9 @@ function serviceWith(
       realtime as never,
       writeGuard as never,
       agentOsJournal as never,
+      { scheduleCompaction: jest.fn() } as never,
+      { publishDocumentOperation: jest.fn() } as never,
+      productionPlans as never,
     ),
     prisma,
     realtime,

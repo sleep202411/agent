@@ -49,6 +49,7 @@ import {
   type StoryAgentCanvasLayoutSnapshot,
 } from '../../story-studio/story-agent-patch.executor';
 import { StoryAgentRunService } from '../../story-studio/story-agent-run.service';
+import { StoryProductionPlanService } from '../../story-studio/story-production-plan.service';
 import { StoryProjectWriteGuardService } from '../../story-studio/story-project-write-guard.service';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
 import { AgentOsToolExecutionReceiptService } from '../agent-os-tool-execution-receipt.service';
@@ -91,6 +92,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     private readonly writeGuard: StoryProjectWriteGuardService,
     private readonly agentRuns: StoryAgentRunService,
     private readonly receipts: AgentOsToolExecutionReceiptService,
+    private readonly production: StoryProductionPlanService,
   ) {}
 
   supports(toolId: string): boolean {
@@ -301,9 +303,15 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     chapterId: string,
   ) {
     const context = await this.projects.requireRead(actorId, projectId);
-    const [state, authoringRun] = await Promise.all([
+    const [state, authoringRun, productionState] = await Promise.all([
       this.loadStoryDraft(projectId, chapterId),
       this.agentRuns.getLatestRun(
+        { userId: actorId },
+        context.workspaceId,
+        projectId,
+        chapterId,
+      ),
+      this.production.getProductionState(
         { userId: actorId },
         context.workspaceId,
         projectId,
@@ -325,6 +333,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       },
       graph: state.content.graph,
       productionNotes: state.content.productionNotes,
+      productionState,
       creativeProfile: {
         frameProfile: state.project.frameProfile,
         durationPreset: state.project.durationPreset,

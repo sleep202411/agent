@@ -86,6 +86,7 @@ describe('StoryAgentCapabilityHandler', () => {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 
   it('claims only the new Story capability family', () => {
@@ -113,6 +114,7 @@ describe('StoryAgentCapabilityHandler', () => {
       {} as never,
       { createAuthoringRun } as never,
       { fenceBusinessMutationInTx: jest.fn() } as never,
+      {} as never,
     );
     const input = {
       toolId: 'story.author',
@@ -235,6 +237,7 @@ describe('StoryAgentCapabilityHandler', () => {
         fenceBusinessMutationInTx: jest.fn().mockResolvedValue(undefined),
         completeSuccessInTx: jest.fn().mockResolvedValue(undefined),
       } as never,
+      {} as never,
     );
 
     await expect(

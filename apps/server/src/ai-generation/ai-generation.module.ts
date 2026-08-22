@@ -62,6 +62,7 @@ import { AiGenerationRoutingService } from './routing.service';
 import { AiGenerationValidatorService } from './validator.service';
 import { AiGenerationWorkerService } from './worker.service';
 import { AiReferenceUrlPreparerService } from './reference-url-preparer.service';
+import { AiGenerationCompletionObserverRegistry } from './completion-observer.service';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { AiReferenceUrlPreparerService } from './reference-url-preparer.service'
     AiGenerationAuthzService,
     AiGenerationEtaService,
     AiGenerationValidatorService,
+    AiGenerationCompletionObserverRegistry,
     AiPromptCompilerService,
     AiReferenceUrlPreparerService,
     AiModelOpsService,
@@ -153,7 +155,7 @@ import { AiReferenceUrlPreparerService } from './reference-url-preparer.service'
       useExisting: RealPersonLikenessOutputsService,
     },
   ],
-  exports: [AiGenerationService],
+  exports: [AiGenerationService, AiGenerationCompletionObserverRegistry],
 })
 export class AiGenerationModule implements OnModuleInit {
   /**

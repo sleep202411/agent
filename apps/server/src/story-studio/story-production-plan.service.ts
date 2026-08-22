@@ -1,0 +1,2875 @@
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  MediaAssetKind,
+  MediaAssetVariantKind,
+  MediaAssetVariantStatus,
+  Prisma,
+  StoryProductionPlanDisposition,
+  StoryProductionSpecStatus,
+  StoryStoryboardBindingMode,
+  type StoryAssetSpec,
+  type StoryStoryboardClip,
+  type StoryStoryboardSequence,
+} from '@prisma/client';
+import {
+  StoryProductionPlanSchema,
+  storyClipAssetMentions,
+  type StoryProductionPlan,
+} from '@repo/shared/story-production';
+import type { StoryScreenplay } from '@repo/shared/story-agent';
+import type { AuthUser } from '../auth';
+import { PrismaService } from '../infra/db/db.module';
+import {
+  resolveMediaPublicUrl,
+  resolveMediaPublicVariantUrl,
+} from '../infra/storage/media-asset-url-resolver.service';
+import { canonicalJsonHash } from './canonical-json';
+import {
+  InteractiveStoryDraftContentSchema,
+  type InteractiveStoryDraftContent,
+} from './dto';
+import { StoryPermissionService } from './story-permission.service';
+import {
+  storyProductionGenerationBasePath,
+  toStoryProductionGenerationProgressDto,
+} from './story-production-generation.dto';
+import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
+import {
+  readApprovedStoryScreenplaySnapshot,
+  readStoryScriptHead,
+} from './story-script-stage';
+import type {
+  PatchStoryAssetSpecInput,
+  PatchStoryStoryboardClipInput,
+  PatchStoryStoryboardCueInput,
+  PatchStoryStoryboardSequenceInput,
+  PutStoryStoryboardTimelineInput,
+  PutStoryStoryboardBindingInput,
+  ResolveStoryProductionConflictInput,
+} from './story-production-plan.schema';
+
+const PUBLIC_MEDIA_ASSET_INCLUDE = Prisma.validator<Prisma.MediaAssetInclude>()(
+  {
+    placements: true,
+    variants: {
+      where: {
+        deletedAt: null,
+        status: MediaAssetVariantStatus.ready,
+      },
+      include: { placements: true },
+    },
+  },
+);
+
+const CREATIVE_MEDIA_VERSION_INCLUDE = {
+  mediaAsset: { include: PUBLIC_MEDIA_ASSET_INCLUDE },
+  preferredVariant: { include: { placements: true } },
+} as const;
+
+const ASSET_SPEC_INCLUDE = Prisma.validator<Prisma.StoryAssetSpecInclude>()({
+  pendingPlanSnapshot: {
+    select: {
+      sourceFingerprint: true,
+      planFingerprint: true,
+      productionPlan: true,
+    },
+  },
+  mediaVersions: {
+    where: { archivedAt: null },
+    orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
+    include: CREATIVE_MEDIA_VERSION_INCLUDE,
+  },
+  selectedMediaVersion: {
+    include: CREATIVE_MEDIA_VERSION_INCLUDE,
+  },
+  generations: {
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: 1,
+    include: { aiJob: true },
+  },
+});
+
+const STORYBOARD_INCLUDE =
+  Prisma.validator<Prisma.StoryStoryboardSequenceInclude>()({
+    pendingPlanSnapshot: {
+      select: {
+        sourceFingerprint: true,
+        planFingerprint: true,
+        productionPlan: true,
+      },
+    },
+    clips: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+      include: {
+        mediaVersions: {
+          where: { archivedAt: null },
+          orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
+          include: CREATIVE_MEDIA_VERSION_INCLUDE,
+        },
+        selectedMediaVersion: {
+          include: CREATIVE_MEDIA_VERSION_INCLUDE,
+        },
+        generations: {
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: 1,
+          include: { aiJob: true },
+        },
+        assetBindings: {
+          where: { status: { not: StoryProductionSpecStatus.archived } },
+          orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+          include: {
+            assetSpec: { include: ASSET_SPEC_INCLUDE },
+            pinnedMediaVersion: {
+              include: CREATIVE_MEDIA_VERSION_INCLUDE,
+            },
+          },
+        },
+      },
+    },
+    cues: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [{ atMs: 'asc' }, { id: 'asc' }],
+    },
+  });
+
+type AssetSpecRow = Prisma.StoryAssetSpecGetPayload<{
+  include: typeof ASSET_SPEC_INCLUDE;
+}>;
+type StoryboardSequenceRow = Prisma.StoryStoryboardSequenceGetPayload<{
+  include: typeof STORYBOARD_INCLUDE;
+}>;
+type CreativeMediaVersionRow =
+  | NonNullable<AssetSpecRow['selectedMediaVersion']>
+  | NonNullable<StoryboardSequenceRow['clips'][number]['selectedMediaVersion']>;
+
+export interface ApplyApprovedProductionPlanInput {
+  storyProjectId: string;
+  storyChapterId: string;
+  actorUserId: string;
+  /** Hash of the exact approved Plot source reconciled by this transaction. */
+  sourceFingerprint: string;
+  /** Canonical character ids from the exact approved screenplay. */
+  canonicalCharacterIds: readonly string[];
+  productionPlan: StoryProductionPlan;
+}
+
+export interface StoryProductionReconcileResult {
+  assetSpecsCreated: number;
+  assetSpecsUpdated: number;
+  assetSpecsMarkedStale: number;
+  sequencesCreated: number;
+  sequencesUpdated: number;
+  sequencesMarkedStale: number;
+}
+
+export interface ValidateApprovedProductionPlanInput {
+  productionPlan: StoryProductionPlan;
+  draft: unknown;
+  chapterNodeIds: readonly string[];
+  canonicalCharacterIds: readonly string[];
+}
+
+export type StoryProductionStageStatus = 'missing' | 'current' | 'stale';
+
+export interface StoryProductionStateDto {
+  projectId: string;
+  chapterId: string;
+  profile: { status: 'missing' | 'current' };
+  script: {
+    status: StoryProductionStageStatus;
+    documentId: string | null;
+    sequence: number | null;
+  };
+  plotTree: { status: StoryProductionStageStatus; nodeCount: number };
+  assets: {
+    status: StoryProductionStageStatus;
+    currentCount: number;
+    staleCount: number;
+  };
+  storyboard: {
+    status: StoryProductionStageStatus;
+    sequenceCount: number;
+    staleCount: number;
+    missingPlotNodeIds: string[];
+  };
+  ready: boolean;
+}
+
+@Injectable()
+export class StoryProductionPlanService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly permissions: StoryPermissionService,
+    private readonly writeGuard: StoryProjectWriteGuardService,
+  ) {}
+
+  async getProductionState(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+  ): Promise<StoryProductionStateDto> {
+    await this.requireScope(
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      'story.read',
+    );
+    return this.prisma.$transaction((tx) =>
+      this.getProductionStateInTransaction(tx, projectId, chapterId),
+    );
+  }
+
+  /**
+   * Canonical transaction-local projection used by both story.read and the
+   * authoring admission planner. No caller-supplied mode can bypass it.
+   */
+  async getProductionStateInTransaction(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    chapterId: string,
+  ): Promise<StoryProductionStateDto> {
+    const [project, chapter, draft, assetCounts, sequenceRows, scriptHead] =
+      await Promise.all([
+        tx.storyProject.findUniqueOrThrow({ where: { id: projectId } }),
+        tx.storyChapter.findFirstOrThrow({
+          where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
+        }),
+        tx.storyDraft.findUniqueOrThrow({
+          where: { storyProjectId: projectId },
+        }),
+        tx.storyAssetSpec.groupBy({
+          by: ['status'],
+          where: { storyProjectId: projectId, storyChapterId: chapterId },
+          _count: { _all: true },
+        }),
+        tx.storyStoryboardSequence.findMany({
+          where: {
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+          select: { plotNodeId: true, status: true },
+        }),
+        readStoryScriptHead(tx, projectId, chapterId),
+      ]);
+    const parsedDraft = InteractiveStoryDraftContentSchema.parse(draft.content);
+    const ownedNodeIds = new Set(jsonStringArray(chapter.nodeIds));
+    const plotNodeIds = parsedDraft.graph.nodes
+      .filter((node) => node.kind === 'clip' && ownedNodeIds.has(node.nodeId))
+      .map((node) => node.nodeId);
+    const sequenceByPlotNode = new Map(
+      sequenceRows.map((sequence) => [sequence.plotNodeId, sequence]),
+    );
+    const missingPlotNodeIds = plotNodeIds.filter(
+      (nodeId) => !sequenceByPlotNode.has(nodeId),
+    );
+    const staleSequenceCount = sequenceRows.filter(
+      (sequence) => sequence.status === StoryProductionSpecStatus.stale,
+    ).length;
+    const countFor = (status: StoryProductionSpecStatus) =>
+      assetCounts.find((row) => row.status === status)?._count._all ?? 0;
+    const assetCurrent = countFor(StoryProductionSpecStatus.current);
+    const assetStale = countFor(StoryProductionSpecStatus.stale);
+    const lineageMatchesHead =
+      chapter.sourceScriptDocumentId === scriptHead.documentId &&
+      chapter.sourceScriptSequence === scriptHead.sequence &&
+      chapter.sourceScriptHash === scriptHead.hash;
+    const approvedScreenplay = lineageMatchesHead
+      ? await readApprovedStoryScreenplaySnapshot(tx, projectId, chapterId)
+      : null;
+    const scriptStatus: StoryProductionStageStatus = !scriptHead.hasContent
+      ? 'missing'
+      : lineageMatchesHead && approvedScreenplay
+        ? 'current'
+        : 'stale';
+    const plotStatus: StoryProductionStageStatus =
+      plotNodeIds.length === 0
+        ? 'missing'
+        : scriptStatus === 'current' &&
+            approvedScreenplay !== null &&
+            plotMatchesApprovedScreenplay(
+              approvedScreenplay.screenplay,
+              parsedDraft,
+              chapter.entryNodeId,
+              ownedNodeIds,
+            )
+          ? 'current'
+          : 'stale';
+    const ownStoryboardStatus =
+      sequenceRows.length === 0
+        ? 'missing'
+        : staleSequenceCount > 0 || missingPlotNodeIds.length > 0
+          ? 'stale'
+          : 'current';
+    const storyboardStatus =
+      ownStoryboardStatus === 'missing'
+        ? 'missing'
+        : plotStatus === 'current' && ownStoryboardStatus === 'current'
+          ? 'current'
+          : 'stale';
+    const ownAssetStatus =
+      assetStale > 0
+        ? 'stale'
+        : assetCurrent > 0 || ownStoryboardStatus === 'current'
+          ? 'current'
+          : 'missing';
+    const assetStatus =
+      ownAssetStatus === 'missing'
+        ? 'missing'
+        : plotStatus === 'current' && ownAssetStatus === 'current'
+          ? 'current'
+          : 'stale';
+    const profileStatus = project.creativeProfileConfirmedAt
+      ? 'current'
+      : 'missing';
+    return {
+      projectId,
+      chapterId,
+      profile: { status: profileStatus },
+      script: {
+        status: scriptStatus,
+        documentId: scriptHead.documentId,
+        sequence: scriptHead.documentId ? scriptHead.sequence : null,
+      },
+      plotTree: { status: plotStatus, nodeCount: plotNodeIds.length },
+      assets: {
+        status: assetStatus,
+        currentCount: assetCurrent,
+        staleCount: assetStale,
+      },
+      storyboard: {
+        status: storyboardStatus,
+        sequenceCount: sequenceRows.length,
+        staleCount: staleSequenceCount,
+        missingPlotNodeIds,
+      },
+      ready:
+        profileStatus === 'current' &&
+        scriptStatus === 'current' &&
+        plotStatus === 'current' &&
+        assetStatus === 'current' &&
+        storyboardStatus === 'current',
+    };
+  }
+
+  async listAssetSpecs(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+  ) {
+    await this.requireScope(
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      'story.read',
+    );
+    const rows = await this.prisma.storyAssetSpec.findMany({
+      where: {
+        storyProjectId: projectId,
+        storyChapterId: chapterId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      orderBy: [{ kind: 'asc' }, { name: 'asc' }, { id: 'asc' }],
+      include: ASSET_SPEC_INCLUDE,
+    });
+    return rows.map(toAssetSpecDto);
+  }
+
+  async getStoryboard(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+  ) {
+    await this.requireScope(
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      'story.read',
+    );
+    const rows = await this.prisma.storyStoryboardSequence.findMany({
+      where: {
+        storyProjectId: projectId,
+        storyChapterId: chapterId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      include: STORYBOARD_INCLUDE,
+    });
+    return rows.map(toStoryboardSequenceDto);
+  }
+
+  async resolveAssetSpecConflict(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    assetSpecId: string,
+    idempotencyKey: string,
+    input: ResolveStoryProductionConflictInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'asset-spec.conflict-resolution',
+      request: { assetSpecId, input },
+      mutate: async (tx, now) => {
+        const current = await tx.storyAssetSpec.findFirst({
+          where: {
+            id: assetSpecId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+          },
+          include: { pendingPlanSnapshot: true },
+        });
+        if (!current) throw productionNotFound('Asset Spec', assetSpecId);
+        const pending = readPendingConflict(current, input, 'Asset Spec');
+        const item = pending.plan.assetSpecs.find(
+          (candidate) => candidate.stableKey === current.stableKey,
+        );
+        const expectedFingerprint = item
+          ? planFingerprint(pending.sourceFingerprint, 'asset', item)
+          : planFingerprint(pending.sourceFingerprint, 'asset-removed', {
+              stableKey: current.stableKey,
+            });
+        assertPendingFingerprint(current, expectedFingerprint);
+
+        let outcome: 'kept_current' | 'applied_latest' | 'archived';
+        if (input.resolution === 'keep_current') {
+          const updated = await tx.storyAssetSpec.updateMany({
+            where: pendingConflictCasWhere(current, input),
+            data: {
+              sourceFingerprint: expectedFingerprint,
+              pendingSourceFingerprint: null,
+              pendingPlanSnapshotId: null,
+              planDisposition: StoryProductionPlanDisposition.user_override,
+              status: StoryProductionSpecStatus.current,
+              userModifiedAt: current.userModifiedAt ?? now,
+              userModifiedByUserId: current.userModifiedByUserId ?? user.userId,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) throw productionCasConflict('Asset Spec');
+          outcome = 'kept_current';
+        } else if (item) {
+          const updated = await tx.storyAssetSpec.updateMany({
+            where: pendingConflictCasWhere(current, input),
+            data: {
+              kind: item.kind,
+              sourceCharacterId: item.sourceCharacterId ?? null,
+              sourceNodeIds: item.sourceNodeIds,
+              name: item.name,
+              description: item.description,
+              imagePrompt: item.imagePrompt,
+              videoPrompt: item.videoPrompt ?? null,
+              negativePrompt: item.negativePrompt ?? null,
+              sourceFingerprint: expectedFingerprint,
+              pendingSourceFingerprint: null,
+              pendingPlanSnapshotId: null,
+              planDisposition: StoryProductionPlanDisposition.planned,
+              status: StoryProductionSpecStatus.current,
+              userModifiedAt: null,
+              userModifiedByUserId: null,
+              lastPlannedAt: now,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) throw productionCasConflict('Asset Spec');
+          outcome = 'applied_latest';
+        } else {
+          const activeBindingCount =
+            await tx.storyStoryboardClipAssetBinding.count({
+              where: {
+                assetSpecId: current.id,
+                status: { not: StoryProductionSpecStatus.archived },
+                storyboardClip: {
+                  status: { not: StoryProductionSpecStatus.archived },
+                  sequence: {
+                    status: { not: StoryProductionSpecStatus.archived },
+                  },
+                },
+              },
+            });
+          if (activeBindingCount > 0) {
+            throw new ConflictException({
+              code: 'STORY_PRODUCTION_ASSET_STILL_REFERENCED',
+              message:
+                'Resolve the affected Storyboard sequence with the latest plan before removing this Asset Spec, or keep the Asset Spec override.',
+            });
+          }
+          const updated = await tx.storyAssetSpec.updateMany({
+            where: pendingConflictCasWhere(current, input),
+            data: {
+              sourceFingerprint: expectedFingerprint,
+              pendingSourceFingerprint: null,
+              pendingPlanSnapshotId: null,
+              planDisposition: StoryProductionPlanDisposition.planned,
+              status: StoryProductionSpecStatus.archived,
+              userModifiedAt: null,
+              userModifiedByUserId: null,
+              lastPlannedAt: now,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) throw productionCasConflict('Asset Spec');
+          outcome = 'archived';
+        }
+
+        const resolved = await tx.storyAssetSpec.findUniqueOrThrow({
+          where: { id: current.id },
+          include: ASSET_SPEC_INCLUDE,
+        });
+        return {
+          targetKind: 'asset_spec' as const,
+          targetId: resolved.id,
+          resolution: input.resolution,
+          outcome,
+          item: toAssetSpecDto(resolved),
+          productionState: await this.getProductionStateInTransaction(
+            tx,
+            projectId,
+            chapterId,
+          ),
+        };
+      },
+    });
+  }
+
+  async resolveStoryboardSequenceConflict(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    idempotencyKey: string,
+    input: ResolveStoryProductionConflictInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'storyboard-sequence.conflict-resolution',
+      request: { sequenceId, input },
+      mutate: async (tx, now) => {
+        const current = await tx.storyStoryboardSequence.findFirst({
+          where: {
+            id: sequenceId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+          },
+          include: { pendingPlanSnapshot: true },
+        });
+        if (!current) {
+          throw productionNotFound('Storyboard sequence', sequenceId);
+        }
+        const pending = readPendingConflict(
+          current,
+          input,
+          'Storyboard sequence',
+        );
+        const item = pending.plan.storyboardSequences.find(
+          (candidate) => candidate.plotNodeId === current.plotNodeId,
+        );
+        const expectedFingerprint = item
+          ? planFingerprint(pending.sourceFingerprint, 'sequence', item)
+          : planFingerprint(pending.sourceFingerprint, 'sequence-removed', {
+              plotNodeId: current.plotNodeId,
+            });
+        assertPendingFingerprint(current, expectedFingerprint);
+
+        let outcome: 'kept_current' | 'applied_latest' | 'archived';
+        if (input.resolution === 'keep_current') {
+          if (!item) {
+            throw new ConflictException({
+              code: 'STORY_PRODUCTION_REMOVED_SEQUENCE_OVERRIDE_UNSUPPORTED',
+              message:
+                'A Storyboard sequence whose Plot node was removed cannot remain as an override. Use the latest plan to archive it.',
+            });
+          }
+          const updated = await tx.storyStoryboardSequence.updateMany({
+            where: pendingConflictCasWhere(current, input),
+            data: {
+              sourceFingerprint: expectedFingerprint,
+              pendingSourceFingerprint: null,
+              pendingPlanSnapshotId: null,
+              planDisposition: StoryProductionPlanDisposition.user_override,
+              status: StoryProductionSpecStatus.current,
+              userModifiedAt: current.userModifiedAt ?? now,
+              userModifiedByUserId: current.userModifiedByUserId ?? user.userId,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) {
+            throw productionCasConflict('Storyboard sequence');
+          }
+          outcome = 'kept_current';
+        } else if (!item) {
+          await this.archiveSequenceChildren(tx, current.id);
+          const updated = await tx.storyStoryboardSequence.updateMany({
+            where: pendingConflictCasWhere(current, input),
+            data: {
+              sourceFingerprint: expectedFingerprint,
+              pendingSourceFingerprint: null,
+              pendingPlanSnapshotId: null,
+              planDisposition: StoryProductionPlanDisposition.planned,
+              status: StoryProductionSpecStatus.archived,
+              userModifiedAt: null,
+              userModifiedByUserId: null,
+              lastPlannedAt: now,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) {
+            throw productionCasConflict('Storyboard sequence');
+          }
+          outcome = 'archived';
+        } else {
+          const assetRows = await tx.storyAssetSpec.findMany({
+            where: {
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+            },
+          });
+          const updated = await tx.storyStoryboardSequence.updateMany({
+            where: pendingConflictCasWhere(current, input),
+            data: {
+              stableKey: item.plotNodeId,
+              title: item.title,
+              description: item.description,
+              suggestedDurationMs: item.durationMs,
+              durationMs: item.durationMs,
+              sourceFingerprint: expectedFingerprint,
+              pendingSourceFingerprint: null,
+              pendingPlanSnapshotId: null,
+              planDisposition: StoryProductionPlanDisposition.planned,
+              status: StoryProductionSpecStatus.current,
+              userModifiedAt: null,
+              userModifiedByUserId: null,
+              lastPlannedAt: now,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) {
+            throw productionCasConflict('Storyboard sequence');
+          }
+          await this.reconcileSequenceChildren(
+            tx,
+            {
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+              actorUserId: user.userId,
+              sourceFingerprint: pending.sourceFingerprint,
+              canonicalCharacterIds: [],
+              productionPlan: pending.plan,
+            },
+            item,
+            { ...current, version: current.version + 1 },
+            new Map(assetRows.map((asset) => [asset.stableKey, asset])),
+            now,
+            {
+              clearUserModifications: true,
+              preserveCompatibleBindings: true,
+            },
+          );
+          outcome = 'applied_latest';
+        }
+
+        const resolved = await tx.storyStoryboardSequence.findUniqueOrThrow({
+          where: { id: current.id },
+          include: STORYBOARD_INCLUDE,
+        });
+        return {
+          targetKind: 'storyboard_sequence' as const,
+          targetId: resolved.id,
+          resolution: input.resolution,
+          outcome,
+          item: toStoryboardSequenceDto(resolved),
+          productionState: await this.getProductionStateInTransaction(
+            tx,
+            projectId,
+            chapterId,
+          ),
+        };
+      },
+    });
+  }
+
+  async patchAssetSpec(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    assetSpecId: string,
+    idempotencyKey: string,
+    input: PatchStoryAssetSpecInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'asset-spec.patch',
+      request: { assetSpecId, input },
+      mutate: async (tx, now) => {
+        const current = await tx.storyAssetSpec.findFirst({
+          where: {
+            id: assetSpecId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+          },
+        });
+        if (!current) throw productionNotFound('Asset Spec', assetSpecId);
+        if (input.selectedMediaVersionId) {
+          await requireAssetMediaVersion(
+            tx,
+            input.selectedMediaVersionId,
+            current.id,
+            projectId,
+            chapterId,
+          );
+        }
+        const semanticModified = storyAssetSemanticPatch(input);
+        const updated = await tx.storyAssetSpec.updateMany({
+          where: { id: current.id, version: input.expectedVersion },
+          data: {
+            ...defined(input, 'name'),
+            ...defined(input, 'description'),
+            ...defined(input, 'imagePrompt'),
+            ...defined(input, 'videoPrompt'),
+            ...defined(input, 'negativePrompt'),
+            ...defined(input, 'selectedMediaVersionId'),
+            ...(semanticModified
+              ? {
+                  userModifiedAt: now,
+                  userModifiedByUserId: user.userId,
+                }
+              : {}),
+            version: { increment: 1 },
+          },
+        });
+        if (updated.count !== 1) throw productionCasConflict('Asset Spec');
+        return toAssetSpecDto(
+          await tx.storyAssetSpec.findUniqueOrThrow({
+            where: { id: current.id },
+            include: ASSET_SPEC_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  async patchSequence(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    idempotencyKey: string,
+    input: PatchStoryStoryboardSequenceInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'storyboard-sequence.patch',
+      request: { sequenceId, input },
+      mutate: async (tx, now) => {
+        const sequence = await tx.storyStoryboardSequence.findFirst({
+          where: {
+            id: sequenceId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+          },
+        });
+        if (!sequence)
+          throw productionNotFound('Storyboard sequence', sequenceId);
+        const updated = await tx.storyStoryboardSequence.updateMany({
+          where: { id: sequence.id, version: input.expectedVersion },
+          data: {
+            ...defined(input, 'title'),
+            ...defined(input, 'description'),
+            userModifiedAt: now,
+            userModifiedByUserId: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (updated.count !== 1)
+          throw productionCasConflict('Storyboard sequence');
+        return toStoryboardSequenceDto(
+          await tx.storyStoryboardSequence.findUniqueOrThrow({
+            where: { id: sequence.id },
+            include: STORYBOARD_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  /**
+   * Replace one complete visual timeline atomically. Existing bindings and
+   * creative media stay attached to retained clip ids; omitted clips and their
+   * bindings are archived. This command is deliberately separate from clip
+   * metadata PATCH because no sequence of independent coordinate writes can
+   * preserve the database's continuous-coverage invariant.
+   */
+  async putTimeline(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    idempotencyKey: string,
+    input: PutStoryStoryboardTimelineInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'storyboard-timeline.put',
+      request: { sequenceId, input },
+      mutate: async (tx, now) => {
+        const sequence = await tx.storyStoryboardSequence.findFirst({
+          where: {
+            id: sequenceId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+        });
+        if (!sequence) {
+          throw productionNotFound('Storyboard sequence', sequenceId);
+        }
+        if (sequence.version !== input.expectedVersion) {
+          throw productionCasConflict('Storyboard sequence');
+        }
+
+        const [allClips, cues] = await Promise.all([
+          tx.storyStoryboardClip.findMany({
+            where: {
+              sequenceId,
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+            },
+            orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+          }),
+          tx.storyStoryboardCue.findMany({
+            where: {
+              sequenceId,
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+              status: { not: StoryProductionSpecStatus.archived },
+            },
+            select: { id: true, atMs: true },
+          }),
+        ]);
+        if (cues.some((cue) => cue.atMs > input.durationMs)) {
+          throw new BadRequestException({
+            code: 'STORYBOARD_CUE_OUT_OF_RANGE',
+            message:
+              'Every Storyboard cue must remain within the replacement timeline duration.',
+          });
+        }
+
+        const activeClips = allClips.filter(
+          (clip) => clip.status !== StoryProductionSpecStatus.archived,
+        );
+        const activeById = new Map(activeClips.map((clip) => [clip.id, clip]));
+        const everyStableKey = new Map(
+          allClips.map((clip) => [clip.stableKey, clip]),
+        );
+        const retainedIds = new Set<string>();
+
+        for (const clipInput of input.clips) {
+          if (!clipInput.id) {
+            if (everyStableKey.has(clipInput.stableKey)) {
+              throw new ConflictException({
+                code: 'STORYBOARD_CLIP_STABLE_KEY_CONFLICT',
+                message:
+                  'A new Storyboard clip must use a stable key that has never belonged to this sequence.',
+              });
+            }
+            continue;
+          }
+          const existing = activeById.get(clipInput.id);
+          if (!existing) {
+            throw productionNotFound('Storyboard clip', clipInput.id);
+          }
+          if (existing.version !== clipInput.expectedVersion) {
+            throw productionCasConflict('Storyboard clip');
+          }
+          if (existing.stableKey !== clipInput.stableKey) {
+            throw new BadRequestException({
+              code: 'STORYBOARD_CLIP_STABLE_KEY_IMMUTABLE',
+              message:
+                'An existing Storyboard clip stable key cannot be changed.',
+            });
+          }
+          retainedIds.add(existing.id);
+        }
+
+        // Move every rank into a disjoint range first. The ordinary unique
+        // index is immediate, so a naive rank+constant rewrite can collide
+        // with another row's old rank. The offset band must clear BOTH the
+        // old ranks and the new compact ranks 0..n-1 written below, because
+        // omitted rows keep their shifted slots until they are archived after
+        // the write loop.
+        if (allClips.length > 0) {
+          const maximumRank = Math.max(...allClips.map((clip) => clip.rank));
+          const offset = Math.max(maximumRank, input.clips.length - 1) + 1;
+          if (maximumRank + offset > 2_147_483_647) {
+            throw new InternalServerErrorException({
+              code: 'STORYBOARD_TIMELINE_RANK_EXHAUSTED',
+              message: 'The Storyboard timeline rank space is exhausted.',
+            });
+          }
+          await tx.storyStoryboardClip.updateMany({
+            where: { sequenceId },
+            data: { rank: { increment: offset } },
+          });
+        }
+
+        for (const [rank, clipInput] of input.clips.entries()) {
+          assertClipPromptShape(
+            clipInput.kind,
+            clipInput.imagePrompt,
+            clipInput.videoPrompt,
+          );
+          if (!clipInput.id) {
+            await tx.storyStoryboardClip.create({
+              data: {
+                storyProjectId: projectId,
+                storyChapterId: chapterId,
+                sequenceId,
+                stableKey: clipInput.stableKey,
+                title: clipInput.title,
+                rank,
+                kind: clipInput.kind,
+                track: 'visual',
+                startMs: clipInput.startMs,
+                durationMs: clipInput.durationMs,
+                description: clipInput.description,
+                imagePrompt: clipInput.imagePrompt,
+                videoPrompt: clipInput.videoPrompt,
+                negativePrompt: clipInput.negativePrompt,
+                sourceFingerprint: canonicalJsonHash({
+                  kind: 'human-storyboard-clip',
+                  projectId,
+                  chapterId,
+                  sequenceId,
+                  stableKey: clipInput.stableKey,
+                }),
+                createdByUserId: user.userId,
+                userModifiedAt: now,
+                userModifiedByUserId: user.userId,
+              },
+            });
+            continue;
+          }
+          const existing = activeById.get(clipInput.id)!;
+          const updated = await tx.storyStoryboardClip.updateMany({
+            where: { id: existing.id, version: clipInput.expectedVersion },
+            data: {
+              title: clipInput.title,
+              rank,
+              kind: clipInput.kind,
+              track: 'visual',
+              startMs: clipInput.startMs,
+              durationMs: clipInput.durationMs,
+              description: clipInput.description,
+              imagePrompt: clipInput.imagePrompt,
+              videoPrompt: clipInput.videoPrompt,
+              negativePrompt: clipInput.negativePrompt,
+              ...(existing.kind === clipInput.kind
+                ? {}
+                : { selectedMediaVersionId: null }),
+              userModifiedAt: now,
+              userModifiedByUserId: user.userId,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1) {
+            throw productionCasConflict('Storyboard clip');
+          }
+        }
+
+        const omitted = activeClips.filter((clip) => !retainedIds.has(clip.id));
+        let archivedRank = input.clips.length;
+        for (const clip of omitted) {
+          await tx.storyStoryboardClipAssetBinding.updateMany({
+            where: { storyboardClipId: clip.id },
+            data: {
+              status: StoryProductionSpecStatus.archived,
+              pendingSourceFingerprint: null,
+            },
+          });
+          await tx.storyStoryboardCue.updateMany({
+            where: { storyboardClipId: clip.id },
+            data: {
+              storyboardClipId: null,
+              userModifiedAt: now,
+              userModifiedByUserId: user.userId,
+              version: { increment: 1 },
+            },
+          });
+          const archived = await tx.storyStoryboardClip.updateMany({
+            where: { id: clip.id, version: clip.version },
+            data: {
+              rank: archivedRank++,
+              status: StoryProductionSpecStatus.archived,
+              pendingSourceFingerprint: null,
+              userModifiedAt: now,
+              userModifiedByUserId: user.userId,
+              version: { increment: 1 },
+            },
+          });
+          if (archived.count !== 1) {
+            throw productionCasConflict('Storyboard clip');
+          }
+        }
+        for (const clip of allClips) {
+          if (clip.status !== StoryProductionSpecStatus.archived) continue;
+          await tx.storyStoryboardClip.update({
+            where: { id: clip.id },
+            data: { rank: archivedRank++ },
+          });
+        }
+
+        const updatedSequence = await tx.storyStoryboardSequence.updateMany({
+          where: { id: sequence.id, version: input.expectedVersion },
+          data: {
+            durationMs: input.durationMs,
+            userModifiedAt: now,
+            userModifiedByUserId: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (updatedSequence.count !== 1) {
+          throw productionCasConflict('Storyboard sequence');
+        }
+        return toStoryboardSequenceDto(
+          await tx.storyStoryboardSequence.findUniqueOrThrow({
+            where: { id: sequence.id },
+            include: STORYBOARD_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  async patchClip(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    clipId: string,
+    idempotencyKey: string,
+    input: PatchStoryStoryboardClipInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'storyboard-clip.patch',
+      request: { sequenceId, clipId, input },
+      mutate: async (tx, now) => {
+        const clip = await tx.storyStoryboardClip.findFirst({
+          where: {
+            id: clipId,
+            sequenceId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+          },
+        });
+        if (!clip) throw productionNotFound('Storyboard clip', clipId);
+        if (input.selectedMediaVersionId) {
+          await requireClipMediaVersion(
+            tx,
+            input.selectedMediaVersionId,
+            clip.id,
+            projectId,
+            chapterId,
+            clip.kind,
+          );
+        }
+        const nextImagePrompt =
+          input.imagePrompt === undefined
+            ? clip.imagePrompt
+            : input.imagePrompt;
+        const nextVideoPrompt =
+          input.videoPrompt === undefined
+            ? clip.videoPrompt
+            : input.videoPrompt;
+        assertClipPromptShape(clip.kind, nextImagePrompt, nextVideoPrompt);
+        const semanticModified = storyboardClipSemanticPatch(input);
+        const updated = await tx.storyStoryboardClip.updateMany({
+          where: { id: clip.id, version: input.expectedVersion },
+          data: {
+            ...defined(input, 'title'),
+            ...defined(input, 'description'),
+            ...defined(input, 'imagePrompt'),
+            ...defined(input, 'videoPrompt'),
+            ...defined(input, 'negativePrompt'),
+            ...defined(input, 'selectedMediaVersionId'),
+            ...(semanticModified
+              ? {
+                  userModifiedAt: now,
+                  userModifiedByUserId: user.userId,
+                }
+              : {}),
+            version: { increment: 1 },
+          },
+        });
+        if (updated.count !== 1) throw productionCasConflict('Storyboard clip');
+        return toStoryboardSequenceDto(
+          await tx.storyStoryboardSequence.findUniqueOrThrow({
+            where: { id: sequenceId },
+            include: STORYBOARD_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  async putBinding(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    clipId: string,
+    assetSpecId: string,
+    idempotencyKey: string,
+    input: PutStoryStoryboardBindingInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'storyboard-binding.put',
+      request: { sequenceId, clipId, assetSpecId, input },
+      mutate: async (tx, now) => {
+        const [clip, assetSpec] = await Promise.all([
+          tx.storyStoryboardClip.findFirst({
+            where: {
+              id: clipId,
+              sequenceId,
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+            },
+          }),
+          tx.storyAssetSpec.findFirst({
+            where: {
+              id: assetSpecId,
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+            },
+          }),
+        ]);
+        if (!clip) throw productionNotFound('Storyboard clip', clipId);
+        if (!assetSpec) throw productionNotFound('Asset Spec', assetSpecId);
+        if (input.pinnedMediaVersionId) {
+          await requireAssetMediaVersion(
+            tx,
+            input.pinnedMediaVersionId,
+            assetSpec.id,
+            projectId,
+            chapterId,
+          );
+        }
+        const existing = await tx.storyStoryboardClipAssetBinding.findUnique({
+          where: {
+            storyboardClipId_assetSpecId_role: {
+              storyboardClipId: clip.id,
+              assetSpecId: assetSpec.id,
+              role: input.role,
+            },
+          },
+        });
+        const fingerprint = canonicalJsonHash({
+          kind: 'human-binding',
+          clipId,
+          assetSpecId,
+          role: input.role,
+        });
+        if (!existing) {
+          if (input.expectedVersion !== 0)
+            throw productionCasConflict('Storyboard binding');
+          await tx.storyStoryboardClipAssetBinding.create({
+            data: {
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+              storyboardClipId: clip.id,
+              assetSpecId: assetSpec.id,
+              role: input.role,
+              mode: input.mode,
+              pinnedMediaVersionId: input.pinnedMediaVersionId ?? null,
+              required: input.required,
+              rank: input.rank,
+              sourceFingerprint: fingerprint,
+              createdByUserId: user.userId,
+              userModifiedAt: now,
+              userModifiedByUserId: user.userId,
+            },
+          });
+        } else {
+          const updated = await tx.storyStoryboardClipAssetBinding.updateMany({
+            where: { id: existing.id, version: input.expectedVersion },
+            data: {
+              mode: input.mode,
+              pinnedMediaVersionId: input.pinnedMediaVersionId ?? null,
+              required: input.required,
+              rank: input.rank,
+              status: StoryProductionSpecStatus.current,
+              pendingSourceFingerprint: null,
+              userModifiedAt: now,
+              userModifiedByUserId: user.userId,
+              version: { increment: 1 },
+            },
+          });
+          if (updated.count !== 1)
+            throw productionCasConflict('Storyboard binding');
+        }
+        return toStoryboardSequenceDto(
+          await tx.storyStoryboardSequence.findUniqueOrThrow({
+            where: { id: sequenceId },
+            include: STORYBOARD_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  async patchCue(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    cueId: string,
+    idempotencyKey: string,
+    input: PatchStoryStoryboardCueInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'storyboard-cue.patch',
+      request: { sequenceId, cueId, input },
+      mutate: async (tx, now) => {
+        const sequence = await tx.storyStoryboardSequence.findFirst({
+          where: {
+            id: sequenceId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+          },
+        });
+        if (!sequence)
+          throw productionNotFound('Storyboard sequence', sequenceId);
+        if (input.atMs > sequence.durationMs) {
+          throw new BadRequestException({
+            code: 'STORYBOARD_CUE_OUT_OF_RANGE',
+            message:
+              'A Storyboard cue must occur within its sequence duration.',
+          });
+        }
+        const updated = await tx.storyStoryboardCue.updateMany({
+          where: {
+            id: cueId,
+            sequenceId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            version: input.expectedVersion,
+          },
+          data: {
+            atMs: input.atMs,
+            userModifiedAt: now,
+            userModifiedByUserId: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (updated.count !== 1) throw productionCasConflict('Storyboard cue');
+        return toStoryboardSequenceDto(
+          await tx.storyStoryboardSequence.findUniqueOrThrow({
+            where: { id: sequenceId },
+            include: STORYBOARD_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  /**
+   * Reconcile one approved plan into chapter-owned production specifications.
+   * The caller owns the surrounding Script + Plot transaction. This method
+   * never starts paid work and never creates MediaAsset or AiJob rows.
+   */
+  async applyApprovedProductionPlanInTransaction(
+    tx: Prisma.TransactionClient,
+    rawInput: ApplyApprovedProductionPlanInput,
+  ): Promise<StoryProductionReconcileResult> {
+    const productionPlan = StoryProductionPlanSchema.parse(
+      rawInput.productionPlan,
+    );
+    if (!/^[0-9a-f]{64}$/.test(rawInput.sourceFingerprint)) {
+      throw new BadRequestException({
+        code: 'STORY_PRODUCTION_SOURCE_INVALID',
+        message:
+          'The production plan source fingerprint must be a lowercase SHA-256 hash.',
+      });
+    }
+    const [chapter, draftRow] = await Promise.all([
+      tx.storyChapter.findFirst({
+        where: {
+          id: rawInput.storyChapterId,
+          storyProjectId: rawInput.storyProjectId,
+        },
+      }),
+      tx.storyDraft.findUnique({
+        where: { storyProjectId: rawInput.storyProjectId },
+      }),
+    ]);
+    if (!chapter || !draftRow) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        message: 'Story chapter not found.',
+      });
+    }
+    this.validateApprovedProductionPlan({
+      productionPlan,
+      draft: draftRow.content,
+      chapterNodeIds: jsonStringArray(chapter.nodeIds),
+      canonicalCharacterIds: rawInput.canonicalCharacterIds,
+    });
+
+    const result: StoryProductionReconcileResult = {
+      assetSpecsCreated: 0,
+      assetSpecsUpdated: 0,
+      assetSpecsMarkedStale: 0,
+      sequencesCreated: 0,
+      sequencesUpdated: 0,
+      sequencesMarkedStale: 0,
+    };
+    const now = new Date();
+    const planSnapshot = await this.ensurePlanSnapshot(
+      tx,
+      rawInput,
+      productionPlan,
+    );
+    const assetByKey = await this.reconcileAssetSpecs(
+      tx,
+      rawInput,
+      productionPlan,
+      planSnapshot.id,
+      now,
+      result,
+    );
+    await this.reconcileStoryboard(
+      tx,
+      rawInput,
+      productionPlan,
+      planSnapshot.id,
+      assetByKey,
+      now,
+      result,
+    );
+    return result;
+  }
+
+  private async ensurePlanSnapshot(
+    tx: Prisma.TransactionClient,
+    input: ApplyApprovedProductionPlanInput,
+    productionPlan: StoryProductionPlan,
+  ) {
+    const planFingerprint = canonicalJsonHash({
+      sourceFingerprint: input.sourceFingerprint,
+      productionPlan,
+    });
+    const snapshot = await tx.storyProductionPlanSnapshot.upsert({
+      where: {
+        storyChapterId_planFingerprint: {
+          storyChapterId: input.storyChapterId,
+          planFingerprint,
+        },
+      },
+      update: {},
+      create: {
+        storyProjectId: input.storyProjectId,
+        storyChapterId: input.storyChapterId,
+        sourceFingerprint: input.sourceFingerprint,
+        planFingerprint,
+        productionPlan: productionPlan as Prisma.InputJsonValue,
+        createdByUserId: input.actorUserId,
+      },
+    });
+    const parsed = StoryProductionPlanSchema.safeParse(snapshot.productionPlan);
+    if (
+      snapshot.storyProjectId !== input.storyProjectId ||
+      snapshot.sourceFingerprint !== input.sourceFingerprint ||
+      !parsed.success ||
+      canonicalJsonHash({
+        sourceFingerprint: snapshot.sourceFingerprint,
+        productionPlan: parsed.data,
+      }) !== snapshot.planFingerprint
+    ) {
+      throw productionSnapshotCorrupt();
+    }
+    return snapshot;
+  }
+
+  /** Pure preflight used before Script/Plot writes begin. */
+  validateApprovedProductionPlan(
+    rawInput: ValidateApprovedProductionPlanInput,
+  ): StoryProductionPlan {
+    const productionPlan = StoryProductionPlanSchema.parse(
+      rawInput.productionPlan,
+    );
+    const draft = InteractiveStoryDraftContentSchema.parse(rawInput.draft);
+    const ownedNodeIds = new Set(rawInput.chapterNodeIds);
+    const clipNodeById = new Map(
+      draft.graph.nodes
+        .filter((node) => node.kind === 'clip' && ownedNodeIds.has(node.nodeId))
+        .map((node) => [node.nodeId, node]),
+    );
+    const screenplayCharacters = new Set(rawInput.canonicalCharacterIds);
+    const bibleCharacters = new Set(
+      draft.storyBible.characters.map((character) => character.id),
+    );
+    for (const asset of productionPlan.assetSpecs) {
+      for (const nodeId of asset.sourceNodeIds) {
+        if (!clipNodeById.has(nodeId))
+          throw productionCrossChapter('Asset Spec source', nodeId);
+      }
+      const sourceCharacterId = asset.sourceCharacterId;
+      if (
+        asset.kind === 'character' &&
+        (!sourceCharacterId ||
+          !screenplayCharacters.has(sourceCharacterId) ||
+          !bibleCharacters.has(sourceCharacterId))
+      ) {
+        throw new BadRequestException({
+          code: 'STORY_PRODUCTION_CHARACTER_INVALID',
+          message: `Character Asset Spec ${asset.stableKey} does not reference a canonical character in the approved chapter screenplay.`,
+        });
+      }
+    }
+    for (const sequence of productionPlan.storyboardSequences) {
+      const node = clipNodeById.get(sequence.plotNodeId);
+      if (!node)
+        throw productionCrossChapter(
+          'Storyboard Plot node',
+          sequence.plotNodeId,
+        );
+      const validDecisionIds =
+        node.exit.kind === 'choice'
+          ? new Set([node.exit.decisionId])
+          : new Set<string>();
+      for (const cue of sequence.cues) {
+        if (!validDecisionIds.has(cue.decisionId)) {
+          throw new BadRequestException({
+            code: 'STORY_PRODUCTION_DECISION_INVALID',
+            message: `Storyboard cue ${cue.stableKey} references a decision not owned by Plot node ${sequence.plotNodeId}.`,
+          });
+        }
+      }
+    }
+    const plannedNodeIds = new Set(
+      productionPlan.storyboardSequences.map((sequence) => sequence.plotNodeId),
+    );
+    const missingSequenceNodeIds = [...clipNodeById.keys()].filter(
+      (nodeId) => !plannedNodeIds.has(nodeId),
+    );
+    if (missingSequenceNodeIds.length > 0) {
+      throw new BadRequestException({
+        code: 'STORY_PRODUCTION_STORYBOARD_INCOMPLETE',
+        message: `Every chapter Plot node requires exactly one Storyboard sequence. Missing: ${missingSequenceNodeIds.join(', ')}.`,
+      });
+    }
+
+    return productionPlan;
+  }
+
+  private async reconcileAssetSpecs(
+    tx: Prisma.TransactionClient,
+    input: ApplyApprovedProductionPlanInput,
+    plan: StoryProductionPlan,
+    planSnapshotId: string,
+    now: Date,
+    result: StoryProductionReconcileResult,
+  ): Promise<Map<string, StoryAssetSpec>> {
+    const existing = await tx.storyAssetSpec.findMany({
+      where: {
+        storyProjectId: input.storyProjectId,
+        storyChapterId: input.storyChapterId,
+      },
+    });
+    const existingByKey = new Map(existing.map((row) => [row.stableKey, row]));
+    const plannedKeys = new Set(
+      plan.assetSpecs.map((asset) => asset.stableKey),
+    );
+    for (const item of plan.assetSpecs) {
+      const fingerprint = planFingerprint(
+        input.sourceFingerprint,
+        'asset',
+        item,
+      );
+      const current = existingByKey.get(item.stableKey);
+      if (!current) {
+        const created = await tx.storyAssetSpec.create({
+          data: {
+            storyProjectId: input.storyProjectId,
+            storyChapterId: input.storyChapterId,
+            stableKey: item.stableKey,
+            kind: item.kind,
+            sourceCharacterId: item.sourceCharacterId ?? null,
+            sourceNodeIds: item.sourceNodeIds,
+            name: item.name,
+            description: item.description,
+            imagePrompt: item.imagePrompt,
+            videoPrompt: item.videoPrompt ?? null,
+            negativePrompt: item.negativePrompt ?? null,
+            sourceFingerprint: fingerprint,
+            createdByUserId: input.actorUserId,
+            lastPlannedAt: now,
+          },
+        });
+        existingByKey.set(item.stableKey, created);
+        result.assetSpecsCreated += 1;
+        continue;
+      }
+      if (
+        current.sourceFingerprint === fingerprint &&
+        current.status === StoryProductionSpecStatus.current
+      ) {
+        await tx.storyAssetSpec.update({
+          where: { id: current.id },
+          data: { lastPlannedAt: now },
+        });
+        continue;
+      }
+      if (current.userModifiedAt) {
+        if (
+          current.status === StoryProductionSpecStatus.stale &&
+          current.pendingSourceFingerprint === fingerprint &&
+          current.pendingPlanSnapshotId === planSnapshotId
+        ) {
+          await tx.storyAssetSpec.update({
+            where: { id: current.id },
+            data: { lastPlannedAt: now },
+          });
+          continue;
+        }
+        const stale = await tx.storyAssetSpec.update({
+          where: { id: current.id },
+          data: {
+            status: StoryProductionSpecStatus.stale,
+            pendingSourceFingerprint: fingerprint,
+            pendingPlanSnapshotId: planSnapshotId,
+            lastPlannedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        existingByKey.set(item.stableKey, stale);
+        result.assetSpecsMarkedStale += 1;
+        continue;
+      }
+      const updated = await tx.storyAssetSpec.update({
+        where: { id: current.id },
+        data: {
+          kind: item.kind,
+          sourceCharacterId: item.sourceCharacterId ?? null,
+          sourceNodeIds: item.sourceNodeIds,
+          name: item.name,
+          description: item.description,
+          imagePrompt: item.imagePrompt,
+          videoPrompt: item.videoPrompt ?? null,
+          negativePrompt: item.negativePrompt ?? null,
+          sourceFingerprint: fingerprint,
+          pendingSourceFingerprint: null,
+          pendingPlanSnapshotId: null,
+          planDisposition: StoryProductionPlanDisposition.planned,
+          status: StoryProductionSpecStatus.current,
+          lastPlannedAt: now,
+          version: { increment: 1 },
+        },
+      });
+      existingByKey.set(item.stableKey, updated);
+      result.assetSpecsUpdated += 1;
+    }
+    for (const current of existing) {
+      if (
+        plannedKeys.has(current.stableKey) ||
+        current.status === StoryProductionSpecStatus.archived
+      )
+        continue;
+      const removalFingerprint = planFingerprint(
+        input.sourceFingerprint,
+        'asset-removed',
+        {
+          stableKey: current.stableKey,
+        },
+      );
+      if (
+        current.userModifiedAt &&
+        current.status === StoryProductionSpecStatus.stale &&
+        current.pendingSourceFingerprint === removalFingerprint &&
+        current.pendingPlanSnapshotId === planSnapshotId
+      ) {
+        await tx.storyAssetSpec.update({
+          where: { id: current.id },
+          data: { lastPlannedAt: now },
+        });
+        continue;
+      }
+      const updated = await tx.storyAssetSpec.update({
+        where: { id: current.id },
+        data: current.userModifiedAt
+          ? {
+              status: StoryProductionSpecStatus.stale,
+              pendingSourceFingerprint: removalFingerprint,
+              pendingPlanSnapshotId: planSnapshotId,
+              lastPlannedAt: now,
+              version: { increment: 1 },
+            }
+          : {
+              status: StoryProductionSpecStatus.archived,
+              pendingSourceFingerprint: null,
+              pendingPlanSnapshotId: null,
+              planDisposition: StoryProductionPlanDisposition.planned,
+              lastPlannedAt: now,
+              version: { increment: 1 },
+            },
+      });
+      existingByKey.set(current.stableKey, updated);
+      if (current.userModifiedAt) result.assetSpecsMarkedStale += 1;
+      else result.assetSpecsUpdated += 1;
+    }
+    return existingByKey;
+  }
+
+  private async reconcileStoryboard(
+    tx: Prisma.TransactionClient,
+    input: ApplyApprovedProductionPlanInput,
+    plan: StoryProductionPlan,
+    planSnapshotId: string,
+    assetByKey: Map<string, StoryAssetSpec>,
+    now: Date,
+    result: StoryProductionReconcileResult,
+  ): Promise<void> {
+    const existing = await tx.storyStoryboardSequence.findMany({
+      where: {
+        storyProjectId: input.storyProjectId,
+        storyChapterId: input.storyChapterId,
+      },
+      include: { clips: { include: { assetBindings: true } }, cues: true },
+    });
+    const existingByNode = new Map(
+      existing.map((row) => [row.plotNodeId, row]),
+    );
+    const plannedNodeIds = new Set(
+      plan.storyboardSequences.map((row) => row.plotNodeId),
+    );
+    for (const item of plan.storyboardSequences) {
+      const fingerprint = planFingerprint(
+        input.sourceFingerprint,
+        'sequence',
+        item,
+      );
+      const current = existingByNode.get(item.plotNodeId);
+      // Archived children are dead history: their userModifiedAt stamps must
+      // not keep re-conflicting a sequence the creator already reconciled.
+      const subtreeWasModified =
+        current?.userModifiedAt !== null &&
+        current?.userModifiedAt !== undefined
+          ? true
+          : Boolean(
+              current?.clips.some(
+                (clip) =>
+                  clip.status !== StoryProductionSpecStatus.archived &&
+                  (clip.userModifiedAt ||
+                    clip.assetBindings.some(
+                      (binding) =>
+                        binding.status !== StoryProductionSpecStatus.archived &&
+                        binding.userModifiedAt,
+                    )),
+              ) ||
+              current?.cues.some(
+                (cue) =>
+                  cue.status !== StoryProductionSpecStatus.archived &&
+                  cue.userModifiedAt,
+              ),
+            );
+      if (
+        current &&
+        current.sourceFingerprint !== fingerprint &&
+        subtreeWasModified
+      ) {
+        if (
+          current.status === StoryProductionSpecStatus.stale &&
+          current.pendingSourceFingerprint === fingerprint &&
+          current.pendingPlanSnapshotId === planSnapshotId
+        ) {
+          await tx.storyStoryboardSequence.update({
+            where: { id: current.id },
+            data: { lastPlannedAt: now },
+          });
+          continue;
+        }
+        await tx.storyStoryboardSequence.update({
+          where: { id: current.id },
+          data: {
+            status: StoryProductionSpecStatus.stale,
+            pendingSourceFingerprint: fingerprint,
+            pendingPlanSnapshotId: planSnapshotId,
+            lastPlannedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        result.sequencesMarkedStale += 1;
+        continue;
+      }
+      let sequence: StoryStoryboardSequence;
+      if (!current) {
+        sequence = await tx.storyStoryboardSequence.create({
+          data: {
+            storyProjectId: input.storyProjectId,
+            storyChapterId: input.storyChapterId,
+            plotNodeId: item.plotNodeId,
+            stableKey: item.plotNodeId,
+            title: item.title,
+            description: item.description,
+            suggestedDurationMs: item.durationMs,
+            durationMs: item.durationMs,
+            sourceFingerprint: fingerprint,
+            createdByUserId: input.actorUserId,
+            lastPlannedAt: now,
+          },
+        });
+        result.sequencesCreated += 1;
+      } else if (
+        current.sourceFingerprint === fingerprint &&
+        current.status === StoryProductionSpecStatus.current
+      ) {
+        await tx.storyStoryboardSequence.update({
+          where: { id: current.id },
+          data: { lastPlannedAt: now },
+        });
+        continue;
+      } else {
+        sequence = await tx.storyStoryboardSequence.update({
+          where: { id: current.id },
+          data: {
+            stableKey: item.plotNodeId,
+            title: item.title,
+            description: item.description,
+            suggestedDurationMs: item.durationMs,
+            durationMs: item.durationMs,
+            sourceFingerprint: fingerprint,
+            pendingSourceFingerprint: null,
+            pendingPlanSnapshotId: null,
+            planDisposition: StoryProductionPlanDisposition.planned,
+            status: StoryProductionSpecStatus.current,
+            lastPlannedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        result.sequencesUpdated += 1;
+      }
+      await this.reconcileSequenceChildren(
+        tx,
+        input,
+        item,
+        sequence,
+        assetByKey,
+        now,
+      );
+    }
+    for (const current of existing) {
+      if (
+        plannedNodeIds.has(current.plotNodeId) ||
+        current.status === StoryProductionSpecStatus.archived
+      )
+        continue;
+      const subtreeWasModified =
+        Boolean(current.userModifiedAt) ||
+        current.clips.some(
+          (clip) =>
+            clip.status !== StoryProductionSpecStatus.archived &&
+            (clip.userModifiedAt ||
+              clip.assetBindings.some(
+                (binding) =>
+                  binding.status !== StoryProductionSpecStatus.archived &&
+                  binding.userModifiedAt,
+              )),
+        ) ||
+        current.cues.some(
+          (cue) =>
+            cue.status !== StoryProductionSpecStatus.archived &&
+            cue.userModifiedAt,
+        );
+      if (subtreeWasModified) {
+        const removalFingerprint = planFingerprint(
+          input.sourceFingerprint,
+          'sequence-removed',
+          { plotNodeId: current.plotNodeId },
+        );
+        if (
+          current.status === StoryProductionSpecStatus.stale &&
+          current.pendingSourceFingerprint === removalFingerprint &&
+          current.pendingPlanSnapshotId === planSnapshotId
+        ) {
+          await tx.storyStoryboardSequence.update({
+            where: { id: current.id },
+            data: { lastPlannedAt: now },
+          });
+          continue;
+        }
+        await tx.storyStoryboardSequence.update({
+          where: { id: current.id },
+          data: {
+            status: StoryProductionSpecStatus.stale,
+            pendingSourceFingerprint: removalFingerprint,
+            pendingPlanSnapshotId: planSnapshotId,
+            lastPlannedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        result.sequencesMarkedStale += 1;
+      } else {
+        await Promise.all([
+          tx.storyStoryboardClipAssetBinding.updateMany({
+            where: { storyboardClip: { sequenceId: current.id } },
+            data: {
+              status: StoryProductionSpecStatus.archived,
+              pendingSourceFingerprint: null,
+            },
+          }),
+          tx.storyStoryboardCue.updateMany({
+            where: { sequenceId: current.id },
+            data: {
+              status: StoryProductionSpecStatus.archived,
+              pendingSourceFingerprint: null,
+            },
+          }),
+          tx.storyStoryboardClip.updateMany({
+            where: { sequenceId: current.id },
+            data: {
+              status: StoryProductionSpecStatus.archived,
+              pendingSourceFingerprint: null,
+            },
+          }),
+        ]);
+        await tx.storyStoryboardSequence.update({
+          where: { id: current.id },
+          data: {
+            status: StoryProductionSpecStatus.archived,
+            pendingSourceFingerprint: null,
+            pendingPlanSnapshotId: null,
+            planDisposition: StoryProductionPlanDisposition.planned,
+            lastPlannedAt: now,
+            version: { increment: 1 },
+          },
+        });
+        result.sequencesUpdated += 1;
+      }
+    }
+  }
+
+  private async reconcileSequenceChildren(
+    tx: Prisma.TransactionClient,
+    input: ApplyApprovedProductionPlanInput,
+    item: StoryProductionPlan['storyboardSequences'][number],
+    sequence: StoryStoryboardSequence,
+    assetByKey: Map<string, StoryAssetSpec>,
+    now: Date,
+    options: {
+      clearUserModifications?: boolean;
+      preserveCompatibleBindings?: boolean;
+    } = {},
+  ): Promise<void> {
+    const existingClips = await tx.storyStoryboardClip.findMany({
+      where: { sequenceId: sequence.id },
+      include: { assetBindings: true },
+    });
+    const byKey = new Map(existingClips.map((row) => [row.stableKey, row]));
+    const plannedClipKeys = new Set(item.clips.map((clip) => clip.stableKey));
+    // Move old ranks out of the way before a planned reorder; all surviving
+    // clips receive their canonical rank below in this same transaction.
+    await tx.storyStoryboardClip.updateMany({
+      where: { sequenceId: sequence.id },
+      data: { rank: { increment: 1_000_000 } },
+    });
+    for (const [rank, clipPlan] of item.clips.entries()) {
+      const fingerprint = planFingerprint(
+        input.sourceFingerprint,
+        'clip',
+        clipPlan,
+      );
+      const current = byKey.get(clipPlan.stableKey);
+      const clipData = {
+        title: clipPlan.title,
+        rank,
+        kind: clipPlan.kind,
+        track: 'visual',
+        startMs: clipPlan.startMs,
+        durationMs: clipPlan.durationMs,
+        description: clipPlan.description,
+        imagePrompt: clipPlan.kind === 'image' ? clipPlan.imagePrompt : null,
+        videoPrompt: clipPlan.kind === 'video' ? clipPlan.videoPrompt : null,
+        negativePrompt: clipPlan.negativePrompt ?? null,
+        sourceFingerprint: fingerprint,
+        pendingSourceFingerprint: null,
+        status: StoryProductionSpecStatus.current,
+        lastPlannedAt: now,
+        ...(options.clearUserModifications
+          ? { userModifiedAt: null, userModifiedByUserId: null }
+          : {}),
+      } as const;
+      let clip: StoryStoryboardClip;
+      if (!current) {
+        clip = await tx.storyStoryboardClip.create({
+          data: {
+            storyProjectId: input.storyProjectId,
+            storyChapterId: input.storyChapterId,
+            sequenceId: sequence.id,
+            stableKey: clipPlan.stableKey,
+            ...clipData,
+            createdByUserId: input.actorUserId,
+          },
+        });
+      } else {
+        clip = await tx.storyStoryboardClip.update({
+          where: { id: current.id },
+          data: {
+            ...clipData,
+            ...(current.kind === clipPlan.kind
+              ? {}
+              : { selectedMediaVersionId: null }),
+            ...(current.sourceFingerprint === fingerprint &&
+            !(options.clearUserModifications && current.userModifiedAt)
+              ? {}
+              : { version: { increment: 1 } }),
+          },
+        });
+      }
+      await this.reconcileBindings(
+        tx,
+        input,
+        clipPlan,
+        clip,
+        assetByKey,
+        now,
+        options,
+      );
+    }
+    for (const current of existingClips) {
+      if (plannedClipKeys.has(current.stableKey)) continue;
+      await tx.storyStoryboardClipAssetBinding.updateMany({
+        where: { storyboardClipId: current.id },
+        data: {
+          status: StoryProductionSpecStatus.archived,
+          pendingSourceFingerprint: null,
+          ...(options.clearUserModifications
+            ? { userModifiedAt: null, userModifiedByUserId: null }
+            : {}),
+        },
+      });
+      await tx.storyStoryboardClip.update({
+        where: { id: current.id },
+        data: {
+          status: StoryProductionSpecStatus.archived,
+          pendingSourceFingerprint: null,
+          version: { increment: 1 },
+        },
+      });
+    }
+    await this.reconcileCues(tx, input, item, sequence, now, options);
+  }
+
+  private async archiveSequenceChildren(
+    tx: Prisma.TransactionClient,
+    sequenceId: string,
+  ): Promise<void> {
+    await Promise.all([
+      tx.storyStoryboardClipAssetBinding.updateMany({
+        where: { storyboardClip: { sequenceId } },
+        data: {
+          status: StoryProductionSpecStatus.archived,
+          pendingSourceFingerprint: null,
+        },
+      }),
+      tx.storyStoryboardCue.updateMany({
+        where: { sequenceId },
+        data: {
+          status: StoryProductionSpecStatus.archived,
+          pendingSourceFingerprint: null,
+        },
+      }),
+      tx.storyStoryboardClip.updateMany({
+        where: { sequenceId },
+        data: {
+          status: StoryProductionSpecStatus.archived,
+          pendingSourceFingerprint: null,
+        },
+      }),
+    ]);
+  }
+
+  private async reconcileBindings(
+    tx: Prisma.TransactionClient,
+    input: ApplyApprovedProductionPlanInput,
+    clipPlan: StoryProductionPlan['storyboardSequences'][number]['clips'][number],
+    clip: StoryStoryboardClip,
+    assetByKey: Map<string, StoryAssetSpec>,
+    now: Date,
+    options: {
+      clearUserModifications?: boolean;
+      preserveCompatibleBindings?: boolean;
+    } = {},
+  ): Promise<void> {
+    const existing = await tx.storyStoryboardClipAssetBinding.findMany({
+      where: { storyboardClipId: clip.id },
+    });
+    const plannedSpecIds = new Set<string>();
+    // The prompt text is the authoritative reference carrier: binding rows are
+    // a derived index over the @stableKey mentions, ranked by first appearance.
+    for (const [rank, assetKey] of storyClipAssetMentions(clipPlan).entries()) {
+      const assetSpec = assetByKey.get(assetKey);
+      if (
+        !assetSpec ||
+        assetSpec.status === StoryProductionSpecStatus.archived
+      ) {
+        throw new InternalServerErrorException({
+          code: 'STORY_PRODUCTION_ASSET_RECONCILE_MISSING',
+          message: `Storyboard references missing Asset Spec ${assetKey}.`,
+        });
+      }
+      plannedSpecIds.add(assetSpec.id);
+      const fingerprint = planFingerprint(input.sourceFingerprint, 'binding', {
+        clip: clipPlan.stableKey,
+        assetKey,
+        rank,
+      });
+      const current = existing.find(
+        (row) => row.assetSpecId === assetSpec.id && row.role === 'reference',
+      );
+      if (!current) {
+        await tx.storyStoryboardClipAssetBinding.create({
+          data: {
+            storyProjectId: input.storyProjectId,
+            storyChapterId: input.storyChapterId,
+            storyboardClipId: clip.id,
+            assetSpecId: assetSpec.id,
+            role: 'reference',
+            mode: StoryStoryboardBindingMode.follow_selected,
+            // Mentions resolve best-effort: without media the mention still
+            // contributes the asset's identity textually and never blocks
+            // generation, mirroring the platform prompt composer.
+            required: false,
+            rank,
+            sourceFingerprint: fingerprint,
+            createdByUserId: input.actorUserId,
+            lastPlannedAt: now,
+          },
+        });
+      } else {
+        await tx.storyStoryboardClipAssetBinding.update({
+          where: { id: current.id },
+          data: {
+            // Planner resets restore the create-path defaults: mentions are
+            // best-effort references and never block generation.
+            mode: options.preserveCompatibleBindings
+              ? current.mode
+              : StoryStoryboardBindingMode.follow_selected,
+            pinnedMediaVersionId: options.preserveCompatibleBindings
+              ? current.pinnedMediaVersionId
+              : null,
+            required: options.preserveCompatibleBindings
+              ? current.required
+              : false,
+            rank,
+            sourceFingerprint: fingerprint,
+            pendingSourceFingerprint: null,
+            status: StoryProductionSpecStatus.current,
+            lastPlannedAt: now,
+            ...(options.clearUserModifications &&
+            !options.preserveCompatibleBindings
+              ? { userModifiedAt: null, userModifiedByUserId: null }
+              : {}),
+            ...(current.sourceFingerprint === fingerprint &&
+            !(options.clearUserModifications && current.userModifiedAt)
+              ? {}
+              : { version: { increment: 1 } }),
+          },
+        });
+      }
+    }
+    await tx.storyStoryboardClipAssetBinding.updateMany({
+      where: {
+        storyboardClipId: clip.id,
+        role: 'reference',
+        assetSpecId: { notIn: [...plannedSpecIds] },
+      },
+      data: {
+        status: StoryProductionSpecStatus.archived,
+        pendingSourceFingerprint: null,
+      },
+    });
+  }
+
+  private async reconcileCues(
+    tx: Prisma.TransactionClient,
+    input: ApplyApprovedProductionPlanInput,
+    item: StoryProductionPlan['storyboardSequences'][number],
+    sequence: StoryStoryboardSequence,
+    now: Date,
+    options: { clearUserModifications?: boolean } = {},
+  ): Promise<void> {
+    const existing = await tx.storyStoryboardCue.findMany({
+      where: { sequenceId: sequence.id },
+    });
+    const byKey = new Map(existing.map((row) => [row.stableKey, row]));
+    const plannedKeys = new Set(item.cues.map((cue) => cue.stableKey));
+    for (const cue of item.cues) {
+      const fingerprint = planFingerprint(input.sourceFingerprint, 'cue', cue);
+      const current = byKey.get(cue.stableKey);
+      if (!current) {
+        await tx.storyStoryboardCue.create({
+          data: {
+            storyProjectId: input.storyProjectId,
+            storyChapterId: input.storyChapterId,
+            sequenceId: sequence.id,
+            stableKey: cue.stableKey,
+            kind: cue.kind,
+            plotDecisionId: cue.decisionId,
+            atMs: cue.atMs,
+            sourceFingerprint: fingerprint,
+            createdByUserId: input.actorUserId,
+            lastPlannedAt: now,
+          },
+        });
+      } else {
+        await tx.storyStoryboardCue.update({
+          where: { id: current.id },
+          data: {
+            kind: cue.kind,
+            plotDecisionId: cue.decisionId,
+            atMs: cue.atMs,
+            sourceFingerprint: fingerprint,
+            pendingSourceFingerprint: null,
+            status: StoryProductionSpecStatus.current,
+            lastPlannedAt: now,
+            ...(options.clearUserModifications
+              ? { userModifiedAt: null, userModifiedByUserId: null }
+              : {}),
+            ...(current.sourceFingerprint === fingerprint &&
+            !(options.clearUserModifications && current.userModifiedAt)
+              ? {}
+              : { version: { increment: 1 } }),
+          },
+        });
+      }
+    }
+    await tx.storyStoryboardCue.updateMany({
+      where: {
+        sequenceId: sequence.id,
+        stableKey: { notIn: [...plannedKeys] },
+      },
+      data: {
+        status: StoryProductionSpecStatus.archived,
+        pendingSourceFingerprint: null,
+      },
+    });
+  }
+
+  private async mutateWithReceipt<T>(input: {
+    user: AuthUser;
+    workspaceId: string;
+    projectId: string;
+    chapterId: string;
+    idempotencyKey: string;
+    operation: string;
+    request: unknown;
+    mutate: (tx: Prisma.TransactionClient, now: Date) => Promise<T>;
+  }): Promise<T> {
+    await this.requireScope(
+      input.user,
+      input.workspaceId,
+      input.projectId,
+      input.chapterId,
+      'story.edit',
+    );
+    const idempotencyKey = normalizeIdempotencyKey(input.idempotencyKey);
+    const requestFingerprint = canonicalJsonHash({
+      operation: input.operation,
+      projectId: input.projectId,
+      chapterId: input.chapterId,
+      request: input.request,
+    });
+    return this.prisma.$transaction(async (tx) => {
+      await this.writeGuard.assertHumanWriteAllowed(tx, input.projectId);
+      await this.permissions.requireProjectInTransaction(
+        tx,
+        input.user.userId,
+        input.projectId,
+        'story.edit',
+      );
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtext(${`story-production:${input.chapterId}:${input.user.userId}:${idempotencyKey}`})::bigint
+        )
+      `;
+      const replay = await tx.storyProductionMutationReceipt.findUnique({
+        where: {
+          storyChapterId_actorUserId_idempotencyKey: {
+            storyChapterId: input.chapterId,
+            actorUserId: input.user.userId,
+            idempotencyKey,
+          },
+        },
+      });
+      if (replay) {
+        if (
+          replay.storyProjectId !== input.projectId ||
+          replay.operation !== input.operation ||
+          replay.requestFingerprint !== requestFingerprint
+        ) {
+          throw new ConflictException({
+            code: 'STORY_PRODUCTION_IDEMPOTENCY_CONFLICT',
+            message:
+              'This idempotency key was already used for another production edit.',
+          });
+        }
+        return replay.response as T;
+      }
+      const chapter = await tx.storyChapter.findFirst({
+        where: { id: input.chapterId, storyProjectId: input.projectId },
+        select: { id: true },
+      });
+      if (!chapter) throw productionNotFound('Story chapter', input.chapterId);
+      const nowRows = await tx.$queryRaw<Array<{ now: Date }>>`
+        SELECT transaction_timestamp() AS "now"
+      `;
+      const value = await input.mutate(tx, nowRows[0]?.now ?? new Date());
+      await tx.storyProductionMutationReceipt.create({
+        data: {
+          storyProjectId: input.projectId,
+          storyChapterId: input.chapterId,
+          actorUserId: input.user.userId,
+          idempotencyKey,
+          operation: input.operation,
+          requestFingerprint,
+          response: value as Prisma.InputJsonValue,
+        },
+      });
+      return value;
+    });
+  }
+
+  private async requireScope(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    capability: 'story.read' | 'story.edit',
+  ): Promise<void> {
+    const { project } = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      capability,
+    );
+    if (project.workspaceId !== workspaceId) {
+      throw new NotFoundException({
+        code: 'STORY_PROJECT_NOT_FOUND',
+        message: 'Story project not found.',
+      });
+    }
+    const chapter = await this.prisma.storyChapter.findFirst({
+      where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
+      select: { id: true },
+    });
+    if (!chapter) throw productionNotFound('Story chapter', chapterId);
+  }
+}
+
+function planFingerprint(source: string, kind: string, value: unknown): string {
+  return canonicalJsonHash({ source, kind, value });
+}
+
+type PendingPlanSnapshotValue = {
+  sourceFingerprint: string;
+  planFingerprint: string;
+  productionPlan: Prisma.JsonValue;
+};
+
+type PendingConflictTarget = {
+  id: string;
+  version: number;
+  status: StoryProductionSpecStatus;
+  pendingSourceFingerprint: string | null;
+  pendingPlanSnapshotId: string | null;
+  pendingPlanSnapshot: PendingPlanSnapshotValue | null;
+};
+
+function parsePlanSnapshot(
+  snapshot: PendingPlanSnapshotValue,
+): StoryProductionPlan {
+  const parsed = StoryProductionPlanSchema.safeParse(snapshot.productionPlan);
+  if (
+    !parsed.success ||
+    canonicalJsonHash({
+      sourceFingerprint: snapshot.sourceFingerprint,
+      productionPlan: parsed.data,
+    }) !== snapshot.planFingerprint
+  ) {
+    throw productionSnapshotCorrupt();
+  }
+  return parsed.data;
+}
+
+function readPendingConflict(
+  row: PendingConflictTarget,
+  input: ResolveStoryProductionConflictInput,
+  resource: string,
+): {
+  plan: StoryProductionPlan;
+  sourceFingerprint: string;
+} {
+  if (row.version !== input.expectedVersion) {
+    throw productionCasConflict(resource);
+  }
+  if (
+    row.status !== StoryProductionSpecStatus.stale ||
+    !row.pendingSourceFingerprint
+  ) {
+    throw new ConflictException({
+      code: 'STORY_PRODUCTION_CONFLICT_NOT_PENDING',
+      message: `${resource} has no pending planner conflict to resolve.`,
+    });
+  }
+  if (row.pendingSourceFingerprint !== input.expectedPendingSourceFingerprint) {
+    throw new ConflictException({
+      code: 'STORY_PRODUCTION_PENDING_CHANGED',
+      message: `${resource} received a newer pending plan. Reload and choose again.`,
+    });
+  }
+  if (!row.pendingPlanSnapshotId || !row.pendingPlanSnapshot) {
+    throw new ConflictException({
+      code: 'STORY_PRODUCTION_PENDING_SNAPSHOT_MISSING',
+      message:
+        'This legacy conflict predates durable plan snapshots. Re-run Story planning once, then resolve the refreshed conflict.',
+    });
+  }
+  return {
+    plan: parsePlanSnapshot(row.pendingPlanSnapshot),
+    sourceFingerprint: row.pendingPlanSnapshot.sourceFingerprint,
+  };
+}
+
+function assertPendingFingerprint(
+  row: { pendingSourceFingerprint: string | null },
+  expected: string,
+): void {
+  if (row.pendingSourceFingerprint !== expected) {
+    throw productionSnapshotCorrupt();
+  }
+}
+
+function pendingConflictCasWhere(
+  row: PendingConflictTarget,
+  input: ResolveStoryProductionConflictInput,
+) {
+  return {
+    id: row.id,
+    version: input.expectedVersion,
+    status: StoryProductionSpecStatus.stale,
+    pendingSourceFingerprint: input.expectedPendingSourceFingerprint,
+    pendingPlanSnapshotId: row.pendingPlanSnapshotId,
+  };
+}
+
+function productionSnapshotCorrupt(): InternalServerErrorException {
+  return new InternalServerErrorException({
+    code: 'STORY_PRODUCTION_PLAN_SNAPSHOT_CORRUPT',
+    message: 'The pending production plan snapshot failed its integrity check.',
+  });
+}
+
+function normalizeIdempotencyKey(value: string): string {
+  const normalized = value.trim();
+  if (!normalized || normalized.length > 160) {
+    throw new BadRequestException({
+      code: 'INVALID_IDEMPOTENCY_KEY',
+      message: 'Idempotency-Key must contain between 1 and 160 characters.',
+    });
+  }
+  return normalized;
+}
+
+function defined<T extends object, K extends keyof T>(
+  value: T,
+  key: K,
+): Partial<Pick<T, K>> {
+  return value[key] === undefined
+    ? {}
+    : ({ [key]: value[key] } as Partial<Pick<T, K>>);
+}
+
+function productionNotFound(resource: string, id: string): NotFoundException {
+  return new NotFoundException({
+    code: 'STORY_PRODUCTION_RESOURCE_NOT_FOUND',
+    message: `${resource} not found.`,
+    id,
+  });
+}
+
+function productionCrossChapter(
+  resource: string,
+  id: string,
+): BadRequestException {
+  return new BadRequestException({
+    code: 'STORY_PRODUCTION_SCOPE_INVALID',
+    message: `${resource} ${id} is not owned by this Story chapter.`,
+  });
+}
+
+function productionCasConflict(resource: string): ConflictException {
+  return new ConflictException({
+    code: 'STORY_PRODUCTION_VERSION_CONFLICT',
+    message: `${resource} changed after it was loaded. Reload and retry.`,
+  });
+}
+
+async function requireAssetMediaVersion(
+  tx: Prisma.TransactionClient,
+  id: string,
+  assetSpecId: string,
+  projectId: string,
+  chapterId: string,
+): Promise<void> {
+  const row = await tx.storyAssetMediaVersion.findFirst({
+    where: {
+      id,
+      assetSpecId,
+      storyProjectId: projectId,
+      storyChapterId: chapterId,
+      archivedAt: null,
+    },
+    select: { id: true },
+  });
+  if (!row) throw productionNotFound('Asset creative media version', id);
+}
+
+async function requireClipMediaVersion(
+  tx: Prisma.TransactionClient,
+  id: string,
+  storyboardClipId: string,
+  projectId: string,
+  chapterId: string,
+  clipKind: StoryStoryboardClip['kind'],
+): Promise<void> {
+  const row = await tx.storyStoryboardClipMediaVersion.findFirst({
+    where: {
+      id,
+      storyboardClipId,
+      storyProjectId: projectId,
+      storyChapterId: chapterId,
+      archivedAt: null,
+    },
+    select: { id: true, mediaAsset: { select: { kind: true } } },
+  });
+  if (!row) throw productionNotFound('Storyboard creative media version', id);
+  assertStoryboardClipMediaKind(clipKind, row.mediaAsset.kind);
+}
+
+export function assertStoryboardClipMediaKind(
+  clipKind: StoryStoryboardClip['kind'],
+  mediaKind: MediaAssetKind,
+): void {
+  if (String(clipKind) === String(mediaKind)) return;
+  throw new BadRequestException({
+    code: 'STORYBOARD_CLIP_MEDIA_KIND_MISMATCH',
+    message: `A ${clipKind} Storyboard clip can only select ${clipKind} media.`,
+    clipKind,
+    mediaKind,
+  });
+}
+
+function assertClipPromptShape(
+  kind: StoryStoryboardClip['kind'],
+  imagePrompt: string | null,
+  videoPrompt: string | null,
+): void {
+  if (kind === 'image' && (!imagePrompt?.trim() || videoPrompt !== null)) {
+    throw new BadRequestException({
+      code: 'STORYBOARD_CLIP_PROMPT_INVALID',
+      message:
+        'An image clip requires an image prompt and cannot have a video prompt.',
+    });
+  }
+  if (kind === 'video' && (!videoPrompt?.trim() || imagePrompt !== null)) {
+    throw new BadRequestException({
+      code: 'STORYBOARD_CLIP_PROMPT_INVALID',
+      message:
+        'A video clip requires a video prompt and cannot have an image prompt.',
+    });
+  }
+}
+
+function jsonStringArray(value: Prisma.JsonValue): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new InternalServerErrorException({
+      code: 'STORY_CHAPTER_SCOPE_CORRUPT',
+      message: 'Story chapter node ownership is invalid.',
+    });
+  }
+  return value as string[];
+}
+
+function plotMatchesApprovedScreenplay(
+  screenplay: StoryScreenplay,
+  draft: InteractiveStoryDraftContent,
+  chapterEntryNodeId: string | null,
+  ownedNodeIds: ReadonlySet<string>,
+): boolean {
+  const expected = {
+    entryNodeId: screenplay.entrySceneId,
+    nodes: screenplay.scenes.map((scene) => ({
+      kind: 'clip' as const,
+      nodeId: scene.nodeId,
+      clipKey: scene.clipKey,
+      ...(scene.name ? { name: scene.name } : {}),
+      description: [scene.heading, scene.action].join('\n\n'),
+      interactions: [],
+      exit: scene.exit,
+    })),
+  };
+  const actual = {
+    entryNodeId: chapterEntryNodeId,
+    nodes: draft.graph.nodes.filter((node) => ownedNodeIds.has(node.nodeId)),
+  };
+  return canonicalJsonHash(actual) === canonicalJsonHash(expected);
+}
+
+function toAssetSpecDto(row: AssetSpecRow) {
+  return {
+    id: row.id,
+    projectId: row.storyProjectId,
+    chapterId: row.storyChapterId,
+    stableKey: row.stableKey,
+    kind: row.kind,
+    sourceCharacterId: row.sourceCharacterId,
+    sourceNodeIds: jsonStringArray(row.sourceNodeIds),
+    name: row.name,
+    description: row.description,
+    imagePrompt: row.imagePrompt,
+    videoPrompt: row.videoPrompt,
+    negativePrompt: row.negativePrompt,
+    generationConfig: row.generationConfig,
+    sourceFingerprint: row.sourceFingerprint,
+    pendingSourceFingerprint: row.pendingSourceFingerprint,
+    planDisposition: row.planDisposition,
+    conflict: toAssetSpecConflictDto(row),
+    status: row.status,
+    version: row.version,
+    selectedMediaVersionId: row.selectedMediaVersionId,
+    selectedMediaVersion: row.selectedMediaVersion
+      ? toCreativeMediaVersionDto(row.selectedMediaVersion)
+      : null,
+    mediaVersions: row.mediaVersions.map(toCreativeMediaVersionDto),
+    latestGeneration: row.generations[0]
+      ? toLatestGenerationDto(row.generations[0], {
+          projectId: row.storyProjectId,
+          chapterId: row.storyChapterId,
+          kind: 'asset_spec',
+          targetId: row.id,
+        })
+      : null,
+    userModifiedAt: row.userModifiedAt?.toISOString() ?? null,
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toCreativeMediaVersionDto(row: CreativeMediaVersionRow) {
+  const previewUrl = resolveMediaPublicUrl(row.mediaAsset);
+  const preferredKey =
+    row.preferredVariant?.status === MediaAssetVariantStatus.ready &&
+    !row.preferredVariant.deletedAt
+      ? row.preferredVariant.variantKey
+      : undefined;
+  const thumbnail = row.mediaAsset.variants.find(
+    (variant) => variant.kind === MediaAssetVariantKind.thumbnail,
+  );
+  const thumbnailUrl = preferredKey
+    ? resolveMediaPublicVariantUrl(row.mediaAsset, preferredKey)
+    : thumbnail
+      ? resolveMediaPublicVariantUrl(row.mediaAsset, thumbnail.variantKey)
+      : null;
+  return {
+    id: row.id,
+    versionNumber: row.versionNumber,
+    mediaAssetId: row.mediaAssetId,
+    mediaKind: row.mediaAsset.kind,
+    mediaStatus: row.mediaAsset.status,
+    preferredVariantId: row.preferredVariantId,
+    preferredVariantStatus: row.preferredVariant?.status ?? null,
+    previewUrl,
+    thumbnailUrl: thumbnailUrl ?? previewUrl,
+    width: row.mediaAsset.width,
+    height: row.mediaAsset.height,
+    durationSeconds: row.mediaAsset.durationSeconds,
+    mimeType: row.mediaAsset.contentType,
+    sourceFingerprint: row.sourceFingerprint,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+function toStoryboardSequenceDto(row: StoryboardSequenceRow) {
+  return {
+    id: row.id,
+    projectId: row.storyProjectId,
+    chapterId: row.storyChapterId,
+    plotNodeId: row.plotNodeId,
+    stableKey: row.stableKey,
+    title: row.title,
+    description: row.description,
+    suggestedDurationMs: row.suggestedDurationMs,
+    durationMs: row.durationMs,
+    sourceFingerprint: row.sourceFingerprint,
+    pendingSourceFingerprint: row.pendingSourceFingerprint,
+    planDisposition: row.planDisposition,
+    conflict: toStoryboardConflictDto(row),
+    status: row.status,
+    version: row.version,
+    userModifiedAt: row.userModifiedAt?.toISOString() ?? null,
+    clips: row.clips.map((clip) => ({
+      id: clip.id,
+      stableKey: clip.stableKey,
+      title: clip.title,
+      rank: clip.rank,
+      kind: clip.kind,
+      track: clip.track,
+      startMs: clip.startMs,
+      durationMs: clip.durationMs,
+      description: clip.description,
+      imagePrompt: clip.imagePrompt,
+      videoPrompt: clip.videoPrompt,
+      negativePrompt: clip.negativePrompt,
+      generationConfig: clip.generationConfig,
+      status: clip.status,
+      version: clip.version,
+      selectedMediaVersionId: clip.selectedMediaVersionId,
+      selectedMediaVersion: clip.selectedMediaVersion
+        ? toCreativeMediaVersionDto(clip.selectedMediaVersion)
+        : null,
+      mediaVersions: clip.mediaVersions.map(toCreativeMediaVersionDto),
+      latestGeneration: clip.generations[0]
+        ? toLatestGenerationDto(clip.generations[0], {
+            projectId: row.storyProjectId,
+            chapterId: row.storyChapterId,
+            kind: 'storyboard_clip',
+            targetId: clip.id,
+            sequenceId: row.id,
+          })
+        : null,
+      userModifiedAt: clip.userModifiedAt?.toISOString() ?? null,
+      assetBindings: clip.assetBindings.map((binding) => {
+        const resolved =
+          binding.mode === StoryStoryboardBindingMode.pinned
+            ? binding.pinnedMediaVersion
+            : binding.assetSpec.selectedMediaVersion;
+        return {
+          id: binding.id,
+          assetSpecId: binding.assetSpecId,
+          assetStableKey: binding.assetSpec.stableKey,
+          role: binding.role,
+          mode: binding.mode,
+          required: binding.required,
+          rank: binding.rank,
+          status: binding.status,
+          version: binding.version,
+          pinnedMediaVersionId: binding.pinnedMediaVersionId,
+          resolvedMediaVersion: resolved
+            ? toCreativeMediaVersionDto(resolved)
+            : null,
+          assetSpec: toAssetSpecDto(binding.assetSpec),
+          userModifiedAt: binding.userModifiedAt?.toISOString() ?? null,
+        };
+      }),
+    })),
+    cues: row.cues.map((cue) => ({
+      id: cue.id,
+      stableKey: cue.stableKey,
+      kind: cue.kind,
+      plotDecisionId: cue.plotDecisionId,
+      atMs: cue.atMs,
+      durationMs: cue.durationMs,
+      payload: cue.payload,
+      status: cue.status,
+      version: cue.version,
+      userModifiedAt: cue.userModifiedAt?.toISOString() ?? null,
+    })),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toAssetSpecConflictDto(row: AssetSpecRow) {
+  if (!row.pendingSourceFingerprint || !row.pendingPlanSnapshot) return null;
+  const plan = parsePlanSnapshot(row.pendingPlanSnapshot);
+  const pendingItem = plan.assetSpecs.find(
+    (item) => item.stableKey === row.stableKey,
+  );
+  const expected = pendingItem
+    ? planFingerprint(
+        row.pendingPlanSnapshot.sourceFingerprint,
+        'asset',
+        pendingItem,
+      )
+    : planFingerprint(
+        row.pendingPlanSnapshot.sourceFingerprint,
+        'asset-removed',
+        { stableKey: row.stableKey },
+      );
+  assertPendingFingerprint(row, expected);
+  return {
+    pendingSourceFingerprint: row.pendingSourceFingerprint,
+    pendingPlanFingerprint: row.pendingPlanSnapshot.planFingerprint,
+    removed: !pendingItem,
+    pendingItem: pendingItem ?? null,
+  };
+}
+
+function toStoryboardConflictDto(row: StoryboardSequenceRow) {
+  if (!row.pendingSourceFingerprint || !row.pendingPlanSnapshot) return null;
+  const plan = parsePlanSnapshot(row.pendingPlanSnapshot);
+  const pendingItem = plan.storyboardSequences.find(
+    (item) => item.plotNodeId === row.plotNodeId,
+  );
+  const expected = pendingItem
+    ? planFingerprint(
+        row.pendingPlanSnapshot.sourceFingerprint,
+        'sequence',
+        pendingItem,
+      )
+    : planFingerprint(
+        row.pendingPlanSnapshot.sourceFingerprint,
+        'sequence-removed',
+        { plotNodeId: row.plotNodeId },
+      );
+  assertPendingFingerprint(row, expected);
+  return {
+    pendingSourceFingerprint: row.pendingSourceFingerprint,
+    pendingPlanFingerprint: row.pendingPlanSnapshot.planFingerprint,
+    removed: !pendingItem,
+    pendingItem: pendingItem ?? null,
+  };
+}
+
+type LatestGenerationRow = AssetSpecRow['generations'][number];
+
+/**
+ * Creative-media selection is presentation state, not a semantic edit to the
+ * logical production specification. Keeping this distinction explicit lets a
+ * later approved Script/plan reconcile update prompts and topology normally,
+ * while still protecting genuine creator-authored spec changes as stale.
+ */
+export function storyAssetSemanticPatch(
+  input: PatchStoryAssetSpecInput,
+): boolean {
+  return (
+    input.name !== undefined ||
+    input.description !== undefined ||
+    input.imagePrompt !== undefined ||
+    input.videoPrompt !== undefined ||
+    input.negativePrompt !== undefined
+  );
+}
+
+export function storyboardClipSemanticPatch(
+  input: PatchStoryStoryboardClipInput,
+): boolean {
+  return (
+    input.title !== undefined ||
+    input.description !== undefined ||
+    input.imagePrompt !== undefined ||
+    input.videoPrompt !== undefined ||
+    input.negativePrompt !== undefined
+  );
+}
+
+function toLatestGenerationDto(
+  generation: LatestGenerationRow,
+  target:
+    | {
+        projectId: string;
+        chapterId: string;
+        kind: 'asset_spec';
+        targetId: string;
+      }
+    | {
+        projectId: string;
+        chapterId: string;
+        kind: 'storyboard_clip';
+        targetId: string;
+        sequenceId: string;
+      },
+) {
+  const basePath = storyProductionGenerationBasePath({
+    projectId: target.projectId,
+    chapterId: target.chapterId,
+    generationId: generation.id,
+    target:
+      target.kind === 'asset_spec'
+        ? { kind: 'asset_spec', id: target.targetId }
+        : {
+            kind: 'storyboard_clip',
+            id: target.targetId,
+            sequenceId: target.sequenceId,
+          },
+  });
+  return {
+    id: generation.id,
+    outputKind: generation.generationKind,
+    targetVersion: generation.targetVersion,
+    targetSourceFingerprint: generation.targetSourceFingerprint,
+    retryOfGenerationId: generation.retryOfGenerationId,
+    ...toStoryProductionGenerationProgressDto(generation),
+    materialization: {
+      ...toStoryProductionGenerationProgressDto(generation).materialization,
+      retryUrl: `${basePath}/materialization/retry`,
+    },
+    statusUrl: basePath,
+    cancelUrl: `${basePath}/cancel`,
+    retryUrl: `${basePath}/retry`,
+    createdAt: generation.createdAt.toISOString(),
+    updatedAt: generation.updatedAt.toISOString(),
+  };
+}

@@ -40,6 +40,9 @@ describe('StoryAgentRunContinuationWorkerService', () => {
     expect(sql).toContain('source_result_delivery_attempts');
     expect(sql).toContain('run."status" = \'authoring_failed\'');
     expect(sql).toContain('run."authoring_attempts" >=');
+    expect(sql).toMatch(
+      /source_proposal_ready_delivered_at" IS NOT NULL[\s\S]*source_approval_decision" = 'approve'[\s\S]*status" = 'authoring_failed'/,
+    );
   });
 
   it('appends the correlated result and delivery CAS in one transaction, then publishes', async () => {
@@ -282,7 +285,7 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         externalJobId: STORY_RUN_ID,
         phase: 'apply',
         outcome: 'completed',
-        text: '已将批准的故事提案应用到画布。',
+        text: '已批准的剧本已写入 Script，并据此构建了情节树、资产规格与分镜时间轴。尚未生成任何图片或视频——准备好后，请在资产页与分镜页点击生成。',
       }),
     );
     expect(fixture.updateMany).toHaveBeenCalledWith(
@@ -291,6 +294,54 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         data: expect.objectContaining({ sourceTerminalDeliveredAt: NOW }),
       }),
     );
+  });
+
+  it('terminalizes an exhausted v2 downstream authoring failure on the approval turn', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.authoring_failed,
+        authoringAttempts: 5,
+        sourceProposalReadyDeliveredAt: new Date('2026-08-20T11:58:00.000Z'),
+        sourceApprovalDecision: 'approve',
+        sourceApprovalDecisionTurnId: DECISION_TURN_ID,
+        errorCode: 'STORY_PRODUCTION_PLAN_INVALID',
+        errorDetail:
+          'The approved Script could not be compiled into a complete production plan.',
+      }),
+      registration: registration({ decisionContractVersion: 2 }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(
+      fixture.reconcileExternalHandoffInTransaction,
+    ).not.toHaveBeenCalled();
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        runId: AGENT_RUN_ID,
+        turnId: DECISION_TURN_ID,
+        toolId: 'story.applyProposal',
+        externalJobId: STORY_RUN_ID,
+        phase: 'apply',
+        outcome: 'failed',
+        text: 'The approved Script could not be compiled into a complete production plan.',
+        error: {
+          code: 'STORY_PRODUCTION_PLAN_INVALID',
+          message:
+            'The approved Script could not be compiled into a complete production plan.',
+          retryable: false,
+        },
+      }),
+    );
+    expect(fixture.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ sourceTerminalDeliveredAt: null }),
+        data: expect.objectContaining({ sourceTerminalDeliveredAt: NOW }),
+      }),
+    );
+    expect(fixture.publishCommitted).toHaveBeenCalledTimes(1);
   });
 });
 

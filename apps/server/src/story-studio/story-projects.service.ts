@@ -19,6 +19,7 @@ import {
   StoryFrameProfile,
   StoryRevisionSource,
   StudioDocumentType,
+  StudioDocumentStatus,
   StudioDocumentVersionSource,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
@@ -26,6 +27,7 @@ import {
 import type { AuthUser } from '../auth';
 import { encodeDocumentSnapshot } from '../documents/document-crdt';
 import { rootSchemaFor } from '../documents/document-modes';
+import { ensureStoryScriptDocumentInTransaction } from '../documents/story-script-document';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
@@ -241,97 +243,107 @@ export class StoryProjectsService {
       {},
       rootSchemaFor(StudioDocumentType.canvas)!,
     );
-    const { project, chapter } = await this.prisma.$transaction(async (tx) => {
-      const project = await tx.storyProject.create({
-        data: {
-          workspaceId,
-          // The empty canvas needs a projection shape before the Agent intake
-          // runs. This value is provisional: the creator's Q1 answer replaces
-          // it atomically with duration + visual direction before authoring.
-          frameProfile: StoryFrameProfile.landscape_16_9,
-          status: StoryProjectStatus.active,
-          visibility: input.visibility,
-          title: input.title,
-          summary: input.summary,
-          defaultLocale: input.defaultLocale,
-          sourceIpId: input.sourceIpId,
-          createdByUserId: user.userId,
-          members: {
-            create: {
-              userId: user.userId,
-              role: StoryProjectMemberRole.owner,
-              status: StoryProjectMemberStatus.active,
-              grantedByUserId: user.userId,
+    const { project, chapter, scriptDocument } = await this.prisma.$transaction(
+      async (tx) => {
+        const project = await tx.storyProject.create({
+          data: {
+            workspaceId,
+            // The empty canvas needs a projection shape before the Agent intake
+            // runs. This value is provisional: the creator's Q1 answer replaces
+            // it atomically with duration + visual direction before authoring.
+            frameProfile: StoryFrameProfile.landscape_16_9,
+            status: StoryProjectStatus.active,
+            visibility: input.visibility,
+            title: input.title,
+            summary: input.summary,
+            defaultLocale: input.defaultLocale,
+            sourceIpId: input.sourceIpId,
+            createdByUserId: user.userId,
+            members: {
+              create: {
+                userId: user.userId,
+                role: StoryProjectMemberRole.owner,
+                status: StoryProjectMemberStatus.active,
+                grantedByUserId: user.userId,
+              },
             },
-          },
-          draft: {
-            create: {
-              schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-              content:
-                EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
-              contentHash,
-              updatedByUserId: user.userId,
+            draft: {
+              create: {
+                schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+                content:
+                  EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
+                contentHash,
+                updatedByUserId: user.userId,
+              },
             },
+            writeState: { create: {} },
           },
-          writeState: { create: {} },
-        },
-      });
-      const studioDocument = await tx.studioDocument.create({
-        data: {
-          workspaceId,
-          storyProjectId: project.id,
-          type: StudioDocumentType.canvas,
-          title: project.title,
-          contentSnapshot: {
-            ...(initialCanvasState.snapshot as Prisma.InputJsonObject),
+        });
+        const studioDocument = await tx.studioDocument.create({
+          data: {
+            workspaceId,
+            storyProjectId: project.id,
+            type: StudioDocumentType.canvas,
+            title: project.title,
+            contentSnapshot: {
+              ...(initialCanvasState.snapshot as Prisma.InputJsonObject),
+            },
+            crdtState: Buffer.from(initialCanvasState.state),
+            createdById: user.userId,
           },
-          crdtState: Buffer.from(initialCanvasState.state),
-          createdById: user.userId,
-        },
-      });
-      const studioDocumentVersion = await tx.studioDocumentVersion.create({
-        data: {
-          documentId: studioDocument.id,
-          versionNumber: 1,
-          schemaVersion: studioDocument.schemaVersion,
-          sequence: 0,
-          title: studioDocument.title,
-          source: StudioDocumentVersionSource.system,
-          snapshot: studioDocument.contentSnapshot as Prisma.InputJsonValue,
-          crdtState: studioDocument.crdtState,
-          metadata: { reason: 'initial_story_canvas' },
-          createdById: user.userId,
-        },
-      });
-      await tx.studioDocument.update({
-        where: { id: studioDocument.id },
-        data: { currentVersionId: studioDocumentVersion.id },
-      });
-      const chapter = await tx.storyChapter.create({
-        data: {
-          storyProjectId: project.id,
-          title: defaultStoryChapterTitle(input.defaultLocale, 1),
-          rank: 0,
-          nodeIds: [],
-          entryNodeId: null,
-          createdByUserId: user.userId,
-        },
-      });
-      await tx.storyCanvasLayout.create({
-        data: {
-          storyChapterId: chapter.id,
-          storyProjectId: project.id,
-          workspaceId,
-          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-          nodePositions: {},
-          updatedByUserId: user.userId,
-        },
-      });
-      return {
-        project: await this.loadProjectSummary(project.id, tx),
-        chapter,
-      };
-    });
+        });
+        const studioDocumentVersion = await tx.studioDocumentVersion.create({
+          data: {
+            documentId: studioDocument.id,
+            versionNumber: 1,
+            schemaVersion: studioDocument.schemaVersion,
+            sequence: 0,
+            title: studioDocument.title,
+            source: StudioDocumentVersionSource.system,
+            snapshot: studioDocument.contentSnapshot as Prisma.InputJsonValue,
+            crdtState: studioDocument.crdtState,
+            metadata: { reason: 'initial_story_canvas' },
+            createdById: user.userId,
+          },
+        });
+        await tx.studioDocument.update({
+          where: { id: studioDocument.id },
+          data: { currentVersionId: studioDocumentVersion.id },
+        });
+        const chapter = await tx.storyChapter.create({
+          data: {
+            storyProjectId: project.id,
+            title: defaultStoryChapterTitle(input.defaultLocale, 1),
+            rank: 0,
+            nodeIds: [],
+            entryNodeId: null,
+            createdByUserId: user.userId,
+          },
+        });
+        const { document: scriptDocument } =
+          await ensureStoryScriptDocumentInTransaction(tx, {
+            workspaceId,
+            storyProjectId: project.id,
+            storyChapterId: chapter.id,
+            actorUserId: user.userId,
+          });
+        await tx.storyCanvasLayout.create({
+          data: {
+            storyChapterId: chapter.id,
+            storyProjectId: project.id,
+            workspaceId,
+            schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+            nodePositions: {},
+            updatedByUserId: user.userId,
+          },
+        });
+        return {
+          project: await this.loadProjectSummary(project.id, tx),
+          chapter,
+          scriptDocument,
+        };
+      },
+    );
 
     if (!project.draft) {
       throw new InternalServerErrorException({
@@ -345,6 +357,13 @@ export class StoryProjectsService {
       chapters: [this.toChapter(chapter)],
       chapter: this.toChapter(chapter),
       draft: this.toChapterDraft(project.draft, project, chapter),
+      script: {
+        documentId: scriptDocument.id,
+        currentSequence: 0,
+        sourceVersionId: null,
+        sourceSequence: null,
+        status: 'missing',
+      },
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
         clips: [],
@@ -682,6 +701,12 @@ export class StoryProjectsService {
           entryNodeId: null,
           createdByUserId: user.userId,
         },
+      });
+      await ensureStoryScriptDocumentInTransaction(tx, {
+        workspaceId,
+        storyProjectId: projectId,
+        storyChapterId: created.id,
+        actorUserId: user.userId,
       });
       await Promise.all([
         tx.storyCanvasLayout.create({
@@ -1462,6 +1487,7 @@ export class StoryProjectsService {
       chapters,
       chapter,
       draft,
+      script,
       video,
       references,
       latestBuild,
@@ -1516,6 +1542,17 @@ export class StoryProjectsService {
           ? chapters.find((candidate) => candidate.id === query.chapterId)
           : chapters[0];
         if (!chapter) throwChapterNotFound();
+        const scriptDocument = await tx.studioDocument.findFirst({
+          where: {
+            storyProjectId: projectId,
+            storyChapterId: chapter.id,
+            type: StudioDocumentType.script,
+            status: StudioDocumentStatus.active,
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, currentSequence: true },
+        });
         if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
           throw unsupportedStorySchema('draft', draft.schemaVersion);
         }
@@ -1539,6 +1576,7 @@ export class StoryProjectsService {
           chapters,
           chapter,
           draft,
+          script: storyScriptFreshness(chapter, scriptDocument),
           video: projectStoryVideoWorkbench(chapterContent, selections),
           references: references.map((slot) => this.toStoryReference(slot)),
           latestBuild: latestBuild
@@ -1554,6 +1592,7 @@ export class StoryProjectsService {
       chapters: chapters.map((item) => this.toChapter(item)),
       chapter: this.toChapter(chapter),
       draft: this.toChapterDraft(draft, project, chapter),
+      script,
       video,
       references,
       latestBuild,
@@ -2392,6 +2431,49 @@ function buildDiagnostics(value: Prisma.JsonValue): StoryBuildDiagnosticDto[] {
   return value.filter(
     isStoryBuildDiagnostic,
   ) as unknown as StoryBuildDiagnosticDto[];
+}
+
+function storyScriptFreshness(
+  chapter: {
+    sourceScriptDocumentId: string | null;
+    sourceScriptVersionId: string | null;
+    sourceScriptSequence: number | null;
+  },
+  document: { id: string; currentSequence: number } | null,
+): StoryWorkbenchDto['script'] {
+  if (!document || document.currentSequence === 0) {
+    return {
+      documentId: document?.id ?? null,
+      currentSequence: document?.currentSequence ?? 0,
+      sourceVersionId: chapter.sourceScriptVersionId,
+      sourceSequence: chapter.sourceScriptSequence,
+      status: 'missing',
+    };
+  }
+  if (
+    chapter.sourceScriptDocumentId === null ||
+    chapter.sourceScriptSequence === null ||
+    chapter.sourceScriptVersionId === null
+  ) {
+    return {
+      documentId: document.id,
+      currentSequence: document.currentSequence,
+      sourceVersionId: null,
+      sourceSequence: null,
+      status: 'unlinked',
+    };
+  }
+  return {
+    documentId: document.id,
+    currentSequence: document.currentSequence,
+    sourceVersionId: chapter.sourceScriptVersionId,
+    sourceSequence: chapter.sourceScriptSequence,
+    status:
+      chapter.sourceScriptDocumentId === document.id &&
+      chapter.sourceScriptSequence === document.currentSequence
+        ? 'current'
+        : 'stale',
+  };
 }
 
 function isStoryBuildDiagnostic(

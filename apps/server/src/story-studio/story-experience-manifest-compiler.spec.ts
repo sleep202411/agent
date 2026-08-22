@@ -295,7 +295,11 @@ describe('Story Runtime Manifest v2 compiler', () => {
         kind: 'hotspot',
         interactionId: 'rewind',
         label: { 'en-US': 'Rewind' },
-        trigger: { kind: 'press-hold', durationMs: 800 },
+        trigger: {
+          kind: 'press-hold',
+          durationMs: 800,
+          controlTimeline: false,
+        },
         rect: { x: 0.4, y: 0.1, width: 0.2, height: 0.2 },
         startMs: 1_000,
         endMs: 2_000,

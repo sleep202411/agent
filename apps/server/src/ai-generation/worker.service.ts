@@ -20,6 +20,7 @@
 import {
   Injectable,
   Logger,
+  Optional,
   type BeforeApplicationShutdown,
   type OnApplicationBootstrap,
 } from '@nestjs/common';
@@ -79,6 +80,7 @@ import {
 } from './repository';
 import type { AiJob, AiJobError, AiJobOutput } from './types';
 import { AiReferenceUrlPreparerService } from './reference-url-preparer.service';
+import { AiGenerationCompletionObserverRegistry } from './completion-observer.service';
 
 // Azure preview pools (gpt-image-2 in particular) return 429
 // `EngineOverloaded` when the global shared pool is full. It's not a
@@ -155,6 +157,8 @@ export class AiGenerationWorkerService
     private readonly videoProbe: PlayableVideoProbeService,
     private readonly audioProbe: PlayableAudioProbeService,
     private readonly referenceUrls: AiReferenceUrlPreparerService,
+    @Optional()
+    private readonly completionObservers?: AiGenerationCompletionObserverRegistry,
   ) {}
 
   private queuePriorityFor(job: AiJob): number {
@@ -1470,6 +1474,7 @@ export class AiGenerationWorkerService
         outputCount: outputs.length,
       },
     });
+    await this.completionObservers?.notifyCompleted(completed);
     this.emit(completed);
     await this.recordActivityVersionSafe(completed);
   }

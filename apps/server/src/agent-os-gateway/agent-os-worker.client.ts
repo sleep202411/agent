@@ -173,10 +173,27 @@ export class AgentOsWorkerClient {
 
   /** Model profiles the worker can drive — the picker's source of truth. */
   async listModels(): Promise<unknown> {
-    const res = await fetch(
-      `${this.config.value.workerBaseUrl}/v1/agent-os/models`,
-      { headers: this.internalHeaders(), signal: AbortSignal.timeout(10_000) },
-    );
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.config.value.workerBaseUrl}/v1/agent-os/models`,
+        {
+          headers: this.internalHeaders(),
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+    } catch (error) {
+      // A dead or unreachable worker must surface as 503, not an unhandled
+      // fetch rejection turned into a generic 500; keep the cause in the log
+      // so timeout / DNS / refused stay distinguishable during an incident.
+      this.logger.warn(
+        `Agent OS worker models fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new ServiceUnavailableException({
+        code: 'AGENT_OS_WORKER_UNAVAILABLE',
+        message: 'Could not reach the Agent OS worker.',
+      });
+    }
     if (!res.ok) {
       throw new ServiceUnavailableException({
         code: 'AGENT_OS_WORKER_UNAVAILABLE',

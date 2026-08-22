@@ -973,6 +973,13 @@ export interface StoryWorkbenchDto {
   chapters: StoryChapterDto[];
   chapter: StoryChapterDto;
   draft: StoryDraftDto;
+  script: {
+    documentId: string | null;
+    currentSequence: number;
+    sourceVersionId: string | null;
+    sourceSequence: number | null;
+    status: 'missing' | 'current' | 'stale' | 'unlinked';
+  };
   video: {
     snapshotHash: string;
     clips: StoryClipVideoSummaryDto[];

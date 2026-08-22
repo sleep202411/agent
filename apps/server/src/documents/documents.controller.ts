@@ -23,6 +23,7 @@ import {
   ProjectDocumentEnsureParamsSchema,
   ProjectDocumentsParamsSchema,
   StoryCanvasDocumentParamsSchema,
+  StoryChapterDocumentParamsSchema,
   UpdateDocumentSchema,
   UpsertDocumentPresenceSchema,
   type AddCommentInput,
@@ -37,6 +38,7 @@ import {
   type ProjectDocumentEnsureParams,
   type ProjectDocumentsParams,
   type StoryCanvasDocumentParams,
+  type StoryChapterDocumentParams,
   type UpdateDocumentInput,
   type UpsertDocumentPresenceInput,
 } from './dto';
@@ -125,17 +127,18 @@ export class DocumentsController {
     };
   }
 
-  @Post('story-projects/:projectId/documents/script/ensure')
+  @Post('story-projects/:projectId/chapters/:chapterId/documents/script/ensure')
   async ensureStoryScriptDocument(
     @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(StoryCanvasDocumentParamsSchema))
-    params: StoryCanvasDocumentParams,
+    @Param(new ZodValidationPipe(StoryChapterDocumentParamsSchema))
+    params: StoryChapterDocumentParams,
   ) {
     return {
       code: 200,
       data: await this.documents.ensureStoryScriptDocument(
         user,
         params.projectId,
+        params.chapterId,
       ),
     };
   }

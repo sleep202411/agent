@@ -69,6 +69,20 @@ describe('AiGenerationService submit-time storage pin', () => {
 
     expect(harness.built().outputStorageProvider).toBeNull();
   });
+
+  it('freezes trusted retry lineage on the replacement job', async () => {
+    const harness = submitHarness('image');
+    const previousJobId = '01900000-0000-7000-8000-000000000099';
+
+    await harness.service.submitJob(
+      userFixture(),
+      submitBody(STORY_STUDIO_WORKBENCH_SURFACE),
+      undefined,
+      { retryOfJobId: previousJobId },
+    );
+
+    expect(harness.built().retryOfJobId).toBe(previousJobId);
+  });
 });
 
 describe('AiGenerationRepository output storage persistence', () => {

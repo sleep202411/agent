@@ -4,6 +4,8 @@ import {
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantStatus,
+  StudioDocumentStatus,
+  StudioDocumentType,
   StoryDurationPreset,
   StoryFrameProfile,
   StoryProjectMemberRole,
@@ -35,6 +37,7 @@ const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000005';
 const SECOND_CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000006';
 const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000007';
 const MEDIA_VARIANT_ID = '0197f4a2-0800-7000-8000-000000000008';
+const SCRIPT_DOCUMENT_ID = '0197f4a2-0800-7000-8000-000000000010';
 /** Someone else's tenant: where a shared project lives, never the invitee's. */
 const OWNER_WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000009';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
@@ -670,29 +673,56 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       },
     );
     const chapter = chapterRow({ nodeIds: [], entryNodeId: null });
+    const canvasDocument = {
+      id: '0197f4a2-0800-7000-8000-000000000099',
+      schemaVersion: '2026-05-27',
+      title: project.title,
+      contentSnapshot: {},
+      crdtState: Buffer.from([]),
+    };
+    const scriptDocument = {
+      ...canvasDocument,
+      id: SCRIPT_DOCUMENT_ID,
+      storyProjectId: PROJECT_ID,
+      storyChapterId: CHAPTER_ID,
+      workspaceId: WORKSPACE_ID,
+      title: chapter.title,
+      type: StudioDocumentType.script,
+      currentSequence: 0,
+    };
     const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
       storyProject: {
         create,
         findUnique: jest.fn().mockResolvedValue(project),
       },
-      storyChapter: { create: jest.fn().mockResolvedValue(chapter) },
+      storyChapter: {
+        create: jest.fn().mockResolvedValue(chapter),
+        findFirst: jest.fn().mockResolvedValue({ title: chapter.title }),
+      },
       storyCanvasLayout: {
         create: jest.fn().mockResolvedValue(canvasLayoutRow()),
       },
       studioDocument: {
-        create: jest.fn().mockResolvedValue({
-          id: '0197f4a2-0800-7000-8000-000000000099',
-          schemaVersion: '2026-05-27',
-          title: project.title,
-          contentSnapshot: {},
-          crdtState: Buffer.from([]),
-        }),
-        update: jest.fn().mockResolvedValue({}),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest
+          .fn()
+          .mockResolvedValueOnce(canvasDocument)
+          .mockResolvedValueOnce(scriptDocument),
+        update: jest
+          .fn()
+          .mockResolvedValueOnce(canvasDocument)
+          .mockResolvedValueOnce(scriptDocument),
       },
       studioDocumentVersion: {
-        create: jest.fn().mockResolvedValue({
-          id: '0197f4a2-0800-7000-8000-000000000098',
-        }),
+        create: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: '0197f4a2-0800-7000-8000-000000000098',
+          })
+          .mockResolvedValueOnce({
+            id: '0197f4a2-0800-7000-8000-000000000097',
+          }),
       },
     };
     const prisma = { $transaction: transactionMock(tx) };
@@ -735,6 +765,13 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       }) as unknown,
     });
     expect(result).toMatchObject({
+      script: {
+        documentId: SCRIPT_DOCUMENT_ID,
+        currentSequence: 0,
+        sourceVersionId: null,
+        sourceSequence: null,
+        status: 'missing',
+      },
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
         clips: [],
@@ -749,6 +786,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       'latestBuild',
       'project',
       'references',
+      'script',
       'video',
     ]);
   });
@@ -997,14 +1035,38 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       nodeIds: [],
       entryNodeId: null,
     });
+    const scriptDocument = {
+      id: SCRIPT_DOCUMENT_ID,
+      storyProjectId: PROJECT_ID,
+      storyChapterId: SECOND_CHAPTER_ID,
+      workspaceId: WORKSPACE_ID,
+      title: created.title,
+      type: StudioDocumentType.script,
+      schemaVersion: '2026-05-27',
+      currentSequence: 0,
+      contentSnapshot: {},
+      crdtState: Buffer.from([]),
+    };
     const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
       storyChapter: {
         count: jest.fn().mockResolvedValue(1),
         aggregate: jest.fn().mockResolvedValue({ _max: { rank: 0 } }),
         create: jest.fn().mockResolvedValue(created),
+        findFirst: jest.fn().mockResolvedValue({ title: created.title }),
       },
       storyCanvasLayout: { create: jest.fn().mockResolvedValue({}) },
       storyProject: { update: jest.fn().mockResolvedValue({}) },
+      studioDocument: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockResolvedValue(scriptDocument),
+        update: jest.fn().mockResolvedValue(scriptDocument),
+      },
+      studioDocumentVersion: {
+        create: jest.fn().mockResolvedValue({
+          id: '0197f4a2-0800-7000-8000-000000000097',
+        }),
+      },
     };
     const { service } = serviceWith({ $transaction: transactionMock(tx) });
 
@@ -1033,6 +1095,14 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         storyChapterId: SECOND_CHAPTER_ID,
         storyProjectId: PROJECT_ID,
         workspaceId: WORKSPACE_ID,
+      }) as unknown,
+    });
+    expect(tx.studioDocument.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storyProjectId: PROJECT_ID,
+        storyChapterId: SECOND_CHAPTER_ID,
+        workspaceId: WORKSPACE_ID,
+        type: StudioDocumentType.script,
       }) as unknown,
     });
     expect(tx.storyProject.update).toHaveBeenCalledWith({
@@ -1370,6 +1440,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
       storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
       storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
+      studioDocument: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const prisma = { $transaction: transactionMock(tx) };
     const { service } = serviceWith(prisma);
@@ -1431,6 +1502,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
       storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
       storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
+      studioDocument: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const prisma = { $transaction: transactionMock(tx) };
     const { service } = serviceWith(prisma);
@@ -1468,6 +1540,17 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
     expect(result.references).toEqual([]);
     expect(result.latestBuild).toBeNull();
+    expect(tx.studioDocument.findFirst).toHaveBeenCalledWith({
+      where: {
+        storyProjectId: PROJECT_ID,
+        storyChapterId: CHAPTER_ID,
+        type: StudioDocumentType.script,
+        status: StudioDocumentStatus.active,
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, currentSequence: true },
+    });
   });
 
   it('counts graph clips instead of removed prompt records', async () => {

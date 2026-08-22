@@ -123,7 +123,7 @@ export class StoryAgentRunContinuationWorkerService
                 (
                   run."source_proposal_ready_delivered_at" IS NULL
                   AND (
-                    run."status" IN ('proposed', 'cancelled', 'stale')
+                    run."status" IN ('proposed', 'succeeded', 'failed', 'cancelled', 'stale')
                     OR (
                       run."status" = 'authoring_failed'
                       AND run."authoring_attempts" >= ${STORY_AGENT_MAX_AUTHORING_ATTEMPTS}
@@ -134,7 +134,13 @@ export class StoryAgentRunContinuationWorkerService
                   run."source_proposal_ready_delivered_at" IS NOT NULL
                   AND run."source_approval_decision" = 'approve'
                   AND run."source_approval_decision_turn_id" IS NOT NULL
-                  AND run."status" IN ('succeeded', 'failed', 'cancelled', 'stale')
+                  AND (
+                    run."status" IN ('succeeded', 'failed', 'cancelled', 'stale')
+                    OR (
+                      run."status" = 'authoring_failed'
+                      AND run."authoring_attempts" >= ${STORY_AGENT_MAX_AUTHORING_ATTEMPTS}
+                    )
+                  )
                 )
               )
             )
@@ -345,6 +351,7 @@ export class StoryAgentRunContinuationWorkerService
     } else {
       const result = applyContinuationResult({
         status: run.status,
+        authoringAttempts: run.authoringAttempts,
         errorCode: run.errorCode,
         errorDetail: run.errorDetail,
         locale: run.sourceApprovalLocale,
@@ -478,6 +485,8 @@ function continuationPhase(input: {
   if (input.sourceProposalReadyDeliveredAt === null) {
     if (input.status === StoryAgentRunStatus.proposed) return 'proposal_ready';
     if (
+      input.status === StoryAgentRunStatus.succeeded ||
+      input.status === StoryAgentRunStatus.failed ||
       input.status === StoryAgentRunStatus.cancelled ||
       input.status === StoryAgentRunStatus.stale ||
       (input.status === StoryAgentRunStatus.authoring_failed &&
@@ -493,7 +502,9 @@ function continuationPhase(input: {
     (input.status === StoryAgentRunStatus.succeeded ||
       input.status === StoryAgentRunStatus.failed ||
       input.status === StoryAgentRunStatus.cancelled ||
-      input.status === StoryAgentRunStatus.stale)
+      input.status === StoryAgentRunStatus.stale ||
+      (input.status === StoryAgentRunStatus.authoring_failed &&
+        input.authoringAttempts >= STORY_AGENT_MAX_AUTHORING_ATTEMPTS))
   ) {
     return 'apply_terminal';
   }
@@ -551,6 +562,7 @@ function continuationResult(input: {
 
 function applyContinuationResult(input: {
   status: StoryAgentRunStatus;
+  authoringAttempts: number;
   errorCode: string | null;
   errorDetail: string | null;
   locale: string | null;
@@ -560,6 +572,21 @@ function applyContinuationResult(input: {
     return {
       outcome: 'completed',
       text: copy.completed,
+    };
+  }
+  if (
+    input.status === StoryAgentRunStatus.authoring_failed &&
+    input.authoringAttempts >= STORY_AGENT_MAX_AUTHORING_ATTEMPTS
+  ) {
+    const text = input.errorDetail ?? copy.failed;
+    return {
+      outcome: 'failed',
+      text,
+      error: {
+        code: input.errorCode ?? 'STORY_AGENT_APPLY_FAILED',
+        message: text,
+        retryable: false,
+      },
     };
   }
   const cancelled =
@@ -588,20 +615,23 @@ function applyContinuationCopy(locale: string | null): {
 } {
   if (locale === 'zh-CN') {
     return {
-      completed: '已将批准的故事提案应用到画布。',
+      completed:
+        '已批准的剧本已写入 Script，并据此构建了情节树、资产规格与分镜时间轴。尚未生成任何图片或视频——准备好后，请在资产页与分镜页点击生成。',
       cancelled: '故事提案的应用在完成前已取消。',
       failed: '无法应用已批准的故事提案。',
     };
   }
   if (locale === 'zh-HK') {
     return {
-      completed: '已將核准的故事提案套用到畫布。',
+      completed:
+        '已核准的劇本已寫入 Script，並據此構建了情節樹、資產規格與分鏡時間軸。尚未生成任何圖片或影片——準備好後，請在資產頁與分鏡頁點擊生成。',
       cancelled: '故事提案的套用在完成前已取消。',
       failed: '無法套用已核准的故事提案。',
     };
   }
   return {
-    completed: 'The approved story proposal has been applied to the canvas.',
+    completed:
+      'The approved screenplay is saved to Script, and the Plot Tree, Asset Specs, and Storyboard were built from it. No images or videos have been generated yet — use Generate on the Assets and Storyboard pages when you are ready.',
     cancelled: 'Story proposal application was cancelled before it completed.',
     failed: 'The approved story proposal could not be applied.',
   };
