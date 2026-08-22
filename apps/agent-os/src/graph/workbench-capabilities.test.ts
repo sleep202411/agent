@@ -70,6 +70,13 @@ describe("skill mounts (system workbench skills)", () => {
     expect(names).not.toContain("canvas_applyPatch");
     expect(names).not.toContain("characters_upsert");
     expect(mount.instructions).toMatch(/intent-level tools/i);
+    expect(mount.instructions).toMatch(/answer normally and call NO Story tool/);
+    expect(mount.instructions).toMatch(/Only when canonical context has no valid chapter Script/);
+    expect(mount.instructions).toMatch(/script\.status=missing selects screenplay creation/);
+    expect(mount.instructions).toMatch(/productionState\.ready=true\s+selects no-op/);
+    const storyAuthor = tools.find((tool) => tool.name === "story_author");
+    expect(storyAuthor?.description).toMatch(/Server-side canonical production planner/);
+    expect(storyAuthor?.description).toMatch(/never generates images or videos/i);
   });
 
   it("returns complete creative-profile answers without allowing known values to be overwritten", () => {

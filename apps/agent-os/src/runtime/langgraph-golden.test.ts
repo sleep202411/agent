@@ -379,9 +379,17 @@ describe("LangGraph golden path: script → characters", () => {
 
   it("pauses on a generic external-job handoff for the Gateway continuation", async () => {
     const jobId = "77777777-7777-4777-8777-777777777777";
-    const startedMessage = "The story pipeline is running; I’ll bring the proposal back here.";
-    const completionMessage = "The complete interactive-story proposal is ready for review.";
+    const startedMessage = "I’m preparing the screenplay for this chapter.";
+    const completionMessage =
+      "The screenplay is ready for your review. No image or video media has been generated; use Generate when you want to create media.";
     const model = fakeModel()
+      .respondWithTools([
+        {
+          name: "story_read",
+          id: "tc-story-read",
+          args: {},
+        },
+      ])
       .respondWithTools([
         {
           name: "story_author",
@@ -396,10 +404,48 @@ describe("LangGraph golden path: script → characters", () => {
         },
       ])
       .respond(new AIMessage("This text must not close the run before the external job."));
+    const observedToolIds: string[] = [];
     const domain: DomainPort = {
       async execute(toolId, input, context) {
-        expect(toolId).toBe("story.author");
+        observedToolIds.push(toolId);
         expect(context.turnId).toBeTruthy();
+        if (toolId === "story.read") {
+          return {
+            ok: true,
+            data: {
+              chapterId: "00000000-0000-4000-8000-000000000001",
+              draftRevision: 0,
+              contentHash: "a".repeat(64),
+              storyBible: { logline: "", synopsis: "", characters: [] },
+              graph: { entryNodeId: null, nodes: [] },
+              productionNotes: [],
+              productionState: {
+                projectId: PROJECT,
+                chapterId: "00000000-0000-4000-8000-000000000001",
+                profile: { status: "current" },
+                script: { status: "missing", documentId: null, sequence: null },
+                plotTree: { status: "missing", nodeCount: 0 },
+                assets: { status: "missing", currentCount: 0, staleCount: 0 },
+                storyboard: {
+                  status: "missing",
+                  sequenceCount: 0,
+                  staleCount: 0,
+                  missingPlotNodeIds: [],
+                },
+                ready: false,
+              },
+              creativeProfile: {
+                frameProfile: "landscape_16_9",
+                durationPreset: "short_5_15",
+                visualStyle: "cinematic_realism",
+                storyLanguage: "en-US",
+                confirmed: true,
+              },
+              authoringRun: null,
+            },
+          };
+        }
+        expect(toolId).toBe("story.author");
         expect(input).toMatchObject({ startedMessage, completionMessage });
         return {
           ok: true,
@@ -431,6 +477,7 @@ describe("LangGraph golden path: script → characters", () => {
     });
 
     expect(waiting.status).toBe("waiting_for_external");
+    expect(observedToolIds).toEqual(["story.read", "story.author"]);
     expect(waiting.pendingExternal).toMatchObject({
       kind: "external_job",
       jobId,

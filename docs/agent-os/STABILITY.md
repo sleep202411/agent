@@ -88,6 +88,27 @@ follow-up.
     numbers and repairs pointer, event, snapshot, and Ably continuity-loss gaps
     over HTTP. Conversation reconciliation precedes per-run repair so a run
     missed entirely in another tab is still discovered.
+22. **Approved screenplay precedes derived structure.** A new Story proposal
+    is authored against an exact collaborative Script head and persists one
+    canonical review document. View all and Script consume those same ordered
+    blocks; no independent UI renderer may invent a second proposal. Apply
+    commits the Script operation, AI version, and exact lineage first, then
+    durably re-arms the same run for recoverable Plot/Asset/Storyboard
+    reconciliation. The Agent run cannot terminalize between those stages. A
+    changed head fails stale; a manually edited Script may be read to rebuild
+    downstream structure but must never be rewritten as a side effect.
+23. **Plan conflicts are explicit and recoverable.** Reconciliation persists
+    an immutable, chapter-scoped pending plan for creator-edited Asset Specs or
+    Storyboard sequences. Only a version-checked keep-current or use-latest
+    command may clear the conflict; compatible media and bindings survive.
+24. **Media attachment is not regeneration.** Provider completion and Story
+    media materialization have separate durable state. Retrying a failed
+    attachment reuses the existing output and cannot create or bill another AI
+    job. Regeneration is a separate explicit command.
+25. **Timeline time is authoritative.** A Storyboard clip owns an exact
+    millisecond playback duration. Video generation may choose the shortest
+    supported source duration that covers it and trim to the timeline, but may
+    not silently shorten, lengthen, or round the authored clip.
 
 ## Phase 1 acceptance (must automate)
 

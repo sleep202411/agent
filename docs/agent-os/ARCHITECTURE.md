@@ -167,6 +167,38 @@ continuation:
    terminal event to that decision turn. A proposal-ready event must never be
    mistaken for successful project application.
 
+The proposal payload for new Story authoring is a versioned chapter screenplay
+plus one canonical creator-visible rich-text document and the exact
+collaborative Script head it was authored against. Studio reviews that document
+without re-projecting screenplay semantics into dashboard cards. Apply first
+writes those exact document blocks to the chapter's Yjs Script operation and
+immutable AI document version. That commit is a durable stage boundary: the
+same Story run is then re-armed as a recoverable downstream job, which derives
+the Plot Tree, logical Asset Specs, and Storyboard Specs from the committed
+Script. The chapter records its source Script document, version, sequence, and
+hash, so freshness is a data invariant rather than a UI guess. The Script
+commit never waits on a second model call, and the Agent run does not complete
+until downstream reconciliation commits. A changed Script head fails closed. A
+manually edited Script is read from its exact current CRDT head; the derived
+structure and lineage commit without rewriting that Script operation, sequence,
+or hash. Project Overview remains project-scoped; production stages and Agent
+workbench context always carry one explicit chapter id.
+
+Downstream plans are immutable chapter-scoped snapshots. Reconciliation may
+attach a snapshot to a creator-edited Asset Spec or Storyboard sequence as a
+pending conflict, but cannot overwrite it. Conflict resolution is an
+idempotent, version-checked command that either rebases the current override or
+applies the exact snapshot while preserving compatible media and bindings.
+Generated media selection is operational provenance, not a semantic edit.
+
+Media generation is a separate target-scoped command. Provider completion,
+output persistence, and Story materialization are recoverable stages. A failed
+materialization can reattach the same output without creating a new paid job;
+an explicit AI retry remains a distinct regeneration command. Video source
+duration is selected from provider-supported values and may exceed the
+millisecond playback duration, in which case the clip is deterministically
+trimmed to its timeline.
+
 The proposal decision and Story lifecycle transition commit in one PostgreSQL
 transaction. Gateway must not resume the LangGraph checkpoint for this
 control-plane approval: the asynchronous Story workflow, rather than the model,

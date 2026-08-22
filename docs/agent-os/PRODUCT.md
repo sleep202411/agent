@@ -148,3 +148,62 @@ terminal. Its Draft card is the rich rendering of a durable Agent approval.
 Discard closes the run without changing the project; Apply acknowledges the
 decision, returns to the single live activity row, and completes only after the
 Story transaction has committed the proposal.
+
+### Story creation stage contract
+
+The creator-facing source of truth is the **Script**, not a graph-shaped
+proposal. When a project has no Script, Agent OS derives a complete screenplay
+from the user's prompt and any attached source material. Missing creative
+profile fields are collected through the ordinary Question surface; known
+fields are not asked again. The resulting screenplay is presented through the
+Draft approval surface before any canonical write.
+
+That approval surface renders one persisted, versioned screenplay document.
+It does not add review-only metrics, character cards, scene ids, or a second
+summary. The blocks shown in “View all” are the exact blocks written to the
+chapter Script after approval. Scene/branch/ending structure remains an
+internal compiler companion to that document, not a second creator-facing
+artifact.
+
+Apply starts a durable two-stage continuation:
+
+1. verify that the collaborative Script head still matches the head used for
+   authoring;
+2. append the approved screenplay to the Script operation log, create an AI
+   Script version, and commit the exact Script lineage;
+3. re-arm the same Story run for recoverable downstream reconciliation;
+4. derive and atomically persist the Plot Tree, logical Asset Specs, and
+   Storyboard Specs from that committed Script before completing the Agent run.
+
+If the Script changed during review, Apply becomes stale instead of overwriting
+the creator's edit. A later manual Script edit makes downstream structure stale;
+an explicit production request reads the exact current Script head, derives a
+new structured companion, and reconciles downstream specs without adding a
+Script operation or changing its text, sequence, or hash. Paid or slow media
+generation remains a later explicit Assets/Storyboard command rather than being
+triggered by screenplay approval or page load.
+
+Generation produces a media version for a logical Asset Spec or Storyboard
+clip; it does not replace that target's semantic specification. A completed
+provider job whose output has not attached successfully exposes a separate
+attachment retry that reuses the paid output and never submits another model
+job. For video, the clip's millisecond timeline duration is the playback
+contract. The generation bridge may request the shortest supported source
+duration that covers it and trim playback to the timeline; an unsupported
+duration must ask the creator to split the clip rather than silently changing
+the story timing.
+
+The Plot Tree is the sole branching topology. Every visual Plot node owns
+exactly one Storyboard sequence, while a sequence may contain multiple ordered
+image or video clips on a continuous millisecond timeline. Asset Specs are
+durable logical assets: an empty spec still has a stable identity, name, and
+generation prompts and can be referenced from a Storyboard clip. Bindings store
+that identity rather than a media URL; follow-selected bindings resolve the
+currently selected generated media when it later exists.
+
+When a later Script-derived plan meets creator-edited Asset or Storyboard
+specifications, reconciliation stores the exact pending plan without
+overwriting the edit. The creator resolves the conflict explicitly: keep the
+current specification and rebase it onto the new source, or apply the exact
+latest plan. Compatible generated media, selections, and asset bindings survive
+either resolution.

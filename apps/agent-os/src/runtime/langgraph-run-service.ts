@@ -498,13 +498,42 @@ function carryRunContext(
     skillMountSnapshot: input.skillMountSnapshot ?? prev?.skillMountSnapshot,
     clientSubmissionId: input.clientSubmissionId ?? prev?.clientSubmissionId,
     startMessageId: input.startMessageId ?? prev?.startMessageId,
-    startExecution:
+    startExecution: pickRicherExecutionProof(
       input.startExecution && "executionOwnerId" in input.startExecution
         ? input.startExecution
-        : prev?.startExecution,
+        : undefined,
+      prev?.startExecution
+    ),
     continuationCommand: prev?.continuationCommand,
-    continuationExecution: input.continuationExecution ?? prev?.continuationExecution,
+    continuationExecution: pickRicherExecutionProof(
+      input.continuationExecution,
+      prev?.continuationExecution
+    ),
   };
+}
+
+/**
+ * Boundary snapshots are rebuilt from the run-loop INPUT, whose execution
+ * proof is the original grant WITHOUT the checkpoint receipt that a later
+ * capture attached to the live snapshot. The Gateway finalizes a recoverable
+ * command only when the boundary report carries that receipt, so for the same
+ * execution attempt the checkpoint-enriched proof must win — otherwise no
+ * continuation ever finalizes and the next approval in the run is fenced.
+ */
+function pickRicherExecutionProof<T extends { executionAttemptId: string; checkpointId?: string }>(
+  incoming: T | undefined,
+  previous: T | undefined
+): T | undefined {
+  if (!incoming) return previous;
+  if (!previous) return incoming;
+  if (
+    previous.executionAttemptId === incoming.executionAttemptId &&
+    previous.checkpointId &&
+    !incoming.checkpointId
+  ) {
+    return previous;
+  }
+  return incoming;
 }
 
 export class LangGraphRunService {
@@ -2749,13 +2778,29 @@ export class LangGraphRunService {
     for (;;) {
       try {
         await this.persist(snapshot);
-        if (snapshot.startExecution && isCheckpointedStartBoundary(snapshot.status)) {
+        // The Gateway finalizes a recoverable start/continuation ONLY when the
+        // boundary report carries its durable checkpoint receipt. Dropping the
+        // execution proof on status alone breaks that handshake: every later
+        // report (e.g. the next approval in the same run) would arrive
+        // proof-less while the command is still armed and be fenced with
+        // AGENT_OS_CONTINUATION_EXECUTION_FENCED, wedging the run. Keep the
+        // proof until a report that provably finalized has been accepted; a
+        // later checkpoint capture then completes the handshake.
+        if (
+          snapshot.startExecution &&
+          isCheckpointedStartBoundary(snapshot.status) &&
+          snapshot.startExecution.checkpointId
+        ) {
           snapshot.startExecution = undefined;
           if (this.snapshots.get(snapshot.runId) === snapshot) {
             this.stopStartHeartbeat(snapshot.runId);
           }
         }
-        if (snapshot.continuationExecution && isCheckpointedStartBoundary(snapshot.status)) {
+        if (
+          snapshot.continuationExecution &&
+          isCheckpointedStartBoundary(snapshot.status) &&
+          snapshot.continuationExecution.checkpointId
+        ) {
           snapshot.continuationExecution = undefined;
           snapshot.continuationCommand = undefined;
           if (this.snapshots.get(snapshot.runId) === snapshot) {

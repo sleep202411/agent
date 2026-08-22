@@ -11,7 +11,37 @@ import { listTools } from "@repo/agent-tools";
 import { isLiveModelConfigured } from "@repo/model-router";
 
 import { listenAgentOsHttp } from "./http/server.js";
+import { AgentOsCheckpointExecutionSupersededError } from "./runtime/checkpointer.js";
 import { resolveWorkerDomainMode } from "./runtime/http-domain-port.js";
+
+/**
+ * A superseded execution is an expected fencing race: a newer execution claimed
+ * the run and the loser's next checkpoint write throws. The run service catches
+ * this on its awaited paths, but LangGraph's PregelRunner can also surface it
+ * from a floating promise, where it becomes an unhandled rejection and would
+ * kill the whole worker. Swallow exactly this error — the losing execution is
+ * already fenced out and the run is owned by its successor. Every other
+ * rejection stays fatal (fail-loud). Matches by class OR stable code, since a
+ * wrapped error or a duplicated module copy would defeat instanceof.
+ */
+function installSupersededRejectionPolicy(): void {
+  process.on("unhandledRejection", (reason) => {
+    const superseded =
+      reason instanceof AgentOsCheckpointExecutionSupersededError ||
+      (reason as { code?: string } | null)?.code === "AGENT_OS_CHECKPOINT_EXECUTION_SUPERSEDED";
+    if (superseded) {
+      process.stdout.write(
+        `${JSON.stringify({
+          level: "warn",
+          msg: "agent-os.execution.superseded.async",
+          detail: reason instanceof Error ? reason.message : String(reason),
+        })}\n`
+      );
+      return;
+    }
+    throw reason;
+  });
+}
 
 export function agentOsIdentity(): {
   product: string;
@@ -55,6 +85,7 @@ const isEntrypoint =
     process.argv[1].endsWith("\\main.js"));
 
 if (isEntrypoint) {
+  installSupersededRejectionPolicy();
   void main().catch((error) => {
     process.stderr.write(
       `${JSON.stringify({
