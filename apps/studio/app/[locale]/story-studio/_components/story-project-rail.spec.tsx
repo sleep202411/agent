@@ -62,7 +62,6 @@ describe("StoryProjectRail", () => {
       "sidebar.world",
       "sidebar.catalog",
       "chapters.action",
-      "sidebar.media",
       "share",
     ]);
     expect(items.every((item) => !(item instanceof HTMLButtonElement) || !item.disabled)).toBe(
@@ -91,6 +90,30 @@ describe("StoryProjectRail", () => {
     expect(useStoryProjectUiStore.getState().shareOpen).toBe(true);
     expect(useStoryProjectUiStore.getState().chapterMenuOpen).toBe(false);
     expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
+  });
+
+  it("toggles an open surface closed on second click", async () => {
+    navigation.segment = "canvas";
+    await renderRail();
+    const byText = (label: string) =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.textContent?.trim() === label
+      );
+
+    await act(async () => byText("sidebar.world")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBe("world");
+    await act(async () => byText("sidebar.world")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
+
+    await act(async () => byText("sidebar.catalog")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBe("catalog");
+    await act(async () => byText("sidebar.catalog")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
+
+    await act(async () => byText("share")?.click());
+    expect(useStoryProjectUiStore.getState().shareOpen).toBe(true);
+    await act(async () => byText("share")?.click());
+    expect(useStoryProjectUiStore.getState().shareOpen).toBe(false);
   });
 
   async function renderRail() {

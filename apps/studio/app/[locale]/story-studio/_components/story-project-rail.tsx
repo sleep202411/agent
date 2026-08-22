@@ -1,7 +1,13 @@
 "use client";
 
 import type { ComponentType } from "react";
-import { IconBook2, IconListTree, IconMovie, IconShare3, IconWorld } from "@tabler/icons-react";
+import {
+  IconBook2,
+  IconClipboardList,
+  IconListTree,
+  IconMovie,
+  IconShare3,
+} from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -43,13 +49,17 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const openOverview = () => {
     setChapterMenuOpen(false);
     setShareOpen(false);
+    if (onCanvas && sidePanel === "world") {
+      setSidePanel(null);
+      return;
+    }
     setSidePanel("world");
     openCanvas();
   };
   const openCatalog = () => {
     setChapterMenuOpen(false);
     setShareOpen(false);
-    setSidePanel("catalog");
+    setSidePanel(sidePanel === "catalog" ? null : "catalog");
   };
   const openChapters = () => {
     setSidePanel(null);
@@ -60,6 +70,10 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const openShare = () => {
     setSidePanel(null);
     setChapterMenuOpen(false);
+    if (shareOpen) {
+      setShareOpen(false);
+      return;
+    }
     setShareOpen(true);
     openCanvas();
   };
@@ -71,7 +85,7 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
     >
       <nav className="flex min-h-0 flex-1 flex-col items-center gap-2 px-1.5 py-3">
         <RailButton
-          icon={IconWorld}
+          icon={IconClipboardList}
           label={t("sidebar.world")}
           active={sidePanel === "world"}
           onClick={openOverview}
