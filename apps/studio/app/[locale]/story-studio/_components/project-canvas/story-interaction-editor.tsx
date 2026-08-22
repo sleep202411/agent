@@ -460,6 +460,11 @@ export function StoryInteractionEditor({
                     preload="metadata"
                     className="pointer-events-none size-full select-none object-contain"
                     onLoadedMetadata={(event) => {
+                      // The scene's timeline is its storyboard sequence, which
+                      // usually runs longer than the one clip previewed here.
+                      // Adopting this element's duration would clamp — and
+                      // persist — every hotspot into the first clip's window.
+                      if (declaredDuration > 0) return;
                       const nextDuration = event.currentTarget.duration;
                       if (Number.isFinite(nextDuration) && nextDuration > 0) {
                         const normalizedDuration = Math.max(nextDuration, MIN_WINDOW_SECONDS);

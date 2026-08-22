@@ -2668,6 +2668,7 @@
         "tree": "情节树",
         "assets": "资产",
         "storyboard": "分镜",
+        "preview": "预览",
         "stepAria": "{step}：{status}",
         "status": {
           "current": "当前版本",

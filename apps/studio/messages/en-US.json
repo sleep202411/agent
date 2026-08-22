@@ -2668,6 +2668,7 @@
         "tree": "Plot Tree",
         "assets": "Assets",
         "storyboard": "Storyboard",
+        "preview": "Preview",
         "stepAria": "{step}: {status}",
         "status": {
           "current": "current",

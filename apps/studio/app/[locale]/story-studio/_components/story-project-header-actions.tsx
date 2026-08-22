@@ -15,6 +15,7 @@ import {
   storyApiErrorMessage,
 } from "@/lib/story-projects-api";
 import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
+import { useStoryPreviewNavigation } from "../_lib/use-story-preview-navigation";
 import { isExactCurrentStoryRelease } from "./project-canvas/story-current-release";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
 import {
@@ -94,43 +95,7 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     withSavedDraftSnapshot: draftBarrier ?? fallbackRunner,
   });
 
-  const [previewPending, setPreviewPending] = useState(false);
-  const openPreview = useCallback(async () => {
-    if (!workspaceId || previewPending) return;
-    setPreviewPending(true);
-    try {
-      const navigate = () => {
-        const chapterQuery = activeChapterId
-          ? `?chapter=${encodeURIComponent(activeChapterId)}`
-          : "";
-        router.push(
-          `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
-        );
-      };
-      const go = () => (guardedNavigate ?? ((proceed: () => void) => proceed()))(navigate);
-      if (draftBarrier) {
-        await draftBarrier(async () => {
-          go();
-          return null;
-        });
-      } else {
-        go();
-      }
-    } catch (error) {
-      toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
-    } finally {
-      setPreviewPending(false);
-    }
-  }, [
-    activeChapterId,
-    draftBarrier,
-    guardedNavigate,
-    previewPending,
-    projectId,
-    router,
-    t,
-    workspaceId,
-  ]);
+  const { openPreview, pending: previewPending } = useStoryPreviewNavigation(projectId);
 
   // Both hashes of the local check were produced in THIS session; the
   // authority check compares against the stored release. Semantics preserved

@@ -10,6 +10,8 @@ vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
     isPending: false,
@@ -18,6 +20,7 @@ vi.mock("@tanstack/react-query", () => ({
       plotTree: { status: "stale" },
       assets: { status: "missing" },
       storyboard: { status: "current" },
+      ready: false,
     },
   }),
 }));
@@ -32,7 +35,10 @@ vi.mock("@/i18n/navigation", () => ({
       {children}
     </a>
   ),
+  useRouter: () => ({ push: navigation.push }),
 }));
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 
 describe("StoryProductionSteps", () => {
   let container: HTMLDivElement;
@@ -40,7 +46,12 @@ describe("StoryProductionSteps", () => {
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    useStoryProjectUiStore.setState({ activeChapterId: "chapter-1" });
+    navigation.push.mockReset();
+    useStoryProjectUiStore.setState({
+      activeChapterId: "chapter-1",
+      draftBarrier: null,
+      guardedNavigate: null,
+    });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -64,5 +75,31 @@ describe("StoryProductionSteps", () => {
     ]);
     expect(container.querySelector('[aria-current="page"]')?.textContent).toContain("assets");
     expect(container.textContent).not.toMatch(/\b[1-4]\b/);
+  });
+
+  it("runs the preview through the save barrier instead of linking to it", async () => {
+    const barrier = vi.fn(async (run: () => Promise<unknown>) => run());
+    useStoryProjectUiStore.setState({
+      draftBarrier: barrier as never,
+      guardedNavigate: (proceed: () => void) => proceed(),
+    });
+    await act(async () => {
+      root.render(<StoryProductionSteps projectId="project-1" active="storyboard" />);
+    });
+
+    const preview = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("preview")
+    );
+    // A link would navigate without flushing the draft the preview compiles from.
+    expect(preview).toBeTruthy();
+    expect(
+      [...container.querySelectorAll("a")].map((link) => link.getAttribute("href"))
+    ).not.toContain("/story-studio/projects/project-1/playtest?chapter=chapter-1");
+
+    await act(async () => preview?.click());
+    expect(barrier).toHaveBeenCalledTimes(1);
+    expect(navigation.push).toHaveBeenCalledWith(
+      "/story-studio/projects/project-1/playtest?chapter=chapter-1"
+    );
   });
 });
