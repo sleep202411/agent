@@ -2612,7 +2612,6 @@
     "assetsPage": {
       "empty": "当前章节还没有制作资产。",
       "emptyHint": "已批准的故事方案应用后，资产规格会显示在这里。",
-      "logicalHint": "资产规格是稳定、可引用的制作指令；即使没有媒体也可使用。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。",
       "count": "{count} 项资产规格",
       "loadError": "无法加载资产规格。",
@@ -2627,15 +2626,16 @@
       "detailDialog": {
         "imagePrompt": "图片提示词",
         "model": "模型",
-        "modelDefault": "默认模型（自动）",
         "save": "保存",
         "saved": "已保存。",
         "saveError": "无法保存资产规格。",
         "generate": "生成",
         "generateStarted": "已开始生成。",
         "generateError": "无法开始生成媒体。",
-        "close": "关闭"
-      }
+        "close": "关闭",
+        "videoPrompt": "视频提示词"
+      },
+      "title": "资产规格"
     },
     "storyboardPage": {
       "emptyChapter": "本章还没有分镜序列。",
@@ -2653,7 +2653,12 @@
       },
       "seconds": "{value} 秒",
       "options": "选项",
-      "plotNodeMissing": "未关联情节节点"
+      "plotNodeMissing": "未关联情节节点",
+      "title": "分镜",
+      "clipKind": {
+        "image": "图片",
+        "video": "视频"
+      }
     },
     "canvas": {
       "back": "返回影游工作室",
@@ -3439,6 +3444,12 @@
         "failed": "失败",
         "cancelled": "已取消"
       }
+    },
+    "productionHeader": {
+      "imageLabel": "图片",
+      "videoLabel": "视频",
+      "imageModel": "图片模型",
+      "videoModel": "视频模型"
     }
   },
   "storyStudioLanding": {

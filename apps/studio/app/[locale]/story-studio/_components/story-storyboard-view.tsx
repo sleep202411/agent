@@ -16,6 +16,7 @@ import {
 } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { localizedText } from "./project-canvas/story-project-canvas-model";
+import { StoryProductionPageHeader } from "./story-production-page-header";
 import {
   StoryStoryboardChoiceCard,
   StoryStoryboardSequenceSection,
@@ -151,7 +152,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-      <p className="text-xs text-white/62">{t("generationHint")}</p>
+      <StoryProductionPageHeader title={t("title")} description={t("generationHint")} />
       <div className="mt-5 space-y-8">
         {sequences.map((sequence, index) => {
           const choiceOptions = choiceOptionsByNode.get(sequence.plotNodeId);

@@ -17,6 +17,7 @@ import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryAssetSpecCard } from "./story-asset-spec-card";
+import { StoryProductionPageHeader } from "./story-production-page-header";
 
 const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
 
@@ -64,17 +65,12 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
     <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="w-full px-6 py-6">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div className="max-w-2xl">
-              <p className="text-sm leading-6 text-white/72">{t("logicalHint")}</p>
-              <p className="mt-1 text-xs text-white/64">{t("generationHint")}</p>
-            </div>
-            {assetsQuery.data ? (
-              <span className="text-xs font-medium tabular-nums text-white/58">
-                {t("count", { count: assetsQuery.data.length })}
-              </span>
-            ) : null}
-          </div>
+          <StoryProductionPageHeader
+            title={t("title")}
+            description={t("generationHint")}
+            meta={assetsQuery.data ? t("count", { count: assetsQuery.data.length }) : null}
+            modalities={["image"]}
+          />
 
           <nav
             className="mt-5 inline-flex max-w-full flex-wrap gap-1 rounded-2xl bg-white/[0.035] p-1.5"

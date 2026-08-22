@@ -2612,7 +2612,6 @@
     "assetsPage": {
       "empty": "目前章節還沒有製作資產。",
       "emptyHint": "已批准的故事方案套用後，資產規格會顯示在這裡。",
-      "logicalHint": "資產規格是穩定、可引用的製作指令；即使沒有媒體也可使用。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。",
       "count": "{count} 項資產規格",
       "loadError": "無法載入資產規格。",
@@ -2627,15 +2626,16 @@
       "detailDialog": {
         "imagePrompt": "圖片提示詞",
         "model": "模型",
-        "modelDefault": "預設模型（自動）",
         "save": "儲存",
         "saved": "已儲存。",
         "saveError": "無法儲存資產規格。",
         "generate": "生成",
         "generateStarted": "已開始生成。",
         "generateError": "無法開始生成媒體。",
-        "close": "關閉"
-      }
+        "close": "關閉",
+        "videoPrompt": "影片提示詞"
+      },
+      "title": "資產規格"
     },
     "storyboardPage": {
       "emptyChapter": "本章還沒有分鏡序列。",
@@ -2653,7 +2653,12 @@
       },
       "seconds": "{value} 秒",
       "options": "選項",
-      "plotNodeMissing": "未關聯情節節點"
+      "plotNodeMissing": "未關聯情節節點",
+      "title": "分鏡",
+      "clipKind": {
+        "image": "圖片",
+        "video": "影片"
+      }
     },
     "canvas": {
       "back": "返回影遊工作室",
@@ -3439,6 +3444,12 @@
         "failed": "失敗",
         "cancelled": "已取消"
       }
+    },
+    "productionHeader": {
+      "imageLabel": "圖片",
+      "videoLabel": "影片",
+      "imageModel": "圖片模型",
+      "videoModel": "影片模型"
     }
   },
   "storyStudioLanding": {

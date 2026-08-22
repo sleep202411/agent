@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { isOperationOnlyModel } from "@/lib/canvas-authoring/generation-api";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
   createStoryAssetGeneration,
@@ -32,8 +32,8 @@ import {
   type StoryAssetSpec,
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
-
-const DEFAULT_MODEL = "__default__";
+import { StoryPromptMentionField, useStoryAssetMentions } from "./story-prompt-mention-field";
+import { useStoryProductionSettingsStore } from "../_stores/story-production-settings-store";
 
 /**
  * Detail dialog for one Asset Spec: the full identity plus the two knobs the
@@ -59,9 +59,15 @@ export function StoryAssetSpecDetailDialog({
   const t = useTranslations("storyStudio.assetsPage.detailDialog");
   const queryClient = useQueryClient();
   const catalog = useAiCatalog();
-  const models = usableModelsByModality(catalog.data, "image");
+  const models = usableModelsByModality(catalog.data, "image").filter(
+    (model) => !isOperationOnlyModel(model) && !/hunyuan|panorama/i.test(model.id)
+  );
+  const pageDefault = useStoryProductionSettingsStore((state) => state.image.selection);
+  const mentions = useStoryAssetMentions(workspaceId, projectId, chapterId);
   const [prompt, setPrompt] = useState(asset.imagePrompt);
-  const [modelId, setModelId] = useState<string>(DEFAULT_MODEL);
+  // null = follow the page-level default until the creator picks explicitly.
+  const [modelId, setModelId] = useState<string | null>(null);
+  const effectiveModelId = modelId ?? pageDefault?.modelId ?? models[0]?.id ?? null;
   const reference = asset.stableKey.startsWith("@") ? asset.stableKey : `@${asset.stableKey}`;
   const promptDirty = prompt.trim() !== asset.imagePrompt;
 
@@ -105,7 +111,7 @@ export function StoryAssetSpecDetailDialog({
         );
         version = patched.version;
       }
-      const model = models.find((candidate) => candidate.id === modelId);
+      const model = models.find((candidate) => candidate.id === effectiveModelId);
       return createStoryAssetGeneration(
         workspaceId,
         projectId,
@@ -151,22 +157,25 @@ export function StoryAssetSpecDetailDialog({
         ) : null}
 
         <Field dense label={t("imagePrompt")} htmlFor={`asset-detail-prompt-${asset.id}`}>
-          <Textarea
+          <StoryPromptMentionField
             id={`asset-detail-prompt-${asset.id}`}
             value={prompt}
             disabled={busy}
-            onChange={(event) => setPrompt(event.target.value)}
-            className="min-h-36 bg-white/[0.07] text-xs leading-5 text-white/88"
+            onChange={setPrompt}
+            mentions={mentions}
           />
         </Field>
 
         <Field dense label={t("model")} htmlFor={`asset-detail-model-${asset.id}`}>
-          <Select value={modelId} onValueChange={setModelId} disabled={busy}>
+          <Select
+            value={effectiveModelId ?? undefined}
+            onValueChange={setModelId}
+            disabled={busy || models.length === 0}
+          >
             <SelectTrigger id={`asset-detail-model-${asset.id}`} className="w-full">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={DEFAULT_MODEL}>{t("modelDefault")}</SelectItem>
               {models.map((model) => (
                 <SelectItem key={model.id} value={model.id}>
                   {model.name}

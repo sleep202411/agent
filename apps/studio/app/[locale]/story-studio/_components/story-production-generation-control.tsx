@@ -1,6 +1,13 @@
 "use client";
 
-import { IconLoader2, IconPhotoOff, IconRefresh, IconSparkles, IconX } from "@tabler/icons-react";
+import {
+  IconBolt,
+  IconLoader2,
+  IconPhotoOff,
+  IconRefresh,
+  IconSparkles,
+  IconX,
+} from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
@@ -27,6 +34,19 @@ import {
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
+import {
+  estimateModelSellPoints,
+  schemaFields,
+  type FizzAiModel,
+  type ModelSettings,
+} from "@/lib/canvas-authoring/generation-api";
+import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
+import {
+  storyGenerationOptions,
+  useStoryProductionSettingsStore,
+  type ProductionModality,
+  type ProductionModelSelection,
+} from "../_stores/story-production-settings-store";
 
 interface GenerationScope {
   workspaceId: string;
@@ -59,6 +79,8 @@ export function StoryProductionGenerationControl({
   selectedMedia,
   aspect = "square",
   secondaryAction,
+  outputKind = "image",
+  clipDurationMs,
 }: {
   scope: GenerationScope;
   target: GenerationTarget;
@@ -68,6 +90,11 @@ export function StoryProductionGenerationControl({
   aspect?: "square" | "portrait" | "landscape";
   /** Extra card-owned action stacked directly under the primary action. */
   secondaryAction?: React.ReactNode;
+  /** Which modality this target generates; picks the page-header default. */
+  outputKind?: ProductionModality;
+  /** Video clips bill by their timeline length: the server rounds this up to
+   *  the model's nearest supported source duration, so the estimate must too. */
+  clipDurationMs?: number;
 }) {
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
@@ -111,9 +138,20 @@ export function StoryProductionGenerationControl({
     queryClient.setQueryData(generationQueryKey(scope, target, value.id), value);
   };
 
+  const generationDefaults = useStoryProductionSettingsStore((state) => state[outputKind]);
+  const catalog = useAiCatalog();
+  const defaultModel = generationDefaults.selection
+    ? catalog.data?.models.find((model) => model.id === generationDefaults.selection?.modelId)
+    : undefined;
+  const estimatedPoints = estimateStoryGenerationPoints(
+    defaultModel,
+    generationDefaults.options,
+    outputKind === "video" ? (clipDurationMs ?? null) : null
+  );
   const createMutation = useMutation({
     retry: false,
-    mutationFn: () => createGeneration(scope, target),
+    mutationFn: () =>
+      createGeneration(scope, target, generationDefaults.selection, generationDefaults.options),
     onSuccess: rememberGeneration,
     onError: (error) => toast.error(storyApiErrorMessage(error, t("requestError"))),
   });
@@ -232,6 +270,12 @@ export function StoryProductionGenerationControl({
     >
       <IconSparkles />
       {selectedMedia ? t("generateAgain") : t("generate")}
+      {estimatedPoints !== null ? (
+        <span className="flex items-center gap-0.5 text-[11px] opacity-85">
+          <IconBolt className="size-3" stroke={2} />
+          {estimatedPoints}
+        </span>
+      ) : null}
     </Button>
   ) : null;
 
@@ -397,8 +441,75 @@ function getGeneration(
       );
 }
 
-function createGeneration(scope: GenerationScope, target: GenerationTarget) {
+/**
+ * The same sell-points estimate the header pill shows, corrected for video
+ * clips: duration is server-owned and rounded up from the clip's timeline
+ * length to the model's nearest supported source duration.
+ */
+function estimateStoryGenerationPoints(
+  model: FizzAiModel | undefined,
+  options: ModelSettings,
+  clipDurationMs: number | null
+): number | null {
+  if (!model) return null;
+  const scalar = (name: string) => {
+    const value = options[name];
+    return Array.isArray(value) ? undefined : value;
+  };
+  const estimate: {
+    numOutputs: number;
+    resolution?: string;
+    quality?: string;
+    duration?: string;
+    durationSeconds?: number;
+    generateAudio?: boolean;
+  } = {
+    numOutputs: Number(scalar("numOutputs") ?? scalar("n") ?? 1) || 1,
+    resolution: scalar("resolution") != null ? String(scalar("resolution")) : undefined,
+    quality: scalar("quality") != null ? String(scalar("quality")) : undefined,
+    duration: scalar("duration") != null ? String(scalar("duration")) : undefined,
+    durationSeconds:
+      typeof scalar("durationSeconds") === "number"
+        ? (scalar("durationSeconds") as number)
+        : undefined,
+    generateAudio:
+      typeof scalar("generateAudio") === "boolean"
+        ? (scalar("generateAudio") as boolean)
+        : undefined,
+  };
+  if (clipDurationMs !== null) {
+    const seconds = clipDurationMs / 1_000;
+    const field = schemaFields(model).find(
+      (candidate) => candidate.name === "durationSeconds" || candidate.name === "duration"
+    );
+    const supported = (field?.enum ?? [])
+      .map(Number)
+      .filter((value) => Number.isFinite(value))
+      .sort((left, right) => left - right)
+      .find((value) => value >= seconds);
+    if (supported === undefined) return null;
+    estimate.duration = String(supported);
+    estimate.durationSeconds = supported;
+  }
+  return estimateModelSellPoints(model, estimate)?.sellPoints ?? null;
+}
+
+function createGeneration(
+  scope: GenerationScope,
+  target: GenerationTarget,
+  selection: ProductionModelSelection | null,
+  options: Parameters<typeof storyGenerationOptions>[0]
+) {
   const idempotencyKey = createStoryProductionIdempotencyKey("story-generate");
+  // The page-header default rides along only when a model is explicitly
+  // chosen; option keys are schema-bound to that model.
+  const modelInput = selection
+    ? {
+        modelId: selection.modelId,
+        schemaVersion: selection.schemaVersion,
+        options: storyGenerationOptions(options),
+      }
+    : {};
   return target.kind === "asset_spec"
     ? createStoryAssetGeneration(
         scope.workspaceId,
@@ -406,7 +517,7 @@ function createGeneration(scope: GenerationScope, target: GenerationTarget) {
         scope.chapterId,
         target.id,
         idempotencyKey,
-        { expectedVersion: target.version }
+        { expectedVersion: target.version, ...modelInput }
       )
     : createStoryStoryboardClipGeneration(
         scope.workspaceId,
@@ -415,7 +526,7 @@ function createGeneration(scope: GenerationScope, target: GenerationTarget) {
         target.sequenceId,
         target.id,
         idempotencyKey,
-        { expectedVersion: target.version }
+        { expectedVersion: target.version, ...modelInput }
       );
 }
 

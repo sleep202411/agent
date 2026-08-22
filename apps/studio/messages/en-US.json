@@ -2612,7 +2612,6 @@
     "assetsPage": {
       "empty": "No production assets in this chapter yet.",
       "emptyHint": "Asset Specs appear here after the approved story plan is applied.",
-      "logicalHint": "Asset Specs are stable, referenceable production instructions — media is optional.",
       "generationHint": "Opening this page never generates media or spends credits.",
       "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
       "loadError": "Asset Specs could not be loaded.",
@@ -2627,15 +2626,16 @@
       "detailDialog": {
         "imagePrompt": "Image Prompt",
         "model": "Model",
-        "modelDefault": "Default model (auto)",
         "save": "Save",
         "saved": "Saved.",
         "saveError": "Could not save the Asset Spec.",
         "generate": "Generate",
         "generateStarted": "Generation started.",
         "generateError": "Could not start generating media.",
-        "close": "Close"
-      }
+        "close": "Close",
+        "videoPrompt": "Video Prompt"
+      },
+      "title": "Asset Specs"
     },
     "storyboardPage": {
       "emptyChapter": "No storyboard sequences in this chapter yet.",
@@ -2653,7 +2653,12 @@
       },
       "seconds": "{value}s",
       "options": "Options",
-      "plotNodeMissing": "Not linked to a plot node"
+      "plotNodeMissing": "Not linked to a plot node",
+      "title": "Storyboard",
+      "clipKind": {
+        "image": "Image",
+        "video": "Video"
+      }
     },
     "canvas": {
       "back": "Back to Interactive Film Studio",
@@ -3439,6 +3444,12 @@
         "failed": "Failed",
         "cancelled": "Cancelled"
       }
+    },
+    "productionHeader": {
+      "imageLabel": "Image",
+      "videoLabel": "Video",
+      "imageModel": "Image model",
+      "videoModel": "Video model"
     }
   },
   "storyStudioLanding": {

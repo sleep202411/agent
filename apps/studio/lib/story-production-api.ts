@@ -276,6 +276,14 @@ export interface PatchStoryAssetSpecInput {
   imagePrompt?: string;
 }
 
+export interface PatchStoryStoryboardClipInput {
+  expectedVersion: number;
+  title?: string;
+  description?: string | null;
+  imagePrompt?: string | null;
+  videoPrompt?: string | null;
+}
+
 export const storyProductionKeys = {
   state: (workspaceId: string | null, projectId: string, chapterId: string | null) =>
     ["story-studio", "production-state", workspaceId, projectId, chapterId] as const,
@@ -547,6 +555,25 @@ export async function patchStoryAssetSpec(
 ): Promise<StoryAssetSpec> {
   return api.patch<StoryAssetSpec>(
     chapterPath(projectId, chapterId, `asset-specs/${encodeURIComponent(assetSpecId)}`),
+    mutationConfig(workspaceId, idempotencyKey, input)
+  );
+}
+
+export async function patchStoryStoryboardClip(
+  workspaceId: string,
+  projectId: string,
+  chapterId: string,
+  sequenceId: string,
+  clipId: string,
+  idempotencyKey: string,
+  input: PatchStoryStoryboardClipInput
+): Promise<StoryStoryboardClip> {
+  return api.patch<StoryStoryboardClip>(
+    chapterPath(
+      projectId,
+      chapterId,
+      `storyboard/sequences/${encodeURIComponent(sequenceId)}/clips/${encodeURIComponent(clipId)}`
+    ),
     mutationConfig(workspaceId, idempotencyKey, input)
   );
 }

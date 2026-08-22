@@ -1,8 +1,11 @@
 "use client";
 
+import { useState } from "react";
+import { IconPhoto, IconVideo } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import type { StoryStoryboardSequence } from "@/lib/story-production-api";
 import { StoryProductionConflictPanel } from "./story-production-conflict-panel";
+import { StoryClipDetailDialog } from "./story-clip-detail-dialog";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
 /**
@@ -21,6 +24,71 @@ export interface StorySequenceChoiceOptions {
  * node whose footage ends on it — mirroring the Plot Tree's branch point in
  * the flat narrative order. Display-only; branch editing lives on the canvas.
  */
+function StoryClipTile({
+  clip,
+  sequenceId,
+  scope,
+  durationLabel,
+}: {
+  clip: StoryStoryboardSequence["clips"][number];
+  sequenceId: string;
+  scope: { workspaceId: string; projectId: string; chapterId: string };
+  durationLabel: string;
+}) {
+  const t = useTranslations("storyStudio.assetsPage");
+  const boardT = useTranslations("storyStudio.storyboardPage");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const KindIcon = clip.kind === "video" ? IconVideo : IconPhoto;
+  return (
+    <div className="relative w-[200px]">
+      <span
+        role="img"
+        aria-label={boardT(`clipKind.${clip.kind}`)}
+        title={boardT(`clipKind.${clip.kind}`)}
+        className="pointer-events-none absolute top-2 right-2 z-10 grid size-6 place-items-center rounded-md bg-black/50 text-white/75 backdrop-blur-sm"
+      >
+        <KindIcon className="size-3.5" stroke={1.8} />
+      </span>
+      <StoryProductionGenerationControl
+        scope={scope}
+        target={{
+          kind: "storyboard_clip",
+          id: clip.id,
+          sequenceId,
+          version: clip.version,
+          status: clip.status,
+          latestGeneration: clip.latestGeneration,
+        }}
+        label={clip.title}
+        selectedMedia={clip.selectedMediaVersion}
+        outputKind={clip.kind}
+        clipDurationMs={clip.durationMs}
+        secondaryAction={
+          <button
+            type="button"
+            onClick={() => setDetailOpen(true)}
+            className="rounded-md bg-black/45 px-2 py-1 text-[11px] font-medium text-white/72 backdrop-blur-sm transition hover:bg-black/60 hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+          >
+            {t("details")}
+          </button>
+        }
+      />
+      <p className="mt-1.5 truncate text-[11px] tabular-nums text-white/62">
+        {clip.title} · {durationLabel}
+      </p>
+      <StoryClipDetailDialog
+        clip={clip}
+        sequenceId={sequenceId}
+        workspaceId={scope.workspaceId}
+        projectId={scope.projectId}
+        chapterId={scope.chapterId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
+    </div>
+  );
+}
+
 export function StoryStoryboardChoiceCard({ options }: { options: StorySequenceChoiceOptions }) {
   const t = useTranslations("storyStudio.storyboardPage");
   return (
@@ -123,24 +191,13 @@ export function StoryStoryboardSequenceSection({
       ) : (
         <div className="mt-4 flex flex-wrap gap-4">
           {sequence.clips.map((clip) => (
-            <div key={clip.id} className="w-[200px]">
-              <StoryProductionGenerationControl
-                scope={scope}
-                target={{
-                  kind: "storyboard_clip",
-                  id: clip.id,
-                  sequenceId: sequence.id,
-                  version: clip.version,
-                  status: clip.status,
-                  latestGeneration: clip.latestGeneration,
-                }}
-                label={clip.title}
-                selectedMedia={clip.selectedMediaVersion}
-              />
-              <p className="mt-1.5 truncate text-[11px] tabular-nums text-white/62">
-                {clip.title} · {t("seconds", { value: seconds(clip.durationMs) })}
-              </p>
-            </div>
+            <StoryClipTile
+              key={clip.id}
+              clip={clip}
+              sequenceId={sequence.id}
+              scope={scope}
+              durationLabel={t("seconds", { value: seconds(clip.durationMs) })}
+            />
           ))}
         </div>
       )}

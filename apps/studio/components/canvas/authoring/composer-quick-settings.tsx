@@ -38,12 +38,18 @@ export function ComposerQuickSettings({
   onChange,
   onOpenChange,
   className,
+  placement = "above",
+  align = "left",
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
   onChange: (next: ModelSettings) => void;
   onOpenChange?: (open: boolean) => void;
   className?: string;
+  /** Which side of the anchored trigger the popover opens toward. Composers
+   *  sit at the bottom of the screen and open above; page headers open below. */
+  placement?: "above" | "below";
+  align?: "left" | "right";
 }) {
   const t = useTranslations("canvasControls");
   const [open, setOpen] = useState(false);
@@ -153,7 +159,20 @@ export function ComposerQuickSettings({
       </button>
 
       {effectiveOpen && (
-        <div className="liquid-rim nodrag nowheel absolute bottom-full left-0 z-50 mb-2 w-[320px] origin-bottom-left overflow-hidden rounded-2xl bg-[oklch(0.19_0_0_/_0.97)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-24px_48px_rgba(0,0,0,0.28),0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-[56px] backdrop-saturate-[1.25] duration-150 animate-in fade-in-0 zoom-in-95">
+        <div
+          className={cn(
+            "liquid-rim nodrag nowheel absolute z-50 w-[320px] overflow-hidden rounded-2xl bg-[oklch(0.19_0_0_/_0.97)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-24px_48px_rgba(0,0,0,0.28),0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-[56px] backdrop-saturate-[1.25] duration-150 animate-in fade-in-0 zoom-in-95",
+            placement === "above" ? "bottom-full mb-2" : "top-full mt-2",
+            align === "left" ? "left-0" : "right-0",
+            placement === "above"
+              ? align === "left"
+                ? "origin-bottom-left"
+                : "origin-bottom-right"
+              : align === "left"
+                ? "origin-top-left"
+                : "origin-top-right"
+          )}
+        >
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.11)_0%,rgba(255,255,255,0.035)_38%,rgba(0,0,0,0.22)_100%)]"
