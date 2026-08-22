@@ -18,9 +18,7 @@ import { cn } from "@/lib/utils";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryAssetSpecCard } from "./story-asset-spec-card";
 
-type TabKey = "all" | StoryAssetSpecKind;
-
-const TABS: TabKey[] = ["all", "character", "location", "prop"];
+const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
 
 /** Chapter-scoped logical Asset Specs. A spec remains usable by @stable-key
  * before any media exists; this view never starts paid generation on load. */
@@ -33,7 +31,9 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const kindParam = searchParams.get("kind");
-  const active: TabKey = TABS.includes(kindParam as TabKey) ? (kindParam as TabKey) : "all";
+  const active: StoryAssetSpecKind = TABS.includes(kindParam as StoryAssetSpecKind)
+    ? (kindParam as StoryAssetSpecKind)
+    : "character";
 
   const assetsQuery = useQuery({
     queryKey: storyProductionKeys.assets(workspaceId, projectId, activeChapterId),
@@ -43,18 +43,13 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
     retry: false,
   });
 
-  const setTab = (tab: TabKey) => {
+  const setTab = (tab: StoryAssetSpecKind) => {
     const next = new URLSearchParams(searchParams.toString());
-    if (tab === "all") next.delete("kind");
-    else next.set("kind", tab);
-    const query = next.toString();
-    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    next.set("kind", tab);
+    router.replace(`${pathname}?${next.toString()}`, { scroll: false });
   };
 
-  const assets =
-    active === "all"
-      ? (assetsQuery.data ?? [])
-      : (assetsQuery.data ?? []).filter((asset) => asset.kind === active);
+  const assets = (assetsQuery.data ?? []).filter((asset) => asset.kind === active);
   const loading = workspaceLoading || (Boolean(workspaceId) && assetsQuery.isPending);
 
   return (

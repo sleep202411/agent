@@ -2615,7 +2615,6 @@
       "logicalHint": "資產規格是穩定、可引用的製作指令；即使沒有媒體也可使用。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。",
       "count": "{count} 項資產規格",
-      "filterLabel": "按類型篩選資產規格",
       "loadError": "無法載入資產規格。",
       "retry": "重試",
       "imagePrompt": "圖片提示詞",
@@ -2630,11 +2629,11 @@
         "archived": "已封存"
       },
       "tabs": {
-        "all": "全部",
         "character": "角色",
         "location": "場景",
         "prop": "道具"
-      }
+      },
+      "filterLabel": "按類型篩選資產規格"
     },
     "storyboardPage": {
       "emptyChapter": "本章還沒有分鏡序列。",

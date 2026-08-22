@@ -2615,7 +2615,6 @@
       "logicalHint": "资产规格是稳定、可引用的制作指令；即使没有媒体也可使用。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。",
       "count": "{count} 项资产规格",
-      "filterLabel": "按类型筛选资产规格",
       "loadError": "无法加载资产规格。",
       "retry": "重试",
       "imagePrompt": "图片提示词",
@@ -2630,11 +2629,11 @@
         "archived": "已归档"
       },
       "tabs": {
-        "all": "全部",
         "character": "角色",
         "location": "场景",
         "prop": "道具"
-      }
+      },
+      "filterLabel": "按类型筛选资产规格"
     },
     "storyboardPage": {
       "emptyChapter": "本章还没有分镜序列。",

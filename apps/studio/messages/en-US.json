@@ -2615,7 +2615,6 @@
       "logicalHint": "Asset Specs are stable, referenceable production instructions — media is optional.",
       "generationHint": "Opening this page never generates media or spends credits.",
       "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
-      "filterLabel": "Filter Asset Specs by type",
       "loadError": "Asset Specs could not be loaded.",
       "retry": "Try again",
       "imagePrompt": "Image prompt",
@@ -2630,11 +2629,11 @@
         "archived": "Archived"
       },
       "tabs": {
-        "all": "All",
         "character": "Characters",
         "location": "Locations",
         "prop": "Props"
-      }
+      },
+      "filterLabel": "Filter Asset Specs by type"
     },
     "storyboardPage": {
       "emptyChapter": "No storyboard sequences in this chapter yet.",
