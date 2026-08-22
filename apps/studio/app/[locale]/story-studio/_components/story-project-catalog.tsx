@@ -3,15 +3,13 @@
 import { IconGitBranch, IconWorld } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { getStoryWorkbench, type StoryGraphNode } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
-
-const CATALOG_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
 
 /**
  * Chapter/scene catalog — one tenant of the side-panel dock, mounted by
@@ -21,7 +19,6 @@ const CATALOG_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
  * endings carry an END badge.
  */
 export function StoryProjectCatalog({ projectId }: { projectId: string }) {
-  const segment = useSelectedLayoutSegment();
   const t = useTranslations("storyStudio.canvas");
   const locale = useLocale();
   const searchParams = useSearchParams();
@@ -29,14 +26,10 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   const { activeWorkspace } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
-  // The dock only mounts this panel when catalog is the active tenant, so
-  // visibility here is just: is the catalog meaningful on this segment?
-  const enabled = CATALOG_SEGMENTS.has(segment ?? "");
-
   const workbenchQuery = useQuery({
     queryKey: ["story-studio", "chapter-workbench", workspaceId, projectId, activeChapterId],
     queryFn: () => getStoryWorkbench(workspaceId as string, projectId, activeChapterId as string),
-    enabled: Boolean(workspaceId && activeChapterId) && enabled,
+    enabled: Boolean(workspaceId && activeChapterId),
     retry: false,
   });
   const chapter = workbenchQuery.data?.chapter ?? null;
@@ -55,8 +48,6 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
     return names;
   }, [nodes]);
 
-  if (!enabled) return null;
-
   const rowHref = (nodeId: string) =>
     `/story-studio/projects/${projectId}/storyboard?chapter=${encodeURIComponent(
       activeChapterId as string
@@ -68,10 +59,7 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   }));
 
   return (
-    <nav
-      aria-label={t("sidebar.catalog")}
-      className="w-64 shrink-0 overflow-y-auto border-r border-white/8 bg-[#0C0C0D] px-3 py-5 max-md:hidden"
-    >
+    <nav aria-label={t("sidebar.catalog")} className="min-h-0 flex-1 overflow-y-auto px-3 py-5">
       <p className="px-2 text-[11px] font-semibold tracking-[0.14em] text-white uppercase">
         {t("sidebar.catalog")}
       </p>

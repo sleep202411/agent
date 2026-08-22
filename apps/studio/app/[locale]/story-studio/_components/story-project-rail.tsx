@@ -34,10 +34,7 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
   const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
   const shareOpen = useStoryProjectUiStore((state) => state.shareOpen);
-  const chapterMenuOpen = useStoryProjectUiStore((state) => state.chapterMenuOpen);
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
-  const setChapterMenuOpen = useStoryProjectUiStore((state) => state.setChapterMenuOpen);
-  const setChapterRailSlot = useStoryProjectUiStore((state) => state.setChapterRailSlot);
 
   if (!RAIL_SEGMENTS.has(segment ?? "")) return null;
 
@@ -47,7 +44,6 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
     if (!onCanvas) router.push(canvasHref);
   };
   const openOverview = () => {
-    setChapterMenuOpen(false);
     setShareOpen(false);
     if (onCanvas && sidePanel === "world") {
       setSidePanel(null);
@@ -57,19 +53,20 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
     openCanvas();
   };
   const openCatalog = () => {
-    setChapterMenuOpen(false);
     setShareOpen(false);
     setSidePanel(sidePanel === "catalog" ? null : "catalog");
   };
   const openChapters = () => {
-    setSidePanel(null);
     setShareOpen(false);
-    setChapterMenuOpen(true);
+    if (onCanvas && sidePanel === "chapters") {
+      setSidePanel(null);
+      return;
+    }
+    setSidePanel("chapters");
     openCanvas();
   };
   const openShare = () => {
     setSidePanel(null);
-    setChapterMenuOpen(false);
     if (shareOpen) {
       setShareOpen(false);
       return;
@@ -96,19 +93,12 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           active={sidePanel === "catalog"}
           onClick={openCatalog}
         />
-        {onCanvas ? (
-          <div
-            ref={setChapterRailSlot}
-            className="flex h-[54px] w-[52px] shrink-0 items-center justify-center"
-          />
-        ) : (
-          <RailButton
-            icon={IconBook2}
-            label={t("chapters.action")}
-            active={chapterMenuOpen}
-            onClick={openChapters}
-          />
-        )}
+        <RailButton
+          icon={IconBook2}
+          label={t("chapters.action")}
+          active={sidePanel === "chapters"}
+          onClick={openChapters}
+        />
         {/* Material canvas — the free creative canvas scoped to this project. */}
         {MATERIAL_CANVAS_ENABLED && (
           <RailLink

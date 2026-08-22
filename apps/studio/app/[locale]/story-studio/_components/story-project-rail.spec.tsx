@@ -39,8 +39,6 @@ describe("StoryProjectRail", () => {
     useStoryProjectUiStore.setState({
       sidePanel: null,
       shareOpen: false,
-      chapterMenuOpen: false,
-      chapterRailSlot: null,
     });
     container = document.createElement("div");
     document.body.append(container);
@@ -82,13 +80,12 @@ describe("StoryProjectRail", () => {
     expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
 
     await act(async () => byText("chapters.action")?.click());
-    expect(useStoryProjectUiStore.getState().chapterMenuOpen).toBe(true);
-    expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
+    expect(useStoryProjectUiStore.getState().sidePanel).toBe("chapters");
     expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
 
     await act(async () => byText("share")?.click());
     expect(useStoryProjectUiStore.getState().shareOpen).toBe(true);
-    expect(useStoryProjectUiStore.getState().chapterMenuOpen).toBe(false);
+    expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
     expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
   });
 
@@ -108,6 +105,11 @@ describe("StoryProjectRail", () => {
     await act(async () => byText("sidebar.catalog")?.click());
     expect(useStoryProjectUiStore.getState().sidePanel).toBe("catalog");
     await act(async () => byText("sidebar.catalog")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
+
+    await act(async () => byText("chapters.action")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBe("chapters");
+    await act(async () => byText("chapters.action")?.click());
     expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
 
     await act(async () => byText("share")?.click());

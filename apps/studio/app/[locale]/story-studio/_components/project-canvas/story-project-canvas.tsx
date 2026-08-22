@@ -34,7 +34,6 @@ import {
   IconArrowDown,
   IconArrowLeft,
   IconArrowUp,
-  IconBook2,
   IconChevronDown,
   IconDownload,
   IconFocusCentered,
@@ -54,7 +53,7 @@ import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { MATERIAL_CANVAS_ENABLED } from "../../_lib/feature-flags";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
-import { StoryProjectRailItemContent, storyProjectRailItemClass } from "../story-project-rail";
+import { StoryProjectSidePanelShell } from "../story-project-side-panel";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
@@ -82,7 +81,6 @@ import { WorldModelExperienceRenderer } from "@/components/experience-runtime/wo
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { Link, useRouter } from "@/i18n/navigation";
-import { createPortal } from "react-dom";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
@@ -149,7 +147,7 @@ import {
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-draft-reconcile";
-import { StoryChapterDropdown, type StoryChapterDropdownProps } from "./story-chapter-dropdown";
+import { StoryChaptersPanel } from "./story-chapters-panel";
 import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
 import {
   coordinateStoryCanvasNavigation,
@@ -369,8 +367,6 @@ function StoryProjectCanvasInner({
   const setBackGuard = useStoryProjectUiStore((state) => state.setBackGuard);
   const setDraftBarrier = useStoryProjectUiStore((state) => state.setDraftBarrier);
   const setGuardedNavigate = useStoryProjectUiStore((state) => state.setGuardedNavigate);
-  const chapterMenuOpen = useStoryProjectUiStore((state) => state.chapterMenuOpen);
-  const setChapterMenuOpen = useStoryProjectUiStore((state) => state.setChapterMenuOpen);
   const [worldRun, setWorldRun] = useState<StoryWorldRunState | null>(null);
   const [interactionEditorNodeId, setInteractionEditorNodeId] = useState<string | null>(null);
   const [chapterCreatePending, setChapterCreatePending] = useState(false);
@@ -2965,47 +2961,46 @@ function StoryProjectCanvasInner({
   return (
     <main className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--canvas-background)] text-white">
       {sidePanel === "world" ? (
-        <StoryProjectWorldPanel
-          project={project}
-          content={content}
-          canEdit={canMutateCanvasLayout}
-          coverMedia={{
-            cover: project.cover,
-            candidateAssets: candidateAssets.items,
-            candidateAssetsLoading: candidateAssets.loading,
-            candidateAssetsError: candidateAssets.failed
-              ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
-              : null,
-            disabledReason: coverMediaDisabledReason,
-            onRetryCandidates: () => void candidateAssets.refresh(),
-            onSelectCandidate: selectProjectCover,
-            onClearSelection: () => updateProjectCover(null),
-            onUpload: uploadProjectCover,
-          }}
-          onUpdateFoundation={updateFoundation}
-          onClose={() => setSidePanel(null)}
-        />
+        <StoryProjectSidePanelShell>
+          <StoryProjectWorldPanel
+            project={project}
+            content={content}
+            canEdit={canMutateCanvasLayout}
+            coverMedia={{
+              cover: project.cover,
+              candidateAssets: candidateAssets.items,
+              candidateAssetsLoading: candidateAssets.loading,
+              candidateAssetsError: candidateAssets.failed
+                ? candidateAssets.error || t("filmFoundation.cover.candidateLoadError")
+                : null,
+              disabledReason: coverMediaDisabledReason,
+              onRetryCandidates: () => void candidateAssets.refresh(),
+              onSelectCandidate: selectProjectCover,
+              onClearSelection: () => updateProjectCover(null),
+              onUpload: uploadProjectCover,
+            }}
+            onUpdateFoundation={updateFoundation}
+            onClose={() => setSidePanel(null)}
+          />
+        </StoryProjectSidePanelShell>
+      ) : null}
+      {sidePanel === "chapters" ? (
+        <StoryProjectSidePanelShell>
+          <StoryChaptersPanel
+            chapters={workbenchProjection.chapters}
+            activeChapterId={workbenchProjection.chapter.id}
+            canEdit={canEdit}
+            creating={chapterCreatePending}
+            pendingChapterId={chapterMutationPendingId}
+            onSelect={navigateToChapter}
+            onCreate={createChapter}
+            onRename={renameChapter}
+            onMove={moveChapter}
+            onArchive={archiveChapter}
+          />
+        </StoryProjectSidePanelShell>
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
-        <CanvasRailPortals
-          chapterDropdown={{
-            open: chapterMenuOpen,
-            chapters: workbenchProjection.chapters,
-            activeChapterId: workbenchProjection.chapter.id,
-            canEdit,
-            creating: chapterCreatePending,
-            pendingChapterId: chapterMutationPendingId,
-            onOpenChange: (open) => {
-              setChapterMenuOpen(open);
-              if (open) setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
-            },
-            onSelect: navigateToChapter,
-            onCreate: createChapter,
-            onRename: renameChapter,
-            onMove: moveChapter,
-            onArchive: archiveChapter,
-          }}
-        />
         <div className="relative min-w-0 flex-1">
           {worldRun ? (
             <div
@@ -3424,32 +3419,6 @@ function formatInteractionTime(timeMs: number): string {
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds - minutes * 60;
   return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
-}
-
-function CanvasRailPortals({ chapterDropdown }: { chapterDropdown: StoryChapterDropdownProps }) {
-  const t = useTranslations("storyStudio.canvas");
-  // Chapter data and writes stay canvas-owned, while the one visible trigger
-  // lives in the layout rail through this ref-registered slot.
-  const chapterRailSlot = useStoryProjectUiStore((state) => state.chapterRailSlot);
-  if (!chapterRailSlot) return null;
-  return createPortal(
-    <StoryChapterDropdown
-      {...chapterDropdown}
-      contentSide="right"
-      contentAlign="start"
-      trigger={
-        <button
-          type="button"
-          aria-label={t("chapters.action")}
-          aria-pressed={chapterDropdown.open}
-          className={storyProjectRailItemClass(chapterDropdown.open)}
-        >
-          <StoryProjectRailItemContent icon={IconBook2} label={t("chapters.action")} />
-        </button>
-      }
-    />,
-    chapterRailSlot
-  );
 }
 
 function StoryPortHandle({

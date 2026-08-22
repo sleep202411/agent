@@ -30,8 +30,8 @@ interface StoryProjectWorldPanelProps {
  */
 export function StoryProjectWorldPanel(props: StoryProjectWorldPanelProps) {
   return (
-    <aside className="flex w-[368px] shrink-0 flex-col overflow-y-auto border-r border-white/8 bg-[#0C0C0D] px-5 py-5 max-md:hidden">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5 py-5">
       <StoryFoundationLibrary {...props} />
-    </aside>
+    </div>
   );
 }
