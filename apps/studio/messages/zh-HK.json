@@ -2590,7 +2590,7 @@
       "cancel": "取消生成",
       "retry": "重試生成",
       "retryAttachment": "重試附加媒體",
-      "generate": "生成",
+      "generate": "一鍵生成",
       "generateAgain": "再次生成",
       "progressAria": "生成進度",
       "targetNotCurrent": "請先將此過期製作目標與目前情節同步，再生成媒體。",
@@ -2617,23 +2617,25 @@
       "count": "{count} 項資產規格",
       "loadError": "無法載入資產規格。",
       "retry": "重試",
-      "imagePrompt": "圖片提示詞",
-      "kinds": {
-        "character": "角色",
-        "location": "場景",
-        "prop": "道具"
-      },
-      "status": {
-        "current": "目前版本",
-        "stale": "需要覆核",
-        "archived": "已封存"
-      },
       "tabs": {
         "character": "角色",
         "location": "場景",
         "prop": "道具"
       },
-      "filterLabel": "按類型篩選資產規格"
+      "filterLabel": "按類型篩選資產規格",
+      "details": "詳情",
+      "detailDialog": {
+        "imagePrompt": "圖片提示詞",
+        "model": "模型",
+        "modelDefault": "預設模型（自動）",
+        "save": "儲存",
+        "saved": "已儲存。",
+        "saveError": "無法儲存資產規格。",
+        "generate": "生成",
+        "generateStarted": "已開始生成。",
+        "generateError": "無法開始生成媒體。",
+        "close": "關閉"
+      }
     },
     "storyboardPage": {
       "emptyChapter": "本章還沒有分鏡序列。",

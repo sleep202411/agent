@@ -2590,7 +2590,7 @@
       "cancel": "取消生成",
       "retry": "重试生成",
       "retryAttachment": "重试附加媒体",
-      "generate": "生成",
+      "generate": "一键生成",
       "generateAgain": "再次生成",
       "progressAria": "生成进度",
       "targetNotCurrent": "请先将此过期制作目标与当前情节同步，再生成媒体。",
@@ -2617,23 +2617,25 @@
       "count": "{count} 项资产规格",
       "loadError": "无法加载资产规格。",
       "retry": "重试",
-      "imagePrompt": "图片提示词",
-      "kinds": {
-        "character": "角色",
-        "location": "场景",
-        "prop": "道具"
-      },
-      "status": {
-        "current": "当前版本",
-        "stale": "需要复核",
-        "archived": "已归档"
-      },
       "tabs": {
         "character": "角色",
         "location": "场景",
         "prop": "道具"
       },
-      "filterLabel": "按类型筛选资产规格"
+      "filterLabel": "按类型筛选资产规格",
+      "details": "详情",
+      "detailDialog": {
+        "imagePrompt": "图片提示词",
+        "model": "模型",
+        "modelDefault": "默认模型（自动）",
+        "save": "保存",
+        "saved": "已保存。",
+        "saveError": "无法保存资产规格。",
+        "generate": "生成",
+        "generateStarted": "已开始生成。",
+        "generateError": "无法开始生成媒体。",
+        "close": "关闭"
+      }
     },
     "storyboardPage": {
       "emptyChapter": "本章还没有分镜序列。",

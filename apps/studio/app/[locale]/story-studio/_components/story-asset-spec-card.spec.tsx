@@ -27,13 +27,17 @@ describe("StoryAssetSpecCard", () => {
     container.remove();
   });
 
-  it("keeps a zero-media logical spec visible and @referenceable", async () => {
+  it.each([
+    ["character", "aspect-[3/4]"],
+    ["location", "aspect-video"],
+    ["prop", "aspect-square"],
+  ] as const)("renders a %s spec as a minimal media card (%s)", async (kind, aspectClass) => {
     const client = new QueryClient();
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
           <StoryAssetSpecCard
-            asset={assetSpec()}
+            asset={assetSpec({ kind })}
             workspaceId="workspace-1"
             projectId="project-1"
             chapterId="chapter-1"
@@ -43,16 +47,26 @@ describe("StoryAssetSpecCard", () => {
     });
 
     const text = container.textContent ?? "";
-    expect(text).toContain("@hero");
+    expect(text).toContain("Hero");
+    expect(text).toContain("Lead character");
     expect(text).toContain("generate");
-    expect(container.querySelector("article")).not.toBeNull();
-    // The prompt is carried by an always-editable textarea, not display text.
-    const prompt = container.querySelector<HTMLTextAreaElement>("textarea");
-    expect(prompt?.value).toContain("A consistent red flight suit");
+    expect(text).toContain("details");
+    expect(container.querySelector(`[class*="${aspectClass}"]`)).not.toBeNull();
+    // The card stays minimal: no @key and no prompt textarea until the
+    // detail dialog is opened.
+    expect(text).not.toContain("@hero");
+    expect(container.querySelector("textarea")).toBeNull();
   });
 });
 
-function assetSpec(): StoryAssetSpec {
+function assetSpec(overrides: Partial<StoryAssetSpec> = {}): StoryAssetSpec {
+  return {
+    ...baseAssetSpec(),
+    ...overrides,
+  };
+}
+
+function baseAssetSpec(): StoryAssetSpec {
   return {
     id: "asset-1",
     projectId: "project-1",

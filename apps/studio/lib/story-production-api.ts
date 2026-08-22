@@ -269,6 +269,13 @@ export interface RetryStoryProductionGenerationInput {
   expectedVersion: number;
 }
 
+export interface PatchStoryAssetSpecInput {
+  expectedVersion: number;
+  name?: string;
+  description?: string | null;
+  imagePrompt?: string;
+}
+
 export const storyProductionKeys = {
   state: (workspaceId: string | null, projectId: string, chapterId: string | null) =>
     ["story-studio", "production-state", workspaceId, projectId, chapterId] as const,
@@ -528,6 +535,20 @@ export async function retryStoryStoryboardClipGenerationMaterialization(
   );
   assertClipGenerationScope(value, projectId, chapterId, sequenceId, clipId);
   return value;
+}
+
+export async function patchStoryAssetSpec(
+  workspaceId: string,
+  projectId: string,
+  chapterId: string,
+  assetSpecId: string,
+  idempotencyKey: string,
+  input: PatchStoryAssetSpecInput
+): Promise<StoryAssetSpec> {
+  return api.patch<StoryAssetSpec>(
+    chapterPath(projectId, chapterId, `asset-specs/${encodeURIComponent(assetSpecId)}`),
+    mutationConfig(workspaceId, idempotencyKey, input)
+  );
 }
 
 export async function resolveStoryAssetSpecConflict(

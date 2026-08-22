@@ -2590,7 +2590,7 @@
       "cancel": "Cancel generation",
       "retry": "Retry generation",
       "retryAttachment": "Retry attachment",
-      "generate": "Generate",
+      "generate": "Quick Generate",
       "generateAgain": "Generate again",
       "progressAria": "Generation progress",
       "targetNotCurrent": "Reconcile this stale production target before generating media.",
@@ -2617,23 +2617,25 @@
       "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
       "loadError": "Asset Specs could not be loaded.",
       "retry": "Try again",
-      "imagePrompt": "Image prompt",
-      "kinds": {
-        "character": "Character",
-        "location": "Location",
-        "prop": "Prop"
-      },
-      "status": {
-        "current": "Current",
-        "stale": "Needs review",
-        "archived": "Archived"
-      },
       "tabs": {
         "character": "Characters",
         "location": "Locations",
         "prop": "Props"
       },
-      "filterLabel": "Filter Asset Specs by type"
+      "filterLabel": "Filter Asset Specs by type",
+      "details": "Details",
+      "detailDialog": {
+        "imagePrompt": "Image Prompt",
+        "model": "Model",
+        "modelDefault": "Default model (auto)",
+        "save": "Save",
+        "saved": "Saved.",
+        "saveError": "Could not save the Asset Spec.",
+        "generate": "Generate",
+        "generateStarted": "Generation started.",
+        "generateError": "Could not start generating media.",
+        "close": "Close"
+      }
     },
     "storyboardPage": {
       "emptyChapter": "No storyboard sequences in this chapter yet.",

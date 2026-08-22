@@ -50,6 +50,14 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   };
 
   const assets = (assetsQuery.data ?? []).filter((asset) => asset.kind === active);
+  // Every kind renders the minimal media card; the lane width tracks each
+  // kind's media shape (character 3:4, location 16:9, prop 1:1).
+  const gridClass =
+    active === "character"
+      ? "grid-cols-[repeat(auto-fill,minmax(min(180px,100%),1fr))]"
+      : active === "location"
+        ? "grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))]"
+        : "grid-cols-[repeat(auto-fill,minmax(min(200px,100%),1fr))]";
   const loading = workspaceLoading || (Boolean(workspaceId) && assetsQuery.isPending);
 
   return (
@@ -91,9 +99,9 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
           </nav>
 
           {loading ? (
-            <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(min(560px,100%),1fr))] gap-4">
+            <div className={cn("mt-5 grid gap-4", gridClass)}>
               {[0, 1, 2].map((key) => (
-                <Skeleton key={key} className="h-56 rounded-2xl" />
+                <Skeleton key={key} className="h-72 rounded-2xl" />
               ))}
             </div>
           ) : null}
@@ -117,7 +125,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
 
           {!loading && !assetsQuery.isError && workspaceId && activeChapterId ? (
             assets.length > 0 ? (
-              <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(min(560px,100%),1fr))] items-start gap-4">
+              <div className={cn("mt-5 grid items-start gap-4", gridClass)}>
                 {assets.map((asset) => (
                   <StoryAssetSpecCard
                     key={`${asset.id}:${asset.version}`}

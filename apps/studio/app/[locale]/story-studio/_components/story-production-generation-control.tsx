@@ -57,11 +57,17 @@ export function StoryProductionGenerationControl({
   target,
   label,
   selectedMedia,
+  aspect = "square",
+  secondaryAction,
 }: {
   scope: GenerationScope;
   target: GenerationTarget;
   label: string;
   selectedMedia: StoryCreativeMediaVersion | null;
+  /** Media-slot shape; character cards use portrait (3:4), location cards landscape (16:9). */
+  aspect?: "square" | "portrait" | "landscape";
+  /** Extra card-owned action stacked directly under the primary action. */
+  secondaryAction?: React.ReactNode;
 }) {
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
@@ -232,12 +238,19 @@ export function StoryProductionGenerationControl({
   return (
     <div>
       <section
-        className="relative aspect-square overflow-hidden rounded-xl bg-black/24"
+        className={cn(
+          "relative overflow-hidden rounded-xl bg-black/24",
+          aspect === "portrait"
+            ? "aspect-[3/4]"
+            : aspect === "landscape"
+              ? "aspect-video"
+              : "aspect-square"
+        )}
         aria-label={t("controlsAria", { name: label })}
       >
         {previewMedia ? (
           <MediaPreview media={previewMedia} label={label} />
-        ) : actionButton ? null : (
+        ) : actionButton || secondaryAction ? null : (
           <div className="grid size-full place-items-center">
             <IconPhotoOff className="size-6 text-white/40" aria-hidden="true" />
           </div>
@@ -251,14 +264,17 @@ export function StoryProductionGenerationControl({
             <span>{status.label}</span>
           </div>
         ) : null}
-        {actionButton ? (
+        {actionButton || secondaryAction ? (
           <div
             className={cn(
               "absolute",
               previewMedia ? "bottom-2.5 right-2.5" : "inset-0 grid place-items-center"
             )}
           >
-            {actionButton}
+            <div className="flex flex-col items-center gap-1.5">
+              {actionButton}
+              {secondaryAction}
+            </div>
           </div>
         ) : null}
         {typeof progress === "number" && running ? (
