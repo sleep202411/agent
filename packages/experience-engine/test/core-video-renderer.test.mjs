@@ -32,3 +32,16 @@ test("rejects malformed or unsupported core.video commands", () => {
     code: "RENDERER_COMMAND_UNSUPPORTED",
   });
 });
+
+test("leaves the still capability to the host, not the shared adapter", () => {
+  // Every host registers this adapter, including native ones whose renderer
+  // draws footage only. If the adapter claimed core.video.still, those hosts
+  // would silently claim to render stills the moment they rebuild, and a
+  // still-bearing manifest would play as an empty frame instead of being
+  // refused by name.
+  assert.equal(
+    EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER.capabilities.has("core.video.still"),
+    false
+  );
+  assert.equal(EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER.capabilities.has("core.video"), true);
+});

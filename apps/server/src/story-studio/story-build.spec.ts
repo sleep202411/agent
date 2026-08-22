@@ -226,6 +226,37 @@ describe('compileStoryBuild', () => {
     expect(config.sequence[1]?.endBehavior).toEqual({ behavior: 'advance' });
   });
 
+  // The compatibility contract for hosts that predate stills: a host refuses a
+  // capability it does not have, so declaring this only when a still is really
+  // present is what keeps video-only experiences playable on old players.
+  it('requires the still capability only when a sequence actually holds a still', () => {
+    const withStill = compileStoryBuild(
+      input({
+        timelines: [
+          timeline('opening', [stillSegment('opening')]),
+          timeline('left'),
+          timeline('right'),
+        ],
+      }),
+    );
+    expect(withStill.runtime?.compatibility.requiredCapabilities).toContain(
+      'core.video.still',
+    );
+
+    const videoOnly = compileStoryBuild(
+      input({
+        timelines: [
+          timeline('opening', [videoSegment('opening')]),
+          timeline('left'),
+          timeline('right'),
+        ],
+      }),
+    );
+    expect(videoOnly.runtime?.compatibility.requiredCapabilities).not.toContain(
+      'core.video.still',
+    );
+  });
+
   it('keeps a working preview playable while footage is incomplete', () => {
     const result = compileStoryBuild(
       input({

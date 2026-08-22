@@ -1452,6 +1452,14 @@ function currentMediaDiagnostics(
 ): StoryBuildDiagnosticDto[] {
   return assets.flatMap((frozen) => {
     const label = `Build asset ${frozen.logicalKey}`;
+    // A segment freezes either footage or a still, and its frozen contentType
+    // was checked against the storyboard clip's kind when the Build was made.
+    // That makes it the authority for what this row is allowed to read back as.
+    const frozenKind = frozen.contentType.toLowerCase().startsWith('image/')
+      ? MediaAssetKind.image
+      : MediaAssetKind.video;
+    const expectedPrefix =
+      frozenKind === MediaAssetKind.image ? 'image/' : 'video/';
     const moderation = moderationDiagnostics(
       frozen.asset,
       frozen.variant,
@@ -1476,7 +1484,7 @@ function currentMediaDiagnostics(
     }
     if (
       frozen.asset.status !== MediaAssetStatus.ready ||
-      frozen.asset.kind !== MediaAssetKind.video ||
+      frozen.asset.kind !== frozenKind ||
       frozen.variant.status !== MediaAssetVariantStatus.ready ||
       frozen.asset.id !== frozen.assetId ||
       frozen.variant.id !== frozen.variantId ||
@@ -1496,10 +1504,7 @@ function currentMediaDiagnostics(
       (frozen.variant.variantKey === 'original'
         ? frozen.asset.sizeBytes
         : null);
-    if (
-      !frozen.contentType.toLowerCase().startsWith('video/') ||
-      !frozen.variant.contentType.toLowerCase().startsWith('video/')
-    ) {
+    if (!frozen.variant.contentType.toLowerCase().startsWith(expectedPrefix)) {
       return [
         buildDiagnostic(
           'STORY_BUILD_ASSET_METADATA_CHANGED',
@@ -1659,13 +1664,6 @@ function assertCurrentBuildContract(row: {
     code: 'STORY_BUILD_SCHEMA_RETIRED',
     message:
       'This Build uses a retired runtime contract. Create a new Build from the current story.',
-  });
-}
-
-function corruptSelection(graphNodeId: string): ConflictException {
-  return new ConflictException({
-    code: 'STORY_VIDEO_SELECTION_CORRUPT',
-    message: `Current video selection ${graphNodeId} is partially populated.`,
   });
 }
 

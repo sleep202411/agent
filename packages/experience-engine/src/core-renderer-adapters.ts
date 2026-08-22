@@ -50,6 +50,10 @@ export const EXPERIENCE_CORE_VIDEO_RENDERER_ADAPTER: ExperienceRendererAdapter =
   rendererId: EXPERIENCE_CORE_VIDEO_RENDERER_ID,
   apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
   configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
+  // Deliberately NOT declaring the still capability: this adapter is shared by
+  // every host, including native ones whose renderer draws footage only. A
+  // host declares `core.video.still` for itself once it can actually paint a
+  // still — see EXPERIENCE_REACT_HOST_CAPABILITIES.
   capabilities: new Set([EXPERIENCE_CORE_VIDEO_RENDERER_ID, "renderer.content-transform"]),
   supportsCommand: (commandType) =>
     commandType === "play" || commandType === "pause" || commandType === "seek",

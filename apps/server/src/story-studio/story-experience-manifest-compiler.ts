@@ -9,6 +9,7 @@ import {
   EXPERIENCE_CORE_RENDERER_API_VERSION,
   EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
+  EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY,
   EXPERIENCE_CORE_WORLD_MODEL_RENDERER_ID,
   EXPERIENCE_GESTURE_CAPABILITY,
   ExperienceRuntimeManifestSchema,
@@ -133,6 +134,28 @@ export function compileStoryExperienceManifest(
   const hasSpatialInteractions = input.release.nodes.some(
     (node) => node.interactions.length > 0,
   );
+  // A sequence that plays stills needs a host that can render one. Declaring
+  // it only when a still is actually present keeps video-only experiences
+  // playable on hosts that predate stills, and makes a host that cannot render
+  // one refuse by name instead of showing an empty frame.
+  const stillAssetIds = new Set(
+    assets
+      .filter((asset) =>
+        asset.kind === 'video'
+          ? asset.variants.some((variant) =>
+              variant.mediaType.toLowerCase().startsWith('image/'),
+            )
+          : false,
+      )
+      .map((asset) => asset.assetId),
+  );
+  const hasStillSegments = input.release.nodes.some(
+    (node) =>
+      node.presentation.kind === 'video' &&
+      node.presentation.sequence.some((clip) =>
+        stillAssetIds.has(clip.assetId),
+      ),
+  );
   const interactionCapabilities = new Set(
     input.release.nodes.flatMap((node) =>
       node.interactions.map(
@@ -179,6 +202,7 @@ export function compileStoryExperienceManifest(
       semanticRulesVersion: 1,
       requiredCapabilities: [
         ...usedRendererIds,
+        ...(hasStillSegments ? [EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY] : []),
         ...(hasSpatialInteractions
           ? [
               'spatial.anchor',

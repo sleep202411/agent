@@ -276,7 +276,10 @@ const VideoSequenceEndBehaviorSchema = z.discriminatedUnion("behavior", [
   z
     .object({
       behavior: z.literal("hold-last-frame"),
-      durationMs: z.number().int().min(100).max(10_000).optional(),
+      // Still-image clips hold for their full storyboard length, so the cap
+      // covers a long held shot, not just a brief end-frame beat. Must stay in
+      // step with the renderer schema in experience-runtime/core-renderers.
+      durationMs: z.number().int().min(100).max(120_000).optional(),
     })
     .strict(),
   z
