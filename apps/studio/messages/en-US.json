@@ -2491,7 +2491,6 @@
       "clips": "Clips",
       "videos": "Videos",
       "choices": "Choices",
-      "graphClips": "Graph clips",
       "graphScenes": "Interactive scenes"
     },
     "actions": {
@@ -2638,8 +2637,8 @@
       "title": "Asset Specs"
     },
     "storyboardPage": {
-      "emptyChapter": "No storyboard sequences in this chapter yet.",
-      "emptyHint": "Sequences appear after the approved Plot is compiled into the production plan.",
+      "emptyChapter": "No scenes in this chapter yet.",
+      "emptyHint": "Add scenes on the Plot Tree and the storyboard unfolds here scene by scene.",
       "loadError": "The storyboard could not be loaded.",
       "retry": "Try again",
       "plotNode": "Plot node {index}",
@@ -2653,7 +2652,8 @@
       },
       "seconds": "{value}s",
       "options": "Options",
-      "plotNodeMissing": "Not linked to a plot node",
+      "unplanned": "No storyboard yet",
+      "unplannedHint": "This scene has not been planned into a storyboard. Ask FizzAgent to plan this chapter's storyboard.",
       "title": "Storyboard",
       "clipKind": {
         "image": "Image",
@@ -2929,6 +2929,7 @@
       "filmFoundation": {
         "eyebrow": "Basics",
         "title": "Basics",
+        "saveError": "Could not save the overview.",
         "description": "The premise, synopsis, cast, and cover that ground every cinematic branch. Changes autosave to the draft.",
         "profile": {
           "title": "Creative profile",
@@ -3049,14 +3050,10 @@
           "action": "The production action could not be completed."
         },
         "node": {
-          "noVideo": "No video yet",
           "videoPreview": "Current video preview",
-          "metadata": {
-            "duration": "Duration",
-            "dimensions": "Resolution",
-            "fileSize": "File size",
-            "format": "Format"
-          }
+          "noMedia": "No media yet",
+          "noSequence": "No storyboard yet",
+          "clipCoverage": "{ready}/{total} clips with media"
         }
       },
       "creativeWorkbench": {
@@ -3147,7 +3144,7 @@
         "previewSeek": "Interaction triggered · Jump to {time}",
         "previewMissingTarget": "No destination is assigned to this hotspot.",
         "noVideo": "No current video",
-        "noVideoDescription": "Choose a current video on the node, then return here to position interactions over the real frame.",
+        "noVideoDescription": "Interaction placement anchors to the storyboard timeline. Generate storyboard media first, then position hotspots on real footage.",
         "emptyTitle": "Draw your first hotspot",
         "emptyDescription": "Define where the viewer can click, when it appears, and what the interaction does.",
         "drawFirst": "Draw hotspot",
@@ -3203,24 +3200,6 @@
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
-        "media": {
-          "title": "Current video",
-          "description": "Upload a local file or reuse a video from this workspace.",
-          "preview": "Current video for {title}",
-          "empty": "No video selected",
-          "emptyDescription": "Add the playable video for this story clip.",
-          "candidateAction": "Choose from Candidate assets",
-          "candidateActionDescription": "{count, plural, =0 {No candidate videos} =1 {1 candidate video} other {# candidate videos}}",
-          "candidateUnavailable": "This video has no accessible original.",
-          "candidateLoadError": "Candidate videos could not be loaded.",
-          "preparing": "Clip media is still being prepared.",
-          "unknownDimensions": "Unknown size",
-          "unknownDuration": "Unknown duration"
-        },
-        "exit": "Next step",
-        "production": "Production status",
-        "openProduction": "Open clip production",
-        "choices": "Player choice",
         "chapterTransitions": {
           "title": "Continue to another chapter",
           "continueHint": "Choose the chapter whose opening scene should follow this scene.",
@@ -3228,29 +3207,18 @@
           "connect": "Connect",
           "linked": "Linked"
         },
-        "exitAuto": "Continue to scene",
-        "exitChoice": "Player choice",
-        "continuationTarget": "Next scene",
-        "continuationDescription": "A scene has one direct continuation. Use a player choice when the story must branch.",
-        "choicePrompt": "Decision prompt",
-        "choicePromptPlaceholder": "What must the player decide?",
-        "optionLabel": "Option {number}",
-        "optionPlaceholder": "Write the player-facing option",
-        "addChoice": "Add option",
         "removeChoice": "Remove option",
-        "removeChoiceTitle": "Remove this option?",
-        "removeChoiceDescription": "This option and its branch will be removed.",
         "moveChoiceUp": "Move option up",
         "moveChoiceDown": "Move option down",
-        "choiceMinimum": "A playable choice needs at least 2 options. It currently has {count}.",
-        "requiredForPlayableStory": "Required for a playable story.",
-        "terminalAfterPlayback": "Playback ends here when no continuation is connected.",
-        "convertExitTitle": "Replace the current next step?",
-        "convertExitDescription": "This will remove {count} existing branches and their authored conditions or option details.",
-        "confirmConversion": "Replace next step",
         "delete": "Delete node",
-        "cancel": "Cancel",
-        "nodeName": "Name"
+        "nodeName": "Name",
+        "storyboard": {
+          "title": "Storyboard",
+          "summary": "{count} clips · {ready} with media",
+          "loading": "Loading the storyboard…",
+          "missing": "This scene has no storyboard sequence yet.",
+          "open": "Open storyboard"
+        }
       },
       "conflict": {
         "description": "Someone saved a newer version. Your local draft is preserved; export it before discarding if needed.",
@@ -3303,17 +3271,14 @@
       "back": "Back to Interactive Film Studio",
       "draftHead": "Mutable draft · revision {revision}",
       "stageNav": "Project stages",
-      "stages": {
-        "overview": "Overview",
-        "story": "Story",
-        "references": "References",
-        "production": "Production"
-      },
       "errors": {
         "loadTitle": "This project could not be opened."
       },
-      "noProductionDataTitle": "Production data is not available yet",
-      "noProductionDataDescription": "Return to the story canvas to add clips, then generate or upload a video for each clip."
+      "stages": {
+        "overview": "Overview",
+        "story": "Story",
+        "references": "References"
+      }
     },
     "overview": {
       "productionTitle": "Video production",
@@ -3418,31 +3383,6 @@
       "errors": {
         "action": "The reference action could not be completed.",
         "upload": "The media upload could not be completed."
-      }
-    },
-    "production": {
-      "title": "Clip production",
-      "subtitle": "Current video state for every story clip.",
-      "clipCount": "{count} clips",
-      "seconds": "{seconds}s",
-      "noBlocker": "Ready for the next action",
-      "currentDraftPromptRequired": "Generate or upload a video from the story canvas.",
-      "currentVideoReady": "A current video is bound to this clip.",
-      "columns": {
-        "key": "Key",
-        "clip": "Clip",
-        "duration": "Duration",
-        "status": "Status",
-        "blocker": "Details"
-      },
-      "status": {
-        "draft": "Current draft",
-        "ready": "Ready",
-        "queued": "Queued",
-        "running": "Running",
-        "processing": "Processing",
-        "failed": "Failed",
-        "cancelled": "Cancelled"
       }
     },
     "productionHeader": {

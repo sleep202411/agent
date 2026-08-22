@@ -12,9 +12,8 @@ import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
+import { isProductionStepSegment } from "../_lib/production-steps";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
-
-const NAV_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
 
 /**
  * Phone-only bottom bar (hidden ≥md): chat first, then the four production
@@ -27,7 +26,7 @@ export function StoryProjectMobileNav({ projectId }: { projectId: string }) {
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
   const setMobileView = useStoryProjectUiStore((state) => state.setMobileView);
 
-  if (!NAV_SEGMENTS.has(segment ?? "")) return null;
+  if (!isProductionStepSegment(segment)) return null;
 
   const base = `/story-studio/projects/${projectId}`;
   const steps: Array<{ segment: string; href: string; icon: NavIcon; label: string }> = [

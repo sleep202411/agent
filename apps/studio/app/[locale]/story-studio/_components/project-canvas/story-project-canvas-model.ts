@@ -1,6 +1,5 @@
 import type { Edge, Node } from "@xyflow/react";
 import type {
-  StoryClipVideoSummary,
   InteractiveStoryDraftContent,
   StoryFrameProfile,
   StoryGraphNode,
@@ -55,7 +54,6 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   continuationTargetNodeId?: string;
   choices?: StoryCanvasChoiceData[];
   interactions?: StoryCanvasInteractionData[];
-  clipVideo?: StoryClipVideoSummary;
   frameAspectRatio?: "16:9" | "9:16";
   summary?: string;
 }
@@ -105,7 +103,6 @@ const DEFAULT_COPY: StoryCanvasCopy = {
 export function buildStoryCanvasModel(
   content: InteractiveStoryDraftContent,
   locale: string,
-  clips: StoryClipVideoSummary[] = [],
   copyOverrides: Partial<StoryCanvasCopy> = DEFAULT_COPY,
   frameProfile: StoryFrameProfile = "landscape_16_9",
   worlds: WorldModelWorld[] = []
@@ -120,7 +117,6 @@ export function buildStoryCanvasModel(
     if (node.kind !== "clip") return;
     clipOrdinalsByNodeId.set(node.nodeId, ++nextClipOrdinal);
   });
-  const clipsByGraphNodeId = indexClips(clips, (clip) => clip.graphNodeId);
   const worldsById = new Map(worlds.map((world) => [world.id, world]));
   let clipOrdinal = 0;
 
@@ -182,7 +178,6 @@ export function buildStoryCanvasModel(
       }));
 
       clipOrdinal += 1;
-      const clip = clipsByGraphNodeId.get(node.nodeId);
       const clipProjection: CanvasProjection = {
         id: node.nodeId,
         order: index,
@@ -198,7 +193,6 @@ export function buildStoryCanvasModel(
           interactions,
           continuationTargetNodeId:
             node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
-          clipVideo: clip,
           frameAspectRatio: frameAspectRatioOf(frameProfile),
         },
       };
@@ -431,18 +425,6 @@ function normalizeZero(value: number): number {
  */
 export function estimateStoryNodeHeight(data: StoryCanvasNodeData): number {
   return canvasNodeGeometry({ type: "storyCanvas", data }).estimatedHeight;
-}
-
-function indexClips(
-  clips: StoryClipVideoSummary[],
-  keyOf: (clip: StoryClipVideoSummary) => string
-): Map<string, StoryClipVideoSummary> {
-  const index = new Map<string, StoryClipVideoSummary>();
-  clips.forEach((clip) => {
-    const key = keyOf(clip);
-    if (!index.has(key)) index.set(key, clip);
-  });
-  return index;
 }
 
 export function localizedText(

@@ -1,25 +1,16 @@
 "use client";
 
-import { useState } from "react";
 import { IconArrowRight, IconFocusCentered, IconTrash, IconX } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import type {
   InteractiveStoryDraftContent,
   StoryClipGraphNode,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
 import type { StoryCanvasNode } from "./story-project-canvas-model";
-import { StoryClipMediaPanel, type StoryClipMediaPanelProps } from "./story-clip-media-panel";
+import { StoryNodeStoryboardPanel } from "./story-node-storyboard-panel";
 
 type StoryChapterTarget = {
   id: string;
@@ -28,17 +19,12 @@ type StoryChapterTarget = {
 };
 
 /**
- * What the creator asked a scene's next step to become. The inspector states the
- * intent; the canvas owns which mutation realizes it because only the canvas
- * knows the surrounding draft and can author an inline interaction branch.
+ * The docked editor for the selected scene: its name, its storyboard summary,
+ * and the actions that need the canvas's draft (interactions, chapter links,
+ * delete), which it raises to the canvas rather than authoring itself.
  */
-export type SceneExitIntent = { kind: "auto"; nextNodeId: string | null } | { kind: "choice" };
-
-type SceneExitKind = SceneExitIntent["kind"];
-
-const SCENE_EXIT_KINDS: readonly SceneExitKind[] = ["auto", "choice"];
-
 interface StoryNodeInspectorProps {
+  projectId: string;
   content: InteractiveStoryDraftContent;
   selectedNode: StoryCanvasNode | null;
   canEdit: boolean;
@@ -46,12 +32,11 @@ interface StoryNodeInspectorProps {
   chapterTargets?: StoryChapterTarget[];
   onConnectChapter?: (nodeId: string, targetNodeId: string, title: string) => void;
   onDeleteSelected: () => void;
-  clipMedia?: StoryClipMediaPanelProps;
   onUpdateClipMeta: (nodeId: string, patch: { name?: string; description?: string }) => void;
-  onSetSceneExit: (nodeId: string, intent: SceneExitIntent) => void;
   onEditInteractions: (nodeId: string) => void;
 }
 export function StoryNodeInspector({
+  projectId,
   content,
   selectedNode,
   canEdit,
@@ -59,9 +44,7 @@ export function StoryNodeInspector({
   chapterTargets = [],
   onConnectChapter = () => undefined,
   onDeleteSelected,
-  clipMedia,
   onUpdateClipMeta,
-  onSetSceneExit,
   onEditInteractions,
 }: StoryNodeInspectorProps) {
   const t = useTranslations("storyStudio.canvas");
@@ -75,8 +58,7 @@ export function StoryNodeInspector({
   if (!editableGraphNode || !canvasData) return null;
 
   return (
-    <aside className="absolute top-16 bottom-3 left-3 z-30 flex w-[368px] flex-col overflow-hidden rounded-[24px] bg-[oklch(0.205_0_0/0.72)] shadow-[18px_0_60px_rgba(0,0,0,0.32)] backdrop-blur-[60px] backdrop-saturate-150">
-      <div className="pointer-events-none absolute inset-0 z-10 rounded-[inherit] shadow-[inset_0_1px_0_rgba(255,255,255,0.07)]" />
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 items-start justify-between gap-3 px-5 pt-5 pb-1">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold tracking-[0.12em] text-white/34 uppercase">
@@ -97,14 +79,12 @@ export function StoryNodeInspector({
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
         <GraphNodeEditor
-          content={content}
+          projectId={projectId}
           node={editableGraphNode}
           canEdit={canEdit}
-          clipMedia={clipMedia}
           onUpdateClipMeta={onUpdateClipMeta}
           chapterTargets={chapterTargets}
           onConnectChapter={onConnectChapter}
-          onSetSceneExit={onSetSceneExit}
           onEditInteractions={onEditInteractions}
         />
       </div>
@@ -121,29 +101,25 @@ export function StoryNodeInspector({
           {t("inspector.delete")}
         </Button>
       </div>
-    </aside>
+    </div>
   );
 }
 
 function GraphNodeEditor({
-  content,
+  projectId,
   node,
   canEdit,
-  clipMedia,
   onUpdateClipMeta,
   chapterTargets,
   onConnectChapter,
-  onSetSceneExit,
   onEditInteractions,
 }: {
-  content: InteractiveStoryDraftContent;
+  projectId: string;
   node: StoryClipGraphNode;
   canEdit: boolean;
-  clipMedia?: StoryClipMediaPanelProps;
   onUpdateClipMeta: StoryNodeInspectorProps["onUpdateClipMeta"];
   chapterTargets: StoryChapterTarget[];
   onConnectChapter: NonNullable<StoryNodeInspectorProps["onConnectChapter"]>;
-  onSetSceneExit: StoryNodeInspectorProps["onSetSceneExit"];
   onEditInteractions: NonNullable<StoryNodeInspectorProps["onEditInteractions"]>;
 }) {
   const t = useTranslations("storyStudio.canvas");
@@ -162,9 +138,7 @@ function GraphNodeEditor({
         />
       </label>
 
-      {clipMedia ? (
-        <StoryClipMediaPanel key={clipMedia.clip?.graphNodeId ?? node.nodeId} {...clipMedia} />
-      ) : null}
+      <StoryNodeStoryboardPanel projectId={projectId} nodeId={node.nodeId} />
 
       <button
         type="button"
@@ -186,13 +160,6 @@ function GraphNodeEditor({
         <IconArrowRight className="size-4 shrink-0 text-white/22 transition group-hover:translate-x-0.5 group-hover:text-white/48" />
       </button>
 
-      <SceneExitEditor
-        content={content}
-        node={node}
-        canEdit={canEdit}
-        onSetSceneExit={onSetSceneExit}
-      />
-
       <ChapterDestinationEditor
         node={node}
         targets={chapterTargets}
@@ -210,157 +177,6 @@ function GraphNodeEditor({
  * demands a drag onto blank canvas, so an existing continuation must be deleted
  * first. Re-shaping a scene's next step should not depend on remembering that.
  */
-function SceneExitEditor({
-  content,
-  node,
-  canEdit,
-  onSetSceneExit,
-}: {
-  content: InteractiveStoryDraftContent;
-  node: StoryClipGraphNode;
-  canEdit: boolean;
-  onSetSceneExit: StoryNodeInspectorProps["onSetSceneExit"];
-}) {
-  const t = useTranslations("storyStudio.canvas");
-  const [pendingKind, setPendingKind] = useState<SceneExitKind | null>(null);
-
-  const currentKind = node.exit.kind;
-  const currentTarget = node.exit.kind === "auto" ? node.exit.nextNodeId : null;
-  // Replacing a choice throws away every authored option and its branch link, so
-  // that conversion — and only that one — asks first.
-  const branchCount = node.exit.kind === "choice" ? node.exit.choices.length : 0;
-
-  const targets = content.graph.nodes.filter((candidate) => candidate.nodeId !== node.nodeId);
-
-  const intentFor = (kind: SceneExitKind): SceneExitIntent | null => {
-    if (kind === "auto") return { kind: "auto", nextNodeId: currentTarget };
-    if (kind === "choice") return { kind: "choice" };
-    return null;
-  };
-
-  const commitKind = (kind: SceneExitKind) => {
-    setPendingKind(null);
-    const intent = intentFor(kind);
-    if (intent) onSetSceneExit(node.nodeId, intent);
-  };
-
-  const requestKind = (kind: SceneExitKind) => {
-    if (kind === currentKind) return;
-    if (branchCount > 0) {
-      setPendingKind(kind);
-      return;
-    }
-    commitKind(kind);
-  };
-
-  return (
-    <section className="mt-6 rounded-[18px] bg-white/[0.04] p-3">
-      <div className="flex items-center gap-2">
-        <span className="grid size-7 place-items-center rounded-[10px] bg-white/[0.07] text-white/62">
-          <IconArrowRight className="size-3.5" />
-        </span>
-        <h3 className="text-xs font-semibold text-white/78">{t("inspector.exit")}</h3>
-      </div>
-
-      <div
-        className="mt-3 grid grid-cols-3 gap-1.5"
-        role="radiogroup"
-        aria-label={t("inspector.exit")}
-      >
-        {SCENE_EXIT_KINDS.map((kind) => {
-          const active = kind === currentKind;
-          return (
-            <button
-              key={kind}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              disabled={!canEdit}
-              onClick={() => requestKind(kind)}
-              className={cn(
-                "rounded-xl px-3 py-2 text-[10px] transition disabled:cursor-default disabled:opacity-40",
-                active
-                  ? "bg-white/[0.14] text-white"
-                  : "bg-white/[0.045] text-white/58 hover:bg-white/[0.09] hover:text-white"
-              )}
-            >
-              {t(`inspector.exit${kind === "auto" ? "Auto" : "Choice"}`)}
-            </button>
-          );
-        })}
-      </div>
-
-      {pendingKind ? (
-        <div className="mt-3 rounded-xl bg-[#e0a45c]/[0.12] p-3">
-          <p className="text-[10px] font-semibold text-[#e0a45c]">
-            {t("inspector.convertExitTitle")}
-          </p>
-          <p className="mt-1 text-[9px] leading-4 text-white/58">
-            {t("inspector.convertExitDescription", { count: branchCount })}
-          </p>
-          <div className="mt-2.5 flex gap-1.5">
-            <Button
-              type="button"
-              variant="destructive"
-              className="h-8 flex-1 text-[10px]"
-              onClick={() => commitKind(pendingKind)}
-            >
-              {t("inspector.confirmConversion")}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-8 flex-1 text-[10px]"
-              onClick={() => setPendingKind(null)}
-            >
-              {t("inspector.cancel")}
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {currentKind === "auto" ? (
-        <label className="mt-3 block">
-          <span className="text-[9px] font-semibold text-white/32">
-            {t("inspector.continuationTarget")}
-          </span>
-          <Select
-            value={currentTarget ?? ""}
-            disabled={!canEdit || targets.length === 0}
-            onValueChange={(nextNodeId) =>
-              onSetSceneExit(node.nodeId, { kind: "auto", nextNodeId })
-            }
-          >
-            <SelectTrigger className="mt-1.5 w-full" aria-label={t("inspector.continuationTarget")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {targets.map((candidate) => (
-                <SelectItem key={candidate.nodeId} value={candidate.nodeId}>
-                  {sceneLabel(candidate)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {currentTarget ? null : (
-            <span className={cn("mt-1.5 block text-[9px]", "text-white/38")}>
-              {t("inspector.terminalAfterPlayback")}
-            </span>
-          )}
-        </label>
-      ) : null}
-
-      <p className="mt-2.5 text-[9px] leading-4 text-white/34">
-        {t("inspector.continuationDescription")}
-      </p>
-    </section>
-  );
-}
-
-function sceneLabel(node: StoryGraphNode): string {
-  return node.name?.trim() || (node.kind === "clip" ? node.clipKey : (node.worldId ?? node.nodeId));
-}
-
 function ChapterDestinationEditor({
   node,
   targets,

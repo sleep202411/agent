@@ -78,44 +78,6 @@ export interface StoryCandidateAsset {
  * the exact playable original that can be bound as a clip's current
  * video directly.
  */
-export interface StoryVideoLibraryItem {
-  asset: MediaAssetSummary;
-  variantId: string;
-  variantKey: string;
-  contentType: string;
-  width: number | null;
-  height: number | null;
-  durationSeconds: number | null;
-  checksumSha256: string | null;
-  createdAt: string;
-}
-
-export type StoryClipVideoFinalizationStatus =
-  | "queued"
-  | "processing"
-  | "ready"
-  | "failed"
-  | "expired"
-  | "cancelled";
-
-export interface StoryClipVideoFinalization {
-  mediaAssetId: string;
-  status: StoryClipVideoFinalizationStatus;
-  pollAfterMs: number | null;
-  item: StoryVideoLibraryItem | null;
-  error: { code: string; message: string } | null;
-}
-
-export class StoryClipVideoFinalizationError extends Error {
-  readonly code: string;
-
-  constructor(code: string, message: string) {
-    super(message);
-    this.name = "StoryClipVideoFinalizationError";
-    this.code = code;
-  }
-}
-
 export interface StoryProjectProductionSummary {
   referenceSlotCount: number;
   approvedReferenceCount: number;
@@ -280,27 +242,6 @@ export interface StoryCanvasLayout {
   updatedBySessionId: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface StoryCurrentVideo {
-  asset: MediaAssetSummary;
-  variantId: string;
-  checksumSha256: string | null;
-  contentType: string;
-  durationMs: number | null;
-  width: number | null;
-  height: number | null;
-  sizeBytes: string | null;
-  browserSafeMp4: boolean | null;
-  selectionVersion: number;
-  setByUserId: string | null;
-  setAt: string;
-}
-
-export interface StoryClipVideoSummary {
-  graphNodeId: string;
-  selectionVersion: number;
-  currentVideo: StoryCurrentVideo | null;
 }
 
 export type StoryReferenceKind =
@@ -534,7 +475,6 @@ export interface StoryWorkbench {
   };
   video: {
     snapshotHash: string;
-    clips: StoryClipVideoSummary[];
   };
   references: StoryReferenceSlot[];
   latestBuild: StoryBuildSummary | null;
@@ -631,104 +571,6 @@ export async function listJoinedStoryProjects(
   }
   page.items.forEach(assertProjectSummary);
   return page;
-}
-
-/**
- * Finalizes a direct Story Studio clip-video upload into one reusable,
- * workspace-owned original variant. The returned item can be passed directly
- * to the existing current-video CAS mutation.
- */
-export async function completeStoryClipVideoUpload(
-  workspaceId: string,
-  projectId: string,
-  input: { mediaAssetId: string },
-  signal?: AbortSignal
-): Promise<StoryClipVideoFinalization> {
-  const finalization = await api.post<StoryClipVideoFinalization>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/video-library/uploads/complete`,
-    {
-      data: input,
-      headers: storyWorkspaceHeaders(workspaceId),
-      signal,
-    }
-  );
-  assertStoryClipVideoFinalization(finalization, input.mediaAssetId);
-  return finalization;
-}
-
-export async function getStoryClipVideoUploadFinalization(
-  workspaceId: string,
-  projectId: string,
-  mediaAssetId: string,
-  signal?: AbortSignal
-): Promise<StoryClipVideoFinalization> {
-  const finalization = await api.get<StoryClipVideoFinalization>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/video-library/uploads/${encodeURIComponent(mediaAssetId)}`,
-    {
-      headers: storyWorkspaceHeaders(workspaceId),
-      signal,
-    }
-  );
-  assertStoryClipVideoFinalization(finalization, mediaAssetId);
-  return finalization;
-}
-
-/**
- * Releases a Story clip upload that the browser abandoned before the server
- * accepted asynchronous finalization. This request deliberately owns its own
- * short timeout instead of reusing the already-aborted upload signal.
- */
-export async function cancelStoryClipVideoUpload(
-  workspaceId: string,
-  projectId: string,
-  mediaAssetId: string
-): Promise<StoryClipVideoFinalization> {
-  const finalization = await api.delete<StoryClipVideoFinalization>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/video-library/uploads/${encodeURIComponent(mediaAssetId)}`,
-    {
-      headers: storyWorkspaceHeaders(workspaceId),
-      timeout: 5_000,
-    }
-  );
-  assertStoryClipVideoFinalization(finalization, mediaAssetId);
-  return finalization;
-}
-
-export async function waitForStoryClipVideoUploadFinalization(
-  workspaceId: string,
-  projectId: string,
-  initial: StoryClipVideoFinalization,
-  options: {
-    signal?: AbortSignal;
-    onStatus?: (finalization: StoryClipVideoFinalization) => void;
-  } = {}
-): Promise<StoryVideoLibraryItem> {
-  let current = initial;
-  let fallbackDelayMs = 1_500;
-  throwIfStoryClipVideoPollAborted(options.signal);
-  options.onStatus?.(current);
-
-  while (current.status === "queued" || current.status === "processing") {
-    const delayMs = Math.min(5_000, Math.max(250, current.pollAfterMs ?? fallbackDelayMs));
-    await waitForStoryClipVideoPoll(delayMs, options.signal);
-    fallbackDelayMs = Math.min(5_000, Math.ceil(delayMs * 1.5));
-    current = await getStoryClipVideoUploadFinalization(
-      workspaceId,
-      projectId,
-      current.mediaAssetId,
-      options.signal
-    );
-    options.onStatus?.(current);
-  }
-
-  if (current.status === "ready" && current.item) {
-    throwIfStoryClipVideoPollAborted(options.signal);
-    return current.item;
-  }
-  throw new StoryClipVideoFinalizationError(
-    current.error?.code ?? "STORY_VIDEO_FINALIZE_FAILED",
-    current.error?.message ?? "The uploaded video could not be processed."
-  );
 }
 
 /**
@@ -1012,23 +854,6 @@ export async function getStoryWorkingPreview(
   );
 }
 
-export async function putStoryClipCurrentVideo(
-  workspaceId: string,
-  projectId: string,
-  graphNodeId: string,
-  input: {
-    expectedDraftRevision: number;
-    expectedSelectionVersion: number;
-    assetId: string | null;
-    variantId: string | null;
-  }
-): Promise<StoryClipVideoSummary> {
-  return api.put<StoryClipVideoSummary>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/clips/${encodeURIComponent(graphNodeId)}/current-video`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
-  );
-}
-
 export async function listStoryReferenceSlots(
   workspaceId: string,
   projectId: string
@@ -1297,116 +1122,6 @@ function assertStoryCandidateAsset(value: unknown): asserts value is StoryCandid
   ) {
     throw new Error("Story Studio API returned an invalid candidate asset.");
   }
-}
-
-function assertStoryVideoLibraryItem(value: unknown): asserts value is StoryVideoLibraryItem {
-  if (!value || typeof value !== "object") {
-    throw new Error("Story Studio API returned an invalid video library item.");
-  }
-  const item = value as Partial<StoryVideoLibraryItem>;
-  const asset = item.asset;
-  if (
-    !asset ||
-    typeof asset !== "object" ||
-    asset.kind !== "video" ||
-    asset.status !== "ready" ||
-    !["unreviewed", "approved", "flagged", "blocked"].includes(asset.moderationStatus) ||
-    !nonEmptyString(asset.id) ||
-    !nonEmptyString(asset.contentType) ||
-    !asset.contentType.startsWith("video/") ||
-    !nullablePositiveInteger(asset.width) ||
-    !nullablePositiveInteger(asset.height) ||
-    !nullableNonNegativeNumber(asset.durationSeconds) ||
-    !nullableNonEmptyString(asset.checksumSha256) ||
-    !nullableNonEmptyString(asset.previewUrl) ||
-    !nonEmptyString(item.variantId) ||
-    item.variantKey !== "original" ||
-    !nonEmptyString(item.contentType) ||
-    !item.contentType.startsWith("video/") ||
-    !nullablePositiveInteger(item.width) ||
-    !nullablePositiveInteger(item.height) ||
-    !nullableNonNegativeNumber(item.durationSeconds) ||
-    !nullableNonEmptyString(item.checksumSha256) ||
-    !validIsoTimestamp(item.createdAt)
-  ) {
-    throw new Error("Story Studio API returned an invalid video library item.");
-  }
-}
-
-function assertStoryClipVideoFinalization(
-  value: unknown,
-  expectedMediaAssetId: string
-): asserts value is StoryClipVideoFinalization {
-  if (!value || typeof value !== "object") {
-    throw new Error("Story Studio API returned an invalid video finalization state.");
-  }
-  const finalization = value as Partial<StoryClipVideoFinalization>;
-  const pending = finalization.status === "queued" || finalization.status === "processing";
-  const terminalFailure =
-    finalization.status === "failed" ||
-    finalization.status === "expired" ||
-    finalization.status === "cancelled";
-  if (
-    finalization.mediaAssetId !== expectedMediaAssetId ||
-    (!pending && finalization.status !== "ready" && !terminalFailure) ||
-    (pending &&
-      (!Number.isFinite(finalization.pollAfterMs) ||
-        (finalization.pollAfterMs ?? 0) <= 0 ||
-        finalization.item !== null ||
-        finalization.error !== null)) ||
-    (!pending && finalization.pollAfterMs !== null)
-  ) {
-    throw new Error("Story Studio API returned an invalid video finalization state.");
-  }
-
-  if (finalization.status === "ready") {
-    if (finalization.error !== null) {
-      throw new Error("Story Studio API returned an invalid video finalization state.");
-    }
-    assertStoryVideoLibraryItem(finalization.item);
-    return;
-  }
-
-  if (
-    terminalFailure &&
-    (finalization.item !== null ||
-      !finalization.error ||
-      !nonEmptyString(finalization.error.code) ||
-      !nonEmptyString(finalization.error.message))
-  ) {
-    throw new Error("Story Studio API returned an invalid video finalization state.");
-  }
-}
-
-function waitForStoryClipVideoPoll(delayMs: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const abort = () => {
-      if (timer !== null) clearTimeout(timer);
-      signal?.removeEventListener("abort", abort);
-      reject(
-        signal?.reason instanceof Error
-          ? signal.reason
-          : new DOMException("Request aborted", "AbortError")
-      );
-    };
-    if (signal?.aborted) {
-      abort();
-      return;
-    }
-    timer = setTimeout(() => {
-      signal?.removeEventListener("abort", abort);
-      resolve();
-    }, delayMs);
-    signal?.addEventListener("abort", abort, { once: true });
-  });
-}
-
-function throwIfStoryClipVideoPollAborted(signal?: AbortSignal): void {
-  if (!signal?.aborted) return;
-  throw signal.reason instanceof Error
-    ? signal.reason
-    : new DOMException("Request aborted", "AbortError");
 }
 
 function nonEmptyString(value: unknown): value is string {

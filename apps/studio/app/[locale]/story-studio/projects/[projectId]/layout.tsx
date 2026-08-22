@@ -4,6 +4,7 @@ import { StoryProjectChapterScope } from "@/app/[locale]/story-studio/_component
 import { StoryProjectHeader } from "@/app/[locale]/story-studio/_components/story-project-header";
 import { StoryProjectMobileNav } from "@/app/[locale]/story-studio/_components/story-project-mobile-nav";
 import { StoryProjectRail } from "@/app/[locale]/story-studio/_components/story-project-rail";
+import { StoryProjectShareDialog } from "@/app/[locale]/story-studio/_components/story-project-share-dialog";
 import { StoryProjectSidePanel } from "@/app/[locale]/story-studio/_components/story-project-side-panel";
 import { StoryProjectWorkView } from "@/app/[locale]/story-studio/_components/story-project-work-view";
 import { StoryProjectWorkspaceGate } from "@/app/[locale]/story-studio/_components/story-project-workspace-gate";
@@ -35,14 +36,14 @@ export default async function StoryProjectLayout({
               <div className="flex min-h-0 shrink-0">
                 {/* Sidebar */}
                 <StoryProjectRail projectId={projectId} />
-                {/* Side Panel — the dock for rail-toggled panels (catalog here; the
-                    world panel docks into the same slot from the canvas). */}
+                {/* Side Panel — the dock for every rail-toggled panel. */}
                 <StoryProjectSidePanel projectId={projectId} />
               </div>
 
               <StoryProjectWorkView>{children}</StoryProjectWorkView>
               <StoryProjectAgentPanel projectId={projectId} />
             </section>
+            <StoryProjectShareDialog projectId={projectId} />
             <StoryProjectMobileNav projectId={projectId} />
           </div>
         </StoryProjectChapterScope>

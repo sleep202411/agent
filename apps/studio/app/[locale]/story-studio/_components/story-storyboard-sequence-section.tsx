@@ -8,21 +8,14 @@ import { StoryProductionConflictPanel } from "./story-production-conflict-panel"
 import { StoryClipDetailDialog } from "./story-clip-detail-dialog";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
-/**
- * One plot node = one card on the flattened board. The card carries the
- * node's identity and its clips as a row of media slots, each with a single
- * generate action. Prompts and per-clip details deliberately stay off this
- * board — a dedicated detail surface will own them later.
- */
 export interface StorySequenceChoiceOptions {
   prompt: string;
   choices: { id: string; label: string; target: string }[];
 }
 
 /**
- * A choice is a first-class card on the board, placed right after the plot
- * node whose footage ends on it — mirroring the Plot Tree's branch point in
- * the flat narrative order. Display-only; branch editing lives on the canvas.
+ * One storyboard clip: its media slot with a single generate action, a kind
+ * badge, and a details affordance for prompt/model editing.
  */
 function StoryClipTile({
   clip,
@@ -89,6 +82,11 @@ function StoryClipTile({
   );
 }
 
+/**
+ * A choice is a first-class card on the board, placed right after the plot
+ * node whose footage ends on it — mirroring the Plot Tree's branch point in
+ * the flat narrative order. Display-only; branch editing lives on the canvas.
+ */
 export function StoryStoryboardChoiceCard({ options }: { options: StorySequenceChoiceOptions }) {
   const t = useTranslations("storyStudio.storyboardPage");
   return (
@@ -123,21 +121,57 @@ export function StoryStoryboardChoiceCard({ options }: { options: StorySequenceC
   );
 }
 
+/**
+ * Placeholder section for a plot node that has never been planned into a
+ * storyboard sequence. It keeps the node visible (and deep-linkable) on the
+ * board so the graph and the board always list the same scenes.
+ */
+export function StoryStoryboardUnplannedSection({
+  nodeId,
+  title,
+  index,
+}: {
+  nodeId: string;
+  title: string;
+  index: number;
+}) {
+  const t = useTranslations("storyStudio.storyboardPage");
+  return (
+    <article
+      id={`plot-${nodeId}`}
+      className="scroll-mt-6 rounded-2xl bg-white/[0.045] p-4 text-white shadow-sm"
+      aria-label={title}
+    >
+      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
+        {t("plotNode", { index: index + 1 })}
+      </span>
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h2 className="text-base font-semibold text-white/94">{title}</h2>
+        <code className="text-xs text-white/62">@{nodeId}</code>
+      </div>
+      <p className="mt-4 text-sm text-white/64">{t("unplanned")}</p>
+      <p className="mt-1 text-xs text-white/50">{t("unplannedHint")}</p>
+    </article>
+  );
+}
+
+/**
+ * One plot node's planned sequence = one card on the flattened board: the
+ * node's identity and its clips as a row of media slots, each with a single
+ * generate action and a details dialog for its prompt and model.
+ */
 export function StoryStoryboardSequenceSection({
   sequence,
   index,
   workspaceId,
   projectId,
   chapterId,
-  plotNodeMissing = false,
 }: {
   sequence: StoryStoryboardSequence;
   index: number;
   workspaceId: string;
   projectId: string;
   chapterId: string;
-  /** The plot node this sequence fills no longer exists in the plot tree. */
-  plotNodeMissing?: boolean;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
   const scope = { workspaceId, projectId, chapterId };
@@ -157,11 +191,6 @@ export function StoryStoryboardSequenceSection({
         {sequence.status !== "current" ? (
           <span className="rounded-md bg-amber-300/12 px-2 py-0.5 text-[10px] font-semibold text-amber-100/85">
             {t(`status.${sequence.status}`)}
-          </span>
-        ) : null}
-        {plotNodeMissing ? (
-          <span className="rounded-md bg-red-400/12 px-2 py-0.5 text-[10px] font-semibold text-red-200/90">
-            {t("plotNodeMissing")}
           </span>
         ) : null}
       </div>

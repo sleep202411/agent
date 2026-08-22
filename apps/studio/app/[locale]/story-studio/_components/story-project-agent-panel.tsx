@@ -9,13 +9,11 @@ import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { getStoryProductionState, storyProductionKeys } from "@/lib/story-production-api";
 import { cn } from "@/lib/utils";
+import { isProductionStepSegment } from "../_lib/production-steps";
 import { StoryAuthoringComposer, StoryAuthoringProposalApproval } from "./story-authoring-run-card";
 import { useStoryAuthoringRun } from "./use-story-authoring-run";
 import { storyApplyingActivityKey } from "./story-production-activity";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
-
-/** Steps that carry the project shell; playtest and the legacy workbench own their screens. */
-const PANEL_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
 
 /**
  * The project's permanent FizzAgent panel, mounted once at the project layout
@@ -49,7 +47,7 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
   // On phones the panel IS the chat view: full-width when active, hidden (but
   // mounted, so the conversation survives) while a step page shows.
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
-  const panelActive = PANEL_SEGMENTS.has(segment ?? "");
+  const panelActive = isProductionStepSegment(segment);
   if (!panelActive) return null;
 
   const activeAuthoringStage =

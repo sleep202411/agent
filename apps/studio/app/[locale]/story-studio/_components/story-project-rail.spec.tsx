@@ -68,7 +68,7 @@ describe("StoryProjectRail", () => {
     expect(items.every((item) => item.getAttribute("aria-disabled") !== "true")).toBe(true);
   });
 
-  it("routes canvas-owned destinations and opens their requested surface", async () => {
+  it("opens every surface in place — no rail click ever switches the step page", async () => {
     await renderRail();
     const byText = (label: string) =>
       Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
@@ -77,16 +77,15 @@ describe("StoryProjectRail", () => {
 
     await act(async () => byText("sidebar.world")?.click());
     expect(useStoryProjectUiStore.getState().sidePanel).toBe("world");
-    expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
 
     await act(async () => byText("chapters.action")?.click());
     expect(useStoryProjectUiStore.getState().sidePanel).toBe("chapters");
-    expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
 
     await act(async () => byText("share")?.click());
     expect(useStoryProjectUiStore.getState().shareOpen).toBe(true);
     expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
-    expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
+
+    expect(navigation.push).not.toHaveBeenCalled();
   });
 
   it("toggles an open surface closed on second click", async () => {

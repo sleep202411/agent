@@ -10,69 +10,39 @@ import {
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
-import { Link, useRouter } from "@/i18n/navigation";
+import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
+import { isProductionStepSegment } from "../_lib/production-steps";
 import { MATERIAL_CANVAS_ENABLED } from "../_lib/feature-flags";
-import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
+import { useStoryProjectUiStore, type StorySidePanel } from "../_stores/story-project-ui-store";
 
 type RailIcon = ComponentType<{ className?: string; stroke?: number }>;
 
-const RAIL_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
-
 /**
  * Project rail rendered by the [projectId] layout — the one navigation column
- * for every production step, canvas included. Every destination remains
- * operable from every step: canvas-owned surfaces navigate to the canvas and
- * open there instead of degrading into disabled placeholders.
+ * for every production step, canvas included. Every rail item toggles its
+ * surface in place on the current step: the panels are layout-dock tenants
+ * and the share dialog mounts here, so nothing ever switches the step page.
  */
 export function StoryProjectRail({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
-  const onCanvas = segment === "canvas";
   const t = useTranslations("storyStudio.canvas");
-  const router = useRouter();
   const sidePanel = useStoryProjectUiStore((state) => state.sidePanel);
   const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
   const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
   const shareOpen = useStoryProjectUiStore((state) => state.shareOpen);
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
 
-  if (!RAIL_SEGMENTS.has(segment ?? "")) return null;
+  if (!isProductionStepSegment(segment)) return null;
 
   const chapterQuery = activeChapterId ? `?chapter=${encodeURIComponent(activeChapterId)}` : "";
-  const canvasHref = `/story-studio/projects/${projectId}/canvas${chapterQuery}`;
-  const openCanvas = () => {
-    if (!onCanvas) router.push(canvasHref);
-  };
-  const openOverview = () => {
+  const togglePanel = (panel: Exclude<StorySidePanel, null>) => {
     setShareOpen(false);
-    if (onCanvas && sidePanel === "world") {
-      setSidePanel(null);
-      return;
-    }
-    setSidePanel("world");
-    openCanvas();
-  };
-  const openCatalog = () => {
-    setShareOpen(false);
-    setSidePanel(sidePanel === "catalog" ? null : "catalog");
-  };
-  const openChapters = () => {
-    setShareOpen(false);
-    if (onCanvas && sidePanel === "chapters") {
-      setSidePanel(null);
-      return;
-    }
-    setSidePanel("chapters");
-    openCanvas();
+    setSidePanel(sidePanel === panel ? null : panel);
   };
   const openShare = () => {
     setSidePanel(null);
-    if (shareOpen) {
-      setShareOpen(false);
-      return;
-    }
-    setShareOpen(true);
-    openCanvas();
+    setShareOpen(!shareOpen);
   };
 
   return (
@@ -85,19 +55,19 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           icon={IconClipboardList}
           label={t("sidebar.world")}
           active={sidePanel === "world"}
-          onClick={openOverview}
+          onClick={() => togglePanel("world")}
         />
         <RailButton
           icon={IconListTree}
           label={t("sidebar.catalog")}
           active={sidePanel === "catalog"}
-          onClick={openCatalog}
+          onClick={() => togglePanel("catalog")}
         />
         <RailButton
           icon={IconBook2}
           label={t("chapters.action")}
           active={sidePanel === "chapters"}
-          onClick={openChapters}
+          onClick={() => togglePanel("chapters")}
         />
         {/* Material canvas — the free creative canvas scoped to this project. */}
         {MATERIAL_CANVAS_ENABLED && (

@@ -32,13 +32,12 @@ import {
 } from "@/lib/story-projects-api";
 import { StoryReferencePack } from "./story-reference-pack";
 
-type WorkbenchStage = "overview" | "story" | "references" | "production";
+type WorkbenchStage = "overview" | "story" | "references";
 
 const STAGES: Array<{ id: WorkbenchStage; icon: typeof IconBook2 }> = [
   { id: "overview", icon: IconSparkles },
   { id: "story", icon: IconBook2 },
   { id: "references", icon: IconPhoto },
-  { id: "production", icon: IconMovie },
 ];
 const STORY_REFERENCE_API_CONNECTED = true;
 
@@ -108,7 +107,6 @@ export function StoryProjectWorkbench({
               onRefresh={() => workbenchQuery.refetch()}
             />
           ) : null}
-          {stage === "production" ? <ProductionStage workbench={authoringWorkbench} /> : null}
         </div>
       </div>
     </main>
@@ -472,90 +470,6 @@ function ReferencesStage({
   );
 }
 
-function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
-  const t = useTranslations("storyStudio");
-  const clipNodes = workbench.draft.content.graph.nodes.filter((node) => node.kind === "clip");
-  const videos = new Map(workbench.video.clips.map((clip) => [clip.graphNodeId, clip]));
-  const frame = workbench.project.frameProfile
-    ? STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile]
-    : null;
-  return (
-    <div>
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-base font-semibold text-white">{t("production.title")}</h2>
-          <p className="mt-1 text-xs text-white/40">{t("production.subtitle")}</p>
-        </div>
-        <p className="text-xs tabular-nums text-white/40">
-          {t("production.clipCount", { count: clipNodes.length })}
-        </p>
-      </div>
-      {clipNodes.length === 0 ? <NoProductionData /> : null}
-      {clipNodes.length > 0 ? (
-        <FrostedPanel className="mt-5 overflow-hidden">
-          <div className="hidden grid-cols-[100px_minmax(220px,1fr)_140px_140px_minmax(180px,0.8fr)] gap-4 px-5 py-3 text-[10px] font-semibold tracking-wide text-white/28 uppercase lg:grid">
-            <span>{t("production.columns.key")}</span>
-            <span>{t("production.columns.clip")}</span>
-            <span>{t("production.columns.duration")}</span>
-            <span>{t("production.columns.status")}</span>
-            <span>{t("production.columns.blocker")}</span>
-          </div>
-          <div className="divide-y divide-white/[0.045]">
-            {clipNodes.map((node) => {
-              const clip = videos.get(node.nodeId);
-              const status = clip?.currentVideo ? "ready" : "draft";
-              const statusDetail = clip?.currentVideo
-                ? t("production.currentVideoReady")
-                : t("production.currentDraftPromptRequired");
-              return (
-                <div
-                  key={node.nodeId}
-                  className="grid gap-3 px-5 py-4 lg:grid-cols-[100px_minmax(220px,1fr)_140px_140px_minmax(180px,0.8fr)] lg:items-center lg:gap-4"
-                >
-                  <span className="flex items-center gap-2 font-mono text-[11px] text-white/34">
-                    {node.clipKey}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white/76">{node.clipKey}</p>
-                    <p className="mt-1 truncate text-[10px] text-white/26">{node.nodeId}</p>
-                  </div>
-                  <span className="text-xs tabular-nums text-white/46">
-                    {clip?.currentVideo?.durationMs != null
-                      ? t("production.seconds", { seconds: clip.currentVideo.durationMs / 1000 })
-                      : "—"}
-                  </span>
-                  <StatusPill label={t(`production.status.${status}`)} status={status} />
-                  <p className="truncate text-[11px] text-white/36">{statusDetail}</p>
-                </div>
-              );
-            })}
-          </div>
-          {frame ? (
-            <div className="px-5 py-3 text-[10px] text-white/28">
-              {frame.width} × {frame.height}
-            </div>
-          ) : null}
-        </FrostedPanel>
-      ) : null}
-    </div>
-  );
-}
-
-function NoProductionData() {
-  const t = useTranslations("storyStudio");
-  return (
-    <FrostedPanel className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-      <IconBook2 className="size-6 text-white/42" />
-      <h2 className="mt-4 text-sm font-semibold text-white">
-        {t("workbench.noProductionDataTitle")}
-      </h2>
-      <p className="mt-2 max-w-md text-xs leading-5 text-white/42">
-        {t("workbench.noProductionDataDescription")}
-      </p>
-    </FrostedPanel>
-  );
-}
-
 function OverviewMetric({
   icon: Icon,
   label,
@@ -584,23 +498,6 @@ function InfoRow({ label, value, mono = false }: { label: string; value: string;
         {value}
       </dd>
     </div>
-  );
-}
-
-function StatusPill({ label, status }: { label: string; status: string }) {
-  const positive = status === "approved" || status === "ready";
-  const warning = status === "blocked" || status === "failed" || status === "invalidated";
-  return (
-    <span
-      className={cn(
-        "inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[10px] font-semibold",
-        positive && "bg-emerald-400/10 text-emerald-200/70",
-        warning && "bg-red-400/10 text-red-200/70",
-        !positive && !warning && "bg-white/[0.055] text-white/42"
-      )}
-    >
-      {label}
-    </span>
   );
 }
 

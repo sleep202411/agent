@@ -1,14 +1,13 @@
 "use client";
 
 import { IconGitBranch, IconWorld } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
-import { getStoryWorkbench, type StoryGraphNode } from "@/lib/story-projects-api";
+import { type StoryGraphNode } from "@/lib/story-projects-api";
+import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 /**
@@ -23,15 +22,8 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   const locale = useLocale();
   const searchParams = useSearchParams();
   const activeNodeId = searchParams.get("node");
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
-  const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "chapter-workbench", workspaceId, projectId, activeChapterId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId, activeChapterId as string),
-    enabled: Boolean(workspaceId && activeChapterId),
-    retry: false,
-  });
+  const workbenchQuery = useStoryChapterWorkbench(projectId);
   const chapter = workbenchQuery.data?.chapter ?? null;
   const nodes = useMemo(
     () => workbenchQuery.data?.draft.content.graph.nodes ?? [],

@@ -14,6 +14,7 @@ import {
   getStoryWorkbench,
   storyApiErrorMessage,
 } from "@/lib/story-projects-api";
+import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
 import { isExactCurrentStoryRelease } from "./project-canvas/story-current-release";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
 import {
@@ -43,8 +44,10 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const guardedNavigate = useStoryProjectUiStore((state) => state.guardedNavigate);
 
   const workbenchQuery = useQuery({
+    // With a chapter in scope this shares the dock tenants' cache entry; the
+    // header also renders before one resolves, hence the project-level key.
     queryKey: activeChapterId
-      ? ["story-studio", "chapter-workbench", workspaceId, projectId, activeChapterId]
+      ? storyChapterWorkbenchQueryKey(workspaceId, projectId, activeChapterId)
       : ["story-studio", "script-workbench", workspaceId, projectId],
     queryFn: () =>
       getStoryWorkbench(workspaceId as string, projectId, activeChapterId ?? undefined),

@@ -2491,7 +2491,6 @@
       "clips": "鏡頭",
       "videos": "目前影片",
       "choices": "選擇",
-      "graphClips": "劇情鏡頭",
       "graphScenes": "互動場景"
     },
     "actions": {
@@ -2638,8 +2637,8 @@
       "title": "資產規格"
     },
     "storyboardPage": {
-      "emptyChapter": "本章還沒有分鏡序列。",
-      "emptyHint": "已批准的情節編譯為製作方案後，序列會顯示在這裡。",
+      "emptyChapter": "本章還沒有情節節點。",
+      "emptyHint": "在情節樹中加入場景後，分鏡會在這裡逐場景展開。",
       "loadError": "無法載入分鏡。",
       "retry": "重試",
       "plotNode": "情節節點 {index}",
@@ -2653,7 +2652,8 @@
       },
       "seconds": "{value} 秒",
       "options": "選項",
-      "plotNodeMissing": "未關聯情節節點",
+      "unplanned": "尚無分鏡",
+      "unplannedHint": "該場景還沒有規劃分鏡。可讓 FizzAgent 為本章規劃分鏡。",
       "title": "分鏡",
       "clipKind": {
         "image": "圖片",
@@ -2929,6 +2929,7 @@
       "filmFoundation": {
         "eyebrow": "基本資訊",
         "title": "基本資訊",
+        "saveError": "簡介保存失敗。",
         "description": "支撐每個影視分支的前提、梗概、角色與封面；修改會自動儲存到草稿。",
         "profile": {
           "title": "創作檔案",
@@ -3049,14 +3050,10 @@
           "action": "製作操作無法完成。"
         },
         "node": {
-          "noVideo": "尚無影片",
           "videoPreview": "目前影片預覽",
-          "metadata": {
-            "duration": "時長",
-            "dimensions": "解析度",
-            "fileSize": "檔案大小",
-            "format": "格式"
-          }
+          "noMedia": "尚無媒體",
+          "noSequence": "尚無分鏡",
+          "clipCoverage": "{ready}/{total} 片段已有媒體"
         }
       },
       "creativeWorkbench": {
@@ -3147,7 +3144,7 @@
         "previewSeek": "已觸發互動 · 跳轉至 {time}",
         "previewMissingTarget": "這個熱點尚未指定前往目標。",
         "noVideo": "暫無目前影片",
-        "noVideoDescription": "請先在節點中選擇目前影片，再回到這裡按真實畫面定位互動。",
+        "noVideoDescription": "互動熱點將錨定到分鏡時間軸。請先在分鏡頁生成媒體，再基於真實畫面定位互動。",
         "emptyTitle": "繪製第一個熱點",
         "emptyDescription": "先定義觀眾可點擊的區域，再設定它出現的時間與觸發動作。",
         "drawFirst": "繪製熱點",
@@ -3203,24 +3200,6 @@
       "inspector": {
         "eyebrow": "節點檢查器",
         "close": "關閉節點檢查器",
-        "media": {
-          "title": "目前影片",
-          "description": "上載本機檔案，或重用目前工作區中的影片。",
-          "preview": "{title} 的目前影片",
-          "empty": "尚未選擇影片",
-          "emptyDescription": "為這個故事片段加入可播放的影片。",
-          "candidateAction": "從候選素材中選擇",
-          "candidateActionDescription": "{count} 個候選影片",
-          "candidateUnavailable": "此影片沒有可存取的原始版本。",
-          "candidateLoadError": "無法載入候選影片。",
-          "preparing": "正在準備片段媒體資料。",
-          "unknownDimensions": "尺寸未知",
-          "unknownDuration": "時長未知"
-        },
-        "exit": "後續走向",
-        "production": "製作狀態",
-        "openProduction": "開啟鏡頭製作",
-        "choices": "玩家選擇",
         "chapterTransitions": {
           "title": "前往其他章節",
           "continueHint": "選擇本場景結束後進入的章節開場。",
@@ -3228,29 +3207,18 @@
           "connect": "連接",
           "linked": "已連接"
         },
-        "exitAuto": "繼續到場景",
-        "exitChoice": "玩家選擇",
-        "continuationTarget": "下一個場景",
-        "continuationDescription": "一個場景只有一個直接後續；需要分支時請使用玩家選擇。",
-        "choicePrompt": "選擇問題",
-        "choicePromptPlaceholder": "玩家此刻必須決定甚麼？",
-        "optionLabel": "選項 {number}",
-        "optionPlaceholder": "填寫玩家看到的選項文字",
-        "addChoice": "新增選項",
         "removeChoice": "刪除選項",
-        "removeChoiceTitle": "刪除這個選項？",
-        "removeChoiceDescription": "這個選項及其分支也會一併刪除。",
         "moveChoiceUp": "上移選項",
         "moveChoiceDown": "下移選項",
-        "choiceMinimum": "可試玩的選擇至少需要 2 個選項，目前為 {count} 個。",
-        "requiredForPlayableStory": "可試玩故事必須填寫。",
-        "terminalAfterPlayback": "未連接後續節點時，播放將在這裡自然結束。",
-        "convertExitTitle": "取代目前後續走向？",
-        "convertExitDescription": "這會刪除現有的 {count} 條分支，以及其中已編寫的條件或選項細節。",
-        "confirmConversion": "取代後續走向",
         "delete": "刪除節點",
-        "cancel": "取消",
-        "nodeName": "名稱"
+        "nodeName": "名稱",
+        "storyboard": {
+          "title": "分鏡",
+          "summary": "{count} 個片段 · {ready} 個已有媒體",
+          "loading": "分鏡載入中…",
+          "missing": "該場景還沒有分鏡序列。",
+          "open": "打開分鏡"
+        }
       },
       "conflict": {
         "description": "其他工作階段儲存了更新版本。你的本機草稿已保留；如需留存，請先匯出再捨棄。",
@@ -3303,17 +3271,14 @@
       "back": "返回影遊工作室",
       "draftHead": "可編輯草稿 · 修訂 {revision}",
       "stageNav": "專案階段",
-      "stages": {
-        "overview": "總覽",
-        "story": "故事",
-        "references": "參考包",
-        "production": "鏡頭生產"
-      },
       "errors": {
         "loadTitle": "無法開啟這個專案。"
       },
-      "noProductionDataTitle": "目前還沒有可用的製作資料",
-      "noProductionDataDescription": "返回故事畫布加入片段，然後為每個片段生成或上載影片。"
+      "stages": {
+        "overview": "總覽",
+        "story": "故事",
+        "references": "參考包"
+      }
     },
     "overview": {
       "productionTitle": "影片生產",
@@ -3418,31 +3383,6 @@
       "errors": {
         "action": "參考包操作未能完成。",
         "upload": "媒體上載未能完成。"
-      }
-    },
-    "production": {
-      "title": "鏡頭生產",
-      "subtitle": "每個故事片段目前綁定的影片。",
-      "clipCount": "{count} 個鏡頭",
-      "seconds": "{seconds} 秒",
-      "noBlocker": "可以執行下一步",
-      "currentDraftPromptRequired": "請在故事畫布中生成或上載影片。",
-      "currentVideoReady": "目前鏡頭已綁定影片。",
-      "columns": {
-        "key": "編號",
-        "clip": "鏡頭",
-        "duration": "時長",
-        "status": "狀態",
-        "blocker": "詳情"
-      },
-      "status": {
-        "draft": "目前草稿",
-        "ready": "就緒",
-        "queued": "排隊中",
-        "running": "生成中",
-        "processing": "處理中",
-        "failed": "失敗",
-        "cancelled": "已取消"
       }
     },
     "productionHeader": {

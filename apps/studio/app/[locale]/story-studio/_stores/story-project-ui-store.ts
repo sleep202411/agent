@@ -40,9 +40,8 @@ interface StoryProjectUIState {
   mobileView: "chat" | "work";
   setMobileView: (view: "chat" | "work") => void;
   /**
-   * Which rail-toggled panel is docked in the side-panel slot (catalog or
-   * world), or null when closed. Drives — and is highlighted by — the rail's
-   * Catalog and World buttons.
+   * Which rail-toggled panel is docked in the side-panel slot, or null when
+   * closed. Drives — and is highlighted by — the rail's panel buttons.
    */
   sidePanel: StorySidePanel;
   setSidePanel: (panel: StorySidePanel) => void;
@@ -60,7 +59,7 @@ interface StoryProjectUIState {
       | StoryCanvasInspectorTarget
       | ((current: StoryCanvasInspectorTarget) => StoryCanvasInspectorTarget)
   ) => void;
-  /** Share dialog (mounted by the canvas) open. */
+  /** Share dialog (mounted by the project layout) open. */
   shareOpen: boolean;
   setShareOpen: (open: boolean) => void;
   /**
@@ -81,6 +80,15 @@ interface StoryProjectUIState {
   setDraftBarrier: (barrier: SavedDraftSnapshotRunner | null) => void;
   guardedNavigate: ((proceed: () => void) => void) | null;
   setGuardedNavigate: (navigate: ((proceed: () => void) => void) | null) => void;
+  /**
+   * Story-bible writer the canvas registers while mounted. The overview dock
+   * routes bible edits through it so the mounted canvas stays the draft's
+   * only writer; when null (any other step), the dock saves the draft itself.
+   */
+  foundationWriter: ((field: "logline" | "synopsis", value: string) => void) | null;
+  setFoundationWriter: (
+    writer: ((field: "logline" | "synopsis", value: string) => void) | null
+  ) => void;
 }
 
 export const useStoryProjectUiStore = create<StoryProjectUIState>()(
@@ -113,6 +121,9 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
       guardedNavigate: null,
       setGuardedNavigate: (navigate) =>
         set({ guardedNavigate: navigate }, false, "setGuardedNavigate"),
+      foundationWriter: null,
+      setFoundationWriter: (writer) =>
+        set({ foundationWriter: writer }, false, "setFoundationWriter"),
     }),
     { name: "story-project-ui" }
   )

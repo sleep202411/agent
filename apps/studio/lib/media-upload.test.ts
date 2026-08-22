@@ -11,131 +11,72 @@ afterEach(() => {
 });
 
 describe("uploadFileViaSignedUrl", () => {
-  it("fails before signing when a Story upload has no ownership scope", async () => {
-    await expect(
-      uploadFileViaSignedUrl(new File(["video"], "scene.mp4", { type: "video/mp4" }), {
-        kind: "story_clip_video",
-      })
-    ).rejects.toThrow("require a workspace and project scope");
-  });
-
-  it("rejects non-MP4 Story clips before reserving an upload", async () => {
-    const fetchMock = vi.fn<typeof fetch>();
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(
-      uploadFileViaSignedUrl(new File(["video"], "scene.mov", { type: "video/quicktime" }), {
-        kind: "story_clip_video",
-        workspaceId: "workspace-1",
-        scope: { projectId: "project-1" },
-      })
-    ).rejects.toThrow("require an MP4 file");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
   it("uses the canonical extension content type when the browser omits file.type", async () => {
     const fetchMock = mockUploadPipeline({ "x-storage-header": "signed" });
     vi.stubGlobal("fetch", fetchMock);
-    const onSessionIssued = vi.fn();
 
-    const result = await uploadFileViaSignedUrl(new File(["video"], "scene.mp4", { type: "" }), {
-      kind: "story_clip_video",
+    const result = await uploadFileViaSignedUrl(new File(["image"], "frame.png", { type: "" }), {
+      kind: "ai_reference_image",
       workspaceId: "workspace-1",
       scope: { projectId: "project-1" },
-      onSessionIssued,
     });
 
     expect(FakeXMLHttpRequest.instances[0]?.headers).toEqual(
       new Map([
-        ["Content-Type", "video/mp4"],
+        ["Content-Type", "image/png"],
         ["x-storage-header", "signed"],
       ])
     );
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
-      kind: "story_clip_video",
-      contentType: "video/mp4",
-      fileName: "scene.mp4",
+      kind: "ai_reference_image",
+      contentType: "image/png",
+      fileName: "frame.png",
       scope: { projectId: "project-1" },
     });
     expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
       "x-fizz-workspace-id": "workspace-1",
     });
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
-      kind: "story_clip_video",
-      contentType: "video/mp4",
-      uploadSessionId: "upload-session-1",
-    });
-    expect(fetchMock.mock.calls[1]?.[1]?.headers).toMatchObject({
-      "x-fizz-workspace-id": "workspace-1",
+      kind: "ai_reference_image",
+      contentType: "image/png",
     });
     expect(result).toEqual({
       mediaAssetId: "asset-1",
-      storageKey: "story/scene.mp4",
-      url: null,
+      variantId: "variant-1",
+      storageKey: "reference/frame.png",
+      url: "https://media.example.test/frame.png",
     });
-    expect(onSessionIssued).toHaveBeenCalledWith({
-      uploadSessionId: "upload-session-1",
-      mediaAssetId: "asset-1",
-    });
-  });
-
-  it("recovers the durable session identity when the caller aborts during issuance", async () => {
-    const controller = new AbortController();
-    let resolveIssue!: (response: Response) => void;
-    const fetchMock = vi.fn<typeof fetch>().mockImplementationOnce(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolveIssue = resolve;
-        })
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const onSessionIssued = vi.fn();
-
-    const upload = uploadFileViaSignedUrl(new File(["video"], "scene.mp4", { type: "video/mp4" }), {
-      kind: "story_clip_video",
-      workspaceId: "workspace-1",
-      scope: { projectId: "project-1" },
-      onSessionIssued,
-      signal: controller.signal,
-    });
-    controller.abort();
-    resolveIssue(
-      jsonResponse({
-        uploadUrl: "https://storage.example.test/upload",
-        method: "PUT",
-        headers: {},
-        storageKey: "story/scene.mp4",
-        provider: "aliyun_oss",
-        expiresAt: "2026-07-17T12:00:00.000Z",
-        uploadSessionId: "upload-session-1",
-        mediaAssetId: "asset-1",
-      })
-    );
-
-    await expect(upload).rejects.toMatchObject({ name: "AbortError" });
-    expect(onSessionIssued).toHaveBeenCalledWith({
-      uploadSessionId: "upload-session-1",
-      mediaAssetId: "asset-1",
-    });
-    expect(FakeXMLHttpRequest.instances).toHaveLength(0);
   });
 
   it("lets a provider-signed content type override the canonical default case-insensitively", async () => {
-    vi.stubGlobal("fetch", mockUploadPipeline({ "content-type": "video/provider-signed" }));
+    vi.stubGlobal("fetch", mockUploadPipeline({ "content-type": "image/provider-signed" }));
 
-    await uploadFileViaSignedUrl(new File(["video"], "scene.mp4", { type: "" }), {
-      kind: "story_clip_video",
-      workspaceId: "workspace-1",
-      scope: { projectId: "project-1" },
+    await uploadFileViaSignedUrl(new File(["image"], "frame.png", { type: "" }), {
+      kind: "ai_reference_image",
     });
 
     expect(FakeXMLHttpRequest.instances[0]?.headers).toEqual(
-      new Map([["content-type", "video/provider-signed"]])
+      new Map([["content-type", "image/provider-signed"]])
     );
   });
 
-  it("still requires a media URL for ordinary uploads", async () => {
-    vi.stubGlobal("fetch", mockUploadPipeline({}));
+  it("refuses to start once the caller has already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png", { type: "image/png" }), {
+        kind: "ai_reference_image",
+        signal: controller.signal,
+      })
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("requires a media URL on the confirmed asset", async () => {
+    vi.stubGlobal("fetch", mockUploadPipeline({}, { mediaAssetId: "asset-1" }));
 
     await expect(
       uploadFileViaSignedUrl(new File(["image"], "frame.png", { type: "image/png" }), {
@@ -143,9 +84,25 @@ describe("uploadFileViaSignedUrl", () => {
       })
     ).rejects.toThrow("returned no media URL");
   });
+
+  it("requires an original variant on the confirmed asset", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockUploadPipeline(
+        {},
+        { mediaAssetId: "asset-1", url: "https://media.example.test/frame.png" }
+      )
+    );
+
+    await expect(
+      uploadFileViaSignedUrl(new File(["image"], "frame.png", { type: "image/png" }), {
+        kind: "canvas_input_image",
+      })
+    ).rejects.toThrow("returned no original media variant");
+  });
 });
 
-function mockUploadPipeline(headers: Record<string, string>) {
+function mockUploadPipeline(headers: Record<string, string>, confirmed?: object) {
   return vi
     .fn<typeof fetch>()
     .mockResolvedValueOnce(
@@ -153,19 +110,21 @@ function mockUploadPipeline(headers: Record<string, string>) {
         uploadUrl: "https://storage.example.test/upload",
         method: "PUT",
         headers,
-        storageKey: "story/scene.mp4",
+        storageKey: "reference/frame.png",
         provider: "aliyun_oss",
         expiresAt: "2026-07-17T12:00:00.000Z",
-        uploadSessionId: "upload-session-1",
-        mediaAssetId: "asset-1",
       })
     )
     .mockResolvedValueOnce(
-      jsonResponse({
-        mediaAssetId: "asset-1",
-        storageKey: "story/scene.mp4",
-        provider: "aliyun_oss",
-      })
+      jsonResponse(
+        confirmed ?? {
+          mediaAssetId: "asset-1",
+          variantId: "variant-1",
+          storageKey: "reference/frame.png",
+          provider: "aliyun_oss",
+          url: "https://media.example.test/frame.png",
+        }
+      )
     );
 }
 

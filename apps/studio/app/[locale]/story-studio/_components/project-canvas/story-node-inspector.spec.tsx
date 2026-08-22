@@ -7,6 +7,10 @@ import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import { StoryNodeInspector } from "./story-node-inspector";
 import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
+vi.mock("./story-node-storyboard-panel", () => ({
+  StoryNodeStoryboardPanel: () => null,
+}));
+
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
@@ -27,41 +31,9 @@ describe("StoryNodeInspector film authoring", () => {
     container.remove();
   });
 
-  it("confirms before replacing an authored choice with a direct continuation", async () => {
-    const content = branchingDraft();
-    const model = buildStoryCanvasModel(content, "en-US", [], { clip: "Clip" });
-    const onSetSceneExit = vi.fn<ComponentProps<typeof StoryNodeInspector>["onSetSceneExit"]>();
-
-    await act(async () => {
-      root.render(
-        <StoryNodeInspector
-          {...inspectorProps(content)}
-          onSetSceneExit={onSetSceneExit}
-          selectedNode={requiredNode(model.nodes, "opening")}
-        />
-      );
-    });
-
-    await click(exitButton(container, "Auto"));
-    expect(onSetSceneExit).not.toHaveBeenCalled();
-    expect(container.textContent).toContain("inspector.convertExitTitle");
-
-    const confirm = requiredElement(
-      [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-        (button) => button.textContent?.trim() === "inspector.confirmConversion"
-      ) ?? null,
-      "exit conversion confirmation"
-    );
-    await click(confirm);
-    expect(onSetSceneExit).toHaveBeenCalledWith("opening", {
-      kind: "auto",
-      nextNodeId: null,
-    });
-  });
-
   it("opens the interaction editor for the inspected clip", async () => {
     const content = linearDraft();
-    const model = buildStoryCanvasModel(content, "en-US", [], { clip: "Clip" });
+    const model = buildStoryCanvasModel(content, "en-US", { clip: "Clip" });
     const onEditInteractions =
       vi.fn<ComponentProps<typeof StoryNodeInspector>["onEditInteractions"]>();
 
@@ -102,7 +74,7 @@ describe("StoryNodeInspector film authoring", () => {
       },
       productionNotes: [],
     };
-    const model = buildStoryCanvasModel(content, "en-US", [], { world: "World" });
+    const model = buildStoryCanvasModel(content, "en-US", { world: "World" });
 
     await act(async () => {
       root.render(
@@ -116,37 +88,6 @@ describe("StoryNodeInspector film authoring", () => {
     expect(container.innerHTML).toBe("");
   });
 });
-
-function branchingDraft(): InteractiveStoryDraftContent {
-  return {
-    storyBible: { logline: "", synopsis: "", characters: [] },
-    graph: {
-      entryNodeId: "opening",
-      nodes: [
-        {
-          kind: "clip",
-          nodeId: "opening",
-          clipKey: "OPENING",
-          interactions: [],
-          exit: {
-            kind: "choice",
-            decisionId: "decision.route",
-            prompt: { "en-US": "Which route?" },
-            choices: [
-              {
-                choiceId: "choice.continue",
-                label: { "en-US": "Continue" },
-                nextNodeId: "second",
-              },
-            ],
-          },
-        },
-        clip("second", "SECOND", null),
-      ],
-    },
-    productionNotes: [],
-  };
-}
 
 function linearDraft(): InteractiveStoryDraftContent {
   return {
@@ -173,12 +114,12 @@ function inspectorProps(
   content: InteractiveStoryDraftContent
 ): Omit<ComponentProps<typeof StoryNodeInspector>, "selectedNode"> {
   return {
+    projectId: "project-1",
     content,
     canEdit: true,
     onCloseNode: vi.fn(),
     onDeleteSelected: vi.fn(),
     onUpdateClipMeta: vi.fn(),
-    onSetSceneExit: vi.fn(),
     onEditInteractions: vi.fn(),
   };
 }
@@ -192,15 +133,6 @@ function requiredNode(nodes: ReturnType<typeof buildStoryCanvasModel>["nodes"], 
 function requiredElement<T extends Element>(element: T | null, label: string): T {
   if (!element) throw new Error(`Missing ${label}`);
   return element;
-}
-
-function exitButton(container: HTMLElement, kind: string): HTMLButtonElement {
-  return requiredElement(
-    [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-      (button) => button.textContent?.trim() === `inspector.exit${kind}`
-    ) ?? null,
-    `${kind} exit button`
-  );
 }
 
 async function click(element: HTMLElement): Promise<void> {

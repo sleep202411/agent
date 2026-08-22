@@ -2491,7 +2491,6 @@
       "clips": "镜头",
       "videos": "当前视频",
       "choices": "选择",
-      "graphClips": "剧情镜头",
       "graphScenes": "互动场景"
     },
     "actions": {
@@ -2638,8 +2637,8 @@
       "title": "资产规格"
     },
     "storyboardPage": {
-      "emptyChapter": "本章还没有分镜序列。",
-      "emptyHint": "已批准的情节编译为制作方案后，序列会显示在这里。",
+      "emptyChapter": "本章还没有情节节点。",
+      "emptyHint": "在情节树中添加场景后，分镜会在这里逐场景展开。",
       "loadError": "无法加载分镜。",
       "retry": "重试",
       "plotNode": "情节节点 {index}",
@@ -2653,7 +2652,8 @@
       },
       "seconds": "{value} 秒",
       "options": "选项",
-      "plotNodeMissing": "未关联情节节点",
+      "unplanned": "尚无分镜",
+      "unplannedHint": "该场景还没有规划分镜。可让 FizzAgent 为本章规划分镜。",
       "title": "分镜",
       "clipKind": {
         "image": "图片",
@@ -2929,6 +2929,7 @@
       "filmFoundation": {
         "eyebrow": "基本信息",
         "title": "基本信息",
+        "saveError": "简介保存失败。",
         "description": "支撑每个影视分支的前提、梗概、角色与封面；修改会自动保存到草稿。",
         "profile": {
           "title": "创作档案",
@@ -3049,14 +3050,10 @@
           "action": "制作操作无法完成。"
         },
         "node": {
-          "noVideo": "尚无视频",
           "videoPreview": "当前视频预览",
-          "metadata": {
-            "duration": "时长",
-            "dimensions": "分辨率",
-            "fileSize": "文件大小",
-            "format": "格式"
-          }
+          "noMedia": "尚无媒体",
+          "noSequence": "尚无分镜",
+          "clipCoverage": "{ready}/{total} 片段已有媒体"
         }
       },
       "creativeWorkbench": {
@@ -3147,7 +3144,7 @@
         "previewSeek": "已触发交互 · 跳转至 {time}",
         "previewMissingTarget": "这个热点尚未指定跳转目标。",
         "noVideo": "暂无当前视频",
-        "noVideoDescription": "请先在节点中选择当前视频，再回到这里基于真实画面定位交互。",
+        "noVideoDescription": "交互热点将锚定到分镜时间轴。请先在分镜页生成媒体，再基于真实画面定位交互。",
         "emptyTitle": "绘制第一个热点",
         "emptyDescription": "先定义观众可点击的区域，再设置它出现的时间与触发动作。",
         "drawFirst": "绘制热点",
@@ -3203,24 +3200,6 @@
       "inspector": {
         "eyebrow": "节点检查器",
         "close": "关闭节点检查器",
-        "media": {
-          "title": "当前视频",
-          "description": "上传本地文件，或复用当前工作区中的视频。",
-          "preview": "{title} 的当前视频",
-          "empty": "尚未选择视频",
-          "emptyDescription": "为这个故事片段添加可播放的视频。",
-          "candidateAction": "从候选素材中选择",
-          "candidateActionDescription": "{count} 个候选视频",
-          "candidateUnavailable": "此视频没有可访问的原始版本。",
-          "candidateLoadError": "无法加载候选视频。",
-          "preparing": "正在准备片段媒体信息。",
-          "unknownDimensions": "尺寸未知",
-          "unknownDuration": "时长未知"
-        },
-        "exit": "后续走向",
-        "production": "生产状态",
-        "openProduction": "打开镜头生产",
-        "choices": "玩家选择",
         "chapterTransitions": {
           "title": "前往其他章节",
           "continueHint": "选择本场景结束后进入的章节开场。",
@@ -3228,29 +3207,18 @@
           "connect": "连接",
           "linked": "已连接"
         },
-        "exitAuto": "继续到场景",
-        "exitChoice": "玩家选择",
-        "continuationTarget": "下一个场景",
-        "continuationDescription": "一个场景只有一个直接后续；需要分支时请使用玩家选择。",
-        "choicePrompt": "选择问题",
-        "choicePromptPlaceholder": "玩家此刻必须决定什么？",
-        "optionLabel": "选项 {number}",
-        "optionPlaceholder": "填写玩家看到的选项文案",
-        "addChoice": "添加选项",
         "removeChoice": "删除选项",
-        "removeChoiceTitle": "删除这个选项？",
-        "removeChoiceDescription": "这个选项及其分支也会一起删除。",
         "moveChoiceUp": "上移选项",
         "moveChoiceDown": "下移选项",
-        "choiceMinimum": "可试玩的选择至少需要 2 个选项，当前为 {count} 个。",
-        "requiredForPlayableStory": "可试玩故事必须填写。",
-        "terminalAfterPlayback": "未连接后续节点时，播放将在这里自然结束。",
-        "convertExitTitle": "替换当前后续走向？",
-        "convertExitDescription": "这会删除现有的 {count} 条分支，以及其中已经编写的条件或选项细节。",
-        "confirmConversion": "替换后续走向",
         "delete": "删除节点",
-        "cancel": "取消",
-        "nodeName": "名称"
+        "nodeName": "名称",
+        "storyboard": {
+          "title": "分镜",
+          "summary": "{count} 个片段 · {ready} 个已有媒体",
+          "loading": "分镜加载中…",
+          "missing": "该场景还没有分镜序列。",
+          "open": "打开分镜"
+        }
       },
       "conflict": {
         "description": "其他会话保存了更新版本。你的本地草稿已保留；如需留存，请先导出再丢弃。",
@@ -3303,17 +3271,14 @@
       "back": "返回影游工作室",
       "draftHead": "可编辑草稿 · 修订 {revision}",
       "stageNav": "项目阶段",
-      "stages": {
-        "overview": "总览",
-        "story": "故事",
-        "references": "参考包",
-        "production": "镜头生产"
-      },
       "errors": {
         "loadTitle": "无法打开这个项目。"
       },
-      "noProductionDataTitle": "当前还没有可用的生产数据",
-      "noProductionDataDescription": "回到故事画布添加片段，然后为每个片段生成或上传视频。"
+      "stages": {
+        "overview": "总览",
+        "story": "故事",
+        "references": "参考包"
+      }
     },
     "overview": {
       "productionTitle": "视频生产",
@@ -3418,31 +3383,6 @@
       "errors": {
         "action": "参考包操作未能完成。",
         "upload": "媒体上传未能完成。"
-      }
-    },
-    "production": {
-      "title": "镜头生产",
-      "subtitle": "每个故事片段的当前视频状态。",
-      "clipCount": "{count} 个镜头",
-      "seconds": "{seconds} 秒",
-      "noBlocker": "可以执行下一步",
-      "currentDraftPromptRequired": "请在故事画布中生成或上传视频。",
-      "currentVideoReady": "当前镜头已绑定视频。",
-      "columns": {
-        "key": "编号",
-        "clip": "镜头",
-        "duration": "时长",
-        "status": "状态",
-        "blocker": "详情"
-      },
-      "status": {
-        "draft": "当前草稿",
-        "ready": "就绪",
-        "queued": "排队中",
-        "running": "生成中",
-        "processing": "处理中",
-        "failed": "失败",
-        "cancelled": "已取消"
       }
     },
     "productionHeader": {

@@ -10,23 +10,28 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
 import {
-  getStoryWorkbench,
   storyApiErrorMessage,
+  type StoryClipGraphNode,
   type StoryGraphNode,
 } from "@/lib/story-projects-api";
+import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { localizedText } from "./project-canvas/story-project-canvas-model";
 import { StoryProductionPageHeader } from "./story-production-page-header";
 import {
   StoryStoryboardChoiceCard,
   StoryStoryboardSequenceSection,
+  StoryStoryboardUnplannedSection,
   type StorySequenceChoiceOptions,
 } from "./story-storyboard-sequence-section";
 
 /**
- * Chapter-owned production board, flattened like the catalog: every plot
- * node's sequence renders in narrative order on one page. A ?node= deep link
- * (from the catalog or the canvas) scrolls to its section.
+ * Chapter-owned production board. The chapter graph is the board's skeleton —
+ * every plot node renders one section in narrative (authoring) order, numbered
+ * exactly like the catalog. A storyboard sequence fills its node's section;
+ * a node that has never been planned shows an unplanned placeholder instead
+ * of silently disappearing. A ?node= deep link (from the catalog or the
+ * canvas) scrolls to its section.
  */
 export function StoryStoryboardView({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.storyboardPage");
@@ -43,19 +48,19 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     retry: false,
   });
 
-  // The chapter graph supplies choice options and node names; the board
-  // degrades gracefully to plain sequence cards if it cannot load.
   const locale = useLocale();
-  // Same key as the catalog's chapter fetch so the two surfaces share one
-  // cache entry instead of double-fetching the workbench.
-  const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "chapter-workbench", workspaceId, projectId, chapterId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId, chapterId as string),
-    enabled: Boolean(workspaceId && chapterId),
-    retry: false,
-  });
+  const workbenchQuery = useStoryChapterWorkbench(projectId, { chapterId });
+  const nodes = useMemo(
+    () => workbenchQuery.data?.draft.content.graph.nodes ?? [],
+    [workbenchQuery.data?.draft.content.graph.nodes]
+  );
+  // Scene rows in authoring order — the same filter and numbering the catalog
+  // uses, so "情节节点 N" here and "N." there always name the same scene.
+  const sceneNodes = useMemo(
+    () => nodes.filter((node): node is StoryClipGraphNode => node.kind === "clip"),
+    [nodes]
+  );
   const choiceOptionsByNode = useMemo(() => {
-    const nodes = workbenchQuery.data?.draft.content.graph.nodes ?? [];
     const byId = new Map<string, StoryGraphNode>(nodes.map((node) => [node.nodeId, node]));
     const titleOf = (nodeId: string | null): string => {
       if (!nodeId) return "";
@@ -75,38 +80,31 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
       });
     }
     return options;
-  }, [workbenchQuery.data, locale]);
+  }, [nodes, locale]);
 
-  // Live plot-node ids so orphaned sequences (their node deleted from the
-  // plot tree) can be flagged; null while the workbench is still loading so
-  // the badge never flashes on unresolved data.
-  const plotNodeIds = useMemo(() => {
-    const nodes = workbenchQuery.data?.draft.content.graph.nodes;
-    if (!nodes) return null;
-    return new Set(nodes.filter((node) => node.kind === "clip").map((node) => node.nodeId));
-  }, [workbenchQuery.data]);
-
-  const sequences = storyboardQuery.data ?? [];
+  const sequenceByNode = useMemo(
+    () => new Map((storyboardQuery.data ?? []).map((sequence) => [sequence.plotNodeId, sequence])),
+    [storyboardQuery.data]
+  );
   const requestedPlotNodeId = searchParams.get("node");
 
-  // Consume the deep link exactly once: refetches that change the sequence
-  // count must not yank the viewport back to the anchor.
+  const loading =
+    workspaceLoading ||
+    (Boolean(workspaceId) && (storyboardQuery.isPending || workbenchQuery.isPending));
+
+  // Consume the deep link exactly once, after the board has actually rendered
+  // (both queries settled): refetches must not yank the viewport back to the
+  // anchor.
   const consumedScrollTarget = useRef<string | null>(null);
   useEffect(() => {
-    if (
-      !requestedPlotNodeId ||
-      sequences.length === 0 ||
-      consumedScrollTarget.current === requestedPlotNodeId
-    ) {
+    if (loading || !requestedPlotNodeId || consumedScrollTarget.current === requestedPlotNodeId) {
       return;
     }
     const target = document.getElementById(`plot-${requestedPlotNodeId}`);
     if (!target) return;
     consumedScrollTarget.current = requestedPlotNodeId;
     target.scrollIntoView({ block: "start" });
-  }, [requestedPlotNodeId, sequences.length]);
-
-  const loading = workspaceLoading || (Boolean(workspaceId) && storyboardQuery.isPending);
+  }, [requestedPlotNodeId, loading]);
 
   if (loading) {
     return (
@@ -118,18 +116,21 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (storyboardQuery.isError) {
+  if (storyboardQuery.isError || workbenchQuery.isError) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
           <IconAlertTriangle className="mx-auto size-6 text-white/58" aria-hidden="true" />
           <p className="mt-3 max-w-lg text-sm text-white/72">
-            {storyApiErrorMessage(storyboardQuery.error, t("loadError"))}
+            {storyApiErrorMessage(storyboardQuery.error ?? workbenchQuery.error, t("loadError"))}
           </p>
           <Button
             variant="secondary"
             className="mt-5"
-            onClick={() => void storyboardQuery.refetch()}
+            onClick={() => {
+              void storyboardQuery.refetch();
+              void workbenchQuery.refetch();
+            }}
           >
             <IconRefresh />
             {t("retry")}
@@ -139,7 +140,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (sequences.length === 0 || !workspaceId || !chapterId) {
+  if (sceneNodes.length === 0 || !workspaceId || !chapterId) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
@@ -154,18 +155,26 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
       <StoryProductionPageHeader title={t("title")} description={t("generationHint")} />
       <div className="mt-5 space-y-8">
-        {sequences.map((sequence, index) => {
-          const choiceOptions = choiceOptionsByNode.get(sequence.plotNodeId);
+        {sceneNodes.map((node, index) => {
+          const sequence = sequenceByNode.get(node.nodeId);
+          const choiceOptions = choiceOptionsByNode.get(node.nodeId);
           return (
-            <div key={sequence.id} className="space-y-4">
-              <StoryStoryboardSequenceSection
-                sequence={sequence}
-                index={index}
-                workspaceId={workspaceId}
-                projectId={projectId}
-                chapterId={chapterId}
-                plotNodeMissing={plotNodeIds ? !plotNodeIds.has(sequence.plotNodeId) : false}
-              />
+            <div key={node.nodeId} className="space-y-4">
+              {sequence ? (
+                <StoryStoryboardSequenceSection
+                  sequence={sequence}
+                  index={index}
+                  workspaceId={workspaceId}
+                  projectId={projectId}
+                  chapterId={chapterId}
+                />
+              ) : (
+                <StoryStoryboardUnplannedSection
+                  nodeId={node.nodeId}
+                  title={node.name?.trim() || node.clipKey}
+                  index={index}
+                />
+              )}
               {choiceOptions ? <StoryStoryboardChoiceCard options={choiceOptions} /> : null}
             </div>
           );
