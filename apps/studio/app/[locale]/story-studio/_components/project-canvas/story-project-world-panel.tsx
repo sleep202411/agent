@@ -1,6 +1,6 @@
 "use client";
 
-import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
+import type { InteractiveStoryDraftContent, StoryProjectSummary } from "@/lib/story-projects-api";
 import {
   StoryFoundationLibrary,
   type StoryFoundationCoverMediaProps,
@@ -9,6 +9,10 @@ import {
 type FoundationField = "logline" | "synopsis";
 
 interface StoryProjectWorldPanelProps {
+  project: Pick<
+    StoryProjectSummary,
+    "frameProfile" | "durationPreset" | "visualStyle" | "defaultLocale"
+  >;
   content: InteractiveStoryDraftContent;
   canEdit: boolean;
   coverMedia: StoryFoundationCoverMediaProps;

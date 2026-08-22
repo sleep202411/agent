@@ -445,7 +445,7 @@ function indexClips(
   return index;
 }
 
-function localizedText(
+export function localizedText(
   text: Record<string, string> | undefined,
   locale: string,
   fallback: string

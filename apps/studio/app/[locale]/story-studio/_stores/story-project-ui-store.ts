@@ -45,8 +45,6 @@ interface StoryProjectUIState {
    */
   sidePanel: StorySidePanel;
   setSidePanel: (panel: StorySidePanel) => void;
-  /** Open `panel`, or close it if it is already the docked one. */
-  toggleSidePanel: (panel: Exclude<StorySidePanel, null>) => void;
   /** Chapter the canvas is editing — context hint for the agent panel. */
   activeChapterId: string | null;
   setActiveChapterId: (chapterId: string | null) => void;
@@ -64,6 +62,9 @@ interface StoryProjectUIState {
   /** Share dialog (mounted by the canvas) open. */
   shareOpen: boolean;
   setShareOpen: (open: boolean) => void;
+  /** Whether the project-rail chapter menu is open. */
+  chapterMenuOpen: boolean;
+  setChapterMenuOpen: (open: boolean) => void;
   /**
    * Leave guard the canvas registers while mounted; the rail's Back link runs
    * it so unsaved-draft protection survives the move to the shared rail.
@@ -83,11 +84,12 @@ interface StoryProjectUIState {
   guardedNavigate: ((proceed: () => void) => void) | null;
   setGuardedNavigate: (navigate: ((proceed: () => void) => void) | null) => void;
   /**
-   * The header's context slot element (ref-registered by StoryProjectHeader);
-   * the canvas portals its chapter switcher into it.
+   * The project rail's chapter slot. The canvas portals its chapter switcher
+   * here so Chapters has one canonical home instead of a duplicate header
+   * control.
    */
-  headerContextSlot: HTMLElement | null;
-  setHeaderContextSlot: (element: HTMLElement | null) => void;
+  chapterRailSlot: HTMLElement | null;
+  setChapterRailSlot: (element: HTMLElement | null) => void;
 }
 
 export const useStoryProjectUiStore = create<StoryProjectUIState>()(
@@ -97,12 +99,6 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
       setMobileView: (view) => set({ mobileView: view }, false, "setMobileView"),
       sidePanel: null,
       setSidePanel: (panel) => set({ sidePanel: panel }, false, "setSidePanel"),
-      toggleSidePanel: (panel) =>
-        set(
-          (state) => ({ sidePanel: state.sidePanel === panel ? null : panel }),
-          false,
-          "toggleSidePanel"
-        ),
       activeChapterId: null,
       setActiveChapterId: (chapterId) =>
         set({ activeChapterId: chapterId }, false, "setActiveChapterId"),
@@ -117,6 +113,8 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
         ),
       shareOpen: false,
       setShareOpen: (open) => set({ shareOpen: open }, false, "setShareOpen"),
+      chapterMenuOpen: false,
+      setChapterMenuOpen: (open) => set({ chapterMenuOpen: open }, false, "setChapterMenuOpen"),
       backGuard: null,
       setBackGuard: (guard) => set({ backGuard: guard }, false, "setBackGuard"),
       liveDraft: null,
@@ -126,14 +124,14 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
       guardedNavigate: null,
       setGuardedNavigate: (navigate) =>
         set({ guardedNavigate: navigate }, false, "setGuardedNavigate"),
-      headerContextSlot: null,
-      setHeaderContextSlot: (element) =>
-        set({ headerContextSlot: element }, false, "setHeaderContextSlot"),
+      chapterRailSlot: null,
+      setChapterRailSlot: (element) =>
+        set({ chapterRailSlot: element }, false, "setChapterRailSlot"),
     }),
     {
       name: "story-project-ui",
       // The devtools extension JSON-serializes every state snapshot. The store
-      // holds a DOM node (headerContextSlot); walking it blows up on internals
+      // holds a DOM node (chapterRailSlot); walking it blows up on internals
       // (BigInt), so collapse nodes to their tag name for the devtools view.
       serialize: {
         replacer: (_key: string, value: unknown) =>

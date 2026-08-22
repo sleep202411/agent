@@ -54,7 +54,7 @@ export interface StoryChapterDropdownProps {
 }
 
 /**
- * Story-specific chapter navigation anchored to the canvas header.
+ * Story-specific chapter navigation anchored to the project rail.
  *
  * The menu owns interaction state only. Chapter identity, ordering and
  * mutations remain authoritative in Story Studio's workbench projection.

@@ -2,7 +2,9 @@ import type {
   StoryAgentCharacter,
   StoryAgentGraphNode,
   StoryPatchProposal,
+  StoryScreenplayProposal,
 } from "@repo/shared/story-agent";
+import { isStoryScreenplayProposal } from "@repo/shared/story-agent";
 
 export interface StoryAuthoringProposalReview {
   logline: string | null;
@@ -24,8 +26,37 @@ export interface StoryAuthoringProposalReview {
  * patch JSON or machine operation labels.
  */
 export function storyAuthoringProposalReview(
-  proposal: StoryPatchProposal
+  proposal: StoryPatchProposal | StoryScreenplayProposal
 ): StoryAuthoringProposalReview {
+  if (isStoryScreenplayProposal(proposal)) {
+    const scenes: StoryAgentGraphNode[] = proposal.screenplay.scenes.map((scene) => ({
+      kind: "clip",
+      nodeId: scene.nodeId,
+      clipKey: scene.clipKey,
+      ...(scene.name ? { name: scene.name } : {}),
+      description: [scene.heading, scene.action].join("\n\n"),
+      interactions: [],
+      exit: scene.exit,
+    }));
+    return {
+      logline: proposal.screenplay.logline,
+      synopsis: proposal.screenplay.synopsis,
+      characters: proposal.screenplay.characters,
+      scenes,
+      productionNotes: [],
+      metrics: {
+        scenes: scenes.length,
+        branches: scenes.reduce(
+          (count, scene) => count + (scene.exit.kind === "choice" ? scene.exit.choices.length : 0),
+          0
+        ),
+        endings: scenes.filter(
+          (scene) => scene.exit.kind === "auto" && scene.exit.nextNodeId === null
+        ).length,
+        interactions: 0,
+      },
+    };
+  }
   let logline: string | null = null;
   let synopsis: string | null = null;
   let productionNotes: string[] = [];

@@ -2414,7 +2414,7 @@
     "authoringRun": {
       "title": {
         "authoring": "Drafting…",
-        "proposed": "Draft ready",
+        "proposed": "Screenplay ready",
         "applying": "Applying…",
         "failed": "Drafting failed"
       },
@@ -2429,22 +2429,28 @@
         "foundation": "Building the story world…",
         "structure": "Structuring the narrative…",
         "branch": "Designing story branches…",
-        "scene": "Writing the scenes…",
+        "scene": "Writing the screenplay…",
         "validate": "Checking story continuity…",
-        "applying": "Applying the draft to the canvas…"
+        "applying": "Saving the screenplay and building the story…",
+        "savingScript": "Saving the approved screenplay to Script…",
+        "buildingProduction": "Script saved. Building Plot, Asset Specs, and Storyboard…",
+        "finalizingProduction": "Plot, Asset Specs, and Storyboard are ready. Finishing…"
       },
-      "applyingHint": "Applying the draft to the canvas…",
-      "apply": "Apply to canvas",
+      "applyingHint": "Saving the screenplay and building the story…",
+      "apply": "Approve and build",
+      "savingScript": "Saving Script…",
+      "savingScriptHint": "Recording your approval and saving the screenplay to Script. Production continues in the Agent activity.",
       "discard": "Discard",
       "discarding": "Discarding…",
       "failedHint": "Drafting didn't finish. You can retry.",
       "retry": "Retry",
       "viewAll": "View all",
+      "reviewScreenplay": "Review screenplay",
       "proposalLoading": "Loading the Story proposal…",
       "proposalUnavailable": "The proposal could not be loaded. Refresh it or discard it to continue.",
       "proposal": {
-        "eyebrow": "Story proposal",
-        "description": "Review the complete story structure before applying it to the canvas.",
+        "eyebrow": "Screenplay draft",
+        "description": "Review the complete screenplay. What you see here is saved to Script exactly, then used to build the Plot Tree.",
         "metrics": {
           "scenes": "Scenes",
           "branches": "Branches",
@@ -2454,7 +2460,7 @@
         "sections": {
           "summary": "Story overview",
           "characters": "Characters",
-          "structure": "Scene and branch structure",
+          "structure": "Screenplay scenes and branches",
           "productionNotes": "Production notes"
         },
         "untitledScene": "Untitled scene",
@@ -2548,19 +2554,104 @@
     "scriptDoc": {
       "placeholder": "Write your script — the pipeline reads it from here…"
     },
+    "productionConflict": {
+      "ariaLabel": "Production plan conflict",
+      "title": "Your edits conflict with the latest approved plan",
+      "description": "Review the pending plan before deciding whether this chapter keeps your current production work or adopts the latest compiled version.",
+      "metadataUnavailable": "The conflict summary has not arrived from the server yet. Refresh this chapter before choosing a resolution.",
+      "latestRemovesItem": "The latest plan removes this item",
+      "assetRemovalSummary": "Use latest plan will archive {name}. Keep current preserves it as a chapter override when references allow.",
+      "sequenceRemovalSummary": "Use latest plan will archive {name} and its clips because its Plot node no longer exists.",
+      "latestAsset": "Latest Asset Spec · {name} · {kind}",
+      "latestPrompt": "Image prompt: {prompt}",
+      "latestSequence": "Latest sequence · {name}",
+      "latestSequenceSummary": "{duration} ms · {clips} clips · {cues} decision cues",
+      "keepCurrent": "Keep current",
+      "useLatestPlan": "Use latest plan",
+      "removedSequenceCannotKeep": "This Plot node was removed, so the current sequence cannot remain as an override.",
+      "resolved": "Production conflict resolved.",
+      "resolveError": "The production conflict could not be resolved.",
+      "confirmKeepTitle": "Keep the current production work?",
+      "confirmLatestTitle": "Use the latest approved plan?",
+      "confirmKeepDescription": "Your current edits become an explicit chapter override. Future plan updates will compare against this preserved version.",
+      "confirmLatestDescription": "The latest compiled production instructions replace the conflicting editable fields. Existing compatible media remains available.",
+      "confirmRemoveAssetDescription": "The latest plan removes this Asset Spec. It will be archived only when no active Storyboard reference still requires it.",
+      "confirmRemoveSequenceDescription": "The latest plan removes this Plot node. This sequence and its production clips will be archived.",
+      "cancel": "Cancel",
+      "confirmKeep": "Keep current",
+      "confirmLatest": "Use latest plan"
+    },
+    "productionGeneration": {
+      "controlsAria": "Media generation for {name}",
+      "requestError": "Media generation could not be started.",
+      "cancelError": "Media generation could not be cancelled.",
+      "attachmentRetryError": "The generated media could not be attached again.",
+      "statusRefreshError": "Generation status could not be refreshed.",
+      "cancel": "Cancel generation",
+      "retry": "Retry generation",
+      "retryAttachment": "Retry attachment",
+      "generate": "Generate",
+      "generateAgain": "Generate again",
+      "progressAria": "Generation progress",
+      "targetNotCurrent": "Reconcile this stale production target before generating media.",
+      "status": {
+        "idle": "Ready to generate with the default compatible model",
+        "submitting": "Submitting generation…",
+        "created": "Preparing generation…",
+        "inQueue": "Waiting in the generation queue…",
+        "inProgress": "Generating media…",
+        "attaching": "Media generated · attaching it to this production target…",
+        "retryingAttachment": "Retrying the saved media attachment…",
+        "ready": "Generated media is ready and selected",
+        "failed": "Generation failed",
+        "cancelled": "Generation cancelled",
+        "expired": "Generation expired",
+        "materializationFailed": "Media was generated but could not be attached"
+      }
+    },
     "assetsPage": {
+      "empty": "No production assets in this chapter yet.",
+      "emptyHint": "Asset Specs appear here after the approved story plan is applied.",
+      "logicalHint": "Asset Specs are stable, referenceable production instructions — media is optional.",
+      "generationHint": "Opening this page never generates media or spends credits.",
+      "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
+      "filterLabel": "Filter Asset Specs by type",
+      "loadError": "Asset Specs could not be loaded.",
+      "retry": "Try again",
+      "imagePrompt": "Image prompt",
+      "kinds": {
+        "character": "Character",
+        "location": "Location",
+        "prop": "Prop"
+      },
+      "status": {
+        "current": "Current",
+        "stale": "Needs review",
+        "archived": "Archived"
+      },
       "tabs": {
         "all": "All",
         "character": "Characters",
-        "scene": "Scenes",
+        "location": "Locations",
         "prop": "Props"
       }
     },
     "storyboardPage": {
-      "emptyChapter": "No scenes in this chapter yet.",
-      "slotEmpty": "Empty",
-      "ready": "Ready",
-      "story": "Story"
+      "emptyChapter": "No storyboard sequences in this chapter yet.",
+      "emptyHint": "Sequences appear after the approved Plot is compiled into the production plan.",
+      "loadError": "The storyboard could not be loaded.",
+      "retry": "Try again",
+      "plotNode": "Plot node {index}",
+      "clipCount": "{count, plural, one {# clip} other {# clips}}",
+      "noClips": "This sequence has no clips.",
+      "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
+      "status": {
+        "current": "Current",
+        "stale": "Needs review",
+        "archived": "Archived"
+      },
+      "seconds": "{value}s",
+      "options": "Options"
     },
     "canvas": {
       "back": "Back to Interactive Film Studio",
@@ -2569,7 +2660,14 @@
         "script": "Script",
         "tree": "Plot Tree",
         "assets": "Assets",
-        "storyboard": "Storyboard"
+        "storyboard": "Storyboard",
+        "stepAria": "{step}: {status}",
+        "status": {
+          "current": "current",
+          "stale": "needs review",
+          "missing": "not ready",
+          "unknown": "status unavailable"
+        }
       },
       "sidebar": {
         "navigation": "Story project navigation",
@@ -2825,6 +2923,30 @@
         "eyebrow": "Basics",
         "title": "Basics",
         "description": "The premise, synopsis, cast, and cover that ground every cinematic branch. Changes autosave to the draft.",
+        "profile": {
+          "title": "Creative profile",
+          "description": "Project-level production constraints shared by every chapter.",
+          "aspectRatio": "Aspect ratio",
+          "targetRuntime": "Target runtime",
+          "visualStyle": "Visual style",
+          "language": "Language",
+          "notSet": "Not set",
+          "frameProfiles": {
+            "landscape_16_9": "Landscape · 16:9",
+            "portrait_9_16": "Portrait · 9:16"
+          },
+          "durationPresets": {
+            "short_5_15": "5–15 minutes",
+            "medium_15_30": "15–30 minutes",
+            "long_30_60": "30–60 minutes"
+          },
+          "visualStyles": {
+            "cinematic_realism": "Cinematic realism",
+            "stylized_3d": "Stylized 3D",
+            "graphic_novel": "Graphic novel",
+            "anime_cinematic": "Cinematic anime"
+          }
+        },
         "cover": {
           "title": "Cover image",
           "description": "One still for this story: the project tile here, the title-screen backdrop in the player, and the share image of the published game.",

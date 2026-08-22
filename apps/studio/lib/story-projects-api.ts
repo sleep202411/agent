@@ -525,6 +525,13 @@ export interface StoryWorkbench {
   chapters: StoryChapter[];
   chapter: StoryChapter;
   draft: StoryDraft;
+  script: {
+    documentId: string | null;
+    currentSequence: number;
+    sourceVersionId: string | null;
+    sourceSequence: number | null;
+    status: "missing" | "current" | "stale" | "unlinked";
+  };
   video: {
     snapshotHash: string;
     clips: StoryClipVideoSummary[];

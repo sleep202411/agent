@@ -34,6 +34,7 @@ import {
   IconArrowDown,
   IconArrowLeft,
   IconArrowUp,
+  IconBook2,
   IconChevronDown,
   IconDownload,
   IconFocusCentered,
@@ -51,7 +52,9 @@ import { toast } from "sonner";
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { useWorkspace } from "@/app/_components/workspace-context";
+import { MATERIAL_CANVAS_ENABLED } from "../../_lib/feature-flags";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
+import { StoryProjectRailItemContent, storyProjectRailItemClass } from "../story-project-rail";
 import { Button } from "@/components/ui/button";
 import { CanvasControls } from "@/components/canvas/canvas-controls";
 import { CanvasHistoryControls } from "@/components/canvas/canvas-history-controls";
@@ -366,10 +369,8 @@ function StoryProjectCanvasInner({
   const setBackGuard = useStoryProjectUiStore((state) => state.setBackGuard);
   const setDraftBarrier = useStoryProjectUiStore((state) => state.setDraftBarrier);
   const setGuardedNavigate = useStoryProjectUiStore((state) => state.setGuardedNavigate);
-  const [chapterDropdownOpen, setChapterDropdownOpen] = useState(false);
-  // Project-level agent panel (mounted in the [projectId] layout) — the canvas
-  // only feeds it the active-chapter context via the store.
-  const setActiveChapterId = useStoryProjectUiStore((state) => state.setActiveChapterId);
+  const chapterMenuOpen = useStoryProjectUiStore((state) => state.chapterMenuOpen);
+  const setChapterMenuOpen = useStoryProjectUiStore((state) => state.setChapterMenuOpen);
   const [worldRun, setWorldRun] = useState<StoryWorldRunState | null>(null);
   const [interactionEditorNodeId, setInteractionEditorNodeId] = useState<string | null>(null);
   const [chapterCreatePending, setChapterCreatePending] = useState(false);
@@ -611,11 +612,9 @@ function StoryProjectCanvasInner({
   const projectionPair = useLastDefinedData(projectionPairCandidate);
   const workbenchProjection = projectionPair?.workbench;
   const layoutProjection = projectionPair?.layout;
-  // Feed the project-level agent panel its chapter context.
-  const activeChapterIdForAgent = workbenchProjection?.chapter.id ?? null;
-  useEffect(() => {
-    setActiveChapterId(activeChapterIdForAgent);
-  }, [setActiveChapterId, activeChapterIdForAgent]);
+  // The project layout owns active-chapter identity for every production
+  // surface, including the agent. The canvas consumes that route scope; it
+  // must never publish transient query state back into the global store.
   const project = workbenchProjection?.project ?? null;
   const video = workbenchProjection?.video ?? null;
   // Publish the live authoring head while mounted so the layout header's
@@ -2919,6 +2918,7 @@ function StoryProjectCanvasInner({
   }
 
   const openProductionCanvas = (focusNodeId?: string) => {
+    if (!MATERIAL_CANVAS_ENABLED) return;
     router.push(
       `/story-studio/projects/${projectId}/workbench/canvas${
         focusNodeId ? `?focus=${encodeURIComponent(focusNodeId)}` : ""
@@ -2966,6 +2966,7 @@ function StoryProjectCanvasInner({
     <main className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--canvas-background)] text-white">
       {sidePanel === "world" ? (
         <StoryProjectWorldPanel
+          project={project}
           content={content}
           canEdit={canMutateCanvasLayout}
           coverMedia={{
@@ -2986,17 +2987,16 @@ function StoryProjectCanvasInner({
         />
       ) : null}
       <div className="flex min-w-0 flex-1 flex-col">
-        <CanvasHeaderPortals
-          chapterTitle={workbenchProjection.chapter.title}
+        <CanvasRailPortals
           chapterDropdown={{
-            open: chapterDropdownOpen,
+            open: chapterMenuOpen,
             chapters: workbenchProjection.chapters,
             activeChapterId: workbenchProjection.chapter.id,
             canEdit,
             creating: chapterCreatePending,
             pendingChapterId: chapterMutationPendingId,
             onOpenChange: (open) => {
-              setChapterDropdownOpen(open);
+              setChapterMenuOpen(open);
               if (open) setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
             },
             onSelect: navigateToChapter,
@@ -3426,45 +3426,29 @@ function formatInteractionTime(timeMs: number): string {
   return `${minutes}:${seconds.toFixed(1).padStart(4, "0")}`;
 }
 
-function CanvasHeaderPortals({
-  chapterTitle,
-  chapterDropdown,
-}: {
-  chapterTitle: string;
-  chapterDropdown: StoryChapterDropdownProps;
-}) {
+function CanvasRailPortals({ chapterDropdown }: { chapterDropdown: StoryChapterDropdownProps }) {
   const t = useTranslations("storyStudio.canvas");
-  // The layout's StoryProjectHeader owns the top bar; the canvas contributes
-  // its chapter switcher through the ref-registered context slot.
-  const contextSlot = useStoryProjectUiStore((state) => state.headerContextSlot);
-  if (!contextSlot) return null;
+  // Chapter data and writes stay canvas-owned, while the one visible trigger
+  // lives in the layout rail through this ref-registered slot.
+  const chapterRailSlot = useStoryProjectUiStore((state) => state.chapterRailSlot);
+  if (!chapterRailSlot) return null;
   return createPortal(
-    <>
-      <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.1]" />
-      {/* Chapter switcher — moved here from the retired canvas sidebar. */}
-      <StoryChapterDropdown
-        {...chapterDropdown}
-        contentSide="bottom"
-        contentAlign="start"
-        trigger={
-          <button
-            type="button"
-            aria-label={t("chapters.action")}
-            aria-pressed={chapterDropdown.open}
-            className={cn(
-              "flex min-w-0 items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none",
-              chapterDropdown.open
-                ? "bg-white/[0.08] text-white"
-                : "text-white/52 hover:bg-white/[0.08] hover:text-white"
-            )}
-          >
-            <span className="max-w-56 truncate">{chapterTitle}</span>
-            <IconChevronDown className="size-3.5 shrink-0 opacity-60" />
-          </button>
-        }
-      />
-    </>,
-    contextSlot
+    <StoryChapterDropdown
+      {...chapterDropdown}
+      contentSide="right"
+      contentAlign="start"
+      trigger={
+        <button
+          type="button"
+          aria-label={t("chapters.action")}
+          aria-pressed={chapterDropdown.open}
+          className={storyProjectRailItemClass(chapterDropdown.open)}
+        >
+          <StoryProjectRailItemContent icon={IconBook2} label={t("chapters.action")} />
+        </button>
+      }
+    />,
+    chapterRailSlot
   );
 }
 

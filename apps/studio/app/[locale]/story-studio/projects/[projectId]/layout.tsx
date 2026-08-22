@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { StoryProjectAgentPanel } from "@/app/[locale]/story-studio/_components/story-project-agent-panel";
+import { StoryProjectChapterScope } from "@/app/[locale]/story-studio/_components/story-project-chapter-scope";
 import { StoryProjectHeader } from "@/app/[locale]/story-studio/_components/story-project-header";
 import { StoryProjectMobileNav } from "@/app/[locale]/story-studio/_components/story-project-mobile-nav";
 import { StoryProjectRail } from "@/app/[locale]/story-studio/_components/story-project-rail";
@@ -24,23 +26,27 @@ export default async function StoryProjectLayout({
   const { projectId } = await params;
   return (
     <StoryProjectWorkspaceGate projectId={projectId}>
-      <div className="flex h-dvh flex-col overflow-hidden bg-[var(--canvas-background)] text-white">
-        {/* Header */}
-        <StoryProjectHeader projectId={projectId} />
-        <section className="flex min-h-0 min-w-0 flex-1">
-          <div className="flex min-h-0 shrink-0">
-            {/* Sidebar */}
-            <StoryProjectRail projectId={projectId} />
-            {/* Side Panel — the dock for rail-toggled panels (catalog here; the
-                world panel docks into the same slot from the canvas). */}
-            <StoryProjectSidePanel projectId={projectId} />
-          </div>
+      <Suspense fallback={null}>
+        <StoryProjectChapterScope projectId={projectId}>
+          <div className="flex h-dvh flex-col overflow-hidden bg-[var(--canvas-background)] text-white">
+            {/* Header */}
+            <StoryProjectHeader projectId={projectId} />
+            <section className="flex min-h-0 min-w-0 flex-1">
+              <div className="flex min-h-0 shrink-0">
+                {/* Sidebar */}
+                <StoryProjectRail projectId={projectId} />
+                {/* Side Panel — the dock for rail-toggled panels (catalog here; the
+                    world panel docks into the same slot from the canvas). */}
+                <StoryProjectSidePanel projectId={projectId} />
+              </div>
 
-          <StoryProjectWorkView>{children}</StoryProjectWorkView>
-          <StoryProjectAgentPanel projectId={projectId} />
-        </section>
-        <StoryProjectMobileNav projectId={projectId} />
-      </div>
+              <StoryProjectWorkView>{children}</StoryProjectWorkView>
+              <StoryProjectAgentPanel projectId={projectId} />
+            </section>
+            <StoryProjectMobileNav projectId={projectId} />
+          </div>
+        </StoryProjectChapterScope>
+      </Suspense>
     </StoryProjectWorkspaceGate>
   );
 }

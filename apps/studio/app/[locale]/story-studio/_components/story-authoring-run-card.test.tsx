@@ -74,7 +74,7 @@ describe("Story authoring Agent gates", () => {
         status: "proposed",
         agentOsManaged: true,
         proposal: {
-          schemaVersion: "story-patch-v1",
+          schemaVersion: "story-screenplay-proposal-v1",
           title: "The Last Light",
           summary: "A complete interactive-film proposal.",
         },
@@ -129,7 +129,7 @@ describe("Story authoring Agent gates", () => {
     expect(cancel.mutate).toHaveBeenCalledWith("legacy-run");
   });
 
-  it("reviews and submits a Story proposal through the Agent approval callback", async () => {
+  it("requires the exact screenplay review before submitting Agent approval", async () => {
     const onResolve = vi.fn().mockResolvedValue(undefined);
     vi.mocked(useStoryAuthoringRunById).mockReturnValue({
       run: {
@@ -137,7 +137,7 @@ describe("Story authoring Agent gates", () => {
         status: "proposed",
         agentOsManaged: true,
         proposal: {
-          schemaVersion: "story-patch-v1",
+          schemaVersion: "story-screenplay-proposal-v1",
           title: "The Last Light",
           summary: "A complete interactive-film proposal.",
         },
@@ -171,11 +171,16 @@ describe("Story authoring Agent gates", () => {
     expect(region?.querySelector("[role='status'][aria-live='polite']")).not.toBeNull();
     expect(document.activeElement).toBe(title);
 
-    await act(async () => button("apply").click());
+    expect(
+      [...container.querySelectorAll("button")].some((item) => item.textContent === "apply")
+    ).toBe(false);
+    await act(async () => button("reviewScreenplay").click());
+    expect(container.querySelector('[data-testid="proposal-dialog"]')).not.toBeNull();
+    expect(onResolve).not.toHaveBeenCalled();
+    await act(async () => button("dialog-apply").click());
     expect(onResolve).toHaveBeenCalledWith("approve", "apply");
 
-    await act(async () => button("viewAll").click());
-    expect(container.querySelector('[data-testid="proposal-dialog"]')).not.toBeNull();
+    await act(async () => button("reviewScreenplay").click());
     await act(async () => button("dialog-discard").click());
     expect(onResolve).toHaveBeenCalledWith("reject", "discard");
   });

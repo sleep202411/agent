@@ -2414,7 +2414,7 @@
     "authoringRun": {
       "title": {
         "authoring": "正在起草…",
-        "proposed": "起草完成",
+        "proposed": "剧本已完成",
         "applying": "应用中…",
         "failed": "起草失败"
       },
@@ -2429,22 +2429,28 @@
         "foundation": "正在构建故事世界…",
         "structure": "正在搭建叙事结构…",
         "branch": "正在设计故事分支…",
-        "scene": "正在编写故事场景…",
+        "scene": "正在编写完整剧本…",
         "validate": "正在检查故事连续性…",
-        "applying": "正在把草案应用到画布…"
+        "applying": "正在保存剧本并构建故事资产…",
+        "savingScript": "正在将已批准的剧本保存到 Script…",
+        "buildingProduction": "Script 已保存。正在构建情节树、资产规格和分镜…",
+        "finalizingProduction": "情节树、资产规格和分镜已完成。正在收尾…"
       },
-      "applyingHint": "正在把草案应用到画布…",
-      "apply": "应用到画布",
+      "applyingHint": "正在保存剧本并构建故事资产…",
+      "apply": "确认并构建",
+      "savingScript": "正在保存剧本…",
+      "savingScriptHint": "正在记录你的批准并将正式剧本保存到 Script。后续制作会显示在 Agent 动态中。",
       "discard": "丢弃",
       "discarding": "正在丢弃…",
       "failedHint": "起草没能完成，可以重试。",
       "retry": "重试",
       "viewAll": "查看全部",
+      "reviewScreenplay": "审阅完整剧本",
       "proposalLoading": "正在加载故事提案…",
       "proposalUnavailable": "无法加载这份提案。请刷新重试，或丢弃提案以继续。",
       "proposal": {
-        "eyebrow": "故事结构提案",
-        "description": "应用到画布前，请审阅完整的故事结构。",
+        "eyebrow": "剧本初稿",
+        "description": "请审阅完整剧本。你在这里看到的内容会原样写入 Script，再据此构建 Plot Tree。",
         "metrics": {
           "scenes": "场景",
           "branches": "分支",
@@ -2454,7 +2460,7 @@
         "sections": {
           "summary": "故事概览",
           "characters": "角色",
-          "structure": "场景与分支结构",
+          "structure": "剧本场景与分支",
           "productionNotes": "制作说明"
         },
         "untitledScene": "未命名场景",
@@ -2548,19 +2554,104 @@
     "scriptDoc": {
       "placeholder": "写下你的剧本——流水线会从这里读取原文…"
     },
+    "productionConflict": {
+      "ariaLabel": "制作方案冲突",
+      "title": "你的编辑与最新批准方案存在冲突",
+      "description": "请先查看待应用方案，再决定本章是保留当前制作内容，还是采用最新编译版本。",
+      "metadataUnavailable": "服务器尚未返回冲突摘要。请刷新本章后再选择解决方式。",
+      "latestRemovesItem": "最新方案将移除此项目",
+      "assetRemovalSummary": "采用最新方案会归档{name}；如果引用条件允许，保留当前内容会将其保存为本章覆盖项。",
+      "sequenceRemovalSummary": "由于对应的情节节点已不存在，采用最新方案会归档{name}及其片段。",
+      "latestAsset": "最新资产规格 · {name} · {kind}",
+      "latestPrompt": "图片提示词：{prompt}",
+      "latestSequence": "最新序列 · {name}",
+      "latestSequenceSummary": "{duration} 毫秒 · {clips} 个片段 · {cues} 个决策提示点",
+      "keepCurrent": "保留当前内容",
+      "useLatestPlan": "采用最新方案",
+      "removedSequenceCannotKeep": "此情节节点已被移除，因此当前序列不能保留为覆盖项。",
+      "resolved": "制作冲突已解决。",
+      "resolveError": "无法解决制作冲突。",
+      "confirmKeepTitle": "保留当前制作内容？",
+      "confirmLatestTitle": "采用最新批准方案？",
+      "confirmKeepDescription": "当前编辑会成为本章的显式覆盖项；后续方案更新会与这个保留版本比较。",
+      "confirmLatestDescription": "最新编译的制作指令会替换存在冲突的可编辑字段；已有的兼容媒体仍可继续使用。",
+      "confirmRemoveAssetDescription": "最新方案会移除此资产规格。只有在没有活动分镜引用需要它时，系统才会将其归档。",
+      "confirmRemoveSequenceDescription": "最新方案已移除此情节节点；该序列及其制作片段将被归档。",
+      "cancel": "取消",
+      "confirmKeep": "保留当前内容",
+      "confirmLatest": "采用最新方案"
+    },
+    "productionGeneration": {
+      "controlsAria": "为{name}生成媒体",
+      "requestError": "无法开始生成媒体。",
+      "cancelError": "无法取消媒体生成。",
+      "attachmentRetryError": "无法重新附加已生成的媒体。",
+      "statusRefreshError": "无法刷新生成状态。",
+      "cancel": "取消生成",
+      "retry": "重试生成",
+      "retryAttachment": "重试附加媒体",
+      "generate": "生成",
+      "generateAgain": "再次生成",
+      "progressAria": "生成进度",
+      "targetNotCurrent": "请先将此过期制作目标与当前情节同步，再生成媒体。",
+      "status": {
+        "idle": "可使用默认兼容模型生成",
+        "submitting": "正在提交生成…",
+        "created": "正在准备生成…",
+        "inQueue": "正在生成队列中等待…",
+        "inProgress": "正在生成媒体…",
+        "attaching": "媒体已生成 · 正在附加到此制作目标…",
+        "retryingAttachment": "正在重新附加已保存的媒体…",
+        "ready": "生成的媒体已就绪并已选中",
+        "failed": "生成失败",
+        "cancelled": "生成已取消",
+        "expired": "生成已过期",
+        "materializationFailed": "媒体已生成，但无法附加到此目标"
+      }
+    },
     "assetsPage": {
+      "empty": "当前章节还没有制作资产。",
+      "emptyHint": "已批准的故事方案应用后，资产规格会显示在这里。",
+      "logicalHint": "资产规格是稳定、可引用的制作指令；即使没有媒体也可使用。",
+      "generationHint": "打开此页面不会生成媒体，也不会消耗点数。",
+      "count": "{count} 项资产规格",
+      "filterLabel": "按类型筛选资产规格",
+      "loadError": "无法加载资产规格。",
+      "retry": "重试",
+      "imagePrompt": "图片提示词",
+      "kinds": {
+        "character": "角色",
+        "location": "场景",
+        "prop": "道具"
+      },
+      "status": {
+        "current": "当前版本",
+        "stale": "需要复核",
+        "archived": "已归档"
+      },
       "tabs": {
         "all": "全部",
         "character": "角色",
-        "scene": "场景",
+        "location": "场景",
         "prop": "道具"
       }
     },
     "storyboardPage": {
-      "emptyChapter": "本章还没有场景。",
-      "slotEmpty": "待生成",
-      "ready": "已就绪",
-      "story": "剧情"
+      "emptyChapter": "本章还没有分镜序列。",
+      "emptyHint": "已批准的情节编译为制作方案后，序列会显示在这里。",
+      "loadError": "无法加载分镜。",
+      "retry": "重试",
+      "plotNode": "情节节点 {index}",
+      "clipCount": "{count} 个片段",
+      "noClips": "此序列没有片段。",
+      "generationHint": "打开此页面不会生成媒体，也不会消耗点数。准备好后，可在已保存的片段上选择“生成”。",
+      "status": {
+        "current": "当前版本",
+        "stale": "需要复核",
+        "archived": "已归档"
+      },
+      "seconds": "{value} 秒",
+      "options": "选项"
     },
     "canvas": {
       "back": "返回影游工作室",
@@ -2569,7 +2660,14 @@
         "script": "剧本",
         "tree": "情节树",
         "assets": "资产",
-        "storyboard": "分镜"
+        "storyboard": "分镜",
+        "stepAria": "{step}：{status}",
+        "status": {
+          "current": "当前版本",
+          "stale": "需要复核",
+          "missing": "尚未就绪",
+          "unknown": "状态不可用"
+        }
       },
       "sidebar": {
         "navigation": "影游项目导航",
@@ -2825,6 +2923,30 @@
         "eyebrow": "基本信息",
         "title": "基本信息",
         "description": "支撑每个影视分支的前提、梗概、角色与封面；修改会自动保存到草稿。",
+        "profile": {
+          "title": "创作档案",
+          "description": "由所有章节共享的项目级制作约束。",
+          "aspectRatio": "画面比例",
+          "targetRuntime": "目标时长",
+          "visualStyle": "视觉风格",
+          "language": "语言",
+          "notSet": "未设置",
+          "frameProfiles": {
+            "landscape_16_9": "横屏 · 16:9",
+            "portrait_9_16": "竖屏 · 9:16"
+          },
+          "durationPresets": {
+            "short_5_15": "5–15 分钟",
+            "medium_15_30": "15–30 分钟",
+            "long_30_60": "30–60 分钟"
+          },
+          "visualStyles": {
+            "cinematic_realism": "电影写实",
+            "stylized_3d": "风格化 3D",
+            "graphic_novel": "图像小说",
+            "anime_cinematic": "电影感动漫"
+          }
+        },
         "cover": {
           "title": "封面图",
           "description": "本故事的一张静态封面图：既是这里的项目封面，也是播放器标题页的背景，以及已发布作品的分享图。",

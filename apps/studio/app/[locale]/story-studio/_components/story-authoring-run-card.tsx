@@ -9,7 +9,7 @@ import {
   IconLoader2,
   IconSparkles,
 } from "@tabler/icons-react";
-import { isStoryPatchBrief } from "@repo/shared/story-agent";
+import { isStoryPatchBrief, isStoryScreenplayProposal } from "@repo/shared/story-agent";
 import type { AgentOsPendingApproval } from "@/lib/agent-os/api-client";
 import { Button } from "@/components/ui/button";
 import { useComposerGateFocus } from "@/components/agent-os/use-composer-gate-focus";
@@ -104,6 +104,7 @@ export function StoryAuthoringProposalApproval({
     !isStoryPatchBrief(run.proposal)
       ? run.proposal
       : null;
+  const requiresScreenplayReview = proposal ? isStoryScreenplayProposal(proposal) : false;
   const busy = agentBusy || pendingDecision !== null;
   const titleId = useId();
   const titleRef = useComposerGateFocus<HTMLParagraphElement>(
@@ -203,31 +204,43 @@ export function StoryAuthoringProposalApproval({
           <p className="mt-2 line-clamp-4 text-[11px] leading-5 text-white/88">{summary}</p>
         ) : null}
 
-        <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-2">
+        {requiresScreenplayReview ? (
           <Button
             type="button"
-            variant="quiet"
-            className="h-9 min-w-0 px-2 text-xs font-medium"
+            className="mt-3 h-9 w-full min-w-0 px-2 text-xs font-medium"
             disabled={busy}
             onClick={() => setProposalOpen(true)}
           >
             <IconListDetails className="size-3.5" stroke={1.8} />
-            {t("viewAll")}
+            {t("reviewScreenplay")}
           </Button>
-          <Button
-            type="button"
-            className="h-9 min-w-0 px-2 text-xs font-medium"
-            disabled={busy}
-            onClick={() => void resolve("approve")}
-          >
-            {pendingDecision === "approve" ? (
-              <IconLoader2 className="size-3.5 animate-spin" />
-            ) : (
-              <IconCheck className="size-3.5" stroke={1.9} />
-            )}
-            {t("apply")}
-          </Button>
-        </div>
+        ) : (
+          <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-2">
+            <Button
+              type="button"
+              variant="quiet"
+              className="h-9 min-w-0 px-2 text-xs font-medium"
+              disabled={busy}
+              onClick={() => setProposalOpen(true)}
+            >
+              <IconListDetails className="size-3.5" stroke={1.8} />
+              {t("viewAll")}
+            </Button>
+            <Button
+              type="button"
+              className="h-9 min-w-0 px-2 text-xs font-medium"
+              disabled={busy}
+              onClick={() => void resolve("approve")}
+            >
+              {pendingDecision === "approve" ? (
+                <IconLoader2 className="size-3.5 animate-spin" />
+              ) : (
+                <IconCheck className="size-3.5" stroke={1.9} />
+              )}
+              {t("apply")}
+            </Button>
+          </div>
+        )}
         <button
           type="button"
           disabled={busy}

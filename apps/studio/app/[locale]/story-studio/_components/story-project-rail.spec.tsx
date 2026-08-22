@@ -1,0 +1,101 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
+import { StoryProjectRail } from "./story-project-rail";
+
+const navigation = vi.hoisted(() => ({
+  segment: "script",
+  push: vi.fn(),
+}));
+
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+}));
+
+vi.mock("next/navigation", () => ({
+  useSelectedLayoutSegment: () => navigation.segment,
+}));
+
+vi.mock("@/i18n/navigation", () => ({
+  Link: ({ href, children, ...props }: React.ComponentProps<"a">) => (
+    <a href={String(href)} {...props}>
+      {children}
+    </a>
+  ),
+  useRouter: () => ({ push: navigation.push }),
+}));
+
+describe("StoryProjectRail", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    navigation.segment = "script";
+    navigation.push.mockReset();
+    useStoryProjectUiStore.setState({
+      sidePanel: null,
+      shareOpen: false,
+      chapterMenuOpen: false,
+      chapterRailSlot: null,
+    });
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    await act(async () => root.unmount());
+    container.remove();
+  });
+
+  it("keeps every destination actionable and places Overview first", async () => {
+    await renderRail();
+
+    const items = Array.from(
+      container.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>("nav a, nav button")
+    );
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      "sidebar.world",
+      "sidebar.catalog",
+      "chapters.action",
+      "sidebar.media",
+      "share",
+    ]);
+    expect(items.every((item) => !(item instanceof HTMLButtonElement) || !item.disabled)).toBe(
+      true
+    );
+    expect(items.every((item) => item.getAttribute("aria-disabled") !== "true")).toBe(true);
+  });
+
+  it("routes canvas-owned destinations and opens their requested surface", async () => {
+    await renderRail();
+    const byText = (label: string) =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.textContent?.trim() === label
+      );
+
+    await act(async () => byText("sidebar.world")?.click());
+    expect(useStoryProjectUiStore.getState().sidePanel).toBe("world");
+    expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
+
+    await act(async () => byText("chapters.action")?.click());
+    expect(useStoryProjectUiStore.getState().chapterMenuOpen).toBe(true);
+    expect(useStoryProjectUiStore.getState().sidePanel).toBeNull();
+    expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
+
+    await act(async () => byText("share")?.click());
+    expect(useStoryProjectUiStore.getState().shareOpen).toBe(true);
+    expect(useStoryProjectUiStore.getState().chapterMenuOpen).toBe(false);
+    expect(navigation.push).toHaveBeenLastCalledWith("/story-studio/projects/project-1/canvas");
+  });
+
+  async function renderRail() {
+    await act(async () => {
+      root.render(<StoryProjectRail projectId="project-1" />);
+    });
+  }
+});

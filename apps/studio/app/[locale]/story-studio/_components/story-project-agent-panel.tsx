@@ -1,13 +1,17 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
-import { STORY_AUTHORING_STAGE_KEYS } from "@repo/shared/story-agent";
+import { isStoryScreenplayProposal, STORY_AUTHORING_STAGE_KEYS } from "@repo/shared/story-agent";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
+import { useWorkspace } from "@/app/_components/workspace-context";
+import { getStoryProductionState, storyProductionKeys } from "@/lib/story-production-api";
 import { cn } from "@/lib/utils";
 import { StoryAuthoringComposer, StoryAuthoringProposalApproval } from "./story-authoring-run-card";
 import { useStoryAuthoringRun } from "./use-story-authoring-run";
+import { storyApplyingActivityKey } from "./story-production-activity";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 /** Steps that carry the project shell; playtest and the legacy workbench own their screens. */
@@ -22,8 +26,26 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
   const queryClient = useQueryClient();
   const t = useTranslations("storyStudio.authoringRun");
+  const { activeWorkspace } = useWorkspace();
+  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const { run: authoringRun } = useStoryAuthoringRun(projectId, activeChapterId);
+  const applyingRunId = authoringRun?.status === "applying" ? authoringRun.id : null;
+  const productionQuery = useQuery({
+    queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
+    queryFn: ({ signal }) =>
+      getStoryProductionState(workspaceId as string, projectId, activeChapterId as string, signal),
+    enabled: Boolean(workspaceId && activeChapterId),
+    refetchInterval: authoringRun?.status === "applying" ? 1500 : false,
+    refetchIntervalInBackground: true,
+    retry: false,
+  });
+  useEffect(() => {
+    if (!applyingRunId || !workspaceId || !activeChapterId) return;
+    void queryClient.invalidateQueries({
+      queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
+    });
+  }, [activeChapterId, applyingRunId, projectId, queryClient, workspaceId]);
   // On phones the panel IS the chat view: full-width when active, hidden (but
   // mounted, so the conversation survives) while a step page shows.
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
@@ -41,7 +63,17 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
           externalJobId: authoringRun.id,
         }
       : authoringRun?.agentOsManaged && authoringRun.status === "applying"
-        ? { label: t("activity.applying"), externalJobId: authoringRun.id }
+        ? {
+            label: t(
+              `activity.${storyApplyingActivityKey(
+                productionQuery.data ?? null,
+                isStoryScreenplayProposal(authoringRun.proposal)
+                  ? authoringRun.proposal.baseScriptSequence
+                  : null
+              )}`
+            ),
+            externalJobId: authoringRun.id,
+          }
         : null;
 
   return (

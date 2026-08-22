@@ -1,7 +1,7 @@
 "use client";
 
 import { IconGitBranch, IconWorld } from "@tabler/icons-react";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { useMemo } from "react";
@@ -9,6 +9,7 @@ import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { getStoryWorkbench, type StoryGraphNode } from "@/lib/story-projects-api";
+import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 const CATALOG_SEGMENTS = new Set(["canvas", "script", "assets", "storyboard"]);
 
@@ -27,117 +28,109 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   const activeNodeId = searchParams.get("node");
   const { activeWorkspace } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
+  const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   // The dock only mounts this panel when catalog is the active tenant, so
   // visibility here is just: is the catalog meaningful on this segment?
   const enabled = CATALOG_SEGMENTS.has(segment ?? "");
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "script-workbench", workspaceId, projectId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId) && enabled,
+    queryKey: ["story-studio", "chapter-workbench", workspaceId, projectId, activeChapterId],
+    queryFn: () => getStoryWorkbench(workspaceId as string, projectId, activeChapterId as string),
+    enabled: Boolean(workspaceId && activeChapterId) && enabled,
     retry: false,
   });
-  const chapters = workbenchQuery.data?.chapters ?? [];
-  const chapterQueries = useQueries({
-    queries: chapters.map((chapter) => ({
-      queryKey: ["story-studio", "chapter-workbench", workspaceId, projectId, chapter.id],
-      queryFn: () => getStoryWorkbench(workspaceId as string, projectId, chapter.id),
-      enabled: Boolean(workspaceId) && enabled,
-      retry: false,
-    })),
-  });
+  const chapter = workbenchQuery.data?.chapter ?? null;
+  const nodes = useMemo(
+    () => workbenchQuery.data?.draft.content.graph.nodes ?? [],
+    [workbenchQuery.data?.draft.content.graph.nodes]
+  );
 
-  // nodeId → display name across every loaded chapter, so choice targets read
+  // nodeId → display name within the selected chapter, so choice targets read
   // as scene names instead of raw ids.
   const nodeNames = useMemo(() => {
     const names = new Map<string, string>();
-    for (const query of chapterQueries) {
-      for (const node of query.data?.draft.content.graph.nodes ?? []) {
-        names.set(node.nodeId, nodeTitle(node));
-      }
+    for (const node of nodes) {
+      names.set(node.nodeId, nodeTitle(node));
     }
     return names;
-  }, [chapterQueries]);
+  }, [nodes]);
 
   if (!enabled) return null;
 
   const rowHref = (nodeId: string) =>
-    `/story-studio/projects/${projectId}/storyboard?node=${nodeId}`;
+    `/story-studio/projects/${projectId}/storyboard?chapter=${encodeURIComponent(
+      activeChapterId as string
+    )}&node=${encodeURIComponent(nodeId)}`;
+  let sceneNumber = 0;
+  const catalogRows = nodes.map((node) => ({
+    node,
+    sceneNumber: node.kind === "clip" ? ++sceneNumber : null,
+  }));
 
   return (
     <nav
       aria-label={t("sidebar.catalog")}
       className="w-64 shrink-0 overflow-y-auto border-r border-white/8 bg-[#0C0C0D] px-3 py-5 max-md:hidden"
     >
-      <p className="px-2 text-[11px] font-semibold tracking-[0.14em] text-white/30 uppercase">
+      <p className="px-2 text-[11px] font-semibold tracking-[0.14em] text-white uppercase">
         {t("sidebar.catalog")}
       </p>
-      {chapters.map((chapter, index) => {
-        const nodes = chapterQueries[index]?.data?.draft.content.graph.nodes ?? [];
-        let sceneNumber = 0;
-        return (
-          <div key={chapter.id} className="mt-4">
-            {chapters.length > 1 ? (
-              <p className="px-2 text-xs font-semibold text-white/56">
-                {chapter.rank + 1}. {chapter.title}
-              </p>
-            ) : null}
-            <div className="mt-1 space-y-0.5">
-              {nodes.map((node) => {
-                const isEnding = node.exit.kind === "auto" && node.exit.nextNodeId === null;
-                if (node.kind === "clip") sceneNumber += 1;
-                return (
-                  <div key={node.nodeId}>
-                    <Link
-                      href={rowHref(node.nodeId)}
-                      className={cn(
-                        "flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition",
-                        activeNodeId === node.nodeId
-                          ? "bg-white/[0.08] text-white"
-                          : "text-white/52 hover:bg-white/[0.04] hover:text-white/80"
-                      )}
-                    >
-                      {node.kind === "clip" ? (
-                        <span className="shrink-0 tabular-nums text-white/30">{sceneNumber}.</span>
-                      ) : (
-                        <IconWorld className="size-3.5 shrink-0 text-white/30" />
-                      )}
-                      <span className="truncate">{nodeTitle(node)}</span>
-                      {isEnding ? (
-                        <span className="ml-auto shrink-0 rounded bg-red-400/12 px-1.5 py-px text-[9px] font-semibold tracking-wide text-red-300/75">
-                          {t("catalogPanel.end")}
-                        </span>
-                      ) : null}
-                    </Link>
-                    {node.exit.kind === "choice" ? (
-                      <div className="mt-0.5 mb-1 ml-3 border-l border-white/8 pl-2">
-                        <p className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-white/38">
-                          <IconGitBranch className="size-3 shrink-0" />
-                          <span className="truncate">
-                            {localized(node.exit.prompt, locale) || t("catalogPanel.choice")}
-                          </span>
-                        </p>
-                        {node.exit.choices.map((choice) => (
-                          <Link
-                            key={choice.choiceId}
-                            href={rowHref(choice.nextNodeId)}
-                            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white/44 transition hover:bg-white/[0.04] hover:text-white/78"
-                          >
-                            <span className="truncate">{localized(choice.label, locale)}</span>
-                            <span className="shrink-0 text-white/24">
-                              → {nodeNames.get(choice.nextNodeId) ?? choice.nextNodeId}
-                            </span>
-                          </Link>
-                        ))}
-                      </div>
+      {chapter ? (
+        <div key={chapter.id} className="mt-4">
+          <div className="space-y-0.5">
+            {catalogRows.map(({ node, sceneNumber: rowSceneNumber }) => {
+              const isEnding = node.exit.kind === "auto" && node.exit.nextNodeId === null;
+              return (
+                <div key={node.nodeId}>
+                  <Link
+                    href={rowHref(node.nodeId)}
+                    className={cn(
+                      "flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs transition",
+                      activeNodeId === node.nodeId
+                        ? "bg-white/[0.08] text-white"
+                        : "text-white hover:bg-white/[0.07]"
+                    )}
+                  >
+                    {node.kind === "clip" ? (
+                      <span className="shrink-0 tabular-nums text-white/70">{rowSceneNumber}.</span>
+                    ) : (
+                      <IconWorld className="size-3.5 shrink-0 text-white/65" />
+                    )}
+                    <span className="truncate">{nodeTitle(node)}</span>
+                    {isEnding ? (
+                      <span className="ml-auto shrink-0 rounded bg-red-400/12 px-1.5 py-px text-[9px] font-semibold tracking-wide text-red-300/75">
+                        {t("catalogPanel.end")}
+                      </span>
                     ) : null}
-                  </div>
-                );
-              })}
-            </div>
+                  </Link>
+                  {node.exit.kind === "choice" ? (
+                    <div className="mt-0.5 mb-1 ml-3 border-l border-white/20 pl-2">
+                      <p className="flex items-center gap-1.5 px-2 py-1 text-[11px] text-white/80">
+                        <IconGitBranch className="size-3 shrink-0" />
+                        <span className="truncate">
+                          {localized(node.exit.prompt, locale) || t("catalogPanel.choice")}
+                        </span>
+                      </p>
+                      {node.exit.choices.map((choice) => (
+                        <Link
+                          key={choice.choiceId}
+                          href={rowHref(choice.nextNodeId)}
+                          className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white transition hover:bg-white/[0.07]"
+                        >
+                          <span className="truncate">{localized(choice.label, locale)}</span>
+                          <span className="shrink-0 text-white/70">
+                            → {nodeNames.get(choice.nextNodeId) ?? choice.nextNodeId}
+                          </span>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
-        );
-      })}
+        </div>
+      ) : null}
     </nav>
   );
 }

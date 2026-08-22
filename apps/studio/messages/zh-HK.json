@@ -2414,7 +2414,7 @@
     "authoringRun": {
       "title": {
         "authoring": "正在起草…",
-        "proposed": "起草完成",
+        "proposed": "劇本已完成",
         "applying": "套用中…",
         "failed": "起草失敗"
       },
@@ -2429,22 +2429,28 @@
         "foundation": "正在構建故事世界…",
         "structure": "正在搭建敘事結構…",
         "branch": "正在設計故事分支…",
-        "scene": "正在編寫故事場景…",
+        "scene": "正在編寫完整劇本…",
         "validate": "正在檢查故事連續性…",
-        "applying": "正在把草案套用到畫布…"
+        "applying": "正在儲存劇本並構建故事資產…",
+        "savingScript": "正在將已批准的劇本儲存到 Script…",
+        "buildingProduction": "Script 已儲存。正在構建情節樹、資產規格和分鏡…",
+        "finalizingProduction": "情節樹、資產規格和分鏡已完成。正在收尾…"
       },
-      "applyingHint": "正在把草案套用到畫布…",
-      "apply": "套用到畫布",
+      "applyingHint": "正在儲存劇本並構建故事資產…",
+      "apply": "確認並構建",
+      "savingScript": "正在儲存劇本…",
+      "savingScriptHint": "正在記錄你的批准並將正式劇本儲存到 Script。後續製作會顯示在 Agent 動態中。",
       "discard": "丟棄",
       "discarding": "正在丟棄…",
       "failedHint": "起草未能完成，可以重試。",
       "retry": "重試",
       "viewAll": "查看全部",
+      "reviewScreenplay": "審閱完整劇本",
       "proposalLoading": "正在載入故事提案…",
       "proposalUnavailable": "無法載入這份提案。請重新整理，或丟棄提案以繼續。",
       "proposal": {
-        "eyebrow": "故事結構提案",
-        "description": "套用到畫布前，請審閱完整的故事結構。",
+        "eyebrow": "劇本初稿",
+        "description": "請審閱完整劇本。你在這裡看到的內容會原樣寫入 Script，再據此構建 Plot Tree。",
         "metrics": {
           "scenes": "場景",
           "branches": "分支",
@@ -2454,7 +2460,7 @@
         "sections": {
           "summary": "故事概覽",
           "characters": "角色",
-          "structure": "場景與分支結構",
+          "structure": "劇本場景與分支",
           "productionNotes": "製作說明"
         },
         "untitledScene": "未命名場景",
@@ -2548,19 +2554,104 @@
     "scriptDoc": {
       "placeholder": "寫下你的劇本——流水線會從這裡讀取原文…"
     },
+    "productionConflict": {
+      "ariaLabel": "製作方案衝突",
+      "title": "你的編輯與最新批准方案存在衝突",
+      "description": "請先查看待套用方案，再決定本章是保留目前製作內容，還是採用最新編譯版本。",
+      "metadataUnavailable": "伺服器尚未傳回衝突摘要。請重新整理本章後再選擇解決方式。",
+      "latestRemovesItem": "最新方案將移除此項目",
+      "assetRemovalSummary": "採用最新方案會封存{name}；如果引用條件允許，保留目前內容會將其儲存為本章覆寫項。",
+      "sequenceRemovalSummary": "由於對應的情節節點已不存在，採用最新方案會封存{name}及其片段。",
+      "latestAsset": "最新資產規格 · {name} · {kind}",
+      "latestPrompt": "圖片提示詞：{prompt}",
+      "latestSequence": "最新序列 · {name}",
+      "latestSequenceSummary": "{duration} 毫秒 · {clips} 個片段 · {cues} 個決策提示點",
+      "keepCurrent": "保留目前內容",
+      "useLatestPlan": "採用最新方案",
+      "removedSequenceCannotKeep": "此情節節點已被移除，因此目前序列不能保留為覆寫項。",
+      "resolved": "製作衝突已解決。",
+      "resolveError": "無法解決製作衝突。",
+      "confirmKeepTitle": "保留目前製作內容？",
+      "confirmLatestTitle": "採用最新批准方案？",
+      "confirmKeepDescription": "目前編輯會成為本章的明確覆寫項；後續方案更新會與這個保留版本比較。",
+      "confirmLatestDescription": "最新編譯的製作指令會取代存在衝突的可編輯欄位；已有的相容媒體仍可繼續使用。",
+      "confirmRemoveAssetDescription": "最新方案會移除此資產規格。只有在沒有有效分鏡引用需要它時，系統才會將其封存。",
+      "confirmRemoveSequenceDescription": "最新方案已移除此情節節點；該序列及其製作片段將被封存。",
+      "cancel": "取消",
+      "confirmKeep": "保留目前內容",
+      "confirmLatest": "採用最新方案"
+    },
+    "productionGeneration": {
+      "controlsAria": "為{name}生成媒體",
+      "requestError": "無法開始生成媒體。",
+      "cancelError": "無法取消媒體生成。",
+      "attachmentRetryError": "無法重新附加已生成的媒體。",
+      "statusRefreshError": "無法重新整理生成狀態。",
+      "cancel": "取消生成",
+      "retry": "重試生成",
+      "retryAttachment": "重試附加媒體",
+      "generate": "生成",
+      "generateAgain": "再次生成",
+      "progressAria": "生成進度",
+      "targetNotCurrent": "請先將此過期製作目標與目前情節同步，再生成媒體。",
+      "status": {
+        "idle": "可使用預設相容模型生成",
+        "submitting": "正在提交生成…",
+        "created": "正在準備生成…",
+        "inQueue": "正在生成佇列中等待…",
+        "inProgress": "正在生成媒體…",
+        "attaching": "媒體已生成 · 正在附加到此製作目標…",
+        "retryingAttachment": "正在重新附加已儲存的媒體…",
+        "ready": "生成的媒體已就緒並已選取",
+        "failed": "生成失敗",
+        "cancelled": "生成已取消",
+        "expired": "生成已過期",
+        "materializationFailed": "媒體已生成，但無法附加到此目標"
+      }
+    },
     "assetsPage": {
+      "empty": "目前章節還沒有製作資產。",
+      "emptyHint": "已批准的故事方案套用後，資產規格會顯示在這裡。",
+      "logicalHint": "資產規格是穩定、可引用的製作指令；即使沒有媒體也可使用。",
+      "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。",
+      "count": "{count} 項資產規格",
+      "filterLabel": "按類型篩選資產規格",
+      "loadError": "無法載入資產規格。",
+      "retry": "重試",
+      "imagePrompt": "圖片提示詞",
+      "kinds": {
+        "character": "角色",
+        "location": "場景",
+        "prop": "道具"
+      },
+      "status": {
+        "current": "目前版本",
+        "stale": "需要覆核",
+        "archived": "已封存"
+      },
       "tabs": {
         "all": "全部",
         "character": "角色",
-        "scene": "場景",
+        "location": "場景",
         "prop": "道具"
       }
     },
     "storyboardPage": {
-      "emptyChapter": "本章還沒有場景。",
-      "slotEmpty": "待生成",
-      "ready": "已就緒",
-      "story": "劇情"
+      "emptyChapter": "本章還沒有分鏡序列。",
+      "emptyHint": "已批准的情節編譯為製作方案後，序列會顯示在這裡。",
+      "loadError": "無法載入分鏡。",
+      "retry": "重試",
+      "plotNode": "情節節點 {index}",
+      "clipCount": "{count} 個片段",
+      "noClips": "此序列沒有片段。",
+      "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。準備好後，可在已儲存的片段上選取「生成」。",
+      "status": {
+        "current": "目前版本",
+        "stale": "需要覆核",
+        "archived": "已封存"
+      },
+      "seconds": "{value} 秒",
+      "options": "選項"
     },
     "canvas": {
       "back": "返回影遊工作室",
@@ -2569,7 +2660,14 @@
         "script": "劇本",
         "tree": "情節樹",
         "assets": "資產",
-        "storyboard": "分鏡"
+        "storyboard": "分鏡",
+        "stepAria": "{step}：{status}",
+        "status": {
+          "current": "目前版本",
+          "stale": "需要覆核",
+          "missing": "尚未就緒",
+          "unknown": "狀態不可用"
+        }
       },
       "sidebar": {
         "navigation": "影遊專案導覽",
@@ -2825,6 +2923,30 @@
         "eyebrow": "基本資訊",
         "title": "基本資訊",
         "description": "支撐每個影視分支的前提、梗概、角色與封面；修改會自動儲存到草稿。",
+        "profile": {
+          "title": "創作檔案",
+          "description": "由所有章節共用的項目級製作約束。",
+          "aspectRatio": "畫面比例",
+          "targetRuntime": "目標時長",
+          "visualStyle": "視覺風格",
+          "language": "語言",
+          "notSet": "未設定",
+          "frameProfiles": {
+            "landscape_16_9": "橫向 · 16:9",
+            "portrait_9_16": "直向 · 9:16"
+          },
+          "durationPresets": {
+            "short_5_15": "5–15 分鐘",
+            "medium_15_30": "15–30 分鐘",
+            "long_30_60": "30–60 分鐘"
+          },
+          "visualStyles": {
+            "cinematic_realism": "電影寫實",
+            "stylized_3d": "風格化 3D",
+            "graphic_novel": "圖像小說",
+            "anime_cinematic": "電影感動漫"
+          }
+        },
         "cover": {
           "title": "封面圖",
           "description": "本故事的一張靜態封面圖：既是這裡的項目封面，也是播放器標題頁的背景，以及已發布作品的分享圖。",

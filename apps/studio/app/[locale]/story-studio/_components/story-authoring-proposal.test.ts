@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { StoryPatchProposal } from "@repo/shared/story-agent";
+import type { StoryPatchProposal, StoryScreenplayProposal } from "@repo/shared/story-agent";
 import { storyAuthoringProposalReview } from "./story-authoring-proposal";
 
 const OPERATION_ID = "00000000-0000-4000-8000-000000000001";
@@ -69,6 +69,52 @@ describe("storyAuthoringProposalReview", () => {
       logline: "A courier relives one impossible night.",
       metrics: { scenes: 2, branches: 2, endings: 1, interactions: 0 },
       scenes: [{ nodeId: "opening" }, { nodeId: "ending" }],
+    });
+  });
+
+  it("projects the screenplay itself before any Plot Tree operations exist", () => {
+    const proposal = {
+      schemaVersion: "story-screenplay-proposal-v1",
+      draftSchemaVersion: "interactive-story-draft-v1",
+      baseDraftRevision: 0,
+      baseContentHash: "0".repeat(64),
+      baseLayoutRevision: 0,
+      baseScriptDocumentId: null,
+      baseScriptSequence: 0,
+      baseScriptHash: "1".repeat(64),
+      title: "The Order",
+      summary: "A one-scene screenplay.",
+      screenplay: {
+        schemaVersion: "interactive-screenplay-v1",
+        storyLanguage: "en-US",
+        title: "The Order",
+        logline: "A sealed order changes the city.",
+        synopsis: "One guard chooses between duty and mercy.",
+        characters: [],
+        entrySceneId: "gate",
+        scenes: [
+          {
+            nodeId: "gate",
+            clipKey: "GATE",
+            heading: "EXT. CITY GATE – NIGHT",
+            beat: "The order is opened.",
+            action: "The guard opens the order under the rain.",
+            dialogue: [{ characterId: null, speaker: "GUARD", text: "Read it." }],
+            exit: { kind: "auto", nextNodeId: null },
+          },
+        ],
+      },
+    } as StoryScreenplayProposal;
+
+    expect(storyAuthoringProposalReview(proposal)).toMatchObject({
+      logline: "A sealed order changes the city.",
+      metrics: { scenes: 1, endings: 1 },
+      scenes: [
+        {
+          nodeId: "gate",
+          description: "EXT. CITY GATE – NIGHT\n\nThe guard opens the order under the rain.",
+        },
+      ],
     });
   });
 });

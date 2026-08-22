@@ -15,6 +15,7 @@ import { ensureStoryScriptDocument } from "@/lib/collab/projects-api";
 import { RICH_TEXT_DOC_ROOT_SCHEMA } from "@/lib/collab/protocol";
 import { useCollabDoc } from "@/lib/collab/use-collab-doc";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
+import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 /**
  * Script step — free-form rich-text writing. The script is the pipeline's
@@ -30,19 +31,20 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
   const collabUser = useMemo(() => toCollabUser(user), [user]);
   const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
   const workspaceId = activeWorkspace?.id ?? null;
+  const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "script-workbench", workspaceId, projectId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
+    queryKey: ["story-studio", "script-workbench", workspaceId, projectId, activeChapterId],
+    queryFn: () => getStoryWorkbench(workspaceId as string, projectId, activeChapterId as string),
+    enabled: Boolean(workspaceId && activeChapterId),
     retry: false,
   });
   const canEdit = workbenchQuery.data?.project.capabilities.includes("story.edit") ?? false;
 
   const documentQuery = useQuery({
-    queryKey: ["story-studio", "script-document", projectId],
-    queryFn: () => ensureStoryScriptDocument(projectId),
-    enabled: Boolean(workspaceId),
+    queryKey: ["story-studio", "script-document", projectId, activeChapterId],
+    queryFn: () => ensureStoryScriptDocument(projectId, activeChapterId as string),
+    enabled: Boolean(workspaceId && activeChapterId),
     retry: false,
   });
   const { doc, status: connStatus } = useCollabDoc(
@@ -56,7 +58,7 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
       <div className="relative min-h-0 flex-1 overflow-y-auto">
         {documentQuery.isError ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-sm text-white/46">{projectT("documentOpenError")}</p>
+            <p className="text-sm text-white/72">{projectT("documentOpenError")}</p>
           </div>
         ) : doc ? (
           <ScriptEditor
@@ -67,7 +69,7 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
           />
         ) : null}
         {doc && connStatus !== "synced" && (
-          <span className="pointer-events-none absolute right-6 bottom-4 text-xs text-white/38">
+          <span className="pointer-events-none absolute right-6 bottom-4 text-xs text-white/62">
             {connStatus === "offline" ? projectT("offlineSaved") : projectT("connecting")}
           </span>
         )}
@@ -107,7 +109,7 @@ function ScriptEditor({
             "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-0.5",
             "[&_code]:rounded [&_code]:bg-white/[0.08] [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[13px]",
             "[&_hr]:my-6 [&_hr]:border-white/10",
-            "[&_.is-editor-empty:first-child]:before:pointer-events-none [&_.is-editor-empty:first-child]:before:float-left [&_.is-editor-empty:first-child]:before:h-0 [&_.is-editor-empty:first-child]:before:text-white/28 [&_.is-editor-empty:first-child]:before:content-[attr(data-placeholder)]",
+            "[&_.is-editor-empty:first-child]:before:pointer-events-none [&_.is-editor-empty:first-child]:before:float-left [&_.is-editor-empty:first-child]:before:h-0 [&_.is-editor-empty:first-child]:before:text-white/62 [&_.is-editor-empty:first-child]:before:content-[attr(data-placeholder)]",
           ].join(" "),
         },
       },

@@ -3,7 +3,7 @@ import { StoryStoryboardView } from "../../../_components/story-storyboard-view"
 
 export const metadata: Metadata = {
   title: "Storyboard · Interactive Film Studio",
-  description: "Per-scene production status: prose and the current video.",
+  description: "Edit chapter-local Plot sequences, clips, cues, and Asset bindings.",
 };
 
 export default async function StoryProjectStoryboardPage({

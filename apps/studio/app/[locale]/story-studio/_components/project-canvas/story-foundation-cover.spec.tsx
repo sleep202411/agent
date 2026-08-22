@@ -8,9 +8,13 @@ import type {
   MediaAssetSummary,
   StoryCandidateAsset,
 } from "@/lib/story-projects-api";
+import enUsMessages from "../../../../../messages/en-US.json";
+import zhCnMessages from "../../../../../messages/zh-CN.json";
+import zhHkMessages from "../../../../../messages/zh-HK.json";
 import { StoryProjectWorldPanel } from "./story-project-world-panel";
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
 
@@ -45,6 +49,41 @@ describe("film foundation cover authoring", () => {
     expect(container.textContent ?? "").toContain("filmFoundation.cover.empty");
     const choose = buttonByText("filmFoundation.cover.choose");
     expect(choose.disabled).toBe(false);
+  });
+
+  it("shows the project-level creative profile in Overview", async () => {
+    await render({ cover: null });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("aspectRatio");
+    expect(text).toContain("frameProfiles.landscape_16_9");
+    expect(text).toContain("durationPresets.medium_15_30");
+    expect(text).toContain("visualStyles.graphic_novel");
+    expect(text).toContain("en-US");
+  });
+
+  it("labels the shared project runtime presets in minutes in every locale", () => {
+    const profiles = [enUsMessages, zhCnMessages, zhHkMessages].map(
+      (messages) => messages.storyStudio.canvas.filmFoundation.profile.durationPresets
+    );
+
+    expect(profiles).toEqual([
+      {
+        short_5_15: "5–15 minutes",
+        medium_15_30: "15–30 minutes",
+        long_30_60: "30–60 minutes",
+      },
+      {
+        short_5_15: "5–15 分钟",
+        medium_15_30: "15–30 分钟",
+        long_30_60: "30–60 分钟",
+      },
+      {
+        short_5_15: "5–15 分鐘",
+        medium_15_30: "15–30 分鐘",
+        long_30_60: "30–60 分鐘",
+      },
+    ]);
   });
 
   it("renders a set cover image and switches the action to replace", async () => {
@@ -114,6 +153,12 @@ describe("film foundation cover authoring", () => {
     onSelectCandidate?: (candidate: StoryCandidateAsset) => Promise<void>;
   }) {
     const props: ComponentProps<typeof StoryProjectWorldPanel> = {
+      project: {
+        frameProfile: "landscape_16_9",
+        durationPreset: "medium_15_30",
+        visualStyle: "graphic_novel",
+        defaultLocale: "en-US",
+      },
       content: emptyDraft(),
       canEdit: true,
       coverMedia: {

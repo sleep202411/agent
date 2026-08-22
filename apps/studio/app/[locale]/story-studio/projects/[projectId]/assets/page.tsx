@@ -3,9 +3,14 @@ import { StoryAssetsGallery } from "../../../_components/story-assets-gallery";
 
 export const metadata: Metadata = {
   title: "Assets · Interactive Film Studio",
-  description: "Manage characters, scenes, and props.",
+  description: "Manage chapter-local logical Asset Specs and selected media.",
 };
 
-export default function StoryProjectAssetsPage() {
-  return <StoryAssetsGallery />;
+export default async function StoryProjectAssetsPage({
+  params,
+}: {
+  params: Promise<{ projectId: string }>;
+}) {
+  const { projectId } = await params;
+  return <StoryAssetsGallery projectId={projectId} />;
 }
