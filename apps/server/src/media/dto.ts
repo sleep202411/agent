@@ -25,7 +25,6 @@ import { z } from 'zod';
 
 export const UploadKindSchema = z.enum([
   'episode_video',
-  'story_clip_video',
   'episode_cover',
   'ip_banner',
   'news_cover',
@@ -72,10 +71,6 @@ export interface CreateUploadUrlResponseDto {
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
   /** ISO; client re-requests a fresh URL if it'll lapse mid-upload. */
   expiresAt: string;
-  /** Present only for durable Story clip staging uploads. */
-  uploadSessionId?: string;
-  /** Pre-created uploading asset ledger; present only for Story clips. */
-  mediaAssetId?: string;
 }
 
 /**
@@ -99,8 +94,6 @@ export const ConfirmUploadSchema = z.object({
       crewId: z.string().trim().min(1).max(64).optional(),
     })
     .optional(),
-  /** Required for story_clip_video; omitted by stateless generic uploads. */
-  uploadSessionId: z.string().uuid().optional(),
 });
 export type ConfirmUploadInputDto = z.infer<typeof ConfirmUploadSchema>;
 
@@ -116,8 +109,6 @@ export interface ConfirmUploadResponseDto {
   /** Final immutable key for verified images; otherwise the issued key. */
   storageKey: string;
   provider: 'azure_blob' | 'aliyun_oss' | 's3_compatible';
-  /** Present for durable Story clip sessions. */
-  uploadSessionId?: string;
   /** Story staging assets are intentionally unreadable until async finalize. */
   url: string | null;
 }

@@ -160,7 +160,6 @@ function serviceFixture() {
     } as never,
     {} as never,
     readiness as never,
-    {} as never,
     workspacePermissions as never,
     uploadedImages as never,
     mediaFacts as never,

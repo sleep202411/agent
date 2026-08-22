@@ -101,6 +101,7 @@ import {
   type StoryScriptSourceSnapshot,
 } from './story-script-stage';
 import { StoryProductionPlanService } from './story-production-plan.service';
+import { reconcileStoryTimelinesWithDraft } from './story-timeline-reconcile';
 
 const RUN_INCLUDE = Prisma.validator<Prisma.StoryAgentRunInclude>()({
   activeWriteState: true,
@@ -2118,6 +2119,15 @@ export class StoryAgentRunService {
         if (updatedDraft.count !== 1) {
           throw new StoryAgentCasLostError('draft');
         }
+        // Plot tree and storyboard stay 1:1 on save: nodes removed by this
+        // apply archive their sequences immediately.
+        await reconcileStoryTimelinesWithDraft(
+          tx,
+          run.storyProjectId,
+          mergedGlobalDraft as unknown as {
+            graph: { nodes: Array<{ kind: string; nodeId: string }> };
+          },
+        );
         await tx.storyChapter.update({
           where: { id: run.storyChapterId },
           data: {

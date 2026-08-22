@@ -1,39 +1,6 @@
 import { z } from 'zod';
 import { canonicalJsonHash } from './canonical-json';
 
-const StoryVideoSelectionMutationFields = {
-  // Optional for the same reason the Build tokens are: binding a clip is a
-  // routine authoring act, and making every caller first read a version number
-  // to perform it buys nothing a re-bind would not fix.
-  expectedSelectionVersion: z.number().int().nonnegative().optional(),
-  assetId: z.string().uuid().nullable(),
-  variantId: z.string().uuid().nullable(),
-} as const;
-
-function validateSelectedAsset(
-  input: { assetId: string | null; variantId: string | null },
-  context: z.RefinementCtx,
-): void {
-  if ((input.assetId === null) !== (input.variantId === null)) {
-    context.addIssue({
-      code: 'custom',
-      path: input.assetId === null ? ['assetId'] : ['variantId'],
-      message: 'assetId and variantId must both be UUIDs or both be null.',
-    });
-  }
-}
-
-export const PutStoryClipVideoSelectionSchema = z
-  .object({
-    expectedDraftRevision: z.number().int().nonnegative().optional(),
-    ...StoryVideoSelectionMutationFields,
-  })
-  .strict()
-  .superRefine(validateSelectedAsset);
-export type PutStoryClipVideoSelectionInput = z.infer<
-  typeof PutStoryClipVideoSelectionSchema
->;
-
 const StoryVideoSnapshotNullableMediaFields = {
   assetId: z.string().uuid().nullable(),
   variantId: z.string().uuid().nullable(),
@@ -43,9 +10,14 @@ const StoryVideoSnapshotNullableMediaFields = {
     .nullable(),
   contentType: z
     .string()
-    .refine((value) => value.toLowerCase().startsWith('video/'), {
-      message: 'contentType must be a video/* MIME type',
-    })
+    .refine(
+      (value) => {
+        const lower = value.toLowerCase();
+        // Storyboard segments are video footage or still images.
+        return lower.startsWith('video/') || lower.startsWith('image/');
+      },
+      { message: 'contentType must be a video/* or image/* MIME type' },
+    )
     .nullable(),
   durationMs: z.number().int().positive().nullable(),
   width: z.number().int().positive().nullable(),
@@ -108,4 +80,104 @@ export function storyVideoSnapshotHash(
     throw new Error('A video snapshot may contain each graph node only once.');
   }
   return canonicalJsonHash(canonicalEntries);
+}
+
+/** Advisory browser-compatibility probe result carried on variant metadata. */
+export function isBrowserSafeMp4Metadata(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    (value as { browserSafeMp4?: unknown }).browserSafeMp4 === true
+  );
+}
+
+/**
+ * Structural shape of a storyboard clip row as every snapshot consumer loads
+ * it. Build, Working Preview and the workbench projection all hash the SAME
+ * entry through {@link storyboardClipSnapshotEntry}, so the publish conflict
+ * gate can compare hashes computed in different services.
+ */
+export interface StoryboardSnapshotVariant {
+  id: string;
+  variantKey: string;
+  checksumSha256: string | null;
+  contentType: string;
+  durationMs: number | null;
+  width: number | null;
+  height: number | null;
+  metadata: unknown;
+}
+
+export interface StoryboardClipSnapshotSource {
+  id: string;
+  version: number;
+  selectedMediaVersion: {
+    mediaAssetId: string;
+    archivedAt: Date | null;
+    preferredVariant: StoryboardSnapshotVariant | null;
+    mediaAsset: { variants: StoryboardSnapshotVariant[] };
+  } | null;
+}
+
+/**
+ * The playable rendition of a clip's selected creative media: the explicitly
+ * preferred rendition when one is set, otherwise the original upload/output.
+ */
+export function chooseStoryboardClipVariant<
+  V extends Pick<StoryboardSnapshotVariant, 'variantKey'>,
+>(media: {
+  preferredVariant: V | null;
+  mediaAsset: { variants: V[] };
+}): V | null {
+  return (
+    media.preferredVariant ??
+    media.mediaAsset.variants.find(
+      (variant) => variant.variantKey === 'original',
+    ) ??
+    null
+  );
+}
+
+/**
+ * One clip's contribution to the video snapshot hash. The identity is the
+ * storyboard clip itself; its version covers every selection change (and any
+ * clip edit) since the last snapshot.
+ */
+export function storyboardClipSnapshotEntry(
+  clip: StoryboardClipSnapshotSource,
+): StoryVideoSnapshotEntry {
+  const media =
+    clip.selectedMediaVersion && clip.selectedMediaVersion.archivedAt === null
+      ? clip.selectedMediaVersion
+      : null;
+  const variant = media ? chooseStoryboardClipVariant(media) : null;
+  const candidate = {
+    graphNodeId: clip.id,
+    selectionVersion: clip.version,
+    assetId: media && variant ? media.mediaAssetId : null,
+    variantId: variant?.id ?? null,
+    checksumSha256: variant?.checksumSha256 ?? null,
+    contentType: variant?.contentType ?? null,
+    durationMs: variant?.durationMs ?? null,
+    width: variant?.width ?? null,
+    height: variant?.height ?? null,
+    browserSafeMp4: variant ? isBrowserSafeMp4Metadata(variant.metadata) : null,
+  };
+  const parsed = StoryVideoSnapshotEntrySchema.safeParse(candidate);
+  // A partial selection still needs a deterministic identity; the clip version
+  // changes whenever the creator edits it.
+  if (parsed.success) return parsed.data;
+  return StoryVideoSnapshotEntrySchema.parse({
+    graphNodeId: clip.id,
+    selectionVersion: clip.version,
+    assetId: null,
+    variantId: null,
+    checksumSha256: null,
+    contentType: null,
+    durationMs: null,
+    width: null,
+    height: null,
+    browserSafeMp4: null,
+  });
 }

@@ -1,7 +1,8 @@
 import {
   compileStoryBuild,
   type StoryBuildCompilerInput,
-  type StoryBuildVideoInput,
+  type StoryBuildNodeTimelineInput,
+  type StoryBuildSegmentInput,
   type StoryBuildWorldInput,
 } from './story-build-compiler';
 import type { InteractiveStoryDraftContent } from './interactive-film.schema';
@@ -63,13 +64,19 @@ function draft(): InteractiveStoryDraftContent {
   };
 }
 
-function video(graphNodeId: string): StoryBuildVideoInput {
+function videoSegment(
+  graphNodeId: string,
+  suffix = 'a',
+): StoryBuildSegmentInput {
   return {
-    graphNodeId,
-    selectionVersion: 1,
+    clipId: `clip-${graphNodeId}-${suffix}`,
+    clipKey: `shot.${graphNodeId}.${suffix}`,
+    kind: 'video',
+    durationMs: 5_000,
+    clipVersion: 1,
     asset: {
-      assetId: `asset-${graphNodeId}`,
-      variantId: `variant-${graphNodeId}`,
+      assetId: `asset-${graphNodeId}-${suffix}`,
+      variantId: `variant-${graphNodeId}-${suffix}`,
       checksumSha256: 'a'.repeat(64),
       contentType: 'video/mp4',
       sizeBytes: 1_024n,
@@ -77,10 +84,43 @@ function video(graphNodeId: string): StoryBuildVideoInput {
       height: 1080,
       durationMs: 5_000,
       browserSafeMp4: true,
-      url: `https://cdn.example/${graphNodeId}.mp4`,
+      url: `https://cdn.example/${graphNodeId}-${suffix}.mp4`,
     },
     eligibilityDiagnostics: [],
   };
+}
+
+function stillSegment(
+  graphNodeId: string,
+  suffix = 'still',
+): StoryBuildSegmentInput {
+  return {
+    clipId: `clip-${graphNodeId}-${suffix}`,
+    clipKey: `shot.${graphNodeId}.${suffix}`,
+    kind: 'image',
+    durationMs: 4_000,
+    clipVersion: 1,
+    asset: {
+      assetId: `asset-${graphNodeId}-${suffix}`,
+      variantId: `variant-${graphNodeId}-${suffix}`,
+      checksumSha256: 'b'.repeat(64),
+      contentType: 'image/png',
+      sizeBytes: 512n,
+      width: 1920,
+      height: 1080,
+      durationMs: null,
+      browserSafeMp4: null,
+      url: `https://cdn.example/${graphNodeId}-${suffix}.png`,
+    },
+    eligibilityDiagnostics: [],
+  };
+}
+
+function timeline(
+  graphNodeId: string,
+  segments: StoryBuildSegmentInput[] = [videoSegment(graphNodeId)],
+): StoryBuildNodeTimelineInput {
+  return { graphNodeId, sequenceId: `sequence-${graphNodeId}`, segments };
 }
 
 function input(
@@ -97,7 +137,7 @@ function input(
     defaultLocale: 'en-US',
     metadata: { title: 'Gate', summary: null },
     draft: content,
-    videos: content.graph.nodes.map((node) => video(node.nodeId)),
+    timelines: content.graph.nodes.map((node) => timeline(node.nodeId)),
     ...overrides,
   };
 }
@@ -118,15 +158,15 @@ describe('compileStoryBuild', () => {
     expect(result.runtime?.metadata.experienceProfile).toBe('cinematic');
   });
 
-  it('blocks production when a clip has no frozen video', () => {
+  it('blocks production when a scene has no storyboard sequence', () => {
     const result = compileStoryBuild(
-      input({ videos: [video('opening'), video('left')] }),
+      input({ timelines: [timeline('opening'), timeline('left')] }),
     );
     expect(result.runtime).toBeNull();
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
+          code: 'STORY_BUILD_SEQUENCE_REQUIRED',
           severity: 'error',
           entityId: 'right',
         }),
@@ -134,15 +174,70 @@ describe('compileStoryBuild', () => {
     );
   });
 
+  it('blocks production when a storyboard clip has no selected media', () => {
+    const result = compileStoryBuild(
+      input({
+        timelines: [
+          timeline('opening'),
+          timeline('left'),
+          timeline('right', [{ ...videoSegment('right'), asset: null }]),
+        ],
+      }),
+    );
+    expect(result.runtime).toBeNull();
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_BUILD_CLIP_MEDIA_REQUIRED',
+          severity: 'error',
+          entityId: 'right',
+        }),
+      ]),
+    );
+  });
+
+  it('plays a still-image segment for its storyboard length', () => {
+    const result = compileStoryBuild(
+      input({
+        timelines: [
+          timeline('opening', [
+            stillSegment('opening'),
+            videoSegment('opening'),
+          ]),
+          timeline('left'),
+          timeline('right'),
+        ],
+      }),
+    );
+    expect(
+      result.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
+    const openingNode = result.runtime?.graph.nodes.find(
+      (node) => 'sceneId' in node && node.sceneId === 'opening',
+    ) as { renderers?: Array<{ config: Record<string, unknown> }> } | undefined;
+    const config = openingNode?.renderers?.[0]?.config as {
+      sequence: Array<{ endBehavior: Record<string, unknown> }>;
+    };
+    expect(config.sequence).toHaveLength(2);
+    expect(config.sequence[0]?.endBehavior).toEqual({
+      behavior: 'hold-last-frame',
+      durationMs: 4_000,
+    });
+    expect(config.sequence[1]?.endBehavior).toEqual({ behavior: 'advance' });
+  });
+
   it('keeps a working preview playable while footage is incomplete', () => {
     const result = compileStoryBuild(
-      input({ channel: 'preview', videos: [video('opening'), video('left')] }),
+      input({
+        channel: 'preview',
+        timelines: [timeline('opening'), timeline('left')],
+      }),
     );
     expect(result.runtime).not.toBeNull();
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
+          code: 'STORY_BUILD_SEQUENCE_REQUIRED',
           severity: 'warning',
         }),
       ]),
@@ -164,7 +259,7 @@ describe('compileStoryBuild', () => {
       input({
         channel: 'preview',
         draft: content,
-        videos: [video(opening.nodeId), video(left.nodeId)],
+        timelines: [timeline(opening.nodeId), timeline(left.nodeId)],
       }),
     );
     expect(preview.runtime).not.toBeNull();
@@ -185,7 +280,7 @@ describe('compileStoryBuild', () => {
     const production = compileStoryBuild(
       input({
         draft: content,
-        videos: [video(opening.nodeId), video(left.nodeId)],
+        timelines: [timeline(opening.nodeId), timeline(left.nodeId)],
       }),
     );
     expect(production.runtime).not.toBeNull();
@@ -251,7 +346,7 @@ describe('compileStoryBuild', () => {
     const result = compileStoryBuild(
       input({
         draft: content,
-        videos: [video('opening'), video('left')],
+        timelines: [timeline('opening'), timeline('left')],
         worlds,
       }),
     );
@@ -305,7 +400,7 @@ describe('compileStoryBuild', () => {
       input({
         channel: 'preview',
         draft: content,
-        videos: [video('opening')],
+        timelines: [timeline('opening')],
         worlds: [
           { graphNodeId: 'world', worldId: WORLD_ID, status: 'generating' },
         ],

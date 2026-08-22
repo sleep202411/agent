@@ -242,7 +242,7 @@ function summaryProject(overrides: Record<string, unknown> = {}) {
     revisions: [],
     members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
     referenceSlots: [],
-    videoSelections: [],
+    storyboardSequences: [],
     builds: [],
     ...overrides,
   });
@@ -584,8 +584,11 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
   it('locks the frame profile after a current video has been selected', async () => {
     const current = summaryProject({
-      videoSelections: [
-        { graphNodeId: 'node.opening', currentAssetId: MEDIA_ASSET_ID },
+      storyboardSequences: [
+        {
+          plotNodeId: 'node.opening',
+          clips: [{ selectedMediaVersionId: MEDIA_ASSET_ID }],
+        },
       ],
     });
     const tx = {
@@ -774,7 +777,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       },
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
-        clips: [],
       },
       references: [],
       latestBuild: null,
@@ -1172,6 +1174,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     };
     const tx = {
       storyDraft,
+      storyStoryboardSequence: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       storyChapter: {
         findMany: jest.fn().mockResolvedValue(chapters),
         update: jest.fn().mockResolvedValue({}),
@@ -1227,6 +1232,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       }),
     ];
     const tx = {
+      storyStoryboardSequence: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
       storyDraft: {
         findUnique: jest
           .fn()
@@ -1280,6 +1288,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           ...first,
           archivedAt: NOW,
         }),
+      },
+      storyStoryboardSequence: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       storyDraft: {
         findUnique: jest.fn().mockResolvedValue(draftRow({ content })),
@@ -1437,7 +1448,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         findUnique: jest.fn().mockResolvedValue(summaryProject({ draft })),
       },
       storyChapter: { findMany: jest.fn().mockResolvedValue([chapterRow()]) },
-      storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
+      storyStoryboardSequence: { findMany: jest.fn().mockResolvedValue([]) },
       storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
       storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
       studioDocument: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -1494,32 +1505,18 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     ]);
   });
 
-  it('projects every graph clip into an empty CAS summary without inventing video data', async () => {
+  it('hashes an empty storyboard snapshot when no sequences exist', async () => {
     const project = summaryProject();
     const tx = {
       storyProject: { findUnique: jest.fn().mockResolvedValue(project) },
       storyChapter: { findMany: jest.fn().mockResolvedValue([chapterRow()]) },
-      storyVideoSelection: { findMany: jest.fn().mockResolvedValue([]) },
+      storyStoryboardSequence: { findMany: jest.fn().mockResolvedValue([]) },
       storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
       storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
       studioDocument: { findFirst: jest.fn().mockResolvedValue(null) },
     };
     const prisma = { $transaction: transactionMock(tx) };
     const { service } = serviceWith(prisma);
-    const expectedSnapshot = [
-      {
-        graphNodeId: 'node.opening',
-        selectionVersion: 0,
-        assetId: null,
-        variantId: null,
-        checksumSha256: null,
-        contentType: null,
-        durationMs: null,
-        width: null,
-        height: null,
-        browserSafeMp4: null,
-      },
-    ];
 
     const result = await service.workbench(
       USER as never,
@@ -1528,28 +1525,10 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       {},
     );
 
+    // A scene without a storyboard sequence contributes nothing: the hash is
+    // exactly the empty-snapshot hash Build and Preview would compute.
     expect(result.video).toEqual({
-      snapshotHash: storyVideoSnapshotHash(expectedSnapshot),
-      clips: [
-        {
-          graphNodeId: 'node.opening',
-          selectionVersion: 0,
-          currentVideo: null,
-        },
-      ],
-    });
-    expect(result.references).toEqual([]);
-    expect(result.latestBuild).toBeNull();
-    expect(tx.studioDocument.findFirst).toHaveBeenCalledWith({
-      where: {
-        storyProjectId: PROJECT_ID,
-        storyChapterId: CHAPTER_ID,
-        type: StudioDocumentType.script,
-        status: StudioDocumentStatus.active,
-        deletedAt: null,
-      },
-      orderBy: { createdAt: 'asc' },
-      select: { id: true, currentSequence: true },
+      snapshotHash: storyVideoSnapshotHash([]),
     });
   });
 

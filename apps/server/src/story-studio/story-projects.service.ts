@@ -13,6 +13,7 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
+  StoryProductionSpecStatus,
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
@@ -66,13 +67,13 @@ import {
   type StoryRevisionDto,
   type StoryRevisionListQuery,
   type StoryRevisionSummaryDto,
-  type StoryCurrentVideoDto,
   type StoryReferenceSlotDto,
   type StoryWorkbenchDto,
   type StoryWorkbenchQuery,
   type ReorderStoryChaptersInput,
 } from './dto';
 import {
+  storyboardClipSnapshotEntry,
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
@@ -81,6 +82,7 @@ import {
   type StoryCapability as PermissionCapability,
 } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
+import { reconcileStoryTimelinesWithDraft } from './story-timeline-reconcile';
 
 const PROJECT_NOT_FOUND = {
   code: 'STORY_PROJECT_NOT_FOUND',
@@ -114,10 +116,14 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
     where: { archivedAt: null },
     select: { required: true, approvedVersionId: true },
   },
-  videoSelections: {
+  storyboardSequences: {
+    where: { status: { not: StoryProductionSpecStatus.archived } },
     select: {
-      graphNodeId: true,
-      currentAssetId: true,
+      plotNodeId: true,
+      clips: {
+        where: { status: { not: StoryProductionSpecStatus.archived } },
+        select: { selectedMediaVersionId: true },
+      },
     },
   },
   builds: {
@@ -133,26 +139,43 @@ type ProjectSummaryRow = Prisma.StoryProjectGetPayload<{
 
 function storyFrameProfileCanChange(row: ProjectSummaryRow): boolean {
   // The frame is part of setup until production has a concrete dependency on
-  // it. Empty selection rows and text-only draft work deliberately do not lock
-  // the creator into the project's initial ratio.
+  // it. Media-less storyboard planning and text-only draft work deliberately
+  // do not lock the creator into the project's initial ratio.
   return (
     row.builds.length === 0 &&
-    row.videoSelections.every((selection) => selection.currentAssetId === null)
+    row.storyboardSequences.every((sequence) =>
+      sequence.clips.every((clip) => clip.selectedMediaVersionId === null),
+    )
   );
 }
 
-const STORY_VIDEO_SELECTION_INCLUDE =
-  Prisma.validator<Prisma.StoryVideoSelectionInclude>()({
-    currentAsset: {
+/**
+ * The storyboard rows the workbench snapshot hash needs — the SAME entry
+ * shape Build and Working Preview hash, so the publish conflict gate compares
+ * hashes computed from one implementation.
+ */
+const STORY_WORKBENCH_TIMELINE_INCLUDE =
+  Prisma.validator<Prisma.StoryStoryboardSequenceInclude>()({
+    clips: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [
+        { track: 'asc' as const },
+        { startMs: 'asc' as const },
+        { rank: 'asc' as const },
+      ],
       include: {
-        placements: true,
-        variants: { include: { placements: true } },
+        selectedMediaVersion: {
+          include: {
+            mediaAsset: { select: { variants: true } },
+            preferredVariant: true,
+          },
+        },
       },
     },
   });
 
-type StoryVideoSelectionRow = Prisma.StoryVideoSelectionGetPayload<{
-  include: typeof STORY_VIDEO_SELECTION_INCLUDE;
+type WorkbenchTimelineSequenceRow = Prisma.StoryStoryboardSequenceGetPayload<{
+  include: typeof STORY_WORKBENCH_TIMELINE_INCLUDE;
 }>;
 
 const STORY_REFERENCE_INCLUDE =
@@ -366,7 +389,6 @@ export class StoryProjectsService {
       },
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
-        clips: [],
       },
       references: [],
       latestBuild: null,
@@ -1026,6 +1048,16 @@ export class StoryProjectsService {
       });
       if (claimed.count !== 1) return null;
 
+      // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
+      // their sequences immediately, undone deletions revive them.
+      await reconcileStoryTimelinesWithDraft(
+        tx,
+        projectId,
+        mergedContent as {
+          graph: { nodes: Array<{ kind: string; nodeId: string }> };
+        },
+      );
+
       await tx.storyChapter.update({
         where: { id: chapter.id },
         data: {
@@ -1493,7 +1525,7 @@ export class StoryProjectsService {
       latestBuild,
     } = await this.prisma.$transaction(
       async (tx) => {
-        const [project, chapters, selections, references, latestBuild] =
+        const [project, chapters, sequences, references, latestBuild] =
           await Promise.all([
             this.loadProjectSummary(projectId, tx),
             tx.storyChapter.findMany({
@@ -1503,9 +1535,12 @@ export class StoryProjectsService {
               },
               orderBy: [{ rank: 'asc' }, { id: 'asc' }],
             }),
-            tx.storyVideoSelection.findMany({
-              where: { storyProjectId: projectId },
-              include: STORY_VIDEO_SELECTION_INCLUDE,
+            tx.storyStoryboardSequence.findMany({
+              where: {
+                storyProjectId: projectId,
+                status: { not: StoryProductionSpecStatus.archived },
+              },
+              include: STORY_WORKBENCH_TIMELINE_INCLUDE,
             }),
             tx.storyReferenceSlot.findMany({
               where: { storyProjectId: projectId, archivedAt: null },
@@ -1577,7 +1612,7 @@ export class StoryProjectsService {
           chapter,
           draft,
           script: storyScriptFreshness(chapter, scriptDocument),
-          video: projectStoryVideoWorkbench(chapterContent, selections),
+          video: projectStoryVideoWorkbench(projectContent, sequences),
           references: references.map((slot) => this.toStoryReference(slot)),
           latestBuild: latestBuild
             ? this.toStoryBuildSummary(latestBuild)
@@ -1779,14 +1814,18 @@ export class StoryProjectsService {
           )
         : [],
     );
-    const selections = row.videoSelections.filter((selection) =>
-      currentClipNodeIds.has(selection.graphNodeId),
+    const liveSequences = row.storyboardSequences.filter((sequence) =>
+      currentClipNodeIds.has(sequence.plotNodeId),
     );
     const approvedReferenceCount = row.referenceSlots.filter(
       (slot) => slot.approvedVersionId !== null,
     ).length;
-    const currentVideoCount = selections.filter(
-      (selection) => selection.currentAssetId !== null,
+    // A scene counts as "has footage" once every storyboard clip on its
+    // timeline carries selected media — the release-readiness definition.
+    const currentVideoCount = liveSequences.filter(
+      (sequence) =>
+        sequence.clips.length > 0 &&
+        sequence.clips.every((clip) => clip.selectedMediaVersionId !== null),
     ).length;
     return {
       id: row.id,
@@ -2229,85 +2268,21 @@ function isReusableCandidateVideoVariant(
 
 function projectStoryVideoWorkbench(
   draft: ReturnType<typeof parseDraftContent>,
-  selections: StoryVideoSelectionRow[],
+  sequences: WorkbenchTimelineSequenceRow[],
 ): StoryWorkbenchDto['video'] {
-  const selectionByNodeId = new Map(
-    selections.map((selection) => [selection.graphNodeId, selection]),
+  // Hash over the whole project draft — the exact clip set Build and Working
+  // Preview hash — so the publish conflict gate compares like with like.
+  const liveNodeIds = new Set(
+    draft.graph.nodes.flatMap((node) =>
+      node.kind === 'clip' ? [node.nodeId] : [],
+    ),
   );
-  const clips = draft.graph.nodes.flatMap((node) => {
-    if (node.kind !== 'clip') return [];
-    const selection = selectionByNodeId.get(node.nodeId) ?? null;
-    return [
-      {
-        graphNodeId: node.nodeId,
-        selectionVersion: selection?.version ?? 0,
-        currentVideo: selectionCurrentVideo(selection),
-      },
-    ];
-  });
-  const snapshot: StoryVideoSnapshotEntry[] = clips.map((clip) => {
-    const video = clip.currentVideo;
-    return {
-      graphNodeId: clip.graphNodeId,
-      selectionVersion: clip.selectionVersion,
-      assetId: video?.asset.id ?? null,
-      variantId: video?.variantId ?? null,
-      checksumSha256: video?.checksumSha256 ?? null,
-      contentType: video ? exactStoryVideoContentType(video.contentType) : null,
-      durationMs: video?.durationMs ?? null,
-      width: video?.width ?? null,
-      height: video?.height ?? null,
-      browserSafeMp4: video?.browserSafeMp4 ?? null,
-    };
-  });
-  return {
-    snapshotHash: storyVideoSnapshotHash(snapshot),
-    clips,
-  };
-}
-
-function selectionCurrentVideo(
-  selection: StoryVideoSelectionRow | null,
-): StoryCurrentVideoDto | null {
-  if (!selection?.currentAssetId) return null;
-  if (
-    !selection.currentAsset ||
-    !selection.currentVariantId ||
-    !selection.currentContentType ||
-    !selection.setAt
-  ) {
-    throw corruptData('STORY_VIDEO_SELECTION_CORRUPT', 'story video selection');
-  }
-  const currentVariant = selection.currentAsset.variants.find(
-    (variant) => variant.id === selection.currentVariantId,
-  );
-  return {
-    asset: toMediaAsset(selection.currentAsset),
-    variantId: selection.currentVariantId,
-    checksumSha256: selection.currentChecksumSha256,
-    contentType: selection.currentContentType,
-    durationMs: selection.currentDurationMs,
-    width: selection.currentWidth,
-    height: selection.currentHeight,
-    sizeBytes:
-      (
-        currentVariant?.sizeBytes ?? selection.currentAsset.sizeBytes
-      )?.toString() ?? null,
-    browserSafeMp4: selection.currentBrowserSafeMp4,
-    selectionVersion: selection.version,
-    setByUserId: selection.setByUserId,
-    setAt: selection.setAt.toISOString(),
-  };
-}
-
-function exactStoryVideoContentType(value: string): string {
-  if (!value.toLowerCase().startsWith('video/')) {
-    throw corruptData(
-      'STORY_VIDEO_SELECTION_CORRUPT',
-      'story video content type',
+  const entries = sequences
+    .filter((sequence) => liveNodeIds.has(sequence.plotNodeId))
+    .flatMap((sequence) =>
+      sequence.clips.map((clip) => storyboardClipSnapshotEntry(clip)),
     );
-  }
-  return value;
+  return { snapshotHash: storyVideoSnapshotHash(entries) };
 }
 
 function parseDraftContent(

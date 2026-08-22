@@ -51,6 +51,7 @@ import {
 import { StoryAgentRunService } from '../../story-studio/story-agent-run.service';
 import { StoryProductionPlanService } from '../../story-studio/story-production-plan.service';
 import { StoryProjectWriteGuardService } from '../../story-studio/story-project-write-guard.service';
+import { reconcileStoryTimelinesWithDraft } from '../../story-studio/story-timeline-reconcile';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
 import { AgentOsToolExecutionReceiptService } from '../agent-os-tool-execution-receipt.service';
 import type {
@@ -413,8 +414,10 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           defaultLocale: true,
           creativeProfileConfirmedAt: true,
           builds: { select: { id: true }, take: 1 },
-          videoSelections: {
-            where: { currentAssetId: { not: null } },
+          storyboardSequences: {
+            where: {
+              clips: { some: { selectedMediaVersionId: { not: null } } },
+            },
             select: { id: true },
             take: 1,
           },
@@ -453,7 +456,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
 
       if (
         project.frameProfile !== frameProfile &&
-        (project.builds.length > 0 || project.videoSelections.length > 0)
+        (project.builds.length > 0 || project.storyboardSequences.length > 0)
       ) {
         throw new ConflictException({
           code: 'STORY_FRAME_PROFILE_LOCKED',
@@ -607,6 +610,16 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           message: 'Story draft changed concurrently. Read it again and retry.',
         });
       }
+
+      // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
+      // their sequences immediately, undone deletions revive them.
+      await reconcileStoryTimelinesWithDraft(
+        tx,
+        input.projectId,
+        mergedGlobalDraft as unknown as {
+          graph: { nodes: Array<{ kind: string; nodeId: string }> };
+        },
+      );
 
       await tx.storyChapter.update({
         where: { id: state.chapter.id },

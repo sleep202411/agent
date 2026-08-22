@@ -32,11 +32,25 @@ export interface FrozenStoryVideoAsset {
   url: string;
 }
 
-export interface StoryBuildVideoInput {
-  graphNodeId: string;
-  selectionVersion: number;
+/**
+ * One storyboard clip on a node's timeline, frozen for the Build. The
+ * storyboard sequence — not any per-node video selection — is the sole source
+ * of a node's playable content.
+ */
+export interface StoryBuildSegmentInput {
+  clipId: string;
+  clipKey: string;
+  kind: 'image' | 'video';
+  durationMs: number;
+  clipVersion: number;
   asset: FrozenStoryVideoAsset | null;
   eligibilityDiagnostics: StoryBuildDiagnosticDto[];
+}
+
+export interface StoryBuildNodeTimelineInput {
+  graphNodeId: string;
+  sequenceId: string | null;
+  segments: StoryBuildSegmentInput[];
 }
 
 export interface StoryBuildWorldInput {
@@ -45,9 +59,14 @@ export interface StoryBuildWorldInput {
   status: 'generating' | 'ready' | 'failed';
 }
 
-type FrozenStoryBuildVideoInput = StoryBuildVideoInput & {
+type FrozenStoryBuildSegment = StoryBuildSegmentInput & {
   asset: FrozenStoryVideoAsset;
 };
+
+interface FrozenNodeTimeline {
+  graphNodeId: string;
+  segments: FrozenStoryBuildSegment[];
+}
 
 /**
  * The project cover as a release carries it: a PLAIN MEDIA REFERENCE like a
@@ -92,7 +111,7 @@ export interface StoryBuildCompilerInput {
   defaultLocale: string;
   metadata: { title: string; summary: string | null };
   draft: InteractiveStoryDraftContent;
-  videos: StoryBuildVideoInput[];
+  timelines: StoryBuildNodeTimelineInput[];
   worlds?: StoryBuildWorldInput[];
   /**
    * Playable URL per bound music MediaAsset id — a plain public media URL, not
@@ -128,21 +147,21 @@ export function compileStoryBuild(
   const nodes = new Map(
     input.draft.graph.nodes.map((node) => [node.nodeId, node]),
   );
-  const videos = new Map<string, StoryBuildVideoInput>();
-  input.videos.forEach((video) => {
-    if (videos.has(video.graphNodeId)) {
+  const timelines = new Map<string, StoryBuildNodeTimelineInput>();
+  input.timelines.forEach((timeline) => {
+    if (timelines.has(timeline.graphNodeId)) {
       diagnostics.push(
         diagnostic(
           'error',
-          'STORY_BUILD_VIDEO_SELECTION_DUPLICATE',
-          `Graph node ${video.graphNodeId} has more than one frozen current video.`,
+          'STORY_BUILD_TIMELINE_DUPLICATE',
+          `Graph node ${timeline.graphNodeId} has more than one frozen storyboard timeline.`,
           'clip',
-          video.graphNodeId,
+          timeline.graphNodeId,
         ),
       );
       return;
     }
-    videos.set(video.graphNodeId, video);
+    timelines.set(timeline.graphNodeId, timeline);
   });
   const worlds = new Map<string, StoryBuildWorldInput>();
   (input.worlds ?? []).forEach((world) => {
@@ -191,32 +210,67 @@ export function compileStoryBuild(
   const runtimeSelection = reachable;
   validateWorldBindings(runtimeSelection, nodes, worlds, diagnostics);
   const requiredGraphNodeIds = requiredVideoNodeIds(runtimeSelection, nodes);
-  const includedVideos = [...requiredGraphNodeIds]
-    .flatMap((graphNodeId) => {
-      const video = videos.get(graphNodeId);
-      if (video) diagnostics.push(...video.eligibilityDiagnostics);
-      if (video?.asset) return [video as FrozenStoryBuildVideoInput];
+  const missingSeverity = input.channel === 'preview' ? 'warning' : 'error';
+  const includedTimelines: FrozenNodeTimeline[] = [...requiredGraphNodeIds]
+    .sort()
+    .map((graphNodeId) => {
       const node = nodes.get(graphNodeId);
-      // Missing footage stops a release and only annotates a preview: the whole
-      // point of a preview is to walk a work that is not finished yet.
-      diagnostics.push(
-        diagnostic(
-          input.channel === 'preview' ? 'warning' : 'error',
-          'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
-          `Clip ${node?.kind === 'clip' ? node.clipKey : graphNodeId} has no current video selection.`,
-          'clip',
-          graphNodeId,
-        ),
-      );
-      return [];
-    })
-    .sort((left, right) => left.graphNodeId.localeCompare(right.graphNodeId));
-  includedVideos.forEach((video) => validateFrozenVideo(video, diagnostics));
+      const nodeLabel = node?.kind === 'clip' ? node.clipKey : graphNodeId;
+      const timeline = timelines.get(graphNodeId);
+      // The storyboard sequence is the node's production plan; a node without
+      // one has never been planned and cannot carry playable content. Missing
+      // footage stops a release and only annotates a preview: the whole point
+      // of a preview is to walk a work that is not finished yet.
+      if (!timeline || timeline.sequenceId === null) {
+        diagnostics.push(
+          diagnostic(
+            missingSeverity,
+            'STORY_BUILD_SEQUENCE_REQUIRED',
+            `Scene ${nodeLabel} has no storyboard sequence to play.`,
+            'clip',
+            graphNodeId,
+          ),
+        );
+        return { graphNodeId, segments: [] };
+      }
+      const segments = timeline.segments.flatMap((segment) => {
+        diagnostics.push(...segment.eligibilityDiagnostics);
+        if (segment.asset) return [segment as FrozenStoryBuildSegment];
+        diagnostics.push(
+          diagnostic(
+            missingSeverity,
+            'STORY_BUILD_CLIP_MEDIA_REQUIRED',
+            `Storyboard clip ${segment.clipKey} of scene ${nodeLabel} has no selected media.`,
+            'clip',
+            graphNodeId,
+          ),
+        );
+        return [];
+      });
+      if (timeline.segments.length === 0) {
+        diagnostics.push(
+          diagnostic(
+            missingSeverity,
+            'STORY_BUILD_CLIP_MEDIA_REQUIRED',
+            `Scene ${nodeLabel} has an empty storyboard timeline.`,
+            'clip',
+            graphNodeId,
+          ),
+        );
+      }
+      return { graphNodeId, segments };
+    });
+  const includedSegments = includedTimelines.flatMap(
+    (timeline) => timeline.segments,
+  );
+  includedSegments.forEach((segment) =>
+    validateFrozenSegment(segment, diagnostics),
+  );
 
   const analysis = analyzePaths(
     entryNodeId,
     nodes,
-    videos,
+    timelines,
     runtimeSelection,
     diagnostics,
   );
@@ -246,8 +300,7 @@ export function compileStoryBuild(
       entryNodeId,
       runtimeSelection,
       nodes,
-      videos,
-      includedVideos,
+      includedTimelines,
     );
     const release = InteractiveFilmReleaseSchema.safeParse(releaseCandidate);
     if (!release.success) {
@@ -265,12 +318,10 @@ export function compileStoryBuild(
     } else {
       const cover = input.cover?.asset ?? null;
       const mediaIdentities: StoryExperienceMediaIdentity[] = [
-        ...includedVideos.map((video) => ({
-          runtimeAssetId: storyRuntimeAssetId(
-            clipNodeById(nodes, video.graphNodeId).clipKey,
-          ),
-          variantId: video.asset.variantId,
-          mediaType: video.asset.contentType,
+        ...includedSegments.map((segment) => ({
+          runtimeAssetId: storyRuntimeAssetId(segment.clipKey),
+          variantId: segment.asset.variantId,
+          mediaType: segment.asset.contentType,
         })),
         ...(cover
           ? [
@@ -315,7 +366,9 @@ export function compileStoryBuild(
     diagnostics: sortAndDedupeDiagnostics(diagnostics),
     pathReport,
     runtime,
-    includedGraphNodeIds: includedVideos.map((video) => video.graphNodeId),
+    includedGraphNodeIds: includedTimelines
+      .filter((timeline) => timeline.segments.length > 0)
+      .map((timeline) => timeline.graphNodeId),
   };
 }
 
@@ -463,11 +516,12 @@ function requiredVideoNodeIds(
  * browsers can play the original media without it, so missing values warn and
  * never block publication.
  */
-function validateFrozenVideo(
-  video: FrozenStoryBuildVideoInput,
+function validateFrozenSegment(
+  segment: FrozenStoryBuildSegment,
   diagnostics: StoryBuildDiagnosticDto[],
 ): void {
-  const asset = video.asset;
+  const asset = segment.asset;
+  const expectedPrefix = segment.kind === 'video' ? 'video/' : 'image/';
   if (
     asset.checksumSha256 !== null &&
     !/^[a-f0-9]{64}$/.test(asset.checksumSha256)
@@ -476,18 +530,18 @@ function validateFrozenVideo(
       diagnostic(
         'warning',
         'STORY_BUILD_VIDEO_CHECKSUM_INVALID',
-        `Current video for ${video.graphNodeId} has no valid immutable SHA-256 checksum.`,
+        `Storyboard clip ${segment.clipKey} has no valid immutable SHA-256 checksum.`,
         'asset',
         asset.assetId,
       ),
     );
   }
-  if (!asset.contentType.toLowerCase().startsWith('video/')) {
+  if (!asset.contentType.toLowerCase().startsWith(expectedPrefix)) {
     diagnostics.push(
       diagnostic(
         'error',
         'STORY_BUILD_VIDEO_CONTENT_TYPE_INVALID',
-        `Current video for ${video.graphNodeId} has non-video content type ${asset.contentType}.`,
+        `Storyboard clip ${segment.clipKey} resolves to ${asset.contentType}, not a ${segment.kind} media type.`,
         'asset',
         asset.assetId,
       ),
@@ -501,24 +555,25 @@ function validateFrozenVideo(
       diagnostic(
         'warning',
         'STORY_BUILD_VIDEO_DURATION_INVALID',
-        `Current video for ${video.graphNodeId} has invalid duration metadata.`,
+        `Storyboard clip ${segment.clipKey} has invalid duration metadata.`,
         'asset',
         asset.assetId,
       ),
     );
   }
   if (
-    asset.checksumSha256 === null ||
-    asset.durationMs === null ||
-    asset.width === null ||
-    asset.height === null ||
-    asset.browserSafeMp4 !== true
+    segment.kind === 'video' &&
+    (asset.checksumSha256 === null ||
+      asset.durationMs === null ||
+      asset.width === null ||
+      asset.height === null ||
+      asset.browserSafeMp4 !== true)
   ) {
     diagnostics.push(
       diagnostic(
         'warning',
         'STORY_BUILD_VIDEO_METADATA_INCOMPLETE',
-        `Current video for ${video.graphNodeId} has incomplete technical metadata; the original video will still be published.`,
+        `Storyboard clip ${segment.clipKey} has incomplete technical metadata; the original video will still be published.`,
         'asset',
         asset.assetId,
       ),
@@ -637,7 +692,7 @@ function analyzePaths(
     string,
     InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
-  videos: ReadonlyMap<string, StoryBuildVideoInput>,
+  timelines: ReadonlyMap<string, StoryBuildNodeTimelineInput>,
   selection: ReadonlySet<string>,
   diagnostics: StoryBuildDiagnosticDto[],
 ): NodePathFacts & { ambiguousPathCount: number } {
@@ -693,7 +748,12 @@ function analyzePaths(
     const selfMs =
       node.kind === 'world'
         ? node.maxExperienceSeconds * 1_000
-        : (videos.get(node.nodeId)?.asset?.durationMs ?? 0);
+        : (timelines
+            .get(node.nodeId)
+            ?.segments.reduce(
+              (total, segment) => total + segment.durationMs,
+              0,
+            ) ?? 0);
 
     let facts: NodePathFacts = DEAD_END;
     if (node.exit.kind === 'auto' && node.exit.nextNodeId === null) {
@@ -762,33 +822,38 @@ function compileIntermediateRelease(
     string,
     InteractiveStoryDraftContent['graph']['nodes'][number]
   >,
-  videos: ReadonlyMap<string, StoryBuildVideoInput>,
-  includedVideos: FrozenStoryBuildVideoInput[],
+  includedTimelines: FrozenNodeTimeline[],
 ): InteractiveFilmRelease {
-  // Every clip is pinned to the project's film orientation.
-  const videoMedia = includedVideos.map((video) => {
-    const node = clipNodeById(nodes, video.graphNodeId);
-    const variant = {
-      sourceAssetId: video.asset.assetId,
-      src: video.asset.url,
-      ...(video.asset.checksumSha256
-        ? { sha256: video.asset.checksumSha256 }
-        : {}),
-      ...(video.asset.width ? { width: video.asset.width } : {}),
-      ...(video.asset.height ? { height: video.asset.height } : {}),
-      ...(video.asset.durationMs
-        ? { durationSeconds: video.asset.durationMs / 1_000 }
-        : {}),
-    };
-    const landscape = input.frameProfile === 'landscape_16_9';
-    return {
-      assetId: storyRuntimeAssetId(node.clipKey),
-      kind: 'video' as const,
-      orientationPolicy: 'single-master' as const,
-      variants: landscape ? { landscape: variant } : { portrait: variant },
-    };
-  });
-  const media = [...videoMedia, ...coverMedia(input.cover?.asset ?? null)];
+  // Every clip is pinned to the project's film orientation. A still-image
+  // segment carries no duration metadata: its screen time is the clip's
+  // hold-last-frame endBehavior, not a media property.
+  const segmentMedia = includedTimelines
+    .flatMap((timeline) => timeline.segments)
+    .map((segment) => {
+      const variant = {
+        sourceAssetId: segment.asset.assetId,
+        src: segment.asset.url,
+        ...(segment.asset.checksumSha256
+          ? { sha256: segment.asset.checksumSha256 }
+          : {}),
+        ...(segment.asset.width ? { width: segment.asset.width } : {}),
+        ...(segment.asset.height ? { height: segment.asset.height } : {}),
+        ...(segment.kind === 'video' && segment.asset.durationMs
+          ? { durationSeconds: segment.asset.durationMs / 1_000 }
+          : {}),
+      };
+      const landscape = input.frameProfile === 'landscape_16_9';
+      return {
+        assetId: storyRuntimeAssetId(segment.clipKey),
+        kind: 'video' as const,
+        orientationPolicy: 'single-master' as const,
+        variants: landscape ? { landscape: variant } : { portrait: variant },
+      };
+    });
+  const media = [...segmentMedia, ...coverMedia(input.cover?.asset ?? null)];
+  const timelineByNodeId = new Map(
+    includedTimelines.map((timeline) => [timeline.graphNodeId, timeline]),
+  );
   const runtimeNodes: InteractiveFilmRelease['nodes'] = [];
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
@@ -811,28 +876,36 @@ function compileIntermediateRelease(
       });
       return;
     }
-    const video = videos.get(node.nodeId);
-    // A preview keeps the shot in the story with an empty sequence so the work
-    // stays playable end to end while its footage is still being made; the
-    // player stands in for it and finishes on the same `media-ended` outcome, so
-    // every exit downstream is unaffected. A release still requires the clip —
-    // `STORY_BUILD_CURRENT_VIDEO_REQUIRED` is raised for it either way, and it
-    // is an error only on the release path.
-    const hasFootage = Boolean(video?.asset);
-    if (!video && input.channel !== 'preview') return;
+    const timeline = timelineByNodeId.get(node.nodeId);
+    // A preview keeps the scene in the story with an empty sequence so the
+    // work stays playable end to end while its footage is still being made;
+    // the player stands in for it and finishes on the same `media-ended`
+    // outcome, so every exit downstream is unaffected. A release still
+    // requires the storyboard media — `STORY_BUILD_SEQUENCE_REQUIRED` /
+    // `STORY_BUILD_CLIP_MEDIA_REQUIRED` are raised for it either way, and they
+    // are errors only on the release path.
+    const segments = timeline?.segments ?? [];
+    if (segments.length === 0 && input.channel !== 'preview') return;
     runtimeNodes.push({
       nodeId: node.nodeId,
       presentation: {
         kind: 'video',
-        sequence: hasFootage
-          ? [
-              {
-                clipId: node.nodeId,
-                assetId: storyRuntimeAssetId(node.clipKey),
-                endBehavior: { behavior: 'advance' },
-              },
-            ]
-          : [],
+        // A video segment advances when its footage ends; a still segment
+        // "ends" the moment it is shown and holds for its storyboard length.
+        sequence: segments.map((segment) => ({
+          clipId: segment.clipId,
+          assetId: storyRuntimeAssetId(segment.clipKey),
+          endBehavior:
+            segment.kind === 'video'
+              ? ({ behavior: 'advance' } as const)
+              : ({
+                  behavior: 'hold-last-frame',
+                  durationMs: Math.min(
+                    120_000,
+                    Math.max(100, segment.durationMs),
+                  ),
+                } as const),
+        })),
         fit: 'cover',
       },
       overlays: [],

@@ -926,7 +926,6 @@ model Workspace {
   projectAssets             ProjectAsset[]
   aiJobs                    AiJob[]
   mediaAssets               MediaAsset[]
-  storyVideoUploadSessions  StoryVideoUploadSession[]
   storyProjects             StoryProject[]
   studioCharacters          StudioCharacter[]
   mediaAssetUsages          MediaAssetUsage[]
@@ -7455,7 +7454,6 @@ model MediaAsset {
   providerMirrors                  AiProviderMediaAssetMirror[]
   storyProjectCovers               StoryProject[]                    @relation("StoryProjectCover")
   storyReferenceVersions           StoryReferenceVersion[]           @relation("StoryReferenceAsset")
-  storyVideoSelectionCurrentVideos StoryVideoSelection[]             @relation("StoryVideoSelectionCurrentAsset")
   storyBuildAssets                 StoryBuildAsset[]                 @relation("StoryBuildAssetMedia")
   storyCandidateAssets             StoryCandidateAsset[]             @relation("StoryCandidateAssetMedia")
   storyAssetSpecMediaVersions      StoryAssetMediaVersion[]          @relation("StoryAssetSpecCreativeMedia")
@@ -7463,7 +7461,6 @@ model MediaAsset {
   moderationCases                  MediaModerationCase[]
   moderationActions                MediaModerationAction[]
   processingJobs                   MediaProcessingJob[]
-  storyVideoUploadSession          StoryVideoUploadSession?
   crewAssetNodes                   CrewAssetNode[]
 
   @@index([storageProvider, bucket, objectKey], map: "media_assets_storage_lookup_idx")
@@ -7505,7 +7502,6 @@ model MediaAssetVariant {
   moderationActions                  MediaModerationAction[]
   processingJobs                     MediaProcessingJob[]              @relation("MediaProcessingSourceVariant")
   storyReferenceVersions             StoryReferenceVersion[]           @relation("StoryReferenceVariant")
-  storyVideoSelectionCurrentVideos   StoryVideoSelection[]             @relation("StoryVideoSelectionCurrentVariant")
   storyBuildAssets                   StoryBuildAsset[]                 @relation("StoryBuildAssetVariant")
   storyAssetSpecPreferredRenditions  StoryAssetMediaVersion[]          @relation("StoryAssetSpecPreferredRendition")
   storyStoryboardPreferredRenditions StoryStoryboardClipMediaVersion[] @relation("StoryStoryboardClipPreferredRendition")
@@ -8117,17 +8113,6 @@ enum StoryExperiencePublicationStatus {
 /// Durable lifecycle for a creator-uploaded Story clip. The browser may write
 /// only to `stagingObjectKey`; a server worker verifies the bytes and promotes
 /// them to a server-chosen immutable final key before the MediaAsset is ready.
-enum StoryVideoUploadStatus {
-  issued
-  confirmed
-  queued
-  processing
-  ready
-  failed
-  expired
-  cancelled
-}
-
 enum StoryAssetRole {
   video
   audio
@@ -8282,7 +8267,6 @@ model StoryProject {
   experienceGameReleases  StoryExperienceGameRelease[]
   referenceSlots          StoryReferenceSlot[]
   referenceVersions       StoryReferenceVersion[]
-  videoSelections         StoryVideoSelection[]
   videoBuildClips         StoryVideoBuildClip[]
   storyBuildAssets        StoryBuildAsset[]
   candidateAssets         StoryCandidateAsset[]
@@ -8296,7 +8280,6 @@ model StoryProject {
   productionGenerations   StoryProductionGeneration[]
   productionMutations     StoryProductionMutationReceipt[]
   productionPlanSnapshots StoryProductionPlanSnapshot[]
-  videoUploadSessions     StoryVideoUploadSession[]
   agentOsAttachments      AgentOsAttachment[]
   aiJobs                  AiJob[]
   skillState              ProjectSkillState?
@@ -8538,58 +8521,6 @@ model StoryAgentRun {
   @@index([initiatedByUserId, createdAt(sort: Desc)], map: "story_agent_runs_initiator_recent_idx")
   @@index([revertsRunId], map: "story_agent_runs_reverts_idx")
   @@map("story_agent_runs")
-}
-
-model StoryVideoUploadSession {
-  id              String                 @id @default(uuid(7)) @db.Uuid
-  storyProjectId  String                 @map("story_project_id") @db.Uuid
-  workspaceId     String                 @map("workspace_id") @db.Uuid
-  mediaAssetId    String                 @unique @map("media_asset_id") @db.Uuid
-  createdByUserId String                 @map("created_by_user_id") @db.VarChar(64)
-  status          StoryVideoUploadStatus @default(issued)
-
-  storageProvider   MediaStorageProvider @map("storage_provider")
-  bucket            String?              @db.VarChar(128)
-  region            String?              @db.VarChar(64)
-  stagingObjectKey  String               @unique @map("staging_object_key") @db.VarChar(1024)
-  finalObjectKey    String?              @map("final_object_key") @db.VarChar(1024)
-  contentType       String               @map("content_type") @db.VarChar(128)
-  declaredSizeBytes BigInt               @map("declared_size_bytes")
-  actualSizeBytes   BigInt?              @map("actual_size_bytes")
-
-  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(6)
-  reclaimAfter    DateTime? @map("reclaim_after") @db.Timestamptz(6)
-  attemptCount    Int       @default(0) @map("attempt_count")
-  maxAttempts     Int       @default(10) @map("max_attempts")
-  nextAttemptAt   DateTime? @map("next_attempt_at") @db.Timestamptz(6)
-  leaseOwner      String?   @map("lease_owner") @db.VarChar(160)
-  leaseAcquiredAt DateTime? @map("lease_acquired_at") @db.Timestamptz(6)
-  leaseExpiresAt  DateTime? @map("lease_expires_at") @db.Timestamptz(6)
-
-  errorCode          String?   @map("error_code") @db.VarChar(128)
-  errorDetail        String?   @map("error_detail") @db.Text
-  confirmedAt        DateTime? @map("confirmed_at") @db.Timestamptz(6)
-  queuedAt           DateTime? @map("queued_at") @db.Timestamptz(6)
-  processingAt       DateTime? @map("processing_at") @db.Timestamptz(6)
-  completedAt        DateTime? @map("completed_at") @db.Timestamptz(6)
-  failedAt           DateTime? @map("failed_at") @db.Timestamptz(6)
-  cancelledAt        DateTime? @map("cancelled_at") @db.Timestamptz(6)
-  stagingReclaimedAt DateTime? @map("staging_reclaimed_at") @db.Timestamptz(6)
-  finalReclaimedAt   DateTime? @map("final_reclaimed_at") @db.Timestamptz(6)
-  finalReclaimAfter  DateTime? @map("final_reclaim_after") @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  project    StoryProject @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
-  workspace  Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  mediaAsset MediaAsset   @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
-
-  @@index([createdByUserId, workspaceId, status, expiresAt], map: "story_video_upload_sessions_user_active_idx")
-  @@index([status, nextAttemptAt, leaseExpiresAt], map: "story_video_upload_sessions_claim_idx")
-  @@index([status, reclaimAfter], map: "story_video_upload_sessions_reclaim_idx")
-  @@index([status, finalReclaimAfter], map: "story_video_upload_sessions_final_reclaim_idx")
-  @@index([storyProjectId, createdAt(sort: Desc)], map: "story_video_upload_sessions_project_recent_idx")
-  @@map("story_video_upload_sessions")
 }
 
 model StoryChapter {
@@ -9502,35 +9433,6 @@ model StoryReferenceApproval {
   @@map("story_reference_approvals")
 }
 
-/// Project-scoped current-video state for one canonical graph clip.
-model StoryVideoSelection {
-  id                    String    @id @default(uuid(7)) @db.Uuid
-  storyProjectId        String    @map("story_project_id") @db.Uuid
-  graphNodeId           String    @map("graph_node_id") @db.VarChar(128)
-  currentAssetId        String?   @map("current_asset_id") @db.Uuid
-  currentVariantId      String?   @map("current_variant_id") @db.Uuid
-  currentChecksumSha256 String?   @map("current_checksum_sha256") @db.VarChar(64)
-  currentContentType    String?   @map("current_content_type") @db.VarChar(128)
-  currentDurationMs     Int?      @map("current_duration_ms")
-  currentWidth          Int?      @map("current_width")
-  currentHeight         Int?      @map("current_height")
-  currentBrowserSafeMp4 Boolean?  @map("current_browser_safe_mp4")
-  version               Int       @default(0)
-  setByUserId           String?   @map("set_by_user_id") @db.VarChar(64)
-  setAt                 DateTime? @map("set_at") @db.Timestamptz(6)
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  project        StoryProject       @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  currentAsset   MediaAsset?        @relation("StoryVideoSelectionCurrentAsset", fields: [currentAssetId], references: [id], onDelete: NoAction)
-  currentVariant MediaAssetVariant? @relation("StoryVideoSelectionCurrentVariant", fields: [currentVariantId, currentAssetId], references: [id, assetId], onDelete: NoAction)
-
-  @@unique([storyProjectId, graphNodeId], map: "story_video_selections_graph_node_unique")
-  @@unique([id, storyProjectId], map: "story_video_selections_id_project_unique")
-  @@index([storyProjectId, updatedAt(sort: Desc)], map: "story_video_selections_project_updated_idx")
-  @@map("story_video_selections")
-}
-
 model StoryVideoBuildClip {
   buildId        String   @map("build_id") @db.Uuid
   storyProjectId String   @map("story_project_id") @db.Uuid
@@ -9550,9 +9452,9 @@ model StoryVideoBuildClip {
   project    StoryProject    @relation(fields: [storyProjectId], references: [id], onDelete: Restrict)
   buildAsset StoryBuildAsset @relation(fields: [buildAssetId, buildId], references: [id, buildId], onDelete: Restrict)
 
-  @@id([buildId, graphNodeId])
+  @@id([buildId, logicalKey])
   @@unique([buildAssetId, buildId], map: "story_video_build_clips_asset_build_unique")
-  @@unique([buildId, logicalKey], map: "story_video_build_clips_build_logical_key_unique")
+  @@index([buildId, graphNodeId], map: "story_video_build_clips_build_node_idx")
   @@index([storyProjectId, rank], map: "story_video_build_clips_project_rank_idx")
   @@map("story_video_build_clips")
 }
