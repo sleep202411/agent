@@ -2652,7 +2652,8 @@
         "archived": "Archived"
       },
       "seconds": "{value}s",
-      "options": "Options"
+      "options": "Options",
+      "plotNodeMissing": "Not linked to a plot node"
     },
     "canvas": {
       "back": "Back to Interactive Film Studio",

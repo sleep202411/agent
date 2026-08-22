@@ -76,6 +76,15 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     return options;
   }, [workbenchQuery.data, locale]);
 
+  // Live plot-node ids so orphaned sequences (their node deleted from the
+  // plot tree) can be flagged; null while the workbench is still loading so
+  // the badge never flashes on unresolved data.
+  const plotNodeIds = useMemo(() => {
+    const nodes = workbenchQuery.data?.draft.content.graph.nodes;
+    if (!nodes) return null;
+    return new Set(nodes.filter((node) => node.kind === "clip").map((node) => node.nodeId));
+  }, [workbenchQuery.data]);
+
   const sequences = storyboardQuery.data ?? [];
   const requestedPlotNodeId = searchParams.get("node");
 
@@ -154,6 +163,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
                 workspaceId={workspaceId}
                 projectId={projectId}
                 chapterId={chapterId}
+                plotNodeMissing={plotNodeIds ? !plotNodeIds.has(sequence.plotNodeId) : false}
               />
               {choiceOptions ? <StoryStoryboardChoiceCard options={choiceOptions} /> : null}
             </div>

@@ -2652,7 +2652,8 @@
         "archived": "已归档"
       },
       "seconds": "{value} 秒",
-      "options": "选项"
+      "options": "选项",
+      "plotNodeMissing": "未关联情节节点"
     },
     "canvas": {
       "back": "返回影游工作室",

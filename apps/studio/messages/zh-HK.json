@@ -2652,7 +2652,8 @@
         "archived": "已封存"
       },
       "seconds": "{value} 秒",
-      "options": "選項"
+      "options": "選項",
+      "plotNodeMissing": "未關聯情節節點"
     },
     "canvas": {
       "back": "返回影遊工作室",

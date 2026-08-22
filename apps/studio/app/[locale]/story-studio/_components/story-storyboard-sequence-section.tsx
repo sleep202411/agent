@@ -61,12 +61,15 @@ export function StoryStoryboardSequenceSection({
   workspaceId,
   projectId,
   chapterId,
+  plotNodeMissing = false,
 }: {
   sequence: StoryStoryboardSequence;
   index: number;
   workspaceId: string;
   projectId: string;
   chapterId: string;
+  /** The plot node this sequence fills no longer exists in the plot tree. */
+  plotNodeMissing?: boolean;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
   const scope = { workspaceId, projectId, chapterId };
@@ -86,6 +89,11 @@ export function StoryStoryboardSequenceSection({
         {sequence.status !== "current" ? (
           <span className="rounded-md bg-amber-300/12 px-2 py-0.5 text-[10px] font-semibold text-amber-100/85">
             {t(`status.${sequence.status}`)}
+          </span>
+        ) : null}
+        {plotNodeMissing ? (
+          <span className="rounded-md bg-red-400/12 px-2 py-0.5 text-[10px] font-semibold text-red-200/90">
+            {t("plotNodeMissing")}
           </span>
         ) : null}
       </div>
