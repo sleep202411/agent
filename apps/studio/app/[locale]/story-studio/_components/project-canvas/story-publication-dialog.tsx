@@ -99,16 +99,23 @@ export function StoryPublicationDialog({
           ) : null}
 
           {state.status === "succeeded" ? (
-            <div className="rounded-2xl bg-white/[0.055] p-4">
-              <div className="flex items-start gap-3">
-                <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-black">
-                  <IconCheck className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-white/80">{t("success.version")}</p>
-                  <p className="mt-1 text-[11px] leading-5 text-white/46">{t("success.detail")}</p>
+            <div className="space-y-3">
+              <div className="rounded-2xl bg-white/[0.055] p-4">
+                <div className="flex items-start gap-3">
+                  <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-black">
+                    <IconCheck className="size-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-white/80">{t("success.version")}</p>
+                    <p className="mt-1 text-[11px] leading-5 text-white/46">
+                      {t("success.detail")}
+                    </p>
+                  </div>
                 </div>
               </div>
+              {/* Unfilled work never blocks a release, so the release itself is
+                  where the creator learns what shipped empty. */}
+              <PublishedGaps diagnostics={state.build.diagnostics} />
             </div>
           ) : null}
         </div>
@@ -213,6 +220,35 @@ function PublicationProgress({ phase }: { phase: StoryPublicationActivePhase }) 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * What shipped unfilled. A release is never refused for missing footage — a
+ * work in progress is a legitimate thing to publish — so this is where the
+ * creator finds out which scenes their players will walk through empty.
+ */
+function PublishedGaps({ diagnostics }: { diagnostics: StoryBuildDiagnostic[] }) {
+  const t = useTranslations("storyStudio.canvas.publish");
+  const gaps = diagnostics.filter(
+    (diagnostic) =>
+      diagnostic.code === "STORY_BUILD_CLIP_MEDIA_REQUIRED" ||
+      diagnostic.code === "STORY_BUILD_SEQUENCE_REQUIRED"
+  );
+  if (gaps.length === 0) return null;
+  const scenes = new Set(gaps.map((gap) => gap.entityId ?? "")).size;
+  return (
+    <div className="rounded-2xl bg-amber-300/[0.07] p-4">
+      <div className="flex items-start gap-3">
+        <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-200/80" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-amber-100/90">
+            {t("gaps.title", { count: scenes })}
+          </p>
+          <p className="mt-1 text-[11px] leading-5 text-white/52">{t("gaps.detail")}</p>
+        </div>
+      </div>
     </div>
   );
 }

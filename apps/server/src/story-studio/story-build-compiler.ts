@@ -210,7 +210,12 @@ export function compileStoryBuild(
   const runtimeSelection = reachable;
   validateWorldBindings(runtimeSelection, nodes, worlds, diagnostics);
   const requiredGraphNodeIds = requiredVideoNodeIds(runtimeSelection, nodes);
-  const missingSeverity = input.channel === 'preview' ? 'warning' : 'error';
+  // Missing footage never stops a compile, on either channel. A creator may
+  // ship a work in progress on purpose; the release reports what is unfilled
+  // and the publish surface repeats it, so the decision stays theirs instead
+  // of the pipeline making it for them. A scene with no footage still plays —
+  // the runtime holds an empty sequence and moves on.
+  const missingSeverity = 'warning' as const;
   const includedTimelines: FrozenNodeTimeline[] = [...requiredGraphNodeIds]
     .sort()
     .map((graphNodeId) => {
@@ -218,9 +223,8 @@ export function compileStoryBuild(
       const nodeLabel = node?.kind === 'clip' ? node.clipKey : graphNodeId;
       const timeline = timelines.get(graphNodeId);
       // The storyboard sequence is the node's production plan; a node without
-      // one has never been planned and cannot carry playable content. Missing
-      // footage stops a release and only annotates a preview: the whole point
-      // of a preview is to walk a work that is not finished yet.
+      // one has never been planned and carries no playable content yet. That
+      // is reported, not refused.
       if (!timeline || timeline.sequenceId === null) {
         diagnostics.push(
           diagnostic(
@@ -877,15 +881,12 @@ function compileIntermediateRelease(
       return;
     }
     const timeline = timelineByNodeId.get(node.nodeId);
-    // A preview keeps the scene in the story with an empty sequence so the
-    // work stays playable end to end while its footage is still being made;
-    // the player stands in for it and finishes on the same `media-ended`
-    // outcome, so every exit downstream is unaffected. A release still
-    // requires the storyboard media — `STORY_BUILD_SEQUENCE_REQUIRED` /
-    // `STORY_BUILD_CLIP_MEDIA_REQUIRED` are raised for it either way, and they
-    // are errors only on the release path.
+    // A scene with no footage yet stays in the story with an empty sequence,
+    // on both channels. The player stands in for it and finishes on the same
+    // `media-ended` outcome, so every exit downstream is unaffected — whereas
+    // dropping the scene would leave the scenes that point at it referring to
+    // a node the manifest no longer contains.
     const segments = timeline?.segments ?? [];
-    if (segments.length === 0 && input.channel !== 'preview') return;
     runtimeNodes.push({
       nodeId: node.nodeId,
       presentation: {

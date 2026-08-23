@@ -158,23 +158,33 @@ describe('compileStoryBuild', () => {
     expect(result.runtime?.metadata.experienceProfile).toBe('cinematic');
   });
 
-  it('blocks production when a scene has no storyboard sequence', () => {
+  // Unfilled work is reported, never refused: a creator may ship a work in
+  // progress on purpose, and the scene still plays as an empty sequence so the
+  // scenes pointing at it keep their exits.
+  it('reports, but still releases, a scene with no storyboard sequence', () => {
     const result = compileStoryBuild(
       input({ timelines: [timeline('opening'), timeline('left')] }),
     );
-    expect(result.runtime).toBeNull();
+    expect(result.runtime).not.toBeNull();
+    expect(
+      result.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: 'STORY_BUILD_SEQUENCE_REQUIRED',
-          severity: 'error',
+          severity: 'warning',
           entityId: 'right',
         }),
       ]),
     );
+    const kept = result.runtime?.graph.nodes.some(
+      (node) => 'sceneId' in node && node.sceneId === 'right',
+    );
+    expect(kept).toBe(true);
   });
 
-  it('blocks production when a storyboard clip has no selected media', () => {
+  it('reports, but still releases, a storyboard clip with no selected media', () => {
     const result = compileStoryBuild(
       input({
         timelines: [
@@ -184,12 +194,15 @@ describe('compileStoryBuild', () => {
         ],
       }),
     );
-    expect(result.runtime).toBeNull();
+    expect(result.runtime).not.toBeNull();
+    expect(
+      result.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           code: 'STORY_BUILD_CLIP_MEDIA_REQUIRED',
-          severity: 'error',
+          severity: 'warning',
           entityId: 'right',
         }),
       ]),
