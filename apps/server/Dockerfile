@@ -52,6 +52,7 @@ COPY --from=builder /app/packages/shared/dist ./packages/shared/dist
 COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
 COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
 COPY --from=builder /app/packages/agent-tools/dist ./packages/agent-tools/dist
+COPY --from=builder /app/packages/agent-protocol/dist ./packages/agent-protocol/dist
 
 # A workspace dependency added later without a COPY line above would otherwise
 # only surface as MODULE_NOT_FOUND when the container boots in production —
