@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 4c6b2e68fc4afd296afba2eb0a1cdd0612ccbb2a
+    tag: eb3f65ea558525fe903546db746160adcb7c21ba
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -541,7 +541,7 @@ agentOs:
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: f12f63f1bc2c53a74ed385d22cdf80061273767b
+    tag: eb3f65ea558525fe903546db746160adcb7c21ba
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
