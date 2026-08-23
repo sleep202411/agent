@@ -137,7 +137,9 @@ function ModalityPicker({ modality }: { modality: ProductionModality }) {
             modality={modality}
             selectedId={selected?.id}
             placement="bottom"
-            align="right"
+            // Opens rightward: the trigger sits at the left of the toolbar, so
+            // hanging the panel off its right edge would send it under the rail.
+            align="left"
             onSelect={applyModel}
             onClose={() => setPickerOpen(false)}
           />
