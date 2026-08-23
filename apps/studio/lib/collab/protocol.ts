@@ -31,6 +31,13 @@ export const TEXT_DOC_ROOT_SCHEMA: RootSchema = {
   content: "text",
 };
 
+/** Rich-text mode (the Script): a Y.XmlFragment body driven by Tiptap.
+ *  MUST match the server's ROOT_SCHEMAS entry for `script`. */
+export const RICH_TEXT_DOC_ROOT_SCHEMA: RootSchema = {
+  meta: "map",
+  content: "xml",
+};
+
 /** An operation as returned by the server (operationDto). */
 export interface OperationDto {
   id: string;

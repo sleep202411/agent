@@ -6,6 +6,16 @@ export const EXPERIENCE_CORE_RENDERER_API_VERSION = "1.0.0" as const;
 export const EXPERIENCE_CORE_RENDERER_CONFIG_VERSION = "1.0.0" as const;
 
 export const EXPERIENCE_CORE_VIDEO_RENDERER_ID = "core.video" as const;
+
+/**
+ * A sequence that plays still images, not only footage.
+ *
+ * Declared in `compatibility.requiredCapabilities` only by manifests that
+ * actually contain a still, so video-only experiences stay playable on hosts
+ * that predate stills. A host that cannot render one is refused at runtime
+ * construction, by name, instead of silently showing an empty frame.
+ */
+export const EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY = "core.video.still" as const;
 export const EXPERIENCE_CORE_TEXT_RENDERER_ID = "core.text" as const;
 export const EXPERIENCE_CORE_CHOICE_RENDERER_ID = "core.choice" as const;
 export const EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID = "core.charge-feedback" as const;
@@ -50,7 +60,9 @@ const ExperienceCoreVideoEndBehaviorSchema = z.discriminatedUnion("behavior", [
   z
     .object({
       behavior: z.literal("hold-last-frame"),
-      durationMs: z.number().int().min(100).max(10_000).optional(),
+      // Still-image segments hold for their full storyboard clip length, so
+      // the cap covers long held shots, not just brief end-frame beats.
+      durationMs: z.number().int().min(100).max(120_000).optional(),
     })
     .strict(),
   z

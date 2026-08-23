@@ -211,6 +211,42 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
    disabled). Don't sprinkle `cursor-pointer` per element — the global rule
    covers it.
 
+## FizzAgent conversation contract
+
+FizzAgent is a product projection of Agent OS, not a developer event console.
+The model interprets intent; Agent OS owns orchestration, tools, durable state,
+pause/resume, and the UI events that represent those facts.
+
+- The transcript contains only chronological user messages and assistant
+  answers. Agent requests for input are blocking composer state, never chat
+  rows. `Plan*`, `Step*`, `Tool*`, and `UserInputRequired` events never render
+  as transcript entries, raw ids, timestamps, or sequence numbers.
+- While work is running, the transcript tail has exactly one ephemeral
+  activity line. Its localized product copy may switch in place as phases or
+  tools change. A separate pipeline (for example story authoring stages) must
+  feed this same line, never add a second progress card.
+- The activity line is status, not a job-control toolbar. It never exposes an
+  inline Cancel action. The composer's Stop control may stop the live Agent
+  turn before handoff; once a durable authoring pipeline has been handed off,
+  its creator decision appears only with the resulting proposal (Apply or
+  Discard). A discarded/cancelled run is terminal, and historical assistant
+  prose must never be used as current job-state authority.
+- A structured interaction is rendered only after Agent OS requests it; it
+  replaces and blocks the normal composer, exactly like a Claude/Codex
+  approve-to-continue gate. It is never rendered in the transcript, never a
+  permanent project-settings form, and never an unconditional empty-state
+  control. When submitted, the interaction disappears and only the
+  human-readable answer is appended as a durable user message in normal
+  timeline order.
+- A blocking interaction pauses the same logical run at a checkpoint. The user
+  response is a new visible message turn, then Agent OS resumes that run. The
+  transcript tail keeps exactly one truthful waiting line while the composer
+  is blocked (for example “Waiting for your answer…”); it switches back to the
+  current work phase after submission.
+- Completed answer copy uses white as the primary foreground on the dark
+  surface. Gray is reserved for subordinate hints and metadata, not applied to
+  the whole conversation by default.
+
 ## Type scale
 
 One neutral grotesque (`--font-sans`) carries the whole app; hierarchy comes

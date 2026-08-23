@@ -85,7 +85,6 @@ import {
   STORY_CLIP_VIDEO_CONTENT_TYPE,
   STORY_CLIP_VIDEO_MAX_BYTES,
 } from './media-upload.policy';
-import { StoryVideoUploadSessionService } from './story-video-upload-session.service';
 import { WorkspacePermissionService } from '../workspaces';
 import {
   UploadedImageProbeService,
@@ -123,14 +122,7 @@ const MiB = 1024 * 1024;
 /** Video upload kinds that generic confirm must not transcode. Reference
  *  videos are generation-only inputs; story clips are enqueued later by the
  *  story domain after checksum/ffprobe verification and workspace claim. */
-const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>([
-  'ai_reference_video',
-  // Story clip uploads are not reusable until the project completion endpoint
-  // has streamed the object back through SHA-256 + ffprobe and claimed it into
-  // the workspace. Starting HLS here would race that verification and could
-  // transcode bytes that the story domain later rejects.
-  'story_clip_video',
-]);
+const HLS_SKIP_UPLOAD_KINDS = new Set<UploadKind>(['ai_reference_video']);
 
 const IMAGE_CONTENT_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -214,13 +206,6 @@ const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
     assetKind: MediaAssetKind.video,
     ttlSeconds: 3600, // 60 min — large video can be slow on the PUT
     keySegment: 'episode-video',
-  },
-  story_clip_video: {
-    contentTypes: STORY_VIDEO_CONTENT_TYPES,
-    maxBytes: STORY_CLIP_VIDEO_MAX_BYTES,
-    assetKind: MediaAssetKind.video,
-    ttlSeconds: 3600,
-    keySegment: 'story-clip-video',
   },
   episode_cover: {
     contentTypes: IMAGE_CONTENT_TYPES,
@@ -327,7 +312,6 @@ export class MediaUploadService {
     private readonly assetUrls: MediaAssetUrlResolverService,
     private readonly mediaProcessing: MediaProcessingService,
     private readonly readiness: MediaAssetReadinessService,
-    private readonly storyVideoUploads: StoryVideoUploadSessionService,
     private readonly workspacePermissions: WorkspacePermissionService,
     private readonly uploadedImages: UploadedImageProbeService,
     private readonly mediaFacts: MediaAssetFactsService,
@@ -387,9 +371,6 @@ export class MediaUploadService {
     input: CreateUploadUrlInputDto,
     workspaceId?: string,
   ): Promise<CreateUploadUrlResponseDto> {
-    if (input.kind === 'story_clip_video') {
-      return this.storyVideoUploads.issue(userId, workspaceId, input);
-    }
     const uploadScope = await this.requireUploadScope(
       userId,
       input.kind,
@@ -497,9 +478,6 @@ export class MediaUploadService {
     input: ConfirmUploadInputDto,
     workspaceId?: string,
   ): Promise<ConfirmUploadResponseDto> {
-    if (input.kind === 'story_clip_video') {
-      return this.storyVideoUploads.confirm(userId, workspaceId, input);
-    }
     const uploadScope = await this.requireUploadScope(
       userId,
       input.kind,

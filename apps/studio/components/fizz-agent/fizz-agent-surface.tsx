@@ -37,14 +37,23 @@ export interface FizzAgentSurfaceProps {
   children: ReactNode;
   composer?: ReactNode;
   headerActions?: ReactNode;
+  /**
+   * Wrap or replace the composer for the duration of a blocking decision — the
+   * host returns the approval prompt to render in the composer's place, or the
+   * composer untouched. Mirrors the Claude/Codex "approve to continue" gate.
+   */
+  composerGate?: (composer: ReactNode) => ReactNode;
   busy?: boolean;
   /**
    * Retire this conversation and open an empty one. Omit to hide the control —
    * a surface with no thread has nothing to retire.
    */
   onNewConversation?: () => void;
-  onOpenChange: (open: boolean) => void;
+  /** Omit to make the surface permanent — no close control is rendered. */
+  onOpenChange?: (open: boolean) => void;
   className?: string;
+  /** "floating" is the default rounded card; "docked" squares it off to sit flush against the viewport edge. */
+  variant?: "floating" | "docked";
 }
 
 /**
@@ -66,10 +75,12 @@ export function FizzAgentSurface({
   children,
   composer,
   headerActions,
+  composerGate,
   busy = false,
   onNewConversation,
   onOpenChange,
   className,
+  variant = "floating",
 }: FizzAgentSurfaceProps) {
   if (!open) return null;
 
@@ -82,13 +93,16 @@ export function FizzAgentSurface({
       <aside
         aria-label={labels.surface}
         role="complementary"
-        className="liquid-rim flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden rounded-[26px] bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200"
+        className={cn(
+          "flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200",
+          variant === "docked" ? "rounded-none max-md:w-full" : "liquid-rim rounded-[26px]"
+        )}
       >
         <header className="flex h-14 shrink-0 items-center gap-3 px-4">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-medium text-white/92">{title}</h2>
+            <h2 className="truncate text-sm font-medium text-white">{title}</h2>
             {subtitle ? (
-              <div className="mt-0.5 truncate text-[10px] leading-3 text-white/38">{subtitle}</div>
+              <div className="mt-0.5 truncate text-[10px] leading-3 text-white/65">{subtitle}</div>
             ) : null}
           </div>
 
@@ -102,7 +116,7 @@ export function FizzAgentSurface({
                   aria-label={labels.newConversation}
                   title={labels.newConversation}
                   disabled={busy}
-                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:pointer-events-none disabled:opacity-40"
+                  className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-white/72 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:pointer-events-none disabled:opacity-40"
                 >
                   <IconPencilPlus aria-hidden="true" className="size-4" />
                 </button>
@@ -129,18 +143,24 @@ export function FizzAgentSurface({
             </AlertDialog>
           ) : null}
 
-          <button
-            type="button"
-            aria-label={labels.close}
-            onClick={() => onOpenChange(false)}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.035] text-white/54 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
-          >
-            <IconX aria-hidden="true" className="size-4" />
-          </button>
+          {onOpenChange ? (
+            <button
+              type="button"
+              aria-label={labels.close}
+              onClick={() => onOpenChange(false)}
+              className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-white/72 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+            >
+              <IconX aria-hidden="true" className="size-4" />
+            </button>
+          ) : null}
         </header>
 
         <div className="min-h-0 flex-1">{children}</div>
-        {composer ? <footer className="shrink-0 p-3 pt-1">{composer}</footer> : null}
+        {composer ? (
+          <footer className="shrink-0 p-3 pt-1">
+            {composerGate ? composerGate(composer) : composer}
+          </footer>
+        ) : null}
       </aside>
     </div>
   );

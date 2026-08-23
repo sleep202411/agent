@@ -5,6 +5,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
+  Prisma,
+  type StudioDocumentOperation,
   StudioDocumentOperationType,
   StudioDocumentStatus,
   StudioDocumentType,
@@ -22,8 +24,16 @@ import { PrismaService } from '../infra/db/db.module';
 import { DocumentsService } from '../documents/documents.service';
 import { DocumentsGateway } from '../documents/documents.gateway';
 import { rootSchemaFor } from '../documents/document-modes';
+import { AgentOsToolExecutionReceiptService } from './agent-os-tool-execution-receipt.service';
+import type { AgentOsCapabilityExecuteInput } from './capabilities/capability-handler';
 
 const SHOT_NODE_TYPE = 'shot';
+const AGENT_OS_OPERATION_RECEIPT_KEY = 'agentOsToolReceipt';
+
+type AgentOsOperationReceiptEnvelope = {
+  requestFingerprint: string;
+  result: unknown;
+};
 
 export type AgentOsCanvasShot = {
   id: string;
@@ -67,6 +77,7 @@ export class AgentOsCanvasShotsService {
     private readonly prisma: PrismaService,
     private readonly documents: DocumentsService,
     private readonly documentsGateway: DocumentsGateway,
+    private readonly receipts: AgentOsToolExecutionReceiptService,
   ) {}
 
   /**
@@ -247,6 +258,7 @@ export class AgentOsCanvasShotsService {
     idempotencyKey: string;
     skillResolutionId: string;
     skillVersionIds: readonly string[];
+    toolExecution: AgentOsCapabilityExecuteInput;
   }): Promise<{
     draftRevision: number;
     layoutRevision: number;
@@ -255,6 +267,14 @@ export class AgentOsCanvasShotsService {
     nodeIds: string[];
   }> {
     const user: AuthUser = { userId: input.actorId };
+    const operationKey = `agent-os:patch:${input.idempotencyKey}`.slice(0, 160);
+    const replay = await this.replayCommittedOperation<{
+      draftRevision: number;
+      layoutRevision: number;
+      appliedOperationIds: string[];
+      nodeIds: string[];
+    }>(input, operationKey);
+    if (replay) return replay;
     const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
@@ -330,35 +350,79 @@ export class AgentOsCanvasShotsService {
         };
       }
 
-      const { operation } = await this.documents.appendOperation(user, row.id, {
-        operationType: StudioDocumentOperationType.yjs_update,
-        yjsUpdateBase64: Buffer.from(update).toString('base64'),
-        idempotencyKey: `agent-os:patch:${input.idempotencyKey}`.slice(0, 160),
-        metadata: {
-          source: 'agent-os',
-          toolId: 'canvas.applyPatch',
-          appliedOperationIds,
-          skillResolutionId: input.skillResolutionId,
-          skillVersionIds: [...input.skillVersionIds],
+      let committedResult:
+        | {
+            draftRevision: number;
+            layoutRevision: number;
+            appliedOperationIds: string[];
+            nodeIds: string[];
+          }
+        | undefined;
+      const { operation } = await this.documents.appendOperation(
+        user,
+        row.id,
+        {
+          operationType: StudioDocumentOperationType.yjs_update,
+          yjsUpdateBase64: Buffer.from(update).toString('base64'),
+          idempotencyKey: operationKey,
+          metadata: {
+            source: 'agent-os',
+            toolId: 'canvas.applyPatch',
+            appliedOperationIds,
+            skillResolutionId: input.skillResolutionId,
+            skillVersionIds: [...input.skillVersionIds],
+          },
         },
-      });
+        {
+          onTransactionStart: (tx) =>
+            this.receipts.fenceBusinessMutationInTx(tx, input.toolExecution),
+          onBeforeCommit: async (tx, storedOperation, context) => {
+            const committedDocument = await tx.studioDocument.findUnique({
+              where: { id: row.id },
+              select: { version: true },
+            });
+            if (
+              !context.replayed &&
+              (storedOperation.sequence - 1 !== input.baseLayoutRevision ||
+                (committedDocument?.version ?? 0) - 1 !==
+                  input.baseDraftRevision)
+            ) {
+              throw new ConflictException({
+                code: 'CANVAS_VERSION_CONFLICT',
+                message:
+                  'Canvas changed before this Agent patch could be committed.',
+                expected: {
+                  draftRevision: input.baseDraftRevision,
+                  layoutRevision: input.baseLayoutRevision,
+                },
+                actual: {
+                  draftRevision: (committedDocument?.version ?? 1) - 1,
+                  layoutRevision: storedOperation.sequence - 1,
+                },
+              });
+            }
+            const result = {
+              draftRevision: committedDocument?.version ?? row.version + 1,
+              layoutRevision: storedOperation.sequence,
+              appliedOperationIds,
+              nodeIds: touchedNodeIds,
+            };
+            committedResult = await this.commitOperationReceiptInTx(
+              tx,
+              storedOperation,
+              input.toolExecution,
+              result,
+              context.replayed,
+            );
+          },
+        },
+      );
 
-      await this.documentsGateway.publishDocumentOperation(row.id, operation);
-
-      const refreshed = await this.prisma.studioDocument.findUnique({
-        where: { id: row.id },
-        select: { version: true, currentSequence: true },
-      });
-
-      return {
-        draftRevision: refreshed?.version ?? row.version + 1,
-        layoutRevision:
-          operation.sequence ??
-          refreshed?.currentSequence ??
-          row.currentSequence + 1,
-        appliedOperationIds,
-        nodeIds: touchedNodeIds,
-      };
+      await this.publishOperation(row.id, operation);
+      if (!committedResult) {
+        throw new Error('Canvas command committed without a durable result.');
+      }
+      return committedResult;
     } finally {
       doc.destroy();
     }
@@ -378,16 +442,27 @@ export class AgentOsCanvasShotsService {
     projectId: string;
     documentId: string;
     shotIds: string[];
+    baseRevision?: number;
     idempotencyKey: string;
     skillResolutionId: string;
     skillVersionIds: readonly string[];
+    toolExecution: AgentOsCapabilityExecuteInput;
   }): Promise<{
-    documentId: string;
     revision: number;
-    previousRevision: number;
     deleted: Array<{ id: string; title: string }>;
+    staleBaseRevision?: true;
   }> {
     const user: AuthUser = { userId: input.actorId };
+    const operationKey = `agent-os:shots-del:${input.idempotencyKey}`.slice(
+      0,
+      160,
+    );
+    const replay = await this.replayCommittedOperation<{
+      revision: number;
+      deleted: Array<{ id: string; title: string }>;
+      staleBaseRevision?: true;
+    }>(input, operationKey);
+    if (replay) return replay;
     const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
@@ -449,36 +524,67 @@ export class AgentOsCanvasShotsService {
       const deleted = targets.map(({ id, title }) => ({ id, title }));
       if (update.byteLength === 0) {
         return {
-          documentId: row.id,
           revision: row.currentSequence,
-          previousRevision: row.currentSequence,
           deleted,
+          ...(isStaleRevision(input.baseRevision, row.currentSequence)
+            ? { staleBaseRevision: true as const }
+            : {}),
         };
       }
 
-      const { operation } = await this.documents.appendOperation(user, row.id, {
-        operationType: StudioDocumentOperationType.yjs_update,
-        yjsUpdateBase64: Buffer.from(update).toString('base64'),
-        idempotencyKey: `agent-os:shots-del:${input.idempotencyKey}`.slice(
-          0,
-          160,
-        ),
-        metadata: {
-          source: 'agent-os',
-          toolId: 'storyboard.deleteShots',
-          skillResolutionId: input.skillResolutionId,
-          skillVersionIds: [...input.skillVersionIds],
+      let committedResult:
+        | {
+            revision: number;
+            deleted: Array<{ id: string; title: string }>;
+            staleBaseRevision?: true;
+          }
+        | undefined;
+      const { operation } = await this.documents.appendOperation(
+        user,
+        row.id,
+        {
+          operationType: StudioDocumentOperationType.yjs_update,
+          yjsUpdateBase64: Buffer.from(update).toString('base64'),
+          idempotencyKey: operationKey,
+          metadata: {
+            source: 'agent-os',
+            toolId: 'storyboard.deleteShots',
+            skillResolutionId: input.skillResolutionId,
+            skillVersionIds: [...input.skillVersionIds],
+          },
         },
-      });
+        {
+          onTransactionStart: (tx) =>
+            this.receipts.fenceBusinessMutationInTx(tx, input.toolExecution),
+          onBeforeCommit: async (tx, storedOperation, context) => {
+            const result = {
+              revision: storedOperation.sequence,
+              deleted,
+              ...(isStaleRevision(
+                input.baseRevision,
+                storedOperation.sequence - 1,
+              )
+                ? { staleBaseRevision: true as const }
+                : {}),
+            };
+            committedResult = await this.commitOperationReceiptInTx(
+              tx,
+              storedOperation,
+              input.toolExecution,
+              result,
+              context.replayed,
+            );
+          },
+        },
+      );
 
-      await this.documentsGateway.publishDocumentOperation(row.id, operation);
-
-      return {
-        documentId: row.id,
-        revision: operation.sequence,
-        previousRevision: row.currentSequence,
-        deleted,
-      };
+      await this.publishOperation(row.id, operation);
+      if (!committedResult) {
+        throw new Error(
+          'Storyboard delete committed without a durable result.',
+        );
+      }
+      return committedResult;
     } finally {
       doc.destroy();
     }
@@ -495,16 +601,24 @@ export class AgentOsCanvasShotsService {
     projectId: string;
     documentId: string;
     shots: ShotWrite[];
+    baseRevision?: number;
     idempotencyKey: string;
     skillResolutionId: string;
     skillVersionIds: readonly string[];
+    toolExecution: AgentOsCapabilityExecuteInput;
   }): Promise<{
-    documentId: string;
     revision: number;
-    previousRevision: number;
     written: Array<{ id: string; title: string; nodeId: string }>;
+    staleBaseRevision?: true;
   }> {
     const user: AuthUser = { userId: input.actorId };
+    const operationKey = `agent-os:shots:${input.idempotencyKey}`.slice(0, 160);
+    const replay = await this.replayCommittedOperation<{
+      revision: number;
+      written: Array<{ id: string; title: string; nodeId: string }>;
+      staleBaseRevision?: true;
+    }>(input, operationKey);
+    if (replay) return replay;
     const row = await this.prisma.studioDocument.findFirst({
       where: {
         id: input.documentId,
@@ -537,35 +651,186 @@ export class AgentOsCanvasShotsService {
       const update = Y.encodeStateAsUpdate(doc, before);
       if (update.byteLength === 0) {
         return {
-          documentId: row.id,
           revision: row.currentSequence,
-          previousRevision: row.currentSequence,
           written,
+          ...(isStaleRevision(input.baseRevision, row.currentSequence)
+            ? { staleBaseRevision: true as const }
+            : {}),
         };
       }
 
-      const { operation } = await this.documents.appendOperation(user, row.id, {
-        operationType: StudioDocumentOperationType.yjs_update,
-        yjsUpdateBase64: Buffer.from(update).toString('base64'),
-        idempotencyKey: `agent-os:shots:${input.idempotencyKey}`.slice(0, 160),
-        metadata: {
-          source: 'agent-os',
-          toolId: 'storyboard.upsertShots',
-          skillResolutionId: input.skillResolutionId,
-          skillVersionIds: [...input.skillVersionIds],
+      let committedResult:
+        | {
+            revision: number;
+            written: Array<{ id: string; title: string; nodeId: string }>;
+            staleBaseRevision?: true;
+          }
+        | undefined;
+      const { operation } = await this.documents.appendOperation(
+        user,
+        row.id,
+        {
+          operationType: StudioDocumentOperationType.yjs_update,
+          yjsUpdateBase64: Buffer.from(update).toString('base64'),
+          idempotencyKey: operationKey,
+          metadata: {
+            source: 'agent-os',
+            toolId: 'storyboard.upsertShots',
+            skillResolutionId: input.skillResolutionId,
+            skillVersionIds: [...input.skillVersionIds],
+          },
         },
-      });
+        {
+          onTransactionStart: (tx) =>
+            this.receipts.fenceBusinessMutationInTx(tx, input.toolExecution),
+          onBeforeCommit: async (tx, storedOperation, context) => {
+            const result = {
+              revision: storedOperation.sequence,
+              written,
+              ...(isStaleRevision(
+                input.baseRevision,
+                storedOperation.sequence - 1,
+              )
+                ? { staleBaseRevision: true as const }
+                : {}),
+            };
+            committedResult = await this.commitOperationReceiptInTx(
+              tx,
+              storedOperation,
+              input.toolExecution,
+              result,
+              context.replayed,
+            );
+          },
+        },
+      );
 
-      await this.documentsGateway.publishDocumentOperation(row.id, operation);
-
-      return {
-        documentId: row.id,
-        revision: operation.sequence,
-        previousRevision: row.currentSequence,
-        written,
-      };
+      await this.publishOperation(row.id, operation);
+      if (!committedResult) {
+        throw new Error(
+          'Storyboard upsert committed without a durable result.',
+        );
+      }
+      return committedResult;
     } finally {
       doc.destroy();
+    }
+  }
+
+  /**
+   * Recover an operation that committed before the caller received its HTTP
+   * response. This lookup deliberately precedes document/version/hydration
+   * checks: an exact replay returns the original product result even after the
+   * board has advanced.
+   */
+  private async replayCommittedOperation<T extends object>(
+    input: {
+      projectId: string;
+      documentId: string;
+      toolExecution: AgentOsCapabilityExecuteInput;
+    },
+    idempotencyKey: string,
+  ): Promise<T | null> {
+    const operation = await this.prisma.studioDocumentOperation.findFirst({
+      where: {
+        documentId: input.documentId,
+        idempotencyKey,
+        document: {
+          platformProjectId: input.projectId,
+          type: StudioDocumentType.canvas,
+          deletedAt: null,
+        },
+      },
+    });
+    if (!operation) return null;
+    const envelope = operationReceiptEnvelope(operation.metadata);
+    const receipt = input.toolExecution.toolExecutionReceipt;
+    if (
+      !receipt ||
+      envelope?.requestFingerprint !== receipt.requestFingerprint
+    ) {
+      throw new ConflictException({
+        code: 'AGENT_OS_DOCUMENT_RECEIPT_CONFLICT',
+        message:
+          'The document idempotency key was already committed by a different tool request.',
+      });
+    }
+    const result = requireObjectResult<T>(envelope.result);
+    await this.prisma.$transaction((tx) =>
+      this.receipts.completeSuccessInTx(tx, input.toolExecution, result),
+    );
+    return result;
+  }
+
+  private async commitOperationReceiptInTx<T extends object>(
+    tx: Prisma.TransactionClient,
+    operation: StudioDocumentOperation,
+    toolExecution: AgentOsCapabilityExecuteInput,
+    proposedResult: T,
+    replayed: boolean,
+  ): Promise<T> {
+    const receipt = toolExecution.toolExecutionReceipt;
+    if (!receipt) {
+      throw new ConflictException({
+        code: 'AGENT_OS_DOCUMENT_RECEIPT_REQUIRED',
+        message: 'A document command requires a durable tool receipt.',
+      });
+    }
+    const existing = operationReceiptEnvelope(operation.metadata);
+    if (existing) {
+      if (existing.requestFingerprint !== receipt.requestFingerprint) {
+        throw new ConflictException({
+          code: 'AGENT_OS_DOCUMENT_RECEIPT_CONFLICT',
+          message:
+            'The document idempotency key belongs to a different tool payload.',
+        });
+      }
+      const stored = requireObjectResult<T>(existing.result);
+      await this.receipts.completeSuccessInTx(tx, toolExecution, stored);
+      return stored;
+    }
+    if (replayed) {
+      throw new ConflictException({
+        code: 'AGENT_OS_DOCUMENT_RECEIPT_MISSING',
+        message:
+          'The existing document operation predates durable Agent OS receipts and cannot be replayed safely.',
+      });
+    }
+    const metadata = jsonObject(operation.metadata);
+    await tx.studioDocumentOperation.update({
+      where: { id: operation.id },
+      data: {
+        metadata: {
+          ...metadata,
+          [AGENT_OS_OPERATION_RECEIPT_KEY]: {
+            requestFingerprint: receipt.requestFingerprint,
+            result: proposedResult,
+          },
+        } as Prisma.InputJsonObject,
+      },
+    });
+    await this.receipts.completeSuccessInTx(tx, toolExecution, proposedResult);
+    return proposedResult;
+  }
+
+  private async publishOperation(
+    documentId: string,
+    operation: unknown,
+  ): Promise<void> {
+    try {
+      await this.documentsGateway.publishDocumentOperation(
+        documentId,
+        operation,
+      );
+    } catch (error) {
+      // PostgreSQL already owns both the product mutation and its exact result.
+      // A realtime transport outage must not turn that durable success into a
+      // second command execution; reconnect/sync will recover the operation.
+      const operationId = asRecord(operation).id;
+      this.logger.error(
+        `Document operation ${typeof operationId === 'string' ? operationId : 'unknown'} committed but realtime publication failed`,
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 
@@ -979,6 +1244,44 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function jsonObject(value: Prisma.JsonValue): Prisma.InputJsonObject {
+  return asRecord(value) as Prisma.InputJsonObject;
+}
+
+function operationReceiptEnvelope(
+  metadata: Prisma.JsonValue,
+): AgentOsOperationReceiptEnvelope | null {
+  const candidate = asRecord(metadata)[AGENT_OS_OPERATION_RECEIPT_KEY];
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    return null;
+  }
+  const record = candidate as Record<string, unknown>;
+  return typeof record.requestFingerprint === 'string' &&
+    Object.hasOwn(record, 'result')
+    ? {
+        requestFingerprint: record.requestFingerprint,
+        result: record.result,
+      }
+    : null;
+}
+
+function requireObjectResult<T extends object>(value: unknown): T {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new ConflictException({
+      code: 'AGENT_OS_DOCUMENT_RECEIPT_CORRUPT',
+      message: 'The stored document tool result is invalid.',
+    });
+  }
+  return value as T;
+}
+
+function isStaleRevision(
+  expected: number | undefined,
+  actual: number,
+): boolean {
+  return expected !== undefined && expected !== actual;
 }
 
 function readString(data: Record<string, unknown>, key: string): string {

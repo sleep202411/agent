@@ -16,6 +16,7 @@ export function CopilotComposer({
   inputLabel,
   sendLabel,
   stopLabel,
+  stopAvailable = true,
   inlineTokens,
   attachmentBar,
   leadingAction,
@@ -37,6 +38,8 @@ export function CopilotComposer({
   inputLabel: string;
   sendLabel: string;
   stopLabel: string;
+  /** False when a committed domain operation cannot be interrupted safely. */
+  stopAvailable?: boolean;
   inlineTokens?: ReactNode;
   /** Rendered above the input row (attachment chips, errors). */
   attachmentBar?: ReactNode;
@@ -89,6 +92,7 @@ export function CopilotComposer({
   const textarea = (className?: string, style?: React.CSSProperties) => (
     <textarea
       ref={textareaRef}
+      data-agent-composer-input="true"
       id={inputId}
       value={value}
       onChange={(event) => onChange(event.target.value)}
@@ -103,7 +107,7 @@ export function CopilotComposer({
       placeholder={placeholder}
       style={style}
       className={cn(
-        "w-full resize-none bg-transparent py-2 text-sm text-white/88 outline-none placeholder:text-white/28",
+        "w-full resize-none bg-transparent py-2 text-sm text-white outline-none placeholder:text-white/68",
         appearance === "fizz-agent" ? "min-h-14 leading-relaxed" : "min-h-10 leading-5",
         className
       )}
@@ -111,19 +115,21 @@ export function CopilotComposer({
   );
 
   const action = busy ? (
-    <button
-      type="button"
-      onClick={onStop}
-      aria-label={stopLabel}
-      className={cn(
-        "grid shrink-0 place-items-center text-white transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-        appearance === "fizz-agent"
-          ? "size-9 rounded-full bg-primary shadow-[0_8px_24px_rgba(0,0,0,0.3)] hover:scale-[1.03] hover:bg-primary/90 active:scale-95"
-          : "size-10 rounded-2xl bg-white/[0.1] hover:bg-white/[0.15]"
-      )}
-    >
-      <IconPlayerStopFilled className="size-4" />
-    </button>
+    stopAvailable ? (
+      <button
+        type="button"
+        onClick={onStop}
+        aria-label={stopLabel}
+        className={cn(
+          "grid shrink-0 place-items-center text-white transition focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+          appearance === "fizz-agent"
+            ? "size-9 rounded-full bg-primary shadow-[0_8px_24px_rgba(0,0,0,0.3)] hover:scale-[1.03] hover:bg-primary/90 active:scale-95"
+            : "size-10 rounded-2xl bg-white/[0.1] hover:bg-white/[0.15]"
+        )}
+      >
+        <IconPlayerStopFilled className="size-4" />
+      </button>
+    ) : null
   ) : (
     <button
       type="submit"

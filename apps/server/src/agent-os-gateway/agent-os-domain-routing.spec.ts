@@ -1,7 +1,12 @@
+import { ConflictException } from '@nestjs/common';
 import { AgentOsDomainService } from './agent-os-domain.service';
 
 const INPUT = {
   toolId: 'characters.list',
+  runId: '00000000-0000-4000-8000-000000000010',
+  conversationId: '00000000-0000-4000-8000-000000000011',
+  turnId: '00000000-0000-4000-8000-000000000012',
+  toolCallId: 'tool-call-1',
   actorId: 'actor-1',
   projectId: 'project-1',
   skillResolutionId: '00000000-0000-4000-8000-000000000000',
@@ -32,13 +37,23 @@ function makeService(options: {
     projectKind: 'platform',
     supports: jest.fn().mockReturnValue(true),
     execute: jest.fn().mockResolvedValue({ characters: [] }),
+    listCharactersForUser: jest.fn().mockResolvedValue({ characters: [] }),
   };
   const attachmentHandler = {
     supports: jest.fn().mockReturnValue(false),
     execute: jest.fn(),
   };
+  const receipts = {
+    executeCommand: jest.fn(
+      (
+        input: typeof INPUT,
+        execute: (value: typeof INPUT) => Promise<unknown>,
+      ) => execute(input),
+    ),
+  };
   const service = new AgentOsDomainService(
     projects as never,
+    receipts as never,
     attachmentHandler as never,
     platformHandler as never,
     storyHandler as never,
@@ -49,6 +64,7 @@ function makeService(options: {
     attachmentHandler,
     platformHandler,
     storyHandler,
+    receipts,
   };
 }
 
@@ -113,5 +129,42 @@ describe('AgentOsDomainService project-kind routing', () => {
       },
     );
     expect(storyHandler.execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps the human character query outside Agent run execution context', async () => {
+    const { service, platformHandler } = makeService({
+      projectKind: 'platform',
+    });
+
+    await expect(
+      service.listProjectCharacters('actor-1', 'project-1'),
+    ).resolves.toEqual({ characters: [] });
+    expect(platformHandler.listCharactersForUser).toHaveBeenCalledWith(
+      'actor-1',
+      'project-1',
+    );
+    expect(platformHandler.execute).not.toHaveBeenCalled();
+  });
+
+  it('preserves superseded receipt ownership as Worker control flow', async () => {
+    const { service, receipts, platformHandler } = makeService({
+      projectKind: 'platform',
+    });
+    receipts.executeCommand.mockRejectedValueOnce(
+      new ConflictException({
+        code: 'AGENT_OS_TOOL_EXECUTION_SUPERSEDED',
+        message: 'A newer execution owns this receipt.',
+      }),
+    );
+
+    await expect(
+      service.execute({ ...INPUT, toolId: 'characters.upsert' }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'AGENT_OS_TOOL_EXECUTION_SUPERSEDED',
+      message: 'A newer execution owns this receipt.',
+      retryable: true,
+    });
+    expect(platformHandler.execute).not.toHaveBeenCalled();
   });
 });

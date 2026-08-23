@@ -124,7 +124,7 @@ export function StoryProjectPlaytest({
     : t("pageTitle");
 
   return (
-    <main className="relative isolate min-h-dvh overflow-hidden bg-black text-white">
+    <main className="relative isolate min-h-dvh min-w-0 flex-1 overflow-hidden bg-black text-white">
       <div className="absolute inset-0">
         <ExperienceRuntimePlayer
           key={parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}

@@ -8,18 +8,22 @@ import type {
   MediaAssetSummary,
   StoryCandidateAsset,
 } from "@/lib/story-projects-api";
-import { StoryNodeInspector } from "./story-node-inspector";
+import enUsMessages from "../../../../../messages/en-US.json";
+import zhCnMessages from "../../../../../messages/zh-CN.json";
+import zhHkMessages from "../../../../../messages/zh-HK.json";
+import { StoryProjectWorldPanel } from "./story-project-world-panel";
 
 vi.mock("next-intl", () => ({
+  useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
 
 /**
- * The cover editor is reached through the canvas film-foundation header button,
- * which opens this inspector in `showFoundation` mode. These tests drive that
- * real panel rather than the section in isolation, because the thing worth
- * protecting is that a human can get to the control at all — shipping the
- * publish pipeline without a reachable tap is what makes a dead feature.
+ * The cover editor is reached through the rail's World button, which docks the
+ * world panel next to the canvas. These tests drive that real panel rather than
+ * the section in isolation, because the thing worth protecting is that a human
+ * can get to the control at all — shipping the publish pipeline without a
+ * reachable tap is what makes a dead feature.
  */
 describe("film foundation cover authoring", () => {
   let container: HTMLDivElement;
@@ -45,6 +49,41 @@ describe("film foundation cover authoring", () => {
     expect(container.textContent ?? "").toContain("filmFoundation.cover.empty");
     const choose = buttonByText("filmFoundation.cover.choose");
     expect(choose.disabled).toBe(false);
+  });
+
+  it("shows the project-level creative profile in Overview", async () => {
+    await render({ cover: null });
+
+    const text = container.textContent ?? "";
+    expect(text).toContain("aspectRatio");
+    expect(text).toContain("frameProfiles.landscape_16_9");
+    expect(text).toContain("durationPresets.medium_15_30");
+    expect(text).toContain("visualStyles.graphic_novel");
+    expect(text).toContain("en-US");
+  });
+
+  it("labels the shared project runtime presets in minutes in every locale", () => {
+    const profiles = [enUsMessages, zhCnMessages, zhHkMessages].map(
+      (messages) => messages.storyStudio.canvas.filmFoundation.profile.durationPresets
+    );
+
+    expect(profiles).toEqual([
+      {
+        short_5_15: "5–15 minutes",
+        medium_15_30: "15–30 minutes",
+        long_30_60: "30–60 minutes",
+      },
+      {
+        short_5_15: "5–15 分钟",
+        medium_15_30: "15–30 分钟",
+        long_30_60: "30–60 分钟",
+      },
+      {
+        short_5_15: "5–15 分鐘",
+        medium_15_30: "15–30 分鐘",
+        long_30_60: "30–60 分鐘",
+      },
+    ]);
   });
 
   it("renders a set cover image and switches the action to replace", async () => {
@@ -113,10 +152,14 @@ describe("film foundation cover authoring", () => {
     candidateAssets?: StoryCandidateAsset[];
     onSelectCandidate?: (candidate: StoryCandidateAsset) => Promise<void>;
   }) {
-    const props: ComponentProps<typeof StoryNodeInspector> = {
+    const props: ComponentProps<typeof StoryProjectWorldPanel> = {
+      project: {
+        frameProfile: "landscape_16_9",
+        durationPreset: "medium_15_30",
+        visualStyle: "graphic_novel",
+        defaultLocale: "en-US",
+      },
       content: emptyDraft(),
-      selectedNode: null,
-      showFoundation: true,
       canEdit: true,
       coverMedia: {
         cover: coverMedia.cover,
@@ -129,14 +172,10 @@ describe("film foundation cover authoring", () => {
         onUpload: vi.fn().mockResolvedValue(undefined),
       },
       onUpdateFoundation: vi.fn(),
-      onCloseNode: vi.fn(),
-      onDeleteSelected: vi.fn(),
-      onUpdateClipMeta: vi.fn(),
-      onSetSceneExit: vi.fn(),
-      onEditInteractions: vi.fn(),
+      onClose: vi.fn(),
     };
     await act(async () => {
-      root.render(<StoryNodeInspector {...props} />);
+      root.render(<StoryProjectWorldPanel {...props} />);
     });
   }
 

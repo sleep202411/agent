@@ -1,41 +1,64 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentOsAblyRunSnapshot } from "@repo/shared";
+import type { AgentOsAblyResyncPointer, AgentOsAblyRunSnapshot } from "@repo/shared";
 import { AgentOsAblyLive } from "@/lib/agent-os/ably-live";
+import {
+  AgentOsRealtimeConversationReconciler,
+  AgentOsRealtimeResyncPuller,
+  advanceAgentOsContiguousSequence,
+  agentOsCatchUpTargetFromEventGap,
+  agentOsCatchUpTargetFromPointer,
+  agentOsCatchUpTargetFromSnapshot,
+} from "@/lib/agent-os/realtime-resync";
 import {
   agentOsApi,
   type AgentOsEvent,
   type AgentOsPendingApproval,
+  type AgentOsPendingExternal,
+  type AgentOsPendingUserInput,
   type AgentOsRunStatus,
   type AgentOsWorkbenchContext,
 } from "@/lib/agent-os/api-client";
+import {
+  deriveActiveTurnId,
+  deriveAgentActivity,
+  derivePendingExternalFromEvents,
+  derivePendingApprovalFromEvents,
+  derivePendingUserInputFromEvents,
+  deriveStatusFromEvents,
+  rebuildRunTimelineFromEvents,
+  workbenchContextFromEvents,
+  type AgentOsChatMessage,
+  type AgentOsSessionStatus,
+} from "./agent-os-timeline";
 
-export type AgentOsChatRole = "user" | "assistant" | "system" | "tool" | "approval";
-
-export interface AgentOsChatMessage {
-  id: string;
-  role: AgentOsChatRole;
-  /** Primary text shown in the bubble / card. */
-  content: string;
-  createdAt: string;
-  /** Optional structured payload (tool id, steps, approval args preview). */
-  meta?: Record<string, unknown>;
-  /** Which agent run produced this message (product turn). */
-  runId?: string;
-  /** Immutable workbench target captured when this turn started. */
-  workbenchContext?: AgentOsWorkbenchContext;
-}
+export {
+  deriveAgentActivity,
+  derivePendingExternalFromEvents,
+  derivePendingApprovalFromEvents,
+  derivePendingUserInputFromEvents,
+  deriveStatusFromEvents,
+  rebuildRunTimelineFromEvents,
+};
+export type {
+  AgentOsActivity,
+  AgentOsActivityPhase,
+  AgentOsAssistantSegment,
+  AgentOsChatMessage,
+  AgentOsSessionStatus,
+} from "./agent-os-timeline";
 
 export interface AgentOsSessionState {
-  status: "idle" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled";
+  status: AgentOsSessionStatus;
   runId: string | null;
   conversationId: string | null;
   /** Full chat transcript (Codex-style continuous thread). */
   messages: AgentOsChatMessage[];
   events: AgentOsEvent[];
   pendingApproval: AgentOsPendingApproval | null;
-  assistantText: string | null;
+  pendingUserInput: AgentOsPendingUserInput | null;
+  pendingExternal: AgentOsPendingExternal | null;
   error: string | null;
   /** Machine code for the failure, so the UI can translate it. */
   errorCode: string | null;
@@ -48,21 +71,30 @@ const initial: AgentOsSessionState = {
   messages: [],
   events: [],
   pendingApproval: null,
-  assistantText: null,
+  pendingUserInput: null,
+  pendingExternal: null,
   error: null,
   errorCode: null,
 };
 
-const TERMINAL = new Set(["completed", "failed", "cancelled", "waiting_for_approval"]);
+const POLL_STOP_STATUSES = new Set([
+  "completed",
+  "failed",
+  "cancelled",
+  "waiting_for_approval",
+  "waiting_for_input",
+]);
 
-function mapRunStatus(status: string | undefined): AgentOsSessionState["status"] {
-  if (status === "waiting_for_approval") return "waiting_for_approval";
-  if (status === "completed") return "completed";
-  if (status === "failed") return "failed";
-  if (status === "cancelled") return "cancelled";
-  if (status === "running" || status === "queued" || status === "paused") return "running";
-  if (status) return "failed";
-  return "idle";
+/**
+ * A successful journal snapshot is authoritative regardless of which server
+ * projection returned it. PostgreSQL is the normal durable source for healthy
+ * long-running and recovering runs; only its status may stop polling.
+ */
+export function agentOsPollSnapshotDisposition(input: {
+  status: string;
+  source?: string;
+}): "continue" | "stop" {
+  return POLL_STOP_STATUSES.has(input.status) ? "stop" : "continue";
 }
 
 function newId(): string {
@@ -83,31 +115,108 @@ function mergeRunStatus(
 ): string {
   const prev = previous ?? "running";
   const terminal = new Set(["completed", "failed", "cancelled"]);
-  if (terminal.has(prev) && incoming === "running") return prev;
+  if (terminal.has(prev) && !terminal.has(incoming)) return prev;
   if (incoming === "waiting_for_approval") return incoming;
+  if (incoming === "waiting_for_input") return incoming;
+  if (incoming === "waiting_for_external") return incoming;
   if (terminal.has(incoming)) return incoming;
   if (prev === "waiting_for_approval" && incoming === "running" && !opts?.allowResumeFromWaiting) {
+    return prev;
+  }
+  if (prev === "waiting_for_input" && incoming === "running" && !opts?.allowResumeFromWaiting) {
+    return prev;
+  }
+  if (prev === "waiting_for_external" && incoming === "running" && !opts?.allowResumeFromWaiting) {
     return prev;
   }
   return incoming || prev;
 }
 
+export function isAgentOsActionableRunStatus(status: string): boolean {
+  return (
+    status === "waiting_for_approval" ||
+    status === "waiting_for_input" ||
+    status === "waiting_for_external" ||
+    status === "running" ||
+    status === "queued" ||
+    status === "paused"
+  );
+}
+
 // ─── Per-run event buffer (conversation-scoped) ───────────────────────────
+
+export function agentOsPollFailureCode(input: {
+  status: string | undefined;
+  consecutiveFailures: number;
+  maxConsecutiveFailures: number;
+  now: number;
+  ordinaryDeadlineAt: number;
+}): "AGENT_OS_POLL_TIMEOUT" | "AGENT_OS_POLL_LOST" | null {
+  // A durable host job has its own lifecycle and may legitimately outlive a
+  // browser session. Only terminal journal events may close it.
+  if (input.status === "waiting_for_external") return null;
+  if (input.now >= input.ordinaryDeadlineAt) return "AGENT_OS_POLL_TIMEOUT";
+  if (input.consecutiveFailures >= input.maxConsecutiveFailures) return "AGENT_OS_POLL_LOST";
+  return null;
+}
 
 type OptimisticUser = {
   id: string;
+  turnId: string;
   content: string;
   createdAt: string;
   attachmentNames?: string[];
+};
+
+export type StartSubmissionIdentity = {
+  fingerprint: string;
+  conversationId: string;
+  clientSubmissionId: string;
+  turnId: string;
+  messageId: string;
+  createdAt: string;
+};
+
+type StartSubmissionFingerprintInput = {
+  conversationId: string;
+  message: string;
+  modelProfileId: string;
+  attachmentIds: readonly string[];
+  permissionMode?: "ask" | "smart" | "full";
+  workbenchMode: "storyboard" | "canvas" | "brief" | "story";
+  workbenchContext?: AgentOsWorkbenchContext;
+  skillIds?: readonly string[];
+  projectSkillInstallationIds?: readonly string[];
+  disabledDefaultSkillInstallationIds?: readonly string[];
+};
+
+export type UserInputSubmissionIdentity = {
+  fingerprint: string;
+  responseId: string;
+  messageId: string;
+  turnId: string;
+};
+
+export type ApprovalSubmissionIdentity = {
+  decision: "approve" | "reject";
+  responseText: string;
+  locale: "en-US" | "zh-CN" | "zh-HK";
+  responseId: string;
+  messageId: string;
+  turnId: string;
 };
 
 type RunBuffer = {
   runId: string;
   /** Stable order of runs within the conversation (first-seen order). */
   order: number;
+  /** Durable creation key used only to insert runs first discovered after a gap. */
+  createdAt: string | null;
   status: string;
   eventsBySeq: Map<number, AgentOsEvent>;
   pendingApproval: AgentOsPendingApproval | null;
+  pendingUserInput: AgentOsPendingUserInput | null;
+  pendingExternal: AgentOsPendingExternal | null;
   assistantText: string | null;
   error: { code?: string; message?: string } | null;
   /** The target captured by RunStarted; never replaced by the current UI selection. */
@@ -116,487 +225,167 @@ type RunBuffer = {
   optimisticUser: OptimisticUser | null;
   /** Client-only HITL decisions not yet in journal (no eventSequence). */
   optimisticDecisions: AgentOsChatMessage[];
+  /** Client-only structured-input answers until the durable UserMessage arrives. */
+  optimisticInputResponses: AgentOsChatMessage[];
 };
 
 function emptyRunBuffer(runId: string, order: number): RunBuffer {
   return {
     runId,
     order,
+    createdAt: null,
     status: "running",
     eventsBySeq: new Map(),
     pendingApproval: null,
+    pendingUserInput: null,
+    pendingExternal: null,
     assistantText: null,
     error: null,
     workbenchContext: null,
     optimisticUser: null,
     optimisticDecisions: [],
+    optimisticInputResponses: [],
   };
 }
 
+export type AgentOsConversationRunOrderEntry = {
+  runId: string;
+  order: number;
+  createdAt: string | null;
+};
+
+type AgentOsDurableRunOrderEntry = {
+  runId: string;
+  createdAt: string;
+};
+
+function runCreatedAtMillis(createdAt: string | null): number | null {
+  if (!createdAt) return null;
+  const value = Date.parse(createdAt);
+  return Number.isFinite(value) ? value : null;
+}
+
 /**
- * Rebuild one run's timeline from sorted events in true chronological order.
+ * Merges a bounded durable history tail without reordering older local runs.
  *
- * Rules:
- * - MessageDelta opens/extends an assistant segment
- * - Tool / plan / approval-related boundaries close the open assistant segment
- *   so later deltas become a NEW bubble *after* the tools (not rewrite above)
- * - ToolStarted/Completed/Failed collapse to one row per toolCallId
- * - MessageCompleted finalizes the open segment; does not re-merge full text
- *   into the first bubble (that was the main out-of-order bug)
+ * The conversation endpoint intentionally returns only its newest runs. A
+ * continuity repair must therefore treat omitted local buffers as older
+ * durable history, not append them after the returned tail. Existing runs
+ * keep their relative order; only genuinely unknown runs are inserted by the
+ * server-owned `(createdAt, runId)` key.
  */
-export function rebuildRunTimelineFromEvents(
-  events: AgentOsEvent[],
-  runId: string,
-  runStatus: AgentOsSessionState["status"]
-): AgentOsChatMessage[] {
-  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
-  const out: AgentOsChatMessage[] = [];
-  let segment = 0;
-  let streamText = "";
-  let openAssistant = false;
-  /** toolCallId (or fallback key) → index in out */
-  const toolIndex = new Map<string, number>();
-
-  const openAssistantId = () => `assistant:stream:${runId}:${segment}`;
-
-  const closeOpenAssistant = (kind: "streaming" | "message_completed", eventSequence?: number) => {
-    if (!openAssistant && !streamText.trim()) return;
-    const id = openAssistantId();
-    const last = out.at(-1);
-    const seq = eventSequence ?? Number(last?.meta?.eventSequence ?? 0);
-    if (last?.id === id) {
-      last.content = streamText;
-      last.meta = { kind, eventSequence: seq };
-    } else if (streamText.trim()) {
-      out.push({
-        id,
-        role: "assistant",
-        content: streamText,
-        createdAt: last?.createdAt ?? new Date().toISOString(),
-        runId,
-        meta: { kind, eventSequence: seq },
-      });
-    }
-    openAssistant = false;
-    streamText = "";
-    segment += 1;
-  };
-
-  const upsertAssistantDelta = (delta: string, ts: string, eventSequence: number) => {
-    streamText += delta;
-    openAssistant = true;
-    const id = openAssistantId();
-    const last = out.at(-1);
-    if (last?.id === id) {
-      last.content = streamText;
-      last.createdAt = ts;
-      last.meta = { kind: "streaming", eventSequence };
-      return;
-    }
-    out.push({
-      id,
-      role: "assistant",
-      content: streamText,
-      createdAt: ts,
-      runId,
-      meta: { kind: "streaming", eventSequence },
+export function reconcileAgentOsConversationRunOrder(
+  existing: readonly AgentOsConversationRunOrderEntry[],
+  durableTail: readonly AgentOsDurableRunOrderEntry[]
+): AgentOsConversationRunOrderEntry[] {
+  const durableById = new Map(durableTail.map((run) => [run.runId, run.createdAt]));
+  const ordered = [...existing]
+    .sort((left, right) => left.order - right.order)
+    .map((run) => ({
+      ...run,
+      createdAt: durableById.get(run.runId) ?? run.createdAt,
+    }));
+  const knownIds = new Set(ordered.map((run) => run.runId));
+  const unknown = durableTail
+    .filter((run) => !knownIds.has(run.runId))
+    .sort((left, right) => {
+      const leftAt = runCreatedAtMillis(left.createdAt);
+      const rightAt = runCreatedAtMillis(right.createdAt);
+      if (leftAt !== null && rightAt !== null && leftAt !== rightAt) return leftAt - rightAt;
+      if (leftAt !== null && rightAt === null) return -1;
+      if (leftAt === null && rightAt !== null) return 1;
+      return left.runId.localeCompare(right.runId);
     });
-  };
 
-  const toolKey = (event: AgentOsEvent): string => {
-    const callId = event.data.toolCallId;
-    if (typeof callId === "string" && callId.trim()) return callId.trim();
-    const toolId = String(event.data.toolId ?? "tool");
-    return `${toolId}@${event.sequence}`;
-  };
-
-  const upsertTool = (
-    event: AgentOsEvent,
-    phase: "proposed" | "started" | "completed" | "failed"
-  ) => {
-    if (openAssistant || streamText.trim()) {
-      closeOpenAssistant("message_completed");
-    }
-    const key = toolKey(event);
-    const toolId = String(event.data.toolId ?? "tool");
-    const id = `tool:${runId}:${key}`;
-    const existing = toolIndex.get(key);
-    const row: AgentOsChatMessage = {
-      id,
-      role: "tool",
-      content: toolId,
-      createdAt: event.timestamp,
-      runId,
-      meta: {
-        kind: "tool",
-        toolId,
-        toolCallId: event.data.toolCallId,
-        phase,
-        message: event.data.message,
-        // The tool's own result — it carries the canvas nodes a write touched,
-        // which is what lets the transcript link to them.
-        result: event.data.result,
-        eventSequence: event.sequence,
-      },
-    };
-    if (existing !== undefined) {
-      const prevPhase = String(out[existing]?.meta?.phase ?? "");
-      const rank = { proposed: 0, started: 1, completed: 2, failed: 2 } as const;
-      const prevRank = rank[prevPhase as keyof typeof rank] ?? -1;
-      const nextRank = rank[phase];
-      if (nextRank >= prevRank) {
-        out[existing] = row;
-      }
-      return;
-    }
-    toolIndex.set(key, out.length);
-    out.push(row);
-  };
-
-  for (const event of sorted) {
-    if (event.type === "UserMessage") {
-      if (openAssistant || streamText.trim()) {
-        closeOpenAssistant("message_completed", event.sequence);
-      }
-      const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
-      if (text) {
-        out.push({
-          id: `user:${runId}:${event.sequence}`,
-          role: "user",
-          content: text,
-          createdAt: event.timestamp,
-          runId,
-          meta: { eventSequence: event.sequence },
-        });
-      }
-      continue;
-    }
-
-    if (event.type === "ApprovalResolved") {
-      if (openAssistant || streamText.trim()) {
-        closeOpenAssistant("message_completed", event.sequence);
-      }
-      const decision = event.data.decision === "reject" ? "reject" : "approve";
-      // Reject short-circuits execution: mark the open proposed tool failed so
-      // the UI does not spin on phase=proposed forever (even if ToolFailed is
-      // missing from an older journal).
-      if (decision === "reject") {
-        const openIdx = [...toolIndex.values()].reverse().find((idx) => {
-          const phase = String(out[idx]?.meta?.phase ?? "");
-          return phase === "proposed" || phase === "started";
-        });
-        if (openIdx !== undefined) {
-          const prev = out[openIdx]!;
-          out[openIdx] = {
-            ...prev,
-            meta: {
-              ...prev.meta,
-              phase: "failed",
-              message: "User rejected the proposed write.",
-              eventSequence: event.sequence,
-            },
-          };
-        }
-      }
-      out.push({
-        id: `decision:${runId}:${event.sequence}`,
-        role: "user",
-        content: decision === "approve" ? "Approved write" : "Rejected write",
-        createdAt: event.timestamp,
-        runId,
-        meta: {
-          kind: "approval_decision",
-          decision,
-          afterSequence: event.sequence,
-          eventSequence: event.sequence,
-        },
-      });
-      continue;
-    }
-
-    if (event.type === "PlanCreated" && Array.isArray(event.data.steps)) {
-      if (openAssistant || streamText.trim()) {
-        closeOpenAssistant("message_completed", event.sequence);
-      }
-      out.push({
-        id: `plan:${runId}:${event.sequence}`,
-        role: "tool",
-        content: (event.data.steps as string[]).join(" → "),
-        createdAt: event.timestamp,
-        runId,
-        meta: {
-          kind: "plan",
-          steps: event.data.steps,
-          eventSequence: event.sequence,
-        },
-      });
-      continue;
-    }
-
-    if (event.type === "MessageDelta" && typeof event.data.delta === "string") {
-      upsertAssistantDelta(event.data.delta, event.timestamp, event.sequence);
-      continue;
-    }
-
-    if (event.type === "MessageCompleted") {
-      const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
-      if (openAssistant || streamText.trim()) {
-        if (!streamText.trim() && text) streamText = text;
-        closeOpenAssistant("message_completed", event.sequence);
-      } else if (text && !out.some((m) => m.role === "assistant")) {
-        out.push({
-          id: openAssistantId(),
-          role: "assistant",
-          content: text,
-          createdAt: event.timestamp,
-          runId,
-          meta: { kind: "message_completed", eventSequence: event.sequence },
-        });
-        segment += 1;
-      } else {
-        const lastAsst = [...out].reverse().find((m) => m.role === "assistant");
-        if (lastAsst?.meta?.kind === "streaming") {
-          lastAsst.meta = {
-            ...lastAsst.meta,
-            kind: "message_completed",
-            eventSequence: event.sequence,
-          };
-        }
-      }
-      continue;
-    }
-
-    if (event.type === "ToolProposed") {
-      upsertTool(event, "proposed");
-      continue;
-    }
-    if (event.type === "ToolStarted") {
-      upsertTool(event, "started");
-      continue;
-    }
-    if (event.type === "ToolCompleted") {
-      upsertTool(event, "completed");
-      continue;
-    }
-    if (event.type === "ToolFailed") {
-      upsertTool(event, "failed");
-      continue;
-    }
-
-    if (event.type === "ProjectPatchApplied") {
-      if (openAssistant || streamText.trim()) {
-        closeOpenAssistant("message_completed", event.sequence);
-      }
-      out.push({
-        id: `patch:${runId}:${event.sequence}`,
-        role: "system",
-        content: "Project updated",
-        createdAt: event.timestamp,
-        runId,
-        meta: { kind: "patch", eventSequence: event.sequence },
-      });
-      continue;
-    }
-
-    if (event.type === "RunFailed") {
-      if (openAssistant || streamText.trim()) {
-        closeOpenAssistant("message_completed", event.sequence);
-      }
-      const msg =
-        typeof event.data.message === "string"
-          ? event.data.message
-          : typeof (event.data.error as { message?: string } | undefined)?.message === "string"
-            ? (event.data.error as { message: string }).message
-            : "Run failed";
-      out.push({
-        id: `err:${runId}:${event.sequence}`,
-        role: "system",
-        content: msg,
-        createdAt: event.timestamp,
-        runId,
-        meta: { kind: "error", eventSequence: event.sequence },
-      });
-    }
+  for (const run of unknown) {
+    const createdAt = runCreatedAtMillis(run.createdAt);
+    const insertAt =
+      createdAt === null
+        ? -1
+        : ordered.findIndex((candidate) => {
+            const candidateAt = runCreatedAtMillis(candidate.createdAt);
+            if (candidateAt === null) return false;
+            if (candidateAt !== createdAt) return candidateAt > createdAt;
+            return candidate.runId.localeCompare(run.runId) > 0;
+          });
+    const entry = { runId: run.runId, order: 0, createdAt: run.createdAt };
+    if (insertAt === -1) ordered.push(entry);
+    else ordered.splice(insertAt, 0, entry);
   }
 
-  // Terminal / cancelled runs must not leave tool cards spinning.
-  if (runStatus === "cancelled" || runStatus === "failed" || runStatus === "completed") {
-    for (const idx of toolIndex.values()) {
-      const row = out[idx];
-      if (!row) continue;
-      const phase = String(row.meta?.phase ?? "");
-      if (phase === "proposed" || phase === "started") {
-        out[idx] = {
-          ...row,
-          meta: {
-            ...row.meta,
-            phase: runStatus === "completed" ? "completed" : "failed",
-            message:
-              runStatus === "cancelled"
-                ? "Run cancelled"
-                : runStatus === "failed"
-                  ? "Run failed"
-                  : row.meta?.message,
-          },
-        };
-      }
-    }
-  }
-
-  if (openAssistant || streamText.trim()) {
-    const kind =
-      runStatus === "running" || runStatus === "waiting_for_approval"
-        ? "streaming"
-        : "message_completed";
-    const id = openAssistantId();
-    const last = out.at(-1);
-    const seq = Number(last?.meta?.eventSequence ?? 0);
-    if (last?.id === id) {
-      last.content = streamText;
-      last.meta = { kind, eventSequence: seq };
-    } else if (streamText.trim()) {
-      out.push({
-        id,
-        role: "assistant",
-        content: streamText,
-        createdAt: new Date().toISOString(),
-        runId,
-        meta: { kind, eventSequence: seq },
-      });
-    }
-  }
-
-  return out;
+  return ordered.map((run, order) => ({ ...run, order }));
 }
 
-/**
- * Prefer journal terminal / HITL events over a stale buffer status of "running"
- * (e.g. last MessageDelta left status running after RunCompleted was missed).
- */
-export function deriveStatusFromEvents(
-  events: readonly AgentOsEvent[],
-  bufferStatus: string
-): AgentOsSessionState["status"] {
-  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
-  let derived: AgentOsSessionState["status"] | null = null;
-  for (const event of sorted) {
-    switch (event.type) {
-      case "RunCompleted":
-        derived = "completed";
-        break;
-      case "RunFailed":
-        derived = "failed";
-        break;
-      case "RunCancelled":
-        derived = "cancelled";
-        break;
-      case "ApprovalRequired":
-      case "RunPaused":
-        derived = "waiting_for_approval";
-        break;
-      case "ApprovalResolved":
-        // Reject ends the turn; approve resumes execution.
-        derived = event.data.decision === "reject" ? "cancelled" : "running";
-        break;
-      case "RunStarted":
-      case "RunResumed":
-        derived = "running";
-        break;
-      default:
-        break;
-    }
-  }
-  if (derived === "completed" || derived === "failed" || derived === "cancelled") {
-    return derived;
-  }
-  if (derived === "waiting_for_approval") {
-    return "waiting_for_approval";
-  }
-  return mapRunStatus(bufferStatus);
+function userInputResponseText(
+  request: AgentOsPendingUserInput,
+  answers: Readonly<Record<string, string>>
+): string {
+  return request.questions
+    .map((question) => {
+      const value = answers[question.id];
+      const option = question.options.find((candidate) => candidate.value === value);
+      return `${question.header}: ${option?.label ?? value ?? ""}`;
+    })
+    .filter((line) => !line.endsWith(": "))
+    .join("\n");
 }
 
-/**
- * Reconstruct HITL card from journal events when poll/snapshot pendingApproval
- * is missing (common after Ably-only ToolProposed / resume races).
- * Latest open approval wins; cleared by resolve / tool terminal / run terminal.
- */
-export function derivePendingApprovalFromEvents(
-  events: readonly AgentOsEvent[]
-): AgentOsPendingApproval | null {
-  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
-  let lastProposed: {
-    toolId: string;
-    toolCallId: string;
-    arguments: unknown;
-  } | null = null;
-  let pending: AgentOsPendingApproval | null = null;
-
-  for (const event of sorted) {
-    if (event.type === "ToolProposed") {
-      lastProposed = {
-        toolId: String(event.data.toolId ?? "tool"),
-        toolCallId: String(event.data.toolCallId ?? ""),
-        arguments: event.data.arguments,
-      };
-      // Provisional — until ApprovalRequired supplies approvalId.
-      if (lastProposed.toolCallId) {
-        pending = {
-          kind: "tool_approval",
-          toolId: lastProposed.toolId,
-          toolCallId: lastProposed.toolCallId,
-          arguments: lastProposed.arguments,
-          title: `Approve ${lastProposed.toolId}`,
-          description: "Sensitive write requires approval.",
-          approvalId: `pending:${lastProposed.toolCallId}`,
-        };
-      }
-      continue;
-    }
-    if (event.type === "ApprovalRequired") {
-      const toolCallId = String(event.data.toolCallId ?? lastProposed?.toolCallId ?? "");
-      const toolId =
-        lastProposed && lastProposed.toolCallId === toolCallId
-          ? lastProposed.toolId
-          : String(event.data.toolId ?? lastProposed?.toolId ?? "tool");
-      const approvalId = String(event.data.approvalId ?? "").trim();
-      if (!toolCallId || !approvalId) continue;
-      pending = {
-        kind: "tool_approval",
-        toolId,
-        toolCallId,
-        arguments:
-          lastProposed && lastProposed.toolCallId === toolCallId
-            ? lastProposed.arguments
-            : event.data.arguments,
-        title: String(event.data.title ?? `Approve ${toolId}`),
-        description: String(event.data.description ?? "Sensitive write requires approval."),
-        approvalId,
-      };
-      continue;
-    }
-    if (
-      event.type === "ApprovalResolved" ||
-      event.type === "ToolStarted" ||
-      event.type === "ToolCompleted" ||
-      event.type === "ToolFailed" ||
-      event.type === "RunCompleted" ||
-      event.type === "RunCancelled" ||
-      event.type === "RunFailed"
-    ) {
-      pending = null;
-    }
-  }
-  return pending;
+function eventMatchesOptimisticUser(event: AgentOsEvent, optimistic: OptimisticUser): boolean {
+  if (event.type !== "UserMessage") return false;
+  return event.data.messageId === optimistic.id && event.data.turnId === optimistic.turnId;
 }
 
-function workbenchContextFromEvents(
-  events: readonly AgentOsEvent[]
-): AgentOsWorkbenchContext | null {
-  const value = events.find((event) => event.type === "RunStarted")?.data.workbenchContext;
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const entries = Object.entries(value);
-  if (entries.length === 0 || entries.some(([, item]) => typeof item !== "string")) return null;
-  return Object.fromEntries(entries) as AgentOsWorkbenchContext;
+function userInputFingerprint(answers: Readonly<Record<string, string>>): string {
+  return JSON.stringify(
+    Object.entries(answers).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+  );
+}
+
+export function userInputSubmissionIdentity(
+  store: Map<string, UserInputSubmissionIdentity>,
+  requestId: string,
+  answers: Readonly<Record<string, string>>,
+  createId: () => string = newId
+): UserInputSubmissionIdentity {
+  const fingerprint = userInputFingerprint(answers);
+  const existing = store.get(requestId);
+  if (existing?.fingerprint === fingerprint) return existing;
+  const created = {
+    fingerprint,
+    responseId: createId(),
+    messageId: createId(),
+    turnId: createId(),
+  };
+  store.set(requestId, created);
+  return created;
+}
+
+export function approvalSubmissionIdentity(
+  store: Map<string, ApprovalSubmissionIdentity>,
+  approvalId: string,
+  decision: "approve" | "reject",
+  responseText: string,
+  locale: "en-US" | "zh-CN" | "zh-HK",
+  createId: () => string = newId
+): ApprovalSubmissionIdentity {
+  const existing = store.get(approvalId);
+  if (
+    existing?.decision === decision &&
+    existing.responseText === responseText &&
+    existing.locale === locale
+  ) {
+    return existing;
+  }
+  const created = {
+    decision,
+    responseText,
+    locale,
+    responseId: createId(),
+    messageId: createId(),
+    turnId: createId(),
+  };
+  store.set(approvalId, created);
+  return created;
 }
 
 /**
@@ -608,22 +397,22 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
   runId: string | null;
   status: AgentOsSessionState["status"];
   pendingApproval: AgentOsPendingApproval | null;
+  pendingUserInput: AgentOsPendingUserInput | null;
+  pendingExternal: AgentOsPendingExternal | null;
   events: AgentOsEvent[];
-  assistantText: string | null;
   error: string | null;
   errorCode: string | null;
 } {
   const ordered = [...buffers].sort((a, b) => a.order - b.order);
   const messages: AgentOsChatMessage[] = [];
-  let last: RunBuffer | null = null;
 
   for (const buf of ordered) {
     const messageStart = messages.length;
-    last = buf;
     const events = [...buf.eventsBySeq.values()].sort((a, b) => a.sequence - b.sequence);
     buf.workbenchContext = workbenchContextFromEvents(events) ?? buf.workbenchContext;
     const optimisticReject = buf.optimisticDecisions.some((d) => d.meta?.decision === "reject");
     const optimisticApprove = buf.optimisticDecisions.some((d) => d.meta?.decision === "approve");
+    const optimisticUserInput = buf.optimisticInputResponses.length > 0;
     // Event-derived status / HITL override stale buffer "running".
     // Client-side decision already made: do not resurrect HITL from a journal
     // that still only has ApprovalRequired (API lag).
@@ -631,18 +420,29 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
       optimisticReject || optimisticApprove
         ? null
         : (buf.pendingApproval ?? derivePendingApprovalFromEvents(events));
+    const derivedUserInput = optimisticUserInput
+      ? null
+      : (buf.pendingUserInput ?? derivePendingUserInputFromEvents(events));
     let status = deriveStatusFromEvents(events, buf.status);
-    if (optimisticReject) {
-      status = "cancelled";
-    } else if (optimisticApprove && status === "waiting_for_approval") {
+    if ((optimisticReject || optimisticApprove) && status === "waiting_for_approval") {
+      // Either decision answers the approval and resumes the same run. A
+      // rejected tool action is not a cancelled Agent conversation.
       status = "running";
     } else if (derivedPending && (status === "running" || status === "idle")) {
       status = "waiting_for_approval";
+    } else if (derivedUserInput && (status === "running" || status === "idle")) {
+      status = "waiting_for_input";
+    } else if (optimisticUserInput && status === "waiting_for_input") {
+      status = "running";
     }
     if (!derivedPending && status === "waiting_for_approval") {
       // Open approval was cleared by later events; fall back to event terminal.
       status = deriveStatusFromEvents(events, "running");
       if (status === "waiting_for_approval") status = "running";
+    }
+    if (!derivedUserInput && status === "waiting_for_input") {
+      status = deriveStatusFromEvents(events, "running");
+      if (status === "waiting_for_input") status = "running";
     }
     // Keep buffer in sync so subsequent publishes stay consistent.
     if (derivedPending) {
@@ -650,11 +450,23 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
     } else if (status !== "waiting_for_approval") {
       buf.pendingApproval = null;
     }
+    if (derivedUserInput) {
+      buf.pendingUserInput = derivedUserInput;
+    } else if (status !== "waiting_for_input") {
+      buf.pendingUserInput = null;
+    }
+    const derivedExternal = buf.pendingExternal ?? derivePendingExternalFromEvents(events);
+    buf.pendingExternal = status === "waiting_for_external" ? derivedExternal : null;
     buf.status = status;
 
     let rebuilt = rebuildRunTimelineFromEvents(events, buf.runId, status);
 
-    const hasUser = rebuilt.some((m) => m.role === "user" && m.meta?.kind !== "approval_decision");
+    const hasUser = rebuilt.some(
+      (m) =>
+        m.role === "user" &&
+        m.meta?.kind !== "approval_response" &&
+        m.meta?.kind !== "user_input_response"
+    );
     if (!hasUser && buf.optimisticUser) {
       const u = buf.optimisticUser;
       rebuilt = [
@@ -663,6 +475,7 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
           role: "user",
           content: u.content,
           createdAt: u.createdAt,
+          turnId: u.turnId,
           runId: buf.runId,
           meta: u.attachmentNames?.length
             ? { attachmentNames: u.attachmentNames, optimistic: true }
@@ -672,47 +485,59 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
       ];
     }
 
-    // Snapshot assistantText only when this run has no assistant rows yet.
-    if (
-      !rebuilt.some((m) => m.role === "assistant") &&
-      typeof buf.assistantText === "string" &&
-      buf.assistantText.trim()
-    ) {
-      rebuilt = [
-        ...rebuilt,
-        {
-          id: `assistant:stream:${buf.runId}:snap`,
-          role: "assistant",
-          content: buf.assistantText.trim(),
-          createdAt: new Date().toISOString(),
-          runId: buf.runId,
-          meta: {
-            kind: status === "running" ? "streaming" : "message_completed",
-            fromSnapshot: true,
-          },
-        },
-      ];
+    // Compatibility for snapshots whose event page is still catching up. New
+    // journals reconstruct immutable messageId segments from events, but an
+    // Ably snapshot can legitimately arrive before that segment's deltas.
+    const snapshotText = buf.assistantText?.trim() ?? "";
+    const snapshotTurnId =
+      deriveActiveTurnId(events, buf.runId) ?? rebuilt.at(-1)?.turnId ?? `legacy:${buf.runId}:0`;
+    const lastAssistant = [...rebuilt]
+      .reverse()
+      .find((message) => message.role === "assistant" && message.turnId === snapshotTurnId);
+    const liveStartedSegment = lastAssistant?.segments?.at(-1);
+    const snapshotAdvancesSegment =
+      snapshotText &&
+      liveStartedSegment &&
+      !liveStartedSegment.completed &&
+      snapshotText.startsWith(liveStartedSegment.content) &&
+      snapshotText.length > liveStartedSegment.content.length;
+    if (snapshotAdvancesSegment && lastAssistant && liveStartedSegment) {
+      liveStartedSegment.content = snapshotText;
+      // A waiting_for_external transition is itself a durable handoff
+      // boundary: the receipt segment is settled even though the run is not.
+      liveStartedSegment.completed = status !== "running";
+      lastAssistant.content = (lastAssistant.segments ?? [])
+        .map((segment) => segment.content.trim())
+        .filter(Boolean)
+        .join("\n\n");
+      lastAssistant.meta = {
+        ...lastAssistant.meta,
+        kind: status === "running" ? "streaming" : "message_completed",
+        fromSnapshot: true,
+      };
     }
 
-    // Interleave client-only approval decisions (until ApprovalResolved lands).
-    const journalDecisions = new Set(
+    // Interleave client-only HITL replies until their durable UserMessage lands.
+    const journalApprovalIds = new Set(
       rebuilt
-        .filter((m) => m.meta?.kind === "approval_decision" && m.meta?.eventSequence != null)
-        .map((m) => String(m.meta?.decision ?? ""))
+        .filter((m) => m.meta?.kind === "approval_response" && m.meta?.eventSequence != null)
+        .map((m) => String(m.meta?.approvalId ?? ""))
     );
-    const clientDecisions = buf.optimisticDecisions.filter((d) => {
-      const dec = String(d.meta?.decision ?? "");
-      return !journalDecisions.has(dec) || d.meta?.eventSequence == null;
-    });
-    // If journal already has ApprovalResolved, drop client mirrors.
-    const hasJournalDecision = rebuilt.some(
-      (m) => m.meta?.kind === "approval_decision" && m.meta?.eventSequence != null
+    const decisions = buf.optimisticDecisions.filter(
+      (message) => !journalApprovalIds.has(String(message.meta?.approvalId ?? ""))
     );
-    const decisions = hasJournalDecision ? [] : clientDecisions;
+    const journalInputRequestIds = new Set(
+      rebuilt
+        .filter((m) => m.meta?.kind === "user_input_response" && m.meta?.eventSequence != null)
+        .map((m) => String(m.meta?.requestId ?? ""))
+    );
+    const inputResponses = buf.optimisticInputResponses.filter(
+      (message) => !journalInputRequestIds.has(String(message.meta?.requestId ?? ""))
+    );
 
     const withDecisions: AgentOsChatMessage[] = [];
     let di = 0;
-    const sortedDec = [...decisions].sort(
+    const sortedDec = [...decisions, ...inputResponses].sort(
       (a, b) => Number(a.meta?.afterSequence ?? 0) - Number(b.meta?.afterSequence ?? 0)
     );
     for (const msg of rebuilt) {
@@ -730,55 +555,6 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
 
     messages.push(...withDecisions);
 
-    const pendingForCard = derivedPending ?? buf.pendingApproval;
-    if (status === "waiting_for_approval" && pendingForCard) {
-      const pa = pendingForCard;
-      const approvalId = `approval:${buf.runId}:${pa.approvalId}`;
-      if (!messages.some((m) => m.id === approvalId)) {
-        messages.push({
-          id: approvalId,
-          role: "approval",
-          content: pa.title,
-          createdAt: new Date().toISOString(),
-          runId: buf.runId,
-          meta: {
-            toolId: pa.toolId,
-            description: pa.description,
-            arguments: pa.arguments,
-            approvalId: pa.approvalId,
-          },
-        });
-      }
-    }
-
-    if (
-      status === "completed" &&
-      !messages.some((m) => m.role === "assistant" && m.runId === buf.runId && m.content.trim())
-    ) {
-      messages.push({
-        id: `system:empty:${buf.runId}`,
-        role: "system",
-        content:
-          "Turn finished but no assistant text was returned. Check worker logs / model config.",
-        createdAt: new Date().toISOString(),
-        runId: buf.runId,
-        meta: { kind: "empty_reply" },
-      });
-    }
-
-    if (status === "failed" && buf.error?.message) {
-      if (!messages.some((m) => m.id === `system:err:${buf.runId}`)) {
-        messages.push({
-          id: `system:err:${buf.runId}`,
-          role: "system",
-          content: buf.error.message,
-          createdAt: new Date().toISOString(),
-          runId: buf.runId,
-          meta: { kind: "error", code: buf.error.code },
-        });
-      }
-    }
-
     if (buf.workbenchContext) {
       for (let index = messageStart; index < messages.length; index += 1) {
         messages[index] = {
@@ -789,56 +565,45 @@ export function rebuildConversationMessages(buffers: Iterable<RunBuffer>): {
     }
   }
 
-  const lastEvents = last
-    ? [...last.eventsBySeq.values()].sort((a, b) => a.sequence - b.sequence)
-    : [];
-
-  // Session status = most recent run's event-derived status (not stale "running").
-  let sessionStatus: AgentOsSessionState["status"] = last
-    ? deriveStatusFromEvents([...last.eventsBySeq.values()], last.status)
-    : "idle";
+  // Keep the newest run that still owns live/actionable state. If every run
+  // is terminal, the latest run is authoritative. Never combine one run's
+  // id/pending state with another run's event page.
+  let selected = ordered.at(-1) ?? null;
   for (let i = ordered.length - 1; i >= 0; i -= 1) {
     const b = ordered[i]!;
-    const events = [...b.eventsBySeq.values()];
-    const derived = b.pendingApproval ?? derivePendingApprovalFromEvents(events);
-    let s = deriveStatusFromEvents(events, b.status);
-    if (derived && (s === "running" || s === "idle")) {
-      s = "waiting_for_approval";
-    }
-    if (
-      s === "waiting_for_approval" ||
-      s === "running" ||
-      s === "completed" ||
-      s === "failed" ||
-      s === "cancelled"
-    ) {
-      sessionStatus = s;
-      last = b;
-      if (derived) b.pendingApproval = derived;
-      else if (s !== "waiting_for_approval") b.pendingApproval = null;
-      // Prefer the latest run that still needs user action, else latest terminal.
-      if (s === "waiting_for_approval" || s === "running") break;
+    const s = b.status;
+    if (isAgentOsActionableRunStatus(s)) {
+      selected = b;
+      break;
     }
   }
 
-  const assistantText =
-    [...messages].reverse().find((m) => m.role === "assistant")?.content ??
-    last?.assistantText ??
-    null;
+  const selectedEvents = selected
+    ? [...selected.eventsBySeq.values()].sort((a, b) => a.sequence - b.sequence)
+    : [];
+  const sessionStatus: AgentOsSessionState["status"] = selected
+    ? deriveStatusFromEvents([], selected.status)
+    : "idle";
 
   return {
     messages,
-    runId: last?.runId ?? null,
+    runId: selected?.runId ?? null,
     status: sessionStatus,
     pendingApproval:
       sessionStatus === "waiting_for_approval"
-        ? (last?.pendingApproval ??
-          (last ? derivePendingApprovalFromEvents([...last.eventsBySeq.values()]) : null))
+        ? (selected?.pendingApproval ?? derivePendingApprovalFromEvents(selectedEvents))
         : null,
-    events: lastEvents,
-    assistantText,
-    error: sessionStatus === "failed" ? (last?.error?.message ?? null) : null,
-    errorCode: sessionStatus === "failed" ? (last?.error?.code ?? null) : null,
+    pendingUserInput:
+      sessionStatus === "waiting_for_input"
+        ? (selected?.pendingUserInput ?? derivePendingUserInputFromEvents(selectedEvents))
+        : null,
+    pendingExternal:
+      sessionStatus === "waiting_for_external"
+        ? (selected?.pendingExternal ?? derivePendingExternalFromEvents(selectedEvents))
+        : null,
+    events: selectedEvents,
+    error: sessionStatus === "failed" ? (selected?.error?.message ?? null) : null,
+    errorCode: sessionStatus === "failed" ? (selected?.error?.code ?? null) : null,
   };
 }
 
@@ -848,7 +613,10 @@ export function messagesFromConversationHistory(
     runId: string;
     status: string;
     events: AgentOsEvent[];
+    createdAt?: string;
     pendingApproval?: AgentOsPendingApproval | null;
+    pendingUserInput?: AgentOsPendingUserInput | null;
+    pendingExternal?: AgentOsPendingExternal | null;
     assistantText?: string | null;
   }>
 ): {
@@ -856,12 +624,17 @@ export function messagesFromConversationHistory(
   runId: string | null;
   status: AgentOsSessionState["status"];
   pendingApproval: AgentOsPendingApproval | null;
+  pendingUserInput: AgentOsPendingUserInput | null;
+  pendingExternal: AgentOsPendingExternal | null;
   events: AgentOsEvent[];
 } {
   const buffers: RunBuffer[] = runs.map((run, index) => {
     const buf = emptyRunBuffer(run.runId, index);
+    buf.createdAt = run.createdAt ?? run.events.at(0)?.timestamp ?? null;
     buf.status = run.status;
     buf.pendingApproval = (run.pendingApproval as AgentOsPendingApproval | null) ?? null;
+    buf.pendingUserInput = (run.pendingUserInput as AgentOsPendingUserInput | null) ?? null;
+    buf.pendingExternal = (run.pendingExternal as AgentOsPendingExternal | null) ?? null;
     buf.assistantText = run.assistantText ?? null;
     for (const event of run.events) {
       buf.eventsBySeq.set(event.sequence, event);
@@ -872,17 +645,182 @@ export function messagesFromConversationHistory(
   return {
     messages: rebuilt.messages,
     runId: rebuilt.runId,
-    // Hydrate: don't leave the UI stuck in "running" if the process died.
-    status: rebuilt.status === "running" ? "completed" : rebuilt.status,
+    // Replay never invents a terminal result. PostgreSQL owns run state, while
+    // the durable dispatch sweeper recovers interrupted execution; the client
+    // only reattaches to those authoritative transitions.
+    status: rebuilt.status,
     pendingApproval: rebuilt.pendingApproval,
+    pendingUserInput: rebuilt.pendingUserInput,
+    pendingExternal: rebuilt.pendingExternal,
     events: rebuilt.events,
   };
 }
 
 const LS_CONVERSATION_PREFIX = "fizz:agent-os:conversationId:";
+const LS_START_OUTBOX_PREFIX = "fizz:agent-os:start-outbox:";
+const MAX_START_OUTBOX_IDENTITIES = 8;
+export const AGENT_OS_START_OUTBOX_TTL_MS = 24 * 60 * 60 * 1000;
+const volatileStartOutbox = new Map<string, StartSubmissionIdentity[]>();
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function agentOsConversationStorageKey(projectId: string): string {
   return `${LS_CONVERSATION_PREFIX}${projectId}`;
+}
+
+export function agentOsStartOutboxStorageKey(projectId: string): string {
+  return `${LS_START_OUTBOX_PREFIX}${projectId}`;
+}
+
+export function isStartSubmissionIdentityFresh(
+  identity: Pick<StartSubmissionIdentity, "createdAt">,
+  now = Date.now()
+): boolean {
+  const createdAt = Date.parse(identity.createdAt);
+  return (
+    Number.isFinite(createdAt) &&
+    createdAt <= now &&
+    now - createdAt <= AGENT_OS_START_OUTBOX_TTL_MS
+  );
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function startSubmissionFingerprint(
+  input: StartSubmissionFingerprintInput
+): Promise<string> {
+  return sha256Hex(
+    canonicalJson({
+      ...input,
+      message: input.message.trim(),
+      modelProfileId: input.modelProfileId.trim(),
+      attachmentIds: [...new Set(input.attachmentIds)],
+      permissionMode: input.permissionMode ?? "smart",
+      skillIds: [...new Set((input.skillIds ?? []).map((value) => value.trim()))].sort(),
+      projectSkillInstallationIds: [...new Set(input.projectSkillInstallationIds ?? [])].sort(),
+      disabledDefaultSkillInstallationIds: [
+        ...new Set(input.disabledDefaultSkillInstallationIds ?? []),
+      ].sort(),
+    })
+  );
+}
+
+function readStartOutbox(projectId: string): StartSubmissionIdentity[] {
+  if (typeof window === "undefined") return volatileStartOutbox.get(projectId) ?? [];
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(agentOsStartOutboxStorageKey(projectId)) ?? "[]"
+    );
+    if (!Array.isArray(parsed)) return [];
+    const valid = parsed.filter((entry): entry is StartSubmissionIdentity => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return false;
+      const item = entry as Partial<StartSubmissionIdentity>;
+      const shaped =
+        typeof item.fingerprint === "string" &&
+        /^[0-9a-f]{64}$/.test(item.fingerprint) &&
+        typeof item.conversationId === "string" &&
+        UUID_PATTERN.test(item.conversationId) &&
+        typeof item.clientSubmissionId === "string" &&
+        UUID_PATTERN.test(item.clientSubmissionId) &&
+        typeof item.turnId === "string" &&
+        UUID_PATTERN.test(item.turnId) &&
+        typeof item.messageId === "string" &&
+        UUID_PATTERN.test(item.messageId) &&
+        typeof item.createdAt === "string";
+      return shaped && isStartSubmissionIdentityFresh(item as StartSubmissionIdentity);
+    });
+    return valid.length > 0
+      ? valid
+      : (volatileStartOutbox.get(projectId) ?? []).filter((identity) =>
+          isStartSubmissionIdentityFresh(identity)
+        );
+  } catch {
+    return (volatileStartOutbox.get(projectId) ?? []).filter((identity) =>
+      isStartSubmissionIdentityFresh(identity)
+    );
+  }
+}
+
+function writeStartOutbox(projectId: string, identities: StartSubmissionIdentity[]): void {
+  const bounded = identities.slice(-MAX_START_OUTBOX_IDENTITIES);
+  volatileStartOutbox.set(projectId, bounded);
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(agentOsStartOutboxStorageKey(projectId), JSON.stringify(bounded));
+  } catch {
+    // The in-memory copy still keeps same-page transport retries stable.
+  }
+}
+
+export async function startSubmissionIdentity(
+  projectId: string,
+  input: StartSubmissionFingerprintInput,
+  createId: () => string = newId
+): Promise<StartSubmissionIdentity> {
+  const fingerprint = await startSubmissionFingerprint(input);
+  const existing = readStartOutbox(projectId).find(
+    (candidate) =>
+      candidate.conversationId === input.conversationId && candidate.fingerprint === fingerprint
+  );
+  if (existing) return existing;
+  const created: StartSubmissionIdentity = {
+    fingerprint,
+    conversationId: input.conversationId,
+    clientSubmissionId: createId(),
+    turnId: createId(),
+    messageId: createId(),
+    createdAt: new Date().toISOString(),
+  };
+  writeStartOutbox(projectId, [...readStartOutbox(projectId), created]);
+  return created;
+}
+
+function forgetStartSubmission(projectId: string, identity: StartSubmissionIdentity): void {
+  const remaining = readStartOutbox(projectId).filter(
+    (candidate) => candidate.clientSubmissionId !== identity.clientSubmissionId
+  );
+  if (remaining.length === 0) {
+    volatileStartOutbox.delete(projectId);
+    try {
+      localStorage.removeItem(agentOsStartOutboxStorageKey(projectId));
+    } catch {
+      // Storage may be disabled; the volatile entry is already gone.
+    }
+    return;
+  }
+  writeStartOutbox(projectId, remaining);
+}
+
+function forgetAcknowledgedStartSubmissions(
+  projectId: string,
+  events: readonly AgentOsEvent[]
+): void {
+  const durableMessageIds = new Set(
+    events
+      .filter((event) => event.type === "UserMessage")
+      .map((event) => event.data.messageId)
+      .filter((messageId): messageId is string => typeof messageId === "string")
+  );
+  if (durableMessageIds.size === 0) return;
+  for (const identity of readStartOutbox(projectId)) {
+    if (durableMessageIds.has(identity.messageId)) {
+      forgetStartSubmission(projectId, identity);
+    }
+  }
 }
 
 function readStoredConversationId(projectId: string): string | null {
@@ -907,8 +845,8 @@ function writeStoredConversationId(projectId: string, conversationId: string | n
   }
 }
 
-function statusFromEventType(type: string): AgentOsRunStatus | string {
-  switch (type) {
+function statusFromEvent(event: AgentOsEvent): AgentOsRunStatus | string {
+  switch (event.type) {
     case "RunCompleted":
       return "completed";
     case "RunFailed":
@@ -916,9 +854,17 @@ function statusFromEventType(type: string): AgentOsRunStatus | string {
     case "RunCancelled":
       return "cancelled";
     case "RunPaused":
+      return event.data.status === "waiting_for_input"
+        ? "waiting_for_input"
+        : event.data.status === "waiting_for_external"
+          ? "waiting_for_external"
+          : "waiting_for_approval";
     case "ApprovalRequired":
       return "waiting_for_approval";
+    case "UserInputRequired":
+      return "waiting_for_input";
     case "ApprovalResolved":
+    case "UserInputResolved":
       return "running";
     default:
       return "running";
@@ -934,12 +880,23 @@ export function useAgentOsRun(projectId: string) {
   const activeRunIdRef = useRef<string | null>(null);
   const ablyLive = useRef(new AgentOsAblyLive());
   const ablyConnected = useRef(false);
+  const resyncPuller = useRef<
+    AgentOsRealtimeResyncPuller<Awaited<ReturnType<typeof agentOsApi.listEvents>>> | undefined
+  >(undefined);
+  const continuityReconciler = useRef<
+    | AgentOsRealtimeConversationReconciler<Awaited<ReturnType<typeof agentOsApi.getConversation>>>
+    | undefined
+  >(undefined);
 
   /** Conversation-scoped event buffers — source of truth for transcript. */
   const runsRef = useRef(new Map<string, RunBuffer>());
   const nextRunOrder = useRef(0);
   /** Optimistic user before startRun returns a runId. */
   const pendingUserRef = useRef<OptimisticUser | null>(null);
+  /** Idempotency identity survives a failed HTTP attempt and a user retry. */
+  const userInputSubmissionIds = useRef(new Map<string, UserInputSubmissionIdentity>());
+  /** Stable identity for an approval survives transport failure and UI retry. */
+  const approvalSubmissionIds = useRef(new Map<string, ApprovalSubmissionIdentity>());
 
   const publishFromBuffers = useCallback(() => {
     // Attach pending user (no runId yet) as a trailing optimistic row.
@@ -957,6 +914,7 @@ export function useAgentOsRun(projectId: string) {
             role: "user",
             content: p.content,
             createdAt: p.createdAt,
+            turnId: p.turnId,
             meta: p.attachmentNames?.length
               ? { attachmentNames: p.attachmentNames, optimistic: true }
               : { optimistic: true },
@@ -964,6 +922,10 @@ export function useAgentOsRun(projectId: string) {
         ];
       }
     }
+    // Selection belongs to the conversation projection, not to whichever
+    // realtime/poll request happened to finish last. A late resync for run A
+    // must never retarget Stop or HITL actions away from the newer run B.
+    activeRunIdRef.current = rebuilt.runId;
     setState({
       status: rebuilt.status === "idle" && messages.length > 0 ? "completed" : rebuilt.status,
       runId: rebuilt.runId,
@@ -971,7 +933,8 @@ export function useAgentOsRun(projectId: string) {
       messages,
       events: rebuilt.events,
       pendingApproval: rebuilt.pendingApproval,
-      assistantText: rebuilt.assistantText,
+      pendingUserInput: rebuilt.pendingUserInput,
+      pendingExternal: rebuilt.pendingExternal,
       errorCode: rebuilt.errorCode,
       error: rebuilt.error,
     });
@@ -993,6 +956,8 @@ export function useAgentOsRun(projectId: string) {
       status?: string;
       events?: AgentOsEvent[];
       pendingApproval?: AgentOsPendingApproval | null;
+      pendingUserInput?: AgentOsPendingUserInput | null;
+      pendingExternal?: AgentOsPendingExternal | null;
       assistantText?: string | null;
       error?: { code?: string; message?: string } | null;
       /** Poll / snapshot / ApprovalResolved may leave waiting_for_approval. */
@@ -1005,33 +970,121 @@ export function useAgentOsRun(projectId: string) {
         });
       }
       if (input.events) {
+        if (!buf.createdAt && input.events.length > 0) {
+          buf.createdAt =
+            [...input.events].sort((left, right) => left.sequence - right.sequence).at(0)
+              ?.timestamp ?? null;
+        }
+        forgetAcknowledgedStartSubmissions(projectId, input.events);
         for (const event of input.events) {
           buf.eventsBySeq.set(event.sequence, event);
         }
+        const pendingUser = pendingUserRef.current;
+        if (
+          pendingUser &&
+          input.events.some((event) => eventMatchesOptimisticUser(event, pendingUser))
+        ) {
+          pendingUserRef.current = null;
+        }
         if (buf.eventsBySeq.size > 0) {
-          lastSequenceByRun.current.set(input.runId, Math.max(...buf.eventsBySeq.keys()));
+          lastSequenceByRun.current.set(
+            input.runId,
+            advanceAgentOsContiguousSequence(
+              buf.eventsBySeq,
+              lastSequenceByRun.current.get(input.runId) ?? 0
+            )
+          );
         }
         // Durable UserMessage → drop optimistic user for this run.
         const hasUserMessage = [...buf.eventsBySeq.values()].some((e) => e.type === "UserMessage");
         if (hasUserMessage) buf.optimisticUser = null;
-        // Journal ApprovalResolved → drop client decision mirrors + leave HITL.
+        const durableUserInteractions = [...buf.eventsBySeq.values()]
+          .filter((event) => event.type === "UserMessage")
+          .map((event) => event.data.interaction)
+          .filter(
+            (interaction): interaction is Record<string, unknown> =>
+              Boolean(interaction) && typeof interaction === "object" && !Array.isArray(interaction)
+          );
+        const durableApprovalIds = new Set(
+          durableUserInteractions
+            .filter((interaction) => interaction.kind === "approval")
+            .map((interaction) => String(interaction.approvalId ?? ""))
+        );
+        const durableApprovalResponseIds = new Set(
+          durableUserInteractions
+            .filter((interaction) => interaction.kind === "approval")
+            .map((interaction) => String(interaction.responseId ?? ""))
+            .filter(Boolean)
+        );
+        const durableRequestIds = new Set(
+          durableUserInteractions
+            .filter((interaction) => interaction.kind === "user_input")
+            .map((interaction) => String(interaction.requestId ?? ""))
+        );
+        // Drop an optimistic answer only when its durable UserMessage exists.
+        // Resolve events can arrive first and must not make the user row blink.
+        buf.optimisticDecisions = buf.optimisticDecisions.filter((message) => {
+          const responseId = String(message.meta?.responseId ?? "");
+          if (responseId) return !durableApprovalResponseIds.has(responseId);
+          return !durableApprovalIds.has(String(message.meta?.approvalId ?? ""));
+        });
+        buf.optimisticInputResponses = buf.optimisticInputResponses.filter(
+          (message) => !durableRequestIds.has(String(message.meta?.requestId ?? ""))
+        );
+        for (const interaction of durableUserInteractions) {
+          if (interaction.kind === "user_input") {
+            const requestId = String(interaction.requestId ?? "");
+            const responseId = String(interaction.responseId ?? "");
+            const local = userInputSubmissionIds.current.get(requestId);
+            if (local && (!responseId || responseId === local.responseId)) {
+              userInputSubmissionIds.current.delete(requestId);
+            }
+          } else if (interaction.kind === "approval") {
+            const approvalId = String(interaction.approvalId ?? "");
+            const responseId = String(interaction.responseId ?? "");
+            const local = approvalSubmissionIds.current.get(approvalId);
+            if (local && (!responseId || responseId === local.responseId)) {
+              approvalSubmissionIds.current.delete(approvalId);
+            }
+          }
+        }
+
+        // Journal ApprovalResolved leaves the blocking state; transcript
+        // reconciliation above remains independently keyed to UserMessage.
         const hasResolved = [...buf.eventsBySeq.values()].some(
           (e) => e.type === "ApprovalResolved"
         );
         if (hasResolved) {
-          buf.optimisticDecisions = [];
           if (buf.status === "waiting_for_approval") {
             buf.status = mergeRunStatus(buf.status, "running", {
               allowResumeFromWaiting: true,
             });
           }
         }
+        const hasInputResolved = [...buf.eventsBySeq.values()].some(
+          (e) => e.type === "UserInputResolved"
+        );
+        if (hasInputResolved && buf.status === "waiting_for_input") {
+          buf.status = mergeRunStatus(buf.status, "running", {
+            allowResumeFromWaiting: true,
+          });
+        }
       }
       if (input.pendingApproval !== undefined) {
         buf.pendingApproval = input.pendingApproval;
       }
+      if (input.pendingUserInput !== undefined) {
+        buf.pendingUserInput = input.pendingUserInput;
+      }
+      if (input.pendingExternal !== undefined) {
+        buf.pendingExternal = input.pendingExternal;
+      } else if (input.status && input.status !== "waiting_for_external") {
+        buf.pendingExternal = null;
+      }
       if (buf.status === "completed" || buf.status === "failed" || buf.status === "cancelled") {
         buf.pendingApproval = null;
+        buf.pendingUserInput = null;
+        buf.pendingExternal = null;
       }
       if (typeof input.assistantText === "string") {
         buf.assistantText = input.assistantText;
@@ -1039,16 +1092,107 @@ export function useAgentOsRun(projectId: string) {
       if (input.error !== undefined) {
         buf.error = input.error;
       }
-      activeRunIdRef.current = input.runId;
       publishFromBuffers();
     },
-    [ensureRunBuffer, publishFromBuffers]
+    [ensureRunBuffer, projectId, publishFromBuffers]
   );
 
   const mergeResponseRef = useRef(applyToRunBuffer);
   useEffect(() => {
     mergeResponseRef.current = applyToRunBuffer;
   }, [applyToRunBuffer]);
+
+  useEffect(() => {
+    const puller = new AgentOsRealtimeResyncPuller(
+      (target, afterSequence, signal) =>
+        agentOsApi.listEvents(target.runId, projectId, afterSequence, signal),
+      (page) => {
+        mergeResponseRef.current({
+          runId: page.runId,
+          status: page.status,
+          events: page.events,
+          pendingApproval:
+            page.status === "waiting_for_approval" ? (page.pendingApproval ?? null) : null,
+          pendingUserInput:
+            page.status === "waiting_for_input" ? (page.pendingUserInput ?? null) : null,
+          pendingExternal:
+            page.status === "waiting_for_external" ? (page.pendingExternal ?? null) : null,
+          assistantText: page.assistantText,
+          allowResumeFromWaiting: true,
+        });
+      },
+      (runId) => lastSequenceByRun.current.get(runId) ?? 0
+    );
+    const reconciler = new AgentOsRealtimeConversationReconciler(
+      (conversationId, signal) => agentOsApi.getConversation(projectId, conversationId, signal),
+      (history) => {
+        const durableRuns = [...history.runs].sort(
+          (left, right) =>
+            Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+            left.runId.localeCompare(right.runId)
+        );
+        const reconciledOrder = reconcileAgentOsConversationRunOrder(
+          [...runsRef.current.values()].map((buffer) => ({
+            runId: buffer.runId,
+            order: buffer.order,
+            createdAt: buffer.createdAt,
+          })),
+          durableRuns
+        );
+        for (const entry of reconciledOrder) {
+          const buffer = ensureRunBuffer(entry.runId);
+          buffer.order = entry.order;
+          buffer.createdAt = entry.createdAt;
+        }
+        nextRunOrder.current = reconciledOrder.length;
+        const durableBuffers = durableRuns.map((run) => ({
+          run,
+          buffer: ensureRunBuffer(run.runId),
+        }));
+
+        for (const { run } of durableBuffers) {
+          mergeResponseRef.current({
+            runId: run.runId,
+            status: run.status,
+            events: run.events,
+            pendingApproval:
+              run.status === "waiting_for_approval" ? (run.pendingApproval ?? null) : null,
+            pendingUserInput:
+              run.status === "waiting_for_input" ? (run.pendingUserInput ?? null) : null,
+            pendingExternal:
+              run.status === "waiting_for_external" ? (run.pendingExternal ?? null) : null,
+            assistantText: run.assistantText,
+            allowResumeFromWaiting: true,
+          });
+        }
+        publishFromBuffers();
+
+        const reconciledConversationId = history.conversationId ?? conversationRef.current;
+        if (!reconciledConversationId) return;
+        for (const { run, buffer } of durableBuffers) {
+          const contiguous = lastSequenceByRun.current.get(run.runId) ?? 0;
+          const observedMax = Math.max(0, ...buffer.eventsBySeq.keys());
+          if (observedMax > contiguous) {
+            void puller.requestWatermark({
+              runId: run.runId,
+              conversationId: reconciledConversationId,
+              afterSequence: contiguous,
+            });
+          }
+        }
+      }
+    );
+    resyncPuller.current = puller;
+    continuityReconciler.current = reconciler;
+    return () => {
+      reconciler.dispose();
+      puller.dispose();
+      if (resyncPuller.current === puller) resyncPuller.current = undefined;
+      if (continuityReconciler.current === reconciler) {
+        continuityReconciler.current = undefined;
+      }
+    };
+  }, [ensureRunBuffer, projectId, publishFromBuffers]);
 
   useEffect(() => {
     const controllers = pollAborts.current;
@@ -1069,7 +1213,8 @@ export function useAgentOsRun(projectId: string) {
           onEvent: (event) => {
             const runId = event.runId;
             if (!runId) return;
-            const mapped = statusFromEventType(event.type);
+            const contiguousBeforeEvent = lastSequenceByRun.current.get(runId) ?? 0;
+            const mapped = statusFromEvent(event);
             mergeResponseRef.current({
               runId,
               status: mapped,
@@ -1082,9 +1227,16 @@ export function useAgentOsRun(projectId: string) {
                 event.type === "RunFailed" ||
                 event.type === "RunCancelled",
             });
+            const catchUp = agentOsCatchUpTargetFromEventGap(event, contiguousBeforeEvent);
+            if (catchUp) void resyncPuller.current?.request(catchUp);
           },
           onSnapshot: (snapshot: AgentOsAblyRunSnapshot) => {
             // Status + pending + assistantText only — never wipe event buffers.
+            // Shared transport is deployed independently; accept the formal
+            // pendingExternal field as soon as the Gateway starts publishing it.
+            const transportSnapshot = snapshot as AgentOsAblyRunSnapshot & {
+              pendingExternal?: AgentOsPendingExternal | null;
+            };
             mergeResponseRef.current({
               runId: snapshot.runId,
               status: snapshot.status,
@@ -1093,8 +1245,28 @@ export function useAgentOsRun(projectId: string) {
                 snapshot.status === "waiting_for_approval"
                   ? ((snapshot.pendingApproval as AgentOsPendingApproval | null) ?? null)
                   : null,
+              pendingUserInput:
+                snapshot.status === "waiting_for_input"
+                  ? ((snapshot.pendingUserInput as AgentOsPendingUserInput | null) ?? null)
+                  : null,
+              pendingExternal:
+                snapshot.status === "waiting_for_external"
+                  ? (transportSnapshot.pendingExternal ?? null)
+                  : null,
               allowResumeFromWaiting: true,
             });
+            const contiguous = lastSequenceByRun.current.get(snapshot.runId) ?? 0;
+            const catchUp = agentOsCatchUpTargetFromSnapshot(snapshot, contiguous);
+            if (catchUp) void resyncPuller.current?.request(catchUp);
+          },
+          onResync: (pointer: AgentOsAblyResyncPointer) => {
+            if (pointer.conversationId !== conversationRef.current) return;
+            void resyncPuller.current?.request(agentOsCatchUpTargetFromPointer(pointer));
+          },
+          onDiscontinuity: () => {
+            const currentConversationId = conversationRef.current;
+            if (!currentConversationId) return;
+            void continuityReconciler.current?.request(currentConversationId);
           },
         },
       });
@@ -1110,37 +1282,20 @@ export function useAgentOsRun(projectId: string) {
       pollAborts.current.get(runId)?.abort();
       const ac = new AbortController();
       pollAborts.current.set(runId, ac);
-      const started = Date.now();
       const maxMs = 10 * 60_000;
+      let ordinaryDeadlineAt = Date.now() + maxMs;
+      let wasWaitingForExternal = false;
       /**
-       * Give up on CONSECUTIVE failures, never on elapsed time.
+       * Foreground inference has a bounded follow window and tolerates a run
+       * of transient transport failures. A durable external handoff suspends
+       * both limits because only its journal terminal event owns completion.
        *
-       * Measuring from the poll's start meant any turn longer than 15s died on
-       * its first transient error — and it died by throwing out of a
-       * fire-and-forget call, so nothing was shown: the transcript simply froze
-       * on "Working…" with the composer locked. This loop is the ONLY transport
-       * when Ably is not live, which is the case the design exists for (Front
-       * Door does not pass SSE), so it has to survive a blip and has to speak up
-       * when it truly cannot.
+       * This loop is the only transport when Ably is not live (Front Door does
+       * not pass SSE), so failures must become visible without fabricating a
+       * product failure for background work that is still healthy.
        */
       let consecutiveFailures = 0;
       const maxConsecutiveFailures = 8;
-      /**
-       * A run the worker does not have is not running.
-       *
-       * The gateway asks the worker first and only falls back to the durable
-       * journal when the worker does not report the run as open — so
-       * `source: "postgres"` while the row still says "running" means the
-       * process that owned this turn is gone (a restart, a crash, a deploy).
-       * The journal will say "running" forever, so without this the panel
-       * spins on reopen until the poll window closes ten minutes later.
-       *
-       * Requires a few observations because the worker client does not check
-       * res.ok — one transient error also lands on the journal.
-       */
-      let orphanObservations = 0;
-      const orphanThreshold = 3;
-
       const giveUp = (code: string, message: string) => {
         pollAborts.current.delete(runId);
         // Through the buffer, not a bare setState: a later rebuild would wipe
@@ -1154,7 +1309,33 @@ export function useAgentOsRun(projectId: string) {
         });
       };
 
-      while (!ac.signal.aborted && Date.now() - started < maxMs) {
+      while (!ac.signal.aborted) {
+        const currentStatus = runsRef.current.get(runId)?.status;
+        const waitingForExternal = currentStatus === "waiting_for_external";
+        if (waitingForExternal) {
+          wasWaitingForExternal = true;
+        } else {
+          // Time spent in a durable background handoff never consumes the
+          // foreground inference deadline. Once it resumes, grant a fresh
+          // window to receive the terminal journal events.
+          if (wasWaitingForExternal) {
+            ordinaryDeadlineAt = Date.now() + maxMs;
+            consecutiveFailures = 0;
+            wasWaitingForExternal = false;
+          }
+          const failureCode = agentOsPollFailureCode({
+            status: currentStatus,
+            consecutiveFailures,
+            maxConsecutiveFailures,
+            now: Date.now(),
+            ordinaryDeadlineAt,
+          });
+          if (failureCode) {
+            giveUp(failureCode, "");
+            return;
+          }
+        }
+
         const after = lastSequenceByRun.current.get(runId) ?? 0;
         let justFailed = false;
         try {
@@ -1165,43 +1346,61 @@ export function useAgentOsRun(projectId: string) {
             events: page.events,
             pendingApproval:
               page.status === "waiting_for_approval" ? (page.pendingApproval ?? null) : null,
+            pendingUserInput:
+              page.status === "waiting_for_input" ? (page.pendingUserInput ?? null) : null,
+            pendingExternal:
+              page.status === "waiting_for_external" ? (page.pendingExternal ?? null) : null,
             assistantText: page.assistantText,
             allowResumeFromWaiting: true,
           });
           consecutiveFailures = 0;
-          if (TERMINAL.has(page.status)) {
+          if (agentOsPollSnapshotDisposition(page) === "stop") {
             pollAborts.current.delete(runId);
             return page;
-          }
-          if (page.status === "running" && page.source === "postgres") {
-            orphanObservations += 1;
-            if (orphanObservations >= orphanThreshold) {
-              giveUp("AGENT_OS_RUN_ORPHANED", "");
-              return;
-            }
-          } else {
-            orphanObservations = 0;
           }
         } catch (error) {
           if (ac.signal.aborted) return;
           consecutiveFailures += 1;
           justFailed = true;
-          if (consecutiveFailures >= maxConsecutiveFailures) {
-            giveUp("AGENT_OS_POLL_LOST", error instanceof Error ? error.message : String(error));
+          const durableExternalWork = runsRef.current.get(runId)?.status === "waiting_for_external";
+          const failureCode = agentOsPollFailureCode({
+            status: runsRef.current.get(runId)?.status,
+            consecutiveFailures,
+            maxConsecutiveFailures,
+            now: Date.now(),
+            ordinaryDeadlineAt,
+          });
+          if (failureCode) {
+            giveUp(
+              failureCode,
+              failureCode === "AGENT_OS_POLL_LOST"
+                ? error instanceof Error
+                  ? error.message
+                  : String(error)
+                : ""
+            );
             return;
           }
+          // A durable external run survives browser/gateway disconnects. Keep
+          // retrying with a bounded exponent so reconnect can replay journal
+          // events instead of fabricating a failed product turn.
+          if (durableExternalWork) {
+            consecutiveFailures = Math.min(consecutiveFailures, 12);
+          }
         }
-        const base = ablyConnected.current || ablyLive.current.isLive ? 1_500 : 120;
+        const externalStillRunning = runsRef.current.get(runId)?.status === "waiting_for_external";
+        const base = externalStillRunning
+          ? ablyConnected.current || ablyLive.current.isLive
+            ? 5_000
+            : 2_000
+          : ablyConnected.current || ablyLive.current.isLive
+            ? 1_500
+            : 120;
         // Back off while failing so a struggling gateway is not hammered at 8/s.
-        const intervalMs = justFailed ? Math.min(base * 2 ** consecutiveFailures, 5_000) : base;
+        const intervalMs = justFailed
+          ? Math.min(base * 2 ** consecutiveFailures, externalStillRunning ? 30_000 : 5_000)
+          : base;
         await new Promise((r) => setTimeout(r, intervalMs));
-      }
-
-      if (!ac.signal.aborted) {
-        // The window closed with the run still open. Saying so is honest and
-        // unlocks the composer; leaving it spinning is neither.
-        giveUp("AGENT_OS_POLL_TIMEOUT", "");
-        return;
       }
       pollAborts.current.delete(runId);
     },
@@ -1231,20 +1430,28 @@ export function useAgentOsRun(projectId: string) {
         }
         conversationRef.current = history.conversationId;
         writeStoredConversationId(projectId, history.conversationId);
+        resyncPuller.current?.reset();
+        continuityReconciler.current?.reset();
         runsRef.current = new Map();
         nextRunOrder.current = 0;
         for (const run of history.runs) {
           const buf = emptyRunBuffer(run.runId, nextRunOrder.current);
           nextRunOrder.current += 1;
+          buf.createdAt = run.createdAt;
           buf.status = run.status;
           buf.pendingApproval = (run.pendingApproval as AgentOsPendingApproval | null) ?? null;
+          buf.pendingUserInput = (run.pendingUserInput as AgentOsPendingUserInput | null) ?? null;
+          buf.pendingExternal = (run.pendingExternal as AgentOsPendingExternal | null) ?? null;
           buf.assistantText = run.assistantText ?? null;
           for (const event of run.events) {
             buf.eventsBySeq.set(event.sequence, event);
           }
           runsRef.current.set(run.runId, buf);
           if (buf.eventsBySeq.size > 0) {
-            lastSequenceByRun.current.set(run.runId, Math.max(...buf.eventsBySeq.keys()));
+            lastSequenceByRun.current.set(
+              run.runId,
+              advanceAgentOsContiguousSequence(buf.eventsBySeq)
+            );
           }
         }
         publishFromBuffers();
@@ -1253,10 +1460,16 @@ export function useAgentOsRun(projectId: string) {
         if (
           rebuilt.runId &&
           history.conversationId &&
-          (rebuilt.status === "waiting_for_approval" || rebuilt.status === "running")
+          (rebuilt.status === "waiting_for_approval" ||
+            rebuilt.status === "waiting_for_input" ||
+            rebuilt.status === "waiting_for_external" ||
+            rebuilt.status === "running")
         ) {
           void ensureAbly(history.conversationId).then(() => {
-            if (rebuilt.status === "running" && rebuilt.runId) {
+            if (
+              (rebuilt.status === "running" || rebuilt.status === "waiting_for_external") &&
+              rebuilt.runId
+            ) {
               void pollRun(rebuilt.runId);
             }
           });
@@ -1295,10 +1508,23 @@ export function useAgentOsRun(projectId: string) {
       writeStoredConversationId(projectId, conversationId);
 
       const names = input.attachmentNames ?? [];
+      const submission = await startSubmissionIdentity(projectId, {
+        conversationId,
+        message: text,
+        modelProfileId: input.modelProfileId,
+        attachmentIds,
+        permissionMode: input.permissionMode,
+        workbenchMode: input.workbenchMode,
+        workbenchContext: input.workbenchContext,
+        skillIds: input.skillIds,
+        projectSkillInstallationIds: input.projectSkillInstallationIds,
+        disabledDefaultSkillInstallationIds: input.disabledDefaultSkillInstallationIds,
+      });
       const optimistic: OptimisticUser = {
-        id: newId(),
-        content: text || "(attachment)",
-        createdAt: new Date().toISOString(),
+        id: submission.messageId,
+        turnId: submission.turnId,
+        content: text,
+        createdAt: submission.createdAt,
         attachmentNames: names.length > 0 ? names : undefined,
       };
       pendingUserRef.current = optimistic;
@@ -1308,6 +1534,8 @@ export function useAgentOsRun(projectId: string) {
         conversationId,
         error: null,
         pendingApproval: null,
+        pendingUserInput: null,
+        pendingExternal: null,
       }));
       publishFromBuffers();
 
@@ -1315,9 +1543,12 @@ export function useAgentOsRun(projectId: string) {
         void ensureAbly(conversationId);
         const response = await agentOsApi.startRun({
           projectId,
-          message: text || "Please analyze the attached file(s).",
-          modelProfileId: input.modelProfileId,
           conversationId,
+          clientSubmissionId: submission.clientSubmissionId,
+          turnId: submission.turnId,
+          messageId: submission.messageId,
+          message: text,
+          modelProfileId: input.modelProfileId,
           attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
           permissionMode: input.permissionMode,
           workbenchMode: input.workbenchMode,
@@ -1328,8 +1559,10 @@ export function useAgentOsRun(projectId: string) {
         });
 
         // Bind optimistic user to this run *before* merging events.
+        forgetStartSubmission(projectId, submission);
         pendingUserRef.current = null;
         const buf = ensureRunBuffer(response.runId);
+        buf.createdAt = buf.createdAt ?? submission.createdAt;
         buf.optimisticUser = optimistic;
         buf.workbenchContext = input.workbenchContext ?? null;
         lastSequenceByRun.current.set(
@@ -1344,6 +1577,10 @@ export function useAgentOsRun(projectId: string) {
           events: response.events,
           pendingApproval:
             response.status === "waiting_for_approval" ? (response.pendingApproval ?? null) : null,
+          pendingUserInput:
+            response.status === "waiting_for_input" ? (response.pendingUserInput ?? null) : null,
+          pendingExternal:
+            response.status === "waiting_for_external" ? (response.pendingExternal ?? null) : null,
           assistantText: response.assistantText,
           allowResumeFromWaiting: true,
         });
@@ -1352,6 +1589,7 @@ export function useAgentOsRun(projectId: string) {
         // Fire-and-forget: a second send must not await this poll.
         if (
           response.status === "running" ||
+          response.status === "waiting_for_external" ||
           response.status === "queued" ||
           response.status === "paused"
         ) {
@@ -1359,6 +1597,21 @@ export function useAgentOsRun(projectId: string) {
         }
         return response;
       } catch (error) {
+        const recovered = [...runsRef.current.values()].find((buffer) =>
+          [...buffer.eventsBySeq.values()].some((event) =>
+            eventMatchesOptimisticUser(event, optimistic)
+          )
+        );
+        if (recovered) {
+          forgetStartSubmission(projectId, submission);
+          pendingUserRef.current = null;
+          activeRunIdRef.current = recovered.runId;
+          publishFromBuffers();
+          if (recovered.status === "running" || recovered.status === "waiting_for_external") {
+            void pollRun(recovered.runId);
+          }
+          return;
+        }
         pendingUserRef.current = null;
         const message = error instanceof Error ? error.message : "FizzAgent run failed";
         setState((prev) => ({
@@ -1372,16 +1625,10 @@ export function useAgentOsRun(projectId: string) {
               role: "user",
               content: optimistic.content,
               createdAt: optimistic.createdAt,
+              turnId: optimistic.turnId,
               meta: optimistic.attachmentNames
                 ? { attachmentNames: optimistic.attachmentNames }
                 : undefined,
-            },
-            {
-              id: newId(),
-              role: "system",
-              content: message,
-              createdAt: new Date().toISOString(),
-              meta: { kind: "error" },
             },
           ],
         }));
@@ -1391,41 +1638,70 @@ export function useAgentOsRun(projectId: string) {
     [applyToRunBuffer, ensureAbly, ensureRunBuffer, pollRun, projectId, publishFromBuffers]
   );
 
-  const resolveApproval = useCallback(
+  const resolveUserInput = useCallback(
     async (input: {
-      decision: "approve" | "reject";
+      requestId: string;
+      answers: Record<string, string>;
       modelProfileId: string;
       permissionMode?: "ask" | "smart" | "full";
     }) => {
       const runId = activeRunIdRef.current ?? state.runId;
       const conversationId = conversationRef.current;
       if (!runId || !conversationId) {
-        throw new Error("No active turn to approve");
+        throw new Error("No active input request");
+      }
+      const buffer = ensureRunBuffer(runId);
+      const pending =
+        buffer.pendingUserInput ??
+        derivePendingUserInputFromEvents([...buffer.eventsBySeq.values()]);
+      if (!pending || pending.requestId !== input.requestId) {
+        throw new Error("This input request is no longer pending");
+      }
+
+      const identity = userInputSubmissionIdentity(
+        userInputSubmissionIds.current,
+        input.requestId,
+        input.answers
+      );
+      if (
+        buffer.optimisticInputResponses.some(
+          (message) => message.meta?.responseId === identity.responseId
+        )
+      ) {
+        return;
       }
       const afterSequence = lastSequenceByRun.current.get(runId) ?? 0;
-      const decisionMsg: AgentOsChatMessage = {
-        id: newId(),
+      const responseMessage: AgentOsChatMessage = {
+        id: identity.messageId,
         role: "user",
-        content: input.decision === "approve" ? "Approved write" : "Rejected write",
+        content: userInputResponseText(pending, input.answers),
         createdAt: new Date().toISOString(),
+        turnId: identity.turnId,
         runId,
         meta: {
-          kind: "approval_decision",
-          decision: input.decision,
+          kind: "user_input_response",
+          requestId: input.requestId,
+          responseId: identity.responseId,
+          answers: input.answers,
           afterSequence,
         },
       };
-      const buf = ensureRunBuffer(runId);
-      buf.optimisticDecisions = [...buf.optimisticDecisions, decisionMsg];
-      // Reject ends the turn — do not flip to "running" or Working/spinner sticks.
-      buf.status = input.decision === "reject" ? "cancelled" : "running";
-      buf.pendingApproval = null;
+      buffer.optimisticInputResponses = [
+        ...buffer.optimisticInputResponses.filter(
+          (message) => message.meta?.responseId !== identity.responseId
+        ),
+        responseMessage,
+      ];
+      buffer.pendingUserInput = null;
+      buffer.status = "running";
       publishFromBuffers();
 
       try {
-        const response = await agentOsApi.resolveApproval({
+        const response = await agentOsApi.resolveUserInput({
           runId,
-          decision: input.decision,
+          requestId: input.requestId,
+          responseId: identity.responseId,
+          answers: input.answers,
           projectId,
           conversationId,
           modelProfileId: input.modelProfileId,
@@ -1438,11 +1714,16 @@ export function useAgentOsRun(projectId: string) {
           events: response.events,
           pendingApproval:
             response.status === "waiting_for_approval" ? (response.pendingApproval ?? null) : null,
+          pendingUserInput:
+            response.status === "waiting_for_input" ? (response.pendingUserInput ?? null) : null,
+          pendingExternal:
+            response.status === "waiting_for_external" ? (response.pendingExternal ?? null) : null,
           assistantText: response.assistantText,
           allowResumeFromWaiting: true,
         });
         if (
           response.status === "running" ||
+          response.status === "waiting_for_external" ||
           response.status === "queued" ||
           response.status === "paused"
         ) {
@@ -1450,24 +1731,142 @@ export function useAgentOsRun(projectId: string) {
         }
         return response;
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Approval failed";
-        buf.optimisticDecisions = buf.optimisticDecisions.filter((d) => d.id !== decisionMsg.id);
+        buffer.optimisticInputResponses = buffer.optimisticInputResponses.filter(
+          (message) => message.id !== responseMessage.id
+        );
+        const journalEvents = [...buffer.eventsBySeq.values()];
+        const requestWasJournaled = journalEvents.some(
+          (event) =>
+            event.type === "UserInputRequired" && event.data.requestId === pending.requestId
+        );
+        const restoredPending = requestWasJournaled
+          ? derivePendingUserInputFromEvents(journalEvents)
+          : pending;
+        buffer.pendingUserInput = restoredPending;
+        buffer.status = restoredPending
+          ? "waiting_for_input"
+          : deriveStatusFromEvents(journalEvents, buffer.status);
         publishFromBuffers();
-        setState((prev) => ({
-          ...prev,
-          status: "failed",
-          error: message,
-          messages: [
-            ...prev.messages,
-            {
-              id: newId(),
-              role: "system",
-              content: message,
-              createdAt: new Date().toISOString(),
-              meta: { kind: "error" },
-            },
-          ],
-        }));
+        throw error;
+      }
+    },
+    [applyToRunBuffer, ensureRunBuffer, pollRun, projectId, publishFromBuffers, state.runId]
+  );
+
+  const resolveApproval = useCallback(
+    async (input: {
+      approvalId: string;
+      decision: "approve" | "reject";
+      /** Localized user-visible transcript copy for the optimistic row. */
+      responseText: string;
+      locale: "en-US" | "zh-CN" | "zh-HK";
+      modelProfileId: string;
+      permissionMode?: "ask" | "smart" | "full";
+    }) => {
+      const runId = activeRunIdRef.current ?? state.runId;
+      const conversationId = conversationRef.current;
+      if (!runId || !conversationId) {
+        throw new Error("No active turn to approve");
+      }
+      const responseText = input.responseText.trim();
+      if (responseText.length < 1 || responseText.length > 300) {
+        throw new Error("Approval response text must contain 1–300 characters");
+      }
+      const afterSequence = lastSequenceByRun.current.get(runId) ?? 0;
+      const buf = ensureRunBuffer(runId);
+      const pendingApproval =
+        buf.pendingApproval ?? derivePendingApprovalFromEvents([...buf.eventsBySeq.values()]);
+      if (!pendingApproval || pendingApproval.approvalId !== input.approvalId) {
+        throw new Error("This approval is no longer pending");
+      }
+      const identity = approvalSubmissionIdentity(
+        approvalSubmissionIds.current,
+        input.approvalId,
+        input.decision,
+        responseText,
+        input.locale
+      );
+      if (
+        buf.optimisticDecisions.some((message) => message.meta?.responseId === identity.responseId)
+      ) {
+        return;
+      }
+      const decisionMsg: AgentOsChatMessage = {
+        id: identity.messageId,
+        role: "user",
+        content: responseText,
+        createdAt: new Date().toISOString(),
+        turnId: identity.turnId,
+        runId,
+        meta: {
+          kind: "approval_response",
+          approvalId: input.approvalId,
+          responseId: identity.responseId,
+          decision: input.decision,
+          responseText,
+          locale: input.locale,
+          afterSequence,
+        },
+      };
+      buf.optimisticDecisions = [...buf.optimisticDecisions, decisionMsg];
+      // Both decisions resume the same run. Reject means "do not execute this
+      // action", not "cancel the Agent conversation".
+      buf.status = "running";
+      buf.pendingApproval = null;
+      publishFromBuffers();
+
+      try {
+        const response = await agentOsApi.resolveApproval({
+          runId,
+          approvalId: input.approvalId,
+          responseId: identity.responseId,
+          decision: input.decision,
+          responseText,
+          locale: input.locale,
+          projectId,
+          conversationId,
+          modelProfileId: input.modelProfileId,
+          permissionMode: input.permissionMode,
+        });
+        activeRunIdRef.current = response.runId;
+        applyToRunBuffer({
+          runId: response.runId,
+          status: response.status,
+          events: response.events,
+          pendingApproval:
+            response.status === "waiting_for_approval" ? (response.pendingApproval ?? null) : null,
+          pendingUserInput:
+            response.status === "waiting_for_input" ? (response.pendingUserInput ?? null) : null,
+          pendingExternal:
+            response.status === "waiting_for_external" ? (response.pendingExternal ?? null) : null,
+          assistantText: response.assistantText,
+          allowResumeFromWaiting: true,
+        });
+        if (
+          response.status === "running" ||
+          response.status === "waiting_for_external" ||
+          response.status === "queued" ||
+          response.status === "paused"
+        ) {
+          void pollRun(runId);
+        }
+        return response;
+      } catch (error) {
+        buf.optimisticDecisions = buf.optimisticDecisions.filter((d) => d.id !== decisionMsg.id);
+        const journalEvents = [...buf.eventsBySeq.values()];
+        const approvalWasJournaled = journalEvents.some(
+          (event) =>
+            event.type === "ApprovalRequired" &&
+            event.data.approvalId === pendingApproval?.approvalId
+        );
+        const restoredPending = approvalWasJournaled
+          ? derivePendingApprovalFromEvents(journalEvents)
+          : pendingApproval;
+        buf.pendingApproval = restoredPending;
+        buf.status = restoredPending
+          ? "waiting_for_approval"
+          : deriveStatusFromEvents(journalEvents, buf.status);
+        publishFromBuffers();
         throw error;
       }
     },
@@ -1479,56 +1878,52 @@ export function useAgentOsRun(projectId: string) {
     pollAborts.current.clear();
     ablyLive.current.detach();
     ablyConnected.current = false;
+    resyncPuller.current?.reset();
+    continuityReconciler.current?.reset();
     conversationRef.current = null;
     lastSequenceByRun.current = new Map();
     activeRunIdRef.current = null;
     runsRef.current = new Map();
     nextRunOrder.current = 0;
     pendingUserRef.current = null;
+    userInputSubmissionIds.current.clear();
+    approvalSubmissionIds.current.clear();
     writeStoredConversationId(projectId, null);
     setState(initial);
   }, [projectId]);
 
   const stop = useCallback(
-    (label = "Stopped") => {
-      for (const ac of pollAborts.current.values()) ac.abort();
-      pollAborts.current.clear();
+    async (label = "Stopped") => {
       const runId = activeRunIdRef.current;
       if (runId) {
-        void agentOsApi.cancelRun(runId, projectId, label).catch(() => {
-          /* best-effort */
+        const response = await agentOsApi.cancelRun(runId, projectId, label);
+        for (const ac of pollAborts.current.values()) ac.abort();
+        pollAborts.current.clear();
+        applyToRunBuffer({
+          runId: response.runId,
+          status: response.status,
+          events: response.events,
+          pendingApproval: response.pendingApproval ?? null,
+          pendingUserInput: response.pendingUserInput ?? null,
+          pendingExternal: response.pendingExternal ?? null,
+          assistantText: response.assistantText,
+          allowResumeFromWaiting: true,
         });
-        const buf = runsRef.current.get(runId);
-        if (buf) {
-          buf.status = "cancelled";
-          buf.pendingApproval = null;
-        }
       }
       pendingUserRef.current = null;
+      userInputSubmissionIds.current.clear();
+      approvalSubmissionIds.current.clear();
       publishFromBuffers();
-      setState((prev) => {
-        if (prev.status !== "running" && prev.status !== "waiting_for_approval") {
-          return { ...prev, status: "cancelled", pendingApproval: null };
-        }
-        return {
-          ...prev,
-          status: "cancelled",
-          pendingApproval: null,
-          messages: [
-            ...prev.messages,
-            {
-              id: newId(),
-              role: "system",
-              content: label,
-              createdAt: new Date().toISOString(),
-              meta: { kind: "stopped" },
-            },
-          ],
-        };
-      });
     },
-    [projectId, publishFromBuffers]
+    [applyToRunBuffer, projectId, publishFromBuffers]
   );
 
-  return { state, send, resolveApproval, newChat, stop, reset: newChat };
+  return {
+    state,
+    send,
+    resolveApproval,
+    resolveUserInput,
+    newChat,
+    stop,
+  };
 }

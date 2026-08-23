@@ -987,6 +987,19 @@ function isEmptyVideoSequence(renderer: ExperienceRendererInstance): boolean {
  * long enough to register as a scene and short enough not to stall a playthrough.
  */
 const EMPTY_SEQUENCE_HOLD_MS = 6_000;
+/** How often a still reports elapsed time, matching a video's timeupdate rate. */
+const STILL_CLOCK_TICK_MS = 250;
+
+/**
+ * A still's screen time. The sequence expresses it as the clip's held
+ * duration, which the compiler always emits for a still; the fallback only
+ * covers a hand-authored manifest that held a frame indefinitely.
+ */
+function stillDurationMs(clip: { endBehavior: { behavior: string; durationMs?: number } }): number {
+  return clip.endBehavior.behavior === "hold-last-frame" && clip.endBehavior.durationMs
+    ? clip.endBehavior.durationMs
+    : EMPTY_SEQUENCE_HOLD_MS;
+}
 
 function EmptyVideoSequencePlaceholder({
   label,
@@ -1148,7 +1161,20 @@ function CoreVideoRenderer({
   // ratio, is centered in the responsive stage, and scales down to fit without
   // ever cropping. Everything else fills a fixed full-bleed frame.
   const native = config.fit === "native";
-  const player = (
+  const stillImage = Boolean(media.variant.mediaType?.toLowerCase().startsWith("image/"));
+  const player = stillImage ? (
+    <ExperienceStillSegment
+      uri={media.variant.uri}
+      title={copy.videoLabel(renderer.instanceId)}
+      fit={config.fit === "native" ? "contain" : config.fit}
+      durationMs={stillDurationMs(clip)}
+      timelineOffsetMs={timelineOffsetMs}
+      playbackIdentity={playbackIdentity}
+      onDisplayed={handleEnd}
+      onTimelineTimeMs={onTimelineTimeMs}
+      onPlaybackHandle={registerPlaybackHandle}
+    />
+  ) : (
     <ExperienceMediaPlayer
       source={{ src: media.variant.uri, type: media.variant.mediaType }}
       title={copy.videoLabel(renderer.instanceId)}
@@ -1205,6 +1231,112 @@ function CoreVideoRenderer({
   );
 }
 
+/**
+ * A storyboard still on the sequence timeline, played through the same
+ * playback handle a video clip uses.
+ *
+ * A still has no element that plays itself, so it is governed like footage
+ * instead of like an image: it declares itself displayed only when the host
+ * calls play() — never on image load, which happens behind the title screen —
+ * and from then on reports elapsed time so the scene clock keeps advancing and
+ * time-anchored interactions stay live. Its screen time is the clip's
+ * `hold-last-frame` duration, still owned by the sequence above.
+ */
+function ExperienceStillSegment({
+  uri,
+  title,
+  fit,
+  durationMs,
+  timelineOffsetMs,
+  playbackIdentity,
+  onDisplayed,
+  onTimelineTimeMs,
+  onPlaybackHandle,
+}: {
+  uri: string;
+  title: string;
+  fit: "cover" | "contain";
+  durationMs: number;
+  timelineOffsetMs: number;
+  playbackIdentity: string;
+  onDisplayed: () => void;
+  onTimelineTimeMs: (timeMs: number) => void;
+  onPlaybackHandle: (handle: ExperienceMediaPlaybackHandle | null) => void;
+}) {
+  const displayedRef = useRef(false);
+  const elapsedMsRef = useRef(0);
+  const runningSinceRef = useRef<number | null>(null);
+  const tickRef = useRef<number | null>(null);
+  const onDisplayedRef = useRef(onDisplayed);
+  onDisplayedRef.current = onDisplayed;
+  const onTimelineTimeMsRef = useRef(onTimelineTimeMs);
+  onTimelineTimeMsRef.current = onTimelineTimeMs;
+
+  const stopTicking = useCallback(() => {
+    if (tickRef.current === null) return;
+    window.clearInterval(tickRef.current);
+    tickRef.current = null;
+  }, []);
+
+  // The clock outlives handle registration: the sequence deregisters the
+  // handle the moment this clip enters its terminal hold, which is exactly
+  // when the still is on screen and the scene clock must keep running.
+  useEffect(() => {
+    displayedRef.current = false;
+    elapsedMsRef.current = 0;
+    runningSinceRef.current = null;
+    return () => {
+      stopTicking();
+    };
+  }, [playbackIdentity, stopTicking]);
+
+  useEffect(() => {
+    const elapsed = () =>
+      elapsedMsRef.current +
+      (runningSinceRef.current === null ? 0 : performance.now() - runningSinceRef.current);
+    const handle: ExperienceMediaPlaybackHandle = {
+      playbackIdentity,
+      play: async () => {
+        if (runningSinceRef.current === null) {
+          runningSinceRef.current = performance.now();
+          stopTicking();
+          tickRef.current = window.setInterval(() => {
+            const now = Math.min(elapsed(), durationMs);
+            onTimelineTimeMsRef.current(timelineOffsetMs + now);
+            if (now >= durationMs) stopTicking();
+          }, STILL_CLOCK_TICK_MS);
+        }
+        if (displayedRef.current) return;
+        displayedRef.current = true;
+        onTimelineTimeMsRef.current(timelineOffsetMs);
+        onDisplayedRef.current();
+      },
+      pause: () => {
+        if (runningSinceRef.current === null) return;
+        elapsedMsRef.current = elapsed();
+        runningSinceRef.current = null;
+        stopTicking();
+      },
+      seek: (seconds) => {
+        const target = Math.max(0, Math.min(seconds * 1_000, durationMs));
+        elapsedMsRef.current = target;
+        if (runningSinceRef.current !== null) runningSinceRef.current = performance.now();
+        onTimelineTimeMsRef.current(timelineOffsetMs + target);
+      },
+      // A still carries no audio track, so muting is a no-op rather than an
+      // error — the host mutes every registered handle uniformly.
+      setMuted: () => undefined,
+    };
+    onPlaybackHandle(handle);
+    return () => onPlaybackHandle(null);
+  }, [durationMs, onPlaybackHandle, playbackIdentity, stopTicking, timelineOffsetMs]);
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={uri} alt={title} className="absolute inset-0 size-full" style={{ objectFit: fit }} />
+  );
+}
+
 function CoreChoiceRenderer({
   manifest,
   renderer,
@@ -1238,20 +1370,35 @@ function CoreChoiceRenderer({
     <div
       role="group"
       aria-labelledby={promptId}
-      className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black via-black/88 to-transparent px-4 pt-24 pb-5 sm:px-8 sm:pb-8"
+      className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black via-black/88 to-transparent px-4 pt-24 pb-12 sm:px-8 sm:pb-16"
       style={{ zIndex: renderer.layer }}
     >
-      <p id={promptId} className="text-center text-sm font-semibold text-white sm:text-base">
+      <p
+        id={promptId}
+        className="mx-auto max-w-2xl text-center text-[15px] leading-6 font-semibold text-balance text-white sm:text-base sm:leading-7"
+      >
         {localize(config.prompt, locale, manifest.localization.defaultLocale)}
       </p>
       {choices.length > 0 ? (
-        <div className="mx-auto mt-4 grid max-w-2xl gap-2 sm:grid-cols-2">
-          {choices.map((choice) => (
+        <div className="mx-auto mt-5 grid max-w-2xl gap-2.5 sm:grid-cols-2">
+          {choices.map((choice, index) => (
             <button
               key={choice.choiceId}
               type="button"
               onClick={() => onSelect(choice.choiceId)}
-              className="min-h-12 rounded-xl bg-white/[0.12] px-4 py-3 text-left text-sm font-semibold text-white backdrop-blur-xl transition-colors hover:bg-white/[0.2] focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:outline-none"
+              className={classNames(
+                // Frosted glass over arbitrary footage: one flat fill and one
+                // hairline, so the card reads on a bright frame and a black
+                // one without decorating the shot.
+                "min-h-13 rounded-2xl px-4 py-3.5 text-left text-sm leading-5 font-semibold text-white sm:text-[15px]",
+                "bg-white/[0.10] ring-1 ring-inset ring-white/10 backdrop-blur-2xl",
+                "transition-colors duration-200 hover:bg-white/[0.17] hover:ring-white/16",
+                "focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none",
+                // An odd final choice spans the row rather than leaving a gap.
+                choices.length % 2 === 1 && index === choices.length - 1
+                  ? "sm:col-span-2"
+                  : undefined
+              )}
               aria-label={
                 choice.accessibilityLabel
                   ? localize(choice.accessibilityLabel, locale, manifest.localization.defaultLocale)
@@ -1605,6 +1752,12 @@ function sequenceTimelineOffsetMs(
 ): number {
   return config.sequence.slice(0, sequenceIndex).reduce((total, clip) => {
     const media = resolveVideoMedia(assets, clip.assetId, orientation);
+    // A still carries no media duration — its screen time is the held
+    // duration on the clip. Reading only the variant would under-count it and
+    // shift every later clip's interaction window earlier.
+    if (media?.variant.mediaType?.toLowerCase().startsWith("image/")) {
+      return total + stillDurationMs(clip);
+    }
     return total + (media?.variant.durationMs ?? 0);
   }, 0);
 }

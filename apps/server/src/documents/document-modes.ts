@@ -37,6 +37,13 @@ const ROOT_SCHEMAS: Partial<Record<StudioDocumentType, DocumentRootSchema>> = {
     meta: 'map',
     content: 'text',
   },
+  // Story script — free-form rich-text writing (the pipeline's source text).
+  // A Y.XmlFragment body driven by Tiptap; MUST match the client's
+  // RICH_TEXT_DOC_ROOT_SCHEMA.
+  [StudioDocumentType.script]: {
+    meta: 'map',
+    content: 'xml',
+  },
 };
 
 /** Root-type schema for a CRDT mode, or null if the mode is not CRDT-backed. */

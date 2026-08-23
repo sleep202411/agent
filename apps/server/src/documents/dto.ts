@@ -55,6 +55,14 @@ export type StoryCanvasDocumentParams = z.infer<
   typeof StoryCanvasDocumentParamsSchema
 >;
 
+export const StoryChapterDocumentParamsSchema = z.object({
+  projectId: z.string().uuid(),
+  chapterId: z.string().uuid(),
+});
+export type StoryChapterDocumentParams = z.infer<
+  typeof StoryChapterDocumentParamsSchema
+>;
+
 export const ListProjectDocumentsQuerySchema = z.object({
   type: DocumentTypeSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),

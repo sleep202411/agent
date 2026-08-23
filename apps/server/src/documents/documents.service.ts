@@ -29,6 +29,10 @@ import { encodeDocumentSnapshot } from './document-crdt';
 import { rootSchemaFor } from './document-modes';
 import { resolveSyncWindow } from './document-sync';
 import { StudioDocumentAccessService } from './studio-document-access.service';
+import {
+  ensureStoryScriptDocumentInTransaction,
+  StoryScriptChapterNotFoundError,
+} from './story-script-document';
 import type {
   AddCommentInput,
   AppendDocumentOperationInput,
@@ -267,20 +271,45 @@ export class DocumentsService {
 
   /** Idempotent bootstrap for Story's shared canvas/storyboard document. */
   async ensureStoryCanvasDocument(user: AuthUser, storyProjectId: string) {
-    // An archived Story project still opens read-only (the same contract
-    // `StoryProjectsService.workbench` honours), so an existing canvas has to
-    // resolve here. Creating one below stays behind the un-widened
-    // `story.edit` gate, which keeps archived projects unwritable.
+    return this.ensureStoryDocument(user, storyProjectId, {
+      type: StudioDocumentType.canvas,
+      lockKey: 'story-canvas',
+      reason: 'initial_story_canvas',
+    });
+  }
+
+  /** One chapter's free-form screenplay (the chapter pipeline's source). */
+  async ensureStoryScriptDocument(
+    user: AuthUser,
+    storyProjectId: string,
+    storyChapterId: string,
+  ) {
     const { project } = await this.storyPermissions.requireProject(
       user.userId,
       storyProjectId,
       'story.read',
       { allowArchived: true },
     );
+    const chapter = await this.prisma.storyChapter.findFirst({
+      where: {
+        id: storyChapterId,
+        storyProjectId,
+        archivedAt: null,
+      },
+      select: { id: true, title: true },
+    });
+    if (!chapter) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        msg: 'The active story chapter was not found.',
+      });
+    }
+
     const existing = await this.prisma.studioDocument.findFirst({
       where: {
         storyProjectId,
-        type: StudioDocumentType.canvas,
+        storyChapterId,
+        type: StudioDocumentType.script,
         status: StudioDocumentStatus.active,
         deletedAt: null,
       },
@@ -295,15 +324,95 @@ export class DocumentsService {
       storyProjectId,
       'story.edit',
     );
-    const initialState = encodeInitialState(StudioDocumentType.canvas, {});
+    let ensured: Awaited<
+      ReturnType<typeof ensureStoryScriptDocumentInTransaction>
+    >;
+    try {
+      ensured = await this.prisma.$transaction((tx) =>
+        ensureStoryScriptDocumentInTransaction(tx, {
+          workspaceId: project.workspaceId,
+          storyProjectId,
+          storyChapterId,
+          actorUserId: user.userId,
+        }),
+      );
+    } catch (error) {
+      if (error instanceof StoryScriptChapterNotFoundError) {
+        throw new NotFoundException({
+          code: 'STORY_CHAPTER_NOT_FOUND',
+          msg: 'The active story chapter was not found.',
+        });
+      }
+      throw error;
+    }
+    const { document } = ensured;
+
+    if (ensured.created) {
+      await this.audit.record({
+        workspaceId: document.workspaceId,
+        projectId: null,
+        actorUserId: user.userId,
+        action: 'studio_document.created',
+        entityType: 'studio_document',
+        entityId: document.id,
+        after: document,
+        metadata: {
+          ownerKind: 'story_chapter',
+          storyProjectId,
+          storyChapterId,
+        },
+      });
+    }
+    return { document: this.documentDto(document, { detail: true }) };
+  }
+
+  /** Schedule compaction after a trusted cross-domain Yjs operation commits. */
+  scheduleCompaction(documentId: string): void {
+    this.compaction.schedule(documentId);
+  }
+
+  private async ensureStoryDocument(
+    user: AuthUser,
+    storyProjectId: string,
+    kind: { type: StudioDocumentType; lockKey: string; reason: string },
+  ) {
+    // An archived Story project still opens read-only (the same contract
+    // `StoryProjectsService.workbench` honours), so an existing document has
+    // to resolve here. Creating one below stays behind the un-widened
+    // `story.edit` gate, which keeps archived projects unwritable.
+    const { project } = await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    const existing = await this.prisma.studioDocument.findFirst({
+      where: {
+        storyProjectId,
+        type: kind.type,
+        status: StudioDocumentStatus.active,
+        deletedAt: null,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (existing) {
+      return { document: this.documentDto(existing, { detail: true }) };
+    }
+
+    await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.edit',
+    );
+    const initialState = encodeInitialState(kind.type, {});
     const document = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`studio-document:story-canvas:${storyProjectId}`})::bigint)
+        SELECT pg_advisory_xact_lock(hashtext(${`studio-document:${kind.lockKey}:${storyProjectId}`})::bigint)
       `;
       const found = await tx.studioDocument.findFirst({
         where: {
           storyProjectId,
-          type: StudioDocumentType.canvas,
+          type: kind.type,
           status: StudioDocumentStatus.active,
           deletedAt: null,
         },
@@ -314,7 +423,7 @@ export class DocumentsService {
         data: {
           workspaceId: project.workspaceId,
           storyProjectId,
-          type: StudioDocumentType.canvas,
+          type: kind.type,
           title: project.title,
           contentSnapshot:
             initialState.snapshot as unknown as Prisma.InputJsonValue,
@@ -332,7 +441,7 @@ export class DocumentsService {
           source: StudioDocumentVersionSource.system,
           snapshot: created.contentSnapshot as Prisma.InputJsonValue,
           crdtState: created.crdtState,
-          metadata: { reason: 'initial_story_canvas' },
+          metadata: { reason: kind.reason },
           createdById: user.userId,
         },
       });
@@ -490,6 +599,19 @@ export class DocumentsService {
     user: AuthUser,
     documentId: string,
     input: AppendDocumentOperationInput,
+    options?: {
+      /** Acquire cross-domain locks before the document advisory lock. */
+      onTransactionStart?: (tx: Prisma.TransactionClient) => Promise<void>;
+      /**
+       * Trusted server hook for a cross-domain receipt. It runs after the
+       * operation/document writes but before commit, under the document lock.
+       */
+      onBeforeCommit?: (
+        tx: Prisma.TransactionClient,
+        operation: StudioDocumentOperation,
+        context: { replayed: boolean },
+      ) => Promise<void>;
+    },
   ) {
     await this.documentAccess.requireDocument(user.userId, documentId, 'edit');
 
@@ -505,6 +627,7 @@ export class DocumentsService {
     const isCrdt = operationType === StudioDocumentOperationType.yjs_update;
 
     const result = await this.prisma.$transaction(async (tx) => {
+      await options?.onTransactionStart?.(tx);
       // Serialize sequence assignment per document. The body is intentionally
       // tiny (find + small op insert + counter bump) so the lock is held
       // briefly; the expensive merge happens off the hot path in compaction.
@@ -530,7 +653,10 @@ export class DocumentsService {
         const existing = await tx.studioDocumentOperation.findFirst({
           where: { documentId, idempotencyKey: input.idempotencyKey },
         });
-        if (existing) return { operation: existing, scheduleCompaction: false };
+        if (existing) {
+          await options?.onBeforeCommit?.(tx, existing, { replayed: true });
+          return { operation: existing, scheduleCompaction: false };
+        }
       }
 
       if (
@@ -584,6 +710,8 @@ export class DocumentsService {
           version: { increment: 1 },
         },
       });
+
+      await options?.onBeforeCommit?.(tx, created, { replayed: false });
 
       return { operation: created, scheduleCompaction: isCrdt };
     });
@@ -917,6 +1045,7 @@ export class DocumentsService {
           },
       platformProjectId: document.platformProjectId,
       storyProjectId: document.storyProjectId,
+      storyChapterId: document.storyChapterId,
       sectionId: document.sectionId,
       type: document.type,
       status: document.status,

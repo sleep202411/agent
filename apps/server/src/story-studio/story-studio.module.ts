@@ -8,19 +8,13 @@ import { StoryExperienceReleaseGateway } from './story-experience-release.gatewa
 import { StoryExperienceReleaseService } from './story-experience-release.service';
 import { StoryChapterManifestStorageService } from './story-chapter-manifest-storage.service';
 import { StoryGameReleaseService } from './story-game-release.service';
-import { StoryVideoProductionController } from './story-video-production.controller';
-import { StoryVideoProductionService } from './story-video-production.service';
 import { StoryReferenceController } from './story-reference.controller';
 import { StoryReferenceService } from './story-reference.service';
 import { StoryAccessModule } from './story-access.module';
-import { StoryProjectVideoLibraryController } from './story-project-video-library.controller';
-import { StoryProjectVideoLibraryService } from './story-project-video-library.service';
 import { StoryProjectsController } from './story-projects.controller';
 import { StoryProjectsService } from './story-projects.service';
 import { StoryWorkingPreviewController } from './story-working-preview.controller';
 import { StoryWorkingPreviewService } from './story-working-preview.service';
-import { StoryVideoUploadFinalizeWorkerService } from './story-video-upload-finalize-worker.service';
-import { StoryUploadedVideoProbeService } from './story-uploaded-video-probe.service';
 import { StoryAgentRunModule } from './story-agent-run.module';
 
 @Module({
@@ -33,18 +27,12 @@ import { StoryAgentRunModule } from './story-agent-run.module';
   ],
   controllers: [
     StoryProjectsController,
-    StoryProjectVideoLibraryController,
-    StoryVideoProductionController,
     StoryReferenceController,
     StoryBuildController,
     StoryWorkingPreviewController,
   ],
   providers: [
     StoryProjectsService,
-    StoryProjectVideoLibraryService,
-    StoryUploadedVideoProbeService,
-    StoryVideoUploadFinalizeWorkerService,
-    StoryVideoProductionService,
     StoryReferenceService,
     StoryBuildService,
     StoryExperienceReleaseGateway,

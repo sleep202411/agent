@@ -59,7 +59,7 @@ export function FizzAgentPermissionMenu({
         disabled={disabled}
         aria-label={labels.menu}
         className={cn(
-          "inline-flex h-8 max-w-44 items-center gap-1.5 rounded-full px-2.5 text-[11px] text-white/52 outline-none transition-colors hover:bg-white/[0.06] hover:text-white/78 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45",
+          "inline-flex h-8 max-w-44 items-center gap-1.5 rounded-full px-2.5 text-[11px] text-white/82 outline-none transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45",
           className
         )}
       >
@@ -89,20 +89,20 @@ export function FizzAgentPermissionMenu({
                 <Icon
                   aria-hidden={true}
                   className={cn(
-                    "mt-0.5 size-4 shrink-0 text-white/56",
+                    "mt-0.5 size-4 shrink-0 text-white/72",
                     option.value === "full" && "text-destructive/82"
                   )}
                 />
                 <span className="min-w-0">
                   <span
                     className={cn(
-                      "block text-xs font-medium text-white/88",
+                      "block text-xs font-medium text-white",
                       option.value === "full" && "text-destructive/90"
                     )}
                   >
                     {option.label}
                   </span>
-                  <span className="mt-0.5 block text-[11px]/relaxed text-white/42">
+                  <span className="mt-0.5 block text-[11px]/relaxed text-white/65">
                     {option.description}
                   </span>
                 </span>

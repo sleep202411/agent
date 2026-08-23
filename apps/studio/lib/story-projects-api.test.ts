@@ -26,25 +26,18 @@ import { api, ApiRequestError } from "@/lib/api";
 import {
   archiveStoryChapter,
   addStoryCandidateAsset,
-  cancelStoryClipVideoUpload,
-  completeStoryClipVideoUpload,
   createStoryProject,
   getStoryExperienceCurrentRelease,
   getStoryCandidateAssets,
-  getStoryClipVideoUploadFinalization,
   getStoryProjectWorkspace,
   getStoryWorkingPreview,
   listStoryProjects,
   putStoryCanvasLayout,
-  putStoryClipCurrentVideo,
   removeStoryCandidateAsset,
   storyApiErrorMessage,
   updateStoryChapter,
-  type StoryClipVideoFinalization,
   type StoryCandidateAsset,
   type StoryProjectSummary,
-  type StoryVideoLibraryItem,
-  waitForStoryClipVideoUploadFinalization,
 } from "./story-projects-api";
 
 describe("storyApiErrorMessage", () => {
@@ -103,12 +96,27 @@ describe("current-draft Story production routes", () => {
     });
   });
 
-  it("creates a film project with its required frame contract", async () => {
+  it("rejects a partial creative profile from the API", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({
+      items: [
+        {
+          ...storyProject(),
+          durationPreset: "short_5_15",
+        },
+      ],
+      nextCursor: null,
+    });
+
+    await expect(listStoryProjects("workspace-1", { limit: 100 })).rejects.toThrow(
+      "Story Studio API contract is out of date."
+    );
+  });
+
+  it("creates an empty project without pretending the Agent intake is already answered", async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ project: storyProject() });
 
     await expect(
       createStoryProject("workspace-1", {
-        frameProfile: "portrait_9_16",
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
@@ -117,7 +125,6 @@ describe("current-draft Story production routes", () => {
     ).resolves.toMatchObject({ frameProfile: "landscape_16_9" });
     expect(api.post).toHaveBeenCalledWith("/aurora/story-projects", {
       data: {
-        frameProfile: "portrait_9_16",
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
@@ -216,200 +223,6 @@ describe("current-draft Story production routes", () => {
     vi.useRealTimers();
   });
 
-  it("binds one current video with both authoring revisions", async () => {
-    vi.mocked(api.put).mockResolvedValueOnce({ id: "clip-1" });
-
-    await putStoryClipCurrentVideo("workspace-1", "project / one", "clip / one", {
-      expectedDraftRevision: 18,
-      expectedSelectionVersion: 3,
-      assetId: "00000000-0000-4000-8000-000000000001",
-      variantId: "00000000-0000-4000-8000-000000000002",
-    });
-
-    expect(api.put).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/clips/clip%20%2F%20one/current-video",
-      {
-        data: {
-          expectedDraftRevision: 18,
-          expectedSelectionVersion: 3,
-          assetId: "00000000-0000-4000-8000-000000000001",
-          variantId: "00000000-0000-4000-8000-000000000002",
-        },
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-      }
-    );
-  });
-
-  it("accepts a candidate video whose advisory duration is absent", async () => {
-    const candidate = candidateAsset();
-    vi.mocked(api.get).mockResolvedValueOnce([
-      {
-        ...candidate,
-        videoVariant: {
-          ...candidate.videoVariant!,
-          durationSeconds: null,
-        },
-      },
-    ]);
-
-    await expect(getStoryCandidateAssets("workspace-1", "project-1")).resolves.toEqual([
-      expect.objectContaining({
-        videoVariant: expect.objectContaining({ durationSeconds: null }),
-      }),
-    ]);
-  });
-
-  it("starts abortable asynchronous clip-video finalization", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce(videoFinalization("queued"));
-    const controller = new AbortController();
-
-    const finalization = await completeStoryClipVideoUpload(
-      "workspace-1",
-      "project / one",
-      {
-        mediaAssetId: "00000000-0000-4000-8000-000000000001",
-      },
-      controller.signal
-    );
-
-    expect(finalization.status).toBe("queued");
-    expect(api.post).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/video-library/uploads/complete",
-      {
-        data: { mediaAssetId: "00000000-0000-4000-8000-000000000001" },
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-        signal: controller.signal,
-      }
-    );
-  });
-
-  it("accepts an idempotent ready response without polling", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce(videoFinalization("ready"));
-
-    const finalization = await completeStoryClipVideoUpload("workspace-1", "project-1", {
-      mediaAssetId: "00000000-0000-4000-8000-000000000001",
-    });
-    const item = await waitForStoryClipVideoUploadFinalization(
-      "workspace-1",
-      "project-1",
-      finalization
-    );
-
-    expect(item.variantKey).toBe("original");
-    expect(api.get).not.toHaveBeenCalled();
-  });
-
-  it("polls the project-scoped finalization resource", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce(videoFinalization("ready"));
-    const controller = new AbortController();
-
-    const finalization = await getStoryClipVideoUploadFinalization(
-      "workspace-1",
-      "project / one",
-      "00000000-0000-4000-8000-000000000001",
-      controller.signal
-    );
-
-    expect(finalization.item?.variantKey).toBe("original");
-    expect(api.get).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/video-library/uploads/00000000-0000-4000-8000-000000000001",
-      {
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-        signal: controller.signal,
-      }
-    );
-  });
-
-  it("cancels an abandoned upload with a fresh bounded request", async () => {
-    vi.mocked(api.delete).mockResolvedValueOnce({
-      mediaAssetId: "00000000-0000-4000-8000-000000000001",
-      status: "cancelled",
-      pollAfterMs: null,
-      item: null,
-      error: {
-        code: "STORY_VIDEO_UPLOAD_CANCELLED",
-        message: "The Story video upload was cancelled.",
-      },
-    });
-
-    await cancelStoryClipVideoUpload(
-      "workspace-1",
-      "project / one",
-      "00000000-0000-4000-8000-000000000001"
-    );
-
-    expect(api.delete).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/video-library/uploads/00000000-0000-4000-8000-000000000001",
-      {
-        headers: { "x-fizz-workspace-id": "workspace-1" },
-        timeout: 5_000,
-      }
-    );
-  });
-
-  it("waits through queued and processing states and returns the ready library item", async () => {
-    vi.useFakeTimers();
-    vi.mocked(api.get)
-      .mockResolvedValueOnce(videoFinalization("processing"))
-      .mockResolvedValueOnce(videoFinalization("ready"));
-    const statuses: string[] = [];
-
-    const pending = waitForStoryClipVideoUploadFinalization(
-      "workspace-1",
-      "project-1",
-      videoFinalization("queued"),
-      { onStatus: (state) => statuses.push(state.status) }
-    );
-    await vi.advanceTimersByTimeAsync(1_500);
-    await vi.advanceTimersByTimeAsync(1_500);
-
-    await expect(pending).resolves.toMatchObject({ variantKey: "original" });
-    expect(statuses).toEqual(["queued", "processing", "ready"]);
-    expect(api.get).toHaveBeenCalledTimes(2);
-  });
-
-  it("surfaces the terminal processing error verbatim", async () => {
-    await expect(
-      waitForStoryClipVideoUploadFinalization(
-        "workspace-1",
-        "project-1",
-        videoFinalization("failed")
-      )
-    ).rejects.toMatchObject({
-      code: "VIDEO_PROBE_FAILED",
-      message: "The uploaded file is not a valid video.",
-    });
-  });
-
-  it("stops polling immediately when the caller aborts", async () => {
-    vi.useFakeTimers();
-    const controller = new AbortController();
-    const pending = waitForStoryClipVideoUploadFinalization(
-      "workspace-1",
-      "project-1",
-      videoFinalization("queued"),
-      { signal: controller.signal }
-    );
-    controller.abort();
-
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-    expect(api.get).not.toHaveBeenCalled();
-  });
-
-  it("does not return an already-ready item after the caller has aborted", async () => {
-    const controller = new AbortController();
-    controller.abort();
-
-    await expect(
-      waitForStoryClipVideoUploadFinalization(
-        "workspace-1",
-        "project-1",
-        videoFinalization("ready"),
-        { signal: controller.signal }
-      )
-    ).rejects.toMatchObject({ name: "AbortError" });
-  });
-
   it("loads the ephemeral working preview from the latest saved authoring head", async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       draftRevision: 18,
@@ -477,6 +290,10 @@ function storyProject(): StoryProjectSummary {
     id: "project-film",
     workspaceId: "workspace-1",
     frameProfile: "landscape_16_9",
+    frameProfileMutable: true,
+    durationPreset: null,
+    visualStyle: null,
+    creativeProfileConfirmedAt: null,
     status: "active",
     visibility: "private",
     title: "Moving Pictures",
@@ -497,31 +314,6 @@ function storyProject(): StoryProjectSummary {
     capabilities: ["story.read", "story.edit"],
     createdAt: "2026-07-19T12:00:00.000Z",
     updatedAt: "2026-07-19T12:00:00.000Z",
-  };
-}
-
-function videoLibraryItem(): StoryVideoLibraryItem {
-  return {
-    asset: {
-      id: "asset-1",
-      kind: "video",
-      status: "ready",
-      moderationStatus: "approved",
-      contentType: "video/mp4",
-      width: 1920,
-      height: 1080,
-      durationSeconds: 12,
-      checksumSha256: "asset-checksum",
-      previewUrl: "https://example.test/video.mp4",
-    },
-    variantId: "variant-1",
-    variantKey: "original",
-    contentType: "video/mp4",
-    width: 1920,
-    height: 1080,
-    durationSeconds: 12,
-    checksumSha256: "variant-checksum",
-    createdAt: "2026-07-15T12:00:00.000Z",
   };
 }
 
@@ -550,39 +342,5 @@ function candidateAsset(): StoryCandidateAsset {
     },
     addedByUserId: "user-1",
     addedAt: "2026-07-23T12:00:00.000Z",
-  };
-}
-
-function videoFinalization(
-  status: "queued" | "processing" | "ready" | "failed"
-): StoryClipVideoFinalization {
-  const mediaAssetId = "00000000-0000-4000-8000-000000000001";
-  if (status === "queued" || status === "processing") {
-    return {
-      mediaAssetId,
-      status,
-      pollAfterMs: 1_500,
-      item: null,
-      error: null,
-    };
-  }
-  if (status === "ready") {
-    return {
-      mediaAssetId,
-      status,
-      pollAfterMs: null,
-      item: videoLibraryItem(),
-      error: null,
-    };
-  }
-  return {
-    mediaAssetId,
-    status,
-    pollAfterMs: null,
-    item: null,
-    error: {
-      code: "VIDEO_PROBE_FAILED",
-      message: "The uploaded file is not a valid video.",
-    },
   };
 }

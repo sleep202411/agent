@@ -232,7 +232,6 @@ function ControlledEditor({
     <StoryInteractionEditor
       node={NODES[0]}
       nodes={NODES}
-      clip={null}
       frameProfile="landscape_16_9"
       drafts={drafts}
       onDraftsChange={setDrafts}

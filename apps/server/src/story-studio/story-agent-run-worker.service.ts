@@ -7,7 +7,11 @@ import {
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { StoryAgentRunService } from './story-agent-run.service';
-import { StoryAuthoringPipelineService } from './story-authoring-pipeline.service';
+import {
+  StoryAuthoringPipelineService,
+  type StoryAuthoringPipelineResult,
+  type StoryScriptCompilationResult,
+} from './story-authoring-pipeline.service';
 import { StoryAuthoringStageError } from './story-authoring-model';
 
 const DEFAULT_INTERVAL_MS = 750;
@@ -166,14 +170,42 @@ export class StoryAgentRunWorkerService
       }, AUTHORING_HEARTBEAT_MS);
       heartbeat.unref?.();
 
-      let authored;
+      let authored: StoryAuthoringPipelineResult | null = null;
+      let compiled: StoryScriptCompilationResult | null = null;
+      let productionPlan: unknown;
       try {
-        authored = await this.pipeline.author({
-          job: load.job,
-          signal: controller.signal,
-          onStage: (stage) =>
-            this.runs.advanceAuthoringStage(runId, this.workerId, stage),
-        });
+        if (load.job.mode === 'screenplay_required') {
+          authored = await this.pipeline.author({
+            job: load.job,
+            signal: controller.signal,
+            onStage: (stage) =>
+              this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+          });
+        } else if (load.job.mode === 'downstream_reconcile') {
+          if (load.job.approvedScreenplay) {
+            productionPlan = await this.pipeline.planProduction({
+              screenplay: load.job.approvedScreenplay.screenplay,
+              creativeProfile: load.job.creativeProfile,
+              signal: controller.signal,
+              onStage: (stage) =>
+                this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+            });
+          } else if (load.job.scriptSource) {
+            compiled = await this.pipeline.compileProductionFromScript({
+              sourceText: load.job.scriptSource.sourceText,
+              title: load.job.brief.title,
+              creativeProfile: load.job.creativeProfile,
+              signal: controller.signal,
+              onStage: (stage) =>
+                this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+            });
+            productionPlan = compiled.productionPlan;
+          } else {
+            throw new Error(
+              'The canonical downstream route is missing both approved structure and an exact Script source.',
+            );
+          }
+        }
       } catch (error) {
         // Lease lost (cancel/supersede/reclaim) or shutdown: another actor
         // owns the outcome now; land nothing.
@@ -191,14 +223,18 @@ export class StoryAgentRunWorkerService
         this.inflightAuthoring.delete(controller);
       }
 
-      const completion = await this.runs.completeAuthoring(
-        runId,
-        this.workerId,
-        {
-          operations: authored.operations,
-          authoredAgainst: load.job.snapshot,
-        },
-      );
+      const completion =
+        load.job.mode === 'screenplay_required'
+          ? await this.runs.completeAuthoring(runId, this.workerId, {
+              screenplay: authored!.screenplay,
+              authoredAgainst: load.job.snapshot,
+            })
+          : await this.runs.completeAutomaticAuthoring(runId, this.workerId, {
+              mode: load.job.mode,
+              ...(productionPlan ? { productionPlan } : {}),
+              ...(compiled ? { screenplay: compiled.screenplay } : {}),
+              authoredAgainst: load.job.snapshot,
+            });
       switch (completion.kind) {
         case 'completed':
         case 'skip':

@@ -29,8 +29,6 @@ interface SignedUrlResponse {
   storageKey: string;
   provider: "azure_blob" | "aliyun_oss" | "s3_compatible";
   expiresAt: string;
-  uploadSessionId?: string;
-  mediaAssetId?: string;
 }
 
 interface ConfirmResponse {
@@ -68,8 +66,6 @@ export interface UploadFileOptions {
   /** Workspace ownership scope; required for every Story Studio-owned asset. */
   workspaceId?: string;
   scope?: { projectId: string };
-  /** Story-only durable reservation identity, emitted before the direct PUT. */
-  onSessionIssued?: (session: { uploadSessionId: string; mediaAssetId: string }) => void;
 }
 
 export interface UploadFileResult {
@@ -78,18 +74,6 @@ export interface UploadFileResult {
   storageKey: string;
   url: string;
 }
-
-export interface StoryClipUploadFileResult {
-  mediaAssetId: string;
-  storageKey: string;
-  url: string | null;
-}
-
-export type StoryClipUploadFileOptions = UploadFileOptions & {
-  kind: "story_clip_video";
-  workspaceId: string;
-  scope: { projectId: string };
-};
 
 async function postJson<T extends object>(
   endpoint: string,
@@ -222,29 +206,14 @@ export function isUploadAbort(err: unknown): boolean {
 }
 
 /** Upload a file straight to storage and return the confirmed MediaAsset. */
-export function uploadFileViaSignedUrl(
-  file: File,
-  opts: StoryClipUploadFileOptions
-): Promise<StoryClipUploadFileResult>;
-export function uploadFileViaSignedUrl(
-  file: File,
-  opts: UploadFileOptions
-): Promise<UploadFileResult>;
 export async function uploadFileViaSignedUrl(
   file: File,
   opts: UploadFileOptions
-): Promise<UploadFileResult | StoryClipUploadFileResult> {
-  const storyUpload = opts.kind === "story_clip_video";
-  if (storyUpload && (!opts.workspaceId?.trim() || !opts.scope?.projectId.trim())) {
-    throw new Error("Story clip video uploads require a workspace and project scope.");
-  }
+): Promise<UploadFileResult> {
   if (opts.signal?.aborted) {
     throw new DOMException("Upload aborted", "AbortError");
   }
   const contentType = contentTypeForFile(file, opts.contentType);
-  if (storyUpload && contentType.toLowerCase() !== "video/mp4") {
-    throw new Error("Story clip uploads require an MP4 file with H.264 video and AAC audio.");
-  }
   const scopedHeaders = opts.workspaceId ? { "x-fizz-workspace-id": opts.workspaceId } : undefined;
   const info = await postJson<SignedUrlResponse>(
     UPLOAD_URL_ENDPOINT,
@@ -256,27 +225,11 @@ export async function uploadFileViaSignedUrl(
       ...(opts.scope ? { scope: opts.scope } : {}),
     },
     "getUploadUrl",
-    // Once a Story reservation request reaches the server, let this small
-    // request return its durable identity even if the user changes nodes. The
-    // caller can then cancel it; aborting the response would lose that key and
-    // leave an unaddressable quota reservation until expiry.
-    storyUpload ? undefined : opts.signal,
+    opts.signal,
     scopedHeaders
   );
   if (!info.uploadUrl || !info.storageKey) {
     throw new Error("getUploadUrl succeeded but returned no upload URL");
-  }
-  if (storyUpload && !info.uploadSessionId) {
-    throw new Error("getUploadUrl succeeded but returned no story upload session");
-  }
-  if (storyUpload && !info.mediaAssetId) {
-    throw new Error("getUploadUrl succeeded but returned no story media asset");
-  }
-  if (storyUpload) {
-    opts.onSessionIssued?.({
-      uploadSessionId: info.uploadSessionId!,
-      mediaAssetId: info.mediaAssetId!,
-    });
   }
   if (opts.signal?.aborted) {
     throw new DOMException("Upload aborted", "AbortError");
@@ -292,7 +245,6 @@ export async function uploadFileViaSignedUrl(
       storageKey: info.storageKey,
       kind: opts.kind,
       contentType,
-      ...(info.uploadSessionId ? { uploadSessionId: info.uploadSessionId } : {}),
     },
     "confirmUpload",
     opts.signal,
@@ -301,22 +253,16 @@ export async function uploadFileViaSignedUrl(
   if (!confirmed.mediaAssetId) {
     throw new Error("confirmUpload succeeded but returned no mediaAssetId");
   }
-  if (!storyUpload && !confirmed.url) {
+  if (!confirmed.url) {
     throw new Error("confirmUpload succeeded but returned no media URL");
   }
-  if (!storyUpload && !confirmed.variantId) {
+  if (!confirmed.variantId) {
     throw new Error("confirmUpload succeeded but returned no original media variant");
   }
-  return storyUpload
-    ? {
-        mediaAssetId: confirmed.mediaAssetId,
-        storageKey: info.storageKey,
-        url: confirmed.url ?? null,
-      }
-    : {
-        mediaAssetId: confirmed.mediaAssetId,
-        variantId: confirmed.variantId!,
-        storageKey: info.storageKey,
-        url: confirmed.url!,
-      };
+  return {
+    mediaAssetId: confirmed.mediaAssetId,
+    variantId: confirmed.variantId,
+    storageKey: info.storageKey,
+    url: confirmed.url,
+  };
 }

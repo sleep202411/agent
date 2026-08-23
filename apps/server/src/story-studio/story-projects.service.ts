@@ -13,11 +13,14 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
+  StoryProductionSpecStatus,
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
+  StoryFrameProfile,
   StoryRevisionSource,
   StudioDocumentType,
+  StudioDocumentStatus,
   StudioDocumentVersionSource,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
@@ -25,6 +28,7 @@ import {
 import type { AuthUser } from '../auth';
 import { encodeDocumentSnapshot } from '../documents/document-crdt';
 import { rootSchemaFor } from '../documents/document-modes';
+import { ensureStoryScriptDocumentInTransaction } from '../documents/story-script-document';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
@@ -63,13 +67,13 @@ import {
   type StoryRevisionDto,
   type StoryRevisionListQuery,
   type StoryRevisionSummaryDto,
-  type StoryCurrentVideoDto,
   type StoryReferenceSlotDto,
   type StoryWorkbenchDto,
   type StoryWorkbenchQuery,
   type ReorderStoryChaptersInput,
 } from './dto';
 import {
+  storyboardClipSnapshotEntry,
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
@@ -78,6 +82,7 @@ import {
   type StoryCapability as PermissionCapability,
 } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
+import { reconcileStoryTimelinesWithDraft } from './story-timeline-reconcile';
 
 const PROJECT_NOT_FOUND = {
   code: 'STORY_PROJECT_NOT_FOUND',
@@ -111,10 +116,14 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
     where: { archivedAt: null },
     select: { required: true, approvedVersionId: true },
   },
-  videoSelections: {
+  storyboardSequences: {
+    where: { status: { not: StoryProductionSpecStatus.archived } },
     select: {
-      graphNodeId: true,
-      currentAssetId: true,
+      plotNodeId: true,
+      clips: {
+        where: { status: { not: StoryProductionSpecStatus.archived } },
+        select: { selectedMediaVersionId: true },
+      },
     },
   },
   builds: {
@@ -128,18 +137,45 @@ type ProjectSummaryRow = Prisma.StoryProjectGetPayload<{
   include: typeof PROJECT_SUMMARY_INCLUDE;
 }>;
 
-const STORY_VIDEO_SELECTION_INCLUDE =
-  Prisma.validator<Prisma.StoryVideoSelectionInclude>()({
-    currentAsset: {
+function storyFrameProfileCanChange(row: ProjectSummaryRow): boolean {
+  // The frame is part of setup until production has a concrete dependency on
+  // it. Media-less storyboard planning and text-only draft work deliberately
+  // do not lock the creator into the project's initial ratio.
+  return (
+    row.builds.length === 0 &&
+    row.storyboardSequences.every((sequence) =>
+      sequence.clips.every((clip) => clip.selectedMediaVersionId === null),
+    )
+  );
+}
+
+/**
+ * The storyboard rows the workbench snapshot hash needs — the SAME entry
+ * shape Build and Working Preview hash, so the publish conflict gate compares
+ * hashes computed from one implementation.
+ */
+const STORY_WORKBENCH_TIMELINE_INCLUDE =
+  Prisma.validator<Prisma.StoryStoryboardSequenceInclude>()({
+    clips: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [
+        { track: 'asc' as const },
+        { startMs: 'asc' as const },
+        { rank: 'asc' as const },
+      ],
       include: {
-        placements: true,
-        variants: { include: { placements: true } },
+        selectedMediaVersion: {
+          include: {
+            mediaAsset: { select: { variants: true } },
+            preferredVariant: true,
+          },
+        },
       },
     },
   });
 
-type StoryVideoSelectionRow = Prisma.StoryVideoSelectionGetPayload<{
-  include: typeof STORY_VIDEO_SELECTION_INCLUDE;
+type WorkbenchTimelineSequenceRow = Prisma.StoryStoryboardSequenceGetPayload<{
+  include: typeof STORY_WORKBENCH_TIMELINE_INCLUDE;
 }>;
 
 const STORY_REFERENCE_INCLUDE =
@@ -230,94 +266,107 @@ export class StoryProjectsService {
       {},
       rootSchemaFor(StudioDocumentType.canvas)!,
     );
-    const { project, chapter } = await this.prisma.$transaction(async (tx) => {
-      const project = await tx.storyProject.create({
-        data: {
-          workspaceId,
-          frameProfile: input.frameProfile,
-          status: StoryProjectStatus.active,
-          visibility: input.visibility,
-          title: input.title,
-          summary: input.summary,
-          defaultLocale: input.defaultLocale,
-          sourceIpId: input.sourceIpId,
-          createdByUserId: user.userId,
-          members: {
-            create: {
-              userId: user.userId,
-              role: StoryProjectMemberRole.owner,
-              status: StoryProjectMemberStatus.active,
-              grantedByUserId: user.userId,
+    const { project, chapter, scriptDocument } = await this.prisma.$transaction(
+      async (tx) => {
+        const project = await tx.storyProject.create({
+          data: {
+            workspaceId,
+            // The empty canvas needs a projection shape before the Agent intake
+            // runs. This value is provisional: the creator's Q1 answer replaces
+            // it atomically with duration + visual direction before authoring.
+            frameProfile: StoryFrameProfile.landscape_16_9,
+            status: StoryProjectStatus.active,
+            visibility: input.visibility,
+            title: input.title,
+            summary: input.summary,
+            defaultLocale: input.defaultLocale,
+            sourceIpId: input.sourceIpId,
+            createdByUserId: user.userId,
+            members: {
+              create: {
+                userId: user.userId,
+                role: StoryProjectMemberRole.owner,
+                status: StoryProjectMemberStatus.active,
+                grantedByUserId: user.userId,
+              },
             },
-          },
-          draft: {
-            create: {
-              schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-              content:
-                EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
-              contentHash,
-              updatedByUserId: user.userId,
+            draft: {
+              create: {
+                schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+                content:
+                  EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT as Prisma.InputJsonObject,
+                contentHash,
+                updatedByUserId: user.userId,
+              },
             },
+            writeState: { create: {} },
           },
-          writeState: { create: {} },
-        },
-      });
-      const studioDocument = await tx.studioDocument.create({
-        data: {
-          workspaceId,
-          storyProjectId: project.id,
-          type: StudioDocumentType.canvas,
-          title: project.title,
-          contentSnapshot: {
-            ...(initialCanvasState.snapshot as Prisma.InputJsonObject),
+        });
+        const studioDocument = await tx.studioDocument.create({
+          data: {
+            workspaceId,
+            storyProjectId: project.id,
+            type: StudioDocumentType.canvas,
+            title: project.title,
+            contentSnapshot: {
+              ...(initialCanvasState.snapshot as Prisma.InputJsonObject),
+            },
+            crdtState: Buffer.from(initialCanvasState.state),
+            createdById: user.userId,
           },
-          crdtState: Buffer.from(initialCanvasState.state),
-          createdById: user.userId,
-        },
-      });
-      const studioDocumentVersion = await tx.studioDocumentVersion.create({
-        data: {
-          documentId: studioDocument.id,
-          versionNumber: 1,
-          schemaVersion: studioDocument.schemaVersion,
-          sequence: 0,
-          title: studioDocument.title,
-          source: StudioDocumentVersionSource.system,
-          snapshot: studioDocument.contentSnapshot as Prisma.InputJsonValue,
-          crdtState: studioDocument.crdtState,
-          metadata: { reason: 'initial_story_canvas' },
-          createdById: user.userId,
-        },
-      });
-      await tx.studioDocument.update({
-        where: { id: studioDocument.id },
-        data: { currentVersionId: studioDocumentVersion.id },
-      });
-      const chapter = await tx.storyChapter.create({
-        data: {
-          storyProjectId: project.id,
-          title: defaultStoryChapterTitle(input.defaultLocale, 1),
-          rank: 0,
-          nodeIds: [],
-          entryNodeId: null,
-          createdByUserId: user.userId,
-        },
-      });
-      await tx.storyCanvasLayout.create({
-        data: {
-          storyChapterId: chapter.id,
-          storyProjectId: project.id,
-          workspaceId,
-          schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
-          nodePositions: {},
-          updatedByUserId: user.userId,
-        },
-      });
-      return {
-        project: await this.loadProjectSummary(project.id, tx),
-        chapter,
-      };
-    });
+        });
+        const studioDocumentVersion = await tx.studioDocumentVersion.create({
+          data: {
+            documentId: studioDocument.id,
+            versionNumber: 1,
+            schemaVersion: studioDocument.schemaVersion,
+            sequence: 0,
+            title: studioDocument.title,
+            source: StudioDocumentVersionSource.system,
+            snapshot: studioDocument.contentSnapshot as Prisma.InputJsonValue,
+            crdtState: studioDocument.crdtState,
+            metadata: { reason: 'initial_story_canvas' },
+            createdById: user.userId,
+          },
+        });
+        await tx.studioDocument.update({
+          where: { id: studioDocument.id },
+          data: { currentVersionId: studioDocumentVersion.id },
+        });
+        const chapter = await tx.storyChapter.create({
+          data: {
+            storyProjectId: project.id,
+            title: defaultStoryChapterTitle(input.defaultLocale, 1),
+            rank: 0,
+            nodeIds: [],
+            entryNodeId: null,
+            createdByUserId: user.userId,
+          },
+        });
+        const { document: scriptDocument } =
+          await ensureStoryScriptDocumentInTransaction(tx, {
+            workspaceId,
+            storyProjectId: project.id,
+            storyChapterId: chapter.id,
+            actorUserId: user.userId,
+          });
+        await tx.storyCanvasLayout.create({
+          data: {
+            storyChapterId: chapter.id,
+            storyProjectId: project.id,
+            workspaceId,
+            schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+            nodePositions: {},
+            updatedByUserId: user.userId,
+          },
+        });
+        return {
+          project: await this.loadProjectSummary(project.id, tx),
+          chapter,
+          scriptDocument,
+        };
+      },
+    );
 
     if (!project.draft) {
       throw new InternalServerErrorException({
@@ -331,9 +380,15 @@ export class StoryProjectsService {
       chapters: [this.toChapter(chapter)],
       chapter: this.toChapter(chapter),
       draft: this.toChapterDraft(project.draft, project, chapter),
+      script: {
+        documentId: scriptDocument.id,
+        currentSequence: 0,
+        sourceVersionId: null,
+        sourceSequence: null,
+        status: 'missing',
+      },
       video: {
         snapshotHash: storyVideoSnapshotHash([]),
-        clips: [],
       },
       references: [],
       latestBuild: null,
@@ -502,6 +557,22 @@ export class StoryProjectsService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      if (input.confirmCreativeProfile && input.frameProfile !== undefined) {
+        const current = await this.loadProjectSummary(projectId, tx);
+        if (
+          current.version === input.expectedProjectVersion &&
+          input.frameProfile !== current.frameProfile &&
+          !storyFrameProfileCanChange(current)
+        ) {
+          throw new ConflictException({
+            code: 'STORY_FRAME_PROFILE_LOCKED',
+            message:
+              'The aspect ratio can change only before a video is selected or a build is created for this project.',
+            projectId,
+            frameProfile: current.frameProfile,
+          });
+        }
+      }
       if (input.coverAssetId !== undefined && input.coverAssetId !== null) {
         // A cover must be a STILL. Every place a cover is consumed needs one: the
         // player paints it as the pre-playback backdrop from an image asset, the
@@ -553,6 +624,14 @@ export class StoryProjectsService {
             : {}),
           ...(input.tags !== undefined
             ? { tags: input.tags as Prisma.InputJsonArray }
+            : {}),
+          ...(input.confirmCreativeProfile
+            ? {
+                frameProfile: input.frameProfile,
+                durationPreset: input.durationPreset,
+                visualStyle: input.visualStyle,
+                creativeProfileConfirmedAt: new Date(),
+              }
             : {}),
           version: { increment: 1 },
         },
@@ -644,6 +723,12 @@ export class StoryProjectsService {
           entryNodeId: null,
           createdByUserId: user.userId,
         },
+      });
+      await ensureStoryScriptDocumentInTransaction(tx, {
+        workspaceId,
+        storyProjectId: projectId,
+        storyChapterId: created.id,
+        actorUserId: user.userId,
       });
       await Promise.all([
         tx.storyCanvasLayout.create({
@@ -962,6 +1047,16 @@ export class StoryProjectsService {
         },
       });
       if (claimed.count !== 1) return null;
+
+      // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
+      // their sequences immediately, undone deletions revive them.
+      await reconcileStoryTimelinesWithDraft(
+        tx,
+        projectId,
+        mergedContent as {
+          graph: { nodes: Array<{ kind: string; nodeId: string }> };
+        },
+      );
 
       await tx.storyChapter.update({
         where: { id: chapter.id },
@@ -1424,12 +1519,13 @@ export class StoryProjectsService {
       chapters,
       chapter,
       draft,
+      script,
       video,
       references,
       latestBuild,
     } = await this.prisma.$transaction(
       async (tx) => {
-        const [project, chapters, selections, references, latestBuild] =
+        const [project, chapters, sequences, references, latestBuild] =
           await Promise.all([
             this.loadProjectSummary(projectId, tx),
             tx.storyChapter.findMany({
@@ -1439,9 +1535,12 @@ export class StoryProjectsService {
               },
               orderBy: [{ rank: 'asc' }, { id: 'asc' }],
             }),
-            tx.storyVideoSelection.findMany({
-              where: { storyProjectId: projectId },
-              include: STORY_VIDEO_SELECTION_INCLUDE,
+            tx.storyStoryboardSequence.findMany({
+              where: {
+                storyProjectId: projectId,
+                status: { not: StoryProductionSpecStatus.archived },
+              },
+              include: STORY_WORKBENCH_TIMELINE_INCLUDE,
             }),
             tx.storyReferenceSlot.findMany({
               where: { storyProjectId: projectId, archivedAt: null },
@@ -1478,6 +1577,17 @@ export class StoryProjectsService {
           ? chapters.find((candidate) => candidate.id === query.chapterId)
           : chapters[0];
         if (!chapter) throwChapterNotFound();
+        const scriptDocument = await tx.studioDocument.findFirst({
+          where: {
+            storyProjectId: projectId,
+            storyChapterId: chapter.id,
+            type: StudioDocumentType.script,
+            status: StudioDocumentStatus.active,
+            deletedAt: null,
+          },
+          orderBy: { createdAt: 'asc' },
+          select: { id: true, currentSequence: true },
+        });
         if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
           throw unsupportedStorySchema('draft', draft.schemaVersion);
         }
@@ -1501,7 +1611,8 @@ export class StoryProjectsService {
           chapters,
           chapter,
           draft,
-          video: projectStoryVideoWorkbench(chapterContent, selections),
+          script: storyScriptFreshness(chapter, scriptDocument),
+          video: projectStoryVideoWorkbench(projectContent, sequences),
           references: references.map((slot) => this.toStoryReference(slot)),
           latestBuild: latestBuild
             ? this.toStoryBuildSummary(latestBuild)
@@ -1516,6 +1627,7 @@ export class StoryProjectsService {
       chapters: chapters.map((item) => this.toChapter(item)),
       chapter: this.toChapter(chapter),
       draft: this.toChapterDraft(draft, project, chapter),
+      script,
       video,
       references,
       latestBuild,
@@ -1702,19 +1814,28 @@ export class StoryProjectsService {
           )
         : [],
     );
-    const selections = row.videoSelections.filter((selection) =>
-      currentClipNodeIds.has(selection.graphNodeId),
+    const liveSequences = row.storyboardSequences.filter((sequence) =>
+      currentClipNodeIds.has(sequence.plotNodeId),
     );
     const approvedReferenceCount = row.referenceSlots.filter(
       (slot) => slot.approvedVersionId !== null,
     ).length;
-    const currentVideoCount = selections.filter(
-      (selection) => selection.currentAssetId !== null,
+    // A scene counts as "has footage" once every storyboard clip on its
+    // timeline carries selected media — the release-readiness definition.
+    const currentVideoCount = liveSequences.filter(
+      (sequence) =>
+        sequence.clips.length > 0 &&
+        sequence.clips.every((clip) => clip.selectedMediaVersionId !== null),
     ).length;
     return {
       id: row.id,
       workspaceId: row.workspaceId,
       frameProfile: row.frameProfile,
+      frameProfileMutable: storyFrameProfileCanChange(row),
+      durationPreset: row.durationPreset,
+      visualStyle: row.visualStyle,
+      creativeProfileConfirmedAt:
+        row.creativeProfileConfirmedAt?.toISOString() ?? null,
       status: row.status,
       visibility: row.visibility,
       title: row.title,
@@ -2147,85 +2268,21 @@ function isReusableCandidateVideoVariant(
 
 function projectStoryVideoWorkbench(
   draft: ReturnType<typeof parseDraftContent>,
-  selections: StoryVideoSelectionRow[],
+  sequences: WorkbenchTimelineSequenceRow[],
 ): StoryWorkbenchDto['video'] {
-  const selectionByNodeId = new Map(
-    selections.map((selection) => [selection.graphNodeId, selection]),
+  // Hash over the whole project draft — the exact clip set Build and Working
+  // Preview hash — so the publish conflict gate compares like with like.
+  const liveNodeIds = new Set(
+    draft.graph.nodes.flatMap((node) =>
+      node.kind === 'clip' ? [node.nodeId] : [],
+    ),
   );
-  const clips = draft.graph.nodes.flatMap((node) => {
-    if (node.kind !== 'clip') return [];
-    const selection = selectionByNodeId.get(node.nodeId) ?? null;
-    return [
-      {
-        graphNodeId: node.nodeId,
-        selectionVersion: selection?.version ?? 0,
-        currentVideo: selectionCurrentVideo(selection),
-      },
-    ];
-  });
-  const snapshot: StoryVideoSnapshotEntry[] = clips.map((clip) => {
-    const video = clip.currentVideo;
-    return {
-      graphNodeId: clip.graphNodeId,
-      selectionVersion: clip.selectionVersion,
-      assetId: video?.asset.id ?? null,
-      variantId: video?.variantId ?? null,
-      checksumSha256: video?.checksumSha256 ?? null,
-      contentType: video ? exactStoryVideoContentType(video.contentType) : null,
-      durationMs: video?.durationMs ?? null,
-      width: video?.width ?? null,
-      height: video?.height ?? null,
-      browserSafeMp4: video?.browserSafeMp4 ?? null,
-    };
-  });
-  return {
-    snapshotHash: storyVideoSnapshotHash(snapshot),
-    clips,
-  };
-}
-
-function selectionCurrentVideo(
-  selection: StoryVideoSelectionRow | null,
-): StoryCurrentVideoDto | null {
-  if (!selection?.currentAssetId) return null;
-  if (
-    !selection.currentAsset ||
-    !selection.currentVariantId ||
-    !selection.currentContentType ||
-    !selection.setAt
-  ) {
-    throw corruptData('STORY_VIDEO_SELECTION_CORRUPT', 'story video selection');
-  }
-  const currentVariant = selection.currentAsset.variants.find(
-    (variant) => variant.id === selection.currentVariantId,
-  );
-  return {
-    asset: toMediaAsset(selection.currentAsset),
-    variantId: selection.currentVariantId,
-    checksumSha256: selection.currentChecksumSha256,
-    contentType: selection.currentContentType,
-    durationMs: selection.currentDurationMs,
-    width: selection.currentWidth,
-    height: selection.currentHeight,
-    sizeBytes:
-      (
-        currentVariant?.sizeBytes ?? selection.currentAsset.sizeBytes
-      )?.toString() ?? null,
-    browserSafeMp4: selection.currentBrowserSafeMp4,
-    selectionVersion: selection.version,
-    setByUserId: selection.setByUserId,
-    setAt: selection.setAt.toISOString(),
-  };
-}
-
-function exactStoryVideoContentType(value: string): string {
-  if (!value.toLowerCase().startsWith('video/')) {
-    throw corruptData(
-      'STORY_VIDEO_SELECTION_CORRUPT',
-      'story video content type',
+  const entries = sequences
+    .filter((sequence) => liveNodeIds.has(sequence.plotNodeId))
+    .flatMap((sequence) =>
+      sequence.clips.map((clip) => storyboardClipSnapshotEntry(clip)),
     );
-  }
-  return value;
+  return { snapshotHash: storyVideoSnapshotHash(entries) };
 }
 
 function parseDraftContent(
@@ -2349,6 +2406,49 @@ function buildDiagnostics(value: Prisma.JsonValue): StoryBuildDiagnosticDto[] {
   return value.filter(
     isStoryBuildDiagnostic,
   ) as unknown as StoryBuildDiagnosticDto[];
+}
+
+function storyScriptFreshness(
+  chapter: {
+    sourceScriptDocumentId: string | null;
+    sourceScriptVersionId: string | null;
+    sourceScriptSequence: number | null;
+  },
+  document: { id: string; currentSequence: number } | null,
+): StoryWorkbenchDto['script'] {
+  if (!document || document.currentSequence === 0) {
+    return {
+      documentId: document?.id ?? null,
+      currentSequence: document?.currentSequence ?? 0,
+      sourceVersionId: chapter.sourceScriptVersionId,
+      sourceSequence: chapter.sourceScriptSequence,
+      status: 'missing',
+    };
+  }
+  if (
+    chapter.sourceScriptDocumentId === null ||
+    chapter.sourceScriptSequence === null ||
+    chapter.sourceScriptVersionId === null
+  ) {
+    return {
+      documentId: document.id,
+      currentSequence: document.currentSequence,
+      sourceVersionId: null,
+      sourceSequence: null,
+      status: 'unlinked',
+    };
+  }
+  return {
+    documentId: document.id,
+    currentSequence: document.currentSequence,
+    sourceVersionId: chapter.sourceScriptVersionId,
+    sourceSequence: chapter.sourceScriptSequence,
+    status:
+      chapter.sourceScriptDocumentId === document.id &&
+      chapter.sourceScriptSequence === document.currentSequence
+        ? 'current'
+        : 'stale',
+  };
 }
 
 function isStoryBuildDiagnostic(

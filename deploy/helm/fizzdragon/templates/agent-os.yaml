@@ -9,9 +9,6 @@
 {{- if eq $imageTag "latest" -}}
 {{- fail "agentOs.image.tag must be an immutable deployment revision, never latest" -}}
 {{- end -}}
-{{- if gt (int $agentOs.replicaCount) 1 -}}
-{{- fail "agentOs.replicaCount must remain 1: run snapshots, the event journal and pending approvals live in the worker process, so a second replica answers /events and /cancel for runs it does not have" -}}
-{{- end -}}
 {{- $component := "agent-os" -}}
 {{- $ctx := merge (dict "component" $component) . -}}
 {{- $serverName := include "fizzdragon.componentName" (merge (dict "component" "server") .) -}}
@@ -78,10 +75,14 @@ spec:
               value: {{ required "agentOs.model.baseUrl is required" $agentOs.model.baseUrl | quote }}
             - name: AGENT_OS_CHECKPOINT_SCHEMA
               value: {{ $agentOs.checkpoint.schema | quote }}
+            - name: AGENT_OS_CHECKPOINT_POOL_MAX
+              value: {{ $agentOs.checkpoint.poolMax | quote }}
+            - name: AGENT_OS_CHECKPOINT_LOCK_POOL_MAX
+              value: {{ $agentOs.checkpoint.lockPoolMax | quote }}
           {{- /*
-            ONLY the scoped projection. fizzdragon-secrets carries DATABASE_URL,
-            which the checkpointer accepts as a fallback and would then run
-            CREATE SCHEMA / CREATE TABLE against the product database.
+            ONLY the scoped projection. The worker's explicit checkpoint DSN
+            points to the same PostgreSQL authority as public.agent_os_runs,
+            but does not expose the server's unrelated secret bundle.
           */}}
           envFrom:
             - secretRef:

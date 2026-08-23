@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { IconLoader2, IconPhoto, IconTrash, IconX } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -10,6 +10,7 @@ import {
   type InteractiveStoryDraftContent,
   type MediaAssetSummary,
   type StoryCandidateAsset,
+  type StoryProjectSummary,
 } from "@/lib/story-projects-api";
 import {
   StoryCandidateAssetPickerDialog,
@@ -35,6 +36,10 @@ export interface StoryFoundationCoverMediaProps {
 }
 
 interface StoryFoundationLibraryProps {
+  project: Pick<
+    StoryProjectSummary,
+    "frameProfile" | "durationPreset" | "visualStyle" | "defaultLocale"
+  >;
   content: InteractiveStoryDraftContent;
   canEdit: boolean;
   coverMedia: StoryFoundationCoverMediaProps;
@@ -43,6 +48,7 @@ interface StoryFoundationLibraryProps {
 }
 
 export function StoryFoundationLibrary({
+  project,
   content,
   canEdit,
   coverMedia,
@@ -50,22 +56,23 @@ export function StoryFoundationLibrary({
   onClose,
 }: StoryFoundationLibraryProps) {
   const t = useTranslations("storyStudio.canvas");
+  const locale = useLocale();
   return (
     <>
       <header className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold tracking-[0.12em] text-white/34 uppercase">
+          <p className="text-[10px] font-semibold tracking-[0.12em] text-white/64 uppercase">
             {t("filmFoundation.eyebrow")}
           </p>
           <h2 className="mt-1 text-base font-semibold">{t("filmFoundation.title")}</h2>
-          <p className="mt-1 text-[11px] leading-5 text-white/38">
+          <p className="mt-1 text-[11px] leading-5 text-white/62">
             {t("filmFoundation.description")}
           </p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/48 transition hover:bg-white/[0.1] hover:text-white"
+          className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/68 transition hover:bg-white/[0.1] hover:text-white"
           aria-label={t("inspector.close")}
         >
           <IconX className="size-4" />
@@ -73,6 +80,7 @@ export function StoryFoundationLibrary({
       </header>
 
       <div className="mt-5">
+        <CreativeProfileSummary project={project} locale={locale} />
         <ProjectCoverEditor canEdit={canEdit} media={coverMedia} />
         <FoundationEditor
           content={content}
@@ -82,6 +90,58 @@ export function StoryFoundationLibrary({
       </div>
     </>
   );
+}
+
+function CreativeProfileSummary({
+  project,
+  locale,
+}: {
+  project: StoryFoundationLibraryProps["project"];
+  locale: string;
+}) {
+  const t = useTranslations("storyStudio.canvas.filmFoundation.profile");
+  const values = [
+    { key: "aspectRatio", value: t(`frameProfiles.${project.frameProfile}`) },
+    {
+      key: "targetRuntime",
+      value: project.durationPreset ? t(`durationPresets.${project.durationPreset}`) : t("notSet"),
+    },
+    {
+      key: "visualStyle",
+      value: project.visualStyle ? t(`visualStyles.${project.visualStyle}`) : t("notSet"),
+    },
+    {
+      key: "language",
+      value: `${displayLanguage(project.defaultLocale, locale)} · ${project.defaultLocale}`,
+    },
+  ] as const;
+
+  return (
+    <section className="border-b border-white/[0.08] pb-5" aria-labelledby="creative-profile-title">
+      <h3 id="creative-profile-title" className="text-[11px] font-semibold text-white/82">
+        {t("title")}
+      </h3>
+      <p className="mt-1 text-[10px] leading-4 text-white/64">{t("description")}</p>
+      <dl className="mt-3 grid grid-cols-2 gap-2">
+        {values.map((item) => (
+          <div key={item.key} className="rounded-xl bg-white/[0.055] px-3 py-2.5">
+            <dt className="text-[9px] font-semibold uppercase tracking-[0.1em] text-white/64">
+              {t(item.key)}
+            </dt>
+            <dd className="mt-1 text-[11px] font-medium leading-4 text-white/88">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function displayLanguage(languageTag: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: "language" }).of(languageTag) ?? languageTag;
+  } catch {
+    return languageTag;
+  }
 }
 
 function ProjectCoverEditor({
@@ -110,18 +170,18 @@ function ProjectCoverEditor({
   const dimensions = cover?.width && cover.height ? `${cover.width}×${cover.height}` : null;
 
   return (
-    <section className="border-b border-white/[0.06] pb-5">
+    <section className="border-b border-white/[0.08] py-5">
       <div className="flex items-end justify-between gap-3">
         <div>
           <h3 className="text-[11px] font-semibold text-white/72">
             {t("filmFoundation.cover.title")}
           </h3>
-          <p className="mt-1 text-[10px] leading-4 text-white/34">
+          <p className="mt-1 text-[10px] leading-4 text-white/64">
             {t("filmFoundation.cover.description")}
           </p>
         </div>
         {dimensions ? (
-          <span className="shrink-0 text-[9px] text-white/30">{dimensions}</span>
+          <span className="shrink-0 text-[9px] text-white/62">{dimensions}</span>
         ) : null}
       </div>
 
@@ -134,7 +194,7 @@ function ProjectCoverEditor({
             className="size-full object-cover"
           />
         ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-2 text-white/24">
+          <div className="flex size-full flex-col items-center justify-center gap-2 text-white/64">
             <span className="grid size-9 place-items-center rounded-full bg-white/[0.055]">
               <IconPhoto className="size-4" stroke={1.6} />
             </span>
@@ -177,7 +237,7 @@ function ProjectCoverEditor({
                 )
                 .finally(() => setClearPending(false));
             }}
-            className="h-8 rounded-xl px-3 text-[10px] text-white/42 hover:text-[#ff9b9e]"
+            className="h-8 rounded-xl px-3 text-[10px] text-white/64 hover:text-[#ff9b9e]"
           >
             {clearPending ? (
               <IconLoader2 className="size-3.5 animate-spin" stroke={1.8} />
@@ -228,7 +288,7 @@ function FoundationEditor({
   const t = useTranslations("storyStudio.canvas");
   return (
     <div>
-      <p className="text-[10px] leading-4 text-white/36">{t("foundation.description")}</p>
+      <p className="text-[10px] leading-4 text-white/60">{t("foundation.description")}</p>
       <FoundationField
         label={t("foundation.logline")}
         placeholder={t("foundation.loglinePlaceholder")}
@@ -270,7 +330,7 @@ function FoundationField({
 }) {
   return (
     <label className="mt-4 block">
-      <span className="text-[10px] font-semibold text-white/42">{label}</span>
+      <span className="text-[10px] font-semibold text-white/68">{label}</span>
       <Textarea
         value={value}
         onChange={(event) => onChange(event.target.value)}

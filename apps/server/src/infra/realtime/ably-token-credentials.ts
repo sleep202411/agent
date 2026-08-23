@@ -45,7 +45,10 @@ export interface AblyTokenCredentials {
 export const ABLY_TOKEN_CREDENTIALS = Symbol('ABLY_TOKEN_CREDENTIALS');
 export const ABLY_REST_CLIENT = Symbol('ABLY_REST_CLIENT');
 
-export type AblyRestClient = Pick<Ably.Rest, 'auth' | 'channels' | 'request'>;
+export type AblyRestClient = Pick<
+  Ably.Rest,
+  'auth' | 'batchPublish' | 'channels' | 'request'
+>;
 
 /**
  * Creates the process-wide REST transport without exposing the root key to
@@ -59,6 +62,10 @@ export function createAblyRestClient(
     key: parsed.ABLY_API_KEY,
     clientId: 'fizzdragon-server',
     idempotentRestPublishing: true,
+    // Agent OS outbox budgets the exact JSON UTF-8 request body. Ably's Node
+    // default prefers MessagePack, so pin JSON here rather than proving one
+    // wire format in tests and deploying another.
+    useBinaryProtocol: false,
     restAgentOptions: { keepAlive: true, maxSockets: 64 },
   });
 }

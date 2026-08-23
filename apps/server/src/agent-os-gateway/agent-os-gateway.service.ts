@@ -1,13 +1,21 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import {
   getModeDefinition,
   type AgentProjectKind,
 } from '@repo/agent-capabilities';
+import {
+  AgentOsIdSchema,
+  ApprovalResolvedDataSchema,
+  UserInputResolvedDataSchema,
+} from '@repo/agent-protocol';
 import {
   listInvocableSkills,
   listSkills,
@@ -17,6 +25,7 @@ import type { AuthUser } from '../auth';
 import type {
   AgentOsApprovalBody,
   AgentOsStartRunBody,
+  AgentOsUserInputBody,
 } from './agent-os-gateway.dto';
 import { AgentOsAttachmentService } from './agent-os-attachment.service';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
@@ -26,12 +35,138 @@ import {
 } from './agent-os-worker.client';
 import { AgentOsDomainService } from './agent-os-domain.service';
 import { AgentOsProjectContextService } from './agent-os-project-context.service';
-import { AgentOsRunJournalService } from './agent-os-run-journal.service';
+import {
+  AgentOsRunJournalService,
+  type AgentOsRunStartReservation,
+} from '../agent-os-journal/agent-os-run-journal.service';
+import {
+  canonicalJson,
+  journalErrorText,
+} from '../agent-os-journal/agent-os-journal.mapper';
 import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
+import { AgentOsRunStartDispatcherService } from './agent-os-run-start-dispatcher.service';
+import { AgentOsRunContinuationDispatcherService } from './agent-os-run-continuation-dispatcher.service';
 import { ProjectSkillsResolver } from '../project-skills';
+import { StoryAgentRunService } from '../story-studio/story-agent-run.service';
+import type { StoryAgentRunDto } from '@repo/shared/story-agent';
+
+const USER_INPUT_RESPONSE_LEASE_MS = 30_000;
+const USER_INPUT_RESPONSE_WAIT_MS = 65_000;
+const USER_INPUT_RESPONSE_POLL_MS = 75;
+const APPROVAL_RESPONSE_LEASE_MS = 30_000;
+const APPROVAL_RESPONSE_WAIT_MS = 65_000;
+const APPROVAL_RESPONSE_POLL_MS = 75;
+
+type DurableRunSnapshot = NonNullable<
+  Awaited<ReturnType<AgentOsRunJournalService['getEventsAfter']>>
+>;
+
+function approvalRecord(value: unknown): {
+  approvalId: string;
+  toolId: string;
+  arguments: unknown;
+} | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.approvalId === 'string' &&
+    typeof record.toolId === 'string'
+    ? {
+        approvalId: record.approvalId,
+        toolId: record.toolId,
+        arguments: record.arguments,
+      }
+    : null;
+}
+
+function externalRecord(value: unknown): {
+  jobId: string;
+  toolId: string;
+} | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return typeof record.jobId === 'string' && typeof record.toolId === 'string'
+    ? { jobId: record.jobId, toolId: record.toolId }
+    : null;
+}
+
+function recordString(value: unknown, key: string): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === 'string' ? field : null;
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+/**
+ * Server truth injected into a Story turn without polluting the visible
+ * transcript. Prior assistant prose is historical and must never masquerade as
+ * the current background-job state after a discard/cancellation.
+ */
+export function storyAuthoringModelContext(
+  run: Pick<StoryAgentRunDto, 'id' | 'status'> | null,
+): string {
+  const status = run?.status ?? 'none';
+  const active = status === 'authoring' || status === 'applying';
+  const awaitingReview = status === 'proposed';
+  return [
+    '[Trusted Story runtime state at turn admission]',
+    `latestAuthoringRun=${JSON.stringify(run ? { runId: run.id, status } : null)}`,
+    `authoringActive=${active}`,
+    `proposalAwaitingReview=${awaitingReview}`,
+    'This server state overrides lifecycle claims in earlier conversation messages.',
+    'Before any Story write or any claim that authoring is in progress, call story_read for the latest state.',
+    'Only authoring/applying is in progress. cancelled/stale/failed/succeeded is terminal and does not block a new create request.',
+  ].join('\n');
+}
+
+function orderedUnique(values: readonly string[] | undefined): string[] {
+  return [...new Set(values ?? [])];
+}
+
+function sortedUnique(values: readonly string[] | undefined): string[] {
+  return orderedUnique(values).sort();
+}
+
+/**
+ * Stable semantics of a browser submission. Dynamic project resolution is
+ * deliberately excluded: response-loss replay must work even when a Skill
+ * resolution id, Story context, filename, or project revision has changed.
+ */
+export function startRunSubmissionFingerprint(
+  body: AgentOsStartRunBody,
+): string {
+  return createHash('sha256')
+    .update(
+      canonicalJson({
+        conversationId: body.conversationId,
+        turnId: body.turnId,
+        messageId: body.messageId,
+        message: body.message.trim(),
+        attachmentIds: orderedUnique(body.attachmentIds),
+        modelProfileId: body.modelProfileId.trim(),
+        permissionMode: body.permissionMode ?? 'smart',
+        workbenchMode: body.workbenchMode,
+        workbenchContext: body.workbenchContext ?? null,
+        skillIds: sortedUnique(body.skillIds),
+        projectSkillInstallationIds: sortedUnique(
+          body.projectSkillInstallationIds,
+        ),
+        disabledDefaultSkillInstallationIds: sortedUnique(
+          body.disabledDefaultSkillInstallationIds,
+        ),
+      }),
+    )
+    .digest('hex');
+}
 
 @Injectable()
 export class AgentOsGatewayService {
+  private readonly logger = new Logger(AgentOsGatewayService.name);
+
   constructor(
     private readonly worker: AgentOsWorkerClient,
     private readonly projects: AgentOsProjectContextService,
@@ -41,6 +176,9 @@ export class AgentOsGatewayService {
     private readonly realtimeTokens: AgentOsAblyTokenIssuer,
     private readonly attachments: AgentOsAttachmentService,
     private readonly projectSkills: ProjectSkillsResolver,
+    private readonly storyAgentRuns: StoryAgentRunService,
+    private readonly runStarts: AgentOsRunStartDispatcherService,
+    private readonly runContinuations: AgentOsRunContinuationDispatcherService,
   ) {}
 
   async health() {
@@ -62,42 +200,59 @@ export class AgentOsGatewayService {
   ): Promise<AgentOsWorkerRunResponse> {
     const project = await this.requireProjectWrite(user.userId, body.projectId);
     this.requireWorkbenchMode(project.projectKind, body.workbenchMode);
-    const workbenchContext = await this.resolveWorkbenchContext(
-      project.projectKind,
-      project.projectId,
-      body.workbenchMode,
-      body.workbenchContext,
-    );
-    const attachmentIds = await this.attachments.validateForRun(
-      project.projectKind,
-      project.projectId,
-      body.attachmentIds,
-    );
+    const submissionFingerprint = startRunSubmissionFingerprint(body);
+    const replay = await this.journal.findRunStartSubmission({
+      actorId: user.userId,
+      projectId: body.projectId,
+      clientSubmissionId: body.clientSubmissionId,
+      conversationId: body.conversationId,
+      submissionFingerprint,
+    });
+    if (replay) return this.dispatchReservedStart(replay);
 
-    const conversationId = body.conversationId ?? randomUUID();
+    const conversationId = body.conversationId;
     // conversationId becomes the LangGraph thread id, so submitting someone
-    // else's would resume THEIR checkpointed history as context for this turn —
-    // and the reply could read it straight back out.
+    // else's would resume THEIR checkpointed history as context for this turn.
     if (
-      body.conversationId &&
-      (await this.journal.conversationConflictsWith({
+      await this.journal.conversationConflictsWith({
         conversationId,
         projectId: body.projectId,
         actorId: user.userId,
-      }))
+      })
     ) {
       throw new NotFoundException({
         code: 'AGENT_OS_CONVERSATION_NOT_FOUND',
         message: 'Conversation not found for this project.',
       });
     }
+
+    const attachmentIds = orderedUnique(body.attachmentIds);
+    const skillIds = sortedUnique(body.skillIds);
+    const projectSkillInstallationIds = sortedUnique(
+      body.projectSkillInstallationIds,
+    );
+    const disabledDefaultSkillInstallationIds = sortedUnique(
+      body.disabledDefaultSkillInstallationIds,
+    );
+    const workbenchContext = await this.resolveWorkbenchContext(
+      project.projectKind,
+      project.projectId,
+      body.workbenchMode,
+      body.workbenchContext,
+    );
+    const attachments = await this.attachments.validateForRun(
+      project.projectKind,
+      project.projectId,
+      attachmentIds.length > 0 ? attachmentIds : undefined,
+    );
+
     const allowedSystemSkills = new Set(
       listInvocableSkills({
         projectKind: project.projectKind,
         workbenchMode: body.workbenchMode,
       }).map((skill) => skill.id),
     );
-    for (const skillId of body.skillIds ?? []) {
+    for (const skillId of skillIds) {
       if (!allowedSystemSkills.has(skillId)) {
         throw new BadRequestException({
           code: 'AGENT_OS_SKILL_NOT_INVOCABLE',
@@ -112,24 +267,94 @@ export class AgentOsGatewayService {
       workbenchMode: body.workbenchMode,
       sourceSurface: `agent_os:${body.workbenchMode}`,
       selection: {
-        includeInstallationIds: body.projectSkillInstallationIds,
-        excludeInstallationIds: body.disabledDefaultSkillInstallationIds,
+        includeInstallationIds:
+          projectSkillInstallationIds.length > 0
+            ? projectSkillInstallationIds
+            : undefined,
+        excludeInstallationIds:
+          disabledDefaultSkillInstallationIds.length > 0
+            ? disabledDefaultSkillInstallationIds
+            : undefined,
       },
     });
-    return this.worker.startRun({
+    const modelContext =
+      project.projectKind === 'story'
+        ? storyAuthoringModelContext(
+            await this.storyAgentRuns.getLatestRun(
+              user,
+              project.workspaceId,
+              project.projectId,
+              workbenchContext?.chapterId,
+            ),
+          )
+        : undefined;
+    const proposedRunId = randomUUID();
+    const reservation = await this.journal.reserveRunStart({
+      runId: proposedRunId,
+      clientSubmissionId: body.clientSubmissionId,
+      submissionFingerprint,
+      turnId: body.turnId,
+      messageId: body.messageId,
       projectId: body.projectId,
       conversationId,
       actorId: user.userId,
       message: body.message,
+      modelContext,
       modelProfileId: body.modelProfileId,
-      attachmentIds,
-      permissionMode: body.permissionMode,
+      attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+      attachments,
+      permissionMode: body.permissionMode ?? 'smart',
       projectKind: project.projectKind,
       workbenchMode: body.workbenchMode,
       workbenchContext,
-      skillIds: body.skillIds,
+      skillIds: skillIds.length > 0 ? skillIds : undefined,
+      projectSkillInstallationIds:
+        projectSkillInstallationIds.length > 0
+          ? projectSkillInstallationIds
+          : undefined,
+      disabledDefaultSkillInstallationIds:
+        disabledDefaultSkillInstallationIds.length > 0
+          ? disabledDefaultSkillInstallationIds
+          : undefined,
       skillMountSnapshot,
     });
+
+    return this.dispatchReservedStart(reservation);
+  }
+
+  /**
+   * Dispatch after a committed admission or replay its durable state. Both
+   * paths use the reservation's canonical run id, never a retry's proposal.
+   */
+  private async dispatchReservedStart(
+    reservation: AgentOsRunStartReservation,
+  ): Promise<AgentOsWorkerRunResponse> {
+    try {
+      const dispatched = await this.runStarts.dispatch(reservation.runId);
+      if (dispatched) return dispatched;
+    } catch (error) {
+      // A durable command remains queued and the dispatcher retries it. The
+      // creator receives its stable run id instead of retrying the whole POST
+      // and accidentally competing with its own admitted conversation turn.
+      this.logger.warn(
+        `Agent OS start accepted but Worker dispatch is deferred run=${reservation.runId}: ${journalErrorText(error)}`,
+      );
+    }
+
+    // Dispatch acknowledgement can be lost after Worker persistence. Re-read
+    // PostgreSQL before falling back to the admission receipt so a retry never
+    // regresses a running/terminal run to a synthetic empty queued response.
+    const durable = await this.journal.getEventsAfter(reservation.runId, 0);
+    if (durable) return this.toWorkerRunResponse(durable);
+    return {
+      runId: reservation.runId,
+      status: reservation.snapshot.status,
+      pendingApproval: reservation.snapshot.pendingApproval,
+      pendingUserInput: reservation.snapshot.pendingUserInput,
+      pendingExternal: reservation.snapshot.pendingExternal,
+      assistantText: reservation.snapshot.assistantText ?? undefined,
+      events: reservation.events,
+    };
   }
 
   /** Relay of the worker's model list — no auth beyond the session guard: it
@@ -166,21 +391,220 @@ export class AgentOsGatewayService {
       'write',
     );
 
-    return this.worker.resolveApproval({
+    const response = {
       runId,
+      approvalId: body.approvalId,
+      responseId: body.responseId,
       decision: body.decision,
-      // The run's OWN identity goes downstream, never the client's copy: the
-      // worker feeds these into the resumed graph's tool context, so a
-      // mismatched pair would execute the pending write somewhere else.
-      projectId: run.projectId,
-      actorId: user.userId,
-      conversationId: run.conversationId,
-      modelProfileId: body.modelProfileId,
-      projectKind: run.projectKind,
-      workbenchMode: run.workbenchMode,
-      workbenchContext: run.workbenchContext,
-      permissionMode: body.permissionMode,
+      responseText: body.responseText,
+      locale: body.locale,
+    } as const;
+    const alreadyResolved = await this.findDurableApprovalResolution(response);
+    if (alreadyResolved)
+      return this.dispatchResolvedContinuation(alreadyResolved);
+
+    const durable = await this.journal.getEventsAfter(runId, 0);
+    if (!durable) {
+      throw new NotFoundException({
+        code: 'AGENT_OS_RUN_NOT_FOUND',
+        message: 'Run not found for this project.',
+      });
+    }
+    const pending = approvalRecord(durable.pendingApproval);
+    if (
+      durable.status !== 'waiting_for_approval' ||
+      !pending ||
+      pending.approvalId !== body.approvalId
+    ) {
+      throw new ConflictException({
+        code: 'AGENT_OS_APPROVAL_NOT_PENDING',
+        message: 'This approval is no longer waiting for a decision.',
+      });
+    }
+
+    if (pending.toolId === 'story.applyProposal') {
+      const storyRunId = recordString(pending.arguments, 'storyAgentRunId');
+      if (!storyRunId || !AgentOsIdSchema.safeParse(storyRunId).success) {
+        throw new ConflictException({
+          code: 'AGENT_OS_STORY_APPROVAL_CORRELATION_INVALID',
+          message:
+            'The Story proposal approval is missing its durable authoring-run correlation.',
+        });
+      }
+      const coordinated =
+        await this.storyAgentRuns.resolveAgentOsProposalDecision({
+          user,
+          workspaceId: run.workspaceId,
+          projectId: run.projectId,
+          agentRunId: runId,
+          conversationId: run.conversationId,
+          storyRunId,
+          approvalId: body.approvalId,
+          responseId: body.responseId,
+          decision: body.decision,
+          responseText: body.responseText,
+          locale: body.locale,
+        });
+      return {
+        ...coordinated,
+        assistantText: coordinated.assistantText ?? undefined,
+      };
+    }
+
+    const waitDeadline = Date.now() + APPROVAL_RESPONSE_WAIT_MS;
+
+    // Admission is a short PostgreSQL transaction. The Worker call must stay
+    // outside its row lock because the Worker synchronously reports the
+    // ApprovalResolved suffix back through this service before returning.
+    while (Date.now() < waitDeadline) {
+      const claim = await this.journal.claimApprovalResponse({
+        ...response,
+        leaseDurationMs: APPROVAL_RESPONSE_LEASE_MS,
+      });
+
+      if (claim.kind === 'resolved') {
+        const resolved = await this.findDurableApprovalResolution(response);
+        if (resolved) return this.dispatchResolvedContinuation(resolved);
+        throw this.approvalResolutionUnavailable();
+      }
+
+      if (claim.kind === 'in_flight') {
+        const resolved = await this.waitForDurableApprovalResolution(
+          response,
+          Math.min(waitDeadline, claim.leaseExpiresAt.getTime()),
+        );
+        if (resolved) return this.dispatchResolvedContinuation(resolved);
+        // The lease owner disappeared before committing. After expiry exactly
+        // one Gateway pod reclaims it; no request waits inside a transaction.
+        continue;
+      }
+
+      try {
+        await this.worker.resolveApproval({
+          ...response,
+          // The run's OWN identity goes downstream, never the client's copy:
+          // these values select the LangGraph checkpoint and domain boundary.
+          projectId: run.projectId,
+          actorId: user.userId,
+          conversationId: run.conversationId,
+          modelProfileId: body.modelProfileId,
+          projectKind: run.projectKind,
+          workbenchMode: run.workbenchMode,
+          workbenchContext: run.workbenchContext,
+          permissionMode: body.permissionMode,
+        });
+      } catch (error) {
+        // The Worker may have committed before its HTTP response was lost.
+        // PostgreSQL, never transport success, decides the outcome.
+        const resolved = await this.findDurableApprovalResolution(response);
+        if (resolved) return this.dispatchResolvedContinuation(resolved);
+        throw error;
+      }
+
+      const resolved = await this.waitForDurableApprovalResolution(
+        response,
+        Math.min(waitDeadline, claim.leaseExpiresAt.getTime()),
+      );
+      if (resolved) return this.dispatchResolvedContinuation(resolved);
+    }
+
+    throw this.approvalResolutionUnavailable();
+  }
+
+  async resolveUserInput(
+    user: AuthUser,
+    runId: string,
+    body: AgentOsUserInputBody,
+  ): Promise<AgentOsWorkerRunResponse> {
+    const run = await this.requireRunAccess(
+      user,
+      runId,
+      body.projectId,
+      'write',
+    );
+    const response = {
+      runId,
+      requestId: body.requestId,
+      responseId: body.responseId,
+      answers: body.answers,
+    } as const;
+    const waitDeadline = Date.now() + USER_INPUT_RESPONSE_WAIT_MS;
+
+    // The claim is a short row-locked transaction. Never keep its transaction
+    // open across the Worker HTTP call: doing so can deadlock the pool because
+    // the Worker must synchronously report UserInputResolved back to Gateway.
+    while (Date.now() < waitDeadline) {
+      const claim = await this.journal.claimUserInputResponse({
+        ...response,
+        leaseDurationMs: USER_INPUT_RESPONSE_LEASE_MS,
+      });
+
+      if (claim.kind === 'resolved') {
+        const durable = await this.findDurableUserInputResolution(response);
+        if (durable) return this.dispatchResolvedContinuation(durable);
+        // claimUserInputResponse derives `resolved` from the append-only event
+        // table. A missing event on the following read is an integrity or
+        // availability failure, never permission to replay the side effect.
+        throw this.userInputResolutionUnavailable();
+      }
+
+      if (claim.kind === 'in_flight') {
+        const durable = await this.waitForDurableUserInputResolution(
+          response,
+          Math.min(waitDeadline, claim.leaseExpiresAt.getTime()),
+        );
+        if (durable) return this.dispatchResolvedContinuation(durable);
+        // The lease owner disappeared before committing. Re-enter the short
+        // transaction after expiry and let exactly one caller reclaim it.
+        continue;
+      }
+
+      try {
+        await this.worker.resolveUserInput({
+          ...response,
+          projectId: run.projectId,
+          actorId: user.userId,
+          conversationId: run.conversationId,
+          modelProfileId: body.modelProfileId,
+          projectKind: run.projectKind,
+          workbenchMode: run.workbenchMode,
+          workbenchContext: run.workbenchContext,
+          permissionMode: body.permissionMode,
+        });
+      } catch (error) {
+        // The Worker may have durably committed the answer while its HTTP
+        // response was lost. PostgreSQL decides whether this was success.
+        const durable = await this.findDurableUserInputResolution(response);
+        if (durable) return this.dispatchResolvedContinuation(durable);
+        throw error;
+      }
+
+      // A successful Worker response is only an acknowledgement. Return the
+      // normal API shape from the authoritative journal, including all pending
+      // projections, and never expose a still-waiting claim snapshot as success.
+      const durable = await this.waitForDurableUserInputResolution(
+        response,
+        Math.min(waitDeadline, claim.leaseExpiresAt.getTime()),
+      );
+      if (durable) return this.dispatchResolvedContinuation(durable);
+    }
+
+    throw this.userInputResolutionUnavailable();
+  }
+
+  private dispatchResolvedContinuation(
+    durable: AgentOsWorkerRunResponse,
+  ): AgentOsWorkerRunResponse {
+    // Resolution + visible user/ack messages + continuation command are one
+    // PostgreSQL boundary. Dispatch is intentionally fire-and-recover: the
+    // API returns the durable transcript immediately, while a lost callback is
+    // retried by the dispatcher sweep without asking the user to submit again.
+    void this.runContinuations.dispatch(durable.runId).catch((error) => {
+      this.logger.warn(
+        `Agent OS continuation accepted but immediate dispatch is deferred run=${durable.runId}: ${journalErrorText(error)}`,
+      );
     });
+    return durable;
   }
 
   async cancelRun(
@@ -189,8 +613,102 @@ export class AgentOsGatewayService {
     projectId: string,
     reason?: string,
   ): Promise<AgentOsWorkerRunResponse> {
-    await this.requireRunAccess(user, runId, projectId, 'write');
-    return this.worker.cancelRun(runId, reason);
+    const run = await this.requireRunAccess(user, runId, projectId, 'write');
+    const beforeCancel = await this.journal.getEventsAfter(runId, 0);
+    if (!beforeCancel) {
+      throw new NotFoundException({
+        code: 'AGENT_OS_RUN_NOT_FOUND',
+        message: 'Agent OS run not found.',
+      });
+    }
+    const pendingExternal = externalRecord(beforeCancel.pendingExternal);
+    const pendingApproval = approvalRecord(beforeCancel.pendingApproval);
+    if (pendingApproval?.toolId === 'story.applyProposal') {
+      const storyRunId = recordString(
+        pendingApproval.arguments,
+        'storyAgentRunId',
+      );
+      if (!storyRunId || !AgentOsIdSchema.safeParse(storyRunId).success) {
+        throw new ConflictException({
+          code: 'AGENT_OS_STORY_APPROVAL_CORRELATION_INVALID',
+          message:
+            'The Story proposal approval is missing its durable authoring-run correlation.',
+        });
+      }
+      // Stop is not a proposal decision. Letting the generic cancellation path
+      // terminalize only the Agent run would strand the canonical Story row in
+      // `proposed`, and its later expiry could no longer close the approval.
+      // The composer exposes the explicit Approve / Discard actions instead.
+      throw new ConflictException({
+        code: 'AGENT_OS_STORY_PROPOSAL_DECISION_REQUIRED',
+        message:
+          'This Story proposal is awaiting a decision and cannot be stopped. Choose Approve or Discard.',
+        storyRunId,
+      });
+    }
+    if (pendingExternal?.toolId === 'story.applyProposal') {
+      throw new ConflictException({
+        code: 'OPERATION_COMMITTED',
+        message:
+          'This Story proposal has already been committed for application and can no longer be stopped.',
+      });
+    }
+    if (pendingExternal?.toolId === 'story.author') {
+      if (!AgentOsIdSchema.safeParse(pendingExternal.jobId).success) {
+        throw new ConflictException({
+          code: 'AGENT_OS_STORY_HANDOFF_CORRELATION_INVALID',
+          message:
+            'The Story authoring handoff is missing its durable job correlation.',
+        });
+      }
+      const cancelled = await this.storyAgentRuns.cancelAgentOsAuthoring({
+        user,
+        workspaceId: run.workspaceId,
+        projectId: run.projectId,
+        agentRunId: runId,
+        conversationId: run.conversationId,
+        storyRunId: pendingExternal.jobId,
+        reason: reason?.trim() || undefined,
+      });
+      void this.worker.cancelRun(runId, reason).catch((error) => {
+        this.logger.warn(
+          `Agent OS Worker cancel notification failed run=${runId}: ${journalErrorText(error)}`,
+        );
+      });
+      return {
+        ...cancelled,
+        assistantText: cancelled.assistantText ?? undefined,
+      };
+    }
+    await this.journal.cancelRun({
+      runId,
+      reason: reason?.trim() || 'Stopped by user',
+    });
+
+    // PostgreSQL is already terminal. This call only aborts any live model
+    // stream promptly; a restarted or unavailable Worker cannot undo Stop.
+    void this.worker.cancelRun(runId, reason).catch((error) => {
+      this.logger.warn(
+        `Agent OS Worker cancel notification failed run=${runId}: ${journalErrorText(error)}`,
+      );
+    });
+
+    const durable = await this.journal.getEventsAfter(runId, 0);
+    if (!durable) {
+      throw new NotFoundException({
+        code: 'AGENT_OS_RUN_NOT_FOUND',
+        message: 'Agent OS run not found.',
+      });
+    }
+    return {
+      runId,
+      status: durable.status,
+      events: durable.events,
+      pendingApproval: durable.pendingApproval,
+      pendingUserInput: durable.pendingUserInput,
+      pendingExternal: durable.pendingExternal,
+      assistantText: durable.assistantText ?? undefined,
+    };
   }
 
   /**
@@ -248,8 +766,27 @@ export class AgentOsGatewayService {
     after = 0,
   ) {
     await this.requireRunAccess(user, runId, projectId, 'read');
-    // Live worker first while the turn is open — MessageDelta must be low-latency
-    // for smooth streaming. Durable journal is for reconnect / completed runs.
+    // Worker event production is fail-closed on journal persistence, so the
+    // PostgreSQL suffix is both current enough for streaming polls and the only
+    // lifecycle authority. In particular, a restarted Worker's stale `running`
+    // memory must never override a durable cancellation or external result.
+    const durable = await this.journal.getEventsAfter(runId, after);
+    if (durable) {
+      return {
+        runId: durable.runId,
+        status: durable.status,
+        events: durable.events,
+        pendingApproval: durable.pendingApproval,
+        pendingUserInput: durable.pendingUserInput,
+        pendingExternal: durable.pendingExternal,
+        assistantText: durable.assistantText,
+        source: 'postgres' as const,
+      };
+    }
+
+    // A pre-migration/diagnostic Worker may still know a run not present in
+    // this database. Keep the fallback read-only; no projection is accepted
+    // from it as durable truth.
     let live: Record<string, unknown> | null = null;
     try {
       live = (await this.worker.listEvents(runId, after)) as Record<
@@ -258,28 +795,6 @@ export class AgentOsGatewayService {
       >;
     } catch {
       live = null;
-    }
-    const liveStatus = typeof live?.status === 'string' ? live.status : '';
-    if (
-      live &&
-      (liveStatus === 'running' ||
-        liveStatus === 'queued' ||
-        liveStatus === 'paused' ||
-        liveStatus === 'waiting_for_approval')
-    ) {
-      return { ...live, source: 'worker' as const };
-    }
-
-    const durable = await this.journal.getEventsAfter(runId, after);
-    if (durable) {
-      return {
-        runId: durable.runId,
-        status: durable.status,
-        events: durable.events,
-        pendingApproval: durable.pendingApproval,
-        assistantText: durable.assistantText,
-        source: 'postgres' as const,
-      };
     }
     if (live) {
       return { ...live, source: 'worker' as const };
@@ -294,24 +809,7 @@ export class AgentOsGatewayService {
 
   async listProjectCharacters(user: AuthUser, projectId: string) {
     await this.requireProjectRead(user.userId, projectId);
-    const result = await this.domain.execute({
-      toolId: 'characters.list',
-      actorId: user.userId,
-      projectId,
-      // This read endpoint is not an Agent turn. Use an explicit no-Skill
-      // provenance marker instead of weakening the Domain contract.
-      skillResolutionId: '00000000-0000-4000-8000-000000000000',
-      skillVersionIds: [],
-      idempotencyKey: `list:${projectId}:${user.userId}:${Date.now()}`,
-      arguments: {},
-    });
-    if (!result.ok) {
-      throw new NotFoundException({
-        code: result.code,
-        message: result.message,
-      });
-    }
-    return result.data;
+    return this.domain.listProjectCharacters(user.userId, projectId);
   }
 
   /**
@@ -334,6 +832,7 @@ export class AgentOsGatewayService {
     access: 'read' | 'write',
   ): Promise<{
     projectId: string;
+    workspaceId: string;
     actorId: string;
     conversationId: string;
     projectKind: AgentProjectKind;
@@ -374,10 +873,201 @@ export class AgentOsGatewayService {
     );
     return {
       ...run,
+      workspaceId: project.workspaceId,
       projectKind: project.projectKind,
       workbenchMode: run.workbenchMode,
       workbenchContext,
     };
+  }
+
+  private async findDurableApprovalResolution(input: {
+    runId: string;
+    approvalId: string;
+    responseId: string;
+    decision: 'approve' | 'reject';
+    responseText: string;
+    locale: 'en-US' | 'zh-CN' | 'zh-HK';
+  }): Promise<AgentOsWorkerRunResponse | null> {
+    const durable = await this.journal.getEventsAfter(input.runId, 0);
+    if (!durable) {
+      throw new NotFoundException({
+        code: 'AGENT_OS_RUN_NOT_FOUND',
+        message: 'Run not found for this project.',
+      });
+    }
+    const resolutions = durable.events.flatMap((event) => {
+      if (event.type !== 'ApprovalResolved') return [];
+      const parsed = ApprovalResolvedDataSchema.safeParse(event.data);
+      return parsed.success ? [parsed.data] : [];
+    });
+    const sameResponse = resolutions.filter(
+      (resolution) => resolution.responseId === input.responseId,
+    );
+    if (sameResponse.length > 0) {
+      const samePayload = sameResponse.every(
+        (resolution) =>
+          resolution.approvalId === input.approvalId &&
+          resolution.decision === input.decision,
+      );
+      if (!samePayload) {
+        throw new ConflictException({
+          code: 'AGENT_OS_APPROVAL_RESPONSE_CONFLICT',
+          message:
+            'This responseId was already used for a different approval decision.',
+        });
+      }
+      const durableMessages = durable.events.filter((event) => {
+        if (event.type !== 'UserMessage') return false;
+        const data = objectRecord(event.data);
+        const interaction = objectRecord(data?.interaction);
+        return (
+          interaction?.kind === 'approval' &&
+          interaction.responseId === input.responseId
+        );
+      });
+      const sameDisplayPayload =
+        durableMessages.length > 0 &&
+        durableMessages.every((event) => {
+          const data = objectRecord(event.data)!;
+          const interaction = objectRecord(data.interaction)!;
+          return (
+            data.text === input.responseText &&
+            interaction.approvalId === input.approvalId &&
+            interaction.responseId === input.responseId &&
+            interaction.decision === input.decision &&
+            interaction.locale === input.locale
+          );
+        });
+      if (!sameDisplayPayload) {
+        throw new ConflictException({
+          code: 'AGENT_OS_APPROVAL_RESPONSE_CONFLICT',
+          message:
+            'This responseId was already used with different approval display data.',
+        });
+      }
+      return this.toWorkerRunResponse(durable);
+    }
+    if (
+      resolutions.some(
+        (resolution) => resolution.approvalId === input.approvalId,
+      )
+    ) {
+      throw new ConflictException({
+        code: 'AGENT_OS_APPROVAL_ALREADY_RESOLVED',
+        message:
+          'This approval was already answered with a different responseId.',
+      });
+    }
+    return null;
+  }
+
+  private async findDurableUserInputResolution(input: {
+    runId: string;
+    requestId: string;
+    responseId: string;
+    answers: Readonly<Record<string, string>>;
+  }): Promise<AgentOsWorkerRunResponse | null> {
+    const durable = await this.journal.getEventsAfter(input.runId, 0);
+    if (!durable) {
+      throw new NotFoundException({
+        code: 'AGENT_OS_RUN_NOT_FOUND',
+        message: 'Run not found for this project.',
+      });
+    }
+    const responses = durable.events.flatMap((event) => {
+      if (event.type !== 'UserInputResolved') return [];
+      const parsed = UserInputResolvedDataSchema.safeParse(event.data);
+      return parsed.success && parsed.data.responseId === input.responseId
+        ? [parsed.data]
+        : [];
+    });
+    if (responses.length === 0) return null;
+
+    const samePayload = responses.every(
+      (response) =>
+        response.requestId === input.requestId &&
+        canonicalJson(response.answers) === canonicalJson(input.answers),
+    );
+    if (!samePayload) {
+      throw new ConflictException({
+        code: 'AGENT_OS_INPUT_RESPONSE_CONFLICT',
+        message:
+          'This responseId was already used for a different structured-input answer.',
+      });
+    }
+    return this.toWorkerRunResponse(durable);
+  }
+
+  private async waitForDurableApprovalResolution(
+    input: {
+      runId: string;
+      approvalId: string;
+      responseId: string;
+      decision: 'approve' | 'reject';
+      responseText: string;
+      locale: 'en-US' | 'zh-CN' | 'zh-HK';
+    },
+    deadline: number,
+  ): Promise<AgentOsWorkerRunResponse | null> {
+    for (;;) {
+      const durable = await this.findDurableApprovalResolution(input);
+      if (durable) return durable;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return null;
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(APPROVAL_RESPONSE_POLL_MS, remaining)),
+      );
+    }
+  }
+
+  private async waitForDurableUserInputResolution(
+    input: {
+      runId: string;
+      requestId: string;
+      responseId: string;
+      answers: Readonly<Record<string, string>>;
+    },
+    deadline: number,
+  ): Promise<AgentOsWorkerRunResponse | null> {
+    for (;;) {
+      const durable = await this.findDurableUserInputResolution(input);
+      if (durable) return durable;
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) return null;
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(USER_INPUT_RESPONSE_POLL_MS, remaining)),
+      );
+    }
+  }
+
+  private toWorkerRunResponse(
+    durable: DurableRunSnapshot,
+  ): AgentOsWorkerRunResponse {
+    return {
+      runId: durable.runId,
+      status: durable.status,
+      pendingApproval: durable.pendingApproval,
+      pendingUserInput: durable.pendingUserInput,
+      pendingExternal: durable.pendingExternal,
+      assistantText: durable.assistantText ?? '',
+      events: durable.events,
+    };
+  }
+
+  private userInputResolutionUnavailable(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      code: 'AGENT_OS_INPUT_RESOLUTION_NOT_DURABLE',
+      message:
+        'The structured-input response was not durably recorded. Retry with the same responseId.',
+    });
+  }
+
+  private approvalResolutionUnavailable(): ServiceUnavailableException {
+    return new ServiceUnavailableException({
+      code: 'AGENT_OS_APPROVAL_RESOLUTION_NOT_DURABLE',
+      message:
+        'The approval decision was not durably recorded. Retry with the same responseId.',
+    });
   }
 
   private async requireProjectWrite(userId: string, projectId: string) {

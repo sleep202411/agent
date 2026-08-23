@@ -38,6 +38,21 @@ export const StoryFrameProfileSchema = z.enum([
 ]);
 export type StoryFrameProfile = z.infer<typeof StoryFrameProfileSchema>;
 
+export const StoryDurationPresetSchema = z.enum([
+  'short_5_15',
+  'medium_15_30',
+  'long_30_60',
+]);
+export type StoryDurationPreset = z.infer<typeof StoryDurationPresetSchema>;
+
+export const StoryVisualStyleSchema = z.enum([
+  'cinematic_realism',
+  'stylized_3d',
+  'graphic_novel',
+  'anime_cinematic',
+]);
+export type StoryVisualStyle = z.infer<typeof StoryVisualStyleSchema>;
+
 export const STORY_FRAME_PROFILE_CONTRACTS = {
   landscape_16_9: {
     aspectRatio: '16:9',
@@ -220,35 +235,6 @@ export const StoryWorkbenchQuerySchema = z
   .strict();
 export type StoryWorkbenchQuery = z.infer<typeof StoryWorkbenchQuerySchema>;
 
-export const StoryProjectVideoLibraryQuerySchema = z
-  .object({
-    cursor: z.string().trim().min(1).max(500).optional(),
-    limit: z.coerce.number().int().min(1).max(100).default(30),
-  })
-  .strict();
-export type StoryProjectVideoLibraryQuery = z.infer<
-  typeof StoryProjectVideoLibraryQuerySchema
->;
-
-export const CompleteStoryProjectVideoUploadSchema = z
-  .object({
-    mediaAssetId: StoryUuidSchema,
-  })
-  .strict();
-export type CompleteStoryProjectVideoUpload = z.infer<
-  typeof CompleteStoryProjectVideoUploadSchema
->;
-
-export const StoryProjectVideoUploadParamsSchema = z
-  .object({
-    projectId: StoryUuidSchema,
-    mediaAssetId: StoryUuidSchema,
-  })
-  .strict();
-export type StoryProjectVideoUploadParams = z.infer<
-  typeof StoryProjectVideoUploadParamsSchema
->;
-
 export const StoryRevisionListQuerySchema = z
   .object({
     cursor: z.string().trim().min(1).max(500).optional(),
@@ -272,7 +258,6 @@ export type StoryBuildListQuery = z.infer<typeof StoryBuildListQuerySchema>;
 
 export const CreateStoryProjectSchema = z
   .object({
-    frameProfile: StoryFrameProfileSchema,
     title: StoryTitleSchema,
     summary: StorySummarySchema.optional(),
     defaultLocale: z.string().trim().min(2).max(16),
@@ -293,8 +278,37 @@ export const PatchStoryProjectSchema = z
     defaultLocale: z.string().trim().min(2).max(16).optional(),
     visibility: StoryVisibilitySchema.optional(),
     tags: StoryTagsSchema.optional(),
+    frameProfile: StoryFrameProfileSchema.optional(),
+    durationPreset: StoryDurationPresetSchema.optional(),
+    visualStyle: StoryVisualStyleSchema.optional(),
+    /**
+     * A creator confirms the complete profile atomically. The server owns the
+     * timestamp; clients cannot file partial or silently-defaulted direction.
+     */
+    confirmCreativeProfile: z.literal(true).optional(),
   })
   .strict()
+  .superRefine((value, context) => {
+    const touchesCreativeProfile =
+      value.frameProfile !== undefined ||
+      value.durationPreset !== undefined ||
+      value.visualStyle !== undefined ||
+      value.confirmCreativeProfile !== undefined;
+    if (
+      touchesCreativeProfile &&
+      (value.frameProfile === undefined ||
+        value.durationPreset === undefined ||
+        value.visualStyle === undefined ||
+        value.confirmCreativeProfile !== true)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['confirmCreativeProfile'],
+        message:
+          'Confirm frameProfile, durationPreset, and visualStyle together as one creative profile.',
+      });
+    }
+  })
   .refine(
     (value) =>
       Object.keys(value).some((key) => key !== 'expectedProjectVersion'),
@@ -607,34 +621,6 @@ export interface StoryCandidateAssetDto {
   addedAt: string;
 }
 
-export interface StoryProjectVideoLibraryItemDto {
-  asset: MediaAssetSummaryDto;
-  variantId: string;
-  variantKey: string;
-  contentType: string;
-  width: number | null;
-  height: number | null;
-  durationSeconds: number | null;
-  checksumSha256: string | null;
-  createdAt: string;
-}
-
-export type StoryProjectVideoUploadFinalizeStatus =
-  | 'queued'
-  | 'processing'
-  | 'ready'
-  | 'failed'
-  | 'expired'
-  | 'cancelled';
-
-export interface StoryProjectVideoUploadFinalizeDto {
-  mediaAssetId: string;
-  status: StoryProjectVideoUploadFinalizeStatus;
-  pollAfterMs: number | null;
-  item: StoryProjectVideoLibraryItemDto | null;
-  error: { code: string; message: string } | null;
-}
-
 export interface StoryRevisionSummaryDto {
   id: string;
   number: number;
@@ -670,6 +656,10 @@ export interface StoryProjectSummaryDto {
   id: string;
   workspaceId: string;
   frameProfile: StoryFrameProfile;
+  frameProfileMutable: boolean;
+  durationPreset: StoryDurationPreset | null;
+  visualStyle: StoryVisualStyle | null;
+  creativeProfileConfirmedAt: string | null;
   status: StoryProjectStatus;
   visibility: StoryVisibility;
   title: string;
@@ -728,28 +718,6 @@ export interface StoryCanvasLayoutDto {
 export interface StoryRevisionDto extends StoryRevisionSummaryDto {
   projectId: string;
   content: InteractiveStoryDraftContent;
-}
-
-export interface StoryCurrentVideoDto {
-  asset: MediaAssetSummaryDto;
-  variantId: string;
-  checksumSha256: string | null;
-  contentType: string;
-  durationMs: number | null;
-  width: number | null;
-  height: number | null;
-  /** Byte length of the exact selected variant, serialized for BigInt-safe JSON. */
-  sizeBytes: string | null;
-  browserSafeMp4: boolean | null;
-  selectionVersion: number;
-  setByUserId: string | null;
-  setAt: string;
-}
-
-export interface StoryClipVideoSummaryDto {
-  graphNodeId: string;
-  selectionVersion: number;
-  currentVideo: StoryCurrentVideoDto | null;
 }
 
 export interface StoryReferenceVersionDto {
@@ -926,9 +894,15 @@ export interface StoryWorkbenchDto {
   chapters: StoryChapterDto[];
   chapter: StoryChapterDto;
   draft: StoryDraftDto;
+  script: {
+    documentId: string | null;
+    currentSequence: number;
+    sourceVersionId: string | null;
+    sourceSequence: number | null;
+    status: 'missing' | 'current' | 'stale' | 'unlinked';
+  };
   video: {
     snapshotHash: string;
-    clips: StoryClipVideoSummaryDto[];
   };
   references: StoryReferenceSlotDto[];
   latestBuild: StoryBuildSummaryDto | null;
