@@ -4832,6 +4832,7 @@ model Crew {
   applications        CrewApplication[]
   assetNodes          CrewAssetNode[]
   invitations         CrewInvitation[]
+  inviteLinks         CrewInviteLink[]
   tasks               CrewTask[]
   taskViews           CrewTaskView[]
   taskCycles          CrewTaskCycle[]
@@ -5199,6 +5200,51 @@ model CrewInvitation {
   @@index([crewId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_invitations_crew_status_created_idx")
   @@index([inviteeUserId, status, createdAt(sort: Desc), id(sort: Desc)], map: "crew_invitations_invitee_status_created_idx")
   @@map("crew_invitations")
+}
+
+/// A shareable "anyone with the link" way into a crew — the counterpart to
+/// CrewInvitation's one-row-per-invitee model. The link is a bearer secret:
+/// only `sha256(token)` is stored, and the raw token is returned exactly once
+/// at creation. Access granted on redemption is fixed when the link is minted,
+/// so a link can never widen someone's permissions after the fact.
+model CrewInviteLink {
+  id              String    @id @default(uuid(7)) @db.Uuid
+  crewId          String    @map("crew_id")
+  tokenHash       String    @unique(map: "crew_invite_links_token_hash_unique") @map("token_hash") @db.VarChar(128)
+  /// Additive policies every joiner receives. Empty = plain member.
+  policyKeys      String[]  @default([]) @map("policy_keys")
+  createdByUserId String    @map("created_by_user_id") @db.VarChar(64)
+  /// Null means unlimited. Checked against `useCount` under a row lock.
+  maxUses         Int?      @map("max_uses")
+  useCount        Int       @default(0) @map("use_count")
+  /// Null means it never expires. Expiry is lazy — nothing sweeps these.
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
+  revokedByUserId String?   @map("revoked_by_user_id") @db.VarChar(64)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  crew        Crew                       @relation(fields: [crewId], references: [id], onDelete: Cascade)
+  redemptions CrewInviteLinkRedemption[]
+
+  @@index([crewId, createdAt(sort: Desc)], map: "crew_invite_links_crew_created_idx")
+  @@map("crew_invite_links")
+}
+
+/// One row per account that arrived through a link. The unique pair is what
+/// makes accept idempotent: a second click finds its own redemption instead of
+/// burning another use, and the crew can see who came in through which link.
+model CrewInviteLinkRedemption {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  linkId     String   @map("link_id") @db.Uuid
+  userId     String   @map("user_id") @db.VarChar(64)
+  memberId   String?  @map("member_id")
+  redeemedAt DateTime @default(now()) @map("redeemed_at") @db.Timestamptz(6)
+
+  link CrewInviteLink @relation(fields: [linkId], references: [id], onDelete: Cascade)
+
+  @@unique([linkId, userId], map: "crew_invite_link_redemptions_link_user_unique")
+  @@map("crew_invite_link_redemptions")
 }
 
 /// GitHub-Issue-like production unit. Its project/document are the editable

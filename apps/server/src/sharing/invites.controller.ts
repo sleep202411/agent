@@ -1,10 +1,11 @@
 /**
  * Scope-agnostic invite acceptance. A raw token is opaque about its scope, so
  * preview/accept hash it once and resolve against each invite table in turn —
- * workspace, then platform project, then story project (tokenHash is unique
- * within each; a cross-table collision is cryptographically negligible). The
- * per-scope create/list/revoke endpoints live on WorkspaceInvitesController /
- * ProjectInvitesController / StoryProjectInvitesController.
+ * workspace, then platform project, then story project, then crew (tokenHash is
+ * unique within each; a cross-table collision is cryptographically negligible).
+ * The per-scope create/list/revoke endpoints live on WorkspaceInvitesController
+ * / ProjectInvitesController / StoryProjectInvitesController /
+ * CrewInvitationsController.
  */
 import {
   BadRequestException,
@@ -18,6 +19,7 @@ import {
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
+import { CrewInviteLinksService } from '../crews/invitations/invite-links.service';
 import { StoryProjectInvitesService } from '../story-studio/story-project-invites.service';
 import { AcceptInviteSchema, type AcceptInviteInput } from './dto';
 import { hashInviteToken } from './invite-token';
@@ -30,6 +32,7 @@ export class InvitesController {
     private readonly workspaceInvites: WorkspaceInvitesService,
     private readonly projectInvites: ProjectInvitesService,
     private readonly storyProjectInvites: StoryProjectInvitesService,
+    private readonly crewInviteLinks: CrewInviteLinksService,
   ) {}
 
   @Get('preview')
@@ -49,6 +52,9 @@ export class InvitesController {
     const story = await this.storyProjectInvites.findByHash(tokenHash);
     if (story)
       return { code: 200, data: await this.storyProjectInvites.preview(story) };
+    const crew = await this.crewInviteLinks.findByHash(tokenHash);
+    if (crew)
+      return { code: 200, data: await this.crewInviteLinks.preview(crew) };
     throw new NotFoundException({
       code: 'INVITE_NOT_FOUND',
       msg: 'This invite link is invalid.',
@@ -74,6 +80,10 @@ export class InvitesController {
         code: 200,
         data: await this.storyProjectInvites.accept(story, user),
       };
+    }
+    const crew = await this.crewInviteLinks.findByHash(tokenHash);
+    if (crew) {
+      return { code: 200, data: await this.crewInviteLinks.accept(crew, user) };
     }
     throw new NotFoundException({
       code: 'INVITE_NOT_FOUND',

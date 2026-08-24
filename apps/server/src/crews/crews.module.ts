@@ -29,6 +29,7 @@ import { MembersController } from './members.controller';
 import { MembersService } from './members.service';
 import { CrewInvitationsController } from './invitations/invitations.controller';
 import { CrewInvitationsService } from './invitations/invitations.service';
+import { CrewInviteLinksService } from './invitations/invite-links.service';
 import {
   PositionsController,
   PositionsDiscoveryController,
@@ -92,6 +93,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetUploadCleanupWorker,
     CrewCollaborationService,
     CrewInvitationsService,
+    CrewInviteLinksService,
     CrewTasksService,
     CrewTaskDraftService,
     CrewProductionService,
@@ -102,6 +104,7 @@ import { CrewProductionService } from './production/production.service';
     CrewEarningsService,
     CrewPayoutsService,
   ],
-  exports: [CrewAssetAccessModule],
+  // The scope-agnostic InvitesController redeems crew link tokens.
+  exports: [CrewAssetAccessModule, CrewInviteLinksService],
 })
 export class CrewsModule {}

@@ -36,6 +36,9 @@ const PUBLIC_PATTERNS: RegExp[] = [
   /^\/games(\/|$)/,
   /^\/news(\/|$)/,
   /^\/invite(\/|$)/,
+  // A crew invite link is handed to someone who may not have an account yet.
+  // The page itself prompts for sign-in before it will let anyone join.
+  /^\/crew-invite\/[^/]+(\/|$)/,
   /^\/ips(\/|$)/,
   // Keep the frozen Jinling interactive-film showcase public. Published
   // StoryOS interactive films remain login-gated.

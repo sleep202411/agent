@@ -25,6 +25,7 @@ import type {
 import { newCrewDomainId } from '../id';
 import { CrewAgreementsService } from '../agreements/agreements.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
+import { joinCrewInTransaction } from './join-crew';
 
 @Injectable()
 export class CrewInvitationsService {
@@ -304,75 +305,22 @@ export class CrewInvitationsService {
         });
       }
 
-      const existing = await tx.crewMember.findFirst({
-        where: {
-          crewId: invitation.crewId,
-          userId,
-          status: {
-            in: [CrewMembershipStatus.active, CrewMembershipStatus.suspended],
-          },
-        },
-      });
-      if (existing) {
-        throw new ConflictException({
-          message: 'This account already has an active crew membership.',
-        });
-      }
-      const conversation = await this.conversations.openCrewConversation(
-        invitation.crewId,
+      const joined = await joinCrewInTransaction(
         tx,
-      );
-      const member = await tx.crewMember.create({
-        data: {
-          id: newCrewDomainId(),
+        {
+          conversations: this.conversations,
+          collaboration: this.collaboration,
+        },
+        {
           crewId: invitation.crewId,
           userId,
-          status: CrewMembershipStatus.active,
-          joinedVia: 'invitation',
-        },
-      });
-      const policyKeys = invitation.policyKeys.filter(isCrewPolicyKey);
-      if (policyKeys.length > 0) {
-        await tx.crewMemberPolicy.createMany({
-          data: policyKeys.map((policyKey) => ({
-            memberId: member.id,
-            policyKey,
-            assignedByUserId: invitation.invitedByUserId,
-          })),
-        });
-      }
-      await tx.crewAuthorizationEvent.create({
-        data: {
-          crewId: invitation.crewId,
-          memberId: member.id,
-          actorUserId: userId,
+          policyKeys: invitation.policyKeys,
+          grantedByUserId: invitation.invitedByUserId,
           action: 'member.joined.invitation',
-          after: {
-            invitationId: invitation.id,
-            policyKeys,
-          },
+          auditAfter: { invitationId: invitation.id },
         },
-      });
-      await this.collaboration.addCrewMemberAccess(
-        invitation.crewId,
-        userId,
-        invitation.invitedByUserId,
-        tx,
       );
-      await this.conversations.syncCrewParticipant(
-        invitation.crewId,
-        userId,
-        'join',
-        tx,
-      );
-      pendingMessages.push(
-        await this.conversations.persistSystem(
-          conversation.id,
-          'crew.member.joined',
-          { userId },
-          tx,
-        ),
-      );
+      pendingMessages.push(joined.systemMessage);
       const agreement = await this.agreements.stageInvitationAgreement(
         invitation,
         tx,
@@ -401,18 +349,22 @@ export class CrewInvitationsService {
         },
         tx,
       );
-      return { member, agreement };
+      return {
+        memberId: joined.memberId,
+        crewId: invitation.crewId,
+        agreement,
+      };
     });
     for (const message of pendingMessages) {
       await this.conversations.broadcastMessage(message);
     }
     return {
-      crewId: result.member.crewId,
-      memberId: result.member.id,
+      crewId: result.crewId,
+      memberId: result.memberId,
       accepted: true,
       agreementId: result.agreement?.id ?? null,
       agreementQueued: Boolean(result.agreement),
-      workspaceHref: `/crews/${result.member.crewId}/workspace`,
+      workspaceHref: `/crews/${result.crewId}/workspace`,
     };
   }
 

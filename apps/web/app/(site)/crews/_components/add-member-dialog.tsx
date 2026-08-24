@@ -53,6 +53,7 @@ import {
   useInviteCrewMember,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useDebouncedValue, useUserLookup } from "@/app/(site)/crews/_hooks/use-users";
+import { InviteLinkPanel } from "@/app/(site)/crews/_components/invite-link-panel";
 import {
   isCrewInviteAccessPreset,
   policyKeysForAccessPreset,
@@ -77,6 +78,9 @@ export function AddCrewMemberDialog({
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
 
+  // Two ways in, one dialog: name an account, or mint a link. They share the
+  // access vocabulary and nothing else, so they are siblings, not a wizard.
+  const [mode, setMode] = useState<"account" | "link">("account");
   const [queryInput, setQueryInput] = useState("");
   const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
   const [agreementEnabled, setAgreementEnabled] = useState(false);
@@ -92,6 +96,7 @@ export function AddCrewMemberDialog({
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
+      setMode("account");
       setQueryInput("");
       setAccessPreset("standard");
       setAgreementEnabled(false);
@@ -177,122 +182,148 @@ export function AddCrewMemberDialog({
         />
 
         <DialogBody>
-          <FieldGroup>
-            <Field>
-              <FieldLabel required>{t("addMemberContactLabel")}</FieldLabel>
-              <Input
-                value={queryInput}
-                onChange={(e) => setQueryInput(e.target.value)}
-                placeholder={t("addMemberContactPlaceholder")}
-                maxLength={120}
-                disabled={submitting}
-                autoFocus
-              />
-              <LookupPreview state={lookup} contact={debouncedQuery} t={t} />
-            </Field>
+          <div className="mb-5 flex gap-1 rounded-lg bg-white/[0.03] p-1 ring-1 ring-white/[0.06]">
+            {(["account", "link"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                className={cn(
+                  "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                  mode === value
+                    ? "bg-white/[0.08] text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {value === "account" ? t("inviteLinkTabAccount") : t("inviteLinkTabLink")}
+              </button>
+            ))}
+          </div>
 
-            {canGrantPolicies ? (
+          {mode === "link" ? (
+            <InviteLinkPanel
+              crewId={crewId}
+              canGrantPolicies={canGrantPolicies}
+              open={open && mode === "link"}
+            />
+          ) : (
+            <FieldGroup>
               <Field>
-                <FieldLabel>{t("addMemberAccessLabel")}</FieldLabel>
-                <Select
-                  value={accessPreset}
-                  onValueChange={(value) => {
-                    if (isCrewInviteAccessPreset(value)) setAccessPreset(value);
-                  }}
+                <FieldLabel required>{t("addMemberContactLabel")}</FieldLabel>
+                <Input
+                  value={queryInput}
+                  onChange={(e) => setQueryInput(e.target.value)}
+                  placeholder={t("addMemberContactPlaceholder")}
+                  maxLength={120}
                   disabled={submitting}
-                >
-                  <SelectTrigger className="h-10 w-full rounded-lg px-3 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent position="popper" align="start">
-                    <SelectItem value="standard">{t("memberAccessPresetStandard")}</SelectItem>
-                    <SelectItem value="finance">{t("memberAccessPresetFinance")}</SelectItem>
-                    <SelectItem value="admin">{t("memberAccessPresetAdmin")}</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] leading-5 text-foreground/65">
-                  {accessPreset === "admin"
-                    ? t("addMemberAdminPolicyHint")
-                    : accessPreset === "finance"
-                      ? t("addMemberFinancePolicyHint")
-                      : t("addMemberStandardPolicyHint")}
-                </p>
-                <p className="text-[11px] leading-5 text-muted-foreground">
-                  {t("addMemberAccessHint")}
-                </p>
-              </Field>
-            ) : null}
-
-            <div className="rounded-xl bg-white/[0.025] p-4 ring-1 ring-white/[0.08]">
-              <label className="flex cursor-pointer items-start gap-3">
-                <Checkbox
-                  className="mt-0.5"
-                  checked={agreementEnabled}
-                  disabled={submitting || agreementCapability.isLoading || !canRequestAgreement}
-                  onCheckedChange={(checked) => toggleAgreement(checked === true)}
+                  autoFocus
                 />
-                <span className="min-w-0">
-                  <span className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <IconSignature className="size-4 text-primary" />
-                    {t("addMemberAgreementLabel")}
-                    <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-white/40">
-                      {t("addMemberAgreementOptional")}
+                <LookupPreview state={lookup} contact={debouncedQuery} t={t} />
+              </Field>
+
+              {canGrantPolicies ? (
+                <Field>
+                  <FieldLabel>{t("addMemberAccessLabel")}</FieldLabel>
+                  <Select
+                    value={accessPreset}
+                    onValueChange={(value) => {
+                      if (isCrewInviteAccessPreset(value)) setAccessPreset(value);
+                    }}
+                    disabled={submitting}
+                  >
+                    <SelectTrigger className="h-10 w-full rounded-lg px-3 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent position="popper" align="start">
+                      <SelectItem value="standard">{t("memberAccessPresetStandard")}</SelectItem>
+                      <SelectItem value="finance">{t("memberAccessPresetFinance")}</SelectItem>
+                      <SelectItem value="admin">{t("memberAccessPresetAdmin")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-5 text-foreground/65">
+                    {accessPreset === "admin"
+                      ? t("addMemberAdminPolicyHint")
+                      : accessPreset === "finance"
+                        ? t("addMemberFinancePolicyHint")
+                        : t("addMemberStandardPolicyHint")}
+                  </p>
+                  <p className="text-[11px] leading-5 text-muted-foreground">
+                    {t("addMemberAccessHint")}
+                  </p>
+                </Field>
+              ) : null}
+
+              <div className="rounded-xl bg-white/[0.025] p-4 ring-1 ring-white/[0.08]">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <Checkbox
+                    className="mt-0.5"
+                    checked={agreementEnabled}
+                    disabled={submitting || agreementCapability.isLoading || !canRequestAgreement}
+                    onCheckedChange={(checked) => toggleAgreement(checked === true)}
+                  />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-2 text-sm font-medium text-foreground">
+                      <IconSignature className="size-4 text-primary" />
+                      {t("addMemberAgreementLabel")}
+                      <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] uppercase tracking-[0.08em] text-white/40">
+                        {t("addMemberAgreementOptional")}
+                      </span>
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                      {t("addMemberAgreementHint")}
                     </span>
                   </span>
-                  <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                    {t("addMemberAgreementHint")}
-                  </span>
-                </span>
-              </label>
+                </label>
 
-              {!agreementCapability.isLoading && !canRequestAgreement ? (
-                <p className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] leading-5 text-amber-200/80">
-                  <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
-                  {t("addMemberAgreementUnavailable")}
-                </p>
-              ) : null}
-
-              {agreementEnabled ? (
-                <FieldGroup className="mt-4">
-                  <Field>
-                    <FieldLabel required>{t("addMemberAgreementTitle")}</FieldLabel>
-                    <Input
-                      value={agreementTitle}
-                      onChange={(event) => setAgreementTitle(event.target.value)}
-                      maxLength={180}
-                      placeholder={t("addMemberAgreementTitlePlaceholder")}
-                      disabled={submitting}
-                    />
-                  </Field>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field>
-                      <FieldLabel required>{t("addMemberSignerName")}</FieldLabel>
-                      <Input
-                        value={signerName}
-                        onChange={(event) => setSignerName(event.target.value)}
-                        maxLength={128}
-                        disabled={submitting}
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel required>{t("addMemberSignerEmail")}</FieldLabel>
-                      <Input
-                        type="email"
-                        value={signerEmail}
-                        onChange={(event) => setSignerEmail(event.target.value)}
-                        maxLength={320}
-                        placeholder="name@example.com"
-                        disabled={submitting}
-                      />
-                    </Field>
-                  </div>
-                  <p className="text-[11px] leading-5 text-muted-foreground">
-                    {t("addMemberAgreementDisclosure")}
+                {!agreementCapability.isLoading && !canRequestAgreement ? (
+                  <p className="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/[0.08] px-3 py-2 text-[11px] leading-5 text-amber-200/80">
+                    <IconAlertCircle className="mt-0.5 size-3.5 shrink-0" />
+                    {t("addMemberAgreementUnavailable")}
                   </p>
-                </FieldGroup>
-              ) : null}
-            </div>
-          </FieldGroup>
+                ) : null}
+
+                {agreementEnabled ? (
+                  <FieldGroup className="mt-4">
+                    <Field>
+                      <FieldLabel required>{t("addMemberAgreementTitle")}</FieldLabel>
+                      <Input
+                        value={agreementTitle}
+                        onChange={(event) => setAgreementTitle(event.target.value)}
+                        maxLength={180}
+                        placeholder={t("addMemberAgreementTitlePlaceholder")}
+                        disabled={submitting}
+                      />
+                    </Field>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel required>{t("addMemberSignerName")}</FieldLabel>
+                        <Input
+                          value={signerName}
+                          onChange={(event) => setSignerName(event.target.value)}
+                          maxLength={128}
+                          disabled={submitting}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel required>{t("addMemberSignerEmail")}</FieldLabel>
+                        <Input
+                          type="email"
+                          value={signerEmail}
+                          onChange={(event) => setSignerEmail(event.target.value)}
+                          maxLength={320}
+                          placeholder="name@example.com"
+                          disabled={submitting}
+                        />
+                      </Field>
+                    </div>
+                    <p className="text-[11px] leading-5 text-muted-foreground">
+                      {t("addMemberAgreementDisclosure")}
+                    </p>
+                  </FieldGroup>
+                ) : null}
+              </div>
+            </FieldGroup>
+          )}
         </DialogBody>
 
         <DialogFooter>
@@ -303,12 +334,16 @@ export function AddCrewMemberDialog({
             onClick={() => handleOpenChange(false)}
             disabled={submitting}
           >
-            {tc("cancel")}
+            {mode === "link" ? tc("close") : tc("cancel")}
           </Button>
-          <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit}>
-            {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
-            {submitting ? t("addMemberSubmitting") : t("addMemberSubmit")}
-          </Button>
+          {/* Minting a link is its own action inside the panel; a second
+              primary here would read as "and now submit". */}
+          {mode === "account" ? (
+            <Button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit}>
+              {submitting ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {submitting ? t("addMemberSubmitting") : t("addMemberSubmit")}
+            </Button>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

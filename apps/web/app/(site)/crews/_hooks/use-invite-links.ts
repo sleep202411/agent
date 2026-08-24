@@ -1,0 +1,69 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { crewApi } from "./api";
+import { crewKeys } from "./shared";
+
+export type CrewInviteLinkState = "active" | "revoked" | "expired" | "exhausted";
+
+export interface CrewInviteLinkDTO {
+  id: string;
+  crewId: string;
+  policyKeys: string[];
+  maxUses: number | null;
+  useCount: number;
+  expiresAt: string | null;
+  createdAt: string;
+  createdByUserId: string;
+  state: CrewInviteLinkState;
+}
+
+export interface CreateCrewInviteLinkInput {
+  policyKeys?: string[];
+  /** Omit for a link that never expires. */
+  expiresInDays?: number;
+  /** Omit for unlimited joins. */
+  maxUses?: number;
+}
+
+export function useCrewInviteLinks(crewId: string, enabled = true) {
+  return useQuery({
+    queryKey: crewKeys.inviteLinks(crewId),
+    enabled: enabled && !!crewId,
+    queryFn: () =>
+      crewApi.get<CrewInviteLinkDTO[]>(`/crews/${encodeURIComponent(crewId)}/invite-links`),
+  });
+}
+
+/**
+ * The raw token comes back exactly once, here. Nothing re-reads it, so the
+ * caller must surface it immediately — a lost token means minting a new link.
+ */
+export function useCreateCrewInviteLink(crewId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateCrewInviteLinkInput) =>
+      crewApi.post<CrewInviteLinkDTO & { token: string }>(
+        `/crews/${encodeURIComponent(crewId)}/invite-links`,
+        { body: input }
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.inviteLinks(crewId) }),
+  });
+}
+
+export function useRevokeCrewInviteLink(crewId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (linkId: string) =>
+      crewApi.delete<void>(
+        `/crews/${encodeURIComponent(crewId)}/invite-links/${encodeURIComponent(linkId)}`
+      ),
+    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.inviteLinks(crewId) }),
+  });
+}
+
+/** Where a minted token becomes something a person can paste into chat. */
+export function crewInviteUrl(token: string): string {
+  const origin = typeof window === "undefined" ? "" : window.location.origin;
+  return `${origin}/crew-invite/${encodeURIComponent(token)}`;
+}

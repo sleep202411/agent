@@ -7,6 +7,7 @@ import { UsersModule } from '../users/users.module';
 import { WorkspacesModule } from '../workspaces';
 import { RealtimeRevokeModule } from '../infra/realtime/realtime-revoke.module';
 import { StoryProjectSharingModule } from '../story-studio/story-project-sharing.module';
+import { CrewsModule } from '../crews/crews.module';
 import { InvitesController } from './invites.controller';
 import { ProjectInvitesController } from './project-invites.controller';
 import { ProjectInvitesService } from './project-invites.service';
@@ -40,6 +41,8 @@ import { WorkspaceMembersService } from './workspace-members.service';
     CharactersModule,
     // The scope-agnostic InvitesController resolves story-project tokens too.
     StoryProjectSharingModule,
+    // ...and crew invite-link tokens.
+    CrewsModule,
   ],
   controllers: [
     WorkspaceMembersController,

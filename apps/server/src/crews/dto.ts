@@ -367,6 +367,25 @@ export type CreateCrewInvitationInput = z.infer<
   typeof CreateCrewInvitationSchema
 >;
 
+/**
+ * A shareable link, not a named invitation: there is no account to resolve, so
+ * the creator instead bounds who may use it. Both bounds are optional and both
+ * are open-ended by omission — an unbounded link is a real product choice, and
+ * revoke is always available.
+ */
+export const CreateCrewInviteLinkSchema = z
+  .object({
+    policyKeys: z.array(crewPolicyKey).max(CREW_POLICY_KEYS.length).default([]),
+    /** Omit for a link that never expires. */
+    expiresInDays: z.number().int().min(1).max(365).optional(),
+    /** Omit for unlimited joins. */
+    maxUses: z.number().int().min(1).max(500).optional(),
+  })
+  .strict();
+export type CreateCrewInviteLinkInput = z.infer<
+  typeof CreateCrewInviteLinkSchema
+>;
+
 export const ListCrewInvitationsQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   cursor: z

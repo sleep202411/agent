@@ -39,6 +39,7 @@ export const crewKeys = {
   payouts: (crewId: string, scope: "mine" | "crew") => ["crew", "payouts", crewId, scope] as const,
   payout: (payoutId: string) => ["crew", "payout", payoutId] as const,
   invitations: (crewId: string) => ["crew", "invitations", crewId] as const,
+  inviteLinks: (crewId: string) => ["crew", "invite-links", crewId] as const,
   myInvitations: ["crew", "invitations", "mine"] as const,
   invitation: (invitationId: string) => ["crew", "invitation", invitationId] as const,
   agreements: (crewId: string) => ["crew", "agreements", crewId] as const,
