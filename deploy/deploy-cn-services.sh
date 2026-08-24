@@ -37,7 +37,7 @@ fi
 
 for service in "${SERVICES[@]}"; do
   case "$service" in
-    web|studio|admin-ui|server) ;;
+    web|studio|admin-ui|server|agent-os) ;;
     agent)
       [ "${ALLOW_LEGACY_AGENT_DEPLOY:-0}" = 1 ] || {
         echo "FATAL: legacy agent is frozen/quarantined; set ALLOW_LEGACY_AGENT_DEPLOY=1 only after its image passes a real boot test" >&2
