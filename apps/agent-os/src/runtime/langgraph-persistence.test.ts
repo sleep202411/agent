@@ -677,6 +677,58 @@ describe("LangGraph journal persistence", () => {
     await expect(service.beginDurableStart(startInput())).rejects.toThrow(/no durable reservation/);
     expect(beginStart).not.toHaveBeenCalled();
   });
+
+  it("refuses to replay a stale in-memory snapshot while the start execution is still pending", async () => {
+    // An execution that died mid-turn leaves a `running` snapshot behind.
+    // Answering the redispatch from it would make every retry a no-op and
+    // strand the run on its admission prefix.
+    process.env.AGENT_OS_DOMAIN_URL = "http://gateway.test";
+    process.env.AGENT_OS_INTERNAL_TOKEN = "internal-test-token";
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "running",
+            events: [
+              durableEvent(1, "UserMessage", {
+                turnId: TURN_ID,
+                messageId: START_MESSAGE_ID,
+                text: "Create an interactive story.",
+              }),
+            ],
+            pendingApproval: null,
+            pendingUserInput: null,
+            pendingExternal: null,
+            assistantText: null,
+            projectKind: "story",
+            workbenchMode: "story",
+            workbenchContext: null,
+            skillMountSnapshot: null,
+            startExecutionPending: true,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+    const service = new LangGraphRunService();
+    (
+      service as unknown as {
+        snapshots: Map<string, LangGraphRunSnapshot>;
+      }
+    ).snapshots.set(RUN_ID, {
+      runId: RUN_ID,
+      activeTurnId: TURN_ID,
+      status: "running",
+      journal: new EventJournal(),
+      conversationId: CONVERSATION_ID,
+      startExecution: {
+        ...startInput().startExecution,
+        executionOwnerId: START_EXECUTION_OWNER_ID,
+      },
+    });
+
+    expect(await service.replayDurableStart(RUN_ID, CONVERSATION_ID)).toBeNull();
+  });
 });
 
 const EXTERNAL_JOB_ID = "99999999-9999-4999-8999-999999999999";

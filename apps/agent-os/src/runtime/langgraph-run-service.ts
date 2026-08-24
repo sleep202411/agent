@@ -637,17 +637,24 @@ export class LangGraphRunService {
    * construction. A durable retry must remain answerable even while an AI
    * provider is temporarily unavailable; those dependencies are needed only
    * for a genuinely new queued run.
+   *
+   * PostgreSQL decides this, never Worker memory. A snapshot left behind by an
+   * execution that died mid-turn still reads as `running`, so answering from it
+   * would turn every redispatch of a still-pending start into a no-op reply and
+   * strand the run on its admission prefix forever. Whenever the Gateway says a
+   * start execution is pending, fall through to `beginDurableStart`, which owns
+   * the same-grant/supersede decision.
    */
   async replayDurableStart(
     runId: string,
     conversationId: string
   ): Promise<AgentRunSnapshotView | null> {
+    const durable = await fetchJournalFromNest(runId, { requireExisting: true });
+    if (durable?.startExecutionPending) return null;
     const existing = this.snapshots.get(runId);
     if (existing) return existing;
-    const durable = await fetchJournalFromNest(runId, { requireExisting: true });
     if (!durable) return null;
     const status = AgentRunStatusSchema.parse(durable.status);
-    if (durable.startExecutionPending) return null;
 
     const journal = this.createJournal(conversationId);
     journal.restore(durable.events);
@@ -1083,6 +1090,22 @@ export class LangGraphRunService {
         // admission command and make the missing graph suffix unrecoverable.
         // Retain the command, stop heartbeating in finally, and let a later
         // fenced epoch inspect the authoritative conversation checkpoint.
+        //
+        // Deferring is silent to the creator by design, so it must never be
+        // silent to the operator: a failure that repeats every epoch (a missing
+        // grant, an unreachable dependency) otherwise presents as a run frozen
+        // on its admission prefix with no error anywhere.
+        process.stderr.write(
+          `${JSON.stringify({
+            level: "warn",
+            msg: "agent-os.start.execution_deferred",
+            runId: input.runId,
+            conversationId: input.conversationId,
+            turnId,
+            executionEpoch: liveBeforeFailure.startExecution.executionEpoch,
+            error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+          })}\n`
+        );
         return;
       }
       const message = error instanceof Error ? error.message : String(error);
