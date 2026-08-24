@@ -8,6 +8,7 @@ import { IconDownload, IconPencil, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
+import { downloadCanvasMedia } from "./download-media";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { Icon720, PanoramaCanvas, PanoramaViewer } from "./panorama-viewer";
 import { PortPlus } from "./ports";
@@ -33,10 +34,7 @@ function PanoramaNodeComponent({ id, data, selected }: NodeProps<PanoramaNodeTyp
   const title = data.label ?? t("panorama.title");
 
   const onDownload = () => {
-    const anchor = document.createElement("a");
-    anchor.href = data.src;
-    anchor.download = title;
-    anchor.click();
+    void downloadCanvasMedia(data.src, title, "image");
   };
 
   const commitName = useCallback(

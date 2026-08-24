@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
+import { downloadCanvasMedia } from "./download-media";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { PortPlus } from "./ports";
 import { CanvasMediaViewer } from "./canvas-media-viewer";
@@ -34,13 +35,6 @@ export type MediaAssetNodeData = {
 
 export type VideoAssetNodeType = Node<MediaAssetNodeData, "videoAsset">;
 export type AudioAssetNodeType = Node<MediaAssetNodeData, "audioAsset">;
-
-function downloadMedia(src: string, name: string) {
-  const anchor = document.createElement("a");
-  anchor.href = src;
-  anchor.download = name;
-  anchor.click();
-}
 
 function MediaAssetNodeComponent({
   id,
@@ -65,8 +59,8 @@ function MediaAssetNodeComponent({
   const geometry = canvasNodeGeometry({ type: nodeType });
 
   const onDownload = useCallback(() => {
-    downloadMedia(src, title);
-  }, [src, title]);
+    void downloadCanvasMedia(src, title, kind);
+  }, [src, title, kind]);
 
   const commitName = useCallback(
     (name: string) => {
