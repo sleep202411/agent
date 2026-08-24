@@ -49,9 +49,11 @@ interface CreatorLeftRailProps {
   isOwner: boolean;
   /**
    * Owner clicked any per-section edit pencil — parent opens the
-   * ProfileEditDialog. All editable sections (bio / education /
-   * experience) share the one callback because the dialog covers
-   * the whole profile, not per-field.
+   * ProfileEditDialog. Every card that carries the pencil (profile
+   * info / bio / education / experience) shares the one callback
+   * because the dialog covers the whole profile, not per-field. The
+   * info card qualifies through its verification row: that reads off
+   * `contact`, which is one of the fields the dialog edits.
    */
   onEditProfile?: () => void;
   /**
@@ -95,7 +97,7 @@ export function CreatorLeftRail({
 
   return (
     <aside className="space-y-4 lg:self-start">
-      <RailCard title={t("info.heading")}>
+      <RailCard title={t("info.heading")} action={editAction}>
         <div className="space-y-2.5 text-xs">
           <InfoRow
             label={t("info.userId")}
