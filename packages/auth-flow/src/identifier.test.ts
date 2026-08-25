@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { detectIdentifierKind, maskIdentifier, normalizeIdentifier } from "./identifier";
+import { maskIdentifier, normalizeIdentifier } from "./identifier";
 
 describe("normalizeIdentifier — email", () => {
   it("lowercases so casing variants hit one Java account", () => {
@@ -65,16 +65,6 @@ describe("normalizeIdentifier — phone", () => {
     expect(normalizeIdentifier("isaac")).toBeNull();
     expect(normalizeIdentifier("")).toBeNull();
     expect(normalizeIdentifier("+86abc")).toBeNull();
-  });
-});
-
-describe("detectIdentifierKind", () => {
-  it("is lenient — it only drives live affordances", () => {
-    expect(detectIdentifierKind("a@")).toBe("email");
-    expect(detectIdentifierKind("138")).toBe("phone");
-    expect(detectIdentifierKind("+")).toBe("phone");
-    expect(detectIdentifierKind("isaac")).toBeNull();
-    expect(detectIdentifierKind("   ")).toBeNull();
   });
 });
 

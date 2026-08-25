@@ -13,7 +13,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { authErrorTranslationKey, type AuthError } from "../errors";
-import { detectIdentifierKind, maskIdentifier } from "../identifier";
+import { maskIdentifier } from "../identifier";
 import {
   CODE_LENGTH,
   isSessionEstablished,
@@ -455,10 +455,11 @@ function StepBody({
 /**
  * One identifier control for every step that has one.
  *
- * The field accepts a phone number exactly as happily as an email, so
- * the mobile keyboard follows what is actually being typed instead of
- * permanently offering the "@" row — `detectIdentifierKind` is the same
- * live-affordance helper the package already exports for this.
+ * The field deliberately stays a plain text input. Switching the mobile
+ * keyboard from email to telephone mode after a numeric prefix traps users
+ * who are entering digit-first email addresses: once the keyboard becomes a
+ * dial pad, they can no longer continue with "@". Validation still decides
+ * whether the completed value is a phone number or email on submit.
  */
 function IdentifierField({
   id,
@@ -485,9 +486,9 @@ function IdentifierField({
     <Field label={t("identifierLabel")} htmlFor={id} hint={hint}>
       <TextInput
         id={id}
+        type="text"
         autoFocus={autoFocus}
         autoComplete="username"
-        inputMode={detectIdentifierKind(value) === "phone" ? "tel" : "email"}
         aria-describedby={describedBy}
         aria-invalid={invalid || undefined}
         placeholder={t("identifierPlaceholder")}

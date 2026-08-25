@@ -13,7 +13,7 @@
  * strictly, and put a single canonical value on the wire.
  */
 
-import type { IdentifierKind, NormalizedIdentifier } from "./types";
+import type { NormalizedIdentifier } from "./types";
 
 /** Deliberately loose — Java owns real deliverability, we own routing. */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -30,19 +30,6 @@ const CN_NATIONAL = /^1[3-9]\d{9}$/;
 
 /** E.164 without the `+`: country code 1-9 then up to 14 more digits. */
 const E164_DIGITS = /^[1-9]\d{6,14}$/;
-
-/**
- * What the user is *probably* typing, for live affordances (input mode,
- * icon, autocomplete hints). Never used to pick an endpoint — that is
- * `normalizeIdentifier`'s job, which also validates.
- */
-export function detectIdentifierKind(raw: string): IdentifierKind | null {
-  const value = raw.trim();
-  if (!value) return null;
-  if (value.includes("@")) return "email";
-  if (/^[+\d]/.test(value)) return "phone";
-  return null;
-}
 
 /**
  * Validate + canonicalize. Returns `null` when the value is neither a
