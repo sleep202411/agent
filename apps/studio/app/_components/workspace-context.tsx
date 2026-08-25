@@ -59,21 +59,32 @@ export function useActiveWorkspace(): WorkspaceRef | null {
 }
 
 /**
- * The workspace whose compute pot the CURRENT USER pays from and should see —
- * mirrors the server's payer rule (billing-wallet `resolvePayerTx`): a TEAM
- * active workspace bills its shared pot; every other context — the user's own
- * personal workspace, or visiting someone else's personal workspace as an
- * invited collaborator — bills the caller's OWN personal pot. Never resolves
- * to another user's personal workspace (guests reading a host's wallet 403,
- * which the balance chrome used to render as "—"). Null (no provider / list
- * still loading) is safe: the server treats a missing workspace header as
- * "the caller's personal pot".
+ * The compute pot a caller pays from when acting in `context` — the server's
+ * payer rule (billing-wallet `resolvePayerTx`) in one place: a TEAM workspace
+ * bills its shared pot; anything else — the user's own personal workspace, or
+ * someone else's personal workspace they only collaborate in (`null` context) —
+ * bills the caller's OWN personal pot. It never resolves to another user's
+ * personal workspace (guests reading a host's wallet 403). Callers pick the
+ * context: the active workspace (useBillingWorkspace) or a project's workspace
+ * (useProjectPayerWorkspace).
+ */
+export function payerWorkspace(
+  context: WorkspaceRef | null | undefined,
+  workspaces: readonly WorkspaceRef[]
+): WorkspaceRef | null {
+  if (context?.type === "team") return context;
+  return workspaces.find((w) => w.type === "personal" && w.role === "owner") ?? null;
+}
+
+/**
+ * The pot the CURRENT USER pays from and should see for the GLOBAL context (no
+ * project open) — the active workspace decides. Null (no provider / list still
+ * loading) is safe: the server treats a missing workspace header as the
+ * caller's personal pot.
  */
 export function useBillingWorkspace(): WorkspaceRef | null {
   const value = useContext(WorkspaceContext);
-  const active = value?.activeWorkspace ?? null;
-  if (active?.type === "team") return active;
-  return value?.workspaces.find((w) => w.type === "personal" && w.role === "owner") ?? null;
+  return payerWorkspace(value?.activeWorkspace ?? null, value?.workspaces ?? []);
 }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {

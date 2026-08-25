@@ -35,7 +35,7 @@ type Draft = ReturnType<typeof buildInteractiveFilmTestBundle>['draftContent'];
 
 function scopedService(
   draftContent: Draft,
-  selections: unknown[] = currentPreviewSelections(draftContent),
+  sequences: unknown[] = previewSequences(draftContent),
   schemaVersion: string = INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   cover: { coverAssetId: string; row: unknown } | null = null,
 ) {
@@ -49,8 +49,8 @@ function scopedService(
         contentHash,
       }),
     },
-    storyVideoSelection: {
-      findMany: jest.fn().mockResolvedValue(selections),
+    storyStoryboardSequence: {
+      findMany: jest.fn().mockResolvedValue(sequences),
     },
     mediaAsset: {
       findFirst: jest.fn().mockResolvedValue(cover?.row ?? null),
@@ -92,7 +92,7 @@ function scopedService(
   };
 }
 
-function currentPreviewSelections(draft: Draft) {
+function previewSequences(draft: Draft) {
   return draft.graph.nodes
     .filter((node) => node.kind === 'clip')
     .map((node, index) => {
@@ -114,51 +114,55 @@ function currentPreviewSelections(draft: Draft) {
         // Nullable on the real variant row; tests null it to model unprobed.
         durationMs: 15_000 as number | null,
         sizeBytes: BigInt(1_000 + index),
-        metadata: { browserSafeMp4: true },
+        metadata: { browserSafeMp4: true } as Record<string, unknown>,
         createdAt: new Date(),
         updatedAt: new Date(),
         placements: [],
       };
+      const mediaAsset = {
+        id: assetId,
+        workspaceId: WORKSPACE_ID,
+        kind: 'video',
+        status: 'ready',
+        moderationStatus: 'approved',
+        deletedAt: null,
+        storageProvider: 'external_url',
+        bucket: null,
+        region: null,
+        objectKey: null,
+        externalUrl: `https://assets.example/${node.clipKey}.mp4`,
+        contentType: 'video/mp4',
+        checksumSha256: checksum,
+        width: 1920,
+        height: 1080,
+        durationSeconds: 15,
+        sizeBytes: BigInt(1_000 + index),
+        placements: [],
+        variants: [variant],
+      };
       return {
-        id: uuidAt(500 + index),
+        id: uuidAt(700 + index),
         storyProjectId: PROJECT_ID,
-        graphNodeId: node.nodeId,
-        currentAssetId: assetId,
-        currentVariantId: variantId,
-        currentChecksumSha256: checksum,
-        currentContentType: 'video/mp4',
-        currentDurationMs: 15_000,
-        currentWidth: 1920,
-        currentHeight: 1080,
-        // Boolean? in the schema; tests null it for pre-cutover selections.
-        currentBrowserSafeMp4: true as boolean | null,
-        version: index + 3,
-        setByUserId: USER.userId,
-        setAt: new Date(),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        currentAsset: {
-          id: assetId,
-          workspaceId: WORKSPACE_ID,
-          kind: 'video',
-          status: 'ready',
-          moderationStatus: 'approved',
-          deletedAt: null,
-          storageProvider: 'external_url',
-          bucket: null,
-          region: null,
-          objectKey: null,
-          externalUrl: `https://assets.example/${node.clipKey}.mp4`,
-          contentType: 'video/mp4',
-          checksumSha256: checksum,
-          width: 1920,
-          height: 1080,
-          durationSeconds: 15,
-          sizeBytes: BigInt(1_000 + index),
-          placements: [],
-          variants: [variant],
-        },
-        currentVariant: variant,
+        plotNodeId: node.nodeId,
+        stableKey: `seq.${node.clipKey}`,
+        status: 'current',
+        clips: [
+          {
+            id: uuidAt(500 + index),
+            stableKey: `shot.${node.clipKey}.a`,
+            kind: 'video',
+            durationMs: 15_000,
+            version: index + 3,
+            status: 'current',
+            selectedMediaVersion: {
+              id: uuidAt(600 + index),
+              mediaAssetId: assetId,
+              archivedAt: null,
+              preferredVariant: null,
+              mediaAsset,
+            },
+          },
+        ],
       };
     });
 }
@@ -173,7 +177,7 @@ describe('StoryWorkingPreviewService', () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, tx } = scopedService(
       draft,
-      currentPreviewSelections(draft),
+      previewSequences(draft),
       INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
       { coverAssetId: COVER_ASSET_ID, row: previewCoverRow() },
     );
@@ -232,7 +236,7 @@ describe('StoryWorkingPreviewService', () => {
       graph: { entrySceneId: draft.graph.nodes[0]?.nodeId },
     });
     expect(preview.diagnostics).toEqual([]);
-    expect(tx.storyVideoSelection.findMany).toHaveBeenCalledTimes(1);
+    expect(tx.storyStoryboardSequence.findMany).toHaveBeenCalledTimes(1);
   });
 
   it('does not block Preview on an unfinished player choice', async () => {
@@ -304,13 +308,14 @@ describe('StoryWorkingPreviewService', () => {
       selection: 'current',
       selectionVersion: 3,
     });
-    const calls = tx.storyVideoSelection.findMany.mock
+    const calls = tx.storyStoryboardSequence.findMany.mock
       .calls as unknown as Array<
       [
         {
           where: {
             storyProjectId: string;
-            graphNodeId: { in: string[] };
+            plotNodeId: { in: string[] };
+            status: unknown;
           };
           include: unknown;
         },
@@ -319,11 +324,12 @@ describe('StoryWorkingPreviewService', () => {
     const query = calls[0]?.[0];
     expect(query?.where).toEqual({
       storyProjectId: PROJECT_ID,
-      graphNodeId: {
+      plotNodeId: {
         in: draft.graph.nodes
           .filter((node) => node.kind === 'clip')
           .map((node) => node.nodeId),
       },
+      status: { not: 'archived' },
     });
     expect(query?.include).toBeDefined();
   });
@@ -332,25 +338,24 @@ describe('StoryWorkingPreviewService', () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const firstPreview = await scopedService(
       draft,
-      currentPreviewSelections(draft),
+      previewSequences(draft),
     ).service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID);
-    const changedSelections = currentPreviewSelections(draft);
-    const changed = changedSelections[0];
-    if (!changed) throw new Error('Fixture selection missing.');
+    const changedSequences = previewSequences(draft);
+    const changedClip = changedSequences[0]?.clips[0];
+    if (!changedClip) throw new Error('Fixture clip missing.');
     const changedAssetId = uuidAt(900);
     const changedVariantId = uuidAt(901);
-    changed.currentAssetId = changedAssetId;
-    changed.currentVariantId = changedVariantId;
-    changed.version += 1;
-    changed.currentAsset.id = changedAssetId;
-    changed.currentAsset.variants[0].assetId = changedAssetId;
-    changed.currentAsset.variants[0].id = changedVariantId;
-    changed.currentVariant.assetId = changedAssetId;
-    changed.currentVariant.id = changedVariantId;
+    changedClip.version += 1;
+    changedClip.selectedMediaVersion.mediaAssetId = changedAssetId;
+    changedClip.selectedMediaVersion.mediaAsset.id = changedAssetId;
+    changedClip.selectedMediaVersion.mediaAsset.variants[0].assetId =
+      changedAssetId;
+    changedClip.selectedMediaVersion.mediaAsset.variants[0].id =
+      changedVariantId;
 
     const secondPreview = await scopedService(
       draft,
-      changedSelections,
+      changedSequences,
     ).service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID);
 
     expect(secondPreview.videoSnapshotHash).not.toBe(
@@ -364,12 +369,12 @@ describe('StoryWorkingPreviewService', () => {
     );
   });
 
-  it('keeps Preview playable with an empty shot when one clip has no selection', async () => {
+  it('keeps Preview playable with an empty shot when a scene has no sequence', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
-    const selections = currentPreviewSelections(draft);
-    const missing = selections.shift();
-    if (!missing) throw new Error('Fixture selection missing.');
-    const { service } = scopedService(draft, selections);
+    const sequences = previewSequences(draft);
+    const missing = sequences.shift();
+    if (!missing) throw new Error('Fixture sequence missing.');
+    const { service } = scopedService(draft, sequences);
 
     const preview = await service.getWorkingPreview(
       USER as never,
@@ -382,13 +387,38 @@ describe('StoryWorkingPreviewService', () => {
     expect(preview.diagnostics).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
-          entityId: missing.graphNodeId,
+          code: 'STORY_BUILD_SEQUENCE_REQUIRED',
+          entityId: missing.plotNodeId,
+          severity: 'warning',
+        }),
+      ]),
+    );
+  });
+
+  it('keeps Preview playable with an empty shot when a clip has no media', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const sequences = previewSequences(draft);
+    const bare = sequences[0]?.clips[0];
+    if (!bare) throw new Error('Fixture clip missing.');
+    Object.assign(bare, { selectedMediaVersion: null });
+    const { service } = scopedService(draft, sequences);
+
+    const preview = await service.getWorkingPreview(
+      USER as never,
+      WORKSPACE_ID,
+      PROJECT_ID,
+    );
+
+    expect(preview.runtime).not.toBeNull();
+    expect(preview.sources).toHaveLength(20);
+    expect(preview.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: 'STORY_WORKING_PREVIEW_CLIP_MEDIA_MISSING',
           severity: 'warning',
         }),
         expect.objectContaining({
-          code: 'STORY_BUILD_CURRENT_VIDEO_REQUIRED',
-          entityId: missing.graphNodeId,
+          code: 'STORY_BUILD_CLIP_MEDIA_REQUIRED',
           severity: 'warning',
         }),
       ]),
@@ -397,11 +427,15 @@ describe('StoryWorkingPreviewService', () => {
 
   it('keeps Preview playable and warns when probed variant metadata is missing', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
-    const selections = currentPreviewSelections(draft);
-    const incomplete = selections[0];
-    if (!incomplete) throw new Error('Fixture selection missing.');
-    incomplete.currentVariant.durationMs = null;
-    const { service } = scopedService(draft, selections);
+    const sequences = previewSequences(draft);
+    const incompleteClip = sequences[0]?.clips[0];
+    if (!incompleteClip) throw new Error('Fixture clip missing.');
+    incompleteClip.selectedMediaVersion.mediaAsset.variants[0].durationMs =
+      null;
+    const incomplete = {
+      currentAssetId: incompleteClip.selectedMediaVersion.mediaAssetId,
+    };
+    const { service } = scopedService(draft, sequences);
 
     const preview = await service.getWorkingPreview(
       USER as never,
@@ -421,11 +455,16 @@ describe('StoryWorkingPreviewService', () => {
 
   it('keeps Preview playback for a browser-unsafe MP4 variant (browserSafeMp4 is informational)', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
-    const selections = currentPreviewSelections(draft);
-    const unsafe = selections[0];
-    if (!unsafe) throw new Error('Fixture selection missing.');
-    unsafe.currentVariant.metadata = { browserSafeMp4: false };
-    const { service } = scopedService(draft, selections);
+    const sequences = previewSequences(draft);
+    const unsafeClip = sequences[0]?.clips[0];
+    if (!unsafeClip) throw new Error('Fixture clip missing.');
+    unsafeClip.selectedMediaVersion.mediaAsset.variants[0].metadata = {
+      browserSafeMp4: false,
+    };
+    const unsafe = {
+      currentAssetId: unsafeClip.selectedMediaVersion.mediaAssetId,
+    };
+    const { service } = scopedService(draft, sequences);
 
     const preview = await service.getWorkingPreview(
       USER as never,
@@ -442,79 +481,6 @@ describe('StoryWorkingPreviewService', () => {
         code: 'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISSING',
         entityId: unsafe.currentAssetId,
       }),
-    );
-  });
-
-  it('keeps Preview playable when advisory selection metadata differs', async () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const selections = currentPreviewSelections(draft);
-    const mismatched = selections[0];
-    if (!mismatched) throw new Error('Fixture selection missing.');
-    mismatched.currentDurationMs += 1_000;
-    const { service } = scopedService(draft, selections);
-
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
-
-    expect(preview.runtime).not.toBeNull();
-    expect(preview.diagnostics).toContainEqual(
-      expect.objectContaining({
-        severity: 'warning',
-        code: 'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISMATCH',
-        entityId: mismatched.currentAssetId,
-      }),
-    );
-  });
-
-  it('accepts a selection whose advisory browser-safety flag is absent', async () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const selections = currentPreviewSelections(draft);
-    const partial = selections[0];
-    if (!partial) throw new Error('Fixture selection missing.');
-    partial.currentBrowserSafeMp4 = null;
-    const { service } = scopedService(draft, selections);
-
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
-    expect(preview.runtime).not.toBeNull();
-    expect(preview.videoSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(preview.diagnostics).not.toContainEqual(
-      expect.objectContaining({
-        code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
-      }),
-    );
-  });
-
-  it('keeps Preview playable when a stored selection identity is partial', async () => {
-    const draft = buildInteractiveFilmTestBundle().draftContent;
-    const selections = currentPreviewSelections(draft);
-    const partial = selections[0];
-    if (!partial) throw new Error('Fixture selection missing.');
-    Object.assign(partial, { currentVariantId: null });
-    const { service } = scopedService(draft, selections);
-
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
-
-    expect(preview.runtime).not.toBeNull();
-    expect(preview.videoSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(preview.diagnostics).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          severity: 'warning',
-          code: 'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
-          entityId: partial.graphNodeId,
-        }),
-      ]),
     );
   });
 
@@ -561,7 +527,7 @@ describe('StoryWorkingPreviewService', () => {
         }),
       ],
     });
-    expect(tx.storyVideoSelection.findMany).not.toHaveBeenCalled();
+    expect(tx.storyStoryboardSequence.findMany).not.toHaveBeenCalled();
   });
 });
 

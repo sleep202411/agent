@@ -4,10 +4,12 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import { ServiceTokenGuard } from './service-token.guard';
 import { InternalPointsService } from './internal-points.service';
 import {
+  CommunityGrantSchema,
   DeductPointsSchema,
   GrantPointsSchema,
   MigratePointsSchema,
   PointsBalanceQuerySchema,
+  type CommunityGrantInput,
   type DeductPointsInput,
   type GrantPointsInput,
   type MigratePointsInput,
@@ -44,6 +46,14 @@ export class InternalPointsController {
     @Body(new ZodValidationPipe(GrantPointsSchema)) body: GrantPointsInput,
   ) {
     return { code: 200, data: await this.points.grant(body) };
+  }
+
+  @Post('community/grant')
+  async grantCommunity(
+    @Body(new ZodValidationPipe(CommunityGrantSchema))
+    body: CommunityGrantInput,
+  ) {
+    return { code: 200, data: await this.points.grantCommunity(body) };
   }
 
   @Get('balance')

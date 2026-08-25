@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import {
   MediaAssetKind,
+  StoryProductionSpecStatus,
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantStatus,
@@ -58,14 +59,17 @@ import {
   storyRuntimeAssetId,
   type FrozenStoryVideoAsset,
   type StoryBuildCoverInput,
-  type StoryBuildVideoInput,
+  type StoryBuildNodeTimelineInput,
+  type StoryBuildSegmentInput,
   type StoryBuildWorldInput,
 } from './story-build-compiler';
 import { resolveStoryCover } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
-  StoryVideoSnapshotEntrySchema,
+  chooseStoryboardClipVariant,
+  isBrowserSafeMp4Metadata,
+  storyboardClipSnapshotEntry,
   storyVideoSnapshotHash,
   type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
@@ -156,14 +160,40 @@ type BuildDeliveryAssetRow = Prisma.StoryBuildAssetGetPayload<{
   include: typeof BUILD_DELIVERY_ASSET_INCLUDE;
 }>;
 
-const BUILD_SELECTION_INCLUDE =
-  Prisma.validator<Prisma.StoryVideoSelectionInclude>()({
-    currentAsset: { include: { placements: true } },
-    currentVariant: { include: { placements: true } },
+/**
+ * A chapter's storyboard timeline with everything a Build freeze needs: the
+ * ordered clips, each clip's selected creative media, and the media's
+ * immutable storage placements. The storyboard — not any per-node video
+ * selection — is the sole source of a node's playable content.
+ */
+const BUILD_TIMELINE_INCLUDE =
+  Prisma.validator<Prisma.StoryStoryboardSequenceInclude>()({
+    clips: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [
+        { track: 'asc' as const },
+        { startMs: 'asc' as const },
+        { rank: 'asc' as const },
+      ],
+      include: {
+        selectedMediaVersion: {
+          include: {
+            mediaAsset: {
+              include: {
+                placements: true,
+                variants: { include: { placements: true } },
+              },
+            },
+            preferredVariant: { include: { placements: true } },
+          },
+        },
+      },
+    },
   });
-type BuildSelectionRow = Prisma.StoryVideoSelectionGetPayload<{
-  include: typeof BUILD_SELECTION_INCLUDE;
+type BuildTimelineSequenceRow = Prisma.StoryStoryboardSequenceGetPayload<{
+  include: typeof BUILD_TIMELINE_INCLUDE;
 }>;
+type BuildTimelineClipRow = BuildTimelineSequenceRow['clips'][number];
 
 const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
@@ -192,7 +222,7 @@ interface ValidatedBuildSnapshot {
   };
   videoSnapshotHash: string;
   entries: StoryVideoSnapshotEntry[];
-  videos: StoryBuildVideoInput[];
+  timelines: StoryBuildNodeTimelineInput[];
   worlds: StoryBuildWorldInput[];
   /** Plain public cover reference; `asset: null` warns instead of failing. */
   cover: StoryBuildCoverInput;
@@ -289,7 +319,7 @@ export class StoryBuildService {
                 summary: snapshot.project.summary,
               },
               draft: snapshot.draft.content,
-              videos: snapshot.videos,
+              timelines: snapshot.timelines,
               worlds: snapshot.worlds,
               cover: snapshot.cover,
             });
@@ -356,58 +386,71 @@ export class StoryBuildService {
             });
 
             if (ready) {
-              const videoByNodeId = new Map(
-                snapshot.videos.map((video) => [video.graphNodeId, video]),
+              const timelineByNodeId = new Map(
+                snapshot.timelines.map((timeline) => [
+                  timeline.graphNodeId,
+                  timeline,
+                ]),
               );
-              const clipByNodeId = new Map(
+              const nodeRankById = new Map(
                 snapshot.draft.content.graph.nodes.flatMap((node, index) =>
-                  node.kind === 'clip'
-                    ? [[node.nodeId, { node, rank: index }] as const]
-                    : [],
+                  node.kind === 'clip' ? [[node.nodeId, index] as const] : [],
                 ),
               );
               for (const graphNodeId of compilation.includedGraphNodeIds) {
-                const source = videoByNodeId.get(graphNodeId);
-                const clip = clipByNodeId.get(graphNodeId);
-                if (!source?.asset || !clip) {
+                const timeline = timelineByNodeId.get(graphNodeId);
+                const nodeRank = nodeRankById.get(graphNodeId);
+                if (!timeline || nodeRank === undefined) {
                   throw new Error(
-                    `Compiler included unfrozen graph video ${graphNodeId}.`,
+                    `Compiler included unknown graph node ${graphNodeId}.`,
                   );
                 }
-                const buildAsset = await tx.storyBuildAsset.create({
-                  data: {
-                    buildId,
-                    storyProjectId: projectId,
-                    logicalKey: storyRuntimeAssetId(clip.node.clipKey),
-                    role: StoryAssetRole.video,
-                    assetId: source.asset.assetId,
-                    variantId: source.asset.variantId,
-                    checksumSha256: source.asset.checksumSha256,
-                    contentType: source.asset.contentType,
-                    sizeBytes: source.asset.sizeBytes,
-                    width: source.asset.width,
-                    height: source.asset.height,
-                    durationMs: source.asset.durationMs,
-                    browserSafeMp4: source.asset.browserSafeMp4,
-                    rank: clip.rank,
-                  },
-                });
-                await tx.storyVideoBuildClip.create({
-                  data: {
-                    buildId,
-                    storyProjectId: projectId,
-                    graphNodeId,
-                    buildAssetId: buildAsset.id,
-                    logicalKey: buildAsset.logicalKey,
-                    checksumSha256: source.asset.checksumSha256,
-                    contentType: source.asset.contentType,
-                    durationMs: source.asset.durationMs,
-                    width: source.asset.width,
-                    height: source.asset.height,
-                    browserSafeMp4: source.asset.browserSafeMp4,
-                    rank: clip.rank,
-                  },
-                });
+                const frozenSegments = timeline.segments.filter(
+                  (segment) => segment.asset !== null,
+                );
+                if (frozenSegments.length === 0) {
+                  throw new Error(
+                    `Compiler included unfrozen timeline ${graphNodeId}.`,
+                  );
+                }
+                for (const [segmentRank, segment] of frozenSegments.entries()) {
+                  const asset = segment.asset as FrozenStoryVideoAsset;
+                  const rank = nodeRank * 1_000 + segmentRank;
+                  const buildAsset = await tx.storyBuildAsset.create({
+                    data: {
+                      buildId,
+                      storyProjectId: projectId,
+                      logicalKey: storyRuntimeAssetId(segment.clipKey),
+                      role: StoryAssetRole.video,
+                      assetId: asset.assetId,
+                      variantId: asset.variantId,
+                      checksumSha256: asset.checksumSha256,
+                      contentType: asset.contentType,
+                      sizeBytes: asset.sizeBytes,
+                      width: asset.width,
+                      height: asset.height,
+                      durationMs: asset.durationMs,
+                      browserSafeMp4: asset.browserSafeMp4,
+                      rank,
+                    },
+                  });
+                  await tx.storyVideoBuildClip.create({
+                    data: {
+                      buildId,
+                      storyProjectId: projectId,
+                      graphNodeId,
+                      buildAssetId: buildAsset.id,
+                      logicalKey: buildAsset.logicalKey,
+                      checksumSha256: asset.checksumSha256,
+                      contentType: asset.contentType,
+                      durationMs: asset.durationMs,
+                      width: asset.width,
+                      height: asset.height,
+                      browserSafeMp4: asset.browserSafeMp4,
+                      rank,
+                    },
+                  });
+                }
               }
             }
 
@@ -861,22 +904,34 @@ async function loadValidatedBuildSnapshot(
       { kind: 'world' }
     > => node.kind === 'world' && node.worldId !== null,
   );
-  const selections =
+  const sequences =
     clipNodes.length === 0
       ? []
-      : await tx.storyVideoSelection.findMany({
+      : await tx.storyStoryboardSequence.findMany({
           where: {
             storyProjectId: projectId,
-            graphNodeId: { in: clipNodes.map((node) => node.nodeId) },
+            plotNodeId: { in: clipNodes.map((node) => node.nodeId) },
+            status: { not: StoryProductionSpecStatus.archived },
           },
-          include: BUILD_SELECTION_INCLUDE,
+          include: BUILD_TIMELINE_INCLUDE,
         });
-  const selectionByNodeId = new Map(
-    selections.map((selection) => [selection.graphNodeId, selection]),
+  const sequenceByNodeId = new Map(
+    sequences.map((sequence) => [sequence.plotNodeId, sequence]),
   );
-  const entries = clipNodes.map((node) =>
-    videoSnapshotEntry(node.nodeId, selectionByNodeId.get(node.nodeId) ?? null),
-  );
+  const timelines: StoryBuildNodeTimelineInput[] = clipNodes.map((node) => {
+    const sequence = sequenceByNodeId.get(node.nodeId) ?? null;
+    return {
+      graphNodeId: node.nodeId,
+      sequenceId: sequence?.id ?? null,
+      segments: (sequence?.clips ?? []).map((clip) =>
+        prepareBuildSegment(project, buildId, node.nodeId, clip),
+      ),
+    };
+  });
+  const entries = timelines.flatMap((timeline) => {
+    const sequence = sequenceByNodeId.get(timeline.graphNodeId) ?? null;
+    return (sequence?.clips ?? []).map((clip) => clipSnapshotEntry(clip));
+  });
   const videoSnapshotHash = storyVideoSnapshotHash(entries);
   if (
     input.expectedVideoSnapshotHash !== undefined &&
@@ -890,14 +945,7 @@ async function loadValidatedBuildSnapshot(
       actualVideoSnapshotHash: videoSnapshotHash,
     });
   }
-  const videos = clipNodes.map((node) =>
-    prepareBuildVideo(
-      project,
-      buildId,
-      node.nodeId,
-      selectionByNodeId.get(node.nodeId) ?? null,
-    ),
-  );
+
   const worldRows =
     worldNodes.length === 0
       ? []
@@ -930,7 +978,7 @@ async function loadValidatedBuildSnapshot(
     },
     videoSnapshotHash,
     entries,
-    videos,
+    timelines,
     worlds,
     cover: await resolveStoryCover(
       tx,
@@ -940,50 +988,10 @@ async function loadValidatedBuildSnapshot(
   };
 }
 
-function videoSnapshotEntry(
-  graphNodeId: string,
-  selection: BuildSelectionRow | null,
-): StoryVideoSnapshotEntry {
-  if (!selection) return emptyVideoSnapshotEntry(graphNodeId, 0);
-  if (selection.currentAssetId === null) {
-    return emptyVideoSnapshotEntry(graphNodeId, selection.version);
-  }
-  const candidate = {
-    graphNodeId,
-    selectionVersion: selection.version,
-    assetId: selection.currentAssetId,
-    variantId: selection.currentVariantId,
-    checksumSha256: selection.currentChecksumSha256,
-    contentType: selection.currentContentType,
-    durationMs: selection.currentDurationMs,
-    width: selection.currentWidth,
-    height: selection.currentHeight,
-    browserSafeMp4: selection.currentBrowserSafeMp4,
-  };
-  const parsed = StoryVideoSnapshotEntrySchema.safeParse(candidate);
-  if (!parsed.success) throw corruptSelection(graphNodeId);
-  return parsed.data;
-}
+const clipSnapshotEntry = storyboardClipSnapshotEntry;
+const chooseClipVariant = chooseStoryboardClipVariant;
 
-function emptyVideoSnapshotEntry(
-  graphNodeId: string,
-  selectionVersion: number,
-): StoryVideoSnapshotEntry {
-  return StoryVideoSnapshotEntrySchema.parse({
-    graphNodeId,
-    selectionVersion,
-    assetId: null,
-    variantId: null,
-    checksumSha256: null,
-    contentType: null,
-    durationMs: null,
-    width: null,
-    height: null,
-    browserSafeMp4: null,
-  });
-}
-
-function prepareBuildVideo(
+function prepareBuildSegment(
   project: {
     id: string;
     workspaceId: string;
@@ -991,168 +999,148 @@ function prepareBuildVideo(
   },
   buildId: string,
   graphNodeId: string,
-  selection: BuildSelectionRow | null,
-): StoryBuildVideoInput {
-  const entry = videoSnapshotEntry(graphNodeId, selection);
-  if (!entry.assetId || !entry.variantId || !selection) {
-    return {
-      graphNodeId,
-      selectionVersion: entry.selectionVersion,
-      asset: null,
-      eligibilityDiagnostics: [],
-    };
+  clip: BuildTimelineClipRow,
+): StoryBuildSegmentInput {
+  const base = {
+    clipId: clip.id,
+    clipKey: clip.stableKey,
+    kind: clip.kind as 'image' | 'video',
+    durationMs: clip.durationMs,
+    clipVersion: clip.version,
+  };
+  const media = clip.selectedMediaVersion;
+  if (!media || media.archivedAt !== null) {
+    return { ...base, asset: null, eligibilityDiagnostics: [] };
   }
   const diagnostics: StoryBuildDiagnosticDto[] = [];
-  const asset = selection.currentAsset;
-  const variant = selection.currentVariant;
-  if (!asset || !variant || variant.assetId !== entry.assetId) {
+  const asset = media.mediaAsset;
+  const variant = chooseClipVariant(media);
+  const label = `Storyboard clip ${clip.stableKey}`;
+  if (!variant) {
     diagnostics.push(
       buildDiagnostic(
         'STORY_BUILD_VIDEO_VARIANT_NOT_FOUND',
-        `Current video ${graphNodeId} does not resolve to its exact media variant.`,
+        `${label} does not resolve to a playable media variant.`,
         'asset',
-        entry.assetId,
+        media.mediaAssetId,
       ),
     );
-  } else {
-    // Workspace is deliberately not compared: uploads record none, so this
-    // rejected every uploaded cut. Kind still has to be video.
-    if (asset.kind !== MediaAssetKind.video) {
-      diagnostics.push(
-        buildDiagnostic(
-          'STORY_BUILD_VIDEO_SCOPE_INVALID',
-          `Current video ${graphNodeId} is a ${asset.kind} asset, not a video.`,
-          'asset',
-          asset.id,
-        ),
-      );
-    }
-    if (
-      asset.status !== MediaAssetStatus.ready ||
-      asset.deletedAt !== null ||
-      variant.status !== MediaAssetVariantStatus.ready ||
-      variant.deletedAt !== null
-    ) {
-      diagnostics.push(
-        buildDiagnostic(
-          'STORY_BUILD_VIDEO_NOT_READY',
-          `Current video ${graphNodeId} is not an exact ready media variant.`,
-          'asset',
-          asset.id,
-        ),
-      );
-    }
+    return { ...base, asset: null, eligibilityDiagnostics: diagnostics };
+  }
+  const expectedKind =
+    clip.kind === 'video' ? MediaAssetKind.video : MediaAssetKind.image;
+  if (asset.kind !== expectedKind) {
     diagnostics.push(
-      ...moderationDiagnostics(
-        asset,
-        variant,
-        requireModerationApproval(),
-        `Current video ${graphNodeId}`,
+      buildDiagnostic(
+        'STORY_BUILD_VIDEO_SCOPE_INVALID',
+        `${label} is a ${asset.kind} asset, not ${clip.kind}.`,
+        'asset',
+        asset.id,
       ),
     );
-    if (!variant.contentType.toLowerCase().startsWith('video/')) {
-      diagnostics.push(
-        buildDiagnostic(
-          'STORY_BUILD_VIDEO_CONTENT_TYPE_INVALID',
-          `Current video ${graphNodeId} does not resolve to a video media type.`,
-          'asset',
-          asset.id,
-        ),
-      );
-    }
-    if (
-      entry.checksumSha256 !== variant.checksumSha256 ||
-      entry.contentType !== variant.contentType ||
-      entry.width !== variant.width ||
-      entry.height !== variant.height ||
-      entry.durationMs !== variant.durationMs
-    ) {
-      diagnostics.push(
-        buildWarning(
-          'STORY_BUILD_VIDEO_SELECTION_STALE',
-          `Current video ${graphNodeId} technical metadata changed after selection; the latest metadata will be used.`,
-          'asset',
-          asset.id,
-        ),
-      );
-    }
-    if (
-      !variant.checksumSha256 ||
+  }
+  if (
+    asset.status !== MediaAssetStatus.ready ||
+    asset.deletedAt !== null ||
+    variant.status !== MediaAssetVariantStatus.ready ||
+    variant.deletedAt !== null
+  ) {
+    diagnostics.push(
+      buildDiagnostic(
+        'STORY_BUILD_VIDEO_NOT_READY',
+        `${label} is not a ready media variant.`,
+        'asset',
+        asset.id,
+      ),
+    );
+  }
+  diagnostics.push(
+    ...moderationDiagnostics(
+      asset,
+      variant,
+      requireModerationApproval(),
+      label,
+    ),
+  );
+  const expectedPrefix = clip.kind === 'video' ? 'video/' : 'image/';
+  if (!variant.contentType.toLowerCase().startsWith(expectedPrefix)) {
+    diagnostics.push(
+      buildDiagnostic(
+        'STORY_BUILD_VIDEO_CONTENT_TYPE_INVALID',
+        `${label} does not resolve to a ${clip.kind} media type.`,
+        'asset',
+        asset.id,
+      ),
+    );
+  }
+  if (
+    clip.kind === 'video' &&
+    (!variant.checksumSha256 ||
       variant.width === null ||
       variant.height === null ||
       variant.durationMs === null ||
       variant.durationMs <= 0 ||
-      !isBrowserSafeMp4Metadata(variant.metadata)
+      !isBrowserSafeMp4Metadata(variant.metadata))
+  ) {
+    diagnostics.push(
+      buildWarning(
+        'STORY_BUILD_VIDEO_METADATA_INCOMPLETE',
+        `${label} has incomplete technical metadata; the original video remains publishable.`,
+        'asset',
+        asset.id,
+      ),
+    );
+  }
+  if (clip.kind === 'video' && variant.width && variant.height) {
+    const expected = STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile];
+    if (
+      variant.width !== expected.width ||
+      variant.height !== expected.height
     ) {
       diagnostics.push(
         buildWarning(
-          'STORY_BUILD_VIDEO_METADATA_INCOMPLETE',
-          `Current video ${graphNodeId} has incomplete technical metadata; the original video remains publishable.`,
-          'asset',
-          asset.id,
-        ),
-      );
-    }
-    if (variant.width && variant.height) {
-      const expected = STORY_FRAME_PROFILE_CONTRACTS[project.frameProfile];
-      if (
-        variant.width !== expected.width ||
-        variant.height !== expected.height
-      ) {
-        diagnostics.push(
-          buildWarning(
-            'STORY_BUILD_VIDEO_FRAME_PROFILE_MISMATCH',
-            `Current video ${graphNodeId} is ${variant.width}×${variant.height}; project settings recommend ${expected.width}×${expected.height}. It will still be published.`,
-            'asset',
-            asset.id,
-          ),
-        );
-      }
-    }
-    // The frame profile is an authoring intent, not a delivery contract: a
-    // 1280×720 clip is the same 16:9 picture as 1920×1080 and plays correctly.
-    // Blocking Build on exact pixel dimensions only forced creators to
-    // regenerate perfectly good footage, so the profile no longer gates
-    // publication (same call as the browser-safe-MP4 gate).
-    if (!selectStoryBuildReadSource(asset, variant)) {
-      diagnostics.push(
-        buildDiagnostic(
-          'STORY_BUILD_VIDEO_STORAGE_UNAVAILABLE',
-          `Current video ${graphNodeId} has no readable immutable storage placement.`,
+          'STORY_BUILD_VIDEO_FRAME_PROFILE_MISMATCH',
+          `${label} is ${variant.width}×${variant.height}; project settings recommend ${expected.width}×${expected.height}. It will still be published.`,
           'asset',
           asset.id,
         ),
       );
     }
   }
-  const frozen: FrozenStoryVideoAsset | null =
-    !diagnostics.some((item) => item.severity === 'error') && asset && variant
-      ? {
-          assetId: asset.id,
-          variantId: variant.id,
-          checksumSha256: variant.checksumSha256,
-          contentType: variant.contentType,
-          sizeBytes:
-            variant.sizeBytes ??
-            (variant.variantKey === 'original' ? asset.sizeBytes : null),
-          width: variant.width,
-          height: variant.height,
-          durationMs: variant.durationMs,
-          browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
-          url: storyBuildAssetDeliveryPath(
-            project.id,
-            buildId,
-            asset.id,
-            variant.id,
-          ),
-        }
-      : null;
-  return {
-    graphNodeId,
-    selectionVersion: selection.version,
-    asset: frozen,
-    eligibilityDiagnostics: diagnostics,
-  };
+  if (!selectStoryBuildReadSource(asset, variant)) {
+    diagnostics.push(
+      buildDiagnostic(
+        'STORY_BUILD_VIDEO_STORAGE_UNAVAILABLE',
+        `${label} has no readable immutable storage placement.`,
+        'asset',
+        asset.id,
+      ),
+    );
+  }
+  const frozen: FrozenStoryVideoAsset | null = !diagnostics.some(
+    (item) => item.severity === 'error',
+  )
+    ? {
+        assetId: asset.id,
+        variantId: variant.id,
+        checksumSha256: variant.checksumSha256,
+        contentType: variant.contentType,
+        sizeBytes:
+          variant.sizeBytes ??
+          (variant.variantKey === 'original' ? asset.sizeBytes : null),
+        width: variant.width,
+        height: variant.height,
+        durationMs: variant.durationMs,
+        browserSafeMp4: isBrowserSafeMp4Metadata(variant.metadata),
+        url: storyBuildAssetDeliveryPath(
+          project.id,
+          buildId,
+          asset.id,
+          variant.id,
+        ),
+      }
+    : null;
+  return { ...base, asset: frozen, eligibilityDiagnostics: diagnostics };
 }
 
 async function materializeStoryRevision(
@@ -1388,19 +1376,6 @@ function isCompleteBuildReadRef(ref: {
     : Boolean(ref.bucket && ref.objectKey);
 }
 
-function isBrowserSafeMp4Metadata(value: Prisma.JsonValue): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  if (value.browserSafeMp4 === true) return true;
-  const probe = value.videoProbe;
-  return (
-    probe !== null &&
-    probe !== undefined &&
-    typeof probe === 'object' &&
-    !Array.isArray(probe) &&
-    probe.browserSafeMp4 === true
-  );
-}
-
 function moderationDiagnostics(
   asset: { id: string; moderationStatus: MediaAssetModerationStatus },
   variant: { status: MediaAssetVariantStatus },
@@ -1477,6 +1452,14 @@ function currentMediaDiagnostics(
 ): StoryBuildDiagnosticDto[] {
   return assets.flatMap((frozen) => {
     const label = `Build asset ${frozen.logicalKey}`;
+    // A segment freezes either footage or a still, and its frozen contentType
+    // was checked against the storyboard clip's kind when the Build was made.
+    // That makes it the authority for what this row is allowed to read back as.
+    const frozenKind = frozen.contentType.toLowerCase().startsWith('image/')
+      ? MediaAssetKind.image
+      : MediaAssetKind.video;
+    const expectedPrefix =
+      frozenKind === MediaAssetKind.image ? 'image/' : 'video/';
     const moderation = moderationDiagnostics(
       frozen.asset,
       frozen.variant,
@@ -1501,7 +1484,7 @@ function currentMediaDiagnostics(
     }
     if (
       frozen.asset.status !== MediaAssetStatus.ready ||
-      frozen.asset.kind !== MediaAssetKind.video ||
+      frozen.asset.kind !== frozenKind ||
       frozen.variant.status !== MediaAssetVariantStatus.ready ||
       frozen.asset.id !== frozen.assetId ||
       frozen.variant.id !== frozen.variantId ||
@@ -1521,10 +1504,7 @@ function currentMediaDiagnostics(
       (frozen.variant.variantKey === 'original'
         ? frozen.asset.sizeBytes
         : null);
-    if (
-      !frozen.contentType.toLowerCase().startsWith('video/') ||
-      !frozen.variant.contentType.toLowerCase().startsWith('video/')
-    ) {
+    if (!frozen.variant.contentType.toLowerCase().startsWith(expectedPrefix)) {
       return [
         buildDiagnostic(
           'STORY_BUILD_ASSET_METADATA_CHANGED',
@@ -1684,13 +1664,6 @@ function assertCurrentBuildContract(row: {
     code: 'STORY_BUILD_SCHEMA_RETIRED',
     message:
       'This Build uses a retired runtime contract. Create a new Build from the current story.',
-  });
-}
-
-function corruptSelection(graphNodeId: string): ConflictException {
-  return new ConflictException({
-    code: 'STORY_VIDEO_SELECTION_CORRUPT',
-    message: `Current video selection ${graphNodeId} is partially populated.`,
   });
 }
 

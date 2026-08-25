@@ -46,6 +46,59 @@ export const AGENT_OS_ABLY_EVENT_NAME = "agent.event" as const;
 /** Ably message name for a compact run status snapshot (not an event envelope). */
 export const AGENT_OS_ABLY_SNAPSHOT_NAME = "run.snapshot" as const;
 
+/**
+ * Ably message name for a lightweight pointer back to the durable HTTP
+ * journal. The realtime transport has a strict per-message byte ceiling, so a
+ * large event or snapshot is represented by this pointer instead of being
+ * retried forever and blocking the conversation outbox.
+ */
+export const AGENT_OS_ABLY_RESYNC_NAME = "run.resync" as const;
+
+interface AgentOsAblyResyncPointerBase {
+  version: 1;
+  runId: string;
+  conversationId: string;
+  /** Durable sequence that must be present after the HTTP catch-up. */
+  sequence: number;
+  /** Fixed journal cursor. Never substitute the client's current max cursor. */
+  afterSequence: number;
+}
+
+export interface AgentOsAblyEventResyncPointer extends AgentOsAblyResyncPointerBase {
+  kind: "event_oversized";
+  eventId: string;
+}
+
+export interface AgentOsAblySnapshotResyncPointer extends AgentOsAblyResyncPointerBase {
+  kind: "snapshot_oversized";
+}
+
+/** A realtime nudge; the PostgreSQL journal remains the payload authority. */
+export type AgentOsAblyResyncPointer =
+  | AgentOsAblyEventResyncPointer
+  | AgentOsAblySnapshotResyncPointer;
+
+/**
+ * PostgreSQL advisory-lock namespace for the one LangGraph writer allowed to
+ * advance a conversation checkpoint thread.  Both the Nest control plane and
+ * Agent OS Worker hash this exact value inside PostgreSQL; changing it is a
+ * wire/storage migration, not a local implementation detail.
+ */
+export const AGENT_OS_CHECKPOINT_EXECUTION_LOCK_SEED = 1_907_443_517 as const;
+
+export function agentOsCheckpointExecutionLockKey(conversationId: string): string {
+  return `agent-os:checkpoint:conversation:${conversationId}`;
+}
+
+export interface AgentOsPendingExternal {
+  kind: "external_job";
+  jobId: string;
+  startedMessage: string;
+  turnId: string;
+  toolCallId: string;
+  toolId: string;
+}
+
 export interface AgentOsAblyRunSnapshot {
   runId: string;
   conversationId: string;
@@ -53,4 +106,6 @@ export interface AgentOsAblyRunSnapshot {
   lastSequence: number;
   assistantText?: string | null;
   pendingApproval?: unknown;
+  pendingUserInput?: unknown;
+  pendingExternal?: AgentOsPendingExternal | null;
 }

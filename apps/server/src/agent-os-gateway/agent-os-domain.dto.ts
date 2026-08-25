@@ -20,6 +20,15 @@ const localizedName = z.record(
   z.string().min(1).max(200),
 );
 
+const ExecutionProofSchema = z
+  .object({
+    executionToken: z.string().uuid(),
+    executionAttemptId: z.string().uuid(),
+    executionEpoch: z.number().int().positive(),
+    executionOwnerId: z.string().uuid(),
+  })
+  .strict();
+
 export const CharactersUpsertInputSchema = z
   .object({
     baseRevision: z.number().int().nonnegative(),
@@ -115,15 +124,25 @@ export const ShotsDeleteInputSchema = z
 
 export const AgentOsDomainExecuteBodySchema = z
   .object({
+    runId: z.string().uuid(),
+    conversationId: z.string().uuid(),
+    turnId: z.string().uuid(),
+    toolCallId: z.string().trim().min(1).max(256),
     actorId: z.string().trim().min(1).max(128),
     projectId: z.string().uuid(),
     skillResolutionId: z.string().uuid(),
     skillVersionIds: z.array(z.string().uuid()).max(32),
     workbenchContext: z.record(z.string(), z.string()).optional(),
     idempotencyKey: z.string().trim().min(8).max(512),
+    startExecution: ExecutionProofSchema.optional(),
+    continuationExecution: ExecutionProofSchema.optional(),
     arguments: z.unknown(),
   })
-  .strict();
+  .strict()
+  .refine((body) => !(body.startExecution && body.continuationExecution), {
+    message:
+      'A Domain tool invocation cannot carry initial and continuation execution proofs together.',
+  });
 
 export type AgentOsDomainExecuteBody = z.infer<
   typeof AgentOsDomainExecuteBodySchema

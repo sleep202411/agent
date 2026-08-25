@@ -4,7 +4,7 @@ import { buildStoryCanvasModel } from "./story-project-canvas-model";
 
 describe("film-only story canvas projection", () => {
   it("projects clips and choices without cast members", () => {
-    const model = buildStoryCanvasModel(draft(), "en-US", [], { clip: "Clip" });
+    const model = buildStoryCanvasModel(draft(), "en-US", { clip: "Clip" });
     expect(model.nodes.map((node) => node.id)).toEqual(["clip:a", "clip:b"]);
     expect(model.nodes.map((node) => node.data.kind)).toEqual(["clip", "clip"]);
     expect(model.nodes[0]?.data).toMatchObject({

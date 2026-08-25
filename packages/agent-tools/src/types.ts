@@ -23,6 +23,8 @@ export interface ToolDefinition<
 export interface ToolExecutionContext {
   runId: string;
   conversationId: string;
+  /** Stable logical turn that owns this tool call and any async continuation. */
+  turnId: string;
   projectId: string;
   actorId: string;
   /** Immutable Skill resolution that authorized/influenced this tool call. */
@@ -33,6 +35,24 @@ export interface ToolExecutionContext {
   /** Stable key: projectId + runId + toolCallId + operationVersion */
   idempotencyKey: string;
   toolCallId: string;
+  /**
+   * Present only while the initial user turn is not yet checkpoint-backed.
+   * Nest validates this DB-clock lease immediately before admitting a Domain
+   * effect, so a superseded Worker cannot keep writing after failover.
+   */
+  startExecution?: {
+    executionToken: string;
+    executionAttemptId: string;
+    executionEpoch: number;
+    executionOwnerId: string;
+  };
+  /** Present while a durable HITL checkpoint resume owns a leased epoch. */
+  continuationExecution?: {
+    executionToken: string;
+    executionAttemptId: string;
+    executionEpoch: number;
+    executionOwnerId: string;
+  };
   abortSignal?: AbortSignal;
 }
 

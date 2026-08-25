@@ -1,21 +1,37 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Jest mock payload inspection is intentionally structural. */
 import { StoryAgentRunWorkerService } from './story-agent-run-worker.service';
 import { StoryAuthoringStageError } from './story-authoring-model';
+import {
+  buildStoryScreenplayDocument,
+  StoryScreenplaySchema,
+} from '@repo/shared/story-agent';
 
 const RUN_ID = '0197f4a2-0800-7000-8000-000000000031';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
+const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000003';
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const HEARTBEAT_MS = 10_000;
 
 const JOB = {
   runId: RUN_ID,
   projectId: PROJECT_ID,
+  chapterId: CHAPTER_ID,
   workspaceId: WORKSPACE_ID,
+  mode: 'screenplay_required' as const,
+  approvedScreenplay: null,
+  scriptSource: null,
   brief: {
     schemaVersion: 'story-patch-brief-v1',
     title: 'A remembered dream',
     summary: 'Establish the premise.',
     brief: 'Open the story bible with a premise about a remembered dream.',
+  },
+  creativeProfile: {
+    frameProfile: 'landscape_16_9',
+    durationPreset: 'short_5_15',
+    visualStyle: 'cinematic_realism',
+    storyLanguage: 'en-US',
+    confirmedAt: '2026-08-21T00:00:00.000Z',
   },
   contextJson: '{"project":{},"draft":{}}',
   document: null,
@@ -26,14 +42,59 @@ const JOB = {
   },
 };
 
-const AUTHORED_OPERATIONS = [
-  {
-    operationId: '0197f4a2-0800-7000-8000-000000000005',
-    summary: 'Give the story a premise.',
-    kind: 'story_bible.update_overview',
-    payload: { logline: 'A dream remembers its author.' },
-  },
-];
+const AUTHORED_SCREENPLAY = StoryScreenplaySchema.parse({
+  schemaVersion: 'interactive-screenplay-v1',
+  storyLanguage: 'en-US',
+  title: 'A remembered dream',
+  logline: 'A dream remembers its author.',
+  synopsis: 'The author wakes inside the dream they abandoned.',
+  characters: [],
+  entrySceneId: 'opening',
+  scenes: [
+    {
+      nodeId: 'opening',
+      clipKey: 'OPENING',
+      heading: 'INT. DREAM – NIGHT',
+      beat: 'The dream recognizes its author.',
+      action: 'A page turns itself in the dark.',
+      dialogue: [],
+      exit: { kind: 'auto', nextNodeId: null },
+    },
+  ],
+});
+
+const AUTHORED_PRODUCTION_PLAN = {
+  schemaVersion: 'story-production-plan-v1',
+  assetSpecs: [],
+  storyboardSequences: [
+    {
+      plotNodeId: 'opening',
+      title: 'Opening',
+      description: 'The page turns itself in the dark.',
+      durationMs: 10_000,
+      clips: [
+        {
+          stableKey: 'shot.opening.main',
+          kind: 'video',
+          title: 'Opening shot',
+          description: 'A page turns itself in the dark.',
+          startMs: 0,
+          durationMs: 10_000,
+          videoPrompt: 'A cinematic page turns itself in a dark dream.',
+        },
+      ],
+      cues: [],
+    },
+  ],
+} as const;
+
+const APPROVED_SCREENPLAY = {
+  documentId: '0197f4a2-0800-7000-8000-000000000041',
+  versionId: '0197f4a2-0800-7000-8000-000000000042',
+  sequence: 3,
+  screenplay: AUTHORED_SCREENPLAY,
+  document: buildStoryScreenplayDocument(AUTHORED_SCREENPLAY),
+};
 
 function harness() {
   const runs = {
@@ -51,10 +112,20 @@ function harness() {
     completeAuthoring: jest
       .fn()
       .mockResolvedValue({ kind: 'completed', run: { id: RUN_ID } }),
+    completeAutomaticAuthoring: jest
+      .fn()
+      .mockResolvedValue({ kind: 'completed', run: { id: RUN_ID } }),
     failAuthoring: jest.fn().mockResolvedValue(undefined),
   };
   const pipeline = {
-    author: jest.fn().mockResolvedValue({ operations: AUTHORED_OPERATIONS }),
+    author: jest.fn().mockResolvedValue({
+      screenplay: AUTHORED_SCREENPLAY,
+    }),
+    planProduction: jest.fn().mockResolvedValue(AUTHORED_PRODUCTION_PLAN),
+    compileProductionFromScript: jest.fn().mockResolvedValue({
+      screenplay: AUTHORED_SCREENPLAY,
+      productionPlan: AUTHORED_PRODUCTION_PLAN,
+    }),
   };
   const worker = new StoryAgentRunWorkerService(
     runs as never,
@@ -92,10 +163,117 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     });
     expect(runs.completeAuthoring).toHaveBeenCalledTimes(1);
     expect(runs.completeAuthoring).toHaveBeenCalledWith(RUN_ID, workerId, {
-      operations: AUTHORED_OPERATIONS,
+      screenplay: AUTHORED_SCREENPLAY,
       authoredAgainst: JOB.snapshot,
     });
+    expect(pipeline.planProduction).not.toHaveBeenCalled();
+    expect(pipeline.compileProductionFromScript).not.toHaveBeenCalled();
     expect(runs.failAuthoring).not.toHaveBeenCalled();
+  });
+
+  it('plans only downstream production from the exact approved screenplay', async () => {
+    const { runs, pipeline, worker } = harness();
+    const job = {
+      ...JOB,
+      mode: 'downstream_reconcile' as const,
+      approvedScreenplay: APPROVED_SCREENPLAY,
+    };
+    runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
+
+    await worker.drainOnce();
+    await worker.authoringIdle();
+
+    const workerId = claimedWorkerId(runs);
+    expect(pipeline.author).not.toHaveBeenCalled();
+    expect(pipeline.planProduction).toHaveBeenCalledTimes(1);
+    expect(pipeline.planProduction).toHaveBeenCalledWith({
+      screenplay: APPROVED_SCREENPLAY.screenplay,
+      creativeProfile: JOB.creativeProfile,
+      signal: expect.any(AbortSignal),
+      onStage: expect.any(Function),
+    });
+    expect(runs.completeAuthoring).not.toHaveBeenCalled();
+    expect(runs.completeAutomaticAuthoring).toHaveBeenCalledWith(
+      RUN_ID,
+      workerId,
+      {
+        mode: 'downstream_reconcile',
+        productionPlan: AUTHORED_PRODUCTION_PLAN,
+        authoredAgainst: JOB.snapshot,
+      },
+    );
+  });
+
+  it('compiles downstream structure from an exact existing Script without rewriting it', async () => {
+    const { runs, pipeline, worker } = harness();
+    const scriptSource = {
+      documentId: '0197f4a2-0800-7000-8000-000000000051',
+      sequence: 8,
+      hash: 'b'.repeat(64),
+      hasContent: true,
+      sourceText: '<paragraph>The creator exact Script.</paragraph>',
+    };
+    const job = {
+      ...JOB,
+      mode: 'downstream_reconcile' as const,
+      approvedScreenplay: null,
+      scriptSource,
+      snapshot: {
+        ...JOB.snapshot,
+        scriptDocumentId: scriptSource.documentId,
+        scriptSequence: scriptSource.sequence,
+        scriptHash: scriptSource.hash,
+      },
+    };
+    runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
+
+    await worker.drainOnce();
+    await worker.authoringIdle();
+
+    expect(pipeline.author).not.toHaveBeenCalled();
+    expect(pipeline.planProduction).not.toHaveBeenCalled();
+    expect(pipeline.compileProductionFromScript).toHaveBeenCalledWith({
+      sourceText: scriptSource.sourceText,
+      title: JOB.brief.title,
+      creativeProfile: JOB.creativeProfile,
+      signal: expect.any(AbortSignal),
+      onStage: expect.any(Function),
+    });
+    expect(runs.completeAutomaticAuthoring).toHaveBeenCalledWith(
+      RUN_ID,
+      claimedWorkerId(runs),
+      {
+        mode: 'downstream_reconcile',
+        productionPlan: AUTHORED_PRODUCTION_PLAN,
+        screenplay: AUTHORED_SCREENPLAY,
+        authoredAgainst: job.snapshot,
+      },
+    );
+  });
+
+  it('completes a canonical no-op without invoking either model pipeline', async () => {
+    const { runs, pipeline, worker } = harness();
+    const job = {
+      ...JOB,
+      mode: 'noop' as const,
+      approvedScreenplay: APPROVED_SCREENPLAY,
+    };
+    runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
+
+    await worker.drainOnce();
+    await worker.authoringIdle();
+
+    expect(pipeline.author).not.toHaveBeenCalled();
+    expect(pipeline.planProduction).not.toHaveBeenCalled();
+    expect(runs.completeAuthoring).not.toHaveBeenCalled();
+    expect(runs.completeAutomaticAuthoring).toHaveBeenCalledWith(
+      RUN_ID,
+      claimedWorkerId(runs),
+      {
+        mode: 'noop',
+        authoredAgainst: JOB.snapshot,
+      },
+    );
   });
 
   it('forwards each baton onStage to advanceAuthoringStage', async () => {
@@ -104,7 +282,9 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
       async ({ onStage }: { onStage: (s: string) => Promise<void> }) => {
         await onStage('foundation');
         await onStage('structure');
-        return { operations: AUTHORED_OPERATIONS };
+        return {
+          screenplay: AUTHORED_SCREENPLAY,
+        };
       },
     );
 
@@ -149,7 +329,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
       RUN_ID,
       workerId,
       {
-        operations: AUTHORED_OPERATIONS,
+        screenplay: AUTHORED_SCREENPLAY,
         authoredAgainst: freshJob.snapshot,
       },
     );

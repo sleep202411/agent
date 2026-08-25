@@ -2,9 +2,9 @@
 # Render contract for the Agent OS worker.
 #
 # Every assertion here is a mistake that renders perfectly well and only fails
-# in the cluster: a probe path that 401s, a second replica that answers for runs
-# it does not have, an egress rule that silently becomes an allow-all, a worker
-# handed the product database's credentials. `helm lint` catches none of them.
+# in the cluster: a probe path that 401s, an egress rule that silently becomes
+# an allow-all, or a worker missing its fenced checkpoint authority. `helm
+# lint` catches none of them.
 set -euo pipefail
 CHART="$(cd "$(dirname "$0")/.." && pwd)"
 CN_VALUES="$CHART/values.cn-prod.yaml"
@@ -40,12 +40,24 @@ grep -q 'value: "http://fizzdragon-agent-os:4301"' <<<"$render" ||
   fail "the server must be told the rendered worker Service"
 ok "worker→server and server→worker addresses derive from the chart"
 
-# ── the worker must never see the product database ───────────────────────────
+# ── scoped DSN, same execution authority, no unrelated server secrets ────────
 grep -q 'name: fizzdragon-secrets' <<<"$agent_os" &&
-  fail "the worker must not receive the shared projection: it carries DATABASE_URL, which the checkpointer would accept and then run DDL against the product database"
+  fail "the worker must not receive the server's broad shared secret projection"
 grep -q 'name: fizzdragon-agent-os-secrets' <<<"$agent_os" ||
   fail "the worker needs its own scoped projection"
-ok "worker gets only its scoped secrets"
+grep -q 'AGENT_OS_CHECKPOINT_DATABASE_URL' <<<"$render" ||
+  fail "the worker secret projection must include its required checkpoint DSN"
+grep -q 'name: AGENT_OS_CHECKPOINT_POOL_MAX' <<<"$agent_os" ||
+  fail "checkpoint saver connection budget must be explicit"
+grep -q 'name: AGENT_OS_CHECKPOINT_LOCK_POOL_MAX' <<<"$agent_os" ||
+  fail "checkpoint guard connection budget must be explicit"
+ok "worker gets the same-authority scoped DSN and explicit pool budgets"
+
+# ── durable authorities make the Worker horizontally safe ──────────────────
+replicated="$(helm template fizzdragon "$CHART" --set agentOs.replicaCount=2 \
+  -s templates/agent-os.yaml)" || fail "two Agent OS replicas must render"
+grep -q 'replicas: 2' <<<"$replicated" || fail "replicaCount=2 was not rendered"
+ok "two replicas render against the fenced PostgreSQL authorities"
 
 # ── guards that must reject, not warn ────────────────────────────────────────
 expect_fail() {
@@ -55,8 +67,6 @@ expect_fail() {
   fi
   ok "rejected: $why"
 }
-expect_fail "a second replica (it would answer /events for runs it never started)" \
-  --set agentOs.replicaCount=2
 expect_fail "empty clusterCidrs (the egress subtraction becomes an in-cluster allow-all)" \
   --set agentOs.networkPolicy.clusterCidrs=null
 expect_fail "networkPolicy disabled" \

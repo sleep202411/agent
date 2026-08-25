@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconBolt,
@@ -150,6 +150,32 @@ export function ModelPicker({
   const [vendorFilter, setVendorFilter] = useState<string | null>(null);
   const [vendorMenuOpen, setVendorMenuOpen] = useState(false);
   const vendorMenuRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // How far the panel has to slide to stay on screen. `align` says which edge
+  // it hangs off, which is the right default until the trigger sits near a
+  // viewport edge — then honouring it puts the panel where nobody can read it.
+  const [shiftX, setShiftX] = useState(0);
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const anchor = panel?.offsetParent;
+    if (!panel || !(anchor instanceof HTMLElement)) return;
+    const measure = () => {
+      // Derive the panel's resting position from the ANCHOR's box plus the
+      // panel's layout width. Reading the panel's own rect would fold in the
+      // enter animation's scale, which measures short and under-corrects.
+      const anchorRect = anchor.getBoundingClientRect();
+      const width = panel.offsetWidth;
+      const margin = 8;
+      const restingLeft = align === "left" ? anchorRect.left : anchorRect.right - width;
+      const overflowLeft = margin - restingLeft;
+      const overflowRight = restingLeft + width - (window.innerWidth - margin);
+      setShiftX(overflowLeft > 0 ? overflowLeft : overflowRight > 0 ? -overflowRight : 0);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [placement, align]);
 
   const models = useMemo(
     () =>
@@ -246,10 +272,12 @@ export function ModelPicker({
 
   return (
     <div
+      ref={panelRef}
       role="dialog"
       aria-label={t("modelPicker.allModels")}
+      style={shiftX ? { transform: `translateX(${shiftX}px)` } : undefined}
       className={cn(
-        "nodrag absolute z-50 flex max-h-[460px] w-[380px] flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] shadow-2xl shadow-black/60 backdrop-blur-2xl",
+        "nodrag absolute z-50 flex max-h-[460px] w-[380px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] shadow-2xl shadow-black/60 backdrop-blur-2xl",
         "duration-150 animate-in fade-in-0 zoom-in-95",
         placement === "top" ? "bottom-full mb-2 origin-bottom" : "top-full mt-2 origin-top",
         align === "left" ? "left-0" : "right-0"

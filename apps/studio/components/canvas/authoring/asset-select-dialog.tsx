@@ -12,7 +12,7 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   canvasAcceptedFileTypes,
@@ -79,7 +79,7 @@ export function AssetSelectDialog({
   maxSelection?: number;
 }) {
   const t = useTranslations("storyboard");
-  const workspaceId = useActiveWorkspaceId();
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   const { addAssets, canEdit } = useCanvasGraphContext();
   const { assets, filtered, filter, setFilter, isLoading } = useProjectAssets(projectId);
   const fileInputRef = useRef<HTMLInputElement>(null);

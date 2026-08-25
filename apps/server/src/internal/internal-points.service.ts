@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   Prisma,
   WalletAccountStatus,
@@ -13,10 +13,15 @@ import {
 import { PrismaService } from '../infra/db/db.module';
 import { WalletLedgerService, WorkspacesService } from '../workspaces';
 import type {
+  CommunityGrantInput,
   DeductPointsInput,
   GrantPointsInput,
   MigratePointsInput,
 } from './internal-points.dto';
+
+/** Sanity ceiling per grant call — a runaway caller can't mint an outsized
+ *  balance in one shot. Campaign totals are the caller's responsibility. */
+const COMMUNITY_GRANT_MAX_AMOUNT = 50_000;
 
 function isUniqueViolation(err: unknown): boolean {
   return (
@@ -185,6 +190,51 @@ export class InternalPointsService {
     };
   }
 
+  /** Campaign community-point grant (promo codes redeemed on the Java side).
+   *  community_point is user-owned — never a workspace pot — so this posts to
+   *  the user's own consumable account; no personal-workspace provisioning. */
+  async grantCommunity(input: CommunityGrantInput) {
+    if (input.amount > COMMUNITY_GRANT_MAX_AMOUNT) {
+      throw new BadRequestException({
+        code: 'AMOUNT_EXCEEDS_CAP',
+        msg: `Single grant capped at ${COMMUNITY_GRANT_MAX_AMOUNT} community points.`,
+      });
+    }
+    const account = await this.communityAccount(input.userId);
+    const amount = BigInt(input.amount);
+    const posted = await this.walletLedger.postEntry({
+      accountId: account.id,
+      entryType: WalletLedgerEntryType.credit,
+      amount,
+      availableDelta: amount,
+      heldDelta: 0n,
+      sourceType: 'java_community_grant',
+      sourceId: input.idempotencyKey,
+      // The userId is baked into the server-side key so one caller key can never
+      // dedupe across users: the ledger's idempotency_key is GLOBALLY unique, and
+      // a cross-user hit would report success while crediting nobody.
+      idempotencyKey: `community_grant:${input.userId}:${input.idempotencyKey}`,
+      actorUserId: input.userId,
+      workspaceId: null,
+      description: input.reason ?? 'Java community-point grant',
+      reason: 'java_community_grant',
+      metadata: { userId: input.userId, reason: input.reason ?? null },
+      creditGrant: {
+        grantType: WalletCreditGrantType.system_grant,
+        expiresAt: input.expiresAt ?? null,
+        metadata: { userId: input.userId, reason: input.reason ?? null },
+      },
+    });
+    return {
+      userId: input.userId,
+      // Ledger truth, not the request echo: on a deduped retry the amount that
+      // actually posted may differ from what this call asked for.
+      granted: posted.entry.amount.toString(),
+      balance: posted.account.availableBalance.toString(),
+      deduped: posted.deduped,
+    };
+  }
+
   /** PG balance + migration status (Java reads this to display / route). */
   async getBalance(userId: string) {
     const ws = await this.prisma.workspace.findFirst({
@@ -231,6 +281,27 @@ export class InternalPointsService {
         ownerType: WalletOwnerType.workspace,
         ownerId: workspaceId,
         currency: WalletCurrencyType.compute_point,
+        balanceKind: WalletBalanceKind.consumable,
+        status: WalletAccountStatus.active,
+      },
+      update: {},
+    });
+  }
+
+  private async communityAccount(userId: string): Promise<WalletAccount> {
+    return this.prisma.walletAccount.upsert({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType: WalletOwnerType.user,
+          ownerId: userId,
+          currency: WalletCurrencyType.community_point,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      create: {
+        ownerType: WalletOwnerType.user,
+        ownerId: userId,
+        currency: WalletCurrencyType.community_point,
         balanceKind: WalletBalanceKind.consumable,
         status: WalletAccountStatus.active,
       },

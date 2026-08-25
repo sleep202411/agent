@@ -5,8 +5,10 @@ import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 import type { Node } from "@xyflow/react";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
-import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
+import {
+  useProjectContext,
+  useProjectPayerWorkspace,
+} from "@/app/[locale]/project/_components/project-context";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import {
   canvasDefaultMode,
@@ -98,7 +100,7 @@ export function useStoryboard() {
   const graph = useCanvasGraphContext();
   const { catalog: projectCatalog } = useProjectContext();
   const catalog = projectCatalog.data;
-  const workspaceId = useActiveWorkspaceId();
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   const {
     nodes,
     edges,

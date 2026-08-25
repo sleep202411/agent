@@ -1,4 +1,6 @@
 import { Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { stableUuid } from '../../agent-os-journal/agent-os-journal.mapper';
+import { PrismaService } from '../../infra/db/db.module';
 import {
   AgentOsAttachmentService,
   contentHash,
@@ -11,6 +13,7 @@ import {
   AgentOsProjectContextService,
   type AgentOsProjectContext,
 } from '../agent-os-project-context.service';
+import { AgentOsToolExecutionReceiptService } from '../agent-os-tool-execution-receipt.service';
 import type { AgentOsCapabilityExecuteInput } from './capability-handler';
 
 const ATTACHMENT_TOOL_IDS = new Set(['script.readSection', 'script.store']);
@@ -27,6 +30,8 @@ export class AttachmentAgentCapabilityHandler {
   constructor(
     private readonly attachments: AgentOsAttachmentService,
     private readonly projects: AgentOsProjectContextService,
+    private readonly prisma: PrismaService,
+    private readonly receipts: AgentOsToolExecutionReceiptService,
   ) {}
 
   supports(toolId: string): boolean {
@@ -40,21 +45,33 @@ export class AttachmentAgentCapabilityHandler {
     switch (input.toolId) {
       case 'script.store': {
         const args = ScriptStoreInputSchema.parse(input.arguments);
-        const uploaded = await this.attachments.upload(
-          input.actorId,
-          project.projectId,
-          {
-            originalname: `agent-script-${Date.now()}.txt`,
-            mimetype: 'text/plain',
-            size: Buffer.byteLength(args.text, 'utf8'),
-            buffer: Buffer.from(args.text, 'utf8'),
-          },
-          { sectionSize: args.sectionSize },
+        const attachmentId = stableUuid(
+          `agent-os:script-store:${input.runId}:${input.toolCallId}`,
         );
-        return {
-          sectionCount: uploaded.sectionCount,
-          attachmentId: uploaded.id,
-        };
+        return this.prisma.$transaction(async (tx) => {
+          await this.receipts.fenceBusinessMutationInTx(tx, input);
+          const uploaded = await this.attachments.upload(
+            input.actorId,
+            project.projectId,
+            {
+              originalname: `agent-script-${attachmentId}.txt`,
+              mimetype: 'text/plain',
+              size: Buffer.byteLength(args.text, 'utf8'),
+              buffer: Buffer.from(args.text, 'utf8'),
+            },
+            {
+              sectionSize: args.sectionSize,
+              attachmentId,
+              transaction: tx,
+            },
+          );
+          const result = {
+            sectionCount: uploaded.sectionCount,
+            attachmentId: uploaded.id,
+          };
+          await this.receipts.completeSuccessInTx(tx, input, result);
+          return result;
+        });
       }
       case 'script.readSection': {
         const args = ScriptReadSectionInputSchema.parse(input.arguments);

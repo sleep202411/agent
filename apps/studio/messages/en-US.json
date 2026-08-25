@@ -2411,6 +2411,64 @@
     "confirmRemoveEdge": "Delete this connection?"
   },
   "storyStudio": {
+    "authoringRun": {
+      "title": {
+        "authoring": "Drafting…",
+        "proposed": "Screenplay ready",
+        "applying": "Applying…",
+        "failed": "Drafting failed"
+      },
+      "stages": {
+        "foundation": "World",
+        "structure": "Structure",
+        "branch": "Branches",
+        "scene": "Scenes",
+        "validate": "Validate"
+      },
+      "activity": {
+        "foundation": "Building the story world…",
+        "structure": "Structuring the narrative…",
+        "branch": "Designing story branches…",
+        "scene": "Writing the screenplay…",
+        "validate": "Checking story continuity…",
+        "applying": "Saving the screenplay and building the story…",
+        "savingScript": "Saving the approved screenplay to Script…",
+        "buildingProduction": "Script saved. Building Plot, Asset Specs, and Storyboard…",
+        "finalizingProduction": "Plot, Asset Specs, and Storyboard are ready. Finishing…"
+      },
+      "applyingHint": "Saving the screenplay and building the story…",
+      "apply": "Approve and build",
+      "savingScript": "Saving Script…",
+      "savingScriptHint": "Recording your approval and saving the screenplay to Script. Production continues in the Agent activity.",
+      "discard": "Discard",
+      "discarding": "Discarding…",
+      "failedHint": "Drafting didn't finish. You can retry.",
+      "retry": "Retry",
+      "viewAll": "View all",
+      "reviewScreenplay": "Review screenplay",
+      "proposalLoading": "Loading the Story proposal…",
+      "proposalUnavailable": "The proposal could not be loaded. Refresh it or discard it to continue.",
+      "proposal": {
+        "eyebrow": "Screenplay draft",
+        "description": "Review the complete screenplay. What you see here is saved to Script exactly, then used to build the Plot Tree.",
+        "metrics": {
+          "scenes": "Scenes",
+          "branches": "Branches",
+          "endings": "Endings",
+          "interactions": "Interactions"
+        },
+        "sections": {
+          "summary": "Story overview",
+          "characters": "Characters",
+          "structure": "Screenplay scenes and branches",
+          "productionNotes": "Production notes"
+        },
+        "untitledScene": "Untitled scene",
+        "continuesTo": "Continues to {scene}",
+        "ending": "Ending",
+        "noScenes": "This proposal contains no scene changes."
+      }
+    },
     "metaTitle": "Interactive Film Studio",
     "metaDescription": "Author, produce, review, and release cinematic interactive stories.",
     "eyebrow": "Interactive story production",
@@ -2433,7 +2491,6 @@
       "clips": "Clips",
       "videos": "Videos",
       "choices": "Choices",
-      "graphClips": "Graph clips",
       "graphScenes": "Interactive scenes"
     },
     "actions": {
@@ -2459,7 +2516,7 @@
     },
     "create": {
       "title": "Create a story project",
-      "description": "Create a private, versioned cinematic draft in the active workspace."
+      "description": "Create an empty project, then develop it through a natural conversation with FizzAgent. It asks for decisions only when they are needed."
     },
     "edit": {
       "title": "Edit project details"
@@ -2468,11 +2525,7 @@
       "title": "Title",
       "titlePlaceholder": "Untitled interactive story",
       "summary": "Summary",
-      "summaryPlaceholder": "Describe the premise and intended experience.",
-      "frameProfile": "Video format",
-      "frameProfileHint": "Every generated clip in this project uses this fixed format.",
-      "storyLocale": "Story language",
-      "storyLocaleHint": "(authoring & publish primary language)"
+      "summaryPlaceholder": "Describe the premise and intended experience."
     },
     "frameProfiles": {
       "landscape_16_9": {
@@ -2497,14 +2550,138 @@
       "resolving": "Opening this story project…",
       "switching": "Switching to the workspace this story belongs to…"
     },
+    "scriptDoc": {
+      "placeholder": "Write your script — the pipeline reads it from here…"
+    },
+    "productionConflict": {
+      "ariaLabel": "Production plan conflict",
+      "title": "Your edits conflict with the latest approved plan",
+      "description": "Review the pending plan before deciding whether this chapter keeps your current production work or adopts the latest compiled version.",
+      "metadataUnavailable": "The conflict summary has not arrived from the server yet. Refresh this chapter before choosing a resolution.",
+      "latestRemovesItem": "The latest plan removes this item",
+      "assetRemovalSummary": "Use latest plan will archive {name}. Keep current preserves it as a chapter override when references allow.",
+      "sequenceRemovalSummary": "Use latest plan will archive {name} and its clips because its Plot node no longer exists.",
+      "latestAsset": "Latest Asset Spec · {name} · {kind}",
+      "latestPrompt": "Image prompt: {prompt}",
+      "latestSequence": "Latest sequence · {name}",
+      "latestSequenceSummary": "{duration} ms · {clips} clips · {cues} decision cues",
+      "keepCurrent": "Keep current",
+      "useLatestPlan": "Use latest plan",
+      "removedSequenceCannotKeep": "This Plot node was removed, so the current sequence cannot remain as an override.",
+      "resolved": "Production conflict resolved.",
+      "resolveError": "The production conflict could not be resolved.",
+      "confirmKeepTitle": "Keep the current production work?",
+      "confirmLatestTitle": "Use the latest approved plan?",
+      "confirmKeepDescription": "Your current edits become an explicit chapter override. Future plan updates will compare against this preserved version.",
+      "confirmLatestDescription": "The latest compiled production instructions replace the conflicting editable fields. Existing compatible media remains available.",
+      "confirmRemoveAssetDescription": "The latest plan removes this Asset Spec. It will be archived only when no active Storyboard reference still requires it.",
+      "confirmRemoveSequenceDescription": "The latest plan removes this Plot node. This sequence and its production clips will be archived.",
+      "cancel": "Cancel",
+      "confirmKeep": "Keep current",
+      "confirmLatest": "Use latest plan"
+    },
+    "productionGeneration": {
+      "controlsAria": "Media generation for {name}",
+      "requestError": "Media generation could not be started.",
+      "cancelError": "Media generation could not be cancelled.",
+      "attachmentRetryError": "The generated media could not be attached again.",
+      "statusRefreshError": "Generation status could not be refreshed.",
+      "cancel": "Cancel generation",
+      "retry": "Retry generation",
+      "retryAttachment": "Retry attachment",
+      "generate": "Quick Generate",
+      "generateAgain": "Generate again",
+      "progressAria": "Generation progress",
+      "targetNotCurrent": "Reconcile this stale production target before generating media.",
+      "status": {
+        "idle": "Ready to generate with the default compatible model",
+        "submitting": "Submitting generation…",
+        "created": "Preparing generation…",
+        "inQueue": "Waiting in the generation queue…",
+        "inProgress": "Generating media…",
+        "attaching": "Media generated · attaching it to this production target…",
+        "retryingAttachment": "Retrying the saved media attachment…",
+        "ready": "Generated media is ready and selected",
+        "failed": "Generation failed",
+        "cancelled": "Generation cancelled",
+        "expired": "Generation expired",
+        "materializationFailed": "Media was generated but could not be attached"
+      }
+    },
+    "assetsPage": {
+      "empty": "No production assets in this chapter yet.",
+      "emptyHint": "Asset Specs appear here after the approved story plan is applied.",
+      "generationHint": "Opening this page never generates media or spends credits.",
+      "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
+      "loadError": "Asset Specs could not be loaded.",
+      "retry": "Try again",
+      "tabs": {
+        "character": "Characters",
+        "location": "Locations",
+        "prop": "Props"
+      },
+      "filterLabel": "Filter Asset Specs by type",
+      "details": "Details",
+      "detailDialog": {
+        "imagePrompt": "Image Prompt",
+        "model": "Model",
+        "save": "Save",
+        "saved": "Saved.",
+        "saveError": "Could not save the Asset Spec.",
+        "generate": "Generate",
+        "generateStarted": "Generation started.",
+        "generateError": "Could not start generating media.",
+        "close": "Close",
+        "videoPrompt": "Video Prompt"
+      },
+      "title": "Asset Specs"
+    },
+    "storyboardPage": {
+      "emptyChapter": "No scenes in this chapter yet.",
+      "emptyHint": "Add scenes on the Plot Tree and the storyboard unfolds here scene by scene.",
+      "loadError": "The storyboard could not be loaded.",
+      "retry": "Try again",
+      "plotNode": "Plot node {index}",
+      "clipCount": "{count, plural, one {# clip} other {# clips}}",
+      "noClips": "This sequence has no clips.",
+      "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
+      "status": {
+        "current": "Current",
+        "stale": "Needs review",
+        "archived": "Archived"
+      },
+      "seconds": "{value}s",
+      "options": "Options",
+      "unplanned": "No storyboard yet",
+      "unplannedHint": "This scene has not been planned into a storyboard. Ask FizzAgent to plan this chapter's storyboard.",
+      "title": "Storyboard",
+      "clipKind": {
+        "image": "Image",
+        "video": "Video"
+      }
+    },
     "canvas": {
       "back": "Back to Interactive Film Studio",
       "mode": "Story canvas",
+      "steps": {
+        "script": "Script",
+        "tree": "Plot Tree",
+        "assets": "Assets",
+        "storyboard": "Storyboard",
+        "preview": "Preview",
+        "stepAria": "{step}: {status}",
+        "status": {
+          "current": "current",
+          "stale": "needs review",
+          "missing": "not ready",
+          "unknown": "status unavailable"
+        }
+      },
       "sidebar": {
         "navigation": "Story project navigation",
-        "world": "World",
+        "world": "Overview",
         "media": "Media",
-        "agent": "Agent"
+        "catalog": "Catalog"
       },
       "chapters": {
         "action": "Chapters",
@@ -2751,9 +2928,34 @@
         "synopsisPlaceholder": "Describe the complete cinematic arc, including the central turn and how each route reaches a terminal clip."
       },
       "filmFoundation": {
-        "eyebrow": "Worldbuilding",
-        "title": "Worldbuilding",
+        "eyebrow": "Basics",
+        "title": "Basics",
+        "saveError": "Could not save the overview.",
         "description": "The premise, synopsis, cast, and cover that ground every cinematic branch. Changes autosave to the draft.",
+        "profile": {
+          "title": "Creative profile",
+          "description": "Project-level production constraints shared by every chapter.",
+          "aspectRatio": "Aspect ratio",
+          "targetRuntime": "Target runtime",
+          "visualStyle": "Visual style",
+          "language": "Language",
+          "notSet": "Not set",
+          "frameProfiles": {
+            "landscape_16_9": "Landscape · 16:9",
+            "portrait_9_16": "Portrait · 9:16"
+          },
+          "durationPresets": {
+            "short_5_15": "5–15 minutes",
+            "medium_15_30": "15–30 minutes",
+            "long_30_60": "30–60 minutes"
+          },
+          "visualStyles": {
+            "cinematic_realism": "Cinematic realism",
+            "stylized_3d": "Stylized 3D",
+            "graphic_novel": "Graphic novel",
+            "anime_cinematic": "Cinematic anime"
+          }
+        },
         "cover": {
           "title": "Cover image",
           "description": "One still for this story: the project tile here, the title-screen backdrop in the player, and the share image of the published game.",
@@ -2849,14 +3051,10 @@
           "action": "The production action could not be completed."
         },
         "node": {
-          "noVideo": "No video yet",
           "videoPreview": "Current video preview",
-          "metadata": {
-            "duration": "Duration",
-            "dimensions": "Resolution",
-            "fileSize": "File size",
-            "format": "Format"
-          }
+          "noMedia": "No media yet",
+          "noSequence": "No storyboard yet",
+          "clipCoverage": "{ready}/{total} clips with media"
         }
       },
       "creativeWorkbench": {
@@ -2947,7 +3145,7 @@
         "previewSeek": "Interaction triggered · Jump to {time}",
         "previewMissingTarget": "No destination is assigned to this hotspot.",
         "noVideo": "No current video",
-        "noVideoDescription": "Choose a current video on the node, then return here to position interactions over the real frame.",
+        "noVideoDescription": "Interaction placement anchors to the storyboard timeline. Generate storyboard media first, then position hotspots on real footage.",
         "emptyTitle": "Draw your first hotspot",
         "emptyDescription": "Define where the viewer can click, when it appears, and what the interaction does.",
         "drawFirst": "Draw hotspot",
@@ -3003,24 +3201,6 @@
       "inspector": {
         "eyebrow": "Node inspector",
         "close": "Close node inspector",
-        "media": {
-          "title": "Current video",
-          "description": "Upload a local file or reuse a video from this workspace.",
-          "preview": "Current video for {title}",
-          "empty": "No video selected",
-          "emptyDescription": "Add the playable video for this story clip.",
-          "candidateAction": "Choose from Candidate assets",
-          "candidateActionDescription": "{count, plural, =0 {No candidate videos} =1 {1 candidate video} other {# candidate videos}}",
-          "candidateUnavailable": "This video has no accessible original.",
-          "candidateLoadError": "Candidate videos could not be loaded.",
-          "preparing": "Clip media is still being prepared.",
-          "unknownDimensions": "Unknown size",
-          "unknownDuration": "Unknown duration"
-        },
-        "exit": "Next step",
-        "production": "Production status",
-        "openProduction": "Open clip production",
-        "choices": "Player choice",
         "chapterTransitions": {
           "title": "Continue to another chapter",
           "continueHint": "Choose the chapter whose opening scene should follow this scene.",
@@ -3028,29 +3208,18 @@
           "connect": "Connect",
           "linked": "Linked"
         },
-        "exitAuto": "Continue to scene",
-        "exitChoice": "Player choice",
-        "continuationTarget": "Next scene",
-        "continuationDescription": "A scene has one direct continuation. Use a player choice when the story must branch.",
-        "choicePrompt": "Decision prompt",
-        "choicePromptPlaceholder": "What must the player decide?",
-        "optionLabel": "Option {number}",
-        "optionPlaceholder": "Write the player-facing option",
-        "addChoice": "Add option",
         "removeChoice": "Remove option",
-        "removeChoiceTitle": "Remove this option?",
-        "removeChoiceDescription": "This option and its branch will be removed.",
         "moveChoiceUp": "Move option up",
         "moveChoiceDown": "Move option down",
-        "choiceMinimum": "A playable choice needs at least 2 options. It currently has {count}.",
-        "requiredForPlayableStory": "Required for a playable story.",
-        "terminalAfterPlayback": "Playback ends here when no continuation is connected.",
-        "convertExitTitle": "Replace the current next step?",
-        "convertExitDescription": "This will remove {count} existing branches and their authored conditions or option details.",
-        "confirmConversion": "Replace next step",
         "delete": "Delete node",
-        "cancel": "Cancel",
-        "nodeName": "Name"
+        "nodeName": "Name",
+        "storyboard": {
+          "title": "Storyboard",
+          "summary": "{count} clips · {ready} with media",
+          "loading": "Loading the storyboard…",
+          "missing": "This scene has no storyboard sequence yet.",
+          "open": "Open storyboard"
+        }
       },
       "conflict": {
         "description": "Someone saved a newer version. Your local draft is preserved; export it before discarding if needed.",
@@ -3089,23 +3258,28 @@
       "tidy": {
         "action": "Tidy layout"
       },
-      "share": "Share"
+      "share": "Share",
+      "catalogPanel": {
+        "choice": "Choice",
+        "end": "END"
+      },
+      "mobileNav": {
+        "label": "Production navigation",
+        "chat": "Chat"
+      }
     },
     "workbench": {
       "back": "Back to Interactive Film Studio",
       "draftHead": "Mutable draft · revision {revision}",
       "stageNav": "Project stages",
-      "stages": {
-        "overview": "Overview",
-        "story": "Story",
-        "references": "References",
-        "production": "Production"
-      },
       "errors": {
         "loadTitle": "This project could not be opened."
       },
-      "noProductionDataTitle": "Production data is not available yet",
-      "noProductionDataDescription": "Return to the story canvas to add clips, then generate or upload a video for each clip."
+      "stages": {
+        "overview": "Overview",
+        "story": "Story",
+        "references": "References"
+      }
     },
     "overview": {
       "productionTitle": "Video production",
@@ -3212,30 +3386,11 @@
         "upload": "The media upload could not be completed."
       }
     },
-    "production": {
-      "title": "Clip production",
-      "subtitle": "Current video state for every story clip.",
-      "clipCount": "{count} clips",
-      "seconds": "{seconds}s",
-      "noBlocker": "Ready for the next action",
-      "currentDraftPromptRequired": "Generate or upload a video from the story canvas.",
-      "currentVideoReady": "A current video is bound to this clip.",
-      "columns": {
-        "key": "Key",
-        "clip": "Clip",
-        "duration": "Duration",
-        "status": "Status",
-        "blocker": "Details"
-      },
-      "status": {
-        "draft": "Current draft",
-        "ready": "Ready",
-        "queued": "Queued",
-        "running": "Running",
-        "processing": "Processing",
-        "failed": "Failed",
-        "cancelled": "Cancelled"
-      }
+    "productionHeader": {
+      "imageLabel": "Image",
+      "videoLabel": "Video",
+      "imageModel": "Image model",
+      "videoModel": "Video model"
     }
   },
   "storyStudioLanding": {
@@ -3316,9 +3471,6 @@
     "permHint_ask": "Approve every write before it runs",
     "permHint_smart": "Auto-run safe ops; ask only for sensitive writes",
     "permHint_full": "Auto-run writes; still stop on critical actions",
-    "scriptOptional": "Attach file",
-    "scriptPlaceholder": "",
-    "scriptAttached": "Attachment · {chars} chars",
     "attachFile": "Attach file",
     "uploading": "Uploading…",
     "removeAttachment": "Remove attachment",
@@ -3347,6 +3499,7 @@
     "send": "Send",
     "stop": "Stop",
     "stopped": "Stopped listening to this turn",
+    "stopFailed": "Could not stop the current turn.",
     "newChat": "New chat",
     "newConversationDialog": {
       "title": "Start a new conversation?",
@@ -3368,28 +3521,51 @@
         "idle": "Idle",
         "running": "Running",
         "waiting_for_approval": "Waiting for approval",
+        "waiting_for_input": "Waiting for your answer",
+        "waiting_for_external": "Working in the background",
         "completed": "Completed",
         "failed": "Failed",
         "cancelled": "Cancelled"
       }
     },
-    "thinking": "Working…",
+    "thinking": "Thinking…",
+    "waitingForInput": "Waiting for your answer…",
+    "waitingForApproval": "Waiting for your approval…",
+    "activity": {
+      "thinking": "Thinking…",
+      "planning": "Planning the next steps…",
+      "waitingForInput": "Waiting for your answer…",
+      "waitingForApproval": "Waiting for your approval…",
+      "readingProject": "Reading the project…",
+      "updatingProject": "Updating the project…",
+      "readingStory": "Reading the story…",
+      "confirmingCreativeDirection": "Confirming the creative direction…",
+      "preparingStoryDraft": "Preparing the story draft…",
+      "updatingStory": "Updating the story…",
+      "designingBranches": "Designing story branches…",
+      "writingScenes": "Writing scenes…",
+      "readingCanvas": "Reading the canvas…",
+      "updatingCanvas": "Updating the canvas…",
+      "readingSource": "Reading the source material…",
+      "savingSource": "Saving the source material…",
+      "readingCharacters": "Reviewing the characters…",
+      "updatingCharacters": "Updating the characters…",
+      "readingStoryboard": "Reviewing the storyboard…",
+      "updatingStoryboard": "Updating the storyboard…"
+    },
     "transcriptLabel": "FizzAgent conversation",
     "scrollToLatest": "Scroll to latest",
     "roleUser": "You",
     "roleAssistant": "FizzAgent",
-    "roleSystem": "System",
-    "roleTool": "Tool",
     "suggestCharacters": "Extract characters from this script",
     "suggestShots": "Break this script into 10 storyboard shots",
     "suggestBoth": "Store script, then characters + shots",
     "suggestStoryContinue": "Continue the story with a new scene",
     "suggestStoryBranch": "Add a meaningful choice and two branches",
     "suggestStoryPolish": "Review and polish the current chapter",
-    "run": "Send",
-    "reset": "New chat",
     "approve": "Approve write",
     "reject": "Reject",
+    "approvalRequired": "Review this change",
     "approved": "Write approved",
     "rejected": "Write rejected",
     "runFailed": "Agent failed",
@@ -3400,32 +3576,16 @@
     "approvalSceneOrder": "Scene order",
     "approvalStoryScene": "Story scene",
     "approvalNotReady": "Approval is still preparing — wait a moment and try again",
-    "event": {
-      "RunStarted": "Run started",
-      "PlanCreated": "Plan",
-      "ToolProposed": "Tool proposed",
-      "ToolStarted": "Tool started",
-      "ToolCompleted": "Tool completed",
-      "ToolFailed": "Tool failed",
-      "ApprovalRequired": "Approval required",
-      "ApprovalResolved": "Approval resolved",
-      "MessageCompleted": "Message",
-      "RunPaused": "Paused",
-      "RunCompleted": "Completed",
-      "RunFailed": "Failed",
-      "RunCancelled": "Cancelled",
-      "ProjectPatchApplied": "Project updated"
+    "userInput": {
+      "step": "STEP {current}/{total}",
+      "back": "Back",
+      "continue": "Continue",
+      "submit": "Confirm",
+      "submitting": "Confirming…",
+      "failed": "Could not submit these answers"
     },
-    "projectArtifacts": "Project artifacts",
-    "characters": "Characters",
-    "shots": "Storyboard shots",
-    "refreshArtifacts": "Refresh",
-    "artifactsEmpty": "No characters or shots written yet. Chat and approve writes.",
-    "artifactsLoadFailed": "Could not load project artifacts",
     "workerOnline": "Worker online",
     "workerOffline": "Unavailable right now — retrying automatically",
-    "shotsSynced": "Storyboard updated · {created} new · {updated} updated",
-    "charactersWritten": "{count, plural, one {# character stored in project} other {# characters stored in project}}",
     "approvalCreates": "Creates {count}",
     "approvalUpdates": "Updates {count}",
     "approvalDeletes": "Deletes {count}",
@@ -3434,8 +3594,6 @@
     "approvalHideDetails": "Hide full request",
     "approvalUntitled": "Untitled",
     "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check.",
-    "showOnCanvas": "Show on canvas",
-    "pollTimeout": "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check.",
-    "runOrphaned": "This turn was interrupted before it finished — the agent process restarted. Send your message again to retry."
+    "pollTimeout": "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check."
   }
 }

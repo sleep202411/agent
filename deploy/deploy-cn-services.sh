@@ -20,7 +20,7 @@ while [ "$#" -gt 0 ]; do
     --allow-chart-update) ALLOW_CHART_UPDATE=1; shift ;;
     -h|--help)
       echo "Usage: $0 [--full] [--build-only|--deploy-only] [--allow-chart-update] <service...|platform>"
-      echo "Services: web studio admin-ui server; legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
+      echo "Services: web studio admin-ui server agent-os; legacy agent requires ALLOW_LEGACY_AGENT_DEPLOY=1"
       exit 0
       ;;
     -*) echo "Unknown option: $1" >&2; exit 2 ;;
@@ -30,14 +30,14 @@ done
 
 [ "${#REQUESTED[@]}" -gt 0 ] || { echo "No services selected" >&2; exit 2; }
 if [ "${REQUESTED[0]}" = platform ] || [ "${REQUESTED[0]}" = all ]; then
-  SERVICES=(server studio web admin-ui)
+  SERVICES=(server studio web admin-ui agent-os)
 else
   SERVICES=("${REQUESTED[@]}")
 fi
 
 for service in "${SERVICES[@]}"; do
   case "$service" in
-    web|studio|admin-ui|server) ;;
+    web|studio|admin-ui|server|agent-os) ;;
     agent)
       [ "${ALLOW_LEGACY_AGENT_DEPLOY:-0}" = 1 ] || {
         echo "FATAL: legacy agent is frozen/quarantined; set ALLOW_LEGACY_AGENT_DEPLOY=1 only after its image passes a real boot test" >&2
@@ -173,6 +173,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
   studio_tag="$(contains_service studio && printf '%s' "$TAG" || live_tag fizzdragon-studio)"
   admin_tag="$(contains_service admin-ui && printf '%s' "$TAG" || live_tag fizzdragon-admin-ui)"
   server_tag="$(contains_service server && printf '%s' "$TAG" || live_tag fizzdragon-server)"
+  agent_os_tag="$(contains_service agent-os && printf '%s' "$TAG" || live_tag fizzdragon-agent-os)"
 
   helm_sets=(
     --set-string "cnRelease.chartFingerprint=$fingerprint"
@@ -180,6 +181,7 @@ if [ "$PHASE" = deploy ] || [ "$PHASE" = all ]; then
     --set-string "studio.image.tag=$studio_tag"
     --set-string "adminUi.image.tag=$admin_tag"
     --set-string "server.image.tag=$server_tag"
+    --set-string "agentOs.image.tag=$agent_os_tag"
     --set 'server.migrationJob.enabled=false'
   )
   if contains_service agent; then

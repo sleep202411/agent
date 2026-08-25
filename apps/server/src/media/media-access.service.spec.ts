@@ -65,6 +65,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       permissions as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -125,6 +126,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       crewAssetAccess as never,
+      {} as never,
     );
 
     await expect(
@@ -173,6 +175,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       crewAssetAccess as never,
+      {} as never,
     );
 
     await expect(
@@ -221,6 +224,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       crewAssetAccess as never,
+      {} as never,
     );
 
     await expect(
@@ -265,6 +269,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       crewAssetAccess as never,
+      {} as never,
     );
 
     await expect(
@@ -297,6 +302,7 @@ describe('MediaAccessService', () => {
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -322,6 +328,7 @@ describe('MediaAccessService', () => {
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -369,6 +376,7 @@ describe('MediaAccessService', () => {
         ),
       } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -418,6 +426,7 @@ describe('MediaAccessService', () => {
       } as never,
       { requireWorkspaceRole } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -483,6 +492,7 @@ describe('MediaAccessService', () => {
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -533,6 +543,7 @@ describe('MediaAccessService', () => {
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -574,6 +585,7 @@ describe('MediaAccessService', () => {
         ),
       } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -608,6 +620,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -631,6 +644,7 @@ describe('MediaAccessService', () => {
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -652,6 +666,7 @@ describe('MediaAccessService', () => {
       { createReadUrl: jest.fn() } as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -684,6 +699,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -740,6 +756,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -799,6 +816,7 @@ describe('MediaAccessService', () => {
       storageAccess as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
 
     await expect(
@@ -951,6 +969,7 @@ describe('MediaAccessService pre-broadcast moderation gate', () => {
       } as never,
       { requireWorkspaceRole: jest.fn() } as never,
       allowCrewAssetAccess() as never,
+      {} as never,
     );
   }
 

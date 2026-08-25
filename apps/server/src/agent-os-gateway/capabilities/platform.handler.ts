@@ -17,6 +17,7 @@ import {
   ShotsUpsertInputSchema,
 } from '../agent-os-domain.dto';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
+import { AgentOsToolExecutionReceiptService } from '../agent-os-tool-execution-receipt.service';
 import type {
   AgentOsCapabilityExecuteInput,
   AgentOsCapabilityHandler,
@@ -46,6 +47,7 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     private readonly prisma: PrismaService,
     private readonly projects: AgentOsProjectContextService,
     private readonly canvasShots: AgentOsCanvasShotsService,
+    private readonly receipts: AgentOsToolExecutionReceiptService,
   ) {}
 
   supports(toolId: string): boolean {
@@ -55,7 +57,7 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
   async execute(input: AgentOsCapabilityExecuteInput): Promise<unknown> {
     switch (input.toolId) {
       case 'characters.list':
-        return this.listCharacters(input.actorId, input.projectId);
+        return this.listCharactersForUser(input.actorId, input.projectId);
       case 'characters.upsert':
         return this.upsertCharacters(input);
       case 'storyboard.listShots':
@@ -109,55 +111,38 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     // One store, one write. Existence checks happen inside the same hydrate
     // that performs the mutation, so a shot can never be reported as written
     // to a board that did not receive it.
-    const result = await this.canvasShots.applyShots({
+    return this.canvasShots.applyShots({
       actorId: input.actorId,
       projectId: input.projectId,
       documentId: requiredCanvasDocumentId(input.workbenchContext),
       shots: args.shots,
+      baseRevision: args.baseRevision,
       idempotencyKey: input.idempotencyKey,
       skillResolutionId: input.skillResolutionId,
       skillVersionIds: input.skillVersionIds,
+      toolExecution: input,
     });
-
-    return {
-      revision: result.revision,
-      // nodeId travels with the result so the UI can offer "show me on the
-      // canvas" — a write the user cannot find is barely a write.
-      written: result.written,
-      canvasDocumentId: result.documentId,
-      idempotencyKey: input.idempotencyKey,
-      ...(isStale(args.baseRevision, result.previousRevision)
-        ? { staleBaseRevision: true }
-        : {}),
-    };
   }
 
   private async deleteShots(input: AgentOsCapabilityExecuteInput) {
     const args = ShotsDeleteInputSchema.parse(input.arguments);
     await this.requireEdit(input.actorId, input.projectId);
 
-    const result = await this.canvasShots.deleteShots({
+    return this.canvasShots.deleteShots({
       actorId: input.actorId,
       projectId: input.projectId,
       documentId: requiredCanvasDocumentId(input.workbenchContext),
       shotIds: [...new Set(args.shotIds)],
+      baseRevision: args.baseRevision,
       idempotencyKey: input.idempotencyKey,
       skillResolutionId: input.skillResolutionId,
       skillVersionIds: input.skillVersionIds,
+      toolExecution: input,
     });
-
-    return {
-      revision: result.revision,
-      deleted: result.deleted,
-      canvasDocumentId: result.documentId,
-      idempotencyKey: input.idempotencyKey,
-      ...(isStale(args.baseRevision, result.previousRevision)
-        ? { staleBaseRevision: true }
-        : {}),
-    };
   }
 
-  private async listCharacters(actorId: string, projectId: string) {
+  /** Human HTTP query path; it must not mint a fake Agent run identity. */
+  async listCharactersForUser(actorId: string, projectId: string) {
     await this.requireRead(actorId, projectId);
     const state = await this.ensureState(projectId);
     const characters = parseCharacters(state.characters);
@@ -176,6 +161,7 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
     await this.requireEdit(input.actorId, input.projectId);
 
     return this.prisma.$transaction(async (tx) => {
+      await this.receipts.fenceBusinessMutationInTx(tx, input);
       const project = await tx.platformProject.findFirst({
         where: { id: input.projectId, deletedAt: null },
         select: { id: true, workspaceId: true },
@@ -252,11 +238,13 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
         });
       }
 
-      return {
+      const result = {
         projectRevision: state.revision + 1,
         written,
         idempotencyKey: input.idempotencyKey,
       };
+      await this.receipts.completeSuccessInTx(tx, input, result);
+      return result;
     });
   }
 
@@ -314,6 +302,7 @@ export class PlatformAgentCapabilityHandler implements AgentOsCapabilityHandler 
       idempotencyKey: input.idempotencyKey,
       skillResolutionId: input.skillResolutionId,
       skillVersionIds: input.skillVersionIds,
+      toolExecution: input,
     });
   }
 
@@ -377,15 +366,6 @@ function parseCharacters(value: Prisma.JsonValue): StoredCharacter[] {
       !Array.isArray(item) &&
       typeof (item as StoredCharacter).id === 'string',
   );
-}
-
-/**
- * Whether the caller's baseRevision was behind when the write landed. Reported,
- * never enforced: shot writes merge as CRDT updates, so rejecting on a stale
- * anchor would fail an agent write for an unrelated human keystroke.
- */
-function isStale(baseRevision: number | undefined, actual: number): boolean {
-  return baseRevision !== undefined && baseRevision !== actual;
 }
 
 /**

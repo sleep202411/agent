@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 
-import { createAgentOsHttpServer } from "./server.js";
+import { createAgentOsHttpServer, listenAgentOsHttp } from "./server.js";
+import { resetAgentOsCheckpointerForTests } from "../runtime/checkpointer.js";
 
 /**
  * The inbound half of the gateway↔worker trust boundary.
@@ -12,11 +13,15 @@ import { createAgentOsHttpServer } from "./server.js";
  * token used to be checked only on the way OUT.
  */
 const TOKEN = "test-internal-token-abcdef";
+const originalFetch = globalThis.fetch;
 
 describe("worker HTTP auth", () => {
   let server: ReturnType<typeof createAgentOsHttpServer>;
   let baseUrl: string;
   const previousToken = process.env.AGENT_OS_INTERNAL_TOKEN;
+  const previousDomainUrl = process.env.AGENT_OS_DOMAIN_URL;
+  const previousNodeEnv = process.env.NODE_ENV;
+  const previousCheckpointDatabaseUrl = process.env.AGENT_OS_CHECKPOINT_DATABASE_URL;
 
   beforeEach(async () => {
     process.env.AGENT_OS_INTERNAL_TOKEN = TOKEN;
@@ -27,8 +32,19 @@ describe("worker HTTP auth", () => {
 
   afterEach(async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+    globalThis.fetch = originalFetch;
     if (previousToken === undefined) delete process.env.AGENT_OS_INTERNAL_TOKEN;
     else process.env.AGENT_OS_INTERNAL_TOKEN = previousToken;
+    if (previousDomainUrl === undefined) delete process.env.AGENT_OS_DOMAIN_URL;
+    else process.env.AGENT_OS_DOMAIN_URL = previousDomainUrl;
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+    if (previousCheckpointDatabaseUrl === undefined) {
+      delete process.env.AGENT_OS_CHECKPOINT_DATABASE_URL;
+    } else {
+      process.env.AGENT_OS_CHECKPOINT_DATABASE_URL = previousCheckpointDatabaseUrl;
+    }
+    resetAgentOsCheckpointerForTests();
   });
 
   it("refuses a run with no token", async () => {
@@ -84,6 +100,21 @@ describe("worker HTTP auth", () => {
     expect(["http", "memory", "unconfigured"]).toContain(body.domain);
   });
 
+  it("reports non-ready instead of silently using memory when production lacks a checkpoint DSN", async () => {
+    resetAgentOsCheckpointerForTests();
+    process.env.NODE_ENV = "production";
+    delete process.env.AGENT_OS_CHECKPOINT_DATABASE_URL;
+
+    const res = await fetch(`${baseUrl}/health`);
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: false,
+      checkpoint: "unavailable",
+      error: expect.stringContaining("AGENT_OS_CHECKPOINT_DATABASE_URL"),
+    });
+    await expect(listenAgentOsHttp(0)).rejects.toThrow("AGENT_OS_CHECKPOINT_DATABASE_URL");
+  });
+
   it("accepts the right token", async () => {
     const res = await fetch(`${baseUrl}/v1/agent-os/runs`, {
       method: "POST",
@@ -96,5 +127,97 @@ describe("worker HTTP auth", () => {
       body: JSON.stringify({ projectId: "p1" }),
     });
     expect(res.status).not.toBe(401);
+  });
+
+  it("requires the Gateway-reserved runId before checking model readiness", async () => {
+    const res = await fetch(`${baseUrl}/v1/agent-os/runs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-agent-os-internal-token": TOKEN,
+      },
+      body: JSON.stringify({
+        projectId: "22222222-2222-4222-8222-222222222222",
+        conversationId: "33333333-3333-4333-8333-333333333333",
+        actorId: "user-1",
+        message: "Create a story.",
+        modelProfileId: "qwen-plus",
+        projectKind: "story",
+        workbenchMode: "story",
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toContain("runId");
+  });
+
+  it("replays a durable run before model and Skill initialization", async () => {
+    const runId = "44444444-4444-4444-8444-444444444444";
+    const conversationId = "33333333-3333-4333-8333-333333333333";
+    process.env.AGENT_OS_DOMAIN_URL = "http://gateway.test";
+    globalThis.fetch = vi.fn(async (input, init) => {
+      if (String(input).startsWith("http://gateway.test/")) {
+        return new Response(
+          JSON.stringify({
+            ok: true,
+            status: "completed",
+            events: [
+              {
+                id: "55555555-5555-4555-8555-555555555555",
+                protocolVersion: "fizz.agent.v1",
+                sessionId: `agent-os:v1:conversation:${conversationId}`,
+                runId,
+                conversationId,
+                sequence: 1,
+                timestamp: "2026-08-21T00:00:00.000Z",
+                type: "RunCompleted",
+                data: {
+                  turnId: "66666666-6666-4666-8666-666666666666",
+                  status: "completed",
+                },
+              },
+            ],
+            pendingApproval: null,
+            pendingUserInput: null,
+            pendingExternal: null,
+            assistantText: "Already completed.",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+      return originalFetch(input, init);
+    }) as typeof fetch;
+
+    const res = await originalFetch(`${baseUrl}/v1/agent-os/runs`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-agent-os-internal-token": TOKEN,
+      },
+      // No Skill snapshot is needed for a replay; initializing a new turn
+      // would reject this command, proving the durable branch ran first.
+      body: JSON.stringify({
+        runId,
+        clientSubmissionId: "77777777-7777-4777-8777-777777777777",
+        turnId: "66666666-6666-4666-8666-666666666666",
+        messageId: "88888888-8888-4888-8888-888888888888",
+        startExecutionToken: "99999999-9999-4999-8999-999999999999",
+        startExecutionAttemptId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        startExecutionEpoch: 1,
+        projectId: "22222222-2222-4222-8222-222222222222",
+        conversationId,
+        actorId: "user-1",
+        message: "Create a story.",
+        modelProfileId: "qwen-plus",
+        projectKind: "story",
+        workbenchMode: "story",
+      }),
+    });
+
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({
+      runId,
+      status: "completed",
+      assistantText: "Already completed.",
+    });
   });
 });

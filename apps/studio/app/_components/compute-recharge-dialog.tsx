@@ -20,7 +20,7 @@ import {
   useComputeWalletBalance,
 } from "@/app/_components/credits-badge";
 import { useIsCnSite } from "@/app/_components/region-provider";
-import { useBillingWorkspace } from "@/app/_components/workspace-context";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import { ApiRequestError } from "@/lib/api";
 import {
   createComputeCustomRecharge,
@@ -67,7 +67,7 @@ export function ComputeRechargeDialog({
   // Recharge targets the pot the user actually pays from (payer-rule mirror):
   // a team active workspace tops up the shared pot; anywhere else tops up the
   // caller's OWN personal pot — never a host's pot they happen to be visiting.
-  const billingWorkspace = useBillingWorkspace();
+  const billingWorkspace = useProjectPayerWorkspace();
   const sym = isCn ? "¥" : "$";
   const minorPerPoint = isCn ? 7 : 1;
   const effectiveAvailable = available ?? wallet.data?.available ?? null;

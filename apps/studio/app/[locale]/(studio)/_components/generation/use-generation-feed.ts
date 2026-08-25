@@ -20,7 +20,7 @@ import {
 import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { charactersKeys } from "@/app/[locale]/(studio)/characters/_lib/use-characters";
 import { computeWalletBalanceQueryKey } from "@/app/_components/credits-badge";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 
 /** One row of the create-and-browse feed. Rows are inserted after server accept. */
 export interface FeedJob {
@@ -163,9 +163,11 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     };
   }, [reconcileHistory]);
 
-  // Realtime: ai_job_update pushes for this modality merge into the feed. One
-  // socket per active workspace (so it carries that workspace's wallet channel).
-  const workspaceId = useActiveWorkspaceId();
+  // Realtime: ai_job_update pushes for this modality merge into the feed. Scoped
+  // to the project's PAYER workspace, not the global active selection: always a
+  // workspace I am a member of (negotiate never 403s) and the one carrying this
+  // project's job + wallet channels when I belong to the project's workspace.
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   useEffect(() => {
     const client = getAssetsRealtimeKernel({
       workspaceId: workspaceId ?? undefined,

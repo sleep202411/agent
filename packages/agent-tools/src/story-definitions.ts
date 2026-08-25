@@ -1,15 +1,19 @@
 import {
+  STORY_AGENT_BRIEF_MAX_CHARS,
   StoryAgentCharacterSchema,
   StoryAgentClipKeySchema,
   StoryAgentGraphNodeSchema,
   StoryAgentHotspotInteractionSchema,
   StoryAgentLocalizedTextSchema,
+  StoryAgentRunStatusSchema,
   StoryAgentStableIdSchema,
   StoryPatchOperationsSchema,
 } from "@repo/shared/story-agent";
 import { z } from "zod";
 
 import type { ToolDefinition } from "./types.js";
+import { AgentExternalJobHandoffSchema } from "./handoff.js";
+import { StoryCreativeProfileLanguageSchema } from "./story-creative-profile.js";
 
 const StorySceneDraftSchema = z
   .object({
@@ -27,6 +31,77 @@ const StoryMutationBaseSchema = z
   .strict();
 
 export const StoryReadInputSchema = z.object({}).strict();
+
+const StoryProductionStageStatusSchema = z.enum(["missing", "current", "stale"]);
+
+/**
+ * Canonical chapter-stage readiness projected by the Server. The model uses
+ * this state to choose create, incremental completion, or no-op; transcript
+ * prose and graph emptiness are never substitutes for these stage statuses.
+ */
+export const StoryProductionStateSchema = z
+  .object({
+    projectId: z.string().uuid(),
+    chapterId: z.string().uuid(),
+    profile: z.object({ status: StoryProductionStageStatusSchema }).strict(),
+    script: z
+      .object({
+        status: StoryProductionStageStatusSchema,
+        documentId: z.string().uuid().nullable(),
+        sequence: z.number().int().nonnegative().nullable(),
+      })
+      .strict(),
+    plotTree: z
+      .object({
+        status: StoryProductionStageStatusSchema,
+        nodeCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+    assets: z
+      .object({
+        status: StoryProductionStageStatusSchema,
+        currentCount: z.number().int().nonnegative(),
+        staleCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+    storyboard: z
+      .object({
+        status: StoryProductionStageStatusSchema,
+        sequenceCount: z.number().int().nonnegative(),
+        staleCount: z.number().int().nonnegative(),
+        missingPlotNodeIds: z.array(StoryAgentStableIdSchema).max(500),
+      })
+      .strict(),
+    ready: z.boolean(),
+  })
+  .strict()
+  .superRefine((state, context) => {
+    if (
+      state.script.status !== "missing" &&
+      (state.script.documentId === null || state.script.sequence === null)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["script"],
+        message: "An existing Script stage requires its canonical document id and sequence.",
+      });
+    }
+    const allCurrent = [
+      state.profile.status,
+      state.script.status,
+      state.plotTree.status,
+      state.assets.status,
+      state.storyboard.status,
+    ].every((status) => status === "current");
+    if (state.ready !== allCurrent) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ready"],
+        message: "ready must exactly reflect all canonical production stages being current.",
+      });
+    }
+  });
+export type StoryProductionState = z.infer<typeof StoryProductionStateSchema>;
 
 /**
  * Cast authoring is withdrawn from the agent surface: character cards project
@@ -143,11 +218,68 @@ const StoryMutationOutputSchema = z
   })
   .strict();
 
+/**
+ * Hand an explicit Story production request to the Server-side canonical
+ * planner. Unlike the fine-grained Plot mutation tools, this command never
+ * makes the model reconstruct a whole project from transcript history. The
+ * Server inspects the chapter's durable stages and decides whether a screenplay
+ * proposal or only downstream specification work is required.
+ */
+export const StoryAuthorInputSchema = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    summary: z.string().trim().min(1).max(4_000),
+    brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
+    /** Natural acknowledgement shown as soon as durable planning starts; never claims success. */
+    startedMessage: z.string().trim().min(1).max(2_000),
+    /**
+     * Stage-accurate result shown when the handoff completes. A screenplay may
+     * be reviewable; downstream specs are never a second review artifact. It
+     * distinguishes durable specifications from generated media and directs the
+     * creator to Generate for any later image/video production.
+     */
+    completionMessage: z.string().trim().min(1).max(2_000),
+  })
+  .strict();
+
+export const StoryConfirmCreativeProfileInputSchema = z
+  .object({
+    requestId: z.string().uuid().optional(),
+    aspectRatio: z.enum(["landscape_16_9", "portrait_9_16"]),
+    targetRuntime: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
+    visualDirection: z.enum([
+      "cinematic_realism",
+      "stylized_3d",
+      "graphic_novel",
+      "anime_cinematic",
+    ]),
+    storyLanguage: StoryCreativeProfileLanguageSchema,
+  })
+  .strict();
+
+const StoryCreativeProfileOutputSchema = z
+  .object({
+    frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]),
+    durationPreset: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
+    visualStyle: z.enum(["cinematic_realism", "stylized_3d", "graphic_novel", "anime_cinematic"]),
+    storyLanguage: StoryCreativeProfileLanguageSchema,
+    confirmedAt: z.string().datetime(),
+  })
+  .strict();
+
+const StoryAuthorOutputSchema = z
+  .object({
+    runId: z.string().uuid(),
+    status: z.literal("authoring"),
+    agentHandoff: AgentExternalJobHandoffSchema,
+  })
+  .strict();
+
 export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.read",
     description:
-      "Read the active Story chapter, including story bible, graph topology, production notes, revision, and content hash. Call before every Story write.",
+      "Read the active Story chapter and current durable authoring-run status, including story bible, graph topology, production notes, revision, content hash, and the Server-owned productionState for profile, Script, Plot Tree, Asset Specs, and Storyboard specs. Call before every Story write, before story.author, and before claiming that a background run or production stage is active/current/missing. productionState, not transcript prose or graph emptiness, selects create, incremental completion, or no-op.",
     kind: "query",
     risk: "read",
     inputSchema: StoryReadInputSchema,
@@ -166,8 +298,42 @@ export const STORY_AGENT_OS_TOOLS = [
           nodes: z.array(StoryAgentGraphNodeSchema),
         }),
         productionNotes: z.array(z.string()),
+        productionState: StoryProductionStateSchema,
+        creativeProfile: z
+          .object({
+            frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]),
+            durationPreset: z.enum(["short_5_15", "medium_15_30", "long_30_60"]).nullable(),
+            visualStyle: z
+              .enum(["cinematic_realism", "stylized_3d", "graphic_novel", "anime_cinematic"])
+              .nullable(),
+            storyLanguage: z.string().min(2).max(16),
+            confirmed: z.boolean(),
+          })
+          .strict(),
+        /**
+         * Current durable authoring lifecycle. Conversation text is historical
+         * and can say "drafting" long after a creator discarded that run; the
+         * model must use this projection instead of inferring job state from
+         * an earlier assistant message.
+         */
+        authoringRun: z
+          .object({
+            runId: z.string().uuid(),
+            status: StoryAgentRunStatusSchema,
+          })
+          .strict()
+          .nullable(),
       })
       .strict(),
+  },
+  {
+    id: "story.confirmCreativeProfile",
+    description:
+      "Atomically confirm the Story project's complete aspect ratio, runtime, visual direction, and story language. Use values the creator already supplied directly, plus answers from a story_creative_profile interaction when some values were missing. Pass that interaction's requestId when one was used; the server validates every requested answer against these values.",
+    kind: "command",
+    risk: "reversible",
+    inputSchema: StoryConfirmCreativeProfileInputSchema,
+    outputSchema: StoryCreativeProfileOutputSchema,
   },
   {
     id: "story.updateBible",
@@ -256,5 +422,18 @@ export const STORY_AGENT_OS_TOOLS = [
     risk: "critical",
     inputSchema: StoryApplyPatchInputSchema,
     outputSchema: StoryMutationOutputSchema,
+  },
+  {
+    id: "story.author",
+    description:
+      "Hand an explicit Story creation or production-completion request to the Server-side canonical production planner. Never call for greetings, casual conversation, capability questions, unrelated requests, or merely because Story mode is open. Call story.read first. The Server reuses every valid chapter stage and fills only what is missing or stale; do not use this tool to rebuild valid work. Only when no valid Script exists may it author the single creator-visible screenplay proposal (asking for missing project-profile values first only when necessary). After screenplay approval, the Server saves the exact chapter Script, compiles the single canonical Plot topology, and persists stably referenceable Asset Specs plus one Storyboard sequence per Plot node with one or more ordered clips. Asset Specs may have zero generated media. This tool never generates images or videos and never incurs media-generation work; the creator must use Generate later. For a narrow edit to an existing Plot, use the fine-grained story.* tools instead. Provide a specific startedMessage that acknowledges work without claiming success. completionMessage must name only results proven by canonical context: for a missing Script, say only that the screenplay is ready for creator review; never present production specifications as a second review artifact. For an incremental plan, name only its requested specifications. If the Server-selected path is not exposed, use neutral handoff copy rather than predicting it. Always say that media has not been generated. The later authoritative Server apply continuation, not this proposal-ready copy, announces persisted Script/Plot/spec readiness after commit. Runs asynchronously and returns a durable external-job handoff.",
+    kind: "command",
+    // Reversible at the Agent tool boundary: this durably schedules the Server
+    // plan and never starts paid media generation. When a screenplay is needed,
+    // its creator-facing review is the write gate; a generic raw-JSON approval
+    // here would duplicate that product decision.
+    risk: "reversible",
+    inputSchema: StoryAuthorInputSchema,
+    outputSchema: StoryAuthorOutputSchema,
   },
 ] as const satisfies readonly ToolDefinition[];

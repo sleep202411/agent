@@ -26,22 +26,15 @@ export function SmoothStreamMarkdown({
   className?: string;
   caret?: boolean;
 }) {
-  const [shown, setShown] = useState(active ? "" : target);
-  const [paint, setPaint] = useState(active ? "" : target);
-  const shownRef = useRef(active ? "" : target);
+  const [shown, setShown] = useState("");
+  const [paint, setPaint] = useState("");
+  const shownRef = useRef("");
   const targetRef = useRef(target);
   const lastPaintAtRef = useRef(0);
 
-  targetRef.current = target;
-
-  // Turn finished → snap to full text (no trailing lag).
   useEffect(() => {
-    if (!active) {
-      shownRef.current = target;
-      setShown(target);
-      setPaint(target);
-    }
-  }, [active, target]);
+    targetRef.current = target;
+  }, [target]);
 
   // rAF progressive catch-up while streaming.
   useEffect(() => {
@@ -78,17 +71,17 @@ export function SmoothStreamMarkdown({
 
   // Throttle Markdown paints while streaming; always flush when caught up.
   useEffect(() => {
-    if (!active) {
-      setPaint(shown);
-      return;
-    }
+    if (!active) return;
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     const caughtUp = shown === targetRef.current;
     const due = now - lastPaintAtRef.current >= 48;
     if (caughtUp || due || paint.length === 0) {
-      lastPaintAtRef.current = now;
-      setPaint(shown);
-      return;
+      const frame = window.requestAnimationFrame(() => {
+        lastPaintAtRef.current =
+          typeof performance !== "undefined" ? performance.now() : Date.now();
+        setPaint(shown);
+      });
+      return () => window.cancelAnimationFrame(frame);
     }
     const id = window.setTimeout(() => {
       lastPaintAtRef.current = typeof performance !== "undefined" ? performance.now() : Date.now();
@@ -97,7 +90,9 @@ export function SmoothStreamMarkdown({
     return () => window.clearTimeout(id);
   }, [active, shown, paint.length]);
 
-  const body = paint.length > 0 ? paint : active ? "" : target;
+  // Settled text is a pure render projection, so completion snaps without a
+  // state-setting effect or a trailing animation frame.
+  const body = active ? paint : target;
 
   return (
     <div className={cn("min-w-0 max-w-full", className)}>
@@ -111,7 +106,7 @@ export function SmoothStreamMarkdown({
       {caret && active ? (
         <span
           aria-hidden
-          className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-0.5 animate-pulse bg-white/70 align-text-bottom"
+          className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-0.5 animate-pulse bg-white/70 align-text-bottom motion-reduce:animate-none"
         />
       ) : null}
     </div>

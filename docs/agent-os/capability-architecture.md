@@ -140,7 +140,7 @@ apps/server/src/agent-os-gateway/capabilities/
 4. `build-langchain-tools` 改为遍历（先保留手写 schema，仅换成循环）
 5. Nest 新增 handler 接口与 `platform.handler`，`execute()` 改为查表分派；方法内 `kind !== 'platform'` 判断上移到分派层
 
-**验收**：现有测试全绿（agent-os 21、model-router 12、agent-protocol 4、server 相关 spec）；`probe:models` 五个模型全通；.com 上分镜与画布各跑一轮真实对话。
+**验收**：现有 Agent OS、model-router、agent-protocol 与 server 测试全绿；候选模型通过生产 Gateway/Worker durable HITL 集成测试；.com 上分镜与画布各跑一轮真实对话。
 
 **风险**：低。无行为变更，回滚 = revert。
 
@@ -148,7 +148,7 @@ apps/server/src/agent-os-gateway/capabilities/
 
 让工具契约同时产出严格校验版与模型可见版，绑定层不再手写 schema。
 
-**前置验证**：v4 schema 经 LangChain 转 JSON Schema 后模型能否正常调用。`.strict()`（→ `additionalProperties: false`）与 `z.preprocess` 的转换行为需实测，改 `probe:models` 即可验。
+**前置验证**：v4 schema 经 LangChain 转 JSON Schema 后模型能否正常调用。`.strict()`（→ `additionalProperties: false`）与 `z.preprocess` 的转换行为必须通过生产 Gateway/Worker durable HITL 集成路径实测。
 
 **若不通过**：保留手写模型可见 schema，但与契约同文件相邻，靠 review 而非跨文件记忆维持一致。
 

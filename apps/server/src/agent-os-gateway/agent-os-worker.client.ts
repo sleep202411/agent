@@ -5,15 +5,27 @@ import {
 } from '@nestjs/common';
 import type { AgentProjectKind } from '@repo/agent-capabilities';
 import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
+import type { AgentOsContinuationCommand } from '../agent-os-journal/agent-os-journal.schemas';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
 
 export interface AgentOsWorkerRunRequest {
+  /** Stable id allocated and durably reserved by Gateway before dispatch. */
+  runId: string;
+  clientSubmissionId: string;
+  turnId: string;
+  messageId: string;
+  /** Durable semantic execution owner plus one leased dispatch attempt fence. */
+  startExecutionToken: string;
+  startExecutionAttemptId: string;
+  startExecutionEpoch: number;
   projectId: string;
   conversationId: string;
   actorId: string;
   message: string;
+  /** Trusted Nest-resolved product state for model reasoning, never transcript UI. */
+  modelContext?: string;
   modelProfileId: string;
-  attachmentIds?: string[];
+  attachments?: Array<{ id: string; filename: string }>;
   permissionMode?: 'ask' | 'smart' | 'full';
   projectKind: AgentProjectKind;
   workbenchMode: string;
@@ -26,10 +38,13 @@ export interface AgentOsWorkerRunResponse {
   runId: string;
   status: string;
   pendingApproval?: unknown;
+  pendingUserInput?: unknown;
+  pendingExternal?: unknown;
   events?: unknown[];
   assistantText?: string;
   characters?: unknown[];
   error?: { code: string; message: string };
+  startDisposition?: 'scheduled' | 'already_scheduled' | 'replayed';
 }
 
 @Injectable()
@@ -57,12 +72,33 @@ export class AgentOsWorkerClient {
   async startRun(
     body: AgentOsWorkerRunRequest,
   ): Promise<AgentOsWorkerRunResponse> {
-    return this.postJson('/v1/agent-os/runs', body);
+    // Admission holds a cross-pod conversation lock. Worker start is designed
+    // to acknowledge immediately and stream in the background, so a slow
+    // acknowledgement is an availability failure rather than a ten-minute job.
+    return this.postJson('/v1/agent-os/runs', body, 15_000);
+  }
+
+  async resumeContinuation(
+    body: AgentOsContinuationCommand & {
+      continuationExecutionToken: string;
+      continuationExecutionAttemptId: string;
+      continuationExecutionEpoch: number;
+    },
+  ): Promise<AgentOsWorkerRunResponse> {
+    return this.postJson(
+      `/v1/agent-os/runs/${body.runId}/continuations`,
+      body,
+      15_000,
+    );
   }
 
   async resolveApproval(input: {
     runId: string;
+    approvalId: string;
+    responseId: string;
     decision: 'approve' | 'reject';
+    responseText: string;
+    locale: 'en-US' | 'zh-CN' | 'zh-HK';
     projectId: string;
     actorId: string;
     conversationId: string;
@@ -73,7 +109,11 @@ export class AgentOsWorkerClient {
     permissionMode?: 'ask' | 'smart' | 'full';
   }): Promise<AgentOsWorkerRunResponse> {
     return this.postJson(`/v1/agent-os/runs/${input.runId}/approvals`, {
+      approvalId: input.approvalId,
+      responseId: input.responseId,
       decision: input.decision,
+      responseText: input.responseText,
+      locale: input.locale,
       projectId: input.projectId,
       actorId: input.actorId,
       conversationId: input.conversationId,
@@ -83,6 +123,43 @@ export class AgentOsWorkerClient {
       workbenchContext: input.workbenchContext,
       permissionMode: input.permissionMode,
     });
+  }
+
+  async resolveUserInput(input: {
+    runId: string;
+    requestId: string;
+    responseId: string;
+    answers: Record<string, string>;
+    projectId: string;
+    actorId: string;
+    conversationId: string;
+    modelProfileId: string;
+    projectKind: AgentProjectKind;
+    workbenchMode: string;
+    workbenchContext?: Readonly<Record<string, string>>;
+    permissionMode?: 'ask' | 'smart' | 'full';
+  }): Promise<AgentOsWorkerRunResponse> {
+    // Resume acknowledges only after UserInputResolved + the assistant
+    // acknowledgement are durable, then continues inference in background.
+    // Keep this below Gateway's response-claim lease so a timed-out dispatch
+    // cannot overlap a second lease owner.
+    return this.postJson(
+      `/v1/agent-os/runs/${input.runId}/user-input`,
+      {
+        requestId: input.requestId,
+        responseId: input.responseId,
+        answers: input.answers,
+        projectId: input.projectId,
+        actorId: input.actorId,
+        conversationId: input.conversationId,
+        modelProfileId: input.modelProfileId,
+        projectKind: input.projectKind,
+        workbenchMode: input.workbenchMode,
+        workbenchContext: input.workbenchContext,
+        permissionMode: input.permissionMode,
+      },
+      20_000,
+    );
   }
 
   /**
@@ -96,10 +173,27 @@ export class AgentOsWorkerClient {
 
   /** Model profiles the worker can drive — the picker's source of truth. */
   async listModels(): Promise<unknown> {
-    const res = await fetch(
-      `${this.config.value.workerBaseUrl}/v1/agent-os/models`,
-      { headers: this.internalHeaders(), signal: AbortSignal.timeout(10_000) },
-    );
+    let res: Response;
+    try {
+      res = await fetch(
+        `${this.config.value.workerBaseUrl}/v1/agent-os/models`,
+        {
+          headers: this.internalHeaders(),
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+    } catch (error) {
+      // A dead or unreachable worker must surface as 503, not an unhandled
+      // fetch rejection turned into a generic 500; keep the cause in the log
+      // so timeout / DNS / refused stay distinguishable during an incident.
+      this.logger.warn(
+        `Agent OS worker models fetch failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw new ServiceUnavailableException({
+        code: 'AGENT_OS_WORKER_UNAVAILABLE',
+        message: 'Could not reach the Agent OS worker.',
+      });
+    }
     if (!res.ok) {
       throw new ServiceUnavailableException({
         code: 'AGENT_OS_WORKER_UNAVAILABLE',
@@ -126,14 +220,19 @@ export class AgentOsWorkerClient {
     runId: string,
     reason?: string,
   ): Promise<AgentOsWorkerRunResponse> {
-    return this.postJson(`/v1/agent-os/runs/${runId}/cancel`, {
-      reason: reason ?? 'Stopped by user',
-    });
+    return this.postJson(
+      `/v1/agent-os/runs/${runId}/cancel`,
+      {
+        reason: reason ?? 'Stopped by user',
+      },
+      10_000,
+    );
   }
 
   private async postJson(
     path: string,
     body: unknown,
+    timeoutMs = 10 * 60_000,
   ): Promise<AgentOsWorkerRunResponse> {
     let res: Response;
     try {
@@ -144,7 +243,7 @@ export class AgentOsWorkerClient {
           ...this.internalHeaders(),
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(10 * 60_000),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
       throw new ServiceUnavailableException({

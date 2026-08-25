@@ -50,6 +50,7 @@ export interface ModeDocumentRef {
     | { kind: "story_project"; projectId: string };
   platformProjectId: string | null;
   storyProjectId: string | null;
+  storyChapterId: string | null;
   workspaceId: string;
   sectionId: string | null;
   type: string;
@@ -220,6 +221,17 @@ export async function ensureModeDocument(
 export async function ensureStoryCanvasDocument(storyProjectId: string): Promise<ModeDocumentRef> {
   const data = await api.post<{ document: ModeDocumentRef }>(
     `/aurora/story-projects/${storyProjectId}/documents/canvas/ensure`
+  );
+  return data.document;
+}
+
+/** One chapter's free-form screenplay — the chapter pipeline's source. */
+export async function ensureStoryScriptDocument(
+  storyProjectId: string,
+  storyChapterId: string
+): Promise<ModeDocumentRef> {
+  const data = await api.post<{ document: ModeDocumentRef }>(
+    `/aurora/story-projects/${storyProjectId}/chapters/${storyChapterId}/documents/script/ensure`
   );
   return data.document;
 }

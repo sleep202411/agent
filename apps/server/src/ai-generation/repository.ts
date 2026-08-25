@@ -569,13 +569,23 @@ export class AiGenerationRepository {
     patch: Partial<AiJob>,
   ): Promise<AiJob | null> {
     const data = this.patchToRow(patch);
-    const result = await this.prisma.aiJob.updateMany({
-      where: { id, status: 'in_progress' },
-      data: { ...data, version: { increment: 1 } },
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.aiJob.updateMany({
+        where: { id, status: 'in_progress' },
+        data: { ...data, version: { increment: 1 } },
+      });
+      if (result.count === 0) return null;
+
+      // The terminal state and its outputs are one fact. Keeping these writes
+      // in the same transaction prevents a process crash from leaving a
+      // `completed` AiJob whose output rows (and output usage ledger) were
+      // never committed. Product-plane completion observers can therefore
+      // safely treat a completed job as having its durable outputs present.
+      if (patch.outputs) {
+        await this.replaceOutputsWith(tx, id, patch.outputs);
+      }
+      return this.findByIdWith(tx, id);
     });
-    if (result.count === 0) return null;
-    if (patch.outputs) await this.replaceOutputs(id, patch.outputs);
-    return this.findById(id);
   }
 
   /**
@@ -1508,89 +1518,97 @@ export class AiGenerationRepository {
     // Two-step: delete + insert in a transaction. Prisma doesn't have
     // a true "replace child collection" primitive, so we do it
     // atomically to avoid a partial state if the worker crashes mid-write.
-    await this.prisma.$transaction(async (tx) => {
-      const job = await tx.aiJob.findUnique({
-        where: { id: jobId },
-        select: {
-          userId: true,
-          workspaceId: true,
-          projectId: true,
-          sourceSurface: true,
-        },
-      });
-      const outputRows = outputs.map((o, idx) => ({
-        id: o.id || newShortId(),
-        jobId,
-        assetId: o.assetId ?? null,
-        type: o.type,
-        url: o.url,
-        storagePath: o.storagePath,
-        contentHash: o.contentHash ?? null,
-        width: o.width ?? null,
-        height: o.height ?? null,
-        durationSeconds: o.durationSeconds ?? null,
-        mimeType: o.mimeType ?? null,
-        bytes: o.bytes ?? null,
-        outputIndex: idx,
-        seed: o.seed ?? null,
-        safetyFlags:
-          (o.safetyFlags as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
-        provenance:
-          (o.provenance as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
-        createdAt: new Date(o.createdAt),
-      }));
-      const assetIds = [
-        ...new Set(
-          outputRows
-            .map((row) => row.assetId)
-            .filter((assetId): assetId is string => Boolean(assetId)),
-        ),
-      ];
-      const variants =
-        assetIds.length > 0
-          ? await tx.mediaAssetVariant.findMany({
-              where: { assetId: { in: assetIds }, variantKey: 'original' },
-              select: { id: true, assetId: true },
-            })
-          : [];
-      const variantByAssetId = new Map(
-        variants.map((variant) => [variant.assetId, variant.id]),
-      );
+    await this.prisma.$transaction((tx) =>
+      this.replaceOutputsWith(tx, jobId, outputs),
+    );
+  }
 
-      await tx.mediaAssetUsage.deleteMany({
-        where: {
-          aiJobId: jobId,
-          role: MediaAssetUsageRole.output,
-        },
-      });
-      await tx.aiJobOutput.deleteMany({ where: { jobId } });
-      if (outputRows.length > 0) {
-        await tx.aiJobOutput.createMany({ data: outputRows });
-      }
-      const usageRows = outputRows
-        .filter((row) => row.assetId)
-        .map((row) => ({
-          assetId: row.assetId!,
-          variantId: variantByAssetId.get(row.assetId!) ?? null,
-          userId: job?.userId ?? null,
-          workspaceId: job?.workspaceId ?? null,
-          projectId: job?.projectId ?? null,
-          aiJobId: jobId,
-          aiJobOutputId: row.id,
-          surface: usageSurfaceForSourceSurface(job?.sourceSurface),
-          sourceSurface: job?.sourceSurface ?? null,
-          role: MediaAssetUsageRole.output,
-          idempotencyKey: `ai-output:${jobId}:${row.id}`,
-          metadata: {
-            outputIndex: row.outputIndex,
-            type: row.type,
-            contentHash: row.contentHash,
-          } satisfies Prisma.InputJsonObject,
-        }));
-      if (usageRows.length > 0) {
-        await tx.mediaAssetUsage.createMany({ data: usageRows });
-      }
+  private async replaceOutputsWith(
+    tx: Prisma.TransactionClient,
+    jobId: string,
+    outputs: AiJobOutput[],
+  ): Promise<void> {
+    const job = await tx.aiJob.findUnique({
+      where: { id: jobId },
+      select: {
+        userId: true,
+        workspaceId: true,
+        projectId: true,
+        sourceSurface: true,
+      },
     });
+    const outputRows = outputs.map((o, idx) => ({
+      id: o.id || newShortId(),
+      jobId,
+      assetId: o.assetId ?? null,
+      type: o.type,
+      url: o.url,
+      storagePath: o.storagePath,
+      contentHash: o.contentHash ?? null,
+      width: o.width ?? null,
+      height: o.height ?? null,
+      durationSeconds: o.durationSeconds ?? null,
+      mimeType: o.mimeType ?? null,
+      bytes: o.bytes ?? null,
+      outputIndex: idx,
+      seed: o.seed ?? null,
+      safetyFlags:
+        (o.safetyFlags as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
+      provenance:
+        (o.provenance as Prisma.InputJsonValue | undefined) ?? Prisma.DbNull,
+      createdAt: new Date(o.createdAt),
+    }));
+    const assetIds = [
+      ...new Set(
+        outputRows
+          .map((row) => row.assetId)
+          .filter((assetId): assetId is string => Boolean(assetId)),
+      ),
+    ];
+    const variants =
+      assetIds.length > 0
+        ? await tx.mediaAssetVariant.findMany({
+            where: { assetId: { in: assetIds }, variantKey: 'original' },
+            select: { id: true, assetId: true },
+          })
+        : [];
+    const variantByAssetId = new Map(
+      variants.map((variant) => [variant.assetId, variant.id]),
+    );
+
+    await tx.mediaAssetUsage.deleteMany({
+      where: {
+        aiJobId: jobId,
+        role: MediaAssetUsageRole.output,
+      },
+    });
+    await tx.aiJobOutput.deleteMany({ where: { jobId } });
+    if (outputRows.length > 0) {
+      await tx.aiJobOutput.createMany({ data: outputRows });
+    }
+    const usageRows = outputRows
+      .filter((row) => row.assetId)
+      .map((row) => ({
+        assetId: row.assetId!,
+        variantId: variantByAssetId.get(row.assetId!) ?? null,
+        userId: job?.userId ?? null,
+        workspaceId: job?.workspaceId ?? null,
+        projectId: job?.projectId ?? null,
+        aiJobId: jobId,
+        aiJobOutputId: row.id,
+        surface: usageSurfaceForSourceSurface(job?.sourceSurface),
+        sourceSurface: job?.sourceSurface ?? null,
+        role: MediaAssetUsageRole.output,
+        idempotencyKey: `ai-output:${jobId}:${row.id}`,
+        metadata: {
+          outputIndex: row.outputIndex,
+          type: row.type,
+          contentHash: row.contentHash,
+        } satisfies Prisma.InputJsonObject,
+      }));
+    if (usageRows.length > 0) {
+      await tx.mediaAssetUsage.createMany({ data: usageRows });
+    }
   }
 
   /**

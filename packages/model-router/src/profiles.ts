@@ -42,9 +42,9 @@ export const ModelProfileSchema = z
 export type ModelProfile = z.infer<typeof ModelProfileSchema>;
 
 /**
- * Shipped defaults. Every one of these has been through `probe:models` — it
- * completes the golden path (propose a write, pause, approve, land it) against
- * the configured endpoint. A model that has not is a guess, not a default.
+ * Shipped defaults. A model qualifies only after the durable Gateway/Worker
+ * HITL evaluation path can propose, pause, resume, and commit a fenced write
+ * against the configured endpoint. An unqualified model is not a default.
  */
 const BUILT_IN_PROFILES: readonly ModelProfile[] = [
   {

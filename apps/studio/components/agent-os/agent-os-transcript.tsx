@@ -1,8 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { IconAlertTriangle, IconLoader2, IconTool } from "@tabler/icons-react";
-import { Button } from "@/components/ui/button";
+import { IconAlertTriangle, IconClockPause, IconLoader2 } from "@tabler/icons-react";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { Message, MessageContent, MessageHeader } from "@/components/ui/message";
@@ -14,156 +13,115 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
-import { cn } from "@/lib/utils";
-import { ApprovalPayload, type ApprovalPayloadLabels } from "./approval-payload";
+import type { AgentOsActivityStatus } from "./agent-os-activity";
 import { SmoothStreamMarkdown } from "./smooth-stream-markdown";
-import { WrittenNodes, writtenNodesFromResult } from "./written-nodes";
-import type { AgentOsChatMessage } from "./use-agent-os-run";
+import type { AgentOsChatMessage, AgentOsSessionStatus } from "./use-agent-os-run";
 
-/** Clock label for timeline debug — local wall time next to every row. */
-function formatMessageClock(iso: string): { label: string; title: string } {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return { label: "—", title: iso || "invalid time" };
-  }
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate();
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
-  const clock = `${hh}:${mm}:${ss}`;
-  if (sameDay) {
-    return { label: clock, title: d.toISOString() };
-  }
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return {
-    label: `${mo}-${day} ${clock}`,
-    title: d.toISOString(),
-  };
-}
-
-function MessageMetaClock({
-  message,
-  className,
-}: {
-  message: AgentOsChatMessage;
-  className?: string;
-}) {
-  const { label, title } = formatMessageClock(message.createdAt);
-  const seq = typeof message.meta?.eventSequence === "number" ? message.meta.eventSequence : null;
-  const runHint = message.runId ? message.runId.slice(0, 8) : null;
-  const tip = [
-    title,
-    runHint ? `run ${runHint}` : null,
-    seq != null ? `seq ${seq}` : null,
-    message.id,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-
-  return (
-    <time
-      dateTime={message.createdAt}
-      title={tip}
-      className={cn(
-        "shrink-0 font-mono text-[10px] tabular-nums tracking-tight text-white/30",
-        className
-      )}
-    >
-      {label}
-      {seq != null ? <span className="text-white/20">{` · #${seq}`}</span> : null}
-    </time>
-  );
+interface TranscriptLabels {
+  transcript: string;
+  scrollToLatest: string;
+  user: string;
+  assistant: string;
+  thinking: string;
+  waitingForInput: string;
+  waitingForApproval: string;
+  approved: string;
+  rejected: string;
 }
 
 /**
- * Agent OS transcript on shadcn MessageScroller + Message + Bubble.
- * Same chat shell as Canvas Copilot; data comes from AgentOsChatMessage[], not AI SDK UIMessage.
+ * Durable transcript projection:
+ * - only real user messages and Assistant UI turns are rows;
+ * - all messageId segments in one turnId share one Assistant visual group;
+ * - the sole ephemeral activity lives at the active turn's tail;
+ * - Question / Approval / Draft operation cards are composer-only.
  */
 export function AgentOsTranscript({
-  projectId,
   messages,
   status,
   error,
   busy,
-  pendingApprovalActive,
-  onApprove,
+  activityStatus,
   empty,
   labels,
 }: {
   messages: AgentOsChatMessage[];
-  status: "idle" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled";
+  status: AgentOsSessionStatus;
   error: string | null;
   busy: boolean;
-  /** Whether the latest approval card should show action buttons. */
-  pendingApprovalActive: boolean;
-  onApprove: (decision: "approve" | "reject") => void;
   empty: ReactNode;
-  /** Needed to link a written node to its place on the canvas. */
-  projectId: string;
-  labels: {
-    transcript: string;
-    scrollToLatest: string;
-    user: string;
-    assistant: string;
-    system: string;
-    tool: string;
-    thinking: string;
-    approve: string;
-    reject: string;
-    scriptAttached: (chars: number) => string;
-    plan: string;
-    showOnCanvas: string;
-    payload: ApprovalPayloadLabels;
-  };
+  activityStatus?: AgentOsActivityStatus | null;
+  labels: TranscriptLabels;
 }) {
-  /**
-   * Chat timeline rules (chronological):
-   *   user → (optional tools/plan) → Working… → assistant stream → …
-   * Working is a real timeline row while the agent is busy, except when the
-   * *last* row is already a live streaming assistant bubble (progress shows
-   * as the caret inside that bubble — still the same timeline position).
-   */
-  const last = messages.at(-1);
-  const lastIsLiveAssistantStream =
-    last?.role === "assistant" && last.meta?.kind === "streaming" && last.content.trim().length > 0;
-  // Never show Working during HITL — the approval card is the action.
-  const showWorkingOnTimeline =
-    status !== "waiting_for_approval" &&
-    (status === "running" || busy) &&
-    !lastIsLiveAssistantStream;
-  const isEmpty = messages.length === 0 && status === "idle" && !error;
+  const lastTimelineItem = messages.at(-1);
+  const activeTurnId = lastTimelineItem?.turnId ?? null;
+  const explicitActivityMatchesTurn =
+    activityStatus?.turnId != null &&
+    (activeTurnId === null || activityStatus.turnId === activeTurnId);
+  const effectiveActivityStatus = explicitActivityMatchesTurn ? activityStatus : null;
+  const activityTurnId = effectiveActivityStatus?.turnId ?? activeTurnId;
+  const activeAssistant = [...messages]
+    .reverse()
+    .find((message) => message.role === "assistant" && message.turnId === activityTurnId);
+  const lastSegment = activeAssistant?.segments?.at(-1);
+  const assistantIsStreaming =
+    activeAssistant?.meta?.kind === "streaming" &&
+    Boolean(lastSegment?.content.trim() || activeAssistant.content.trim());
 
-  // Stick-to-bottom chat (side panel).
-  //
-  // shadcn MessageScroller's `defaultScrollPosition="last-anchor"` pins the
-  // last `scrollAnchor` item to the *top* of the viewport (start of a turn).
-  // We previously marked every user+assistant as an anchor, so each send /
-  // full rebuild scrolled that anchor to the top → felt like "jump to top".
-  //
-  // Correct pattern for this panel:
-  // - autoScroll + defaultScrollPosition="end" → follow the bottom
-  // - only the *latest* row is a scrollAnchor (streaming / Working tail)
-  // - spacer collapsed so we don't reintroduce a blank half-panel
-  // The failure banner belongs at the BOTTOM: this panel follows the tail, so a
-  // banner above the thread is off-screen the moment the conversation is longer
-  // than the viewport — which is exactly when a turn dies unexplained.
+  const statusKeepsTurnOpen =
+    status === "running" ||
+    status === "waiting_for_input" ||
+    status === "waiting_for_approval" ||
+    status === "waiting_for_external";
+  const terminal = status === "completed" || status === "failed" || status === "cancelled";
+  const explicitActivityVisible =
+    !terminal &&
+    effectiveActivityStatus != null &&
+    (!assistantIsStreaming || status === "waiting_for_external");
+  const showActivity =
+    explicitActivityVisible ||
+    (!terminal &&
+      (status === "waiting_for_input" ||
+        status === "waiting_for_approval" ||
+        ((status === "running" || status === "waiting_for_external" || busy) &&
+          !assistantIsStreaming)));
+  const activityLabel =
+    status === "waiting_for_input"
+      ? labels.waitingForInput
+      : status === "waiting_for_approval"
+        ? labels.waitingForApproval
+        : (effectiveActivityStatus?.label ?? labels.thinking);
+  const activityAssistantId = showActivity ? activeAssistant?.id : undefined;
+  const standaloneActivity = showActivity && !activityAssistantId;
+  const waitingActivity =
+    status === "waiting_for_input" ||
+    status === "waiting_for_approval" ||
+    effectiveActivityStatus?.mode === "waiting";
+
+  const visibleMessages = messages.filter(
+    (message) =>
+      message.role === "user" ||
+      message.content.trim().length > 0 ||
+      message.id === activityAssistantId
+  );
+  const lastVisible = visibleMessages.at(-1);
+  const isEmpty = visibleMessages.length === 0 && status === "idle" && !error;
   const tailId = error
     ? "timeline-error"
-    : showWorkingOnTimeline
-      ? "timeline-working"
-      : (last?.id ?? null);
+    : standaloneActivity
+      ? "timeline-activity"
+      : (activityAssistantId ?? lastVisible?.id ?? null);
 
   return (
     <MessageScrollerProvider autoScroll defaultScrollPosition="end">
       <MessageScroller className="min-h-0 flex-1">
         <MessageScrollerViewport aria-label={labels.transcript}>
           <MessageScrollerContent
-            aria-busy={status === "running" || busy}
+            aria-busy={
+              !waitingActivity &&
+              ((effectiveActivityStatus != null && effectiveActivityStatus.mode !== "waiting") ||
+                (!terminal && (status === "running" || status === "waiting_for_external" || busy)))
+            }
             className="gap-4 px-4 py-3 pb-6"
             spacerClassName="!max-h-0"
           >
@@ -175,28 +133,24 @@ export function AgentOsTranscript({
                 {empty}
               </MessageScrollerItem>
             ) : (
-              messages.map((message) => {
-                const streamingThis =
-                  status === "running" &&
-                  message.role === "assistant" &&
-                  message.meta?.kind === "streaming";
-                const isTail = !showWorkingOnTimeline && message.id === tailId;
+              visibleMessages.map((message) => {
+                const showTurnActivity = message.id === activityAssistantId;
                 return (
                   <MessageScrollerItem
                     key={message.id}
                     messageId={message.id}
-                    // Default Item uses contain-intrinsic-size ~10rem which
-                    // invents empty height for short tool/assistant rows.
                     className="[contain-intrinsic-size:auto_1.5rem]"
-                    scrollAnchor={isTail}
+                    scrollAnchor={message.id === tailId}
                   >
                     <AgentOsMessageRow
                       message={message}
-                      busy={busy}
-                      isStreaming={streamingThis}
-                      showApprovalActions={message.role === "approval" && pendingApprovalActive}
-                      projectId={projectId}
-                      onApprove={onApprove}
+                      streamActive={
+                        statusKeepsTurnOpen &&
+                        message.id === activeAssistant?.id &&
+                        assistantIsStreaming
+                      }
+                      activityLabel={showTurnActivity ? activityLabel : null}
+                      activityWaiting={showTurnActivity && waitingActivity}
                       labels={labels}
                     />
                   </MessageScrollerItem>
@@ -204,20 +158,21 @@ export function AgentOsTranscript({
               })
             )}
 
-            {/* Timeline tail: Working… after the last event while the turn is open. */}
-            {showWorkingOnTimeline ? (
+            {standaloneActivity ? (
               <MessageScrollerItem
-                key="timeline-working"
-                messageId="timeline-working"
+                key="timeline-activity"
+                messageId="timeline-activity"
                 className="[contain-intrinsic-size:auto_1.5rem]"
                 scrollAnchor
               >
-                <Marker role="status" className="px-1">
-                  <MarkerIcon>
-                    <IconLoader2 className="size-3.5 animate-spin text-white/55" stroke={1.8} />
-                  </MarkerIcon>
-                  <MarkerContent>{labels.thinking}</MarkerContent>
-                </Marker>
+                <Message align="start" data-turn-id={activityTurnId ?? undefined}>
+                  <MessageContent>
+                    <MessageHeader className="sr-only">
+                      <span>{labels.assistant}</span>
+                    </MessageHeader>
+                    <AgentOsActivityIndicator label={activityLabel} waiting={waitingActivity} />
+                  </MessageContent>
+                </Message>
               </MessageScrollerItem>
             ) : null}
 
@@ -225,7 +180,7 @@ export function AgentOsTranscript({
               <MessageScrollerItem key="timeline-error" messageId="timeline-error" scrollAnchor>
                 <div
                   role="alert"
-                  className="flex items-start gap-2 px-1 py-1 text-xs/relaxed text-destructive/86"
+                  className="flex items-start gap-2 px-1 py-1 text-xs/relaxed text-destructive/90"
                 >
                   <IconAlertTriangle className="mt-0.5 size-3.5 shrink-0" stroke={1.8} />
                   <span>{error}</span>
@@ -241,66 +196,47 @@ export function AgentOsTranscript({
 }
 
 function AgentOsMessageRow({
-  projectId,
   message,
-  busy,
-  isStreaming = false,
-  showApprovalActions,
-  onApprove,
+  streamActive,
+  activityLabel,
+  activityWaiting,
   labels,
 }: {
   message: AgentOsChatMessage;
-  busy: boolean;
-  /** Live token stream — show caret, not a separate Working row under the bubble. */
-  isStreaming?: boolean;
-  showApprovalActions: boolean;
-  projectId: string;
-  onApprove: (decision: "approve" | "reject") => void;
-  labels: {
-    user: string;
-    assistant: string;
-    system: string;
-    tool: string;
-    approve: string;
-    reject: string;
-    scriptAttached: (chars: number) => string;
-    plan: string;
-    showOnCanvas: string;
-    payload: ApprovalPayloadLabels;
-  };
+  streamActive: boolean;
+  activityLabel: string | null;
+  activityWaiting: boolean;
+  labels: Pick<TranscriptLabels, "user" | "assistant" | "approved" | "rejected">;
 }) {
   if (message.role === "user") {
-    // HITL decisions are timeline markers, not chat bubbles — keeps the
-    // chronological stream readable next to tool/assistant rows.
-    if (message.meta?.kind === "approval_decision") {
-      return (
-        <Marker className="px-1">
-          <MarkerContent className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/45">
-            <span>{message.content}</span>
-            <MessageMetaClock message={message} />
-          </MarkerContent>
-        </Marker>
-      );
-    }
+    // Current approval writers persist the exact localized display copy the
+    // creator submitted. Keep the generic label only as a replay fallback for
+    // old journals that projected an empty approval response.
+    const content =
+      message.content.trim() ||
+      (message.meta?.kind === "approval_response"
+        ? message.meta?.decision === "reject"
+          ? labels.rejected
+          : labels.approved
+        : "");
     const names = Array.isArray(message.meta?.attachmentNames)
-      ? (message.meta!.attachmentNames as string[])
+      ? (message.meta.attachmentNames as string[])
       : [];
     return (
       <Message align="end">
         <MessageContent className="gap-1.5">
           <MessageHeader className="sr-only">
-            <MessageMetaClock message={message} />
             <span>{labels.user}</span>
           </MessageHeader>
           <Bubble variant="secondary" className="max-w-[88%]">
-            <BubbleContent className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-white/[0.07] px-3.5 py-2.5 text-sm/relaxed text-white/88">
-              {message.content}
+            <BubbleContent className="whitespace-pre-wrap rounded-2xl rounded-br-md bg-white/[0.09] px-3.5 py-2.5 text-sm/relaxed text-white">
+              {content || null}
               {names.length > 0 ? (
                 <span className="mt-1.5 flex flex-wrap gap-1">
-                  {names.map((name) => (
+                  {names.map((name, index) => (
                     <span
-                      key={name}
-                      className="rounded-md bg-black/25 px-1.5 py-0.5 text-[10px] text-white/55"
+                      key={`${name}:${index}`}
+                      className="rounded-md bg-black/25 px-1.5 py-0.5 text-[10px] text-white/72"
                     >
                       {name}
                     </span>
@@ -314,135 +250,76 @@ function AgentOsMessageRow({
     );
   }
 
-  if (message.role === "assistant") {
-    // Live GFM while streaming (throttled parse) + rAF catch-up for chunky
-    // poll/Ably jumps. Settled turns pass active=false and snap to full text.
-    return (
-      <Message align="start">
-        <MessageContent className="gap-1.5">
-          <MessageHeader className="sr-only">
-            <span>{labels.assistant}</span>
-            <MessageMetaClock message={message} />
-          </MessageHeader>
+  const segments = message.segments?.filter((segment) => segment.content.trim()) ?? [];
+  return (
+    <Message align="start" data-turn-id={message.turnId}>
+      <MessageContent className="gap-3">
+        <MessageHeader className="sr-only">
+          <span>{labels.assistant}</span>
+        </MessageHeader>
+        {segments.length > 0 ? (
+          segments.map((segment, index) => {
+            const streamingSegment =
+              streamActive && index === segments.length - 1 && !segment.completed;
+            return (
+              <Bubble key={segment.id} variant="ghost" className="max-w-full min-w-0">
+                <BubbleContent className="min-w-0 max-w-full overflow-x-hidden px-0.5 text-sm/relaxed text-white">
+                  <SmoothStreamMarkdown
+                    target={segment.content}
+                    active={streamingSegment}
+                    caret={streamingSegment}
+                  />
+                </BubbleContent>
+              </Bubble>
+            );
+          })
+        ) : message.content.trim() ? (
           <Bubble variant="ghost" className="max-w-full min-w-0">
-            <BubbleContent className="min-w-0 max-w-full overflow-x-hidden px-0.5 text-sm/relaxed text-white/82">
+            <BubbleContent className="min-w-0 max-w-full overflow-x-hidden px-0.5 text-sm/relaxed text-white">
               <SmoothStreamMarkdown
                 target={message.content}
-                active={isStreaming}
-                caret={isStreaming}
+                active={streamActive}
+                caret={streamActive}
               />
             </BubbleContent>
           </Bubble>
-        </MessageContent>
-      </Message>
-    );
-  }
+        ) : null}
+        {activityLabel ? (
+          <AgentOsActivityIndicator label={activityLabel} waiting={activityWaiting} />
+        ) : null}
+      </MessageContent>
+    </Message>
+  );
+}
 
-  if (message.role === "approval") {
-    return (
-      <Message align="start">
-        <MessageContent className="gap-1">
-          <MessageHeader className="flex items-center gap-2">
-            <span className="text-white/58">{labels.assistant}</span>
-            <MessageMetaClock message={message} />
-          </MessageHeader>
-          <div className="w-full max-w-[96%] rounded-2xl bg-white/[0.035] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-            <p className="text-xs font-medium text-white/86">{message.content}</p>
-            {typeof message.meta?.description === "string" ? (
-              <p className="mt-1 text-[11px] text-white/50">{message.meta.description}</p>
-            ) : null}
-            <p className="mt-1 font-mono text-[10px] text-white/40">
-              {String(message.meta?.toolId ?? "")}
-            </p>
-            {/* What the write actually does — the whole point of the gate. */}
-            <ApprovalPayload
-              toolId={String(message.meta?.toolId ?? "")}
-              args={message.meta?.arguments}
-              labels={labels.payload}
-            />
-            {showApprovalActions ? (
-              <div className="mt-2.5 flex gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  disabled={busy}
-                  onClick={() => onApprove("approve")}
-                >
-                  {labels.approve}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => onApprove("reject")}
-                >
-                  {labels.reject}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-        </MessageContent>
-      </Message>
-    );
-  }
-
-  if (message.role === "tool") {
-    const phase = String(message.meta?.phase ?? "");
-    const isPlan = message.meta?.kind === "plan";
-    const done = phase === "completed" || phase === "failed";
-    const written =
-      phase === "completed"
-        ? writtenNodesFromResult(String(message.meta?.toolId ?? ""), message.meta?.result)
-        : [];
-    return (
-      <Marker className="px-1">
-        <MarkerIcon>
-          {phase === "started" || phase === "proposed" ? (
-            <IconLoader2 className="size-3.5 animate-spin text-white/40" stroke={1.8} />
-          ) : (
-            <IconTool
-              className={cn(
-                "size-3.5 text-white/40",
-                phase === "failed" && "text-destructive/80",
-                phase === "completed" && "text-white/50"
-              )}
-              stroke={1.8}
-            />
-          )}
-        </MarkerIcon>
-        <MarkerContent
-          className={cn(
-            "flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-white/45",
-            done && "text-white/40"
-          )}
-        >
-          <span>
-            {isPlan ? labels.plan : message.content}
-            {!isPlan && phase ? ` · ${phase}` : ""}
-          </span>
-          <MessageMetaClock message={message} />
-          {/* Where the write landed. Ids in prose are not findable. */}
-          {written.length > 0 && projectId ? (
-            <WrittenNodes
-              projectId={projectId}
-              sectionId={message.workbenchContext?.sectionId}
-              nodes={written}
-              label={labels.showOnCanvas}
-            />
-          ) : null}
-        </MarkerContent>
-      </Marker>
-    );
-  }
-
-  // system / error lines
+/** Single ephemeral turn status. Waiting states are static because no work is executing. */
+export function AgentOsActivityIndicator({
+  label,
+  waiting = false,
+}: {
+  label: string;
+  waiting?: boolean;
+}) {
   return (
-    <Marker variant="separator" className="px-1">
-      <MarkerContent className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-white/40">
-        <span>{message.content}</span>
-        <MessageMetaClock message={message} />
-      </MarkerContent>
+    <Marker
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      data-activity-mode={waiting ? "waiting" : "working"}
+      className="px-1 text-white/92"
+    >
+      <MarkerIcon>
+        {waiting ? (
+          <IconClockPause aria-hidden="true" className="size-3.5 text-white/78" stroke={1.8} />
+        ) : (
+          <IconLoader2
+            aria-hidden="true"
+            className="size-3.5 animate-spin text-white/88 motion-reduce:animate-none"
+            stroke={1.8}
+          />
+        )}
+      </MarkerIcon>
+      <MarkerContent className="min-w-0 flex-1 truncate">{label}</MarkerContent>
     </Marker>
   );
 }

@@ -6,7 +6,6 @@ import {
   IconArchive,
   IconArrowRight,
   IconClock,
-  IconDeviceMobile,
   IconDots,
   IconEdit,
   IconUsers,
@@ -15,7 +14,6 @@ import {
   IconMovie,
   IconPlus,
   IconRefresh,
-  IconRectangle,
   IconSparkles,
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
@@ -40,16 +38,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field } from "@/components/ui/field";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
-import { GlassRim } from "@/components/ui/glass-rim";
 import { Input } from "@/components/ui/input";
-import { RequiredMark } from "@/components/ui/required-mark";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Link, useRouter } from "@/i18n/navigation";
@@ -60,7 +49,6 @@ import {
   listJoinedStoryProjects,
   storyApiErrorMessage,
   updateStoryProject,
-  type StoryFrameProfile,
   type StoryProjectSummary,
 } from "@/lib/story-projects-api";
 import { StoryStudioHero } from "./story-studio-hero";
@@ -486,26 +474,23 @@ function CreateProjectDialog({
   const t = useTranslations("storyStudio");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
-  const [storyLocale, setStoryLocale] = useState(defaultLocale);
-  const [frameProfile, setFrameProfile] = useState<StoryFrameProfile>(DEFAULT_FRAME_PROFILE);
   const createMutation = useMutation({
     mutationFn: () => {
       if (!workspaceId) {
         throw new Error(t("errors.createProject"));
       }
       return createStoryProject(workspaceId, {
-        frameProfile,
         title: title.trim(),
         summary: summary.trim() || null,
-        defaultLocale: storyLocale,
+        // Provisional only. FizzAgent confirms the authored story language as
+        // part of the creative profile when the creator first asks it to work.
+        defaultLocale,
         visibility: "private",
       });
     },
     onSuccess: (project) => {
       setTitle("");
       setSummary("");
-      setStoryLocale(defaultLocale);
-      setFrameProfile(DEFAULT_FRAME_PROFILE);
       onOpenChange(false);
       onCreated(project);
     },
@@ -541,47 +526,6 @@ function CreateProjectDialog({
               placeholder={t("fields.summaryPlaceholder")}
             />
           </Field>
-          <Field
-            dense
-            required
-            label={t("fields.storyLocale")}
-            hint={t("fields.storyLocaleHint")}
-            htmlFor="story-create-locale"
-          >
-            <Select value={storyLocale} onValueChange={setStoryLocale}>
-              <SelectTrigger id="story-create-locale" aria-required="true" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {STORY_LOCALE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <fieldset className="space-y-2">
-            <legend className="text-xs font-medium text-white/58">
-              {t("fields.frameProfile")}
-              <RequiredMark />
-            </legend>
-            <p className="text-[11px] leading-4 text-white/38">{t("fields.frameProfileHint")}</p>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-required="true">
-              <FrameProfileOption
-                profile="landscape_16_9"
-                selected={frameProfile === "landscape_16_9"}
-                icon={<IconRectangle className="size-5" stroke={1.7} />}
-                onSelect={setFrameProfile}
-              />
-              <FrameProfileOption
-                profile="portrait_9_16"
-                selected={frameProfile === "portrait_9_16"}
-                icon={<IconDeviceMobile className="size-5" stroke={1.7} />}
-                onSelect={setFrameProfile}
-              />
-            </div>
-          </fieldset>
         </div>
         <DialogFooter className="pt-2">
           <Button
@@ -605,63 +549,6 @@ function CreateProjectDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// Landscape is the dominant film orientation in practice — preselect it so a film
-// project is creatable with only a title typed.
-const DEFAULT_FRAME_PROFILE: StoryFrameProfile = "landscape_16_9";
-
-// Language autonyms are locale-invariant data (a language picker always shows
-// each language in itself), not translatable UI copy.
-const STORY_LOCALE_OPTIONS = [
-  { value: "zh-CN", label: "简体中文" },
-  { value: "zh-HK", label: "繁體中文" },
-  { value: "en-US", label: "English" },
-] as const;
-
-// Brand-red selection treatment for option cards (DESIGN.md rule 3): the rim
-// gradient mirrors the subscription dialog's Popular-tier red GlassRim.
-const redRgba = (alpha: number) => `rgba(229, 34, 39, ${alpha})`;
-const SELECTED_CARD_RIM = `conic-gradient(from 288deg, ${redRgba(0.55)} 0%, ${redRgba(0.28)} 30%, ${redRgba(0.22)} 55%, ${redRgba(0.22)} 80%, ${redRgba(0.55)} 100%)`;
-
-function FrameProfileOption({
-  profile,
-  selected,
-  icon,
-  onSelect,
-}: {
-  profile: StoryFrameProfile;
-  selected: boolean;
-  icon: React.ReactNode;
-  onSelect: (profile: StoryFrameProfile) => void;
-}) {
-  const t = useTranslations("storyStudio");
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      className={`relative flex min-h-24 flex-col justify-between rounded-xl px-3.5 py-3 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-white/50 ${
-        selected
-          ? "bg-[#E52227]/[0.07] text-white"
-          : "bg-white/[0.055] text-white/58 hover:bg-white/[0.085] hover:text-white/82"
-      }`}
-      onClick={() => onSelect(profile)}
-    >
-      {selected ? <GlassRim gradient={SELECTED_CARD_RIM} width="1.5px" /> : null}
-      <span className={selected ? "text-[#E52227]" : "text-white/48"}>{icon}</span>
-      <span className="mt-3 block">
-        <span className="block text-xs font-semibold">{t(`frameProfiles.${profile}.label`)}</span>
-        <span
-          className={`mt-0.5 block text-[10px] font-medium tabular-nums ${
-            selected ? "text-white/56" : "text-white/36"
-          }`}
-        >
-          {t(`frameProfiles.${profile}.dimensions`)}
-        </span>
-      </span>
-    </button>
   );
 }
 

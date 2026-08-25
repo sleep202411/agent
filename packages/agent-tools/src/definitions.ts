@@ -11,6 +11,87 @@ import {
 
 import type { ToolDefinition } from "./types.js";
 import { STORY_AGENT_OS_TOOLS } from "./story-definitions.js";
+import {
+  isCompleteStoryCreativeProfileInputRequest,
+  STORY_CREATIVE_PROFILE_FORM_ID,
+} from "./story-creative-profile.js";
+
+const userInputKey = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[A-Za-z][A-Za-z0-9_-]*$/);
+
+export const AgentUserInputOptionSchema = z
+  .object({
+    value: userInputKey,
+    label: z.string().trim().min(1).max(80),
+    description: z.string().trim().min(1).max(180).optional(),
+  })
+  .strict();
+
+export const AgentUserInputQuestionSchema = z
+  .object({
+    id: userInputKey,
+    header: z.string().trim().min(1).max(40),
+    question: z.string().trim().min(1).max(500),
+    options: z.array(AgentUserInputOptionSchema).min(2).max(5),
+  })
+  .strict()
+  .refine(
+    (value) => new Set(value.options.map((option) => option.value)).size === value.options.length,
+    {
+      message: "Question option values must be unique.",
+    }
+  );
+
+export const RequestUserInputInputSchema = z
+  .object({
+    /** Assistant text completed in the transcript before the composer is blocked. */
+    leadIn: z.string().trim().min(1).max(1_000),
+    /** Assistant acknowledgement persisted immediately after the user submits answers. */
+    resumeAcknowledgement: z.string().trim().min(1).max(1_000),
+    formId: userInputKey.optional(),
+    knownValues: z.record(userInputKey, userInputKey).optional(),
+    questions: z.array(AgentUserInputQuestionSchema).min(1).max(4),
+  })
+  .strict()
+  .refine(
+    (value) =>
+      new Set(value.questions.map((question) => question.id)).size === value.questions.length,
+    {
+      message: "Question ids must be unique.",
+    }
+  )
+  .superRefine((value, context) => {
+    if (value.formId === STORY_CREATIVE_PROFILE_FORM_ID) {
+      if (isCompleteStoryCreativeProfileInputRequest(value.questions, value.knownValues)) {
+        return;
+      }
+      context.addIssue({
+        code: "custom",
+        path: ["knownValues"],
+        message:
+          "story_creative_profile must classify every profile field exactly once: put explicitly supplied canonical values in knownValues and ask only the remaining questions in canonical relative order with their complete option sets.",
+      });
+      return;
+    }
+    if (value.knownValues !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["knownValues"],
+        message: "knownValues is reserved for story_creative_profile input requests.",
+      });
+    }
+  });
+
+export const RequestUserInputOutputSchema = z
+  .object({
+    requestId: z.uuid(),
+    answers: z.record(userInputKey, userInputKey),
+  })
+  .strict();
 
 const stableKey = z
   .string()
@@ -365,6 +446,22 @@ const PLATFORM_AGENT_OS_TOOLS = [
   },
 ] as const satisfies readonly ToolDefinition[];
 
-export const AGENT_OS_TOOLS = [...PLATFORM_AGENT_OS_TOOLS, ...STORY_AGENT_OS_TOOLS] as const;
+const AGENT_INTERACTION_TOOLS = [
+  {
+    id: "request_user_input",
+    description:
+      "Pause the current turn and ask the user one to four structured single-choice questions. Always provide leadIn (the completed assistant sentence shown before the blocking composer card) and resumeAcknowledgement (the immediate assistant acknowledgement persisted after the user answers). Use only when the answer is genuinely required to continue; never use it as a page-load wizard or for information already supplied by the user. For story_creative_profile, classify every field exactly once: put explicitly supplied canonical values in knownValues and put only missing fields in questions, in canonical relative order with their canonical options.",
+    kind: "query",
+    risk: "read",
+    inputSchema: RequestUserInputInputSchema,
+    outputSchema: RequestUserInputOutputSchema,
+  },
+] as const satisfies readonly ToolDefinition[];
+
+export const AGENT_OS_TOOLS = [
+  ...AGENT_INTERACTION_TOOLS,
+  ...PLATFORM_AGENT_OS_TOOLS,
+  ...STORY_AGENT_OS_TOOLS,
+] as const;
 
 export type AgentOsToolId = (typeof AGENT_OS_TOOLS)[number]["id"];

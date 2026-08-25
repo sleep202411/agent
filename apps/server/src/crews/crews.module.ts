@@ -22,12 +22,14 @@ import { CrewAgreementSendWorker } from './agreements/agreement-send.worker';
 import { BoldSignAgreementProvider } from './agreements/boldsign-agreement.provider';
 import { CrewCollaborationService } from './collaboration/crew-collaboration.service';
 import { CrewsAdminController } from './crews-admin.controller';
+import { CrewPositionsAdminController } from './crew-positions-admin.controller';
 import { CrewsController } from './crews.controller';
 import { CrewsService } from './crews.service';
 import { MembersController } from './members.controller';
 import { MembersService } from './members.service';
 import { CrewInvitationsController } from './invitations/invitations.controller';
 import { CrewInvitationsService } from './invitations/invitations.service';
+import { CrewInviteLinksService } from './invitations/invite-links.service';
 import {
   PositionsController,
   PositionsDiscoveryController,
@@ -68,6 +70,7 @@ import { CrewProductionService } from './production/production.service';
   controllers: [
     CrewsController,
     CrewsAdminController,
+    CrewPositionsAdminController,
     PositionsController,
     PositionsDiscoveryController,
     ApplicationsController,
@@ -90,6 +93,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetUploadCleanupWorker,
     CrewCollaborationService,
     CrewInvitationsService,
+    CrewInviteLinksService,
     CrewTasksService,
     CrewTaskDraftService,
     CrewProductionService,
@@ -100,6 +104,7 @@ import { CrewProductionService } from './production/production.service';
     CrewEarningsService,
     CrewPayoutsService,
   ],
-  exports: [CrewAssetAccessModule],
+  // The scope-agnostic InvitesController redeems crew link tokens.
+  exports: [CrewAssetAccessModule, CrewInviteLinksService],
 })
 export class CrewsModule {}

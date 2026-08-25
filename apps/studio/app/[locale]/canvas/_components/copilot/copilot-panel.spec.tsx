@@ -63,8 +63,21 @@ vi.mock("@/app/_components/auth-provider", () => ({
   useAuth: () => ({ user: { id: "user-a" }, loading: false }),
 }));
 
-vi.mock("@/app/_components/workspace-context", () => ({
-  useActiveWorkspaceId: () => "019f7243-20c1-7054-a6fa-0a33da6efef1",
+const TEST_WORKSPACE = {
+  id: "019f7243-20c1-7054-a6fa-0a33da6efef1",
+  type: "personal",
+  role: "owner",
+} as const;
+
+// Only the hooks are stubbed: `payerWorkspace` stays real so this mock cannot
+// drift from the rule the panel actually bills by.
+vi.mock("@/app/_components/workspace-context", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/app/_components/workspace-context")>()),
+  useActiveWorkspaceId: () => TEST_WORKSPACE.id,
+  useWorkspace: () => ({
+    workspaces: [TEST_WORKSPACE],
+    activeWorkspace: TEST_WORKSPACE,
+  }),
 }));
 
 vi.mock("./canvas-copilot-chat-transport", () => ({

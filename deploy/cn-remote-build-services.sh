@@ -59,13 +59,14 @@ want() {
 
 for service in $SERVICES; do
   case "$service" in
-    server|agent|admin-ui|web|studio) ;;
+    server|agent|agent-os|admin-ui|web|studio) ;;
     *) echo "FATAL: unsupported service $service" >&2; exit 2 ;;
   esac
 done
 
 want server && build server apps/server/Dockerfile
 want agent && build agent apps/agent/Dockerfile
+want agent-os && build agent-os apps/agent-os/Dockerfile
 want admin-ui && build admin-ui apps/admin-ui/Dockerfile --build-arg NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/
 want web && build web apps/web/Dockerfile \
   --build-arg NEXT_PUBLIC_OSS_BASE_URL="$NEXT_PUBLIC_OSS_BASE_URL" \

@@ -222,6 +222,9 @@ server:
     # bucket. This explicit override prevents the CN cell from ever inheriting
     # the .com Singapore bucket when resolving those keys.
     LEGACY_OSS_BASE_URL: https://shotive.oss-cn-hangzhou.aliyuncs.com
+    # CN banner bucket for crew logos (relative keys). Admin DTOs resolve
+    # crew.logo with this base; never inherit the .com Singapore banner bucket.
+    BANNER_BASE_URL: https://banner.fizzspace.cn
     # CN-local CDN mirror for the Git-governed Project Skill preview media.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://media.fizzspace.cn/product-skills/previews/v1
     # Mirrors prod-cn .env (2026-06-10).
@@ -308,17 +311,25 @@ agentWorker:
     # Aliyun community Redis is plaintext :6379.
     enableTLS: "false"
 
-# Agent OS is not on CN yet: the image is not built for the CN registry, the
-# out-of-band Secret does not exist, and deploy-cn-services.sh has no arm for
-# it. Off explicitly rather than by omission — inheriting .com's defaults would
-# schedule it onto `pool: worker`, which CN's single untainted node does not
-# have, and leave the pod Pending forever with a green chart.
+# Agent OS, CN cell. The .com defaults are inherited except where this cell
+# genuinely differs: the model host, and the scheduling hints — CN runs one
+# untainted node, so .com's `pool: worker` selector would leave the pod Pending
+# forever behind a green chart.
 #
-# To turn it on: build+push the image, create fizzdragon-agent-os-secrets and
-# fizzdragon-agent-os-server-secrets with kubectl (BAILIAN key is the Beijing
-# one — see ALIBABA_BASE_URL above), then set enabled plus:
-#   agentOs: { enabled: true, image: { tag: set-at-deploy },
-#              model: { baseUrl: <beijing workspace endpoint> },
-#              nodeSelector: null, tolerations: null }
+# Secrets are out-of-band here (no Key Vault; azure.enabled=false makes the CSI
+# volume inert), so `fizzdragon-agent-os-secrets` and
+# `fizzdragon-agent-os-server-secrets` are created with kubectl. The worker
+# refuses to boot if any of its four keys is missing.
 agentOs:
-  enabled: false
+  enabled: true
+  replicaCount: 1
+  image:
+    tag: set-at-deploy
+  # Bailian's mainland endpoint. The shipped profile table needs no per-cell
+  # override: all five ids (qwen3.8-max, qwen3.7-plus, deepseek-v4-pro, glm-5.2,
+  # kimi-k2.7-code) were verified to answer here on 2026-08-24, so only the host
+  # differs from .com.
+  model:
+    baseUrl: https://dashscope.aliyuncs.com/compatible-mode/v1
+  nodeSelector: null
+  tolerations: null

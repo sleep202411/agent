@@ -53,6 +53,7 @@ import {
   WalletTransactionStatus,
 } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
+import { decodeUserId, encodeUserId } from '@repo/shared';
 import { regionLabel as sharedRegionLabel } from '@repo/shared/regions';
 import type { AuthUser } from '../auth';
 import {
@@ -1457,14 +1458,16 @@ export class IpCommerceService {
     const defaultShareBps = await this.getCreatorRevenueShareDefaultBps();
     return {
       ip: ipReferenceDto(ip, locale),
-      ownerUserId: ip.createdById,
+      // Encoded public id out; the raw creator id stays server-side.
+      ownerUserId: encodeUserId(ip.createdById),
       version: ip.version,
       creatorRevenueShareBps: ip.creatorRevenueShareBps,
       effectiveShareBps: ip.creatorRevenueShareBps ?? defaultShareBps,
       defaultShareBps,
       contributors: ip.contributors.map((c) => ({
         id: c.id,
-        userId: c.userId,
+        // Encoded public id out; the config is edited by contributor row id.
+        userId: c.userId ? encodeUserId(c.userId) : c.userId,
         displayName: c.displayName,
         role: c.role,
         customRole: c.customRole,
@@ -3207,6 +3210,8 @@ export class IpCommerceService {
     input: GrantAdminIpEntitlementInput,
   ) {
     const targetType = input.targetType as IpTargetType;
+    // The dialog sends the encoded public id; entitlements store the raw id.
+    const targetUserId = decodeUserId(input.userId);
     const now = new Date();
     const ip = await this.prisma.ip.findFirst({
       where: { id: input.ipId, deletedAt: null },
@@ -3244,7 +3249,7 @@ export class IpCommerceService {
 
     const result = await this.prisma.$transaction(async (tx) => {
       const existing = await findCurrentOrPendingEntitlementTx(tx, {
-        userId: input.userId,
+        userId: targetUserId,
         ipId: ip.id,
         targetType,
         episodeId: input.episodeId ?? null,
@@ -3262,7 +3267,7 @@ export class IpCommerceService {
 
       const entitlement = await tx.ipContentEntitlement.create({
         data: {
-          userId: input.userId,
+          userId: targetUserId,
           ipId: ip.id,
           episodeId:
             targetType === IpTargetType.episode
@@ -3281,7 +3286,7 @@ export class IpCommerceService {
           },
         },
       });
-      await ensureCollectionItemTx(tx, input.userId, entitlement);
+      await ensureCollectionItemTx(tx, targetUserId, entitlement);
       return {
         entitlement: await tx.ipContentEntitlement.findUniqueOrThrow({
           where: { id: entitlement.id },
@@ -4360,6 +4365,30 @@ export class IpCommerceService {
       WalletOwnerType.user,
       user.userId,
     );
+    // Honest balance: sweep lapsed community credit grants (expiring promo
+    // grants) before reporting, so an expired grant never shows as spendable.
+    // Best-effort — a sweep hiccup must not break the wallet read.
+    const community = accounts.find(
+      (account) =>
+        account.currency === WalletCurrencyType.community_point &&
+        account.balanceKind === WalletBalanceKind.consumable,
+    );
+    if (community) {
+      const { expired } = await this.walletLedger
+        .expireLapsedGrants(community.id)
+        .catch(() => ({ expired: 0n }));
+      if (expired > 0n) {
+        const fresh = await this.prisma.walletAccount.findUnique({
+          where: { id: community.id },
+          select: {
+            availableBalance: true,
+            heldBalance: true,
+            updatedAt: true,
+          },
+        });
+        if (fresh) Object.assign(community, fresh);
+      }
+    }
     return {
       accounts: accounts.map((account) => ({
         id: account.id,
@@ -6389,7 +6418,8 @@ function adminPurchaseOrderWhere(
   const search = query.q?.trim();
   return {
     ipId: query.ipId,
-    userId: query.userId,
+    // Filter arrives as the encoded public id; orders store the raw id.
+    userId: query.userId ? decodeUserId(query.userId) : undefined,
     status: query.status as IpPurchaseOrderStatus | undefined,
     ...(search
       ? {
@@ -6436,7 +6466,8 @@ function adminEntitlementWhere(
 ): Prisma.IpContentEntitlementWhereInput {
   return {
     ipId: query.ipId,
-    userId: query.userId,
+    // Filter arrives as the encoded public id; entitlements store the raw id.
+    userId: query.userId ? decodeUserId(query.userId) : undefined,
     targetType: query.targetType as IpTargetType | undefined,
     status: query.status as IpEntitlementStatus | undefined,
   };
@@ -8720,7 +8751,8 @@ function purchaseOrderDto(order: {
     id: order.id,
     orderNo: order.orderNo,
     status: order.status,
-    userId: order.userId,
+    // Encoded public id out; the order row keeps the raw id.
+    userId: encodeUserId(order.userId),
     ipId: order.ipId,
     episodeId: order.episodeId,
     targetType: order.targetType,
@@ -8753,7 +8785,8 @@ function entitlementDto(entitlement: {
 }) {
   return {
     id: entitlement.id,
-    userId: entitlement.userId,
+    // Encoded public id out; the entitlement row keeps the raw id.
+    userId: encodeUserId(entitlement.userId),
     ipId: entitlement.ipId,
     episodeId: entitlement.episodeId,
     targetType: entitlement.targetType,

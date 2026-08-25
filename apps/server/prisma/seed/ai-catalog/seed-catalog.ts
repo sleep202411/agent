@@ -188,9 +188,9 @@ function buildBindingPayload(args: {
     endpointId: string;
     displayName: string | null;
     supportedModes: Prisma.JsonValue;
-    providerInputSchema: Prisma.JsonValue;
-    providerOutputSchema: Prisma.JsonValue;
-    catalogSnapshot: Prisma.JsonValue;
+    providerInputSchema: Prisma.JsonValue | Prisma.InputJsonObject;
+    providerOutputSchema: Prisma.JsonValue | Prisma.InputJsonObject;
+    catalogSnapshot: Prisma.JsonValue | Prisma.InputJsonObject;
   };
   canonicalModelId: string;
   priority: number;

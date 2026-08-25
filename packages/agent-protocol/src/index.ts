@@ -3,3 +3,4 @@ export * from "./protocol.js";
 export * from "./workspace.js";
 export * from "./run.js";
 export * from "./events.js";
+export * from "./hitl.js";

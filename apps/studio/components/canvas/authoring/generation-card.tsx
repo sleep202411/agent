@@ -74,6 +74,7 @@ import {
 import { useOperationLabel } from "@/lib/canvas-authoring/use-labels";
 import { ValidationAlertDialog } from "./validation-alert-dialog";
 import { ProjectSkillDetailDialog } from "@/components/project-skills/project-skill-detail-dialog";
+import { downloadCanvasMedia } from "./download-media";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import { CanvasMediaToolbarActions } from "./media-actions-context";
 import { Icon720, PanoramaViewer } from "./panorama-viewer";
@@ -851,18 +852,11 @@ function GenerationCard({
   const output = generation?.outputs?.[0];
   const onDownload = async () => {
     if (!output?.url) return;
-    const ext = outputExtension(output.type);
-    try {
-      const blob = await (await fetch(output.url)).blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `${data.name ?? data.opType ?? "result"}.${ext}`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      window.open(output.url, "_blank");
-    }
+    await downloadCanvasMedia(
+      output.url,
+      `${data.name ?? data.opType ?? "result"}.${outputExtension(output.type)}`,
+      output.type === "video" || output.type === "audio" ? output.type : "image"
+    );
   };
 
   const copyTaskId = async (jobId: string) => {

@@ -12,10 +12,15 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { z } from 'zod';
+import { AgentEventEnvelopeSchema } from '@repo/agent-protocol';
 import { ProjectSkillResolutionSnapshotSchema } from '@repo/agent-skills';
 import { Public } from '../auth';
+import { AgentOsRunJournalService } from '../agent-os-journal/agent-os-run-journal.service';
+import {
+  AgentOsContinuationCommandSchema,
+  AgentOsPendingExternalSchema,
+} from '../agent-os-journal/agent-os-journal.schemas';
 import { AgentOsGatewayConfigService } from './agent-os-gateway.config';
-import { AgentOsRunJournalService } from './agent-os-run-journal.service';
 
 const journalBodySchema = z
   .object({
@@ -23,14 +28,84 @@ const journalBodySchema = z
     conversationId: z.string().uuid(),
     actorId: z.string().trim().min(1).max(128),
     modelProfileId: z.string().trim().min(1).max(64),
-    status: z.string().trim().min(1).max(32),
-    events: z.array(z.record(z.string(), z.unknown())).max(10_000),
+    status: z.enum([
+      'queued',
+      'running',
+      'waiting_for_approval',
+      'waiting_for_input',
+      'waiting_for_external',
+      'paused',
+      'completed',
+      'failed',
+      'cancelled',
+    ]),
+    lastSequence: z.number().int().nonnegative(),
+    events: z.array(z.unknown()).max(10_000),
     pendingApproval: z.unknown().optional(),
+    pendingUserInput: z.unknown().optional(),
+    pendingExternal: AgentOsPendingExternalSchema.nullable().optional(),
     assistantText: z.string().max(200_000).nullable().optional(),
     projectKind: z.enum(['platform', 'story']),
     workbenchMode: z.string().trim().min(1).max(64),
     workbenchContext: z.record(z.string(), z.string()).optional(),
     skillMountSnapshot: ProjectSkillResolutionSnapshotSchema,
+    startExecution: z
+      .object({
+        executionToken: z.string().uuid(),
+        executionAttemptId: z.string().uuid(),
+        executionEpoch: z.number().int().positive(),
+        executionOwnerId: z.string().uuid(),
+        checkpointId: z.string().trim().min(1).max(160).optional(),
+        checkpointNamespace: z.string().max(200).optional(),
+        checkpointThreadId: z.string().uuid().optional(),
+        checkpointMessageId: z.string().uuid().optional(),
+      })
+      .strict()
+      .refine(
+        (proof) => {
+          const checkpoint = [
+            proof.checkpointId,
+            proof.checkpointNamespace,
+            proof.checkpointThreadId,
+            proof.checkpointMessageId,
+          ];
+          return (
+            checkpoint.every((item) => item !== undefined) ||
+            checkpoint.every((item) => item === undefined)
+          );
+        },
+        { message: 'Checkpoint receipt fields must be supplied together.' },
+      )
+      .optional(),
+    continuationCommand: AgentOsContinuationCommandSchema.optional(),
+    continuationExecution: z
+      .object({
+        executionToken: z.string().uuid(),
+        executionAttemptId: z.string().uuid(),
+        executionEpoch: z.number().int().positive(),
+        executionOwnerId: z.string().uuid(),
+        checkpointId: z.string().trim().min(1).max(160).optional(),
+        checkpointNamespace: z.string().max(200).optional(),
+        checkpointThreadId: z.string().uuid().optional(),
+      })
+      .strict()
+      .refine(
+        (proof) => {
+          const checkpoint = [
+            proof.checkpointId,
+            proof.checkpointNamespace,
+            proof.checkpointThreadId,
+          ];
+          return (
+            checkpoint.every((item) => item !== undefined) ||
+            checkpoint.every((item) => item === undefined)
+          );
+        },
+        {
+          message: 'Continuation checkpoint fields must be supplied together.',
+        },
+      )
+      .optional(),
   })
   .strict();
 
@@ -65,22 +140,36 @@ export class AgentOsInternalController {
         message: parsed.error.message,
       });
     }
-    await this.journal.upsertSnapshot({
+    const events = AgentEventEnvelopeSchema.array().safeParse(
+      parsed.data.events,
+    );
+    if (!events.success) {
+      throw new BadRequestException({
+        code: 'AGENT_OS_JOURNAL_EVENT_INVALID',
+        message: events.error.message,
+      });
+    }
+    const committed = await this.journal.upsertSnapshot({
       runId,
       projectId: parsed.data.projectId,
       conversationId: parsed.data.conversationId,
       actorId: parsed.data.actorId,
       modelProfileId: parsed.data.modelProfileId,
       status: parsed.data.status,
-      events: parsed.data.events as never,
+      reportedLastSequence: parsed.data.lastSequence,
+      events: events.data,
       pendingApproval: parsed.data.pendingApproval,
+      pendingExternal: parsed.data.pendingExternal,
       assistantText: parsed.data.assistantText,
       projectKind: parsed.data.projectKind,
       workbenchMode: parsed.data.workbenchMode,
       workbenchContext: parsed.data.workbenchContext,
       skillMountSnapshot: parsed.data.skillMountSnapshot,
+      startExecution: parsed.data.startExecution,
+      continuationCommand: parsed.data.continuationCommand,
+      continuationExecution: parsed.data.continuationExecution,
     });
-    return { ok: true, runId };
+    return { ok: true, runId, ...committed };
   }
 
   @Public()

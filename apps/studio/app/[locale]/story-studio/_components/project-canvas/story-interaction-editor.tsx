@@ -32,10 +32,10 @@ import { MediaTimelineRange, MediaTimelineTrack } from "@/components/media-timel
 import { cn } from "@/lib/utils";
 import type {
   StoryClipGraphNode,
-  StoryClipVideoSummary,
   StoryFrameProfile,
   StoryGraphNode,
 } from "@/lib/story-projects-api";
+import { useStoryboardNodeCoverage } from "./story-canvas-storyboard-coverage";
 import { createStoryHotspotId } from "./story-interaction-ids";
 import type {
   NormalizedHotspotRect,
@@ -54,7 +54,6 @@ type EditorTool = "select" | "rectangle";
 interface StoryInteractionEditorProps {
   node: StoryClipGraphNode;
   nodes: StoryGraphNode[];
-  clip: StoryClipVideoSummary | null;
   frameProfile: StoryFrameProfile;
   drafts: StoryInteractionDraft[];
   onDraftsChange: (drafts: StoryInteractionDraft[]) => void;
@@ -67,7 +66,6 @@ const MIN_WINDOW_SECONDS = 0.1;
 export function StoryInteractionEditor({
   node,
   nodes,
-  clip,
   frameProfile,
   drafts,
   onDraftsChange,
@@ -86,8 +84,13 @@ export function StoryInteractionEditor({
   );
   const draftsRef = useRef(drafts);
   const previewTimerRef = useRef<number | null>(null);
-  const source = clip?.currentVideo?.asset.previewUrl ?? null;
-  const declaredDuration = (clip?.currentVideo?.durationMs ?? 0) / 1_000;
+  // The node's storyboard sequence is its playable content, so it supplies the
+  // footage to place interactions against: the first clip carrying video, over
+  // the sequence's planned running time. A node with no sequence (or no
+  // generated media yet) runs the editor in its no-footage mode.
+  const coverage = useStoryboardNodeCoverage(node.nodeId);
+  const source = coverage?.previewVideoUrl ?? null;
+  const declaredDuration = (coverage?.durationMs ?? 0) / 1_000;
   const [duration, setDuration] = useState(
     declaredDuration > 0 ? Math.max(declaredDuration, MIN_WINDOW_SECONDS) : 10
   );
@@ -457,6 +460,11 @@ export function StoryInteractionEditor({
                     preload="metadata"
                     className="pointer-events-none size-full select-none object-contain"
                     onLoadedMetadata={(event) => {
+                      // The scene's timeline is its storyboard sequence, which
+                      // usually runs longer than the one clip previewed here.
+                      // Adopting this element's duration would clamp — and
+                      // persist — every hotspot into the first clip's window.
+                      if (declaredDuration > 0) return;
                       const nextDuration = event.currentTarget.duration;
                       if (Number.isFinite(nextDuration) && nextDuration > 0) {
                         const normalizedDuration = Math.max(nextDuration, MIN_WINDOW_SECONDS);

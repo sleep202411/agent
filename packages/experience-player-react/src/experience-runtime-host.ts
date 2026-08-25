@@ -1,4 +1,7 @@
-import type { ExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
+import {
+  EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY,
+  type ExperienceRuntimeManifest,
+} from "@repo/shared/experience-runtime";
 import {
   EXPERIENCE_API_VERSION,
   EXPERIENCE_ENGINE_API_VERSION,
@@ -26,6 +29,11 @@ const EXPERIENCE_REACT_HOST_CAPABILITIES = new Set([
   "input.tap",
   "input.swipe",
   "renderer.content-transform",
+  // This host paints stills (ExperienceStillSegment), so it can play a
+  // sequence that holds an image. A host without that branch must not declare
+  // this — the whole point is that it is refused by name instead of showing an
+  // empty frame.
+  EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY,
 ]);
 
 /** React host adapter around the shared headless experience controller. */

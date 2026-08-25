@@ -23,15 +23,17 @@ npm test -w agent-os
 cp .env.example .env   # then fill keys
 npm run smoke:qwen -w agent-os
 
-# live golden path: Qwen + tools + approval + domain write
-npm run live:golden -w agent-os
-
 # live HTTP worker
 npm run dev -w agent-os
 # GET  /health
 # POST /v1/agent-os/runs
 # POST /v1/agent-os/runs/:runId/approvals
 ```
+
+Approval and structured-input qualification must use the durable Gateway →
+continuation-dispatcher → Worker path. Direct in-process HITL resume scripts
+are deliberately not supported because they bypass the production command,
+lease, checkpoint, and effect fences.
 
 ### Qwen / OpenAI-compatible env
 

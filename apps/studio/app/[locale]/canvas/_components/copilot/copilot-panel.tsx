@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/app/_components/auth-provider";
-import { useActiveWorkspaceId } from "@/app/_components/workspace-context";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import {
   createCanvasCopilotChatTransport,
   type CanvasCopilotChatRequestContext,
@@ -96,7 +96,7 @@ type CanvasPendingTurn = CopilotPendingTurn<UIMessage, Record<string, never>>;
 function CopilotPanelSession({ projectId, open, onClose }: CopilotPanelProps) {
   const t = useTranslations("copilot");
   const locale = useLocale();
-  const workspaceId = useActiveWorkspaceId();
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   const { user } = useAuth();
   const authenticatedUserId = user?.id == null ? null : String(user.id);
   const mode = "canvas" as const;

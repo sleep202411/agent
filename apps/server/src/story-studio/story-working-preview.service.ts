@@ -9,6 +9,7 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
+  StoryProductionSpecStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
@@ -25,36 +26,56 @@ import {
 import {
   compileStoryBuild,
   type FrozenStoryVideoAsset,
-  type StoryBuildVideoInput,
+  type StoryBuildNodeTimelineInput,
+  type StoryBuildSegmentInput,
   type StoryBuildWorldInput,
 } from './story-build-compiler';
 import { resolveStoryCover } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
 import {
-  StoryVideoSnapshotEntrySchema,
+  chooseStoryboardClipVariant,
+  isBrowserSafeMp4Metadata,
+  storyboardClipSnapshotEntry,
   storyVideoSnapshotHash,
+  StoryVideoSnapshotEntrySchema,
   type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
 
-const WORKING_PREVIEW_SELECTION_INCLUDE =
-  Prisma.validator<Prisma.StoryVideoSelectionInclude>()({
-    currentAsset: {
+/** Twin of the Build's timeline include: storyboard clips + selected media. */
+const WORKING_PREVIEW_TIMELINE_INCLUDE =
+  Prisma.validator<Prisma.StoryStoryboardSequenceInclude>()({
+    clips: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [
+        { track: 'asc' as const },
+        { startMs: 'asc' as const },
+        { rank: 'asc' as const },
+      ],
       include: {
-        placements: true,
-        variants: { include: { placements: true } },
+        selectedMediaVersion: {
+          include: {
+            mediaAsset: {
+              include: {
+                placements: true,
+                variants: { include: { placements: true } },
+              },
+            },
+            preferredVariant: { include: { placements: true } },
+          },
+        },
       },
     },
-    currentVariant: { include: { placements: true } },
   });
 
-type WorkingPreviewSelection = Prisma.StoryVideoSelectionGetPayload<{
-  include: typeof WORKING_PREVIEW_SELECTION_INCLUDE;
+type WorkingPreviewSequence = Prisma.StoryStoryboardSequenceGetPayload<{
+  include: typeof WORKING_PREVIEW_TIMELINE_INCLUDE;
 }>;
+type WorkingPreviewClip = WorkingPreviewSequence['clips'][number];
 
-interface PreparedWorkingPreviewVideo {
-  video: StoryBuildVideoInput;
-  source: StoryWorkingPreviewDto['sources'][number] | null;
-  snapshotEntry: StoryVideoSnapshotEntry;
+interface PreparedWorkingPreviewTimeline {
+  timeline: StoryBuildNodeTimelineInput;
+  sources: StoryWorkingPreviewDto['sources'];
+  snapshotEntries: StoryVideoSnapshotEntry[];
 }
 
 @Injectable()
@@ -183,23 +204,24 @@ export class StoryWorkingPreviewService {
         { kind: 'world' }
       > => node.kind === 'world' && node.worldId !== null,
     );
-    const selections =
+    const sequences =
       clipNodes.length === 0
         ? []
-        : await tx.storyVideoSelection.findMany({
+        : await tx.storyStoryboardSequence.findMany({
             where: {
               storyProjectId: projectId,
-              graphNodeId: { in: clipNodes.map((node) => node.nodeId) },
+              plotNodeId: { in: clipNodes.map((node) => node.nodeId) },
+              status: { not: StoryProductionSpecStatus.archived },
             },
-            include: WORKING_PREVIEW_SELECTION_INCLUDE,
+            include: WORKING_PREVIEW_TIMELINE_INCLUDE,
           });
-    const selectionByNodeId = new Map(
-      selections.map((selection) => [selection.graphNodeId, selection]),
+    const sequenceByNodeId = new Map(
+      sequences.map((sequence) => [sequence.plotNodeId, sequence]),
     );
     const prepared = clipNodes.map((node) =>
-      prepareWorkingPreviewVideo(
+      prepareWorkingPreviewTimeline(
         node.nodeId,
-        selectionByNodeId.get(node.nodeId) ?? null,
+        sequenceByNodeId.get(node.nodeId) ?? null,
         this.assetUrls,
       ),
     );
@@ -230,7 +252,7 @@ export class StoryWorkingPreviewService {
         : [];
     });
 
-    const snapshotEntries = prepared.map((item) => item.snapshotEntry);
+    const snapshotEntries = prepared.flatMap((item) => item.snapshotEntries);
     const videoSnapshotHash = storyVideoSnapshotHash(snapshotEntries);
     // A chapter owns its own entry scene; the story-level entry belongs to the
     // first chapter only. An unknown or entry-less chapter falls back to the
@@ -268,7 +290,7 @@ export class StoryWorkingPreviewService {
           project.summary?.trim() || playableDraft.data.storyBible.logline,
       },
       draft: playableDraft.data,
-      videos: prepared.map((item) => item.video),
+      timelines: prepared.map((item) => item.timeline),
       worlds,
       // Preview validates and paints the selected cover through ExperiencePlayer.
       cover: await resolveStoryCover(
@@ -287,130 +309,132 @@ export class StoryWorkingPreviewService {
       diagnostics: compiled.diagnostics,
       pathReport: compiled.pathReport,
       sources: prepared.flatMap((item) =>
-        item.source &&
-        compiled.includedGraphNodeIds.includes(item.source.graphNodeId)
-          ? [item.source]
-          : [],
+        item.sources.filter((source) =>
+          compiled.includedGraphNodeIds.includes(source.graphNodeId),
+        ),
       ),
     };
   }
 }
 
-function prepareWorkingPreviewVideo(
+function prepareWorkingPreviewTimeline(
   graphNodeId: string,
-  selection: WorkingPreviewSelection | null,
+  sequence: WorkingPreviewSequence | null,
   assetUrls: MediaAssetUrlResolverService,
-): PreparedWorkingPreviewVideo {
+): PreparedWorkingPreviewTimeline {
+  if (!sequence) {
+    return {
+      timeline: { graphNodeId, sequenceId: null, segments: [] },
+      sources: [],
+      snapshotEntries: [],
+    };
+  }
+  const segments = sequence.clips.map((clip) =>
+    prepareWorkingPreviewSegment(graphNodeId, clip, assetUrls),
+  );
+  return {
+    timeline: {
+      graphNodeId,
+      sequenceId: sequence.id,
+      segments: segments.map((item) => item.segment),
+    },
+    sources: segments.flatMap((item) => (item.source ? [item.source] : [])),
+    snapshotEntries: segments.map((item) => item.snapshotEntry),
+  };
+}
+
+const choosePreviewClipVariant = chooseStoryboardClipVariant;
+
+function prepareWorkingPreviewSegment(
+  graphNodeId: string,
+  clip: WorkingPreviewClip,
+  assetUrls: MediaAssetUrlResolverService,
+): {
+  segment: StoryBuildSegmentInput;
+  source: StoryWorkingPreviewDto['sources'][number] | null;
+  snapshotEntry: StoryVideoSnapshotEntry;
+} {
   const diagnostics: StoryBuildDiagnosticDto[] = [];
   let asset: FrozenStoryVideoAsset | null = null;
-  const snapshotEntry = workingPreviewSnapshotEntry(graphNodeId, selection);
+  const media =
+    clip.selectedMediaVersion && clip.selectedMediaVersion.archivedAt === null
+      ? clip.selectedMediaVersion
+      : null;
+  const variant = media ? choosePreviewClipVariant(media) : null;
+  const label = `Storyboard clip ${clip.stableKey}`;
+  const snapshotEntry = previewClipSnapshotEntry(clip, media, variant);
 
-  if (!selection?.currentAssetId) {
+  if (!media) {
     diagnostics.push(
       previewDiagnostic(
         'warning',
-        'STORY_WORKING_PREVIEW_CURRENT_VIDEO_MISSING',
-        `Clip ${graphNodeId} has no video yet; Preview is using an empty shot placeholder.`,
+        'STORY_WORKING_PREVIEW_CLIP_MEDIA_MISSING',
+        `${label} has no selected media yet; Preview is using an empty shot placeholder.`,
         'clip',
         graphNodeId,
       ),
     );
-  } else if (
-    !selection.currentVariantId ||
-    !selection.currentContentType?.trim()
-  ) {
-    diagnostics.push(
-      previewDiagnostic(
-        'warning',
-        'STORY_WORKING_PREVIEW_CURRENT_VIDEO_SELECTION_INCOMPLETE',
-        `Clip ${graphNodeId} has a partial video selection; Preview is using an empty shot placeholder.`,
-        'clip',
-        graphNodeId,
-      ),
-    );
-  } else if (!selection.currentAsset || !selection.currentVariant) {
+  } else if (!variant) {
     diagnostics.push(
       previewDiagnostic(
         'warning',
         'STORY_WORKING_PREVIEW_OUTPUT_MISSING',
-        `Clip ${graphNodeId} current video is unavailable; Preview is using an empty shot placeholder.`,
-        'clip',
-        graphNodeId,
+        `${label} does not resolve to a playable media variant; Preview is using an empty shot placeholder.`,
+        'asset',
+        media.mediaAssetId,
       ),
     );
   } else {
-    const source = selection.currentAsset;
-    const variant = selection.currentVariant;
-    // Workspace is deliberately not compared here: uploads record none, so an
-    // uploaded cut sitting ready on the canvas was reported as "not a ready,
-    // usable asset in this workspace" — a sentence with no actionable part.
-    // The reason, when there is one, now names itself.
+    const source = media.mediaAsset;
+    const expectedKind =
+      clip.kind === 'video' ? MediaAssetKind.video : MediaAssetKind.image;
+    const expectedPrefix = clip.kind === 'video' ? 'video/' : 'image/';
     const ineligible =
-      source.id !== selection.currentAssetId ||
-      variant.id !== selection.currentVariantId ||
-      variant.assetId !== source.id
-        ? 'no longer matches the selected asset and variant'
-        : source.kind !== MediaAssetKind.video
-          ? `is a ${source.kind} asset, not a video`
-          : source.deletedAt !== null || variant.deletedAt !== null
-            ? 'has been deleted'
-            : source.moderationStatus === MediaAssetModerationStatus.blocked
-              ? 'was blocked by moderation'
-              : source.status !== MediaAssetStatus.ready
-                ? `is still ${source.status}`
-                : variant.status !== MediaAssetVariantStatus.ready
-                  ? `has a variant that is still ${variant.status}`
-                  : null;
+      source.kind !== expectedKind
+        ? `is a ${source.kind} asset, not ${clip.kind}`
+        : source.deletedAt !== null || variant.deletedAt !== null
+          ? 'has been deleted'
+          : source.moderationStatus === MediaAssetModerationStatus.blocked
+            ? 'was blocked by moderation'
+            : source.status !== MediaAssetStatus.ready
+              ? `is still ${source.status}`
+              : variant.status !== MediaAssetVariantStatus.ready
+                ? `has a variant that is still ${variant.status}`
+                : null;
     if (ineligible) {
       diagnostics.push(
         previewDiagnostic(
           'warning',
           'STORY_WORKING_PREVIEW_OUTPUT_INELIGIBLE',
-          `Clip ${graphNodeId} current video ${ineligible}; Preview is using an empty shot placeholder.`,
+          `${label} selected media ${ineligible}; Preview is using an empty shot placeholder.`,
           'asset',
           source.id,
         ),
       );
-    } else if (!variant.contentType.toLowerCase().startsWith('video/')) {
+    } else if (!variant.contentType.toLowerCase().startsWith(expectedPrefix)) {
       diagnostics.push(
         previewDiagnostic(
           'warning',
           'STORY_WORKING_PREVIEW_OUTPUT_CONTENT_TYPE_INVALID',
-          `Clip ${graphNodeId} current variant is not video media; Preview is using an empty shot placeholder.`,
+          `${label} does not resolve to a ${clip.kind} media type; Preview is using an empty shot placeholder.`,
           'asset',
           source.id,
         ),
       );
     } else {
       if (
-        variant.checksumSha256 !== selection.currentChecksumSha256 ||
-        variant.contentType !== selection.currentContentType ||
-        variant.durationMs !== selection.currentDurationMs ||
-        variant.width !== selection.currentWidth ||
-        variant.height !== selection.currentHeight
-      ) {
-        diagnostics.push(
-          previewDiagnostic(
-            'warning',
-            'STORY_WORKING_PREVIEW_OUTPUT_METADATA_MISMATCH',
-            `Graph clip ${graphNodeId} technical metadata changed after selection; the latest metadata will be used.`,
-            'asset',
-            source.id,
-          ),
-        );
-      }
-      if (
-        !variant.checksumSha256 ||
-        variant.durationMs === null ||
-        variant.width === null ||
-        variant.height === null ||
-        !isBrowserSafeMp4Metadata(variant.metadata)
+        clip.kind === 'video' &&
+        (!variant.checksumSha256 ||
+          variant.durationMs === null ||
+          variant.width === null ||
+          variant.height === null ||
+          !isBrowserSafeMp4Metadata(variant.metadata))
       ) {
         diagnostics.push(
           previewDiagnostic(
             'warning',
             'STORY_WORKING_PREVIEW_OUTPUT_METADATA_INCOMPLETE',
-            `Graph clip ${graphNodeId} has incomplete technical metadata; browser playback remains available.`,
+            `${label} has incomplete technical metadata; browser playback remains available.`,
             'asset',
             source.id,
           ),
@@ -428,7 +452,7 @@ function prepareWorkingPreviewVideo(
           previewDiagnostic(
             'warning',
             'STORY_WORKING_PREVIEW_OUTPUT_URL_UNAVAILABLE',
-            `Clip ${graphNodeId} current video has no resolvable playback URL; Preview is using an empty shot placeholder.`,
+            `${label} has no resolvable playback URL; Preview is using an empty shot placeholder.`,
             'asset',
             source.id,
           ),
@@ -439,7 +463,7 @@ function prepareWorkingPreviewVideo(
             previewDiagnostic(
               'warning',
               'STORY_WORKING_PREVIEW_MODERATION_PENDING',
-              `Graph clip ${graphNodeId} current video has not completed moderation review.`,
+              `${label} selected media has not completed moderation review.`,
               'asset',
               source.id,
             ),
@@ -462,19 +486,22 @@ function prepareWorkingPreviewVideo(
   }
 
   return {
-    video: {
-      graphNodeId,
-      selectionVersion: selection?.version ?? 0,
+    segment: {
+      clipId: clip.id,
+      clipKey: clip.stableKey,
+      kind: clip.kind as 'image' | 'video',
+      durationMs: clip.durationMs,
+      clipVersion: clip.version,
       asset,
       eligibilityDiagnostics: diagnostics,
     },
     source:
-      selection?.currentAssetId && selection.currentVariantId && asset
+      media && variant && asset
         ? {
             graphNodeId,
-            assetId: selection.currentAssetId,
-            variantId: selection.currentVariantId,
-            selectionVersion: selection.version,
+            assetId: media.mediaAssetId,
+            variantId: variant.id,
+            selectionVersion: clip.version,
             selection: 'current',
           }
         : null,
@@ -482,33 +509,11 @@ function prepareWorkingPreviewVideo(
   };
 }
 
-function workingPreviewSnapshotEntry(
-  graphNodeId: string,
-  selection: WorkingPreviewSelection | null,
-): StoryVideoSnapshotEntry {
-  if (!selection) return emptyVideoSnapshotEntry(graphNodeId, 0);
-  if (selection.currentAssetId === null) {
-    return emptyVideoSnapshotEntry(graphNodeId, selection.version);
-  }
-  const parsed = StoryVideoSnapshotEntrySchema.safeParse({
-    graphNodeId,
-    selectionVersion: selection.version,
-    assetId: selection.currentAssetId,
-    variantId: selection.currentVariantId,
-    checksumSha256: selection.currentChecksumSha256,
-    contentType: selection.currentContentType,
-    durationMs: selection.currentDurationMs,
-    width: selection.currentWidth,
-    height: selection.currentHeight,
-    browserSafeMp4: selection.currentBrowserSafeMp4,
-  });
-  // A partial selection still needs a deterministic Preview identity. Its
-  // selection version changes whenever the creator edits it, while the empty
-  // media fields accurately describe what this Preview can currently play.
-  return parsed.success
-    ? parsed.data
-    : emptyVideoSnapshotEntry(graphNodeId, selection.version);
-}
+const previewClipSnapshotEntry = (
+  clip: WorkingPreviewClip,
+  _media: unknown,
+  _variant: unknown,
+): StoryVideoSnapshotEntry => storyboardClipSnapshotEntry(clip);
 
 function emptyVideoSnapshotEntry(
   graphNodeId: string,
@@ -538,19 +543,6 @@ function workingPreviewBuildId(
     draftContentHash,
     videoSnapshotHash,
   })}`;
-}
-
-function isBrowserSafeMp4Metadata(value: Prisma.JsonValue): boolean {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
-  if (value.browserSafeMp4 === true) return true;
-  const probe = value.videoProbe;
-  return (
-    probe !== null &&
-    probe !== undefined &&
-    typeof probe === 'object' &&
-    !Array.isArray(probe) &&
-    probe.browserSafeMp4 === true
-  );
 }
 
 function emptyWorkingPreview(

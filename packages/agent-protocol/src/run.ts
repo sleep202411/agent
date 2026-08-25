@@ -8,6 +8,8 @@ export const AgentRunStatusSchema = z.enum([
   "queued",
   "running",
   "waiting_for_approval",
+  "waiting_for_input",
+  "waiting_for_external",
   "paused",
   "completed",
   "failed",
@@ -72,6 +74,10 @@ export const AgentRunAcceptedSchema = z
   .strict();
 export type AgentRunAccepted = z.infer<typeof AgentRunAcceptedSchema>;
 
+/**
+ * Legacy v1 response reader. Current producers expose only approve/reject;
+ * edit_and_approve remains readable so stored v1 payloads do not break replay.
+ */
 export const AgentApprovalDecisionSchema = z.enum(["approve", "edit_and_approve", "reject"]);
 export type AgentApprovalDecision = z.infer<typeof AgentApprovalDecisionSchema>;
 
@@ -83,6 +89,17 @@ export const AgentApprovalResponseSchema = z
   })
   .strict();
 export type AgentApprovalResponse = z.infer<typeof AgentApprovalResponseSchema>;
+
+export const AgentUserInputResponseSchema = z
+  .object({
+    schemaVersion: z.literal("agent-os-user-input-response/v1"),
+    /** Stable across retries; the Gateway deduplicates this durable submission. */
+    responseId: AgentOsIdSchema,
+    requestId: AgentOsIdSchema,
+    answers: z.record(z.string().trim().min(1).max(64), z.string().trim().min(1).max(64)),
+  })
+  .strict();
+export type AgentUserInputResponse = z.infer<typeof AgentUserInputResponseSchema>;
 
 export const AgentCancelRequestSchema = z
   .object({

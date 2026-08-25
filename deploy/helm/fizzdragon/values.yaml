@@ -256,11 +256,11 @@ agentOsSecrets:
     # internal token with it and stopping the worker from booting.
     - kv: ably-api-key
       env: ABLY_API_KEY
-    # Durable LangGraph checkpoints. Create the vault entry first, then
-    # uncomment: the saver runs CREATE SCHEMA / CREATE TABLE on first use, so
-    # that role needs DDL on schema `agent_os`. No migrator Job owns it.
-    # - kv: agent-os-checkpoint-database-url
-    #   env: AGENT_OS_CHECKPOINT_DATABASE_URL
+    # Durable LangGraph checkpoints and the execution-fence authority. The
+    # worker refuses to boot without this scoped DSN; it must address the same
+    # PostgreSQL database as public.agent_os_runs and allow DDL in agent_os.
+    - kv: agent-os-checkpoint-database-url
+      env: AGENT_OS_CHECKPOINT_DATABASE_URL
 # The same vault entry projected a second time, for the Nest pod. Separate group
 # for the same fail-closed reason: the server must not lose its own secrets
 # because an Agent OS entry is missing.
@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: cac2f8377413f9869a83a55f19b69291fb8aed64
+    tag: 0361da0718cd369fe643996cf40e732b8fe48dfc
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: b2b8f0c943f23845c51791d79d5cb45e3dd9ef16
+    tag: 57449381327c364da794151efbe1119f49ba05f2
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 665977ef4c24387ec9d12381888a651aa844ed79
+    tag: 97e6755cb056dee47aaa2dd5539700209763c794
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 16295af714d07178745d02864d73ddb7fb56938b
+    tag: 57449381327c364da794151efbe1119f49ba05f2
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -428,6 +428,9 @@ server:
     # Never default this in code: an omitted value must fail the server at boot
     # instead of silently resolving .com/.cn data against another region.
     LEGACY_OSS_BASE_URL: https://fizzstudio-sg.oss-ap-southeast-1.aliyuncs.com
+    # Region-owned banner bucket that holds crew logos (relative keys). The admin
+    # DTOs resolve crew.logo to an absolute URL with this base.
+    BANNER_BASE_URL: https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com
     # Public, versioned preview media for the Git-governed Project Skill catalog.
     PROJECT_SKILL_PREVIEW_BASE_URL: https://r2.fizzdragon.com/product-skills/previews/v1
     FAL_ENABLED: "true"
@@ -532,15 +535,13 @@ server:
 # ---------------------------------------------------------------------------
 agentOs:
   enabled: true
-  # MUST remain 1, and the template refuses anything else. Run snapshots, the
-  # live event journal and pending approvals live in the worker PROCESS, so a
-  # second replica answers /events and /cancel for runs it never started — and
-  # the gateway silently falls back to the Postgres journal, so the symptom is
-  # "chat feels laggy", not an error anyone would report.
+  # Runs, HITL commands, dispatch leases, journal suffixes and checkpoints are
+  # PostgreSQL-authoritative. Replicas coordinate through fenced dispatch and
+  # the per-conversation checkpoint execution lock.
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: f12f63f1bc2c53a74ed385d22cdf80061273767b
+    tag: fc8fd144fcd15e5404a2bdae7d5eb19d6109cdca
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
@@ -550,6 +551,10 @@ agentOs:
     baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
   checkpoint:
     schema: agent_os
+    # Per-pod budget: saver transactions are short; guard sessions are pinned
+    # only while a graph owns a conversation. Keep explicit for replica sizing.
+    poolMax: 10
+    lockPoolMax: 20
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { cpu: 2000m, memory: 2Gi }

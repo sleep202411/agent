@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
+import { downloadCanvasMedia } from "./download-media";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
 import {
   EXPAND_OP,
@@ -73,11 +74,10 @@ function ImageNodeComponent({ id, data, selected }: NodeProps<ImageNodeType>) {
   const title = data.label ?? t("image.title");
 
   const onDownload = useCallback(() => {
-    const anchor = document.createElement("a");
-    anchor.href = data.src;
-    anchor.download = title;
-    anchor.click();
-  }, [data.src, title]);
+    // `src`, not `data.src`: the raw value drops the canvas document grant and
+    // the local blob preview an in-flight upload is still showing.
+    void downloadCanvasMedia(src, title, "image");
+  }, [src, title]);
 
   const commitName = useCallback(
     (name: string) => {

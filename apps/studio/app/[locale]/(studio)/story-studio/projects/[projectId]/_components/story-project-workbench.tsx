@@ -27,17 +27,17 @@ import {
   storyApiErrorMessage,
   type InteractiveStoryDraftContent,
   type StoryProjectProductionSummary,
+  type StoryProjectSummary,
   type StoryWorkbench,
 } from "@/lib/story-projects-api";
 import { StoryReferencePack } from "./story-reference-pack";
 
-type WorkbenchStage = "overview" | "story" | "references" | "production";
+type WorkbenchStage = "overview" | "story" | "references";
 
 const STAGES: Array<{ id: WorkbenchStage; icon: typeof IconBook2 }> = [
   { id: "overview", icon: IconSparkles },
   { id: "story", icon: IconBook2 },
   { id: "references", icon: IconPhoto },
-  { id: "production", icon: IconMovie },
 ];
 const STORY_REFERENCE_API_CONNECTED = true;
 
@@ -70,7 +70,7 @@ export function StoryProjectWorkbench({
           <h1 className="mt-4 text-base font-semibold text-white">
             {t("workbench.errors.loadTitle")}
           </h1>
-          <p className="mt-2 text-sm leading-6 text-white/46">
+          <p className="mt-2 text-sm leading-6 text-white/64">
             {storyApiErrorMessage(workbenchQuery.error, t("errors.generic"))}
           </p>
           <div className="mt-6 flex items-center gap-2">
@@ -107,7 +107,6 @@ export function StoryProjectWorkbench({
               onRefresh={() => workbenchQuery.refetch()}
             />
           ) : null}
-          {stage === "production" ? <ProductionStage workbench={authoringWorkbench} /> : null}
         </div>
       </div>
     </main>
@@ -121,7 +120,7 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
       <div className="min-w-0">
         <Link
           href="/story-studio"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-white/38 transition hover:text-white/72"
+          className="inline-flex items-center gap-1.5 text-xs font-medium text-white/62 transition hover:text-white/82"
         >
           <IconArrowLeft className="size-3.5" />
           {t("workbench.back")}
@@ -134,20 +133,23 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
             <h1 className="truncate text-2xl font-semibold tracking-[-0.025em] text-white">
               {workbench.project.title}
             </h1>
-            <p className="mt-1 text-xs text-white/38">
+            <p className="mt-1 text-xs text-white/62">
               {t("workbench.draftHead", { revision: workbench.draft.revision })}
             </p>
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/46">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/64">
         <span className="rounded-full bg-white/[0.05] px-3 py-1.5">
           {t(`visibility.${workbench.project.visibility}`)}
         </span>
-        <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
-          {t(`frameProfiles.${workbench.project.frameProfile}.label`)} ·{" "}
-          {t(`frameProfiles.${workbench.project.frameProfile}.dimensions`)}
-        </span>
+        {workbench.project.creativeProfileConfirmedAt ? (
+          <span className="rounded-full bg-white/[0.05] px-3 py-1.5 tabular-nums">
+            {`${t(`frameProfiles.${workbench.project.frameProfile}.label`)} · ${t(
+              `frameProfiles.${workbench.project.frameProfile}.dimensions`
+            )}`}
+          </span>
+        ) : null}
       </div>
     </header>
   );
@@ -175,7 +177,7 @@ function StageNavigation({
             "inline-flex h-9 shrink-0 items-center gap-2 rounded-xl px-3.5 text-xs font-semibold transition",
             activeStage === id
               ? "bg-white/[0.09] text-white shadow-sm"
-              : "text-white/40 hover:bg-white/[0.04] hover:text-white/72"
+              : "text-white/64 hover:bg-white/[0.04] hover:text-white/88"
           )}
         >
           <Icon className="size-4" stroke={1.7} />
@@ -195,13 +197,14 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
       <div className="space-y-5">
+        <StoryOverviewCreativeProfile project={workbench.project} />
         <FrostedPanel className="p-5 lg:p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h2 className="text-base font-semibold text-white">
                 {t("overview.productionTitle")}
               </h2>
-              <p className="mt-1 text-xs text-white/40">{t("overview.productionSubtitle")}</p>
+              <p className="mt-1 text-xs text-white/64">{t("overview.productionSubtitle")}</p>
             </div>
             <span className="text-xs font-semibold tabular-nums text-white/54">
               {t("overview.draftRevisionStatus", { revision: workbench.draft.revision })}
@@ -230,7 +233,7 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
           <h2 className="text-base font-semibold text-white">
             {t("overview.storyStructureTitle")}
           </h2>
-          <p className="mt-1 text-xs text-white/40">{t("overview.storyStructureSubtitle")}</p>
+          <p className="mt-1 text-xs text-white/64">{t("overview.storyStructureSubtitle")}</p>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <OverviewMetric
               icon={IconGitBranch}
@@ -243,8 +246,8 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
               value={String(sceneNodes)}
             />
           </div>
-          {workbench.project.frameProfile ? (
-            <div className="mt-4 rounded-xl bg-black/20 px-4 py-3 text-[11px] text-white/45">
+          {workbench.project.creativeProfileConfirmedAt ? (
+            <div className="mt-4 rounded-xl bg-black/20 px-4 py-3 text-[11px] text-white/62">
               {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].width} ×{" "}
               {STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile].height}
             </div>
@@ -271,6 +274,52 @@ function OverviewStage({ workbench }: { workbench: StoryWorkbench }) {
   );
 }
 
+export function StoryOverviewCreativeProfile({
+  project,
+}: {
+  project: Pick<
+    StoryProjectSummary,
+    "frameProfile" | "durationPreset" | "visualStyle" | "defaultLocale"
+  >;
+}) {
+  const t = useTranslations("storyStudio.canvas.filmFoundation.profile");
+  const locale = useLocale();
+  const values = [
+    { key: "aspectRatio", value: t(`frameProfiles.${project.frameProfile}`) },
+    {
+      key: "targetRuntime",
+      value: project.durationPreset ? t(`durationPresets.${project.durationPreset}`) : t("notSet"),
+    },
+    {
+      key: "visualStyle",
+      value: project.visualStyle ? t(`visualStyles.${project.visualStyle}`) : t("notSet"),
+    },
+    {
+      key: "language",
+      value: `${displayLanguage(project.defaultLocale, locale)} · ${project.defaultLocale}`,
+    },
+  ] as const;
+
+  return (
+    <FrostedPanel className="p-5 lg:p-6" aria-labelledby="overview-creative-profile-title">
+      <h2 id="overview-creative-profile-title" className="text-base font-semibold text-white">
+        {t("title")}
+      </h2>
+      <p className="mt-1 text-xs leading-5 text-white/64">{t("description")}</p>
+      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+        {values.map((item) => (
+          <div key={item.key} className="rounded-2xl bg-white/[0.045] px-4 py-3.5">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.1em] text-white/64">
+              {t(item.key)}
+            </dt>
+            <dd className="mt-1.5 text-sm font-semibold text-white/90">{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </FrostedPanel>
+  );
+}
+
 function CurrentVideoState({ production }: { production: StoryProjectProductionSummary }) {
   const t = useTranslations("storyStudio");
   return (
@@ -281,7 +330,7 @@ function CurrentVideoState({ production }: { production: StoryProjectProductionS
         </div>
         <div>
           <h2 className="text-sm font-semibold text-white">{t("overview.videoState")}</h2>
-          <p className="mt-1.5 text-xs leading-5 text-white/46">
+          <p className="mt-1.5 text-xs leading-5 text-white/64">
             {t("overview.videoStateReady", {
               current: production.currentVideoCount,
               total: production.clipCount,
@@ -421,90 +470,6 @@ function ReferencesStage({
   );
 }
 
-function ProductionStage({ workbench }: { workbench: StoryWorkbench }) {
-  const t = useTranslations("storyStudio");
-  const clipNodes = workbench.draft.content.graph.nodes.filter((node) => node.kind === "clip");
-  const videos = new Map(workbench.video.clips.map((clip) => [clip.graphNodeId, clip]));
-  const frame = workbench.project.frameProfile
-    ? STORY_FRAME_PROFILE_CONTRACTS[workbench.project.frameProfile]
-    : null;
-  return (
-    <div>
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h2 className="text-base font-semibold text-white">{t("production.title")}</h2>
-          <p className="mt-1 text-xs text-white/40">{t("production.subtitle")}</p>
-        </div>
-        <p className="text-xs tabular-nums text-white/40">
-          {t("production.clipCount", { count: clipNodes.length })}
-        </p>
-      </div>
-      {clipNodes.length === 0 ? <NoProductionData /> : null}
-      {clipNodes.length > 0 ? (
-        <FrostedPanel className="mt-5 overflow-hidden">
-          <div className="hidden grid-cols-[100px_minmax(220px,1fr)_140px_140px_minmax(180px,0.8fr)] gap-4 px-5 py-3 text-[10px] font-semibold tracking-wide text-white/28 uppercase lg:grid">
-            <span>{t("production.columns.key")}</span>
-            <span>{t("production.columns.clip")}</span>
-            <span>{t("production.columns.duration")}</span>
-            <span>{t("production.columns.status")}</span>
-            <span>{t("production.columns.blocker")}</span>
-          </div>
-          <div className="divide-y divide-white/[0.045]">
-            {clipNodes.map((node) => {
-              const clip = videos.get(node.nodeId);
-              const status = clip?.currentVideo ? "ready" : "draft";
-              const statusDetail = clip?.currentVideo
-                ? t("production.currentVideoReady")
-                : t("production.currentDraftPromptRequired");
-              return (
-                <div
-                  key={node.nodeId}
-                  className="grid gap-3 px-5 py-4 lg:grid-cols-[100px_minmax(220px,1fr)_140px_140px_minmax(180px,0.8fr)] lg:items-center lg:gap-4"
-                >
-                  <span className="flex items-center gap-2 font-mono text-[11px] text-white/34">
-                    {node.clipKey}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-white/76">{node.clipKey}</p>
-                    <p className="mt-1 truncate text-[10px] text-white/26">{node.nodeId}</p>
-                  </div>
-                  <span className="text-xs tabular-nums text-white/46">
-                    {clip?.currentVideo?.durationMs != null
-                      ? t("production.seconds", { seconds: clip.currentVideo.durationMs / 1000 })
-                      : "—"}
-                  </span>
-                  <StatusPill label={t(`production.status.${status}`)} status={status} />
-                  <p className="truncate text-[11px] text-white/36">{statusDetail}</p>
-                </div>
-              );
-            })}
-          </div>
-          {frame ? (
-            <div className="px-5 py-3 text-[10px] text-white/28">
-              {frame.width} × {frame.height}
-            </div>
-          ) : null}
-        </FrostedPanel>
-      ) : null}
-    </div>
-  );
-}
-
-function NoProductionData() {
-  const t = useTranslations("storyStudio");
-  return (
-    <FrostedPanel className="flex min-h-64 flex-col items-center justify-center px-6 text-center">
-      <IconBook2 className="size-6 text-white/42" />
-      <h2 className="mt-4 text-sm font-semibold text-white">
-        {t("workbench.noProductionDataTitle")}
-      </h2>
-      <p className="mt-2 max-w-md text-xs leading-5 text-white/42">
-        {t("workbench.noProductionDataDescription")}
-      </p>
-    </FrostedPanel>
-  );
-}
-
 function OverviewMetric({
   icon: Icon,
   label,
@@ -528,28 +493,11 @@ function OverviewMetric({
 function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4">
-      <dt className="text-white/38">{label}</dt>
+      <dt className="text-white/62">{label}</dt>
       <dd className={cn("truncate text-right text-white/68", mono && "font-mono text-[11px]")}>
         {value}
       </dd>
     </div>
-  );
-}
-
-function StatusPill({ label, status }: { label: string; status: string }) {
-  const positive = status === "approved" || status === "ready";
-  const warning = status === "blocked" || status === "failed" || status === "invalidated";
-  return (
-    <span
-      className={cn(
-        "inline-flex w-fit items-center rounded-full px-2.5 py-1 text-[10px] font-semibold",
-        positive && "bg-emerald-400/10 text-emerald-200/70",
-        warning && "bg-red-400/10 text-red-200/70",
-        !positive && !warning && "bg-white/[0.055] text-white/42"
-      )}
-    >
-      {label}
-    </span>
   );
 }
 
@@ -616,4 +564,12 @@ function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecisi
 function localizedText(values: Record<string, string> | undefined, locale: string): string {
   if (!values) return "—";
   return values[locale] || values["zh-CN"] || values["en-US"] || Object.values(values)[0] || "—";
+}
+
+function displayLanguage(languageTag: string, locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: "language" }).of(languageTag) ?? languageTag;
+  } catch {
+    return languageTag;
+  }
 }

@@ -6,6 +6,7 @@ import { createPortal } from "react-dom";
 import { IconDownload, IconMinus, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
+import { downloadCanvasMedia } from "./download-media";
 
 export function CanvasMediaViewer({
   alt,
@@ -58,19 +59,7 @@ export function CanvasMediaViewer({
   }, [onClose, type]);
 
   const download = async () => {
-    try {
-      const blob = await (await fetch(src)).blob();
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download =
-        downloadName ??
-        (type === "video" ? "video.mp4" : type === "audio" ? "audio.mp3" : "image.png");
-      anchor.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      window.open(src, "_blank");
-    }
+    await downloadCanvasMedia(src, downloadName ?? type, type);
   };
 
   const buttonClass =

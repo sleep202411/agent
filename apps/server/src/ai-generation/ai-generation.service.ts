@@ -85,6 +85,12 @@ export interface AiJobSubmissionHooks {
   afterJobCreate?: (tx: Prisma.TransactionClient, job: AiJob) => Promise<void>;
   /** Trusted internal retry path. Never exposed through the HTTP DTO. */
   frozenSkillSnapshot?: ProjectSkillResolutionSnapshot | null;
+  /**
+   * Trusted retry lineage. Product-specific retry commands use this instead
+   * of the generic HTTP DTO so a replacement job cannot lose the durable
+   * request it supersedes.
+   */
+  retryOfJobId?: string;
 }
 
 /**
@@ -401,6 +407,7 @@ export class AiGenerationService {
             estimatedTotalSeconds: estimate.estimatedTotalSeconds,
             etaConfidence: estimate.etaConfidence,
             attempt: 1,
+            retryOfJobId: hooks.retryOfJobId,
             createdAt: now,
             queuedAt: now,
             updatedAt: now,
@@ -784,7 +791,10 @@ export class AiGenerationService {
         idempotencyKey: randomUUID(),
       },
       undefined,
-      { frozenSkillSnapshot: job.skillSnapshot ?? null },
+      {
+        frozenSkillSnapshot: job.skillSnapshot ?? null,
+        retryOfJobId: job.id,
+      },
     );
   }
 

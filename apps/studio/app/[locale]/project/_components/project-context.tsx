@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { ProjectRole } from "@/lib/collab/projects-api";
+import { payerWorkspace, useWorkspace } from "@/app/_components/workspace-context";
+import type { ProjectRole, WorkspaceRef } from "@/lib/collab/projects-api";
 import { SkillsLaunchAnnouncement } from "@/components/project-skills/skills-launch-announcement";
 import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import type { FizzAiCatalog } from "@/lib/canvas-authoring/generation-api";
@@ -21,6 +22,14 @@ export type StudioWorkbenchOwner =
 
 interface ProjectContextValue {
   projectId: string;
+  /**
+   * The workspace this project lives in, resolved from the project id — the
+   * single source for every project-scoped read (billing pot, generation,
+   * uploads, realtime). Never the global active workspace: that is shared
+   * across tabs and would make one project's page bill/scope to another's
+   * workspace. Null only until the project resolves.
+   */
+  workspaceId: string | null;
   owner: StudioWorkbenchOwner;
   uploadKinds: readonly FizzAiReferenceKind[];
   /** The caller's effective role (null until resolved / no access). */
@@ -83,6 +92,7 @@ const DEFAULT_UPLOAD_KINDS = ["image", "video"] as const;
  */
 export function ProjectProvider({
   projectId,
+  workspaceId,
   owner,
   uploadKinds = DEFAULT_UPLOAD_KINDS,
   role,
@@ -91,6 +101,7 @@ export function ProjectProvider({
   children,
 }: {
   projectId: string;
+  workspaceId: string | null;
   owner?: StudioWorkbenchOwner;
   uploadKinds?: readonly FizzAiReferenceKind[];
   role: ProjectRole | null;
@@ -166,6 +177,7 @@ export function ProjectProvider({
     const canManage = role === "owner" || role === "admin";
     return {
       projectId,
+      workspaceId,
       owner: resolvedOwner,
       uploadKinds,
       role,
@@ -179,6 +191,7 @@ export function ProjectProvider({
     };
   }, [
     projectId,
+    workspaceId,
     resolvedOwner,
     uploadKinds,
     role,
@@ -211,4 +224,39 @@ export function useProjectContext(): ProjectContextValue {
 
 export function useOptionalProjectContext(): ProjectContextValue | null {
   return useContext(ProjectContext);
+}
+
+/**
+ * The single workspace the current user operates in FOR the open project — the
+ * one they are a member of, so it is at once the compute pot a generation debits
+ * (mirrors the server payer rule `resolvePayerTx`), the realtime channel to
+ * subscribe to, and the workspace an upload belongs to. It keys off the OPEN
+ * PROJECT's workspace, never the global active selection, so it stays correct
+ * even when a second tab switched the active workspace elsewhere; and because it
+ * always resolves to a workspace the user belongs to, workspace-membership-gated
+ * endpoints (realtime negotiate, media upload) never 403.
+ *
+ * - In a project: a team project → the team pot/channel; a personal project
+ *   (mine, or a host's I only collaborate in) → MY own personal pot/channel —
+ *   the one I can read and the one the server debits for a personal-workspace
+ *   job. (A collaborator cannot reach the host's personal workspace, so realtime
+ *   for the host's jobs degrades to reconcile-on-connect rather than 403ing.)
+ * - Outside any project: the global billing workspace (active team → team pot;
+ *   otherwise my personal pot).
+ */
+export function useProjectPayerWorkspace(): WorkspaceRef | null {
+  const project = useOptionalProjectContext();
+  const { workspaces, activeWorkspace } = useWorkspace();
+  if (project) {
+    // In a project the pot is decided by the PROJECT's workspace and nothing
+    // else. While it is still resolving (workspaceId null) return null — chrome
+    // shows "—" — rather than flashing the global active pot, which is the
+    // cross-context leak this fixes. A host's personal workspace I only
+    // collaborate in is absent from my list, so `find` misses and payerWorkspace
+    // correctly falls back to my own personal pot.
+    if (!project.workspaceId) return null;
+    const projectWs = workspaces.find((w) => w.id === project.workspaceId) ?? null;
+    return payerWorkspace(projectWs, workspaces);
+  }
+  return payerWorkspace(activeWorkspace, workspaces);
 }

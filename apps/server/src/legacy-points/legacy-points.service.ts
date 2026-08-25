@@ -28,6 +28,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { decodeUserId, encodeUserId } from '@repo/shared';
 import type { RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import { LegacyMysqlService, type SqlParam } from '../infra/legacy-mysql';
 
@@ -115,14 +116,33 @@ export class LegacyPointsService {
     const offset = (page - 1) * pageSize;
     const q = query?.trim();
 
-    const where = q
-      ? `WHERE phone LIKE ? OR email LIKE ? OR nick_name LIKE ? OR CAST(id AS CHAR) LIKE ?`
-      : '';
-    const likeParams = q ? [`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`] : [];
+    // Users are shown/searched by their obfuscated public id (e.g. a paste from
+    // a creator URL), so decode it back to the real client_user.id and match
+    // that exactly. decodeUserId returns the input unchanged when it is not an
+    // encoded id, so a raw id or an email/nickname just skips this branch.
+    const decodedId = q ? decodeUserId(q) : '';
+    const publicIdMatch = !!q && /^\d+$/.test(decodedId) && decodedId !== q;
+
+    let where = '';
+    const whereParams: SqlParam[] = [];
+    if (q) {
+      const clauses = [
+        'phone LIKE ?',
+        'email LIKE ?',
+        'nick_name LIKE ?',
+        'CAST(id AS CHAR) LIKE ?',
+      ];
+      whereParams.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+      if (publicIdMatch) {
+        clauses.push('id = ?');
+        whereParams.push(decodedId);
+      }
+      where = `WHERE ${clauses.join(' OR ')}`;
+    }
 
     const countRow = await this.mysql.queryOne<RowDataPacket>(
       `SELECT COUNT(*) AS total FROM client_user ${where}`,
-      likeParams,
+      whereParams,
     );
     const total = Number(countRow?.total ?? 0);
 
@@ -132,12 +152,14 @@ export class LegacyPointsService {
          FROM client_user ${where}
         ORDER BY id DESC
         LIMIT ? OFFSET ?`,
-      [...likeParams, pageSize, offset],
+      [...whereParams, pageSize, offset],
     );
 
     return {
+      // The real client_user.id never leaves the server — the UI shows and
+      // passes back the encoded public id, which inbound handlers decode.
       items: rows.map((r) => ({
-        userId: String(r.id),
+        userId: encodeUserId(String(r.id)),
         phone: r.phone ?? null,
         email: r.email ?? null,
         nickName: r.nick_name ?? null,
@@ -161,7 +183,10 @@ export class LegacyPointsService {
    * names without N queries. Unknown ids are simply absent from the result.
    */
   async findUsersByIds(ids: string[]): Promise<LegacyUser[]> {
-    const numeric = [...new Set(ids)].filter((id) => /^\d{1,18}$/.test(id));
+    // Callers pass the encoded public id; decode back to the real id to query.
+    const numeric = [...new Set(ids.map((id) => decodeUserId(id)))].filter(
+      (id) => /^\d{1,18}$/.test(id),
+    );
     if (numeric.length === 0) return [];
     const placeholders = numeric.map(() => '?').join(',');
     const rows = await this.mysql.query<RowDataPacket>(
@@ -170,7 +195,12 @@ export class LegacyPointsService {
         WHERE id IN (${placeholders})`,
       numeric,
     );
-    return rows.map((row) => this.mapUser(row));
+    // This endpoint is a pure display resolver (identity chips), so the id it
+    // hands back is the encoded public one.
+    return rows.map((row) => ({
+      ...this.mapUser(row),
+      userId: encodeUserId(String(row.id)),
+    }));
   }
 
   /** Resolve a phone/email to a legacy user, or null if not found. */
@@ -307,10 +337,21 @@ export class LegacyPointsService {
     const clauses: string[] = [];
     const params: SqlParam[] = [];
     if (q) {
-      clauses.push(
-        '(u.phone LIKE ? OR u.email LIKE ? OR u.nick_name LIKE ? OR CAST(u.id AS CHAR) LIKE ?)',
-      );
+      // Also match on the decoded public id — see searchMembers for the why.
+      const decodedId = decodeUserId(q);
+      const publicIdMatch = /^\d+$/.test(decodedId) && decodedId !== q;
+      const userClauses = [
+        'u.phone LIKE ?',
+        'u.email LIKE ?',
+        'u.nick_name LIKE ?',
+        'CAST(u.id AS CHAR) LIKE ?',
+      ];
       params.push(`%${q}%`, `%${q}%`, `%${q}%`, `%${q}%`);
+      if (publicIdMatch) {
+        userClauses.push('u.id = ?');
+        params.push(decodedId);
+      }
+      clauses.push(`(${userClauses.join(' OR ')})`);
     }
     if (recordType != null) {
       clauses.push('r.record_type = ?');
@@ -342,7 +383,7 @@ export class LegacyPointsService {
     return {
       items: rows.map((r) => ({
         id: String(r.id),
-        userId: String(r.user_id),
+        userId: encodeUserId(String(r.user_id)),
         phone: r.phone ?? null,
         email: r.email ?? null,
         nickName: r.nick_name ?? null,
@@ -363,6 +404,8 @@ export class LegacyPointsService {
 
   private mapUser(row: RowDataPacket): LegacyUser {
     return {
+      // Raw id — findUser feeds the grant dialogs, which pass this straight back
+      // as idFormat=raw. The public-facing encode happens per-endpoint instead.
       userId: String(row.id),
       phone: row.phone ?? null,
       email: row.email ?? null,
