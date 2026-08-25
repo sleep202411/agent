@@ -11,7 +11,13 @@ import { cn } from "@/lib/utils";
 export function StoryProjectWorkView({ children }: { children: React.ReactNode }) {
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
   return (
-    <div className={cn("flex min-w-0 flex-1", mobileView === "chat" && "max-md:hidden")}>
+    <div
+      data-slot="story-project-work-view"
+      className={cn(
+        "grid min-h-0 min-w-0 flex-1 overflow-hidden",
+        mobileView === "chat" && "max-md:hidden"
+      )}
+    >
       {children}
     </div>
   );

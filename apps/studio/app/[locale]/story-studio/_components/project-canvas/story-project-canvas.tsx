@@ -52,6 +52,7 @@ import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
 import { StoryProjectSidePanelShell } from "../story-project-side-panel";
+import { StoryProjectWorkState } from "../story-project-work-state";
 import {
   StoryCanvasStoryboardCoverageContext,
   storyboardCoverageByNode,
@@ -3821,12 +3822,12 @@ function downloadJsonArtifact(fileName: string, payload: unknown) {
 function CanvasLoading() {
   const t = useTranslations("storyStudio.canvas");
   return (
-    <main className="grid h-screen place-items-center bg-[oklch(0.105_0_0)] text-white">
+    <StoryProjectWorkState>
       <div className="flex items-center gap-3 text-sm text-white/54">
         <IconLoader2 className="size-5 animate-spin" />
         {t("loading")}
       </div>
-    </main>
+    </StoryProjectWorkState>
   );
 }
 
@@ -3841,7 +3842,7 @@ function CanvasError({
 }) {
   const t = useTranslations("storyStudio.canvas");
   return (
-    <main className="grid h-screen place-items-center bg-[oklch(0.105_0_0)] px-6 text-white">
+    <StoryProjectWorkState className="px-6">
       <FrostedPanel className="w-full max-w-md rounded-[28px] bg-[oklch(0.205_0_0/0.72)] p-7 text-center shadow-[0_26px_100px_rgba(0,0,0,0.52)] backdrop-blur-[60px]">
         <IconAlertTriangle className="mx-auto size-6 text-[#ff9b9e]" />
         <h1 className="mt-4 text-base font-semibold">{t("error.title")}</h1>
@@ -3859,7 +3860,7 @@ function CanvasError({
           </Button>
         </div>
       </FrostedPanel>
-    </main>
+    </StoryProjectWorkState>
   );
 }
 
