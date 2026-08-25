@@ -41,4 +41,27 @@ describe("CopilotComposer committed operation controls", () => {
     expect(container.querySelector('button[aria-label="Stop"]')).toBeNull();
     expect(container.querySelector('button[aria-label="Send"]')).toBeNull();
   });
+
+  it("focuses the textarea for a new host prefill request", async () => {
+    await act(async () => {
+      root.render(
+        <CopilotComposer
+          value="Prepare the next stage"
+          onChange={vi.fn()}
+          onSubmit={vi.fn()}
+          onStop={vi.fn()}
+          busy={false}
+          focusRequestKey={1}
+          placeholder="Message"
+          inputLabel="Message"
+          sendLabel="Send"
+          stopLabel="Stop"
+        />
+      );
+    });
+
+    expect(document.activeElement).toBe(
+      container.querySelector('textarea[data-agent-composer-input="true"]')
+    );
+  });
 });
