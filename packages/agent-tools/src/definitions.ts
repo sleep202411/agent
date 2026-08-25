@@ -36,7 +36,7 @@ export const AgentUserInputQuestionSchema = z
     id: userInputKey,
     header: z.string().trim().min(1).max(40),
     question: z.string().trim().min(1).max(500),
-    options: z.array(AgentUserInputOptionSchema).min(2).max(5),
+    options: z.array(AgentUserInputOptionSchema).min(2).max(12),
   })
   .strict()
   .refine(
@@ -450,7 +450,7 @@ const AGENT_INTERACTION_TOOLS = [
   {
     id: "request_user_input",
     description:
-      "Pause the current turn and ask the user one to four structured single-choice questions. Always provide leadIn (the completed assistant sentence shown before the blocking composer card) and resumeAcknowledgement (the immediate assistant acknowledgement persisted after the user answers). Use only when the answer is genuinely required to continue; never use it as a page-load wizard or for information already supplied by the user. For story_creative_profile, classify every field exactly once: put explicitly supplied canonical values in knownValues and put only missing fields in questions, in canonical relative order with their canonical options.",
+      "Pause the current turn and ask the user one to four structured single-choice questions with two to twelve options each. Always provide leadIn (the completed assistant sentence shown before the blocking composer card) and resumeAcknowledgement (the immediate assistant acknowledgement persisted after the user answers). Use only when the answer is genuinely required to continue; never use it as a page-load wizard or for information already supplied by the user. For story_creative_profile, classify every field exactly once: put explicitly supplied canonical values in knownValues and put only missing fields in questions, in canonical relative order with their canonical options.",
     kind: "query",
     risk: "read",
     inputSchema: RequestUserInputInputSchema,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 
 import { buildToolIdempotencyKey } from "./idempotency.js";
 import {
@@ -187,7 +188,7 @@ describe("agent-tools registry", () => {
       creativeProfile: {
         frameProfile: "landscape_16_9",
         durationPreset: "medium_15_30",
-        visualStyle: "stylized_3d",
+        visualStyle: "stylized-3d-cinema",
         storyLanguage: "zh-CN",
         confirmed: true,
       },
@@ -287,10 +288,10 @@ describe("agent-tools registry", () => {
         header: "Visual direction",
         question: "Choose a style",
         options: [
-          { value: "cinematic_realism", label: "Cinematic realism" },
-          { value: "stylized_3d", label: "Stylized 3D" },
-          { value: "graphic_novel", label: "Graphic novel" },
-          { value: "anime_cinematic", label: "Cinematic anime" },
+          ...STORY_VISUAL_STYLE_SKILL_SLUGS.map((value) => ({
+            value,
+            label: value,
+          })),
         ],
       },
       {
@@ -320,7 +321,7 @@ describe("agent-tools registry", () => {
         formId: "story_creative_profile",
         knownValues: {
           aspect_ratio: "landscape_16_9",
-          visual_direction: "cinematic_realism",
+          visual_direction: "cinematic-realism",
         },
         questions: [questions[1], questions[3]],
       })
@@ -352,7 +353,7 @@ describe("agent-tools registry", () => {
     const complete = {
       aspectRatio: "landscape_16_9",
       targetRuntime: "short_5_15",
-      visualDirection: "cinematic_realism",
+      visualDirection: "cinematic-realism",
       storyLanguage: "en-US",
     };
     expect(parseToolInput("story.confirmCreativeProfile", complete)).toEqual(complete);
@@ -374,6 +375,7 @@ describe("agent-tools registry", () => {
       title: "The Last Watch",
       summary: "A final imperial guard chooses whom to save.",
       brief: "Create an interactive film set on the final night of Ming rule.",
+      continueThrough: "storyboard" as const,
       startedMessage: "I have your direction and am preparing the production plan now.",
       completionMessage:
         "The screenplay is ready for your review. No media has been generated; use Generate when you want to create it.",
@@ -408,12 +410,17 @@ describe("agent-tools registry", () => {
     expect(description).toContain("Call story.read first");
     expect(description).toContain("reuses every valid chapter stage");
     expect(description).toContain("Only when no valid Script exists");
+    expect(description).toContain("selects exactly one reviewable proposal");
+    expect(description).toContain("approval writes only that artifact");
+    expect(description).toContain("Set continueThrough once");
+    expect(description).toContain("never asks the model to infer the old intent again");
+    expect(description).toContain("Preparing the next proposal may be automatic");
+    expect(description).toContain("approving it never is");
     expect(description).toContain("single canonical Plot topology");
     expect(description).toContain("one Storyboard sequence per Plot node");
     expect(description).toContain("zero generated media");
     expect(description).toContain("creator must use Generate later");
-    expect(description).toContain("say only that the screenplay is ready for creator review");
-    expect(description).toContain("never present production specifications as a second review");
+    expect(description).toContain("one proposal selected by canonical state");
     expect(description).toContain("authoritative Server apply continuation");
     expect(description).not.toContain("five-baton");
     expect(description).not.toContain("proposal for the whole tree");

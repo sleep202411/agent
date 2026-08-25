@@ -199,6 +199,60 @@ export const ToolProposedDataSchema = z
   })
   .strict();
 
+/**
+ * Durable, domain-owned content which is rendered inside an Assistant turn.
+ * The Agent journal stores only the immutable identity and correlation data;
+ * the referenced domain record remains the authority for the rich payload.
+ */
+export const StoryStageProposalArtifactReferenceSchema = z
+  .object({
+    kind: z.literal("story_stage_proposal"),
+    storyAgentRunId: AgentOsIdSchema,
+    storyProjectId: AgentOsIdSchema,
+    storyChapterId: AgentOsIdSchema,
+    workspaceId: AgentOsIdSchema,
+    stage: z.enum(["script", "assets", "plot", "storyboard", "noop", "patch"]),
+    schemaVersion: z.string().trim().min(1).max(128),
+  })
+  .strict();
+export type StoryStageProposalArtifactReference = z.infer<
+  typeof StoryStageProposalArtifactReferenceSchema
+>;
+
+export const AgentArtifactReferenceSchema = z.discriminatedUnion("kind", [
+  StoryStageProposalArtifactReferenceSchema,
+]);
+export type AgentArtifactReference = z.infer<typeof AgentArtifactReferenceSchema>;
+
+export const AgentArtifactStatusSchema = z.enum([
+  "proposed",
+  "applying",
+  "applied",
+  "rejected",
+  "failed",
+  "cancelled",
+]);
+export type AgentArtifactStatus = z.infer<typeof AgentArtifactStatusSchema>;
+
+export const ArtifactCreatedDataSchema = z
+  .object({
+    turnId: AgentTurnIdSchema,
+    artifactId: AgentOsIdSchema,
+    artifact: AgentArtifactReferenceSchema,
+    status: z.literal("proposed"),
+  })
+  .strict();
+export type ArtifactCreatedData = z.infer<typeof ArtifactCreatedDataSchema>;
+
+export const ArtifactUpdatedDataSchema = z
+  .object({
+    turnId: AgentTurnIdSchema,
+    artifactId: AgentOsIdSchema,
+    status: AgentArtifactStatusSchema.exclude(["proposed"]),
+  })
+  .strict();
+export type ArtifactUpdatedData = z.infer<typeof ArtifactUpdatedDataSchema>;
+
 export const ApprovalRequiredDataSchema = z
   .object({
     turnId: AgentTurnIdSchema,
@@ -254,7 +308,7 @@ const UserInputQuestionSchema = z
     id: z.string().trim().min(1).max(64),
     header: z.string().trim().min(1).max(40),
     question: z.string().trim().min(1).max(500),
-    options: z.array(UserInputOptionSchema).min(2).max(5),
+    options: z.array(UserInputOptionSchema).min(2).max(12),
   })
   .strict();
 
@@ -438,6 +492,10 @@ export function parseAgentEventDataForWrite(
       return MessageCompletedDataSchema.parse(data);
     case "ToolProposed":
       return ToolProposedDataSchema.parse(data);
+    case "ArtifactCreated":
+      return ArtifactCreatedDataSchema.parse(data);
+    case "ArtifactUpdated":
+      return ArtifactUpdatedDataSchema.parse(data);
     case "ApprovalRequired":
       return ApprovalRequiredWriteDataSchema.parse(data);
     case "ApprovalResolved":

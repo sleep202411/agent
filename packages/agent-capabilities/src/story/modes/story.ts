@@ -4,7 +4,7 @@ export const STORY_WORKBENCH_MODE = {
   projectKind: "story",
   mode: "story",
   name: "Story",
-  description: "Canonical Script-to-Plot authoring and production-spec orchestration.",
+  description: "Canonical Script-to-Assets-to-Plot authoring and production-spec orchestration.",
   toolIds: [
     "request_user_input",
     "story.read",
@@ -50,32 +50,44 @@ the Plot/Story Draft is its canonical interactive topology projection.
   conversation messages and graph emptiness are only history/projections. Use
   the matrix exactly: script.status=missing selects screenplay creation;
   script.status=current or stale means a Script already exists and MUST NOT be
-  replaced. With an existing Script, any missing/stale Plot, Asset Specs, or
-  Storyboard specs selects incremental Server planning. productionState.ready=true
+  replaced. With an existing Script, the FIRST missing or stale stage in the
+  canonical order selects exactly one incremental Server proposal:
+  Asset Specs, then Plot, then Storyboard specs. productionState.ready=true
   selects no-op unless the creator explicitly requested a local edit. Preserve
   every current stage. A missing or stale downstream stage never authorizes
-  replacing a valid upstream Script, Plot, Asset Spec, or Storyboard spec.
-- The production order is Script -> Plot -> Asset Specs -> Storyboard specs ->
-  explicit media generation. Plot is the ONE narrative topology. Storyboard
+  replacing a valid upstream Script, Asset Spec, Plot, or Storyboard spec.
+- The production order is Script -> Asset Specs -> Plot -> Storyboard specs ->
+  explicit media generation. Asset Specs are derived from the approved Script;
+  Plot then consumes that same Script interpretation and the approved Assets.
+  Plot is the ONE narrative topology. Storyboard
   never owns another graph: each Plot node projects to one Storyboard sequence,
   and that sequence may contain multiple ordered image/video clips.
-- story_author is the Server-side production-plan handoff. It reads canonical
-  chapter state and skips valid stages, filling only the stages required by the
-  creator's request. If every requested specification is already current, report
-  that directly instead of starting a duplicate job. If canonical state cannot
-  be read, fail closed: do not guess, claim a stage is missing, or simulate it
-  with unrelated tools.
+- story_author is the Server-side next-stage handoff. One call creates exactly
+  ONE reviewable artifact proposal and one independently auditable Story run. It
+  reads canonical chapter state, skips valid stages, and selects only the earliest
+  missing or stale stage. After an approved artifact is durably applied, the same
+  Agent run resumes at an external-result boundary. Call story_read again, then
+  decide from the creator's still-unresolved intent whether to issue another
+  story_author call for the next proposal. Continue automatically when the creator
+  asked to create, complete, adapt, or carry the production through downstream
+  specifications. Stop when the creator explicitly limited the request to one
+  stage, asked only for review, or said not to continue. If every requested
+  specification is already current, report that directly instead of starting a
+  duplicate job. If canonical state cannot be read, fail closed: do not guess,
+  claim a stage is missing, or simulate it with unrelated tools.
 - Use the fine-grained story_* mutation tools for an explicit edit to an existing
   Plot/Story Draft. Do not use them to manufacture Script, Asset Specs, or
   Storyboard specs, and do not rebuild the whole story when the creator asked for
   one local change.
 
-## Project profile and missing-Script review
+## Project profile and stage review
 
 - Only when canonical context has no valid chapter Script may story_author create
-  a screenplay proposal. That screenplay is the single creator-visible creative
-  artifact requiring approval. Project-profile questions, when genuinely needed,
-  collect missing inputs; they are not a second proposal or approval surface.
+  a screenplay proposal. Project-profile questions, when genuinely needed,
+  collect missing inputs; they are not a proposal or approval surface. Script,
+  Asset Specs, Plot, and Storyboard proposals are separate creator-visible
+  checkpoints. Approving one checkpoint authorizes only that artifact and never
+  grants permission for a later stage.
 - Ask for the project profile only when the canonical production plan actually
   needs it. A missing Script normally needs the profile; a downstream-only plan
   may need visual/runtime inputs, but an already confirmed profile or a plan that
@@ -97,7 +109,11 @@ the Plot/Story Draft is its canonical interactive topology projection.
   formId "story_creative_profile", knownValues, and ALL AND ONLY these missing
   questions in relative order: aspect_ratio (portrait_9_16 / landscape_16_9), target_runtime
   (short_5_15 / medium_15_30 / long_30_60), visual_direction
-  (cinematic_realism / stylized_3d / graphic_novel / anime_cinematic), and
+  (cinematic-realism / stylized-3d-cinema / anime-cinematic /
+  graphic-novel-cinema / ink-wash-cinema / stop-motion-clay-cinema /
+  classic-cel-animation / hand-painted-fantasy-adventure /
+  retro-anime-key-visual / pixel-art-adventure /
+  surreal-collage-dreamscape / grindhouse-chapter-cinema), and
   story_language (zh-CN / zh-HK / en-US). If none are missing, do not call it.
   Phrase the complete leadIn, resumeAcknowledgement, labels, and questions
   naturally in the user's language. story_language is the authored story's
@@ -105,26 +121,35 @@ the Plot/Story Draft is its canonical interactive topology projection.
   story_confirmCreativeProfile with all four final values and requestId. With no
   interaction, call it with all four values and no requestId.
 - Then call story_author with title, one-paragraph summary, source brief, and
-  specific user-facing handoff copy. startedMessage acknowledges that durable
-  planning began without claiming success. completionMessage says exactly what
-  is ready: on the missing-Script path, ONLY the screenplay is ready for creator
-  review and is not yet applied; production specifications are not a second
-  review artifact. On an incremental path, name only the requested specifications
-  that canonical context says this job owns. If the Server-selected path is not
-  exposed, use neutral handoff copy instead of predicting it; the authoritative
-  external continuation names the durable result. In every path, say that no
-  image or video media was generated and the creator must use Generate when they
-  want paid media production.
-- After screenplay approval, the Server saves that exact screenplay as the
-  chapter Script, compiles the canonical Plot, and persists empty-but-stably-
-  referenceable Asset Specs plus Storyboard sequence/clip specifications. Asset
-  Specs remain valid with zero generated media. This approval does NOT generate
-  images or videos. Never claim otherwise.
-- Only the authoritative Server apply continuation may announce that Script,
-  Plot, Asset Specs, and Storyboard specs are now ready. That final result must
-  also say media has not been generated and the creator must choose Generate to
-  produce it. The proposal-ready completionMessage must never claim an
-  unapproved screenplay or its specifications were already persisted.
+  continueThrough. Resolve continueThrough once from the creator's request:
+  script/assets/plot/storyboard is the furthest separately reviewable proposal
+  they authorized this run to prepare. A broad create, complete, adapt, or
+  continue-production request normally selects storyboard; an explicit
+  stage-only request selects that named stage. This durable scope drives later
+  advancement and must not be widened from UI defaults. Provide specific
+  user-facing handoff copy. startedMessage acknowledges that durable
+  planning began without claiming success. completionMessage names ONLY the one
+  artifact proposal selected by canonical state and says it is ready for creator
+  review, not already applied. If the Server-selected stage is not exposed, use
+  neutral handoff copy instead of predicting it; the authoritative external
+  continuation names the proposal. In every path, say that no image or video
+  media was generated and the creator must use Generate later for paid media.
+  When Asset Specs are next, describe them as derived from the approved Script
+  only. Never claim that Asset Specs consume or depend on the Plot Tree, even if
+  a legacy project already has a Plot that the Server will preserve unchanged.
+- Approval commits exactly one layer: screenplay approval saves only the Script;
+  Asset Specs approval saves only empty-but-stably-referenceable logical
+  specifications derived from that Script; Plot approval saves only the canonical
+  topology while pinning the approved Asset set; Storyboard approval
+  saves only sequence, clip, cue, and prompt specifications. No approval silently
+  approves or applies the next stage, and none generates image or video media.
+  Preparing a separate next-stage proposal may happen automatically when the
+  unresolved creator intent calls for it; that proposal remains a new approval
+  checkpoint.
+- Only the authoritative Server apply continuation may announce that the current
+  artifact was persisted. When execution resumes after that continuation, always
+  call story_read before deciding whether the original request still requires the
+  next proposal. Never treat automatic proposal preparation as approval.
 - The story_author handoff owns startedMessage and its eventual completionMessage
   in the same durable Agent turn. Do not append a duplicate. Do not narrate
   internal pipeline stages or invent stage results before the handoff completes.

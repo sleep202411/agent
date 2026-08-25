@@ -10,6 +10,7 @@ import {
   StoryPatchOperationsSchema,
 } from "@repo/shared/story-agent";
 import { z } from "zod";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 
 import type { ToolDefinition } from "./types.js";
 import { AgentExternalJobHandoffSchema } from "./handoff.js";
@@ -102,6 +103,49 @@ export const StoryProductionStateSchema = z
     }
   });
 export type StoryProductionState = z.infer<typeof StoryProductionStateSchema>;
+
+/**
+ * Furthest reviewable specification the creator asked this production request
+ * to prepare. The model decides this scope once from the creator's words; the
+ * durable workflow then advances deterministically and still pauses for a
+ * separate approval at every stage.
+ */
+export const StoryProductionTargetStageSchema = z.enum(["script", "assets", "plot", "storyboard"]);
+export type StoryProductionTargetStage = z.infer<typeof StoryProductionTargetStageSchema>;
+
+export const StoryProductionContinuationPlanSchema = z
+  .object({
+    continueThrough: StoryProductionTargetStageSchema,
+    title: z.string().trim().min(1).max(160),
+    summary: z.string().trim().min(1).max(4_000),
+    brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
+  })
+  .strict();
+export type StoryProductionContinuationPlan = z.infer<typeof StoryProductionContinuationPlanSchema>;
+
+const STORY_PRODUCTION_STAGE_ORDER = [
+  "script",
+  "assets",
+  "plot",
+  "storyboard",
+] as const satisfies readonly StoryProductionTargetStage[];
+
+/** True while any stage inside the creator-authorized scope is not current. */
+export function storyProductionNeedsContinuation(
+  state: StoryProductionState,
+  continueThrough: StoryProductionTargetStage
+): boolean {
+  const targetIndex = STORY_PRODUCTION_STAGE_ORDER.indexOf(continueThrough);
+  const statuses = {
+    script: state.script.status,
+    assets: state.assets.status,
+    plot: state.plotTree.status,
+    storyboard: state.storyboard.status,
+  } as const;
+  return STORY_PRODUCTION_STAGE_ORDER.slice(0, targetIndex + 1).some(
+    (stage) => statuses[stage] !== "current"
+  );
+}
 
 /**
  * Cast authoring is withdrawn from the agent surface: character cards project
@@ -230,6 +274,8 @@ export const StoryAuthorInputSchema = z
     title: z.string().trim().min(1).max(160),
     summary: z.string().trim().min(1).max(4_000),
     brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
+    /** Furthest independently reviewable stage authorized by this request. */
+    continueThrough: StoryProductionTargetStageSchema,
     /** Natural acknowledgement shown as soon as durable planning starts; never claims success. */
     startedMessage: z.string().trim().min(1).max(2_000),
     /**
@@ -247,12 +293,7 @@ export const StoryConfirmCreativeProfileInputSchema = z
     requestId: z.string().uuid().optional(),
     aspectRatio: z.enum(["landscape_16_9", "portrait_9_16"]),
     targetRuntime: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
-    visualDirection: z.enum([
-      "cinematic_realism",
-      "stylized_3d",
-      "graphic_novel",
-      "anime_cinematic",
-    ]),
+    visualDirection: z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS),
     storyLanguage: StoryCreativeProfileLanguageSchema,
   })
   .strict();
@@ -261,7 +302,7 @@ const StoryCreativeProfileOutputSchema = z
   .object({
     frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]),
     durationPreset: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
-    visualStyle: z.enum(["cinematic_realism", "stylized_3d", "graphic_novel", "anime_cinematic"]),
+    visualStyle: z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS),
     storyLanguage: StoryCreativeProfileLanguageSchema,
     confirmedAt: z.string().datetime(),
   })
@@ -279,7 +320,7 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.read",
     description:
-      "Read the active Story chapter and current durable authoring-run status, including story bible, graph topology, production notes, revision, content hash, and the Server-owned productionState for profile, Script, Plot Tree, Asset Specs, and Storyboard specs. Call before every Story write, before story.author, and before claiming that a background run or production stage is active/current/missing. productionState, not transcript prose or graph emptiness, selects create, incremental completion, or no-op.",
+      "Read the active Story chapter and current durable authoring-run status, including story bible, graph topology, production notes, revision, content hash, and the Server-owned productionState for profile, Script, Asset Specs, Plot Tree, and Storyboard specs. Call before every Story write, before story.author, and before claiming that a background run or production stage is active/current/missing. productionState, not transcript prose or graph emptiness, selects create, incremental completion, or no-op.",
     kind: "query",
     risk: "read",
     inputSchema: StoryReadInputSchema,
@@ -303,9 +344,7 @@ export const STORY_AGENT_OS_TOOLS = [
           .object({
             frameProfile: z.enum(["landscape_16_9", "portrait_9_16"]),
             durationPreset: z.enum(["short_5_15", "medium_15_30", "long_30_60"]).nullable(),
-            visualStyle: z
-              .enum(["cinematic_realism", "stylized_3d", "graphic_novel", "anime_cinematic"])
-              .nullable(),
+            visualStyle: z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS).nullable(),
             storyLanguage: z.string().min(2).max(16),
             confirmed: z.boolean(),
           })
@@ -426,12 +465,11 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.author",
     description:
-      "Hand an explicit Story creation or production-completion request to the Server-side canonical production planner. Never call for greetings, casual conversation, capability questions, unrelated requests, or merely because Story mode is open. Call story.read first. The Server reuses every valid chapter stage and fills only what is missing or stale; do not use this tool to rebuild valid work. Only when no valid Script exists may it author the single creator-visible screenplay proposal (asking for missing project-profile values first only when necessary). After screenplay approval, the Server saves the exact chapter Script, compiles the single canonical Plot topology, and persists stably referenceable Asset Specs plus one Storyboard sequence per Plot node with one or more ordered clips. Asset Specs may have zero generated media. This tool never generates images or videos and never incurs media-generation work; the creator must use Generate later. For a narrow edit to an existing Plot, use the fine-grained story.* tools instead. Provide a specific startedMessage that acknowledges work without claiming success. completionMessage must name only results proven by canonical context: for a missing Script, say only that the screenplay is ready for creator review; never present production specifications as a second review artifact. For an incremental plan, name only its requested specifications. If the Server-selected path is not exposed, use neutral handoff copy rather than predicting it. Always say that media has not been generated. The later authoritative Server apply continuation, not this proposal-ready copy, announces persisted Script/Plot/spec readiness after commit. Runs asynchronously and returns a durable external-job handoff.",
+      "Hand an explicit Story creation or continue-production request to the Server-side canonical next-stage planner. Never call for greetings, casual conversation, capability questions, unrelated requests, or merely because Story mode is open. Call story.read first. The Server reuses every valid chapter stage and selects exactly one reviewable proposal: the earliest missing or stale artifact in Script -> Asset Specs -> Plot -> Storyboard order. Set continueThrough once to the furthest separately reviewable stage authorized by the creator: broad create/complete/adapt/continue-production requests normally select storyboard, while an explicit stage-only request selects that stage. The durable workflow re-reads canonical state and advances through this scope after each successful apply; it never asks the model to infer the old intent again. One call creates one independently auditable Story run and one approval boundary; approval writes only that artifact and never approves or applies the following stage. Preparing the next proposal may be automatic; approving it never is. Only when no valid Script exists may the Server author a screenplay proposal, asking for missing project-profile values first when necessary. An Asset Specs proposal derives stably referenceable logical specs from the approved Script and may have zero generated media. Asset Specs never consume or depend on Plot; when Assets are next, do not describe their title, summary, brief, startedMessage, or completionMessage as based on Plot, even if a legacy Plot already exists. A Plot proposal consumes that same Script interpretation plus the approved Asset Specs and contains the single canonical Plot topology. A Storyboard proposal creates one Storyboard sequence per Plot node with one or more ordered clips. This tool never generates images or videos and never incurs media-generation work; the creator must use Generate later. For a narrow edit to an existing Plot, use the fine-grained story.* tools instead. Provide a specific startedMessage that acknowledges work without claiming success. completionMessage must name only the one proposal selected by canonical state and say that it is ready for creator review, not already applied. If the Server-selected stage is not exposed, use neutral handoff copy rather than predicting it. Always say that media has not been generated. The authoritative Server apply continuation announces only the single artifact persisted after approval. Runs asynchronously and returns a durable external-job handoff.",
     kind: "command",
     // Reversible at the Agent tool boundary: this durably schedules the Server
-    // plan and never starts paid media generation. When a screenplay is needed,
-    // its creator-facing review is the write gate; a generic raw-JSON approval
-    // here would duplicate that product decision.
+    // plan and never starts paid media generation. The stage-specific
+    // creator-facing proposal is the only write gate for this run.
     risk: "reversible",
     inputSchema: StoryAuthorInputSchema,
     outputSchema: StoryAuthorOutputSchema,

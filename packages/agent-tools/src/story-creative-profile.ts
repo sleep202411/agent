@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 
 export const STORY_CREATIVE_PROFILE_FORM_ID = "story_creative_profile" as const;
 
@@ -13,7 +14,7 @@ export const StoryCreativeProfileLanguageSchema = z.enum(["zh-CN", "zh-HK", "en-
 export const STORY_CREATIVE_PROFILE_QUESTION_OPTIONS = [
   ["aspect_ratio", ["portrait_9_16", "landscape_16_9"]],
   ["target_runtime", ["short_5_15", "medium_15_30", "long_30_60"]],
-  ["visual_direction", ["cinematic_realism", "stylized_3d", "graphic_novel", "anime_cinematic"]],
+  ["visual_direction", STORY_VISUAL_STYLE_SKILL_SLUGS],
   ["story_language", StoryCreativeProfileLanguageSchema.options],
 ] as const;
 
