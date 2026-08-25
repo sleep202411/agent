@@ -1,4 +1,0 @@
-interface:
-  display_name: "Van Gogh Starry Night Painting"
-  short_description: "Swirling night skies, energetic impasto and expressive cobalt-an"
-  default_prompt: "Use $post-impressionist-night-painting to apply this creative direction to my request."

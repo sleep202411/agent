@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STORY_VISUAL_STYLE_SKILLS } from "@repo/shared";
 
 import {
   BUNDLED_CATALOG_SKILL_SOURCES,
@@ -10,10 +11,37 @@ const GLOBAL_PREVIEW_BASE_URL = "https://r2.fizzdragon.com/product-skills/previe
 
 describe("bundled Project Skill catalog", () => {
   it("uses unique stable identities for every catalog item and immutable version", () => {
-    expect(BUNDLED_CATALOG_SKILL_SOURCES).toHaveLength(28);
-    expect(new Set(BUNDLED_CATALOG_SKILL_SOURCES.map((skill) => skill.id)).size).toBe(28);
-    expect(new Set(BUNDLED_CATALOG_SKILL_SOURCES.map((skill) => skill.slug)).size).toBe(28);
-    expect(new Set(BUNDLED_CATALOG_SKILL_SOURCES.map((skill) => skill.version.id)).size).toBe(28);
+    expect(BUNDLED_CATALOG_SKILL_SOURCES).toHaveLength(32);
+    expect(new Set(BUNDLED_CATALOG_SKILL_SOURCES.map((skill) => skill.id)).size).toBe(32);
+    expect(new Set(BUNDLED_CATALOG_SKILL_SOURCES.map((skill) => skill.slug)).size).toBe(32);
+    expect(new Set(BUNDLED_CATALOG_SKILL_SOURCES.map((skill) => skill.version.id)).size).toBe(32);
+  });
+
+  it("keeps the 12 Story visual-style choices pinned to published image and video Skills", () => {
+    for (const visualStyle of STORY_VISUAL_STYLE_SKILLS) {
+      const catalogSkill = BUNDLED_CATALOG_SKILL_SOURCES.find(
+        (skill) => skill.slug === visualStyle.slug
+      );
+
+      expect(catalogSkill).toMatchObject({
+        id: visualStyle.skillId,
+        category: "style",
+        previewImageFile: visualStyle.previewImageFile,
+        version: {
+          id: visualStyle.versionId,
+          capabilities: expect.arrayContaining([
+            "prompt_authoring",
+            "image_generation",
+            "video_generation",
+          ]),
+          generationPolicy: {
+            promptAuthoring: { instructions: expect.any(String) },
+            image: { promptSuffix: expect.any(String) },
+            video: { promptSuffix: expect.any(String) },
+          },
+        },
+      });
+    }
   });
 
   it("derives each published checksum from the complete canonical runtime manifest", () => {

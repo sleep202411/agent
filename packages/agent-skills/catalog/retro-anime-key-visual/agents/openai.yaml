@@ -1,4 +1,0 @@
-interface:
-  display_name: "Retro Anime Key Visual"
-  short_description: "Painted cel backgrounds, crisp character silhouettes and dramati"
-  default_prompt: "Use $retro-anime-key-visual to apply this creative direction to my request."

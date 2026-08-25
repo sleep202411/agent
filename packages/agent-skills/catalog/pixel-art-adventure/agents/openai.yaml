@@ -1,4 +1,0 @@
-interface:
-  display_name: "Pixel Art Adventure"
-  short_description: "Cinematic pixel environments, readable silhouettes and disciplin"
-  default_prompt: "Use $pixel-art-adventure to apply this creative direction to my request."

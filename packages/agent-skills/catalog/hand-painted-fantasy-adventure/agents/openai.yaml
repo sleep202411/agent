@@ -1,4 +1,0 @@
-interface:
-  display_name: "Hand-painted Fantasy Adventure"
-  short_description: "Airy hand-painted worlds, environmental storytelling and gentle,"
-  default_prompt: "Use $hand-painted-fantasy-adventure to apply this creative direction to my request."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Short-Video Diagnostic"
-  short_description: "Audit a short video's hook, clarity, retention beats, continuity"
-  default_prompt: "Use $short-video-diagnostic to apply this creative direction to my request."

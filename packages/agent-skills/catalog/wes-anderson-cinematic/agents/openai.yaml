@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wes Anderson Cinematic"
-  short_description: "Create symmetrical storybook film visuals"
-  default_prompt: "Use $wes-anderson-cinematic to turn this concept into an image or video generation prompt."

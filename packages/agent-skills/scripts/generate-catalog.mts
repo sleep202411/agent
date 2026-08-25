@@ -19,7 +19,10 @@ const scopeSchema = z.enum([
   "preflight",
   "qa",
 ]);
-const fileSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/).nullable();
+const fileSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9._-]*$/)
+  .nullable();
 const sourceManifestSchema = z
   .object({
     $schema: z.string().optional(),
@@ -41,7 +44,10 @@ const sourceManifestSchema = z
         manifestSchemaVersion: z.literal("fizzdragon.skill/v1"),
         publishedAt: z.string().datetime({ offset: true }),
         capabilities: z.array(scopeSchema).min(1).max(6),
-        projectKinds: z.array(z.enum(["platform", "story"])).min(1).max(2),
+        projectKinds: z
+          .array(z.enum(["platform", "story"]))
+          .min(1)
+          .max(2),
         workbenchModes: z.array(z.string().trim().min(1).max(64)).max(32),
         toolIds: z.array(z.string().trim().min(1).max(128)).max(64),
         configSchema: z.record(z.string(), z.unknown()),
@@ -56,28 +62,37 @@ const sourceManifestSchema = z
 
 const frontmatterSchema = z
   .object({
-    name: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/).max(64),
-    description: z.string().trim().min(1).max(1_024).refine((value) => !/[<>]/.test(value), {
-      message: "Skill descriptions may not contain angle brackets",
-    }),
+    name: z
+      .string()
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .max(64),
+    description: z
+      .string()
+      .trim()
+      .min(1)
+      .max(1_024)
+      .refine((value) => !/[<>]/.test(value), {
+        message: "Skill descriptions may not contain angle brackets",
+      }),
   })
   .strict();
-const openAiSchema = z
-  .object({
-    interface: z
-      .object({
-        display_name: z.string().trim().min(1).max(120),
-        short_description: z.string().trim().min(25).max(64),
-        default_prompt: z.string().trim().min(1).max(512),
-      })
-      .strict(),
-  })
-  .strict();
-
 function parseFrontmatter(markdown: string, directory: string) {
   const match = markdown.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]+)$/);
   if (!match) throw new Error(`${directory}/SKILL.md requires YAML frontmatter`);
-  return { frontmatter: frontmatterSchema.parse(parseYaml(match[1])), body: match[2].trim() };
+  const body = match[2].trim();
+  const titleMatch = body.match(/^#\s+([^\r\n]+)(?:\r?\n|$)/);
+  if (!titleMatch) {
+    throw new Error(`${directory}/SKILL.md body must start with one level-one display title`);
+  }
+  const displayName = titleMatch[1].trim();
+  if (!displayName || displayName.length > 120) {
+    throw new Error(`${directory}/SKILL.md display title must contain 1-120 characters`);
+  }
+  return {
+    frontmatter: frontmatterSchema.parse(parseYaml(match[1])),
+    body,
+    displayName,
+  };
 }
 
 function policy(markdown: string, name: "prompt" | "image" | "video"): string | undefined {
@@ -90,7 +105,8 @@ function policy(markdown: string, name: "prompt" | "image" | "video"): string | 
     throw new Error(`Malformed ${name} policy markers`);
   }
   const value = markdown.slice(startIndex + start.length, endIndex).trim();
-  if (!value || value.length > 20_000) throw new Error(`${name} policy must contain 1-20,000 characters`);
+  if (!value || value.length > 20_000)
+    throw new Error(`${name} policy must contain 1-20,000 characters`);
   return value;
 }
 
@@ -106,25 +122,26 @@ const catalog = [];
 for (const directory of directories) {
   const skillDirectory = resolve(catalogDirectory, directory);
   const metadata = sourceManifestSchema.parse(
-    JSON.parse(await readFile(resolve(skillDirectory, "fizzdragon.json"), "utf8")),
+    JSON.parse(await readFile(resolve(skillDirectory, "fizzdragon.json"), "utf8"))
   );
-  const { frontmatter, body } = parseFrontmatter(
+  const { frontmatter, body, displayName } = parseFrontmatter(
     await readFile(resolve(skillDirectory, "SKILL.md"), "utf8"),
-    directory,
+    directory
   );
-  const openAi = openAiSchema.parse(
-    parseYaml(await readFile(resolve(skillDirectory, "agents/openai.yaml"), "utf8")),
-  );
-  if (directory !== frontmatter.name) throw new Error(`${directory}: folder and frontmatter name differ`);
-  if (!openAi.interface.default_prompt.includes(`$${directory}`)) {
-    throw new Error(`${directory}: agents/openai.yaml default_prompt must reference $${directory}`);
-  }
+  if (directory !== frontmatter.name)
+    throw new Error(`${directory}: folder and frontmatter name differ`);
   unique(metadata.version.capabilities, `${directory} capabilities`);
   unique(metadata.version.projectKinds, `${directory} projectKinds`);
   unique(metadata.version.workbenchModes, `${directory} workbenchModes`);
   unique(metadata.version.toolIds, `${directory} toolIds`);
-  if (metadata.version.toolIds.length || metadata.version.riskPolicy.allowsWrite || metadata.version.riskPolicy.allowsPaidGeneration) {
-    throw new Error(`${directory}: bundled content Skills may not add tools, write authority, or autonomous paid generation`);
+  if (
+    metadata.version.toolIds.length ||
+    metadata.version.riskPolicy.allowsWrite ||
+    metadata.version.riskPolicy.allowsPaidGeneration
+  ) {
+    throw new Error(
+      `${directory}: bundled content Skills may not add tools, write authority, or autonomous paid generation`
+    );
   }
   const prompt = policy(body, "prompt");
   const image = policy(body, "image");
@@ -154,7 +171,7 @@ for (const directory of directories) {
     id: metadata.skillId,
     catalogOrder: metadata.catalogOrder,
     slug: directory,
-    name: openAi.interface.display_name,
+    name: displayName,
     description: metadata.displayDescription,
     translationKey: metadata.translationKey,
     publisherName: metadata.publisherName,
@@ -167,7 +184,7 @@ for (const directory of directories) {
       version: metadata.version.version,
       manifestSchemaVersion: metadata.version.manifestSchemaVersion,
       publishedAt: metadata.version.publishedAt,
-      instructions: `## Project Skill: ${openAi.interface.display_name}\n\n${prompt}\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.`,
+      instructions: `## Project Skill: ${displayName}\n\n${prompt}\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.`,
       generationPolicy,
       configSchema: metadata.version.configSchema,
       capabilities: metadata.version.capabilities,
@@ -180,10 +197,22 @@ for (const directory of directories) {
   });
 }
 
-unique(catalog.map((skill) => skill.id), "skill ids");
-unique(catalog.map((skill) => skill.slug), "skill slugs");
-unique(catalog.map((skill) => skill.version.id), "version ids");
-unique(catalog.map((skill) => String(skill.catalogOrder)), "catalog order");
+unique(
+  catalog.map((skill) => skill.id),
+  "skill ids"
+);
+unique(
+  catalog.map((skill) => skill.slug),
+  "skill slugs"
+);
+unique(
+  catalog.map((skill) => skill.version.id),
+  "version ids"
+);
+unique(
+  catalog.map((skill) => String(skill.catalogOrder)),
+  "catalog order"
+);
 catalog.sort((left, right) => left.catalogOrder - right.catalogOrder);
 
 const output = await format(
@@ -192,7 +221,11 @@ const output = await format(
     "// Generated by scripts/generate-catalog.mts. Do not edit by hand.",
     'import type { BundledCatalogSkillSource } from "./catalog-types.js";',
     "",
-    `export const GENERATED_BUNDLED_CATALOG_SKILLS = ${JSON.stringify(catalog.map(({ catalogOrder: _catalogOrder, ...skill }) => skill), null, 2)} as const satisfies readonly BundledCatalogSkillSource[];`,
+    `export const GENERATED_BUNDLED_CATALOG_SKILLS = ${JSON.stringify(
+      catalog.map(({ catalogOrder: _catalogOrder, ...skill }) => skill),
+      null,
+      2
+    )} as const satisfies readonly BundledCatalogSkillSource[];`,
     "",
   ].join("\n"),
   {
@@ -203,15 +236,19 @@ const output = await format(
     trailingComma: "es5",
     printWidth: 100,
     endOfLine: "lf",
-  },
+  }
 );
 
 if (process.argv.includes("--check")) {
   const current = await readFile(generatedFile, "utf8").catch(() => "");
   if (current !== output) {
-    throw new Error(`Bundled Skill catalog is stale. Run: npm run generate:catalog --workspace=@repo/agent-skills`);
+    throw new Error(
+      `Bundled Skill catalog is stale. Run: npm run generate:catalog --workspace=@repo/agent-skills`
+    );
   }
 } else {
   await writeFile(generatedFile, output);
-  process.stdout.write(`Generated ${catalog.length} bundled Skills at ${basename(generatedFile)}\n`);
+  process.stdout.write(
+    `Generated ${catalog.length} bundled Skills at ${basename(generatedFile)}\n`
+  );
 }

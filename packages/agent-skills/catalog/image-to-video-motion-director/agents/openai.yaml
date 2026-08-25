@@ -1,4 +1,0 @@
-interface:
-  display_name: "Image-to-Video Motion Director"
-  short_description: "Convert still frames into timed action beats, camera movement an"
-  default_prompt: "Use $image-to-video-motion-director to apply this creative direction to my request."
