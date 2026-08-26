@@ -72,6 +72,15 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.getAsset).not.toHaveBeenCalled();
   });
 
+  it("keeps stale production targets inspectable without exposing generation actions", async () => {
+    await renderControl(assetTarget(null), false);
+
+    expect(button("generate")).toBeNull();
+    expect(button("retry")).toBeNull();
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
+    expect(apiMocks.retryAsset).not.toHaveBeenCalled();
+  });
+
   it("submits one default command even when the Generate button is clicked twice rapidly", async () => {
     const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
     apiMocks.createAsset.mockResolvedValue(accepted);
@@ -225,7 +234,8 @@ describe("StoryProductionGenerationControl", () => {
   });
 
   async function renderControl(
-    target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>
+    target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>,
+    allowGeneration = true
   ) {
     await act(async () => {
       root.render(
@@ -239,6 +249,7 @@ describe("StoryProductionGenerationControl", () => {
             target={target}
             label="Production target"
             selectedMedia={null}
+            allowGeneration={allowGeneration}
           />
         </QueryClientProvider>
       );

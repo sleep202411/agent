@@ -1,4 +1,5 @@
 import { api, ApiRequestError } from "@/lib/api";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "@repo/shared";
 
 /**
  * Product Story Studio client.
@@ -16,11 +17,7 @@ export type StoryProjectStatus = "active" | "archived";
 export type StoryVisibility = "private" | "unlisted" | "public";
 export type StoryFrameProfile = "landscape_16_9" | "portrait_9_16";
 export type StoryDurationPreset = "short_5_15" | "medium_15_30" | "long_30_60";
-export type StoryVisualStyle =
-  | "cinematic_realism"
-  | "stylized_3d"
-  | "graphic_novel"
-  | "anime_cinematic";
+export type StoryVisualStyle = StoryVisualStyleSkillSlug;
 
 export const STORY_FRAME_PROFILE_CONTRACTS = {
   landscape_16_9: { aspectRatio: "16:9", width: 1920, height: 1080 },
@@ -1063,10 +1060,8 @@ function assertProjectSummary(value: unknown): asserts value is StoryProjectSumm
       project.durationPreset !== "medium_15_30" &&
       project.durationPreset !== "long_30_60") ||
     (project.visualStyle !== null &&
-      project.visualStyle !== "cinematic_realism" &&
-      project.visualStyle !== "stylized_3d" &&
-      project.visualStyle !== "graphic_novel" &&
-      project.visualStyle !== "anime_cinematic") ||
+      (typeof project.visualStyle !== "string" ||
+        !(STORY_VISUAL_STYLE_SKILL_SLUGS as readonly string[]).includes(project.visualStyle))) ||
     (project.creativeProfileConfirmedAt !== null &&
       !validIsoTimestamp(project.creativeProfileConfirmedAt)) ||
     (!creativeProfileEmpty && !creativeProfileComplete) ||

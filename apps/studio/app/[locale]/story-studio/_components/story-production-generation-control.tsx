@@ -81,6 +81,7 @@ export function StoryProductionGenerationControl({
   secondaryAction,
   outputKind = "image",
   clipDurationMs,
+  allowGeneration = true,
 }: {
   scope: GenerationScope;
   target: GenerationTarget;
@@ -95,6 +96,12 @@ export function StoryProductionGenerationControl({
   /** Video clips bill by their timeline length: the server rounds this up to
    *  the model's nearest supported source duration, so the estimate must too. */
   clipDurationMs?: number;
+  /**
+   * Stage-level fence. Stale aggregate stages may still render previews,
+   * details, and conflict resolution, but they must not expose a new paid
+   * generation or retry action until the whole stage is current again.
+   */
+  allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
@@ -241,7 +248,7 @@ export function StoryProductionGenerationControl({
       <IconX />
       {t("cancel")}
     </Button>
-  ) : running ? null : attachmentRetryable ? (
+  ) : running || !allowGeneration ? null : attachmentRetryable ? (
     <Button
       size="sm"
       loading={attachmentRetryMutation.isPending}

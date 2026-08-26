@@ -9,7 +9,7 @@ import {
   IconScript,
 } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
-import { useSelectedLayoutSegment } from "next/navigation";
+import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { isProductionStepSegment } from "../_lib/production-steps";
@@ -22,20 +22,41 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
  */
 export function StoryProjectMobileNav({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
+  const searchParams = useSearchParams();
   const t = useTranslations("storyStudio.canvas");
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
   const setMobileView = useStoryProjectUiStore((state) => state.setMobileView);
+  const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
 
   if (!isProductionStepSegment(segment)) return null;
 
   const base = `/story-studio/projects/${projectId}`;
+  // Preserve route context during the first render, before workbench state
+  // has had a chance to publish the selected chapter into the UI store.
+  const chapterId = activeChapterId ?? searchParams.get("chapter");
+  const chapterQuery = chapterId ? `?chapter=${encodeURIComponent(chapterId)}` : "";
   const steps: Array<{ segment: string; href: string; icon: NavIcon; label: string }> = [
-    { segment: "script", href: `${base}/script`, icon: IconScript, label: t("steps.script") },
-    { segment: "canvas", href: `${base}/canvas`, icon: IconArtboard, label: t("steps.tree") },
-    { segment: "assets", href: `${base}/assets`, icon: IconLayoutGrid, label: t("steps.assets") },
+    {
+      segment: "script",
+      href: `${base}/script${chapterQuery}`,
+      icon: IconScript,
+      label: t("steps.script"),
+    },
+    {
+      segment: "canvas",
+      href: `${base}/canvas${chapterQuery}`,
+      icon: IconArtboard,
+      label: t("steps.tree"),
+    },
+    {
+      segment: "assets",
+      href: `${base}/assets${chapterQuery}`,
+      icon: IconLayoutGrid,
+      label: t("steps.assets"),
+    },
     {
       segment: "storyboard",
-      href: `${base}/storyboard`,
+      href: `${base}/storyboard${chapterQuery}`,
       icon: IconMovie,
       label: t("steps.storyboard"),
     },

@@ -26,8 +26,8 @@ const STEPS: Array<{
   href?: (projectId: string, chapterId: string | null) => string;
 }> = [
   { key: "script", href: chapterHref("script") },
-  { key: "tree", href: chapterHref("canvas") },
   { key: "assets", href: chapterHref("assets") },
+  { key: "tree", href: chapterHref("canvas") },
   { key: "storyboard", href: chapterHref("storyboard") },
   { key: "preview" },
 ];
@@ -75,7 +75,7 @@ export function StoryProductionSteps({
     preview: productionReady === null ? null : productionReady ? "current" : "stale",
   };
   return (
-    <nav aria-label={t(active)} className={cn("items-center", className)}>
+    <nav aria-label={t("navigationLabel")} className={cn("items-center", className)}>
       {STEPS.map((step, index) => {
         const isActive = step.key === active;
         const status = statuses[step.key];

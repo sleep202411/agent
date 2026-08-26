@@ -62,7 +62,7 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
         >
           <IconArrowLeft className="size-4" stroke={1.8} />
         </Link>
-        <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
+        <h1 className="hidden max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em] max-md:block xl:block">
           {workbenchQuery.data?.project.title ?? t(`canvas.steps.${active}`)}
         </h1>
       </div>

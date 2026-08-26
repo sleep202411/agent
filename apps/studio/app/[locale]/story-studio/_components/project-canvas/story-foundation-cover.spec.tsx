@@ -58,7 +58,7 @@ describe("film foundation cover authoring", () => {
     expect(text).toContain("aspectRatio");
     expect(text).toContain("frameProfiles.landscape_16_9");
     expect(text).toContain("durationPresets.medium_15_30");
-    expect(text).toContain("visualStyles.graphic_novel");
+    expect(text).toContain("visualStyles.graphic-novel-cinema");
     expect(text).toContain("en-US");
   });
 
@@ -156,7 +156,7 @@ describe("film foundation cover authoring", () => {
       project: {
         frameProfile: "landscape_16_9",
         durationPreset: "medium_15_30",
-        visualStyle: "graphic_novel",
+        visualStyle: "graphic-novel-cinema",
         defaultLocale: "en-US",
       },
       content: emptyDraft(),

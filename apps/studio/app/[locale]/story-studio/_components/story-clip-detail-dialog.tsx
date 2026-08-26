@@ -49,6 +49,7 @@ export function StoryClipDetailDialog({
   chapterId,
   open,
   onOpenChange,
+  editable = true,
 }: {
   clip: StoryStoryboardClip;
   sequenceId: string;
@@ -57,6 +58,8 @@ export function StoryClipDetailDialog({
   chapterId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** False while the aggregate Storyboard stage is stale; inspection stays available. */
+  editable?: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage.detailDialog");
   const queryClient = useQueryClient();
@@ -170,7 +173,7 @@ export function StoryClipDetailDialog({
           <StoryPromptMentionField
             id={`clip-detail-prompt-${clip.id}`}
             value={prompt}
-            disabled={busy}
+            disabled={busy || !editable}
             onChange={setPrompt}
             mentions={mentions}
           />
@@ -180,7 +183,7 @@ export function StoryClipDetailDialog({
           <Select
             value={effectiveModelId ?? undefined}
             onValueChange={setModelId}
-            disabled={busy || models.length === 0}
+            disabled={busy || !editable || models.length === 0}
           >
             <SelectTrigger id={`clip-detail-model-${clip.id}`} className="w-full">
               <SelectValue />
@@ -199,28 +202,32 @@ export function StoryClipDetailDialog({
           <Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
             {t("close")}
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={!promptDirty || busy}
-            loading={saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
-          >
-            {t("save")}
-          </Button>
-          <Button
-            type="button"
-            disabled={busy}
-            loading={generateMutation.isPending}
-            onClick={() => generateMutation.mutate()}
-          >
-            {generateMutation.isPending ? (
-              <IconLoader2 className="animate-spin" />
-            ) : (
-              <IconSparkles />
-            )}
-            {t("generate")}
-          </Button>
+          {editable ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!promptDirty || busy}
+                loading={saveMutation.isPending}
+                onClick={() => saveMutation.mutate()}
+              >
+                {t("save")}
+              </Button>
+              <Button
+                type="button"
+                disabled={busy}
+                loading={generateMutation.isPending}
+                onClick={() => generateMutation.mutate()}
+              >
+                {generateMutation.isPending ? (
+                  <IconLoader2 className="animate-spin" />
+                ) : (
+                  <IconSparkles />
+                )}
+                {t("generate")}
+              </Button>
+            </>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

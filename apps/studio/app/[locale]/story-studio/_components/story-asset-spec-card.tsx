@@ -25,11 +25,13 @@ export function StoryAssetSpecCard({
   workspaceId,
   projectId,
   chapterId,
+  allowGeneration = true,
 }: {
   asset: StoryAssetSpec;
   workspaceId: string;
   projectId: string;
   chapterId: string;
+  allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage");
   const [detailOpen, setDetailOpen] = useState(false);
@@ -49,6 +51,7 @@ export function StoryAssetSpecCard({
         label={asset.name}
         selectedMedia={asset.selectedMediaVersion}
         aspect={MEDIA_ASPECT[asset.kind]}
+        allowGeneration={allowGeneration}
         secondaryAction={
           <button
             type="button"
@@ -76,6 +79,7 @@ export function StoryAssetSpecCard({
         chapterId={chapterId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        editable={allowGeneration}
       />
     </article>
   );

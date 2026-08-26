@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { getTranslations } from "next-intl/server";
 import { StoryStoryboardView } from "../../../_components/story-storyboard-view";
 
-export const metadata: Metadata = {
-  title: "Storyboard · Interactive Film Studio",
-  description: "Edit chapter-local Plot sequences, clips, cues, and Asset bindings.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("storyStudio.storyboardPage");
+  return { title: t("pageTitle"), description: t("pageDescription") };
+}
 
 export default async function StoryProjectStoryboardPage({
   params,

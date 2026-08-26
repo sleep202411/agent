@@ -43,6 +43,7 @@ export function StoryProductionPageHeader({
   description,
   meta,
   modalities = ["image", "video"],
+  showGenerationControls = true,
 }: {
   title: string;
   description: string;
@@ -50,6 +51,8 @@ export function StoryProductionPageHeader({
   meta?: React.ReactNode;
   /** Which generation modalities this page actually submits. */
   modalities?: ProductionModality[];
+  /** Hide model controls until there is an approved, generatable target. */
+  showGenerationControls?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -60,11 +63,13 @@ export function StoryProductionPageHeader({
           {meta ? <span className="ml-2 tabular-nums text-white/50">{meta}</span> : null}
         </p>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {modalities.map((modality) => (
-          <ModalityPicker key={modality} modality={modality} />
-        ))}
-      </div>
+      {showGenerationControls ? (
+        <div className="flex flex-wrap items-center gap-2">
+          {modalities.map((modality) => (
+            <ModalityPicker key={modality} modality={modality} />
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

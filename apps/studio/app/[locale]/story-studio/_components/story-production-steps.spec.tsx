@@ -3,6 +3,9 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import enUS from "@/messages/en-US.json";
+import zhCN from "@/messages/zh-CN.json";
+import zhHK from "@/messages/zh-HK.json";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryProductionSteps } from "./story-production-steps";
 
@@ -74,6 +77,9 @@ describe("StoryProductionSteps", () => {
       "/story-studio/projects/project-1/storyboard?chapter=chapter-1",
     ]);
     expect(container.querySelector('[aria-current="page"]')?.textContent).toContain("assets");
+    const navigationText = container.querySelector("nav")?.textContent ?? "";
+    expect(navigationText.indexOf("assets")).toBeLessThan(navigationText.indexOf("tree"));
+    expect(container.querySelector("nav")?.getAttribute("aria-label")).toBe("navigationLabel");
     expect(container.textContent).not.toMatch(/\b[1-4]\b/);
   });
 
@@ -101,5 +107,13 @@ describe("StoryProductionSteps", () => {
     expect(navigation.push).toHaveBeenCalledWith(
       "/story-studio/projects/project-1/playtest?chapter=chapter-1"
     );
+  });
+
+  it.each([
+    ["en-US", enUS.storyStudio.canvas.steps.navigationLabel],
+    ["zh-CN", zhCN.storyStudio.canvas.steps.navigationLabel],
+    ["zh-HK", zhHK.storyStudio.canvas.steps.navigationLabel],
+  ])("provides a dedicated production navigation label in %s", (_locale, label) => {
+    expect(label).toBeTruthy();
   });
 });
