@@ -193,7 +193,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     const get = () =>
       service.getAssetGeneration(
         user,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         fixture.assetSpecId,
@@ -238,7 +237,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     } as AiJob);
     const completedClipGeneration = await service.getStoryboardClipGeneration(
       { userId: fixture.userId } as never,
-      fixture.workspaceId,
       fixture.projectId,
       fixture.chapterId,
       fixture.sequenceId,
@@ -331,7 +329,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
       }),
       plans.getProductionState(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
       ),
@@ -375,7 +372,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     await expect(
       service.createStoryboardClipGeneration(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         fixture.sequenceId,
@@ -415,7 +411,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
       }),
       plans.getProductionState(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
       ),
@@ -431,7 +426,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     await expect(
       service.createAssetGeneration(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         fixture.assetSpecId,
@@ -448,7 +442,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     await expect(
       service.createStoryboardClipGeneration(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         fixture.sequenceId,
@@ -531,7 +524,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     await expect(
       service.createAssetGeneration(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         fixture.assetSpecId,
@@ -586,12 +578,12 @@ describePostgres('Story production generation PostgreSQL integration', () => {
         where: { generationId: completed.generation.id },
       }),
     ).resolves.toBe(1);
-    await expect(
-      prisma.storyProductionGeneration.findUniqueOrThrow({
+    const materialized =
+      await prisma.storyProductionGeneration.findUniqueOrThrow({
         where: { id: completed.generation.id },
         select: { materializedAt: true },
-      }),
-    ).resolves.toMatchObject({ materializedAt: expect.any(Date) });
+      });
+    expect(materialized.materializedAt).toBeInstanceOf(Date);
   });
 
   it('preserves late media history when canonical production state cannot be parsed', async () => {
@@ -629,15 +621,13 @@ describePostgres('Story production generation PostgreSQL integration', () => {
         where: { generationId: completed.generation.id },
       }),
     ).resolves.toBe(1);
-    await expect(
-      prisma.storyProductionGeneration.findUniqueOrThrow({
+    const materialized =
+      await prisma.storyProductionGeneration.findUniqueOrThrow({
         where: { id: completed.generation.id },
         select: { materializedAt: true, materializationError: true },
-      }),
-    ).resolves.toMatchObject({
-      materializedAt: expect.any(Date),
-      materializationError: null,
-    });
+      });
+    expect(materialized.materializedAt).toBeInstanceOf(Date);
+    expect(materialized.materializationError).toBeNull();
   });
 
   it('keeps a late Storyboard output as history but never selects it after upstream lineage changes', async () => {
@@ -675,12 +665,12 @@ describePostgres('Story production generation PostgreSQL integration', () => {
         where: { generationId: completed.generation.id },
       }),
     ).resolves.toBe(1);
-    await expect(
-      prisma.storyProductionGeneration.findUniqueOrThrow({
+    const materialized =
+      await prisma.storyProductionGeneration.findUniqueOrThrow({
         where: { id: completed.generation.id },
         select: { materializedAt: true },
-      }),
-    ).resolves.toMatchObject({ materializedAt: expect.any(Date) });
+      });
+    expect(materialized.materializedAt).toBeInstanceOf(Date);
   });
 
   it('materializes but never selects a completed clip output after its parent sequence is invalidated and restored', async () => {
@@ -733,12 +723,12 @@ describePostgres('Story production generation PostgreSQL integration', () => {
         where: { generationId: clipGeneration.generation.id },
       }),
     ).resolves.toBe(1);
-    await expect(
-      prisma.storyProductionGeneration.findUniqueOrThrow({
+    const materialized =
+      await prisma.storyProductionGeneration.findUniqueOrThrow({
         where: { id: clipGeneration.generation.id },
         select: { materializedAt: true },
-      }),
-    ).resolves.toMatchObject({ materializedAt: expect.any(Date) });
+      });
+    expect(materialized.materializedAt).toBeInstanceOf(Date);
   });
 
   it('retries only materialization idempotently and never creates another AI job', async () => {
@@ -770,7 +760,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     const retry = () =>
       service.reattachAssetGeneration(
         user,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         fixture.assetSpecId,
@@ -781,7 +770,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     await Promise.all([retry(), retry()]);
     const final = await service.getAssetGeneration(
       user,
-      fixture.workspaceId,
       fixture.projectId,
       fixture.chapterId,
       fixture.assetSpecId,
@@ -836,7 +824,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
 
     const result = await service.reattachAssetGeneration(
       { userId: fixture.userId } as never,
-      fixture.workspaceId,
       fixture.projectId,
       fixture.chapterId,
       fixture.assetSpecId,

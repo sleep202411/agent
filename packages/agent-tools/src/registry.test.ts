@@ -29,6 +29,9 @@ describe("agent-tools registry", () => {
     expect(toolDescriptorsForModel().some((t) => t.id === "story.confirmCreativeProfile")).toBe(
       true
     );
+    expect(riskForTool("story.generation.quoteAssets")).toBe("reversible");
+    expect(riskForTool("story.generation.confirmBatch")).toBe("critical");
+    expect(riskForTool("story.generation.getBatch")).toBe("read");
   });
 
   it("validates bounded structured user questions", () => {
@@ -84,6 +87,25 @@ describe("agent-tools registry", () => {
       parseToolInput("request_user_input", {
         leadIn: QUESTION_TURN_COPY.leadIn,
         questions,
+      })
+    ).toThrow();
+  });
+
+  it("supports server-verifiable asset-kind generation scopes", () => {
+    expect(
+      parseToolInput("story.generation.quoteAssets", {
+        assetKinds: ["character"],
+        outputKind: "image",
+      })
+    ).toEqual({
+      assetKinds: ["character"],
+      outputKind: "image",
+      options: {},
+    });
+    expect(() =>
+      parseToolInput("story.generation.quoteAssets", {
+        assetKinds: ["character", "costume"],
+        outputKind: "image",
       })
     ).toThrow();
   });

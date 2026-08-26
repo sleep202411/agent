@@ -407,30 +407,21 @@ function serviceWith(input: {
     getGame: input.getGame ?? jest.fn(() => null),
   };
   const builds = {
-    getBuild: jest.fn(
-      (
-        _user: unknown,
-        _workspaceId: string,
-        _projectId: string,
-        buildId: string,
-      ) => {
-        const build = input.builds.find(
-          (candidate) => candidate.id === buildId,
-        )!;
-        return {
-          id: build.id,
-          status: 'ready',
-          scope: build.scope,
-          sourceDraftRevision: 69,
-          videoSnapshotHash: HASH,
-          runtimeSchemaVersion: 2,
-          runtimeJson: build.manifest,
-          runtimeHash: canonicalJsonHash(build.manifest),
-          completedAt: new Date().toISOString(),
-          diagnostics: [],
-        };
-      },
-    ),
+    getBuild: jest.fn((_user: unknown, _projectId: string, buildId: string) => {
+      const build = input.builds.find((candidate) => candidate.id === buildId)!;
+      return {
+        id: build.id,
+        status: 'ready',
+        scope: build.scope,
+        sourceDraftRevision: 69,
+        videoSnapshotHash: HASH,
+        runtimeSchemaVersion: 2,
+        runtimeJson: build.manifest,
+        runtimeHash: canonicalJsonHash(build.manifest),
+        completedAt: new Date().toISOString(),
+        diagnostics: [],
+      };
+    }),
   };
   const releases = new StoryExperienceReleaseService(
     permissions as never,
@@ -453,7 +444,6 @@ function serviceWith(input: {
 function publishProject(service: StoryGameReleaseService) {
   return service.publishProject(
     { userId: 'user-1' } as never,
-    WORKSPACE_ID,
     PROJECT_ID,
     { setCurrent: true },
     'satoken=session',

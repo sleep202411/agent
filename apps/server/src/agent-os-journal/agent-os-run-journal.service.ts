@@ -228,7 +228,7 @@ export type StoryProposalReadyInput = {
   storyProjectId: string;
   storyChapterId: string;
   workspaceId: string;
-  stage: 'script' | 'assets' | 'plot' | 'storyboard' | 'noop' | 'patch';
+  stage: 'script' | 'plot' | 'assets' | 'storyboard' | 'noop' | 'patch';
   schemaVersion: string;
   text: string;
   title: string;

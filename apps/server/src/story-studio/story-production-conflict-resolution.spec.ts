@@ -299,7 +299,6 @@ describe('Story production conflict resolution', () => {
     await expect(
       service.resolveAssetSpecConflict(
         { userId: USER_ID } as never,
-        'workspace-1',
         PROJECT_ID,
         CHAPTER_ID,
         ASSET_ID,
@@ -338,7 +337,6 @@ describe('Story production conflict resolution', () => {
     await expect(
       service.resolveStoryboardSequenceConflict(
         { userId: USER_ID } as never,
-        'workspace-1',
         PROJECT_ID,
         CHAPTER_ID,
         SEQUENCE_ID,
@@ -441,7 +439,6 @@ describe('Story production conflict resolution', () => {
 
     const first = await service.resolveAssetSpecConflict(
       { userId: USER_ID } as never,
-      'workspace-1',
       PROJECT_ID,
       CHAPTER_ID,
       ASSET_ID,
@@ -450,7 +447,6 @@ describe('Story production conflict resolution', () => {
     );
     const replay = await service.resolveAssetSpecConflict(
       { userId: USER_ID } as never,
-      'workspace-1',
       PROJECT_ID,
       CHAPTER_ID,
       ASSET_ID,
@@ -504,7 +500,6 @@ describe('Story production conflict resolution', () => {
 
     await service.resolveAssetSpecConflict(
       { userId: USER_ID } as never,
-      'workspace-1',
       PROJECT_ID,
       CHAPTER_ID,
       ASSET_ID,
@@ -552,7 +547,6 @@ describe('Story production conflict resolution', () => {
 
     const response = await service.resolveStoryboardSequenceConflict(
       { userId: USER_ID } as never,
-      'workspace-1',
       PROJECT_ID,
       CHAPTER_ID,
       SEQUENCE_ID,
@@ -611,7 +605,6 @@ describe('Story production conflict resolution', () => {
 
     const response = await service.resolveStoryboardSequenceConflict(
       { userId: USER_ID } as never,
-      'workspace-1',
       PROJECT_ID,
       CHAPTER_ID,
       SEQUENCE_ID,

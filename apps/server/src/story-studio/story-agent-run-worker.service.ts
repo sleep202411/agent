@@ -189,15 +189,6 @@ export class StoryAgentRunWorkerService
             });
             break;
           case 'plot':
-            if (!load.job.screenplaySnapshot || !load.job.assetPlan) {
-              throw new Error(
-                'The canonical Plot route is missing its approved Script interpretation or Asset Specs source.',
-              );
-            }
-            screenplay = load.job.screenplaySnapshot.screenplay;
-            assetPlan = load.job.assetPlan;
-            break;
-          case 'assets':
             if (load.job.screenplaySnapshot) {
               screenplay = load.job.screenplaySnapshot.screenplay;
             } else if (load.job.scriptSource) {
@@ -217,9 +208,17 @@ export class StoryAgentRunWorkerService
               ).screenplay;
             } else {
               throw new Error(
-                'The canonical Asset Specs route is missing both a structured Script and an exact Script source.',
+                'The canonical Plot route is missing both a structured Script and an exact Script source.',
               );
             }
+            break;
+          case 'assets':
+            if (!load.job.screenplaySnapshot) {
+              throw new Error(
+                'The canonical Asset Specs route is missing its approved Plot interpretation.',
+              );
+            }
+            screenplay = load.job.screenplaySnapshot.screenplay;
             assetPlan = await this.pipeline.planAssets({
               screenplay,
               creativeProfile: load.job.creativeProfile,

@@ -267,7 +267,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     expect(sequence.pendingSourceFingerprint).toMatch(/^[a-f0-9]{64}$/);
   });
 
-  it('persists an approved empty Asset plan as a readable durable marker', async () => {
+  it('never treats an empty Asset marker as current before Plot approval', async () => {
     const fixture = await createFixture(prisma, fixtureWorkspaceIds);
     const script = await prisma.$transaction((tx) =>
       ensureStoryScriptDocumentInTransaction(tx, {
@@ -312,7 +312,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
           fixture.chapterId,
         ),
       ),
-    ).resolves.toEqual({ assetSpecs: [] });
+    ).resolves.toBeNull();
     const chapter = await prisma.storyChapter.findUniqueOrThrow({
       where: { id: fixture.chapterId },
       select: { approvedAssetPlanSnapshotId: true },
@@ -719,7 +719,6 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       }),
       fixture.productionPlans.getProductionState(
         fixture.user,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
       ),
@@ -845,7 +844,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       expectedBindingCount: 1,
     },
   ])(
-    'advances Script, $assetCase Assets, Plot, and Storyboard through four independent approvals',
+    'advances Script, Plot, $assetCase Assets, and Storyboard through four independent approvals',
     async ({
       assetPlan,
       storyboardImagePrompt,
@@ -994,6 +993,56 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         }),
       ).resolves.toBe(0);
 
+      const plot = await fileStage('plot');
+      expect(plot.job.targetStage).toBe('plot');
+      expect(plot.job.screenplaySnapshot?.screenplay).toEqual(screenplay);
+      expect(plot.job.assetPlan).toBeNull();
+      const plotCompletion = await fixture.service.completeStageAuthoring(
+        plot.filed.id,
+        plot.worker,
+        {
+          targetStage: 'plot',
+          screenplay,
+          authoredAgainst: plot.job.snapshot,
+        },
+      );
+      expect(plotCompletion).toMatchObject({
+        kind: 'completed',
+        run: {
+          status: StoryAgentRunStatus.proposed,
+          proposal: {
+            schemaVersion: 'story-plot-proposal-v1',
+          },
+        },
+      });
+      await approveStage(plot.filed.id, 'plot');
+      await expect(
+        prisma.storyAgentRun.count({
+          where: { storyProjectId: fixture.projectId },
+        }),
+      ).resolves.toBe(2);
+      const plottedDraft = await prisma.storyDraft.findUniqueOrThrow({
+        where: { storyProjectId: fixture.projectId },
+      });
+      expect(
+        InteractiveStoryDraftContentSchema.parse(plottedDraft.content).graph
+          .nodes,
+      ).toEqual([
+        expect.objectContaining({ kind: 'clip', nodeId: 'city-gate' }),
+      ]);
+      await expect(
+        fixture.productionPlans.getProductionState(
+          fixture.user,
+          fixture.projectId,
+          fixture.chapterId,
+        ),
+      ).resolves.toMatchObject({
+        plotTree: { status: 'current' },
+        assets: { status: 'missing', currentCount: 0, staleCount: 0 },
+        storyboard: { status: 'missing' },
+        ready: false,
+      });
+
       const assets = await fileStage('assets');
       expect(assets.job.targetStage).toBe('assets');
       expect(assets.job.screenplaySnapshot?.screenplay).toEqual(screenplay);
@@ -1022,23 +1071,21 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         prisma.storyAgentRun.count({
           where: { storyProjectId: fixture.projectId },
         }),
-      ).resolves.toBe(2);
+      ).resolves.toBe(3);
       await expect(
         fixture.productionPlans.getProductionState(
           fixture.user,
-          fixture.workspaceId,
           fixture.projectId,
           fixture.chapterId,
         ),
       ).resolves.toMatchObject({
+        plotTree: { status: 'current' },
         assets: {
           status: 'current',
           currentCount: expectedAssetCount,
           staleCount: 0,
         },
-        plotTree: { status: 'missing' },
         storyboard: { status: 'missing' },
-        ready: false,
       });
       const assetApprovedChapter = await prisma.storyChapter.findUniqueOrThrow({
         where: { id: fixture.chapterId },
@@ -1047,62 +1094,6 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       expect(assetApprovedChapter.approvedAssetPlanSnapshotId).toEqual(
         expect.any(String),
       );
-
-      const plot = await fileStage('plot');
-      expect(plot.job.targetStage).toBe('plot');
-      expect(plot.job.screenplaySnapshot?.screenplay).toEqual(screenplay);
-      expect(plot.job.assetPlan).toEqual(assetPlan);
-      const plotCompletion = await fixture.service.completeStageAuthoring(
-        plot.filed.id,
-        plot.worker,
-        {
-          targetStage: 'plot',
-          screenplay,
-          assetPlan,
-          authoredAgainst: plot.job.snapshot,
-        },
-      );
-      expect(plotCompletion).toMatchObject({
-        kind: 'completed',
-        run: {
-          status: StoryAgentRunStatus.proposed,
-          proposal: {
-            schemaVersion: 'story-plot-proposal-v1',
-            assetPlan,
-          },
-        },
-      });
-      await approveStage(plot.filed.id, 'plot');
-      await expect(
-        prisma.storyAgentRun.count({
-          where: { storyProjectId: fixture.projectId },
-        }),
-      ).resolves.toBe(3);
-      const plottedDraft = await prisma.storyDraft.findUniqueOrThrow({
-        where: { storyProjectId: fixture.projectId },
-      });
-      expect(
-        InteractiveStoryDraftContentSchema.parse(plottedDraft.content).graph
-          .nodes,
-      ).toEqual([
-        expect.objectContaining({ kind: 'clip', nodeId: 'city-gate' }),
-      ]);
-      await expect(
-        fixture.productionPlans.getProductionState(
-          fixture.user,
-          fixture.workspaceId,
-          fixture.projectId,
-          fixture.chapterId,
-        ),
-      ).resolves.toMatchObject({
-        assets: {
-          status: 'current',
-          currentCount: expectedAssetCount,
-          staleCount: 0,
-        },
-        plotTree: { status: 'current' },
-        storyboard: { status: 'missing' },
-      });
       await expect(
         prisma.storyStoryboardSequence.count({
           where: { storyChapterId: fixture.chapterId },
@@ -1157,7 +1148,6 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
           }),
           fixture.productionPlans.getProductionState(
             fixture.user,
-            fixture.workspaceId,
             fixture.projectId,
             fixture.chapterId,
           ),
@@ -1169,8 +1159,8 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       ).toBe(true);
       expect(runs.map((run) => run.id)).toEqual([
         script.filed.id,
-        assets.filed.id,
         plot.filed.id,
+        assets.filed.id,
         storyboard.filed.id,
       ]);
       expect(sequences).toHaveLength(1);

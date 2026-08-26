@@ -27,10 +27,7 @@ import {
   COPILOT_DOCUMENT_MAX_TEXT_CHARS,
   type StoryVisualStyleSkillSlug,
 } from '@repo/shared';
-import {
-  StoryAssetPlanSchema,
-  type StoryAssetPlan,
-} from '@repo/shared/story-production';
+import { type StoryAssetPlan } from '@repo/shared/story-production';
 import {
   STORY_AGENT_BRIEF_MAX_CHARS,
   STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION,
@@ -126,10 +123,7 @@ import {
   type StoryScriptCommit,
   type StoryScriptSourceSnapshot,
 } from './story-script-stage';
-import {
-  StoryProductionPlanService,
-  storyAssetPlanFingerprint,
-} from './story-production-plan.service';
+import { StoryProductionPlanService } from './story-production-plan.service';
 import { reconcileStoryTimelinesWithDraft } from './story-timeline-reconcile';
 
 const RUN_INCLUDE = Prisma.validator<Prisma.StoryAgentRunInclude>()({
@@ -309,7 +303,7 @@ export interface StoryAgentAuthoringJob {
   screenplaySnapshot: ApprovedStoryScreenplaySnapshot | null;
   /** Exact current Script when structured lineage must be derived in place. */
   scriptSource: StoryScriptSourceSnapshot | null;
-  /** Exact currently-approved Asset Specs used by Plot and Storyboard. */
+  /** Exact currently-approved Asset Specs used only by Storyboard. */
   assetPlan: StoryAssetPlan | null;
   brief: Pick<StoryPatchBrief, 'title' | 'summary' | 'brief' | 'documentId'>;
   /** Confirmed project truth used by every authoring baton. */
@@ -862,6 +856,134 @@ export class StoryAgentRunService {
       now,
     );
     return head ? this.toDto(head) : null;
+  }
+
+  /** HTTP project route adapter: ambient Workspace is never an authority. */
+  async getLatestRunForProject(
+    user: AuthUser,
+    projectId: string,
+    chapterId?: string,
+  ): Promise<StoryAgentRunDto | null> {
+    const access = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    return this.getLatestRun(
+      user,
+      access.project.workspaceId,
+      projectId,
+      chapterId,
+    );
+  }
+
+  async getRunForProject(
+    user: AuthUser,
+    projectId: string,
+    runId: string,
+  ): Promise<StoryAgentRunDto> {
+    const access = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    return this.getRun(user, access.project.workspaceId, projectId, runId);
+  }
+
+  async getUndoableRunForProject(
+    user: AuthUser,
+    projectId: string,
+    chapterId?: string,
+  ): Promise<StoryAgentRunDto | null> {
+    const access = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    return this.getUndoableRun(
+      user,
+      access.project.workspaceId,
+      projectId,
+      chapterId,
+    );
+  }
+
+  async confirmForProject(
+    user: AuthUser,
+    projectId: string,
+    runId: string,
+    idempotencyKey: string,
+  ): Promise<StoryAgentRunDto> {
+    const access = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    return this.confirm(
+      user,
+      access.project.workspaceId,
+      projectId,
+      runId,
+      idempotencyKey,
+    );
+  }
+
+  async retryAuthoringForProject(
+    user: AuthUser,
+    projectId: string,
+    runId: string,
+  ): Promise<StoryAgentRunDto> {
+    const access = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    return this.retryAuthoring(
+      user,
+      access.project.workspaceId,
+      projectId,
+      runId,
+    );
+  }
+
+  async cancelForProject(
+    user: AuthUser,
+    projectId: string,
+    runId: string,
+  ): Promise<StoryAgentRunDto> {
+    const access = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    return this.cancel(user, access.project.workspaceId, projectId, runId);
+  }
+
+  async undoForProject(
+    user: AuthUser,
+    projectId: string,
+    runId: string,
+    idempotencyKey: string,
+  ): Promise<StoryAgentRunDto> {
+    const access = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.read',
+      { allowArchived: true },
+    );
+    return this.undo(
+      user,
+      access.project.workspaceId,
+      projectId,
+      runId,
+      idempotencyKey,
+    );
   }
 
   async getRun(
@@ -1985,26 +2107,6 @@ export class StoryAgentRunService {
               'The canonical production stage changed before this proposal could be applied.',
           });
         }
-        if (isStoryPlotProposal(proposal)) {
-          const currentAssetPlan =
-            await this.productionPlans!.readCurrentAssetPlanInTransaction(
-              tx,
-              run.storyProjectId,
-              run.storyChapterId,
-            );
-          if (
-            proposal.assetPlan === undefined ||
-            currentAssetPlan === null ||
-            storyAssetPlanFingerprint(proposal.assetPlan) !==
-              storyAssetPlanFingerprint(currentAssetPlan)
-          ) {
-            return this.finishClaimedTerminal(tx, run, 'stale', {
-              code: 'STORY_AGENT_PLOT_ASSET_BASE_CHANGED',
-              detail:
-                'The approved Asset Specs changed after this Plot proposal was authored. Create a fresh Plot proposal from the current assets.',
-            });
-          }
-        }
       }
 
       let nextDraft: InteractiveStoryDraftContent;
@@ -2135,12 +2237,10 @@ export class StoryAgentRunService {
       let plotLineage: DerivedStoryScreenplayLineage | undefined;
       if (
         run.kind === StoryAgentRunKind.apply &&
-        (isStoryAssetProposal(proposal) || isStoryPlotProposal(proposal))
+        isStoryPlotProposal(proposal)
       ) {
         try {
-          const proposalDocument = isStoryPlotProposal(proposal)
-            ? storyScreenplayDocument(proposal)
-            : buildStoryScreenplayDocument(proposal.screenplay);
+          const proposalDocument = storyScreenplayDocument(proposal);
           const currentScreenplay = await readCurrentStoryScreenplaySnapshot(
             tx,
             run.storyProjectId,
@@ -2174,11 +2274,7 @@ export class StoryAgentRunService {
                   hash: proposal.baseScriptHash,
                 },
               });
-          // Asset approval may create the structured interpretation needed by
-          // later stages, but only Plot approval binds chapter graph lineage.
-          if (isStoryPlotProposal(proposal)) {
-            plotLineage = structuredLineage;
-          }
+          plotLineage = structuredLineage;
         } catch (error) {
           return this.finishClaimedTerminal(
             tx,
@@ -2188,9 +2284,7 @@ export class StoryAgentRunService {
               code:
                 error instanceof StoryScriptBaseChangedError
                   ? 'STORY_AGENT_SCRIPT_BASE_CHANGED'
-                  : isStoryPlotProposal(proposal)
-                    ? 'STORY_AGENT_PLOT_SOURCE_WRITE_FAILED'
-                    : 'STORY_AGENT_ASSET_SOURCE_WRITE_FAILED',
+                  : 'STORY_AGENT_PLOT_SOURCE_WRITE_FAILED',
               detail: errorText(error),
             },
           );
@@ -2330,9 +2424,9 @@ export class StoryAgentRunService {
           storyProjectId: run.storyProjectId,
           storyChapterId: run.storyChapterId,
           actorUserId: run.confirmedByUserId,
-          // Assets are derived directly from the exact approved Script, not
-          // from the later Plot projection of that Script.
-          sourceFingerprint: proposal.baseScriptHash,
+          // Asset Specs are pinned to the exact approved chapter Plot. Any
+          // later topology change makes the plan stale before Storyboard use.
+          sourceFingerprint: afterDraftHash,
           canonicalCharacterIds: proposal.screenplay.characters.map(
             (character) => character.id,
           ),
@@ -2358,8 +2452,8 @@ export class StoryAgentRunService {
         isStoryScreenplayProposal(proposal) ||
         isStoryPlotProposal(proposal)
       ) {
-        // Invalidate only true downstream stages. Plot comes after Assets and
-        // must never make the Asset Specs it consumed stale.
+        // Invalidate only true downstream stages in Script -> Plot -> Assets
+        // -> Storyboard order.
         await this.productionPlans!.invalidateDownstreamAfterUpstreamApprovalInTransaction(
           tx,
           {
@@ -2842,23 +2936,18 @@ export class StoryAgentRunService {
           }
           // A creator-authored or subsequently edited Script is canonical
           // content, not something the Agent may overwrite. Compile a fresh
-          // structured interpretation and prepare Assets from this exact head.
+          // Plot proposal from this exact head.
           plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
-          plannedTargetStage = 'assets';
+          plannedTargetStage = 'plot';
           plannedScreenplay = null;
           plannedSource = source;
-        } else if (productionState.assets.status !== 'current') {
-          plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
-          plannedTargetStage = 'assets';
         } else if (productionState.plotTree.status !== 'current') {
           plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
           plannedTargetStage = 'plot';
-          plannedAssetPlan =
-            await this.productionPlans!.readCurrentAssetPlanInTransaction(
-              tx,
-              run.storyProjectId,
-              run.storyChapterId,
-            );
+        } else if (productionState.assets.status !== 'current') {
+          plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
+          plannedTargetStage = 'assets';
+          plannedScreenplay = approved;
         } else if (productionState.storyboard.status !== 'current') {
           plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
           plannedTargetStage = 'storyboard';
@@ -2879,11 +2968,7 @@ export class StoryAgentRunService {
             'The production state does not identify one safe next authoring stage.',
           );
         }
-        if (
-          (plannedTargetStage === 'plot' ||
-            plannedTargetStage === 'storyboard') &&
-          plannedAssetPlan === null
-        ) {
+        if (plannedTargetStage === 'storyboard' && plannedAssetPlan === null) {
           throw canonicalStateCorrupt(
             'STORY_AGENT_ASSET_SOURCE_UNAVAILABLE',
             'The current approved Asset Specs could not be pinned for the next production stage.',
@@ -3340,9 +3425,6 @@ export class StoryAgentRunService {
             summary: storedBrief.data.summary,
           } as const;
           if (input.targetStage === 'plot') {
-            const approvedAssetPlan = StoryAssetPlanSchema.parse(
-              input.assetPlan,
-            );
             const dryRun = this.executeApplyProposal(
               state.draftRow.content,
               state.layoutRow.layout,
@@ -3360,7 +3442,6 @@ export class StoryAgentRunService {
               schemaVersion: STORY_PLOT_PROPOSAL_SCHEMA_VERSION,
               screenplay,
               document: buildStoryScreenplayDocument(screenplay),
-              assetPlan: approvedAssetPlan,
             });
           } else if (input.targetStage === 'assets') {
             proposal = StoryAssetProposalSchema.parse({
@@ -5371,10 +5452,13 @@ function nextAuthoringTargetStage(state: {
   storyboard: { status: 'missing' | 'current' | 'stale' };
 }): StoryAgentAuthoringTargetStage {
   if (state.script.status === 'missing') return 'script';
-  if (state.script.status !== 'current' || state.assets.status !== 'current') {
-    return 'assets';
+  if (
+    state.script.status !== 'current' ||
+    state.plotTree.status !== 'current'
+  ) {
+    return 'plot';
   }
-  if (state.plotTree.status !== 'current') return 'plot';
+  if (state.assets.status !== 'current') return 'assets';
   if (state.storyboard.status !== 'current') return 'storyboard';
   return 'noop';
 }
@@ -5424,10 +5508,7 @@ function authoringStageKeysForTarget(
     case 'plot':
       return ['structure', 'validate'];
     case 'assets':
-      // A manually-edited Script first needs a faithful structured
-      // interpretation; an already-structured Script advances straight to
-      // Assets and marks this first baton complete.
-      return ['structure', 'assets', 'validate'];
+      return ['assets', 'validate'];
     case 'storyboard':
       return ['storyboard', 'validate'];
     case 'noop':

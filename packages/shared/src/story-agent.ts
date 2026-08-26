@@ -1271,9 +1271,9 @@ export const StoryPlotProposalSchema = z
     screenplay: StoryScreenplaySchema,
     document: StoryScreenplayDocumentSchema,
     /**
-     * Exact approved Asset Specs consumed by this Plot proposal. Optional only
-     * for durable v1 Plot proposals authored before Assets became the upstream
-     * review boundary; every new writer must persist this snapshot.
+     * Legacy read-only payload from the retired Assets-before-Plot workflow.
+     * New Plot writers omit it; accepting it lets already-durable proposals
+     * drain while all active planning and apply logic ignores the old input.
      */
     assetPlan: StoryAssetPlanSchema.optional(),
   })

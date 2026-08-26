@@ -4,7 +4,9 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  BillingSubjectType,
   Prisma,
+  StoryProjectBillingMode,
   WalletAccountStatus,
   WalletBalanceKind,
   WalletCreditGrantStatus,
@@ -26,6 +28,8 @@ type ChargeableJob = Pick<
   | 'userId'
   | 'workspaceId'
   | 'projectId'
+  | 'billingSubjectType'
+  | 'billingSubjectId'
   | 'modelId'
   | 'canonicalModelId'
   | 'providerBindingId'
@@ -64,6 +68,62 @@ type OutstandingHeld = {
 @Injectable()
 export class AiGenerationBillingWalletService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Resolve the product billing policy to the exact wallet owner that must be
+   * frozen on a new AI job. Actor-funded Story projects intentionally map the
+   * creator to their existing personal-workspace wallet until the wallet-ledger
+   * migration moves those balances to user-owned accounts. This compatibility
+   * mapping is internal; project access and UI workspace state never take part.
+   */
+  async resolveStoryProjectPayer(
+    storyProjectId: string,
+    actorUserId: string,
+  ): Promise<{ type: 'user' | 'workspace'; id: string }> {
+    const project = await this.prisma.storyProject.findUnique({
+      where: { id: storyProjectId },
+      select: { billingMode: true, billingAccountId: true },
+    });
+    if (!project) {
+      throw new ServiceUnavailableException({
+        code: 'STORY_BILLING_POLICY_UNAVAILABLE',
+        msg: 'Story project billing policy is unavailable.',
+      });
+    }
+
+    if (project.billingMode === StoryProjectBillingMode.actor) {
+      const personal = await this.prisma.workspace.findFirst({
+        where: {
+          ownerUserId: actorUserId,
+          type: WorkspaceType.personal,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      return personal
+        ? { type: 'workspace', id: personal.id }
+        : { type: 'user', id: actorUserId };
+    }
+
+    const account = project.billingAccountId
+      ? await this.prisma.walletAccount.findFirst({
+          where: {
+            id: project.billingAccountId,
+            currency: WalletCurrencyType.compute_point,
+            balanceKind: WalletBalanceKind.consumable,
+            status: WalletAccountStatus.active,
+          },
+          select: { ownerType: true, ownerId: true },
+        })
+      : null;
+    if (!account) {
+      throw new ServiceUnavailableException({
+        code: 'STORY_BILLING_ACCOUNT_UNAVAILABLE',
+        msg: 'The Story project billing account is unavailable.',
+      });
+    }
+    return { type: account.ownerType, id: account.ownerId };
+  }
 
   async reserveForJobInTransaction(args: {
     tx: Prisma.TransactionClient;
@@ -324,6 +384,20 @@ async function resolvePayerTx(
   tx: WalletTx,
   job: ChargeableJob,
 ): Promise<Payer> {
+  if (job.billingSubjectType && job.billingSubjectId) {
+    return {
+      ownerType:
+        job.billingSubjectType === BillingSubjectType.workspace
+          ? WalletOwnerType.workspace
+          : WalletOwnerType.user,
+      ownerId: job.billingSubjectId,
+      billingScope:
+        job.billingSubjectType === BillingSubjectType.workspace
+          ? 'workspace_team'
+          : 'user',
+    };
+  }
+
   // job.workspaceId is the job's ACCESS scope (the project's home workspace) —
   // it must not double as the payer. Team pots are shared on purpose: a job
   // that runs in a TEAM workspace charges that team's pot. A job that runs in

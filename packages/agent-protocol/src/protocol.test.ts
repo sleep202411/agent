@@ -249,6 +249,48 @@ describe("fizz.agent.v1", () => {
         status: "proposed",
       })
     ).toThrow(/schemaVersion/);
+
+    expect(
+      parseAgentEventDataForWrite("ArtifactCreated", {
+        turnId: uuid,
+        artifactId: uuid,
+        artifact: {
+          kind: "story_generation_batch",
+          generationBatchId: uuid,
+          storyProjectId: uuid,
+          storyChapterId: uuid,
+          schemaVersion: "story-generation-batch-artifact/v1",
+        },
+        status: "active",
+      })
+    ).toMatchObject({
+      artifact: { kind: "story_generation_batch", generationBatchId: uuid },
+      status: "active",
+    });
+    expect(
+      parseAgentEventDataForWrite("ArtifactCreated", {
+        turnId: uuid,
+        artifactId: uuid,
+        artifact: {
+          kind: "story_generation_batch",
+          generationBatchId: uuid,
+          storyProjectId: uuid,
+          storyChapterId: uuid,
+          workspaceId: uuid,
+          schemaVersion: "story-generation-batch-artifact/v1",
+        },
+        status: "active",
+      })
+    ).toMatchObject({
+      artifact: { kind: "story_generation_batch", workspaceId: uuid },
+    });
+    expect(() =>
+      parseAgentEventDataForWrite("ArtifactUpdated", {
+        turnId: uuid,
+        artifactId: uuid,
+        status: "active",
+      })
+    ).toThrow();
   });
 
   it("persists ordered attachment display metadata without inventing transcript text", () => {

@@ -14,6 +14,7 @@ import {
 } from '@repo/shared/story-agent';
 import { validateProductionPlanAgainstScreenplay } from './story-authoring-pipeline.service';
 import { canonicalJsonHash } from './canonical-json';
+import { InteractiveStoryDraftContentSchema } from './dto';
 import { PutStoryStoryboardTimelineSchema } from './story-production-plan.schema';
 import {
   assertStoryboardClipMediaKind,
@@ -303,7 +304,7 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     expect(state.plotTree).toEqual({ status: 'stale', nodeCount: 3 });
   });
 
-  it('treats a pinned approved empty Asset plan as current for the exact Script source', async () => {
+  it('treats a pinned approved empty Asset plan as current for the exact Plot source', async () => {
     const assetPlan = { assetSpecs: [] };
     const scriptDocumentId = '0197f4a2-0800-7000-8000-000000000060';
     const ydoc = new Y.Doc();
@@ -315,15 +316,23 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
         findFirst: jest.fn().mockResolvedValue({
           id: scriptDocumentId,
           currentSequence: 1,
+          currentVersionId: '0197f4a2-0800-7000-8000-000000000062',
           crdtState: Buffer.from(Y.encodeStateAsUpdate(ydoc)),
         }),
       },
       studioDocumentOperation: { findMany: jest.fn().mockResolvedValue([]) },
     };
     ydoc.destroy();
-    const sourceFingerprint = (
-      await readStoryScriptHead(scriptReads as never, 'project-1', 'chapter-1')
-    ).hash;
+    const scriptHead = await readStoryScriptHead(
+      scriptReads as never,
+      'project-1',
+      'chapter-1',
+    );
+    const source = screenplay();
+    const draft = chapterDraft(source);
+    const sourceFingerprint = canonicalJsonHash(
+      InteractiveStoryDraftContentSchema.parse(draft),
+    );
     const snapshot = {
       sourceFingerprint,
       planFingerprint: canonicalJsonHash({
@@ -338,6 +347,26 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
       storyChapter: {
         findFirst: jest.fn().mockResolvedValue({
           approvedAssetPlanSnapshotId: '0197f4a2-0800-7000-8000-000000000061',
+          nodeIds: source.scenes.map((scene) => scene.nodeId),
+          entryNodeId: source.entrySceneId,
+          sourceScriptDocumentId: scriptHead.documentId,
+          sourceScriptVersionId: '0197f4a2-0800-7000-8000-000000000062',
+          sourceScriptSequence: scriptHead.sequence,
+          sourceScriptHash: scriptHead.hash,
+        }),
+      },
+      storyDraft: {
+        findUnique: jest.fn().mockResolvedValue({ content: draft }),
+      },
+      studioDocumentVersion: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: '0197f4a2-0800-7000-8000-000000000062',
+          documentId: scriptHead.documentId,
+          sequence: scriptHead.sequence,
+          snapshot: {
+            screenplay: source,
+            document: buildStoryScreenplayDocument(source),
+          },
         }),
       },
       storyProductionPlanSnapshot: {
@@ -395,7 +424,9 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
       approvedAssetPlanSnapshotId: null as string | null,
     };
     const emptyAssetPlan = { assetSpecs: [] };
-    const sourceFingerprint = scriptHead.hash;
+    const sourceFingerprint = canonicalJsonHash(
+      InteractiveStoryDraftContentSchema.parse(draft),
+    );
     const tx = {
       ...scriptReads,
       storyProject: {
@@ -699,6 +730,51 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     expect(sequenceUpdateMany).toHaveBeenCalledTimes(1);
     expect(sequenceCreate).not.toHaveBeenCalled();
     expect(sequenceUpdate).not.toHaveBeenCalled();
+  });
+
+  it('invalidates both Assets and Storyboard when an approved Plot changes', async () => {
+    type StaleUpdate = {
+      data: {
+        status: StoryProductionSpecStatus;
+        pendingPlanSnapshotId: string | null;
+      };
+    };
+    let assetCall: StaleUpdate | undefined;
+    let storyboardCall: StaleUpdate | undefined;
+    const assetUpdateMany = jest.fn((input: StaleUpdate) => {
+      assetCall = input;
+      return Promise.resolve({ count: 2 });
+    });
+    const storyboardUpdateMany = jest.fn((input: StaleUpdate) => {
+      storyboardCall = input;
+      return Promise.resolve({ count: 3 });
+    });
+    const tx = {
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({
+          approvedAssetPlanSnapshotId: null,
+        }),
+      },
+      storyAssetSpec: { updateMany: assetUpdateMany },
+      storyStoryboardSequence: { updateMany: storyboardUpdateMany },
+    };
+
+    await service.invalidateDownstreamAfterUpstreamApprovalInTransaction(
+      tx as never,
+      {
+        storyProjectId: 'project-1',
+        storyChapterId: 'chapter-1',
+        actorUserId: 'user-1',
+        sourceFingerprint: 'd'.repeat(64),
+        upstreamStage: 'plot',
+        upstreamRunId: 'run-plot-2',
+      },
+    );
+
+    expect(assetCall?.data.status).toBe(StoryProductionSpecStatus.stale);
+    expect(assetCall?.data.pendingPlanSnapshotId).toBeNull();
+    expect(storyboardCall?.data.status).toBe(StoryProductionSpecStatus.stale);
+    expect(storyboardCall?.data.pendingPlanSnapshotId).toBeNull();
   });
 
   it('rejects a Storyboard proposal when its immutable Asset source is no longer current', async () => {

@@ -28,6 +28,12 @@ describe("agent capability registry", () => {
     expect(requireModeDefinition("story", "story").toolIds).toContain(
       "story.confirmCreativeProfile"
     );
+    expect(requireModeDefinition("story", "story").toolIds).toContain(
+      "story.generation.quoteAssets"
+    );
+    expect(requireModeDefinition("story", "story").toolIds).toContain(
+      "story.generation.confirmBatch"
+    );
     expect(() => requireModeDefinition("platform", "story")).toThrow();
     expect(() => requireModeDefinition("story", "canvas")).toThrow();
   });
@@ -67,14 +73,16 @@ describe("agent capability registry", () => {
     expect(instructions).toMatch(/One call creates exactly\s+ONE reviewable artifact proposal/);
     expect(instructions).toMatch(/still-unresolved intent/);
     expect(instructions).toMatch(/Continue automatically/);
-    expect(instructions).toContain("Plot is the ONE narrative topology");
+    expect(instructions).toMatch(
+      /Plot compiles the approved Script into the ONE\s+narrative topology/
+    );
     expect(instructions).toMatch(/each Plot node projects to one Storyboard sequence/);
     expect(instructions).toMatch(
-      /Asset Specs approval saves\s+only empty-but-stably-referenceable logical\s+specifications derived from that Script/
+      /Asset Specs\s+approval saves only empty-but-stably-referenceable logical specifications\s+derived from that Plot/
     );
     expect(instructions).toMatch(/creator must use Generate/);
     expect(instructions).toMatch(
-      /Script,\s+Asset Specs, Plot, and Storyboard proposals are separate creator-visible\s+checkpoints/
+      /Script,\s+Plot, Asset Specs, and Storyboard proposals are separate creator-visible\s+checkpoints/
     );
     expect(instructions).toMatch(/No approval silently\s+approves or applies the next stage/);
     expect(instructions).toMatch(/Never treat automatic proposal preparation as approval/);

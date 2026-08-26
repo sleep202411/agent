@@ -8,12 +8,10 @@ import {
   StoryDurationPreset,
   StoryFrameProfile,
   StoryProjectMemberRole,
+  StoryProjectBillingMode,
   StoryProjectStatus,
   StoryRevisionSource,
-  WorkspaceMemberRole,
-  WorkspaceMemberStatus,
 } from '@prisma/client';
-import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import { canonicalJsonHash } from './canonical-json';
 import {
@@ -23,7 +21,6 @@ import {
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   type InteractiveStoryDraftContent,
 } from './dto';
-import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectsService } from './story-projects.service';
 import { storyVideoSnapshotHash } from './story-video-production.schema';
 
@@ -42,10 +39,6 @@ const OWNER_WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000009';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
 const CINEMATIC_REALISM_SKILL =
   storyVisualStyleSkillBySlug('cinematic-realism')!;
-const PROJECT_NOT_FOUND_BODY = {
-  code: 'STORY_PROJECT_NOT_FOUND',
-  message: 'Story project not found.',
-};
 
 function lockableDraft(): InteractiveStoryDraftContent {
   return {
@@ -279,10 +272,8 @@ function serviceWith(prisma: Record<string, unknown>) {
     requireProject: jest.fn().mockResolvedValue(access),
     capabilities: jest.fn().mockReturnValue(access.capabilities),
   };
-  const workspacePermissions = {
-    requireWorkspaceRole: jest
-      .fn()
-      .mockResolvedValue({ role: WorkspaceMemberRole.owner }),
+  const workspaces = {
+    ensurePersonalWorkspace: jest.fn().mockResolvedValue({ id: WORKSPACE_ID }),
   };
   const writeGuard = {
     assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
@@ -291,11 +282,11 @@ function serviceWith(prisma: Record<string, unknown>) {
     service: new StoryProjectsService(
       prisma as never,
       permissions as never,
-      workspacePermissions as never,
+      workspaces as never,
       writeGuard as never,
     ),
     permissions,
-    workspacePermissions,
+    workspaces,
     writeGuard,
   };
 }
@@ -316,97 +307,6 @@ async function apiError(operation: Promise<unknown>) {
     throw error;
   }
   throw new Error('Expected operation to reject.');
-}
-
-/**
- * Keeps the status alongside the body so a denial test fails loudly on a 403
- * instead of quietly accepting any rejection.
- */
-async function httpError(operation: Promise<unknown>) {
-  try {
-    await operation;
-  } catch (error) {
-    if (error instanceof HttpException) {
-      return {
-        status: error.getStatus(),
-        body: error.getResponse() as Record<string, unknown>,
-      };
-    }
-    throw error;
-  }
-  throw new Error('Expected operation to reject.');
-}
-
-type StoryProjectAccessQuery = {
-  where: {
-    id: string;
-    status?: StoryProjectStatus;
-    members?: { some: { userId: string } };
-  };
-};
-
-/**
- * A resolver over the REAL permission services, with a prisma double that
- * applies only the filters the caller actually sends — an absent filter is a
- * filter Prisma does not apply, so an unscoped lookup finds the project the way
- * it really would. That is what makes the denial cases below meaningful:
- * mocking `requireProject` the way {@link serviceWith} does, or hard-coding the
- * membership scope here, would make them pass by construction.
- */
-function resolverWith(seats: {
-  storyRole: StoryProjectMemberRole | null;
-  workspaceRole: WorkspaceMemberRole | null;
-  status?: StoryProjectStatus;
-}) {
-  const status = seats.status ?? StoryProjectStatus.active;
-  const prisma = {
-    storyProject: {
-      findFirst: jest.fn(({ where }: StoryProjectAccessQuery) => {
-        if (where.id !== PROJECT_ID) return Promise.resolve(null);
-        if (where.status !== undefined && where.status !== status) {
-          return Promise.resolve(null);
-        }
-        if (
-          where.members !== undefined &&
-          (where.members.some.userId !== USER.userId ||
-            seats.storyRole === null)
-        ) {
-          return Promise.resolve(null);
-        }
-        return Promise.resolve({
-          ...projectRow({ workspaceId: OWNER_WORKSPACE_ID, status }),
-          members: seats.storyRole === null ? [] : [{ role: seats.storyRole }],
-        });
-      }),
-    },
-    workspaceMember: {
-      findFirst: jest.fn(() =>
-        Promise.resolve(
-          seats.workspaceRole === null
-            ? null
-            : {
-                workspaceId: OWNER_WORKSPACE_ID,
-                userId: USER.userId,
-                role: seats.workspaceRole,
-              },
-        ),
-      ),
-    },
-  };
-  const writeGuard = {
-    assertHumanWriteAllowedEarly: jest.fn().mockResolvedValue(undefined),
-  };
-  const workspacePermissions = new WorkspacePermissionService(prisma as never);
-  return new StoryProjectsService(
-    prisma as never,
-    new StoryPermissionService(
-      prisma as never,
-      workspacePermissions,
-      writeGuard as never,
-    ),
-    workspacePermissions,
-    writeGuard as never,
-  );
 }
 
 describe('StoryProjectsService unified-story authoring boundary', () => {
@@ -439,7 +339,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
 
     await expect(
-      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+      service.patch(USER as never, PROJECT_ID, {
         expectedProjectVersion: 0,
         coverAssetId: MEDIA_ASSET_ID,
       }),
@@ -469,7 +369,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.storyProject.updateMany).toHaveBeenCalledWith({
       where: {
         id: PROJECT_ID,
-        workspaceId: WORKSPACE_ID,
         status: StoryProjectStatus.active,
         version: 0,
       },
@@ -495,7 +394,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     let rejection: unknown;
     try {
-      await service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+      await service.patch(USER as never, PROJECT_ID, {
         expectedProjectVersion: 0,
         coverAssetId: MEDIA_ASSET_ID,
       });
@@ -534,7 +433,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
 
     await expect(
-      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+      service.patch(USER as never, PROJECT_ID, {
         expectedProjectVersion: 0,
         coverAssetId: null,
       }),
@@ -568,7 +467,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     });
 
     await expect(
-      service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+      service.patch(USER as never, PROJECT_ID, {
         expectedProjectVersion: 0,
         frameProfile: 'portrait_9_16',
         durationPreset: 'short_5_15',
@@ -616,7 +515,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     await expect(
       apiError(
-        service.patch(USER as never, WORKSPACE_ID, PROJECT_ID, {
+        service.patch(USER as never, PROJECT_ID, {
           expectedProjectVersion: 0,
           frameProfile: 'portrait_9_16',
           durationPreset: 'short_5_15',
@@ -630,21 +529,31 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.storyProject.updateMany).not.toHaveBeenCalled();
   });
 
-  it('lists joined projects across tenants, excluding the ones you own', async () => {
-    // The three properties that make "Shared with me" both useful and safe. A
-    // workspace id in this predicate would defeat the point; dropping the role
-    // filter would restate everything `list` already shows; dropping the
-    // workspace-membership filter would advertise projects whose tenant seat is
-    // gone, which `requireProject` refuses to open.
+  it('lists every active project membership across workspace boundaries', async () => {
     const findMany = jest.fn((input: { where: Record<string, unknown> }) => {
       void input;
-      return Promise.resolve([]);
+      return Promise.resolve([
+        summaryProject({ id: PROJECT_ID, workspaceId: WORKSPACE_ID }),
+        summaryProject({
+          id: REVISION_ID,
+          workspaceId: OWNER_WORKSPACE_ID,
+          members: [
+            { userId: USER.userId, role: StoryProjectMemberRole.editor },
+          ],
+        }),
+      ]);
     });
     const { service } = serviceWith({ storyProject: { findMany } });
 
     await expect(
-      service.listJoined(USER as never, { status: 'active', limit: 20 }),
-    ).resolves.toEqual({ items: [], nextCursor: null });
+      service.list(USER as never, { status: 'active', limit: 20 }),
+    ).resolves.toMatchObject({
+      items: [
+        { id: PROJECT_ID, workspaceId: WORKSPACE_ID },
+        { id: REVISION_ID, workspaceId: OWNER_WORKSPACE_ID },
+      ],
+      nextCursor: null,
+    });
 
     const where = findMany.mock.calls[0]?.[0].where ?? {};
     expect(where).not.toHaveProperty('workspaceId');
@@ -653,17 +562,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         userId: USER.userId,
         status: 'active',
         removedAt: null,
-        role: { not: StoryProjectMemberRole.owner },
       },
     });
-    expect(where.workspace).toEqual({
-      members: {
-        some: {
-          userId: USER.userId,
-          status: WorkspaceMemberStatus.active,
-        },
-      },
-    });
+    expect(where).not.toHaveProperty('workspace');
   });
 
   it('creates a unified story draft and a non-null empty video workbench', async () => {
@@ -742,22 +643,19 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       },
     };
     const prisma = { $transaction: transactionMock(tx) };
-    const { service, workspacePermissions } = serviceWith(prisma);
+    const { service, workspaces } = serviceWith(prisma);
 
-    const result = await service.create(USER as never, WORKSPACE_ID, {
+    const result = await service.create(USER as never, {
       title: 'Branching Film Test',
       defaultLocale: 'zh-CN',
       visibility: 'private',
     });
 
-    expect(workspacePermissions.requireWorkspaceRole).toHaveBeenCalledWith(
-      USER.userId,
-      WORKSPACE_ID,
-      WorkspaceMemberRole.editor,
-    );
+    expect(workspaces.ensurePersonalWorkspace).toHaveBeenCalledWith(USER);
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith({
       data: expect.objectContaining({
+        billingMode: StoryProjectBillingMode.actor,
         frameProfile: StoryFrameProfile.landscape_16_9,
       }) as unknown,
     });
@@ -815,7 +713,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     const listed = await listHarness.service.listCandidateAssets(
       USER as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
     expect(listed).toHaveLength(1);
@@ -877,7 +774,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     await expect(
       mutationHarness.service.addCandidateAsset(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         MEDIA_ASSET_ID,
       ),
@@ -885,7 +781,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     await expect(
       mutationHarness.service.removeCandidateAsset(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         MEDIA_ASSET_ID,
       ),
@@ -927,12 +822,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         }),
       });
       return harness.service
-        .addCandidateAsset(
-          USER as never,
-          WORKSPACE_ID,
-          PROJECT_ID,
-          MEDIA_ASSET_ID,
-        )
+        .addCandidateAsset(USER as never, PROJECT_ID, MEDIA_ASSET_ID)
         .then(() => 'resolved')
         .catch((error: unknown) => {
           if (error instanceof HttpException) {
@@ -998,11 +888,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       },
     });
 
-    const result = await service.listCandidateAssets(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const result = await service.listCandidateAssets(USER as never, PROJECT_ID);
 
     expect(result).toHaveLength(1);
     expect(result[0]?.asset.id).toBe(MEDIA_ASSET_ID);
@@ -1033,11 +919,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       },
     });
 
-    const result = await service.listCandidateAssets(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const result = await service.listCandidateAssets(USER as never, PROJECT_ID);
 
     expect(result[0]?.videoVariant?.durationSeconds).toBe(12);
   });
@@ -1086,7 +968,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service } = serviceWith({ $transaction: transactionMock(tx) });
 
     await expect(
-      service.createChapter(USER as never, WORKSPACE_ID, PROJECT_ID, {
+      service.createChapter(USER as never, PROJECT_ID, {
         title: 'The Return',
       }),
     ).resolves.toMatchObject({
@@ -1139,13 +1021,9 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service } = serviceWith({ $transaction: transactionMock(tx) });
 
     await expect(
-      service.patchChapter(
-        USER as never,
-        WORKSPACE_ID,
-        PROJECT_ID,
-        CHAPTER_ID,
-        { title: 'A New Name' },
-      ),
+      service.patchChapter(USER as never, PROJECT_ID, CHAPTER_ID, {
+        title: 'A New Name',
+      }),
     ).resolves.toMatchObject({ id: CHAPTER_ID, title: 'A New Name' });
     expect(tx.storyChapter.update).toHaveBeenCalledWith({
       where: { id: CHAPTER_ID },
@@ -1207,7 +1085,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     const result = await service.putDraft(
       USER as never,
-      WORKSPACE_ID,
       PROJECT_ID,
       {
         expectedRevision: 3,
@@ -1266,7 +1143,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     await expect(
       service.putDraft(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         {
           expectedRevision: 3,
@@ -1314,12 +1190,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service } = serviceWith({ $transaction: transactionMock(tx) });
 
     await expect(
-      service.archiveChapter(
-        USER as never,
-        WORKSPACE_ID,
-        PROJECT_ID,
-        CHAPTER_ID,
-      ),
+      service.archiveChapter(USER as never, PROJECT_ID, CHAPTER_ID),
     ).resolves.toMatchObject({ id: CHAPTER_ID });
     expect(tx.storyDraft.update).toHaveBeenCalledWith({
       where: { storyProjectId: PROJECT_ID },
@@ -1344,12 +1215,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service } = serviceWith(prisma);
 
     await expect(
-      service.getCanvasLayout(
-        USER as never,
-        WORKSPACE_ID,
-        PROJECT_ID,
-        CHAPTER_ID,
-      ),
+      service.getCanvasLayout(USER as never, PROJECT_ID, CHAPTER_ID),
     ).resolves.toMatchObject({
       projectId: PROJECT_ID,
       chapterId: CHAPTER_ID,
@@ -1378,7 +1244,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
 
     const result = await service.putCanvasLayout(
       USER as never,
-      WORKSPACE_ID,
       PROJECT_ID,
       {
         expectedRevision: 2,
@@ -1393,7 +1258,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       where: {
         storyChapterId: CHAPTER_ID,
         storyProjectId: PROJECT_ID,
-        workspaceId: WORKSPACE_ID,
         revision: 2,
       },
       data: {
@@ -1432,7 +1296,6 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     await expect(
       service.putCanvasLayout(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         {
           expectedRevision: 2,
@@ -1470,7 +1333,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service } = serviceWith(prisma);
 
     await expect(
-      apiError(service.workbench(USER as never, WORKSPACE_ID, PROJECT_ID, {})),
+      apiError(service.workbench(USER as never, PROJECT_ID, {})),
     ).resolves.toMatchObject({
       code: 'STORY_DRAFT_SCHEMA_UNSUPPORTED',
       actualSchemaVersion: 'interactive-film-draft-v2',
@@ -1498,12 +1361,10 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const prisma = { $transaction: transactionMock(tx) };
     const { service } = serviceWith(prisma);
 
-    const result = await service.lockRevision(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      { expectedDraftRevision: 3, source: 'creator' },
-    );
+    const result = await service.lockRevision(USER as never, PROJECT_ID, {
+      expectedDraftRevision: 3,
+      source: 'creator',
+    });
 
     expect(result).toMatchObject({
       id: REVISION_ID,
@@ -1531,12 +1392,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const prisma = { $transaction: transactionMock(tx) };
     const { service } = serviceWith(prisma);
 
-    const result = await service.workbench(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      {},
-    );
+    const result = await service.workbench(USER as never, PROJECT_ID, {});
 
     // A scene without a storyboard sequence contributes nothing: the hash is
     // exactly the empty-snapshot hash Build and Preview would compute.
@@ -1554,102 +1410,11 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     };
     const { service } = serviceWith(prisma);
 
-    const result = await service.get(USER as never, WORKSPACE_ID, PROJECT_ID);
+    const result = await service.get(USER as never, PROJECT_ID);
 
     expect(result.production).toMatchObject({
       clipCount: 1,
       currentVideoCount: 0,
     });
-  });
-});
-
-describe('StoryProjectsService shared-link workspace resolve', () => {
-  /**
-   * The whole reason this read exists: a first-time invitee has no stored
-   * selection, so the studio scopes every request to their own personal
-   * workspace and the project's real tenant never gets asked. A workspace
-   * viewer seat plus an active story membership is precisely what the canvas
-   * needs, so it is precisely what resolves.
-   */
-  it('resolves the owning workspace for an invited member whose active tenant is elsewhere', async () => {
-    const service = resolverWith({
-      storyRole: StoryProjectMemberRole.editor,
-      workspaceRole: WorkspaceMemberRole.viewer,
-    });
-
-    await expect(
-      service.resolveWorkspace(USER as never, PROJECT_ID),
-    ).resolves.toEqual({ workspaceId: OWNER_WORKSPACE_ID });
-  });
-
-  /**
-   * `workbench` reads with `allowArchived`, so an archived project still opens
-   * read-only. Refusing to resolve one would strand a shared link on a 404 that
-   * switching workspaces would have cleared.
-   */
-  it('resolves an archived project because the canvas still opens it read-only', async () => {
-    const service = resolverWith({
-      storyRole: StoryProjectMemberRole.viewer,
-      workspaceRole: WorkspaceMemberRole.viewer,
-      status: StoryProjectStatus.archived,
-    });
-
-    await expect(
-      service.resolveWorkspace(USER as never, PROJECT_ID),
-    ).resolves.toEqual({ workspaceId: OWNER_WORKSPACE_ID });
-  });
-
-  /**
-   * Story membership is the grant; the workspace seat only ever narrows it.
-   * A workspace owner who was never added to the project cannot open the canvas
-   * — `requireProject` matches only projects the caller is an active member of
-   * — so resolving for them would hand out a tenant id for a project they still
-   * could not open, which is exactly the widening this route may not do. Their
-   * answer is byte-identical to the stranger's below.
-   */
-  it('tells a workspace member with no story membership nothing, exactly as the canvas would', async () => {
-    const service = resolverWith({
-      storyRole: null,
-      workspaceRole: WorkspaceMemberRole.owner,
-    });
-
-    const failure = await httpError(
-      service.resolveWorkspace(USER as never, PROJECT_ID),
-    );
-
-    expect(failure.status).toBe(404);
-    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
-  });
-
-  /**
-   * A story member who lost their seat in the owning tenant trips the workspace
-   * re-check, which raises 403. A 403 on an id-shaped route is itself the leak
-   * — it confirms the project exists — so this route flattens it to the 404.
-   */
-  it('flattens the lost-workspace-seat denial into the same 404', async () => {
-    const service = resolverWith({
-      storyRole: StoryProjectMemberRole.editor,
-      workspaceRole: null,
-    });
-
-    const failure = await httpError(
-      service.resolveWorkspace(USER as never, PROJECT_ID),
-    );
-
-    expect(failure.status).toBe(404);
-    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
-    expect(JSON.stringify(failure.body)).not.toContain(OWNER_WORKSPACE_ID);
-  });
-
-  it('answers a stranger with a 404 that carries no workspace id', async () => {
-    const service = resolverWith({ storyRole: null, workspaceRole: null });
-
-    const failure = await httpError(
-      service.resolveWorkspace(USER as never, PROJECT_ID),
-    );
-
-    expect(failure.status).toBe(404);
-    expect(failure.body).toEqual(PROJECT_NOT_FOUND_BODY);
-    expect(JSON.stringify(failure.body)).not.toContain(OWNER_WORKSPACE_ID);
   });
 });

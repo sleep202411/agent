@@ -685,7 +685,7 @@ function applyContinuationCopy(
       stage === 'script'
         ? '正式剧本已保存到 Script。本次应用没有生成情节树、资产规格、分镜、图片或视频。'
         : stage === 'plot'
-          ? '情节树已保存。已批准的资产规格保持不变；本次应用没有生成分镜、图片或视频。'
+          ? '情节树已保存。资产规格现需基于这份情节树单独准备和审核；本次应用没有生成图片或视频。'
           : stage === 'assets'
             ? '资产规格已保存。本阶段只写入角色、场景与道具等逻辑规格，没有生成图片或视频。'
             : stage === 'storyboard'
@@ -702,7 +702,7 @@ function applyContinuationCopy(
       stage === 'script'
         ? '正式劇本已儲存到 Script。本次套用沒有生成情節樹、資產規格、分鏡、圖片或影片。'
         : stage === 'plot'
-          ? '情節樹已儲存。已批准的資產規格保持不變；本次套用沒有生成分鏡、圖片或影片。'
+          ? '情節樹已儲存。資產規格現需基於這份情節樹單獨準備和審核；本次套用沒有生成圖片或影片。'
           : stage === 'assets'
             ? '資產規格已儲存。本階段只寫入角色、場景與道具等邏輯規格，沒有生成圖片或影片。'
             : stage === 'storyboard'
@@ -716,9 +716,9 @@ function applyContinuationCopy(
   }
   const completed =
     stage === 'script'
-      ? 'The official screenplay was saved to Script. This apply did not create Asset Specs, a Plot Tree, Storyboard, images, or videos.'
+      ? 'The official screenplay was saved to Script. This apply did not create a Plot Tree, Asset Specs, Storyboard, images, or videos.'
       : stage === 'plot'
-        ? 'The Plot Tree was saved. Approved Asset Specs remain unchanged; this apply did not create a Storyboard, images, or videos.'
+        ? 'The Plot Tree was saved. Asset Specs must now be prepared and reviewed from this Plot separately; this apply generated no images or videos.'
         : stage === 'assets'
           ? 'The Asset Specs were saved. This stage writes only logical character, location, and prop specifications; it generated no images or videos.'
           : stage === 'storyboard'
@@ -807,7 +807,7 @@ function noopContinuationResult(locale: string | null): ContinuationResult {
   }
   return {
     outcome: 'completed',
-    text: 'Script, Asset Specs, Plot Tree, and Storyboard Specs are already current. This run wrote nothing and generated no images or videos.',
+    text: 'Script, Plot Tree, Asset Specs, and Storyboard Specs are already current. This run wrote nothing and generated no images or videos.',
   };
 }
 

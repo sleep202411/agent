@@ -409,7 +409,6 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     await expect(
       service.publishBuild(
         { userId: 'user-1' } as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         BUILD_ID,
         { status: 'draft', setCurrent: false },
@@ -494,7 +493,6 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     await expect(
       service.publishBuild(
         { userId: 'user-1' } as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         BUILD_ID,
         { status: 'published', setCurrent: true },
@@ -774,7 +772,6 @@ describe('StoryExperienceReleaseService publication lifecycle', () => {
     await expect(
       service.publishBuild(
         { userId: 'user-1' } as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         NEW_BUILD_ID,
         { status: 'published', setCurrent: true },
@@ -1281,11 +1278,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     });
 
     await expect(
-      service.getCurrentRelease(
-        { userId: 'user-1' } as never,
-        WORKSPACE_ID,
-        PROJECT_ID,
-      ),
+      service.getCurrentRelease({ userId: 'user-1' } as never, PROJECT_ID),
     ).resolves.toMatchObject({
       published: true,
       currentBuild: { id: BUILD_ID },
@@ -1315,7 +1308,6 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
 
     const current = await service.getCurrentRelease(
       { userId: 'user-1' } as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
     expect(current.currentBuild).toEqual({
@@ -1361,7 +1353,6 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
 
     const current = await service.getCurrentRelease(
       { userId: 'user-1' } as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
     expect(current.currentBuild?.id).toBe(OLD_BUILD_ID);
@@ -1393,7 +1384,6 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     });
     const current = await service.getCurrentRelease(
       { userId: 'user-1' } as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
     const currentSavedDraftRevision = 12;
@@ -1409,11 +1399,7 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const gateway = { getGame: jest.fn() };
     const service = serviceWith({ prisma, gateway });
     await expect(
-      service.getCurrentRelease(
-        { userId: 'user-1' } as never,
-        WORKSPACE_ID,
-        PROJECT_ID,
-      ),
+      service.getCurrentRelease({ userId: 'user-1' } as never, PROJECT_ID),
     ).resolves.toEqual({
       projectId: PROJECT_ID,
       gameId: PROJECT_ID,
@@ -1437,7 +1423,6 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
 
     const current = await service.getCurrentRelease(
       { userId: 'user-1' } as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
 
@@ -1459,7 +1444,6 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     const service = serviceWith({ prisma, gateway });
     const current = await service.getCurrentRelease(
       { userId: 'user-1' } as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
     expect(current).toMatchObject({ published: false, currentBuild: null });
@@ -1493,7 +1477,6 @@ describe('StoryExperienceReleaseService authority reconciliation', () => {
     });
     const current = await service.getCurrentRelease(
       { userId: 'user-1' } as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
     expect(current).toMatchObject({
@@ -1918,7 +1901,6 @@ function serviceWith(input: {
 function publish(service: StoryExperienceReleaseService) {
   return service.publishBuild(
     { userId: 'user-1' } as never,
-    WORKSPACE_ID,
     PROJECT_ID,
     BUILD_ID,
     { status: 'published', setCurrent: true },
@@ -1929,7 +1911,6 @@ function publish(service: StoryExperienceReleaseService) {
 function publishDraft(service: StoryExperienceReleaseService) {
   return service.publishBuild(
     { userId: 'user-1' } as never,
-    WORKSPACE_ID,
     PROJECT_ID,
     BUILD_ID,
     { status: 'draft', setCurrent: false },

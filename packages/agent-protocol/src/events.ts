@@ -211,7 +211,7 @@ export const StoryStageProposalArtifactReferenceSchema = z
     storyProjectId: AgentOsIdSchema,
     storyChapterId: AgentOsIdSchema,
     workspaceId: AgentOsIdSchema,
-    stage: z.enum(["script", "assets", "plot", "storyboard", "noop", "patch"]),
+    stage: z.enum(["script", "plot", "assets", "storyboard", "noop", "patch"]),
     schemaVersion: z.string().trim().min(1).max(128),
   })
   .strict();
@@ -219,13 +219,36 @@ export type StoryStageProposalArtifactReference = z.infer<
   typeof StoryStageProposalArtifactReferenceSchema
 >;
 
+/**
+ * A creator-confirmed Story media batch. The journal owns only this immutable
+ * correlation; queue state and generated media remain authoritative in the
+ * Story generation domain and can therefore keep changing after the Agent run
+ * itself has completed.
+ */
+export const StoryGenerationBatchArtifactReferenceSchema = z
+  .object({
+    kind: z.literal("story_generation_batch"),
+    generationBatchId: AgentOsIdSchema,
+    storyProjectId: AgentOsIdSchema,
+    storyChapterId: AgentOsIdSchema,
+    /** Replay compatibility for journals written before Project Scope. */
+    workspaceId: AgentOsIdSchema.optional(),
+    schemaVersion: z.literal("story-generation-batch-artifact/v1"),
+  })
+  .strict();
+export type StoryGenerationBatchArtifactReference = z.infer<
+  typeof StoryGenerationBatchArtifactReferenceSchema
+>;
+
 export const AgentArtifactReferenceSchema = z.discriminatedUnion("kind", [
   StoryStageProposalArtifactReferenceSchema,
+  StoryGenerationBatchArtifactReferenceSchema,
 ]);
 export type AgentArtifactReference = z.infer<typeof AgentArtifactReferenceSchema>;
 
 export const AgentArtifactStatusSchema = z.enum([
   "proposed",
+  "active",
   "applying",
   "applied",
   "rejected",
@@ -239,7 +262,7 @@ export const ArtifactCreatedDataSchema = z
     turnId: AgentTurnIdSchema,
     artifactId: AgentOsIdSchema,
     artifact: AgentArtifactReferenceSchema,
-    status: z.literal("proposed"),
+    status: z.enum(["proposed", "active"]),
   })
   .strict();
 export type ArtifactCreatedData = z.infer<typeof ArtifactCreatedDataSchema>;
@@ -248,7 +271,7 @@ export const ArtifactUpdatedDataSchema = z
   .object({
     turnId: AgentTurnIdSchema,
     artifactId: AgentOsIdSchema,
-    status: AgentArtifactStatusSchema.exclude(["proposed"]),
+    status: AgentArtifactStatusSchema.exclude(["proposed", "active"]),
   })
   .strict();
 export type ArtifactUpdatedData = z.infer<typeof ArtifactUpdatedDataSchema>;

@@ -182,7 +182,7 @@ two-phase continuation:
    mistaken for successful project application.
 
 Story production uses four independently reviewable stages: Script, logical
-Asset Specs, Plot, and Storyboard Specs. One explicit `story.author` handoff
+Plot, Asset Specs, and Storyboard Specs. One explicit `story.author` handoff
 selects only the earliest missing or stale stage, creates one Story run, and
 opens one approval boundary. Approval commits only that stage and terminalizes
 that stage-specific Story run; it never silently approves or applies the
@@ -198,9 +198,9 @@ creator-visible rich-text document and the exact collaborative Script head it
 was authored against. Studio reviews that document without re-projecting
 screenplay semantics into dashboard cards. Apply writes those exact document
 blocks to the chapter's Yjs Script operation and immutable AI document version,
-and nothing downstream. Asset Specs pin the exact current Script head. Plot
-then pins that same Script interpretation plus the approved Asset snapshot;
-Storyboard pins the approved Plot and Asset sources. Their apply transactions
+and nothing downstream. Plot pins the exact current Script interpretation and
+binds it to the reviewed chapter graph. Asset Specs then pin that approved Plot
+snapshot; Storyboard pins the approved Plot and Asset sources. Their apply transactions
 write only the proposed artifact. Plot approval—not Script
 approval—binds the chapter's source Script document, version, sequence, and hash
 to the reviewed graph, so a pre-existing matching graph cannot bypass the Plot
@@ -209,10 +209,10 @@ Script is read from its exact current CRDT head without rewriting its operation,
 sequence, or hash. Project Overview remains project-scoped; production stages
 and Agent workbench context always carry one explicit chapter id.
 
-Downstream stage plans are immutable chapter-scoped snapshots. An Asset plan
-does not contain or precompute Plot or Storyboard work; Plot consumes the exact
-approved Asset Spec set, and a Storyboard plan binds both the current Plot and
-approved Assets. Reconciliation may attach the corresponding
+Downstream stage plans are immutable chapter-scoped snapshots. A Plot proposal
+does not consume or precompute Asset or Storyboard work. An Asset plan derives
+from the exact approved Plot without containing Storyboard work, and a
+Storyboard plan binds both the current Plot and approved Assets. Reconciliation may attach the corresponding
 stage snapshot to a creator-edited Asset Spec or Storyboard sequence as a
 pending conflict, but cannot overwrite it. Conflict resolution is an
 idempotent, version-checked command that either rebases the current override or

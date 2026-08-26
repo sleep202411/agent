@@ -250,7 +250,6 @@ describePostgres(
 
       const sequenceResponse = await service.resolveStoryboardSequenceConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         sequence.id,
@@ -264,7 +263,6 @@ describePostgres(
       );
       const replay = await service.resolveStoryboardSequenceConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         sequence.id,
@@ -279,7 +277,6 @@ describePostgres(
       expect(replay).toEqual(sequenceResponse);
       await service.resolveAssetSpecConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         asset.id,
@@ -367,7 +364,6 @@ describePostgres(
       ]);
       await service.resolveAssetSpecConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         asset.id,
@@ -381,7 +377,6 @@ describePostgres(
       );
       await service.resolveStoryboardSequenceConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         sequence.id,

@@ -127,10 +127,11 @@ const AgentOsContinuationCommandBaseSchema = z.object({
 });
 
 /**
- * One checkpoint-resume command admitted by an append-only HITL resolution or
- * an authoritative external-job result. It is deliberately distinct from
- * initial start: both use leased dispatch, but only a continuation may resume
- * an existing interrupt checkpoint.
+ * One durable continuation command admitted by an append-only HITL resolution
+ * or an authoritative external-job result. It is deliberately distinct from
+ * initial start: both use leased dispatch. Approval/input commands resume an
+ * interrupt; an external result either resumes pending graph work or starts a
+ * new deterministic Story stage cycle from its persisted continuation plan.
  */
 export const AgentOsContinuationCommandSchema = z.discriminatedUnion('kind', [
   AgentOsContinuationCommandBaseSchema.extend({

@@ -52,7 +52,7 @@ follow-up.
     the originating Agent run active behind a durable approval. Apply / Discard
     is an idempotent user turn; applying re-enters correlated external work and
     only the Story result transaction may terminalize the run.
-15. **One Story run writes one production stage.** Script, Asset Specs, Plot,
+15. **One Story run writes one production stage.** Script, Plot, Asset Specs,
     and Storyboard Specs use separate explicit runs and separate approvals.
     Approving one stage cannot re-arm the run, precompute a later proposal, or
     authorize a later artifact write.
@@ -89,7 +89,11 @@ follow-up.
     `(turnId, externalJobId)` correlation has a terminal `RunResumed`, neither
     checkpoint replay nor a stale row projection may move it back to
     `waiting_for_external`; the journal fold repairs such historical rows
-    before the durable dispatcher grants a new epoch.
+    before the durable dispatcher grants a new epoch. Null checkpoint resume
+    is reserved for pending graph work; when a completed Story stage has no
+    pending node and its persisted `continueThrough` scope remains unfinished,
+    the external result starts one new deterministic stage cycle with a stable
+    checkpoint trigger.
 22. **Realtime is byte-bounded and gap-aware.** Each Ably message and batch is
     measured as UTF-8 with provider headroom. Oversized durable events and
     snapshots publish stable journal-resync pointers instead of blocking the
@@ -104,7 +108,7 @@ follow-up.
     Apply commits only the Script operation and AI version, then terminalizes
     that run. Plot approval separately binds that Script version to the reviewed
     graph; Script approval can never certify a pre-existing Plot by coincidence.
-    Later explicit runs propose Asset Specs, Plot, and Storyboard in order, each
+    Later explicit runs propose Plot, Asset Specs, and Storyboard in order, each
     pinned to exact upstream fingerprints and each writing only its own artifact.
     A changed head fails stale; a manually edited Script may be read to propose
     downstream structure but must never be rewritten as a side effect.
@@ -148,9 +152,9 @@ follow-up.
 - [ ] Story Draft Apply / Discard appends exactly one durable user turn; proposal-ready never terminalizes the run
 - [ ] Story proposal rich content remains in its original Assistant turn after Apply, Discard, reload, and cross-device replay; only the approval buttons disappear
 - [ ] Story Apply crash/retry produces one project mutation and one final Agent result on the decision turn
-- [ ] Script approval writes no Asset Spec, Plot, or Storyboard row; its stage-specific Story run terminalizes while the owning Agent run resumes once, reads canonical state, and follows its persisted `continueThrough` boundary
+- [ ] Script approval writes no Plot, Asset Spec, or Storyboard row; its stage-specific Story run terminalizes while the owning Agent run resumes once, reads canonical state, and follows its persisted `continueThrough` boundary
 - [ ] Script approval cannot mark an already-matching Plot current; Plot still requires its own approval
-- [ ] Asset Specs, Plot, and Storyboard each use a new auditable run and one independent approval; the workflow prepares the next proposal automatically only while the persisted creator-authorized boundary requires it
+- [ ] Plot, Asset Specs, and Storyboard each use a new auditable run and one independent approval; the workflow crosses terminal graph boundaries and prepares the next proposal automatically only while the persisted creator-authorized boundary requires it
 - [ ] Asset approval writes no Storyboard row; Storyboard planning validates the current approved Asset Spec set
 - [ ] An approved empty Asset plan is durably current and lets the Agent select Storyboard on the next automatic or explicit `story.author` call
 - [ ] A stale parent Asset/Storyboard stage blocks paid generation and late media attachment for every child target

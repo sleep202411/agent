@@ -2,23 +2,16 @@ import type { MediaStorageProvider } from '@prisma/client';
 import type {
   AiAvailability,
   AiCapabilityMatrix,
-  AiConditionExpression,
   AiCostEstimate,
   AiDocumentationLink,
-  AiFieldConstraint,
-  AiFieldUi,
-  AiInputControl,
   AiJsonSchema,
   AiGenerationMode,
   AiModelFamily,
   AiModelDefinition as SharedAiModelDefinition,
   AiObservabilityContract,
   AiObjectSchema,
-  AiOutputUi,
   AiPreflightEstimator,
   AiProviderBinding,
-  AiSchemaRule,
-  AiUiSchema,
 } from '@repo/shared';
 import type { EntitlementPlanKey, EntitlementSnapshot } from '../entitlements';
 import type {
@@ -58,6 +51,7 @@ export type {
 } from '@repo/shared';
 
 export type AiJobType = 'image' | 'video' | 'audio';
+export type AiBillingSubjectType = 'user' | 'workspace';
 
 /** Runtime capability bucket used by catalog adapters (incl. unsupported). */
 export type AiRuntimeModelCapability =
@@ -390,6 +384,9 @@ export interface AiJob {
   workspaceId?: string | null;
   projectId?: string | null;
   storyProjectId?: string | null;
+  /** Immutable payer snapshot; legacy jobs may omit both fields. */
+  billingSubjectType?: AiBillingSubjectType | null;
+  billingSubjectId?: string | null;
   documentId?: string | null;
   documentBlockId?: string | null;
   sourceSurface?: string | null;

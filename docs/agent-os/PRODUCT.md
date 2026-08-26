@@ -157,7 +157,7 @@ Story transaction has committed the proposal.
 
 ### Story creation stage contract
 
-The production order is **Script → Asset Specs → Plot → Storyboard Specs**.
+The production order is **Script → Plot → Asset Specs → Storyboard Specs**.
 Each `story.author` call advances at most one stage. Agent OS reads the canonical
 production state, skips stages that are already current, and creates one
 independently reviewable proposal for the earliest missing or stale stage.
@@ -196,13 +196,13 @@ Script Apply is one durable stage transaction:
    checkpoint so the deterministic stage workflow can compare canonical state
    with the saved `continueThrough` boundary.
 
-Asset Specs, Plot, and Storyboard each use the same proposal-ready → approval →
-stage-apply lifecycle in a separately audited Story run. Asset Apply writes only
-referenceable logical specifications derived from the exact approved Script
-(possibly an intentionally empty set) and generates no media. Plot Apply writes
-only the canonical branching topology and pins the approved Asset snapshot it
-consumed. Storyboard Apply writes only sequences, clips, cues, bindings, and
-prompts against that approved Plot and Asset set. The pages remain directly
+Plot, Asset Specs, and Storyboard each use the same proposal-ready → approval →
+stage-apply lifecycle in a separately audited Story run. Plot Apply writes only
+the canonical branching topology compiled from the exact approved Script. Asset
+Apply writes only referenceable logical specifications derived from that Plot
+and its Script interpretation (possibly an intentionally empty set) and
+generates no media. Storyboard Apply writes only sequences, clips, cues,
+bindings, and prompts against that approved Plot and Asset set. The pages remain directly
 navigable; an unavailable stage explains its prerequisite instead of faking
 content or triggering work on load.
 
@@ -232,7 +232,7 @@ generation prompts and can be referenced from a Storyboard clip. Bindings store
 that identity rather than a media URL; follow-selected bindings resolve the
 currently selected generated media when it later exists.
 
-When a later Script-derived plan meets creator-edited Asset or Storyboard
+When a later upstream-derived plan meets creator-edited Asset or Storyboard
 specifications, reconciliation stores the exact pending plan without
 overwriting the edit. The creator resolves the conflict explicitly: keep the
 current specification and rebase it onto the new source, or apply the exact

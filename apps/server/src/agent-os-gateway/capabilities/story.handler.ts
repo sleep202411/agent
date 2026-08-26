@@ -23,6 +23,9 @@ import {
   StoryRemoveSubtreeInputSchema,
   StoryReorderInputSchema,
   StorySetEntryInputSchema,
+  StoryQuoteAssetGenerationBatchInputSchema,
+  StoryConfirmGenerationBatchInputSchema,
+  StoryGetGenerationBatchInputSchema,
   StoryUpdateBibleInputSchema,
 } from '@repo/agent-tools';
 import {
@@ -54,6 +57,7 @@ import {
 } from '../../story-studio/story-agent-patch.executor';
 import { StoryAgentRunService } from '../../story-studio/story-agent-run.service';
 import { StoryProductionPlanService } from '../../story-studio/story-production-plan.service';
+import { StoryGenerationBatchService } from '../../story-studio/story-generation-batch.service';
 import { StoryProjectWriteGuardService } from '../../story-studio/story-project-write-guard.service';
 import { reconcileStoryTimelinesWithDraft } from '../../story-studio/story-timeline-reconcile';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
@@ -77,6 +81,10 @@ const STORY_TOOL_IDS = new Set([
   'story.reorder',
   'story.applyPatch',
   'story.author',
+  'story.generation.quoteAssets',
+  'story.generation.confirmBatch',
+  'story.generation.getBatch',
+  'story.generation.cancelBatch',
 ]);
 
 type StoryNode = InteractiveStoryDraftContent['graph']['nodes'][number];
@@ -98,6 +106,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     private readonly agentRuns: StoryAgentRunService,
     private readonly receipts: AgentOsToolExecutionReceiptService,
     private readonly production: StoryProductionPlanService,
+    private readonly generationBatches: StoryGenerationBatchService,
   ) {}
 
   supports(toolId: string): boolean {
@@ -303,6 +312,107 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           },
         };
       }
+      case 'story.generation.quoteAssets': {
+        const args = StoryQuoteAssetGenerationBatchInputSchema.parse(
+          input.arguments,
+        );
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        const assets = await this.prisma.storyAssetSpec.findMany({
+          where: {
+            storyProjectId: input.projectId,
+            storyChapterId: chapterId,
+            status: 'current',
+            ...(args.assetIds ? { id: { in: args.assetIds } } : {}),
+            ...(args.assetKinds ? { kind: { in: args.assetKinds } } : {}),
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true, version: true },
+        });
+        if (assets.length === 0) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_NO_CURRENT_ASSETS',
+            message: 'No current Asset Specs are available to generate.',
+          });
+        }
+        if (args.assetIds && assets.length !== new Set(args.assetIds).size) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_ASSET_NOT_CURRENT',
+            message:
+              'One or more requested Asset Specs are missing or stale. Read the project again before quoting.',
+          });
+        }
+        return this.generationBatches.quoteAssets(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          input.idempotencyKey,
+          {
+            targets: assets.map((asset) => ({
+              id: asset.id,
+              expectedVersion: asset.version,
+            })),
+            outputKind: args.outputKind,
+            ...(args.modelId && args.schemaVersion
+              ? {
+                  modelId: args.modelId,
+                  schemaVersion: args.schemaVersion,
+                }
+              : {}),
+            options: args.options,
+          },
+        );
+      }
+      case 'story.generation.confirmBatch': {
+        const args = StoryConfirmGenerationBatchInputSchema.parse(
+          input.arguments,
+        );
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        const quote = await this.generationBatches.get(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+        );
+        if (
+          quote.itemCount !== args.expectedItemCount ||
+          quote.totalPoints !== args.expectedTotalPoints
+        ) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_APPROVAL_MISMATCH',
+            message:
+              'The generation quote no longer matches the approval summary. Read the batch again before confirming it.',
+            actualItemCount: quote.itemCount,
+            actualTotalPoints: quote.totalPoints,
+          });
+        }
+        return this.generationBatches.confirm(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+          { expectedVersion: args.expectedVersion },
+        );
+      }
+      case 'story.generation.getBatch': {
+        const args = StoryGetGenerationBatchInputSchema.parse(input.arguments);
+        await this.projects.requireRead(input.actorId, input.projectId);
+        return this.generationBatches.get(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+        );
+      }
+      case 'story.generation.cancelBatch': {
+        const args = StoryGetGenerationBatchInputSchema.parse(input.arguments);
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        return this.generationBatches.cancel(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+        );
+      }
       default:
         throw new Error(`Story handler does not implement ${input.toolId}`);
     }
@@ -324,7 +434,6 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       ),
       this.production.getProductionState(
         { userId: actorId },
-        context.workspaceId,
         projectId,
         chapterId,
       ),

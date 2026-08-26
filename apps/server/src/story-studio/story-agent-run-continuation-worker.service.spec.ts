@@ -479,7 +479,7 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         toolId: 'story.author',
         phase: 'authoring',
         outcome: 'completed',
-        text: 'Script, Asset Specs, Plot Tree, and Storyboard Specs are already current. This run wrote nothing and generated no images or videos.',
+        text: 'Script, Plot Tree, Asset Specs, and Storyboard Specs are already current. This run wrote nothing and generated no images or videos.',
       }),
     );
   });

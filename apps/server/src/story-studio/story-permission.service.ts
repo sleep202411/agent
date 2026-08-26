@@ -7,14 +7,10 @@ import {
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
-  WorkspaceMemberRole,
-  WorkspaceMemberStatus,
-  WorkspaceStatus,
   type Prisma,
   type StoryProject,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
-import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
 export type StoryCapability =
@@ -69,7 +65,6 @@ const WRITE_CAPABILITIES = new Set<StoryCapability>([
 export class StoryPermissionService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly workspacePermissions: WorkspacePermissionService,
     private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
@@ -125,12 +120,6 @@ export class StoryPermissionService {
       });
     }
 
-    // Story membership never grants access outside the owning tenant.
-    await this.workspacePermissions.requireWorkspacePresence(
-      userId,
-      project.workspaceId,
-    );
-
     const role = members[0].role;
     const capabilities = this.capabilities(role);
     if (!capabilities.includes(capability)) {
@@ -178,13 +167,6 @@ export class StoryPermissionService {
       SELECT
         story_member."role" AS "storyProjectMemberRole"
       FROM "story_projects" AS project
-      INNER JOIN "workspaces" AS workspace
-        ON workspace."id" = project."workspace_id"
-      INNER JOIN "workspace_members" AS workspace_member
-        ON workspace_member."workspace_id" = workspace."id"
-        AND workspace_member."user_id" = ${userId}
-        AND workspace_member."status" = ${WorkspaceMemberStatus.active}::"WorkspaceMemberStatus"
-        AND workspace_member."removed_at" IS NULL
       INNER JOIN "story_project_members" AS story_member
         ON story_member."story_project_id" = project."id"
         AND story_member."user_id" = ${userId}
@@ -192,9 +174,7 @@ export class StoryPermissionService {
         AND story_member."removed_at" IS NULL
       WHERE project."id" = ${storyProjectId}::uuid
         AND project."status" = ${StoryProjectStatus.active}::"StoryProjectStatus"
-        AND workspace."status" = ${WorkspaceStatus.active}::"WorkspaceStatus"
-        AND workspace."deleted_at" IS NULL
-      FOR UPDATE OF project, workspace, workspace_member, story_member
+      FOR UPDATE OF project, story_member
     `;
     if (authorization.length !== 1) {
       throw new NotFoundException({

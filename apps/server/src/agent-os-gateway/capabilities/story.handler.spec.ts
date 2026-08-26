@@ -87,6 +87,7 @@ describe('StoryAgentCapabilityHandler', () => {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 
   it('claims only the new Story capability family', () => {
@@ -95,8 +96,138 @@ describe('StoryAgentCapabilityHandler', () => {
     expect(handler.supports('story.addBranch')).toBe(true);
     expect(handler.supports('story.putInteraction')).toBe(true);
     expect(handler.supports('story.removeInteraction')).toBe(true);
+    expect(handler.supports('story.generation.quoteAssets')).toBe(true);
+    expect(handler.supports('story.generation.confirmBatch')).toBe(true);
     expect(handler.supports('characters.upsert')).toBe(false);
     expect(handler.supports('canvas.applyPatch')).toBe(false);
+  });
+
+  it('rejects paid batch confirmation when the approved count or points no longer match', async () => {
+    const requireWrite = jest.fn().mockResolvedValue({
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+    });
+    const confirm = jest.fn();
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {} as never,
+      { requireWrite } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        get: jest.fn().mockResolvedValue({ itemCount: 3, totalPoints: 180 }),
+        confirm,
+      } as never,
+    );
+
+    await expect(
+      scoped.execute({
+        toolId: 'story.generation.confirmBatch',
+        runId: '22222222-2222-4222-8222-222222222222',
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        turnId: '44444444-4444-4444-8444-444444444444',
+        toolCallId: 'confirm-generation-batch-1',
+        actorId: 'creator-1',
+        projectId: '55555555-5555-4555-8555-555555555555',
+        skillResolutionId: '66666666-6666-4666-8666-666666666666',
+        skillVersionIds: [],
+        workbenchContext: {
+          chapterId: '77777777-7777-4777-8777-777777777777',
+        },
+        idempotencyKey: 'confirm-generation-batch-key-1',
+        arguments: {
+          batchId: '88888888-8888-4888-8888-888888888888',
+          expectedVersion: 0,
+          expectedItemCount: 3,
+          expectedTotalPoints: 120,
+        },
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'STORY_GENERATION_BATCH_APPROVAL_MISMATCH',
+        actualItemCount: 3,
+        actualTotalPoints: 180,
+      },
+    });
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('quotes only the requested asset kind without forwarding absent model fields', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { id: '11111111-1111-4111-8111-111111111111', version: 2 },
+      { id: '22222222-2222-4222-8222-222222222222', version: 4 },
+    ]);
+    const quoteAssets = jest.fn().mockResolvedValue({
+      id: '33333333-3333-4333-8333-333333333333',
+    });
+    const scoped = new StoryAgentCapabilityHandler(
+      { storyAssetSpec: { findMany } } as never,
+      {} as never,
+      {
+        requireWrite: jest.fn().mockResolvedValue({
+          workspaceId: '44444444-4444-4444-8444-444444444444',
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { quoteAssets } as never,
+    );
+
+    await expect(
+      scoped.execute({
+        toolId: 'story.generation.quoteAssets',
+        runId: '55555555-5555-4555-8555-555555555555',
+        conversationId: '66666666-6666-4666-8666-666666666666',
+        turnId: '77777777-7777-4777-8777-777777777777',
+        toolCallId: 'quote-character-assets-1',
+        actorId: 'creator-1',
+        projectId: '88888888-8888-4888-8888-888888888888',
+        skillResolutionId: '99999999-9999-4999-8999-999999999999',
+        skillVersionIds: [],
+        workbenchContext: {
+          chapterId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        },
+        idempotencyKey: 'quote-character-assets-key-1',
+        arguments: {
+          assetKinds: ['character'],
+          outputKind: 'image',
+        },
+      }),
+    ).resolves.toEqual({ id: '33333333-3333-4333-8333-333333333333' });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        storyProjectId: '88888888-8888-4888-8888-888888888888',
+        storyChapterId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        status: 'current',
+        kind: { in: ['character'] },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, version: true },
+    });
+    expect(quoteAssets).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '88888888-8888-4888-8888-888888888888',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'quote-character-assets-key-1',
+      {
+        targets: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            expectedVersion: 2,
+          },
+          {
+            id: '22222222-2222-4222-8222-222222222222',
+            expectedVersion: 4,
+          },
+        ],
+        outputKind: 'image',
+        options: {},
+      },
+    );
   });
 
   it('returns the stable external-job handoff when an idempotent retry already reached proposed', async () => {
@@ -114,6 +245,7 @@ describe('StoryAgentCapabilityHandler', () => {
       {} as never,
       { createAuthoringRun } as never,
       { fenceBusinessMutationInTx: jest.fn() } as never,
+      {} as never,
       {} as never,
     );
     const input = {
@@ -253,6 +385,7 @@ describe('StoryAgentCapabilityHandler', () => {
         fenceBusinessMutationInTx: jest.fn().mockResolvedValue(undefined),
         completeSuccessInTx: jest.fn().mockResolvedValue(undefined),
       } as never,
+      {} as never,
       {} as never,
     );
 

@@ -199,7 +199,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
       mode: 'downstream_reconcile' as const,
       targetStage: 'plot' as const,
       screenplaySnapshot: APPROVED_SCREENPLAY,
-      assetPlan: AUTHORED_ASSET_PLAN,
+      assetPlan: null,
     };
     runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
 
@@ -215,12 +215,11 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     expect(runs.completeStageAuthoring).toHaveBeenCalledWith(RUN_ID, workerId, {
       targetStage: 'plot',
       screenplay: APPROVED_SCREENPLAY.screenplay,
-      assetPlan: AUTHORED_ASSET_PLAN,
       authoredAgainst: JOB.snapshot,
     });
   });
 
-  it('compiles an exact existing Script before planning its Asset Specs', async () => {
+  it('compiles an exact existing Script into the next Plot proposal', async () => {
     const { runs, pipeline, worker } = harness();
     const scriptSource = {
       documentId: '0197f4a2-0800-7000-8000-000000000051',
@@ -232,7 +231,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     const job = {
       ...JOB,
       mode: 'downstream_reconcile' as const,
-      targetStage: 'assets' as const,
+      targetStage: 'plot' as const,
       screenplaySnapshot: null,
       scriptSource,
       snapshot: {
@@ -248,12 +247,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     await worker.authoringIdle();
 
     expect(pipeline.author).not.toHaveBeenCalled();
-    expect(pipeline.planAssets).toHaveBeenCalledWith({
-      screenplay: AUTHORED_SCREENPLAY,
-      creativeProfile: JOB.creativeProfile,
-      signal: expect.any(AbortSignal),
-      onStage: expect.any(Function),
-    });
+    expect(pipeline.planAssets).not.toHaveBeenCalled();
     expect(pipeline.compileScript).toHaveBeenCalledWith({
       sourceText: scriptSource.sourceText,
       title: JOB.brief.title,
@@ -265,9 +259,8 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
       RUN_ID,
       claimedWorkerId(runs),
       {
-        targetStage: 'assets',
+        targetStage: 'plot',
         screenplay: AUTHORED_SCREENPLAY,
-        assetPlan: AUTHORED_ASSET_PLAN,
         authoredAgainst: job.snapshot,
       },
     );
