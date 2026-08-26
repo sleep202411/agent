@@ -811,6 +811,244 @@ describe("LangGraph initial-start recovery", () => {
     });
     expect(graph.invoke).not.toHaveBeenCalled();
   });
+
+  it("continues from a resolved external result and can pause on the next stage handoff", async () => {
+    const resolvedJobId = "88888888-8888-4888-8888-888888888888";
+    const nextJobId = "99999999-9999-4999-8999-999999999999";
+    const journal = new EventJournal();
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "ToolCompleted",
+      data: {
+        turnId: TURN_ID,
+        toolCallId: "story-apply-call-1",
+        toolId: "story.applyProposal",
+        result: { status: "applying" },
+        agentHandoff: {
+          kind: "external_job",
+          jobId: resolvedJobId,
+          startedMessage: "Applying the approved Script.",
+        },
+      },
+    });
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "RunResumed",
+      data: {
+        turnId: TURN_ID,
+        reason: "external_job_completed",
+        externalJobId: resolvedJobId,
+      },
+    });
+
+    let phase: "pending" | "next-tool" = "pending";
+    let runtimeOnToolEvent:
+      | ((event: {
+          type: "ToolCompleted";
+          toolId: string;
+          toolCallId: string;
+          data: Record<string, unknown>;
+        }) => Promise<void>)
+      | undefined;
+    const graph = {
+      getState: vi.fn(async () => ({
+        ...emptyState(),
+        tasks: phase === "pending" ? [{}] : [],
+        values: {
+          messages:
+            phase === "next-tool"
+              ? [
+                  {
+                    tool_call_id: "story-author-call-next",
+                    content: JSON.stringify({ ok: true }),
+                  },
+                ]
+              : [],
+        },
+        config: {
+          configurable: {
+            thread_id: CONVERSATION_ID,
+            checkpoint_ns: "",
+            checkpoint_id:
+              phase === "pending" ? "checkpoint-pending-agent" : "checkpoint-next-tool",
+          },
+        },
+      })),
+      streamEvents: vi.fn(async (payload: unknown) => ({
+        async *[Symbol.asyncIterator]() {
+          expect(payload).toBeNull();
+          if (!runtimeOnToolEvent) throw new Error("tool event callback missing");
+          await runtimeOnToolEvent({
+            type: "ToolCompleted",
+            toolId: "story.author",
+            toolCallId: "story-author-call-next",
+            data: {
+              result: { runId: nextJobId },
+              agentHandoff: {
+                kind: "external_job",
+                jobId: nextJobId,
+                startedMessage: "Preparing the next reviewable proposal.",
+              },
+            },
+          });
+          phase = "next-tool";
+          yield { event: "on_tool_end", data: {} };
+        },
+      })),
+      invoke: vi.fn(),
+    };
+    const graphFactory = vi.fn(
+      (options: { runtime: { onToolEvent?: typeof runtimeOnToolEvent } }) => {
+        runtimeOnToolEvent = options.runtime.onToolEvent;
+        return graph;
+      }
+    );
+    const service = new LangGraphRunService(graphFactory as never);
+    const snapshot = baseSnapshot(journal);
+    serviceInternals(service).snapshots.set(RUN_ID, snapshot);
+
+    await serviceInternals(service).runGraphTurn({
+      input: startInput(),
+      journal,
+      turnId: TURN_ID,
+      resume: null,
+      signal: new AbortController().signal,
+      continueFromCheckpoint: true,
+    });
+
+    expect(service.getSnapshot(RUN_ID)).toMatchObject({
+      status: "waiting_for_external",
+      pendingExternal: {
+        jobId: nextJobId,
+        toolCallId: "story-author-call-next",
+      },
+    });
+    expect(graph.streamEvents).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ version: "v2" })
+    );
+  });
+
+  it("never projects a resolved external handoff back to waiting during checkpoint replay", async () => {
+    const resolvedJobId = "88888888-8888-4888-8888-888888888888";
+    const toolCallId = "story-author-call-resolved";
+    const journal = new EventJournal();
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "ToolCompleted",
+      data: {
+        turnId: TURN_ID,
+        toolCallId,
+        toolId: "story.author",
+        result: { runId: resolvedJobId },
+        agentHandoff: {
+          kind: "external_job",
+          jobId: resolvedJobId,
+          startedMessage: "Preparing a reviewable proposal.",
+        },
+      },
+    });
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "RunResumed",
+      data: {
+        turnId: TURN_ID,
+        reason: "external_job_completed",
+        externalJobId: resolvedJobId,
+      },
+    });
+
+    let phase: "pending" | "complete" = "pending";
+    let runtimeOnToolEvent:
+      | ((event: {
+          type: "ToolCompleted";
+          toolId: string;
+          toolCallId: string;
+          data: Record<string, unknown>;
+        }) => Promise<void>)
+      | undefined;
+    const state = () => ({
+      ...emptyState(),
+      tasks: phase === "pending" ? [{}] : [],
+      values: {
+        messages: [
+          {
+            tool_call_id: toolCallId,
+            content: JSON.stringify({ runId: resolvedJobId }),
+          },
+          ...(phase === "complete"
+            ? [{ type: "ai", content: "The saved production scope is complete." }]
+            : []),
+        ],
+      },
+    });
+    const graph = {
+      getState: vi.fn(async () => state()),
+      streamEvents: vi.fn(async (payload: unknown) => ({
+        async *[Symbol.asyncIterator]() {
+          expect(payload).toBeNull();
+          if (!runtimeOnToolEvent) throw new Error("tool event callback missing");
+          // LangGraph can replay this lifecycle callback from the checkpointed
+          // tool suffix. The durable RunResumed above makes it terminal.
+          await runtimeOnToolEvent({
+            type: "ToolCompleted",
+            toolId: "story.author",
+            toolCallId,
+            data: {
+              result: { runId: resolvedJobId },
+              agentHandoff: {
+                kind: "external_job",
+                jobId: resolvedJobId,
+                startedMessage: "Preparing a reviewable proposal.",
+              },
+            },
+          });
+          phase = "complete";
+          yield { event: "on_tool_end", data: {} };
+        },
+      })),
+      invoke: vi.fn(),
+    };
+    const graphFactory = vi.fn(
+      (options: { runtime: { onToolEvent?: typeof runtimeOnToolEvent } }) => {
+        runtimeOnToolEvent = options.runtime.onToolEvent;
+        return graph;
+      }
+    );
+    const service = new LangGraphRunService(graphFactory as never);
+    const snapshot = baseSnapshot(journal);
+    serviceInternals(service).snapshots.set(RUN_ID, snapshot);
+
+    await serviceInternals(service).runGraphTurn({
+      input: startInput(),
+      journal,
+      turnId: TURN_ID,
+      resume: null,
+      signal: new AbortController().signal,
+      continueFromCheckpoint: true,
+    });
+
+    expect(service.getSnapshot(RUN_ID)).toMatchObject({ status: "completed" });
+    expect(service.getSnapshot(RUN_ID)?.pendingExternal).toBeUndefined();
+    expect(
+      journal
+        .all()
+        .filter(
+          (event) =>
+            event.type === "RunPaused" &&
+            event.data.status === "waiting_for_external" &&
+            event.data.externalJobId === resolvedJobId
+        )
+    ).toHaveLength(0);
+  });
 });
 
 function fixture(graph: object, journal = new EventJournal()) {
@@ -851,6 +1089,7 @@ function serviceInternals(service: LangGraphRunService) {
       signal: AbortSignal;
       expectedContinuationExecutionOwnerId?: string;
       continuationCommand?: LangGraphRunSnapshot["continuationCommand"];
+      continueFromCheckpoint?: boolean;
     }): Promise<void>;
   };
 }

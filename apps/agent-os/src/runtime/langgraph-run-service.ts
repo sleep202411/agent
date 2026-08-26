@@ -299,11 +299,38 @@ function restoreExternalHandoff(
     const handoff = agentExternalJobHandoffFromResult(event.data);
     const toolCallId = event.data.toolCallId;
     const toolId = event.data.toolId;
-    if (handoff && typeof toolCallId === "string" && typeof toolId === "string") {
+    if (
+      handoff &&
+      !externalHandoffWasResolved(events, { turnId, jobId: handoff.jobId }) &&
+      typeof toolCallId === "string" &&
+      typeof toolId === "string"
+    ) {
       return { ...handoff, turnId, toolCallId, toolId };
     }
   }
   return undefined;
+}
+
+/**
+ * External jobs can be reused across production stages, so terminal identity
+ * is the durable (turnId, jobId) correlation — never jobId alone. Once this
+ * correlation has resumed, replaying an old ToolCompleted event must not move
+ * the run back to waiting_for_external.
+ */
+function externalHandoffWasResolved(
+  events: readonly { type: string; data: Record<string, unknown> }[],
+  handoff: { turnId: string; jobId: string }
+): boolean {
+  return events.some((event) => {
+    if (event.type !== "RunResumed") return false;
+    const reason = event.data.reason;
+    return (
+      event.data.turnId === handoff.turnId &&
+      event.data.externalJobId === handoff.jobId &&
+      typeof reason === "string" &&
+      reason.startsWith("external_job_")
+    );
+  });
 }
 
 function restoreOpenAssistantMessage(
@@ -749,15 +776,23 @@ export class LangGraphRunService {
 
   private assertDurableExecutionPrefix(input: StartLangGraphRunInput, journal: EventJournal): void {
     const runStarted = journal.all()[1];
-    const plan = journal.all()[2];
+    const executionMarker = journal.all()[2];
+    // Immutable journals created before the permission-step marker used the
+    // synthetic PlanCreated event in this slot. Keep those runs recoverable,
+    // while every new start records the real execution step below.
+    const executionStarted = Boolean(
+      executionMarker &&
+      executionMarker.data.turnId === input.turnId &&
+      (executionMarker.type === "PlanCreated" ||
+        (executionMarker.type === "StepStarted" && executionMarker.data.step === "permission"))
+    );
     if (
       runStarted?.type !== "RunStarted" ||
       runStarted.data.turnId !== input.turnId ||
-      plan?.type !== "PlanCreated" ||
-      plan.data.turnId !== input.turnId
+      !executionStarted
     ) {
       throw new Error(
-        "Recoverable start journal must begin UserMessage#1, RunStarted#2, PlanCreated#3"
+        "Recoverable start journal must begin UserMessage#1, RunStarted#2, and an execution marker for the admitted turn"
       );
     }
   }
@@ -949,15 +984,15 @@ export class LangGraphRunService {
         sessionId: input.sessionId,
         runId: input.runId,
         conversationId: input.conversationId,
-        type: "PlanCreated",
+        type: "StepStarted",
         data: {
           turnId,
-          steps: [
-            "Understand request under mounted skills",
-            "Use tools allowed by skill mount",
-            "Propose writes with approval when needed",
-            "Summarize results",
-          ],
+          step: "permission",
+          permissionMode: input.permissionMode ?? "smart",
+          agentMode: input.agentMode ?? "ASSIST",
+          projectKind: input.projectKind,
+          workbenchMode: input.workbenchMode,
+          workbenchContext: input.workbenchContext,
         },
       });
     } else if (fencedStart) {
@@ -1479,25 +1514,41 @@ export class LangGraphRunService {
     if (!durable?.continuationExecutionPending) {
       throw new Error(`Run ${command.runId} has no durable continuation awaiting execution`);
     }
-    const resolutionMatches = durable.events.some((event) => {
-      if (event.data.turnId !== command.turnId) return false;
-      if (command.kind === "approval") {
-        return (
-          event.type === "ApprovalResolved" &&
-          event.data.responseId === command.responseId &&
-          event.data.approvalId === command.approvalId &&
-          event.data.decision === command.decision
-        );
-      }
-      return (
-        event.type === "UserInputResolved" &&
-        event.data.responseId === command.responseId &&
-        event.data.requestId === command.requestId &&
-        stableAnswerFingerprint(
-          (event.data.answers as Record<string, string> | undefined) ?? {}
-        ) === stableAnswerFingerprint(command.answers)
-      );
-    });
+    const resolutionMatches =
+      command.kind === "external_result"
+        ? durable.events.some(
+            (event) =>
+              event.type === "RunResumed" &&
+              event.data.turnId === command.turnId &&
+              event.data.reason === "external_job_completed" &&
+              event.data.externalJobId === command.externalJobId
+          ) &&
+          durable.events.some(
+            (event) =>
+              event.type === "MessageCompleted" &&
+              event.data.turnId === command.turnId &&
+              event.data.messageId === command.resultMessageId &&
+              event.data.finishReason === "external_result"
+          )
+        : durable.events.some((event) => {
+            if (event.data.turnId !== command.turnId) return false;
+            if (command.kind === "approval") {
+              return (
+                event.type === "ApprovalResolved" &&
+                event.data.responseId === command.responseId &&
+                event.data.approvalId === command.approvalId &&
+                event.data.decision === command.decision
+              );
+            }
+            return (
+              event.type === "UserInputResolved" &&
+              event.data.responseId === command.responseId &&
+              event.data.requestId === command.requestId &&
+              stableAnswerFingerprint(
+                (event.data.answers as Record<string, string> | undefined) ?? {}
+              ) === stableAnswerFingerprint(command.answers)
+            );
+          });
     if (!resolutionMatches) {
       throw new Error(
         `Continuation ${command.responseId} diverges from the durable response journal`
@@ -1582,10 +1633,12 @@ export class LangGraphRunService {
     const abort = new AbortController();
     this.aborts.set(command.runId, abort);
     const heartbeatTimer = this.startStartHeartbeat(snapshot);
-    const resume: ApprovalDecision | UserInputDecision =
+    const resume: ApprovalDecision | UserInputDecision | null =
       command.kind === "approval"
         ? command.decision
-        : { requestId: command.requestId, answers: command.answers };
+        : command.kind === "user_input"
+          ? { requestId: command.requestId, answers: command.answers }
+          : null;
     const work = this.runGraphTurn({
       input: {
         runId: command.runId,
@@ -1611,6 +1664,7 @@ export class LangGraphRunService {
       signal: abort.signal,
       expectedContinuationExecutionOwnerId: continuationExecution.executionOwnerId,
       continuationCommand: command,
+      continueFromCheckpoint: command.kind === "external_result",
     }).catch((error) => {
       if (
         isContinuationExecutionFenceError(error) ||
@@ -1915,6 +1969,7 @@ export class LangGraphRunService {
     expectedStartExecutionOwnerId?: string;
     expectedContinuationExecutionOwnerId?: string;
     continuationCommand?: ContinuationCommand;
+    continueFromCheckpoint?: boolean;
   }): Promise<void> {
     const {
       input,
@@ -1925,6 +1980,7 @@ export class LangGraphRunService {
       expectedStartExecutionOwnerId,
       expectedContinuationExecutionOwnerId,
       continuationCommand,
+      continueFromCheckpoint = false,
     } = args;
     const assertCurrentExecution = (): void => {
       if (
@@ -2151,6 +2207,14 @@ export class LangGraphRunService {
         domain: input.domain,
         startExecution: this.snapshots.get(input.runId)?.startExecution,
         continuationExecution: this.snapshots.get(input.runId)?.continuationExecution,
+        ...(continuationCommand?.kind === "external_result" && continuationCommand.storyContinuation
+          ? {
+              storyContinuation: {
+                responseId: continuationCommand.responseId,
+                ...continuationCommand.storyContinuation,
+              },
+            }
+          : {}),
         abortSignal: signal,
         onToolEvent: async (event) => {
           assertCurrentExecution();
@@ -2179,7 +2243,13 @@ export class LangGraphRunService {
           }
           if (event.type === "ToolCompleted" && !externalHandoff) {
             const handoff = agentExternalJobHandoffFromResult(event.data);
-            if (handoff) {
+            if (
+              handoff &&
+              !externalHandoffWasResolved(journal.all(), {
+                turnId,
+                jobId: handoff.jobId,
+              })
+            ) {
               externalHandoff = {
                 ...handoff,
                 turnId,
@@ -2210,12 +2280,17 @@ export class LangGraphRunService {
     ): Promise<boolean> => {
       assertCurrentExecution();
       if (!externalHandoff) return false;
+      const handoff = externalHandoff;
+      if (externalHandoffWasResolved(journal.all(), handoff)) {
+        externalHandoff = undefined;
+        return false;
+      }
       const state = suppliedState ?? (await graph.getState(threadConfig));
       assertCurrentExecution();
       // ToolCompleted is emitted inside the tool wrapper before LangGraph has
       // committed the matching ToolMessage. A start command may be released
       // only after the exact tool result is visible in the checkpoint.
-      if (!stateHasToolResult(state, externalHandoff.toolCallId)) return false;
+      if (!stateHasToolResult(state, handoff.toolCallId)) return false;
       const current = this.snapshots.get(input.runId);
       if (current?.startExecution || current?.continuationExecution) {
         const captured = await this.captureLatestStartCheckpoint(
@@ -2229,6 +2304,13 @@ export class LangGraphRunService {
         if (!captured) return false;
       }
       assertCurrentExecution();
+      // Journal reporting and checkpoint capture are asynchronous. Recheck the
+      // terminal correlation immediately before projecting a new pause so a
+      // concurrent durable resume can never be overwritten by stale work.
+      if (externalHandoffWasResolved(journal.all(), handoff)) {
+        externalHandoff = undefined;
+        return false;
+      }
       if (
         !journal
           .all()
@@ -2237,7 +2319,7 @@ export class LangGraphRunService {
               event.type === "RunPaused" &&
               event.data.turnId === turnId &&
               event.data.status === "waiting_for_external" &&
-              event.data.externalJobId === externalHandoff?.jobId
+              event.data.externalJobId === handoff.jobId
           )
       ) {
         journal.append({
@@ -2248,9 +2330,9 @@ export class LangGraphRunService {
           data: {
             turnId,
             status: "waiting_for_external",
-            externalJobId: externalHandoff.jobId,
-            toolCallId: externalHandoff.toolCallId,
-            toolId: externalHandoff.toolId,
+            externalJobId: handoff.jobId,
+            toolCallId: handoff.toolCallId,
+            toolId: handoff.toolId,
           },
         });
       }
@@ -2260,9 +2342,9 @@ export class LangGraphRunService {
         activeTurnId: turnId,
         status: "waiting_for_external",
         journal,
-        pendingExternal: externalHandoff,
+        pendingExternal: handoff,
         ...carryRunContext(prev, input),
-        assistantText: externalHandoff.startedMessage,
+        assistantText: handoff.startedMessage,
         activeMessage: undefined,
       };
       this.snapshots.set(input.runId, waiting);
@@ -2326,7 +2408,7 @@ export class LangGraphRunService {
       ? checkpointStillAwaitingResume
         ? new Command({ resume })
         : null
-      : stableMessageAlreadyCheckpointed
+      : continueFromCheckpoint || stableMessageAlreadyCheckpointed
         ? null
         : {
             messages: [
@@ -2350,6 +2432,7 @@ export class LangGraphRunService {
     // again or treating EmptyInput as a failed turn.
     if (
       (stableMessageAlreadyCheckpointed ||
+        continueFromCheckpoint ||
         (resume && (!checkpointStillAwaitingResume || continuationAdvancedToNewInterrupt))) &&
       !checkpointHasPendingTasks
     ) {

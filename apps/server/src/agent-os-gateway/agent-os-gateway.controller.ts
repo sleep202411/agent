@@ -22,6 +22,14 @@ import {
 import { ok } from './agent-os-envelope';
 import { AgentOsGatewayService } from './agent-os-gateway.service';
 
+// Multer exposes this Busboy option at runtime even though Nest's bundled
+// MulterOptions type omits it. Modern browsers encode multipart filenames as
+// UTF-8, so decode them correctly before they enter the application layer.
+const AGENT_OS_ATTACHMENT_UPLOAD_OPTIONS = {
+  limits: { fileSize: 20 * 1024 * 1024 },
+  defParamCharset: 'utf8',
+};
+
 /**
  * Product control plane for Agent OS.
  * Routes are under /agent-os/* (studio rewrites /aurora/agent-os/*).
@@ -221,11 +229,7 @@ export class AgentOsGatewayController {
   }
 
   @Post('projects/:projectId/attachments')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 20 * 1024 * 1024 },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', AGENT_OS_ATTACHMENT_UPLOAD_OPTIONS))
   async uploadAttachment(
     @CurrentUser() user: AuthUser,
     @Param('projectId', ParseUUIDPipe) projectId: string,

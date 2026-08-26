@@ -271,7 +271,7 @@ describePostgres(
       expect(execute).toHaveBeenCalledTimes(1);
       expect(project).toMatchObject({
         durationPreset: 'short_5_15',
-        visualStyle: 'cinematic_realism',
+        visualStyle: 'cinematic-realism',
         defaultLocale: 'zh-CN',
         version: 1,
       });
@@ -775,7 +775,7 @@ describePostgres(
       return commonInput(runId, projectId, 'story.confirmCreativeProfile', {
         aspectRatio: 'landscape_16_9',
         targetRuntime: 'short_5_15',
-        visualDirection: 'cinematic_realism',
+        visualDirection: 'cinematic-realism',
         storyLanguage: 'zh-CN',
       });
     }

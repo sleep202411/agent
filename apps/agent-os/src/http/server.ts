@@ -6,7 +6,7 @@ import {
   AgentDisplayLocaleSchema,
   AgentOsIdSchema,
 } from "@repo/agent-protocol";
-import type { DomainPort } from "@repo/agent-tools";
+import { StoryProductionContinuationPlanSchema, type DomainPort } from "@repo/agent-tools";
 import {
   verifyProjectSkillSnapshot,
   type ProjectSkillResolutionSnapshot,
@@ -63,6 +63,64 @@ function validatedSkillSnapshot(
     return null;
   }
   return snapshot;
+}
+
+/**
+ * Preserve and validate the server-owned Story continuation envelope at the
+ * Gateway -> worker trust boundary. Returning `null` distinguishes malformed
+ * input from an omitted optional continuation.
+ */
+function validatedStoryContinuation(value: unknown):
+  | {
+      locale: "en-US" | "zh-CN" | "zh-HK";
+      plan: ReturnType<typeof StoryProductionContinuationPlanSchema.parse>;
+    }
+  | null
+  | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as { locale?: unknown; plan?: unknown };
+  const locale = AgentDisplayLocaleSchema.safeParse(candidate.locale);
+  const plan = StoryProductionContinuationPlanSchema.safeParse(candidate.plan);
+  if (!locale.success || !plan.success) return null;
+  return { locale: locale.data, plan: plan.data };
+}
+
+/** Parse the complete external-result suffix so validated fields cannot be
+ * accidentally dropped while the durable continuation command is rebuilt. */
+export function validatedExternalResultContinuation(value: Record<string, unknown>): {
+  externalJobId: string;
+  toolCallId: string;
+  toolId: string;
+  resultMessageId: string;
+  phase: "apply";
+  outcome: "completed";
+  storyContinuation?: NonNullable<ReturnType<typeof validatedStoryContinuation>>;
+} | null {
+  const storyContinuation = validatedStoryContinuation(value.storyContinuation);
+  if (
+    !AgentOsIdSchema.safeParse(value.externalJobId).success ||
+    typeof value.toolCallId !== "string" ||
+    !value.toolCallId.trim() ||
+    typeof value.toolId !== "string" ||
+    !value.toolId.trim() ||
+    typeof value.resultMessageId !== "string" ||
+    !value.resultMessageId.trim() ||
+    value.phase !== "apply" ||
+    value.outcome !== "completed" ||
+    storyContinuation === null
+  ) {
+    return null;
+  }
+  return {
+    externalJobId: value.externalJobId as string,
+    toolCallId: value.toolCallId,
+    toolId: value.toolId,
+    resultMessageId: value.resultMessageId,
+    phase: "apply",
+    outcome: "completed",
+    ...(storyContinuation ? { storyContinuation } : {}),
+  };
 }
 
 function domainForProject(projectId: string): DomainPort {
@@ -418,7 +476,7 @@ export function createAgentOsHttpServer() {
           !isAgentProjectKind(projectKind) ||
           typeof workbenchMode !== "string" ||
           !workbenchMode.trim() ||
-          (kind !== "approval" && kind !== "user_input") ||
+          (kind !== "approval" && kind !== "user_input" && kind !== "external_result") ||
           !AgentOsIdSchema.safeParse(body.continuationExecutionToken).success ||
           !AgentOsIdSchema.safeParse(body.continuationExecutionAttemptId).success ||
           !Number.isInteger(body.continuationExecutionEpoch) ||
@@ -474,6 +532,8 @@ export function createAgentOsHttpServer() {
           permissionMode: continuationPermissionMode,
           skillMountSnapshot,
         };
+        const externalResult =
+          kind === "external_result" ? validatedExternalResultContinuation(body) : undefined;
         if (
           (kind === "approval" &&
             (!AgentOsIdSchema.safeParse(body.approvalId).success ||
@@ -481,7 +541,8 @@ export function createAgentOsHttpServer() {
           (kind === "user_input" &&
             (!AgentOsIdSchema.safeParse(body.requestId).success ||
               !body.answers ||
-              typeof body.answers !== "object"))
+              typeof body.answers !== "object")) ||
+          (kind === "external_result" && !externalResult)
         ) {
           send(res, 400, {
             error: { code: "INVALID_REQUEST", message: "Continuation payload is invalid" },
@@ -496,12 +557,18 @@ export function createAgentOsHttpServer() {
                 approvalId: body.approvalId as string,
                 decision: body.decision as "approve" | "reject",
               }
-            : {
-                ...common,
-                kind: "user_input",
-                requestId: body.requestId as string,
-                answers: body.answers as Record<string, string>,
-              };
+            : kind === "user_input"
+              ? {
+                  ...common,
+                  kind: "user_input",
+                  requestId: body.requestId as string,
+                  answers: body.answers as Record<string, string>,
+                }
+              : {
+                  ...common,
+                  kind: "external_result",
+                  ...externalResult!,
+                };
         const snapshot = await service.beginDurableContinuation({
           command,
           continuationExecution: {

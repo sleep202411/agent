@@ -694,6 +694,122 @@ describePostgres(
       },
     );
 
+    it('turns an applied Story result into one recoverable external-result continuation', async () => {
+      const runId = randomUUID();
+      const turnId = randomUUID();
+      const externalJobId = randomUUID();
+      const toolCallId = 'story-apply-proposal-pg-it';
+      runIds.add(runId);
+      const journal = service(prisma);
+
+      await prisma.agentOsRun.create({
+        data: {
+          id: runId,
+          projectId: PROJECT_ID,
+          conversationId: CONVERSATION_ID,
+          actorId: ACTOR_ID,
+          modelProfileId: 'integration-test',
+          permissionMode: 'smart',
+          status: 'queued',
+          projectKind: 'story',
+          workbenchMode: 'story-canvas',
+          workbenchContext: { chapterId: randomUUID() },
+          skillSnapshot: startCommand({ runId })
+            .skillMountSnapshot as unknown as object,
+        },
+      });
+      const waiting = [
+        continuationEvent(runId, 1, 'RunStarted', {
+          turnId,
+          status: 'running',
+          workspaceType: 'project_canvas',
+          modelProfileId: 'integration-test',
+          projectKind: 'story',
+          workbenchMode: 'story-canvas',
+        }),
+        continuationEvent(runId, 2, 'ToolCompleted', {
+          turnId,
+          toolCallId,
+          toolId: 'story.applyProposal',
+          agentHandoff: {
+            kind: 'external_job',
+            jobId: externalJobId,
+            startedMessage: 'Applying the approved Plot proposal.',
+          },
+        }),
+        continuationEvent(runId, 3, 'RunPaused', {
+          turnId,
+          status: 'waiting_for_external',
+          externalJobId,
+          toolCallId,
+          toolId: 'story.applyProposal',
+        }),
+      ];
+      await journal.upsertSnapshot(
+        continuationSnapshotInput(runId, 'waiting_for_external', waiting),
+      );
+
+      const applied = await journal.appendExternalResult({
+        runId,
+        turnId,
+        toolCallId,
+        toolId: 'story.applyProposal',
+        externalJobId,
+        phase: 'apply',
+        text: 'The approved Plot proposal was applied.',
+        outcome: 'completed',
+      });
+
+      expect(applied.events.map((event) => event.type)).toEqual([
+        'RunResumed',
+        'ArtifactUpdated',
+        'MessageStarted',
+        'MessageDelta',
+        'MessageCompleted',
+      ]);
+      expect(
+        applied.events.some((event) => event.type === 'RunCompleted'),
+      ).toBe(false);
+      expect(
+        await prisma.agentOsRun.findUniqueOrThrow({
+          where: { id: runId },
+          select: {
+            status: true,
+            permissionMode: true,
+            pendingExternal: true,
+            continuationCommand: true,
+            continuationExecutionToken: true,
+            continuationDispatchNextAttemptAt: true,
+          },
+        }),
+      ).toMatchObject({
+        status: 'running',
+        permissionMode: 'smart',
+        pendingExternal: null,
+        continuationCommand: expect.objectContaining({
+          kind: 'external_result',
+          externalJobId,
+          toolCallId,
+          toolId: 'story.applyProposal',
+          phase: 'apply',
+          outcome: 'completed',
+        }),
+        continuationExecutionToken: expect.any(String),
+        continuationDispatchNextAttemptAt: expect.any(Date),
+      });
+
+      const claim = await journal.claimRunContinuationDispatch(runId);
+      expect(claim).toMatchObject({
+        kind: 'claimed',
+        executionEpoch: 1,
+        command: expect.objectContaining({
+          kind: 'external_result',
+          externalJobId,
+          toolCallId,
+        }),
+      });
+    });
+
     it('serializes two continuation dispatchers across response loss and recovers with epoch 2', async () => {
       const runId = randomUUID();
       const requestId = randomUUID();
@@ -1347,9 +1463,13 @@ function executionEvents(admission: AgentEventEnvelope): AgentEventEnvelope[] {
       projectKind: 'story',
       workbenchMode: 'story-canvas',
     }),
-    executionEvent(admission, 3, 'PlanCreated', {
+    executionEvent(admission, 3, 'StepStarted', {
       turnId: TURN_ID,
-      steps: ['Understand request', 'Execute safely'],
+      step: 'permission',
+      permissionMode: 'smart',
+      agentMode: 'ASSIST',
+      projectKind: 'story',
+      workbenchMode: 'story-canvas',
     }),
   ];
 }

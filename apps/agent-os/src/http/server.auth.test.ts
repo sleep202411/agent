@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AddressInfo } from "node:net";
 
-import { createAgentOsHttpServer, listenAgentOsHttp } from "./server.js";
+import {
+  createAgentOsHttpServer,
+  listenAgentOsHttp,
+  validatedExternalResultContinuation,
+} from "./server.js";
 import { resetAgentOsCheckpointerForTests } from "../runtime/checkpointer.js";
 
 /**
@@ -14,6 +18,67 @@ import { resetAgentOsCheckpointerForTests } from "../runtime/checkpointer.js";
  */
 const TOKEN = "test-internal-token-abcdef";
 const originalFetch = globalThis.fetch;
+
+describe("durable continuation request contract", () => {
+  it("preserves a valid server-owned Story continuation plan", () => {
+    expect(
+      validatedExternalResultContinuation({
+        externalJobId: "11111111-1111-4111-8111-111111111111",
+        toolCallId: "story-apply-call",
+        toolId: "story.applyProposal",
+        resultMessageId: "external-result-message",
+        phase: "apply",
+        outcome: "completed",
+        storyContinuation: {
+          locale: "zh-CN",
+          plan: {
+            continueThrough: "storyboard",
+            title: "逆流镇的信使",
+            summary: "逐阶段完成剩余制作规格。",
+            brief: "资产、情节树和分镜分别准备并等待审核。",
+          },
+        },
+      })
+    ).toEqual({
+      externalJobId: "11111111-1111-4111-8111-111111111111",
+      toolCallId: "story-apply-call",
+      toolId: "story.applyProposal",
+      resultMessageId: "external-result-message",
+      phase: "apply",
+      outcome: "completed",
+      storyContinuation: {
+        locale: "zh-CN",
+        plan: {
+          continueThrough: "storyboard",
+          title: "逆流镇的信使",
+          summary: "逐阶段完成剩余制作规格。",
+          brief: "资产、情节树和分镜分别准备并等待审核。",
+        },
+      },
+    });
+  });
+
+  it("allows an omitted continuation but rejects a malformed one", () => {
+    const base = {
+      externalJobId: "11111111-1111-4111-8111-111111111111",
+      toolCallId: "story-apply-call",
+      toolId: "story.applyProposal",
+      resultMessageId: "external-result-message",
+      phase: "apply",
+      outcome: "completed",
+    };
+    expect(validatedExternalResultContinuation(base)).toEqual(base);
+    expect(
+      validatedExternalResultContinuation({
+        ...base,
+        storyContinuation: {
+          locale: "zh-CN",
+          plan: { continueThrough: "unknown" },
+        },
+      })
+    ).toBeNull();
+  });
+});
 
 describe("worker HTTP auth", () => {
   let server: ReturnType<typeof createAgentOsHttpServer>;
