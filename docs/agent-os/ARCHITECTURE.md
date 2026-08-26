@@ -43,6 +43,7 @@ These identities are deliberately different:
 | `runId`              | May cross multiple HITL pauses and an external job     | One orchestration lifecycle                                    |
 | `turnId`             | Starts at every durable user submission                | One Assistant response group in the UI                         |
 | `messageId`          | One immutable durable transcript segment               | User/Assistant ordering, streaming, retry, and replay identity |
+| `artifactId`         | One immutable domain result referenced by the journal  | Durable rich content and lifecycle projection                  |
 
 A structured answer submitted through an interaction card is a durable
 `UserMessage` and opens a new `turnId`; it resumes the same `runId`. Assistant
@@ -150,42 +151,69 @@ conversation, and tool call. Its terminal transaction appends the result and
 run terminal events to the same journal. A client-generated “success” message
 is never a substitute for that durable continuation.
 
-An external result is not necessarily terminal. Story authoring is a two-phase
-continuation:
+External handoff terminality is monotonic and correlated by
+`(turnId, externalJobId)`, not by job id alone (a Story job can serve more than
+one phase on separate turns). The Worker drops a replayed handoff after its
+correlated `RunResumed`; the Server journal fold independently refuses to
+project that stale pause. The continuation dispatcher also re-folds and repairs
+historical stale row projections under lock before claiming a new epoch. Any
+server-owned deterministic continuation plan is validated and forwarded as one
+complete command at the HTTP trust boundary, never reconstructed from a lossy
+subset of fields.
+
+An external result is not necessarily terminal. Each Story authoring stage is a
+two-phase continuation:
 
 1. `story.author` durably hands off the authoring job and pauses the originating
    run in `waiting_for_external`.
 2. A reviewable proposal resumes that run, appends the Assistant result, then
-   emits `ToolProposed` + `ApprovalRequired` and pauses in
-   `waiting_for_approval`. The Draft card is only a composer projection of that
-   durable approval.
+   emits `ArtifactCreated` + `ToolProposed` + `ApprovalRequired` and pauses in
+   `waiting_for_approval`. The rich proposal is a durable Artifact part on the
+   Assistant turn; the compact yes/no control is the composer-only approval
+   projection. The Artifact references the immutable Story run instead of
+   duplicating its proposal JSON in the Agent journal.
 3. Apply / Discard creates a new durable user `turnId` on the same `runId`.
    Discard records a normal successful completion with no project write. Apply
    atomically moves the Story job to `applying` and the Agent run back to
-   `waiting_for_external`.
+   `waiting_for_external`. Both decisions append `ArtifactUpdated`; resolving
+   the approval never removes or rewrites the original Artifact part.
 4. The authoritative apply transaction appends the final Assistant result and
    terminal event to that decision turn. A proposal-ready event must never be
    mistaken for successful project application.
 
-The proposal payload for new Story authoring is a versioned chapter screenplay
-plus one canonical creator-visible rich-text document and the exact
-collaborative Script head it was authored against. Studio reviews that document
-without re-projecting screenplay semantics into dashboard cards. Apply first
-writes those exact document blocks to the chapter's Yjs Script operation and
-immutable AI document version. That commit is a durable stage boundary: the
-same Story run is then re-armed as a recoverable downstream job, which derives
-the Plot Tree, logical Asset Specs, and Storyboard Specs from the committed
-Script. The chapter records its source Script document, version, sequence, and
-hash, so freshness is a data invariant rather than a UI guess. The Script
-commit never waits on a second model call, and the Agent run does not complete
-until downstream reconciliation commits. A changed Script head fails closed. A
-manually edited Script is read from its exact current CRDT head; the derived
-structure and lineage commit without rewriting that Script operation, sequence,
-or hash. Project Overview remains project-scoped; production stages and Agent
-workbench context always carry one explicit chapter id.
+Story production uses four independently reviewable stages: Script, logical
+Asset Specs, Plot, and Storyboard Specs. One explicit `story.author` handoff
+selects only the earliest missing or stale stage, creates one Story run, and
+opens one approval boundary. Approval commits only that stage and terminalizes
+that stage-specific Story run; it never silently approves or applies the
+following stage. The initial `story.author` call persists the furthest stage
+authorized by the creator as `continueThrough`. The owning Agent run then
+resumes from its durable checkpoint, re-reads canonical state, and the workflow
+deterministically prepares the earliest missing or stale stage inside that
+saved boundary. Each proposal still has its own approval boundary; no approval
+applies a later stage.
 
-Downstream plans are immutable chapter-scoped snapshots. Reconciliation may
-attach a snapshot to a creator-edited Asset Spec or Storyboard sequence as a
+The Script proposal is a versioned chapter screenplay plus one canonical
+creator-visible rich-text document and the exact collaborative Script head it
+was authored against. Studio reviews that document without re-projecting
+screenplay semantics into dashboard cards. Apply writes those exact document
+blocks to the chapter's Yjs Script operation and immutable AI document version,
+and nothing downstream. Asset Specs pin the exact current Script head. Plot
+then pins that same Script interpretation plus the approved Asset snapshot;
+Storyboard pins the approved Plot and Asset sources. Their apply transactions
+write only the proposed artifact. Plot approval—not Script
+approval—binds the chapter's source Script document, version, sequence, and hash
+to the reviewed graph, so a pre-existing matching graph cannot bypass the Plot
+approval boundary. A changed upstream head fails closed. A manually edited
+Script is read from its exact current CRDT head without rewriting its operation,
+sequence, or hash. Project Overview remains project-scoped; production stages
+and Agent workbench context always carry one explicit chapter id.
+
+Downstream stage plans are immutable chapter-scoped snapshots. An Asset plan
+does not contain or precompute Plot or Storyboard work; Plot consumes the exact
+approved Asset Spec set, and a Storyboard plan binds both the current Plot and
+approved Assets. Reconciliation may attach the corresponding
+stage snapshot to a creator-edited Asset Spec or Storyboard sequence as a
 pending conflict, but cannot overwrite it. Conflict resolution is an
 idempotent, version-checked command that either rebases the current override or
 applies the exact snapshot while preserving compatible media and bindings.
