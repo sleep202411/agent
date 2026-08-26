@@ -111,6 +111,17 @@ export class ReferralsService {
         `lazy invitee perk failed for ${userId}: ${e instanceof Error ? e.message : e}`,
       ),
     );
+    // Finish rewards left marked paid_out with items still ungranted. A claim
+    // flips the status before paying, so a crash between the two strands the
+    // reward: the UI reads "Granted" and offers no button, leaving the holder
+    // no way to reach the heal inside claimReward. claimReward now releases the
+    // flip when the payout THROWS, but a crash cannot — so this read-time sweep
+    // is the only self-service repair. Best-effort.
+    await this.settleUnfinishedPaidOutRewards(userId).catch((e) =>
+      this.logger.warn(
+        `lazy reward settle failed for ${userId}: ${e instanceof Error ? e.message : e}`,
+      ),
+    );
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
       include: {
@@ -1150,8 +1161,54 @@ export class ReferralsService {
       throw new BadRequestException('Reward is not claimable');
     }
 
-    await this.grantIgnoringUniqueRace(reward);
+    // The CAS stays AHEAD of the payout on purpose: it is what stops a reward a
+    // refund already reversed from being paid. What it did NOT do was undo
+    // itself — a grant that threw left the reward reading "paid_out" to the UI
+    // with items never granted, and the heal branch above re-threw on every
+    // retry, so the holder had no way back. Release the flip on failure and let
+    // them claim again; granting is per-item idempotent, so whatever already
+    // went out is not re-sent. A crash between the two lands in
+    // settleUnfinishedPaidOutRewards on the next dashboard read.
+    try {
+      await this.grantIgnoringUniqueRace(reward);
+    } catch (e) {
+      await this.prisma.referralReward
+        .updateMany({
+          where: { id: reward.id, status: 'paid_out' },
+          data: { status: 'accrued', paidOutAt: null },
+        })
+        .catch(() => undefined);
+      throw e;
+    }
     return { status: 'paid_out' };
+  }
+
+  /**
+   * Re-run the payout for this user's `paid_out` rewards that still hold
+   * ungranted bundle items. `grantReward` skips anything already granted, so
+   * this only ever pays the remainder; a still-broken item logs and leaves the
+   * rest of the dashboard to render.
+   */
+  private async settleUnfinishedPaidOutRewards(userId: string): Promise<void> {
+    const stranded = await this.prisma.referralReward.findMany({
+      where: {
+        userId,
+        status: 'paid_out',
+        items: { some: { grantedAt: null } },
+      },
+      select: { id: true, userId: true, currency: true },
+      take: 20,
+    });
+    for (const reward of stranded) {
+      try {
+        await this.grantIgnoringUniqueRace(reward);
+        this.logger.log(`Settled stranded reward ${reward.id} for ${userId}`);
+      } catch (e) {
+        this.logger.warn(
+          `settle failed for reward ${reward.id}: ${e instanceof Error ? e.message : e}`,
+        );
+      }
+    }
   }
 
   /** grantReward, swallowing unique-key races (a concurrent grant won → the

@@ -5,6 +5,8 @@ import {
   computeTotals,
   formatBpsPercent,
 } from './referrals.service';
+import { COMMUNITY_MEMBERSHIP_PLAN_KEY } from '../entitlements/entitlement.service';
+import { REWARD_ITEM_KINDS } from './dto';
 
 // ─── fixtures ────────────────────────────────────────────────────────────
 
@@ -520,6 +522,81 @@ describe('claimReward', () => {
     expect(walletLedger.postEntry).toHaveBeenCalledTimes(1);
     const entry = firstCallArg<Record<string, unknown>>(walletLedger.postEntry);
     expect(entry.availableDelta).toBe(100n);
+  });
+
+  // Every kind the admin config layer accepts must be payable. The two lists
+  // drifted once and it cost real rewards: milestones advertised community
+  // membership, `grantSingle` routed it to a validator that only knew compute
+  // tiers, and the claim 500'd while the reward was already marked paid_out.
+  // Reading REWARD_ITEM_KINDS (not a local copy) is the point — a new kind
+  // added to the config surface fails here until the payout path exists.
+  describe.each(REWARD_ITEM_KINDS)('claiming a %s bundle item', (kind) => {
+    it('pays out instead of throwing', async () => {
+      const { service, prisma, walletLedger, entitlements } = makeService();
+      prisma.referralReward.findUnique.mockResolvedValue(
+        rewardRow({ payoutType: kind }),
+      );
+      prisma.referralReward.updateMany.mockResolvedValue({ count: 1 });
+      prisma.referralRewardItem.findMany.mockResolvedValue([
+        cashItem({ payoutType: kind, amountMinor: 100n, days: 7 }),
+      ]);
+
+      await expect(service.claimReward(REFERRER, 'rw-1')).resolves.toEqual({
+        status: 'paid_out',
+      });
+
+      const paid =
+        walletLedger.postEntry.mock.calls.length +
+        entitlements.grantComplimentary.mock.calls.length;
+      expect(paid).toBe(1);
+    });
+  });
+
+  it('routes a community membership item to the community plan key', async () => {
+    const { service, prisma, entitlements } = makeService();
+    prisma.referralReward.findUnique.mockResolvedValue(
+      rewardRow({ payoutType: 'membership_community' }),
+    );
+    prisma.referralReward.updateMany.mockResolvedValue({ count: 1 });
+    prisma.referralRewardItem.findMany.mockResolvedValue([
+      cashItem({
+        payoutType: 'membership_community',
+        amountMinor: 0n,
+        days: 7,
+      }),
+    ]);
+
+    await service.claimReward(REFERRER, 'rw-1');
+
+    expect(entitlements.grantComplimentary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planKey: COMMUNITY_MEMBERSHIP_PLAN_KEY,
+        durationDays: 7,
+      }),
+    );
+  });
+
+  it('releases the paid_out flip when the payout throws, so the holder can retry', async () => {
+    const { service, prisma, entitlements } = makeService();
+    prisma.referralReward.findUnique.mockResolvedValue(
+      rewardRow({ payoutType: 'membership_community' }),
+    );
+    prisma.referralReward.updateMany.mockResolvedValue({ count: 1 });
+    prisma.referralRewardItem.findMany.mockResolvedValue([
+      cashItem({
+        payoutType: 'membership_community',
+        amountMinor: 0n,
+        days: 7,
+      }),
+    ]);
+    entitlements.grantComplimentary.mockRejectedValue(new Error('boom'));
+
+    await expect(service.claimReward(REFERRER, 'rw-1')).rejects.toThrow('boom');
+
+    expect(prisma.referralReward.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'rw-1', status: 'paid_out' },
+      data: { status: 'accrued', paidOutAt: null },
+    });
   });
 
   it('gifted compute points expire per the promo-credit policy (30d)', async () => {

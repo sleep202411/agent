@@ -330,7 +330,7 @@ export class EntitlementService {
   }): Promise<EntitlementGrant> {
     // Store the key the same way resolution reads it, so the row the grant was
     // validated against is the row that later resolves its benefits.
-    const planKey = this.normalizePlanKey(input.planKey);
+    const planKey = this.normalizeGrantablePlanKey(input.planKey);
     return this.prisma.$transaction(async (tx) => {
       await this.assertGrantablePlan(planKey, input.subjectType, tx);
       const now = new Date();
@@ -571,7 +571,7 @@ export class EntitlementService {
         ...rows.map((row) => ({
           ...row,
           membershipPlan:
-            cache.byKey.get(this.normalizePlanKey(row.planKey)) ?? null,
+            cache.byKey.get(this.normalizeComputePlanKey(row.planKey)) ?? null,
         })),
       );
     }
@@ -621,7 +621,7 @@ export class EntitlementService {
     });
     if (!sub?.planKey) return null;
 
-    const planKey = this.normalizePlanKey(sub.planKey) || 'free';
+    const planKey = this.normalizeComputePlanKey(sub.planKey) || 'free';
     const plan = await this.activePlanByKey(planKey);
     return this.buildSnapshot({
       subject: { type: sub.subjectType, id: sub.subjectId },
@@ -638,7 +638,7 @@ export class EntitlementService {
     grant: ActiveGrant,
     input: { now: Date },
   ): EntitlementSnapshot {
-    const planKey = this.normalizePlanKey(grant.planKey) || 'free';
+    const planKey = this.normalizeComputePlanKey(grant.planKey) || 'free';
     return this.buildSnapshot({
       subject: {
         type: grant.subjectType,
@@ -662,12 +662,32 @@ export class EntitlementService {
     return process.env.AUTH_DISABLED === 'true' ? 'pro' : 'free';
   }
 
-  private normalizePlanKey(value: string): EntitlementPlanKey {
+  /**
+   * Normalize a key on the COMPUTE plane, where `ENTITLEMENT_PLAN_RANK` is the
+   * closed set that `hasPlan` compares against. Every caller reads a row that
+   * was already filtered `planKey != community_membership`, so an unknown key
+   * here means a compute-plane invariant broke — keep failing loud.
+   */
+  private normalizeComputePlanKey(value: string): EntitlementPlanKey {
     const normalized = value.trim().toLowerCase();
     if (!isKnownEntitlementPlanKey(normalized)) {
       throw new Error(`Unknown compute membership plan key: ${value}`);
     }
     return normalized;
+  }
+
+  /**
+   * Normalize a key on the WRITE path, where the set of grantable plans is
+   * whatever `billing_membership_plans` says is active — NOT the compute rank
+   * table. `community_membership` is a separate access axis with its own plan
+   * row and its own `isActiveCommunityMember` check; ranking it against
+   * basic/pro is meaningless, so it is absent from `ENTITLEMENT_PLAN_RANK` by
+   * design. Validating writes against that table rejected every community
+   * membership grant (referral bundles 500'd on claim); `assertGrantablePlan`
+   * is the real gate and reads the same rows benefit resolution later does.
+   */
+  private normalizeGrantablePlanKey(value: string): string {
+    return value.trim().toLowerCase();
   }
 }
 
