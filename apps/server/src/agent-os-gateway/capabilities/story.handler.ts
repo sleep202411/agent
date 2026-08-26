@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, SkillCatalogStatus } from '@prisma/client';
 import {
   StoryAddBranchInputSchema,
   StoryAddSceneInputSchema,
@@ -30,6 +30,10 @@ import {
   StoryPatchOperationsSchema,
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
+import {
+  storyVisualStyleSkillBySlug,
+  type StoryVisualStyleSkillSlug,
+} from '@repo/shared';
 import { AgentOsRunJournalService } from '../../agent-os-journal/agent-os-run-journal.service';
 import { PrismaService } from '../../infra/db/db.module';
 import { canonicalJsonHash } from '../../story-studio/canonical-json';
@@ -267,6 +271,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             sourceAgentToolCallId: input.toolCallId,
             sourceStartedMessage: args.startedMessage,
             sourceCompletionMessage: args.completionMessage,
+            sourceContinuationPlan: {
+              continueThrough: args.continueThrough,
+              title: args.title,
+              summary: args.summary,
+              brief: args.brief,
+            },
           },
           {
             canonicalizeAndFence: async (tx, request) => {
@@ -360,6 +370,13 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     const frameProfile = StoryFrameProfileSchema.parse(args.aspectRatio);
     const durationPreset = StoryDurationPresetSchema.parse(args.targetRuntime);
     const visualStyle = StoryVisualStyleSchema.parse(args.visualDirection);
+    const visualStyleSkill = storyVisualStyleSkillBySlug(visualStyle);
+    if (!visualStyleSkill) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_VISUAL_STYLE_SKILL_INVALID',
+        message: 'Select a published Story visual-style Skill.',
+      });
+    }
     const storyLanguage = StoryCreativeProfileLanguageSchema.parse(
       args.storyLanguage,
     );
@@ -405,12 +422,32 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     return this.prisma.$transaction(async (tx) => {
       await this.receipts.fenceBusinessMutationInTx(tx, input);
       await this.writeGuard.acquireAgentOsMutationFence(tx, input.projectId);
+      const publishedVisualStyleSkill = await tx.skillCatalogItem.findFirst({
+        where: {
+          id: visualStyleSkill.skillId,
+          slug: visualStyleSkill.slug,
+          category: 'style',
+          status: SkillCatalogStatus.published,
+          latestPublishedVersionId: visualStyleSkill.versionId,
+        },
+        select: { id: true },
+      });
+      if (!publishedVisualStyleSkill) {
+        throw new UnprocessableEntityException({
+          code: 'STORY_VISUAL_STYLE_SKILL_UNAVAILABLE',
+          message:
+            'The selected Story visual-style Skill is not published in this deployment.',
+          visualStyle,
+        });
+      }
       const project = await tx.storyProject.findUnique({
         where: { id: input.projectId },
         select: {
           frameProfile: true,
           durationPreset: true,
           visualStyle: true,
+          visualStyleSkillId: true,
+          visualStyleSkillVersionId: true,
           defaultLocale: true,
           creativeProfileConfirmedAt: true,
           builds: { select: { id: true }, take: 1 },
@@ -435,6 +472,8 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           project.frameProfile === frameProfile &&
           project.durationPreset === durationPreset &&
           project.visualStyle === visualStyle &&
+          project.visualStyleSkillId === visualStyleSkill.skillId &&
+          project.visualStyleSkillVersionId === visualStyleSkill.versionId &&
           project.defaultLocale === storyLanguage
         ) {
           const result = {
@@ -477,6 +516,8 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           frameProfile,
           durationPreset,
           visualStyle,
+          visualStyleSkillId: visualStyleSkill.skillId,
+          visualStyleSkillVersionId: visualStyleSkill.versionId,
           defaultLocale: storyLanguage,
           creativeProfileConfirmedAt: confirmedAt,
           version: { increment: 1 },
@@ -753,7 +794,10 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       project: {
         frameProfile: project.frameProfile,
         durationPreset: project.durationPreset,
-        visualStyle: project.visualStyle,
+        visualStyle: StoryVisualStyleSchema.safeParse(project.visualStyle)
+          .success
+          ? StoryVisualStyleSchema.parse(project.visualStyle)
+          : null,
         defaultLocale: project.defaultLocale,
         creativeProfileConfirmedAt: project.creativeProfileConfirmedAt,
       },
@@ -773,12 +817,7 @@ interface StoryDraftState {
   project: {
     frameProfile: 'landscape_16_9' | 'portrait_9_16';
     durationPreset: 'short_5_15' | 'medium_15_30' | 'long_30_60' | null;
-    visualStyle:
-      | 'cinematic_realism'
-      | 'stylized_3d'
-      | 'graphic_novel'
-      | 'anime_cinematic'
-      | null;
+    visualStyle: StoryVisualStyleSkillSlug | null;
     defaultLocale: string;
     creativeProfileConfirmedAt: Date | null;
   };

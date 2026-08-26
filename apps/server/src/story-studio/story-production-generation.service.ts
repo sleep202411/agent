@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -51,12 +52,14 @@ import {
   StoryGenerationOptionsSchema,
 } from './story-production-generation.schema';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
+import { StoryProductionPlanService } from './story-production-plan.service';
 
 const DEFAULT_RECONCILE_INTERVAL_MS = 15_000;
 const DEFAULT_RECONCILE_BATCH_SIZE = 25;
 const RECONCILE_LEASE_MS = 60_000;
 const MAX_RECONCILE_ATTEMPTS = 12;
 const GENERATION_TARGET_SNAPSHOT_VERSION = 1;
+const STORYBOARD_CLIP_TARGET_SNAPSHOT_VERSION = 2;
 const GENERATION_SUBMISSION_SNAPSHOT_VERSION = 1;
 const SERVER_OWNED_AI_INPUT_FIELDS = new Set([
   'prompt',
@@ -117,6 +120,14 @@ const REFERENCE_MEDIA_VERSION_INCLUDE =
 const CLIP_TARGET_INCLUDE =
   Prisma.validator<Prisma.StoryStoryboardClipInclude>()({
     project: { select: { frameProfile: true } },
+    sequence: {
+      select: {
+        id: true,
+        status: true,
+        version: true,
+        sourceFingerprint: true,
+      },
+    },
     assetBindings: {
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       include: {
@@ -270,6 +281,7 @@ export class StoryProductionGenerationService
     private readonly aiGeneration: AiGenerationService,
     private readonly completionObservers: AiGenerationCompletionObserverRegistry,
     private readonly assetUrls: MediaAssetUrlResolverService,
+    private readonly productionPlans: StoryProductionPlanService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -834,15 +846,28 @@ export class StoryProductionGenerationService
       return this.toGenerationDto(await this.requireGenerationById(replay.id));
     }
 
-    const target = await this.loadTarget(
-      this.prisma,
-      command.projectId,
-      command.chapterId,
-      command.targetKind,
-      command.targetId,
-      command.sequenceId,
-      command.requestedOutputKind,
-    );
+    const target = await this.prisma.$transaction(async (tx) => {
+      const loadedTarget = await this.loadTarget(
+        tx,
+        command.projectId,
+        command.chapterId,
+        command.targetKind,
+        command.targetId,
+        command.sequenceId,
+        command.requestedOutputKind,
+      );
+      const productionState =
+        await this.productionPlans.getProductionStateInTransaction(
+          tx,
+          command.projectId,
+          command.chapterId,
+        );
+      this.assertProductionStageCanGenerate(
+        productionState,
+        command.targetKind,
+      );
+      return loadedTarget;
+    });
     this.assertTargetCanGenerate(target, command);
     const targetSnapshotFingerprint = canonicalJsonHash(target.logicalSnapshot);
     if (
@@ -974,6 +999,16 @@ export class StoryProductionGenerationService
               command.targetId,
               command.sequenceId,
               command.requestedOutputKind,
+            );
+            const productionState =
+              await this.productionPlans.getProductionStateInTransaction(
+                tx,
+                command.projectId,
+                command.chapterId,
+              );
+            this.assertProductionStageCanGenerate(
+              productionState,
+              command.targetKind,
             );
             this.assertTargetCanGenerate(lockedTarget, command);
             if (
@@ -1460,6 +1495,32 @@ export class StoryProductionGenerationService
     }
   }
 
+  private assertProductionStageCanGenerate(
+    state: Awaited<
+      ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
+    >,
+    targetKind: SubmitGenerationCommand['targetKind'],
+  ): void {
+    if (this.productionStageCanGenerate(state, targetKind)) return;
+    throw new ConflictException({
+      code: 'STORY_GENERATION_TARGET_STALE',
+      message:
+        targetKind === 'asset_spec'
+          ? 'Asset Specs are no longer current with the approved Script. Reconcile them before generating media.'
+          : 'The Storyboard or its upstream Asset Specs are no longer current with the approved Script and Plot Tree. Reconcile them before generating media.',
+    });
+  }
+
+  private productionStageCanGenerate(
+    state: Awaited<
+      ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
+    >,
+    targetKind: SubmitGenerationCommand['targetKind'],
+  ): boolean {
+    if (state.assets.status !== 'current') return false;
+    return targetKind === 'asset_spec' || state.storyboard.status === 'current';
+  }
+
   private async loadTarget(
     db: PrismaService | Prisma.TransactionClient,
     projectId: string,
@@ -1637,22 +1698,43 @@ export class StoryProductionGenerationService
         SELECT pg_advisory_xact_lock(hashtext(${targetLockKey})::bigint)
       `;
 
+      const targetKind =
+        generation.targetKind === StoryProductionGenerationTargetKind.asset_spec
+          ? 'asset_spec'
+          : 'storyboard_clip';
       const target = await this.loadTarget(
         tx,
         generation.storyProjectId,
         generation.storyChapterId,
-        generation.targetKind === StoryProductionGenerationTargetKind.asset_spec
-          ? 'asset_spec'
-          : 'storyboard_clip',
+        targetKind,
         generation.assetSpecId ?? generation.storyboardClipId ?? '',
         null,
         generation.generationKind,
       );
+      let productionStageCanAutoSelect = false;
+      try {
+        const productionState =
+          await this.productionPlans.getProductionStateInTransaction(
+            tx,
+            generation.storyProjectId,
+            generation.storyChapterId,
+          );
+        productionStageCanAutoSelect = this.productionStageCanGenerate(
+          productionState,
+          targetKind,
+        );
+      } catch (error) {
+        if (!isCanonicalProductionStateUnavailable(error)) throw error;
+        this.logger.warn(
+          `Story generation ${generation.id} will preserve completed media without auto-selection because the canonical production state is unavailable: ${safeErrorMessage(error)}`,
+        );
+      }
       const promptSnapshot = jsonObject(generation.promptSnapshot);
       const originalTargetFingerprint = stringValue(
         promptSnapshot.targetSnapshotFingerprint,
       );
       const targetStillCurrent =
+        productionStageCanAutoSelect &&
         originalTargetFingerprint !== null &&
         target.status === StoryProductionSpecStatus.current &&
         target.version === generation.targetVersion &&
@@ -2162,6 +2244,11 @@ function assetTarget(
 }
 
 function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
+  const targetStatus =
+    row.status === StoryProductionSpecStatus.current &&
+    row.sequence.status !== StoryProductionSpecStatus.current
+      ? StoryProductionSpecStatus.stale
+      : row.status;
   const references = row.assetBindings.map((binding) => {
     const mediaVersion =
       binding.mode === StoryStoryboardBindingMode.pinned
@@ -2186,12 +2273,18 @@ function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
     } satisfies ResolvedTargetReference;
   });
   const logicalSnapshot = {
-    version: GENERATION_TARGET_SNAPSHOT_VERSION,
+    version: STORYBOARD_CLIP_TARGET_SNAPSHOT_VERSION,
     targetKind: 'storyboard_clip',
     id: row.id,
     sequenceId: row.sequenceId,
+    sequence: {
+      id: row.sequence.id,
+      versionNumber: row.sequence.version,
+      status: row.sequence.status,
+      sourceFingerprint: row.sequence.sourceFingerprint,
+    },
     versionNumber: row.version,
-    status: row.status,
+    status: targetStatus,
     sourceFingerprint: row.sourceFingerprint,
     selectedMediaVersionId: row.selectedMediaVersionId,
     kind: row.kind,
@@ -2233,7 +2326,7 @@ function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
     generationKind: row.kind,
     version: row.version,
     sourceFingerprint: row.sourceFingerprint,
-    status: row.status,
+    status: targetStatus,
     prompt:
       row.kind === 'video' ? (row.videoPrompt ?? '') : (row.imagePrompt ?? ''),
     negativePrompt: row.negativePrompt,
@@ -2678,6 +2771,17 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 
 function reconcileBackoffMs(attempt: number): number {
   return Math.min(15 * 60_000, 2 ** Math.min(10, attempt) * 1_000);
+}
+
+function isCanonicalProductionStateUnavailable(error: unknown): boolean {
+  if (error instanceof HttpException) return true;
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2025'
+  ) {
+    return true;
+  }
+  return error instanceof Error && error.name === 'ZodError';
 }
 
 function safeErrorMessage(error: unknown): string {

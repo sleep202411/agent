@@ -5,6 +5,10 @@ import {
   StoryRemoveInteractionInputSchema,
 } from '@repo/agent-tools';
 import {
+  STORY_VISUAL_STYLE_SKILL_SLUGS,
+  storyVisualStyleSkillBySlug,
+} from '@repo/shared';
+import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   type InteractiveStoryDraftContent,
 } from '../../story-studio/interactive-film.schema';
@@ -65,18 +69,14 @@ const CREATIVE_PROFILE_QUESTIONS = [
   },
   {
     id: 'visual_direction',
-    options: [
-      { value: 'cinematic_realism' },
-      { value: 'stylized_3d' },
-      { value: 'graphic_novel' },
-      { value: 'anime_cinematic' },
-    ],
+    options: STORY_VISUAL_STYLE_SKILL_SLUGS.map((value) => ({ value })),
   },
   {
     id: 'story_language',
     options: [{ value: 'zh-CN' }, { value: 'zh-HK' }, { value: 'en-US' }],
   },
 ] as const;
+const STYLIZED_3D_SKILL = storyVisualStyleSkillBySlug('stylized-3d-cinema')!;
 
 describe('StoryAgentCapabilityHandler', () => {
   const handler = new StoryAgentCapabilityHandler(
@@ -136,6 +136,7 @@ describe('StoryAgentCapabilityHandler', () => {
         summary: 'A final imperial guard chooses whom to save.',
         brief:
           'Create an interactive film set on the final night of Ming rule.',
+        continueThrough: 'storyboard',
         startedMessage:
           'I have the direction and am shaping the interactive-film proposal now.',
         completionMessage:
@@ -165,9 +166,17 @@ describe('StoryAgentCapabilityHandler', () => {
         sourceAgentToolCallId: input.toolCallId,
         sourceStartedMessage: input.arguments.startedMessage,
         sourceCompletionMessage: input.arguments.completionMessage,
+        sourceContinuationPlan: {
+          continueThrough: 'storyboard',
+          title: input.arguments.title,
+          summary: input.arguments.summary,
+          brief: input.arguments.brief,
+        },
       }),
       expect.objectContaining({
-        canonicalizeAndFence: expect.any(Function),
+        canonicalizeAndFence: expect.any(Function) as (
+          ...args: unknown[]
+        ) => unknown,
       }),
     );
   });
@@ -193,18 +202,25 @@ describe('StoryAgentCapabilityHandler', () => {
           answers: {
             aspect_ratio: 'landscape_16_9',
             target_runtime: 'medium_15_30',
-            visual_direction: 'stylized_3d',
+            visual_direction: 'stylized-3d-cinema',
             story_language: 'zh-CN',
           },
         },
       },
     ]);
     const tx = {
+      skillCatalogItem: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: STYLIZED_3D_SKILL.skillId }),
+      },
       storyProject: {
         findUnique: jest.fn().mockResolvedValue({
           frameProfile: 'landscape_16_9',
           durationPreset: null,
           visualStyle: null,
+          visualStyleSkillId: null,
+          visualStyleSkillVersionId: null,
           defaultLocale: 'en-US',
           creativeProfileConfirmedAt: null,
           builds: [],
@@ -256,14 +272,14 @@ describe('StoryAgentCapabilityHandler', () => {
           requestId,
           aspectRatio: 'landscape_16_9',
           targetRuntime: 'medium_15_30',
-          visualDirection: 'stylized_3d',
+          visualDirection: 'stylized-3d-cinema',
           storyLanguage: 'zh-CN',
         },
       }),
     ).resolves.toMatchObject({
       frameProfile: 'landscape_16_9',
       durationPreset: 'medium_15_30',
-      visualStyle: 'stylized_3d',
+      visualStyle: 'stylized-3d-cinema',
       storyLanguage: 'zh-CN',
     });
     expect(prisma.agentOsRun.findFirst).toHaveBeenCalledWith({
@@ -303,7 +319,7 @@ describe('StoryAgentCapabilityHandler', () => {
               answers: {
                 aspect_ratio: 'landscape_16_9',
                 target_runtime: 'medium_15_30',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
                 story_language: 'zh-CN',
               },
             },
@@ -314,7 +330,7 @@ describe('StoryAgentCapabilityHandler', () => {
     ).toEqual({
       aspect_ratio: 'landscape_16_9',
       target_runtime: 'medium_15_30',
-      visual_direction: 'stylized_3d',
+      visual_direction: 'stylized-3d-cinema',
       story_language: 'zh-CN',
     });
   });
@@ -341,7 +357,7 @@ describe('StoryAgentCapabilityHandler', () => {
               answers: {
                 aspect_ratio: 'landscape_16_9',
                 target_runtime: 'medium_15_30',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
                 story_language: 'zh-HK',
               },
             },
@@ -365,7 +381,7 @@ describe('StoryAgentCapabilityHandler', () => {
               formId: 'story_creative_profile',
               knownValues: {
                 aspect_ratio: 'landscape_16_9',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
               },
               questions: [
                 CREATIVE_PROFILE_QUESTIONS[1],
@@ -390,7 +406,7 @@ describe('StoryAgentCapabilityHandler', () => {
     ).toEqual({
       aspect_ratio: 'landscape_16_9',
       target_runtime: 'medium_15_30',
-      visual_direction: 'stylized_3d',
+      visual_direction: 'stylized-3d-cinema',
       story_language: 'en-US',
     });
   });
@@ -408,7 +424,7 @@ describe('StoryAgentCapabilityHandler', () => {
               formId: 'story_creative_profile',
               knownValues: {
                 aspect_ratio: 'landscape_16_9',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
               },
               questions: [
                 CREATIVE_PROFILE_QUESTIONS[3],
@@ -446,7 +462,7 @@ describe('StoryAgentCapabilityHandler', () => {
               answers: {
                 aspect_ratio: 'landscape_16_9',
                 target_runtime: 'medium_15_30',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
                 story_language: 'en-US',
               },
             },

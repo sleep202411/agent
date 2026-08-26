@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  STORY_VISUAL_STYLE_SKILL_SLUGS,
+  type StoryVisualStyleSkillSlug,
+} from '@repo/shared';
+import {
   StoryBuildScopeSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
@@ -45,13 +49,8 @@ export const StoryDurationPresetSchema = z.enum([
 ]);
 export type StoryDurationPreset = z.infer<typeof StoryDurationPresetSchema>;
 
-export const StoryVisualStyleSchema = z.enum([
-  'cinematic_realism',
-  'stylized_3d',
-  'graphic_novel',
-  'anime_cinematic',
-]);
-export type StoryVisualStyle = z.infer<typeof StoryVisualStyleSchema>;
+export const StoryVisualStyleSchema = z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS);
+export type StoryVisualStyle = StoryVisualStyleSkillSlug;
 
 export const STORY_FRAME_PROFILE_CONTRACTS = {
   landscape_16_9: {

@@ -57,7 +57,7 @@ function productionPlan(): StoryProductionPlan {
   });
 }
 
-function snapshot(plan = productionPlan()) {
+function snapshot(plan: unknown = productionPlan()) {
   return {
     id: SNAPSHOT_ID,
     storyProjectId: PROJECT_ID,
@@ -276,6 +276,82 @@ describe('ResolveStoryProductionConflictSchema', () => {
 });
 
 describe('Story production conflict resolution', () => {
+  it('reads an Asset-only pending snapshot during conflict resolution', async () => {
+    const plan = productionPlan();
+    const assetOnlyPlan = { assetSpecs: plan.assetSpecs };
+    const current = assetRow({
+      pendingPlanSnapshot: snapshot(assetOnlyPlan),
+    });
+    const resolved = assetRow({
+      sourceFingerprint: current.pendingSourceFingerprint,
+      pendingSourceFingerprint: null,
+      pendingPlanSnapshotId: null,
+      pendingPlanSnapshot: null,
+      planDisposition: StoryProductionPlanDisposition.user_override,
+      status: StoryProductionSpecStatus.current,
+      version: 5,
+    });
+    const { service } = serviceHarness({
+      asset: current,
+      resolvedAsset: resolved,
+    });
+
+    await expect(
+      service.resolveAssetSpecConflict(
+        { userId: USER_ID } as never,
+        'workspace-1',
+        PROJECT_ID,
+        CHAPTER_ID,
+        ASSET_ID,
+        'asset-only-snapshot',
+        {
+          expectedVersion: 4,
+          expectedPendingSourceFingerprint: assetFingerprint(),
+          resolution: 'keep_current',
+        },
+      ),
+    ).resolves.toMatchObject({ outcome: 'kept_current' });
+  });
+
+  it('reads a Storyboard-only pending snapshot during conflict resolution', async () => {
+    const plan = productionPlan();
+    const storyboardOnlyPlan = {
+      storyboardSequences: plan.storyboardSequences,
+    };
+    const current = sequenceRow({
+      pendingPlanSnapshot: snapshot(storyboardOnlyPlan),
+    });
+    const resolved = sequenceRow({
+      sourceFingerprint: current.pendingSourceFingerprint,
+      pendingSourceFingerprint: null,
+      pendingPlanSnapshotId: null,
+      pendingPlanSnapshot: null,
+      planDisposition: StoryProductionPlanDisposition.user_override,
+      status: StoryProductionSpecStatus.current,
+      version: 4,
+    });
+    const { service } = serviceHarness({
+      sequence: current,
+      resolvedSequence: resolved,
+    });
+
+    await expect(
+      service.resolveStoryboardSequenceConflict(
+        { userId: USER_ID } as never,
+        'workspace-1',
+        PROJECT_ID,
+        CHAPTER_ID,
+        SEQUENCE_ID,
+        'storyboard-only-snapshot',
+        {
+          expectedVersion: 3,
+          expectedPendingSourceFingerprint: sequenceFingerprint(),
+          resolution: 'keep_current',
+        },
+      ),
+    ).resolves.toMatchObject({ outcome: 'kept_current' });
+  });
+
   it('persists the exact pending snapshot instead of overwriting a modified Asset Spec during reconcile', async () => {
     const current = assetRow({
       status: StoryProductionSpecStatus.current,

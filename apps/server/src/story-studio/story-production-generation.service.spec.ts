@@ -170,6 +170,7 @@ async function resolveDefaultVideoModel(models: unknown[]) {
     } as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   const resolver = service as unknown as {
     requireCompatibleModel(

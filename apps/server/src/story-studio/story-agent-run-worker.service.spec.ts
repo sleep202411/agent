@@ -5,12 +5,15 @@ import {
   buildStoryScreenplayDocument,
   StoryScreenplaySchema,
 } from '@repo/shared/story-agent';
+import { storyVisualStyleSkillBySlug } from '@repo/shared';
 
 const RUN_ID = '0197f4a2-0800-7000-8000-000000000031';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000003';
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const HEARTBEAT_MS = 10_000;
+const CINEMATIC_REALISM_SKILL =
+  storyVisualStyleSkillBySlug('cinematic-realism')!;
 
 const JOB = {
   runId: RUN_ID,
@@ -18,8 +21,10 @@ const JOB = {
   chapterId: CHAPTER_ID,
   workspaceId: WORKSPACE_ID,
   mode: 'screenplay_required' as const,
-  approvedScreenplay: null,
+  targetStage: 'script' as const,
+  screenplaySnapshot: null,
   scriptSource: null,
+  assetPlan: null,
   brief: {
     schemaVersion: 'story-patch-brief-v1',
     title: 'A remembered dream',
@@ -29,7 +34,11 @@ const JOB = {
   creativeProfile: {
     frameProfile: 'landscape_16_9',
     durationPreset: 'short_5_15',
-    visualStyle: 'cinematic_realism',
+    visualStyle: 'cinematic-realism',
+    visualStyleSkillId: CINEMATIC_REALISM_SKILL.skillId,
+    visualStyleSkillVersionId: CINEMATIC_REALISM_SKILL.versionId,
+    visualStylePrompt:
+      'Compose grounded live-action imagery with motivated light and tactile production design.',
     storyLanguage: 'en-US',
     confirmedAt: '2026-08-21T00:00:00.000Z',
   },
@@ -88,6 +97,14 @@ const AUTHORED_PRODUCTION_PLAN = {
   ],
 } as const;
 
+const AUTHORED_ASSET_PLAN = {
+  assetSpecs: AUTHORED_PRODUCTION_PLAN.assetSpecs,
+} as const;
+
+const AUTHORED_STORYBOARD_PLAN = {
+  storyboardSequences: AUTHORED_PRODUCTION_PLAN.storyboardSequences,
+} as const;
+
 const APPROVED_SCREENPLAY = {
   documentId: '0197f4a2-0800-7000-8000-000000000041',
   versionId: '0197f4a2-0800-7000-8000-000000000042',
@@ -112,7 +129,10 @@ function harness() {
     completeAuthoring: jest
       .fn()
       .mockResolvedValue({ kind: 'completed', run: { id: RUN_ID } }),
-    completeAutomaticAuthoring: jest
+    completeStageAuthoring: jest
+      .fn()
+      .mockResolvedValue({ kind: 'completed', run: { id: RUN_ID } }),
+    completeNoopAuthoring: jest
       .fn()
       .mockResolvedValue({ kind: 'completed', run: { id: RUN_ID } }),
     failAuthoring: jest.fn().mockResolvedValue(undefined),
@@ -121,10 +141,10 @@ function harness() {
     author: jest.fn().mockResolvedValue({
       screenplay: AUTHORED_SCREENPLAY,
     }),
-    planProduction: jest.fn().mockResolvedValue(AUTHORED_PRODUCTION_PLAN),
-    compileProductionFromScript: jest.fn().mockResolvedValue({
+    planAssets: jest.fn().mockResolvedValue(AUTHORED_ASSET_PLAN),
+    planStoryboard: jest.fn().mockResolvedValue(AUTHORED_STORYBOARD_PLAN),
+    compileScript: jest.fn().mockResolvedValue({
       screenplay: AUTHORED_SCREENPLAY,
-      productionPlan: AUTHORED_PRODUCTION_PLAN,
     }),
   };
   const worker = new StoryAgentRunWorkerService(
@@ -166,17 +186,20 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
       screenplay: AUTHORED_SCREENPLAY,
       authoredAgainst: JOB.snapshot,
     });
-    expect(pipeline.planProduction).not.toHaveBeenCalled();
-    expect(pipeline.compileProductionFromScript).not.toHaveBeenCalled();
+    expect(pipeline.planAssets).not.toHaveBeenCalled();
+    expect(pipeline.planStoryboard).not.toHaveBeenCalled();
+    expect(pipeline.compileScript).not.toHaveBeenCalled();
     expect(runs.failAuthoring).not.toHaveBeenCalled();
   });
 
-  it('plans only downstream production from the exact approved screenplay', async () => {
+  it('lands only a Plot proposal from the exact approved screenplay', async () => {
     const { runs, pipeline, worker } = harness();
     const job = {
       ...JOB,
       mode: 'downstream_reconcile' as const,
-      approvedScreenplay: APPROVED_SCREENPLAY,
+      targetStage: 'plot' as const,
+      screenplaySnapshot: APPROVED_SCREENPLAY,
+      assetPlan: AUTHORED_ASSET_PLAN,
     };
     runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
 
@@ -185,26 +208,19 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
 
     const workerId = claimedWorkerId(runs);
     expect(pipeline.author).not.toHaveBeenCalled();
-    expect(pipeline.planProduction).toHaveBeenCalledTimes(1);
-    expect(pipeline.planProduction).toHaveBeenCalledWith({
-      screenplay: APPROVED_SCREENPLAY.screenplay,
-      creativeProfile: JOB.creativeProfile,
-      signal: expect.any(AbortSignal),
-      onStage: expect.any(Function),
-    });
+    expect(pipeline.compileScript).not.toHaveBeenCalled();
+    expect(pipeline.planAssets).not.toHaveBeenCalled();
+    expect(pipeline.planStoryboard).not.toHaveBeenCalled();
     expect(runs.completeAuthoring).not.toHaveBeenCalled();
-    expect(runs.completeAutomaticAuthoring).toHaveBeenCalledWith(
-      RUN_ID,
-      workerId,
-      {
-        mode: 'downstream_reconcile',
-        productionPlan: AUTHORED_PRODUCTION_PLAN,
-        authoredAgainst: JOB.snapshot,
-      },
-    );
+    expect(runs.completeStageAuthoring).toHaveBeenCalledWith(RUN_ID, workerId, {
+      targetStage: 'plot',
+      screenplay: APPROVED_SCREENPLAY.screenplay,
+      assetPlan: AUTHORED_ASSET_PLAN,
+      authoredAgainst: JOB.snapshot,
+    });
   });
 
-  it('compiles downstream structure from an exact existing Script without rewriting it', async () => {
+  it('compiles an exact existing Script before planning its Asset Specs', async () => {
     const { runs, pipeline, worker } = harness();
     const scriptSource = {
       documentId: '0197f4a2-0800-7000-8000-000000000051',
@@ -216,7 +232,8 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     const job = {
       ...JOB,
       mode: 'downstream_reconcile' as const,
-      approvedScreenplay: null,
+      targetStage: 'assets' as const,
+      screenplaySnapshot: null,
       scriptSource,
       snapshot: {
         ...JOB.snapshot,
@@ -231,22 +248,94 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     await worker.authoringIdle();
 
     expect(pipeline.author).not.toHaveBeenCalled();
-    expect(pipeline.planProduction).not.toHaveBeenCalled();
-    expect(pipeline.compileProductionFromScript).toHaveBeenCalledWith({
+    expect(pipeline.planAssets).toHaveBeenCalledWith({
+      screenplay: AUTHORED_SCREENPLAY,
+      creativeProfile: JOB.creativeProfile,
+      signal: expect.any(AbortSignal),
+      onStage: expect.any(Function),
+    });
+    expect(pipeline.compileScript).toHaveBeenCalledWith({
       sourceText: scriptSource.sourceText,
       title: JOB.brief.title,
       creativeProfile: JOB.creativeProfile,
       signal: expect.any(AbortSignal),
       onStage: expect.any(Function),
     });
-    expect(runs.completeAutomaticAuthoring).toHaveBeenCalledWith(
+    expect(runs.completeStageAuthoring).toHaveBeenCalledWith(
       RUN_ID,
       claimedWorkerId(runs),
       {
-        mode: 'downstream_reconcile',
-        productionPlan: AUTHORED_PRODUCTION_PLAN,
+        targetStage: 'assets',
         screenplay: AUTHORED_SCREENPLAY,
+        assetPlan: AUTHORED_ASSET_PLAN,
         authoredAgainst: job.snapshot,
+      },
+    );
+  });
+
+  it('authors only Asset Specs and leaves Storyboard for another run', async () => {
+    const { runs, pipeline, worker } = harness();
+    const job = {
+      ...JOB,
+      mode: 'downstream_reconcile' as const,
+      targetStage: 'assets' as const,
+      screenplaySnapshot: APPROVED_SCREENPLAY,
+    };
+    runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
+
+    await worker.drainOnce();
+    await worker.authoringIdle();
+
+    expect(pipeline.planAssets).toHaveBeenCalledWith({
+      screenplay: APPROVED_SCREENPLAY.screenplay,
+      creativeProfile: JOB.creativeProfile,
+      signal: expect.any(AbortSignal),
+      onStage: expect.any(Function),
+    });
+    expect(pipeline.planStoryboard).not.toHaveBeenCalled();
+    expect(runs.completeStageAuthoring).toHaveBeenCalledWith(
+      RUN_ID,
+      claimedWorkerId(runs),
+      {
+        targetStage: 'assets',
+        screenplay: APPROVED_SCREENPLAY.screenplay,
+        assetPlan: AUTHORED_ASSET_PLAN,
+        authoredAgainst: JOB.snapshot,
+      },
+    );
+  });
+
+  it('authors Storyboard only from the exact approved Asset plan', async () => {
+    const { runs, pipeline, worker } = harness();
+    const job = {
+      ...JOB,
+      mode: 'downstream_reconcile' as const,
+      targetStage: 'storyboard' as const,
+      screenplaySnapshot: APPROVED_SCREENPLAY,
+      assetPlan: AUTHORED_ASSET_PLAN,
+    };
+    runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
+
+    await worker.drainOnce();
+    await worker.authoringIdle();
+
+    expect(pipeline.planAssets).not.toHaveBeenCalled();
+    expect(pipeline.planStoryboard).toHaveBeenCalledWith({
+      screenplay: APPROVED_SCREENPLAY.screenplay,
+      assetPlan: AUTHORED_ASSET_PLAN,
+      creativeProfile: JOB.creativeProfile,
+      signal: expect.any(AbortSignal),
+      onStage: expect.any(Function),
+    });
+    expect(runs.completeStageAuthoring).toHaveBeenCalledWith(
+      RUN_ID,
+      claimedWorkerId(runs),
+      {
+        targetStage: 'storyboard',
+        screenplay: APPROVED_SCREENPLAY.screenplay,
+        assetPlan: AUTHORED_ASSET_PLAN,
+        storyboardPlan: AUTHORED_STORYBOARD_PLAN,
+        authoredAgainst: JOB.snapshot,
       },
     );
   });
@@ -256,7 +345,8 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     const job = {
       ...JOB,
       mode: 'noop' as const,
-      approvedScreenplay: APPROVED_SCREENPLAY,
+      targetStage: 'noop' as const,
+      screenplaySnapshot: APPROVED_SCREENPLAY,
     };
     runs.loadAuthoringJob.mockResolvedValue({ kind: 'job', job });
 
@@ -264,15 +354,14 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     await worker.authoringIdle();
 
     expect(pipeline.author).not.toHaveBeenCalled();
-    expect(pipeline.planProduction).not.toHaveBeenCalled();
+    expect(pipeline.compileScript).not.toHaveBeenCalled();
+    expect(pipeline.planAssets).not.toHaveBeenCalled();
+    expect(pipeline.planStoryboard).not.toHaveBeenCalled();
     expect(runs.completeAuthoring).not.toHaveBeenCalled();
-    expect(runs.completeAutomaticAuthoring).toHaveBeenCalledWith(
+    expect(runs.completeNoopAuthoring).toHaveBeenCalledWith(
       RUN_ID,
       claimedWorkerId(runs),
-      {
-        mode: 'noop',
-        authoredAgainst: JOB.snapshot,
-      },
+      JOB.snapshot,
     );
   });
 

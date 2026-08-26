@@ -1,23 +1,30 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access -- Jest mock payload inspection is intentionally structural. */
 import { ConflictException, ForbiddenException } from '@nestjs/common';
 import {
+  Prisma,
+  StoryAgentAuthoringMode,
   StoryAgentRunKind,
   StoryAgentRunStatus,
   StoryDurationPreset,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
-  StoryVisualStyle,
 } from '@prisma/client';
 import type {
   StoryPatchBrief,
   StoryPatchProposal,
 } from '@repo/shared/story-agent';
+import {
+  buildStoryScreenplayDocument,
+  StoryScreenplayProposalSchema,
+} from '@repo/shared/story-agent';
+import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
+  type StoryVisualStyle,
 } from './dto';
 import {
   storyProposalApprovalId,
@@ -61,6 +68,80 @@ const BRIEF_CONVERSATION_ID = `story-canvas:${PROJECT_ID}:${CHAPTER_ID}`;
 const SOURCE_AGENT_RUN_ID = '0197f4a2-0800-7000-8000-00000000000e';
 const SOURCE_AGENT_TURN_ID = '0197f4a2-0800-7000-8000-00000000000f';
 const SOURCE_AGENT_CONVERSATION_ID = '0197f4a2-0800-7000-8000-000000000010';
+const SOURCE_CONTINUATION_PLAN = {
+  continueThrough: 'storyboard' as const,
+  title: 'A remembered dream',
+  summary: 'Establish the premise.',
+  brief: BRIEF_TEXT,
+};
+const CINEMATIC_REALISM_SKILL =
+  storyVisualStyleSkillBySlug('cinematic-realism')!;
+const CINEMATIC_REALISM_PROMPT =
+  'Compose grounded live-action imagery with motivated light, tactile production design, and restrained cinematic color.';
+const CINEMATIC_REALISM_POLICY = {
+  promptAuthoring: { instructions: CINEMATIC_REALISM_PROMPT },
+  image: { promptSuffix: 'grounded cinematic realism' },
+  video: { promptSuffix: 'grounded live-action motion' },
+} as const;
+const LEGACY_APPROVED_SCREENPLAY = {
+  schemaVersion: 'interactive-screenplay-v1' as const,
+  storyLanguage: 'en-US',
+  title: 'A remembered dream',
+  logline: 'A dream remembers its author.',
+  synopsis: 'The author wakes inside the dream they abandoned.',
+  characters: [],
+  entrySceneId: 'opening',
+  scenes: [
+    {
+      nodeId: 'opening',
+      clipKey: 'OPENING',
+      heading: 'INT. DREAM – NIGHT',
+      beat: 'The dream recognizes its author.',
+      action: 'A page turns itself in the dark.',
+      dialogue: [],
+      exit: { kind: 'auto' as const, nextNodeId: null },
+    },
+  ],
+};
+const LEGACY_SCRIPT_DOCUMENT_ID = '0197f4a2-0800-7000-8000-000000000041';
+const LEGACY_SCRIPT_VERSION_ID = '0197f4a2-0800-7000-8000-000000000042';
+const LEGACY_REARMED_PROPOSAL = StoryScreenplayProposalSchema.parse({
+  schemaVersion: 'story-screenplay-proposal-v1',
+  draftSchemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  baseDraftRevision: AUTHORING_SNAPSHOT.draftRevision,
+  baseContentHash: AUTHORING_SNAPSHOT.draftContentHash,
+  baseLayoutRevision: AUTHORING_SNAPSHOT.layoutRevision,
+  baseScriptDocumentId: LEGACY_SCRIPT_DOCUMENT_ID,
+  baseScriptSequence: 0,
+  baseScriptHash: 'b'.repeat(64),
+  title: 'A remembered dream',
+  summary: 'The approved Script was already saved.',
+  screenplay: LEGACY_APPROVED_SCREENPLAY,
+  productionPlan: {
+    schemaVersion: 'story-production-plan-v1',
+    assetSpecs: [],
+    storyboardSequences: [
+      {
+        plotNodeId: 'opening',
+        title: 'Opening',
+        description: 'The dream recognizes its author.',
+        durationMs: 1_000,
+        clips: [
+          {
+            stableKey: 'shot.opening',
+            kind: 'image',
+            title: 'Opening',
+            description: 'The opening frame.',
+            startMs: 0,
+            durationMs: 1_000,
+            imagePrompt: 'A page turns itself in a dark dream.',
+          },
+        ],
+        cues: [],
+      },
+    ],
+  },
+});
 
 const changedOverviewOperation = {
   operationId: OPERATION_ID,
@@ -158,6 +239,7 @@ describe('StoryAgentRunService', () => {
       sourceAgentToolCallId: 'call_story_author_1',
       sourceStartedMessage: 'I am shaping the proposal now.',
       sourceCompletionMessage: 'The proposal is ready for review.',
+      sourceContinuationPlan: SOURCE_CONTINUATION_PLAN,
     };
 
     await service.createAuthoringRun(
@@ -169,7 +251,12 @@ describe('StoryAgentRunService', () => {
 
     expect(createdRows[0]).toEqual(
       expect.objectContaining({
-        ...source,
+        conversationId: source.conversationId,
+        sourceAgentRunId: source.sourceAgentRunId,
+        sourceAgentTurnId: source.sourceAgentTurnId,
+        sourceAgentToolCallId: source.sourceAgentToolCallId,
+        sourceStartedMessage: source.sourceStartedMessage,
+        sourceCompletionMessage: source.sourceCompletionMessage,
         sourceResultDeliveredAt: null,
         requestFingerprint: briefFingerprint(source),
       }),
@@ -206,6 +293,7 @@ describe('StoryAgentRunService', () => {
         sourceToolId: 'story.author',
         startedMessage: 'I am shaping the proposal now.',
         completionMessage: 'The proposal is ready for review.',
+        continuationPlan: SOURCE_CONTINUATION_PLAN,
       },
     });
   });
@@ -218,6 +306,7 @@ describe('StoryAgentRunService', () => {
       sourceAgentToolCallId: 'call_story_author_1',
       sourceStartedMessage: 'I am shaping the proposal now.',
       sourceCompletionMessage: 'The proposal is ready for review.',
+      sourceContinuationPlan: SOURCE_CONTINUATION_PLAN,
     };
     const tx = proposalTransaction([], {
       existing: authoringRunRow({
@@ -482,7 +571,7 @@ describe('StoryAgentRunService', () => {
         briefInput({ sourceAgentRunId: SOURCE_AGENT_RUN_ID }),
       ),
     ).rejects.toThrow(
-      'Agent OS source run, turn, tool call, started message, and completion message must be supplied together.',
+      'Agent OS source run, turn, tool call, lifecycle copy, and continuation plan must be supplied together.',
     );
     expect(createdRows).toHaveLength(0);
   });
@@ -502,6 +591,7 @@ describe('StoryAgentRunService', () => {
           sourceAgentToolCallId: 'call_story_author_1',
           sourceStartedMessage: 'I am shaping the proposal now.',
           sourceCompletionMessage: 'The proposal is ready for review.',
+          sourceContinuationPlan: SOURCE_CONTINUATION_PLAN,
         }),
       ),
     ).rejects.toThrow(
@@ -668,7 +758,10 @@ describe('StoryAgentRunService', () => {
     expect(load.job.creativeProfile).toEqual({
       frameProfile: StoryFrameProfile.landscape_16_9,
       durationPreset: StoryDurationPreset.short_5_15,
-      visualStyle: StoryVisualStyle.cinematic_realism,
+      visualStyle: 'cinematic-realism',
+      visualStyleSkillId: CINEMATIC_REALISM_SKILL.skillId,
+      visualStyleSkillVersionId: CINEMATIC_REALISM_SKILL.versionId,
+      visualStylePrompt: CINEMATIC_REALISM_PROMPT,
       storyLanguage: 'en-US',
       confirmedAt: NOW.toISOString(),
     });
@@ -682,6 +775,373 @@ describe('StoryAgentRunService', () => {
         text: true,
       },
     });
+  });
+
+  it.each([
+    StoryAgentAuthoringMode.downstream_reconcile,
+    StoryAgentAuthoringMode.noop,
+  ])(
+    'terminalizes a legacy confirmed %s same-run continuation without downstream writes',
+    async (authoringMode) => {
+      const legacy = authoringRunRow({
+        proposal: LEGACY_REARMED_PROPOSAL,
+        authoringMode,
+        confirmedByUserId: USER.userId,
+        confirmedAt: NOW,
+      });
+      const completed = runRow({
+        ...legacy,
+        status: StoryAgentRunStatus.succeeded,
+        authoringStages: null,
+        resultDraftRevision: AUTHORING_SNAPSHOT.draftRevision,
+        resultLayoutRevision: AUTHORING_SNAPSHOT.layoutRevision,
+        beforeDraftSnapshot: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+        beforeDraftHash: AUTHORING_SNAPSHOT.draftContentHash,
+        afterDraftSnapshot: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+        afterDraftHash: AUTHORING_SNAPSHOT.draftContentHash,
+        beforeLayoutSnapshot: { nodePositions: {} },
+        beforeLayoutHash: canonicalJsonHash({ nodePositions: {} }),
+        afterLayoutSnapshot: { nodePositions: {} },
+        afterLayoutHash: canonicalJsonHash({ nodePositions: {} }),
+        applyingAt: NOW,
+        revealStartedAt: NOW,
+        completedAt: NOW,
+        leaseOwner: null,
+        leaseAcquiredAt: null,
+        leaseExpiresAt: null,
+      });
+      const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          .mockResolvedValueOnce([{ now: NOW }])
+          .mockResolvedValueOnce([freeWriteState()])
+          .mockResolvedValueOnce([]),
+        storyAgentRun: {
+          findUnique: jest.fn().mockResolvedValue(legacy),
+          findFirst: jest.fn().mockResolvedValue(completed),
+          updateMany,
+        },
+        storyProject: {
+          findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+        },
+        studioDocument: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: LEGACY_SCRIPT_DOCUMENT_ID,
+            currentSequence: 1,
+            currentVersionId: LEGACY_SCRIPT_VERSION_ID,
+          }),
+        },
+        studioDocumentVersion: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: LEGACY_SCRIPT_VERSION_ID,
+            documentId: LEGACY_SCRIPT_DOCUMENT_ID,
+            sequence: 1,
+            snapshot: {
+              screenplay: LEGACY_APPROVED_SCREENPLAY,
+              document: buildStoryScreenplayDocument(
+                LEGACY_APPROVED_SCREENPLAY,
+              ),
+            },
+          }),
+        },
+      };
+      const { service, realtime } = serviceWith(tx);
+
+      await expect(
+        service.loadAuthoringJob(RUN_ID, WORKER_ID),
+      ).resolves.toEqual({
+        kind: 'skip',
+      });
+      expect(updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: RUN_ID,
+            status: StoryAgentRunStatus.authoring,
+            authoringMode,
+            confirmedAt: { not: null },
+          }),
+          data: expect.objectContaining({
+            status: StoryAgentRunStatus.succeeded,
+            resultDraftRevision: AUTHORING_SNAPSHOT.draftRevision,
+            resultLayoutRevision: AUTHORING_SNAPSHOT.layoutRevision,
+            affectedNodeIds: [],
+            createdNodeIds: [],
+            leaseOwner: null,
+          }),
+        }),
+      );
+      expect(realtime.enqueue).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    StoryAgentAuthoringMode.downstream_reconcile,
+    StoryAgentAuthoringMode.noop,
+  ])(
+    'terminalizes a legacy confirmed applying %s run without replaying Script or downstream writes',
+    async (authoringMode) => {
+      const applying = runRow({
+        status: StoryAgentRunStatus.applying,
+        proposal: LEGACY_REARMED_PROPOSAL,
+        authoringMode,
+        confirmedByUserId: USER.userId,
+        confirmedAt: NOW,
+        applyingAt: NOW,
+        fencingToken: 11n,
+        leaseOwner: WORKER_ID,
+        leaseAcquiredAt: NOW,
+        leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+      });
+      const storyRunUpdate = jest
+        .fn()
+        .mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+          Promise.resolve(
+            runRow({
+              ...applying,
+              ...data,
+              activeWriteState: null,
+            }),
+          ),
+        );
+      const scriptCreate = jest.fn();
+      const scriptUpdate = jest.fn();
+      const tx = {
+        $queryRaw: jest.fn().mockResolvedValue([
+          {
+            storyProjectId: PROJECT_ID,
+            activeAgentRunId: RUN_ID,
+            fencingToken: 11n,
+            lockedAt: NOW,
+            lockExpiresAt: new Date(NOW.getTime() + 60_000),
+            databaseNow: NOW,
+          },
+        ]),
+        storyAgentRun: {
+          findUnique: jest.fn().mockResolvedValue(applying),
+          update: storyRunUpdate,
+        },
+        storyProject: {
+          findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+        },
+        storyProjectWriteState: {
+          update: jest.fn().mockResolvedValue(undefined),
+        },
+        studioDocument: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: LEGACY_SCRIPT_DOCUMENT_ID,
+            currentSequence: 1,
+            currentVersionId: LEGACY_SCRIPT_VERSION_ID,
+          }),
+          create: scriptCreate,
+          update: scriptUpdate,
+        },
+        studioDocumentVersion: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: LEGACY_SCRIPT_VERSION_ID,
+            documentId: LEGACY_SCRIPT_DOCUMENT_ID,
+            sequence: 1,
+            snapshot: {
+              screenplay: LEGACY_APPROVED_SCREENPLAY,
+              document: buildStoryScreenplayDocument(
+                LEGACY_APPROVED_SCREENPLAY,
+              ),
+            },
+          }),
+        },
+      };
+      const { service, realtime, productionPlans } = serviceWith(tx);
+
+      await service.executeClaimedRun(RUN_ID, WORKER_ID);
+
+      expect(tx.storyProjectWriteState.update).toHaveBeenCalledWith({
+        where: { storyProjectId: PROJECT_ID },
+        data: {
+          activeAgentRunId: null,
+          lockedAt: null,
+          lockExpiresAt: null,
+        },
+      });
+      expect(storyRunUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: StoryAgentRunStatus.succeeded,
+            resultDraftRevision: AUTHORING_SNAPSHOT.draftRevision,
+            resultLayoutRevision: AUTHORING_SNAPSHOT.layoutRevision,
+            affectedNodeIds: [],
+            createdNodeIds: [],
+            fencingToken: null,
+          }),
+        }),
+      );
+      expect(scriptCreate).not.toHaveBeenCalled();
+      expect(scriptUpdate).not.toHaveBeenCalled();
+      expect(
+        productionPlans.invalidateDownstreamAfterUpstreamApprovalInTransaction,
+      ).not.toHaveBeenCalled();
+      expect(realtime.enqueue).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('selects Storyboard after an approved empty Asset plan is current', async () => {
+    const authoringRun = authoringRunRow();
+    const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+      storyAgentRun: {
+        findUnique: jest.fn().mockResolvedValue(authoringRun),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      storyProject: {
+        findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+      },
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({
+          title: 'Chapter 1',
+          sourceScriptDocumentId: LEGACY_SCRIPT_DOCUMENT_ID,
+          sourceScriptVersionId: LEGACY_SCRIPT_VERSION_ID,
+          sourceScriptSequence: 1,
+        }),
+      },
+      studioDocument: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: LEGACY_SCRIPT_DOCUMENT_ID,
+          currentSequence: 1,
+          currentVersionId: LEGACY_SCRIPT_VERSION_ID,
+          crdtState: Buffer.from([0, 0]),
+        }),
+      },
+      studioDocumentVersion: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: LEGACY_SCRIPT_VERSION_ID,
+          documentId: LEGACY_SCRIPT_DOCUMENT_ID,
+          sequence: 1,
+          snapshot: {
+            screenplay: LEGACY_APPROVED_SCREENPLAY,
+            document: buildStoryScreenplayDocument(LEGACY_APPROVED_SCREENPLAY),
+          },
+        }),
+      },
+    };
+    const { service, productionPlans } = serviceWith(tx);
+    productionPlans.getProductionStateInTransaction.mockResolvedValue({
+      projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
+      profile: { status: 'current' },
+      script: {
+        status: 'current',
+        documentId: LEGACY_SCRIPT_DOCUMENT_ID,
+        sequence: 1,
+      },
+      plotTree: { status: 'current', nodeCount: 1 },
+      assets: { status: 'current', currentCount: 0, staleCount: 0 },
+      storyboard: {
+        status: 'missing',
+        sequenceCount: 0,
+        staleCount: 0,
+        missingPlotNodeIds: ['opening'],
+      },
+      ready: false,
+    });
+    productionPlans.readCurrentAssetPlanInTransaction.mockResolvedValue({
+      assetSpecs: [],
+    });
+
+    const load = await service.loadAuthoringJob(RUN_ID, WORKER_ID);
+
+    expect(load.kind).toBe('job');
+    if (load.kind !== 'job') throw new Error('expected job');
+    expect(load.job.targetStage).toBe('storyboard');
+    expect(load.job.assetPlan).toEqual({ assetSpecs: [] });
+    expect(
+      productionPlans.readCurrentAssetPlanInTransaction,
+    ).toHaveBeenCalledWith(tx, PROJECT_ID, CHAPTER_ID);
+    expect(tx.storyAgentRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          authoringMode: StoryAgentAuthoringMode.downstream_reconcile,
+        }),
+      }),
+    );
+  });
+
+  it('selects Assets before Storyboard when current Storyboard rows have stale Asset lineage', async () => {
+    const authoringRun = authoringRunRow();
+    const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(0),
+      $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+      storyAgentRun: {
+        findUnique: jest.fn().mockResolvedValue(authoringRun),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      storyProject: {
+        findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+      },
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({
+          title: 'Chapter 1',
+          sourceScriptDocumentId: LEGACY_SCRIPT_DOCUMENT_ID,
+          sourceScriptVersionId: LEGACY_SCRIPT_VERSION_ID,
+          sourceScriptSequence: 1,
+        }),
+      },
+      studioDocument: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: LEGACY_SCRIPT_DOCUMENT_ID,
+          currentSequence: 1,
+          currentVersionId: LEGACY_SCRIPT_VERSION_ID,
+          crdtState: Buffer.from([0, 0]),
+        }),
+      },
+      studioDocumentVersion: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: LEGACY_SCRIPT_VERSION_ID,
+          documentId: LEGACY_SCRIPT_DOCUMENT_ID,
+          sequence: 1,
+          snapshot: {
+            screenplay: LEGACY_APPROVED_SCREENPLAY,
+            document: buildStoryScreenplayDocument(LEGACY_APPROVED_SCREENPLAY),
+          },
+        }),
+      },
+    };
+    const { service, productionPlans } = serviceWith(tx);
+    productionPlans.getProductionStateInTransaction.mockResolvedValue({
+      projectId: PROJECT_ID,
+      chapterId: CHAPTER_ID,
+      profile: { status: 'current' },
+      script: {
+        status: 'current',
+        documentId: LEGACY_SCRIPT_DOCUMENT_ID,
+        sequence: 1,
+      },
+      plotTree: { status: 'current', nodeCount: 1 },
+      assets: { status: 'stale', currentCount: 1, staleCount: 1 },
+      storyboard: {
+        status: 'stale',
+        sequenceCount: 1,
+        staleCount: 0,
+        missingPlotNodeIds: [],
+      },
+      ready: false,
+    });
+
+    const load = await service.loadAuthoringJob(RUN_ID, WORKER_ID);
+
+    expect(load.kind).toBe('job');
+    if (load.kind !== 'job') throw new Error('expected job');
+    expect(load.job.targetStage).toBe('assets');
+    expect(load.job.assetPlan).toBeNull();
+    expect(
+      productionPlans.readCurrentAssetPlanInTransaction,
+    ).not.toHaveBeenCalled();
+    expect(tx.storyAgentRun.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          authoringMode: StoryAgentAuthoringMode.downstream_reconcile,
+        }),
+      }),
+    );
   });
 
   it('fails authoring durably when the referenced document is out of scope', async () => {
@@ -888,7 +1348,7 @@ describe('StoryAgentRunService', () => {
   });
 
   it('exposes the independent Undo data head under story.read permission', async () => {
-    const storyAgentRun = { findFirst: jest.fn().mockResolvedValue(null) };
+    const storyAgentRun = { findMany: jest.fn().mockResolvedValue([]) };
     const tx = {
       storyProject: {
         findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
@@ -906,7 +1366,7 @@ describe('StoryAgentRunService', () => {
       'story.read',
       { allowArchived: true },
     );
-    expect(storyAgentRun.findFirst).toHaveBeenCalledWith(
+    expect(storyAgentRun.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
           storyProjectId: PROJECT_ID,
@@ -922,6 +1382,98 @@ describe('StoryAgentRunService', () => {
             in: [StoryProjectStatus.active, StoryProjectStatus.archived],
           },
         }),
+      }),
+    );
+  });
+
+  it('walks past every zero-change stage success to the real Undo head', async () => {
+    const currentLayout = { nodePositions: {} };
+    const beforeDraft = {
+      ...EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      storyBible: {
+        ...EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT.storyBible,
+        logline: 'The premise before the Plot apply.',
+      },
+    };
+    const currentDraftHash = canonicalJsonHash(
+      EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+    );
+    const currentLayoutHash = canonicalJsonHash(currentLayout);
+    const completed = (id: string, authoringMode: StoryAgentAuthoringMode) =>
+      runRow({
+        id,
+        status: StoryAgentRunStatus.succeeded,
+        authoringMode,
+        resultDraftRevision: 7,
+        resultLayoutRevision: 3,
+        beforeDraftSnapshot: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+        beforeDraftHash: currentDraftHash,
+        afterDraftSnapshot: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+        afterDraftHash: currentDraftHash,
+        beforeLayoutSnapshot: currentLayout,
+        beforeLayoutHash: currentLayoutHash,
+        afterLayoutSnapshot: currentLayout,
+        afterLayoutHash: currentLayoutHash,
+        confirmedByUserId: USER.userId,
+        confirmedAt: NOW,
+        applyingAt: NOW,
+        revealStartedAt: NOW,
+        completedAt: NOW,
+      });
+    const realApply = runRow({
+      id: '0197f4a2-0800-7000-8000-000000000040',
+      status: StoryAgentRunStatus.succeeded,
+      resultDraftRevision: 7,
+      resultLayoutRevision: 3,
+      beforeDraftSnapshot: beforeDraft,
+      beforeDraftHash: canonicalJsonHash(beforeDraft),
+      afterDraftSnapshot: EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      afterDraftHash: currentDraftHash,
+      beforeLayoutSnapshot: currentLayout,
+      beforeLayoutHash: currentLayoutHash,
+      afterLayoutSnapshot: currentLayout,
+      afterLayoutHash: currentLayoutHash,
+      confirmedByUserId: USER.userId,
+      confirmedAt: NOW,
+      applyingAt: NOW,
+      revealStartedAt: NOW,
+      completedAt: new Date(NOW.getTime() - 1_000),
+    });
+    const zeroChangeModes = [
+      StoryAgentAuthoringMode.noop,
+      StoryAgentAuthoringMode.downstream_reconcile,
+      StoryAgentAuthoringMode.downstream_reconcile,
+      StoryAgentAuthoringMode.screenplay_required,
+    ];
+    const zeroChangeRuns = Array.from({ length: 55 }, (_, index) =>
+      completed(
+        `0197f4a2-0800-7000-8000-${index.toString(16).padStart(12, '0')}`,
+        zeroChangeModes[index % zeroChangeModes.length],
+      ),
+    );
+    const storyAgentRun = {
+      findMany: jest
+        .fn()
+        .mockResolvedValueOnce(zeroChangeRuns.slice(0, 50))
+        .mockResolvedValueOnce([...zeroChangeRuns.slice(50), realApply]),
+    };
+    const tx = {
+      storyProject: {
+        findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+      },
+      storyAgentRun,
+    };
+    const { service } = serviceWith(tx);
+
+    await expect(
+      service.getUndoableRun(USER, WORKSPACE_ID, PROJECT_ID),
+    ).resolves.toMatchObject({ id: realApply.id });
+    expect(storyAgentRun.findMany).toHaveBeenCalledTimes(2);
+    expect(storyAgentRun.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        cursor: { id: zeroChangeRuns[49].id },
+        skip: 1,
       }),
     );
   });
@@ -1024,6 +1576,31 @@ describe('StoryAgentRunService', () => {
       }),
     );
     expect(realtime.enqueue).toHaveBeenCalledTimes(2);
+  });
+
+  it('maps an unmatched active-scope uniqueness race to a domain conflict', async () => {
+    const tx = proposalTransaction([]);
+    tx.storyAgentRun.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('duplicate active scope', {
+        code: 'P2002',
+        clientVersion: 'test',
+      }),
+    );
+    const { service } = serviceWith(tx);
+
+    await expect(
+      service.createAuthoringRun(
+        USER,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        briefInput({ conversationId: 'story-canvas:conversation-race' }),
+      ),
+    ).rejects.toMatchObject({
+      status: 409,
+      response: expect.objectContaining({
+        code: 'STORY_AGENT_PROPOSAL_SCOPE_BUSY',
+      }),
+    });
   });
 
   it('closes a superseded v2 proposal approval and stamps Story terminal delivery atomically', async () => {
@@ -1354,6 +1931,66 @@ describe('StoryAgentRunService', () => {
     expect(realtime.publishCommitted).toHaveBeenCalledTimes(1);
   });
 
+  it('terminalizes an Agent OS authoring failure in failed without consuming the retryable scope', async () => {
+    const updateMany = jest.fn().mockResolvedValue({ count: 1 });
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+      storyAgentRun: {
+        findUnique: jest.fn().mockResolvedValue({
+          decisionContractVersion: 2,
+          sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+          authoringAttempts: 1,
+        }),
+        updateMany,
+        findUniqueOrThrow: jest.fn().mockResolvedValue(
+          runRow({
+            status: StoryAgentRunStatus.failed,
+            decisionContractVersion: 2,
+            sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+            sourceAgentTurnId: SOURCE_AGENT_TURN_ID,
+            sourceAgentToolCallId: 'call_story_author_1',
+            authoringAttempts: 1,
+            proposal: briefRecord(),
+            completedAt: NOW,
+            errorCode: 'STORY_AGENT_STAGE_FAILED',
+            errorDetail: 'The structure stage exhausted its attempts.',
+          }),
+        ),
+      },
+    };
+    const { service, realtime } = serviceWith(tx);
+
+    await service.failAuthoring(RUN_ID, WORKER_ID, {
+      code: 'STORY_AGENT_STAGE_FAILED',
+      detail: 'The structure stage exhausted its attempts.',
+    });
+
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          id: RUN_ID,
+          status: StoryAgentRunStatus.authoring,
+          leaseOwner: WORKER_ID,
+        },
+        data: expect.objectContaining({
+          status: StoryAgentRunStatus.failed,
+          completedAt: NOW,
+          authoringStages: Prisma.DbNull,
+          errorCode: 'STORY_AGENT_STAGE_FAILED',
+          errorDetail: 'The structure stage exhausted its attempts.',
+          leaseOwner: null,
+          leaseAcquiredAt: null,
+          leaseExpiresAt: null,
+        }),
+      }),
+    );
+    expect(updateMany.mock.calls[0][0].data).not.toHaveProperty(
+      'authoringAttempts',
+    );
+    expect(updateMany.mock.calls[0][0].data).not.toHaveProperty('expiresAt');
+    expect(realtime.enqueue).toHaveBeenCalledTimes(1);
+  });
+
   it('does not fail a run when the status/lease CAS loses', async () => {
     // The atomic updateMany matches nothing when the run left authoring or
     // another worker took the lease between claim and failure.
@@ -1618,6 +2255,33 @@ describe('StoryAgentRunService', () => {
         where: expect.objectContaining({
           status: StoryAgentRunStatus.authoring,
           expiresAt: { gt: NOW },
+        }),
+      }),
+    );
+  });
+
+  it('excludes terminal-delivered and exhausted delivered rows from the proposal expiry sweep', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+      storyAgentRun: { findMany },
+    };
+    const { service } = serviceWith(tx);
+
+    await service.expireProposals();
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: { in: expect.any(Array) },
+          sourceTerminalDeliveredAt: null,
+          expiresAt: { lte: NOW },
+          NOT: expect.objectContaining({
+            decisionContractVersion: 1,
+            status: StoryAgentRunStatus.authoring_failed,
+            authoringAttempts: { gte: expect.any(Number) },
+            sourceResultDeliveredAt: { not: null },
+          }),
         }),
       }),
     );
@@ -2096,6 +2760,15 @@ function serviceWith(
   tx: Record<string, unknown>,
   options: { capabilities?: string[] } = {},
 ) {
+  tx.skillVersion ??= {
+    findUnique: jest.fn().mockResolvedValue({
+      id: CINEMATIC_REALISM_SKILL.versionId,
+      skillId: CINEMATIC_REALISM_SKILL.skillId,
+      status: 'published',
+      generationPolicy: CINEMATIC_REALISM_POLICY,
+      skill: { slug: CINEMATIC_REALISM_SKILL.slug, category: 'style' },
+    }),
+  };
   tx.storyChapter ??= {
     findFirst: jest.fn().mockResolvedValue(null),
   };
@@ -2118,6 +2791,7 @@ function serviceWith(
     storyCanvasLayout: (tx.storyCanvasLayout ?? {}) as Record<string, unknown>,
     storyDraft: (tx.storyDraft ?? {}) as Record<string, unknown>,
     storyAgentRun: (tx.storyAgentRun ?? {}) as Record<string, unknown>,
+    skillVersion: (tx.skillVersion ?? {}) as Record<string, unknown>,
     copilotDocument: (tx.copilotDocument ?? {}) as Record<string, unknown>,
     studioDocument: (tx.studioDocument ?? {
       findFirst: jest.fn().mockResolvedValue(null),
@@ -2149,6 +2823,7 @@ function serviceWith(
   };
   const writeGuard = {
     assertAgentClaimAllowed: jest.fn().mockResolvedValue(undefined),
+    findActiveExternalCommand: jest.fn().mockResolvedValue(null),
   };
   const agentOsJournal = {
     snapshotRunInTransaction: jest.fn(),
@@ -2173,6 +2848,10 @@ function serviceWith(
       },
       ready: false,
     }),
+    readCurrentAssetPlanInTransaction: jest.fn().mockResolvedValue(null),
+    invalidateDownstreamAfterUpstreamApprovalInTransaction: jest
+      .fn()
+      .mockResolvedValue(undefined),
   };
   return {
     service: new StoryAgentRunService(
@@ -2190,6 +2869,7 @@ function serviceWith(
     permissions,
     writeGuard,
     agentOsJournal,
+    productionPlans,
   };
 }
 
@@ -2373,6 +3053,8 @@ function canonicalProjectRow(
   overrides: Partial<{
     durationPreset: StoryDurationPreset | null;
     visualStyle: StoryVisualStyle | null;
+    visualStyleSkillId: string | null;
+    visualStyleSkillVersionId: string | null;
     creativeProfileConfirmedAt: Date | null;
   }> = {},
 ) {
@@ -2382,7 +3064,9 @@ function canonicalProjectRow(
     title: 'Dream',
     frameProfile: StoryFrameProfile.landscape_16_9,
     durationPreset: StoryDurationPreset.short_5_15,
-    visualStyle: StoryVisualStyle.cinematic_realism,
+    visualStyle: 'cinematic-realism',
+    visualStyleSkillId: CINEMATIC_REALISM_SKILL.skillId,
+    visualStyleSkillVersionId: CINEMATIC_REALISM_SKILL.versionId,
     creativeProfileConfirmedAt: NOW,
     defaultLocale: 'en-US',
     draft: {
@@ -2445,6 +3129,7 @@ function briefFingerprint(overrides: Record<string, unknown> = {}): string {
     sourceAgentToolCallId: null,
     sourceStartedMessage: null,
     sourceCompletionMessage: null,
+    sourceContinuationPlan: null,
     ...overrides,
   });
 }
@@ -2496,6 +3181,8 @@ function runRow(overrides: Record<string, unknown> = {}) {
     workspaceId: WORKSPACE_ID,
     kind: StoryAgentRunKind.apply,
     status: StoryAgentRunStatus.proposed,
+    authoringMode: null,
+    authoringStages: null,
     initiatedByUserId: USER.userId,
     initiatedBySessionId: null,
     conversationId: null,

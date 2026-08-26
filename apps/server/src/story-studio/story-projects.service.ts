@@ -13,6 +13,7 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
+  SkillCatalogStatus,
   StoryProductionSpecStatus,
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
@@ -25,6 +26,7 @@ import {
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
 } from '@prisma/client';
+import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import type { AuthUser } from '../auth';
 import { encodeDocumentSnapshot } from '../documents/document-crdt';
 import { rootSchemaFor } from '../documents/document-modes';
@@ -42,6 +44,7 @@ import {
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   STORY_CHAPTER_COUNT_MAX,
   StoryCanvasNodePositionsSchema,
+  StoryVisualStyleSchema,
   StoryUuidSchema,
   type ArchiveStoryProjectInput,
   type CreateStoryChapterInput,
@@ -75,7 +78,6 @@ import {
 import {
   storyboardClipSnapshotEntry,
   storyVideoSnapshotHash,
-  type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
 import {
   StoryPermissionService,
@@ -557,6 +559,35 @@ export class StoryProjectsService {
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      const visualStyleSkill = input.confirmCreativeProfile
+        ? storyVisualStyleSkillBySlug(input.visualStyle ?? '')
+        : undefined;
+      if (input.confirmCreativeProfile) {
+        if (!visualStyleSkill) {
+          throw new UnprocessableEntityException({
+            code: 'STORY_VISUAL_STYLE_SKILL_INVALID',
+            message: 'Select a published Story visual-style Skill.',
+          });
+        }
+        const published = await tx.skillCatalogItem.findFirst({
+          where: {
+            id: visualStyleSkill.skillId,
+            slug: visualStyleSkill.slug,
+            category: 'style',
+            status: SkillCatalogStatus.published,
+            latestPublishedVersionId: visualStyleSkill.versionId,
+          },
+          select: { id: true },
+        });
+        if (!published) {
+          throw new UnprocessableEntityException({
+            code: 'STORY_VISUAL_STYLE_SKILL_UNAVAILABLE',
+            message:
+              'The selected Story visual-style Skill is not published in this deployment.',
+            visualStyle: visualStyleSkill.slug,
+          });
+        }
+      }
       if (input.confirmCreativeProfile && input.frameProfile !== undefined) {
         const current = await this.loadProjectSummary(projectId, tx);
         if (
@@ -630,6 +661,8 @@ export class StoryProjectsService {
                 frameProfile: input.frameProfile,
                 durationPreset: input.durationPreset,
                 visualStyle: input.visualStyle,
+                visualStyleSkillId: visualStyleSkill?.skillId,
+                visualStyleSkillVersionId: visualStyleSkill?.versionId,
                 creativeProfileConfirmedAt: new Date(),
               }
             : {}),
@@ -1596,16 +1629,6 @@ export class StoryProjectsService {
           'STORY_DRAFT_CORRUPT',
         );
         assertActiveChapterGraphPartition(projectContent, chapters);
-        const chapterNodeIds = new Set(stringArray(chapter.nodeIds));
-        const chapterContent = {
-          ...projectContent,
-          graph: {
-            entryNodeId: chapter.entryNodeId,
-            nodes: projectContent.graph.nodes.filter((node) =>
-              chapterNodeIds.has(node.nodeId),
-            ),
-          },
-        };
         return {
           project,
           chapters,
@@ -1833,7 +1856,9 @@ export class StoryProjectsService {
       frameProfile: row.frameProfile,
       frameProfileMutable: storyFrameProfileCanChange(row),
       durationPreset: row.durationPreset,
-      visualStyle: row.visualStyle,
+      visualStyle: StoryVisualStyleSchema.safeParse(row.visualStyle).success
+        ? StoryVisualStyleSchema.parse(row.visualStyle)
+        : null,
       creativeProfileConfirmedAt:
         row.creativeProfileConfirmedAt?.toISOString() ?? null,
       status: row.status,

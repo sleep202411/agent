@@ -4,18 +4,17 @@ import {
   MediaAssetModerationStatus,
   MediaAssetStatus,
   MediaAssetVariantStatus,
-  StudioDocumentStatus,
   StudioDocumentType,
   StoryDurationPreset,
   StoryFrameProfile,
   StoryProjectMemberRole,
   StoryProjectStatus,
   StoryRevisionSource,
-  StoryVisualStyle,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
 } from '@prisma/client';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
+import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -41,6 +40,8 @@ const SCRIPT_DOCUMENT_ID = '0197f4a2-0800-7000-8000-000000000010';
 /** Someone else's tenant: where a shared project lives, never the invitee's. */
 const OWNER_WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000009';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
+const CINEMATIC_REALISM_SKILL =
+  storyVisualStyleSkillBySlug('cinematic-realism')!;
 const PROJECT_NOT_FOUND_BODY = {
   code: 'STORY_PROJECT_NOT_FOUND',
   message: 'Story project not found.',
@@ -104,6 +105,8 @@ function projectRow(overrides: Record<string, unknown> = {}) {
     frameProfile: StoryFrameProfile.landscape_16_9,
     durationPreset: null,
     visualStyle: null,
+    visualStyleSkillId: null,
+    visualStyleSkillVersionId: null,
     creativeProfileConfirmedAt: null,
     status: StoryProjectStatus.active,
     visibility: 'private',
@@ -544,11 +547,16 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const saved = summaryProject({
       frameProfile: StoryFrameProfile.portrait_9_16,
       durationPreset: StoryDurationPreset.short_5_15,
-      visualStyle: StoryVisualStyle.cinematic_realism,
+      visualStyle: 'cinematic-realism',
       creativeProfileConfirmedAt: NOW,
       version: 1,
     });
     const tx = {
+      skillCatalogItem: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: CINEMATIC_REALISM_SKILL.skillId }),
+      },
       storyProject: {
         findUnique: jest.fn().mockResolvedValue(current),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -564,7 +572,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         expectedProjectVersion: 0,
         frameProfile: 'portrait_9_16',
         durationPreset: 'short_5_15',
-        visualStyle: 'cinematic_realism',
+        visualStyle: 'cinematic-realism',
         confirmCreativeProfile: true,
       }),
     ).resolves.toMatchObject({
@@ -576,7 +584,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         data: expect.objectContaining({
           frameProfile: 'portrait_9_16',
           durationPreset: 'short_5_15',
-          visualStyle: 'cinematic_realism',
+          visualStyle: 'cinematic-realism',
         }) as unknown,
       }),
     );
@@ -592,6 +600,11 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       ],
     });
     const tx = {
+      skillCatalogItem: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: CINEMATIC_REALISM_SKILL.skillId }),
+      },
       storyProject: {
         findUnique: jest.fn().mockResolvedValue(current),
         updateMany: jest.fn(),
@@ -607,7 +620,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
           expectedProjectVersion: 0,
           frameProfile: 'portrait_9_16',
           durationPreset: 'short_5_15',
-          visualStyle: 'cinematic_realism',
+          visualStyle: 'cinematic-realism',
           confirmCreativeProfile: true,
         }),
       ),

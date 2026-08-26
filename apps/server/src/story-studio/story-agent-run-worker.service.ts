@@ -6,11 +6,15 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
+import type {
+  StoryAssetPlan,
+  StoryStoryboardPlan,
+} from '@repo/shared/story-production';
+import type { StoryScreenplay } from '@repo/shared/story-agent';
 import { StoryAgentRunService } from './story-agent-run.service';
 import {
   StoryAuthoringPipelineService,
   type StoryAuthoringPipelineResult,
-  type StoryScriptCompilationResult,
 } from './story-authoring-pipeline.service';
 import { StoryAuthoringStageError } from './story-authoring-model';
 
@@ -171,40 +175,78 @@ export class StoryAgentRunWorkerService
       heartbeat.unref?.();
 
       let authored: StoryAuthoringPipelineResult | null = null;
-      let compiled: StoryScriptCompilationResult | null = null;
-      let productionPlan: unknown;
+      let screenplay: StoryScreenplay | undefined;
+      let assetPlan: StoryAssetPlan | undefined;
+      let storyboardPlan: StoryStoryboardPlan | undefined;
       try {
-        if (load.job.mode === 'screenplay_required') {
-          authored = await this.pipeline.author({
-            job: load.job,
-            signal: controller.signal,
-            onStage: (stage) =>
-              this.runs.advanceAuthoringStage(runId, this.workerId, stage),
-          });
-        } else if (load.job.mode === 'downstream_reconcile') {
-          if (load.job.approvedScreenplay) {
-            productionPlan = await this.pipeline.planProduction({
-              screenplay: load.job.approvedScreenplay.screenplay,
+        switch (load.job.targetStage) {
+          case 'script':
+            authored = await this.pipeline.author({
+              job: load.job,
+              signal: controller.signal,
+              onStage: (stage) =>
+                this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+            });
+            break;
+          case 'plot':
+            if (!load.job.screenplaySnapshot || !load.job.assetPlan) {
+              throw new Error(
+                'The canonical Plot route is missing its approved Script interpretation or Asset Specs source.',
+              );
+            }
+            screenplay = load.job.screenplaySnapshot.screenplay;
+            assetPlan = load.job.assetPlan;
+            break;
+          case 'assets':
+            if (load.job.screenplaySnapshot) {
+              screenplay = load.job.screenplaySnapshot.screenplay;
+            } else if (load.job.scriptSource) {
+              screenplay = (
+                await this.pipeline.compileScript({
+                  sourceText: load.job.scriptSource.sourceText,
+                  title: load.job.brief.title,
+                  creativeProfile: load.job.creativeProfile,
+                  signal: controller.signal,
+                  onStage: (stage) =>
+                    this.runs.advanceAuthoringStage(
+                      runId,
+                      this.workerId,
+                      stage,
+                    ),
+                })
+              ).screenplay;
+            } else {
+              throw new Error(
+                'The canonical Asset Specs route is missing both a structured Script and an exact Script source.',
+              );
+            }
+            assetPlan = await this.pipeline.planAssets({
+              screenplay,
               creativeProfile: load.job.creativeProfile,
               signal: controller.signal,
               onStage: (stage) =>
                 this.runs.advanceAuthoringStage(runId, this.workerId, stage),
             });
-          } else if (load.job.scriptSource) {
-            compiled = await this.pipeline.compileProductionFromScript({
-              sourceText: load.job.scriptSource.sourceText,
-              title: load.job.brief.title,
+            break;
+          case 'storyboard':
+            if (!load.job.screenplaySnapshot || !load.job.assetPlan) {
+              throw new Error(
+                'The canonical Storyboard route is missing its approved Plot or Asset Specs source.',
+              );
+            }
+            screenplay = load.job.screenplaySnapshot.screenplay;
+            assetPlan = load.job.assetPlan;
+            storyboardPlan = await this.pipeline.planStoryboard({
+              screenplay,
+              assetPlan,
               creativeProfile: load.job.creativeProfile,
               signal: controller.signal,
               onStage: (stage) =>
                 this.runs.advanceAuthoringStage(runId, this.workerId, stage),
             });
-            productionPlan = compiled.productionPlan;
-          } else {
-            throw new Error(
-              'The canonical downstream route is missing both approved structure and an exact Script source.',
-            );
-          }
+            break;
+          case 'noop':
+            break;
         }
       } catch (error) {
         // Lease lost (cancel/supersede/reclaim) or shutdown: another actor
@@ -224,17 +266,24 @@ export class StoryAgentRunWorkerService
       }
 
       const completion =
-        load.job.mode === 'screenplay_required'
+        load.job.targetStage === 'script'
           ? await this.runs.completeAuthoring(runId, this.workerId, {
               screenplay: authored!.screenplay,
               authoredAgainst: load.job.snapshot,
             })
-          : await this.runs.completeAutomaticAuthoring(runId, this.workerId, {
-              mode: load.job.mode,
-              ...(productionPlan ? { productionPlan } : {}),
-              ...(compiled ? { screenplay: compiled.screenplay } : {}),
-              authoredAgainst: load.job.snapshot,
-            });
+          : load.job.targetStage === 'noop'
+            ? await this.runs.completeNoopAuthoring(
+                runId,
+                this.workerId,
+                load.job.snapshot,
+              )
+            : await this.runs.completeStageAuthoring(runId, this.workerId, {
+                targetStage: load.job.targetStage,
+                screenplay,
+                ...(assetPlan ? { assetPlan } : {}),
+                ...(storyboardPlan ? { storyboardPlan } : {}),
+                authoredAgainst: load.job.snapshot,
+              });
       switch (completion.kind) {
         case 'completed':
         case 'skip':

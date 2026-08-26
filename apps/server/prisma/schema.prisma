@@ -1314,6 +1314,9 @@ model AgentOsRun {
   conversationId                           String    @map("conversation_id") @db.Uuid
   actorId                                  String    @map("actor_id") @db.VarChar(64)
   modelProfileId                           String    @map("model_profile_id") @db.VarChar(64)
+  /// Frozen creator-selected tool permission policy for every recovery path,
+  /// including Server-origin external-result continuations after a long job.
+  permissionMode                           String    @default("smart") @map("permission_mode") @db.VarChar(16)
   status                                   String    @db.VarChar(32)
   lastSequence                             Int       @default(0) @map("last_sequence")
   pendingApproval                          Json?     @map("pending_approval") @db.JsonB
@@ -1362,8 +1365,8 @@ model AgentOsRun {
   startDispatchNextAttemptAt               DateTime? @map("start_dispatch_next_attempt_at") @db.Timestamptz(6)
   startDispatchLastError                   String?   @map("start_dispatch_last_error") @db.Text
   startDispatchedAt                        DateTime? @map("start_dispatched_at") @db.Timestamptz(6)
-  /// Durable HITL continuation outbox. A resolved approval/input response and
-  /// this command commit in the same journal transaction; execution is leased
+  /// Durable continuation outbox. A resolved HITL response or authoritative
+  /// external-job result commits with this command; execution is leased
   /// independently from initial start and remains recoverable until a newer
   /// graph checkpoint proves the resumed node reached a pause or terminal.
   continuationCommand                      Json?     @map("continuation_command") @db.JsonB
@@ -1492,6 +1495,9 @@ model AgentOsExternalHandoffRegistration {
   decisionContractVersion Int      @default(2) @map("decision_contract_version")
   startedMessage          String   @map("started_message") @db.Text
   completionMessage       String   @map("completion_message") @db.Text
+  /// Creator-authorized terminal specification plus the immutable source brief.
+  /// Null is reserved for pre-scope-contract handoffs.
+  continuationPlan        Json?    @map("continuation_plan") @db.JsonB
   storyAgentRunId         String   @unique(map: "agent_os_external_handoffs_story_run_unique") @map("story_agent_run_id") @db.Uuid
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -8066,16 +8072,6 @@ enum StoryDurationPreset {
   long_30_60
 }
 
-/// Curated project-wide visual direction. This intentionally stays small: the
-/// Agent can elaborate within a preset, while the project retains one durable
-/// style contract instead of persisting a provider-specific model taxonomy.
-enum StoryVisualStyle {
-  cinematic_realism
-  stylized_3d
-  graphic_novel
-  anime_cinematic
-}
-
 enum StoryVisibility {
   private
   unlisted
@@ -8282,7 +8278,11 @@ model StoryProject {
   workspaceId                String               @map("workspace_id") @db.Uuid
   frameProfile               StoryFrameProfile    @map("frame_profile")
   durationPreset             StoryDurationPreset? @map("duration_preset")
-  visualStyle                StoryVisualStyle?    @map("visual_style")
+  /// Stable catalog slug shown to creators and carried over the wire.
+  visualStyle                String?              @map("visual_style") @db.VarChar(128)
+  /// Immutable Skill identity pinned when the creative profile is confirmed.
+  visualStyleSkillId         String?              @map("visual_style_skill_id") @db.Uuid
+  visualStyleSkillVersionId  String?              @map("visual_style_skill_version_id") @db.Uuid
   creativeProfileConfirmedAt DateTime?            @map("creative_profile_confirmed_at") @db.Timestamptz(6)
   status                     StoryProjectStatus   @default(active)
   visibility                 StoryVisibility      @default(private)
@@ -8573,39 +8573,43 @@ model StoryAgentRun {
 }
 
 model StoryChapter {
-  id                     String    @id @default(uuid(7)) @db.Uuid
-  storyProjectId         String    @map("story_project_id") @db.Uuid
-  title                  String    @db.VarChar(160)
-  rank                   Int
-  nodeIds                Json      @default("[]") @map("node_ids") @db.JsonB
-  entryNodeId            String?   @map("entry_node_id") @db.VarChar(120)
+  id                          String    @id @default(uuid(7)) @db.Uuid
+  storyProjectId              String    @map("story_project_id") @db.Uuid
+  title                       String    @db.VarChar(160)
+  rank                        Int
+  nodeIds                     Json      @default("[]") @map("node_ids") @db.JsonB
+  entryNodeId                 String?   @map("entry_node_id") @db.VarChar(120)
   /// Exact approved Script head from which this chapter's current graph was derived.
   /// Null is reserved for chapters that have not approved a screenplay yet.
-  sourceScriptDocumentId String?   @map("source_script_document_id") @db.Uuid
-  sourceScriptVersionId  String?   @map("source_script_version_id") @db.Uuid
-  sourceScriptSequence   Int?      @map("source_script_sequence")
-  sourceScriptHash       String?   @map("source_script_hash") @db.VarChar(64)
-  createdByUserId        String    @map("created_by_user_id") @db.VarChar(64)
-  archivedAt             DateTime? @map("archived_at") @db.Timestamptz(6)
-  createdAt              DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  sourceScriptDocumentId      String?   @map("source_script_document_id") @db.Uuid
+  sourceScriptVersionId       String?   @map("source_script_version_id") @db.Uuid
+  sourceScriptSequence        Int?      @map("source_script_sequence")
+  sourceScriptHash            String?   @map("source_script_hash") @db.VarChar(64)
+  /// Exact approved Asset plan, including an intentionally empty plan. Null
+  /// means the Asset Specs stage has not been approved for the current Script.
+  approvedAssetPlanSnapshotId String?   @map("approved_asset_plan_snapshot_id") @db.Uuid
+  createdByUserId             String    @map("created_by_user_id") @db.VarChar(64)
+  archivedAt                  DateTime? @map("archived_at") @db.Timestamptz(6)
+  createdAt                   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project                 StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  canvasLayout            StoryCanvasLayout?
-  agentRuns               StoryAgentRun[]
-  documents               StudioDocument[]
-  sourceScriptDocument    StudioDocument?                   @relation("StoryChapterSourceScriptDocument", fields: [sourceScriptDocumentId], references: [id], onDelete: Restrict)
-  sourceScriptVersion     StudioDocumentVersion?            @relation("StoryChapterSourceScriptVersion", fields: [sourceScriptVersionId, sourceScriptDocumentId], references: [id, documentId], onDelete: Restrict)
-  assetSpecs              StoryAssetSpec[]
-  assetMediaVersions      StoryAssetMediaVersion[]
-  storyboardSequences     StoryStoryboardSequence[]
-  storyboardClips         StoryStoryboardClip[]
-  storyboardBindings      StoryStoryboardClipAssetBinding[]
-  storyboardMedia         StoryStoryboardClipMediaVersion[]
-  storyboardCues          StoryStoryboardCue[]
-  productionGenerations   StoryProductionGeneration[]
-  productionMutations     StoryProductionMutationReceipt[]
-  productionPlanSnapshots StoryProductionPlanSnapshot[]
+  project                   StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  canvasLayout              StoryCanvasLayout?
+  agentRuns                 StoryAgentRun[]
+  documents                 StudioDocument[]
+  sourceScriptDocument      StudioDocument?                   @relation("StoryChapterSourceScriptDocument", fields: [sourceScriptDocumentId], references: [id], onDelete: Restrict)
+  sourceScriptVersion       StudioDocumentVersion?            @relation("StoryChapterSourceScriptVersion", fields: [sourceScriptVersionId, sourceScriptDocumentId], references: [id, documentId], onDelete: Restrict)
+  approvedAssetPlanSnapshot StoryProductionPlanSnapshot?      @relation("StoryChapterApprovedAssetPlan", fields: [approvedAssetPlanSnapshotId, id, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: NoAction)
+  assetSpecs                StoryAssetSpec[]
+  assetMediaVersions        StoryAssetMediaVersion[]
+  storyboardSequences       StoryStoryboardSequence[]
+  storyboardClips           StoryStoryboardClip[]
+  storyboardBindings        StoryStoryboardClipAssetBinding[]
+  storyboardMedia           StoryStoryboardClipMediaVersion[]
+  storyboardCues            StoryStoryboardCue[]
+  productionGenerations     StoryProductionGeneration[]
+  productionMutations       StoryProductionMutationReceipt[]
+  productionPlanSnapshots   StoryProductionPlanSnapshot[]
 
   @@unique([id, storyProjectId], map: "story_chapters_id_project_unique")
   @@index([storyProjectId, rank], map: "story_chapters_project_rank_idx")
@@ -8726,6 +8730,7 @@ model StoryProductionPlanSnapshot {
   chapter                    StoryChapter              @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
   pendingAssetSpecs          StoryAssetSpec[]          @relation("StoryAssetSpecPendingPlan")
   pendingStoryboardSequences StoryStoryboardSequence[] @relation("StoryStoryboardSequencePendingPlan")
+  approvedAssetPlanChapters  StoryChapter[]            @relation("StoryChapterApprovedAssetPlan")
 
   @@unique([storyChapterId, planFingerprint], map: "story_production_plan_snapshots_chapter_fingerprint_unique")
   @@unique([id, storyChapterId, storyProjectId], map: "story_production_plan_snapshots_scope_unique")
@@ -8743,6 +8748,8 @@ model StoryAssetSpec {
   stableKey                String                         @map("stable_key") @db.VarChar(120)
   kind                     StoryAssetSpecKind
   sourceCharacterId        String?                        @map("source_character_id") @db.VarChar(120)
+  /// Exact scene node ids from the approved Script snapshot. Plot later keeps
+  /// these ids while projecting the same screenplay into the interactive graph.
   sourceNodeIds            Json                           @map("source_node_ids") @db.JsonB
   name                     String                         @db.VarChar(240)
   description              String?                        @db.Text
