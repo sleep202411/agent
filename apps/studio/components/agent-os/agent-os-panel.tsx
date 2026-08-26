@@ -59,10 +59,15 @@ import { AgentOsApprovalComposer } from "./agent-os-approval-composer";
 import { AgentOsUserInputCard } from "./agent-os-user-input-card";
 import { type ApprovalPayloadLabels } from "./approval-payload";
 import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
-import { deriveAgentActivity, useAgentOsRun } from "./use-agent-os-run";
+import {
+  deriveAgentActivity,
+  useAgentOsRun,
+  type AgentOsTranscriptArtifact,
+} from "./use-agent-os-run";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { listProjectSkillInstallations } from "@/lib/project-skills-api";
+import { AgentComposerPrefillBridge } from "./agent-composer-prefill-bridge";
 
 const PERMISSION_MODES: Array<{
   id: AgentOsPermissionMode;
@@ -140,12 +145,17 @@ interface AgentOsPanelProps {
   approvalGate?: (input: {
     approval: AgentOsPendingApproval;
     busy: boolean;
-    onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<void>;
-  }) => ReactNode | null;
+    onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<boolean>;
+  }) => { composer: ReactNode } | null;
+  /** Host renderer for durable, journal-backed domain artifacts. */
+  artifactRenderer?: (artifact: AgentOsTranscriptArtifact) => ReactNode;
   /** Host-owned work that participates in the Agent's single activity line. */
   activityStatus?: AgentOsActivityStatus | null;
   /** Host-derived copy for the current product phase. */
   composerPlaceholder?: string;
+  /** One-shot, host-suggested natural-language draft. Never auto-submitted. */
+  composerPrefill?: { id: number; text: string } | null;
+  onComposerPrefillConsumed?: (id: number) => void;
 }
 
 /** Agent OS side panel — one durable conversation boundary per project. */
@@ -165,8 +175,11 @@ function AgentOsProjectSession({
   variant,
   composerGate,
   approvalGate,
+  artifactRenderer,
   activityStatus,
   composerPlaceholder,
+  composerPrefill,
+  onComposerPrefillConsumed,
 }: AgentOsPanelProps) {
   const rawLocale = useLocale();
   if (rawLocale !== "en-US" && rawLocale !== "zh-CN" && rawLocale !== "zh-HK") {
@@ -213,6 +226,11 @@ function AgentOsProjectSession({
       : null,
   });
   const [draft, setDraft] = useState("");
+  const applyComposerPrefill = useCallback((text: string) => {
+    // Never destroy a draft the creator already started. The stage CTA still
+    // brings that existing draft into focus, so the user stays in control.
+    setDraft((current) => (current.trim().length > 0 ? current : text));
+  }, []);
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
   const [uploading, setUploading] = useState(false);
   const [modelProfileId, setModelProfileId] = useState(() => {
@@ -237,6 +255,7 @@ function AgentOsProjectSession({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
+
   /** Event cursor. `sequence` restarts per run, so it resets with the run. */
   const seenEventRunRef = useRef<string | null>(null);
   const seenEventSeqRef = useRef(0);
@@ -613,12 +632,12 @@ function AgentOsProjectSession({
   const onApprove = async (
     decision: "approve" | "reject",
     responseText?: string
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const approvalId = state.pendingApproval?.approvalId;
     // Provisional ids are UI-only until ApprovalRequired lands with a real UUID.
     if (!approvalId || approvalId.startsWith("pending:") || !/^[0-9a-f-]{36}$/i.test(approvalId)) {
       reportIssue(null, t("approvalNotReady"));
-      return;
+      return false;
     }
     setBusy(true);
     try {
@@ -632,8 +651,10 @@ function AgentOsProjectSession({
         modelProfileId,
         permissionMode,
       });
+      return true;
     } catch (error) {
       reportIssue(error, t("approvalFailed"));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -668,10 +689,20 @@ function AgentOsProjectSession({
     storyScene: t("approvalStoryScene"),
   };
 
+  const approval = state.pendingApproval;
+  const hostApproval = approval
+    ? approvalGate?.({
+        approval,
+        busy,
+        onResolve: onApprove,
+      })
+    : null;
+
   // Every user decision replaces the input box (Claude/Codex
   // approve-to-continue). Agent OS HITL wins over any host gate (for example
   // story's proposal gate): the graph is paused, so this is the only way
-  // forward. Neither question nor approval cards ever enter the transcript.
+  // forward. The decision control stays composer-only; durable review content
+  // is rendered independently from Artifact events in the transcript.
   const combinedComposerGate = (composerNode: ReactNode): ReactNode => {
     const gated = composerGate ? composerGate(composerNode) : composerNode;
     const inputRequest = state.pendingUserInput;
@@ -692,14 +723,8 @@ function AgentOsProjectSession({
         />
       );
     }
-    const approval = state.pendingApproval;
     if (!approval) return gated;
-    const hostApproval = approvalGate?.({
-      approval,
-      busy,
-      onResolve: onApprove,
-    });
-    if (hostApproval != null) return hostApproval;
+    if (hostApproval != null) return hostApproval.composer;
     return (
       <AgentOsApprovalComposer
         approval={approval}
@@ -816,6 +841,11 @@ function AgentOsProjectSession({
       }
       composer={
         <div className="space-y-2">
+          <AgentComposerPrefillBridge
+            request={composerPrefill}
+            onPrefill={applyComposerPrefill}
+            onConsumed={onComposerPrefillConsumed}
+          />
           <input
             ref={fileInputRef}
             type="file"
@@ -874,6 +904,7 @@ function AgentOsProjectSession({
             stopLabel={t("stop")}
             stopAvailable={state.pendingExternal?.toolId !== "story.applyProposal"}
             autoFocus
+            focusRequestKey={composerPrefill?.id}
             appearance="fizz-agent"
             leadingAction={
               <button
@@ -1075,6 +1106,7 @@ function AgentOsProjectSession({
         error={runErrorText}
         busy={busy}
         activityStatus={effectiveActivityStatus}
+        artifactRenderer={artifactRenderer}
         labels={{
           transcript: t("transcriptLabel"),
           scrollToLatest: t("scrollToLatest"),

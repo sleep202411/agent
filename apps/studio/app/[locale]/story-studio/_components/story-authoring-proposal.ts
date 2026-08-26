@@ -1,10 +1,35 @@
 import type {
   StoryAgentCharacter,
   StoryAgentGraphNode,
+  StoryAssetProposal,
   StoryPatchProposal,
+  StoryPlotProposal,
   StoryScreenplayProposal,
+  StoryStoryboardProposal,
 } from "@repo/shared/story-agent";
-import { isStoryScreenplayProposal } from "@repo/shared/story-agent";
+import {
+  isStoryAssetProposal,
+  isStoryPlotProposal,
+  isStoryScreenplayProposal,
+  isStoryStoryboardProposal,
+} from "@repo/shared/story-agent";
+
+export type StoryReviewableProposal =
+  | StoryPatchProposal
+  | StoryScreenplayProposal
+  | StoryPlotProposal
+  | StoryAssetProposal
+  | StoryStoryboardProposal;
+
+export type StoryProposalStage = "script" | "plot" | "assets" | "storyboard" | "patch";
+
+export function storyAuthoringProposalStage(proposal: StoryReviewableProposal): StoryProposalStage {
+  if (isStoryScreenplayProposal(proposal)) return "script";
+  if (isStoryPlotProposal(proposal)) return "plot";
+  if (isStoryAssetProposal(proposal)) return "assets";
+  if (isStoryStoryboardProposal(proposal)) return "storyboard";
+  return "patch";
+}
 
 export interface StoryAuthoringProposalReview {
   logline: string | null;
@@ -26,9 +51,14 @@ export interface StoryAuthoringProposalReview {
  * patch JSON or machine operation labels.
  */
 export function storyAuthoringProposalReview(
-  proposal: StoryPatchProposal | StoryScreenplayProposal
+  proposal: StoryReviewableProposal
 ): StoryAuthoringProposalReview {
-  if (isStoryScreenplayProposal(proposal)) {
+  if (
+    isStoryScreenplayProposal(proposal) ||
+    isStoryPlotProposal(proposal) ||
+    isStoryAssetProposal(proposal) ||
+    isStoryStoryboardProposal(proposal)
+  ) {
     const scenes: StoryAgentGraphNode[] = proposal.screenplay.scenes.map((scene) => ({
       kind: "clip",
       nodeId: scene.nodeId,

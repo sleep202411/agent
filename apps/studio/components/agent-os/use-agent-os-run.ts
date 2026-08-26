@@ -44,9 +44,12 @@ export {
 export type {
   AgentOsActivity,
   AgentOsActivityPhase,
+  AgentOsArtifactReference,
+  AgentOsArtifactStatus,
   AgentOsAssistantSegment,
   AgentOsChatMessage,
   AgentOsSessionStatus,
+  AgentOsTranscriptArtifact,
 } from "./agent-os-timeline";
 
 export interface AgentOsSessionState {

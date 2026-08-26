@@ -15,7 +15,11 @@ import {
 } from "@/components/ui/message-scroller";
 import type { AgentOsActivityStatus } from "./agent-os-activity";
 import { SmoothStreamMarkdown } from "./smooth-stream-markdown";
-import type { AgentOsChatMessage, AgentOsSessionStatus } from "./use-agent-os-run";
+import type {
+  AgentOsChatMessage,
+  AgentOsSessionStatus,
+  AgentOsTranscriptArtifact,
+} from "./use-agent-os-run";
 
 interface TranscriptLabels {
   transcript: string;
@@ -34,7 +38,8 @@ interface TranscriptLabels {
  * - only real user messages and Assistant UI turns are rows;
  * - all messageId segments in one turnId share one Assistant visual group;
  * - the sole ephemeral activity lives at the active turn's tail;
- * - Question / Approval / Draft operation cards are composer-only.
+ * - domain artifacts stay in the transcript after their decision resolves;
+ * - Question and Approval controls are composer-only.
  */
 export function AgentOsTranscript({
   messages,
@@ -42,6 +47,7 @@ export function AgentOsTranscript({
   error,
   busy,
   activityStatus,
+  artifactRenderer,
   empty,
   labels,
 }: {
@@ -51,6 +57,8 @@ export function AgentOsTranscript({
   busy: boolean;
   empty: ReactNode;
   activityStatus?: AgentOsActivityStatus | null;
+  /** Host renderer for durable domain artifacts attached to Assistant turns. */
+  artifactRenderer?: (artifact: AgentOsTranscriptArtifact) => ReactNode;
   labels: TranscriptLabels;
 }) {
   const lastTimelineItem = messages.at(-1);
@@ -102,6 +110,7 @@ export function AgentOsTranscript({
     (message) =>
       message.role === "user" ||
       message.content.trim().length > 0 ||
+      (artifactRenderer != null && (message.artifacts?.length ?? 0) > 0) ||
       message.id === activityAssistantId
   );
   const lastVisible = visibleMessages.at(-1);
@@ -151,6 +160,7 @@ export function AgentOsTranscript({
                       }
                       activityLabel={showTurnActivity ? activityLabel : null}
                       activityWaiting={showTurnActivity && waitingActivity}
+                      artifactRenderer={artifactRenderer}
                       labels={labels}
                     />
                   </MessageScrollerItem>
@@ -200,12 +210,14 @@ function AgentOsMessageRow({
   streamActive,
   activityLabel,
   activityWaiting,
+  artifactRenderer,
   labels,
 }: {
   message: AgentOsChatMessage;
   streamActive: boolean;
   activityLabel: string | null;
   activityWaiting: boolean;
+  artifactRenderer?: (artifact: AgentOsTranscriptArtifact) => ReactNode;
   labels: Pick<TranscriptLabels, "user" | "assistant" | "approved" | "rejected">;
 }) {
   if (message.role === "user") {
@@ -251,6 +263,7 @@ function AgentOsMessageRow({
   }
 
   const segments = message.segments?.filter((segment) => segment.content.trim()) ?? [];
+  const artifacts = message.artifacts ?? [];
   return (
     <Message align="start" data-turn-id={message.turnId}>
       <MessageContent className="gap-3">
@@ -284,6 +297,13 @@ function AgentOsMessageRow({
             </BubbleContent>
           </Bubble>
         ) : null}
+        {artifactRenderer
+          ? artifacts.map((artifact) => (
+              <div key={artifact.id} data-agent-artifact-id={artifact.id}>
+                {artifactRenderer(artifact)}
+              </div>
+            ))
+          : null}
         {activityLabel ? (
           <AgentOsActivityIndicator label={activityLabel} waiting={activityWaiting} />
         ) : null}

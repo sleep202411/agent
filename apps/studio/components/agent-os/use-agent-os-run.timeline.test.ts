@@ -541,6 +541,31 @@ describe("turn timeline projection", () => {
     expect(deriveAgentActivity(events, "completed")).toBeNull();
   });
 
+  it("shows the bootstrap permission step as thinking rather than a plan", () => {
+    const events = [
+      ev(1, "UserMessage", {
+        turnId: "turn-1",
+        messageId: "user-1",
+        text: "Hello",
+      }),
+      ev(2, "RunStarted", { turnId: "turn-1" }),
+      ev(3, "PlanCreated", {
+        turnId: "turn-1",
+        steps: ["Legacy runtime scaffold"],
+      }),
+      ev(4, "StepStarted", {
+        turnId: "turn-1",
+        step: "permission",
+        permissionMode: "smart",
+      }),
+    ];
+
+    expect(deriveAgentActivity(events, "running")).toEqual({
+      kind: "thinking",
+      turnId: "turn-1",
+    });
+  });
+
   it("tracks only the current turn's active tool and supports waiting_for_external", () => {
     const events = [
       ev(1, "UserMessage", { turnId: "turn-1", messageId: "u1", text: "First" }),
@@ -668,6 +693,118 @@ describe("turn timeline projection", () => {
 
     expect(rows).toHaveLength(2);
     expect(rows[1]?.segments?.map((segment) => segment.id)).toEqual(["receipt", "result"]);
+  });
+
+  it("projects a durable Story proposal Artifact and keeps it after approval", () => {
+    const storyRunId = "11111111-1111-4111-8111-111111111111";
+    const rows = rebuildRunTimelineFromEvents(
+      [
+        ev(1, "UserMessage", { turnId: "turn-1", messageId: "u1", text: "Prepare assets." }),
+        ev(2, "MessageCompleted", {
+          turnId: "turn-1",
+          messageId: "proposal-ready",
+          text: "The Asset Specs are ready.",
+          finishReason: "external_result",
+        }),
+        ev(3, "ArtifactCreated", {
+          turnId: "turn-1",
+          artifactId: storyRunId,
+          artifact: {
+            kind: "story_stage_proposal",
+            storyAgentRunId: storyRunId,
+            storyProjectId: storyRunId,
+            storyChapterId: storyRunId,
+            workspaceId: storyRunId,
+            stage: "assets",
+            schemaVersion: "story-asset-proposal-v1",
+          },
+          status: "proposed",
+        }),
+        ev(4, "ToolProposed", {
+          turnId: "turn-1",
+          toolCallId: "apply-1",
+          toolId: "story.applyProposal",
+          arguments: { storyAgentRunId: storyRunId },
+        }),
+        ev(5, "ApprovalRequired", {
+          turnId: "turn-1",
+          approvalId: "approval-1",
+          toolCallId: "apply-1",
+        }),
+        ev(6, "ApprovalResolved", {
+          turnId: "turn-2",
+          approvalId: "approval-1",
+          responseId: "response-1",
+          decision: "approve",
+        }),
+        ev(7, "ArtifactUpdated", {
+          turnId: "turn-2",
+          artifactId: storyRunId,
+          status: "applied",
+        }),
+        ev(8, "RunCompleted", { turnId: "turn-2", status: "completed" }),
+      ],
+      "run-1",
+      "completed"
+    );
+
+    const artifact = rows.find((row) => row.role === "assistant")?.artifacts?.[0];
+    expect(artifact).toMatchObject({
+      id: storyRunId,
+      status: "applied",
+      reference: {
+        kind: "story_stage_proposal",
+        storyAgentRunId: storyRunId,
+        stage: "assets",
+      },
+    });
+    expect(artifact?.reference.legacy).toBeUndefined();
+  });
+
+  it("deterministically recovers proposal Artifacts from pre-Artifact journals", () => {
+    const storyRunId = "22222222-2222-4222-8222-222222222222";
+    const rows = rebuildRunTimelineFromEvents(
+      [
+        ev(1, "MessageCompleted", {
+          turnId: "turn-1",
+          messageId: "proposal-ready",
+          text: "The proposal is ready.",
+          finishReason: "external_result",
+        }),
+        ev(2, "ToolProposed", {
+          turnId: "turn-1",
+          toolCallId: "apply-legacy",
+          toolId: "story.applyProposal",
+          arguments: { storyAgentRunId: storyRunId },
+        }),
+        ev(3, "ApprovalRequired", {
+          turnId: "turn-1",
+          approvalId: "approval-legacy",
+          toolCallId: "apply-legacy",
+        }),
+        ev(4, "ApprovalResolved", {
+          turnId: "turn-2",
+          approvalId: "approval-legacy",
+          responseId: "response-legacy",
+          decision: "reject",
+        }),
+        ev(5, "RunCompleted", { turnId: "turn-2", status: "completed" }),
+      ],
+      "run-legacy",
+      "completed"
+    );
+
+    expect(rows[0]?.artifacts).toEqual([
+      expect.objectContaining({
+        id: storyRunId,
+        status: "rejected",
+        reference: expect.objectContaining({
+          kind: "story_stage_proposal",
+          storyAgentRunId: storyRunId,
+          legacy: true,
+        }),
+      }),
+    ]);
   });
 
   it("creates deterministic legacy turns per old UserMessage", () => {
