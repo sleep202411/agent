@@ -1,6 +1,6 @@
 import type { StoryProductionState } from "@/lib/story-production-api";
 
-export type StoryAssetsStageGuidance = "assetsRequired" | "noAssets" | null;
+export type StoryAssetsStageGuidance = "plotRequired" | "assetsRequired" | "noAssets" | null;
 export type StoryStoryboardStageGuidance =
   | "plotRequired"
   | "assetsRequired"
@@ -16,6 +16,7 @@ export function storyAssetsStageGuidance(
   production: StoryProductionState,
   assetCount: number
 ): StoryAssetsStageGuidance {
+  if (production.plotTree.status !== "current") return "plotRequired";
   if (production.assets.status !== "current") return "assetsRequired";
   if (assetCount === 0) return "noAssets";
   return null;

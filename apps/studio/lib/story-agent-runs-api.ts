@@ -7,8 +7,7 @@ export type { StoryAgentRunDto };
  * The lifecycle head for one story project/chapter — the run the assistant panel
  * shows: an in-flight `authoring`/`applying` run, a `proposed` draft awaiting
  * confirm, or the most recent terminal event. Null when the project has never
- * run the authoring agent. The workspace is carried by the api client's ambient
- * `x-fizz-workspace-id` header (the project's, set by the workspace gate).
+ * run the authoring agent. Project membership is the sole request authority.
  */
 export function storyAgentRunActiveQueryKey(projectId: string, chapterId: string | null) {
   return ["story-studio", "agent-run", "active", projectId, chapterId ?? "project"] as const;
@@ -25,6 +24,7 @@ export function getActiveStoryAgentRun(
 ): Promise<StoryAgentRunDto | null> {
   return api.get<StoryAgentRunDto | null>(`/aurora/story-projects/${projectId}/agent-runs/active`, {
     params: chapterId ? { chapterId } : undefined,
+    requestScope: "project",
     signal,
   });
 }
@@ -36,6 +36,7 @@ export function getStoryAgentRun(
   signal?: AbortSignal
 ): Promise<StoryAgentRunDto> {
   return api.get<StoryAgentRunDto>(`/aurora/story-projects/${projectId}/agent-runs/${runId}`, {
+    requestScope: "project",
     signal,
   });
 }
@@ -44,7 +45,7 @@ export function getStoryAgentRun(
 export function cancelStoryAgentRun(projectId: string, runId: string): Promise<StoryAgentRunDto> {
   return api.post<StoryAgentRunDto>(
     `/aurora/story-projects/${projectId}/agent-runs/${runId}/cancel`,
-    {}
+    { requestScope: "project" }
   );
 }
 
@@ -55,6 +56,6 @@ export function retryStoryAgentRunAuthoring(
 ): Promise<StoryAgentRunDto> {
   return api.post<StoryAgentRunDto>(
     `/aurora/story-projects/${projectId}/agent-runs/${runId}/retry-authoring`,
-    {}
+    { requestScope: "project" }
   );
 }

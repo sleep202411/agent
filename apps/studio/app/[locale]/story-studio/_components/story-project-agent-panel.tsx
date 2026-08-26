@@ -12,7 +12,6 @@ import {
   STORY_AUTHORING_STAGE_KEYS,
 } from "@repo/shared/story-agent";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { getStoryProductionState, storyProductionKeys } from "@/lib/story-production-api";
 import { cn } from "@/lib/utils";
 import { isProductionStepSegment } from "../_lib/production-steps";
@@ -21,6 +20,7 @@ import {
   StoryAuthoringProposalApproval,
   StoryAuthoringProposalTranscript,
 } from "./story-authoring-run-card";
+import { StoryGenerationBatchTranscript } from "./story-generation-batch-transcript";
 import { useStoryAuthoringRun } from "./use-story-authoring-run";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
@@ -33,26 +33,23 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
   const queryClient = useQueryClient();
   const t = useTranslations("storyStudio.authoringRun");
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const { run: authoringRun } = useStoryAuthoringRun(projectId, activeChapterId);
   const applyingRunId = authoringRun?.status === "applying" ? authoringRun.id : null;
   useQuery({
-    queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
-    queryFn: ({ signal }) =>
-      getStoryProductionState(workspaceId as string, projectId, activeChapterId as string, signal),
-    enabled: Boolean(workspaceId && activeChapterId),
+    queryKey: storyProductionKeys.state(projectId, activeChapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, activeChapterId as string, signal),
+    enabled: Boolean(activeChapterId),
     refetchInterval: authoringRun?.status === "applying" ? 1500 : false,
     refetchIntervalInBackground: true,
     retry: false,
   });
   useEffect(() => {
-    if (!applyingRunId || !workspaceId || !activeChapterId) return;
+    if (!applyingRunId || !activeChapterId) return;
     void queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
+      queryKey: storyProductionKeys.state(projectId, activeChapterId),
     });
-  }, [activeChapterId, applyingRunId, projectId, queryClient, workspaceId]);
+  }, [activeChapterId, applyingRunId, projectId, queryClient]);
   // On phones the panel IS the chat view: full-width when active, hidden (but
   // mounted, so the conversation survives) while a step page shows.
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
@@ -118,15 +115,15 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
             }
           : null
       }
-      artifactRenderer={(artifact) =>
-        artifact.reference.kind === "story_stage_proposal" ? (
-          <StoryAuthoringProposalTranscript
-            projectId={projectId}
-            artifact={artifact}
-            workspaceId={workspaceId}
-          />
-        ) : null
-      }
+      artifactRenderer={(artifact) => {
+        if (artifact.reference.kind === "story_stage_proposal") {
+          return <StoryAuthoringProposalTranscript projectId={projectId} artifact={artifact} />;
+        }
+        if (artifact.reference.kind === "story_generation_batch") {
+          return <StoryGenerationBatchTranscript reference={artifact.reference} />;
+        }
+        return null;
+      }}
       activityStatus={authoringActivityStatus}
       composerPrefill={composerPrefill}
       onComposerPrefillConsumed={consumeComposerPrefill}

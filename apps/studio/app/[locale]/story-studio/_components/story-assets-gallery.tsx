@@ -1,10 +1,10 @@
 "use client";
 
-import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
+import { IconAlertTriangle, IconChecks, IconRefresh } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { useWorkspace } from "@/app/_components/workspace-context";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import {
@@ -17,6 +17,7 @@ import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryAssetSpecCard } from "./story-asset-spec-card";
+import { StoryAssetBatchGeneration } from "./story-asset-batch-generation";
 import { StoryProductionPageHeader } from "./story-production-page-header";
 import {
   storyAssetsStageGuidance,
@@ -34,8 +35,6 @@ const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
  * before any media exists; this view never starts paid generation on load. */
 export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.assetsPage");
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const router = useRouter();
   const pathname = usePathname();
@@ -44,19 +43,18 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   const active: StoryAssetSpecKind = TABS.includes(kindParam as StoryAssetSpecKind)
     ? (kindParam as StoryAssetSpecKind)
     : "character";
+  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(() => new Set());
 
   const assetsQuery = useQuery({
-    queryKey: storyProductionKeys.assets(workspaceId, projectId, activeChapterId),
-    queryFn: ({ signal }) =>
-      listStoryAssetSpecs(workspaceId as string, projectId, activeChapterId as string, signal),
-    enabled: Boolean(workspaceId && activeChapterId),
+    queryKey: storyProductionKeys.assets(projectId, activeChapterId),
+    queryFn: ({ signal }) => listStoryAssetSpecs(projectId, activeChapterId as string, signal),
+    enabled: Boolean(activeChapterId),
     retry: false,
   });
   const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
-    queryFn: ({ signal }) =>
-      getStoryProductionState(workspaceId as string, projectId, activeChapterId as string, signal),
-    enabled: Boolean(workspaceId && activeChapterId),
+    queryKey: storyProductionKeys.state(projectId, activeChapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, activeChapterId as string, signal),
+    enabled: Boolean(activeChapterId),
     retry: false,
   });
 
@@ -67,6 +65,10 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   };
 
   const assets = (assetsQuery.data ?? []).filter((asset) => asset.kind === active);
+  const selectableAssets = (assetsQuery.data ?? []).filter((asset) => asset.status === "current");
+  const selectedAssets = selectableAssets.filter((asset) => selectedAssetIds.has(asset.id));
+  const allSelected =
+    selectableAssets.length > 0 && selectedAssets.length === selectableAssets.length;
   // Every kind renders the minimal media card; the lane width tracks each
   // kind's media shape (character 3:4, location 16:9, prop 1:1).
   const gridClass =
@@ -75,9 +77,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
       : active === "location"
         ? "grid-cols-[repeat(auto-fill,minmax(min(280px,100%),1fr))]"
         : "grid-cols-[repeat(auto-fill,minmax(min(200px,100%),1fr))]";
-  const loading =
-    workspaceLoading ||
-    (Boolean(workspaceId) && (assetsQuery.isPending || productionQuery.isPending));
+  const loading = assetsQuery.isPending || (Boolean(activeChapterId) && productionQuery.isPending);
   const error = assetsQuery.error ?? productionQuery.error;
   const guidance =
     productionQuery.data && assetsQuery.data
@@ -102,6 +102,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="w-full px-6 py-6">
           <StoryProductionPageHeader
+            projectId={projectId}
             title={t("title")}
             description={t("generationHint")}
             meta={assetsQuery.data ? t("count", { count: assetsQuery.data.length }) : null}
@@ -145,6 +146,32 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
             </nav>
           ) : null}
 
+          {!loading && !error && activeChapterId && generationAllowed ? (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/[0.025] px-3 py-2.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="quiet"
+                onClick={() =>
+                  setSelectedAssetIds(
+                    allSelected ? new Set() : new Set(selectableAssets.map((asset) => asset.id))
+                  )
+                }
+              >
+                <IconChecks />
+                {allSelected
+                  ? t("batch.clearAll")
+                  : t("batch.selectAll", { count: selectableAssets.length })}
+              </Button>
+              <StoryAssetBatchGeneration
+                projectId={projectId}
+                chapterId={activeChapterId}
+                selectedAssets={selectedAssets}
+                onConfirmed={() => setSelectedAssetIds(new Set())}
+              />
+            </div>
+          ) : null}
+
           {loading ? <StoryStageLoadingState label={t("loading")} /> : null}
 
           {error ? (
@@ -167,7 +194,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
             </div>
           ) : null}
 
-          {!loading && !error && workspaceId && activeChapterId ? (
+          {!loading && !error && activeChapterId ? (
             staleContent ? (
               <>
                 <div className="mt-4">
@@ -186,7 +213,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                       <StoryAssetSpecCard
                         key={`${asset.id}:${asset.version}`}
                         asset={asset}
-                        workspaceId={workspaceId}
                         projectId={projectId}
                         chapterId={activeChapterId}
                         allowGeneration={false}
@@ -200,6 +226,13 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                   />
                 )}
               </>
+            ) : guidance === "plotRequired" ? (
+              <StoryStageEmptyState
+                title={t("stage.plotRequired.title")}
+                description={t("stage.plotRequired.description")}
+                actionLabel={t("continueWithAgent")}
+                prompt={t("prompts.plot")}
+              />
             ) : guidance === "assetsRequired" ? (
               <StoryStageEmptyState
                 title={t("stage.assetsRequired.title")}
@@ -228,10 +261,18 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                   <StoryAssetSpecCard
                     key={`${asset.id}:${asset.version}`}
                     asset={asset}
-                    workspaceId={workspaceId}
                     projectId={projectId}
                     chapterId={activeChapterId}
                     allowGeneration={generationAllowed}
+                    selected={selectedAssetIds.has(asset.id)}
+                    onSelectedChange={(selected) =>
+                      setSelectedAssetIds((current) => {
+                        const next = new Set(current);
+                        if (selected) next.add(asset.id);
+                        else next.delete(asset.id);
+                        return next;
+                      })
+                    }
                   />
                 ))}
               </div>

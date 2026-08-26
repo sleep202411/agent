@@ -1,12 +1,43 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "./api";
+import { api, setApiWorkspaceId } from "./api";
 
 afterEach(() => {
+  setApiWorkspaceId(null);
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
-describe("studio API request cancellation", () => {
+describe("studio API client", () => {
+  it("does not inherit the ambient Workspace header for a project-scoped request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ code: 200, data: { id: "project-1" } }),
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    setApiWorkspaceId("workspace-1");
+
+    await api.get("/aurora/story-projects/project-1", { requestScope: "project" });
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(new Headers(request?.headers).get("x-fizz-workspace-id")).toBeNull();
+  });
+
+  it("continues inheriting the ambient Workspace header for legacy requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ code: 200, data: [] }),
+    } as unknown as Response);
+    vi.stubGlobal("fetch", fetchMock);
+    setApiWorkspaceId("workspace-1");
+
+    await api.get("/aurora/workspaces/workspace-1/projects");
+
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    expect(new Headers(request?.headers).get("x-fizz-workspace-id")).toBe("workspace-1");
+  });
+
   it("accepts a numeric 202 envelope for asynchronous operations", async () => {
     vi.stubGlobal(
       "fetch",

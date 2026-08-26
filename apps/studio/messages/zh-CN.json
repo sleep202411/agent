@@ -2470,6 +2470,51 @@
       "retry": "重试",
       "viewAll": "查看全部",
       "reviewScreenplay": "审阅完整剧本",
+      "screenplayCard": {
+        "eyebrow": "剧本提案",
+        "review": "审阅完整剧本",
+        "dialogDescription": "这里展示将被原样保存的完整剧本；批准或退回仍在消息流底部的决策区完成。",
+        "reviewRegion": "完整剧本提案",
+        "metrics": {
+          "scenes": "场景",
+          "characters": "角色",
+          "choices": "选择"
+        },
+        "status": {
+          "proposed": "等待审阅",
+          "active": "等待审阅",
+          "applying": "正在保存",
+          "applied": "已批准",
+          "rejected": "已退回",
+          "failed": "失败",
+          "cancelled": "已取消"
+        }
+      },
+      "plotCard": {
+        "eyebrow": "情节树提案",
+        "review": "打开画布预览",
+        "dialogDescription": "在只读画布中查看本提案的完整场景拓扑、分支与结局；批准或退回仍在消息流底部的决策区完成。",
+        "canvasRegion": "只读情节树画布预览",
+        "scene": "场景",
+        "decision": "玩家选择",
+        "entry": "入口",
+        "ending": "结局",
+        "continues": "继续",
+        "metrics": {
+          "nodes": "节点",
+          "branches": "分支",
+          "endings": "结局"
+        },
+        "status": {
+          "proposed": "等待审阅",
+          "active": "等待审阅",
+          "applying": "正在保存",
+          "applied": "已批准",
+          "rejected": "已退回",
+          "failed": "失败",
+          "cancelled": "已取消"
+        }
+      },
       "proposalLoading": "正在加载故事提案…",
       "proposalUnavailable": "无法加载这份提案。请刷新重试，或丢弃提案以继续。",
       "approvalFailed": "未能记录本次批准。审阅窗口会保持打开，请重试。",
@@ -2491,7 +2536,7 @@
           "ready": "剧本已就绪",
           "review": "审阅剧本",
           "eyebrow": "剧本草稿",
-          "description": "请审阅完整剧本。批准后只保存剧本；下一阶段会单独准备并审阅资产规格。",
+          "description": "请审阅完整剧本。批准后只保存剧本；下一阶段会单独准备并审阅情节树。",
           "approve": "批准剧本",
           "saving": "正在保存剧本…",
           "savingHint": "正在记录你的批准，本次只将内容保存到剧本。"
@@ -2500,7 +2545,7 @@
           "ready": "情节树已就绪",
           "review": "审阅情节树",
           "eyebrow": "情节树提案",
-          "description": "请审阅基于已批准剧本和资产规格构建的场景拓扑、分支和结局。批准后只保存情节树；分镜仍会单独审阅。",
+          "description": "请审阅根据已批准剧本编译出的场景拓扑、分支和结局。批准后只保存情节树；资产规格仍会单独审阅。",
           "approve": "批准情节树",
           "saving": "正在保存情节树…",
           "savingHint": "正在记录你的批准，本次只将故事结构保存到情节树。"
@@ -2509,7 +2554,7 @@
           "ready": "资产规格已就绪",
           "review": "审阅资产规格",
           "eyebrow": "资产规格提案",
-          "description": "请审阅可复用的角色、场景和道具规格。批准后只保存逻辑规格，不生成媒体，也不消耗点数。",
+          "description": "请审阅根据已批准情节树提取的可复用角色、场景和道具规格。批准后只保存逻辑规格，不生成媒体，也不消耗点数。",
           "approve": "批准资产规格",
           "saving": "正在保存资产规格…",
           "savingHint": "正在记录你的批准，本次只保存逻辑资产规格，不会生成媒体。"
@@ -2535,7 +2580,7 @@
       },
       "proposal": {
         "eyebrow": "剧本初稿",
-        "description": "请审阅完整剧本。你在这里看到的内容会原样写入 Script，再先据此准备资产规格，随后构建情节树。",
+        "description": "请审阅完整剧本。你在这里看到的内容会原样写入 Script，再先编译成情节树，随后准备资产规格。",
         "reviewRegion": "待审阅的提案内容",
         "metrics": {
           "scenes": "场景",
@@ -2616,14 +2661,11 @@
     "newProject": "新建故事项目",
     "projects": {
       "title": "故事项目",
-      "subtitle": "当前工作区中的全部可编辑故事。",
+      "subtitle": "集中查看你有权访问的全部故事。",
       "draft": "草稿",
       "noSummary": "尚未填写项目简介。",
       "videoProgress": "当前视频 {current}/{total}",
-      "updatedUnknown": "更新时间不可用",
-      "tabAll": "全部",
-      "tabJoined": "共享给我的",
-      "otherWorkspace": "其他工作区"
+      "updatedUnknown": "更新时间不可用"
     },
     "metrics": {
       "references": "参考位",
@@ -2762,9 +2804,13 @@
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。",
       "continueWithAgent": "在 FizzAgent 中继续",
       "stage": {
+        "plotRequired": {
+          "title": "请先批准情节树",
+          "description": "资产规划应基于已批准的叙事拓扑。请先在 FizzAgent 中准备并审核情节树，再提取可复用资产。"
+        },
         "assetsRequired": {
           "title": "下一步是批准资产规格",
-          "description": "让 FizzAgent 根据已批准剧本整理可复用的角色、场景和道具。进入情节树前会先由你审阅；此过程不会生成媒体。"
+          "description": "让 FizzAgent 根据已批准的情节树及其剧本解释整理可复用的角色、场景和道具。进入分镜前会先由你审阅；此过程不会生成媒体。"
         },
         "stale": {
           "title": "{count} 项资产规格需要处理",
@@ -2776,8 +2822,8 @@
         }
       },
       "prompts": {
-        "plot": "请根据已批准的剧本和资产规格准备本章情节树，进入分镜前先交给我审阅和批准。不要生成媒体。",
-        "assets": "请根据已批准的剧本准备本章资产规格，进入情节树前先交给我审阅和批准。不要生成媒体。",
+        "plot": "请根据已批准的剧本准备本章情节树，进入资产规格前先交给我审阅和批准。不要生成媒体。",
+        "assets": "请根据已批准的情节树及其剧本解释准备本章资产规格，进入分镜前先交给我审阅和批准。不要生成媒体。",
         "storyboard": "继续为本章准备分镜方案，保存前先交给我审阅和批准。不要生成媒体。"
       },
       "count": "{count} 项资产规格",
@@ -2789,6 +2835,39 @@
         "prop": "道具"
       },
       "filterLabel": "按类型筛选资产规格",
+      "batch": {
+        "selectAll": "全选 {count} 项",
+        "clearAll": "清除选择",
+        "selectAsset": "选择{name}",
+        "deselectAsset": "取消选择{name}",
+        "selected": "已选择 {count} 项",
+        "generate": "批量生成",
+        "running": "正在生成",
+        "runningOther": "协作者正在生成",
+        "cancelling": "正在取消",
+        "cancel": "取消批次",
+        "quoting": "正在由服务端计算准确报价…",
+        "quoteError": "无法准备批量生成报价。",
+        "confirmError": "无法开始批量生成。",
+        "cancelError": "无法取消批量生成。",
+        "started": "批量生成已进入队列。",
+        "cancelled": "已请求取消；已经提交的任务将安全结束。",
+        "completed": "批量生成已完成，资产媒体已更新。",
+        "partialFailed": "部分资产生成失败；已完成的结果仍已保存。",
+        "failed": "本次批量生成失败，请调整模型或参数后重试。",
+        "dialog": {
+          "title": "确认批量生成",
+          "description": "媒体进入公平队列前，请先核对服务端的准确费用。",
+          "items": "资产数量",
+          "points": "计算点数",
+          "model": "图片模型：{model}",
+          "expires": "报价将在 {time} 失效",
+          "billingNotice": "任务会在不同创作者之间公平调度；每项进入生成时才扣除点数。如果价格发生变化，系统会要求重新报价。",
+          "back": "返回",
+          "confirm": "确认 · {points} 点",
+          "confirmEmpty": "确认"
+        }
+      },
       "details": "详情",
       "detailDialog": {
         "imagePrompt": "图片提示词",
@@ -2803,6 +2882,37 @@
         "videoPrompt": "视频提示词"
       },
       "title": "资产规格"
+    },
+    "generationBatchTranscript": {
+      "title": "资产媒体生成",
+      "summary": "已完成 {completed}/{total} · {points} 计算点",
+      "loading": "正在加载生成进度…",
+      "loadError": "无法加载这个生成批次。",
+      "mediaLoadError": "无法刷新已生成的资产媒体。",
+      "cancelError": "无法取消这个生成批次。",
+      "retry": "重试",
+      "cancel": "取消",
+      "progressLabel": "批量生成进度",
+      "batchStatus": {
+        "awaiting_confirmation": "等待确认",
+        "queued": "排队中",
+        "running": "生成中",
+        "completed": "已完成",
+        "partial_failed": "部分完成",
+        "cancelling": "正在取消",
+        "cancelled": "已取消",
+        "failed": "失败",
+        "expired": "报价已失效"
+      },
+      "itemStatus": {
+        "awaiting_confirmation": "等待确认",
+        "ready": "排队中",
+        "dispatching": "正在启动",
+        "submitted": "生成中",
+        "completed": "已完成",
+        "failed": "失败",
+        "cancelled": "已取消"
+      }
     },
     "storyboardPage": {
       "pageTitle": "分镜 · 影游工作室",
@@ -2834,8 +2944,8 @@
         }
       },
       "prompts": {
-        "plotRequired": "请根据已批准的剧本和资产规格准备本章情节树，进入分镜前先交给我审阅和批准。不要生成媒体。",
-        "assetsRequired": "请根据已批准的剧本准备本章资产规格，进入情节树前先交给我审阅和批准。不要生成媒体。",
+        "plotRequired": "请根据已批准的剧本准备本章情节树，进入资产规格前先交给我审阅和批准。不要生成媒体。",
+        "assetsRequired": "请根据已批准的情节树及其剧本解释准备本章资产规格，进入分镜前先交给我审阅和批准。不要生成媒体。",
         "storyboardRequired": "请根据已批准的情节树和资产规格准备本章的分镜方案，保存前先交给我审阅和批准。不要生成媒体。",
         "noScenes": "请修改本章的情节树，加入可用于规划分镜的场景。",
         "scene": "请为场景“{title}”准备分镜序列，保存前先交给我审阅。不要生成媒体。"
@@ -3000,6 +3110,7 @@
       },
       "nodeKinds": {
         "clip": "影像镜头",
+        "decision": "玩家选择",
         "world": "世界体验"
       },
       "ports": {
@@ -3063,6 +3174,7 @@
       },
       "projection": {
         "clip": "镜头",
+        "decision": "玩家选择",
         "world": "世界"
       },
       "worldNode": {
@@ -3674,6 +3786,24 @@
     "emptyHint": "上传剧本文件，告诉 FizzAgent 要完成的任务，批准写入后继续追问。",
     "emptyHintStory": "添加参考资料，或告诉 FizzAgent 如何推进当前章节，然后继续打磨故事。",
     "modelProfile": "模型",
+    "modelSettings": {
+      "title": "模型设置",
+      "description": "设置 FizzAgent 在对话、图片与视频任务中使用的项目默认模型，设置会在不同设备间同步。",
+      "conversationModel": "对话模型",
+      "conversationModelHint": "推理与工具调用",
+      "imageModel": "图片模型",
+      "imageModelHint": "资产与画面生成",
+      "videoModel": "视频模型",
+      "videoModelHint": "镜头与片段生成",
+      "automatic": "自动选择",
+      "automaticHint": "自动选择会为每次请求选用当前可用模型，具体任务仍可单独覆盖。",
+      "open": "模型设置",
+      "cancel": "取消",
+      "save": "保存设置",
+      "saving": "正在保存…",
+      "loadFailed": "无法加载模型设置，请重试。",
+      "saveFailed": "模型设置已在其他设备修改，或所选模型已不可用。请刷新后重试。"
+    },
     "permissionMode": "权限模式",
     "permAsk": "每次询问",
     "permSmart": "智能",
@@ -3785,6 +3915,8 @@
     "approvalStoryEntry": "故事入口",
     "approvalSceneOrder": "场景顺序",
     "approvalStoryScene": "故事场景",
+    "approvalGenerationBatch": "资产媒体生成",
+    "approvalGenerationBatchSummary": "{count} 项资产 · {points} 计算点",
     "approvalNotReady": "审批信息还在准备中，请稍后再点",
     "userInput": {
       "step": "步骤 {current}/{total}",

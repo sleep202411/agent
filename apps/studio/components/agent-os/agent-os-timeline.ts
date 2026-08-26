@@ -29,6 +29,7 @@ export interface AgentOsAssistantSegment {
 
 export type AgentOsArtifactStatus =
   | "proposed"
+  | "active"
   | "applying"
   | "applied"
   | "rejected"
@@ -42,13 +43,25 @@ export interface AgentOsStoryProposalArtifactReference {
   storyProjectId?: string;
   storyChapterId?: string;
   workspaceId?: string;
-  stage?: "script" | "assets" | "plot" | "storyboard" | "noop" | "patch";
+  stage?: "script" | "plot" | "assets" | "storyboard" | "noop" | "patch";
   schemaVersion?: string;
   /** True only for journals written before ArtifactCreated existed. */
   legacy?: boolean;
 }
 
-export type AgentOsArtifactReference = AgentOsStoryProposalArtifactReference;
+export interface AgentOsStoryGenerationBatchArtifactReference {
+  kind: "story_generation_batch";
+  generationBatchId: string;
+  storyProjectId: string;
+  storyChapterId: string;
+  schemaVersion: "story-generation-batch-artifact/v1";
+  /** True only when recovered from a legacy ToolCompleted event. */
+  legacy?: boolean;
+}
+
+export type AgentOsArtifactReference =
+  | AgentOsStoryProposalArtifactReference
+  | AgentOsStoryGenerationBatchArtifactReference;
 
 export interface AgentOsTranscriptArtifact {
   id: string;
@@ -145,6 +158,29 @@ function attachmentNames(event: AgentOsEvent): string[] {
   });
 }
 
+function storyGenerationBatchReference(
+  value: unknown,
+  legacy = false
+): AgentOsStoryGenerationBatchArtifactReference | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const generationBatchId = nonEmptyString(record.generationBatchId ?? record.id);
+  const storyProjectId = nonEmptyString(record.storyProjectId ?? record.projectId);
+  const storyChapterId = nonEmptyString(record.storyChapterId ?? record.chapterId);
+  const confirmedAt = nonEmptyString(record.confirmedAt);
+  if (!generationBatchId || !storyProjectId || !storyChapterId || (legacy && !confirmedAt)) {
+    return null;
+  }
+  return {
+    kind: "story_generation_batch",
+    generationBatchId,
+    storyProjectId,
+    storyChapterId,
+    schemaVersion: "story-generation-batch-artifact/v1",
+    ...(legacy ? { legacy: true } : {}),
+  };
+}
+
 /**
  * Journal → product transcript projection.
  *
@@ -228,7 +264,8 @@ export function rebuildRunTimelineFromEvents(
     artifactId: string,
     reference: AgentOsArtifactReference,
     timestamp: string,
-    eventSequence: number
+    eventSequence: number,
+    status: AgentOsArtifactStatus = "proposed"
   ): AgentOsTranscriptArtifact => {
     const existing = artifactById.get(artifactId);
     if (existing) {
@@ -239,7 +276,7 @@ export function rebuildRunTimelineFromEvents(
     const artifact: AgentOsTranscriptArtifact = {
       id: artifactId,
       reference,
-      status: "proposed",
+      status,
       createdAt: timestamp,
       eventSequence,
     };
@@ -324,6 +361,19 @@ export function rebuildRunTimelineFromEvents(
         continue;
       }
       const reference = rawReference as Record<string, unknown>;
+      if (reference.kind === "story_generation_batch") {
+        const batchReference = storyGenerationBatchReference(reference);
+        if (!batchReference) continue;
+        addArtifact(
+          turnId,
+          artifactId,
+          batchReference,
+          event.timestamp,
+          event.sequence,
+          event.data.status === "active" ? "active" : "proposed"
+        );
+        continue;
+      }
       const storyAgentRunId = nonEmptyString(reference.storyAgentRunId);
       if (reference.kind !== "story_stage_proposal" || !storyAgentRunId) continue;
       addArtifact(
@@ -350,6 +400,24 @@ export function rebuildRunTimelineFromEvents(
         event.sequence
       );
       continue;
+    }
+
+    if (event.type === "ToolCompleted" && event.data.toolId === "story.generation.confirmBatch") {
+      // Journals written immediately before the explicit Artifact event was
+      // introduced still contain the canonical confirmed batch result. Use it
+      // as a deterministic replay bridge; all current writers emit
+      // ArtifactCreated before ToolCompleted.
+      const batchReference = storyGenerationBatchReference(event.data.result, true);
+      if (batchReference) {
+        addArtifact(
+          turnId,
+          batchReference.generationBatchId,
+          batchReference,
+          event.timestamp,
+          event.sequence,
+          "active"
+        );
+      }
     }
 
     if (event.type === "ArtifactUpdated") {

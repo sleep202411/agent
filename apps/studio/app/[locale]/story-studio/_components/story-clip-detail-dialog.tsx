@@ -22,8 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isOperationOnlyModel } from "@/lib/canvas-authoring/generation-api";
-import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
   createStoryProductionIdempotencyKey,
   createStoryStoryboardClipGeneration,
@@ -33,7 +31,7 @@ import {
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { StoryPromptMentionField, useStoryAssetMentions } from "./story-prompt-mention-field";
-import { useStoryProductionSettingsStore } from "../_stores/story-production-settings-store";
+import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
  * Detail dialog for one Storyboard clip — the clip-side twin of the Asset Spec
@@ -44,7 +42,6 @@ import { useStoryProductionSettingsStore } from "../_stores/story-production-set
 export function StoryClipDetailDialog({
   clip,
   sequenceId,
-  workspaceId,
   projectId,
   chapterId,
   open,
@@ -53,7 +50,6 @@ export function StoryClipDetailDialog({
 }: {
   clip: StoryStoryboardClip;
   sequenceId: string;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
   open: boolean;
@@ -63,27 +59,23 @@ export function StoryClipDetailDialog({
 }) {
   const t = useTranslations("storyStudio.assetsPage.detailDialog");
   const queryClient = useQueryClient();
-  const catalog = useAiCatalog();
-  const models = usableModelsByModality(catalog.data, clip.kind).filter(
-    (model) => !isOperationOnlyModel(model) && !/hunyuan|panorama/i.test(model.id)
-  );
-  const pageDefault = useStoryProductionSettingsStore((state) => state[clip.kind].selection);
-  const mentions = useStoryAssetMentions(workspaceId, projectId, chapterId);
+  const defaults = useStoryProductionGenerationDefaults(projectId, clip.kind);
+  const models = defaults.models;
+  const mentions = useStoryAssetMentions(projectId, chapterId);
   const savedPrompt = (clip.kind === "image" ? clip.imagePrompt : clip.videoPrompt) ?? "";
   const [prompt, setPrompt] = useState(savedPrompt);
   // null = follow the page-level default until the creator picks explicitly.
   const [modelId, setModelId] = useState<string | null>(null);
-  const effectiveModelId = modelId ?? pageDefault?.modelId ?? models[0]?.id ?? null;
+  const effectiveModelId = modelId ?? defaults.model?.id ?? null;
   const promptDirty = prompt.trim() !== savedPrompt;
 
   const invalidateStoryboard = () =>
     queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.storyboard(workspaceId, projectId, chapterId),
+      queryKey: storyProductionKeys.storyboard(projectId, chapterId),
     });
 
   const patchPrompt = () =>
     patchStoryStoryboardClip(
-      workspaceId,
       projectId,
       chapterId,
       sequenceId,
@@ -119,7 +111,6 @@ export function StoryClipDetailDialog({
       }
       const model = models.find((candidate) => candidate.id === effectiveModelId);
       return createStoryStoryboardClipGeneration(
-        workspaceId,
         projectId,
         chapterId,
         sequenceId,

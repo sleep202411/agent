@@ -29,7 +29,6 @@ import {
   createStoryProject,
   getStoryExperienceCurrentRelease,
   getStoryCandidateAssets,
-  getStoryProjectWorkspace,
   getStoryWorkingPreview,
   listStoryProjects,
   putStoryCanvasLayout,
@@ -87,12 +86,12 @@ describe("current-draft Story production routes", () => {
       nextCursor: null,
     });
 
-    const page = await listStoryProjects("workspace-1", { limit: 100 });
+    const page = await listStoryProjects({ limit: 100 });
 
     expect(page.items).toHaveLength(1);
     expect(api.get).toHaveBeenCalledWith("/aurora/story-projects", {
       params: { limit: 100 },
-      headers: { "x-fizz-workspace-id": "workspace-1" },
+      requestScope: "project",
     });
   });
 
@@ -107,7 +106,7 @@ describe("current-draft Story production routes", () => {
       nextCursor: null,
     });
 
-    await expect(listStoryProjects("workspace-1", { limit: 100 })).rejects.toThrow(
+    await expect(listStoryProjects({ limit: 100 })).rejects.toThrow(
       "Story Studio API contract is out of date."
     );
   });
@@ -116,7 +115,7 @@ describe("current-draft Story production routes", () => {
     vi.mocked(api.post).mockResolvedValueOnce({ project: storyProject() });
 
     await expect(
-      createStoryProject("workspace-1", {
+      createStoryProject({
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
@@ -130,31 +129,30 @@ describe("current-draft Story production routes", () => {
         defaultLocale: "en-US",
         visibility: "private",
       },
-      headers: { "x-fizz-workspace-id": "workspace-1" },
     });
   });
 
   it("renames a chapter without sending a chapter-version token", async () => {
     vi.mocked(api.patch).mockResolvedValueOnce({ id: "chapter-1" });
 
-    await updateStoryChapter("workspace-1", "project-1", "chapter-1", {
+    await updateStoryChapter("project-1", "chapter-1", {
       title: "A New Name",
     });
 
     expect(api.patch).toHaveBeenCalledWith("/aurora/story-projects/project-1/chapters/chapter-1", {
       data: { title: "A New Name" },
-      headers: { "x-fizz-workspace-id": "workspace-1" },
+      requestScope: "project",
     });
   });
 
   it("archives a chapter without sending a request body", async () => {
     vi.mocked(api.post).mockResolvedValueOnce({ id: "chapter-1" });
 
-    await archiveStoryChapter("workspace-1", "project-1", "chapter-1");
+    await archiveStoryChapter("project-1", "chapter-1");
 
     expect(api.post).toHaveBeenCalledWith(
       "/aurora/story-projects/project-1/chapters/chapter-1/archive",
-      { headers: { "x-fizz-workspace-id": "workspace-1" } }
+      { requestScope: "project" }
     );
   });
 
@@ -162,7 +160,6 @@ describe("current-draft Story production routes", () => {
     vi.mocked(api.put).mockResolvedValueOnce({ revision: 8 });
 
     await putStoryCanvasLayout(
-      "workspace-1",
       "project-1",
       "chapter-1",
       {
@@ -192,30 +189,30 @@ describe("current-draft Story production routes", () => {
     vi.mocked(api.put).mockResolvedValueOnce(candidate);
     vi.mocked(api.delete).mockResolvedValueOnce({ mediaAssetId: candidate.asset.id });
 
-    await expect(
-      getStoryCandidateAssets("workspace-1", "project / one", controller.signal)
-    ).resolves.toEqual([candidate]);
-    await expect(
-      addStoryCandidateAsset("workspace-1", "project / one", candidate.asset.id)
-    ).resolves.toEqual(candidate);
-    await expect(
-      removeStoryCandidateAsset("workspace-1", "project / one", candidate.asset.id)
-    ).resolves.toEqual({ mediaAssetId: candidate.asset.id });
+    await expect(getStoryCandidateAssets("project / one", controller.signal)).resolves.toEqual([
+      candidate,
+    ]);
+    await expect(addStoryCandidateAsset("project / one", candidate.asset.id)).resolves.toEqual(
+      candidate
+    );
+    await expect(removeStoryCandidateAsset("project / one", candidate.asset.id)).resolves.toEqual({
+      mediaAssetId: candidate.asset.id,
+    });
 
     const path =
       "/aurora/story-projects/project%20%2F%20one/candidate-assets/00000000-0000-4000-8000-000000000011";
     expect(api.get).toHaveBeenCalledWith(
       "/aurora/story-projects/project%20%2F%20one/candidate-assets",
       {
-        headers: { "x-fizz-workspace-id": "workspace-1" },
+        requestScope: "project",
         signal: controller.signal,
       }
     );
     expect(api.put).toHaveBeenCalledWith(path, {
-      headers: { "x-fizz-workspace-id": "workspace-1" },
+      requestScope: "project",
     });
     expect(api.delete).toHaveBeenCalledWith(path, {
-      headers: { "x-fizz-workspace-id": "workspace-1" },
+      requestScope: "project",
     });
   });
 
@@ -235,10 +232,10 @@ describe("current-draft Story production routes", () => {
       sources: [],
     });
 
-    await getStoryWorkingPreview("workspace-1", "project-1");
+    await getStoryWorkingPreview("project-1");
 
     expect(api.get).toHaveBeenCalledWith("/aurora/story-projects/project-1/working-preview", {
-      headers: { "x-fizz-workspace-id": "workspace-1" },
+      requestScope: "project",
     });
   });
 
@@ -257,30 +254,11 @@ describe("current-draft Story production routes", () => {
       checkedAt: "2026-07-16T12:00:00.000Z",
     });
 
-    await getStoryExperienceCurrentRelease("workspace-1", "project / one");
+    await getStoryExperienceCurrentRelease("project / one");
 
     expect(api.get).toHaveBeenCalledWith(
       "/aurora/story-projects/project%20%2F%20one/releases/current",
-      { headers: { "x-fizz-workspace-id": "workspace-1" } }
-    );
-  });
-
-  it("resolves the project's owning workspace without passing a workspace scope", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ workspaceId: "workspace-owner" });
-
-    await expect(getStoryProjectWorkspace("project / one")).resolves.toBe("workspace-owner");
-
-    // Only that no per-call scope is sent — unlike its neighbours above, which
-    // pass `{ headers: { "x-fizz-workspace-id" } }`. The ambient header `api`
-    // attaches to every request is not observable here and is not claimed.
-    expect(api.get).toHaveBeenCalledWith("/aurora/story-projects/project%20%2F%20one/workspace");
-  });
-
-  it("rejects a resolve response that carries no workspace id", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ workspaceId: "" });
-
-    await expect(getStoryProjectWorkspace("project-1")).rejects.toThrow(
-      "Story Studio API returned an invalid project workspace."
+      { requestScope: "project" }
     );
   });
 });

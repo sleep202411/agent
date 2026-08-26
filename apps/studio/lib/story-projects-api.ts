@@ -4,10 +4,11 @@ import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "
 /**
  * Product Story Studio client.
  *
- * StoryProject is a sovereign project root. It is scoped to the active
- * workspace by the API client's x-fizz-workspace-id header and never borrows a
- * PlatformProject id. Mutable drafts use revision CAS; Build records capture
- * server-owned immutable input snapshots automatically.
+ * StoryProject is a sovereign project root. Project membership authorizes
+ * project reads and writes. Workspace is legacy storage metadata only; project
+ * creation and billing are resolved server-side from the signed-in creator.
+ * Mutable drafts use revision CAS; Build records capture server-owned
+ * immutable input snapshots automatically.
  */
 
 export const INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION = "interactive-story-draft-v1" as const;
@@ -497,36 +498,22 @@ export interface CreateStoryProjectInput {
   sourceIpId?: string | null;
 }
 
-function storyWorkspaceHeaders(workspaceId: string): HeadersInit {
-  if (!workspaceId.trim()) {
-    throw new Error("Story Studio requires an active workspace.");
-  }
-  return { "x-fizz-workspace-id": workspaceId };
-}
-
-function storyIdempotencyHeaders(workspaceId: string, idempotencyKey: string): HeadersInit {
-  if (!workspaceId.trim()) throw new Error("Story Studio requires an active workspace.");
+function storyIdempotencyHeaders(idempotencyKey: string): HeadersInit {
   if (!idempotencyKey.trim()) throw new Error("This operation requires an idempotency key.");
-  return {
-    "x-fizz-workspace-id": workspaceId,
-    "Idempotency-Key": idempotencyKey,
-  };
+  return { "Idempotency-Key": idempotencyKey };
 }
 
 export async function createStoryProject(
-  workspaceId: string,
   input: CreateStoryProjectInput
 ): Promise<StoryProjectSummary> {
   const workbench = await api.post<StoryWorkbench>("/aurora/story-projects", {
     data: input,
-    headers: storyWorkspaceHeaders(workspaceId),
   });
   assertProjectSummary(workbench.project);
   return workbench.project;
 }
 
 export async function listStoryProjects(
-  workspaceId: string,
   query: {
     status?: StoryProjectStatus;
     cursor?: string;
@@ -535,7 +522,7 @@ export async function listStoryProjects(
 ): Promise<CursorPage<StoryProjectSummary>> {
   const page = await api.get<CursorPage<StoryProjectSummary>>("/aurora/story-projects", {
     params: query,
-    headers: storyWorkspaceHeaders(workspaceId),
+    requestScope: "project",
   });
   if (!page || !Array.isArray(page.items)) {
     throw new Error("Story Studio API returned an invalid project page.");
@@ -544,61 +531,7 @@ export async function listStoryProjects(
   return page;
 }
 
-/**
- * The projects someone else invited you into, across every workspace.
- *
- * `listStoryProjects` is scoped to the workspace you are looking at, which is
- * right for the switcher but hides a shared project: it lives in the inviter's
- * workspace, not yours. Each summary carries its own `workspaceId`, so opening
- * one is a switch plus a navigation — no resolve round-trip needed.
- */
-export async function listJoinedStoryProjects(
-  query: {
-    status?: StoryProjectStatus;
-    cursor?: string;
-    limit?: number;
-  } = {}
-): Promise<CursorPage<StoryProjectSummary>> {
-  const page = await api.get<CursorPage<StoryProjectSummary>>(
-    "/aurora/story-projects/shared-with-me",
-    { params: query }
-  );
-  if (!page || !Array.isArray(page.items)) {
-    throw new Error("Story Studio API returned an invalid project page.");
-  }
-  page.items.forEach(assertProjectSummary);
-  return page;
-}
-
-/**
- * The workspace a story project lives in — the one Story Studio read that is
- * deliberately NOT workspace-scoped.
- *
- * A shared project link carries no workspace, so an invited member opens it with
- * their own personal workspace active and every scoped read misses. This answers
- * "which workspace should be active for this project?" so the studio can switch
- * before loading it. The server only answers for a caller who can already reach
- * the project and 404s for everyone else, so it never leaks a workspace id.
- *
- * No per-call workspace scope is sent. The ambient `x-fizz-workspace-id` that
- * `api` attaches to every request still rides along — here it holds the
- * invitee's own workspace, which is exactly the wrong answer — but the route
- * declares no `@Headers` and never reads it, so the resolve is unaffected by
- * whichever workspace happens to be active.
- */
-export async function getStoryProjectWorkspace(projectId: string): Promise<string> {
-  const resolved = await api.get<{ workspaceId: string }>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/workspace`
-  );
-  const workspaceId = resolved?.workspaceId;
-  if (typeof workspaceId !== "string" || !workspaceId.trim()) {
-    throw new Error("Story Studio API returned an invalid project workspace.");
-  }
-  return workspaceId;
-}
-
 export async function getStoryWorkbench(
-  workspaceId: string,
   projectId: string,
   chapterId?: string
 ): Promise<StoryWorkbench> {
@@ -606,7 +539,7 @@ export async function getStoryWorkbench(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/workbench`,
     {
       params: chapterId ? { chapterId } : undefined,
-      headers: storyWorkspaceHeaders(workspaceId),
+      requestScope: "project",
     }
   );
   if (!workbench || typeof workbench !== "object" || !("project" in workbench)) {
@@ -617,69 +550,63 @@ export async function getStoryWorkbench(
 }
 
 export async function createStoryChapter(
-  workspaceId: string,
   projectId: string,
   input: { title: string }
 ): Promise<StoryChapter> {
   return api.post<StoryChapter>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+    { data: input, requestScope: "project" }
   );
 }
 
 export async function updateStoryChapter(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   input: { title: string }
 ): Promise<StoryChapter> {
   return api.patch<StoryChapter>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+    { data: input, requestScope: "project" }
   );
 }
 
 export async function reorderStoryChapters(
-  workspaceId: string,
   projectId: string,
   input: { expectedProjectVersion: number; chapterIds: string[] }
 ): Promise<StoryChapter[]> {
   return api.put<StoryChapter[]>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/order`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+    { data: input, requestScope: "project" }
   );
 }
 
 export async function archiveStoryChapter(
-  workspaceId: string,
   projectId: string,
   chapterId: string
 ): Promise<StoryChapter> {
   return api.post<StoryChapter>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/archive`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
 }
 
 export async function getStoryCanvasLayout(
-  workspaceId: string,
   projectId: string,
   chapterId: string
 ): Promise<StoryCanvasLayout> {
   return api.get<StoryCanvasLayout>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/canvas-layout`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
 }
 
 export async function getStoryCandidateAssets(
-  workspaceId: string,
   projectId: string,
   signal?: AbortSignal
 ): Promise<StoryCandidateAsset[]> {
   const value = await api.get<unknown>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets`,
-    { headers: storyWorkspaceHeaders(workspaceId), signal }
+    { requestScope: "project", signal }
   );
   if (!Array.isArray(value)) {
     throw new Error("Story Studio API returned an invalid candidate asset collection.");
@@ -689,31 +616,28 @@ export async function getStoryCandidateAssets(
 }
 
 export async function addStoryCandidateAsset(
-  workspaceId: string,
   projectId: string,
   mediaAssetId: string
 ): Promise<StoryCandidateAsset> {
   const value = await api.put<unknown>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets/${encodeURIComponent(mediaAssetId)}`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
   assertStoryCandidateAsset(value);
   return value;
 }
 
 export async function removeStoryCandidateAsset(
-  workspaceId: string,
   projectId: string,
   mediaAssetId: string
 ): Promise<{ mediaAssetId: string }> {
   return api.delete<{ mediaAssetId: string }>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/candidate-assets/${encodeURIComponent(mediaAssetId)}`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
 }
 
 export async function putStoryCanvasLayout(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   input: {
@@ -727,14 +651,13 @@ export async function putStoryCanvasLayout(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/canvas-layout`,
     {
       data: { schemaVersion: STORY_CANVAS_LAYOUT_SCHEMA_VERSION, ...input },
-      headers: storyWorkspaceHeaders(workspaceId),
+      requestScope: "project",
       ...request,
     }
   );
 }
 
 export async function updateStoryProject(
-  workspaceId: string,
   projectId: string,
   input: {
     expectedProjectVersion: number;
@@ -752,23 +675,21 @@ export async function updateStoryProject(
 ): Promise<StoryProjectSummary> {
   return api.patch<StoryProjectSummary>(`/aurora/story-projects/${encodeURIComponent(projectId)}`, {
     data: input,
-    headers: storyWorkspaceHeaders(workspaceId),
+    requestScope: "project",
   });
 }
 
 export async function archiveStoryProject(
-  workspaceId: string,
   projectId: string,
   expectedProjectVersion: number
 ): Promise<void> {
   await api.post(`/aurora/story-projects/${encodeURIComponent(projectId)}/archive`, {
     data: { expectedProjectVersion },
-    headers: storyWorkspaceHeaders(workspaceId),
+    requestScope: "project",
   });
 }
 
 export async function putStoryDraft(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   input: {
@@ -782,14 +703,13 @@ export async function putStoryDraft(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/draft`,
     {
       data: { schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION, ...input },
-      headers: storyWorkspaceHeaders(workspaceId),
+      requestScope: "project",
       ...request,
     }
   );
 }
 
 export async function createStoryBuild(
-  workspaceId: string,
   projectId: string,
   input: {
     expectedDraftRevision: number;
@@ -800,45 +720,39 @@ export async function createStoryBuild(
 ): Promise<StoryBuild> {
   return api.post<StoryBuild>(`/aurora/story-projects/${encodeURIComponent(projectId)}/builds`, {
     data: input,
-    headers: storyIdempotencyHeaders(workspaceId, idempotencyKey),
+    headers: storyIdempotencyHeaders(idempotencyKey),
+    requestScope: "project",
   });
 }
 
-export async function getStoryBuild(
-  workspaceId: string,
-  projectId: string,
-  buildId: string
-): Promise<StoryBuild> {
+export async function getStoryBuild(projectId: string, buildId: string): Promise<StoryBuild> {
   return api.get<StoryBuild>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
 }
 
 export async function publishStoryBuild(
-  workspaceId: string,
   projectId: string,
   buildId: string,
   input: { status: "published" | "draft"; setCurrent: boolean }
 ): Promise<ExperienceReleaseResult> {
   return api.post<ExperienceReleaseResult>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/publish`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+    { data: input, requestScope: "project" }
   );
 }
 
 export async function getStoryExperienceCurrentRelease(
-  workspaceId: string,
   projectId: string
 ): Promise<StoryExperienceCurrentRelease> {
   return api.get<StoryExperienceCurrentRelease>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/releases/current`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
 }
 
 export async function getStoryWorkingPreview(
-  workspaceId: string,
   projectId: string,
   chapterId?: string
 ): Promise<StoryWorkingPreview> {
@@ -846,46 +760,44 @@ export async function getStoryWorkingPreview(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/working-preview`,
     {
       ...(chapterId ? { params: { chapterId } } : {}),
-      headers: storyWorkspaceHeaders(workspaceId),
+      requestScope: "project",
     }
   );
 }
 
-export async function listStoryReferenceSlots(
-  workspaceId: string,
-  projectId: string
-): Promise<StoryReferenceSlot[]> {
+export async function listStoryReferenceSlots(projectId: string): Promise<StoryReferenceSlot[]> {
   return api.get<StoryReferenceSlot[]>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
 }
 
 export async function createStoryReferenceSlots(
-  workspaceId: string,
   projectId: string,
   input: { slots: StoryReferenceSlotSpec[] },
   idempotencyKey: string
 ): Promise<StoryReferenceSlot[]> {
   return api.post<StoryReferenceSlot[]>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots`,
-    { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
+    {
+      data: input,
+      headers: storyIdempotencyHeaders(idempotencyKey),
+      requestScope: "project",
+    }
   );
 }
 
 export async function listStoryReferenceVersions(
-  workspaceId: string,
   projectId: string,
   slotId: string
 ): Promise<StoryReferenceVersion[]> {
   return api.get<StoryReferenceVersion[]>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions`,
-    { headers: storyWorkspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
 }
 
 export async function updateStoryReferenceSlot(
-  workspaceId: string,
   projectId: string,
   slotId: string,
   input: {
@@ -895,12 +807,11 @@ export async function updateStoryReferenceSlot(
 ): Promise<StoryReferenceSlot> {
   return api.put<StoryReferenceSlot>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+    { data: input, requestScope: "project" }
   );
 }
 
 export async function createStoryReferenceVersion(
-  workspaceId: string,
   projectId: string,
   slotId: string,
   input: {
@@ -915,12 +826,15 @@ export async function createStoryReferenceVersion(
 ): Promise<StoryReferenceVersion> {
   return api.post<StoryReferenceVersion>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions`,
-    { data: input, headers: storyIdempotencyHeaders(workspaceId, idempotencyKey) }
+    {
+      data: input,
+      headers: storyIdempotencyHeaders(idempotencyKey),
+      requestScope: "project",
+    }
   );
 }
 
 export async function reviewStoryReferenceVersion(
-  workspaceId: string,
   projectId: string,
   slotId: string,
   referenceVersionId: string,
@@ -933,12 +847,11 @@ export async function reviewStoryReferenceVersion(
 ): Promise<{ reference: StoryReferenceVersion; review: StoryReview }> {
   return api.post<{ reference: StoryReferenceVersion; review: StoryReview }>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/versions/${encodeURIComponent(referenceVersionId)}/reviews`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+    { data: input, requestScope: "project" }
   );
 }
 
 export async function approveStoryReferenceVersion(
-  workspaceId: string,
   projectId: string,
   slotId: string,
   input: {
@@ -949,7 +862,7 @@ export async function approveStoryReferenceVersion(
 ): Promise<StoryReferenceSlot> {
   return api.post<StoryReferenceSlot>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/reference-slots/${encodeURIComponent(slotId)}/approval`,
-    { data: input, headers: storyWorkspaceHeaders(workspaceId) }
+    { data: input, requestScope: "project" }
   );
 }
 

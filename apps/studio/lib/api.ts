@@ -28,6 +28,12 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
   params?: Record<string, string | number | boolean | undefined>;
   data?: unknown;
   timeout?: number;
+  /**
+   * Workspace is the legacy default for Studio requests. Project-scoped
+   * routes derive tenancy and authorization from their project id and must
+   * not inherit the ambient Workspace header.
+   */
+  requestScope?: "workspace" | "project";
   /** Return the whole envelope instead of just `data`. */
   raw?: boolean;
 }
@@ -43,11 +49,10 @@ function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
 }
 
 /**
- * Active workspace id attached to every request as `x-fizz-workspace-id`, so the
- * whole studio (reads AND AI-generation spend) is scoped to the workspace the
- * user is in. Set by WorkspaceProvider on switch. compute_point is
- * workspace-owned server-side, so this header decides which pot a generation
- * draws from and which balance the badge shows — keeping them in lockstep.
+ * Active workspace id inherited by legacy Workspace-scoped requests. Project-
+ * scoped routes opt out explicitly and derive access from their project id.
+ * Set by WorkspaceProvider on switch. Workspace-owned billing routes continue
+ * to inherit this value until their payer model is migrated independently.
  *
  * `undefined` = not yet set by the provider → fall back to the persisted
  * selection so even first-paint / off-shell requests are correctly scoped;
@@ -107,6 +112,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     params,
     data,
     timeout = 30_000,
+    requestScope = "workspace",
     raw,
     headers: customHeaders,
     signal: callerSignal,
@@ -120,7 +126,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     ...(isFormData ? {} : { "Content-Type": "application/json" }),
     "accept-language": resolveRequestLocale(),
     // Default workspace scope; an explicit per-call header still wins.
-    ...(workspaceId ? { "x-fizz-workspace-id": workspaceId } : {}),
+    ...(requestScope === "workspace" && workspaceId ? { "x-fizz-workspace-id": workspaceId } : {}),
     ...(customHeaders as Record<string, string>),
   };
 

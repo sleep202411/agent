@@ -45,6 +45,12 @@ vi.mock("./story-authoring-proposal-dialog", () => ({
   ),
 }));
 
+vi.mock("./story-plot-proposal-card", () => ({
+  StoryPlotProposalCard: ({ proposal }: { proposal: { title: string } }) => (
+    <div data-testid="plot-proposal-card">{proposal.title}</div>
+  ),
+}));
+
 function mutation() {
   return { isPending: false, mutate: vi.fn() };
 }
@@ -320,7 +326,6 @@ describe("Story authoring Agent gates", () => {
       root.render(
         <StoryAuthoringProposalTranscript
           projectId="project-1"
-          workspaceId="workspace-1"
           artifact={{
             id: "11111111-1111-4111-8111-111111111111",
             reference: {
@@ -352,10 +357,52 @@ describe("Story authoring Agent gates", () => {
     ).toBe("character.courier");
     expect(useQuery).toHaveBeenCalledWith(
       expect.objectContaining({
-        queryKey: ["story-studio", "asset-specs", "workspace-1", "project-1", "chapter-1"],
+        queryKey: ["story-studio", "asset-specs", "project-1", "chapter-1"],
         enabled: true,
       })
     );
+  });
+
+  it("routes Plot proposals to the compact canvas-preview card", async () => {
+    vi.mocked(useStoryAuthoringRunById).mockReturnValue({
+      run: {
+        id: "11111111-1111-4111-8111-111111111111",
+        chapterId: "chapter-1",
+        status: "proposed",
+        agentOsManaged: true,
+        proposal: {
+          schemaVersion: "story-plot-proposal-v1",
+          title: "Branching night route",
+          summary: "A compact Plot proposal.",
+        },
+      },
+      isLoading: false,
+      refresh: vi.fn(),
+    } as never);
+
+    await act(async () => {
+      root.render(
+        <StoryAuthoringProposalTranscript
+          projectId="project-1"
+          artifact={{
+            id: "11111111-1111-4111-8111-111111111111",
+            reference: {
+              kind: "story_stage_proposal",
+              storyAgentRunId: "11111111-1111-4111-8111-111111111111",
+              workspaceId: "workspace-1",
+            },
+            status: "proposed",
+            createdAt: "2026-08-25T00:00:00.000Z",
+            eventSequence: 4,
+          }}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-testid="plot-proposal-card"]')?.textContent).toBe(
+      "Branching night route"
+    );
+    expect(container.querySelector('[data-testid="proposal-content"]')).toBeNull();
   });
 
   it("loads the approval's exact Story run after the user switches chapters", async () => {

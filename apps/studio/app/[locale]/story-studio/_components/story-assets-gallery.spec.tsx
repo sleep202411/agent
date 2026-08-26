@@ -52,10 +52,6 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@/app/_components/workspace-context", () => ({
-  useWorkspace: () => ({ activeWorkspace: { id: "workspace-1" }, loading: false }),
-}));
-
 vi.mock("@/i18n/navigation", () => ({
   usePathname: () => "/story-studio/projects/project-1/assets",
   useRouter: () => ({ replace: vi.fn() }),
@@ -67,6 +63,10 @@ vi.mock("./story-production-page-header", () => ({
 
 vi.mock("./story-asset-spec-card", () => ({
   StoryAssetSpecCard: ({ asset }: { asset: { kind: string } }) => <div>{asset.kind}</div>,
+}));
+
+vi.mock("./story-asset-batch-generation", () => ({
+  StoryAssetBatchGeneration: () => null,
 }));
 
 vi.mock("./story-stage-empty-state", () => ({

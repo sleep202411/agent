@@ -27,7 +27,7 @@ function StoryClipTile({
 }: {
   clip: StoryStoryboardSequence["clips"][number];
   sequenceId: string;
-  scope: { workspaceId: string; projectId: string; chapterId: string };
+  scope: { projectId: string; chapterId: string };
   durationLabel: string;
   allowGeneration: boolean;
 }) {
@@ -76,7 +76,6 @@ function StoryClipTile({
       <StoryClipDetailDialog
         clip={clip}
         sequenceId={sequenceId}
-        workspaceId={scope.workspaceId}
         projectId={scope.projectId}
         chapterId={scope.chapterId}
         open={detailOpen}
@@ -176,20 +175,18 @@ export function StoryStoryboardUnplannedSection({
 export function StoryStoryboardSequenceSection({
   sequence,
   index,
-  workspaceId,
   projectId,
   chapterId,
   allowGeneration = true,
 }: {
   sequence: StoryStoryboardSequence;
   index: number;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
   allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
-  const scope = { workspaceId, projectId, chapterId };
+  const scope = { projectId, chapterId };
   // Storage and timeline invariants stay in milliseconds; seconds are display-only.
   const seconds = (ms: number) => Number((ms / 1000).toFixed(1));
 

@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { IconCheck } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { type StoryAssetSpec } from "@/lib/story-production-api";
+import { cn } from "@/lib/utils";
 import { StoryAssetSpecDetailDialog } from "./story-asset-spec-detail-dialog";
 import { StoryProductionConflictPanel } from "./story-production-conflict-panel";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
@@ -22,24 +24,49 @@ const MEDIA_ASPECT = {
  */
 export function StoryAssetSpecCard({
   asset,
-  workspaceId,
   projectId,
   chapterId,
   allowGeneration = true,
+  selected = false,
+  onSelectedChange,
 }: {
   asset: StoryAssetSpec;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
   allowGeneration?: boolean;
+  selected?: boolean;
+  onSelectedChange?: (selected: boolean) => void;
 }) {
   const t = useTranslations("storyStudio.assetsPage");
   const [detailOpen, setDetailOpen] = useState(false);
 
   return (
-    <article className="rounded-2xl bg-white/[0.045] p-3 text-white shadow-sm">
+    <article
+      className={cn(
+        "relative rounded-2xl bg-white/[0.045] p-3 text-white shadow-sm",
+        selected && "ring-1 ring-white/65"
+      )}
+    >
+      {onSelectedChange ? (
+        <button
+          type="button"
+          aria-label={t(selected ? "batch.deselectAsset" : "batch.selectAsset", {
+            name: asset.name,
+          })}
+          aria-pressed={selected}
+          onClick={() => onSelectedChange(!selected)}
+          className={cn(
+            "absolute top-5 left-5 z-20 inline-flex size-6 items-center justify-center rounded-lg border text-white transition focus-visible:ring-2 focus-visible:ring-white/50 focus-visible:outline-none",
+            selected
+              ? "border-white/70 bg-white text-black"
+              : "border-white/25 bg-black/50 hover:border-white/55 hover:bg-black/70"
+          )}
+        >
+          {selected ? <IconCheck className="size-3.5" stroke={2.5} /> : null}
+        </button>
+      ) : null}
       <StoryProductionGenerationControl
-        scope={{ workspaceId, projectId, chapterId }}
+        scope={{ projectId, chapterId }}
         target={{
           kind: "asset_spec",
           id: asset.id,
@@ -69,12 +96,11 @@ export function StoryAssetSpecCard({
         ) : null}
       </div>
       <StoryProductionConflictPanel
-        scope={{ workspaceId, projectId, chapterId }}
+        scope={{ projectId, chapterId }}
         target={{ kind: "asset_spec", item: asset }}
       />
       <StoryAssetSpecDetailDialog
         asset={asset}
-        workspaceId={workspaceId}
         projectId={projectId}
         chapterId={chapterId}
         open={detailOpen}

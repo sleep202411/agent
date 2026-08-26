@@ -761,6 +761,79 @@ describe("turn timeline projection", () => {
     expect(artifact?.reference.legacy).toBeUndefined();
   });
 
+  it("projects a confirmed generation batch as a durable live Artifact", () => {
+    const batchId = "33333333-3333-4333-8333-333333333333";
+    const rows = rebuildRunTimelineFromEvents(
+      [
+        ev(1, "UserMessage", {
+          turnId: "turn-1",
+          messageId: "u1",
+          text: "Generate all character images.",
+        }),
+        ev(2, "ArtifactCreated", {
+          turnId: "turn-1",
+          artifactId: batchId,
+          artifact: {
+            kind: "story_generation_batch",
+            generationBatchId: batchId,
+            storyProjectId: "44444444-4444-4444-8444-444444444444",
+            storyChapterId: "55555555-5555-4555-8555-555555555555",
+            schemaVersion: "story-generation-batch-artifact/v1",
+          },
+          status: "active",
+        }),
+        ev(3, "RunCompleted", { turnId: "turn-1", status: "completed" }),
+      ],
+      "run-1",
+      "completed"
+    );
+
+    expect(rows[1]?.artifacts?.[0]).toMatchObject({
+      id: batchId,
+      status: "active",
+      reference: {
+        kind: "story_generation_batch",
+        generationBatchId: batchId,
+        schemaVersion: "story-generation-batch-artifact/v1",
+      },
+    });
+    expect(rows[1]?.artifacts?.[0]?.reference).not.toHaveProperty("workspaceId");
+  });
+
+  it("recovers a confirmed batch from a pre-Artifact ToolCompleted event", () => {
+    const batchId = "77777777-7777-4777-8777-777777777777";
+    const rows = rebuildRunTimelineFromEvents(
+      [
+        ev(1, "ToolCompleted", {
+          turnId: "turn-1",
+          toolCallId: "confirm-legacy",
+          toolId: "story.generation.confirmBatch",
+          result: {
+            id: batchId,
+            workspaceId: "88888888-8888-4888-8888-888888888888",
+            projectId: "99999999-9999-4999-8999-999999999999",
+            chapterId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            confirmedAt: "2026-08-26T12:00:00.000Z",
+          },
+        }),
+        ev(2, "RunCompleted", { turnId: "turn-1", status: "completed" }),
+      ],
+      "run-1",
+      "completed"
+    );
+
+    expect(rows[0]?.artifacts?.[0]).toMatchObject({
+      id: batchId,
+      status: "active",
+      reference: {
+        kind: "story_generation_batch",
+        generationBatchId: batchId,
+        legacy: true,
+      },
+    });
+    expect(rows[0]?.artifacts?.[0]?.reference).not.toHaveProperty("workspaceId");
+  });
+
   it("deterministically recovers proposal Artifacts from pre-Artifact journals", () => {
     const storyRunId = "22222222-2222-4222-8222-222222222222";
     const rows = rebuildRunTimelineFromEvents(

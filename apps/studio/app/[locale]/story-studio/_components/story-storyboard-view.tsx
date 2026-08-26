@@ -5,7 +5,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import {
   getStoryProductionState,
@@ -47,28 +46,24 @@ import {
  */
 export function StoryStoryboardView({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.storyboardPage");
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  const workbenchQuery = useStoryChapterWorkbench(projectId, { chapterId });
   const searchParams = useSearchParams();
 
   const storyboardQuery = useQuery({
-    queryKey: storyProductionKeys.storyboard(workspaceId, projectId, chapterId),
-    queryFn: ({ signal }) =>
-      getStoryStoryboard(workspaceId as string, projectId, chapterId as string, signal),
-    enabled: Boolean(workspaceId && chapterId),
+    queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+    queryFn: ({ signal }) => getStoryStoryboard(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId),
     retry: false,
   });
   const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(workspaceId, projectId, chapterId),
-    queryFn: ({ signal }) =>
-      getStoryProductionState(workspaceId as string, projectId, chapterId as string, signal),
-    enabled: Boolean(workspaceId && chapterId),
+    queryKey: storyProductionKeys.state(projectId, chapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId),
     retry: false,
   });
 
   const locale = useLocale();
-  const workbenchQuery = useStoryChapterWorkbench(projectId, { chapterId });
   const nodes = useMemo(
     () => workbenchQuery.data?.draft.content.graph.nodes ?? [],
     [workbenchQuery.data?.draft.content.graph.nodes]
@@ -115,9 +110,8 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
   const openAgentComposer = useStoryProjectUiStore((state) => state.openAgentComposer);
 
   const loading =
-    workspaceLoading ||
-    (Boolean(workspaceId) &&
-      (storyboardQuery.isPending || workbenchQuery.isPending || productionQuery.isPending));
+    workbenchQuery.isPending ||
+    (Boolean(chapterId) && (storyboardQuery.isPending || productionQuery.isPending));
 
   // Consume the deep link exactly once, after the board has actually rendered
   // (both queries settled): refetches must not yank the viewport back to the
@@ -169,7 +163,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (!workspaceId || !chapterId || !productionQuery.data) {
+  if (!chapterId || !productionQuery.data) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
@@ -206,6 +200,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     return (
       <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
         <StoryProductionPageHeader
+          projectId={projectId}
           title={t("title")}
           description={t("generationHint")}
           showGenerationControls={false}
@@ -223,6 +218,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
   return (
     <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
       <StoryProductionPageHeader
+        projectId={projectId}
         title={t("title")}
         description={t("generationHint")}
         showGenerationControls={generationAllowed && (storyboardQuery.data?.length ?? 0) > 0}
@@ -258,7 +254,6 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
                 <StoryStoryboardSequenceSection
                   sequence={sequence}
                   index={index}
-                  workspaceId={workspaceId}
                   projectId={projectId}
                   chapterId={chapterId}
                   allowGeneration={generationAllowed}
@@ -287,7 +282,6 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
             key={sequence.id}
             sequence={sequence}
             index={sceneNodes.length + index}
-            workspaceId={workspaceId}
             projectId={projectId}
             chapterId={chapterId}
             allowGeneration={false}

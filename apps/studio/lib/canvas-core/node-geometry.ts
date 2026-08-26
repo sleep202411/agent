@@ -63,13 +63,10 @@ function storyNodeGeometry(data: Record<string, unknown> | undefined): CanvasNod
   if (data?.kind === "character") return geometry(COMPACT_WIDTH, 120, 140);
   const interactionCount = Array.isArray(data?.interactions) ? data.interactions.length : 0;
   const interactionHeight = interactionCount > 0 ? 52 + interactionCount * 44 : 0;
-  if (data?.kind === "clip" && data.exitKind === "choice") {
+  if (data?.kind === "decision") {
     const choiceCount = Array.isArray(data.choices) ? data.choices.length : 0;
-    return geometry(
-      STANDARD_WIDTH,
-      364 + interactionHeight,
-      364 + interactionHeight + choiceCount * 48
-    );
+    const choiceHeight = Math.max(2, choiceCount) * 44;
+    return geometry(STANDARD_WIDTH, 180 + choiceHeight, 204 + choiceHeight);
   }
   return geometry(STANDARD_WIDTH, 236 + interactionHeight, 268 + interactionHeight);
 }

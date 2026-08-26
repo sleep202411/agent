@@ -12,8 +12,8 @@ import {
   type StoryCandidateAsset,
 } from "@/lib/story-projects-api";
 
-export function storyCandidateAssetsQueryKey(workspaceId: string | null, projectId: string) {
-  return ["story-studio", "candidate-assets", workspaceId ?? "no-workspace", projectId] as const;
+export function storyCandidateAssetsQueryKey(projectId: string) {
+  return ["story-studio", "candidate-assets", projectId] as const;
 }
 
 export interface StoryCandidateAssetsController {
@@ -30,24 +30,18 @@ export interface StoryCandidateAssetsController {
 }
 
 export function useStoryCandidateAssets({
-  workspaceId,
   projectId,
   canEdit,
 }: {
-  workspaceId: string | null;
   projectId: string;
   canEdit: boolean;
 }): StoryCandidateAssetsController {
   const t = useTranslations("storyStudio.canvas.creativeWorkbench.candidates");
   const queryClient = useQueryClient();
-  const queryKey = useMemo(
-    () => storyCandidateAssetsQueryKey(workspaceId, projectId),
-    [projectId, workspaceId]
-  );
+  const queryKey = useMemo(() => storyCandidateAssetsQueryKey(projectId), [projectId]);
   const query = useQuery({
     queryKey,
-    queryFn: ({ signal }) => getStoryCandidateAssets(workspaceId as string, projectId, signal),
-    enabled: Boolean(workspaceId),
+    queryFn: ({ signal }) => getStoryCandidateAssets(projectId, signal),
     staleTime: 20_000,
   });
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
@@ -60,7 +54,7 @@ export function useStoryCandidateAssets({
 
   const withPending = useCallback(
     async (mediaAssetId: string, action: () => Promise<void>) => {
-      if (!workspaceId || !canEdit || pendingIdsRef.current.has(mediaAssetId)) return;
+      if (!canEdit || pendingIdsRef.current.has(mediaAssetId)) return;
       pendingIdsRef.current.add(mediaAssetId);
       setPendingIds((current) => new Set(current).add(mediaAssetId));
       try {
@@ -77,19 +71,19 @@ export function useStoryCandidateAssets({
         });
       }
     },
-    [canEdit, t, workspaceId]
+    [canEdit, t]
   );
 
   const remove = useCallback(
     async (mediaAssetId: string) => {
       await withPending(mediaAssetId, async () => {
-        await removeStoryCandidateAsset(workspaceId as string, projectId, mediaAssetId);
+        await removeStoryCandidateAsset(projectId, mediaAssetId);
         queryClient.setQueryData<StoryCandidateAsset[]>(queryKey, (current = []) =>
           current.filter((candidate) => candidate.asset.id !== mediaAssetId)
         );
       });
     },
-    [projectId, queryClient, queryKey, withPending, workspaceId]
+    [projectId, queryClient, queryKey, withPending]
   );
 
   const toggle = useCallback(
@@ -99,18 +93,14 @@ export function useStoryCandidateAssets({
         return;
       }
       await withPending(mediaAssetId, async () => {
-        const candidate = await addStoryCandidateAsset(
-          workspaceId as string,
-          projectId,
-          mediaAssetId
-        );
+        const candidate = await addStoryCandidateAsset(projectId, mediaAssetId);
         queryClient.setQueryData<StoryCandidateAsset[]>(queryKey, (current = []) => [
           candidate,
           ...current.filter((item) => item.asset.id !== mediaAssetId),
         ]);
       });
     },
-    [candidateIds, projectId, queryClient, queryKey, remove, withPending, workspaceId]
+    [candidateIds, projectId, queryClient, queryKey, remove, withPending]
   );
 
   const refresh = useCallback(async () => {

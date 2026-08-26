@@ -19,15 +19,11 @@ import { cn } from "@/lib/utils";
  * production mention grammar ("引用即提示词"), so the token label IS the
  * stable key and the chip previews the spec's selected media when it exists.
  */
-export function useStoryAssetMentions(
-  workspaceId: string,
-  projectId: string,
-  chapterId: string
-): MentionItem[] {
+export function useStoryAssetMentions(projectId: string, chapterId: string): MentionItem[] {
   const assetsQuery = useQuery({
-    queryKey: storyProductionKeys.assets(workspaceId, projectId, chapterId),
-    queryFn: ({ signal }) => listStoryAssetSpecs(workspaceId, projectId, chapterId, signal),
-    enabled: Boolean(workspaceId && chapterId),
+    queryKey: storyProductionKeys.assets(projectId, chapterId),
+    queryFn: ({ signal }) => listStoryAssetSpecs(projectId, chapterId, signal),
+    enabled: Boolean(chapterId),
     retry: false,
   });
   return useMemo(

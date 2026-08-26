@@ -6,7 +6,6 @@ import {
   resolveStoryCanvasEditPolicy,
   resolveStoryCanvasProjectionSurface,
   resolveStoryProjectionReadiness,
-  shouldFetchStoryProjection,
   storyProjectionQueryKey,
   type StoryCanvasBasePermissions,
 } from "./story-canvas-edit-policy";
@@ -152,17 +151,11 @@ describe("Story Canvas final mutation barrier", () => {
 
 describe("Story projection readiness", () => {
   const fresh = {
-    hasWorkspace: true,
     workbenchFetchedAfterMount: true,
     workbenchError: false,
     layoutFetchedAfterMount: true,
     layoutError: false,
   };
-
-  it("fetches whenever a workspace exists, independently of an assistant", () => {
-    expect(shouldFetchStoryProjection(false)).toBe(false);
-    expect(shouldFetchStoryProjection(true)).toBe(true);
-  });
 
   it("does not authorize old cache entries on a fresh mount", () => {
     expect(resolveStoryProjectionReadiness({ ...fresh, workbenchFetchedAfterMount: false })).toBe(
@@ -175,10 +168,9 @@ describe("Story projection readiness", () => {
   });
 
   it("uses a stable project/chapter query key without an assistant head", () => {
-    expect(storyProjectionQueryKey("workbench", "workspace-1", "project-1", "chapter-1")).toEqual([
+    expect(storyProjectionQueryKey("workbench", "project-1", "chapter-1")).toEqual([
       "story-studio",
       "workbench",
-      "workspace-1",
       "project-1",
       "chapter",
       "chapter-1",
@@ -210,7 +202,6 @@ describe("Story projection readiness", () => {
   it("fails closed when a canonical projection read fails", () => {
     expect(resolveStoryProjectionReadiness({ ...fresh, workbenchError: true })).toBe("unavailable");
     expect(resolveStoryProjectionReadiness({ ...fresh, layoutError: true })).toBe("unavailable");
-    expect(resolveStoryProjectionReadiness({ ...fresh, hasWorkspace: false })).toBe("unavailable");
   });
 });
 

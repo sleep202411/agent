@@ -38,7 +38,6 @@ describe("StoryAssetSpecCard", () => {
         <QueryClientProvider client={client}>
           <StoryAssetSpecCard
             asset={assetSpec({ kind })}
-            workspaceId="workspace-1"
             projectId="project-1"
             chapterId="chapter-1"
           />

@@ -28,10 +28,6 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@/app/_components/workspace-context", () => ({
-  useWorkspace: () => ({ activeWorkspace: { id: "workspace-1" } }),
-}));
-
 vi.mock("@/i18n/navigation", () => ({
   Link: ({ href, children, ...props }: React.ComponentProps<"a">) => (
     <a href={String(href)} {...props}>
@@ -78,7 +74,7 @@ describe("StoryProductionSteps", () => {
     ]);
     expect(container.querySelector('[aria-current="page"]')?.textContent).toContain("assets");
     const navigationText = container.querySelector("nav")?.textContent ?? "";
-    expect(navigationText.indexOf("assets")).toBeLessThan(navigationText.indexOf("tree"));
+    expect(navigationText.indexOf("tree")).toBeLessThan(navigationText.indexOf("assets"));
     expect(container.querySelector("nav")?.getAttribute("aria-label")).toBe("navigationLabel");
     expect(container.textContent).not.toMatch(/\b[1-4]\b/);
   });

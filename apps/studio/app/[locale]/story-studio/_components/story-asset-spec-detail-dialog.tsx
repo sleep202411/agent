@@ -22,8 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isOperationOnlyModel } from "@/lib/canvas-authoring/generation-api";
-import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
   createStoryAssetGeneration,
   createStoryProductionIdempotencyKey,
@@ -33,7 +31,7 @@ import {
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { StoryPromptMentionField, useStoryAssetMentions } from "./story-prompt-mention-field";
-import { useStoryProductionSettingsStore } from "../_stores/story-production-settings-store";
+import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
  * Detail dialog for one Asset Spec: the full identity plus the two knobs the
@@ -43,7 +41,6 @@ import { useStoryProductionSettingsStore } from "../_stores/story-production-set
  */
 export function StoryAssetSpecDetailDialog({
   asset,
-  workspaceId,
   projectId,
   chapterId,
   open,
@@ -51,7 +48,6 @@ export function StoryAssetSpecDetailDialog({
   editable = true,
 }: {
   asset: StoryAssetSpec;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
   open: boolean;
@@ -61,29 +57,25 @@ export function StoryAssetSpecDetailDialog({
 }) {
   const t = useTranslations("storyStudio.assetsPage.detailDialog");
   const queryClient = useQueryClient();
-  const catalog = useAiCatalog();
-  const models = usableModelsByModality(catalog.data, "image").filter(
-    (model) => !isOperationOnlyModel(model) && !/hunyuan|panorama/i.test(model.id)
-  );
-  const pageDefault = useStoryProductionSettingsStore((state) => state.image.selection);
-  const mentions = useStoryAssetMentions(workspaceId, projectId, chapterId);
+  const defaults = useStoryProductionGenerationDefaults(projectId, "image");
+  const models = defaults.models;
+  const mentions = useStoryAssetMentions(projectId, chapterId);
   const [prompt, setPrompt] = useState(asset.imagePrompt);
   // null = follow the page-level default until the creator picks explicitly.
   const [modelId, setModelId] = useState<string | null>(null);
-  const effectiveModelId = modelId ?? pageDefault?.modelId ?? models[0]?.id ?? null;
+  const effectiveModelId = modelId ?? defaults.model?.id ?? null;
   const reference = asset.stableKey.startsWith("@") ? asset.stableKey : `@${asset.stableKey}`;
   const promptDirty = prompt.trim() !== asset.imagePrompt;
 
   const invalidateAssets = () =>
     queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.assets(workspaceId, projectId, chapterId),
+      queryKey: storyProductionKeys.assets(projectId, chapterId),
     });
 
   const saveMutation = useMutation({
     retry: false,
     mutationFn: () =>
       patchStoryAssetSpec(
-        workspaceId,
         projectId,
         chapterId,
         asset.id,
@@ -105,7 +97,6 @@ export function StoryAssetSpecDetailDialog({
       let version = asset.version;
       if (promptDirty) {
         const patched = await patchStoryAssetSpec(
-          workspaceId,
           projectId,
           chapterId,
           asset.id,
@@ -116,7 +107,6 @@ export function StoryAssetSpecDetailDialog({
       }
       const model = models.find((candidate) => candidate.id === effectiveModelId);
       return createStoryAssetGeneration(
-        workspaceId,
         projectId,
         chapterId,
         asset.id,

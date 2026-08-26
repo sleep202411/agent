@@ -94,7 +94,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(1));
     expect(apiMocks.createAsset).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -118,7 +117,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
     expect(apiMocks.getClip).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -130,7 +128,6 @@ describe("StoryProductionGenerationControl", () => {
     await act(async () => button("cancel")?.click());
     await vi.waitFor(() => expect(apiMocks.cancelClip).toHaveBeenCalledTimes(1));
     expect(apiMocks.cancelClip).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -154,7 +151,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.retryAsset).toHaveBeenCalledTimes(1));
     expect(apiMocks.retryAsset).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -199,7 +195,6 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.retryClip).not.toHaveBeenCalled();
     expect(apiMocks.createClip).not.toHaveBeenCalled();
     expect(apiMocks.retryClipAttachment).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -225,9 +220,9 @@ describe("StoryProductionGenerationControl", () => {
     const keys = invalidate.mock.calls.map(([filters]) => filters?.queryKey);
     expect(keys).toEqual(
       expect.arrayContaining([
-        ["story-studio", "production-state", "workspace-1", "project-1", "chapter-1"],
-        ["story-studio", "asset-specs", "workspace-1", "project-1", "chapter-1"],
-        ["story-studio", "storyboard", "workspace-1", "project-1", "chapter-1"],
+        ["story-studio", "production-state", "project-1", "chapter-1"],
+        ["story-studio", "asset-specs", "project-1", "chapter-1"],
+        ["story-studio", "storyboard", "project-1", "chapter-1"],
       ])
     );
     expect(keys.flat()).not.toContain("chapter-2");
@@ -242,7 +237,6 @@ describe("StoryProductionGenerationControl", () => {
         <QueryClientProvider client={client}>
           <StoryProductionGenerationControl
             scope={{
-              workspaceId: "workspace-1",
               projectId: "project-1",
               chapterId: "chapter-1",
             }}

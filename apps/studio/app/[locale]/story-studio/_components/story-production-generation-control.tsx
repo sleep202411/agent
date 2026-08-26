@@ -40,16 +40,14 @@ import {
   type FizzAiModel,
   type ModelSettings,
 } from "@/lib/canvas-authoring/generation-api";
-import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
   storyGenerationOptions,
-  useStoryProductionSettingsStore,
   type ProductionModality,
   type ProductionModelSelection,
 } from "../_stores/story-production-settings-store";
+import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 interface GenerationScope {
-  workspaceId: string;
   projectId: string;
   chapterId: string;
 }
@@ -145,11 +143,8 @@ export function StoryProductionGenerationControl({
     queryClient.setQueryData(generationQueryKey(scope, target, value.id), value);
   };
 
-  const generationDefaults = useStoryProductionSettingsStore((state) => state[outputKind]);
-  const catalog = useAiCatalog();
-  const defaultModel = generationDefaults.selection
-    ? catalog.data?.models.find((model) => model.id === generationDefaults.selection?.modelId)
-    : undefined;
+  const generationDefaults = useStoryProductionGenerationDefaults(scope.projectId, outputKind);
+  const defaultModel = generationDefaults.model;
   const estimatedPoints = estimateStoryGenerationPoints(
     defaultModel,
     generationDefaults.options,
@@ -395,7 +390,6 @@ function generationQueryKey(
   generationId: string | null
 ) {
   return storyProductionKeys.generation(
-    scope.workspaceId,
     scope.projectId,
     scope.chapterId,
     target.kind,
@@ -429,16 +423,8 @@ function getGeneration(
   signal: AbortSignal
 ) {
   return target.kind === "asset_spec"
-    ? getStoryAssetGeneration(
-        scope.workspaceId,
-        scope.projectId,
-        scope.chapterId,
-        target.id,
-        generationId,
-        signal
-      )
+    ? getStoryAssetGeneration(scope.projectId, scope.chapterId, target.id, generationId, signal)
     : getStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -518,16 +504,11 @@ function createGeneration(
       }
     : {};
   return target.kind === "asset_spec"
-    ? createStoryAssetGeneration(
-        scope.workspaceId,
-        scope.projectId,
-        scope.chapterId,
-        target.id,
-        idempotencyKey,
-        { expectedVersion: target.version, ...modelInput }
-      )
+    ? createStoryAssetGeneration(scope.projectId, scope.chapterId, target.id, idempotencyKey, {
+        expectedVersion: target.version,
+        ...modelInput,
+      })
     : createStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -539,15 +520,8 @@ function createGeneration(
 
 function cancelGeneration(scope: GenerationScope, target: GenerationTarget, generationId: string) {
   return target.kind === "asset_spec"
-    ? cancelStoryAssetGeneration(
-        scope.workspaceId,
-        scope.projectId,
-        scope.chapterId,
-        target.id,
-        generationId
-      )
+    ? cancelStoryAssetGeneration(scope.projectId, scope.chapterId, target.id, generationId)
     : cancelStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -561,7 +535,6 @@ function retryGeneration(scope: GenerationScope, target: GenerationTarget, gener
   const input = { expectedVersion: target.version };
   return target.kind === "asset_spec"
     ? retryStoryAssetGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.id,
@@ -570,7 +543,6 @@ function retryGeneration(scope: GenerationScope, target: GenerationTarget, gener
         input
       )
     : retryStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -589,7 +561,6 @@ function retryGenerationMaterialization(
   const idempotencyKey = createStoryProductionIdempotencyKey("story-attachment-retry");
   return target.kind === "asset_spec"
     ? retryStoryAssetGenerationMaterialization(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.id,
@@ -598,7 +569,6 @@ function retryGenerationMaterialization(
         idempotencyKey
       )
     : retryStoryStoryboardClipGenerationMaterialization(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -616,30 +586,22 @@ async function invalidateProductionTarget(
 ) {
   const invalidations = [
     queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.state(scope.workspaceId, scope.projectId, scope.chapterId),
+      queryKey: storyProductionKeys.state(scope.projectId, scope.chapterId),
     }),
   ];
   if (target.kind === "asset_spec") {
     invalidations.push(
       queryClient.invalidateQueries({
-        queryKey: storyProductionKeys.assets(scope.workspaceId, scope.projectId, scope.chapterId),
+        queryKey: storyProductionKeys.assets(scope.projectId, scope.chapterId),
       }),
       queryClient.invalidateQueries({
-        queryKey: storyProductionKeys.storyboard(
-          scope.workspaceId,
-          scope.projectId,
-          scope.chapterId
-        ),
+        queryKey: storyProductionKeys.storyboard(scope.projectId, scope.chapterId),
       })
     );
   } else {
     invalidations.push(
       queryClient.invalidateQueries({
-        queryKey: storyProductionKeys.storyboard(
-          scope.workspaceId,
-          scope.projectId,
-          scope.chapterId
-        ),
+        queryKey: storyProductionKeys.storyboard(scope.projectId, scope.chapterId),
       })
     );
   }

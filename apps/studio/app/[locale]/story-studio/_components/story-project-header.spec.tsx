@@ -18,10 +18,6 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: { project: { title: "Test story" } } }),
 }));
 
-vi.mock("@/app/_components/workspace-context", () => ({
-  useWorkspace: () => ({ activeWorkspace: { id: "workspace-1" } }),
-}));
-
 vi.mock("@/i18n/navigation", () => ({
   Link: ({
     href,

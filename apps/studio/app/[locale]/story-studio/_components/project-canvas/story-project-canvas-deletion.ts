@@ -1,6 +1,10 @@
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import type { StoryCanvasEdge, StoryCanvasNode } from "./story-project-canvas-model";
-import { deleteGraphNode, disconnectStoryBranch } from "./story-project-canvas-mutations";
+import {
+  convertExitToAuto,
+  deleteGraphNode,
+  disconnectStoryBranch,
+} from "./story-project-canvas-mutations";
 
 export function deleteStoryCanvasElements(
   content: InteractiveStoryDraftContent,
@@ -22,7 +26,11 @@ export function deleteStoryCanvasElements(
 
   let next = deleteStandaloneEdges(content, standaloneEdges);
   for (const node of selectedNodes) {
-    next = deleteGraphNode(next, node.data.nodeId);
+    if (node.data.kind === "decision" && node.data.sourceNodeId) {
+      next = convertExitToAuto(next, node.data.sourceNodeId);
+    } else {
+      next = deleteGraphNode(next, node.data.nodeId);
+    }
   }
   return next;
 }
@@ -34,6 +42,9 @@ function deleteStandaloneEdges(
   const orderedEdges = [...edges].sort((left, right) => left.id.localeCompare(right.id));
 
   return orderedEdges.reduce((next, edge) => {
+    if (edge.data.kind === "decision") {
+      return convertExitToAuto(next, edge.data.sourceNodeId);
+    }
     if (edge.data.kind === "continuation") {
       return disconnectStoryBranch(next, {
         kind: "continuation",

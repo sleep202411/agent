@@ -4,7 +4,6 @@ import { IconArrowRight, IconMovie, IconPhoto, IconVideo } from "@tabler/icons-r
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
@@ -22,15 +21,12 @@ export function StoryNodeStoryboardPanel({
   nodeId: string;
 }) {
   const t = useTranslations("storyStudio.canvas.inspector.storyboard");
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
 
   const storyboardQuery = useQuery({
-    queryKey: storyProductionKeys.storyboard(workspaceId, projectId, chapterId),
-    queryFn: ({ signal }) =>
-      getStoryStoryboard(workspaceId as string, projectId, chapterId as string, signal),
-    enabled: Boolean(workspaceId && chapterId),
+    queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+    queryFn: ({ signal }) => getStoryStoryboard(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId),
     retry: false,
   });
   const sequence =

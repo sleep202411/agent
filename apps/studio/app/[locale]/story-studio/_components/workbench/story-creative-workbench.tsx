@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useMemo, useState, type CSSProperties } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   IconArtboard,
@@ -13,7 +13,6 @@ import { useTranslations } from "next-intl";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useSearchParams } from "next/navigation";
 import { Link, useRouter } from "@/i18n/navigation";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { ProjectProvider } from "@/app/[locale]/project/_components/project-context";
 import { CanvasConnectionProvider } from "@/app/[locale]/project/_components/canvas-connection-context";
 import {
@@ -36,11 +35,7 @@ import {
 import { StoryCandidateAssetsPanel } from "../project-canvas/story-candidate-assets-panel";
 import { useStoryCandidateAssets } from "../project-canvas/use-story-candidate-assets";
 import { ensureStoryCanvasDocument } from "@/lib/collab/projects-api";
-import {
-  getStoryProjectWorkspace,
-  getStoryWorkbench,
-  storyApiErrorMessage,
-} from "@/lib/story-projects-api";
+import { getStoryWorkbench, storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { useCanvasConnection } from "@/app/[locale]/project/_components/canvas-connection-context";
 
@@ -59,51 +54,30 @@ export function StoryCreativeWorkbench({
   const projectT = useTranslations("project");
   const commonT = useTranslations("common");
   const [shareOpen, setShareOpen] = useState(false);
-  const { activeWorkspace, setActiveWorkspaceId } = useWorkspace();
-  const workspaceQuery = useQuery({
-    queryKey: ["story-studio", "project-workspace", projectId],
-    queryFn: () => getStoryProjectWorkspace(projectId),
-    staleTime: 5 * 60_000,
-  });
-  const workspaceId = workspaceQuery.data ?? null;
-
-  useEffect(() => {
-    if (workspaceId && activeWorkspace?.id !== workspaceId) setActiveWorkspaceId(workspaceId);
-  }, [activeWorkspace?.id, setActiveWorkspaceId, workspaceId]);
-
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "workbench-shell", workspaceId, projectId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
+    queryKey: ["story-studio", "workbench-shell", projectId],
+    queryFn: () => getStoryWorkbench(projectId),
     staleTime: 20_000,
   });
   const documentQuery = useQuery({
     queryKey: ["story-studio", "creative-document", projectId],
     queryFn: () => ensureStoryCanvasDocument(projectId),
-    enabled: Boolean(workspaceId),
     staleTime: Number.POSITIVE_INFINITY,
   });
 
-  if (workspaceQuery.isPending || workbenchQuery.isPending || documentQuery.isPending) {
+  if (workbenchQuery.isPending || documentQuery.isPending) {
     return <WorkbenchLoading label={t("status.loading")} />;
   }
   const project = workbenchQuery.data?.project;
+  const workspaceId = project?.workspaceId ?? null;
   const document = documentQuery.data;
-  if (
-    !workspaceId ||
-    !project ||
-    !document ||
-    workspaceQuery.isError ||
-    workbenchQuery.isError ||
-    documentQuery.isError
-  ) {
-    const error = workspaceQuery.error ?? workbenchQuery.error ?? documentQuery.error;
+  if (!workspaceId || !project || !document || workbenchQuery.isError || documentQuery.isError) {
+    const error = workbenchQuery.error ?? documentQuery.error;
     return (
       <WorkbenchError
         message={storyApiErrorMessage(error, projectT("sections.invalid"))}
         retryLabel={commonT("retry")}
         onRetry={() => {
-          void workspaceQuery.refetch();
           void workbenchQuery.refetch();
           void documentQuery.refetch();
         }}
@@ -134,7 +108,6 @@ export function StoryCreativeWorkbench({
       >
         <StoryWorkbenchShell
           projectId={projectId}
-          workspaceId={workspaceId}
           title={project.title}
           activeMode={activeMode}
           canEdit={canEdit}
@@ -149,7 +122,6 @@ export function StoryCreativeWorkbench({
 
 function StoryWorkbenchShell({
   projectId,
-  workspaceId,
   title,
   activeMode,
   canEdit,
@@ -158,7 +130,6 @@ function StoryWorkbenchShell({
   onShareOpenChange,
 }: {
   projectId: string;
-  workspaceId: string;
   title: string;
   activeMode: StoryWorkbenchMode;
   canEdit: boolean;
@@ -182,7 +153,7 @@ function StoryWorkbenchShell({
   const leftDrawerOpen =
     assetsOpen || nodesOpen || historyOpen || skillsOpen || Boolean(selectedShotId);
   const leftInset = 64 + (leftDrawerOpen ? PROJECT_PANEL_WIDTH : 0);
-  const candidates = useStoryCandidateAssets({ workspaceId, projectId, canEdit });
+  const candidates = useStoryCandidateAssets({ projectId, canEdit });
   const { awareness, doc } = useCanvasConnection();
 
   const resolveMediaActions = useCallback<CanvasMediaActionsResolver>(

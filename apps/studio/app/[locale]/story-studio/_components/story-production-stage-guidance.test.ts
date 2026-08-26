@@ -34,12 +34,12 @@ function productionState({
 }
 
 describe("story production stage guidance", () => {
-  it("keeps Asset Specs independent of the later Plot Tree stage", () => {
-    expect(storyAssetsStageGuidance(productionState({ plot: "missing" }), 0)).toBe("noAssets");
-    expect(storyAssetsStageGuidance(productionState({ plot: "stale" }), 2)).toBeNull();
+  it("requires the approved Plot before Asset Specs", () => {
+    expect(storyAssetsStageGuidance(productionState({ plot: "missing" }), 0)).toBe("plotRequired");
+    expect(storyAssetsStageGuidance(productionState({ plot: "stale" }), 2)).toBe("plotRequired");
     expect(
       storyAssetsStageGuidance(productionState({ plot: "missing", assets: "missing" }), 0)
-    ).toBe("assetsRequired");
+    ).toBe("plotRequired");
   });
 
   it("requires current Asset Specs and treats an approved empty plan honestly", () => {

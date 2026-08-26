@@ -3,17 +3,10 @@
 import { IconCheck, IconCloudUpload, IconLoader2, IconPlayerPlay } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useCallback, useState } from "react";
-import { toast } from "sonner";
-import { useWorkspace } from "@/app/_components/workspace-context";
+import { useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRouter } from "@/i18n/navigation";
-import {
-  getStoryExperienceCurrentRelease,
-  getStoryWorkbench,
-  storyApiErrorMessage,
-} from "@/lib/story-projects-api";
+import { getStoryExperienceCurrentRelease, getStoryWorkbench } from "@/lib/story-projects-api";
 import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
 import { useStoryPreviewNavigation } from "../_lib/use-story-preview-navigation";
 import { isExactCurrentStoryRelease } from "./project-canvas/story-current-release";
@@ -36,31 +29,24 @@ const LABEL_CLASS = "@max-[1000px]:sr-only";
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
-  const router = useRouter();
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const liveDraft = useStoryProjectUiStore((state) => state.liveDraft);
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
-  const guardedNavigate = useStoryProjectUiStore((state) => state.guardedNavigate);
 
   const workbenchQuery = useQuery({
     // With a chapter in scope this shares the dock tenants' cache entry; the
     // header also renders before one resolves, hence the project-level key.
     queryKey: activeChapterId
-      ? storyChapterWorkbenchQueryKey(workspaceId, projectId, activeChapterId)
-      : ["story-studio", "script-workbench", workspaceId, projectId],
-    queryFn: () =>
-      getStoryWorkbench(workspaceId as string, projectId, activeChapterId ?? undefined),
-    enabled: Boolean(workspaceId),
+      ? storyChapterWorkbenchQueryKey(projectId, activeChapterId)
+      : ["story-studio", "script-workbench", projectId],
+    queryFn: () => getStoryWorkbench(projectId, activeChapterId ?? undefined),
     retry: false,
   });
   const workbench = workbenchQuery.data ?? null;
 
   const currentReleaseQuery = useQuery({
-    queryKey: ["story-studio", "current-release", workspaceId, projectId],
-    queryFn: () => getStoryExperienceCurrentRelease(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
+    queryKey: ["story-studio", "current-release", projectId],
+    queryFn: () => getStoryExperienceCurrentRelease(projectId),
     retry: 1,
     staleTime: 15_000,
     refetchInterval: 30_000,
@@ -89,7 +75,6 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   );
 
   const publication = useStoryPublication({
-    workspaceId,
     projectId,
     capabilities: workbench?.project.capabilities ?? [],
     withSavedDraftSnapshot: draftBarrier ?? fallbackRunner,

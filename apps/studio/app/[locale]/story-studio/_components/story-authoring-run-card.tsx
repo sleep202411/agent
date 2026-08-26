@@ -8,6 +8,8 @@ import {
   isStoryAssetProposal,
   isStoryNoopProposal,
   isStoryPatchBrief,
+  isStoryPlotProposal,
+  isStoryScreenplayProposal,
 } from "@repo/shared/story-agent";
 import type { AgentOsPendingApproval } from "@/lib/agent-os/api-client";
 import type { AgentOsTranscriptArtifact } from "@/components/agent-os/use-agent-os-run";
@@ -15,6 +17,8 @@ import { listStoryAssetSpecs, storyProductionKeys } from "@/lib/story-production
 import { Button } from "@/components/ui/button";
 import { useComposerGateFocus } from "@/components/agent-os/use-composer-gate-focus";
 import { StoryAuthoringProposalContent } from "./story-authoring-proposal-dialog";
+import { StoryPlotProposalCard } from "./story-plot-proposal-card";
+import { StoryScreenplayProposalCard } from "./story-screenplay-proposal-card";
 import {
   storyAuthoringProposalStage,
   type StoryReviewableProposal,
@@ -103,25 +107,19 @@ function useStoryProposal(projectId: string, storyRunId: string | null) {
 export function StoryAuthoringProposalTranscript({
   projectId,
   artifact,
-  workspaceId,
 }: {
   projectId: string;
   artifact: AgentOsTranscriptArtifact;
-  workspaceId: string | null;
 }) {
   const t = useTranslations("storyStudio.authoringRun");
   const reference = artifact.reference;
   const storyRunId = reference.kind === "story_stage_proposal" ? reference.storyAgentRunId : null;
   const { proposal, run } = useStoryProposal(projectId, storyRunId);
   const chapterId = proposal && run?.id === storyRunId ? run.chapterId : null;
-  const artifactWorkspaceId = reference.workspaceId ?? workspaceId;
   const currentAssetsQuery = useQuery({
-    queryKey: storyProductionKeys.assets(artifactWorkspaceId, projectId, chapterId),
-    queryFn: ({ signal }) =>
-      listStoryAssetSpecs(artifactWorkspaceId as string, projectId, chapterId as string, signal),
-    enabled: Boolean(
-      artifactWorkspaceId && chapterId && proposal && isStoryAssetProposal(proposal)
-    ),
+    queryKey: storyProductionKeys.assets(projectId, chapterId),
+    queryFn: ({ signal }) => listStoryAssetSpecs(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId && proposal && isStoryAssetProposal(proposal)),
     retry: false,
   });
   if (!proposal) return null;
@@ -134,11 +132,17 @@ export function StoryAuthoringProposalTranscript({
       aria-label={t(`proposalStage.${stage}.review`)}
       className="mt-1 border-y border-white/[0.09] py-3"
     >
-      <StoryAuthoringProposalContent
-        proposal={proposal}
-        embedded
-        currentAssets={currentAssetsQuery.data ?? []}
-      />
+      {isStoryScreenplayProposal(proposal) ? (
+        <StoryScreenplayProposalCard proposal={proposal} status={artifact.status} />
+      ) : isStoryPlotProposal(proposal) ? (
+        <StoryPlotProposalCard proposal={proposal} status={artifact.status} />
+      ) : (
+        <StoryAuthoringProposalContent
+          proposal={proposal}
+          embedded
+          currentAssets={currentAssetsQuery.data ?? []}
+        />
+      )}
     </section>
   );
 }

@@ -3,7 +3,6 @@
 import { IconAlertTriangle, IconCheck, IconCircleDashed, IconLoader2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import {
   getStoryProductionState,
@@ -26,8 +25,8 @@ const STEPS: Array<{
   href?: (projectId: string, chapterId: string | null) => string;
 }> = [
   { key: "script", href: chapterHref("script") },
-  { key: "assets", href: chapterHref("assets") },
   { key: "tree", href: chapterHref("canvas") },
+  { key: "assets", href: chapterHref("assets") },
   { key: "storyboard", href: chapterHref("storyboard") },
   { key: "preview" },
 ];
@@ -53,14 +52,11 @@ export function StoryProductionSteps({
   className?: string;
 }) {
   const t = useTranslations("storyStudio.canvas.steps");
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
-    queryFn: ({ signal }) =>
-      getStoryProductionState(workspaceId as string, projectId, activeChapterId as string, signal),
-    enabled: Boolean(workspaceId && activeChapterId),
+    queryKey: storyProductionKeys.state(projectId, activeChapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, activeChapterId as string, signal),
+    enabled: Boolean(activeChapterId),
     retry: false,
   });
   const { openPreview, pending: previewPending } = useStoryPreviewNavigation(projectId);
