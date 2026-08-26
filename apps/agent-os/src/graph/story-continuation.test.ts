@@ -79,7 +79,7 @@ describe("durable Story production continuation", () => {
           ok: true,
           data: storyReadResult({
             assets: "current",
-            plot: "missing",
+            plot: "current",
             storyboard: "missing",
           }),
         };
@@ -103,11 +103,90 @@ describe("durable Story production continuation", () => {
       "你要求的制作规格范围已经完成，当前没有后续阶段在运行。"
     );
   });
+
+  it("advances every separately approved stage across terminal graph cycles", async () => {
+    const checkpointer = new MemorySaver();
+    const threadId = "story-continuation-multi-stage";
+    const observed: string[] = [];
+    const production = {
+      assets: "missing" as "missing" | "current" | "stale",
+      plot: "missing" as "missing" | "current" | "stale",
+      storyboard: "missing" as "missing" | "current" | "stale",
+    };
+    const domain: DomainPort = {
+      async execute(toolId) {
+        observed.push(toolId);
+        if (toolId === "story.read") {
+          return { ok: true, data: storyReadResult(production) };
+        }
+        const nextStage =
+          production.plot !== "current"
+            ? "plot"
+            : production.assets !== "current"
+              ? "assets"
+              : "storyboard";
+        return {
+          ok: true,
+          data: {
+            runId: NEXT_RUN_ID,
+            status: "authoring",
+            stage: nextStage,
+            agentHandoff: {
+              kind: "external_job",
+              jobId: NEXT_RUN_ID,
+              startedMessage: `Preparing ${nextStage}.`,
+            },
+          },
+        };
+      },
+    };
+    const responses = [
+      "44444444-4444-4444-8444-444444444441",
+      "44444444-4444-4444-8444-444444444442",
+      "44444444-4444-4444-8444-444444444443",
+      "44444444-4444-4444-8444-444444444444",
+    ];
+
+    for (const [index, responseId] of responses.entries()) {
+      const graph = createAgentOsGraph({
+        model: fakeModel(),
+        projectKind: "story",
+        workbenchMode: "story",
+        checkpointer,
+        runtime: continuationRuntime(domain, "storyboard", responseId),
+      });
+      await graph.invoke(
+        {
+          messages: [
+            new HumanMessage({
+              id: responseId,
+              content: "Continue from canonical Story state.",
+            }),
+          ],
+        },
+        { configurable: { thread_id: threadId } }
+      );
+      if (index === 0) production.plot = "current";
+      if (index === 1) production.assets = "current";
+      if (index === 2) production.storyboard = "current";
+    }
+
+    expect(observed).toEqual([
+      "story.read",
+      "story.author",
+      "story.read",
+      "story.author",
+      "story.read",
+      "story.author",
+      "story.read",
+    ]);
+  });
 });
 
 function continuationRuntime(
   domain: DomainPort,
-  continueThrough: "assets" | "storyboard" = "storyboard"
+  continueThrough: "plot" | "assets" | "storyboard" = "storyboard",
+  responseId = RESPONSE_ID
 ) {
   return {
     runId: "66666666-6666-4666-8666-666666666666",
@@ -121,7 +200,7 @@ function continuationRuntime(
     permissionMode: "full" as const,
     domain,
     storyContinuation: {
-      responseId: RESPONSE_ID,
+      responseId,
       locale: "zh-CN" as const,
       plan: {
         continueThrough,

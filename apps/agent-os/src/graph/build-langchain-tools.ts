@@ -505,10 +505,48 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
           title: z.string().trim().min(1).max(160),
           summary: z.string().trim().min(1).max(4_000),
           brief: z.string().trim().min(1).max(8_000),
-          continueThrough: z.enum(["script", "assets", "plot", "storyboard"]),
+          continueThrough: z.enum(["script", "plot", "assets", "storyboard"]),
           startedMessage: z.string().trim().min(1).max(2_000),
           completionMessage: z.string().trim().min(1).max(2_000),
         })
+  );
+  const generationOptionValue = z.union([
+    z.boolean(),
+    z.number(),
+    z.string().trim().min(1).max(180),
+    z.array(z.union([z.boolean(), z.number(), z.string().trim().min(1).max(180)])).max(32),
+  ]);
+  const storyQuoteAssetGenerationBatch = bindStoryTool(
+    "story.generation.quoteAssets",
+    z.object({
+      assetIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+      assetKinds: z
+        .array(z.enum(["character", "location", "prop"]))
+        .min(1)
+        .max(3)
+        .optional(),
+      outputKind: z.enum(["image", "video"]).optional(),
+      modelId: z.string().trim().min(1).max(180).optional(),
+      schemaVersion: z.string().trim().min(1).max(180).optional(),
+      options: z.record(generationOptionValue).optional(),
+    })
+  );
+  const storyConfirmGenerationBatch = bindStoryTool(
+    "story.generation.confirmBatch",
+    z.object({
+      batchId: z.string().uuid(),
+      expectedVersion: z.number().int().nonnegative(),
+      expectedItemCount: z.number().int().positive().max(500),
+      expectedTotalPoints: z.number().int().nonnegative(),
+    })
+  );
+  const storyGetGenerationBatch = bindStoryTool(
+    "story.generation.getBatch",
+    z.object({ batchId: z.string().uuid() })
+  );
+  const storyCancelGenerationBatch = bindStoryTool(
+    "story.generation.cancelBatch",
+    z.object({ batchId: z.string().uuid() })
   );
   const storyApplyPatch = tool(
     async (raw, config) => {
@@ -586,6 +624,10 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.reorder": storyReorder,
     "story.applyPatch": storyApplyPatch,
     "story.author": storyAuthor,
+    "story.generation.quoteAssets": storyQuoteAssetGenerationBatch,
+    "story.generation.confirmBatch": storyConfirmGenerationBatch,
+    "story.generation.getBatch": storyGetGenerationBatch,
+    "story.generation.cancelBatch": storyCancelGenerationBatch,
   } as const;
 
   const allowed = new Set(toolIds);

@@ -35,7 +35,7 @@ describe("durable continuation request contract", () => {
             continueThrough: "storyboard",
             title: "逆流镇的信使",
             summary: "逐阶段完成剩余制作规格。",
-            brief: "资产、情节树和分镜分别准备并等待审核。",
+            brief: "情节树、资产和分镜分别准备并等待审核。",
           },
         },
       })
@@ -52,7 +52,7 @@ describe("durable continuation request contract", () => {
           continueThrough: "storyboard",
           title: "逆流镇的信使",
           summary: "逐阶段完成剩余制作规格。",
-          brief: "资产、情节树和分镜分别准备并等待审核。",
+          brief: "情节树、资产和分镜分别准备并等待审核。",
         },
       },
     });

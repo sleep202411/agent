@@ -79,6 +79,19 @@ describe("skill mounts (system workbench skills)", () => {
     expect(storyAuthor?.description).toMatch(/Server-side canonical next-stage planner/);
     expect(storyAuthor?.description).toMatch(/Set continueThrough once/);
     expect(storyAuthor?.description).toMatch(/never generates images or videos/i);
+    const quoteAssets = tools.find((tool) => tool.name === "story_generation_quoteAssets");
+    expect(
+      quoteAssets?.schema.safeParse({
+        assetKinds: ["character"],
+        outputKind: "image",
+      }).success
+    ).toBe(true);
+    expect(
+      quoteAssets?.schema.safeParse({
+        assetKinds: '["character"]',
+        outputKind: "image",
+      }).success
+    ).toBe(false);
   });
 
   it("binds every curated Story visual-style Skill as a creative-profile value", () => {

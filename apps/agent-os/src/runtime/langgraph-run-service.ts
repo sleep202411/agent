@@ -137,6 +137,66 @@ export interface AgentRunSnapshotView {
   assistantText?: string;
 }
 
+type ToolLifecycleEvent = {
+  type: "ToolStarted" | "ToolCompleted" | "ToolFailed";
+  toolId: string;
+  toolCallId: string;
+  data?: Record<string, unknown>;
+};
+
+type StoryGenerationBatchArtifact = {
+  artifactId: string;
+  artifact: {
+    kind: "story_generation_batch";
+    generationBatchId: string;
+    storyProjectId: string;
+    storyChapterId: string;
+    schemaVersion: "story-generation-batch-artifact/v1";
+  };
+};
+
+/**
+ * Project a paid Story generation confirmation into one durable transcript
+ * reference. The journal deliberately stores no queue progress or media URLs:
+ * those continue to belong to the generation and Asset domains after the
+ * Agent run has finished.
+ */
+export function storyGenerationBatchArtifactFromToolEvent(
+  event: ToolLifecycleEvent
+): StoryGenerationBatchArtifact | null {
+  if (event.type !== "ToolCompleted" || event.toolId !== "story.generation.confirmBatch") {
+    return null;
+  }
+  const result = asUnknownRecord(event.data?.result);
+  const generationBatchId = requiredResultString(result.id);
+  const storyProjectId = requiredResultString(result.projectId);
+  const storyChapterId = requiredResultString(result.chapterId);
+  const confirmedAt = requiredResultString(result.confirmedAt);
+  if (!generationBatchId || !storyProjectId || !storyChapterId || !confirmedAt) {
+    return null;
+  }
+  return {
+    artifactId: generationBatchId,
+    artifact: {
+      kind: "story_generation_batch",
+      generationBatchId,
+      storyProjectId,
+      storyChapterId,
+      schemaVersion: "story-generation-batch-artifact/v1",
+    },
+  };
+}
+
+function asUnknownRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function requiredResultString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 /**
  * How a pending approval is answered. Both values RESUME the graph — a reject
  * is an answer, not an abandonment, and the tool turns it into an
@@ -265,6 +325,25 @@ function stateHasMessageId(state: unknown, messageId: string): boolean {
       typeof message === "object" &&
       (message as { id?: unknown }).id === messageId
   );
+}
+
+/**
+ * A completed Story stage is an orchestration boundary, not necessarily a
+ * pending LangGraph node. The authoritative external-result command therefore
+ * owns one stable, checkpoint-only trigger message for the next canonical
+ * stage decision. It is deliberately absent from the public transcript: the
+ * durable external result already records the creator-visible transition.
+ */
+function storyContinuationTrigger(
+  command: ContinuationCommand | undefined
+): { id: string; content: string } | null {
+  if (command?.kind !== "external_result" || !command.storyContinuation) {
+    return null;
+  }
+  return {
+    id: command.responseId,
+    content: "Continue the persisted Story production plan from canonical state.",
+  };
 }
 
 function stateHasToolResult(state: unknown, toolCallId: string): boolean {
@@ -1664,7 +1743,7 @@ export class LangGraphRunService {
       signal: abort.signal,
       expectedContinuationExecutionOwnerId: continuationExecution.executionOwnerId,
       continuationCommand: command,
-      continueFromCheckpoint: command.kind === "external_result",
+      externalResultContinuation: command.kind === "external_result",
     }).catch((error) => {
       if (
         isContinuationExecutionFenceError(error) ||
@@ -1969,7 +2048,7 @@ export class LangGraphRunService {
     expectedStartExecutionOwnerId?: string;
     expectedContinuationExecutionOwnerId?: string;
     continuationCommand?: ContinuationCommand;
-    continueFromCheckpoint?: boolean;
+    externalResultContinuation?: boolean;
   }): Promise<void> {
     const {
       input,
@@ -1980,7 +2059,7 @@ export class LangGraphRunService {
       expectedStartExecutionOwnerId,
       expectedContinuationExecutionOwnerId,
       continuationCommand,
-      continueFromCheckpoint = false,
+      externalResultContinuation = false,
     } = args;
     const assertCurrentExecution = (): void => {
       if (
@@ -2218,6 +2297,33 @@ export class LangGraphRunService {
         abortSignal: signal,
         onToolEvent: async (event) => {
           assertCurrentExecution();
+          const batchArtifact = storyGenerationBatchArtifactFromToolEvent(event);
+          const artifactAlreadyRecorded = batchArtifact
+            ? journal
+                .all()
+                .some(
+                  (existing) =>
+                    existing.type === "ArtifactCreated" &&
+                    existing.data.artifactId === batchArtifact.artifactId
+                )
+            : false;
+          if (batchArtifact && !artifactAlreadyRecorded) {
+            // Record the live domain reference before ToolCompleted. If the
+            // worker dies between the two writes, the creator still sees a
+            // truthful, recoverable batch instead of losing paid work.
+            journal.append({
+              sessionId: input.sessionId,
+              runId: input.runId,
+              conversationId: input.conversationId,
+              type: "ArtifactCreated",
+              data: {
+                turnId,
+                artifactId: batchArtifact.artifactId,
+                artifact: batchArtifact.artifact,
+                status: "active",
+              },
+            });
+          }
           const duplicateLifecycleEvent = journal
             .all()
             .some(
@@ -2380,6 +2486,19 @@ export class LangGraphRunService {
     );
     if (await finishExternalHandoffIfCheckpointed(before)) return;
     const checkpointHasPendingTasks = Array.isArray(before.tasks) && before.tasks.length > 0;
+    const continuationTrigger = storyContinuationTrigger(continuationCommand);
+    const continuationTriggerAlreadyCheckpointed = Boolean(
+      continuationTrigger && stateHasMessageId(before, continuationTrigger.id)
+    );
+    // A Story stage proposal can finish its React graph before the creator
+    // reviews it. Applying that proposal must start a new deterministic
+    // read/decide/author cycle; stream(null) only resumes an unfinished cycle.
+    const startsNewStoryStageCycle = Boolean(
+      externalResultContinuation &&
+      continuationTrigger &&
+      !checkpointHasPendingTasks &&
+      !continuationTriggerAlreadyCheckpointed
+    );
     const checkpointInterrupts = interruptsFromState(before);
     const checkpointStillAwaitingResume = resume
       ? checkpointInterrupts.some((pending) =>
@@ -2408,22 +2527,35 @@ export class LangGraphRunService {
       ? checkpointStillAwaitingResume
         ? new Command({ resume })
         : null
-      : continueFromCheckpoint || stableMessageAlreadyCheckpointed
-        ? null
-        : {
+      : startsNewStoryStageCycle
+        ? {
             messages: [
-              input.messageId
-                ? new HumanMessage({
-                    id: input.messageId,
-                    content: input.modelMessage ?? input.message,
-                    additional_kwargs: {
-                      clientSubmissionId: input.clientSubmissionId,
-                      turnId,
-                    },
-                  })
-                : new HumanMessage(input.modelMessage ?? input.message),
+              new HumanMessage({
+                id: continuationTrigger!.id,
+                content: continuationTrigger!.content,
+                additional_kwargs: {
+                  turnId,
+                  internalContinuation: "story_stage",
+                },
+              }),
             ],
-          };
+          }
+        : externalResultContinuation || stableMessageAlreadyCheckpointed
+          ? null
+          : {
+              messages: [
+                input.messageId
+                  ? new HumanMessage({
+                      id: input.messageId,
+                      content: input.modelMessage ?? input.message,
+                      additional_kwargs: {
+                        clientSubmissionId: input.clientSubmissionId,
+                        turnId,
+                      },
+                    })
+                  : new HumanMessage(input.modelMessage ?? input.message),
+              ],
+            };
 
     // A crash may happen after LangGraph completed its durable checkpoint but
     // before the Gateway journal received MessageCompleted/RunCompleted. In
@@ -2432,7 +2564,8 @@ export class LangGraphRunService {
     // again or treating EmptyInput as a failed turn.
     if (
       (stableMessageAlreadyCheckpointed ||
-        continueFromCheckpoint ||
+        (externalResultContinuation &&
+          (!continuationTrigger || continuationTriggerAlreadyCheckpointed)) ||
         (resume && (!checkpointStillAwaitingResume || continuationAdvancedToNewInterrupt))) &&
       !checkpointHasPendingTasks
     ) {
