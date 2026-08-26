@@ -83,6 +83,9 @@ export async function listPublishedInteractiveFilms(
     // sends explicit `null` for a game with no cover, which `.optional()`
     // (undefined-only) rejects. Strip null/blank/invalid decorative values so
     // the game still lists — just without a cover — instead of vanishing.
+    // Also pick only schema keys: ExperienceGameSummarySchema is `.strict()`,
+    // and Java returns extras (status / offlineAt / …) that would otherwise
+    // fail every row.
     const cleaned =
       entry && typeof entry === "object" && !Array.isArray(entry)
         ? sanitizeGameSummary(entry as Record<string, unknown>)
@@ -94,15 +97,22 @@ export async function listPublishedInteractiveFilms(
 }
 
 function sanitizeGameSummary(entry: Record<string, unknown>): Record<string, unknown> {
-  const next = { ...entry };
-  // coverUrl: keep only a non-blank http(s) string; otherwise drop the key.
-  const cover = next.coverUrl;
-  if (typeof cover !== "string" || !/^https?:\/\/\S+$/i.test(cover.trim())) {
-    delete next.coverUrl;
+  // Schema is `.strict()` — only forward keys the player catalogue contract
+  // accepts. Java DTOs carry extras (status, offlineAt, …).
+  const next: Record<string, unknown> = {
+    gameId: entry.gameId,
+    title: entry.title,
+    currentVersion: entry.currentVersion,
+    updatedAt: entry.updatedAt,
+  };
+  // coverUrl: keep only a non-blank http(s) string; otherwise omit.
+  const cover = entry.coverUrl;
+  if (typeof cover === "string" && /^https?:\/\/\S+$/i.test(cover.trim())) {
+    next.coverUrl = cover;
   }
-  // subtitle: keep only a non-blank string; otherwise drop the key.
-  if (typeof next.subtitle !== "string" || next.subtitle.trim() === "") {
-    delete next.subtitle;
+  // subtitle: keep only a non-blank string; otherwise omit.
+  if (typeof entry.subtitle === "string" && entry.subtitle.trim() !== "") {
+    next.subtitle = entry.subtitle;
   }
   return next;
 }
