@@ -278,6 +278,7 @@ export class ReferralsService {
         days: it.days ?? 0,
         rank: idx,
       }));
+      await this.assertBundlePayable(items);
       data.inviteeBenefitItems = { deleteMany: {}, create: items };
       const primary = items[0];
       data.inviteeBenefitMinor =
@@ -301,6 +302,7 @@ export class ReferralsService {
     if (!items?.length) {
       throw new BadRequestException('Reward bundle is required');
     }
+    await this.assertBundlePayable(items);
     const legacy = legacyColumnsFromItems(items);
     await this.prisma.referralMilestoneConfig.create({
       data: {
@@ -337,6 +339,7 @@ export class ReferralsService {
     // REPLACE the bundle and re-mirror the legacy payout columns from items[0].
     const items = resolveTierItems(input);
     if (items?.length) {
+      await this.assertBundlePayable(items);
       const legacy = legacyColumnsFromItems(items);
       data.payoutType = legacy.payoutType;
       data.rewardMinor = legacy.rewardMinor;
@@ -353,6 +356,33 @@ export class ReferralsService {
     }
     await this.prisma.referralMilestoneConfig.update({ where: { id }, data });
     return this.loadAdminConfig();
+  }
+
+  /**
+   * Refuse a reward bundle the payout path could not honour. A membership item
+   * is only as good as its plan row: archive `community_membership` and every
+   * tier carrying it becomes unclaimable, which the operator learns from a
+   * recipient's failed claim rather than from the save that caused it. Checking
+   * here moves that discovery to the person who can still fix it, and each
+   * membership kind is mapped to the SAME plan key `grantSingle` will use.
+   */
+  private async assertBundlePayable(
+    items: { payoutType: string }[],
+  ): Promise<void> {
+    const planKeys = new Set<string>();
+    for (const item of items) {
+      if (item.payoutType === 'membership_compute') {
+        planKeys.add(COMPUTE_PLAN_KEY);
+      } else if (item.payoutType === 'membership_community') {
+        planKeys.add(COMMUNITY_MEMBERSHIP_PLAN_KEY);
+      }
+    }
+    for (const planKey of planKeys) {
+      await this.entitlements.assertPlanGrantable(
+        planKey,
+        BillingSubjectType.user,
+      );
+    }
   }
 
   async archiveMilestone(id: string) {

@@ -386,6 +386,24 @@ export class EntitlementService {
    * Reads PG directly, NOT the plan cache: the cache is a read-path latency
    * optimisation, and a plan activated seconds ago must be grantable at once.
    */
+  /**
+   * The same gate `grantComplimentary` applies, callable BEFORE anything is
+   * promised. Config surfaces that let an operator compose a membership payout
+   * (referral tiers, invitee perks) use it to fail at save time rather than at
+   * the recipient's claim, which is where an unbacked plan key used to surface:
+   * as a 500 on a reward already marked paid_out.
+   */
+  async assertPlanGrantable(
+    planKey: string,
+    subjectType: BillingSubjectType,
+  ): Promise<void> {
+    await this.assertGrantablePlan(
+      this.normalizeGrantablePlanKey(planKey),
+      subjectType,
+      this.prisma,
+    );
+  }
+
   private async assertGrantablePlan(
     planKey: string,
     subjectType: BillingSubjectType,
