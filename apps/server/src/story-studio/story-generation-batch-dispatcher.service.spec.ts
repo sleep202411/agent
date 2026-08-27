@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import {
   StoryGenerationBatchItemStatus,
   StoryGenerationBatchStatus,
@@ -122,6 +123,64 @@ describe('Story generation batch fair dispatcher', () => {
       { type: 'workspace', id: 'actor-personal-workspace' },
       expect.objectContaining({ itemId: 'item-1' }),
     );
+  });
+
+  it('persists the actionable domain error instead of the generic HTTP exception text', async () => {
+    const updateMany = jest
+      .fn<Promise<{ count: number }>, [unknown]>()
+      .mockResolvedValue({ count: 1 });
+    const createQuotedAssetGeneration = jest.fn().mockRejectedValue(
+      new ConflictException({
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        msg: 'Not enough compute points. Recharge and try again.',
+        requiredAmount: '60',
+        availableBalance: '0',
+      }),
+    );
+    const service = new StoryGenerationBatchDispatcherService(
+      { storyGenerationBatchItem: { updateMany } } as never,
+      { createQuotedAssetGeneration } as never,
+    ) as unknown as {
+      dispatch(item: unknown): Promise<void>;
+    };
+
+    await service.dispatch({
+      id: 'item-1',
+      targetKind: StoryProductionGenerationTargetKind.asset_spec,
+      targetId: 'asset-1',
+      targetVersion: 0,
+      sequenceId: null,
+      outputKind: StoryProductionGenerationKind.image,
+      modelId: 'image-1',
+      schemaVersion: 'v1',
+      options: {},
+      quotedPoints: 60,
+      pricingVersion: 'price-v1',
+      status: StoryGenerationBatchItemStatus.dispatching,
+      batch: {
+        actorUserId: 'actor-1',
+        workspaceId: 'workspace-1',
+        storyProjectId: 'project-1',
+        storyChapterId: 'chapter-1',
+        billingSubjectType: 'workspace',
+        billingSubjectId: 'actor-personal-workspace',
+        status: StoryGenerationBatchStatus.running,
+      },
+    });
+
+    const update = updateMany.mock.calls[0]?.[0] as
+      | { data?: Record<string, unknown> }
+      | undefined;
+    expect(update?.data).toMatchObject({
+      status: StoryGenerationBatchItemStatus.failed,
+      error: {
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        message: 'Not enough compute points. Recharge and try again.',
+        retryable: false,
+        requiredAmount: '60',
+        availableBalance: '0',
+      },
+    });
   });
 });
 

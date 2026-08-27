@@ -130,7 +130,10 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       hostWorkspace: { id: 'host-ws', type: 'personal' },
       actorPersonalWorkspaceId: 'guest-own-ws',
     });
-    const service = new AiGenerationBillingWalletService(null as never);
+    const service = new AiGenerationBillingWalletService(
+      null as never,
+      null as never,
+    );
     await service.reserveForJobInTransaction({ tx: tx as never, job: job() });
 
     expectUpsertPayer(upsert, {
@@ -144,7 +147,10 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       hostWorkspace: { id: 'host-ws', type: 'team' },
       actorPersonalWorkspaceId: 'guest-own-ws',
     });
-    const service = new AiGenerationBillingWalletService(null as never);
+    const service = new AiGenerationBillingWalletService(
+      null as never,
+      null as never,
+    );
     await service.reserveForJobInTransaction({ tx: tx as never, job: job() });
 
     expectUpsertPayer(upsert, {
@@ -161,7 +167,10 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       // The owner's personal workspace IS the host workspace.
       actorPersonalWorkspaceId: 'host-ws',
     });
-    const service = new AiGenerationBillingWalletService(null as never);
+    const service = new AiGenerationBillingWalletService(
+      null as never,
+      null as never,
+    );
     await service.reserveForJobInTransaction({
       tx: tx as never,
       job: job({ userId: 'owner-user' }),
@@ -178,7 +187,10 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       hostWorkspace: { id: 'host-ws', type: 'team' },
       actorPersonalWorkspaceId: 'guest-own-ws',
     });
-    const service = new AiGenerationBillingWalletService(null as never);
+    const service = new AiGenerationBillingWalletService(
+      null as never,
+      null as never,
+    );
     await service.reserveForJobInTransaction({
       tx: tx as never,
       job: job({
@@ -207,7 +219,10 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
         findFirst: jest.fn().mockResolvedValue({ id: 'guest-own-ws' }),
       },
     };
-    const service = new AiGenerationBillingWalletService(prisma as never);
+    const service = new AiGenerationBillingWalletService(
+      prisma as never,
+      null as never,
+    );
 
     await expect(
       service.resolveStoryProjectPayer('story-1', 'guest-user'),
@@ -229,10 +244,46 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
         }),
       },
     };
-    const service = new AiGenerationBillingWalletService(prisma as never);
+    const service = new AiGenerationBillingWalletService(
+      prisma as never,
+      null as never,
+    );
 
     await expect(
       service.resolveStoryProjectPayer('story-1', 'guest-user'),
     ).resolves.toEqual({ type: 'workspace', id: 'project-pool-1' });
+  });
+
+  it('sweeps expired grants before returning the payer balance', async () => {
+    const accountBefore = {
+      id: 'account-1',
+      status: 'active',
+      availableBalance: 100n,
+      heldBalance: 5n,
+    };
+    const accountAfter = {
+      ...accountBefore,
+      availableBalance: 80n,
+    };
+    const prisma = {
+      walletAccount: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(accountBefore)
+          .mockResolvedValueOnce(accountAfter),
+      },
+    };
+    const walletLedger = {
+      expireLapsedGrants: jest.fn().mockResolvedValue({ expired: 20n }),
+    };
+    const service = new AiGenerationBillingWalletService(
+      prisma as never,
+      walletLedger as never,
+    );
+
+    await expect(
+      service.getComputeBalance({ type: 'workspace', id: 'payer-1' }),
+    ).resolves.toEqual({ available: 80n, held: 5n, total: 85n });
+    expect(walletLedger.expireLapsedGrants).toHaveBeenCalledWith('account-1');
   });
 });

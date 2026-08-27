@@ -278,7 +278,7 @@ describePostgres('Story production generation PostgreSQL integration', () => {
         storyProjectId: fixture.projectId,
         storyChapterId: fixture.chapterId,
         actorUserId: fixture.userId,
-        sourceFingerprint: fixture.chapterSourceFingerprint,
+        sourceFingerprint: fixture.chapterPlotFingerprint,
         canonicalCharacterIds: ['char-courier'],
         productionPlan: {
           schemaVersion: STORY_PRODUCTION_PLAN_SCHEMA_VERSION,
@@ -1123,7 +1123,11 @@ async function createFixture(
       createdByUserId: userId,
     },
   });
-  const chapterSourceFingerprint = scriptHead.hash;
+  // Assets are downstream of the approved Plot, so their approval marker must
+  // be fenced by the chapter-scoped Plot projection rather than the Script
+  // head. This fixture owns the complete one-node draft, making its canonical
+  // content hash identical to chapterPlotFingerprint() in production.
+  const chapterPlotFingerprint = canonicalJsonHash(draftContent);
   const approvedAssetPlan = {
     assetSpecs: [
       {
@@ -1138,7 +1142,7 @@ async function createFixture(
     ],
   };
   const approvedAssetPlanFingerprint = canonicalJsonHash({
-    sourceFingerprint: chapterSourceFingerprint,
+    sourceFingerprint: chapterPlotFingerprint,
     productionPlan: approvedAssetPlan,
   });
   const approvedAssetPlanSnapshot =
@@ -1146,7 +1150,7 @@ async function createFixture(
       data: {
         storyProjectId: project.id,
         storyChapterId: chapter.id,
-        sourceFingerprint: chapterSourceFingerprint,
+        sourceFingerprint: chapterPlotFingerprint,
         planFingerprint: approvedAssetPlanFingerprint,
         productionPlan: approvedAssetPlan,
         createdByUserId: userId,
@@ -1217,7 +1221,7 @@ async function createFixture(
     sequenceId: sequence.id,
     clipId: clip.id,
     bindingId: binding.id,
-    chapterSourceFingerprint,
+    chapterPlotFingerprint,
     assetStableKey: asset.stableKey,
     clipStableKey: clip.stableKey,
     screenplay,

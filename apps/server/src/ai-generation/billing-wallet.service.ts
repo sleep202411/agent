@@ -19,6 +19,7 @@ import {
   type WalletCreditGrant,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+import { WalletLedgerService } from '../workspaces';
 import { enqueueWalletChanged } from '../workspaces/wallet-realtime';
 import type { AiJob, AiRoutingSnapshot } from './types';
 
@@ -67,7 +68,10 @@ type OutstandingHeld = {
 
 @Injectable()
 export class AiGenerationBillingWalletService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly walletLedger: WalletLedgerService,
+  ) {}
 
   /**
    * Resolve the product billing policy to the exact wallet owner that must be
@@ -123,6 +127,61 @@ export class AiGenerationBillingWalletService {
       });
     }
     return { type: account.ownerType, id: account.ownerId };
+  }
+
+  /**
+   * Read the exact wallet frozen by the generation admission path. Keeping this
+   * next to payer resolution prevents Story surfaces from accidentally reading
+   * whichever Workspace happens to be active in the shell.
+   */
+  async getComputeBalance(subject: {
+    type: 'user' | 'workspace';
+    id: string;
+  }): Promise<{ available: bigint; held: bigint; total: bigint }> {
+    const ownerType =
+      subject.type === 'workspace'
+        ? WalletOwnerType.workspace
+        : WalletOwnerType.user;
+    let account = await this.prisma.walletAccount.findUnique({
+      where: {
+        ownerType_ownerId_currency_balanceKind: {
+          ownerType,
+          ownerId: subject.id,
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+        availableBalance: true,
+        heldBalance: true,
+      },
+    });
+    if (!account || account.status !== WalletAccountStatus.active) {
+      return { available: 0n, held: 0n, total: 0n };
+    }
+
+    // The wallet account stores a denormalized balance. Sweep expired grants
+    // before displaying or admitting work so both paths agree on spendability.
+    await this.walletLedger.expireLapsedGrants(account.id);
+    account = await this.prisma.walletAccount.findUnique({
+      where: { id: account.id },
+      select: {
+        id: true,
+        status: true,
+        availableBalance: true,
+        heldBalance: true,
+      },
+    });
+    if (!account || account.status !== WalletAccountStatus.active) {
+      return { available: 0n, held: 0n, total: 0n };
+    }
+    return {
+      available: account.availableBalance,
+      held: account.heldBalance,
+      total: account.availableBalance + account.heldBalance,
+    };
   }
 
   async reserveForJobInTransaction(args: {

@@ -231,11 +231,14 @@ describe('AiGenerationBillingWalletService duplicate terminal release', () => {
       },
       walletLedgerEntry: { create: jest.fn() },
     };
-    const service = new AiGenerationBillingWalletService({
-      $transaction: jest.fn((operation: (value: object) => unknown) =>
-        operation(tx),
-      ),
-    } as never);
+    const service = new AiGenerationBillingWalletService(
+      {
+        $transaction: jest.fn((operation: (value: object) => unknown) =>
+          operation(tx),
+        ),
+      } as never,
+      null as never,
+    );
 
     await expect(
       service.releaseForJob(jobFixture(), 'ai_job_cancelled'),

@@ -74,6 +74,9 @@ describe('StoryGenerationBatchService quote payer snapshot', () => {
         findUnique: jest.fn().mockResolvedValue(null),
         create,
       },
+      walletAccount: {
+        findUnique: jest.fn().mockResolvedValue({ availableBalance: 100n }),
+      },
     };
     const permissions = {
       requireProject: jest.fn().mockResolvedValue({
@@ -97,6 +100,11 @@ describe('StoryGenerationBatchService quote payer snapshot', () => {
         type: 'workspace',
         id: 'actor-personal-workspace',
       }),
+      getBillingSubjectComputeBalance: jest.fn().mockResolvedValue({
+        available: 100n,
+        held: 0n,
+        total: 100n,
+      }),
     };
     const service = new StoryGenerationBatchService(
       prisma as never,
@@ -105,7 +113,7 @@ describe('StoryGenerationBatchService quote payer snapshot', () => {
       aiGeneration as never,
     );
 
-    await service.quoteAssets(
+    const result = await service.quoteAssets(
       actor,
       scope.projectId,
       scope.chapterId,
@@ -136,6 +144,7 @@ describe('StoryGenerationBatchService quote payer snapshot', () => {
       billingSubjectType: 'workspace',
       billingSubjectId: 'actor-personal-workspace',
     });
+    expect(result).toMatchObject({ availablePoints: '100' });
   });
 });
 
@@ -168,6 +177,11 @@ function makeService(
         }),
       ),
   );
+  const getBillingSubjectComputeBalance = jest.fn().mockResolvedValue({
+    available: 100n,
+    held: 0n,
+    total: 100n,
+  });
   const prisma = {
     storyGenerationBatch: {
       findFirst: jest
@@ -192,7 +206,7 @@ function makeService(
     prisma as never,
     permissions as never,
     {} as never,
-    { cancelJob } as never,
+    { cancelJob, getBillingSubjectComputeBalance } as never,
   );
   return {
     service,
@@ -202,6 +216,7 @@ function makeService(
     countItems,
     findItems,
     cancelJob,
+    getBillingSubjectComputeBalance,
     transaction,
   };
 }
@@ -286,6 +301,35 @@ describe('StoryGenerationBatchService confirmation', () => {
     ).rejects.toMatchObject({
       response: { code: 'STORY_GENERATION_BATCH_ALREADY_ACTIVE' },
     });
+  });
+
+  it('rejects an unaffordable quote before it enters the queue', async () => {
+    const initial = batch();
+    const {
+      service,
+      getBillingSubjectComputeBalance,
+      updateBatch,
+      updateItems,
+    } = makeService(initial, initial);
+    getBillingSubjectComputeBalance.mockResolvedValue({
+      available: 0n,
+      held: 0n,
+      total: 0n,
+    });
+
+    await expect(
+      service.confirm(actor, scope.projectId, scope.chapterId, scope.batchId, {
+        expectedVersion: 0,
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        requiredAmount: '12',
+        availableBalance: '0',
+      },
+    });
+    expect(updateBatch).not.toHaveBeenCalled();
+    expect(updateItems).not.toHaveBeenCalled();
   });
 });
 

@@ -73,7 +73,7 @@ export class StoryGenerationBatchService {
     });
     if (replay) {
       assertReplay(replay.requestFingerprint, requestFingerprint);
-      return batchDto(replay);
+      return batchDto(replay, true, await this.availableBillingPoints(replay));
     }
 
     const targets = uniqueTargets(input.targets);
@@ -105,6 +105,7 @@ export class StoryGenerationBatchService {
       (total, quote) => total + quote.quotedPoints,
       0,
     );
+    const availablePoints = await this.availableBillingPoints(billingSubject);
     const batchId = newUuidV7();
     const quoteExpiresAt = new Date(Date.now() + QUOTE_TTL_MS);
     try {
@@ -125,6 +126,7 @@ export class StoryGenerationBatchService {
           quoteSnapshot: {
             version: 1,
             currency: 'COMPUTE_POINTS',
+            availablePoints: availablePoints.toString(),
             quotedAt: new Date().toISOString(),
             expiresAt: quoteExpiresAt.toISOString(),
           },
@@ -150,7 +152,7 @@ export class StoryGenerationBatchService {
         },
         include: { items: { orderBy: { ordinal: 'asc' } } },
       });
-      return batchDto(created);
+      return batchDto(created, true, availablePoints);
     } catch (error) {
       if (!isUniqueConflict(error)) throw error;
       const winner = await this.prisma.storyGenerationBatch.findUnique({
@@ -165,7 +167,7 @@ export class StoryGenerationBatchService {
       });
       if (!winner) throw error;
       assertReplay(winner.requestFingerprint, requestFingerprint);
-      return batchDto(winner);
+      return batchDto(winner, true, await this.availableBillingPoints(winner));
     }
   }
 
@@ -217,6 +219,18 @@ export class StoryGenerationBatchService {
     }
     if (batch.version !== input.expectedVersion) {
       throw versionConflict(batch.version);
+    }
+    // This preflight stops an already-unaffordable quote at confirmation. The
+    // dispatcher remains the billing authority because another job can spend
+    // the same wallet balance after this check and before an item is admitted.
+    const availablePoints = await this.availableBillingPoints(batch);
+    if (availablePoints < BigInt(batch.totalPoints)) {
+      throw new ConflictException({
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        msg: 'Not enough compute points. Recharge and try again.',
+        requiredAmount: batch.totalPoints.toString(),
+        availableBalance: availablePoints.toString(),
+      });
     }
     let confirmed: boolean;
     try {
@@ -473,6 +487,22 @@ export class StoryGenerationBatchService {
       ? { modelId: model.id, schemaVersion: model.schemaVersion }
       : null;
   }
+
+  private async availableBillingPoints(subject: {
+    billingSubjectType?: 'user' | 'workspace';
+    billingSubjectId?: string;
+    type?: 'user' | 'workspace';
+    id?: string;
+  }): Promise<bigint> {
+    const ownerType = subject.billingSubjectType ?? subject.type;
+    const ownerId = subject.billingSubjectId ?? subject.id;
+    if (!ownerType || !ownerId) return 0n;
+    const balance = await this.aiGeneration.getBillingSubjectComputeBalance({
+      type: ownerType,
+      id: ownerId,
+    });
+    return balance.available;
+  }
 }
 
 const terminalBatchStatuses = new Set<StoryGenerationBatchStatus>([
@@ -511,6 +541,7 @@ function batchDto(
     }>;
   },
   canCancel = true,
+  availablePoints: bigint | null = null,
 ) {
   const counts = Object.fromEntries(
     Object.values(StoryGenerationBatchItemStatus).map((status) => [status, 0]),
@@ -522,6 +553,7 @@ function batchDto(
     chapterId: batch.storyChapterId,
     status: batch.status,
     totalPoints: batch.totalPoints,
+    availablePoints: availablePoints?.toString() ?? null,
     itemCount: batch.itemCount,
     version: batch.version,
     quoteExpiresAt: batch.quoteExpiresAt.toISOString(),

@@ -226,11 +226,17 @@ export class StoryGenerationBatchDispatcherService
         item.id,
         errorCode(error) ?? 'BATCH_ITEM_DISPATCH_FAILED',
         errorText(error),
+        errorDetails(error),
       );
     }
   }
 
-  private async fail(id: string, code: string, message: string): Promise<void> {
+  private async fail(
+    id: string,
+    code: string,
+    message: string,
+    details: Record<string, string | number | boolean> = {},
+  ): Promise<void> {
     await this.prisma.storyGenerationBatchItem.updateMany({
       where: {
         id,
@@ -242,7 +248,7 @@ export class StoryGenerationBatchDispatcherService
         completedAt: new Date(),
         leaseOwner: null,
         leaseExpiresAt: null,
-        error: { code, message, retryable: false },
+        error: { code, message, retryable: false, ...details },
       },
     });
   }
@@ -362,15 +368,63 @@ function jsonOptions(
 }
 
 function errorCode(error: unknown): string | null {
-  if (!error || typeof error !== 'object') return null;
-  const response = (error as { response?: unknown }).response;
-  if (!response || typeof response !== 'object') return null;
-  const code = (response as { code?: unknown }).code;
+  const response = errorResponse(error);
+  const code = response?.code;
   return typeof code === 'string' ? code : null;
 }
 
 function errorText(error: unknown): string {
+  const response = errorResponse(error);
+  const responseMessage = response?.msg ?? response?.message;
+  if (typeof responseMessage === 'string' && responseMessage.trim()) {
+    return responseMessage.trim();
+  }
+  if (Array.isArray(responseMessage)) {
+    const messages = responseMessage.filter(
+      (value): value is string =>
+        typeof value === 'string' && Boolean(value.trim()),
+    );
+    if (messages.length > 0) return messages.join('; ');
+  }
   return error instanceof Error ? error.message : String(error);
+}
+
+function errorDetails(
+  error: unknown,
+): Record<string, string | number | boolean> {
+  const response = errorResponse(error);
+  if (!response) return {};
+  const details: Record<string, string | number | boolean> = {};
+  for (const key of [
+    'requiredAmount',
+    'availableBalance',
+    'unavailableAmount',
+  ] as const) {
+    const value = response[key];
+    if (
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      details[key] = value;
+    }
+  }
+  return details;
+}
+
+function errorResponse(error: unknown): Record<string, unknown> | null {
+  if (!error || typeof error !== 'object') return null;
+  const getResponse = (error as { getResponse?: unknown }).getResponse;
+  if (typeof getResponse === 'function') {
+    const response = getResponse.call(error) as unknown;
+    if (response && typeof response === 'object' && !Array.isArray(response)) {
+      return response as Record<string, unknown>;
+    }
+  }
+  const response = (error as { response?: unknown }).response;
+  return response && typeof response === 'object' && !Array.isArray(response)
+    ? (response as Record<string, unknown>)
+    : null;
 }
 
 function positiveInteger(value: string | undefined, fallback: number): number {

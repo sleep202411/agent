@@ -1081,6 +1081,28 @@ export class AiGenerationService {
     );
   }
 
+  async getStoryBillingBalance(user: AuthUser, storyProjectId: string) {
+    await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.read',
+    );
+    const subject = await this.resolveStoryBillingSubject(user, storyProjectId);
+    const balance = await this.billingWallet.getComputeBalance(subject);
+    return {
+      availablePoints: balance.available.toString(),
+      heldPoints: balance.held.toString(),
+      totalPoints: balance.total.toString(),
+    };
+  }
+
+  async getBillingSubjectComputeBalance(subject: {
+    type: 'user' | 'workspace';
+    id: string;
+  }) {
+    return this.billingWallet.getComputeBalance(subject);
+  }
+
   private async resolveListScope(
     user: AuthUser,
     query: AiJobListQuery,

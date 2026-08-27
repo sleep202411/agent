@@ -186,6 +186,23 @@ describe('validateProductionPlanAgainstScreenplay', () => {
     );
   });
 
+  it('rejects a scene that omits an Asset Spec whose source lineage says the scene needs it', () => {
+    const value = plan();
+    const sequence = value.storyboardSequences[0];
+    const clip = sequence.clips[0];
+    if (clip.kind === 'video') {
+      clip.videoPrompt = 'A cinematic rendering of the choice at the gate.';
+    } else {
+      clip.imagePrompt = 'A cinematic rendering of the choice at the gate.';
+    }
+
+    const issues = validateProductionPlanAgainstScreenplay(value, screenplay());
+    expect(issues).toContain(
+      'Storyboard sequence for Plot node "scene.gate" must @mention Asset Spec "asset.character.courier" because that Asset Spec declares this node in sourceNodeIds.',
+    );
+    expect(issues.some((issue) => issue.includes('is orphaned'))).toBe(false);
+  });
+
   it('rejects cross-node asset lineage and missing canonical character specs', () => {
     const value = plan();
     value.assetSpecs[0].sourceNodeIds = ['scene.wait', 'scene.run'];
