@@ -11,6 +11,7 @@ import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workben
 import { useStoryPreviewNavigation } from "../_lib/use-story-preview-navigation";
 import { isExactCurrentStoryRelease } from "./project-canvas/story-current-release";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
+import { StoryProjectCreditsBadge } from "./story-project-credits-badge";
 import {
   useStoryPublication,
   type SavedDraftSnapshotRunner,
@@ -166,6 +167,7 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
       ) : (
         publishButton
       )}
+      <StoryProjectCreditsBadge projectId={projectId} />
       {!canEdit ? (
         <span className="inline-flex h-9 items-center gap-1.5 rounded-[14px] bg-white px-3 text-[11px] font-semibold text-black">
           {t("readOnly")}

@@ -1,16 +1,16 @@
 "use client";
 
-import { IconAlertTriangle, IconChecks, IconRefresh } from "@tabler/icons-react";
+import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import {
   getStoryProductionState,
   listStoryAssetSpecs,
   storyProductionKeys,
+  type StoryAssetSpec,
   type StoryAssetSpecKind,
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
@@ -18,7 +18,10 @@ import { cn } from "@/lib/utils";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryAssetSpecCard } from "./story-asset-spec-card";
 import { StoryAssetBatchGeneration } from "./story-asset-batch-generation";
-import { StoryProductionPageHeader } from "./story-production-page-header";
+import {
+  StoryProductionGenerationControls,
+  StoryProductionPageHeader,
+} from "./story-production-page-header";
 import {
   storyAssetsStageGuidance,
   storyAssetsStageHasStaleContent,
@@ -43,8 +46,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   const active: StoryAssetSpecKind = TABS.includes(kindParam as StoryAssetSpecKind)
     ? (kindParam as StoryAssetSpecKind)
     : "character";
-  const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(() => new Set());
-
   const assetsQuery = useQuery({
     queryKey: storyProductionKeys.assets(projectId, activeChapterId),
     queryFn: ({ signal }) => listStoryAssetSpecs(projectId, activeChapterId as string, signal),
@@ -65,10 +66,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   };
 
   const assets = (assetsQuery.data ?? []).filter((asset) => asset.kind === active);
-  const selectableAssets = (assetsQuery.data ?? []).filter((asset) => asset.status === "current");
-  const selectedAssets = selectableAssets.filter((asset) => selectedAssetIds.has(asset.id));
-  const allSelected =
-    selectableAssets.length > 0 && selectedAssets.length === selectableAssets.length;
+  const assetsWithoutMedia = assets.filter(isAvailableForBatchGeneration);
   // Every kind renders the minimal media card; the lane width tracks each
   // kind's media shape (character 3:4, location 16:9, prop 1:1).
   const gridClass =
@@ -107,68 +105,52 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
             description={t("generationHint")}
             meta={assetsQuery.data ? t("count", { count: assetsQuery.data.length }) : null}
             modalities={["image"]}
-            showGenerationControls={
-              !loading && !error && Boolean(assetsQuery.data?.length) && generationAllowed
-            }
+            showGenerationControls={false}
           />
 
           {!loading && !error && (guidance === null || staleContent) ? (
-            <nav
-              className="mt-5 inline-flex max-w-full flex-wrap gap-1 rounded-2xl bg-white/[0.035] p-1.5"
-              aria-label={t("filterLabel")}
-            >
-              {TABS.map((tab) => {
-                const staleCount = (assetsQuery.data ?? []).filter(
-                  (asset) => asset.kind === tab && asset.status === "stale"
-                ).length;
-                return (
-                  <button
-                    key={tab}
-                    type="button"
-                    aria-pressed={active === tab}
-                    onClick={() => setTab(tab)}
-                    className={cn(
-                      "inline-flex h-9 items-center rounded-xl px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
-                      active === tab
-                        ? "bg-white/[0.12] text-white shadow-sm"
-                        : "text-white/58 hover:bg-white/[0.06] hover:text-white/88"
-                    )}
-                  >
-                    {t(`tabs.${tab}`)}
-                    {staleCount > 0 ? (
-                      <span className="ml-1 rounded-md bg-amber-200/12 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-100/88">
-                        {staleCount}
-                      </span>
-                    ) : null}
-                  </button>
-                );
-              })}
-            </nav>
-          ) : null}
-
-          {!loading && !error && activeChapterId && generationAllowed ? (
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/[0.025] px-3 py-2.5">
-              <Button
-                type="button"
-                size="sm"
-                variant="quiet"
-                onClick={() =>
-                  setSelectedAssetIds(
-                    allSelected ? new Set() : new Set(selectableAssets.map((asset) => asset.id))
-                  )
-                }
+            <div className="mt-5 flex min-w-0 flex-wrap items-center gap-3">
+              <nav
+                className="inline-flex shrink-0 gap-1 rounded-2xl bg-white/[0.035] p-1.5"
+                aria-label={t("filterLabel")}
               >
-                <IconChecks />
-                {allSelected
-                  ? t("batch.clearAll")
-                  : t("batch.selectAll", { count: selectableAssets.length })}
-              </Button>
-              <StoryAssetBatchGeneration
-                projectId={projectId}
-                chapterId={activeChapterId}
-                selectedAssets={selectedAssets}
-                onConfirmed={() => setSelectedAssetIds(new Set())}
-              />
+                {TABS.map((tab) => {
+                  const staleCount = (assetsQuery.data ?? []).filter(
+                    (asset) => asset.kind === tab && asset.status === "stale"
+                  ).length;
+                  return (
+                    <button
+                      key={tab}
+                      type="button"
+                      aria-pressed={active === tab}
+                      onClick={() => setTab(tab)}
+                      className={cn(
+                        "inline-flex h-9 items-center rounded-xl px-3.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50",
+                        active === tab
+                          ? "bg-white/[0.12] text-white shadow-sm"
+                          : "text-white/58 hover:bg-white/[0.06] hover:text-white/88"
+                      )}
+                    >
+                      {t(`tabs.${tab}`)}
+                      {staleCount > 0 ? (
+                        <span className="ml-1 rounded-md bg-amber-200/12 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-100/88">
+                          {staleCount}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </nav>
+              {activeChapterId && generationAllowed ? (
+                <div className="ml-auto flex shrink-0 items-center gap-2">
+                  <StoryProductionGenerationControls projectId={projectId} modalities={["image"]} />
+                  <StoryAssetBatchGeneration
+                    projectId={projectId}
+                    chapterId={activeChapterId}
+                    assets={assetsWithoutMedia}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -264,15 +246,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                     projectId={projectId}
                     chapterId={activeChapterId}
                     allowGeneration={generationAllowed}
-                    selected={selectedAssetIds.has(asset.id)}
-                    onSelectedChange={(selected) =>
-                      setSelectedAssetIds((current) => {
-                        const next = new Set(current);
-                        if (selected) next.add(asset.id);
-                        else next.delete(asset.id);
-                        return next;
-                      })
-                    }
                   />
                 ))}
               </div>
@@ -286,5 +259,18 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
         </div>
       </div>
     </main>
+  );
+}
+
+const ACTIVE_GENERATION_STATUSES = new Set(["created", "in_queue", "in_progress"]);
+const ACTIVE_MATERIALIZATION_STATUSES = new Set(["waiting_for_job", "pending"]);
+
+function isAvailableForBatchGeneration(asset: StoryAssetSpec) {
+  if (asset.status !== "current" || asset.selectedMediaVersion !== null) return false;
+  if (!asset.latestGeneration) return true;
+  if (ACTIVE_GENERATION_STATUSES.has(asset.latestGeneration.aiJob.status)) return false;
+  return !(
+    asset.latestGeneration.aiJob.status === "completed" &&
+    ACTIVE_MATERIALIZATION_STATUSES.has(asset.latestGeneration.materialization.status)
   );
 }

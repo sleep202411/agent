@@ -35,12 +35,14 @@ const queryState = vi.hoisted(() => ({
   },
 }));
 
+const navigationState = vi.hoisted(() => ({ kind: "character" }));
+
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
 }));
 
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams("kind=character"),
+  useSearchParams: () => new URLSearchParams(`kind=${navigationState.kind}`),
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -59,6 +61,7 @@ vi.mock("@/i18n/navigation", () => ({
 
 vi.mock("./story-production-page-header", () => ({
   StoryProductionPageHeader: () => null,
+  StoryProductionGenerationControls: () => null,
 }));
 
 vi.mock("./story-asset-spec-card", () => ({
@@ -66,7 +69,9 @@ vi.mock("./story-asset-spec-card", () => ({
 }));
 
 vi.mock("./story-asset-batch-generation", () => ({
-  StoryAssetBatchGeneration: () => null,
+  StoryAssetBatchGeneration: ({ assets }: { assets: Array<{ id: string }> }) => (
+    <output data-testid="batch-count">{assets.length}</output>
+  ),
 }));
 
 vi.mock("./story-stage-empty-state", () => ({
@@ -86,6 +91,7 @@ describe("StoryAssetsGallery empty states", () => {
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     queryState.assets = [];
+    navigationState.kind = "character";
     queryState.production.assets = { status: "current", currentCount: 1, staleCount: 0 };
     useStoryProjectUiStore.setState({ activeChapterId: "chapter-1" });
     container = document.createElement("div");
@@ -137,9 +143,56 @@ describe("StoryAssetsGallery empty states", () => {
     expect(messages.categoryEmptyHint).toBeTruthy();
   });
 
+  it("batches only current-tab assets that still need media", async () => {
+    queryState.assets = [
+      ...makeAssets("character", 3, 1, 1),
+      ...makeAssets("location", 4),
+      ...makeAssets("prop", 3),
+    ];
+
+    await renderGallery();
+    expect(batchCount()).toBe("1");
+
+    navigationState.kind = "location";
+    await renderGallery();
+    expect(batchCount()).toBe("4");
+
+    navigationState.kind = "prop";
+    await renderGallery();
+    expect(batchCount()).toBe("3");
+  });
+
   async function renderGallery() {
     await act(async () => {
       root.render(<StoryAssetsGallery projectId="project-1" />);
     });
   }
+
+  function batchCount() {
+    return container.querySelector('[data-testid="batch-count"]')?.textContent;
+  }
 });
+
+function makeAssets(
+  kind: "character" | "location" | "prop",
+  count: number,
+  generatedCount = 0,
+  inFlightCount = 0
+) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `${kind}-${index + 1}`,
+    version: 1,
+    kind,
+    status: "current" as const,
+    conflict: null,
+    pendingSourceFingerprint: null,
+    selectedMediaVersion: index < generatedCount ? {} : null,
+    latestGeneration:
+      index >= generatedCount && index < generatedCount + inFlightCount
+        ? {
+            aiJob: { status: "in_progress" },
+            materialization: { status: "waiting_for_job" },
+          }
+        : null,
+  }));
+}

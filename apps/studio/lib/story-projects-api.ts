@@ -115,6 +115,16 @@ export interface StoryProjectSummary {
   updatedAt: string;
 }
 
+export interface StoryBillingBalance {
+  availablePoints: string;
+  heldPoints: string;
+  totalPoints: string;
+}
+
+export function storyBillingBalanceQueryKey(projectId: string) {
+  return ["story-studio", "billing-balance", projectId] as const;
+}
+
 export interface StoryGraphChoice {
   choiceId: string;
   label: Record<string, string>;
@@ -547,6 +557,13 @@ export async function getStoryWorkbench(
   }
   assertProjectSummary(workbench.project);
   return workbench;
+}
+
+export async function getStoryBillingBalance(projectId: string): Promise<StoryBillingBalance> {
+  return api.get<StoryBillingBalance>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/billing/balance`,
+    { requestScope: "project" }
+  );
 }
 
 export async function createStoryChapter(

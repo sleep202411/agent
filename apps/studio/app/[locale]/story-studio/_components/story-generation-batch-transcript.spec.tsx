@@ -119,6 +119,51 @@ describe("StoryGenerationBatchTranscript", () => {
       })
     ).toBe(false);
   });
+
+  it("keeps an insufficient-credit failure visible in the persisted transcript", async () => {
+    const failed = batch();
+    failed.status = "failed";
+    failed.completedAt = "2026-08-26T11:46:00.000Z";
+    failed.counts = {
+      ...failed.counts,
+      submitted: 0,
+      completed: 0,
+      failed: 2,
+    };
+    failed.items = failed.items.map((value) => ({
+      ...value,
+      status: "failed" as const,
+      generationId: null,
+      error: {
+        code: "INSUFFICIENT_COMPUTE_POINTS",
+        message: "Conflict Exception",
+        retryable: false,
+      },
+    }));
+    api.getBatch.mockResolvedValue(failed);
+    api.listAssets.mockResolvedValue([]);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryGenerationBatchTranscript
+            reference={{
+              kind: "story_generation_batch",
+              generationBatchId: "batch-1",
+              storyProjectId: "project-1",
+              storyChapterId: "chapter-1",
+              schemaVersion: "story-generation-batch-artifact/v1",
+            }}
+          />
+        </QueryClientProvider>
+      );
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(container.textContent).toContain("insufficientCredits"));
+    });
+  });
 });
 
 function batch(): StoryGenerationBatch {
@@ -128,6 +173,7 @@ function batch(): StoryGenerationBatch {
     chapterId: "chapter-1",
     status: "running",
     totalPoints: 120,
+    availablePoints: null,
     itemCount: 2,
     version: 1,
     quoteExpiresAt: "2026-08-26T12:00:00.000Z",

@@ -49,12 +49,24 @@ export function StoryProductionPageHeader({
         </p>
       </div>
       {showGenerationControls ? (
-        <div className="flex flex-wrap items-center gap-2">
-          {modalities.map((modality) => (
-            <ModalityPicker key={modality} projectId={projectId} modality={modality} />
-          ))}
-        </div>
+        <StoryProductionGenerationControls projectId={projectId} modalities={modalities} />
       ) : null}
+    </div>
+  );
+}
+
+export function StoryProductionGenerationControls({
+  projectId,
+  modalities = ["image", "video"],
+}: {
+  projectId: string;
+  modalities?: ProductionModality[];
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      {modalities.map((modality) => (
+        <ModalityPicker key={modality} projectId={projectId} modality={modality} />
+      ))}
     </div>
   );
 }

@@ -58,7 +58,6 @@ function StoryClipTile({
         label={clip.title}
         selectedMedia={clip.selectedMediaVersion}
         outputKind={clip.kind}
-        clipDurationMs={clip.durationMs}
         allowGeneration={allowGeneration}
         secondaryAction={
           <button

@@ -1,6 +1,6 @@
 "use client";
 
-import { IconBan, IconBolt, IconCheck, IconLoader2 } from "@tabler/icons-react";
+import { IconAlertTriangle, IconBan, IconBolt, IconCheck, IconLoader2 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useFormatter, useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
@@ -20,12 +20,13 @@ import {
   createStoryProductionIdempotencyKey,
   listStoryGenerationBatches,
   quoteStoryAssetGenerationBatch,
+  storyGenerationBatchFailure,
   storyGenerationBatchHasPendingItems,
   storyProductionKeys,
   type StoryAssetSpec,
   type StoryGenerationBatch,
 } from "@/lib/story-production-api";
-import { storyApiErrorMessage } from "@/lib/story-projects-api";
+import { storyApiErrorMessage, storyBillingBalanceQueryKey } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { storyGenerationOptions } from "../_stores/story-production-settings-store";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
@@ -43,15 +44,14 @@ const TERMINAL_STATUSES = new Set([
 export function StoryAssetBatchGeneration({
   projectId,
   chapterId,
-  selectedAssets,
-  onConfirmed,
+  assets,
 }: {
   projectId: string;
   chapterId: string;
-  selectedAssets: StoryAssetSpec[];
-  onConfirmed: () => void;
+  assets: StoryAssetSpec[];
 }) {
   const t = useTranslations("storyStudio.assetsPage.batch");
+  const tGenerationError = useTranslations("studioModes.error");
   const format = useFormatter();
   const queryClient = useQueryClient();
   const defaults = useStoryProductionGenerationDefaults(projectId, "image");
@@ -79,6 +79,9 @@ export function StoryAssetBatchGeneration({
         void queryClient.invalidateQueries({
           queryKey: storyProductionKeys.assets(projectId, chapterId),
         });
+        void queryClient.invalidateQueries({
+          queryKey: storyBillingBalanceQueryKey(projectId),
+        });
       }
       if (ACTIVE_STATUSES.has(batch.status)) {
         observedActiveBatchIds.current.add(batch.id);
@@ -89,12 +92,22 @@ export function StoryAssetBatchGeneration({
       void queryClient.invalidateQueries({
         queryKey: storyProductionKeys.assets(projectId, chapterId),
       });
+      void queryClient.invalidateQueries({
+        queryKey: storyBillingBalanceQueryKey(projectId),
+      });
       if (!observedActiveBatchIds.current.has(batch.id)) continue;
       if (batch.status === "completed") toast.success(t("completed"));
-      else if (batch.status === "partial_failed") toast.error(t("partialFailed"));
-      else if (batch.status === "failed") toast.error(t("failed"));
+      else if (batch.status === "partial_failed") {
+        toast.error(
+          batchFailureMessage(batch, t("partialFailed"), tGenerationError("insufficientCredits"))
+        );
+      } else if (batch.status === "failed") {
+        toast.error(
+          batchFailureMessage(batch, t("failed"), tGenerationError("insufficientCredits"))
+        );
+      }
     }
-  }, [batchesQuery.data, chapterId, projectId, queryClient, t]);
+  }, [batchesQuery.data, chapterId, projectId, queryClient, t, tGenerationError]);
 
   const quoteMutation = useMutation({
     retry: false,
@@ -104,7 +117,7 @@ export function StoryAssetBatchGeneration({
         chapterId,
         createStoryProductionIdempotencyKey("asset-batch-quote"),
         {
-          targets: selectedAssets.map((asset) => ({
+          targets: assets.map((asset) => ({
             id: asset.id,
             expectedVersion: asset.version,
           })),
@@ -131,9 +144,10 @@ export function StoryAssetBatchGeneration({
     },
     onSuccess: (value) => {
       setQuote(value);
-      onConfirmed();
       setDialogOpen(false);
-      toast.success(t("started"));
+      void queryClient.invalidateQueries({
+        queryKey: storyBillingBalanceQueryKey(projectId),
+      });
       void queryClient.invalidateQueries({
         queryKey: storyProductionKeys.batches(projectId, chapterId),
       });
@@ -161,27 +175,22 @@ export function StoryAssetBatchGeneration({
     setDialogOpen(true);
     quoteMutation.mutate();
   };
+  const insufficientPoints = quote ? quoteCannotBeAfforded(quote) : false;
 
   return (
     <>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {activeBatch?.canCancel && CANCELLABLE_STATUSES.has(activeBatch.status) ? (
-          <BatchProgress batch={activeBatch} />
-        ) : (
-          <span className="text-xs tabular-nums text-white/55">
-            {t("selected", { count: selectedAssets.length })}
-          </span>
-        )}
+        {activeBatch ? <BatchProgress batch={activeBatch} /> : null}
         <Button
           type="button"
           size="sm"
           onClick={openQuote}
-          disabled={selectedAssets.length === 0 || Boolean(activeBatch) || defaults.loading}
+          disabled={assets.length === 0 || Boolean(activeBatch) || defaults.loading}
         >
           <IconBolt />
-          {t("generate")}
+          {assets.length === 0 ? t("allGenerated") : t("generate")}
         </Button>
-        {activeBatch ? (
+        {activeBatch?.canCancel && CANCELLABLE_STATUSES.has(activeBatch.status) ? (
           <Button
             type="button"
             size="sm"
@@ -209,9 +218,13 @@ export function StoryAssetBatchGeneration({
             </div>
           ) : quote ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <QuoteMetric label={t("dialog.items")} value={String(quote.itemCount)} />
                 <QuoteMetric label={t("dialog.points")} value={String(quote.totalPoints)} />
+                <QuoteMetric
+                  label={t("dialog.available")}
+                  value={quote.availablePoints ?? t("dialog.unavailable")}
+                />
               </div>
               <div className="rounded-xl bg-white/[0.045] px-3 py-2.5 text-xs leading-5 text-white/62">
                 <p>
@@ -226,6 +239,18 @@ export function StoryAssetBatchGeneration({
                   })}
                 </p>
               </div>
+              {insufficientPoints ? (
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-xl bg-red-500/10 px-3 py-2.5 text-xs leading-5 text-red-100/90"
+                >
+                  <IconAlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+                  {t("dialog.insufficientPoints", {
+                    available: quote.availablePoints ?? "0",
+                    required: quote.totalPoints,
+                  })}
+                </div>
+              ) : null}
               <p className="text-xs leading-5 text-white/55">{t("dialog.billingNotice")}</p>
             </div>
           ) : (
@@ -239,13 +264,15 @@ export function StoryAssetBatchGeneration({
             <Button
               type="button"
               loading={confirmMutation.isPending}
-              disabled={!quote || quote.status !== "awaiting_confirmation"}
+              disabled={!quote || quote.status !== "awaiting_confirmation" || insufficientPoints}
               onClick={() => confirmMutation.mutate()}
             >
               <IconCheck />
-              {quote
-                ? t("dialog.confirm", { points: quote.totalPoints })
-                : t("dialog.confirmEmpty")}
+              {insufficientPoints
+                ? t("dialog.insufficientConfirm")
+                : quote
+                  ? t("dialog.confirm", { points: quote.totalPoints })
+                  : t("dialog.confirmEmpty")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -261,6 +288,11 @@ function QuoteMetric({ label, value }: { label: string; value: string }) {
       <p className="mt-1 text-lg font-semibold tabular-nums text-white/92">{value}</p>
     </div>
   );
+}
+
+function quoteCannotBeAfforded(quote: StoryGenerationBatch): boolean {
+  if (quote.availablePoints === null || !/^\d+$/.test(quote.availablePoints)) return false;
+  return BigInt(quote.availablePoints) < BigInt(quote.totalPoints);
 }
 
 function BatchProgress({ batch }: { batch: StoryGenerationBatch }) {
@@ -295,4 +327,19 @@ function BatchProgress({ batch }: { batch: StoryGenerationBatch }) {
       </div>
     </div>
   );
+}
+
+function batchFailureMessage(
+  batch: StoryGenerationBatch,
+  fallback: string,
+  insufficientCredits: string
+): string {
+  const failure = storyGenerationBatchFailure(batch);
+  if (
+    failure?.code === "INSUFFICIENT_COMPUTE_POINTS" ||
+    failure?.code === "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS"
+  ) {
+    return insufficientCredits;
+  }
+  return failure?.message ?? fallback;
 }

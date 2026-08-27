@@ -11,6 +11,7 @@ import {
   cancelStoryGenerationBatch,
   getStoryGenerationBatch,
   listStoryAssetSpecs,
+  storyGenerationBatchFailure,
   storyGenerationBatchHasPendingItems,
   storyProductionKeys,
   type StoryAssetSpec,
@@ -29,6 +30,7 @@ export function StoryGenerationBatchTranscript({
   reference: AgentOsStoryGenerationBatchArtifactReference;
 }) {
   const t = useTranslations("storyStudio.generationBatchTranscript");
+  const tGenerationError = useTranslations("studioModes.error");
   const queryClient = useQueryClient();
   const { storyProjectId, storyChapterId, generationBatchId } = reference;
   const batchKey = useMemo(
@@ -111,6 +113,12 @@ export function StoryGenerationBatchTranscript({
   const batch = batchQuery.data;
   const assets = new Map((assetsQuery.data ?? []).map((asset) => [asset.id, asset]));
   const settled = batch.counts.completed + batch.counts.failed + batch.counts.cancelled;
+  const failure = storyGenerationBatchFailure(batch);
+  const failureMessage =
+    failure?.code === "INSUFFICIENT_COMPUTE_POINTS" ||
+    failure?.code === "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS"
+      ? tGenerationError("insufficientCredits")
+      : failure?.message;
 
   return (
     <TranscriptSection>
@@ -169,6 +177,12 @@ export function StoryGenerationBatchTranscript({
           />
         ))}
       </div>
+
+      {failureMessage ? (
+        <p role="alert" className="mt-2 text-[11px] leading-relaxed text-red-100/88">
+          {failureMessage}
+        </p>
+      ) : null}
 
       {assetsQuery.isError ? (
         <p role="alert" className="mt-2 text-[11px] leading-relaxed text-red-100/88">

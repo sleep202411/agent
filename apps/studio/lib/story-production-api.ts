@@ -304,12 +304,22 @@ export type StoryGenerationBatchItemStatus =
   | "failed"
   | "cancelled";
 
+export interface StoryGenerationBatchItemError {
+  code: string | null;
+  message: string | null;
+  retryable: boolean | null;
+  requiredAmount: string | null;
+  availableBalance: string | null;
+  unavailableAmount: string | null;
+}
+
 export interface StoryGenerationBatch {
   id: string;
   projectId: string;
   chapterId: string;
   status: StoryGenerationBatchStatus;
   totalPoints: number;
+  availablePoints: string | null;
   itemCount: number;
   version: number;
   quoteExpiresAt: string;
@@ -330,6 +340,33 @@ export interface StoryGenerationBatch {
     generationId: string | null;
     error: unknown;
   }>;
+}
+
+export function storyGenerationBatchFailure(
+  batch: StoryGenerationBatch
+): StoryGenerationBatchItemError | null {
+  for (const item of batch.items) {
+    if (item.status !== "failed" || !item.error || typeof item.error !== "object") continue;
+    const error = item.error as Record<string, unknown>;
+    const code = typeof error.code === "string" ? error.code.trim() : "";
+    const message = typeof error.message === "string" ? error.message.trim() : "";
+    if (!code && !message) continue;
+    return {
+      code: code || null,
+      message: message || null,
+      retryable: typeof error.retryable === "boolean" ? error.retryable : null,
+      requiredAmount: stringDetail(error.requiredAmount),
+      availableBalance: stringDetail(error.availableBalance),
+      unavailableAmount: stringDetail(error.unavailableAmount),
+    };
+  }
+  return null;
+}
+
+function stringDetail(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
 }
 
 export interface QuoteStoryAssetGenerationBatchInput {

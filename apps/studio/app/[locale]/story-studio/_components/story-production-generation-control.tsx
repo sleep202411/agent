@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  IconBolt,
-  IconLoader2,
-  IconPhotoOff,
-  IconRefresh,
-  IconSparkles,
-  IconX,
-} from "@tabler/icons-react";
+import { IconLoader2, IconPhotoOff, IconRefresh, IconSparkles, IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
@@ -34,12 +27,6 @@ import {
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
-import {
-  estimateModelSellPoints,
-  schemaFields,
-  type FizzAiModel,
-  type ModelSettings,
-} from "@/lib/canvas-authoring/generation-api";
 import {
   storyGenerationOptions,
   type ProductionModality,
@@ -78,7 +65,6 @@ export function StoryProductionGenerationControl({
   aspect = "square",
   secondaryAction,
   outputKind = "image",
-  clipDurationMs,
   allowGeneration = true,
 }: {
   scope: GenerationScope;
@@ -91,9 +77,6 @@ export function StoryProductionGenerationControl({
   secondaryAction?: React.ReactNode;
   /** Which modality this target generates; picks the page-header default. */
   outputKind?: ProductionModality;
-  /** Video clips bill by their timeline length: the server rounds this up to
-   *  the model's nearest supported source duration, so the estimate must too. */
-  clipDurationMs?: number;
   /**
    * Stage-level fence. Stale aggregate stages may still render previews,
    * details, and conflict resolution, but they must not expose a new paid
@@ -144,12 +127,6 @@ export function StoryProductionGenerationControl({
   };
 
   const generationDefaults = useStoryProductionGenerationDefaults(scope.projectId, outputKind);
-  const defaultModel = generationDefaults.model;
-  const estimatedPoints = estimateStoryGenerationPoints(
-    defaultModel,
-    generationDefaults.options,
-    outputKind === "video" ? (clipDurationMs ?? null) : null
-  );
   const createMutation = useMutation({
     retry: false,
     mutationFn: () =>
@@ -272,12 +249,6 @@ export function StoryProductionGenerationControl({
     >
       <IconSparkles />
       {selectedMedia ? t("generateAgain") : t("generate")}
-      {estimatedPoints !== null ? (
-        <span className="flex items-center gap-0.5 text-[11px] opacity-85">
-          <IconBolt className="size-3" stroke={2} />
-          {estimatedPoints}
-        </span>
-      ) : null}
     </Button>
   ) : null;
 
@@ -432,59 +403,6 @@ function getGeneration(
         generationId,
         signal
       );
-}
-
-/**
- * The same sell-points estimate the header pill shows, corrected for video
- * clips: duration is server-owned and rounded up from the clip's timeline
- * length to the model's nearest supported source duration.
- */
-function estimateStoryGenerationPoints(
-  model: FizzAiModel | undefined,
-  options: ModelSettings,
-  clipDurationMs: number | null
-): number | null {
-  if (!model) return null;
-  const scalar = (name: string) => {
-    const value = options[name];
-    return Array.isArray(value) ? undefined : value;
-  };
-  const estimate: {
-    numOutputs: number;
-    resolution?: string;
-    quality?: string;
-    duration?: string;
-    durationSeconds?: number;
-    generateAudio?: boolean;
-  } = {
-    numOutputs: Number(scalar("numOutputs") ?? scalar("n") ?? 1) || 1,
-    resolution: scalar("resolution") != null ? String(scalar("resolution")) : undefined,
-    quality: scalar("quality") != null ? String(scalar("quality")) : undefined,
-    duration: scalar("duration") != null ? String(scalar("duration")) : undefined,
-    durationSeconds:
-      typeof scalar("durationSeconds") === "number"
-        ? (scalar("durationSeconds") as number)
-        : undefined,
-    generateAudio:
-      typeof scalar("generateAudio") === "boolean"
-        ? (scalar("generateAudio") as boolean)
-        : undefined,
-  };
-  if (clipDurationMs !== null) {
-    const seconds = clipDurationMs / 1_000;
-    const field = schemaFields(model).find(
-      (candidate) => candidate.name === "durationSeconds" || candidate.name === "duration"
-    );
-    const supported = (field?.enum ?? [])
-      .map(Number)
-      .filter((value) => Number.isFinite(value))
-      .sort((left, right) => left - right)
-      .find((value) => value >= seconds);
-    if (supported === undefined) return null;
-    estimate.duration = String(supported);
-    estimate.durationSeconds = supported;
-  }
-  return estimateModelSellPoints(model, estimate)?.sellPoints ?? null;
 }
 
 function createGeneration(
