@@ -22,6 +22,7 @@ import {
   StoryRemoveInteractionInputSchema,
   StoryRemoveSubtreeInputSchema,
   StoryReorderInputSchema,
+  resolveStoryProductionTargetStage,
   StorySetEntryInputSchema,
   StoryQuoteAssetGenerationBatchInputSchema,
   StoryConfirmGenerationBatchInputSchema,
@@ -260,6 +261,11 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       }
       case 'story.author': {
         const args = StoryAuthorInputSchema.parse(input.arguments);
+        const creatorRequest = await this.initialCreatorRequest(input.runId);
+        const continueThrough = resolveStoryProductionTargetStage({
+          creatorRequest,
+          proposed: args.continueThrough,
+        });
         const context = await this.projects.requireWrite(
           input.actorId,
           input.projectId,
@@ -281,7 +287,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             sourceStartedMessage: args.startedMessage,
             sourceCompletionMessage: args.completionMessage,
             sourceContinuationPlan: {
-              continueThrough: args.continueThrough,
+              continueThrough,
               title: args.title,
               summary: args.summary,
               brief: args.brief,
@@ -416,6 +422,10 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       default:
         throw new Error(`Story handler does not implement ${input.toolId}`);
     }
+  }
+
+  private async initialCreatorRequest(runId: string): Promise<string | null> {
+    return this.journal.getInitialUserMessageText(runId);
   }
 
   private async readStory(

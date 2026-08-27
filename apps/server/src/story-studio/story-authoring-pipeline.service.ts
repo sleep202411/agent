@@ -565,6 +565,16 @@ function validateStoryboardSequence(
   if (!parsed.success) {
     issues.push(...parsed.error.issues.map((issue) => issue.message));
   }
+  const mentionedAssetKeys = new Set(
+    sequence.clips.flatMap((clip) => storyClipAssetMentions(clip)),
+  );
+  for (const asset of availableAssets) {
+    if (!mentionedAssetKeys.has(asset.stableKey)) {
+      issues.push(
+        `Storyboard sequence for Plot node "${scene.nodeId}" must @mention Asset Spec "${asset.stableKey}" because that Asset Spec declares this node in sourceNodeIds.`,
+      );
+    }
+  }
   if (scene.exit.kind === 'choice') {
     const decisionId = scene.exit.decisionId;
     const matching = sequence.cues.filter(
@@ -858,7 +868,7 @@ const ASSET_SYSTEM = [
 const STORYBOARD_SYSTEM = [
   'You are the Storyboard Director. Turn one screenplay scene into one continuous visual timeline sequence. The Plot Tree already owns branching: never create choices, targets, or another graph. Use the exact screenplay nodeId as plotNodeId. Give the sequence a one-or-two-sentence description summarizing what this node’s footage shows.',
   'Split the sequence into the fewest useful image or video clips. Each clip has a flexible millisecond start and duration; clips start at 0, are contiguous, never overlap, and exactly cover durationMs. An image may hold for any duration. Each clip carries exactly one prompt for its own kind: an image clip only imagePrompt, a video clip only videoPrompt. When a held opening frame matters, make it its own short image clip.',
-  'Clip and cue stableKeys must be unique across the WHOLE production plan, and other scenes are planned in parallel without seeing yours — always namespace keys with this exact nodeId (e.g. "shot.<nodeId>.opening"), never generic names like "clip_opening". Every Asset Spec listed for this scene should be @mentioned by at least one clip prompt here or in another of its source scenes.',
+  'Clip and cue stableKeys must be unique across the WHOLE production plan, and other scenes are planned in parallel without seeing yours — always namespace keys with this exact nodeId (e.g. "shot.<nodeId>.opening"), never generic names like "clip_opening". Every Asset Spec listed for this scene MUST be @mentioned by at least one clip prompt in this sequence. Its sourceNodeIds declares that this exact scene needs it, so never defer the reference to another scene.',
   'Reference assets by writing @stableKey inline in imagePrompt and videoPrompt at the exact place the asset appears — for example "LIN WAN (@character_LinWan) grips the rail of @location_lighthouse_top_platform". Use only keys supplied in available_asset_specs. A reference that is not written in a prompt does not exist; an Asset Spec remains valid and mentionable before any media has been generated. Never output media URLs.',
   'For a choice scene, add exactly one decision cue with the exact screenplay decisionId, normally at the end of the sequence. For an auto or terminal scene, cues must be empty. Do not trigger generation or claim media exists.',
 ].join('\n\n');

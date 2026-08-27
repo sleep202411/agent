@@ -30,6 +30,19 @@ const DEFAULT_LOCAL_DATABASE_URL =
 const describePostgres = INTEGRATION_ENABLED ? describe : describe.skip;
 const { Client } = pg;
 
+type JestMatcherConstructor =
+  | DateConstructor
+  | ObjectConstructor
+  | StringConstructor;
+
+function expectAny<T>(constructor: JestMatcherConstructor): T {
+  return expect.any(constructor) as unknown as T;
+}
+
+function expectObjectContaining<T extends object>(expected: T): T {
+  return expect.objectContaining(expected) as unknown as T;
+}
+
 describePostgres(
   'AgentOsRunJournalService start fence PostgreSQL integration',
   () => {
@@ -131,7 +144,7 @@ describePostgres(
           snapshotInput(runId, 'running', running, first, 'checkpoint-stale'),
         ),
       ).rejects.toMatchObject({
-        response: expect.objectContaining({
+        response: expectObjectContaining({
           code: 'AGENT_OS_START_EXECUTION_FENCED',
         }),
       });
@@ -199,7 +212,7 @@ describePostgres(
         ).toEqual({
           status: 'completed',
           startCommand: null,
-          startExecutionFinishedAt: expect.any(Date),
+          startExecutionFinishedAt: expectAny<Date>(Date),
           startExecutionCheckpointId: 'checkpoint-terminal',
         });
       } finally {
@@ -332,7 +345,7 @@ describePostgres(
         status: 'completed',
         startExecutionEpoch: 2,
         startCommand: null,
-        startExecutionFinishedAt: expect.any(Date),
+        startExecutionFinishedAt: expectAny<Date>(Date),
       });
     });
 
@@ -377,9 +390,8 @@ describePostgres(
         journal,
         worker as never,
       );
-      const drainOnce = (
-        dispatcher as unknown as { drainOnce(): Promise<void> }
-      ).drainOnce.bind(dispatcher);
+      const drainOnce = () =>
+        (dispatcher as unknown as { drainOnce(): Promise<void> }).drainOnce();
 
       await drainOnce();
       expect(worker.startRun).toHaveBeenCalledTimes(1);
@@ -389,7 +401,10 @@ describePostgres(
           where: { id: runId },
           select: { status: true, startCommand: true },
         }),
-      ).toMatchObject({ status: 'queued', startCommand: expect.any(Object) });
+      ).toMatchObject({
+        status: 'queued',
+        startCommand: expectAny<Record<string, unknown>>(Object),
+      });
 
       await expireStartLease(prisma, runId);
       await drainOnce();
@@ -425,7 +440,7 @@ describePostgres(
           submissionFingerprint: command.submissionFingerprint,
         }),
       ).rejects.toMatchObject({
-        response: expect.objectContaining({
+        response: expectObjectContaining({
           code: 'AGENT_OS_START_SUBMISSION_CONFLICT',
         }),
       });
@@ -462,7 +477,7 @@ describePostgres(
         },
       };
       await expect(journal.reserveRunStart(foreign)).rejects.toMatchObject({
-        response: expect.objectContaining({
+        response: expectObjectContaining({
           code: 'AGENT_OS_CONVERSATION_OWNERSHIP_CONFLICT',
         }),
       });
@@ -527,7 +542,7 @@ describePostgres(
           ),
         ),
       ).rejects.toMatchObject({
-        response: expect.objectContaining({
+        response: expectObjectContaining({
           code: 'AGENT_OS_INPUT_RESPONSE_NOT_CLAIMED',
         }),
       });
@@ -571,8 +586,8 @@ describePostgres(
         }),
       ).toEqual({
         inputResponseId: null,
-        continuationCommand: expect.any(Object),
-        continuationExecutionToken: expect.any(String),
+        continuationCommand: expectAny<Record<string, unknown>>(Object),
+        continuationExecutionToken: expectAny<string>(String),
       });
     });
 
@@ -688,7 +703,7 @@ describePostgres(
         ).toEqual({
           status: 'completed',
           continuationCommand: null,
-          continuationExecutionFinishedAt: expect.any(Date),
+          continuationExecutionFinishedAt: expectAny<Date>(Date),
           continuationExecutionEpoch: 1,
         });
       },
@@ -786,7 +801,7 @@ describePostgres(
         status: 'running',
         permissionMode: 'smart',
         pendingExternal: null,
-        continuationCommand: expect.objectContaining({
+        continuationCommand: expectObjectContaining({
           kind: 'external_result',
           externalJobId,
           toolCallId,
@@ -794,15 +809,15 @@ describePostgres(
           phase: 'apply',
           outcome: 'completed',
         }),
-        continuationExecutionToken: expect.any(String),
-        continuationDispatchNextAttemptAt: expect.any(Date),
+        continuationExecutionToken: expectAny<string>(String),
+        continuationDispatchNextAttemptAt: expectAny<Date>(Date),
       });
 
       const claim = await journal.claimRunContinuationDispatch(runId);
       expect(claim).toMatchObject({
         kind: 'claimed',
         executionEpoch: 1,
-        command: expect.objectContaining({
+        command: expectObjectContaining({
           kind: 'external_result',
           externalJobId,
           toolCallId,
@@ -851,12 +866,12 @@ describePostgres(
             if (calls === 1) {
               // Worker accepted and claimed its journal owner, but the HTTP
               // response disappeared before the dispatcher saw it.
-              const {
-                checkpointId: _checkpointId,
-                checkpointNamespace: _checkpointNamespace,
-                checkpointThreadId: _checkpointThreadId,
-                ...withoutCheckpoint
-              } = proof;
+              const withoutCheckpoint: ContinuationExecutionReport = {
+                ...proof,
+              };
+              delete withoutCheckpoint.checkpointId;
+              delete withoutCheckpoint.checkpointNamespace;
+              delete withoutCheckpoint.checkpointThreadId;
               await withCheckpointExecutionLock(
                 databaseUrl,
                 CONVERSATION_ID,

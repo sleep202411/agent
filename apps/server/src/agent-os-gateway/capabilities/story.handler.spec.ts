@@ -238,9 +238,14 @@ describe('StoryAgentCapabilityHandler', () => {
     const requireWrite = jest.fn().mockResolvedValue({
       workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
     });
+    const getInitialUserMessageText = jest
+      .fn()
+      .mockResolvedValue(
+        'Create the complete interactive film and review every stage through Storyboard.',
+      );
     const scoped = new StoryAgentCapabilityHandler(
       {} as never,
-      {} as never,
+      { getInitialUserMessageText } as never,
       { requireWrite } as never,
       {} as never,
       { createAuthoringRun } as never,
@@ -310,6 +315,70 @@ describe('StoryAgentCapabilityHandler', () => {
           ...args: unknown[]
         ) => unknown,
       }),
+    );
+    expect(getInitialUserMessageText).toHaveBeenCalledWith(input.runId);
+  });
+
+  it('persists the creator-authorized multi-stage scope when the model proposes only Script', async () => {
+    const createAuthoringRun = jest.fn().mockResolvedValue({
+      id: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+      status: 'authoring',
+    });
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {
+        getInitialUserMessageText: jest
+          .fn()
+          .mockResolvedValue(
+            '请逐阶段提供剧本、情节树、资产规格和分镜规格供我分别审核。',
+          ),
+      } as never,
+      {
+        requireWrite: jest.fn().mockResolvedValue({
+          workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+        }),
+      } as never,
+      {} as never,
+      { createAuthoringRun } as never,
+      { fenceBusinessMutationInTx: jest.fn() } as never,
+      {} as never,
+      {} as never,
+    );
+
+    await scoped.execute({
+      toolId: 'story.author',
+      runId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+      conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+      turnId: '019a034d-34a7-7542-a554-4a7dbdb247dd',
+      toolCallId: 'call_story_author_scope',
+      actorId: 'creator-1',
+      projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+      skillResolutionId: '019a034d-37f5-7d82-9075-a502131a0a69',
+      skillVersionIds: [],
+      workbenchContext: {
+        chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+      },
+      idempotencyKey: 'story-author-scope-test',
+      arguments: {
+        title: '断电之城',
+        summary: '海上城市停电。',
+        brief: '创作一部互动影游。',
+        continueThrough: 'script',
+        startedMessage: '开始创作。',
+        completionMessage: '提案已就绪。',
+      },
+    });
+
+    expect(createAuthoringRun).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+      '019a034d-36a6-70df-91b1-1d030480f7d4',
+      expect.objectContaining({
+        sourceContinuationPlan: expect.objectContaining({
+          continueThrough: 'storyboard',
+        }) as unknown,
+      }),
+      expect.any(Object),
     );
   });
 

@@ -12,7 +12,7 @@
     "start": "node --env-file=.env dist/main.js",
     "smoke:qwen": "tsx --env-file=.env scripts/smoke-qwen.mts",
     "test": "vitest run",
-    "lint": "echo \"agent-os lint: pending eslint wiring\""
+    "lint": "eslint . --max-warnings 0"
   },
   "dependencies": {
     "@langchain/core": "^1.2.5",
@@ -31,8 +31,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@repo/eslint-config": "*",
     "@types/node": "^22.10.7",
     "@types/pg": "^8.16.0",
+    "eslint": "^9.39.1",
     "tsx": "^4.21.0",
     "typescript": "5.9.2",
     "vitest": "^4.0.18"

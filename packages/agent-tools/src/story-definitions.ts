@@ -130,6 +130,74 @@ const STORY_PRODUCTION_STAGE_ORDER = [
   "storyboard",
 ] as const satisfies readonly StoryProductionTargetStage[];
 
+const STORY_PRODUCTION_STAGE_TERMS: Readonly<
+  Record<StoryProductionTargetStage, readonly RegExp[]>
+> = {
+  script: [/剧本/giu, /劇本/giu, /\bscreenplay\b/giu, /\bscript\b/giu],
+  plot: [/情节树/giu, /情節樹/giu, /剧情树/giu, /劇情樹/giu, /\bplot[\s-]*(?:tree|topology)\b/giu],
+  assets: [
+    /资产规格/giu,
+    /資產規格/giu,
+    /逻辑资产/giu,
+    /邏輯資產/giu,
+    /\basset[\s-]*(?:specs?|specifications?)\b/giu,
+  ],
+  storyboard: [/分镜规格/giu, /分鏡規格/giu, /分镜/giu, /分鏡/giu, /\bstoryboards?\b/giu],
+};
+
+const STORY_PRODUCTION_SCOPE_DIRECTIVE =
+  /(?:逐阶段|逐階段|分阶段|分階段|分别审核|分別審核|全部阶段|全部階段|完整流程|完整制作|完整製作|后续制作|後續製作|all\s+stages|each\s+stage|stage\s+by\s+stage|end[\s-]*to[\s-]*end|complete\s+production)/iu;
+const STORY_PRODUCTION_SINGLE_STAGE_DIRECTIVE =
+  /(?:生成|创建|創建|制作|製作|准备|準備|提供|完成|推进|推進|generate|create|build|prepare|provide|complete|continue)/iu;
+const STORY_PRODUCTION_NARROWING_DIRECTIVE = /(?:只|仅|僅|先做|先生成|只需要|只需|only|just)/iu;
+const STORY_PRODUCTION_NEGATED_STAGE_PREFIX =
+  /(?:不要|不需要|无需|無需|别|別|跳过|跳過|略过|略過|排除|do\s+not|don't|without|skip|exclude)[^，,。；;!?\n]{0,48}$/iu;
+
+/**
+ * Reconcile the model-proposed production boundary with the creator's exact,
+ * immutable request. The model may interpret ambiguous prose, but it may not
+ * shrink an explicit "stage by stage / review each stage" authorization or
+ * widen an explicit single-stage request.
+ */
+export function resolveStoryProductionTargetStage(input: {
+  creatorRequest: string | null | undefined;
+  proposed: StoryProductionTargetStage;
+}): StoryProductionTargetStage {
+  const request = input.creatorRequest?.trim();
+  if (!request) return input.proposed;
+
+  const mentioned = STORY_PRODUCTION_STAGE_ORDER.filter((stage) =>
+    STORY_PRODUCTION_STAGE_TERMS[stage].some((term) =>
+      [...request.matchAll(term)].some((match) => !storyStageMentionIsNegated(request, match.index))
+    )
+  );
+  if (mentioned.length === 0) return input.proposed;
+
+  const explicitlyScopesMultipleStages = STORY_PRODUCTION_SCOPE_DIRECTIVE.test(request);
+  const explicitlyNarrowsScope = STORY_PRODUCTION_NARROWING_DIRECTIVE.test(request);
+  const explicitlyRequestsOneStage =
+    mentioned.length === 1 && STORY_PRODUCTION_SINGLE_STAGE_DIRECTIVE.test(request);
+  if (!explicitlyScopesMultipleStages && !explicitlyNarrowsScope && !explicitlyRequestsOneStage) {
+    return input.proposed;
+  }
+
+  return mentioned.at(-1) ?? input.proposed;
+}
+
+function storyStageMentionIsNegated(request: string, matchIndex: number | undefined): boolean {
+  if (matchIndex === undefined) return false;
+  const clauseStart = Math.max(
+    request.lastIndexOf("。", matchIndex - 1),
+    request.lastIndexOf("；", matchIndex - 1),
+    request.lastIndexOf(";", matchIndex - 1),
+    request.lastIndexOf("!", matchIndex - 1),
+    request.lastIndexOf("?", matchIndex - 1),
+    request.lastIndexOf("\n", matchIndex - 1)
+  );
+  const prefix = request.slice(clauseStart + 1, matchIndex);
+  return STORY_PRODUCTION_NEGATED_STAGE_PREFIX.test(prefix);
+}
+
 /** True while any stage inside the creator-authorized scope is not current. */
 export function storyProductionNeedsContinuation(
   state: StoryProductionState,

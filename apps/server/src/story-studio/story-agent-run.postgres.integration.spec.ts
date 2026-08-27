@@ -1012,6 +1012,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
           status: StoryAgentRunStatus.proposed,
           proposal: {
             schemaVersion: 'story-plot-proposal-v1',
+            title: 'The Sealed Order — Plot Tree',
+            summary:
+              'Compile the approved Script for “The Sealed Order” into an interactive Plot Tree for review of its nodes, branches, and endings.',
           },
         },
       });
@@ -1062,6 +1065,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
           status: StoryAgentRunStatus.proposed,
           proposal: {
             schemaVersion: 'story-asset-proposal-v1',
+            title: 'The Sealed Order — Asset Specs',
+            summary:
+              'Compile the approved Script and Plot Tree for “The Sealed Order” into logical character, location, and key-prop Asset Specs. No images or videos will be generated.',
             assetPlan,
           },
         },
@@ -1120,6 +1126,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
           status: StoryAgentRunStatus.proposed,
           proposal: {
             schemaVersion: 'story-storyboard-proposal-v1',
+            title: 'The Sealed Order — Storyboard Specs',
+            summary:
+              'Compile the approved Script, Plot Tree, and Asset Specs for “The Sealed Order” into Storyboard sequences, shots, and timeline specifications. No images or videos will be generated.',
             assetPlan,
             storyboardPlan,
           },

@@ -758,11 +758,19 @@ export class LangGraphRunService {
     const durable = await fetchJournalFromNest(runId, { requireExisting: true });
     if (durable?.startExecutionPending) return null;
     const existing = this.snapshots.get(runId);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.conversationId !== conversationId) {
+        throw new Error(`Agent OS run ${runId} does not belong to conversation ${conversationId}`);
+      }
+      return existing;
+    }
     if (!durable) return null;
+    if (durable.events.some((event) => event.conversationId !== conversationId)) {
+      throw new Error(`Agent OS run ${runId} does not belong to conversation ${conversationId}`);
+    }
     const status = AgentRunStatusSchema.parse(durable.status);
 
-    const journal = this.createJournal(conversationId);
+    const journal = this.createJournal();
     journal.restore(durable.events);
     return {
       runId,
@@ -788,7 +796,7 @@ export class LangGraphRunService {
     // available for unit tests and offline development.
     const durable = await fetchJournalFromNest(input.runId, { requireExisting: true });
     if (durable && !durable.startExecutionPending) {
-      const journal = this.createJournal(input.conversationId);
+      const journal = this.createJournal();
       journal.restore(durable.events);
       return {
         runId: input.runId,
@@ -993,7 +1001,7 @@ export class LangGraphRunService {
     if (!input.modelProfileId.trim()) {
       throw new Error("modelProfileId is required");
     }
-    const journal = this.createJournal(input.conversationId);
+    const journal = this.createJournal();
     const fencedStart = Boolean(input.startExecution);
     if (
       fencedStart &&
@@ -1347,7 +1355,7 @@ export class LangGraphRunService {
     const pending = interrupts[0];
     if (!pending) return false;
 
-    const journal = this.createJournal(input.conversationId);
+    const journal = this.createJournal();
     if (durable?.events?.length) journal.restore(durable.events);
 
     const snapshot: LangGraphRunSnapshot = {
@@ -1654,7 +1662,7 @@ export class LangGraphRunService {
       }
     }
 
-    const journal = this.createJournal(command.conversationId);
+    const journal = this.createJournal();
     journal.restore(durable.events);
     const continuationExecution: ContinuationExecutionProof = {
       ...input.continuationExecution,
@@ -2997,7 +3005,7 @@ export class LangGraphRunService {
     snapshot.activeMessage = undefined;
   }
 
-  private createJournal(_conversationId: string): EventJournal {
+  private createJournal(): EventJournal {
     // PostgreSQL is the worker's only publication path. The Gateway publishes
     // committed events to Ably, so realtime can never overtake durability.
     return new EventJournal();
@@ -3110,7 +3118,7 @@ export class LangGraphRunService {
       return false;
     }
 
-    const journal = this.createJournal(snapshot.conversationId ?? snapshot.runId);
+    const journal = this.createJournal();
     journal.restore(durable.events);
     snapshot.journal = journal;
     snapshot.status = "waiting_for_external";

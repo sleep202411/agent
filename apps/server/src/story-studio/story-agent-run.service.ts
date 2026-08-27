@@ -3413,6 +3413,11 @@ export class StoryAgentRunService {
           | StoryStoryboardProposal;
         try {
           const screenplay = StoryScreenplaySchema.parse(input.screenplay);
+          const proposalCopy = downstreamStageProposalCopy(
+            state.project.defaultLocale,
+            input.targetStage,
+            screenplay.title,
+          );
           const base = {
             draftSchemaVersion: STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION,
             baseDraftRevision: state.draftRow.revision,
@@ -3421,8 +3426,7 @@ export class StoryAgentRunService {
             baseScriptDocumentId: scriptHead.documentId,
             baseScriptSequence: scriptHead.sequence,
             baseScriptHash: scriptHead.hash,
-            title: storedBrief.data.title,
-            summary: storedBrief.data.summary,
+            ...proposalCopy,
           } as const;
           if (input.targetStage === 'plot') {
             const dryRun = this.executeApplyProposal(
@@ -5076,6 +5080,69 @@ function storyProposalDecisionCopy(
     assistantText: 'I received your approval and am applying this stage.',
     applyStartedMessage: 'Applying this stage proposal.',
   };
+}
+
+function downstreamStageProposalCopy(
+  locale: string,
+  stage: 'plot' | 'assets' | 'storyboard',
+  storyTitle: string,
+): { title: string; summary: string } {
+  if (locale === 'zh-CN') {
+    if (stage === 'plot') {
+      return {
+        title: boundedProposalTitle(storyTitle, ' — 情节树'),
+        summary: `基于已审核通过的剧本，为《${storyTitle}》编译互动情节树，供你审核节点、分支和结局。`,
+      };
+    }
+    if (stage === 'assets') {
+      return {
+        title: boundedProposalTitle(storyTitle, ' — 资产规格'),
+        summary: `基于已审核通过的剧本与情节树，为《${storyTitle}》编译角色、场景和关键道具的逻辑资产规格；不会生成图片或视频。`,
+      };
+    }
+    return {
+      title: boundedProposalTitle(storyTitle, ' — 分镜规格'),
+      summary: `基于已审核通过的剧本、情节树与资产规格，为《${storyTitle}》编译分镜序列、镜头和时间轴规格；不会生成图片或视频。`,
+    };
+  }
+  if (locale === 'zh-HK') {
+    if (stage === 'plot') {
+      return {
+        title: boundedProposalTitle(storyTitle, ' — 情節樹'),
+        summary: `基於已審核通過的劇本，為《${storyTitle}》編譯互動情節樹，供你審核節點、分支和結局。`,
+      };
+    }
+    if (stage === 'assets') {
+      return {
+        title: boundedProposalTitle(storyTitle, ' — 資產規格'),
+        summary: `基於已審核通過的劇本與情節樹，為《${storyTitle}》編譯角色、場景和關鍵道具的邏輯資產規格；不會生成圖片或影片。`,
+      };
+    }
+    return {
+      title: boundedProposalTitle(storyTitle, ' — 分鏡規格'),
+      summary: `基於已審核通過的劇本、情節樹與資產規格，為《${storyTitle}》編譯分鏡序列、鏡頭和時間軸規格；不會生成圖片或影片。`,
+    };
+  }
+  if (stage === 'plot') {
+    return {
+      title: boundedProposalTitle(storyTitle, ' — Plot Tree'),
+      summary: `Compile the approved Script for “${storyTitle}” into an interactive Plot Tree for review of its nodes, branches, and endings.`,
+    };
+  }
+  if (stage === 'assets') {
+    return {
+      title: boundedProposalTitle(storyTitle, ' — Asset Specs'),
+      summary: `Compile the approved Script and Plot Tree for “${storyTitle}” into logical character, location, and key-prop Asset Specs. No images or videos will be generated.`,
+    };
+  }
+  return {
+    title: boundedProposalTitle(storyTitle, ' — Storyboard Specs'),
+    summary: `Compile the approved Script, Plot Tree, and Asset Specs for “${storyTitle}” into Storyboard sequences, shots, and timeline specifications. No images or videos will be generated.`,
+  };
+}
+
+function boundedProposalTitle(storyTitle: string, suffix: string): string {
+  return `${storyTitle.slice(0, Math.max(1, 160 - suffix.length))}${suffix}`;
 }
 
 function emptyTransition(): ServiceTransition<void> {

@@ -233,7 +233,7 @@ describe("LangGraph initial-start recovery", () => {
       durableEvents = snapshot.journal.all();
       return { startExecutionDisposition: "accepted" as const };
     });
-    internals.admitDurableStart = vi.fn(async (input, _admissionId) =>
+    internals.admitDurableStart = vi.fn(async (input) =>
       service.beginStart(input, {
         status: "running",
         events: durableEvents,
@@ -778,7 +778,7 @@ describe("LangGraph initial-start recovery", () => {
       })),
       invoke: vi.fn(),
     };
-    let snapshotJournal = new EventJournal();
+    const snapshotJournal = new EventJournal();
     const graphFactory = vi.fn(
       (options: { runtime: { onToolEvent?: typeof runtimeOnToolEvent } }) => {
         runtimeOnToolEvent = options.runtime.onToolEvent;

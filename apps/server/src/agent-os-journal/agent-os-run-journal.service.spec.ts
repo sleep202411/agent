@@ -52,6 +52,40 @@ const EVENT_IDS = [
 ];
 
 describe('AgentOsRunJournalService', () => {
+  it('reads the earliest immutable user message without loading the full journal', async () => {
+    const fixture = createFixture();
+    const started = event(1, 'RunStarted', {
+      turnId: TURN_ID,
+      status: 'running',
+      workspaceType: 'story',
+      modelProfileId: 'qwen-plus',
+    });
+    const initial = event(2, 'UserMessage', {
+      messageId: 'user-message-1',
+      turnId: TURN_ID,
+      text: 'Complete Script, Plot, Assets, and Storyboard stage by stage.',
+    });
+    const followUp = event(3, 'UserMessage', {
+      messageId: 'user-message-2',
+      turnId: TURN_ID,
+      text: 'Approve Script.',
+    });
+    await fixture.service.upsertSnapshot(
+      input('running', [started, initial, followUp]),
+    );
+
+    await expect(
+      fixture.service.getInitialUserMessageText(RUN_ID),
+    ).resolves.toBe(
+      'Complete Script, Plot, Assets, and Storyboard stage by stage.',
+    );
+    expect(fixture.tx.agentOsRunEvent.findFirst).toHaveBeenLastCalledWith({
+      where: { runId: RUN_ID, type: 'UserMessage' },
+      orderBy: { sequence: 'asc' },
+      select: { data: true },
+    });
+  });
+
   it('ignores a late shorter snapshot instead of truncating a terminal run', async () => {
     const fixture = createFixture();
     const started = event(1, 'RunStarted', {
@@ -2056,13 +2090,27 @@ function createFixture() {
         state.events.find((item) => item.id === where.id) ?? null,
     ),
     findFirst: jest.fn(
-      async ({ where }: { where?: { type?: { in?: string[] } } }) => {
-        const allowed = where?.type?.in;
-        return (
-          [...state.events]
-            .reverse()
-            .find((item) => !allowed || allowed.includes(item.type)) ?? null
+      async ({
+        where,
+        orderBy,
+      }: {
+        where?: {
+          runId?: string;
+          type?: string | { in?: string[] };
+        };
+        orderBy?: { sequence?: 'asc' | 'desc' };
+        select?: unknown;
+      }) => {
+        const allowed =
+          typeof where?.type === 'string' ? [where.type] : where?.type?.in;
+        const candidates = state.events.filter(
+          (item) =>
+            (!where?.runId || item.runId === where.runId) &&
+            (!allowed || allowed.includes(item.type)),
         );
+        candidates.sort((left, right) => left.sequence - right.sequence);
+        if (orderBy?.sequence !== 'asc') candidates.reverse();
+        return candidates[0] ?? null;
       },
     ),
     createMany: jest.fn(

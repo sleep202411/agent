@@ -3122,6 +3122,16 @@ export class AgentOsRunJournalService {
     });
     return rows.map(eventRowToEnvelope);
   }
+
+  async getInitialUserMessageText(runId: string): Promise<string | null> {
+    const row = await this.prisma.agentOsRunEvent.findFirst({
+      where: { runId, type: 'UserMessage' },
+      orderBy: { sequence: 'asc' },
+      select: { data: true },
+    });
+    const parsed = UserMessageDataSchema.safeParse(row?.data);
+    return parsed.success ? parsed.data.text : null;
+  }
 }
 
 function normalizeApprovalResponseText(value: string): string {
