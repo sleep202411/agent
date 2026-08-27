@@ -16,11 +16,23 @@ import { CurrentUser, type AuthUser } from '../auth';
 import { AgentOsAttachmentService } from './agent-os-attachment.service';
 import {
   AgentOsApprovalBodySchema,
+  AgentOsModelPreferencesBodySchema,
   AgentOsStartRunBodySchema,
   AgentOsUserInputBodySchema,
+  type AgentOsModelPreferencesBody,
 } from './agent-os-gateway.dto';
 import { ok } from './agent-os-envelope';
 import { AgentOsGatewayService } from './agent-os-gateway.service';
+import { AgentOsModelPreferencesService } from './agent-os-model-preferences.service';
+import { ZodValidationPipe } from '../common/zod.pipe';
+
+// Multer exposes this Busboy option at runtime even though Nest's bundled
+// MulterOptions type omits it. Modern browsers encode multipart filenames as
+// UTF-8, so decode them correctly before they enter the application layer.
+const AGENT_OS_ATTACHMENT_UPLOAD_OPTIONS = {
+  limits: { fileSize: 20 * 1024 * 1024 },
+  defParamCharset: 'utf8',
+};
 
 /**
  * Product control plane for Agent OS.
@@ -34,6 +46,7 @@ export class AgentOsGatewayController {
   constructor(
     private readonly gateway: AgentOsGatewayService,
     private readonly attachments: AgentOsAttachmentService,
+    private readonly modelPreferences: AgentOsModelPreferencesService,
   ) {}
 
   @Get('health')
@@ -44,6 +57,24 @@ export class AgentOsGatewayController {
   @Get('models')
   async listModels() {
     return ok(await this.gateway.listModels());
+  }
+
+  @Get('projects/:projectId/model-preferences')
+  async getModelPreferences(
+    @CurrentUser() user: AuthUser,
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+  ) {
+    return ok(await this.modelPreferences.get(user, projectId));
+  }
+
+  @Post('projects/:projectId/model-preferences')
+  async updateModelPreferences(
+    @CurrentUser() user: AuthUser,
+    @Param('projectId', ParseUUIDPipe) projectId: string,
+    @Body(new ZodValidationPipe(AgentOsModelPreferencesBodySchema))
+    body: AgentOsModelPreferencesBody,
+  ) {
+    return ok(await this.modelPreferences.update(user, projectId, body));
   }
 
   @Get('skills')
@@ -221,11 +252,7 @@ export class AgentOsGatewayController {
   }
 
   @Post('projects/:projectId/attachments')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 20 * 1024 * 1024 },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', AGENT_OS_ATTACHMENT_UPLOAD_OPTIONS))
   async uploadAttachment(
     @CurrentUser() user: AuthUser,
     @Param('projectId', ParseUUIDPipe) projectId: string,

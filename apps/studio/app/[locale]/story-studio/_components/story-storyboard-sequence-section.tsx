@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { IconPhoto, IconVideo } from "@tabler/icons-react";
+import { IconMessageCircle, IconPhoto, IconVideo } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import type { StoryStoryboardSequence } from "@/lib/story-production-api";
+import { Button } from "@/components/ui/button";
 import { StoryProductionConflictPanel } from "./story-production-conflict-panel";
 import { StoryClipDetailDialog } from "./story-clip-detail-dialog";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
@@ -22,11 +23,13 @@ function StoryClipTile({
   sequenceId,
   scope,
   durationLabel,
+  allowGeneration,
 }: {
   clip: StoryStoryboardSequence["clips"][number];
   sequenceId: string;
-  scope: { workspaceId: string; projectId: string; chapterId: string };
+  scope: { projectId: string; chapterId: string };
   durationLabel: string;
+  allowGeneration: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage");
   const boardT = useTranslations("storyStudio.storyboardPage");
@@ -55,7 +58,7 @@ function StoryClipTile({
         label={clip.title}
         selectedMedia={clip.selectedMediaVersion}
         outputKind={clip.kind}
-        clipDurationMs={clip.durationMs}
+        allowGeneration={allowGeneration}
         secondaryAction={
           <button
             type="button"
@@ -72,11 +75,11 @@ function StoryClipTile({
       <StoryClipDetailDialog
         clip={clip}
         sequenceId={sequenceId}
-        workspaceId={scope.workspaceId}
         projectId={scope.projectId}
         chapterId={scope.chapterId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        editable={allowGeneration}
       />
     </div>
   );
@@ -130,10 +133,12 @@ export function StoryStoryboardUnplannedSection({
   nodeId,
   title,
   index,
+  onRequestPlanning,
 }: {
   nodeId: string;
   title: string;
   index: number;
+  onRequestPlanning?: () => void;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
   return (
@@ -151,6 +156,12 @@ export function StoryStoryboardUnplannedSection({
       </div>
       <p className="mt-4 text-sm text-white/64">{t("unplanned")}</p>
       <p className="mt-1 text-xs text-white/50">{t("unplannedHint")}</p>
+      {onRequestPlanning ? (
+        <Button type="button" variant="secondary" className="mt-4" onClick={onRequestPlanning}>
+          <IconMessageCircle aria-hidden="true" className="size-4" />
+          {t("continueWithAgent")}
+        </Button>
+      ) : null}
     </article>
   );
 }
@@ -163,18 +174,18 @@ export function StoryStoryboardUnplannedSection({
 export function StoryStoryboardSequenceSection({
   sequence,
   index,
-  workspaceId,
   projectId,
   chapterId,
+  allowGeneration = true,
 }: {
   sequence: StoryStoryboardSequence;
   index: number;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
+  allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
-  const scope = { workspaceId, projectId, chapterId };
+  const scope = { projectId, chapterId };
   // Storage and timeline invariants stay in milliseconds; seconds are display-only.
   const seconds = (ms: number) => Number((ms / 1000).toFixed(1));
 
@@ -226,6 +237,7 @@ export function StoryStoryboardSequenceSection({
               sequenceId={sequence.id}
               scope={scope}
               durationLabel={t("seconds", { value: seconds(clip.durationMs) })}
+              allowGeneration={allowGeneration}
             />
           ))}
         </div>

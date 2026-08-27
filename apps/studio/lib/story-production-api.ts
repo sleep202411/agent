@@ -284,15 +284,118 @@ export interface PatchStoryStoryboardClipInput {
   videoPrompt?: string | null;
 }
 
+export type StoryGenerationBatchStatus =
+  | "awaiting_confirmation"
+  | "queued"
+  | "running"
+  | "cancelling"
+  | "completed"
+  | "partial_failed"
+  | "cancelled"
+  | "failed"
+  | "expired";
+
+export type StoryGenerationBatchItemStatus =
+  | "awaiting_confirmation"
+  | "ready"
+  | "dispatching"
+  | "submitted"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface StoryGenerationBatchItemError {
+  code: string | null;
+  message: string | null;
+  retryable: boolean | null;
+  requiredAmount: string | null;
+  availableBalance: string | null;
+  unavailableAmount: string | null;
+}
+
+export interface StoryGenerationBatch {
+  id: string;
+  projectId: string;
+  chapterId: string;
+  status: StoryGenerationBatchStatus;
+  totalPoints: number;
+  availablePoints: string | null;
+  itemCount: number;
+  version: number;
+  quoteExpiresAt: string;
+  confirmedAt: string | null;
+  completedAt: string | null;
+  canCancel: boolean;
+  counts: Record<StoryGenerationBatchItemStatus, number>;
+  items: Array<{
+    id: string;
+    ordinal: number;
+    status: StoryGenerationBatchItemStatus;
+    targetId: string;
+    targetVersion: number;
+    outputKind: StoryStoryboardClipKind;
+    modelId: string;
+    schemaVersion: string;
+    quotedPoints: number;
+    generationId: string | null;
+    error: unknown;
+  }>;
+}
+
+export function storyGenerationBatchFailure(
+  batch: StoryGenerationBatch
+): StoryGenerationBatchItemError | null {
+  for (const item of batch.items) {
+    if (item.status !== "failed" || !item.error || typeof item.error !== "object") continue;
+    const error = item.error as Record<string, unknown>;
+    const code = typeof error.code === "string" ? error.code.trim() : "";
+    const message = typeof error.message === "string" ? error.message.trim() : "";
+    if (!code && !message) continue;
+    return {
+      code: code || null,
+      message: message || null,
+      retryable: typeof error.retryable === "boolean" ? error.retryable : null,
+      requiredAmount: stringDetail(error.requiredAmount),
+      availableBalance: stringDetail(error.availableBalance),
+      unavailableAmount: stringDetail(error.unavailableAmount),
+    };
+  }
+  return null;
+}
+
+function stringDetail(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+export interface QuoteStoryAssetGenerationBatchInput {
+  targets: Array<{ id: string; expectedVersion: number }>;
+  outputKind?: StoryStoryboardClipKind;
+  modelId?: string;
+  schemaVersion?: string;
+  options?: Record<string, boolean | number | string | Array<boolean | number | string>>;
+}
+
+/** Keep polling until cancellation and every provider submission have settled. */
+export function storyGenerationBatchHasPendingItems(batch: StoryGenerationBatch): boolean {
+  return (
+    batch.status === "cancelling" ||
+    batch.items.some(
+      (item) =>
+        item.status === "ready" || item.status === "dispatching" || item.status === "submitted"
+    )
+  );
+}
+
 export const storyProductionKeys = {
-  state: (workspaceId: string | null, projectId: string, chapterId: string | null) =>
-    ["story-studio", "production-state", workspaceId, projectId, chapterId] as const,
-  assets: (workspaceId: string | null, projectId: string, chapterId: string | null) =>
-    ["story-studio", "asset-specs", workspaceId, projectId, chapterId] as const,
-  storyboard: (workspaceId: string | null, projectId: string, chapterId: string | null) =>
-    ["story-studio", "storyboard", workspaceId, projectId, chapterId] as const,
+  state: (projectId: string, chapterId: string | null) =>
+    ["story-studio", "production-state", projectId, chapterId] as const,
+  assets: (projectId: string, chapterId: string | null) =>
+    ["story-studio", "asset-specs", projectId, chapterId] as const,
+  storyboard: (projectId: string, chapterId: string | null) =>
+    ["story-studio", "storyboard", projectId, chapterId] as const,
   generation: (
-    workspaceId: string | null,
     projectId: string,
     chapterId: string | null,
     targetKind: "asset_spec" | "storyboard_clip",
@@ -303,7 +406,6 @@ export const storyProductionKeys = {
     [
       "story-studio",
       "production-generation",
-      workspaceId,
       projectId,
       chapterId,
       targetKind,
@@ -311,10 +413,13 @@ export const storyProductionKeys = {
       targetId,
       generationId,
     ] as const,
+  batches: (projectId: string, chapterId: string | null) =>
+    ["story-studio", "generation-batches", projectId, chapterId] as const,
+  batch: (projectId: string, chapterId: string | null, batchId: string) =>
+    [...storyProductionKeys.batches(projectId, chapterId), batchId] as const,
 };
 
 export async function getStoryProductionState(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   signal?: AbortSignal
@@ -322,7 +427,7 @@ export async function getStoryProductionState(
   const value = await api.get<StoryProductionState>(
     chapterPath(projectId, chapterId, "production-state"),
     {
-      headers: workspaceHeaders(workspaceId),
+      requestScope: "project",
       signal,
     }
   );
@@ -331,13 +436,12 @@ export async function getStoryProductionState(
 }
 
 export async function listStoryAssetSpecs(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   signal?: AbortSignal
 ): Promise<StoryAssetSpec[]> {
   const values = await api.get<StoryAssetSpec[]>(chapterPath(projectId, chapterId, "asset-specs"), {
-    headers: workspaceHeaders(workspaceId),
+    requestScope: "project",
     signal,
   });
   values.forEach((value) => assertChapterScope(value, projectId, chapterId));
@@ -345,7 +449,6 @@ export async function listStoryAssetSpecs(
 }
 
 export async function getStoryStoryboard(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   signal?: AbortSignal
@@ -353,7 +456,7 @@ export async function getStoryStoryboard(
   const values = await api.get<StoryStoryboardSequence[]>(
     chapterPath(projectId, chapterId, "storyboard"),
     {
-      headers: workspaceHeaders(workspaceId),
+      requestScope: "project",
       signal,
     }
   );
@@ -362,7 +465,6 @@ export async function getStoryStoryboard(
 }
 
 export async function createStoryAssetGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   assetSpecId: string,
@@ -371,14 +473,71 @@ export async function createStoryAssetGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.post<StoryProductionGeneration>(
     assetGenerationPath(projectId, chapterId, assetSpecId),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
   assertAssetGenerationScope(value, projectId, chapterId, assetSpecId);
   return value;
 }
 
+export async function quoteStoryAssetGenerationBatch(
+  projectId: string,
+  chapterId: string,
+  idempotencyKey: string,
+  input: QuoteStoryAssetGenerationBatchInput
+): Promise<StoryGenerationBatch> {
+  return api.post<StoryGenerationBatch>(
+    `${generationBatchesPath(projectId, chapterId)}/asset-specs/quote`,
+    projectMutationConfig(idempotencyKey, input)
+  );
+}
+
+export async function confirmStoryGenerationBatch(
+  projectId: string,
+  chapterId: string,
+  batchId: string,
+  expectedVersion: number
+): Promise<StoryGenerationBatch> {
+  return api.post<StoryGenerationBatch>(
+    `${generationBatchesPath(projectId, chapterId)}/${encodeURIComponent(batchId)}/confirm`,
+    { data: { expectedVersion }, requestScope: "project" }
+  );
+}
+
+export async function listStoryGenerationBatches(
+  projectId: string,
+  chapterId: string,
+  signal?: AbortSignal
+): Promise<StoryGenerationBatch[]> {
+  return api.get<StoryGenerationBatch[]>(generationBatchesPath(projectId, chapterId), {
+    requestScope: "project",
+    signal,
+  });
+}
+
+export async function getStoryGenerationBatch(
+  projectId: string,
+  chapterId: string,
+  batchId: string,
+  signal?: AbortSignal
+): Promise<StoryGenerationBatch> {
+  return api.get<StoryGenerationBatch>(
+    `${generationBatchesPath(projectId, chapterId)}/${encodeURIComponent(batchId)}`,
+    { requestScope: "project", signal }
+  );
+}
+
+export async function cancelStoryGenerationBatch(
+  projectId: string,
+  chapterId: string,
+  batchId: string
+): Promise<StoryGenerationBatch> {
+  return api.post<StoryGenerationBatch>(
+    `${generationBatchesPath(projectId, chapterId)}/${encodeURIComponent(batchId)}/cancel`,
+    { requestScope: "project" }
+  );
+}
+
 export async function getStoryAssetGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   assetSpecId: string,
@@ -387,14 +546,13 @@ export async function getStoryAssetGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.get<StoryProductionGeneration>(
     assetGenerationPath(projectId, chapterId, assetSpecId, generationId),
-    { headers: workspaceHeaders(workspaceId), signal }
+    { requestScope: "project", signal }
   );
   assertAssetGenerationScope(value, projectId, chapterId, assetSpecId);
   return value;
 }
 
 export async function cancelStoryAssetGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   assetSpecId: string,
@@ -402,14 +560,13 @@ export async function cancelStoryAssetGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.post<StoryProductionGeneration>(
     assetGenerationPath(projectId, chapterId, assetSpecId, generationId, "cancel"),
-    { headers: workspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
   assertAssetGenerationScope(value, projectId, chapterId, assetSpecId);
   return value;
 }
 
 export async function retryStoryAssetGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   assetSpecId: string,
@@ -419,14 +576,13 @@ export async function retryStoryAssetGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.post<StoryProductionGeneration>(
     assetGenerationPath(projectId, chapterId, assetSpecId, generationId, "retry"),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
   assertAssetGenerationScope(value, projectId, chapterId, assetSpecId);
   return value;
 }
 
 export async function retryStoryAssetGenerationMaterialization(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   assetSpecId: string,
@@ -444,14 +600,13 @@ export async function retryStoryAssetGenerationMaterialization(
   assertGenerationCommandUrl(retryUrl, expectedUrl);
   const value = await api.post<StoryProductionGeneration>(
     retryUrl,
-    idempotentCommandConfig(workspaceId, idempotencyKey)
+    projectIdempotentCommandConfig(idempotencyKey)
   );
   assertAssetGenerationScope(value, projectId, chapterId, assetSpecId);
   return value;
 }
 
 export async function createStoryStoryboardClipGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   sequenceId: string,
@@ -461,14 +616,13 @@ export async function createStoryStoryboardClipGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.post<StoryProductionGeneration>(
     clipGenerationPath(projectId, chapterId, sequenceId, clipId),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
   assertClipGenerationScope(value, projectId, chapterId, sequenceId, clipId);
   return value;
 }
 
 export async function getStoryStoryboardClipGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   sequenceId: string,
@@ -478,14 +632,13 @@ export async function getStoryStoryboardClipGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.get<StoryProductionGeneration>(
     clipGenerationPath(projectId, chapterId, sequenceId, clipId, generationId),
-    { headers: workspaceHeaders(workspaceId), signal }
+    { requestScope: "project", signal }
   );
   assertClipGenerationScope(value, projectId, chapterId, sequenceId, clipId);
   return value;
 }
 
 export async function cancelStoryStoryboardClipGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   sequenceId: string,
@@ -494,14 +647,13 @@ export async function cancelStoryStoryboardClipGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.post<StoryProductionGeneration>(
     clipGenerationPath(projectId, chapterId, sequenceId, clipId, generationId, "cancel"),
-    { headers: workspaceHeaders(workspaceId) }
+    { requestScope: "project" }
   );
   assertClipGenerationScope(value, projectId, chapterId, sequenceId, clipId);
   return value;
 }
 
 export async function retryStoryStoryboardClipGeneration(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   sequenceId: string,
@@ -512,14 +664,13 @@ export async function retryStoryStoryboardClipGeneration(
 ): Promise<StoryProductionGeneration> {
   const value = await api.post<StoryProductionGeneration>(
     clipGenerationPath(projectId, chapterId, sequenceId, clipId, generationId, "retry"),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
   assertClipGenerationScope(value, projectId, chapterId, sequenceId, clipId);
   return value;
 }
 
 export async function retryStoryStoryboardClipGenerationMaterialization(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   sequenceId: string,
@@ -539,14 +690,13 @@ export async function retryStoryStoryboardClipGenerationMaterialization(
   assertGenerationCommandUrl(retryUrl, expectedUrl);
   const value = await api.post<StoryProductionGeneration>(
     retryUrl,
-    idempotentCommandConfig(workspaceId, idempotencyKey)
+    projectIdempotentCommandConfig(idempotencyKey)
   );
   assertClipGenerationScope(value, projectId, chapterId, sequenceId, clipId);
   return value;
 }
 
 export async function patchStoryAssetSpec(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   assetSpecId: string,
@@ -555,12 +705,11 @@ export async function patchStoryAssetSpec(
 ): Promise<StoryAssetSpec> {
   return api.patch<StoryAssetSpec>(
     chapterPath(projectId, chapterId, `asset-specs/${encodeURIComponent(assetSpecId)}`),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
 }
 
 export async function patchStoryStoryboardClip(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   sequenceId: string,
@@ -574,12 +723,11 @@ export async function patchStoryStoryboardClip(
       chapterId,
       `storyboard/sequences/${encodeURIComponent(sequenceId)}/clips/${encodeURIComponent(clipId)}`
     ),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
 }
 
 export async function resolveStoryAssetSpecConflict(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   assetSpecId: string,
@@ -592,14 +740,13 @@ export async function resolveStoryAssetSpecConflict(
       chapterId,
       `asset-specs/${encodeURIComponent(assetSpecId)}/conflict-resolution`
     ),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
   assertConflictResolutionScope(value, "asset_spec", assetSpecId, projectId, chapterId);
   return value;
 }
 
 export async function resolveStoryStoryboardSequenceConflict(
-  workspaceId: string,
   projectId: string,
   chapterId: string,
   sequenceId: string,
@@ -612,7 +759,7 @@ export async function resolveStoryStoryboardSequenceConflict(
       chapterId,
       `storyboard/sequences/${encodeURIComponent(sequenceId)}/conflict-resolution`
     ),
-    mutationConfig(workspaceId, idempotencyKey, input)
+    projectMutationConfig(idempotencyKey, input)
   );
   assertConflictResolutionScope(value, "storyboard_sequence", sequenceId, projectId, chapterId);
   return value;
@@ -622,25 +769,12 @@ export function createStoryProductionIdempotencyKey(operation: string): string {
   return `${operation}:${crypto.randomUUID()}`;
 }
 
-async function mutateSequence(
-  workspaceId: string,
-  projectId: string,
-  chapterId: string,
-  suffix: string,
-  idempotencyKey: string,
-  input: unknown,
-  method: "patch" | "put"
-): Promise<StoryStoryboardSequence> {
-  const value = await api[method]<StoryStoryboardSequence>(
-    chapterPath(projectId, chapterId, suffix),
-    mutationConfig(workspaceId, idempotencyKey, input)
-  );
-  assertStoryboardScope(value, projectId, chapterId);
-  return value;
-}
-
 function chapterPath(projectId: string, chapterId: string, suffix: string): string {
   return `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/${suffix}`;
+}
+
+function generationBatchesPath(projectId: string, chapterId: string): string {
+  return chapterPath(projectId, chapterId, "generation-batches");
 }
 
 function assetGenerationPath(
@@ -676,26 +810,18 @@ function clipGenerationPath(
   return `${base}/${encodeURIComponent(generationId)}${action ? `/${action}` : ""}`;
 }
 
-function workspaceHeaders(workspaceId: string): Record<string, string> {
-  return { "x-fizz-workspace-id": workspaceId };
-}
-
-function mutationConfig(workspaceId: string, idempotencyKey: string, data: unknown) {
+function projectMutationConfig(idempotencyKey: string, data: unknown) {
   return {
     data,
-    headers: {
-      ...workspaceHeaders(workspaceId),
-      "Idempotency-Key": idempotencyKey,
-    },
+    requestScope: "project" as const,
+    headers: { "Idempotency-Key": idempotencyKey },
   };
 }
 
-function idempotentCommandConfig(workspaceId: string, idempotencyKey: string) {
+function projectIdempotentCommandConfig(idempotencyKey: string) {
   return {
-    headers: {
-      ...workspaceHeaders(workspaceId),
-      "Idempotency-Key": idempotencyKey,
-    },
+    requestScope: "project" as const,
+    headers: { "Idempotency-Key": idempotencyKey },
   };
 }
 

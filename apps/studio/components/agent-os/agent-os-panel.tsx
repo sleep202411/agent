@@ -9,11 +9,12 @@ import {
   IconChevronDown,
   IconPaperclip,
   IconPuzzle,
+  IconSettings,
+  IconSparkles,
   IconX,
 } from "@tabler/icons-react";
 import { CopilotComposer } from "@/components/copilot/copilot-composer";
 import {
-  FizzAgentModelMenu,
   FizzAgentOrbButton,
   FizzAgentPermissionMenu,
   FizzAgentSurface,
@@ -59,10 +60,16 @@ import { AgentOsApprovalComposer } from "./agent-os-approval-composer";
 import { AgentOsUserInputCard } from "./agent-os-user-input-card";
 import { type ApprovalPayloadLabels } from "./approval-payload";
 import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
-import { deriveAgentActivity, useAgentOsRun } from "./use-agent-os-run";
+import {
+  deriveAgentActivity,
+  useAgentOsRun,
+  type AgentOsTranscriptArtifact,
+} from "./use-agent-os-run";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useProjectUIStore } from "@/app/[locale]/project/_stores/project-ui-store";
 import { listProjectSkillInstallations } from "@/lib/project-skills-api";
+import { AgentComposerPrefillBridge } from "./agent-composer-prefill-bridge";
+import { AgentOsModelSettingsDialog } from "./agent-os-model-settings-dialog";
 
 const PERMISSION_MODES: Array<{
   id: AgentOsPermissionMode;
@@ -87,7 +94,6 @@ const MAX_ATTACHMENTS_PER_TURN = 20;
 const UPLOAD_CONCURRENCY = 3;
 
 const LS_PERM = "fizz:agent-os:permissionMode";
-const LS_MODEL = "fizz:agent-os:modelProfileId";
 
 /**
  * Tools that only read. Anything absent is treated as a write, so a tool added
@@ -140,12 +146,17 @@ interface AgentOsPanelProps {
   approvalGate?: (input: {
     approval: AgentOsPendingApproval;
     busy: boolean;
-    onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<void>;
-  }) => ReactNode | null;
+    onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<boolean>;
+  }) => { composer: ReactNode } | null;
+  /** Host renderer for durable, journal-backed domain artifacts. */
+  artifactRenderer?: (artifact: AgentOsTranscriptArtifact) => ReactNode;
   /** Host-owned work that participates in the Agent's single activity line. */
   activityStatus?: AgentOsActivityStatus | null;
   /** Host-derived copy for the current product phase. */
   composerPlaceholder?: string;
+  /** One-shot, host-suggested natural-language draft. Never auto-submitted. */
+  composerPrefill?: { id: number; text: string } | null;
+  onComposerPrefillConsumed?: (id: number) => void;
 }
 
 /** Agent OS side panel — one durable conversation boundary per project. */
@@ -165,8 +176,11 @@ function AgentOsProjectSession({
   variant,
   composerGate,
   approvalGate,
+  artifactRenderer,
   activityStatus,
   composerPlaceholder,
+  composerPrefill,
+  onComposerPrefillConsumed,
 }: AgentOsPanelProps) {
   const rawLocale = useLocale();
   if (rawLocale !== "en-US" && rawLocale !== "zh-CN" && rawLocale !== "zh-HK") {
@@ -213,12 +227,15 @@ function AgentOsProjectSession({
       : null,
   });
   const [draft, setDraft] = useState("");
+  const applyComposerPrefill = useCallback((text: string) => {
+    // Never destroy a draft the creator already started. The stage CTA still
+    // brings that existing draft into focus, so the user stays in control.
+    setDraft((current) => (current.trim().length > 0 ? current : text));
+  }, []);
   const [pendingFiles, setPendingFiles] = useState<AgentOsAttachmentSummary[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [modelProfileId, setModelProfileId] = useState(() => {
-    const saved = readLs(LS_MODEL);
-    return saved ?? "";
-  });
+  const [modelProfileId, setModelProfileId] = useState("");
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const [permissionMode, setPermissionMode] = useState<AgentOsPermissionMode>(() => {
     const saved = readLs(LS_PERM);
     return saved === "ask" || saved === "smart" || saved === "full" ? saved : "smart";
@@ -237,6 +254,7 @@ function AgentOsProjectSession({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const prevStatusRef = useRef(state.status);
   const lastSyncedRunRef = useRef<string | null>(null);
+
   /** Event cursor. `sequence` restarts per run, so it resets with the run. */
   const seenEventRunRef = useRef<string | null>(null);
   const seenEventSeqRef = useRef(0);
@@ -337,15 +355,20 @@ function AgentOsProjectSession({
   // defaults come exclusively from installed catalog Skills below.
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([agentOsApi.listSkills(projectId, workbenchMode), agentOsApi.listModels()])
-      .then(([skillCatalog, modelCatalog]) => {
+    void Promise.all([
+      agentOsApi.listSkills(projectId, workbenchMode),
+      agentOsApi.listModels(),
+      agentOsApi.getModelPreferences(projectId),
+    ])
+      .then(([skillCatalog, modelCatalog, preferences]) => {
         if (cancelled) return;
         setInvocableSkills(skillCatalog.invocable);
         setModels(modelCatalog.models);
-        // Keep the remembered pick only if the deployment still offers it —
-        // a model can be retired between sessions.
-        setModelProfileId((prev) =>
-          modelCatalog.models.some((m) => m.id === prev) ? prev : (modelCatalog.models[0]?.id ?? "")
+        const preferred = preferences.chatModelProfileId;
+        setModelProfileId(
+          preferred && modelCatalog.models.some((model) => model.id === preferred)
+            ? preferred
+            : (modelCatalog.models[0]?.id ?? "")
         );
         // Drop turn picks that no longer apply to this workbench.
         setTurnSkillIds((prev) =>
@@ -363,10 +386,6 @@ function AgentOsProjectSession({
   useEffect(() => {
     writeLs(LS_PERM, permissionMode);
   }, [permissionMode]);
-
-  useEffect(() => {
-    writeLs(LS_MODEL, modelProfileId);
-  }, [modelProfileId]);
 
   useEffect(() => {
     const prev = prevStatusRef.current;
@@ -467,6 +486,9 @@ function AgentOsProjectSession({
     state.status === "waiting_for_approval" ||
     state.status === "waiting_for_input" ||
     state.status === "waiting_for_external";
+
+  const selectedModelLabel =
+    models.find((model) => model.id === modelProfileId)?.label ?? t("modelProfile");
 
   // Known-offline is the one state where sending cannot work. `null` is "not
   // checked yet" — do not lock the composer on an unanswered probe.
@@ -613,12 +635,12 @@ function AgentOsProjectSession({
   const onApprove = async (
     decision: "approve" | "reject",
     responseText?: string
-  ): Promise<void> => {
+  ): Promise<boolean> => {
     const approvalId = state.pendingApproval?.approvalId;
     // Provisional ids are UI-only until ApprovalRequired lands with a real UUID.
     if (!approvalId || approvalId.startsWith("pending:") || !/^[0-9a-f-]{36}$/i.test(approvalId)) {
       reportIssue(null, t("approvalNotReady"));
-      return;
+      return false;
     }
     setBusy(true);
     try {
@@ -632,8 +654,10 @@ function AgentOsProjectSession({
         modelProfileId,
         permissionMode,
       });
+      return true;
     } catch (error) {
       reportIssue(error, t("approvalFailed"));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -666,12 +690,25 @@ function AgentOsProjectSession({
     storyEntry: t("approvalStoryEntry"),
     sceneOrder: t("approvalSceneOrder"),
     storyScene: t("approvalStoryScene"),
+    generationBatch: t("approvalGenerationBatch"),
+    generationBatchSummary: (count, points) =>
+      t("approvalGenerationBatchSummary", { count, points }),
   };
+
+  const approval = state.pendingApproval;
+  const hostApproval = approval
+    ? approvalGate?.({
+        approval,
+        busy,
+        onResolve: onApprove,
+      })
+    : null;
 
   // Every user decision replaces the input box (Claude/Codex
   // approve-to-continue). Agent OS HITL wins over any host gate (for example
   // story's proposal gate): the graph is paused, so this is the only way
-  // forward. Neither question nor approval cards ever enter the transcript.
+  // forward. The decision control stays composer-only; durable review content
+  // is rendered independently from Artifact events in the transcript.
   const combinedComposerGate = (composerNode: ReactNode): ReactNode => {
     const gated = composerGate ? composerGate(composerNode) : composerNode;
     const inputRequest = state.pendingUserInput;
@@ -692,14 +729,8 @@ function AgentOsProjectSession({
         />
       );
     }
-    const approval = state.pendingApproval;
     if (!approval) return gated;
-    const hostApproval = approvalGate?.({
-      approval,
-      busy,
-      onResolve: onApprove,
-    });
-    if (hostApproval != null) return hostApproval;
+    if (hostApproval != null) return hostApproval.composer;
     return (
       <AgentOsApprovalComposer
         approval={approval}
@@ -740,72 +771,99 @@ function AgentOsProjectSession({
       }}
       busy={turnBusy}
       headerActions={
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <button
-              type="button"
-              aria-label={t("runDetails.open")}
-              title={t("runDetails.open")}
-              className={cn(
-                "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
-                diagnosticIssue
-                  ? "bg-red-500/12 text-red-300 hover:bg-red-500/20 hover:text-red-200"
-                  : "bg-white/[0.05] text-white/72 hover:bg-white/[0.1] hover:text-white"
-              )}
-            >
-              {diagnosticIssue ? (
-                <IconAlertTriangle aria-hidden="true" className="size-4" />
-              ) : (
-                <IconAlertCircle aria-hidden="true" className="size-4" />
-              )}
-              {diagnosticIssue ? (
-                <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-red-400 ring-2 ring-[oklch(0.145_0_0)]" />
-              ) : null}
-            </button>
-          </AlertDialogTrigger>
-          <AlertDialogContent className="liquid-rim bg-[oklch(0.18_0_0_/_0.98)] ring-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.68)] backdrop-blur-[36px]">
-            <AlertDialogHeader>
-              <AlertDialogMedia>
-                <IconAlertCircle aria-hidden="true" />
-              </AlertDialogMedia>
-              <AlertDialogTitle>{t("runDetails.title")}</AlertDialogTitle>
-              <AlertDialogDescription>{t("runDetails.description")}</AlertDialogDescription>
-            </AlertDialogHeader>
-            <dl className="grid gap-2 rounded-xl bg-white/[0.035] p-3 text-xs">
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-white/42">{t("runDetails.status")}</dt>
-                <dd className="text-right font-medium text-white/82">
-                  {t(`runDetails.statusValue.${state.status}`)}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <dt className="shrink-0 text-white/42">{t("runDetails.conversationId")}</dt>
-                <dd className="min-w-0 break-all text-right font-mono text-[11px] text-white/68">
-                  {state.conversationId ?? t("runDetails.notAvailable")}
-                </dd>
-              </div>
-              {diagnosticIssue ? (
-                <div className="grid gap-1 border-t border-white/[0.07] pt-2">
-                  <dt className="text-white/42">{t("runDetails.latestIssue")}</dt>
-                  <dd className="break-words text-xs/relaxed text-red-200/85">
-                    {diagnosticIssue.message}
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={turnBusy}
+            onClick={() => setModelSettingsOpen(true)}
+            aria-label={t("modelSettings.open")}
+            title={t("modelSettings.open")}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-white/[0.05] text-white/72 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
+          >
+            <IconSettings aria-hidden="true" className="size-4" />
+          </button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                aria-label={t("runDetails.open")}
+                title={t("runDetails.open")}
+                className={cn(
+                  "relative flex size-8 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70",
+                  diagnosticIssue
+                    ? "bg-red-500/12 text-red-300 hover:bg-red-500/20 hover:text-red-200"
+                    : "bg-white/[0.05] text-white/72 hover:bg-white/[0.1] hover:text-white"
+                )}
+              >
+                {diagnosticIssue ? (
+                  <IconAlertTriangle aria-hidden="true" className="size-4" />
+                ) : (
+                  <IconAlertCircle aria-hidden="true" className="size-4" />
+                )}
+                {diagnosticIssue ? (
+                  <span className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-red-400 ring-2 ring-[oklch(0.145_0_0)]" />
+                ) : null}
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="liquid-rim bg-[oklch(0.18_0_0_/_0.98)] ring-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.68)] backdrop-blur-[36px]">
+              <AlertDialogHeader>
+                <AlertDialogMedia>
+                  <IconAlertCircle aria-hidden="true" />
+                </AlertDialogMedia>
+                <AlertDialogTitle>{t("runDetails.title")}</AlertDialogTitle>
+                <AlertDialogDescription>{t("runDetails.description")}</AlertDialogDescription>
+              </AlertDialogHeader>
+              <dl className="grid gap-2 rounded-xl bg-white/[0.035] p-3 text-xs">
+                <div className="flex items-start justify-between gap-4">
+                  <dt className="text-white/42">{t("runDetails.status")}</dt>
+                  <dd className="text-right font-medium text-white/82">
+                    {t(`runDetails.statusValue.${state.status}`)}
                   </dd>
-                  {diagnosticIssue.technicalDetail ? (
-                    <>
-                      <dt className="mt-1 text-white/42">{t("runDetails.technicalDetail")}</dt>
-                      <dd className="break-all font-mono text-[11px] text-white/58">
-                        {diagnosticIssue.technicalDetail}
-                      </dd>
-                    </>
-                  ) : null}
                 </div>
-              ) : null}
-            </dl>
-            <AlertDialogFooter>
-              <AlertDialogAction variant="secondary">{t("runDetails.close")}</AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+                <div className="flex items-start justify-between gap-4">
+                  <dt className="shrink-0 text-white/42">{t("runDetails.conversationId")}</dt>
+                  <dd className="min-w-0 break-all text-right font-mono text-[11px] text-white/68">
+                    {state.conversationId ?? t("runDetails.notAvailable")}
+                  </dd>
+                </div>
+                {diagnosticIssue ? (
+                  <div className="grid gap-1 border-t border-white/[0.07] pt-2">
+                    <dt className="text-white/42">{t("runDetails.latestIssue")}</dt>
+                    <dd className="break-words text-xs/relaxed text-red-200/85">
+                      {diagnosticIssue.message}
+                    </dd>
+                    {diagnosticIssue.technicalDetail ? (
+                      <>
+                        <dt className="mt-1 text-white/42">{t("runDetails.technicalDetail")}</dt>
+                        <dd className="break-all font-mono text-[11px] text-white/58">
+                          {diagnosticIssue.technicalDetail}
+                        </dd>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+              </dl>
+              <AlertDialogFooter>
+                <AlertDialogAction variant="secondary">{t("runDetails.close")}</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <AgentOsModelSettingsDialog
+            projectId={projectId}
+            chatModels={models}
+            open={modelSettingsOpen}
+            onOpenChange={setModelSettingsOpen}
+            disabled={turnBusy}
+            onSaved={(preferences) => {
+              const preferred = preferences.chatModelProfileId;
+              setModelProfileId(
+                preferred && models.some((model) => model.id === preferred)
+                  ? preferred
+                  : (models[0]?.id ?? "")
+              );
+            }}
+          />
+        </div>
       }
       onOpenChange={
         onClose
@@ -816,6 +874,11 @@ function AgentOsProjectSession({
       }
       composer={
         <div className="space-y-2">
+          <AgentComposerPrefillBridge
+            request={composerPrefill}
+            onPrefill={applyComposerPrefill}
+            onConsumed={onComposerPrefillConsumed}
+          />
           <input
             ref={fileInputRef}
             type="file"
@@ -874,6 +937,7 @@ function AgentOsProjectSession({
             stopLabel={t("stop")}
             stopAvailable={state.pendingExternal?.toolId !== "story.applyProposal"}
             autoFocus
+            focusRequestKey={composerPrefill?.id}
             appearance="fizz-agent"
             leadingAction={
               <button
@@ -900,17 +964,17 @@ function AgentOsProjectSession({
                   }))}
                   onValueChange={setPermissionMode}
                 />
-                <FizzAgentModelMenu
-                  value={modelProfileId}
+                <button
+                  type="button"
                   disabled={turnBusy}
-                  label={t("modelProfile")}
-                  options={models.map((profile) => ({
-                    value: profile.id,
-                    label: profile.label,
-                    hint: profile.hint,
-                  }))}
-                  onValueChange={setModelProfileId}
-                />
+                  onClick={() => setModelSettingsOpen(true)}
+                  aria-label={t("modelSettings.open")}
+                  title={t("modelSettings.open")}
+                  className="inline-flex h-7 min-w-0 max-w-32 items-center gap-1.5 rounded-lg px-2 text-[11px] text-white/72 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70 disabled:opacity-45"
+                >
+                  <IconSparkles aria-hidden="true" className="size-3.5 shrink-0" />
+                  <span className="truncate">{selectedModelLabel}</span>
+                </button>
               </div>
             }
             attachmentBar={
@@ -1075,6 +1139,7 @@ function AgentOsProjectSession({
         error={runErrorText}
         busy={busy}
         activityStatus={effectiveActivityStatus}
+        artifactRenderer={artifactRenderer}
         labels={{
           transcript: t("transcriptLabel"),
           scrollToLatest: t("scrollToLatest"),

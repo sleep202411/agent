@@ -167,4 +167,24 @@ describe('AgentOsDomainService project-kind routing', () => {
     });
     expect(platformHandler.execute).not.toHaveBeenCalled();
   });
+
+  it('returns a durable domain failure when a handler throws an unexpected error', async () => {
+    const { service, storyHandler } = makeService({ projectKind: 'story' });
+    storyHandler.execute.mockRejectedValueOnce(
+      new TypeError('Undefined value at $.input.modelId.'),
+    );
+
+    await expect(service.execute(INPUT)).resolves.toEqual({
+      ok: false,
+      code: 'AGENT_OS_DOMAIN_INTERNAL_ERROR',
+      message:
+        'The Agent domain could not complete this tool because of an internal error.',
+      retryable: false,
+      details: {
+        runId: INPUT.runId,
+        toolCallId: INPUT.toolCallId,
+        toolId: INPUT.toolId,
+      },
+    });
+  });
 });

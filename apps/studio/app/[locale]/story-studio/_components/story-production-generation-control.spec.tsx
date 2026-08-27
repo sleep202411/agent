@@ -72,6 +72,15 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.getAsset).not.toHaveBeenCalled();
   });
 
+  it("keeps stale production targets inspectable without exposing generation actions", async () => {
+    await renderControl(assetTarget(null), false);
+
+    expect(button("generate")).toBeNull();
+    expect(button("retry")).toBeNull();
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
+    expect(apiMocks.retryAsset).not.toHaveBeenCalled();
+  });
+
   it("submits one default command even when the Generate button is clicked twice rapidly", async () => {
     const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
     apiMocks.createAsset.mockResolvedValue(accepted);
@@ -85,7 +94,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(1));
     expect(apiMocks.createAsset).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -109,7 +117,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
     expect(apiMocks.getClip).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -121,7 +128,6 @@ describe("StoryProductionGenerationControl", () => {
     await act(async () => button("cancel")?.click());
     await vi.waitFor(() => expect(apiMocks.cancelClip).toHaveBeenCalledTimes(1));
     expect(apiMocks.cancelClip).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -145,7 +151,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.retryAsset).toHaveBeenCalledTimes(1));
     expect(apiMocks.retryAsset).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -190,7 +195,6 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.retryClip).not.toHaveBeenCalled();
     expect(apiMocks.createClip).not.toHaveBeenCalled();
     expect(apiMocks.retryClipAttachment).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -216,29 +220,30 @@ describe("StoryProductionGenerationControl", () => {
     const keys = invalidate.mock.calls.map(([filters]) => filters?.queryKey);
     expect(keys).toEqual(
       expect.arrayContaining([
-        ["story-studio", "production-state", "workspace-1", "project-1", "chapter-1"],
-        ["story-studio", "asset-specs", "workspace-1", "project-1", "chapter-1"],
-        ["story-studio", "storyboard", "workspace-1", "project-1", "chapter-1"],
+        ["story-studio", "production-state", "project-1", "chapter-1"],
+        ["story-studio", "asset-specs", "project-1", "chapter-1"],
+        ["story-studio", "storyboard", "project-1", "chapter-1"],
       ])
     );
     expect(keys.flat()).not.toContain("chapter-2");
   });
 
   async function renderControl(
-    target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>
+    target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>,
+    allowGeneration = true
   ) {
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
           <StoryProductionGenerationControl
             scope={{
-              workspaceId: "workspace-1",
               projectId: "project-1",
               chapterId: "chapter-1",
             }}
             target={target}
             label="Production target"
             selectedMedia={null}
+            allowGeneration={allowGeneration}
           />
         </QueryClientProvider>
       );

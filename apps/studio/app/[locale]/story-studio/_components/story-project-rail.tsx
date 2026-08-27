@@ -1,16 +1,25 @@
 "use client";
 
-import type { ComponentType } from "react";
+import { useTransition, type ComponentType } from "react";
 import {
   IconBook2,
   IconClipboardList,
+  IconLanguage,
   IconListTree,
   IconMovie,
   IconShare3,
 } from "@tabler/icons-react";
-import { useTranslations } from "next-intl";
-import { useSelectedLayoutSegment } from "next/navigation";
-import { Link } from "@/i18n/navigation";
+import { useLocale, useTranslations } from "next-intl";
+import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { LOCALE_OPTIONS, isValidLocale } from "@/i18n/config";
+import { Link, usePathname, useRouter } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { isProductionStepSegment } from "../_lib/production-steps";
 import { MATERIAL_CANVAS_ENABLED } from "../_lib/feature-flags";
@@ -27,6 +36,12 @@ type RailIcon = ComponentType<{ className?: string; stroke?: number }>;
 export function StoryProjectRail({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
   const t = useTranslations("storyStudio.canvas");
+  const tLocale = useTranslations("localeSwitcher");
+  const locale = useLocale();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [, startLocaleTransition] = useTransition();
   const sidePanel = useStoryProjectUiStore((state) => state.sidePanel);
   const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
   const setShareOpen = useStoryProjectUiStore((state) => state.setShareOpen);
@@ -43,6 +58,12 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
   const openShare = () => {
     setSidePanel(null);
     setShareOpen(!shareOpen);
+  };
+  const selectLocale = (next: string) => {
+    if (!isValidLocale(next) || next === locale) return;
+    const query = searchParams.toString();
+    const href = query ? `${pathname}?${query}` : pathname;
+    startLocaleTransition(() => router.replace(href, { locale: next }));
   };
 
   return (
@@ -78,6 +99,30 @@ export function StoryProjectRail({ projectId }: { projectId: string }) {
           />
         )}
         <div className="flex-1" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label={tLocale("label")}
+              className={storyProjectRailItemClass()}
+            >
+              <StoryProjectRailItemContent icon={IconLanguage} label={tLocale("label")} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="end" sideOffset={8} className="min-w-40 p-1.5">
+            <DropdownMenuRadioGroup value={locale} onValueChange={selectLocale}>
+              {LOCALE_OPTIONS.map((option) => (
+                <DropdownMenuRadioItem
+                  key={option.value}
+                  value={option.value}
+                  className="rounded-lg text-sm"
+                >
+                  {option.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <RailButton icon={IconShare3} label={t("share")} active={shareOpen} onClick={openShare} />
       </nav>
     </aside>

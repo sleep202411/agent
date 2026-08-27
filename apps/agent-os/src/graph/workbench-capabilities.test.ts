@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { resolveSkillMounts } from "@repo/agent-skills";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 
 import {
   buildLangChainTools,
@@ -75,8 +76,49 @@ describe("skill mounts (system workbench skills)", () => {
     expect(mount.instructions).toMatch(/script\.status=missing selects screenplay creation/);
     expect(mount.instructions).toMatch(/productionState\.ready=true\s+selects no-op/);
     const storyAuthor = tools.find((tool) => tool.name === "story_author");
-    expect(storyAuthor?.description).toMatch(/Server-side canonical production planner/);
+    expect(storyAuthor?.description).toMatch(/Server-side canonical next-stage planner/);
+    expect(storyAuthor?.description).toMatch(/Set continueThrough once/);
     expect(storyAuthor?.description).toMatch(/never generates images or videos/i);
+    const quoteAssets = tools.find((tool) => tool.name === "story_generation_quoteAssets");
+    expect(
+      quoteAssets?.schema.safeParse({
+        assetKinds: ["character"],
+        outputKind: "image",
+      }).success
+    ).toBe(true);
+    expect(
+      quoteAssets?.schema.safeParse({
+        assetKinds: '["character"]',
+        outputKind: "image",
+      }).success
+    ).toBe(false);
+  });
+
+  it("binds every curated Story visual-style Skill as a creative-profile value", () => {
+    const mount = resolveSkillMounts({ projectKind: "story", workbenchMode: "story" });
+    const tool = buildLangChainTools(runtime, mount.toolIds).find(
+      (candidate) => candidate.name === "story_confirmCreativeProfile"
+    );
+    expect(tool).toBeDefined();
+
+    for (const visualDirection of STORY_VISUAL_STYLE_SKILL_SLUGS) {
+      expect(
+        tool?.schema.safeParse({
+          aspectRatio: "portrait_9_16",
+          targetRuntime: "short_5_15",
+          visualDirection,
+          storyLanguage: "zh-CN",
+        }).success
+      ).toBe(true);
+    }
+    expect(
+      tool?.schema.safeParse({
+        aspectRatio: "portrait_9_16",
+        targetRuntime: "short_5_15",
+        visualDirection: "cinematic_realism",
+        storyLanguage: "zh-CN",
+      }).success
+    ).toBe(false);
   });
 
   it("returns complete creative-profile answers without allowing known values to be overwritten", () => {
@@ -84,7 +126,7 @@ describe("skill mounts (system workbench skills)", () => {
       userInputResumePayload(
         {
           aspect_ratio: "landscape_16_9",
-          visual_direction: "cinematic_realism",
+          visual_direction: "cinematic-realism",
         },
         {
           requestId: "11111111-1111-4111-8111-111111111111",
@@ -100,7 +142,7 @@ describe("skill mounts (system workbench skills)", () => {
       answers: {
         aspect_ratio: "landscape_16_9",
         target_runtime: "short_5_15",
-        visual_direction: "cinematic_realism",
+        visual_direction: "cinematic-realism",
         story_language: "zh-CN",
       },
     });

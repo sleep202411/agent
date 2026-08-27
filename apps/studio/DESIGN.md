@@ -83,6 +83,13 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
      wires are colored. The video connector is the one sanctioned, deliberate
      use of brand red as a functional accent (rule 3) — it is still not a
      token and never tints a surface.
+   - **Story decision nodes** are one neutral branch card, not a blue card
+     nested inside another card. The question sits above a stable list of
+     options; every option owns a dedicated right-edge connector rail and an
+     always-visible blue source handle centred on that row. Hover editing may
+     replace destination metadata, but it must never hide, move, or resize the
+     handle. Interaction blue is confined to the branch icon, indices, rail,
+     and handle; the card and rows remain zero-chroma.
    - **Commerce accents** (subscription / pricing surfaces only, decided
      2026-06-12 against the imagine.art reference, restyled to the AI-glass
      language 2026-06-22): the cards are AI-glass surfaces — every plan card

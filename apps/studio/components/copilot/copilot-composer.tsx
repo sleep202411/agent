@@ -23,6 +23,7 @@ export function CopilotComposer({
   /** Sits immediately left of the send/stop button (e.g. model / permission selects). */
   beforeSend,
   autoFocus = false,
+  focusRequestKey,
   appearance = "default",
   className,
 }: {
@@ -48,6 +49,8 @@ export function CopilotComposer({
   /** Bottom toolbar, immediately left of send/stop (mode / model). */
   beforeSend?: ReactNode;
   autoFocus?: boolean;
+  /** Focus the textarea whenever a host issues a new, one-shot request. */
+  focusRequestKey?: string | number | null;
   appearance?: "default" | "fizz-agent";
   className?: string;
 }) {
@@ -80,6 +83,11 @@ export function CopilotComposer({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 144)}px`;
     textarea.style.overflowY = textarea.scrollHeight > 144 ? "auto" : "hidden";
   }, [inlineTokens, tokenIndent, value]);
+
+  useLayoutEffect(() => {
+    if (focusRequestKey == null) return;
+    textareaRef.current?.focus();
+  }, [focusRequestKey]);
 
   const canSend = (Boolean(value.trim()) || canSendWithoutText) && !sendDisabled && !busy;
   /**

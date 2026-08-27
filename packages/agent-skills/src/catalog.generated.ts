@@ -257,7 +257,7 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
     publisherName: "FizzDragon",
     category: "style",
     kind: "general",
-    previewImageFile: "classic-cel-animation-v2.jpg",
+    previewImageFile: "classic-cel-animation.jpg",
     previewVideoFile: null,
     version: {
       id: "20000000-0000-7000-8000-000000000006",
@@ -306,7 +306,7 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
     publisherName: "FizzDragon",
     category: "style",
     kind: "general",
-    previewImageFile: "stop-motion-clay-cinema-v2.jpg",
+    previewImageFile: "stop-motion-clay-cinema.jpg",
     previewVideoFile: null,
     version: {
       id: "20000000-0000-7000-8000-000000000007",
@@ -355,7 +355,7 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
     publisherName: "FizzDragon",
     category: "style",
     kind: "general",
-    previewImageFile: "ink-wash-cinema-v2.jpg",
+    previewImageFile: "ink-wash-cinema.jpg",
     previewVideoFile: null,
     version: {
       id: "20000000-0000-7000-8000-000000000008",
@@ -404,7 +404,7 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
     publisherName: "FizzDragon",
     category: "style",
     kind: "general",
-    previewImageFile: "retro-anime-key-visual-v2.jpg",
+    previewImageFile: "retro-anime-key-visual.jpg",
     previewVideoFile: null,
     version: {
       id: "20000000-0000-7000-8000-000000000009",
@@ -591,20 +591,24 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
     translationKey: "pixelArtAdventure",
     publisherName: "FizzDragon",
     category: "style",
-    kind: "image",
-    previewImageFile: "pixel-art-adventure-v2.jpg",
+    kind: "general",
+    previewImageFile: "pixel-art-adventure.jpg",
     previewVideoFile: null,
     version: {
-      id: "20000000-0000-7000-8000-000000000013",
-      version: "1.0.0",
+      id: "20000000-0000-7000-8000-000000000033",
+      version: "1.1.0",
       manifestSchemaVersion: "fizzdragon.skill/v1",
-      publishedAt: "2026-08-11T12:00:00.000Z",
+      publishedAt: "2026-08-25T12:00:00.000Z",
       instructions:
         "## Project Skill: Pixel Art Adventure\n\nUse a consistent pixel grid, intentional cluster shapes, readable silhouettes, limited palette ramps, selective dithering, tile-aware environment design, and no mixed-resolution smoothing.\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.",
       generationPolicy: {
         image: {
           promptSuffix:
             "Render on a consistent pixel grid with crisp nearest-neighbor edges, disciplined color ramps, readable character and environment silhouettes, selective dithering, tile-aware detail, cinematic lighting, and no anti-aliasing or mixed pixel scales.",
+        },
+        video: {
+          promptSuffix:
+            "Animate on one stable pixel grid with deliberate frame timing, readable key poses, crisp nearest-neighbor edges, coherent palette ramps, tile-aware parallax, and restrained camera movement aligned to whole pixels. Preserve sprite scale and silhouette; avoid subpixel shimmer, anti-aliasing, interpolation blur, or mixed-resolution effects.",
         },
         promptAuthoring: {
           instructions:
@@ -616,7 +620,7 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
         additionalProperties: false,
         properties: {},
       },
-      capabilities: ["prompt_authoring", "image_generation"],
+      capabilities: ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
       projectKinds: ["platform", "story"],
       workbenchModes: [],
       toolIds: [],
@@ -680,20 +684,24 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
     translationKey: "surrealCollageDreamscape",
     publisherName: "FizzDragon",
     category: "style",
-    kind: "image",
-    previewImageFile: "surreal-collage-dreamscape-v2.jpg",
+    kind: "general",
+    previewImageFile: "surreal-collage-dreamscape.jpg",
     previewVideoFile: null,
     version: {
-      id: "20000000-0000-7000-8000-000000000015",
-      version: "1.0.0",
+      id: "20000000-0000-7000-8000-000000000034",
+      version: "1.1.0",
       manifestSchemaVersion: "fizzdragon.skill/v1",
-      publishedAt: "2026-08-11T12:00:00.000Z",
+      publishedAt: "2026-08-25T12:00:00.000Z",
       instructions:
         "## Project Skill: Surreal Collage Dreamscape\n\nConstruct a coherent visual metaphor using cut-paper edges, archival print texture, surprising scale relationships, restrained object count, believable cast shadows, and intentional negative space.\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.",
       generationPolicy: {
         image: {
           promptSuffix:
             "Create an original analog photomontage with tactile paper fibers, visible cut edges, archival print variation, one surprising scale relationship, coherent cast shadows, a restrained palette, a readable focal metaphor, and intentional negative space.",
+        },
+        video: {
+          promptSuffix:
+            "Animate as tactile paper collage with restrained rostrum-camera moves, layered cutout parallax, visible paper edges, coherent cast shadows, deliberate hinge or slide motion, and one clear evolving visual metaphor. Preserve the analog print texture and object scale logic; avoid liquid morphing, weightless floating, or excessive moving elements.",
         },
         promptAuthoring: {
           instructions:
@@ -705,7 +713,7 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
         additionalProperties: false,
         properties: {},
       },
-      capabilities: ["prompt_authoring", "image_generation"],
+      capabilities: ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
       projectKinds: ["platform", "story"],
       workbenchModes: [],
       toolIds: [],
@@ -1299,6 +1307,202 @@ export const GENERATED_BUNDLED_CATALOG_SKILLS = [
         allowsPaidGeneration: false,
       },
       evalSuite: "evals/project-skills/intelligent-subtitle-director/v1",
+    },
+  },
+  {
+    id: "10000000-0000-7000-8000-000000000029",
+    slug: "cinematic-realism",
+    name: "Cinematic Realism",
+    description:
+      "Grounded live-action cinema with physically credible light, lenses, materials, environments and human performance.",
+    translationKey: "cinematicRealism",
+    publisherName: "FizzDragon",
+    category: "style",
+    kind: "general",
+    previewImageFile: "cinematic-realism.jpg",
+    previewVideoFile: null,
+    version: {
+      id: "20000000-0000-7000-8000-000000000029",
+      version: "1.0.0",
+      manifestSchemaVersion: "fizzdragon.skill/v1",
+      publishedAt: "2026-08-25T12:00:00.000Z",
+      instructions:
+        "## Project Skill: Cinematic Realism\n\nUse grounded live-action film language: motivated camera and lens choices, physically credible lighting, natural material response, production-readable blocking, restrained color science, and subtle human performance. Avoid plastic skin, weightless motion, excessive bloom, generic teal-orange grading, and impossible depth of field.\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.",
+      generationPolicy: {
+        image: {
+          promptSuffix:
+            "Render as a grounded live-action film frame with plausible lens perspective, motivated practical light, natural skin and fabric texture, material wear, atmospheric depth, contact shadows, restrained highlight roll-off, and an unforced cinematic composition. Keep faces and bodies anatomically credible; avoid glossy synthetic polish.",
+        },
+        video: {
+          promptSuffix:
+            "Stage motion with believable weight, inertia, eyelines, foot contact, cloth response, and environmental interaction. Use motivated camera movement, stable spatial continuity, natural performance beats, coherent light through the shot, and a composed end frame. Avoid floaty bodies, morphing anatomy, or gratuitous camera motion.",
+        },
+        promptAuthoring: {
+          instructions:
+            "Use grounded live-action film language: motivated camera and lens choices, physically credible lighting, natural material response, production-readable blocking, restrained color science, and subtle human performance. Avoid plastic skin, weightless motion, excessive bloom, generic teal-orange grading, and impossible depth of field.",
+        },
+      },
+      configSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      capabilities: ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+      projectKinds: ["platform", "story"],
+      workbenchModes: [],
+      toolIds: [],
+      riskPolicy: {
+        allowsWrite: false,
+        allowsPaidGeneration: false,
+      },
+      evalSuite: "evals/project-skills/cinematic-realism/v1",
+    },
+  },
+  {
+    id: "10000000-0000-7000-8000-000000000030",
+    slug: "stylized-3d-cinema",
+    name: "Stylized 3D Cinema",
+    description:
+      "Feature-animation 3D with designed proportions, tactile materials, graphic lighting and cinematic camera language.",
+    translationKey: "stylized3dCinema",
+    publisherName: "FizzDragon",
+    category: "style",
+    kind: "general",
+    previewImageFile: "stylized-3d-cinema.jpg",
+    previewVideoFile: null,
+    version: {
+      id: "20000000-0000-7000-8000-000000000030",
+      version: "1.0.0",
+      manifestSchemaVersion: "fizzdragon.skill/v1",
+      publishedAt: "2026-08-25T12:00:00.000Z",
+      instructions:
+        "## Project Skill: Stylized 3D Cinema\n\nUse feature-animation 3D language with intentionally designed proportions, coherent silhouette families, tactile simplified materials, graphic value grouping, cinematic lenses, atmospheric depth, and expressive but physically readable performance. Avoid default game-engine gloss, noisy micro-detail, inconsistent stylization, and toy-like weightlessness.\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.",
+      generationPolicy: {
+        image: {
+          promptSuffix:
+            "Render as a polished stylized 3D film frame with designed proportions, strong readable silhouettes, tactile materials, controlled surface detail, graphic key lighting, soft atmospheric depth, cinematic composition, and appealing facial expression. Avoid generic glossy plastic, flat viewport lighting, or photoreal skin pasted onto stylized forms.",
+        },
+        video: {
+          promptSuffix:
+            "Animate with clear anticipation, appealing arcs, believable weight, squash and stretch only where the design supports it, stable volume, coherent materials, motivated cinematic camera movement, and a strong final pose. Avoid rubbery deformation, sliding feet, or uncontrolled camera orbiting.",
+        },
+        promptAuthoring: {
+          instructions:
+            "Use feature-animation 3D language with intentionally designed proportions, coherent silhouette families, tactile simplified materials, graphic value grouping, cinematic lenses, atmospheric depth, and expressive but physically readable performance. Avoid default game-engine gloss, noisy micro-detail, inconsistent stylization, and toy-like weightlessness.",
+        },
+      },
+      configSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      capabilities: ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+      projectKinds: ["platform", "story"],
+      workbenchModes: [],
+      toolIds: [],
+      riskPolicy: {
+        allowsWrite: false,
+        allowsPaidGeneration: false,
+      },
+      evalSuite: "evals/project-skills/stylized-3d-cinema/v1",
+    },
+  },
+  {
+    id: "10000000-0000-7000-8000-000000000031",
+    slug: "anime-cinematic",
+    name: "Anime Cinematic",
+    description:
+      "Contemporary cinematic anime with authored layouts, expressive acting, atmospheric backgrounds and dynamic readable motion.",
+    translationKey: "animeCinematic",
+    publisherName: "FizzDragon",
+    category: "style",
+    kind: "general",
+    previewImageFile: "anime-cinematic.jpg",
+    previewVideoFile: null,
+    version: {
+      id: "20000000-0000-7000-8000-000000000031",
+      version: "1.0.0",
+      manifestSchemaVersion: "fizzdragon.skill/v1",
+      publishedAt: "2026-08-25T12:00:00.000Z",
+      instructions:
+        "## Project Skill: Anime Cinematic\n\nUse contemporary cinematic anime language: authored perspective layouts, clean expressive linework, controlled cel shadow shapes, luminous atmospheric backgrounds, purposeful environmental motion, strong key poses, and emotionally legible acting. Avoid generic fan-art composition, excessive effects, unstable facial design, and indiscriminate speed lines.\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.",
+      generationPolicy: {
+        image: {
+          promptSuffix:
+            "Create a contemporary anime film frame with a deliberate cinematic layout, clean character linework, controlled cel shading, atmospheric painted background depth, motivated luminous light, restrained environmental particles, and a clear emotional gesture. Keep anatomy, costume details, and facial identity stable; avoid glossy 3D rendering.",
+        },
+        video: {
+          promptSuffix:
+            "Animate through strong readable key poses, purposeful holds, expressive timing, stable facial design, coherent cel shadows, environmental follow-through, and motivated camera movement. Use impact frames or smears sparingly and end on a clean composed key pose.",
+        },
+        promptAuthoring: {
+          instructions:
+            "Use contemporary cinematic anime language: authored perspective layouts, clean expressive linework, controlled cel shadow shapes, luminous atmospheric backgrounds, purposeful environmental motion, strong key poses, and emotionally legible acting. Avoid generic fan-art composition, excessive effects, unstable facial design, and indiscriminate speed lines.",
+        },
+      },
+      configSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      capabilities: ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+      projectKinds: ["platform", "story"],
+      workbenchModes: [],
+      toolIds: [],
+      riskPolicy: {
+        allowsWrite: false,
+        allowsPaidGeneration: false,
+      },
+      evalSuite: "evals/project-skills/anime-cinematic/v1",
+    },
+  },
+  {
+    id: "10000000-0000-7000-8000-000000000032",
+    slug: "graphic-novel-cinema",
+    name: "Graphic Novel Cinema",
+    description:
+      "Graphic-novel cinema with bold ink structure, designed value masses, selective color and panel-aware storytelling.",
+    translationKey: "graphicNovelCinema",
+    publisherName: "FizzDragon",
+    category: "style",
+    kind: "general",
+    previewImageFile: "graphic-novel-cinema.jpg",
+    previewVideoFile: null,
+    version: {
+      id: "20000000-0000-7000-8000-000000000032",
+      version: "1.0.0",
+      manifestSchemaVersion: "fizzdragon.skill/v1",
+      publishedAt: "2026-08-25T12:00:00.000Z",
+      instructions:
+        "## Project Skill: Graphic Novel Cinema\n\nUse graphic-novel cinema language: bold ink structure, designed black-white-gray value masses, selective color accents, purposeful hatching and dry-brush texture, graphic perspective, panel-aware crops, and highly readable silhouettes. Avoid generic comic filters, noisy crosshatching everywhere, illegible crushed blacks, or pasted speech balloons.\n\nApply this guidance only to tasks that match the mounted capability. Preserve explicit user requirements, project facts, character identity, product identity, and safety constraints. Never claim a project change or generation succeeded before the relevant tool or job reports success.",
+      generationPolicy: {
+        image: {
+          promptSuffix:
+            "Render as a cinematic graphic-novel panel with bold authored ink contours, controlled black and midtone shapes, selective color accents, purposeful hatching and paper texture, graphic depth planes, strong silhouette staging, and a clean narrative focal point. Include no text or speech balloons unless explicitly requested.",
+        },
+        video: {
+          promptSuffix:
+            "Animate with held graphic compositions, clear pose changes, layered parallax, restrained camera moves, controlled ink-texture motion, coherent selective color, and deliberate panel-like transitions only when motivated. Keep faces, line weight, value grouping, and spatial orientation stable.",
+        },
+        promptAuthoring: {
+          instructions:
+            "Use graphic-novel cinema language: bold ink structure, designed black-white-gray value masses, selective color accents, purposeful hatching and dry-brush texture, graphic perspective, panel-aware crops, and highly readable silhouettes. Avoid generic comic filters, noisy crosshatching everywhere, illegible crushed blacks, or pasted speech balloons.",
+        },
+      },
+      configSchema: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+      capabilities: ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+      projectKinds: ["platform", "story"],
+      workbenchModes: [],
+      toolIds: [],
+      riskPolicy: {
+        allowsWrite: false,
+        allowsPaidGeneration: false,
+      },
+      evalSuite: "evals/project-skills/graphic-novel-cinema/v1",
     },
   },
 ] as const satisfies readonly BundledCatalogSkillSource[];

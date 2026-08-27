@@ -27,6 +27,50 @@ export interface AgentOsAssistantSegment {
   finishReason?: string;
 }
 
+export type AgentOsArtifactStatus =
+  | "proposed"
+  | "active"
+  | "applying"
+  | "applied"
+  | "rejected"
+  | "failed"
+  | "cancelled";
+
+/** A durable domain reference, never a copy of the proposal payload. */
+export interface AgentOsStoryProposalArtifactReference {
+  kind: "story_stage_proposal";
+  storyAgentRunId: string;
+  storyProjectId?: string;
+  storyChapterId?: string;
+  workspaceId?: string;
+  stage?: "script" | "plot" | "assets" | "storyboard" | "noop" | "patch";
+  schemaVersion?: string;
+  /** True only for journals written before ArtifactCreated existed. */
+  legacy?: boolean;
+}
+
+export interface AgentOsStoryGenerationBatchArtifactReference {
+  kind: "story_generation_batch";
+  generationBatchId: string;
+  storyProjectId: string;
+  storyChapterId: string;
+  schemaVersion: "story-generation-batch-artifact/v1";
+  /** True only when recovered from a legacy ToolCompleted event. */
+  legacy?: boolean;
+}
+
+export type AgentOsArtifactReference =
+  | AgentOsStoryProposalArtifactReference
+  | AgentOsStoryGenerationBatchArtifactReference;
+
+export interface AgentOsTranscriptArtifact {
+  id: string;
+  reference: AgentOsArtifactReference;
+  status: AgentOsArtifactStatus;
+  createdAt: string;
+  eventSequence: number;
+}
+
 export interface AgentOsChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -37,6 +81,8 @@ export interface AgentOsChatMessage {
   turnId: string;
   /** Present only on an Assistant UI turn. */
   segments?: AgentOsAssistantSegment[];
+  /** Durable rich content parts attached to this Assistant turn. */
+  artifacts?: AgentOsTranscriptArtifact[];
   meta?: Record<string, unknown>;
   runId?: string;
   workbenchContext?: AgentOsWorkbenchContext;
@@ -112,11 +158,35 @@ function attachmentNames(event: AgentOsEvent): string[] {
   });
 }
 
+function storyGenerationBatchReference(
+  value: unknown,
+  legacy = false
+): AgentOsStoryGenerationBatchArtifactReference | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const generationBatchId = nonEmptyString(record.generationBatchId ?? record.id);
+  const storyProjectId = nonEmptyString(record.storyProjectId ?? record.projectId);
+  const storyChapterId = nonEmptyString(record.storyChapterId ?? record.chapterId);
+  const confirmedAt = nonEmptyString(record.confirmedAt);
+  if (!generationBatchId || !storyProjectId || !storyChapterId || (legacy && !confirmedAt)) {
+    return null;
+  }
+  return {
+    kind: "story_generation_batch",
+    generationBatchId,
+    storyProjectId,
+    storyChapterId,
+    schemaVersion: "story-generation-batch-artifact/v1",
+    ...(legacy ? { legacy: true } : {}),
+  };
+}
+
 /**
  * Journal → product transcript projection.
  *
  * - turnId owns one Assistant visual group;
  * - messageId owns one immutable segment inside that group;
+ * - domain artifacts are durable Assistant parts, not approval UI;
  * - tools/plans/questions/approvals never become transcript rows;
  * - structured answers remain normal durable user messages.
  */
@@ -129,6 +199,9 @@ export function rebuildRunTimelineFromEvents(
   const assistantByTurn = new Map<string, AgentOsChatMessage>();
   const segmentsByTurn = new Map<string, Map<string, AgentOsAssistantSegment>>();
   const openMessageByTurn = new Map<string, string>();
+  const artifactById = new Map<string, AgentOsTranscriptArtifact>();
+  const artifactIdByToolCall = new Map<string, string>();
+  const artifactIdByApproval = new Map<string, string>();
 
   const ensureAssistant = (
     turnId: string,
@@ -145,6 +218,7 @@ export function rebuildRunTimelineFromEvents(
       turnId,
       runId,
       segments: [],
+      artifacts: [],
       meta: { eventSequence },
     };
     assistantByTurn.set(turnId, created);
@@ -183,6 +257,32 @@ export function rebuildRunTimelineFromEvents(
     const segment = segmentsByTurn.get(turnId)?.get(messageId);
     if (segment) segment.completed = true;
     openMessageByTurn.delete(turnId);
+  };
+
+  const addArtifact = (
+    turnId: string,
+    artifactId: string,
+    reference: AgentOsArtifactReference,
+    timestamp: string,
+    eventSequence: number,
+    status: AgentOsArtifactStatus = "proposed"
+  ): AgentOsTranscriptArtifact => {
+    const existing = artifactById.get(artifactId);
+    if (existing) {
+      if (!reference.legacy) existing.reference = reference;
+      return existing;
+    }
+    const assistant = ensureAssistant(turnId, timestamp, eventSequence);
+    const artifact: AgentOsTranscriptArtifact = {
+      id: artifactId,
+      reference,
+      status,
+      createdAt: timestamp,
+      eventSequence,
+    };
+    artifactById.set(artifactId, artifact);
+    assistant.artifacts!.push(artifact);
+    return artifact;
   };
 
   for (const { event, turnId } of eventsWithTurnIds(events, runId)) {
@@ -249,6 +349,164 @@ export function rebuildRunTimelineFromEvents(
       continue;
     }
 
+    if (event.type === "ArtifactCreated") {
+      const artifactId = nonEmptyString(event.data.artifactId);
+      const rawReference = event.data.artifact;
+      if (
+        !artifactId ||
+        !rawReference ||
+        typeof rawReference !== "object" ||
+        Array.isArray(rawReference)
+      ) {
+        continue;
+      }
+      const reference = rawReference as Record<string, unknown>;
+      if (reference.kind === "story_generation_batch") {
+        const batchReference = storyGenerationBatchReference(reference);
+        if (!batchReference) continue;
+        addArtifact(
+          turnId,
+          artifactId,
+          batchReference,
+          event.timestamp,
+          event.sequence,
+          event.data.status === "active" ? "active" : "proposed"
+        );
+        continue;
+      }
+      const storyAgentRunId = nonEmptyString(reference.storyAgentRunId);
+      if (reference.kind !== "story_stage_proposal" || !storyAgentRunId) continue;
+      addArtifact(
+        turnId,
+        artifactId,
+        {
+          kind: "story_stage_proposal",
+          storyAgentRunId,
+          storyProjectId: nonEmptyString(reference.storyProjectId) ?? undefined,
+          storyChapterId: nonEmptyString(reference.storyChapterId) ?? undefined,
+          workspaceId: nonEmptyString(reference.workspaceId) ?? undefined,
+          stage:
+            reference.stage === "script" ||
+            reference.stage === "assets" ||
+            reference.stage === "plot" ||
+            reference.stage === "storyboard" ||
+            reference.stage === "noop" ||
+            reference.stage === "patch"
+              ? reference.stage
+              : undefined,
+          schemaVersion: nonEmptyString(reference.schemaVersion) ?? undefined,
+        },
+        event.timestamp,
+        event.sequence
+      );
+      continue;
+    }
+
+    if (event.type === "ToolCompleted" && event.data.toolId === "story.generation.confirmBatch") {
+      // Journals written immediately before the explicit Artifact event was
+      // introduced still contain the canonical confirmed batch result. Use it
+      // as a deterministic replay bridge; all current writers emit
+      // ArtifactCreated before ToolCompleted.
+      const batchReference = storyGenerationBatchReference(event.data.result, true);
+      if (batchReference) {
+        addArtifact(
+          turnId,
+          batchReference.generationBatchId,
+          batchReference,
+          event.timestamp,
+          event.sequence,
+          "active"
+        );
+      }
+    }
+
+    if (event.type === "ArtifactUpdated") {
+      const artifactId = nonEmptyString(event.data.artifactId);
+      const status = event.data.status;
+      const artifact = artifactId ? artifactById.get(artifactId) : null;
+      if (
+        artifact &&
+        (status === "applying" ||
+          status === "applied" ||
+          status === "rejected" ||
+          status === "failed" ||
+          status === "cancelled")
+      ) {
+        artifact.status = status;
+      }
+      continue;
+    }
+
+    if (event.type === "ToolProposed") {
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      if (event.data.toolId !== "story.applyProposal" || !toolCallId) continue;
+      const args = event.data.arguments;
+      if (!args || typeof args !== "object" || Array.isArray(args)) continue;
+      const storyAgentRunId = nonEmptyString((args as Record<string, unknown>).storyAgentRunId);
+      if (!storyAgentRunId) continue;
+      addArtifact(
+        turnId,
+        storyAgentRunId,
+        {
+          kind: "story_stage_proposal",
+          storyAgentRunId,
+          legacy: true,
+        },
+        event.timestamp,
+        event.sequence
+      );
+      artifactIdByToolCall.set(toolCallId, storyAgentRunId);
+      continue;
+    }
+
+    if (event.type === "ApprovalRequired") {
+      const approvalId = nonEmptyString(event.data.approvalId);
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      const artifactId = toolCallId ? artifactIdByToolCall.get(toolCallId) : null;
+      if (approvalId && artifactId) artifactIdByApproval.set(approvalId, artifactId);
+    }
+
+    if (event.type === "ApprovalResolved") {
+      const approvalId = nonEmptyString(event.data.approvalId);
+      const artifact = approvalId
+        ? artifactById.get(artifactIdByApproval.get(approvalId) ?? "")
+        : null;
+      if (artifact) {
+        artifact.status = event.data.decision === "reject" ? "rejected" : "applying";
+      }
+    }
+
+    if (event.type === "ToolStarted" || event.type === "ToolFailed") {
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      const artifact = toolCallId
+        ? artifactById.get(artifactIdByToolCall.get(toolCallId) ?? "")
+        : null;
+      if (artifact) {
+        artifact.status =
+          event.type === "ToolStarted"
+            ? "applying"
+            : event.data.code === "STORY_PROPOSAL_REJECTED"
+              ? "rejected"
+              : "failed";
+      }
+    }
+
+    if (
+      event.type === "RunCompleted" ||
+      event.type === "RunFailed" ||
+      event.type === "RunCancelled"
+    ) {
+      for (const artifact of artifactById.values()) {
+        if (artifact.status !== "applying") continue;
+        artifact.status =
+          event.type === "RunCompleted"
+            ? "applied"
+            : event.type === "RunCancelled"
+              ? "cancelled"
+              : "failed";
+      }
+    }
+
     if (
       event.type === "UserInputRequired" ||
       event.type === "ApprovalRequired" ||
@@ -291,7 +549,10 @@ export function rebuildRunTimelineFromEvents(
   }
 
   return timeline.filter(
-    (message) => message.role === "user" || (message.segments?.length ?? 0) > 0
+    (message) =>
+      message.role === "user" ||
+      (message.segments?.length ?? 0) > 0 ||
+      (message.artifacts?.length ?? 0) > 0
   );
 }
 
@@ -327,6 +588,11 @@ export function deriveAgentActivity(
       case "PlanCreated":
       case "PlanUpdated":
         activity = { kind: "planning", turnId };
+        break;
+      case "StepStarted":
+        if (nonEmptyString(event.data.step) === "permission") {
+          activity = { kind: "thinking", turnId };
+        }
         break;
       case "ToolProposed":
       case "ToolStarted":

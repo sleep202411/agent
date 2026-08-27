@@ -368,6 +368,22 @@ export class AgentOsApiClient {
     return api.get("/aurora/agent-os/models", { signal });
   }
 
+  getModelPreferences(projectId: string, signal?: AbortSignal): Promise<AgentOsModelPreferences> {
+    return api.get(`/aurora/agent-os/projects/${encodeURIComponent(projectId)}/model-preferences`, {
+      signal,
+    });
+  }
+
+  updateModelPreferences(
+    projectId: string,
+    input: AgentOsModelPreferencesUpdate
+  ): Promise<AgentOsModelPreferences> {
+    return api.post(
+      `/aurora/agent-os/projects/${encodeURIComponent(projectId)}/model-preferences`,
+      { data: input }
+    );
+  }
+
   listSkills(
     projectId: string,
     workbenchMode: AgentOsWorkbenchMode,
@@ -411,6 +427,23 @@ export interface AgentOsConversationRun {
   assistantText: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface AgentOsModelPreferences {
+  projectId: string;
+  projectKind: "platform" | "story";
+  chatModelProfileId: string | null;
+  imageModelId: string | null;
+  videoModelId: string | null;
+  version: number;
+  updatedAt: string | null;
+}
+
+export interface AgentOsModelPreferencesUpdate {
+  expectedVersion: number;
+  chatModelProfileId: string | null;
+  imageModelId: string | null;
+  videoModelId: string | null;
 }
 
 export interface AgentOsConversationHistory {

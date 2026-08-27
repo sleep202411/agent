@@ -5,10 +5,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
+import {
+  getStoryProductionState,
+  getStoryStoryboard,
+  storyProductionKeys,
+} from "@/lib/story-production-api";
 import {
   storyApiErrorMessage,
   type StoryClipGraphNode,
@@ -18,6 +20,15 @@ import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { localizedText } from "./project-canvas/story-project-canvas-model";
 import { StoryProductionPageHeader } from "./story-production-page-header";
+import {
+  storyStoryboardStageGuidance,
+  storyStoryboardStageHasStaleContent,
+} from "./story-production-stage-guidance";
+import {
+  StoryStageEmptyState,
+  StoryStageLoadingState,
+  StoryStageNotice,
+} from "./story-stage-empty-state";
 import {
   StoryStoryboardChoiceCard,
   StoryStoryboardSequenceSection,
@@ -35,21 +46,24 @@ import {
  */
 export function StoryStoryboardView({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.storyboardPage");
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  const workbenchQuery = useStoryChapterWorkbench(projectId, { chapterId });
   const searchParams = useSearchParams();
 
   const storyboardQuery = useQuery({
-    queryKey: storyProductionKeys.storyboard(workspaceId, projectId, chapterId),
-    queryFn: ({ signal }) =>
-      getStoryStoryboard(workspaceId as string, projectId, chapterId as string, signal),
-    enabled: Boolean(workspaceId && chapterId),
+    queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+    queryFn: ({ signal }) => getStoryStoryboard(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId),
+    retry: false,
+  });
+  const productionQuery = useQuery({
+    queryKey: storyProductionKeys.state(projectId, chapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId),
     retry: false,
   });
 
   const locale = useLocale();
-  const workbenchQuery = useStoryChapterWorkbench(projectId, { chapterId });
   const nodes = useMemo(
     () => workbenchQuery.data?.draft.content.graph.nodes ?? [],
     [workbenchQuery.data?.draft.content.graph.nodes]
@@ -86,11 +100,18 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     () => new Map((storyboardQuery.data ?? []).map((sequence) => [sequence.plotNodeId, sequence])),
     [storyboardQuery.data]
   );
+  const orphanedSequences = useMemo(() => {
+    const currentPlotNodeIds = new Set(sceneNodes.map((node) => node.nodeId));
+    return (storyboardQuery.data ?? []).filter(
+      (sequence) => !currentPlotNodeIds.has(sequence.plotNodeId)
+    );
+  }, [sceneNodes, storyboardQuery.data]);
   const requestedPlotNodeId = searchParams.get("node");
+  const openAgentComposer = useStoryProjectUiStore((state) => state.openAgentComposer);
 
   const loading =
-    workspaceLoading ||
-    (Boolean(workspaceId) && (storyboardQuery.isPending || workbenchQuery.isPending));
+    workbenchQuery.isPending ||
+    (Boolean(chapterId) && (storyboardQuery.isPending || productionQuery.isPending));
 
   // Consume the deep link exactly once, after the board has actually rendered
   // (both queries settled): refetches must not yank the viewport back to the
@@ -108,21 +129,22 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
 
   if (loading) {
     return (
-      <main className="min-w-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
-        {[0, 1, 2].map((key) => (
-          <Skeleton key={key} className="h-56 rounded-2xl" />
-        ))}
+      <main aria-busy="true" className="h-full min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+        <StoryStageLoadingState label={t("loading")} />
       </main>
     );
   }
 
-  if (storyboardQuery.isError || workbenchQuery.isError) {
+  if (storyboardQuery.isError || workbenchQuery.isError || productionQuery.isError) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
           <IconAlertTriangle className="mx-auto size-6 text-white/58" aria-hidden="true" />
-          <p className="mt-3 max-w-lg text-sm text-white/72">
-            {storyApiErrorMessage(storyboardQuery.error ?? workbenchQuery.error, t("loadError"))}
+          <p role="alert" className="mt-3 max-w-lg text-sm text-white/72">
+            {storyApiErrorMessage(
+              storyboardQuery.error ?? workbenchQuery.error ?? productionQuery.error,
+              t("loadError")
+            )}
           </p>
           <Button
             variant="secondary"
@@ -130,6 +152,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
             onClick={() => {
               void storyboardQuery.refetch();
               void workbenchQuery.refetch();
+              void productionQuery.refetch();
             }}
           >
             <IconRefresh />
@@ -140,7 +163,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (sceneNodes.length === 0 || !workspaceId || !chapterId) {
+  if (!chapterId || !productionQuery.data) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
@@ -151,9 +174,76 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
+  const guidance = storyStoryboardStageGuidance(productionQuery.data, sceneNodes.length);
+  const staleContent = storyStoryboardStageHasStaleContent(
+    productionQuery.data,
+    storyboardQuery.data?.length ?? 0
+  );
+  const resolvableStaleCount = (storyboardQuery.data ?? []).filter(
+    (sequence) =>
+      sequence.status === "stale" &&
+      sequence.conflict !== null &&
+      sequence.pendingSourceFingerprint === sequence.conflict.pendingSourceFingerprint
+  ).length;
+  const staleNeedsAgent =
+    guidance === "plotRequired" ||
+    guidance === "assetsRequired" ||
+    (productionQuery.data.storyboard.staleCount ?? 0) > resolvableStaleCount;
+  const generationAllowed =
+    guidance === null && productionQuery.data.storyboard.status === "current";
+  const canRequestScenePlanning =
+    productionQuery.data.plotTree.status === "current" &&
+    productionQuery.data.assets.status === "current";
+  const showStoryboardRows = staleContent || (sceneNodes.length > 0 && guidance !== "plotRequired");
+
+  if (guidance && !showStoryboardRows) {
+    return (
+      <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+        <StoryProductionPageHeader
+          projectId={projectId}
+          title={t("title")}
+          description={t("generationHint")}
+          showGenerationControls={false}
+        />
+        <StoryStageEmptyState
+          title={t(`stage.${guidance}.title`)}
+          description={t(`stage.${guidance}.description`)}
+          actionLabel={t("continueWithAgent")}
+          prompt={t(`prompts.${guidance}`)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-      <StoryProductionPageHeader title={t("title")} description={t("generationHint")} />
+      <StoryProductionPageHeader
+        projectId={projectId}
+        title={t("title")}
+        description={t("generationHint")}
+        showGenerationControls={generationAllowed && (storyboardQuery.data?.length ?? 0) > 0}
+      />
+      {staleContent ? (
+        <div className="mt-5">
+          <StoryStageNotice
+            title={t("stage.stale.title", {
+              count: productionQuery.data.storyboard.staleCount,
+            })}
+            description={t("stage.stale.description")}
+            actionLabel={staleNeedsAgent ? t("continueWithAgent") : undefined}
+            prompt={staleNeedsAgent && guidance ? t(`prompts.${guidance}`) : undefined}
+          />
+        </div>
+      ) : guidance ? (
+        <div className="mt-5">
+          <StoryStageNotice
+            title={t(`stage.${guidance}.title`)}
+            description={t(`stage.${guidance}.description`)}
+            actionLabel={t("continueWithAgent")}
+            prompt={t(`prompts.${guidance}`)}
+          />
+        </div>
+      ) : null}
       <div className="mt-5 space-y-8">
         {sceneNodes.map((node, index) => {
           const sequence = sequenceByNode.get(node.nodeId);
@@ -164,21 +254,39 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
                 <StoryStoryboardSequenceSection
                   sequence={sequence}
                   index={index}
-                  workspaceId={workspaceId}
                   projectId={projectId}
                   chapterId={chapterId}
+                  allowGeneration={generationAllowed}
                 />
               ) : (
                 <StoryStoryboardUnplannedSection
                   nodeId={node.nodeId}
                   title={node.name?.trim() || node.clipKey}
                   index={index}
+                  onRequestPlanning={
+                    canRequestScenePlanning
+                      ? () =>
+                          openAgentComposer(
+                            t("prompts.scene", { title: node.name?.trim() || node.clipKey })
+                          )
+                      : undefined
+                  }
                 />
               )}
               {choiceOptions ? <StoryStoryboardChoiceCard options={choiceOptions} /> : null}
             </div>
           );
         })}
+        {orphanedSequences.map((sequence, index) => (
+          <StoryStoryboardSequenceSection
+            key={sequence.id}
+            sequence={sequence}
+            index={sceneNodes.length + index}
+            projectId={projectId}
+            chapterId={chapterId}
+            allowGeneration={false}
+          />
+        ))}
       </div>
     </main>
   );

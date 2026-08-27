@@ -18,10 +18,6 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: { project: { title: "Test story" } } }),
 }));
 
-vi.mock("@/app/_components/workspace-context", () => ({
-  useWorkspace: () => ({ activeWorkspace: { id: "workspace-1" } }),
-}));
-
 vi.mock("@/i18n/navigation", () => ({
   Link: ({
     href,
@@ -70,5 +66,16 @@ describe("StoryProjectHeader", () => {
     expect(container.textContent).toContain("Test story");
     expect(container.textContent).not.toContain("chapters.action");
     expect(container.querySelector('[data-testid="production-steps"]')).not.toBeNull();
+  });
+
+  it("keeps the centered production steps clear of the project title on compact desktops", async () => {
+    await act(async () => {
+      root.render(<StoryProjectHeader projectId="project-1" />);
+    });
+
+    const title = container.querySelector("h1");
+    expect(title?.className).toContain("hidden");
+    expect(title?.className).toContain("max-md:block");
+    expect(title?.className).toContain("xl:block");
   });
 });

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Classic Cel Animation"
-  short_description: "Hand-drawn character animation with crisp ink lines, painted bac"
-  default_prompt: "Use $classic-cel-animation to apply this creative direction to my request."

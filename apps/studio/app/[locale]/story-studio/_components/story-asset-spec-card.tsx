@@ -22,22 +22,22 @@ const MEDIA_ASPECT = {
  */
 export function StoryAssetSpecCard({
   asset,
-  workspaceId,
   projectId,
   chapterId,
+  allowGeneration = true,
 }: {
   asset: StoryAssetSpec;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
+  allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage");
   const [detailOpen, setDetailOpen] = useState(false);
 
   return (
-    <article className="rounded-2xl bg-white/[0.045] p-3 text-white shadow-sm">
+    <article className="relative rounded-2xl bg-white/[0.045] p-3 text-white shadow-sm">
       <StoryProductionGenerationControl
-        scope={{ workspaceId, projectId, chapterId }}
+        scope={{ projectId, chapterId }}
         target={{
           kind: "asset_spec",
           id: asset.id,
@@ -49,6 +49,7 @@ export function StoryAssetSpecCard({
         label={asset.name}
         selectedMedia={asset.selectedMediaVersion}
         aspect={MEDIA_ASPECT[asset.kind]}
+        allowGeneration={allowGeneration}
         secondaryAction={
           <button
             type="button"
@@ -66,16 +67,16 @@ export function StoryAssetSpecCard({
         ) : null}
       </div>
       <StoryProductionConflictPanel
-        scope={{ workspaceId, projectId, chapterId }}
+        scope={{ projectId, chapterId }}
         target={{ kind: "asset_spec", item: asset }}
       />
       <StoryAssetSpecDetailDialog
         asset={asset}
-        workspaceId={workspaceId}
         projectId={projectId}
         chapterId={chapterId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        editable={allowGeneration}
       />
     </article>
   );

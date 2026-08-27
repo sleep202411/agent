@@ -4,15 +4,24 @@ import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
-import { isStoryScreenplayProposal, STORY_AUTHORING_STAGE_KEYS } from "@repo/shared/story-agent";
+import {
+  isStoryAssetProposal,
+  isStoryPlotProposal,
+  isStoryScreenplayProposal,
+  isStoryStoryboardProposal,
+  STORY_AUTHORING_STAGE_KEYS,
+} from "@repo/shared/story-agent";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { getStoryProductionState, storyProductionKeys } from "@/lib/story-production-api";
 import { cn } from "@/lib/utils";
 import { isProductionStepSegment } from "../_lib/production-steps";
-import { StoryAuthoringComposer, StoryAuthoringProposalApproval } from "./story-authoring-run-card";
+import {
+  StoryAuthoringComposer,
+  StoryAuthoringProposalApproval,
+  StoryAuthoringProposalTranscript,
+} from "./story-authoring-run-card";
+import { StoryGenerationBatchTranscript } from "./story-generation-batch-transcript";
 import { useStoryAuthoringRun } from "./use-story-authoring-run";
-import { storyApplyingActivityKey } from "./story-production-activity";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 /**
@@ -24,29 +33,28 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
   const queryClient = useQueryClient();
   const t = useTranslations("storyStudio.authoringRun");
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const { run: authoringRun } = useStoryAuthoringRun(projectId, activeChapterId);
   const applyingRunId = authoringRun?.status === "applying" ? authoringRun.id : null;
-  const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
-    queryFn: ({ signal }) =>
-      getStoryProductionState(workspaceId as string, projectId, activeChapterId as string, signal),
-    enabled: Boolean(workspaceId && activeChapterId),
+  useQuery({
+    queryKey: storyProductionKeys.state(projectId, activeChapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, activeChapterId as string, signal),
+    enabled: Boolean(activeChapterId),
     refetchInterval: authoringRun?.status === "applying" ? 1500 : false,
     refetchIntervalInBackground: true,
     retry: false,
   });
   useEffect(() => {
-    if (!applyingRunId || !workspaceId || !activeChapterId) return;
+    if (!applyingRunId || !activeChapterId) return;
     void queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
+      queryKey: storyProductionKeys.state(projectId, activeChapterId),
     });
-  }, [activeChapterId, applyingRunId, projectId, queryClient, workspaceId]);
+  }, [activeChapterId, applyingRunId, projectId, queryClient]);
   // On phones the panel IS the chat view: full-width when active, hidden (but
   // mounted, so the conversation survives) while a step page shows.
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
+  const composerPrefill = useStoryProjectUiStore((state) => state.composerPrefillRequest);
+  const consumeComposerPrefill = useStoryProjectUiStore((state) => state.consumeComposerPrefill);
   const panelActive = isProductionStepSegment(segment);
   if (!panelActive) return null;
 
@@ -54,6 +62,17 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
     authoringRun?.authoringStages?.find((stage) => stage.status === "running")?.key ??
     authoringRun?.authoringStages?.find((stage) => stage.status === "pending")?.key ??
     STORY_AUTHORING_STAGE_KEYS[0];
+  const applyingActivityKey = authoringRun
+    ? isStoryScreenplayProposal(authoringRun.proposal)
+      ? "savingScript"
+      : isStoryPlotProposal(authoringRun.proposal)
+        ? "savingPlot"
+        : isStoryAssetProposal(authoringRun.proposal)
+          ? "savingAssets"
+          : isStoryStoryboardProposal(authoringRun.proposal)
+            ? "savingStoryboard"
+            : "savingUpdate"
+    : "savingScript";
   const authoringActivityStatus =
     authoringRun?.agentOsManaged && authoringRun.status === "authoring"
       ? {
@@ -62,14 +81,7 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
         }
       : authoringRun?.agentOsManaged && authoringRun.status === "applying"
         ? {
-            label: t(
-              `activity.${storyApplyingActivityKey(
-                productionQuery.data ?? null,
-                isStoryScreenplayProposal(authoringRun.proposal)
-                  ? authoringRun.proposal.baseScriptSequence
-                  : null
-              )}`
-            ),
+            label: t(`activity.${applyingActivityKey}`),
             externalJobId: authoringRun.id,
           }
         : null;
@@ -90,16 +102,31 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
         />
       )}
       approvalGate={({ approval, busy, onResolve }) =>
-        approval.toolId === "story.applyProposal" ? (
-          <StoryAuthoringProposalApproval
-            projectId={projectId}
-            approval={approval}
-            busy={busy}
-            onResolve={onResolve}
-          />
-        ) : null
+        approval.toolId === "story.applyProposal"
+          ? {
+              composer: (
+                <StoryAuthoringProposalApproval
+                  projectId={projectId}
+                  approval={approval}
+                  busy={busy}
+                  onResolve={onResolve}
+                />
+              ),
+            }
+          : null
       }
+      artifactRenderer={(artifact) => {
+        if (artifact.reference.kind === "story_stage_proposal") {
+          return <StoryAuthoringProposalTranscript projectId={projectId} artifact={artifact} />;
+        }
+        if (artifact.reference.kind === "story_generation_batch") {
+          return <StoryGenerationBatchTranscript reference={artifact.reference} />;
+        }
+        return null;
+      }}
       activityStatus={authoringActivityStatus}
+      composerPrefill={composerPrefill}
+      onComposerPrefillConsumed={consumeComposerPrefill}
       // Agent mutations can touch any projection (draft, layout, references) —
       // refresh the whole story-studio query tree.
       onMutationCompleted={() => queryClient.invalidateQueries({ queryKey: ["story-studio"] })}

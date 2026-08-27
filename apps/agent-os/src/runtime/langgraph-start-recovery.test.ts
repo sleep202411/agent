@@ -233,7 +233,7 @@ describe("LangGraph initial-start recovery", () => {
       durableEvents = snapshot.journal.all();
       return { startExecutionDisposition: "accepted" as const };
     });
-    internals.admitDurableStart = vi.fn(async (input, _admissionId) =>
+    internals.admitDurableStart = vi.fn(async (input) =>
       service.beginStart(input, {
         status: "running",
         events: durableEvents,
@@ -778,7 +778,7 @@ describe("LangGraph initial-start recovery", () => {
       })),
       invoke: vi.fn(),
     };
-    let snapshotJournal = new EventJournal();
+    const snapshotJournal = new EventJournal();
     const graphFactory = vi.fn(
       (options: { runtime: { onToolEvent?: typeof runtimeOnToolEvent } }) => {
         runtimeOnToolEvent = options.runtime.onToolEvent;
@@ -810,6 +810,420 @@ describe("LangGraph initial-start recovery", () => {
       externalJobId: "99999999-9999-4999-8999-999999999999",
     });
     expect(graph.invoke).not.toHaveBeenCalled();
+  });
+
+  it("continues from a resolved external result and can pause on the next stage handoff", async () => {
+    const resolvedJobId = "88888888-8888-4888-8888-888888888888";
+    const nextJobId = "99999999-9999-4999-8999-999999999999";
+    const journal = new EventJournal();
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "ToolCompleted",
+      data: {
+        turnId: TURN_ID,
+        toolCallId: "story-apply-call-1",
+        toolId: "story.applyProposal",
+        result: { status: "applying" },
+        agentHandoff: {
+          kind: "external_job",
+          jobId: resolvedJobId,
+          startedMessage: "Applying the approved Script.",
+        },
+      },
+    });
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "RunResumed",
+      data: {
+        turnId: TURN_ID,
+        reason: "external_job_completed",
+        externalJobId: resolvedJobId,
+      },
+    });
+
+    let phase: "pending" | "next-tool" = "pending";
+    let runtimeOnToolEvent:
+      | ((event: {
+          type: "ToolCompleted";
+          toolId: string;
+          toolCallId: string;
+          data: Record<string, unknown>;
+        }) => Promise<void>)
+      | undefined;
+    const graph = {
+      getState: vi.fn(async () => ({
+        ...emptyState(),
+        tasks: phase === "pending" ? [{}] : [],
+        values: {
+          messages:
+            phase === "next-tool"
+              ? [
+                  {
+                    tool_call_id: "story-author-call-next",
+                    content: JSON.stringify({ ok: true }),
+                  },
+                ]
+              : [],
+        },
+        config: {
+          configurable: {
+            thread_id: CONVERSATION_ID,
+            checkpoint_ns: "",
+            checkpoint_id:
+              phase === "pending" ? "checkpoint-pending-agent" : "checkpoint-next-tool",
+          },
+        },
+      })),
+      streamEvents: vi.fn(async (payload: unknown) => ({
+        async *[Symbol.asyncIterator]() {
+          expect(payload).toBeNull();
+          if (!runtimeOnToolEvent) throw new Error("tool event callback missing");
+          await runtimeOnToolEvent({
+            type: "ToolCompleted",
+            toolId: "story.author",
+            toolCallId: "story-author-call-next",
+            data: {
+              result: { runId: nextJobId },
+              agentHandoff: {
+                kind: "external_job",
+                jobId: nextJobId,
+                startedMessage: "Preparing the next reviewable proposal.",
+              },
+            },
+          });
+          phase = "next-tool";
+          yield { event: "on_tool_end", data: {} };
+        },
+      })),
+      invoke: vi.fn(),
+    };
+    const graphFactory = vi.fn(
+      (options: { runtime: { onToolEvent?: typeof runtimeOnToolEvent } }) => {
+        runtimeOnToolEvent = options.runtime.onToolEvent;
+        return graph;
+      }
+    );
+    const service = new LangGraphRunService(graphFactory as never);
+    const snapshot = baseSnapshot(journal);
+    serviceInternals(service).snapshots.set(RUN_ID, snapshot);
+
+    await serviceInternals(service).runGraphTurn({
+      input: startInput(),
+      journal,
+      turnId: TURN_ID,
+      resume: null,
+      signal: new AbortController().signal,
+      externalResultContinuation: true,
+    });
+
+    expect(service.getSnapshot(RUN_ID)).toMatchObject({
+      status: "waiting_for_external",
+      pendingExternal: {
+        jobId: nextJobId,
+        toolCallId: "story-author-call-next",
+      },
+    });
+    expect(graph.streamEvents).toHaveBeenCalledWith(
+      null,
+      expect.objectContaining({ version: "v2" })
+    );
+  });
+
+  it("starts a new Story stage cycle when the prior graph is already terminal", async () => {
+    const resolvedJobId = "88888888-8888-4888-8888-888888888888";
+    const nextJobId = "99999999-9999-4999-8999-999999999999";
+    const continuationResponseId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const journal = new EventJournal();
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "ToolCompleted",
+      data: {
+        turnId: TURN_ID,
+        toolCallId: "story-apply-call-2",
+        toolId: "story.applyProposal",
+        result: { status: "applying" },
+        agentHandoff: {
+          kind: "external_job",
+          jobId: resolvedJobId,
+          startedMessage: "Applying the approved Asset Specs.",
+        },
+      },
+    });
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "RunResumed",
+      data: {
+        turnId: TURN_ID,
+        reason: "external_job_completed",
+        externalJobId: resolvedJobId,
+      },
+    });
+
+    let phase: "terminal" | "next-tool" = "terminal";
+    let runtimeOnToolEvent:
+      | ((event: {
+          type: "ToolCompleted";
+          toolId: string;
+          toolCallId: string;
+          data: Record<string, unknown>;
+        }) => Promise<void>)
+      | undefined;
+    const graph = {
+      getState: vi.fn(async () => ({
+        ...emptyState(),
+        values: {
+          messages:
+            phase === "next-tool"
+              ? [
+                  { id: continuationResponseId, type: "human", content: "internal" },
+                  {
+                    tool_call_id: "story-author-call-after-terminal",
+                    content: JSON.stringify({ ok: true }),
+                  },
+                ]
+              : [],
+        },
+        config: checkpointConfig(
+          phase === "terminal" ? "checkpoint-terminal" : "checkpoint-next-stage"
+        ),
+      })),
+      streamEvents: vi.fn(async (payload: unknown) => ({
+        async *[Symbol.asyncIterator]() {
+          const messages = (payload as { messages?: Array<{ id?: string; content?: string }> })
+            .messages;
+          expect(messages).toEqual([
+            expect.objectContaining({
+              id: continuationResponseId,
+              content: "Continue the persisted Story production plan from canonical state.",
+            }),
+          ]);
+          if (!runtimeOnToolEvent) throw new Error("tool event callback missing");
+          await runtimeOnToolEvent({
+            type: "ToolCompleted",
+            toolId: "story.author",
+            toolCallId: "story-author-call-after-terminal",
+            data: {
+              result: { runId: nextJobId },
+              agentHandoff: {
+                kind: "external_job",
+                jobId: nextJobId,
+                startedMessage: "Preparing the Plot proposal.",
+              },
+            },
+          });
+          phase = "next-tool";
+          yield { event: "on_tool_end", data: {} };
+        },
+      })),
+      invoke: vi.fn(),
+    };
+    const graphFactory = vi.fn(
+      (options: { runtime: { onToolEvent?: typeof runtimeOnToolEvent } }) => {
+        runtimeOnToolEvent = options.runtime.onToolEvent;
+        return graph;
+      }
+    );
+    const service = new LangGraphRunService(graphFactory as never);
+    const snapshot = baseSnapshot(journal);
+    serviceInternals(service).snapshots.set(RUN_ID, snapshot);
+    const input = startInput();
+    const continuationCommand = storyContinuationCommand(
+      input,
+      continuationResponseId,
+      resolvedJobId
+    );
+
+    await serviceInternals(service).runGraphTurn({
+      input,
+      journal,
+      turnId: TURN_ID,
+      resume: null,
+      signal: new AbortController().signal,
+      continuationCommand,
+      externalResultContinuation: true,
+    });
+
+    expect(service.getSnapshot(RUN_ID)).toMatchObject({
+      status: "waiting_for_external",
+      pendingExternal: {
+        jobId: nextJobId,
+        toolCallId: "story-author-call-after-terminal",
+      },
+    });
+    expect(graph.streamEvents).toHaveBeenCalledOnce();
+  });
+
+  it("does not replay a Story stage cycle whose stable trigger is checkpointed", async () => {
+    const resolvedJobId = "88888888-8888-4888-8888-888888888888";
+    const continuationResponseId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const state = {
+      ...emptyState(),
+      values: {
+        messages: [
+          {
+            id: continuationResponseId,
+            type: "human",
+            content: "Continue the persisted Story production plan from canonical state.",
+          },
+          {
+            id: ASSISTANT_MESSAGE_ID,
+            type: "ai",
+            content: "The next reviewable Story stage was accepted.",
+          },
+        ],
+      },
+      config: checkpointConfig("checkpoint-story-cycle-complete"),
+    };
+    const graph = {
+      getState: vi.fn(async () => state),
+      streamEvents: vi.fn(),
+      invoke: vi.fn(),
+    };
+    const service = new LangGraphRunService(vi.fn(() => graph) as never);
+    const snapshot = baseSnapshot(new EventJournal());
+    serviceInternals(service).snapshots.set(RUN_ID, snapshot);
+    const input = startInput();
+
+    await serviceInternals(service).runGraphTurn({
+      input,
+      journal: snapshot.journal,
+      turnId: TURN_ID,
+      resume: null,
+      signal: new AbortController().signal,
+      continuationCommand: storyContinuationCommand(input, continuationResponseId, resolvedJobId),
+      externalResultContinuation: true,
+    });
+
+    expect(graph.streamEvents).not.toHaveBeenCalled();
+    expect(service.getSnapshot(RUN_ID)).toMatchObject({
+      status: "completed",
+    });
+    expect(snapshot.journal.all().filter((event) => event.type === "ToolStarted")).toHaveLength(0);
+  });
+
+  it("never projects a resolved external handoff back to waiting during checkpoint replay", async () => {
+    const resolvedJobId = "88888888-8888-4888-8888-888888888888";
+    const toolCallId = "story-author-call-resolved";
+    const journal = new EventJournal();
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "ToolCompleted",
+      data: {
+        turnId: TURN_ID,
+        toolCallId,
+        toolId: "story.author",
+        result: { runId: resolvedJobId },
+        agentHandoff: {
+          kind: "external_job",
+          jobId: resolvedJobId,
+          startedMessage: "Preparing a reviewable proposal.",
+        },
+      },
+    });
+    journal.append({
+      sessionId: inputSession(),
+      runId: RUN_ID,
+      conversationId: CONVERSATION_ID,
+      type: "RunResumed",
+      data: {
+        turnId: TURN_ID,
+        reason: "external_job_completed",
+        externalJobId: resolvedJobId,
+      },
+    });
+
+    let phase: "pending" | "complete" = "pending";
+    let runtimeOnToolEvent:
+      | ((event: {
+          type: "ToolCompleted";
+          toolId: string;
+          toolCallId: string;
+          data: Record<string, unknown>;
+        }) => Promise<void>)
+      | undefined;
+    const state = () => ({
+      ...emptyState(),
+      tasks: phase === "pending" ? [{}] : [],
+      values: {
+        messages: [
+          {
+            tool_call_id: toolCallId,
+            content: JSON.stringify({ runId: resolvedJobId }),
+          },
+          ...(phase === "complete"
+            ? [{ type: "ai", content: "The saved production scope is complete." }]
+            : []),
+        ],
+      },
+    });
+    const graph = {
+      getState: vi.fn(async () => state()),
+      streamEvents: vi.fn(async (payload: unknown) => ({
+        async *[Symbol.asyncIterator]() {
+          expect(payload).toBeNull();
+          if (!runtimeOnToolEvent) throw new Error("tool event callback missing");
+          // LangGraph can replay this lifecycle callback from the checkpointed
+          // tool suffix. The durable RunResumed above makes it terminal.
+          await runtimeOnToolEvent({
+            type: "ToolCompleted",
+            toolId: "story.author",
+            toolCallId,
+            data: {
+              result: { runId: resolvedJobId },
+              agentHandoff: {
+                kind: "external_job",
+                jobId: resolvedJobId,
+                startedMessage: "Preparing a reviewable proposal.",
+              },
+            },
+          });
+          phase = "complete";
+          yield { event: "on_tool_end", data: {} };
+        },
+      })),
+      invoke: vi.fn(),
+    };
+    const graphFactory = vi.fn(
+      (options: { runtime: { onToolEvent?: typeof runtimeOnToolEvent } }) => {
+        runtimeOnToolEvent = options.runtime.onToolEvent;
+        return graph;
+      }
+    );
+    const service = new LangGraphRunService(graphFactory as never);
+    const snapshot = baseSnapshot(journal);
+    serviceInternals(service).snapshots.set(RUN_ID, snapshot);
+
+    await serviceInternals(service).runGraphTurn({
+      input: startInput(),
+      journal,
+      turnId: TURN_ID,
+      resume: null,
+      signal: new AbortController().signal,
+      externalResultContinuation: true,
+    });
+
+    expect(service.getSnapshot(RUN_ID)).toMatchObject({ status: "completed" });
+    expect(service.getSnapshot(RUN_ID)?.pendingExternal).toBeUndefined();
+    expect(
+      journal
+        .all()
+        .filter(
+          (event) =>
+            event.type === "RunPaused" &&
+            event.data.status === "waiting_for_external" &&
+            event.data.externalJobId === resolvedJobId
+        )
+    ).toHaveLength(0);
   });
 });
 
@@ -851,6 +1265,7 @@ function serviceInternals(service: LangGraphRunService) {
       signal: AbortSignal;
       expectedContinuationExecutionOwnerId?: string;
       continuationCommand?: LangGraphRunSnapshot["continuationCommand"];
+      externalResultContinuation?: boolean;
     }): Promise<void>;
   };
 }
@@ -902,6 +1317,42 @@ function startInput(): StartLangGraphRunInput {
     model: {} as never,
     domain: {} as never,
     checkpointer: {} as never,
+  };
+}
+
+function storyContinuationCommand(
+  input: StartLangGraphRunInput,
+  responseId: string,
+  externalJobId: string
+) {
+  return {
+    kind: "external_result" as const,
+    runId: RUN_ID,
+    turnId: TURN_ID,
+    responseId,
+    externalJobId,
+    toolCallId: "story-apply-call-2",
+    toolId: "story.applyProposal",
+    resultMessageId: `msg:${externalJobId}:apply:result`,
+    phase: "apply" as const,
+    outcome: "completed" as const,
+    storyContinuation: {
+      locale: "zh-CN" as const,
+      plan: {
+        continueThrough: "storyboard" as const,
+        title: "Night Watch",
+        summary: "Continue the remaining production specifications.",
+        brief: "Prepare each remaining stage for separate review.",
+      },
+    },
+    projectId: input.projectId,
+    conversationId: CONVERSATION_ID,
+    actorId: input.actorId,
+    modelProfileId: input.modelProfileId,
+    projectKind: "story" as const,
+    workbenchMode: "story",
+    permissionMode: "smart" as const,
+    skillMountSnapshot: skillSnapshot(),
   };
 }
 

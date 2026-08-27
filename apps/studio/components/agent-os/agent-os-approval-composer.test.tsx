@@ -18,6 +18,9 @@ const payloadLabels = {
   storyEntry: "Story entry",
   sceneOrder: "Scene order",
   storyScene: "Story scene",
+  generationBatch: "Asset media generation",
+  generationBatchSummary: (count: number, points: number) =>
+    `${count} Assets · ${points} compute points`,
 };
 
 describe("AgentOsApprovalComposer focus contract", () => {

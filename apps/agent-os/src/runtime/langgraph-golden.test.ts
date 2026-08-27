@@ -398,6 +398,7 @@ describe("LangGraph golden path: script → characters", () => {
             title: "Night Watch",
             summary: "A guard chooses between duty and family.",
             brief: "Build a branching historical story.",
+            continueThrough: "storyboard",
             startedMessage,
             completionMessage,
           },
@@ -437,7 +438,7 @@ describe("LangGraph golden path: script → characters", () => {
               creativeProfile: {
                 frameProfile: "landscape_16_9",
                 durationPreset: "short_5_15",
-                visualStyle: "cinematic_realism",
+                visualStyle: "cinematic-realism",
                 storyLanguage: "en-US",
                 confirmed: true,
               },

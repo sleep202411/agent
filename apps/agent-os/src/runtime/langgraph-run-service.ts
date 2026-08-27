@@ -137,6 +137,66 @@ export interface AgentRunSnapshotView {
   assistantText?: string;
 }
 
+type ToolLifecycleEvent = {
+  type: "ToolStarted" | "ToolCompleted" | "ToolFailed";
+  toolId: string;
+  toolCallId: string;
+  data?: Record<string, unknown>;
+};
+
+type StoryGenerationBatchArtifact = {
+  artifactId: string;
+  artifact: {
+    kind: "story_generation_batch";
+    generationBatchId: string;
+    storyProjectId: string;
+    storyChapterId: string;
+    schemaVersion: "story-generation-batch-artifact/v1";
+  };
+};
+
+/**
+ * Project a paid Story generation confirmation into one durable transcript
+ * reference. The journal deliberately stores no queue progress or media URLs:
+ * those continue to belong to the generation and Asset domains after the
+ * Agent run has finished.
+ */
+export function storyGenerationBatchArtifactFromToolEvent(
+  event: ToolLifecycleEvent
+): StoryGenerationBatchArtifact | null {
+  if (event.type !== "ToolCompleted" || event.toolId !== "story.generation.confirmBatch") {
+    return null;
+  }
+  const result = asUnknownRecord(event.data?.result);
+  const generationBatchId = requiredResultString(result.id);
+  const storyProjectId = requiredResultString(result.projectId);
+  const storyChapterId = requiredResultString(result.chapterId);
+  const confirmedAt = requiredResultString(result.confirmedAt);
+  if (!generationBatchId || !storyProjectId || !storyChapterId || !confirmedAt) {
+    return null;
+  }
+  return {
+    artifactId: generationBatchId,
+    artifact: {
+      kind: "story_generation_batch",
+      generationBatchId,
+      storyProjectId,
+      storyChapterId,
+      schemaVersion: "story-generation-batch-artifact/v1",
+    },
+  };
+}
+
+function asUnknownRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function requiredResultString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
 /**
  * How a pending approval is answered. Both values RESUME the graph — a reject
  * is an answer, not an abandonment, and the tool turns it into an
@@ -267,6 +327,25 @@ function stateHasMessageId(state: unknown, messageId: string): boolean {
   );
 }
 
+/**
+ * A completed Story stage is an orchestration boundary, not necessarily a
+ * pending LangGraph node. The authoritative external-result command therefore
+ * owns one stable, checkpoint-only trigger message for the next canonical
+ * stage decision. It is deliberately absent from the public transcript: the
+ * durable external result already records the creator-visible transition.
+ */
+function storyContinuationTrigger(
+  command: ContinuationCommand | undefined
+): { id: string; content: string } | null {
+  if (command?.kind !== "external_result" || !command.storyContinuation) {
+    return null;
+  }
+  return {
+    id: command.responseId,
+    content: "Continue the persisted Story production plan from canonical state.",
+  };
+}
+
 function stateHasToolResult(state: unknown, toolCallId: string): boolean {
   return stateMessages(state).some((message) => {
     if (!message || typeof message !== "object") return false;
@@ -299,11 +378,38 @@ function restoreExternalHandoff(
     const handoff = agentExternalJobHandoffFromResult(event.data);
     const toolCallId = event.data.toolCallId;
     const toolId = event.data.toolId;
-    if (handoff && typeof toolCallId === "string" && typeof toolId === "string") {
+    if (
+      handoff &&
+      !externalHandoffWasResolved(events, { turnId, jobId: handoff.jobId }) &&
+      typeof toolCallId === "string" &&
+      typeof toolId === "string"
+    ) {
       return { ...handoff, turnId, toolCallId, toolId };
     }
   }
   return undefined;
+}
+
+/**
+ * External jobs can be reused across production stages, so terminal identity
+ * is the durable (turnId, jobId) correlation — never jobId alone. Once this
+ * correlation has resumed, replaying an old ToolCompleted event must not move
+ * the run back to waiting_for_external.
+ */
+function externalHandoffWasResolved(
+  events: readonly { type: string; data: Record<string, unknown> }[],
+  handoff: { turnId: string; jobId: string }
+): boolean {
+  return events.some((event) => {
+    if (event.type !== "RunResumed") return false;
+    const reason = event.data.reason;
+    return (
+      event.data.turnId === handoff.turnId &&
+      event.data.externalJobId === handoff.jobId &&
+      typeof reason === "string" &&
+      reason.startsWith("external_job_")
+    );
+  });
 }
 
 function restoreOpenAssistantMessage(
@@ -652,11 +758,19 @@ export class LangGraphRunService {
     const durable = await fetchJournalFromNest(runId, { requireExisting: true });
     if (durable?.startExecutionPending) return null;
     const existing = this.snapshots.get(runId);
-    if (existing) return existing;
+    if (existing) {
+      if (existing.conversationId !== conversationId) {
+        throw new Error(`Agent OS run ${runId} does not belong to conversation ${conversationId}`);
+      }
+      return existing;
+    }
     if (!durable) return null;
+    if (durable.events.some((event) => event.conversationId !== conversationId)) {
+      throw new Error(`Agent OS run ${runId} does not belong to conversation ${conversationId}`);
+    }
     const status = AgentRunStatusSchema.parse(durable.status);
 
-    const journal = this.createJournal(conversationId);
+    const journal = this.createJournal();
     journal.restore(durable.events);
     return {
       runId,
@@ -682,7 +796,7 @@ export class LangGraphRunService {
     // available for unit tests and offline development.
     const durable = await fetchJournalFromNest(input.runId, { requireExisting: true });
     if (durable && !durable.startExecutionPending) {
-      const journal = this.createJournal(input.conversationId);
+      const journal = this.createJournal();
       journal.restore(durable.events);
       return {
         runId: input.runId,
@@ -749,15 +863,23 @@ export class LangGraphRunService {
 
   private assertDurableExecutionPrefix(input: StartLangGraphRunInput, journal: EventJournal): void {
     const runStarted = journal.all()[1];
-    const plan = journal.all()[2];
+    const executionMarker = journal.all()[2];
+    // Immutable journals created before the permission-step marker used the
+    // synthetic PlanCreated event in this slot. Keep those runs recoverable,
+    // while every new start records the real execution step below.
+    const executionStarted = Boolean(
+      executionMarker &&
+      executionMarker.data.turnId === input.turnId &&
+      (executionMarker.type === "PlanCreated" ||
+        (executionMarker.type === "StepStarted" && executionMarker.data.step === "permission"))
+    );
     if (
       runStarted?.type !== "RunStarted" ||
       runStarted.data.turnId !== input.turnId ||
-      plan?.type !== "PlanCreated" ||
-      plan.data.turnId !== input.turnId
+      !executionStarted
     ) {
       throw new Error(
-        "Recoverable start journal must begin UserMessage#1, RunStarted#2, PlanCreated#3"
+        "Recoverable start journal must begin UserMessage#1, RunStarted#2, and an execution marker for the admitted turn"
       );
     }
   }
@@ -879,7 +1001,7 @@ export class LangGraphRunService {
     if (!input.modelProfileId.trim()) {
       throw new Error("modelProfileId is required");
     }
-    const journal = this.createJournal(input.conversationId);
+    const journal = this.createJournal();
     const fencedStart = Boolean(input.startExecution);
     if (
       fencedStart &&
@@ -949,15 +1071,15 @@ export class LangGraphRunService {
         sessionId: input.sessionId,
         runId: input.runId,
         conversationId: input.conversationId,
-        type: "PlanCreated",
+        type: "StepStarted",
         data: {
           turnId,
-          steps: [
-            "Understand request under mounted skills",
-            "Use tools allowed by skill mount",
-            "Propose writes with approval when needed",
-            "Summarize results",
-          ],
+          step: "permission",
+          permissionMode: input.permissionMode ?? "smart",
+          agentMode: input.agentMode ?? "ASSIST",
+          projectKind: input.projectKind,
+          workbenchMode: input.workbenchMode,
+          workbenchContext: input.workbenchContext,
         },
       });
     } else if (fencedStart) {
@@ -1233,7 +1355,7 @@ export class LangGraphRunService {
     const pending = interrupts[0];
     if (!pending) return false;
 
-    const journal = this.createJournal(input.conversationId);
+    const journal = this.createJournal();
     if (durable?.events?.length) journal.restore(durable.events);
 
     const snapshot: LangGraphRunSnapshot = {
@@ -1479,25 +1601,41 @@ export class LangGraphRunService {
     if (!durable?.continuationExecutionPending) {
       throw new Error(`Run ${command.runId} has no durable continuation awaiting execution`);
     }
-    const resolutionMatches = durable.events.some((event) => {
-      if (event.data.turnId !== command.turnId) return false;
-      if (command.kind === "approval") {
-        return (
-          event.type === "ApprovalResolved" &&
-          event.data.responseId === command.responseId &&
-          event.data.approvalId === command.approvalId &&
-          event.data.decision === command.decision
-        );
-      }
-      return (
-        event.type === "UserInputResolved" &&
-        event.data.responseId === command.responseId &&
-        event.data.requestId === command.requestId &&
-        stableAnswerFingerprint(
-          (event.data.answers as Record<string, string> | undefined) ?? {}
-        ) === stableAnswerFingerprint(command.answers)
-      );
-    });
+    const resolutionMatches =
+      command.kind === "external_result"
+        ? durable.events.some(
+            (event) =>
+              event.type === "RunResumed" &&
+              event.data.turnId === command.turnId &&
+              event.data.reason === "external_job_completed" &&
+              event.data.externalJobId === command.externalJobId
+          ) &&
+          durable.events.some(
+            (event) =>
+              event.type === "MessageCompleted" &&
+              event.data.turnId === command.turnId &&
+              event.data.messageId === command.resultMessageId &&
+              event.data.finishReason === "external_result"
+          )
+        : durable.events.some((event) => {
+            if (event.data.turnId !== command.turnId) return false;
+            if (command.kind === "approval") {
+              return (
+                event.type === "ApprovalResolved" &&
+                event.data.responseId === command.responseId &&
+                event.data.approvalId === command.approvalId &&
+                event.data.decision === command.decision
+              );
+            }
+            return (
+              event.type === "UserInputResolved" &&
+              event.data.responseId === command.responseId &&
+              event.data.requestId === command.requestId &&
+              stableAnswerFingerprint(
+                (event.data.answers as Record<string, string> | undefined) ?? {}
+              ) === stableAnswerFingerprint(command.answers)
+            );
+          });
     if (!resolutionMatches) {
       throw new Error(
         `Continuation ${command.responseId} diverges from the durable response journal`
@@ -1524,7 +1662,7 @@ export class LangGraphRunService {
       }
     }
 
-    const journal = this.createJournal(command.conversationId);
+    const journal = this.createJournal();
     journal.restore(durable.events);
     const continuationExecution: ContinuationExecutionProof = {
       ...input.continuationExecution,
@@ -1582,10 +1720,12 @@ export class LangGraphRunService {
     const abort = new AbortController();
     this.aborts.set(command.runId, abort);
     const heartbeatTimer = this.startStartHeartbeat(snapshot);
-    const resume: ApprovalDecision | UserInputDecision =
+    const resume: ApprovalDecision | UserInputDecision | null =
       command.kind === "approval"
         ? command.decision
-        : { requestId: command.requestId, answers: command.answers };
+        : command.kind === "user_input"
+          ? { requestId: command.requestId, answers: command.answers }
+          : null;
     const work = this.runGraphTurn({
       input: {
         runId: command.runId,
@@ -1611,6 +1751,7 @@ export class LangGraphRunService {
       signal: abort.signal,
       expectedContinuationExecutionOwnerId: continuationExecution.executionOwnerId,
       continuationCommand: command,
+      externalResultContinuation: command.kind === "external_result",
     }).catch((error) => {
       if (
         isContinuationExecutionFenceError(error) ||
@@ -1915,6 +2056,7 @@ export class LangGraphRunService {
     expectedStartExecutionOwnerId?: string;
     expectedContinuationExecutionOwnerId?: string;
     continuationCommand?: ContinuationCommand;
+    externalResultContinuation?: boolean;
   }): Promise<void> {
     const {
       input,
@@ -1925,6 +2067,7 @@ export class LangGraphRunService {
       expectedStartExecutionOwnerId,
       expectedContinuationExecutionOwnerId,
       continuationCommand,
+      externalResultContinuation = false,
     } = args;
     const assertCurrentExecution = (): void => {
       if (
@@ -2151,9 +2294,44 @@ export class LangGraphRunService {
         domain: input.domain,
         startExecution: this.snapshots.get(input.runId)?.startExecution,
         continuationExecution: this.snapshots.get(input.runId)?.continuationExecution,
+        ...(continuationCommand?.kind === "external_result" && continuationCommand.storyContinuation
+          ? {
+              storyContinuation: {
+                responseId: continuationCommand.responseId,
+                ...continuationCommand.storyContinuation,
+              },
+            }
+          : {}),
         abortSignal: signal,
         onToolEvent: async (event) => {
           assertCurrentExecution();
+          const batchArtifact = storyGenerationBatchArtifactFromToolEvent(event);
+          const artifactAlreadyRecorded = batchArtifact
+            ? journal
+                .all()
+                .some(
+                  (existing) =>
+                    existing.type === "ArtifactCreated" &&
+                    existing.data.artifactId === batchArtifact.artifactId
+                )
+            : false;
+          if (batchArtifact && !artifactAlreadyRecorded) {
+            // Record the live domain reference before ToolCompleted. If the
+            // worker dies between the two writes, the creator still sees a
+            // truthful, recoverable batch instead of losing paid work.
+            journal.append({
+              sessionId: input.sessionId,
+              runId: input.runId,
+              conversationId: input.conversationId,
+              type: "ArtifactCreated",
+              data: {
+                turnId,
+                artifactId: batchArtifact.artifactId,
+                artifact: batchArtifact.artifact,
+                status: "active",
+              },
+            });
+          }
           const duplicateLifecycleEvent = journal
             .all()
             .some(
@@ -2179,7 +2357,13 @@ export class LangGraphRunService {
           }
           if (event.type === "ToolCompleted" && !externalHandoff) {
             const handoff = agentExternalJobHandoffFromResult(event.data);
-            if (handoff) {
+            if (
+              handoff &&
+              !externalHandoffWasResolved(journal.all(), {
+                turnId,
+                jobId: handoff.jobId,
+              })
+            ) {
               externalHandoff = {
                 ...handoff,
                 turnId,
@@ -2210,12 +2394,17 @@ export class LangGraphRunService {
     ): Promise<boolean> => {
       assertCurrentExecution();
       if (!externalHandoff) return false;
+      const handoff = externalHandoff;
+      if (externalHandoffWasResolved(journal.all(), handoff)) {
+        externalHandoff = undefined;
+        return false;
+      }
       const state = suppliedState ?? (await graph.getState(threadConfig));
       assertCurrentExecution();
       // ToolCompleted is emitted inside the tool wrapper before LangGraph has
       // committed the matching ToolMessage. A start command may be released
       // only after the exact tool result is visible in the checkpoint.
-      if (!stateHasToolResult(state, externalHandoff.toolCallId)) return false;
+      if (!stateHasToolResult(state, handoff.toolCallId)) return false;
       const current = this.snapshots.get(input.runId);
       if (current?.startExecution || current?.continuationExecution) {
         const captured = await this.captureLatestStartCheckpoint(
@@ -2229,6 +2418,13 @@ export class LangGraphRunService {
         if (!captured) return false;
       }
       assertCurrentExecution();
+      // Journal reporting and checkpoint capture are asynchronous. Recheck the
+      // terminal correlation immediately before projecting a new pause so a
+      // concurrent durable resume can never be overwritten by stale work.
+      if (externalHandoffWasResolved(journal.all(), handoff)) {
+        externalHandoff = undefined;
+        return false;
+      }
       if (
         !journal
           .all()
@@ -2237,7 +2433,7 @@ export class LangGraphRunService {
               event.type === "RunPaused" &&
               event.data.turnId === turnId &&
               event.data.status === "waiting_for_external" &&
-              event.data.externalJobId === externalHandoff?.jobId
+              event.data.externalJobId === handoff.jobId
           )
       ) {
         journal.append({
@@ -2248,9 +2444,9 @@ export class LangGraphRunService {
           data: {
             turnId,
             status: "waiting_for_external",
-            externalJobId: externalHandoff.jobId,
-            toolCallId: externalHandoff.toolCallId,
-            toolId: externalHandoff.toolId,
+            externalJobId: handoff.jobId,
+            toolCallId: handoff.toolCallId,
+            toolId: handoff.toolId,
           },
         });
       }
@@ -2260,9 +2456,9 @@ export class LangGraphRunService {
         activeTurnId: turnId,
         status: "waiting_for_external",
         journal,
-        pendingExternal: externalHandoff,
+        pendingExternal: handoff,
         ...carryRunContext(prev, input),
-        assistantText: externalHandoff.startedMessage,
+        assistantText: handoff.startedMessage,
         activeMessage: undefined,
       };
       this.snapshots.set(input.runId, waiting);
@@ -2298,6 +2494,19 @@ export class LangGraphRunService {
     );
     if (await finishExternalHandoffIfCheckpointed(before)) return;
     const checkpointHasPendingTasks = Array.isArray(before.tasks) && before.tasks.length > 0;
+    const continuationTrigger = storyContinuationTrigger(continuationCommand);
+    const continuationTriggerAlreadyCheckpointed = Boolean(
+      continuationTrigger && stateHasMessageId(before, continuationTrigger.id)
+    );
+    // A Story stage proposal can finish its React graph before the creator
+    // reviews it. Applying that proposal must start a new deterministic
+    // read/decide/author cycle; stream(null) only resumes an unfinished cycle.
+    const startsNewStoryStageCycle = Boolean(
+      externalResultContinuation &&
+      continuationTrigger &&
+      !checkpointHasPendingTasks &&
+      !continuationTriggerAlreadyCheckpointed
+    );
     const checkpointInterrupts = interruptsFromState(before);
     const checkpointStillAwaitingResume = resume
       ? checkpointInterrupts.some((pending) =>
@@ -2326,22 +2535,35 @@ export class LangGraphRunService {
       ? checkpointStillAwaitingResume
         ? new Command({ resume })
         : null
-      : stableMessageAlreadyCheckpointed
-        ? null
-        : {
+      : startsNewStoryStageCycle
+        ? {
             messages: [
-              input.messageId
-                ? new HumanMessage({
-                    id: input.messageId,
-                    content: input.modelMessage ?? input.message,
-                    additional_kwargs: {
-                      clientSubmissionId: input.clientSubmissionId,
-                      turnId,
-                    },
-                  })
-                : new HumanMessage(input.modelMessage ?? input.message),
+              new HumanMessage({
+                id: continuationTrigger!.id,
+                content: continuationTrigger!.content,
+                additional_kwargs: {
+                  turnId,
+                  internalContinuation: "story_stage",
+                },
+              }),
             ],
-          };
+          }
+        : externalResultContinuation || stableMessageAlreadyCheckpointed
+          ? null
+          : {
+              messages: [
+                input.messageId
+                  ? new HumanMessage({
+                      id: input.messageId,
+                      content: input.modelMessage ?? input.message,
+                      additional_kwargs: {
+                        clientSubmissionId: input.clientSubmissionId,
+                        turnId,
+                      },
+                    })
+                  : new HumanMessage(input.modelMessage ?? input.message),
+              ],
+            };
 
     // A crash may happen after LangGraph completed its durable checkpoint but
     // before the Gateway journal received MessageCompleted/RunCompleted. In
@@ -2350,6 +2572,8 @@ export class LangGraphRunService {
     // again or treating EmptyInput as a failed turn.
     if (
       (stableMessageAlreadyCheckpointed ||
+        (externalResultContinuation &&
+          (!continuationTrigger || continuationTriggerAlreadyCheckpointed)) ||
         (resume && (!checkpointStillAwaitingResume || continuationAdvancedToNewInterrupt))) &&
       !checkpointHasPendingTasks
     ) {
@@ -2781,7 +3005,7 @@ export class LangGraphRunService {
     snapshot.activeMessage = undefined;
   }
 
-  private createJournal(_conversationId: string): EventJournal {
+  private createJournal(): EventJournal {
     // PostgreSQL is the worker's only publication path. The Gateway publishes
     // committed events to Ably, so realtime can never overtake durability.
     return new EventJournal();
@@ -2894,7 +3118,7 @@ export class LangGraphRunService {
       return false;
     }
 
-    const journal = this.createJournal(snapshot.conversationId ?? snapshot.runId);
+    const journal = this.createJournal();
     journal.restore(durable.events);
     snapshot.journal = journal;
     snapshot.status = "waiting_for_external";

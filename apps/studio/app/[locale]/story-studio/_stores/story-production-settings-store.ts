@@ -16,32 +16,75 @@ interface ModalitySettings {
 }
 
 /**
- * Page-level generation defaults chosen in the production-page header. Every
- * quick-generate on the assets and storyboard boards submits with the matching
- * modality's model + options; null selection defers to the server's catalog
- * default. View state only — the server remains the billing/validation
- * authority, per the state convention in apps/studio/AGENTS.md.
+ * Page-session generation overrides chosen in the production-page header.
+ * Persisted project defaults live in AgentOsModelPreference and are resolved
+ * directly by useStoryProductionGenerationDefaults; they are never copied into
+ * this view store. Null therefore means "follow the cross-device default".
  */
 interface StoryProductionSettingsState {
-  image: ModalitySettings;
-  video: ModalitySettings;
-  setModel: (modality: ProductionModality, selection: ProductionModelSelection | null) => void;
-  setOptions: (modality: ProductionModality, options: ModelSettings) => void;
+  byProject: Record<string, Record<ProductionModality, ModalitySettings>>;
+  setModel: (
+    projectId: string,
+    modality: ProductionModality,
+    selection: ProductionModelSelection | null
+  ) => void;
+  setOptions: (projectId: string, modality: ProductionModality, options: ModelSettings) => void;
 }
 
-const EMPTY: ModalitySettings = { selection: null, options: {} };
+export const EMPTY_PRODUCTION_MODALITY_SETTINGS: ModalitySettings = {
+  selection: null,
+  options: {},
+};
+
+function projectSettings(
+  state: StoryProductionSettingsState,
+  projectId: string
+): Record<ProductionModality, ModalitySettings> {
+  return (
+    state.byProject[projectId] ?? {
+      image: EMPTY_PRODUCTION_MODALITY_SETTINGS,
+      video: EMPTY_PRODUCTION_MODALITY_SETTINGS,
+    }
+  );
+}
 
 export const useStoryProductionSettingsStore = create<StoryProductionSettingsState>()(
   devtools(
     (set) => ({
-      image: EMPTY,
-      video: EMPTY,
-      setModel: (modality, selection) =>
+      byProject: {},
+      setModel: (projectId, modality, selection) =>
         // A model switch discards the previous model's options: option keys are
         // schema-specific and must never leak across models.
-        set({ [modality]: { selection, options: {} } }, false, "setModel"),
-      setOptions: (modality, options) =>
-        set((state) => ({ [modality]: { ...state[modality], options } }), false, "setOptions"),
+        set(
+          (state) => ({
+            byProject: {
+              ...state.byProject,
+              [projectId]: {
+                ...projectSettings(state, projectId),
+                [modality]: { selection, options: {} },
+              },
+            },
+          }),
+          false,
+          "setModel"
+        ),
+      setOptions: (projectId, modality, options) =>
+        set(
+          (state) => ({
+            byProject: {
+              ...state.byProject,
+              [projectId]: {
+                ...projectSettings(state, projectId),
+                [modality]: {
+                  ...projectSettings(state, projectId)[modality],
+                  options,
+                },
+              },
+            },
+          }),
+          false,
+          "setOptions"
+        ),
     }),
     { name: "story-production-settings" }
   )

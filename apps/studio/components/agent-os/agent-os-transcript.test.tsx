@@ -35,6 +35,7 @@ describe("AgentOsActivityIndicator", () => {
   let root: Root;
 
   beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -125,5 +126,55 @@ describe("AgentOsActivityIndicator", () => {
 
     expect(container.querySelector("[role='status']")?.textContent).toBe("Current turn activity");
     expect(container.querySelector("[data-turn-id='turn-current']")).not.toBeNull();
+  });
+
+  it("keeps a durable proposal Artifact on its Assistant turn after approval resolves", async () => {
+    const turnMessages: AgentOsChatMessage[] = [
+      ...messages,
+      {
+        id: "assistant-current",
+        role: "assistant",
+        content: "The Asset Specs are ready.",
+        createdAt: "2026-08-21T00:00:01.000Z",
+        turnId: "turn-current",
+        runId: "run-current",
+        artifacts: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            reference: {
+              kind: "story_stage_proposal",
+              storyAgentRunId: "11111111-1111-4111-8111-111111111111",
+            },
+            status: "applied",
+            createdAt: "2026-08-21T00:00:02.000Z",
+            eventSequence: 4,
+          },
+        ],
+      },
+    ];
+
+    await act(async () => {
+      root.render(
+        <AgentOsTranscript
+          messages={turnMessages}
+          status="completed"
+          error={null}
+          busy={false}
+          artifactRenderer={(artifact) => (
+            <div data-testid="asset-specs" data-status={artifact.status}>
+              Courier · Character
+            </div>
+          )}
+          labels={labels}
+          empty={null}
+        />
+      );
+    });
+
+    const turn = container.querySelector("[data-turn-id='turn-current']");
+    const proposal = turn?.querySelector('[data-testid="asset-specs"]');
+    expect(proposal?.textContent).toBe("Courier · Character");
+    expect(proposal?.getAttribute("data-status")).toBe("applied");
+    expect(turn?.querySelector("[role='status']")).toBeNull();
   });
 });

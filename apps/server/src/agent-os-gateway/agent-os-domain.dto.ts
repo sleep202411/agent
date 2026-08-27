@@ -20,14 +20,53 @@ const localizedName = z.record(
   z.string().min(1).max(200),
 );
 
-const ExecutionProofSchema = z
+const ExecutionProofFields = {
+  executionToken: z.string().uuid(),
+  executionAttemptId: z.string().uuid(),
+  executionEpoch: z.number().int().positive(),
+  executionOwnerId: z.string().uuid(),
+} as const;
+
+const StartExecutionProofSchema = z
   .object({
-    executionToken: z.string().uuid(),
-    executionAttemptId: z.string().uuid(),
-    executionEpoch: z.number().int().positive(),
-    executionOwnerId: z.string().uuid(),
+    ...ExecutionProofFields,
+    checkpointId: z.string().trim().min(1).max(160).optional(),
+    checkpointNamespace: z.string().max(200).optional(),
+    checkpointThreadId: z.string().uuid().optional(),
+    checkpointMessageId: z.string().uuid().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (proof) =>
+      allPresentOrAbsent([
+        proof.checkpointId,
+        proof.checkpointNamespace,
+        proof.checkpointThreadId,
+        proof.checkpointMessageId,
+      ]),
+    { message: 'Start checkpoint receipt fields must be supplied together.' },
+  );
+
+const ContinuationExecutionProofSchema = z
+  .object({
+    ...ExecutionProofFields,
+    checkpointId: z.string().trim().min(1).max(160).optional(),
+    checkpointNamespace: z.string().max(200).optional(),
+    checkpointThreadId: z.string().uuid().optional(),
+  })
+  .strict()
+  .refine(
+    (proof) =>
+      allPresentOrAbsent([
+        proof.checkpointId,
+        proof.checkpointNamespace,
+        proof.checkpointThreadId,
+      ]),
+    {
+      message:
+        'Continuation checkpoint receipt fields must be supplied together.',
+    },
+  );
 
 export const CharactersUpsertInputSchema = z
   .object({
@@ -134,8 +173,8 @@ export const AgentOsDomainExecuteBodySchema = z
     skillVersionIds: z.array(z.string().uuid()).max(32),
     workbenchContext: z.record(z.string(), z.string()).optional(),
     idempotencyKey: z.string().trim().min(8).max(512),
-    startExecution: ExecutionProofSchema.optional(),
-    continuationExecution: ExecutionProofSchema.optional(),
+    startExecution: StartExecutionProofSchema.optional(),
+    continuationExecution: ContinuationExecutionProofSchema.optional(),
     arguments: z.unknown(),
   })
   .strict()
@@ -147,3 +186,10 @@ export const AgentOsDomainExecuteBodySchema = z
 export type AgentOsDomainExecuteBody = z.infer<
   typeof AgentOsDomainExecuteBodySchema
 >;
+
+function allPresentOrAbsent(values: readonly unknown[]): boolean {
+  return (
+    values.every((value) => value !== undefined) ||
+    values.every((value) => value === undefined)
+  );
+}

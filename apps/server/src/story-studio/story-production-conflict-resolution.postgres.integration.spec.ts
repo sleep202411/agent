@@ -10,11 +10,19 @@ import {
   StoryProjectMemberRole,
   StoryProjectStatus,
   StoryStoryboardBindingMode,
-  StoryVisualStyle,
   StoryVisibility,
+  StudioDocumentStatus,
+  StudioDocumentType,
+  StudioDocumentVersionSource,
   WorkspaceMemberRole,
   WorkspaceType,
 } from '@prisma/client';
+import { storyVisualStyleSkillBySlug } from '@repo/shared';
+import {
+  STORY_SCREENPLAY_SCHEMA_VERSION,
+  buildStoryScreenplayDocument,
+  type StoryScreenplay,
+} from '@repo/shared/story-agent';
 import {
   STORY_PRODUCTION_PLAN_SCHEMA_VERSION,
   StoryProductionPlanSchema,
@@ -23,6 +31,7 @@ import {
 import { config as loadEnv } from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
+import * as Y from 'yjs';
 import { buildPrisma } from '../infra/db/db.module';
 import { canonicalJsonHash } from './canonical-json';
 import {
@@ -31,6 +40,10 @@ import {
   InteractiveStoryDraftContentSchema,
 } from './dto';
 import { StoryProductionPlanService } from './story-production-plan.service';
+import { readStoryScriptHead } from './story-script-stage';
+
+const CINEMATIC_REALISM_SKILL =
+  storyVisualStyleSkillBySlug('cinematic-realism')!;
 
 loadEnv({
   path: resolve(__dirname, '../../.env'),
@@ -237,7 +250,6 @@ describePostgres(
 
       const sequenceResponse = await service.resolveStoryboardSequenceConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         sequence.id,
@@ -251,7 +263,6 @@ describePostgres(
       );
       const replay = await service.resolveStoryboardSequenceConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         sequence.id,
@@ -266,7 +277,6 @@ describePostgres(
       expect(replay).toEqual(sequenceResponse);
       await service.resolveAssetSpecConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         asset.id,
@@ -354,7 +364,6 @@ describePostgres(
       ]);
       await service.resolveAssetSpecConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         asset.id,
@@ -368,7 +377,6 @@ describePostgres(
       );
       await service.resolveStoryboardSequenceConflict(
         { userId: fixture.userId } as never,
-        fixture.workspaceId,
         fixture.projectId,
         fixture.chapterId,
         sequence.id,
@@ -531,7 +539,9 @@ async function createFixture(
       workspaceId: workspace.id,
       frameProfile: StoryFrameProfile.landscape_16_9,
       durationPreset: StoryDurationPreset.short_5_15,
-      visualStyle: StoryVisualStyle.cinematic_realism,
+      visualStyle: 'cinematic-realism',
+      visualStyleSkillId: CINEMATIC_REALISM_SKILL.skillId,
+      visualStyleSkillVersionId: CINEMATIC_REALISM_SKILL.versionId,
       creativeProfileConfirmedAt: new Date(),
       status: StoryProjectStatus.active,
       visibility: StoryVisibility.private,
@@ -564,6 +574,77 @@ async function createFixture(
       nodeIds: ['scene.gate'],
       entryNodeId: 'scene.gate',
       createdByUserId: userId,
+    },
+  });
+  const screenplay: StoryScreenplay = {
+    schemaVersion: STORY_SCREENPLAY_SCHEMA_VERSION,
+    storyLanguage: 'en-US',
+    title: 'The Gate',
+    logline: 'A courier reaches a sealed city.',
+    synopsis: 'The city gate opens for one decisive crossing.',
+    characters: [],
+    entrySceneId: 'scene.gate',
+    scenes: [
+      {
+        nodeId: 'scene.gate',
+        clipKey: 'GATE',
+        heading: 'EXT. GATE - NIGHT',
+        beat: 'The gate opens.',
+        action: 'The gate opens beneath the night watch.',
+        dialogue: [],
+        exit: { kind: 'auto', nextNodeId: null },
+      },
+    ],
+  };
+  const ydoc = new Y.Doc();
+  const crdtState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
+  ydoc.destroy();
+  const script = await prisma.studioDocument.create({
+    data: {
+      workspaceId: workspace.id,
+      storyProjectId: project.id,
+      storyChapterId: chapter.id,
+      type: StudioDocumentType.script,
+      status: StudioDocumentStatus.active,
+      title: screenplay.title,
+      crdtState,
+      currentSequence: 0,
+      snapshotSequence: 0,
+      createdById: userId,
+      updatedById: userId,
+    },
+  });
+  const scriptVersion = await prisma.studioDocumentVersion.create({
+    data: {
+      documentId: script.id,
+      versionNumber: 1,
+      schemaVersion: script.schemaVersion,
+      sequence: 0,
+      title: screenplay.title,
+      label: 'Approved conflict integration screenplay',
+      source: StudioDocumentVersionSource.system,
+      snapshot: {
+        screenplay,
+        document: buildStoryScreenplayDocument(screenplay),
+      } as Prisma.InputJsonObject,
+      crdtState,
+      createdById: userId,
+    },
+  });
+  await prisma.studioDocument.update({
+    where: { id: script.id },
+    data: { currentVersionId: scriptVersion.id, version: 1 },
+  });
+  const scriptHead = await prisma.$transaction((tx) =>
+    readStoryScriptHead(tx, project.id, chapter.id),
+  );
+  await prisma.storyChapter.update({
+    where: { id: chapter.id },
+    data: {
+      sourceScriptDocumentId: script.id,
+      sourceScriptVersionId: scriptVersion.id,
+      sourceScriptSequence: 0,
+      sourceScriptHash: scriptHead.hash,
     },
   });
   return {

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Wong Kar-wai Neon Time"
-  short_description: "Neon color separation, step-printed motion, intimate framing and"
-  default_prompt: "Use $wong-kar-wai-neon-time to apply this creative direction to my request."

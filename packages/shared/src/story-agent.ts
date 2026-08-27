@@ -1,6 +1,10 @@
 import { z } from "zod";
 import { findUnprojectableChecks } from "./zod-json-schema-fidelity.js";
-import { StoryProductionPlanSchema } from "./story-production.js";
+import {
+  StoryAssetPlanSchema,
+  StoryProductionPlanSchema,
+  StoryStoryboardPlanSchema,
+} from "./story-production.js";
 
 export const STORY_PATCH_SCHEMA_VERSION = "story-patch-v1" as const;
 
@@ -1053,6 +1057,10 @@ export type StoryPatchBrief = z.infer<typeof StoryPatchBriefSchema>;
 
 export const STORY_SCREENPLAY_SCHEMA_VERSION = "interactive-screenplay-v1" as const;
 export const STORY_SCREENPLAY_PROPOSAL_SCHEMA_VERSION = "story-screenplay-proposal-v1" as const;
+export const STORY_PLOT_PROPOSAL_SCHEMA_VERSION = "story-plot-proposal-v1" as const;
+export const STORY_ASSET_PROPOSAL_SCHEMA_VERSION = "story-asset-proposal-v1" as const;
+export const STORY_STORYBOARD_PROPOSAL_SCHEMA_VERSION = "story-storyboard-proposal-v1" as const;
+export const STORY_NOOP_PROPOSAL_SCHEMA_VERSION = "story-noop-proposal-v1" as const;
 export const STORY_SCREENPLAY_DOCUMENT_SCHEMA_VERSION = "story-screenplay-document-v1" as const;
 
 export const StoryScreenplayDialogueLineSchema = z
@@ -1214,25 +1222,35 @@ function localizedStoryText(value: Readonly<Record<string, string>>): string {
   return value["en-US"] ?? value["zh-CN"] ?? value["zh-HK"] ?? Object.values(value)[0] ?? "";
 }
 
+const StoryStageProposalBaseShape = {
+  draftSchemaVersion: z.literal(STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION),
+  baseDraftRevision: z.number().int().nonnegative(),
+  baseContentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  baseLayoutRevision: z.number().int().nonnegative(),
+  /** Exact collaborative Script head used as this proposal's source. */
+  baseScriptDocumentId: StoryAgentUuidSchema.nullable(),
+  baseScriptSequence: z.number().int().nonnegative(),
+  baseScriptHash: z.string().regex(/^[a-f0-9]{64}$/),
+  title: z.string().trim().min(1).max(160),
+  summary: z.string().trim().min(1).max(4_000),
+} as const;
+
+const StoryDownstreamStageProposalBaseShape = {
+  ...StoryStageProposalBaseShape,
+  /** Assets/Plot/Storyboard require an already-existing approved Script. */
+  baseScriptDocumentId: StoryAgentUuidSchema,
+} as const;
+
+/** Creator review payload for the Script stage only. */
 export const StoryScreenplayProposalSchema = z
   .object({
     schemaVersion: z.literal(STORY_SCREENPLAY_PROPOSAL_SCHEMA_VERSION),
-    draftSchemaVersion: z.literal(STORY_AGENT_TARGET_DRAFT_SCHEMA_VERSION),
-    baseDraftRevision: z.number().int().nonnegative(),
-    baseContentHash: z.string().regex(/^[a-f0-9]{64}$/),
-    baseLayoutRevision: z.number().int().nonnegative(),
-    /** The exact collaborative Script head the proposal was authored against. */
-    baseScriptDocumentId: StoryAgentUuidSchema.nullable(),
-    baseScriptSequence: z.number().int().nonnegative(),
-    baseScriptHash: z.string().regex(/^[a-f0-9]{64}$/),
-    title: z.string().trim().min(1).max(160),
-    summary: z.string().trim().min(1).max(4_000),
+    ...StoryStageProposalBaseShape,
     screenplay: StoryScreenplaySchema,
     /**
-     * Chapter-local production specifications derived from the screenplay.
-     * They contain prompts, timings, and stable logical references only — no
-     * generated media and no second branching graph. Optional solely for
-     * durable screenplay proposals authored before production-plan-v1.
+     * Legacy read-only payload authored before stages became independent.
+     * New Script writers must omit this field; keeping it here lets existing
+     * durable v1 runs drain without changing their schemaVersion in place.
      */
     productionPlan: StoryProductionPlanSchema.optional(),
     /**
@@ -1245,10 +1263,67 @@ export const StoryScreenplayProposalSchema = z
   .strict();
 export type StoryScreenplayProposal = z.infer<typeof StoryScreenplayProposalSchema>;
 
+/** Creator review payload for compiling the approved Script into Plot Tree topology. */
+export const StoryPlotProposalSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_PLOT_PROPOSAL_SCHEMA_VERSION),
+    ...StoryDownstreamStageProposalBaseShape,
+    screenplay: StoryScreenplaySchema,
+    document: StoryScreenplayDocumentSchema,
+    /**
+     * Legacy read-only payload from the retired Assets-before-Plot workflow.
+     * New Plot writers omit it; accepting it lets already-durable proposals
+     * drain while all active planning and apply logic ignores the old input.
+     */
+    assetPlan: StoryAssetPlanSchema.optional(),
+  })
+  .strict();
+export type StoryPlotProposal = z.infer<typeof StoryPlotProposalSchema>;
+
+/** Creator review payload for logical Asset Specs. No media is generated here. */
+export const StoryAssetProposalSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_ASSET_PROPOSAL_SCHEMA_VERSION),
+    ...StoryDownstreamStageProposalBaseShape,
+    screenplay: StoryScreenplaySchema,
+    assetPlan: StoryAssetPlanSchema,
+  })
+  .strict();
+export type StoryAssetProposal = z.infer<typeof StoryAssetProposalSchema>;
+
+/**
+ * Creator review payload for Storyboard sequences. The embedded Asset plan is
+ * the immutable source snapshot that must still match current approved Asset
+ * Specs when this proposal is applied.
+ */
+export const StoryStoryboardProposalSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_STORYBOARD_PROPOSAL_SCHEMA_VERSION),
+    ...StoryDownstreamStageProposalBaseShape,
+    screenplay: StoryScreenplaySchema,
+    assetPlan: StoryAssetPlanSchema,
+    storyboardPlan: StoryStoryboardPlanSchema,
+  })
+  .strict();
+export type StoryStoryboardProposal = z.infer<typeof StoryStoryboardProposalSchema>;
+
+/** Durable proof that an explicit authoring request found every stage current. */
+export const StoryNoopProposalSchema = z
+  .object({
+    schemaVersion: z.literal(STORY_NOOP_PROPOSAL_SCHEMA_VERSION),
+    ...StoryDownstreamStageProposalBaseShape,
+  })
+  .strict();
+export type StoryNoopProposal = z.infer<typeof StoryNoopProposalSchema>;
+
 /** A run's durable proposal column: a drafting brief until authoring lands. */
 export const StoryAgentRunProposalSchema = z.union([
   StoryPatchProposalSchema,
   StoryScreenplayProposalSchema,
+  StoryPlotProposalSchema,
+  StoryAssetProposalSchema,
+  StoryStoryboardProposalSchema,
+  StoryNoopProposalSchema,
   StoryPatchBriefSchema,
 ]);
 export type StoryAgentRunProposal = z.infer<typeof StoryAgentRunProposalSchema>;
@@ -1263,16 +1338,51 @@ export function isStoryScreenplayProposal(
   return proposal.schemaVersion === STORY_SCREENPLAY_PROPOSAL_SCHEMA_VERSION;
 }
 
-export function storyScreenplayDocument(
-  proposal: StoryScreenplayProposal
-): StoryScreenplayDocument {
-  return proposal.document ?? buildStoryScreenplayDocument(proposal.screenplay);
+export function isStoryPlotProposal(
+  proposal: StoryAgentRunProposal
+): proposal is StoryPlotProposal {
+  return proposal.schemaVersion === STORY_PLOT_PROPOSAL_SCHEMA_VERSION;
 }
 
-/** Statuses a run may hold while its proposal column is still a brief. */
+export function isStoryAssetProposal(
+  proposal: StoryAgentRunProposal
+): proposal is StoryAssetProposal {
+  return proposal.schemaVersion === STORY_ASSET_PROPOSAL_SCHEMA_VERSION;
+}
+
+export function isStoryStoryboardProposal(
+  proposal: StoryAgentRunProposal
+): proposal is StoryStoryboardProposal {
+  return proposal.schemaVersion === STORY_STORYBOARD_PROPOSAL_SCHEMA_VERSION;
+}
+
+export function isStoryNoopProposal(
+  proposal: StoryAgentRunProposal
+): proposal is StoryNoopProposal {
+  return proposal.schemaVersion === STORY_NOOP_PROPOSAL_SCHEMA_VERSION;
+}
+
+export function storyScreenplayDocument(
+  proposal:
+    | StoryScreenplayProposal
+    | StoryPlotProposal
+    | StoryAssetProposal
+    | StoryStoryboardProposal
+): StoryScreenplayDocument {
+  return "document" in proposal && proposal.document
+    ? proposal.document
+    : buildStoryScreenplayDocument(proposal.screenplay);
+}
+
+/**
+ * Statuses a run may hold while its proposal column is still a brief.
+ * `failed` is included because authoring can terminate before a concrete
+ * proposal exists; unlike `authoring_failed`, it is not retryable.
+ */
 const BRIEF_PROPOSAL_STATUSES: ReadonlySet<string> = new Set([
   "authoring",
   "authoring_failed",
+  "failed",
   "cancelled",
   "stale",
 ]);
@@ -1329,6 +1439,42 @@ export const StoryAgentRunDtoSchema = z
   })
   .strict()
   .superRefine((run, context) => {
+    if (isStoryNoopProposal(run.proposal)) {
+      if (run.kind !== "apply") {
+        addRunIssue(context, ["kind"], "A Noop proposal can only complete an apply run.");
+      }
+      if (run.status !== "succeeded") {
+        addRunIssue(
+          context,
+          ["status"],
+          "A Noop proposal is a terminal current-workflow result, not a reviewable proposal."
+        );
+      }
+      if (run.affectedNodeIds.length > 0 || run.createdNodeIds.length > 0) {
+        addRunIssue(
+          context,
+          ["affectedNodeIds"],
+          "A Noop result cannot report affected or created Plot nodes."
+        );
+      }
+      if (run.resultDraftRevision !== null && run.resultDraftRevision !== run.baseDraftRevision) {
+        addRunIssue(
+          context,
+          ["resultDraftRevision"],
+          "A Noop result must preserve the base draft revision."
+        );
+      }
+      if (
+        run.resultLayoutRevision !== null &&
+        run.resultLayoutRevision !== run.baseLayoutRevision
+      ) {
+        addRunIssue(
+          context,
+          ["resultLayoutRevision"],
+          "A Noop result must preserve the base layout revision."
+        );
+      }
+    }
     if (isStoryPatchBrief(run.proposal)) {
       if (!BRIEF_PROPOSAL_STATUSES.has(run.status)) {
         addRunIssue(
@@ -1342,19 +1488,11 @@ export const StoryAgentRunDtoSchema = z
       }
     } else {
       if (AUTHORING_PHASE_STATUSES.has(run.status)) {
-        // The staged screenplay approval re-arms the SAME run into the
-        // downstream authoring phase while it still carries the approved
-        // screenplay proposal; that continuation is confirmed by definition.
-        // An unconfirmed authoring-phase run must still carry its brief.
-        const confirmedScreenplayContinuation =
-          isStoryScreenplayProposal(run.proposal) && run.confirmedAt !== null;
-        if (!confirmedScreenplayContinuation) {
-          addRunIssue(
-            context,
-            ["proposal"],
-            `A ${run.status} run must still carry its drafting brief.`
-          );
-        }
+        addRunIssue(
+          context,
+          ["proposal"],
+          `A ${run.status} run must still carry its drafting brief.`
+        );
       }
       if (run.baseDraftRevision !== run.proposal.baseDraftRevision) {
         addRunIssue(
@@ -1435,16 +1573,12 @@ export const StoryAgentRunDtoSchema = z
     }
 
     switch (run.status) {
-      // The staged screenplay approval re-arms the SAME run back into
-      // `authoring` for downstream reconciliation, so a recorded confirmation
-      // is legal in both authoring states. The confirmed/authoring-route
-      // invariant is enforced by the database decision-lifecycle constraint;
-      // this DTO refine keeps only the pairing rule (confirmedByUserId and
-      // confirmedAt together), asserted above.
       case "authoring":
         requireNullRunFields(
           run,
           [
+            "confirmedByUserId",
+            "confirmedAt",
             "cancelledByUserId",
             "cancelledAt",
             "startedAt",
@@ -1461,6 +1595,8 @@ export const StoryAgentRunDtoSchema = z
         requireNullRunFields(
           run,
           [
+            "confirmedByUserId",
+            "confirmedAt",
             "cancelledByUserId",
             "cancelledAt",
             "startedAt",
@@ -1504,11 +1640,12 @@ export const StoryAgentRunDtoSchema = z
         );
         break;
       case "succeeded":
-        requirePresentRunFields(
-          run,
-          ["confirmedByUserId", "confirmedAt", "startedAt", "completedAt"],
-          context
-        );
+        requirePresentRunFields(run, ["startedAt", "completedAt"], context);
+        if (isStoryNoopProposal(run.proposal)) {
+          requireNullRunFields(run, ["confirmedByUserId", "confirmedAt"], context);
+        } else {
+          requirePresentRunFields(run, ["confirmedByUserId", "confirmedAt"], context);
+        }
         requireNullRunFields(run, ["cancelledByUserId", "cancelledAt", "error"], context);
         if (!hasResult) {
           addRunIssue(

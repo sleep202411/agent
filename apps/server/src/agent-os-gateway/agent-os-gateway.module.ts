@@ -6,6 +6,7 @@ import { StoryStudioModule } from '../story-studio/story-studio.module';
 import { StoryProductionPlanModule } from '../story-studio/story-production-plan.module';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { ProjectSkillsModule } from '../project-skills';
+import { AiGenerationModule } from '../ai-generation/ai-generation.module';
 import { AgentOsAttachmentService } from './agent-os-attachment.service';
 import { AgentOsCanvasShotsService } from './agent-os-canvas-shots.service';
 import { AgentOsDomainController } from './agent-os-domain.controller';
@@ -23,6 +24,7 @@ import { AgentOsAblyTokenIssuer } from './agent-os.realtime';
 import { AttachmentAgentCapabilityHandler } from './capabilities/attachment.handler';
 import { PlatformAgentCapabilityHandler } from './capabilities/platform.handler';
 import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
+import { AgentOsModelPreferencesService } from './agent-os-model-preferences.service';
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
     AblyTokenCredentialsModule,
     DocumentsModule,
     ProjectSkillsModule,
+    AiGenerationModule,
   ],
   controllers: [
     AgentOsGatewayController,
@@ -54,6 +57,7 @@ import { StoryAgentCapabilityHandler } from './capabilities/story.handler';
     AttachmentAgentCapabilityHandler,
     PlatformAgentCapabilityHandler,
     StoryAgentCapabilityHandler,
+    AgentOsModelPreferencesService,
   ],
   exports: [
     AgentOsGatewayService,

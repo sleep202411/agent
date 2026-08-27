@@ -1979,6 +1979,22 @@
         "qa": "品質檢查"
       },
       "items": {
+        "cinematicRealism": {
+          "name": "電影寫實",
+          "description": "以可信的光線、鏡頭、材質、環境與人物表演建構實拍電影質感。"
+        },
+        "stylized3dCinema": {
+          "name": "風格化 3D",
+          "description": "以設計化比例、觸感材質、圖形化燈光與電影鏡頭語言建構動畫電影畫面。"
+        },
+        "animeCinematic": {
+          "name": "動漫電影",
+          "description": "結合經過設計的透視構圖、富表現力的演出與氛圍化手繪背景。"
+        },
+        "graphicNovelCinema": {
+          "name": "圖像小說",
+          "description": "以大膽墨線、明暗塊面、選擇性色彩與分格意識組織電影敘事。"
+        },
         "wesAndersonCinematic": {
           "name": "韋斯·安德森電影美學",
           "description": "置中式繪本構圖、克制表演、實體佈景與精準的橫向鏡頭運動。"
@@ -2423,6 +2439,8 @@
         "structure": "結構",
         "branch": "分支",
         "scene": "場景",
+        "assets": "資產",
+        "storyboard": "分鏡",
         "validate": "校驗"
       },
       "activity": {
@@ -2430,39 +2448,205 @@
         "structure": "正在搭建敘事結構…",
         "branch": "正在設計故事分支…",
         "scene": "正在編寫完整劇本…",
+        "assets": "正在準備資產規格…",
+        "storyboard": "正在規劃分鏡…",
         "validate": "正在檢查故事連續性…",
-        "applying": "正在儲存劇本並構建故事資產…",
+        "applying": "正在套用已批准的故事更新…",
         "savingScript": "正在將已批准的劇本儲存到 Script…",
-        "buildingProduction": "Script 已儲存。正在構建情節樹、資產規格和分鏡…",
-        "finalizingProduction": "情節樹、資產規格和分鏡已完成。正在收尾…"
+        "savingPlot": "正在將已批准的故事結構儲存到情節樹…",
+        "savingAssets": "正在儲存已批准的邏輯資產規格…",
+        "savingStoryboard": "正在儲存已批准的分鏡方案…",
+        "savingUpdate": "正在套用已批准的故事更新…",
+        "buildingProduction": "正在儲存已批准的製作變更…",
+        "finalizingProduction": "正在完成已批准的製作更新…"
       },
-      "applyingHint": "正在儲存劇本並構建故事資產…",
-      "apply": "確認並構建",
+      "applyingHint": "正在套用已批准的故事更新…",
+      "apply": "套用更新",
       "savingScript": "正在儲存劇本…",
-      "savingScriptHint": "正在記錄你的批准並將正式劇本儲存到 Script。後續製作會顯示在 Agent 動態中。",
+      "savingScriptHint": "正在記錄你的批准，本次只將正式劇本儲存到 Script。",
       "discard": "丟棄",
       "discarding": "正在丟棄…",
       "failedHint": "起草未能完成，可以重試。",
       "retry": "重試",
       "viewAll": "查看全部",
       "reviewScreenplay": "審閱完整劇本",
+      "screenplayCard": {
+        "eyebrow": "劇本提案",
+        "review": "審閱完整劇本",
+        "dialogDescription": "這裡顯示將被原樣儲存的完整劇本；批准或退回仍在訊息流底部的決策區完成。",
+        "reviewRegion": "完整劇本提案",
+        "metrics": {
+          "scenes": "場景",
+          "characters": "角色",
+          "choices": "選擇"
+        },
+        "status": {
+          "proposed": "等待審閱",
+          "active": "等待審閱",
+          "applying": "正在儲存",
+          "applied": "已批准",
+          "rejected": "已退回",
+          "failed": "失敗",
+          "cancelled": "已取消"
+        }
+      },
+      "plotCard": {
+        "eyebrow": "情節樹提案",
+        "review": "開啟畫布預覽",
+        "dialogDescription": "在唯讀畫布中查看本提案的完整場景拓撲、分支與結局；批准或退回仍在訊息流底部的決策區完成。",
+        "canvasRegion": "唯讀情節樹畫布預覽",
+        "scene": "場景",
+        "decision": "玩家選擇",
+        "entry": "入口",
+        "ending": "結局",
+        "continues": "繼續",
+        "metrics": {
+          "nodes": "節點",
+          "branches": "分支",
+          "endings": "結局"
+        },
+        "status": {
+          "proposed": "等待審閱",
+          "active": "等待審閱",
+          "applying": "正在儲存",
+          "applied": "已批准",
+          "rejected": "已退回",
+          "failed": "失敗",
+          "cancelled": "已取消"
+        }
+      },
       "proposalLoading": "正在載入故事提案…",
       "proposalUnavailable": "無法載入這份提案。請重新整理，或丟棄提案以繼續。",
+      "approvalFailed": "未能記錄本次批准。審閱視窗會保持開啟，請重試。",
+      "proposalDecision": {
+        "question": {
+          "script": "是否批准這份劇本？",
+          "plot": "是否批准這份情節樹？",
+          "assets": "是否批准這份資產規格？",
+          "storyboard": "是否批准這份分鏡方案？",
+          "patch": "是否套用這次故事更新？"
+        },
+        "yes": "是",
+        "no": "否",
+        "rejectLabel": "否，退回調整",
+        "rejectResponse": "退回調整"
+      },
+      "proposalStage": {
+        "script": {
+          "ready": "劇本已就緒",
+          "review": "審閱劇本",
+          "eyebrow": "劇本草稿",
+          "description": "請審閱完整劇本。批准後只儲存劇本；下一階段會單獨準備並審閱情節樹。",
+          "approve": "批准劇本",
+          "saving": "正在儲存劇本…",
+          "savingHint": "正在記錄你的批准，本次只將內容儲存到劇本。"
+        },
+        "plot": {
+          "ready": "情節樹已就緒",
+          "review": "審閱情節樹",
+          "eyebrow": "情節樹提案",
+          "description": "請審閱根據已批准劇本編譯出的場景拓撲、分支和結局。批准後只儲存情節樹；資產規格仍會單獨審閱。",
+          "approve": "批准情節樹",
+          "saving": "正在儲存情節樹…",
+          "savingHint": "正在記錄你的批准，本次只將故事結構儲存到情節樹。"
+        },
+        "assets": {
+          "ready": "資產規格已就緒",
+          "review": "審閱資產規格",
+          "eyebrow": "資產規格提案",
+          "description": "請審閱根據已批准情節樹提取的可重用角色、場景和道具規格。批准後只儲存邏輯規格，不生成媒體，也不消耗點數。",
+          "approve": "批准資產規格",
+          "saving": "正在儲存資產規格…",
+          "savingHint": "正在記錄你的批准，本次只儲存邏輯資產規格，不會生成媒體。"
+        },
+        "storyboard": {
+          "ready": "分鏡已就緒",
+          "review": "審閱分鏡",
+          "eyebrow": "分鏡提案",
+          "description": "請審閱序列、鏡頭、時長和提示詞。批准後只儲存方案，不生成媒體，也不消耗點數。",
+          "approve": "批准分鏡",
+          "saving": "正在儲存分鏡…",
+          "savingHint": "正在記錄你的批准，本次只儲存分鏡序列和鏡頭提示詞。"
+        },
+        "patch": {
+          "ready": "故事更新已就緒",
+          "review": "審閱更新",
+          "eyebrow": "故事更新",
+          "description": "套用前請審閱本次故事變更。",
+          "approve": "套用更新",
+          "saving": "正在套用更新…",
+          "savingHint": "正在套用已批准的故事變更。"
+        }
+      },
       "proposal": {
         "eyebrow": "劇本初稿",
-        "description": "請審閱完整劇本。你在這裡看到的內容會原樣寫入 Script，再據此構建 Plot Tree。",
+        "description": "請審閱完整劇本。你在這裡看到的內容會原樣寫入 Script，再先編譯成情節樹，隨後準備資產規格。",
+        "reviewRegion": "待審閱的提案內容",
         "metrics": {
           "scenes": "場景",
           "branches": "分支",
           "endings": "結局",
-          "interactions": "互動"
+          "interactions": "互動",
+          "assetSpecs": "資產規格",
+          "characters": "角色",
+          "locations": "場景",
+          "props": "道具",
+          "sequences": "序列",
+          "clips": "鏡頭",
+          "seconds": "秒"
         },
         "sections": {
           "summary": "故事概覽",
           "characters": "角色",
           "structure": "劇本場景與分支",
-          "productionNotes": "製作說明"
+          "productionNotes": "製作說明",
+          "assetSpecs": "可重用資產規格",
+          "storyboard": "序列與鏡頭"
         },
+        "assetKinds": {
+          "character": "角色",
+          "location": "場景",
+          "prop": "道具"
+        },
+        "clipKinds": {
+          "image": "圖片",
+          "video": "影片"
+        },
+        "imagePrompt": "參考圖提示詞",
+        "showMoreAssets": "查看其餘 {count} 項資產",
+        "viewMoreAssets": "點擊查看更多",
+        "assetKindDialogTitle": "{kind}資產 · {count}",
+        "assetKindDialogDescription": "本次提案包含的全部{kind}資產。",
+        "videoPrompt": "動態 / 影片提示詞",
+        "negativePrompt": "負面提示詞",
+        "sourceCharacter": "來源故事聖經角色",
+        "sourceNodes": "來源場景 {count} 個",
+        "noAssetSpecs": "本提案不需要可重用的資產規格。",
+        "sequenceMeta": "{count} 個鏡頭 · {seconds} 秒",
+        "storyboardTable": {
+          "sequence": "序列",
+          "shots": "鏡頭",
+          "duration": "時長",
+          "seconds": "{value} 秒",
+          "viewAll": "查看全部分鏡",
+          "more": "還有 {count} 個序列",
+          "dialogTitle": "分鏡詳情 · {count} 個序列",
+          "dialogDescription": "查看本次提案中的全部序列、鏡頭、時間、提示詞和決策提示點。",
+          "shot": "鏡頭",
+          "type": "類型",
+          "timing": "時間",
+          "prompt": "提示詞",
+          "fromTo": "{start}–{end} 毫秒",
+          "durationValue": "時長 {value} 毫秒"
+        },
+        "start": "開始",
+        "end": "結束",
+        "duration": "時長",
+        "milliseconds": "{value} 毫秒",
+        "decisionCues": "決策提示點",
+        "cueAt": "{value} 毫秒",
+        "decision": "決策",
+        "noDecisionCues": "沒有決策提示點。",
         "untitledScene": "未命名場景",
         "continuesTo": "繼續至 {scene}",
         "ending": "結局",
@@ -2477,14 +2661,11 @@
     "newProject": "新增故事專案",
     "projects": {
       "title": "故事專案",
-      "subtitle": "目前工作區中的全部可編輯故事。",
+      "subtitle": "集中查看你有權存取的全部故事。",
       "draft": "草稿",
       "noSummary": "尚未填寫專案簡介。",
       "videoProgress": "目前影片 {current}/{total}",
-      "updatedUnknown": "更新時間不可用",
-      "tabAll": "全部",
-      "tabJoined": "共享給我的",
-      "otherWorkspace": "其他工作區"
+      "updatedUnknown": "更新時間不可用"
     },
     "metrics": {
       "references": "參考位",
@@ -2589,7 +2770,7 @@
       "cancel": "取消生成",
       "retry": "重試生成",
       "retryAttachment": "重試附加媒體",
-      "generate": "一鍵生成",
+      "generate": "生成",
       "generateAgain": "再次生成",
       "progressAria": "生成進度",
       "targetNotCurrent": "請先將此過期製作目標與目前情節同步，再生成媒體。",
@@ -2609,9 +2790,42 @@
       }
     },
     "assetsPage": {
+      "pageTitle": "資產規格 · 影遊工作室",
+      "pageDescription": "管理本章的邏輯資產規格和已選媒體。",
+      "loading": "正在載入資產規格…",
       "empty": "目前章節還沒有製作資產。",
       "emptyHint": "已批准的故事方案套用後，資產規格會顯示在這裡。",
+      "categoryEmpty": {
+        "character": "本章沒有角色資產規格",
+        "location": "本章沒有場景資產規格",
+        "prop": "本章沒有道具資產規格"
+      },
+      "categoryEmptyHint": "目前分類為空。切換到其他分類可查看本章其餘資產規格。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。",
+      "continueWithAgent": "在 FizzAgent 中繼續",
+      "stage": {
+        "plotRequired": {
+          "title": "請先批准情節樹",
+          "description": "資產規劃應基於已批准的敘事拓撲。請先在 FizzAgent 中準備並審核情節樹，再提取可重用資產。"
+        },
+        "assetsRequired": {
+          "title": "下一步是批准資產規格",
+          "description": "讓 FizzAgent 根據已批准的情節樹及其劇本解讀整理可重用的角色、場景和道具。進入分鏡前會先由你審閱；此過程不會生成媒體。"
+        },
+        "stale": {
+          "title": "{count} 項資產規格需要處理",
+          "description": "現有內容會保留供你審閱。請在下方解決可處理的衝突；缺少對比詳情的項目需要讓 Agent 重新準備提案。在本階段恢復為目前版本前，媒體生成保持不可用。"
+        },
+        "noAssets": {
+          "title": "本章不需要可重用的資產規格",
+          "description": "無需建立可重用的角色、場景或道具，可直接繼續規劃分鏡。"
+        }
+      },
+      "prompts": {
+        "plot": "請根據已批准的劇本準備本章情節樹，進入資產規格前先交給我審閱和批准。不要生成媒體。",
+        "assets": "請根據已批准的情節樹及其劇本解讀準備本章資產規格，進入分鏡前先交給我審閱和批准。不要生成媒體。",
+        "storyboard": "繼續為本章準備分鏡方案，儲存前先交給我審閱和批准。不要生成媒體。"
+      },
       "count": "{count} 項資產規格",
       "loadError": "無法載入資產規格。",
       "retry": "重試",
@@ -2621,6 +2835,38 @@
         "prop": "道具"
       },
       "filterLabel": "按類型篩選資產規格",
+      "batch": {
+        "generate": "生成",
+        "allGenerated": "目前分類已全部生成",
+        "running": "正在生成",
+        "runningOther": "協作者正在生成",
+        "cancelling": "正在取消",
+        "cancel": "取消批次",
+        "quoting": "正在由伺服器計算準確報價…",
+        "quoteError": "無法準備批量生成報價。",
+        "confirmError": "無法開始批量生成。",
+        "cancelError": "無法取消批量生成。",
+        "cancelled": "已要求取消；已提交的工作將安全結束。",
+        "completed": "批量生成已完成，資產媒體已更新。",
+        "partialFailed": "部分資產生成失敗；已完成的結果仍已儲存。",
+        "failed": "本次批量生成失敗，請查看任務詳情後重試。",
+        "dialog": {
+          "title": "確認生成剩餘資產",
+          "description": "將生成目前分類中所有尚無媒體的資產。進入公平隊列前，請先核對伺服器的準確費用。",
+          "items": "資產數量",
+          "points": "運算點數",
+          "available": "可用點數",
+          "unavailable": "—",
+          "model": "圖片模型：{model}",
+          "expires": "報價將於 {time} 失效",
+          "insufficientPoints": "運算點不足：本次需要 {required} 點，目前可用 {available} 點。請充值後繼續。",
+          "insufficientConfirm": "運算點不足",
+          "billingNotice": "任務會在不同創作者之間公平調度；每項進入生成時才扣除點數。如價格發生變化，系統會要求重新報價。",
+          "back": "返回",
+          "confirm": "確認 · {points} 點",
+          "confirmEmpty": "確認"
+        }
+      },
       "details": "詳情",
       "detailDialog": {
         "imagePrompt": "圖片提示詞",
@@ -2636,9 +2882,73 @@
       },
       "title": "資產規格"
     },
+    "generationBatchTranscript": {
+      "title": "資產媒體生成",
+      "summary": "已完成 {completed}/{total} · {points} 計算點",
+      "loading": "正在載入生成進度…",
+      "loadError": "無法載入這個生成批次。",
+      "mediaLoadError": "無法重新整理已生成的資產媒體。",
+      "cancelError": "無法取消這個生成批次。",
+      "retry": "重試",
+      "cancel": "取消",
+      "progressLabel": "批次生成進度",
+      "batchStatus": {
+        "awaiting_confirmation": "等待確認",
+        "queued": "排隊中",
+        "running": "生成中",
+        "completed": "已完成",
+        "partial_failed": "部分完成",
+        "cancelling": "正在取消",
+        "cancelled": "已取消",
+        "failed": "失敗",
+        "expired": "報價已失效"
+      },
+      "itemStatus": {
+        "awaiting_confirmation": "等待確認",
+        "ready": "排隊中",
+        "dispatching": "正在啟動",
+        "submitted": "生成中",
+        "completed": "已完成",
+        "failed": "失敗",
+        "cancelled": "已取消"
+      }
+    },
     "storyboardPage": {
+      "pageTitle": "分鏡 · 影遊工作室",
+      "pageDescription": "編輯本章的情節序列、鏡頭、提示點和資產綁定。",
+      "loading": "正在載入分鏡…",
       "emptyChapter": "本章還沒有情節節點。",
       "emptyHint": "在情節樹中加入場景後，分鏡會在這裡逐場景展開。",
+      "continueWithAgent": "在 FizzAgent 中繼續",
+      "stage": {
+        "plotRequired": {
+          "title": "請先批准情節樹",
+          "description": "分鏡需要基於已批准的故事結構。請先在 FizzAgent 中準備、審閱並批准情節樹。"
+        },
+        "assetsRequired": {
+          "title": "請先批准資產規格",
+          "description": "分鏡規劃需要穩定的角色、場景和道具引用。請先在 FizzAgent 中審閱資產規格。"
+        },
+        "storyboardRequired": {
+          "title": "下一步是批准分鏡方案",
+          "description": "讓 FizzAgent 準備序列和鏡頭提示詞。儲存前會先由你審閱；此過程不會生成媒體。"
+        },
+        "stale": {
+          "title": "{count} 個分鏡序列需要處理",
+          "description": "現有序列會保留供你審閱。請在下方解決可處理的衝突；缺少對比詳情的序列需要讓 Agent 重新準備提案。在本階段恢復為目前版本前，媒體生成保持不可用。"
+        },
+        "noScenes": {
+          "title": "已批准的情節樹中沒有場景",
+          "description": "請讓 FizzAgent 加入或修改場景，再準備分鏡。"
+        }
+      },
+      "prompts": {
+        "plotRequired": "請根據已批准的劇本準備本章情節樹，進入資產規格前先交給我審閱和批准。不要生成媒體。",
+        "assetsRequired": "請根據已批准的情節樹及其劇本解讀準備本章資產規格，進入分鏡前先交給我審閱和批准。不要生成媒體。",
+        "storyboardRequired": "請根據已批准的情節樹和資產規格準備本章的分鏡方案，儲存前先交給我審閱和批准。不要生成媒體。",
+        "noScenes": "請修改本章的情節樹，加入可用於規劃分鏡的場景。",
+        "scene": "請為場景「{title}」準備分鏡序列，儲存前先交給我審閱。不要生成媒體。"
+      },
       "loadError": "無法載入分鏡。",
       "retry": "重試",
       "plotNode": "情節節點 {index}",
@@ -2664,6 +2974,7 @@
       "back": "返回影遊工作室",
       "mode": "故事畫布",
       "steps": {
+        "navigationLabel": "影遊製作階段",
         "script": "劇本",
         "tree": "情節樹",
         "assets": "資產",
@@ -2798,6 +3109,7 @@
       },
       "nodeKinds": {
         "clip": "影像鏡頭",
+        "decision": "玩家選擇",
         "world": "世界體驗"
       },
       "ports": {
@@ -2813,7 +3125,10 @@
         "addOption": "新增選項",
         "cancelOption": "取消新增選項",
         "optionPlaceholder": "輸入玩家看到的選項",
-        "connectOption": "連接這個選項"
+        "connectOption": "連接這個選項",
+        "branchOptions": "分支選項",
+        "anchorHint": "每個選項對應一個連接錨點",
+        "optionCount": "{count} 個選項"
       },
       "interactionAnchors": {
         "title": "互動錨點",
@@ -2861,6 +3176,7 @@
       },
       "projection": {
         "clip": "鏡頭",
+        "decision": "玩家選擇",
         "world": "世界"
       },
       "worldNode": {
@@ -2950,10 +3266,18 @@
             "long_30_60": "30–60 分鐘"
           },
           "visualStyles": {
-            "cinematic_realism": "電影寫實",
-            "stylized_3d": "風格化 3D",
-            "graphic_novel": "圖像小說",
-            "anime_cinematic": "電影感動漫"
+            "cinematic-realism": "電影寫實",
+            "stylized-3d-cinema": "風格化 3D",
+            "anime-cinematic": "動漫電影",
+            "graphic-novel-cinema": "圖像小說",
+            "ink-wash-cinema": "東方水墨",
+            "stop-motion-clay-cinema": "黏土定格",
+            "classic-cel-animation": "經典賽璐璐",
+            "hand-painted-fantasy-adventure": "手繪幻想",
+            "retro-anime-key-visual": "復古動漫",
+            "pixel-art-adventure": "像素藝術",
+            "surreal-collage-dreamscape": "超現實拼貼",
+            "grindhouse-chapter-cinema": "復古類型片"
           }
         },
         "cover": {
@@ -3464,6 +3788,24 @@
     "emptyHint": "上傳劇本檔案，告訴 FizzAgent 要完成的任務，批准寫入後繼續追問。",
     "emptyHintStory": "加入參考資料，或告訴 FizzAgent 如何推進目前章節，然後繼續打磨故事。",
     "modelProfile": "模型",
+    "modelSettings": {
+      "title": "模型設定",
+      "description": "設定 FizzAgent 在對話、圖片與影片任務中使用的項目預設模型，設定會在不同裝置間同步。",
+      "conversationModel": "對話模型",
+      "conversationModelHint": "推理與工具調用",
+      "imageModel": "圖片模型",
+      "imageModelHint": "資產與畫面生成",
+      "videoModel": "影片模型",
+      "videoModelHint": "鏡頭與片段生成",
+      "automatic": "自動選擇",
+      "automaticHint": "自動選擇會為每次請求選用目前可用模型，個別任務仍可另外覆蓋。",
+      "open": "模型設定",
+      "cancel": "取消",
+      "save": "儲存設定",
+      "saving": "正在儲存…",
+      "loadFailed": "無法載入模型設定，請重試。",
+      "saveFailed": "模型設定已在其他裝置修改，或所選模型已不可用。請重新整理後重試。"
+    },
     "permissionMode": "權限模式",
     "permAsk": "每次詢問",
     "permSmart": "智能",
@@ -3575,6 +3917,8 @@
     "approvalStoryEntry": "故事入口",
     "approvalSceneOrder": "場景順序",
     "approvalStoryScene": "故事場景",
+    "approvalGenerationBatch": "資產媒體生成",
+    "approvalGenerationBatchSummary": "{count} 項資產 · {points} 計算點",
     "approvalNotReady": "審批資訊還在準備中，請稍後再點",
     "userInput": {
       "step": "步驟 {current}/{total}",

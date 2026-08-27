@@ -8,7 +8,9 @@ import {
   parseToolInput,
   parseToolOutput,
   type DomainPort,
+  type StoryProductionContinuationPlan,
 } from "@repo/agent-tools";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 import { STORY_PATCH_OPERATION_LABELS } from "@repo/shared/story-agent";
 import { z } from "zod/v3";
 
@@ -37,6 +39,15 @@ export interface ToolRuntimeContext {
     executionAttemptId: string;
     executionEpoch: number;
     executionOwnerId: string;
+  };
+  /**
+   * Trusted post-approval production scope. When present, the graph—not the
+   * model—owns the next story.author arguments and lifecycle copy.
+   */
+  storyContinuation?: {
+    responseId: string;
+    locale: "en-US" | "zh-CN" | "zh-HK";
+    plan: StoryProductionContinuationPlan;
   };
   /** Cancels an in-flight Domain receipt poll when the creator stops the run. */
   abortSignal?: AbortSignal;
@@ -155,7 +166,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
                   })
                 )
                 .min(2)
-                .max(5),
+                .max(12),
             })
           )
           .min(1)
@@ -407,12 +418,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
       requestId: z.string().uuid().optional(),
       aspectRatio: z.enum(["landscape_16_9", "portrait_9_16"]),
       targetRuntime: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
-      visualDirection: z.enum([
-        "cinematic_realism",
-        "stylized_3d",
-        "graphic_novel",
-        "anime_cinematic",
-      ]),
+      visualDirection: z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS),
       storyLanguage: z.enum(["zh-CN", "zh-HK", "en-US"]),
     })
   );
@@ -493,13 +499,54 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
   );
   const storyAuthor = bindStoryTool(
     "story.author",
+    runtime.storyContinuation
+      ? z.object({}).strict()
+      : z.object({
+          title: z.string().trim().min(1).max(160),
+          summary: z.string().trim().min(1).max(4_000),
+          brief: z.string().trim().min(1).max(8_000),
+          continueThrough: z.enum(["script", "plot", "assets", "storyboard"]),
+          startedMessage: z.string().trim().min(1).max(2_000),
+          completionMessage: z.string().trim().min(1).max(2_000),
+        })
+  );
+  const generationOptionValue = z.union([
+    z.boolean(),
+    z.number(),
+    z.string().trim().min(1).max(180),
+    z.array(z.union([z.boolean(), z.number(), z.string().trim().min(1).max(180)])).max(32),
+  ]);
+  const storyQuoteAssetGenerationBatch = bindStoryTool(
+    "story.generation.quoteAssets",
     z.object({
-      title: z.string().trim().min(1).max(160),
-      summary: z.string().trim().min(1).max(4_000),
-      brief: z.string().trim().min(1).max(8_000),
-      startedMessage: z.string().trim().min(1).max(2_000),
-      completionMessage: z.string().trim().min(1).max(2_000),
+      assetIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+      assetKinds: z
+        .array(z.enum(["character", "location", "prop"]))
+        .min(1)
+        .max(3)
+        .optional(),
+      outputKind: z.enum(["image", "video"]).optional(),
+      modelId: z.string().trim().min(1).max(180).optional(),
+      schemaVersion: z.string().trim().min(1).max(180).optional(),
+      options: z.record(generationOptionValue).optional(),
     })
+  );
+  const storyConfirmGenerationBatch = bindStoryTool(
+    "story.generation.confirmBatch",
+    z.object({
+      batchId: z.string().uuid(),
+      expectedVersion: z.number().int().nonnegative(),
+      expectedItemCount: z.number().int().positive().max(500),
+      expectedTotalPoints: z.number().int().nonnegative(),
+    })
+  );
+  const storyGetGenerationBatch = bindStoryTool(
+    "story.generation.getBatch",
+    z.object({ batchId: z.string().uuid() })
+  );
+  const storyCancelGenerationBatch = bindStoryTool(
+    "story.generation.cancelBatch",
+    z.object({ batchId: z.string().uuid() })
   );
   const storyApplyPatch = tool(
     async (raw, config) => {
@@ -577,6 +624,10 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.reorder": storyReorder,
     "story.applyPatch": storyApplyPatch,
     "story.author": storyAuthor,
+    "story.generation.quoteAssets": storyQuoteAssetGenerationBatch,
+    "story.generation.confirmBatch": storyConfirmGenerationBatch,
+    "story.generation.getBatch": storyGetGenerationBatch,
+    "story.generation.cancelBatch": storyCancelGenerationBatch,
   } as const;
 
   const allowed = new Set(toolIds);
@@ -602,17 +653,27 @@ async function executeBound(
   toolCallId: string | undefined
 ): Promise<string> {
   const definition = getTool(toolId);
+  const continuationCopy = runtime.storyContinuation
+    ? storyContinuationLifecycleCopy(runtime.storyContinuation.locale)
+    : null;
+  const effectiveRaw =
+    toolId === "story.author" && runtime.storyContinuation && continuationCopy
+      ? {
+          ...runtime.storyContinuation.plan,
+          ...continuationCopy,
+        }
+      : raw;
   const parsed = parseToolInput(
     toolId,
     toolId === "script.readSection"
       ? {
-          ...(raw as object),
+          ...(effectiveRaw as object),
           maxChars:
-            (raw as { maxChars?: number }).maxChars === undefined
+            (effectiveRaw as { maxChars?: number }).maxChars === undefined
               ? 8000
-              : (raw as { maxChars?: number }).maxChars,
+              : (effectiveRaw as { maxChars?: number }).maxChars,
         }
-      : raw
+      : effectiveRaw
   );
 
   const callId = toolCallId ?? crypto.randomUUID();
@@ -750,4 +811,25 @@ async function executeBound(
     });
     throw error;
   }
+}
+
+function storyContinuationLifecycleCopy(locale: "en-US" | "zh-CN" | "zh-HK") {
+  if (locale === "zh-CN") {
+    return {
+      startedMessage: "已开始准备下一份可审核的制作规格；本阶段不会生成任何图片或视频。",
+      completionMessage: "下一份制作规格提案已准备好供你审核；本阶段没有生成任何图片或视频。",
+    };
+  }
+  if (locale === "zh-HK") {
+    return {
+      startedMessage: "已開始準備下一份可審核的製作規格；本階段不會生成任何圖片或影片。",
+      completionMessage: "下一份製作規格提案已準備好供你審核；本階段沒有生成任何圖片或影片。",
+    };
+  }
+  return {
+    startedMessage:
+      "I’m preparing the next reviewable production specification. No image or video generation has started.",
+    completionMessage:
+      "The next production specification is ready for review. No image or video media was generated.",
+  };
 }

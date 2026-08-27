@@ -5,9 +5,21 @@ import type { StoryScreenplayDocument } from "@repo/shared/story-agent";
  * document blocks persisted in the proposal; semantic compiler data never
  * leaks into review-only metrics, ids, or cards.
  */
-export function StoryScreenplayDocumentView({ document }: { document: StoryScreenplayDocument }) {
+export function StoryScreenplayDocumentView({
+  document,
+  embedded = false,
+}: {
+  document: StoryScreenplayDocument;
+  embedded?: boolean;
+}) {
   return (
-    <article className="mx-auto w-full max-w-[66ch] px-5 py-7 text-[15px] leading-relaxed text-white/90 sm:px-7 sm:py-9">
+    <article
+      className={
+        embedded
+          ? "w-full py-1 text-sm leading-relaxed text-white/90"
+          : "mx-auto w-full max-w-[66ch] px-5 py-7 text-[15px] leading-relaxed text-white/90 sm:px-7 sm:py-9"
+      }
+    >
       {document.blocks.map((block, index) => {
         const key = `${index}:${block.kind}:${block.text}`;
         if (block.kind === "heading") {

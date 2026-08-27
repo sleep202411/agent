@@ -1,19 +1,28 @@
 "use client";
 
 import { type ReactNode, useId, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
+import { IconAlertTriangle, IconLoader2 } from "@tabler/icons-react";
 import {
-  IconAlertTriangle,
-  IconCheck,
-  IconListDetails,
-  IconLoader2,
-  IconSparkles,
-} from "@tabler/icons-react";
-import { isStoryPatchBrief, isStoryScreenplayProposal } from "@repo/shared/story-agent";
+  isStoryAssetProposal,
+  isStoryNoopProposal,
+  isStoryPatchBrief,
+  isStoryPlotProposal,
+  isStoryScreenplayProposal,
+} from "@repo/shared/story-agent";
 import type { AgentOsPendingApproval } from "@/lib/agent-os/api-client";
+import type { AgentOsTranscriptArtifact } from "@/components/agent-os/use-agent-os-run";
+import { listStoryAssetSpecs, storyProductionKeys } from "@/lib/story-production-api";
 import { Button } from "@/components/ui/button";
 import { useComposerGateFocus } from "@/components/agent-os/use-composer-gate-focus";
-import { StoryAuthoringProposalDialog } from "./story-authoring-proposal-dialog";
+import { StoryAuthoringProposalContent } from "./story-authoring-proposal-dialog";
+import { StoryPlotProposalCard } from "./story-plot-proposal-card";
+import { StoryScreenplayProposalCard } from "./story-screenplay-proposal-card";
+import {
+  storyAuthoringProposalStage,
+  type StoryReviewableProposal,
+} from "./story-authoring-proposal";
 import { useStoryAuthoringRun, useStoryAuthoringRunById } from "./use-story-authoring-run";
 
 /**
@@ -61,7 +70,7 @@ export function StoryAuthoringComposer({
         type="button"
         disabled={busy}
         onClick={() => cancel.mutate(run.id)}
-        className="mt-1.5 w-full text-center text-[11px] text-white/44 transition-colors hover:text-white/75 disabled:opacity-40"
+        className="mt-1.5 min-h-10 w-full rounded-xl px-3 text-center text-xs text-white/60 transition-colors hover:bg-white/[0.05] hover:text-white/82 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60 disabled:opacity-40"
       >
         {t("discard")}
       </button>
@@ -74,6 +83,68 @@ function storyRunIdFromApproval(approval: AgentOsPendingApproval): string | null
   if (!approval.arguments || typeof approval.arguments !== "object") return null;
   const storyRunId = (approval.arguments as Record<string, unknown>).storyAgentRunId;
   return typeof storyRunId === "string" && storyRunId.length > 0 ? storyRunId : null;
+}
+
+function useStoryApprovalProposal(projectId: string, approval: AgentOsPendingApproval) {
+  const storyRunId = storyRunIdFromApproval(approval);
+  return useStoryProposal(projectId, storyRunId);
+}
+
+function useStoryProposal(projectId: string, storyRunId: string | null) {
+  const query = useStoryAuthoringRunById(projectId, storyRunId);
+  const proposal: StoryReviewableProposal | null =
+    query.run?.id === storyRunId &&
+    query.run.agentOsManaged &&
+    !isStoryPatchBrief(query.run.proposal) &&
+    !isStoryNoopProposal(query.run.proposal)
+      ? query.run.proposal
+      : null;
+
+  return { ...query, proposal };
+}
+
+/** Renders a durable Artifact part from the immutable Story run reference. */
+export function StoryAuthoringProposalTranscript({
+  projectId,
+  artifact,
+}: {
+  projectId: string;
+  artifact: AgentOsTranscriptArtifact;
+}) {
+  const t = useTranslations("storyStudio.authoringRun");
+  const reference = artifact.reference;
+  const storyRunId = reference.kind === "story_stage_proposal" ? reference.storyAgentRunId : null;
+  const { proposal, run } = useStoryProposal(projectId, storyRunId);
+  const chapterId = proposal && run?.id === storyRunId ? run.chapterId : null;
+  const currentAssetsQuery = useQuery({
+    queryKey: storyProductionKeys.assets(projectId, chapterId),
+    queryFn: ({ signal }) => listStoryAssetSpecs(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId && proposal && isStoryAssetProposal(proposal)),
+    retry: false,
+  });
+  if (!proposal) return null;
+
+  const stage = storyAuthoringProposalStage(proposal);
+  return (
+    <section
+      data-testid="story-proposal-transcript"
+      data-artifact-status={artifact.status}
+      aria-label={t(`proposalStage.${stage}.review`)}
+      className="mt-1 border-y border-white/[0.09] py-3"
+    >
+      {isStoryScreenplayProposal(proposal) ? (
+        <StoryScreenplayProposalCard proposal={proposal} status={artifact.status} />
+      ) : isStoryPlotProposal(proposal) ? (
+        <StoryPlotProposalCard proposal={proposal} status={artifact.status} />
+      ) : (
+        <StoryAuthoringProposalContent
+          proposal={proposal}
+          embedded
+          currentAssets={currentAssetsQuery.data ?? []}
+        />
+      )}
+    </section>
+  );
 }
 
 /**
@@ -90,21 +161,20 @@ export function StoryAuthoringProposalApproval({
   projectId: string;
   approval: AgentOsPendingApproval;
   busy: boolean;
-  onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<void>;
+  onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<boolean>;
 }) {
   const t = useTranslations("storyStudio.authoringRun");
-  const [proposalOpen, setProposalOpen] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<"approve" | "reject" | null>(null);
-  const storyRunId = storyRunIdFromApproval(approval);
-  const { run, isLoading, refresh } = useStoryAuthoringRunById(projectId, storyRunId);
-  const proposal =
-    run?.id === storyRunId &&
-    run.status === "proposed" &&
-    run.agentOsManaged &&
-    !isStoryPatchBrief(run.proposal)
-      ? run.proposal
-      : null;
-  const requiresScreenplayReview = proposal ? isStoryScreenplayProposal(proposal) : false;
+  const [resolutionError, setResolutionError] = useState<string | null>(null);
+  const { proposal, isLoading, refresh } = useStoryApprovalProposal(projectId, approval);
+  const proposalStage = proposal ? storyAuthoringProposalStage(proposal) : null;
+  const decisionQuestion = proposalStage
+    ? t(`proposalDecision.question.${proposalStage}`)
+    : t("proposalDecision.question.patch");
+  const approveResponse =
+    proposalStage && proposalStage !== "patch"
+      ? t(`proposalStage.${proposalStage}.approve`)
+      : t("proposalStage.patch.approve");
   const busy = agentBusy || pendingDecision !== null;
   const titleId = useId();
   const titleRef = useComposerGateFocus<HTMLParagraphElement>(
@@ -113,10 +183,14 @@ export function StoryAuthoringProposalApproval({
 
   const resolve = async (decision: "approve" | "reject") => {
     if (busy) return;
+    setResolutionError(null);
     setPendingDecision(decision);
     try {
-      await onResolve(decision, decision === "approve" ? t("apply") : t("discard"));
-      setProposalOpen(false);
+      const resolved = await onResolve(
+        decision,
+        decision === "approve" ? approveResponse : t("proposalDecision.rejectResponse")
+      );
+      if (!resolved) setResolutionError(t("approvalFailed"));
     } finally {
       setPendingDecision(null);
     }
@@ -176,90 +250,51 @@ export function StoryAuthoringProposalApproval({
     );
   }
 
-  const title = proposal.title?.trim();
-  const summary = proposal.summary?.trim();
   return (
-    <>
-      <section
-        data-agent-composer-gate="story-proposal"
-        aria-labelledby={titleId}
-        className="rounded-2xl bg-white/[0.045] p-3 ring-1 ring-inset ring-white/[0.08]"
+    <section
+      data-agent-composer-gate="story-proposal"
+      aria-labelledby={titleId}
+      className="rounded-2xl bg-white/[0.045] p-3 ring-1 ring-inset ring-white/[0.08]"
+    >
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {decisionQuestion}
+      </span>
+      <p
+        ref={titleRef}
+        id={titleId}
+        tabIndex={-1}
+        className="text-center text-xs leading-5 font-medium text-white/88 outline-none"
       >
-        <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-          {t("title.proposed")}
-        </span>
-        <div className="flex items-center gap-2">
-          <IconSparkles className="size-4 shrink-0 text-white/72" stroke={1.7} />
-          <p
-            ref={titleRef}
-            id={titleId}
-            tabIndex={-1}
-            className="min-w-0 flex-1 truncate text-xs font-semibold text-white outline-none"
-          >
-            {t("title.proposed")}
-            {title ? <span className="text-white/76"> · {title}</span> : null}
-          </p>
-        </div>
-        {summary ? (
-          <p className="mt-2 line-clamp-4 text-[11px] leading-5 text-white/88">{summary}</p>
-        ) : null}
-
-        {requiresScreenplayReview ? (
-          <Button
-            type="button"
-            className="mt-3 h-9 w-full min-w-0 px-2 text-xs font-medium"
-            disabled={busy}
-            onClick={() => setProposalOpen(true)}
-          >
-            <IconListDetails className="size-3.5" stroke={1.8} />
-            {t("reviewScreenplay")}
-          </Button>
-        ) : (
-          <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)] gap-2">
-            <Button
-              type="button"
-              variant="quiet"
-              className="h-9 min-w-0 px-2 text-xs font-medium"
-              disabled={busy}
-              onClick={() => setProposalOpen(true)}
-            >
-              <IconListDetails className="size-3.5" stroke={1.8} />
-              {t("viewAll")}
-            </Button>
-            <Button
-              type="button"
-              className="h-9 min-w-0 px-2 text-xs font-medium"
-              disabled={busy}
-              onClick={() => void resolve("approve")}
-            >
-              {pendingDecision === "approve" ? (
-                <IconLoader2 className="size-3.5 animate-spin" />
-              ) : (
-                <IconCheck className="size-3.5" stroke={1.9} />
-              )}
-              {t("apply")}
-            </Button>
-          </div>
-        )}
-        <button
+        {decisionQuestion}
+      </p>
+      {resolutionError ? (
+        <p role="alert" className="mt-2 text-center text-xs leading-5 text-red-200/88">
+          {resolutionError}
+        </p>
+      ) : null}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Button
           type="button"
+          variant="quiet"
+          className="h-10 min-w-0 text-xs font-medium"
+          aria-label={t("proposalDecision.rejectLabel")}
           disabled={busy}
           onClick={() => void resolve("reject")}
-          className="mt-1.5 w-full text-center text-[11px] text-white/44 transition-colors hover:text-white/75 disabled:opacity-40"
         >
-          {pendingDecision === "reject" ? t("discarding") : t("discard")}
-        </button>
-      </section>
-
-      <StoryAuthoringProposalDialog
-        open={proposalOpen}
-        proposal={proposal}
-        applying={pendingDecision === "approve"}
-        discarding={pendingDecision === "reject"}
-        onOpenChange={setProposalOpen}
-        onApply={() => void resolve("approve")}
-        onDiscard={() => void resolve("reject")}
-      />
-    </>
+          {pendingDecision === "reject" ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
+          {t("proposalDecision.no")}
+        </Button>
+        <Button
+          type="button"
+          className="h-10 min-w-0 text-xs font-medium"
+          aria-label={approveResponse}
+          disabled={busy}
+          onClick={() => void resolve("approve")}
+        >
+          {pendingDecision === "approve" ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
+          {t("proposalDecision.yes")}
+        </Button>
+      </div>
+    </section>
   );
 }

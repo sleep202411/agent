@@ -4,7 +4,6 @@ import { useEffect, useMemo } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
@@ -22,8 +21,6 @@ export function StoryProjectChapterScope({
   projectId: string;
   children: React.ReactNode;
 }) {
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -32,9 +29,8 @@ export function StoryProjectChapterScope({
   const requestedChapterId = searchParams.get("chapter");
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "chapter-scope", workspaceId, projectId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
+    queryKey: ["story-studio", "chapter-scope", projectId],
+    queryFn: () => getStoryWorkbench(projectId),
     retry: false,
   });
   const chapterIds = useMemo(
@@ -74,12 +70,7 @@ export function StoryProjectChapterScope({
     [projectId, setActiveChapterId]
   );
 
-  if (
-    workspaceLoading ||
-    (workspaceId && workbenchQuery.isPending) ||
-    !resolvedChapterId ||
-    activeChapterId !== resolvedChapterId
-  ) {
+  if (workbenchQuery.isPending || !resolvedChapterId || activeChapterId !== resolvedChapterId) {
     return (
       <main className="grid h-dvh w-full place-items-center bg-[var(--canvas-background)] text-white/54">
         <IconLoader2 className="size-5 animate-spin" aria-hidden="true" />

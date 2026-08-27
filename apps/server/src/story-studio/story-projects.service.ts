@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -13,25 +12,26 @@ import {
   MediaAssetStatus,
   MediaAssetVariantStatus,
   Prisma,
+  SkillCatalogStatus,
   StoryProductionSpecStatus,
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
+  StoryProjectBillingMode,
   StoryFrameProfile,
   StoryRevisionSource,
   StudioDocumentType,
   StudioDocumentStatus,
   StudioDocumentVersionSource,
-  WorkspaceMemberRole,
-  WorkspaceMemberStatus,
 } from '@prisma/client';
+import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import type { AuthUser } from '../auth';
 import { encodeDocumentSnapshot } from '../documents/document-crdt';
 import { rootSchemaFor } from '../documents/document-modes';
 import { ensureStoryScriptDocumentInTransaction } from '../documents/story-script-document';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
-import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
+import { WorkspacesService } from '../workspaces';
 import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -42,6 +42,7 @@ import {
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   STORY_CHAPTER_COUNT_MAX,
   StoryCanvasNodePositionsSchema,
+  StoryVisualStyleSchema,
   StoryUuidSchema,
   type ArchiveStoryProjectInput,
   type CreateStoryChapterInput,
@@ -63,7 +64,6 @@ import {
   type StoryDraftDto,
   type StoryProjectListQuery,
   type StoryProjectSummaryDto,
-  type StoryProjectWorkspaceRefDto,
   type StoryRevisionDto,
   type StoryRevisionListQuery,
   type StoryRevisionSummaryDto,
@@ -75,7 +75,6 @@ import {
 import {
   storyboardClipSnapshotEntry,
   storyVideoSnapshotHash,
-  type StoryVideoSnapshotEntry,
 } from './story-video-production.schema';
 import {
   StoryPermissionService,
@@ -244,20 +243,22 @@ export class StoryProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
-    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly workspaces: WorkspacesService,
     private readonly writeGuard: StoryProjectWriteGuardService,
   ) {}
 
   async create(
     user: AuthUser,
-    workspaceId: string,
     input: CreateStoryProjectInput,
   ): Promise<StoryWorkbenchDto> {
-    await this.workspacePermissions.requireWorkspaceRole(
-      user.userId,
-      workspaceId,
-      WorkspaceMemberRole.editor,
-    );
+    // Story projects are personal-first product roots. Workspace remains an
+    // internal storage/media compatibility domain while legacy tables still
+    // require it; the active UI workspace never chooses project ownership or
+    // billing. ensurePersonalWorkspace also guarantees the existing personal
+    // wallet mapping without moving any balance.
+    const personalWorkspace =
+      await this.workspaces.ensurePersonalWorkspace(user);
+    const workspaceId = personalWorkspace.id;
 
     const contentHash = canonicalJsonHash(
       EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -271,6 +272,7 @@ export class StoryProjectsService {
         const project = await tx.storyProject.create({
           data: {
             workspaceId,
+            billingMode: StoryProjectBillingMode.actor,
             // The empty canvas needs a projection shape before the Agent intake
             // runs. This value is provisional: the creator's Q1 answer replaces
             // it atomically with duration + visual direction before authoring.
@@ -397,82 +399,6 @@ export class StoryProjectsService {
 
   async list(
     user: AuthUser,
-    workspaceId: string,
-    query: StoryProjectListQuery,
-  ): Promise<CursorPageDto<StoryProjectSummaryDto>> {
-    await this.workspacePermissions.requireWorkspacePresence(
-      user.userId,
-      workspaceId,
-    );
-
-    const cursor = query.cursor
-      ? decodeCursor<ProjectCursor>(query.cursor, isProjectCursor)
-      : null;
-    const rows = await this.prisma.storyProject.findMany({
-      where: {
-        workspaceId,
-        status: query.status,
-        members: {
-          some: {
-            userId: user.userId,
-            status: StoryProjectMemberStatus.active,
-            removedAt: null,
-          },
-        },
-        ...(cursor
-          ? {
-              OR: [
-                { updatedAt: { lt: new Date(cursor.updatedAt) } },
-                {
-                  updatedAt: new Date(cursor.updatedAt),
-                  id: { lt: cursor.id },
-                },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-      include: PROJECT_SUMMARY_INCLUDE,
-    });
-
-    const hasMore = rows.length > query.limit;
-    const pageRows = hasMore ? rows.slice(0, query.limit) : rows;
-    const last = pageRows.at(-1);
-    return {
-      items: pageRows.map((row) => this.toProjectSummary(row, user.userId)),
-      nextCursor:
-        hasMore && last
-          ? encodeCursor({
-              id: last.id,
-              updatedAt: last.updatedAt.toISOString(),
-            })
-          : null,
-    };
-  }
-
-  /**
-   * The projects someone was invited into — the second Story Studio read that
-   * is deliberately not workspace-scoped.
-   *
-   * `list` answers "what is in the workspace I am looking at", which is the
-   * right question for the workspace switcher but leaves a shared project
-   * undiscoverable: an invitee lands in their OWN workspace and the project
-   * they were added to lives in someone else's. This answers "what was I let
-   * into", across every tenant, so the studio can offer it without the invitee
-   * having to already know the link.
-   *
-   * "Joined" is `role != owner`. A project in your own workspace is one you
-   * own, so this can never restate what `list` already shows.
-   *
-   * Authorisation is the membership itself — every row returned is one the
-   * caller was explicitly granted — combined with the same tenant re-check
-   * `requireProject` applies: story membership never outlives the workspace
-   * seat, so a project whose workspace seat is gone must not be advertised as
-   * openable.
-   */
-  async listJoined(
-    user: AuthUser,
     query: StoryProjectListQuery,
   ): Promise<CursorPageDto<StoryProjectSummaryDto>> {
     const cursor = query.cursor
@@ -486,15 +412,6 @@ export class StoryProjectsService {
             userId: user.userId,
             status: StoryProjectMemberStatus.active,
             removedAt: null,
-            role: { not: StoryProjectMemberRole.owner },
-          },
-        },
-        workspace: {
-          members: {
-            some: {
-              userId: user.userId,
-              status: WorkspaceMemberStatus.active,
-            },
           },
         },
         ...(cursor
@@ -531,32 +448,53 @@ export class StoryProjectsService {
 
   async get(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
   ): Promise<StoryProjectSummaryDto> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      {
-        allowArchived: true,
-      },
-    );
+    await this.requireProject(user, projectId, 'story.read', {
+      allowArchived: true,
+    });
     const row = await this.loadProjectSummary(projectId);
     return this.toProjectSummary(row, user.userId);
   }
 
   async patch(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: PatchStoryProjectInput,
   ): Promise<StoryProjectSummaryDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      const visualStyleSkill = input.confirmCreativeProfile
+        ? storyVisualStyleSkillBySlug(input.visualStyle ?? '')
+        : undefined;
+      if (input.confirmCreativeProfile) {
+        if (!visualStyleSkill) {
+          throw new UnprocessableEntityException({
+            code: 'STORY_VISUAL_STYLE_SKILL_INVALID',
+            message: 'Select a published Story visual-style Skill.',
+          });
+        }
+        const published = await tx.skillCatalogItem.findFirst({
+          where: {
+            id: visualStyleSkill.skillId,
+            slug: visualStyleSkill.slug,
+            category: 'style',
+            status: SkillCatalogStatus.published,
+            latestPublishedVersionId: visualStyleSkill.versionId,
+          },
+          select: { id: true },
+        });
+        if (!published) {
+          throw new UnprocessableEntityException({
+            code: 'STORY_VISUAL_STYLE_SKILL_UNAVAILABLE',
+            message:
+              'The selected Story visual-style Skill is not published in this deployment.',
+            visualStyle: visualStyleSkill.slug,
+          });
+        }
+      }
       if (input.confirmCreativeProfile && input.frameProfile !== undefined) {
         const current = await this.loadProjectSummary(projectId, tx);
         if (
@@ -606,7 +544,6 @@ export class StoryProjectsService {
       return tx.storyProject.updateMany({
         where: {
           id: projectId,
-          workspaceId,
           status: StoryProjectStatus.active,
           version: input.expectedProjectVersion,
         },
@@ -630,6 +567,8 @@ export class StoryProjectsService {
                 frameProfile: input.frameProfile,
                 durationPreset: input.durationPreset,
                 visualStyle: input.visualStyle,
+                visualStyleSkillId: visualStyleSkill?.skillId,
+                visualStyleSkillVersionId: visualStyleSkill?.versionId,
                 creativeProfileConfirmedAt: new Date(),
               }
             : {}),
@@ -639,7 +578,6 @@ export class StoryProjectsService {
     });
     if (updated.count !== 1) {
       await this.throwProjectVersionConflict(
-        workspaceId,
         projectId,
         input.expectedProjectVersion,
       );
@@ -651,22 +589,15 @@ export class StoryProjectsService {
 
   async archive(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: ArchiveStoryProjectInput,
   ): Promise<StoryProjectSummaryDto> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.admin',
-    );
+    await this.requireProject(user, projectId, 'story.admin');
     const updated = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       return tx.storyProject.updateMany({
         where: {
           id: projectId,
-          workspaceId,
           status: StoryProjectStatus.active,
           version: input.expectedProjectVersion,
         },
@@ -679,7 +610,6 @@ export class StoryProjectsService {
     });
     if (updated.count !== 1) {
       await this.throwProjectVersionConflict(
-        workspaceId,
         projectId,
         input.expectedProjectVersion,
       );
@@ -691,11 +621,11 @@ export class StoryProjectsService {
 
   async createChapter(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: CreateStoryChapterInput,
   ): Promise<StoryChapterDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    const access = await this.requireProject(user, projectId, 'story.edit');
+    const workspaceId = access.project.workspaceId;
     const chapter = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const [count, latest] = await Promise.all([
@@ -753,12 +683,11 @@ export class StoryProjectsService {
 
   async patchChapter(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     input: PatchStoryChapterInput,
   ): Promise<StoryChapterDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
     const chapter = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await this.loadActiveChapter(projectId, chapterId, tx);
@@ -777,17 +706,15 @@ export class StoryProjectsService {
 
   async reorderChapters(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: ReorderStoryChaptersInput,
   ): Promise<StoryChapterDto[]> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
     const reordered = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const projectClaim = await tx.storyProject.updateMany({
         where: {
           id: projectId,
-          workspaceId,
           status: StoryProjectStatus.active,
           version: input.expectedProjectVersion,
         },
@@ -859,7 +786,6 @@ export class StoryProjectsService {
     });
     if (!reordered) {
       return this.throwProjectVersionConflict(
-        workspaceId,
         projectId,
         input.expectedProjectVersion,
       );
@@ -869,11 +795,10 @@ export class StoryProjectsService {
 
   async archiveChapter(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
   ): Promise<StoryChapterDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
     const archived = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const chapters = await tx.storyChapter.findMany({
@@ -941,17 +866,11 @@ export class StoryProjectsService {
 
   async putDraft(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: PutStoryDraftInput,
     chapterId: string,
   ): Promise<StoryDraftDto> {
-    const access = await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.edit',
-    );
+    const access = await this.requireProject(user, projectId, 'story.edit');
     const saved = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       const [current, chapters] = await Promise.all([
@@ -1089,17 +1008,12 @@ export class StoryProjectsService {
 
   async getCanvasLayout(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
   ): Promise<StoryCanvasLayoutDto> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      { allowArchived: true },
-    );
+    await this.requireProject(user, projectId, 'story.read', {
+      allowArchived: true,
+    });
     const chapter = await this.loadActiveChapter(projectId, chapterId);
     const layout = await this.prisma.storyCanvasLayout.findUnique({
       where: { storyChapterId: chapter.id },
@@ -1110,12 +1024,11 @@ export class StoryProjectsService {
 
   async putCanvasLayout(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: PutStoryCanvasLayoutInput,
     chapterId: string,
   ): Promise<StoryCanvasLayoutDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
     const chapter = await this.loadActiveChapter(projectId, chapterId);
 
     const layout = await this.prisma.$transaction(async (tx) => {
@@ -1124,7 +1037,6 @@ export class StoryProjectsService {
         where: {
           storyChapterId: chapter.id,
           storyProjectId: projectId,
-          workspaceId,
           revision: input.expectedRevision,
         },
         data: {
@@ -1143,7 +1055,6 @@ export class StoryProjectsService {
     });
     if (!layout) {
       return this.throwCanvasLayoutConflict(
-        workspaceId,
         projectId,
         chapter.id,
         input.expectedRevision,
@@ -1154,16 +1065,11 @@ export class StoryProjectsService {
 
   async listCandidateAssets(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
   ): Promise<StoryCandidateAssetDto[]> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      { allowArchived: true },
-    );
+    await this.requireProject(user, projectId, 'story.read', {
+      allowArchived: true,
+    });
     const rows = await this.prisma.storyCandidateAsset.findMany({
       where: {
         storyProjectId: projectId,
@@ -1190,16 +1096,15 @@ export class StoryProjectsService {
 
   async addCandidateAsset(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     mediaAssetId: string,
   ): Promise<StoryCandidateAssetDto> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
 
     const candidate = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       // Deliberately NOT scoped by workspaceId. The id can only reach here from
-      // the project's own canvas, and `requireScopedProject` above already
+      // the project's own canvas, and `requireProject` above already
       // decided whether the caller may edit that project — re-checking the
       // asset's workspace is a second lock on a door that is already shut.
       //
@@ -1279,11 +1184,10 @@ export class StoryProjectsService {
 
   async removeCandidateAsset(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     mediaAssetId: string,
   ): Promise<{ mediaAssetId: string }> {
-    await this.requireScopedProject(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
     await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await tx.storyCandidateAsset.deleteMany({
@@ -1299,19 +1203,12 @@ export class StoryProjectsService {
 
   async listRevisions(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     query: StoryRevisionListQuery,
   ): Promise<CursorPageDto<StoryRevisionSummaryDto>> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      {
-        allowArchived: true,
-      },
-    );
+    await this.requireProject(user, projectId, 'story.read', {
+      allowArchived: true,
+    });
     const cursor = query.cursor
       ? decodeCursor<RevisionCursor>(query.cursor, isRevisionCursor)
       : null;
@@ -1344,19 +1241,12 @@ export class StoryProjectsService {
 
   async getRevision(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     revisionId: string,
   ): Promise<StoryRevisionDto> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      {
-        allowArchived: true,
-      },
-    );
+    await this.requireProject(user, projectId, 'story.read', {
+      allowArchived: true,
+    });
     const revision = await this.prisma.storyRevision.findFirst({
       where: { id: revisionId, storyProjectId: projectId },
     });
@@ -1366,16 +1256,10 @@ export class StoryProjectsService {
 
   async lockRevision(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: LockStoryRevisionInput,
   ): Promise<StoryRevisionDto> {
-    const access = await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.edit',
-    );
+    const access = await this.requireProject(user, projectId, 'story.edit');
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -1502,17 +1386,12 @@ export class StoryProjectsService {
 
   async workbench(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     query: StoryWorkbenchQuery,
   ): Promise<StoryWorkbenchDto> {
-    await this.requireScopedProject(
-      user,
-      workspaceId,
-      projectId,
-      'story.read',
-      { allowArchived: true },
-    );
+    await this.requireProject(user, projectId, 'story.read', {
+      allowArchived: true,
+    });
 
     const {
       project,
@@ -1596,16 +1475,6 @@ export class StoryProjectsService {
           'STORY_DRAFT_CORRUPT',
         );
         assertActiveChapterGraphPartition(projectContent, chapters);
-        const chapterNodeIds = new Set(stringArray(chapter.nodeIds));
-        const chapterContent = {
-          ...projectContent,
-          graph: {
-            entryNodeId: chapter.entryNodeId,
-            nodes: projectContent.graph.nodes.filter((node) =>
-              chapterNodeIds.has(node.nodeId),
-            ),
-          },
-        };
         return {
           project,
           chapters,
@@ -1634,64 +1503,18 @@ export class StoryProjectsService {
     };
   }
 
-  /**
-   * Answer which workspace a project lives in. A shared project link carries no
-   * workspace, so the studio lands on the invitee's own tenant, every scoped
-   * read misses on {@link requireScopedProject}'s workspace comparison, and the
-   * canvas 404s; this read is what lets the studio switch to the owning tenant
-   * and retry.
-   *
-   * It is the one Story read not scoped by the caller's active workspace, so it
-   * must not widen anything: authorization is the very same `requireProject`
-   * gate every scoped read runs, which means the only id it can ever return is
-   * the home of a project the caller could already open once pointed at it.
-   *
-   * `allowArchived` mirrors {@link workbench}: an archived project still opens
-   * read-only, so a shared link to one has to resolve or the invitee would be
-   * parked on a 404 the switch could have cleared. A deleted project is not a
-   * case — `StoryProject` has no soft-delete, so its row is gone and the lookup
-   * below misses exactly like an unknown id.
-   */
-  async resolveWorkspace(
+  private async requireProject(
     user: AuthUser,
-    projectId: string,
-  ): Promise<StoryProjectWorkspaceRefDto> {
-    try {
-      const access = await this.permissions.requireProject(
-        user.userId,
-        projectId,
-        'story.read',
-        { allowArchived: true },
-      );
-      return { workspaceId: access.project.workspaceId };
-    } catch (error) {
-      // Every denial has to look the same from outside. `requireProject` 403s
-      // when a story member has lost their seat in the owning tenant, and a 403
-      // on an id-shaped route confirms the project exists to whoever is asking.
-      if (error instanceof ForbiddenException) {
-        throw new NotFoundException(PROJECT_NOT_FOUND);
-      }
-      throw error;
-    }
-  }
-
-  private async requireScopedProject(
-    user: AuthUser,
-    workspaceId: string,
     projectId: string,
     capability: PermissionCapability,
     options: { allowArchived?: boolean } = {},
   ) {
-    const access = await this.permissions.requireProject(
+    return this.permissions.requireProject(
       user.userId,
       projectId,
       capability,
       options,
     );
-    if (access.project.workspaceId !== workspaceId) {
-      throw new NotFoundException(PROJECT_NOT_FOUND);
-    }
-    return access;
   }
 
   private async loadActiveChapter(
@@ -1723,19 +1546,14 @@ export class StoryProjectsService {
   }
 
   private async throwProjectVersionConflict(
-    workspaceId: string,
     projectId: string,
     expectedVersion: number,
   ): Promise<never> {
     const current = await this.prisma.storyProject.findUnique({
       where: { id: projectId },
-      select: { workspaceId: true, status: true, version: true },
+      select: { status: true, version: true },
     });
-    if (
-      !current ||
-      current.workspaceId !== workspaceId ||
-      current.status !== StoryProjectStatus.active
-    ) {
+    if (!current || current.status !== StoryProjectStatus.active) {
       throw new NotFoundException(PROJECT_NOT_FOUND);
     }
     throw new ConflictException({
@@ -1768,7 +1586,6 @@ export class StoryProjectsService {
   }
 
   private async throwCanvasLayoutConflict(
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     expectedRevision: number,
@@ -1776,11 +1593,7 @@ export class StoryProjectsService {
     const current = await this.prisma.storyCanvasLayout.findUnique({
       where: { storyChapterId: chapterId },
     });
-    if (
-      !current ||
-      current.storyProjectId !== projectId ||
-      current.workspaceId !== workspaceId
-    ) {
+    if (!current || current.storyProjectId !== projectId) {
       throwCanvasLayoutNotFound();
     }
     throw new ConflictException({
@@ -1833,7 +1646,9 @@ export class StoryProjectsService {
       frameProfile: row.frameProfile,
       frameProfileMutable: storyFrameProfileCanChange(row),
       durationPreset: row.durationPreset,
-      visualStyle: row.visualStyle,
+      visualStyle: StoryVisualStyleSchema.safeParse(row.visualStyle).success
+        ? StoryVisualStyleSchema.parse(row.visualStyle)
+        : null,
       creativeProfileConfirmedAt:
         row.creativeProfileConfirmedAt?.toISOString() ?? null,
       status: row.status,

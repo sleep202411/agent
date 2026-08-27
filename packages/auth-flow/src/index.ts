@@ -65,7 +65,7 @@ export {
   type FetchTransportOptions,
 } from "./transport";
 
-export { detectIdentifierKind, maskIdentifier, normalizeIdentifier } from "./identifier";
+export { maskIdentifier, normalizeIdentifier } from "./identifier";
 
 export {
   clearSessionCookie,

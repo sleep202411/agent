@@ -1,4 +1,0 @@
-interface:
-  display_name: "Viral Video Reconstruction"
-  short_description: "Rebuild the transferable hook, beat structure and payoff of a re"
-  default_prompt: "Use $viral-video-reconstruction to apply this creative direction to my request."

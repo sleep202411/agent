@@ -52,63 +52,85 @@ follow-up.
     the originating Agent run active behind a durable approval. Apply / Discard
     is an idempotent user turn; applying re-enters correlated external work and
     only the Story result transaction may terminalize the run.
-15. **Start admission precedes execution.** The first `UserMessage`, stable
+15. **One Story run writes one production stage.** Script, Plot, Asset Specs,
+    and Storyboard Specs use separate explicit runs and separate approvals.
+    Approving one stage cannot re-arm the run, precompute a later proposal, or
+    authorize a later artifact write.
+16. **Start admission precedes execution.** The first `UserMessage`, stable
     submission / turn / message identities, attachment summaries, and frozen
     start command commit atomically before Worker HTTP. Identical retries replay
     that run even after it is terminal; a divergent payload with the same
     `clientSubmissionId` conflicts.
-16. **Execution ownership is leased and fenced.** Dispatch attempt and epoch
+17. **Execution ownership is leased and fenced.** Dispatch attempt and epoch
     distinguish “scheduled but response lost” from “owner died before
     scheduling.” Checkpoint resume and every journal/domain commit reject stale
     epochs; no transaction or connection is held across Worker HTTP.
-17. **Input fidelity is fail-closed.** Start text is at most 20,000 characters
+18. **Input fidelity is fail-closed.** Start text is at most 20,000 characters
     and is never truncated. Empty text is valid only with attachments;
     attachment contents stay out of the transcript while ordered display
     metadata survives reload.
-18. **Decision gates own focus while blocking.** Question, Approval, and Draft
+19. **Decision gates own focus while blocking.** Question, Approval, and Draft
     surfaces are named regions announced on appearance, focus their heading or
     first action, and restore focus to the composer after resolution.
-19. **Command outcomes come from durable receipts.** A command mutation and its
+20. **Command outcomes come from durable receipts.** A command mutation and its
     exact response commit in one transaction behind the run/epoch fence.
     Response loss remains an in-flight tool execution, never a model-visible
     failure. Stop or epoch takeover rolls a late product write back, while an
     already-completed exact replay remains readable. A fenced or superseded
     execution is control flow for the stale Worker and cannot emit
     `ToolFailed` / `ToolMessage` into the shared checkpoint.
-20. **Human continuation is durably dispatched and fenced.** Approval and
+21. **Human continuation is durably dispatched and fenced.** Approval and
     structured-input acceptance commit a continuation command before Worker
     scheduling. A leased attempt resumes the checkpoint after crash/restart,
     and every post-HITL command transaction validates that continuation's
     token, attempt, epoch, owner, and live lease. Re-sending the same decision
-    never consumes the interrupt twice.
-21. **Realtime is byte-bounded and gap-aware.** Each Ably message and batch is
+    never consumes the interrupt twice. External continuations preserve their
+    complete server-owned plan across the Gateway/Worker boundary. Once a
+    `(turnId, externalJobId)` correlation has a terminal `RunResumed`, neither
+    checkpoint replay nor a stale row projection may move it back to
+    `waiting_for_external`; the journal fold repairs such historical rows
+    before the durable dispatcher grants a new epoch. Null checkpoint resume
+    is reserved for pending graph work; when a completed Story stage has no
+    pending node and its persisted `continueThrough` scope remains unfinished,
+    the external result starts one new deterministic stage cycle with a stable
+    checkpoint trigger.
+22. **Realtime is byte-bounded and gap-aware.** Each Ably message and batch is
     measured as UTF-8 with provider headroom. Oversized durable events and
     snapshots publish stable journal-resync pointers instead of blocking the
     outbox. Studio advances its replay cursor only across contiguous sequence
     numbers and repairs pointer, event, snapshot, and Ably continuity-loss gaps
     over HTTP. Conversation reconciliation precedes per-run repair so a run
     missed entirely in another tab is still discovered.
-22. **Approved screenplay precedes derived structure.** A new Story proposal
-    is authored against an exact collaborative Script head and persists one
+23. **Approved stages advance one artifact at a time.** A Script proposal is
+    authored against an exact collaborative Script head and persists one
     canonical review document. View all and Script consume those same ordered
-    blocks; no independent UI renderer may invent a second proposal. Apply
-    commits the Script operation, AI version, and exact lineage first, then
-    durably re-arms the same run for recoverable Plot/Asset/Storyboard
-    reconciliation. The Agent run cannot terminalize between those stages. A
-    changed head fails stale; a manually edited Script may be read to rebuild
+    blocks; no independent UI renderer may invent a second Script proposal.
+    Apply commits only the Script operation and AI version, then terminalizes
+    that run. Plot approval separately binds that Script version to the reviewed
+    graph; Script approval can never certify a pre-existing Plot by coincidence.
+    Later explicit runs propose Plot, Asset Specs, and Storyboard in order, each
+    pinned to exact upstream fingerprints and each writing only its own artifact.
+    A changed head fails stale; a manually edited Script may be read to propose
     downstream structure but must never be rewritten as a side effect.
-23. **Plan conflicts are explicit and recoverable.** Reconciliation persists
+24. **Plan conflicts are explicit and recoverable.** Reconciliation persists
     an immutable, chapter-scoped pending plan for creator-edited Asset Specs or
     Storyboard sequences. Only a version-checked keep-current or use-latest
     command may clear the conflict; compatible media and bindings survive.
-24. **Media attachment is not regeneration.** Provider completion and Story
+25. **Media attachment is not regeneration.** Provider completion and Story
     media materialization have separate durable state. Retrying a failed
     attachment reuses the existing output and cannot create or bill another AI
     job. Regeneration is a separate explicit command.
-25. **Timeline time is authoritative.** A Storyboard clip owns an exact
+26. **Timeline time is authoritative.** A Storyboard clip owns an exact
     millisecond playback duration. Video generation may choose the shortest
     supported source duration that covers it and trim to the timeline, but may
     not silently shorten, lengthen, or round the authored clip.
+27. **Visible transcript content is durable.** Rich proposal content shown in
+    an Assistant turn is represented by `ArtifactCreated` in the append-only
+    journal and references one immutable domain record. Approval resolution
+    appends `ArtifactUpdated`; it never removes the Artifact. Reload and
+    cross-device replay therefore reconstruct the same content, while only the
+    composer decision control is ephemeral. Pre-Artifact Story journals recover
+    the same reference deterministically from `story.applyProposal` correlation.
 
 ## Phase 1 acceptance (must automate)
 
@@ -128,7 +150,14 @@ follow-up.
 - [ ] Question card exists only over the composer; reload restores it from `UserInputRequired`
 - [ ] External Story proposal appends one durable result to its originating turn after restart/retry
 - [ ] Story Draft Apply / Discard appends exactly one durable user turn; proposal-ready never terminalizes the run
+- [ ] Story proposal rich content remains in its original Assistant turn after Apply, Discard, reload, and cross-device replay; only the approval buttons disappear
 - [ ] Story Apply crash/retry produces one project mutation and one final Agent result on the decision turn
+- [ ] Script approval writes no Plot, Asset Spec, or Storyboard row; its stage-specific Story run terminalizes while the owning Agent run resumes once, reads canonical state, and follows its persisted `continueThrough` boundary
+- [ ] Script approval cannot mark an already-matching Plot current; Plot still requires its own approval
+- [ ] Plot, Asset Specs, and Storyboard each use a new auditable run and one independent approval; the workflow crosses terminal graph boundaries and prepares the next proposal automatically only while the persisted creator-authorized boundary requires it
+- [ ] Asset approval writes no Storyboard row; Storyboard planning validates the current approved Asset Spec set
+- [ ] An approved empty Asset plan is durably current and lets the Agent select Storyboard on the next automatic or explicit `story.author` call
+- [ ] A stale parent Asset/Storyboard stage blocks paid generation and late media attachment for every child target
 - [ ] Attachment-only start reloads as one empty-text user turn with the same ordered filenames and no fabricated prose
 - [ ] Blocking card appearance moves accessibility focus into its named region; resolution restores composer focus
 - [ ] Two pods execute one command identity: one product mutation and one exact durable result

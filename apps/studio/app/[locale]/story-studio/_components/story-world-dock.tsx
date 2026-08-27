@@ -46,8 +46,8 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
   const workbenchQuery = useStoryChapterWorkbench(projectId);
   const { workspaceId, chapterId: activeChapterId } = workbenchQuery;
   const workbenchQueryKey = useMemo(
-    () => storyChapterWorkbenchQueryKey(workspaceId, projectId, activeChapterId),
-    [workspaceId, projectId, activeChapterId]
+    () => storyChapterWorkbenchQueryKey(projectId, activeChapterId),
+    [projectId, activeChapterId]
   );
   const workbench = workbenchQuery.data ?? null;
   const canEdit = workbench?.project.capabilities.includes("story.edit") ?? false;
@@ -81,12 +81,14 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
   };
 
   const writerRef = useRef(foundationWriter);
-  writerRef.current = foundationWriter;
+  useEffect(() => {
+    writerRef.current = foundationWriter;
+  }, [foundationWriter]);
 
   const flushBibleOverlay = async () => {
     const head = draftHeadRef.current;
     const overlay = overlayRef.current;
-    if (!head || !overlay || savingRef.current || !workspaceId || !activeChapterId) return;
+    if (!head || !overlay || savingRef.current || !activeChapterId) return;
     // A canvas may have mounted since this flush was armed (the dock survives
     // step changes). It is the draft's writer while mounted, so hand the
     // pending text over instead of racing its autosave with our own PUT.
@@ -105,7 +107,7 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
       storyBible: { ...head.content.storyBible, ...overlay },
     };
     try {
-      const draft = await putStoryDraft(workspaceId, projectId, activeChapterId, {
+      const draft = await putStoryDraft(projectId, activeChapterId, {
         expectedRevision: head.revision,
         content,
         sessionId: sessionIdRef.current as string,
@@ -137,7 +139,9 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
     }
   };
   const flushRef = useRef(flushBibleOverlay);
-  flushRef.current = flushBibleOverlay;
+  useEffect(() => {
+    flushRef.current = flushBibleOverlay;
+  });
 
   useEffect(
     () => () => {
@@ -179,13 +183,13 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
   };
 
   // ---- Cover (project-level) --------------------------------------------
-  const candidateAssets = useStoryCandidateAssets({ workspaceId, projectId, canEdit });
+  const candidateAssets = useStoryCandidateAssets({ projectId, canEdit });
   const updateProjectCover = async (coverAssetId: string | null) => {
     if (!workspaceId || !workbench || !canEdit) {
       throw new Error(t("production.errors.action"));
     }
     try {
-      const updatedProject = await updateStoryProject(workspaceId, projectId, {
+      const updatedProject = await updateStoryProject(projectId, {
         expectedProjectVersion: workbench.project.projectVersion,
         coverAssetId,
       });
@@ -213,7 +217,7 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
     });
     if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
     onState({ stage: "processing" });
-    const candidate = await addStoryCandidateAsset(workspaceId, projectId, uploaded.mediaAssetId);
+    const candidate = await addStoryCandidateAsset(projectId, uploaded.mediaAssetId);
     await candidateAssets.refresh();
     if (signal.aborted) throw new DOMException("Upload aborted", "AbortError");
     await updateProjectCover(candidate.asset.id);

@@ -125,17 +125,15 @@ export class StoryGameReleaseService {
 
   async publishProject(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: PublishStoryProjectInput,
     viewerCookie: string,
   ): Promise<ExperienceReleaseResponse> {
-    const access = await this.permissions.requireProject(
+    await this.permissions.requireProject(
       user.userId,
       projectId,
       'story.release',
     );
-    if (access.project.workspaceId !== workspaceId) throw scopeMismatch();
 
     const chapters = await this.resolveChapters(projectId);
     const plan = planRelease(chapters.candidates, chapters.locales, (buildId) =>
@@ -152,7 +150,6 @@ export class StoryGameReleaseService {
       // single-chapter work byte-identical to how it publishes today.
       return this.releases.publishBuild(
         user,
-        workspaceId,
         projectId,
         plan.opening.buildId,
         { status: 'published', setCurrent: input.setCurrent },
@@ -844,13 +841,6 @@ function releaseInProgress(
     message: 'This exact game release is still being resolved with Java.',
     contentVersion: claim.row.contentVersion,
     retryAfter: claim.retryAfter.toISOString(),
-  });
-}
-
-function scopeMismatch(): ConflictException {
-  return new ConflictException({
-    code: 'STORY_PROJECT_SCOPE_MISMATCH',
-    message: 'Story project does not belong to the active workspace.',
   });
 }
 

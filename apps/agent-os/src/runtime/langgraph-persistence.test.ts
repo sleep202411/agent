@@ -6,6 +6,7 @@ import { LangGraphRunService, type LangGraphRunSnapshot } from "./langgraph-run-
 const RUN_ID = "11111111-1111-4111-8111-111111111111";
 const TURN_ID = "22222222-2222-4222-8222-222222222222";
 const CONVERSATION_ID = "33333333-3333-4333-8333-333333333333";
+const OTHER_CONVERSATION_ID = "44444444-4444-4444-8444-444444444444";
 const originalFetch = globalThis.fetch;
 const originalDomainUrl = process.env.AGENT_OS_DOMAIN_URL;
 const originalToken = process.env.AGENT_OS_INTERNAL_TOKEN;
@@ -728,6 +729,41 @@ describe("LangGraph journal persistence", () => {
     });
 
     expect(await service.replayDurableStart(RUN_ID, CONVERSATION_ID)).toBeNull();
+  });
+
+  it("rejects a durable replay that belongs to another conversation", async () => {
+    process.env.AGENT_OS_DOMAIN_URL = "http://gateway.test";
+    process.env.AGENT_OS_INTERNAL_TOKEN = "internal-test-token";
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            status: "completed",
+            events: [
+              durableEvent(1, "RunCompleted", {
+                turnId: TURN_ID,
+                status: "completed",
+              }),
+            ],
+            pendingApproval: null,
+            pendingUserInput: null,
+            pendingExternal: null,
+            assistantText: "Done",
+            projectKind: "story",
+            workbenchMode: "story",
+            workbenchContext: null,
+            skillMountSnapshot: null,
+            startExecutionPending: false,
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        )
+    );
+
+    const service = new LangGraphRunService();
+    await expect(service.replayDurableStart(RUN_ID, OTHER_CONVERSATION_ID)).rejects.toThrow(
+      `Agent OS run ${RUN_ID} does not belong to conversation ${OTHER_CONVERSATION_ID}`
+    );
   });
 });
 

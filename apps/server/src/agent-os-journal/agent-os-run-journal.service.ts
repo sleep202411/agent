@@ -13,7 +13,11 @@ import {
   type AgentEventEnvelope,
   type AgentRunStatus,
 } from '@repo/agent-protocol';
-import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
+import type { StoryProductionContinuationPlan } from '@repo/agent-tools';
+import {
+  ProjectSkillResolutionSnapshotSchema,
+  type ProjectSkillResolutionSnapshot,
+} from '@repo/agent-skills';
 import {
   AGENT_OS_CHECKPOINT_EXECUTION_LOCK_SEED,
   agentOsCheckpointExecutionLockKey,
@@ -205,6 +209,10 @@ type ExternalResultInput = {
   phase: 'authoring' | 'apply';
   text: string;
   outcome: 'completed' | 'failed' | 'cancelled';
+  storyContinuation?: {
+    locale: 'en-US' | 'zh-CN' | 'zh-HK';
+    plan: StoryProductionContinuationPlan;
+  };
   error?: {
     code: string;
     message: string;
@@ -217,6 +225,11 @@ export type StoryProposalReadyInput = {
   turnId: string;
   authorToolCallId: string;
   externalJobId: string;
+  storyProjectId: string;
+  storyChapterId: string;
+  workspaceId: string;
+  stage: 'script' | 'plot' | 'assets' | 'storyboard' | 'noop' | 'patch';
+  schemaVersion: string;
   text: string;
   title: string;
   summary: string;
@@ -607,6 +620,7 @@ export class AgentOsRunJournalService {
           conversationId: command.conversationId,
           actorId: command.actorId,
           modelProfileId: command.modelProfileId,
+          permissionMode: command.permissionMode ?? 'smart',
           status: 'queued',
           lastSequence: 1,
           pendingApproval: Prisma.JsonNull,
@@ -876,15 +890,41 @@ export class AgentOsRunJournalService {
   ): Promise<AgentOsContinuationDispatchClaim> {
     return this.prisma.$transaction(async (tx) => {
       await lockRun(tx, runId);
-      const run = await tx.agentOsRun.findUnique({ where: { id: runId } });
+      let run = await tx.agentOsRun.findUnique({ where: { id: runId } });
       if (!run) return { kind: 'missing' };
       if (!run.continuationCommand || run.continuationExecutionFinishedAt) {
         return { kind: 'already_finished' };
       }
       if (run.status !== 'running') {
-        throw continuationExecutionFenced(
-          `Continuation execution cannot be claimed while run ${run.id} is ${run.status}.`,
+        const rows = await tx.agentOsRunEvent.findMany({
+          where: { runId: run.id },
+          orderBy: { sequence: 'asc' },
+        });
+        const projection = deriveCanonicalRunProjection(
+          rows.map(eventRowToEnvelope),
         );
+        if (projection.status !== 'running') {
+          throw continuationExecutionFenced(
+            `Continuation execution cannot be claimed while run ${run.id} is ${run.status}.`,
+          );
+        }
+        // A pre-fix Worker could replay a terminal external handoff and leave
+        // the row projection waiting even though its immutable journal proves
+        // that correlation already resumed. Repair the cache from the journal
+        // under the same row lock before granting a new fenced epoch.
+        run = await tx.agentOsRun.update({
+          where: { id: run.id },
+          data: {
+            status: projection.status,
+            pendingApproval:
+              (projection.pendingApproval as Prisma.InputJsonValue | null) ??
+              Prisma.JsonNull,
+            pendingExternal:
+              (projection.pendingExternal as Prisma.InputJsonValue | null) ??
+              Prisma.JsonNull,
+            assistantText: projection.assistantText,
+          },
+        });
       }
       const command = AgentOsContinuationCommandSchema.parse(
         run.continuationCommand,
@@ -1001,7 +1041,22 @@ export class AgentOsRunJournalService {
       Prisma.sql`
         SELECT "id"
         FROM "agent_os_runs"
-        WHERE "status" = 'running'
+        WHERE (
+            "status" = 'running'
+            OR (
+              "status" = 'waiting_for_external'
+              AND "pending_external" IS NOT NULL
+              AND EXISTS (
+                SELECT 1
+                FROM "agent_os_run_events" AS "resolved"
+                WHERE "resolved"."run_id" = "agent_os_runs"."id"
+                  AND "resolved"."type" = 'RunResumed'
+                  AND "resolved"."data"->>'turnId' = "agent_os_runs"."pending_external"->>'turnId'
+                  AND "resolved"."data"->>'externalJobId' = "agent_os_runs"."pending_external"->>'jobId'
+                  AND "resolved"."data"->>'reason' LIKE 'external_job_%'
+              )
+            )
+          )
           AND "continuation_command" IS NOT NULL
           AND "continuation_execution_finished_at" IS NULL
           AND ("continuation_dispatch_next_attempt_at" IS NULL OR "continuation_dispatch_next_attempt_at" <= NOW())
@@ -1878,6 +1933,9 @@ export class AgentOsRunJournalService {
       const priorProposal = await tx.agentOsRunEvent.findUnique({
         where: { id: stableUuid(`${eventSeed}:tool-proposed`) },
       });
+      const priorArtifact = await tx.agentOsRunEvent.findUnique({
+        where: { id: stableUuid(`${eventSeed}:artifact-created`) },
+      });
       const messageData = priorMessage?.data as
         | Record<string, unknown>
         | undefined;
@@ -1886,6 +1944,12 @@ export class AgentOsRunJournalService {
         | undefined;
       const proposalArguments = proposalData
         ? recordField(proposalData, 'arguments')
+        : null;
+      const artifactData = priorArtifact?.data as
+        | Record<string, unknown>
+        | undefined;
+      const artifactReference = artifactData
+        ? recordField(artifactData, 'artifact')
         : null;
       if (
         correlationMatches &&
@@ -1901,7 +1965,19 @@ export class AgentOsRunJournalService {
         proposalData.toolCallId === applyToolCallId &&
         proposalArguments?.storyAgentRunId === input.externalJobId &&
         proposalArguments.title === proposalTitle &&
-        proposalArguments.summary === proposalSummary
+        proposalArguments.summary === proposalSummary &&
+        priorArtifact?.runId === input.runId &&
+        priorArtifact.type === 'ArtifactCreated' &&
+        artifactData?.turnId === input.turnId &&
+        artifactData.artifactId === input.externalJobId &&
+        artifactData.status === 'proposed' &&
+        artifactReference?.kind === 'story_stage_proposal' &&
+        artifactReference.storyAgentRunId === input.externalJobId &&
+        artifactReference.storyProjectId === input.storyProjectId &&
+        artifactReference.storyChapterId === input.storyChapterId &&
+        artifactReference.workspaceId === input.workspaceId &&
+        artifactReference.stage === input.stage &&
+        artifactReference.schemaVersion === input.schemaVersion
       ) {
         return { events: [], snapshot: toRealtimeSnapshot(run) };
       }
@@ -1974,6 +2050,20 @@ export class AgentOsRunJournalService {
         messageId,
         text: assistantText,
         finishReason: 'external_result',
+      }),
+      next('artifact-created', 'ArtifactCreated', {
+        turnId: input.turnId,
+        artifactId: input.externalJobId,
+        artifact: {
+          kind: 'story_stage_proposal',
+          storyAgentRunId: input.externalJobId,
+          storyProjectId: input.storyProjectId,
+          storyChapterId: input.storyChapterId,
+          workspaceId: input.workspaceId,
+          stage: input.stage,
+          schemaVersion: input.schemaVersion,
+        },
+        status: 'proposed',
       }),
       next('tool-proposed', 'ToolProposed', {
         turnId: input.turnId,
@@ -2154,6 +2244,11 @@ export class AgentOsRunJournalService {
         approvalId: input.approvalId,
         responseId: input.responseId,
         decision: input.decision,
+      }),
+      next('artifact-updated', 'ArtifactUpdated', {
+        turnId: decisionTurnId,
+        artifactId: input.storyRunId,
+        status: input.decision === 'approve' ? 'applying' : 'rejected',
       }),
       next('resumed', 'RunResumed', {
         turnId: decisionTurnId,
@@ -2404,6 +2499,11 @@ export class AgentOsRunJournalService {
         data: parseAgentEventDataForWrite(type, data),
       });
     const events: AgentEventEnvelope[] = [
+      next('artifact-updated', 'ArtifactUpdated', {
+        turnId: input.turnId,
+        artifactId: input.storyRunId,
+        status: terminalStatus,
+      }),
       next('tool-failed', 'ToolFailed', {
         turnId: input.turnId,
         toolCallId: applyToolCallId,
@@ -2496,7 +2596,49 @@ export class AgentOsRunJournalService {
     // Include the complete correlation tuple in every deterministic id so a
     // late authoring result can never alias the apply continuation.
     const eventSeed = `agent-os:external:${input.phase}:${input.externalJobId}:${input.turnId}:${input.toolCallId}:${input.toolId}`;
+    const resumesAgentDecision =
+      input.phase === 'apply' &&
+      input.outcome === 'completed' &&
+      input.toolId === 'story.applyProposal';
     const terminalEventId = stableUuid(`${eventSeed}:terminal`);
+    const resultMessageEventId = stableUuid(`${eventSeed}:message-completed`);
+    const priorResultMessage = await tx.agentOsRunEvent.findUnique({
+      where: { id: resultMessageEventId },
+    });
+    if (resumesAgentDecision && priorResultMessage) {
+      const handoffRows = await tx.agentOsRunEvent.findMany({
+        where: { runId: input.runId, type: 'ToolCompleted' },
+        orderBy: { sequence: 'asc' },
+      });
+      const priorHandoff = handoffRows.find((row) => {
+        const data = row.data as Record<string, unknown>;
+        return (
+          recordField(data, 'agentHandoff')?.jobId === input.externalJobId &&
+          data.turnId === input.turnId &&
+          data.toolCallId === input.toolCallId &&
+          data.toolId === input.toolId
+        );
+      });
+      const messageData = priorResultMessage.data as Record<string, unknown>;
+      if (
+        priorResultMessage.runId !== input.runId ||
+        messageData.turnId !== input.turnId ||
+        messageData.messageId !==
+          `msg:${input.externalJobId}:${input.phase}:result` ||
+        messageData.text !== resultText ||
+        (priorHandoff?.data as Record<string, unknown> | undefined)
+          ?.toolCallId !== input.toolCallId ||
+        (priorHandoff?.data as Record<string, unknown> | undefined)?.toolId !==
+          input.toolId
+      ) {
+        throw new ConflictException({
+          code: 'AGENT_OS_EXTERNAL_RESULT_CONFLICT',
+          message:
+            'This external job was already resumed with a different result payload.',
+        });
+      }
+      return { events: [], snapshot: toRealtimeSnapshot(run) };
+    }
     const priorTerminal = await tx.agentOsRunEvent.findUnique({
       where: { id: terminalEventId },
     });
@@ -2514,9 +2656,7 @@ export class AgentOsRunJournalService {
           data.toolId === input.toolId
         );
       });
-      const priorMessage = await tx.agentOsRunEvent.findUnique({
-        where: { id: stableUuid(`${eventSeed}:message-completed`) },
-      });
+      const priorMessage = priorResultMessage;
       const expectedTerminalType =
         input.outcome === 'completed'
           ? 'RunCompleted'
@@ -2611,6 +2751,20 @@ export class AgentOsRunJournalService {
         reason: `external_job_${input.outcome}`,
         externalJobId: input.externalJobId,
       }),
+      ...(input.phase === 'apply' && input.toolId === 'story.applyProposal'
+        ? [
+            next('artifact-updated', 'ArtifactUpdated', {
+              turnId: input.turnId,
+              artifactId: input.externalJobId,
+              status:
+                input.outcome === 'completed'
+                  ? 'applied'
+                  : input.outcome === 'cancelled'
+                    ? 'cancelled'
+                    : 'failed',
+            }),
+          ]
+        : []),
       next('message-started', 'MessageStarted', {
         messageId,
         turnId: input.turnId,
@@ -2637,29 +2791,65 @@ export class AgentOsRunJournalService {
         : input.outcome === 'cancelled'
           ? 'cancelled'
           : 'failed';
-    events.push(
-      next(
-        'terminal',
-        terminalStatus === 'completed'
-          ? 'RunCompleted'
-          : terminalStatus === 'cancelled'
-            ? 'RunCancelled'
-            : 'RunFailed',
-        {
-          turnId: input.turnId,
-          status: terminalStatus,
-          ...(terminalStatus === 'completed'
-            ? {}
-            : {
-                error: input.error ?? {
-                  code: `EXTERNAL_JOB_${terminalStatus.toUpperCase()}`,
-                  message: resultText,
-                  retryable: false,
-                },
-              }),
-        },
-      ),
+    if (!resumesAgentDecision) {
+      events.push(
+        next(
+          'terminal',
+          terminalStatus === 'completed'
+            ? 'RunCompleted'
+            : terminalStatus === 'cancelled'
+              ? 'RunCancelled'
+              : 'RunFailed',
+          {
+            turnId: input.turnId,
+            status: terminalStatus,
+            ...(terminalStatus === 'completed'
+              ? {}
+              : {
+                  error: input.error ?? {
+                    code: `EXTERNAL_JOB_${terminalStatus.toUpperCase()}`,
+                    message: resultText,
+                    retryable: false,
+                  },
+                }),
+          },
+        ),
+      );
+    }
+
+    const continuationWorkbenchContext = parseStringRecord(
+      run.workbenchContext,
     );
+    const continuationCommand = resumesAgentDecision
+      ? AgentOsContinuationCommandSchema.parse({
+          kind: 'external_result',
+          runId: run.id,
+          turnId: input.turnId,
+          responseId: stableUuid(`${eventSeed}:continuation-response`),
+          externalJobId: input.externalJobId,
+          toolCallId: input.toolCallId,
+          toolId: input.toolId,
+          resultMessageId: messageId,
+          phase: 'apply',
+          outcome: 'completed',
+          ...(input.storyContinuation
+            ? { storyContinuation: input.storyContinuation }
+            : {}),
+          projectId: run.projectId,
+          conversationId: run.conversationId,
+          actorId: run.actorId,
+          modelProfileId: run.modelProfileId,
+          projectKind: run.projectKind,
+          workbenchMode: run.workbenchMode,
+          ...(continuationWorkbenchContext
+            ? { workbenchContext: continuationWorkbenchContext }
+            : {}),
+          permissionMode: run.permissionMode,
+          skillMountSnapshot: ProjectSkillResolutionSnapshotSchema.parse(
+            run.skillSnapshot,
+          ),
+        })
+      : null;
 
     await tx.agentOsRunEvent.createMany({
       data: events.map(eventToCreateInput),
@@ -2667,11 +2857,30 @@ export class AgentOsRunJournalService {
     const updated = await tx.agentOsRun.update({
       where: { id: run.id },
       data: {
-        status: terminalStatus,
+        status: resumesAgentDecision ? 'running' : terminalStatus,
         lastSequence: sequence,
         pendingApproval: Prisma.JsonNull,
         pendingExternal: Prisma.JsonNull,
         assistantText: resultText,
+        ...(continuationCommand
+          ? {
+              continuationCommand:
+                continuationCommand as unknown as Prisma.InputJsonValue,
+              continuationExecutionToken: randomUUID(),
+              continuationExecutionAttemptId: null,
+              continuationExecutionOwnerId: null,
+              continuationExecutionLeaseExpiresAt: null,
+              continuationExecutionHeartbeatAt: null,
+              continuationExecutionCheckpointId: null,
+              continuationExecutionCheckpointNamespace: null,
+              continuationExecutionCheckpointThreadId: null,
+              continuationExecutionCheckpointedAt: null,
+              continuationExecutionFinishedAt: null,
+              continuationDispatchNextAttemptAt: now,
+              continuationDispatchLastError: null,
+              continuationDispatchedAt: null,
+            }
+          : {}),
       },
     });
     return { events, snapshot: toRealtimeSnapshot(updated) };
@@ -2912,6 +3121,16 @@ export class AgentOsRunJournalService {
       orderBy: { sequence: 'asc' },
     });
     return rows.map(eventRowToEnvelope);
+  }
+
+  async getInitialUserMessageText(runId: string): Promise<string | null> {
+    const row = await this.prisma.agentOsRunEvent.findFirst({
+      where: { runId, type: 'UserMessage' },
+      orderBy: { sequence: 'asc' },
+      select: { data: true },
+    });
+    const parsed = UserMessageDataSchema.safeParse(row?.data);
+    return parsed.success ? parsed.data.text : null;
   }
 }
 
@@ -3325,18 +3544,27 @@ function assertRecoverableRunningStartPrefix(
   events: readonly AgentEventEnvelope[],
 ): void {
   const runStarted = events[1];
-  const plan = events[2];
+  const executionMarker = events[2];
+  // Old append-only journals used a synthetic PlanCreated marker here. New
+  // Workers report the concrete permission step, but recovery must continue
+  // to accept the immutable prefix written by an earlier Worker version.
+  const executionStarted = Boolean(
+    executionMarker &&
+    stringField(executionMarker.data, 'turnId') === run.startTurnId &&
+    (executionMarker.type === 'PlanCreated' ||
+      (executionMarker.type === 'StepStarted' &&
+        stringField(executionMarker.data, 'step') === 'permission')),
+  );
   if (
     events.length < 3 ||
     runStarted?.type !== 'RunStarted' ||
     stringField(runStarted.data, 'turnId') !== run.startTurnId ||
-    plan?.type !== 'PlanCreated' ||
-    stringField(plan.data, 'turnId') !== run.startTurnId
+    !executionStarted
   ) {
     throw new ConflictException({
       code: 'AGENT_OS_START_EXECUTION_PREFIX_DIVERGED',
       message:
-        'A recoverable initial execution must begin UserMessage#1, RunStarted#2, PlanCreated#3 for the admitted turn.',
+        'A recoverable initial execution must begin UserMessage#1, RunStarted#2, and an execution marker for the admitted turn.',
     });
   }
 }
@@ -3499,6 +3727,11 @@ function assertContinuationCommandForSuffix(input: {
   if (input.run.continuationCommand) {
     throw continuationExecutionFenced(
       'A run cannot admit another continuation while one is still recoverable.',
+    );
+  }
+  if (command.kind === 'external_result') {
+    throw continuationExecutionFenced(
+      'External-result continuations must be admitted by the authoritative Server job transaction.',
     );
   }
   const userMessages = input.suffix.flatMap((event) => {
@@ -3956,7 +4189,11 @@ function deriveCanonicalRunProjection(
   let assistantText: string | null = null;
   const toolProposals = new Map<string, Record<string, unknown>>();
   const externalHandoffs = new Map<string, AgentOsPendingExternal>();
+  const resolvedExternalHandoffs = new Set<string>();
   const messageText = new Map<string, string>();
+
+  const externalHandoffKey = (turnId: string, jobId: string) =>
+    `${turnId}\u0000${jobId}`;
 
   const advance = (next: AgentRunStatus, event: AgentEventEnvelope) => {
     try {
@@ -4046,6 +4283,16 @@ function deriveCanonicalRunProjection(
               'External pause does not match its ToolCompleted handoff.',
             );
           }
+          // Terminal external correlations are monotonic. Historical Workers
+          // could replay ToolCompleted/RunPaused after RunResumed; keep the
+          // immutable evidence but ignore that stale projection event.
+          if (
+            resolvedExternalHandoffs.has(
+              externalHandoffKey(handoff.turnId, handoff.jobId),
+            )
+          ) {
+            break;
+          }
           pendingExternal = handoff;
         }
         advance(pausedStatus, event);
@@ -4065,6 +4312,12 @@ function deriveCanonicalRunProjection(
               'External resume does not match the pending external job.',
             );
           }
+          resolvedExternalHandoffs.add(
+            externalHandoffKey(
+              requiredStringField(data, 'turnId', event),
+              externalJobId,
+            ),
+          );
           pendingExternal = null;
         }
         advance('running', event);

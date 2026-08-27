@@ -27,6 +27,8 @@ export type ApprovalPayloadLabels = {
   storyEntry: string;
   sceneOrder: string;
   storyScene: string;
+  generationBatch: string;
+  generationBatchSummary: (count: number, points: number) => string;
 };
 
 type Row = { key: string; title: string; note?: string };
@@ -55,6 +57,7 @@ type Summary = {
   creates: Row[];
   updates: Row[];
   deletes: Row[];
+  decision?: Row;
   /** Tools we do not have a shape for still show their raw payload. */
   recognized: boolean;
 };
@@ -241,6 +244,29 @@ function summarize(toolId: string, args: unknown, labels: ApprovalPayloadLabels)
     };
   }
 
+  if (toolId === "story.generation.confirmBatch") {
+    const count =
+      typeof payload.expectedItemCount === "number" && Number.isInteger(payload.expectedItemCount)
+        ? payload.expectedItemCount
+        : 0;
+    const points =
+      typeof payload.expectedTotalPoints === "number" &&
+      Number.isInteger(payload.expectedTotalPoints)
+        ? payload.expectedTotalPoints
+        : 0;
+    return {
+      creates: [],
+      updates: [],
+      deletes: [],
+      decision: {
+        key: str(payload.batchId) || toolId,
+        title: labels.generationBatch,
+        note: labels.generationBatchSummary(count, points),
+      },
+      recognized: true,
+    };
+  }
+
   return empty;
 }
 
@@ -307,9 +333,18 @@ export function ApprovalPayload({
 
   const summary = summarize(toolId, args, labels);
   const hasRows = summary.creates.length + summary.updates.length + summary.deletes.length > 0;
+  const hasSummary = hasRows || Boolean(summary.decision);
 
   return (
     <div className="mt-2">
+      {summary.decision ? (
+        <div className="rounded-lg bg-white/[0.055] px-2.5 py-2">
+          <p className="text-xs font-medium text-white/80">{summary.decision.title}</p>
+          {summary.decision.note ? (
+            <p className="mt-0.5 text-[11px] leading-snug text-white/55">{summary.decision.note}</p>
+          ) : null}
+        </div>
+      ) : null}
       {/* Deletions first: they are the change a user most needs to catch. */}
       <RowList
         rows={summary.deletes}
@@ -337,7 +372,7 @@ export function ApprovalPayload({
         </pre>
       ) : null}
 
-      {hasRows ? (
+      {hasSummary ? (
         <>
           <button
             type="button"

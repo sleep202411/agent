@@ -23,7 +23,6 @@ import {
   StoryBuildListQuerySchema,
   StoryBuildParamsSchema,
   StoryProjectIdParamsSchema,
-  StoryUuidSchema,
   type CancelStoryBuildInput,
   type CreateStoryBuildInput,
   type PublishStoryBuildInput,
@@ -49,8 +48,6 @@ export class StoryBuildController {
   @HttpCode(HttpStatus.CREATED)
   async createBuild(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
@@ -62,7 +59,6 @@ export class StoryBuildController {
       code: 200,
       data: await this.builds.createBuild(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         body,
         requiredIdempotencyKey(idempotencyHeader),
@@ -73,8 +69,6 @@ export class StoryBuildController {
   @Get(':projectId/builds')
   async listBuilds(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
     @Query(new ZodValidationPipe(StoryBuildListQuerySchema))
@@ -82,31 +76,19 @@ export class StoryBuildController {
   ) {
     return {
       code: 200,
-      data: await this.builds.listBuilds(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        query,
-      ),
+      data: await this.builds.listBuilds(user, params.projectId, query),
     };
   }
 
   @Get(':projectId/builds/:buildId')
   async getBuild(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryBuildParamsSchema))
     params: StoryBuildParams,
   ) {
     return {
       code: 200,
-      data: await this.builds.getBuild(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.buildId,
-      ),
+      data: await this.builds.getBuild(user, params.projectId, params.buildId),
     };
   }
 
@@ -136,8 +118,6 @@ export class StoryBuildController {
   @HttpCode(HttpStatus.OK)
   async cancelBuild(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryBuildParamsSchema))
     params: StoryBuildParams,
     @Body(new ZodValidationPipe(CancelStoryBuildSchema))
@@ -147,7 +127,6 @@ export class StoryBuildController {
       code: 200,
       data: await this.builds.cancelBuild(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.buildId,
         body,
@@ -158,18 +137,12 @@ export class StoryBuildController {
   @Get(':projectId/releases/current')
   async getCurrentRelease(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
   ) {
     return {
       code: 200,
-      data: await this.releases.getCurrentRelease(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-      ),
+      data: await this.releases.getCurrentRelease(user, params.projectId),
     };
   }
 
@@ -183,8 +156,6 @@ export class StoryBuildController {
   @HttpCode(HttpStatus.OK)
   async publishProject(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @ViewerCookie() viewerCookie: string,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
@@ -195,7 +166,6 @@ export class StoryBuildController {
       code: 200,
       data: await this.gameReleases.publishProject(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         body,
         viewerCookie,
@@ -207,8 +177,6 @@ export class StoryBuildController {
   @HttpCode(HttpStatus.OK)
   async publishBuild(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @ViewerCookie() viewerCookie: string,
     @Param(new ZodValidationPipe(StoryBuildParamsSchema))
     params: StoryBuildParams,
@@ -219,7 +187,6 @@ export class StoryBuildController {
       code: 200,
       data: await this.releases.publishBuild(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.buildId,
         body,
@@ -227,22 +194,6 @@ export class StoryBuildController {
       ),
     };
   }
-}
-
-function requiredWorkspaceId(value: string | string[] | undefined): string {
-  const normalized = firstHeader(value)?.trim();
-  const parsed = StoryUuidSchema.safeParse(normalized);
-  if (!parsed.success) {
-    throw new BadRequestException({
-      code: normalized
-        ? 'WORKSPACE_HEADER_INVALID'
-        : 'WORKSPACE_HEADER_REQUIRED',
-      message: normalized
-        ? 'x-fizz-workspace-id must be a valid UUID.'
-        : 'x-fizz-workspace-id is required.',
-    });
-  }
-  return parsed.data;
 }
 
 function requiredIdempotencyKey(value: string | string[] | undefined): string {

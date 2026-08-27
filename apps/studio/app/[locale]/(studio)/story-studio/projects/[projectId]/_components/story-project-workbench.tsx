@@ -15,7 +15,6 @@ import {
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -49,16 +48,14 @@ export function StoryProjectWorkbench({
   stage: WorkbenchStage;
 }) {
   const t = useTranslations("storyStudio");
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "workbench", workspaceId, projectId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId),
+    queryKey: ["story-studio", "workbench", projectId],
+    queryFn: () => getStoryWorkbench(projectId),
     retry: false,
   });
+  const workspaceId = workbenchQuery.data?.project.workspaceId ?? null;
 
-  if (workspaceLoading || (workspaceId && workbenchQuery.isLoading)) {
+  if (workbenchQuery.isLoading) {
     return <WorkbenchSkeleton />;
   }
 

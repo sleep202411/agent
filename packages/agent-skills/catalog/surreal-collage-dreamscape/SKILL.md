@@ -31,6 +31,14 @@ Create an original analog photomontage with tactile paper fibers, visible cut ed
 
 <!-- fizzdragon:policy:image:end -->
 
+## Video Generation
+
+<!-- fizzdragon:policy:video:start -->
+
+Animate as tactile paper collage with restrained rostrum-camera moves, layered cutout parallax, visible paper edges, coherent cast shadows, deliberate hinge or slide motion, and one clear evolving visual metaphor. Preserve the analog print texture and object scale logic; avoid liquid morphing, weightless floating, or excessive moving elements.
+
+<!-- fizzdragon:policy:video:end -->
+
 ## Boundaries
 
 - Do not override explicit user requirements, approved references, permissions, safety policy, model capability, or tool contracts.

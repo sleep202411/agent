@@ -38,7 +38,6 @@ vi.mock("@/lib/story-projects-api", async (importOriginal) => {
   };
 });
 
-const WORKSPACE_ID = "00000000-0000-4000-8000-000000000001";
 const PROJECT_ID = "00000000-0000-4000-8000-000000000002";
 const ASSET_ID = "00000000-0000-4000-8000-000000000003";
 
@@ -50,7 +49,6 @@ describe("useStoryCandidateAssets", () => {
 
   function Harness() {
     controller = useStoryCandidateAssets({
-      workspaceId: WORKSPACE_ID,
       projectId: PROJECT_ID,
       canEdit: true,
     });

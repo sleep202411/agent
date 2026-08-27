@@ -119,26 +119,17 @@ export class StoryExperienceReleaseService {
 
   async publishBuild(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     buildId: string,
     input: PublishStoryBuildInput,
     viewerCookie: string,
   ): Promise<ExperienceReleaseResponse> {
-    const access = await this.permissions.requireProject(
+    await this.permissions.requireProject(
       user.userId,
       projectId,
       'story.release',
     );
-    if (access.project.workspaceId !== workspaceId) {
-      throw scopeMismatch();
-    }
-    const build = await this.builds.getBuild(
-      user,
-      workspaceId,
-      projectId,
-      buildId,
-    );
+    const build = await this.builds.getBuild(user, projectId, buildId);
     if (
       build.status !== 'ready' ||
       build.scope.kind !== 'full' ||
@@ -293,15 +284,9 @@ export class StoryExperienceReleaseService {
 
   async getCurrentRelease(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
   ): Promise<StoryExperienceCurrentReleaseDto> {
-    const access = await this.permissions.requireProject(
-      user.userId,
-      projectId,
-      'story.read',
-    );
-    if (access.project.workspaceId !== workspaceId) throw scopeMismatch();
+    await this.permissions.requireProject(user.userId, projectId, 'story.read');
 
     const lifecycle = await this.prisma.storyExperiencePublication.findFirst({
       where: {
@@ -1448,13 +1433,6 @@ function publicationInProgress(
       'Another publication for this Story Project is still being resolved.',
     activeBuildId: claim.buildId,
     retryAfter: claim.leaseExpiresAt.toISOString(),
-  });
-}
-
-function scopeMismatch(): ConflictException {
-  return new ConflictException({
-    code: 'STORY_PROJECT_SCOPE_MISMATCH',
-    message: 'Story project does not belong to the active workspace.',
   });
 }
 

@@ -239,12 +239,16 @@ export class StoryBuildService {
 
   async createBuild(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: CreateStoryBuildInput,
     idempotencyKey: string,
   ): Promise<StoryBuildDto> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.build');
+    const access = await this.requireProjectScope(
+      user,
+      projectId,
+      'story.build',
+    );
+    const workspaceId = access.project.workspaceId;
     const submissionKey = storyBuildSubmissionKey(
       user.userId,
       projectId,
@@ -499,11 +503,10 @@ export class StoryBuildService {
 
   async listBuilds(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     query: StoryBuildListQuery,
   ): Promise<CursorPageDto<StoryBuildSummaryDto>> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.read');
+    await this.requireProjectScope(user, projectId, 'story.read');
     const cursor = query.cursor ? decodeBuildCursor(query.cursor) : null;
     const rows = await this.prisma.storyBuild.findMany({
       where: {
@@ -537,11 +540,10 @@ export class StoryBuildService {
 
   async getBuild(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     buildId: string,
   ): Promise<StoryBuildDto> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.read');
+    await this.requireProjectScope(user, projectId, 'story.read');
     return this.toBuildDto(await this.loadBuild(projectId, buildId));
   }
 
@@ -644,12 +646,11 @@ export class StoryBuildService {
 
   async cancelBuild(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     buildId: string,
     input: CancelStoryBuildInput,
   ): Promise<StoryBuildDto> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.build');
+    await this.requireProjectScope(user, projectId, 'story.build');
     const current = await this.loadBuild(projectId, buildId);
     assertCurrentBuildContract(current);
     if (current.version !== input.expectedBuildVersion) {
@@ -711,7 +712,6 @@ export class StoryBuildService {
 
   private async requireProjectScope(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     capability: Parameters<StoryPermissionService['requireProject']>[2],
   ) {
@@ -720,7 +720,6 @@ export class StoryBuildService {
       projectId,
       capability,
     );
-    if (scope.project.workspaceId !== workspaceId) throw projectNotFound();
     return scope;
   }
 
@@ -829,7 +828,7 @@ async function loadValidatedBuildSnapshot(
   buildId: string,
 ): Promise<ValidatedBuildSnapshot> {
   const project = await tx.storyProject.findFirst({
-    where: { id: projectId, workspaceId },
+    where: { id: projectId },
     select: {
       id: true,
       workspaceId: true,

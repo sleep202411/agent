@@ -66,12 +66,15 @@ export const StoryAssetSpecPlanItemSchema = z
   });
 export type StoryAssetSpecPlanItem = z.infer<typeof StoryAssetSpecPlanItemSchema>;
 
+const StoryAssetSpecsSchema = z.array(StoryAssetSpecPlanItemSchema).max(500);
+
 /** Model-stage envelope used before storyboard sequences bind the specs. */
 export const StoryAssetPlanSchema = z
   .object({
-    assetSpecs: z.array(StoryAssetSpecPlanItemSchema).max(500),
+    assetSpecs: StoryAssetSpecsSchema,
   })
-  .strict();
+  .strict()
+  .superRefine(addAssetPlanIssues);
 export type StoryAssetPlan = z.infer<typeof StoryAssetPlanSchema>;
 
 /**
@@ -162,112 +165,159 @@ export const StoryStoryboardSequencePlanItemSchema = z
   .strict();
 export type StoryStoryboardSequencePlanItem = z.infer<typeof StoryStoryboardSequencePlanItemSchema>;
 
+const StoryboardSequencesSchema = z.array(StoryStoryboardSequencePlanItemSchema).min(1).max(200);
+
+/**
+ * Model-stage envelope for the independently reviewable Storyboard proposal.
+ * Asset references are validated against the separately approved Asset plan by
+ * the Server because this stage must never smuggle a second Asset proposal.
+ */
+export const StoryStoryboardPlanSchema = z
+  .object({
+    storyboardSequences: StoryboardSequencesSchema,
+  })
+  .strict()
+  .superRefine(addStoryboardPlanIssues);
+export type StoryStoryboardPlan = z.infer<typeof StoryStoryboardPlanSchema>;
+
+/**
+ * Legacy/composition contract. New authoring proposals persist and approve the
+ * Asset and Storyboard plans independently; this combined shape remains useful
+ * for old durable snapshots and whole-plan validation helpers only.
+ */
 export const StoryProductionPlanSchema = z
   .object({
     schemaVersion: z.literal(STORY_PRODUCTION_PLAN_SCHEMA_VERSION),
-    assetSpecs: z.array(StoryAssetSpecPlanItemSchema).max(500),
-    storyboardSequences: z.array(StoryStoryboardSequencePlanItemSchema).min(1).max(200),
+    assetSpecs: StoryAssetSpecsSchema,
+    storyboardSequences: StoryboardSequencesSchema,
   })
   .strict()
   .superRefine((plan, context) => {
-    const assetKeys = new Set<string>();
-    plan.assetSpecs.forEach((asset, assetIndex) => {
-      if (assetKeys.has(asset.stableKey)) {
+    addAssetPlanIssues(plan, context);
+    addStoryboardPlanIssues(plan, context);
+    addStoryboardAssetReferenceIssues(plan, context);
+  });
+export type StoryProductionPlan = z.infer<typeof StoryProductionPlanSchema>;
+
+function addAssetPlanIssues(
+  plan: { assetSpecs: StoryAssetSpecPlanItem[] },
+  context: z.RefinementCtx
+): void {
+  const assetKeys = new Set<string>();
+  plan.assetSpecs.forEach((asset, assetIndex) => {
+    if (assetKeys.has(asset.stableKey)) {
+      context.addIssue({
+        code: "custom",
+        path: ["assetSpecs", assetIndex, "stableKey"],
+        message: "Asset stable keys must be unique within an Asset plan.",
+      });
+    }
+    assetKeys.add(asset.stableKey);
+  });
+}
+
+function addStoryboardPlanIssues(
+  plan: { storyboardSequences: StoryStoryboardSequencePlanItem[] },
+  context: z.RefinementCtx
+): void {
+  const plotNodeIds = new Set<string>();
+  const clipKeys = new Set<string>();
+  const cueKeys = new Set<string>();
+  plan.storyboardSequences.forEach((sequence, sequenceIndex) => {
+    if (plotNodeIds.has(sequence.plotNodeId)) {
+      context.addIssue({
+        code: "custom",
+        path: ["storyboardSequences", sequenceIndex, "plotNodeId"],
+        message: "A Plot Tree node may have only one storyboard sequence.",
+      });
+    }
+    plotNodeIds.add(sequence.plotNodeId);
+
+    const orderedClips = [...sequence.clips].sort(
+      (left, right) => left.startMs - right.startMs || left.stableKey.localeCompare(right.stableKey)
+    );
+    let previousEndMs = 0;
+    orderedClips.forEach((clip) => {
+      const clipIndex = sequence.clips.indexOf(clip);
+      if (clipKeys.has(clip.stableKey)) {
         context.addIssue({
           code: "custom",
-          path: ["assetSpecs", assetIndex, "stableKey"],
-          message: "Asset stable keys must be unique within a production plan.",
+          path: ["storyboardSequences", sequenceIndex, "clips", clipIndex, "stableKey"],
+          message: "Storyboard clip stable keys must be unique within a Storyboard plan.",
         });
       }
-      assetKeys.add(asset.stableKey);
+      clipKeys.add(clip.stableKey);
+      if (clip.startMs !== previousEndMs) {
+        context.addIssue({
+          code: "custom",
+          path: ["storyboardSequences", sequenceIndex, "clips", clipIndex, "startMs"],
+          message: "Visual clips must form one continuous, non-overlapping sequence timeline.",
+        });
+      }
+      const endMs = clip.startMs + clip.durationMs;
+      if (endMs > sequence.durationMs) {
+        context.addIssue({
+          code: "custom",
+          path: ["storyboardSequences", sequenceIndex, "clips", clipIndex, "durationMs"],
+          message: "A storyboard clip must end within its sequence duration.",
+        });
+      }
+      previousEndMs = Math.max(previousEndMs, endMs);
     });
 
-    const plotNodeIds = new Set<string>();
-    const clipKeys = new Set<string>();
-    const cueKeys = new Set<string>();
-    plan.storyboardSequences.forEach((sequence, sequenceIndex) => {
-      if (plotNodeIds.has(sequence.plotNodeId)) {
-        context.addIssue({
-          code: "custom",
-          path: ["storyboardSequences", sequenceIndex, "plotNodeId"],
-          message: "A Plot Tree node may have only one storyboard sequence.",
-        });
-      }
-      plotNodeIds.add(sequence.plotNodeId);
-
-      const orderedClips = [...sequence.clips].sort(
-        (left, right) =>
-          left.startMs - right.startMs || left.stableKey.localeCompare(right.stableKey)
-      );
-      let previousEndMs = 0;
-      orderedClips.forEach((clip) => {
-        const clipIndex = sequence.clips.indexOf(clip);
-        if (clipKeys.has(clip.stableKey)) {
-          context.addIssue({
-            code: "custom",
-            path: ["storyboardSequences", sequenceIndex, "clips", clipIndex, "stableKey"],
-            message: "Storyboard clip stable keys must be unique within a production plan.",
-          });
-        }
-        clipKeys.add(clip.stableKey);
-        if (clip.startMs !== previousEndMs) {
-          context.addIssue({
-            code: "custom",
-            path: ["storyboardSequences", sequenceIndex, "clips", clipIndex, "startMs"],
-            message: "Visual clips must form one continuous, non-overlapping sequence timeline.",
-          });
-        }
-        const endMs = clip.startMs + clip.durationMs;
-        if (endMs > sequence.durationMs) {
-          context.addIssue({
-            code: "custom",
-            path: ["storyboardSequences", sequenceIndex, "clips", clipIndex, "durationMs"],
-            message: "A storyboard clip must end within its sequence duration.",
-          });
-        }
-        previousEndMs = Math.max(previousEndMs, endMs);
-        storyClipAssetMentions(clip).forEach((mentionKey) => {
-          if (!assetKeys.has(mentionKey)) {
-            context.addIssue({
-              code: "custom",
-              path: [
-                "storyboardSequences",
-                sequenceIndex,
-                "clips",
-                clipIndex,
-                clip.kind === "video" ? "videoPrompt" : "imagePrompt",
-              ],
-              message: `Storyboard clip mentions missing Asset Spec "@${mentionKey}".`,
-            });
-          }
-        });
+    if (previousEndMs !== sequence.durationMs) {
+      context.addIssue({
+        code: "custom",
+        path: ["storyboardSequences", sequenceIndex, "durationMs"],
+        message: "Storyboard clips must cover the complete sequence duration.",
       });
+    }
 
-      if (previousEndMs !== sequence.durationMs) {
+    sequence.cues.forEach((cue, cueIndex) => {
+      if (cueKeys.has(cue.stableKey)) {
         context.addIssue({
           code: "custom",
-          path: ["storyboardSequences", sequenceIndex, "durationMs"],
-          message: "Storyboard clips must cover the complete sequence duration.",
+          path: ["storyboardSequences", sequenceIndex, "cues", cueIndex, "stableKey"],
+          message: "Storyboard cue stable keys must be unique within a Storyboard plan.",
         });
       }
+      cueKeys.add(cue.stableKey);
+      if (cue.atMs > sequence.durationMs) {
+        context.addIssue({
+          code: "custom",
+          path: ["storyboardSequences", sequenceIndex, "cues", cueIndex, "atMs"],
+          message: "A storyboard cue must occur within its sequence duration.",
+        });
+      }
+    });
+  });
+}
 
-      sequence.cues.forEach((cue, cueIndex) => {
-        if (cueKeys.has(cue.stableKey)) {
+function addStoryboardAssetReferenceIssues(
+  plan: {
+    assetSpecs: StoryAssetSpecPlanItem[];
+    storyboardSequences: StoryStoryboardSequencePlanItem[];
+  },
+  context: z.RefinementCtx
+): void {
+  const assetKeys = new Set(plan.assetSpecs.map((asset) => asset.stableKey));
+  plan.storyboardSequences.forEach((sequence, sequenceIndex) => {
+    sequence.clips.forEach((clip, clipIndex) => {
+      storyClipAssetMentions(clip).forEach((mentionKey) => {
+        if (!assetKeys.has(mentionKey)) {
           context.addIssue({
             code: "custom",
-            path: ["storyboardSequences", sequenceIndex, "cues", cueIndex, "stableKey"],
-            message: "Storyboard cue stable keys must be unique within a production plan.",
-          });
-        }
-        cueKeys.add(cue.stableKey);
-        if (cue.atMs > sequence.durationMs) {
-          context.addIssue({
-            code: "custom",
-            path: ["storyboardSequences", sequenceIndex, "cues", cueIndex, "atMs"],
-            message: "A storyboard cue must occur within its sequence duration.",
+            path: [
+              "storyboardSequences",
+              sequenceIndex,
+              "clips",
+              clipIndex,
+              clip.kind === "video" ? "videoPrompt" : "imagePrompt",
+            ],
+            message: `Storyboard clip mentions missing Asset Spec "@${mentionKey}".`,
           });
         }
       });
     });
   });
-export type StoryProductionPlan = z.infer<typeof StoryProductionPlanSchema>;
+}

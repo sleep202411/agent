@@ -5,6 +5,10 @@ export interface AgentOsStartExecutionProof {
   executionAttemptId: string;
   executionEpoch: number;
   executionOwnerId: string;
+  checkpointId?: string;
+  checkpointNamespace?: string;
+  checkpointThreadId?: string;
+  checkpointMessageId?: string;
 }
 
 export interface AgentOsContinuationExecutionProof {
@@ -12,6 +16,9 @@ export interface AgentOsContinuationExecutionProof {
   executionAttemptId: string;
   executionEpoch: number;
   executionOwnerId: string;
+  checkpointId?: string;
+  checkpointNamespace?: string;
+  checkpointThreadId?: string;
 }
 
 /** Opaque lease passed only to command handlers after durable admission. */

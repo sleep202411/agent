@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 
@@ -11,7 +10,6 @@ import { StoryProjectWriteGuardService } from './story-project-write-guard.servi
  * single source of truth for `story.generate`.
  */
 @Module({
-  imports: [WorkspacesModule],
   providers: [StoryProjectWriteGuardService, StoryPermissionService],
   exports: [StoryProjectWriteGuardService, StoryPermissionService],
 })

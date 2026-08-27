@@ -15,7 +15,7 @@ const SWEEP_INTERVAL_MS = 2_000;
 const CONTINUATION_LEASE_MS = 90_000;
 const DISPATCH_CONCURRENCY = 4;
 
-/** Durable dispatcher for checkpoint resumes admitted by HITL responses. */
+/** Durable dispatcher for HITL and authoritative external-result checkpoint resumes. */
 @Injectable()
 export class AgentOsRunContinuationDispatcherService
   implements OnModuleInit, OnApplicationShutdown

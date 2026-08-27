@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { StoryProductionPlanSchema } from "./story-production.js";
+import {
+  StoryAssetPlanSchema,
+  StoryProductionPlanSchema,
+  StoryStoryboardPlanSchema,
+} from "./story-production.js";
 
 function plan() {
   return {
@@ -96,5 +100,42 @@ describe("StoryProductionPlanSchema", () => {
     expect(StoryProductionPlanSchema.safeParse(value).success).toBe(true);
     expect(value.storyboardSequences[0]).not.toHaveProperty("choices");
     expect(value.storyboardSequences[0]).not.toHaveProperty("nextNodeIds");
+  });
+});
+
+describe("independent production stage schemas", () => {
+  it("rejects duplicate logical keys inside an Asset-only proposal", () => {
+    const value = plan();
+    const asset = value.assetSpecs[0]!;
+    const result = StoryAssetPlanSchema.safeParse({
+      assetSpecs: [asset, { ...asset }],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.some((issue) => issue.message.includes("must be unique"))).toBe(
+      true
+    );
+  });
+
+  it("validates a Storyboard structurally without embedding the Asset plan", () => {
+    const value = plan();
+    value.storyboardSequences[0]!.clips[0]!.imagePrompt =
+      "A gate shot framing @asset.approved.in.another.stage at dusk.";
+    expect(
+      StoryStoryboardPlanSchema.safeParse({
+        storyboardSequences: value.storyboardSequences,
+      }).success
+    ).toBe(true);
+  });
+
+  it("still rejects an invalid timeline in a Storyboard-only proposal", () => {
+    const value = plan();
+    value.storyboardSequences[0]!.clips[1]!.startMs = 3_000;
+    const result = StoryStoryboardPlanSchema.safeParse({
+      storyboardSequences: value.storyboardSequences,
+    });
+    expect(result.success).toBe(false);
+    expect(
+      result.error?.issues.some((issue) => issue.message.includes("continuous, non-overlapping"))
+    ).toBe(true);
   });
 });

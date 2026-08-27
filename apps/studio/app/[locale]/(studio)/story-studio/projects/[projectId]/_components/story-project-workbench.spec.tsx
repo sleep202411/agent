@@ -37,7 +37,7 @@ describe("StoryOverviewCreativeProfile", () => {
           project={{
             frameProfile: "landscape_16_9",
             durationPreset: "medium_15_30",
-            visualStyle: "graphic_novel",
+            visualStyle: "graphic-novel-cinema",
             defaultLocale: "en-US",
           }}
         />
@@ -50,7 +50,7 @@ describe("StoryOverviewCreativeProfile", () => {
     expect(text).toContain("targetRuntime");
     expect(text).toContain("durationPresets.medium_15_30");
     expect(text).toContain("visualStyle");
-    expect(text).toContain("visualStyles.graphic_novel");
+    expect(text).toContain("visualStyles.graphic-novel-cinema");
     expect(text).toContain("language");
     expect(text).toContain("en-US");
   });

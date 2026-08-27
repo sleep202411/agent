@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  IconBolt,
-  IconLoader2,
-  IconPhotoOff,
-  IconRefresh,
-  IconSparkles,
-  IconX,
-} from "@tabler/icons-react";
+import { IconLoader2, IconPhotoOff, IconRefresh, IconSparkles, IconX } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
@@ -35,21 +28,13 @@ import {
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import {
-  estimateModelSellPoints,
-  schemaFields,
-  type FizzAiModel,
-  type ModelSettings,
-} from "@/lib/canvas-authoring/generation-api";
-import { useAiCatalog } from "@/lib/canvas-authoring/use-ai-catalog";
-import {
   storyGenerationOptions,
-  useStoryProductionSettingsStore,
   type ProductionModality,
   type ProductionModelSelection,
 } from "../_stores/story-production-settings-store";
+import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 interface GenerationScope {
-  workspaceId: string;
   projectId: string;
   chapterId: string;
 }
@@ -80,7 +65,7 @@ export function StoryProductionGenerationControl({
   aspect = "square",
   secondaryAction,
   outputKind = "image",
-  clipDurationMs,
+  allowGeneration = true,
 }: {
   scope: GenerationScope;
   target: GenerationTarget;
@@ -92,9 +77,12 @@ export function StoryProductionGenerationControl({
   secondaryAction?: React.ReactNode;
   /** Which modality this target generates; picks the page-header default. */
   outputKind?: ProductionModality;
-  /** Video clips bill by their timeline length: the server rounds this up to
-   *  the model's nearest supported source duration, so the estimate must too. */
-  clipDurationMs?: number;
+  /**
+   * Stage-level fence. Stale aggregate stages may still render previews,
+   * details, and conflict resolution, but they must not expose a new paid
+   * generation or retry action until the whole stage is current again.
+   */
+  allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
@@ -138,16 +126,7 @@ export function StoryProductionGenerationControl({
     queryClient.setQueryData(generationQueryKey(scope, target, value.id), value);
   };
 
-  const generationDefaults = useStoryProductionSettingsStore((state) => state[outputKind]);
-  const catalog = useAiCatalog();
-  const defaultModel = generationDefaults.selection
-    ? catalog.data?.models.find((model) => model.id === generationDefaults.selection?.modelId)
-    : undefined;
-  const estimatedPoints = estimateStoryGenerationPoints(
-    defaultModel,
-    generationDefaults.options,
-    outputKind === "video" ? (clipDurationMs ?? null) : null
-  );
+  const generationDefaults = useStoryProductionGenerationDefaults(scope.projectId, outputKind);
   const createMutation = useMutation({
     retry: false,
     mutationFn: () =>
@@ -241,7 +220,7 @@ export function StoryProductionGenerationControl({
       <IconX />
       {t("cancel")}
     </Button>
-  ) : running ? null : attachmentRetryable ? (
+  ) : running || !allowGeneration ? null : attachmentRetryable ? (
     <Button
       size="sm"
       loading={attachmentRetryMutation.isPending}
@@ -270,12 +249,6 @@ export function StoryProductionGenerationControl({
     >
       <IconSparkles />
       {selectedMedia ? t("generateAgain") : t("generate")}
-      {estimatedPoints !== null ? (
-        <span className="flex items-center gap-0.5 text-[11px] opacity-85">
-          <IconBolt className="size-3" stroke={2} />
-          {estimatedPoints}
-        </span>
-      ) : null}
     </Button>
   ) : null;
 
@@ -388,7 +361,6 @@ function generationQueryKey(
   generationId: string | null
 ) {
   return storyProductionKeys.generation(
-    scope.workspaceId,
     scope.projectId,
     scope.chapterId,
     target.kind,
@@ -422,16 +394,8 @@ function getGeneration(
   signal: AbortSignal
 ) {
   return target.kind === "asset_spec"
-    ? getStoryAssetGeneration(
-        scope.workspaceId,
-        scope.projectId,
-        scope.chapterId,
-        target.id,
-        generationId,
-        signal
-      )
+    ? getStoryAssetGeneration(scope.projectId, scope.chapterId, target.id, generationId, signal)
     : getStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -439,59 +403,6 @@ function getGeneration(
         generationId,
         signal
       );
-}
-
-/**
- * The same sell-points estimate the header pill shows, corrected for video
- * clips: duration is server-owned and rounded up from the clip's timeline
- * length to the model's nearest supported source duration.
- */
-function estimateStoryGenerationPoints(
-  model: FizzAiModel | undefined,
-  options: ModelSettings,
-  clipDurationMs: number | null
-): number | null {
-  if (!model) return null;
-  const scalar = (name: string) => {
-    const value = options[name];
-    return Array.isArray(value) ? undefined : value;
-  };
-  const estimate: {
-    numOutputs: number;
-    resolution?: string;
-    quality?: string;
-    duration?: string;
-    durationSeconds?: number;
-    generateAudio?: boolean;
-  } = {
-    numOutputs: Number(scalar("numOutputs") ?? scalar("n") ?? 1) || 1,
-    resolution: scalar("resolution") != null ? String(scalar("resolution")) : undefined,
-    quality: scalar("quality") != null ? String(scalar("quality")) : undefined,
-    duration: scalar("duration") != null ? String(scalar("duration")) : undefined,
-    durationSeconds:
-      typeof scalar("durationSeconds") === "number"
-        ? (scalar("durationSeconds") as number)
-        : undefined,
-    generateAudio:
-      typeof scalar("generateAudio") === "boolean"
-        ? (scalar("generateAudio") as boolean)
-        : undefined,
-  };
-  if (clipDurationMs !== null) {
-    const seconds = clipDurationMs / 1_000;
-    const field = schemaFields(model).find(
-      (candidate) => candidate.name === "durationSeconds" || candidate.name === "duration"
-    );
-    const supported = (field?.enum ?? [])
-      .map(Number)
-      .filter((value) => Number.isFinite(value))
-      .sort((left, right) => left - right)
-      .find((value) => value >= seconds);
-    if (supported === undefined) return null;
-    estimate.duration = String(supported);
-    estimate.durationSeconds = supported;
-  }
-  return estimateModelSellPoints(model, estimate)?.sellPoints ?? null;
 }
 
 function createGeneration(
@@ -511,16 +422,11 @@ function createGeneration(
       }
     : {};
   return target.kind === "asset_spec"
-    ? createStoryAssetGeneration(
-        scope.workspaceId,
-        scope.projectId,
-        scope.chapterId,
-        target.id,
-        idempotencyKey,
-        { expectedVersion: target.version, ...modelInput }
-      )
+    ? createStoryAssetGeneration(scope.projectId, scope.chapterId, target.id, idempotencyKey, {
+        expectedVersion: target.version,
+        ...modelInput,
+      })
     : createStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -532,15 +438,8 @@ function createGeneration(
 
 function cancelGeneration(scope: GenerationScope, target: GenerationTarget, generationId: string) {
   return target.kind === "asset_spec"
-    ? cancelStoryAssetGeneration(
-        scope.workspaceId,
-        scope.projectId,
-        scope.chapterId,
-        target.id,
-        generationId
-      )
+    ? cancelStoryAssetGeneration(scope.projectId, scope.chapterId, target.id, generationId)
     : cancelStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -554,7 +453,6 @@ function retryGeneration(scope: GenerationScope, target: GenerationTarget, gener
   const input = { expectedVersion: target.version };
   return target.kind === "asset_spec"
     ? retryStoryAssetGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.id,
@@ -563,7 +461,6 @@ function retryGeneration(scope: GenerationScope, target: GenerationTarget, gener
         input
       )
     : retryStoryStoryboardClipGeneration(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -582,7 +479,6 @@ function retryGenerationMaterialization(
   const idempotencyKey = createStoryProductionIdempotencyKey("story-attachment-retry");
   return target.kind === "asset_spec"
     ? retryStoryAssetGenerationMaterialization(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.id,
@@ -591,7 +487,6 @@ function retryGenerationMaterialization(
         idempotencyKey
       )
     : retryStoryStoryboardClipGenerationMaterialization(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.sequenceId,
@@ -609,30 +504,22 @@ async function invalidateProductionTarget(
 ) {
   const invalidations = [
     queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.state(scope.workspaceId, scope.projectId, scope.chapterId),
+      queryKey: storyProductionKeys.state(scope.projectId, scope.chapterId),
     }),
   ];
   if (target.kind === "asset_spec") {
     invalidations.push(
       queryClient.invalidateQueries({
-        queryKey: storyProductionKeys.assets(scope.workspaceId, scope.projectId, scope.chapterId),
+        queryKey: storyProductionKeys.assets(scope.projectId, scope.chapterId),
       }),
       queryClient.invalidateQueries({
-        queryKey: storyProductionKeys.storyboard(
-          scope.workspaceId,
-          scope.projectId,
-          scope.chapterId
-        ),
+        queryKey: storyProductionKeys.storyboard(scope.projectId, scope.chapterId),
       })
     );
   } else {
     invalidations.push(
       queryClient.invalidateQueries({
-        queryKey: storyProductionKeys.storyboard(
-          scope.workspaceId,
-          scope.projectId,
-          scope.chapterId
-        ),
+        queryKey: storyProductionKeys.storyboard(scope.projectId, scope.chapterId),
       })
     );
   }

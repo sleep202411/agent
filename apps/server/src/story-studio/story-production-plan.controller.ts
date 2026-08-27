@@ -48,8 +48,6 @@ export class StoryProductionPlanController {
   @Get('production-state')
   async getProductionState(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProductionChapterParamsSchema))
     params: StoryProductionChapterParams,
   ) {
@@ -57,7 +55,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.getProductionState(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
       ),
@@ -67,8 +64,6 @@ export class StoryProductionPlanController {
   @Get('asset-specs')
   async listAssetSpecs(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProductionChapterParamsSchema))
     params: StoryProductionChapterParams,
   ) {
@@ -76,7 +71,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.listAssetSpecs(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
       ),
@@ -86,8 +80,6 @@ export class StoryProductionPlanController {
   @Patch('asset-specs/:assetSpecId')
   async patchAssetSpec(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAssetSpecParamsSchema))
@@ -99,7 +91,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.patchAssetSpec(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.assetSpecId,
@@ -112,8 +103,6 @@ export class StoryProductionPlanController {
   @Post('asset-specs/:assetSpecId/conflict-resolution')
   async resolveAssetSpecConflict(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAssetSpecParamsSchema))
@@ -125,7 +114,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.resolveAssetSpecConflict(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.assetSpecId,
@@ -138,8 +126,6 @@ export class StoryProductionPlanController {
   @Get('storyboard')
   async getStoryboard(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProductionChapterParamsSchema))
     params: StoryProductionChapterParams,
   ) {
@@ -147,7 +133,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.getStoryboard(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
       ),
@@ -157,8 +142,6 @@ export class StoryProductionPlanController {
   @Patch('storyboard/sequences/:sequenceId')
   async patchSequence(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryStoryboardSequenceParamsSchema))
@@ -170,7 +153,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.patchSequence(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.sequenceId,
@@ -183,8 +165,6 @@ export class StoryProductionPlanController {
   @Post('storyboard/sequences/:sequenceId/conflict-resolution')
   async resolveStoryboardSequenceConflict(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryStoryboardSequenceParamsSchema))
@@ -196,7 +176,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.resolveStoryboardSequenceConflict(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.sequenceId,
@@ -209,8 +188,6 @@ export class StoryProductionPlanController {
   @Put('storyboard/sequences/:sequenceId/timeline')
   async putTimeline(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryStoryboardSequenceParamsSchema))
@@ -222,7 +199,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.putTimeline(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.sequenceId,
@@ -235,8 +211,6 @@ export class StoryProductionPlanController {
   @Patch('storyboard/sequences/:sequenceId/clips/:clipId')
   async patchClip(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryStoryboardClipParamsSchema))
@@ -248,7 +222,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.patchClip(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.sequenceId,
@@ -262,8 +235,6 @@ export class StoryProductionPlanController {
   @Put('storyboard/sequences/:sequenceId/clips/:clipId/bindings/:assetSpecId')
   async putBinding(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryStoryboardBindingParamsSchema))
@@ -275,7 +246,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.putBinding(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.sequenceId,
@@ -290,8 +260,6 @@ export class StoryProductionPlanController {
   @Patch('storyboard/sequences/:sequenceId/cues/:cueId')
   async patchCue(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryStoryboardCueParamsSchema))
@@ -303,7 +271,6 @@ export class StoryProductionPlanController {
       code: 200,
       data: await this.production.patchCue(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.chapterId,
         params.sequenceId,
@@ -313,17 +280,6 @@ export class StoryProductionPlanController {
       ),
     };
   }
-}
-
-function requiredWorkspaceId(value: string | string[] | undefined): string {
-  const workspaceId = Array.isArray(value) ? value[0] : value;
-  if (!workspaceId?.trim()) {
-    throw new BadRequestException({
-      code: 'WORKSPACE_HEADER_REQUIRED',
-      message: 'x-fizz-workspace-id is required.',
-    });
-  }
-  return workspaceId.trim();
 }
 
 function requiredIdempotencyKey(value: string | string[] | undefined): string {

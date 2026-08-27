@@ -29,7 +29,6 @@ export type SavedDraftSnapshotRunner = <T>(
 
 export type StoryPublicationFailureCode =
   | StoryPublicationErrorCode
-  | "WORKSPACE_REQUIRED"
   | "PERMISSION_DENIED"
   | "UNEXPECTED";
 
@@ -52,7 +51,6 @@ export type StoryPublicationState =
     };
 
 export interface UseStoryPublicationOptions {
-  workspaceId: string | null;
   projectId: string;
   capabilities: readonly StoryCapability[];
   withSavedDraftSnapshot: SavedDraftSnapshotRunner;
@@ -66,7 +64,6 @@ const REQUIRED_CAPABILITIES = [
 ] as const satisfies readonly StoryCapability[];
 
 export function useStoryPublication({
-  workspaceId,
   projectId,
   capabilities,
   withSavedDraftSnapshot,
@@ -79,42 +76,25 @@ export function useStoryPublication({
   const runningRef = useRef(false);
   const publicationSubmissionKeys = useMemo(
     () =>
-      new StorySubmissionKeyRegistry(
-        `story-publication:${workspaceId ?? "no-workspace"}:${projectId}`,
-        () => {
-          try {
-            return globalThis.window?.sessionStorage ?? null;
-          } catch {
-            return null;
-          }
+      new StorySubmissionKeyRegistry(`story-publication:${projectId}`, () => {
+        try {
+          return globalThis.window?.sessionStorage ?? null;
+        } catch {
+          return null;
         }
-      ),
-    [projectId, workspaceId]
+      }),
+    [projectId]
   );
 
   const missingCapabilities = useMemo(
     () => REQUIRED_CAPABILITIES.filter((capability) => !capabilities.includes(capability)),
     [capabilities]
   );
-  const canPublish = Boolean(workspaceId) && missingCapabilities.length === 0;
-  const disabledReason = !workspaceId
-    ? t("errors.workspaceRequired")
-    : missingCapabilities.length > 0
-      ? t("errors.permissionDenied")
-      : null;
+  const canPublish = missingCapabilities.length === 0;
+  const disabledReason = missingCapabilities.length > 0 ? t("errors.permissionDenied") : null;
 
   const open = useCallback(() => {
     if (runningRef.current) return;
-    if (!workspaceId) {
-      setState({
-        status: "failed",
-        phase: "permission",
-        code: "WORKSPACE_REQUIRED",
-        message: t("errors.workspaceRequired"),
-        diagnostics: [],
-      });
-      return;
-    }
     if (missingCapabilities.length > 0) {
       setState({
         status: "failed",
@@ -126,7 +106,7 @@ export function useStoryPublication({
       return;
     }
     setState({ status: "confirming" });
-  }, [missingCapabilities.length, t, workspaceId]);
+  }, [missingCapabilities.length, t]);
 
   const close = useCallback(() => {
     if (!runningRef.current) setState({ status: "closed" });
@@ -134,7 +114,7 @@ export function useStoryPublication({
 
   const execute = useCallback(async () => {
     if (runningRef.current) return;
-    if (!workspaceId || missingCapabilities.length > 0) {
+    if (missingCapabilities.length > 0) {
       open();
       return;
     }
@@ -146,11 +126,11 @@ export function useStoryPublication({
       result = await runStoryPublication({
         saveDraftSnapshot: () =>
           withSavedDraftSnapshot(async (expectedDraftRevision) => expectedDraftRevision),
-        loadWorkbench: () => getStoryWorkbench(workspaceId, projectId),
+        loadWorkbench: () => getStoryWorkbench(projectId),
         createProductionBuild: (input, idempotencyKey) =>
-          createStoryBuild(workspaceId, projectId, input, idempotencyKey),
+          createStoryBuild(projectId, input, idempotencyKey),
         publishProductionBuild: (buildId) =>
-          publishStoryBuild(workspaceId, projectId, buildId, {
+          publishStoryBuild(projectId, buildId, {
             status: "published",
             setCurrent: true,
           }),
@@ -175,7 +155,7 @@ export function useStoryPublication({
     }
 
     setLastSucceeded(result);
-    const currentReleaseKey = ["story-studio", "current-release", workspaceId, projectId] as const;
+    const currentReleaseKey = ["story-studio", "current-release", projectId] as const;
     queryClient.setQueryData<StoryExperienceCurrentRelease>(currentReleaseKey, {
       projectId,
       gameId: result.release.gameId,
@@ -194,7 +174,7 @@ export function useStoryPublication({
     });
     const refreshes: Promise<unknown>[] = [
       queryClient.invalidateQueries({
-        queryKey: ["story-studio", "workbench", workspaceId, projectId],
+        queryKey: ["story-studio", "workbench", projectId],
       }),
       queryClient.invalidateQueries({
         queryKey: ["story-studio", "interactive-film-projects"],
@@ -216,7 +196,6 @@ export function useStoryPublication({
     queryClient,
     t,
     withSavedDraftSnapshot,
-    workspaceId,
   ]);
 
   return {

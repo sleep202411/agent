@@ -18,9 +18,13 @@ import {
   type StoryStoryboardSequence,
 } from '@prisma/client';
 import {
+  StoryAssetPlanSchema,
   StoryProductionPlanSchema,
+  StoryStoryboardPlanSchema,
   storyClipAssetMentions,
+  type StoryAssetPlan,
   type StoryProductionPlan,
+  type StoryStoryboardPlan,
 } from '@repo/shared/story-production';
 import type { StoryScreenplay } from '@repo/shared/story-agent';
 import type { AuthUser } from '../auth';
@@ -42,6 +46,7 @@ import {
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
   readApprovedStoryScreenplaySnapshot,
+  readCurrentStoryScreenplaySnapshot,
   readStoryScriptHead,
 } from './story-script-stage';
 import type {
@@ -149,13 +154,36 @@ type CreativeMediaVersionRow =
   | NonNullable<AssetSpecRow['selectedMediaVersion']>
   | NonNullable<StoryboardSequenceRow['clips'][number]['selectedMediaVersion']>;
 
-export interface ApplyApprovedProductionPlanInput {
+interface StoryProductionApplyContext {
   storyProjectId: string;
   storyChapterId: string;
   actorUserId: string;
-  /** Hash of the exact approved Plot source reconciled by this transaction. */
+  /** Hash of the exact upstream source reconciled by this transaction. */
   sourceFingerprint: string;
-  /** Canonical character ids from the exact approved screenplay. */
+}
+
+export interface ApplyApprovedAssetPlanInput extends StoryProductionApplyContext {
+  /** Canonical identities from the exact approved Plot interpretation. */
+  canonicalCharacterIds: readonly string[];
+  canonicalNodeIds: readonly string[];
+  assetPlan: StoryAssetPlan;
+}
+
+export interface ApplyApprovedStoryboardPlanInput extends StoryProductionApplyContext {
+  /** Immutable Asset source snapshot embedded in the Storyboard proposal. */
+  assetPlan: StoryAssetPlan;
+  storyboardPlan: StoryStoryboardPlan;
+}
+
+export interface InvalidateStoryProductionDownstreamInput extends StoryProductionApplyContext {
+  /** The approval boundary whose true downstream stages must be invalidated. */
+  upstreamStage: 'script' | 'plot';
+  /** Unique approved upstream run; repeated approvals must invalidate too. */
+  upstreamRunId: string;
+}
+
+/** Legacy whole-plan helper retained for old proposals and tests. */
+export interface ApplyApprovedProductionPlanInput extends StoryProductionApplyContext {
   canonicalCharacterIds: readonly string[];
   productionPlan: StoryProductionPlan;
 }
@@ -174,6 +202,19 @@ export interface ValidateApprovedProductionPlanInput {
   draft: unknown;
   chapterNodeIds: readonly string[];
   canonicalCharacterIds: readonly string[];
+}
+
+export interface ValidateApprovedAssetPlanInput {
+  assetPlan: StoryAssetPlan;
+  canonicalNodeIds: readonly string[];
+  canonicalCharacterIds: readonly string[];
+}
+
+export interface ValidateApprovedStoryboardPlanInput {
+  storyboardPlan: StoryStoryboardPlan;
+  assetPlan: StoryAssetPlan;
+  draft: unknown;
+  chapterNodeIds: readonly string[];
 }
 
 export type StoryProductionStageStatus = 'missing' | 'current' | 'stale';
@@ -212,17 +253,10 @@ export class StoryProductionPlanService {
 
   async getProductionState(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
   ): Promise<StoryProductionStateDto> {
-    await this.requireScope(
-      user,
-      workspaceId,
-      projectId,
-      chapterId,
-      'story.read',
-    );
+    await this.requireScope(user, projectId, chapterId, 'story.read');
     return this.prisma.$transaction((tx) =>
       this.getProductionStateInTransaction(tx, projectId, chapterId),
     );
@@ -237,30 +271,45 @@ export class StoryProductionPlanService {
     projectId: string,
     chapterId: string,
   ): Promise<StoryProductionStateDto> {
-    const [project, chapter, draft, assetCounts, sequenceRows, scriptHead] =
-      await Promise.all([
-        tx.storyProject.findUniqueOrThrow({ where: { id: projectId } }),
-        tx.storyChapter.findFirstOrThrow({
-          where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
-        }),
-        tx.storyDraft.findUniqueOrThrow({
-          where: { storyProjectId: projectId },
-        }),
-        tx.storyAssetSpec.groupBy({
-          by: ['status'],
-          where: { storyProjectId: projectId, storyChapterId: chapterId },
-          _count: { _all: true },
-        }),
-        tx.storyStoryboardSequence.findMany({
-          where: {
-            storyProjectId: projectId,
-            storyChapterId: chapterId,
-            status: { not: StoryProductionSpecStatus.archived },
-          },
-          select: { plotNodeId: true, status: true },
-        }),
-        readStoryScriptHead(tx, projectId, chapterId),
-      ]);
+    const [
+      project,
+      chapter,
+      draft,
+      assetRows,
+      sequenceRows,
+      scriptHead,
+      approvedAssetPlanMarker,
+    ] = await Promise.all([
+      tx.storyProject.findUniqueOrThrow({ where: { id: projectId } }),
+      tx.storyChapter.findFirstOrThrow({
+        where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
+      }),
+      tx.storyDraft.findUniqueOrThrow({
+        where: { storyProjectId: projectId },
+      }),
+      tx.storyAssetSpec.findMany({
+        where: {
+          storyProjectId: projectId,
+          storyChapterId: chapterId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+        select: {
+          stableKey: true,
+          status: true,
+          planDisposition: true,
+        },
+      }),
+      tx.storyStoryboardSequence.findMany({
+        where: {
+          storyProjectId: projectId,
+          storyChapterId: chapterId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+        select: { plotNodeId: true, status: true },
+      }),
+      readStoryScriptHead(tx, projectId, chapterId),
+      this.readApprovedAssetPlanMarkerInTransaction(tx, projectId, chapterId),
+    ]);
     const parsedDraft = InteractiveStoryDraftContentSchema.parse(draft.content);
     const ownedNodeIds = new Set(jsonStringArray(chapter.nodeIds));
     const plotNodeIds = parsedDraft.graph.nodes
@@ -275,57 +324,106 @@ export class StoryProductionPlanService {
     const staleSequenceCount = sequenceRows.filter(
       (sequence) => sequence.status === StoryProductionSpecStatus.stale,
     ).length;
-    const countFor = (status: StoryProductionSpecStatus) =>
-      assetCounts.find((row) => row.status === status)?._count._all ?? 0;
-    const assetCurrent = countFor(StoryProductionSpecStatus.current);
-    const assetStale = countFor(StoryProductionSpecStatus.stale);
+    const currentAssetRows = assetRows.filter(
+      (row) => row.status === StoryProductionSpecStatus.current,
+    );
+    const staleAssetRows = assetRows.filter(
+      (row) => row.status === StoryProductionSpecStatus.stale,
+    );
+    const assetCurrent = currentAssetRows.length;
+    const assetStale = staleAssetRows.length;
     const lineageMatchesHead =
       chapter.sourceScriptDocumentId === scriptHead.documentId &&
       chapter.sourceScriptSequence === scriptHead.sequence &&
       chapter.sourceScriptHash === scriptHead.hash;
-    const approvedScreenplay = lineageMatchesHead
-      ? await readApprovedStoryScreenplaySnapshot(tx, projectId, chapterId)
-      : null;
+    const [currentScreenplay, approvedPlotScreenplay] = await Promise.all([
+      readCurrentStoryScreenplaySnapshot(tx, projectId, chapterId),
+      lineageMatchesHead
+        ? readApprovedStoryScreenplaySnapshot(tx, projectId, chapterId)
+        : Promise.resolve(null),
+    ]);
     const scriptStatus: StoryProductionStageStatus = !scriptHead.hasContent
       ? 'missing'
-      : lineageMatchesHead && approvedScreenplay
+      : currentScreenplay !== null &&
+          currentScreenplay.documentId === scriptHead.documentId &&
+          currentScreenplay.sequence === scriptHead.sequence
         ? 'current'
         : 'stale';
     const plotStatus: StoryProductionStageStatus =
       plotNodeIds.length === 0
         ? 'missing'
         : scriptStatus === 'current' &&
-            approvedScreenplay !== null &&
+            approvedPlotScreenplay !== null &&
+            approvedPlotScreenplay.versionId === currentScreenplay?.versionId &&
             plotMatchesApprovedScreenplay(
-              approvedScreenplay.screenplay,
+              approvedPlotScreenplay.screenplay,
               parsedDraft,
               chapter.entryNodeId,
               ownedNodeIds,
             )
           ? 'current'
           : 'stale';
+    const plotSourceFingerprint = chapterPlotFingerprint(
+      parsedDraft,
+      chapter.entryNodeId,
+      ownedNodeIds,
+    );
     const ownStoryboardStatus =
       sequenceRows.length === 0
         ? 'missing'
         : staleSequenceCount > 0 || missingPlotNodeIds.length > 0
           ? 'stale'
           : 'current';
-    const storyboardStatus =
-      ownStoryboardStatus === 'missing'
-        ? 'missing'
-        : plotStatus === 'current' && ownStoryboardStatus === 'current'
+    const assetMarkerMatchesPlot =
+      approvedAssetPlanMarker !== null &&
+      plotStatus === 'current' &&
+      approvedAssetPlanMarker.sourceFingerprint === plotSourceFingerprint;
+    const assetMarkerIsStale =
+      approvedAssetPlanMarker !== null && !assetMarkerMatchesPlot;
+    const expectedAssetKeys = assetMarkerMatchesPlot
+      ? new Set(
+          approvedAssetPlanMarker.plan.assetSpecs.map(
+            (asset) => asset.stableKey,
+          ),
+        )
+      : null;
+    const currentAssetKeys = new Set(
+      currentAssetRows.map((asset) => asset.stableKey),
+    );
+    const expectedAssetMissing =
+      expectedAssetKeys !== null &&
+      [...expectedAssetKeys].some(
+        (stableKey) => !currentAssetKeys.has(stableKey),
+      );
+    const unexpectedPlannedAsset =
+      expectedAssetKeys !== null &&
+      currentAssetRows.some(
+        (asset) =>
+          !expectedAssetKeys.has(asset.stableKey) &&
+          asset.planDisposition !==
+            StoryProductionPlanDisposition.user_override,
+      );
+    const ownAssetStatus: StoryProductionStageStatus = assetMarkerIsStale
+      ? 'stale'
+      : expectedAssetKeys !== null
+        ? assetStale === 0 && !expectedAssetMissing && !unexpectedPlannedAsset
           ? 'current'
-          : 'stale';
-    const ownAssetStatus =
-      assetStale > 0
-        ? 'stale'
-        : assetCurrent > 0 || ownStoryboardStatus === 'current'
-          ? 'current'
+          : 'stale'
+        : assetRows.length > 0
+          ? 'stale'
           : 'missing';
     const assetStatus =
       ownAssetStatus === 'missing'
         ? 'missing'
         : plotStatus === 'current' && ownAssetStatus === 'current'
+          ? 'current'
+          : 'stale';
+    const storyboardStatus =
+      ownStoryboardStatus === 'missing'
+        ? 'missing'
+        : plotStatus === 'current' &&
+            assetStatus === 'current' &&
+            ownStoryboardStatus === 'current'
           ? 'current'
           : 'stale';
     const profileStatus = project.creativeProfileConfirmedAt
@@ -361,19 +459,8 @@ export class StoryProductionPlanService {
     };
   }
 
-  async listAssetSpecs(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    chapterId: string,
-  ) {
-    await this.requireScope(
-      user,
-      workspaceId,
-      projectId,
-      chapterId,
-      'story.read',
-    );
+  async listAssetSpecs(user: AuthUser, projectId: string, chapterId: string) {
+    await this.requireScope(user, projectId, chapterId, 'story.read');
     const rows = await this.prisma.storyAssetSpec.findMany({
       where: {
         storyProjectId: projectId,
@@ -386,19 +473,8 @@ export class StoryProductionPlanService {
     return rows.map(toAssetSpecDto);
   }
 
-  async getStoryboard(
-    user: AuthUser,
-    workspaceId: string,
-    projectId: string,
-    chapterId: string,
-  ) {
-    await this.requireScope(
-      user,
-      workspaceId,
-      projectId,
-      chapterId,
-      'story.read',
-    );
+  async getStoryboard(user: AuthUser, projectId: string, chapterId: string) {
+    await this.requireScope(user, projectId, chapterId, 'story.read');
     const rows = await this.prisma.storyStoryboardSequence.findMany({
       where: {
         storyProjectId: projectId,
@@ -413,7 +489,6 @@ export class StoryProductionPlanService {
 
   async resolveAssetSpecConflict(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     assetSpecId: string,
@@ -422,7 +497,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -439,7 +513,8 @@ export class StoryProductionPlanService {
         });
         if (!current) throw productionNotFound('Asset Spec', assetSpecId);
         const pending = readPendingConflict(current, input, 'Asset Spec');
-        const item = pending.plan.assetSpecs.find(
+        const pendingAssetPlan = assetPlanFromSnapshot(pending.plan);
+        const item = pendingAssetPlan.assetSpecs.find(
           (candidate) => candidate.stableKey === current.stableKey,
         );
         const expectedFingerprint = item
@@ -552,7 +627,6 @@ export class StoryProductionPlanService {
 
   async resolveStoryboardSequenceConflict(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -561,7 +635,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -584,7 +657,8 @@ export class StoryProductionPlanService {
           input,
           'Storyboard sequence',
         );
-        const item = pending.plan.storyboardSequences.find(
+        const pendingStoryboardPlan = storyboardPlanFromSnapshot(pending.plan);
+        const item = pendingStoryboardPlan.storyboardSequences.find(
           (candidate) => candidate.plotNodeId === current.plotNodeId,
         );
         const expectedFingerprint = item
@@ -676,8 +750,6 @@ export class StoryProductionPlanService {
               storyChapterId: chapterId,
               actorUserId: user.userId,
               sourceFingerprint: pending.sourceFingerprint,
-              canonicalCharacterIds: [],
-              productionPlan: pending.plan,
             },
             item,
             { ...current, version: current.version + 1 },
@@ -713,7 +785,6 @@ export class StoryProductionPlanService {
 
   async patchAssetSpec(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     assetSpecId: string,
@@ -722,7 +793,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -778,7 +848,6 @@ export class StoryProductionPlanService {
 
   async patchSequence(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -787,7 +856,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -834,7 +902,6 @@ export class StoryProductionPlanService {
    */
   async putTimeline(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -843,7 +910,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -1080,7 +1146,6 @@ export class StoryProductionPlanService {
 
   async patchClip(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -1090,7 +1155,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -1157,7 +1221,6 @@ export class StoryProductionPlanService {
 
   async putBinding(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -1168,7 +1231,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -1268,7 +1330,6 @@ export class StoryProductionPlanService {
 
   async patchCue(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -1278,7 +1339,6 @@ export class StoryProductionPlanService {
   ) {
     return this.mutateWithReceipt({
       user,
-      workspaceId,
       projectId,
       chapterId,
       idempotencyKey,
@@ -1329,8 +1389,8 @@ export class StoryProductionPlanService {
 
   /**
    * Reconcile one approved plan into chapter-owned production specifications.
-   * The caller owns the surrounding Script + Plot transaction. This method
-   * never starts paid work and never creates MediaAsset or AiJob rows.
+   * Legacy whole-plan helper: new authoring runs call the independent Asset and
+   * Storyboard methods below so neither stage can pre-generate the next one.
    */
   async applyApprovedProductionPlanInTransaction(
     tx: Prisma.TransactionClient,
@@ -1339,13 +1399,7 @@ export class StoryProductionPlanService {
     const productionPlan = StoryProductionPlanSchema.parse(
       rawInput.productionPlan,
     );
-    if (!/^[0-9a-f]{64}$/.test(rawInput.sourceFingerprint)) {
-      throw new BadRequestException({
-        code: 'STORY_PRODUCTION_SOURCE_INVALID',
-        message:
-          'The production plan source fingerprint must be a lowercase SHA-256 hash.',
-      });
-    }
+    assertProductionSourceFingerprint(rawInput.sourceFingerprint);
     const [chapter, draftRow] = await Promise.all([
       tx.storyChapter.findFirst({
         where: {
@@ -1370,24 +1424,29 @@ export class StoryProductionPlanService {
       canonicalCharacterIds: rawInput.canonicalCharacterIds,
     });
 
-    const result: StoryProductionReconcileResult = {
-      assetSpecsCreated: 0,
-      assetSpecsUpdated: 0,
-      assetSpecsMarkedStale: 0,
-      sequencesCreated: 0,
-      sequencesUpdated: 0,
-      sequencesMarkedStale: 0,
-    };
+    const result = emptyReconcileResult();
     const now = new Date();
     const planSnapshot = await this.ensurePlanSnapshot(
       tx,
       rawInput,
       productionPlan,
     );
+    await this.pinApprovedAssetPlanSnapshotInTransaction(
+      tx,
+      rawInput.storyProjectId,
+      rawInput.storyChapterId,
+      planSnapshot.id,
+    );
+    const assetPlan = StoryAssetPlanSchema.parse({
+      assetSpecs: productionPlan.assetSpecs,
+    });
+    const storyboardPlan = StoryStoryboardPlanSchema.parse({
+      storyboardSequences: productionPlan.storyboardSequences,
+    });
     const assetByKey = await this.reconcileAssetSpecs(
       tx,
       rawInput,
-      productionPlan,
+      assetPlan,
       planSnapshot.id,
       now,
       result,
@@ -1395,7 +1454,7 @@ export class StoryProductionPlanService {
     await this.reconcileStoryboard(
       tx,
       rawInput,
-      productionPlan,
+      storyboardPlan,
       planSnapshot.id,
       assetByKey,
       now,
@@ -1404,10 +1463,426 @@ export class StoryProductionPlanService {
     return result;
   }
 
+  /**
+   * Apply only approved logical Asset Specs. Any existing Storyboard becomes
+   * stale when the approved Asset set changes; no Storyboard is generated or
+   * reconciled in this stage.
+   */
+  async applyApprovedAssetPlanInTransaction(
+    tx: Prisma.TransactionClient,
+    rawInput: ApplyApprovedAssetPlanInput,
+  ): Promise<StoryProductionReconcileResult> {
+    const assetPlan = StoryAssetPlanSchema.parse(rawInput.assetPlan);
+    assertProductionSourceFingerprint(rawInput.sourceFingerprint);
+    const [chapter, beforeAssetPlan] = await Promise.all([
+      tx.storyChapter.findFirst({
+        where: {
+          id: rawInput.storyChapterId,
+          storyProjectId: rawInput.storyProjectId,
+        },
+      }),
+      this.readCurrentAssetPlanInTransaction(
+        tx,
+        rawInput.storyProjectId,
+        rawInput.storyChapterId,
+      ),
+    ]);
+    if (!chapter) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        message: 'Story chapter not found.',
+      });
+    }
+    this.validateApprovedAssetPlan({
+      assetPlan,
+      canonicalNodeIds: rawInput.canonicalNodeIds,
+      canonicalCharacterIds: rawInput.canonicalCharacterIds,
+    });
+
+    const result = emptyReconcileResult();
+    const now = new Date();
+    const snapshot = await this.ensurePlanSnapshot(tx, rawInput, assetPlan);
+    await this.pinApprovedAssetPlanSnapshotInTransaction(
+      tx,
+      rawInput.storyProjectId,
+      rawInput.storyChapterId,
+      snapshot.id,
+    );
+    await this.reconcileAssetSpecs(
+      tx,
+      rawInput,
+      assetPlan,
+      snapshot.id,
+      now,
+      result,
+    );
+    const afterAssetPlan = await this.readCurrentAssetPlanInTransaction(
+      tx,
+      rawInput.storyProjectId,
+      rawInput.storyChapterId,
+    );
+    const beforeFingerprint = beforeAssetPlan
+      ? storyAssetPlanFingerprint(beforeAssetPlan)
+      : null;
+    const afterFingerprint = afterAssetPlan
+      ? storyAssetPlanFingerprint(afterAssetPlan)
+      : null;
+    if (
+      result.assetSpecsMarkedStale > 0 ||
+      beforeFingerprint !== afterFingerprint
+    ) {
+      result.sequencesMarkedStale +=
+        await this.invalidateStoryboardForAssetPlan(
+          tx,
+          rawInput,
+          storyAssetPlanFingerprint(assetPlan),
+          now,
+        );
+    }
+    return result;
+  }
+
+  /**
+   * Apply only approved Storyboard sequences. The proposal's embedded Asset
+   * source must still exactly match the current approved Asset Specs.
+   */
+  async applyApprovedStoryboardPlanInTransaction(
+    tx: Prisma.TransactionClient,
+    rawInput: ApplyApprovedStoryboardPlanInput,
+  ): Promise<StoryProductionReconcileResult> {
+    const storyboardPlan = StoryStoryboardPlanSchema.parse(
+      rawInput.storyboardPlan,
+    );
+    const proposalAssetPlan = StoryAssetPlanSchema.parse(rawInput.assetPlan);
+    assertProductionSourceFingerprint(rawInput.sourceFingerprint);
+    const [chapter, draftRow, currentAssetPlan] = await Promise.all([
+      tx.storyChapter.findFirst({
+        where: {
+          id: rawInput.storyChapterId,
+          storyProjectId: rawInput.storyProjectId,
+        },
+      }),
+      tx.storyDraft.findUnique({
+        where: { storyProjectId: rawInput.storyProjectId },
+      }),
+      this.readCurrentAssetPlanInTransaction(
+        tx,
+        rawInput.storyProjectId,
+        rawInput.storyChapterId,
+      ),
+    ]);
+    if (!chapter || !draftRow) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        message: 'Story chapter not found.',
+      });
+    }
+    if (
+      currentAssetPlan === null ||
+      storyAssetPlanFingerprint(currentAssetPlan) !==
+        storyAssetPlanFingerprint(proposalAssetPlan)
+    ) {
+      throw new ConflictException({
+        code: 'STORY_PRODUCTION_ASSET_PLAN_STALE',
+        message:
+          'The approved Asset Specs changed after this Storyboard proposal was authored. Create a fresh Storyboard proposal.',
+      });
+    }
+    this.validateApprovedStoryboardPlan({
+      storyboardPlan,
+      assetPlan: currentAssetPlan,
+      draft: draftRow.content,
+      chapterNodeIds: jsonStringArray(chapter.nodeIds),
+    });
+
+    const result = emptyReconcileResult();
+    const now = new Date();
+    const snapshot = await this.ensurePlanSnapshot(
+      tx,
+      rawInput,
+      storyboardPlan,
+    );
+    const assetRows = await tx.storyAssetSpec.findMany({
+      where: {
+        storyProjectId: rawInput.storyProjectId,
+        storyChapterId: rawInput.storyChapterId,
+        status: StoryProductionSpecStatus.current,
+      },
+    });
+    await this.reconcileStoryboard(
+      tx,
+      rawInput,
+      storyboardPlan,
+      snapshot.id,
+      new Map(assetRows.map((asset) => [asset.stableKey, asset])),
+      now,
+      result,
+    );
+    return result;
+  }
+
+  /**
+   * Invalidate only true downstream stages. Script and Plot both invalidate
+   * Assets and Storyboard; Asset approval independently invalidates Storyboard
+   * when its semantic plan changes. Stale rows receive deterministic pending
+   * fingerprints required by the database lifecycle checks.
+   */
+  async invalidateDownstreamAfterUpstreamApprovalInTransaction(
+    tx: Prisma.TransactionClient,
+    input: InvalidateStoryProductionDownstreamInput,
+  ): Promise<void> {
+    assertProductionSourceFingerprint(input.sourceFingerprint);
+    const now = new Date();
+    const storyboardInvalidationFingerprint = planFingerprint(
+      input.sourceFingerprint,
+      'storyboard-invalidated-by-upstream',
+      {
+        upstreamStage: input.upstreamStage,
+        upstreamRunId: input.upstreamRunId,
+      },
+    );
+
+    if (input.upstreamStage === 'script' || input.upstreamStage === 'plot') {
+      const chapter = await tx.storyChapter.findFirst({
+        where: {
+          id: input.storyChapterId,
+          storyProjectId: input.storyProjectId,
+        },
+        select: { approvedAssetPlanSnapshotId: true },
+      });
+      if (!chapter) {
+        throw new NotFoundException({
+          code: 'STORY_CHAPTER_NOT_FOUND',
+          message: 'Story chapter not found.',
+        });
+      }
+      const assetInvalidationFingerprint = planFingerprint(
+        input.sourceFingerprint,
+        'asset-invalidated-by-upstream',
+        {
+          upstreamStage: input.upstreamStage,
+          upstreamRunId: input.upstreamRunId,
+        },
+      );
+      if (chapter.approvedAssetPlanSnapshotId !== null) {
+        // Pin an explicit mismatching marker so a previously-approved empty
+        // Asset plan also becomes stale; row counts alone cannot represent it.
+        const invalidationSnapshot = await this.ensurePlanSnapshot(
+          tx,
+          {
+            storyProjectId: input.storyProjectId,
+            storyChapterId: input.storyChapterId,
+            actorUserId: input.actorUserId,
+            sourceFingerprint: assetInvalidationFingerprint,
+          },
+          StoryAssetPlanSchema.parse({ assetSpecs: [] }),
+        );
+        await this.pinApprovedAssetPlanSnapshotInTransaction(
+          tx,
+          input.storyProjectId,
+          input.storyChapterId,
+          invalidationSnapshot.id,
+        );
+      }
+      await tx.storyAssetSpec.updateMany({
+        where: {
+          storyProjectId: input.storyProjectId,
+          storyChapterId: input.storyChapterId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+        data: {
+          status: StoryProductionSpecStatus.stale,
+          pendingSourceFingerprint: assetInvalidationFingerprint,
+          pendingPlanSnapshotId: null,
+          lastPlannedAt: now,
+          version: { increment: 1 },
+        },
+      });
+    }
+    await tx.storyStoryboardSequence.updateMany({
+      where: {
+        storyProjectId: input.storyProjectId,
+        storyChapterId: input.storyChapterId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      data: {
+        status: StoryProductionSpecStatus.stale,
+        pendingSourceFingerprint: storyboardInvalidationFingerprint,
+        pendingPlanSnapshotId: null,
+        lastPlannedAt: now,
+        version: { increment: 1 },
+      },
+    });
+  }
+
+  /** Exact Plot-derived Asset source used to author and fence Storyboards. */
+  async readCurrentAssetPlanInTransaction(
+    tx: Prisma.TransactionClient,
+    storyProjectId: string,
+    storyChapterId: string,
+  ): Promise<StoryAssetPlan | null> {
+    const [
+      rows,
+      marker,
+      scriptHead,
+      chapter,
+      draft,
+      currentScreenplay,
+      approvedPlotScreenplay,
+    ] = await Promise.all([
+      tx.storyAssetSpec.findMany({
+        where: {
+          storyProjectId,
+          storyChapterId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+        orderBy: [{ stableKey: 'asc' }, { id: 'asc' }],
+      }),
+      this.readApprovedAssetPlanMarkerInTransaction(
+        tx,
+        storyProjectId,
+        storyChapterId,
+      ),
+      readStoryScriptHead(tx, storyProjectId, storyChapterId),
+      tx.storyChapter.findFirst({
+        where: {
+          id: storyChapterId,
+          storyProjectId,
+          archivedAt: null,
+        },
+      }),
+      tx.storyDraft.findUnique({ where: { storyProjectId } }),
+      readCurrentStoryScreenplaySnapshot(tx, storyProjectId, storyChapterId),
+      readApprovedStoryScreenplaySnapshot(tx, storyProjectId, storyChapterId),
+    ]);
+    if (marker === null || !chapter || !draft || !scriptHead.hasContent) {
+      return null;
+    }
+    const parsedDraft = InteractiveStoryDraftContentSchema.parse(draft.content);
+    const ownedNodeIds = new Set(jsonStringArray(chapter.nodeIds));
+    const lineageMatchesHead =
+      chapter.sourceScriptDocumentId === scriptHead.documentId &&
+      chapter.sourceScriptSequence === scriptHead.sequence &&
+      chapter.sourceScriptHash === scriptHead.hash;
+    const plotIsCurrent =
+      ownedNodeIds.size > 0 &&
+      lineageMatchesHead &&
+      currentScreenplay !== null &&
+      currentScreenplay.documentId === scriptHead.documentId &&
+      currentScreenplay.sequence === scriptHead.sequence &&
+      approvedPlotScreenplay !== null &&
+      approvedPlotScreenplay.versionId === currentScreenplay.versionId &&
+      plotMatchesApprovedScreenplay(
+        approvedPlotScreenplay.screenplay,
+        parsedDraft,
+        chapter.entryNodeId,
+        ownedNodeIds,
+      );
+    const plotSourceFingerprint = chapterPlotFingerprint(
+      parsedDraft,
+      chapter.entryNodeId,
+      ownedNodeIds,
+    );
+    if (!plotIsCurrent || marker.sourceFingerprint !== plotSourceFingerprint) {
+      return null;
+    }
+    if (rows.some((row) => row.status !== StoryProductionSpecStatus.current)) {
+      return null;
+    }
+    if (rows.length === 0) {
+      return marker.plan.assetSpecs.length === 0 ? marker.plan : null;
+    }
+    const expectedKeys = new Set(
+      marker.plan.assetSpecs.map((asset) => asset.stableKey),
+    );
+    const currentKeys = new Set(rows.map((row) => row.stableKey));
+    if (
+      [...expectedKeys].some((stableKey) => !currentKeys.has(stableKey)) ||
+      rows.some(
+        (row) =>
+          !expectedKeys.has(row.stableKey) &&
+          row.planDisposition !== StoryProductionPlanDisposition.user_override,
+      )
+    ) {
+      return null;
+    }
+    return StoryAssetPlanSchema.parse({
+      assetSpecs: rows.map((row) => ({
+        stableKey: row.stableKey,
+        kind: row.kind,
+        name: row.name,
+        // The editable row permits null; retain an explicit, deterministic
+        // human-readable source without inventing planner content.
+        description: row.description ?? row.name,
+        imagePrompt: row.imagePrompt,
+        ...(row.videoPrompt ? { videoPrompt: row.videoPrompt } : {}),
+        ...(row.negativePrompt ? { negativePrompt: row.negativePrompt } : {}),
+        ...(row.sourceCharacterId
+          ? { sourceCharacterId: row.sourceCharacterId }
+          : {}),
+        sourceNodeIds: jsonStringArray(row.sourceNodeIds),
+      })),
+    });
+  }
+
+  /**
+   * The chapter-pinned approved Asset-only (or legacy combined) snapshot is
+   * the durable stage marker. Unlike row counts it can represent an
+   * intentionally empty Asset plan without confusing it with a stage that
+   * never ran.
+   */
+  private async readApprovedAssetPlanMarkerInTransaction(
+    tx: Prisma.TransactionClient,
+    storyProjectId: string,
+    storyChapterId: string,
+  ): Promise<{ sourceFingerprint: string; plan: StoryAssetPlan } | null> {
+    const chapter = await tx.storyChapter.findFirst({
+      where: {
+        id: storyChapterId,
+        storyProjectId,
+        archivedAt: null,
+      },
+      select: { approvedAssetPlanSnapshotId: true },
+    });
+    if (!chapter?.approvedAssetPlanSnapshotId) return null;
+    const snapshot = await tx.storyProductionPlanSnapshot.findFirst({
+      where: {
+        id: chapter.approvedAssetPlanSnapshotId,
+        storyProjectId,
+        storyChapterId,
+      },
+      select: {
+        sourceFingerprint: true,
+        planFingerprint: true,
+        productionPlan: true,
+      },
+    });
+    if (!snapshot) return null;
+    return {
+      sourceFingerprint: snapshot.sourceFingerprint,
+      plan: assetPlanFromSnapshot(parsePlanSnapshot(snapshot)),
+    };
+  }
+
+  private async pinApprovedAssetPlanSnapshotInTransaction(
+    tx: Prisma.TransactionClient,
+    storyProjectId: string,
+    storyChapterId: string,
+    snapshotId: string,
+  ): Promise<void> {
+    const pinned = await tx.storyChapter.updateMany({
+      where: { id: storyChapterId, storyProjectId },
+      data: { approvedAssetPlanSnapshotId: snapshotId },
+    });
+    if (pinned.count !== 1) {
+      throw productionCasConflict('Approved Asset plan marker');
+    }
+  }
+
   private async ensurePlanSnapshot(
     tx: Prisma.TransactionClient,
-    input: ApplyApprovedProductionPlanInput,
-    productionPlan: StoryProductionPlan,
+    input: StoryProductionApplyContext,
+    productionPlan: StoryProductionSnapshotPlan,
   ) {
     const planFingerprint = canonicalJsonHash({
       sourceFingerprint: input.sourceFingerprint,
@@ -1430,14 +1905,13 @@ export class StoryProductionPlanService {
         createdByUserId: input.actorUserId,
       },
     });
-    const parsed = StoryProductionPlanSchema.safeParse(snapshot.productionPlan);
+    const parsed = parseProductionSnapshotPayload(snapshot.productionPlan);
     if (
       snapshot.storyProjectId !== input.storyProjectId ||
       snapshot.sourceFingerprint !== input.sourceFingerprint ||
-      !parsed.success ||
       canonicalJsonHash({
         sourceFingerprint: snapshot.sourceFingerprint,
-        productionPlan: parsed.data,
+        productionPlan: parsed,
       }) !== snapshot.planFingerprint
     ) {
       throw productionSnapshotCorrupt();
@@ -1452,6 +1926,54 @@ export class StoryProductionPlanService {
     const productionPlan = StoryProductionPlanSchema.parse(
       rawInput.productionPlan,
     );
+    const assetPlan = this.validateApprovedAssetPlan({
+      assetPlan: { assetSpecs: productionPlan.assetSpecs },
+      canonicalNodeIds: rawInput.chapterNodeIds,
+      canonicalCharacterIds: rawInput.canonicalCharacterIds,
+    });
+    this.validateApprovedStoryboardPlan({
+      storyboardPlan: {
+        storyboardSequences: productionPlan.storyboardSequences,
+      },
+      assetPlan,
+      draft: rawInput.draft,
+      chapterNodeIds: rawInput.chapterNodeIds,
+    });
+    return productionPlan;
+  }
+
+  validateApprovedAssetPlan(
+    rawInput: ValidateApprovedAssetPlanInput,
+  ): StoryAssetPlan {
+    const assetPlan = StoryAssetPlanSchema.parse(rawInput.assetPlan);
+    const canonicalNodeIds = new Set(rawInput.canonicalNodeIds);
+    const screenplayCharacters = new Set(rawInput.canonicalCharacterIds);
+    for (const asset of assetPlan.assetSpecs) {
+      for (const nodeId of asset.sourceNodeIds) {
+        if (!canonicalNodeIds.has(nodeId))
+          throw productionCrossChapter('Asset Spec source', nodeId);
+      }
+      const sourceCharacterId = asset.sourceCharacterId;
+      if (
+        asset.kind === 'character' &&
+        (!sourceCharacterId || !screenplayCharacters.has(sourceCharacterId))
+      ) {
+        throw new BadRequestException({
+          code: 'STORY_PRODUCTION_CHARACTER_INVALID',
+          message: `Character Asset Spec ${asset.stableKey} does not reference a canonical character in the approved Script.`,
+        });
+      }
+    }
+    return assetPlan;
+  }
+
+  validateApprovedStoryboardPlan(
+    rawInput: ValidateApprovedStoryboardPlanInput,
+  ): StoryStoryboardPlan {
+    const storyboardPlan = StoryStoryboardPlanSchema.parse(
+      rawInput.storyboardPlan,
+    );
+    const assetPlan = StoryAssetPlanSchema.parse(rawInput.assetPlan);
     const draft = InteractiveStoryDraftContentSchema.parse(rawInput.draft);
     const ownedNodeIds = new Set(rawInput.chapterNodeIds);
     const clipNodeById = new Map(
@@ -1459,29 +1981,10 @@ export class StoryProductionPlanService {
         .filter((node) => node.kind === 'clip' && ownedNodeIds.has(node.nodeId))
         .map((node) => [node.nodeId, node]),
     );
-    const screenplayCharacters = new Set(rawInput.canonicalCharacterIds);
-    const bibleCharacters = new Set(
-      draft.storyBible.characters.map((character) => character.id),
+    const assetByKey = new Map(
+      assetPlan.assetSpecs.map((asset) => [asset.stableKey, asset]),
     );
-    for (const asset of productionPlan.assetSpecs) {
-      for (const nodeId of asset.sourceNodeIds) {
-        if (!clipNodeById.has(nodeId))
-          throw productionCrossChapter('Asset Spec source', nodeId);
-      }
-      const sourceCharacterId = asset.sourceCharacterId;
-      if (
-        asset.kind === 'character' &&
-        (!sourceCharacterId ||
-          !screenplayCharacters.has(sourceCharacterId) ||
-          !bibleCharacters.has(sourceCharacterId))
-      ) {
-        throw new BadRequestException({
-          code: 'STORY_PRODUCTION_CHARACTER_INVALID',
-          message: `Character Asset Spec ${asset.stableKey} does not reference a canonical character in the approved chapter screenplay.`,
-        });
-      }
-    }
-    for (const sequence of productionPlan.storyboardSequences) {
+    for (const sequence of storyboardPlan.storyboardSequences) {
       const node = clipNodeById.get(sequence.plotNodeId);
       if (!node)
         throw productionCrossChapter(
@@ -1500,9 +2003,26 @@ export class StoryProductionPlanService {
           });
         }
       }
+      for (const clip of sequence.clips) {
+        for (const mention of storyClipAssetMentions(clip)) {
+          const asset = assetByKey.get(mention);
+          if (!asset) {
+            throw new BadRequestException({
+              code: 'STORY_PRODUCTION_ASSET_REFERENCE_INVALID',
+              message: `Storyboard clip ${clip.stableKey} references missing approved Asset Spec @${mention}.`,
+            });
+          }
+          if (!asset.sourceNodeIds.includes(sequence.plotNodeId)) {
+            throw new BadRequestException({
+              code: 'STORY_PRODUCTION_ASSET_LINEAGE_INVALID',
+              message: `Storyboard clip ${clip.stableKey} cannot bind Asset Spec @${mention} outside its Plot node lineage ${sequence.plotNodeId}.`,
+            });
+          }
+        }
+      }
     }
     const plannedNodeIds = new Set(
-      productionPlan.storyboardSequences.map((sequence) => sequence.plotNodeId),
+      storyboardPlan.storyboardSequences.map((sequence) => sequence.plotNodeId),
     );
     const missingSequenceNodeIds = [...clipNodeById.keys()].filter(
       (nodeId) => !plannedNodeIds.has(nodeId),
@@ -1513,14 +2033,43 @@ export class StoryProductionPlanService {
         message: `Every chapter Plot node requires exactly one Storyboard sequence. Missing: ${missingSequenceNodeIds.join(', ')}.`,
       });
     }
+    return storyboardPlan;
+  }
 
-    return productionPlan;
+  private async invalidateStoryboardForAssetPlan(
+    tx: Prisma.TransactionClient,
+    input: StoryProductionApplyContext,
+    assetPlanFingerprint: string,
+    now: Date,
+  ): Promise<number> {
+    const invalidationFingerprint = planFingerprint(
+      input.sourceFingerprint,
+      'storyboard-invalidated-by-assets',
+      { assetPlanFingerprint },
+    );
+    const invalidated = await tx.storyStoryboardSequence.updateMany({
+      where: {
+        storyProjectId: input.storyProjectId,
+        storyChapterId: input.storyChapterId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      data: {
+        status: StoryProductionSpecStatus.stale,
+        pendingSourceFingerprint: invalidationFingerprint,
+        // An Asset change invalidates any older pending Storyboard candidate;
+        // a fresh explicit Storyboard proposal must be authored and approved.
+        pendingPlanSnapshotId: null,
+        lastPlannedAt: now,
+        version: { increment: 1 },
+      },
+    });
+    return invalidated.count;
   }
 
   private async reconcileAssetSpecs(
     tx: Prisma.TransactionClient,
-    input: ApplyApprovedProductionPlanInput,
-    plan: StoryProductionPlan,
+    input: StoryProductionApplyContext,
+    plan: StoryAssetPlan,
     planSnapshotId: string,
     now: Date,
     result: StoryProductionReconcileResult,
@@ -1677,8 +2226,8 @@ export class StoryProductionPlanService {
 
   private async reconcileStoryboard(
     tx: Prisma.TransactionClient,
-    input: ApplyApprovedProductionPlanInput,
-    plan: StoryProductionPlan,
+    input: StoryProductionApplyContext,
+    plan: StoryStoryboardPlan,
     planSnapshotId: string,
     assetByKey: Map<string, StoryAssetSpec>,
     now: Date,
@@ -1905,8 +2454,8 @@ export class StoryProductionPlanService {
 
   private async reconcileSequenceChildren(
     tx: Prisma.TransactionClient,
-    input: ApplyApprovedProductionPlanInput,
-    item: StoryProductionPlan['storyboardSequences'][number],
+    input: StoryProductionApplyContext,
+    item: StoryStoryboardPlan['storyboardSequences'][number],
     sequence: StoryStoryboardSequence,
     assetByKey: Map<string, StoryAssetSpec>,
     now: Date,
@@ -2045,8 +2594,8 @@ export class StoryProductionPlanService {
 
   private async reconcileBindings(
     tx: Prisma.TransactionClient,
-    input: ApplyApprovedProductionPlanInput,
-    clipPlan: StoryProductionPlan['storyboardSequences'][number]['clips'][number],
+    input: StoryProductionApplyContext,
+    clipPlan: StoryStoryboardPlan['storyboardSequences'][number]['clips'][number],
     clip: StoryStoryboardClip,
     assetByKey: Map<string, StoryAssetSpec>,
     now: Date,
@@ -2147,8 +2696,8 @@ export class StoryProductionPlanService {
 
   private async reconcileCues(
     tx: Prisma.TransactionClient,
-    input: ApplyApprovedProductionPlanInput,
-    item: StoryProductionPlan['storyboardSequences'][number],
+    input: StoryProductionApplyContext,
+    item: StoryStoryboardPlan['storyboardSequences'][number],
     sequence: StoryStoryboardSequence,
     now: Date,
     options: { clearUserModifications?: boolean } = {},
@@ -2212,7 +2761,6 @@ export class StoryProductionPlanService {
 
   private async mutateWithReceipt<T>(input: {
     user: AuthUser;
-    workspaceId: string;
     projectId: string;
     chapterId: string;
     idempotencyKey: string;
@@ -2222,7 +2770,6 @@ export class StoryProductionPlanService {
   }): Promise<T> {
     await this.requireScope(
       input.user,
-      input.workspaceId,
       input.projectId,
       input.chapterId,
       'story.edit',
@@ -2296,22 +2843,11 @@ export class StoryProductionPlanService {
 
   private async requireScope(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     capability: 'story.read' | 'story.edit',
   ): Promise<void> {
-    const { project } = await this.permissions.requireProject(
-      user.userId,
-      projectId,
-      capability,
-    );
-    if (project.workspaceId !== workspaceId) {
-      throw new NotFoundException({
-        code: 'STORY_PROJECT_NOT_FOUND',
-        message: 'Story project not found.',
-      });
-    }
+    await this.permissions.requireProject(user.userId, projectId, capability);
     const chapter = await this.prisma.storyChapter.findFirst({
       where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
       select: { id: true },
@@ -2324,11 +2860,49 @@ function planFingerprint(source: string, kind: string, value: unknown): string {
   return canonicalJsonHash({ source, kind, value });
 }
 
+/** Stable semantic identity for the Asset source embedded by Storyboard. */
+export function storyAssetPlanFingerprint(value: unknown): string {
+  const plan = StoryAssetPlanSchema.parse(value);
+  return canonicalJsonHash({
+    assetSpecs: [...plan.assetSpecs]
+      .map((asset) => ({
+        ...asset,
+        sourceNodeIds: [...asset.sourceNodeIds].sort(),
+      }))
+      .sort((left, right) => left.stableKey.localeCompare(right.stableKey)),
+  });
+}
+
+function emptyReconcileResult(): StoryProductionReconcileResult {
+  return {
+    assetSpecsCreated: 0,
+    assetSpecsUpdated: 0,
+    assetSpecsMarkedStale: 0,
+    sequencesCreated: 0,
+    sequencesUpdated: 0,
+    sequencesMarkedStale: 0,
+  };
+}
+
+function assertProductionSourceFingerprint(value: string): void {
+  if (/^[0-9a-f]{64}$/.test(value)) return;
+  throw new BadRequestException({
+    code: 'STORY_PRODUCTION_SOURCE_INVALID',
+    message:
+      'The production plan source fingerprint must be a lowercase SHA-256 hash.',
+  });
+}
+
 type PendingPlanSnapshotValue = {
   sourceFingerprint: string;
   planFingerprint: string;
   productionPlan: Prisma.JsonValue;
 };
+
+type StoryProductionSnapshotPlan =
+  | StoryProductionPlan
+  | StoryAssetPlan
+  | StoryStoryboardPlan;
 
 type PendingConflictTarget = {
   id: string;
@@ -2341,18 +2915,45 @@ type PendingConflictTarget = {
 
 function parsePlanSnapshot(
   snapshot: PendingPlanSnapshotValue,
-): StoryProductionPlan {
-  const parsed = StoryProductionPlanSchema.safeParse(snapshot.productionPlan);
+): StoryProductionSnapshotPlan {
+  const parsed = parseProductionSnapshotPayload(snapshot.productionPlan);
   if (
-    !parsed.success ||
     canonicalJsonHash({
       sourceFingerprint: snapshot.sourceFingerprint,
-      productionPlan: parsed.data,
+      productionPlan: parsed,
     }) !== snapshot.planFingerprint
   ) {
     throw productionSnapshotCorrupt();
   }
-  return parsed.data;
+  return parsed;
+}
+
+function parseProductionSnapshotPayload(
+  value: Prisma.JsonValue,
+): StoryProductionSnapshotPlan {
+  const combined = StoryProductionPlanSchema.safeParse(value);
+  if (combined.success) return combined.data;
+  const assets = StoryAssetPlanSchema.safeParse(value);
+  if (assets.success) return assets.data;
+  const storyboard = StoryStoryboardPlanSchema.safeParse(value);
+  if (storyboard.success) return storyboard.data;
+  throw productionSnapshotCorrupt();
+}
+
+function assetPlanFromSnapshot(
+  plan: StoryProductionSnapshotPlan,
+): StoryAssetPlan {
+  if (!('assetSpecs' in plan)) throw productionSnapshotCorrupt();
+  return StoryAssetPlanSchema.parse({ assetSpecs: plan.assetSpecs });
+}
+
+function storyboardPlanFromSnapshot(
+  plan: StoryProductionSnapshotPlan,
+): StoryStoryboardPlan {
+  if (!('storyboardSequences' in plan)) throw productionSnapshotCorrupt();
+  return StoryStoryboardPlanSchema.parse({
+    storyboardSequences: plan.storyboardSequences,
+  });
 }
 
 function readPendingConflict(
@@ -2360,7 +2961,7 @@ function readPendingConflict(
   input: ResolveStoryProductionConflictInput,
   resource: string,
 ): {
-  plan: StoryProductionPlan;
+  plan: StoryProductionSnapshotPlan;
   sourceFingerprint: string;
 } {
   if (row.version !== input.expectedVersion) {
@@ -2554,6 +3155,25 @@ function jsonStringArray(value: Prisma.JsonValue): string[] {
   return value as string[];
 }
 
+/** Chapter-scoped semantic Plot version used as the Asset upstream fence. */
+function chapterPlotFingerprint(
+  draft: InteractiveStoryDraftContent,
+  chapterEntryNodeId: string | null,
+  ownedNodeIds: ReadonlySet<string>,
+): string {
+  return canonicalJsonHash(
+    InteractiveStoryDraftContentSchema.parse({
+      ...draft,
+      graph: {
+        entryNodeId: chapterEntryNodeId,
+        nodes: draft.graph.nodes.filter((node) =>
+          ownedNodeIds.has(node.nodeId),
+        ),
+      },
+    }),
+  );
+}
+
 function plotMatchesApprovedScreenplay(
   screenplay: StoryScreenplay,
   draft: InteractiveStoryDraftContent,
@@ -2743,7 +3363,9 @@ function toStoryboardSequenceDto(row: StoryboardSequenceRow) {
 
 function toAssetSpecConflictDto(row: AssetSpecRow) {
   if (!row.pendingSourceFingerprint || !row.pendingPlanSnapshot) return null;
-  const plan = parsePlanSnapshot(row.pendingPlanSnapshot);
+  const plan = assetPlanFromSnapshot(
+    parsePlanSnapshot(row.pendingPlanSnapshot),
+  );
   const pendingItem = plan.assetSpecs.find(
     (item) => item.stableKey === row.stableKey,
   );
@@ -2769,7 +3391,9 @@ function toAssetSpecConflictDto(row: AssetSpecRow) {
 
 function toStoryboardConflictDto(row: StoryboardSequenceRow) {
   if (!row.pendingSourceFingerprint || !row.pendingPlanSnapshot) return null;
-  const plan = parsePlanSnapshot(row.pendingPlanSnapshot);
+  const plan = storyboardPlanFromSnapshot(
+    parsePlanSnapshot(row.pendingPlanSnapshot),
+  );
   const pendingItem = plan.storyboardSequences.find(
     (item) => item.plotNodeId === row.plotNodeId,
   );

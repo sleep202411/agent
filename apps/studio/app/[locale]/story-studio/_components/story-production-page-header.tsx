@@ -5,30 +5,13 @@ import { IconChevronDown } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { ComposerQuickSettings } from "@/components/canvas/authoring/composer-quick-settings";
 import { ModelPicker } from "@/components/canvas/authoring/model-picker";
+import { defaultSettingsForModel, type FizzAiModel } from "@/lib/canvas-authoring/generation-api";
 import {
-  defaultSettingsForModel,
-  isOperationOnlyModel,
-  type FizzAiCatalog,
-  type FizzAiModel,
-} from "@/lib/canvas-authoring/generation-api";
-import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
-import {
+  EMPTY_PRODUCTION_MODALITY_SETTINGS,
   useStoryProductionSettingsStore,
   type ProductionModality,
 } from "../_stores/story-production-settings-store";
-
-/**
- * Prompt-driven generation models only — the same exclusion the ModelPicker
- * applies, so the default-first choice always matches what the picker shows.
- */
-function pickableModels(
-  catalog: FizzAiCatalog | undefined,
-  modality: ProductionModality
-): FizzAiModel[] {
-  return usableModelsByModality(catalog, modality).filter(
-    (model) => !isOperationOnlyModel(model) && !/hunyuan|panorama/i.test(model.id)
-  );
-}
+import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
  * Shared header for the chapter production pages (assets, storyboard, and any
@@ -39,17 +22,22 @@ function pickableModels(
  * quick-generate on the page submits with these choices.
  */
 export function StoryProductionPageHeader({
+  projectId,
   title,
   description,
   meta,
   modalities = ["image", "video"],
+  showGenerationControls = true,
 }: {
+  projectId: string;
   title: string;
   description: string;
   /** Small trailing annotation on the description row (e.g. an item count). */
   meta?: React.ReactNode;
   /** Which generation modalities this page actually submits. */
   modalities?: ProductionModality[];
+  /** Hide model controls until there is an approved, generatable target. */
+  showGenerationControls?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
@@ -60,37 +48,48 @@ export function StoryProductionPageHeader({
           {meta ? <span className="ml-2 tabular-nums text-white/50">{meta}</span> : null}
         </p>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        {modalities.map((modality) => (
-          <ModalityPicker key={modality} modality={modality} />
-        ))}
-      </div>
+      {showGenerationControls ? (
+        <StoryProductionGenerationControls projectId={projectId} modalities={modalities} />
+      ) : null}
     </div>
   );
 }
 
-function ModalityPicker({ modality }: { modality: ProductionModality }) {
+export function StoryProductionGenerationControls({
+  projectId,
+  modalities = ["image", "video"],
+}: {
+  projectId: string;
+  modalities?: ProductionModality[];
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      {modalities.map((modality) => (
+        <ModalityPicker key={modality} projectId={projectId} modality={modality} />
+      ))}
+    </div>
+  );
+}
+
+function ModalityPicker({
+  projectId,
+  modality,
+}: {
+  projectId: string;
+  modality: ProductionModality;
+}) {
   const t = useTranslations("storyStudio.productionHeader");
-  const catalog = useAiCatalog();
-  const models = pickableModels(catalog.data, modality);
-  const entry = useStoryProductionSettingsStore((state) => state[modality]);
+  const defaults = useStoryProductionGenerationDefaults(projectId, modality);
+  const models = defaults.models;
+  const entry = useStoryProductionSettingsStore(
+    (state) => state.byProject[projectId]?.[modality] ?? EMPTY_PRODUCTION_MODALITY_SETTINGS
+  );
   const setModel = useStoryProductionSettingsStore((state) => state.setModel);
   const setOptions = useStoryProductionSettingsStore((state) => state.setOptions);
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  const selected: FizzAiModel | undefined = entry.selection
-    ? models.find((model) => model.id === entry.selection?.modelId)
-    : undefined;
-
-  // There is no "auto": the first usable model is the working default the
-  // moment the catalog resolves.
-  useEffect(() => {
-    if (entry.selection || models.length === 0) return;
-    const first = models[0];
-    setModel(modality, { modelId: first.id, schemaVersion: first.schemaVersion });
-    setOptions(modality, defaultSettingsForModel(first));
-  }, [entry.selection, models, modality, setModel, setOptions]);
+  const selected: FizzAiModel | undefined = defaults.model;
 
   // The picker closes itself only on selection; outside-pointer and Escape
   // dismissal are the host's job (same contract as the composer).
@@ -111,8 +110,8 @@ function ModalityPicker({ modality }: { modality: ProductionModality }) {
   }, [pickerOpen]);
 
   const applyModel = (model: FizzAiModel) => {
-    setModel(modality, { modelId: model.id, schemaVersion: model.schemaVersion });
-    setOptions(modality, defaultSettingsForModel(model));
+    setModel(projectId, modality, { modelId: model.id, schemaVersion: model.schemaVersion });
+    setOptions(projectId, modality, defaultSettingsForModel(model));
     setPickerOpen(false);
   };
 
@@ -133,7 +132,7 @@ function ModalityPicker({ modality }: { modality: ProductionModality }) {
         </button>
         {pickerOpen ? (
           <ModelPicker
-            catalog={catalog.data}
+            catalog={{ models }}
             modality={modality}
             selectedId={selected?.id}
             placement="bottom"
@@ -149,7 +148,7 @@ function ModalityPicker({ modality }: { modality: ProductionModality }) {
         <ComposerQuickSettings
           model={selected}
           settings={entry.options}
-          onChange={(next) => setOptions(modality, next)}
+          onChange={(next) => setOptions(projectId, modality, next)}
           placement="below"
           align="right"
           className="[&>button]:h-9 [&>button]:rounded-lg [&>button]:text-xs"

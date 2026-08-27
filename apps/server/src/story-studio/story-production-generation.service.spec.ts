@@ -1,5 +1,7 @@
+import { ConflictException } from '@nestjs/common';
 import {
   StoryProductionGenerationService,
+  assertStoryGenerationQuoteMatches,
   exactStoryDurationValue,
   isRetryableStoryMaterializationPrismaCode,
   missingRequiredStoryModelInputs,
@@ -121,6 +123,48 @@ describe('Story production generation model constraints', () => {
     expect(isRetryableStoryMaterializationPrismaCode('P2002')).toBe(true);
     expect(isRetryableStoryMaterializationPrismaCode('P2003')).toBe(false);
   });
+
+  it('fails closed when a confirmed batch quote no longer matches pricing', () => {
+    const model = {
+      billing_policy: {
+        productPricing: {
+          mode: 'fixed_per_output',
+          version: 'image-price-v2',
+          currency: 'COMPUTE_POINTS',
+          pointsPerOutput: 14,
+        },
+      },
+    } as never;
+    let error: unknown;
+    try {
+      assertStoryGenerationQuoteMatches(
+        model,
+        { numOutputs: 2 },
+        {
+          pricingVersion: 'image-price-v1',
+          points: 24,
+        },
+      );
+    } catch (cause) {
+      error = cause;
+    }
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      code: 'STORY_GENERATION_BATCH_QUOTE_STALE',
+      currentPricingVersion: 'image-price-v2',
+      currentPoints: 28,
+    });
+    expect(() =>
+      assertStoryGenerationQuoteMatches(
+        model,
+        { numOutputs: 2 },
+        {
+          pricingVersion: 'image-price-v2',
+          points: 28,
+        },
+      ),
+    ).not.toThrow();
+  });
 });
 
 function videoModel(
@@ -168,6 +212,7 @@ async function resolveDefaultVideoModel(models: unknown[]) {
     {
       listCatalog: jest.fn().mockResolvedValue({ models, presets: [] }),
     } as never,
+    {} as never,
     {} as never,
     {} as never,
   );

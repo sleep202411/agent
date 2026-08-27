@@ -4,7 +4,6 @@ import { IconArrowLeft } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import { cn } from "@/lib/utils";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
@@ -30,14 +29,12 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
   // Phones give the chat view the whole screen — the bar only shows with work.
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
   const backGuard = useStoryProjectUiStore((state) => state.backGuard);
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const active = STEP_BY_SEGMENT[segment as keyof typeof STEP_BY_SEGMENT];
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "script-workbench", workspaceId, projectId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId),
-    enabled: Boolean(workspaceId) && Boolean(active),
+    queryKey: ["story-studio", "script-workbench", projectId],
+    queryFn: () => getStoryWorkbench(projectId),
+    enabled: Boolean(active),
     retry: false,
   });
 
@@ -62,7 +59,7 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
         >
           <IconArrowLeft className="size-4" stroke={1.8} />
         </Link>
-        <h1 className="max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em]">
+        <h1 className="hidden max-w-[320px] truncate text-[15px] font-semibold tracking-[-0.01em] max-md:block xl:block">
           {workbenchQuery.data?.project.title ?? t(`canvas.steps.${active}`)}
         </h1>
       </div>

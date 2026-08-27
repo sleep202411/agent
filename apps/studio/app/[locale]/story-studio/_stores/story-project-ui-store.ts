@@ -25,6 +25,11 @@ export interface StoryLiveDraftSignals {
   videoSnapshotHash: string | null;
 }
 
+export interface StoryComposerPrefillRequest {
+  id: number;
+  text: string;
+}
+
 /**
  * Story project shell UI state — cross-page switches shared by every
  * production step surface (script page, canvas once it adopts the shell).
@@ -39,6 +44,16 @@ interface StoryProjectUIState {
    */
   mobileView: "chat" | "work";
   setMobileView: (view: "chat" | "work") => void;
+  /**
+   * One-shot page -> FizzAgent bridge. Stage surfaces may suggest a natural
+   * language next action, but the Agent remains the only place that submits or
+   * approves work. The monotonically increasing id lets the same prompt be
+   * requested repeatedly without becoming persistent project state.
+   */
+  composerPrefillSequence: number;
+  composerPrefillRequest: StoryComposerPrefillRequest | null;
+  openAgentComposer: (text: string) => void;
+  consumeComposerPrefill: (id: number) => void;
   /**
    * Which rail-toggled panel is docked in the side-panel slot, or null when
    * closed. Drives — and is highlighted by — the rail's panel buttons.
@@ -96,6 +111,28 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
     (set) => ({
       mobileView: "chat",
       setMobileView: (view) => set({ mobileView: view }, false, "setMobileView"),
+      composerPrefillSequence: 0,
+      composerPrefillRequest: null,
+      openAgentComposer: (text) =>
+        set(
+          (state) => {
+            const id = state.composerPrefillSequence + 1;
+            return {
+              mobileView: "chat",
+              composerPrefillSequence: id,
+              composerPrefillRequest: { id, text },
+            };
+          },
+          false,
+          "openAgentComposer"
+        ),
+      consumeComposerPrefill: (id) =>
+        set(
+          (state) =>
+            state.composerPrefillRequest?.id === id ? { composerPrefillRequest: null } : state,
+          false,
+          "consumeComposerPrefill"
+        ),
       sidePanel: null,
       setSidePanel: (panel) => set({ sidePanel: panel }, false, "setSidePanel"),
       activeChapterId: null,

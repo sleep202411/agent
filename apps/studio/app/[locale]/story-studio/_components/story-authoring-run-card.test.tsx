@@ -2,12 +2,21 @@
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { useQuery } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StoryAuthoringComposer, StoryAuthoringProposalApproval } from "./story-authoring-run-card";
+import {
+  StoryAuthoringComposer,
+  StoryAuthoringProposalApproval,
+  StoryAuthoringProposalTranscript,
+} from "./story-authoring-run-card";
 import { useStoryAuthoringRun, useStoryAuthoringRunById } from "./use-story-authoring-run";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+}));
+
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: vi.fn(),
 }));
 
 vi.mock("./use-story-authoring-run", () => ({
@@ -16,25 +25,30 @@ vi.mock("./use-story-authoring-run", () => ({
 }));
 
 vi.mock("./story-authoring-proposal-dialog", () => ({
-  StoryAuthoringProposalDialog: ({
-    open,
-    onApply,
-    onDiscard,
+  StoryAuthoringProposalContent: ({
+    proposal,
+    currentAssets,
   }: {
-    open: boolean;
-    onApply: () => void;
-    onDiscard: () => void;
-  }) =>
-    open ? (
-      <div data-testid="proposal-dialog">
-        <button type="button" onClick={onApply}>
-          dialog-apply
-        </button>
-        <button type="button" onClick={onDiscard}>
-          dialog-discard
-        </button>
-      </div>
-    ) : null,
+    proposal: {
+      summary?: string;
+      assetPlan?: { assetSpecs?: Array<{ name?: string }> };
+    };
+    currentAssets?: Array<{ stableKey?: string }>;
+  }) => (
+    <div
+      data-testid="proposal-content"
+      data-current-assets={currentAssets?.map((asset) => asset.stableKey).join(",")}
+    >
+      {proposal.summary}
+      {proposal.assetPlan?.assetSpecs?.map((asset) => asset.name).join(", ")}
+    </div>
+  ),
+}));
+
+vi.mock("./story-plot-proposal-card", () => ({
+  StoryPlotProposalCard: ({ proposal }: { proposal: { title: string } }) => (
+    <div data-testid="plot-proposal-card">{proposal.title}</div>
+  ),
 }));
 
 function mutation() {
@@ -46,6 +60,7 @@ describe("Story authoring Agent gates", () => {
   let root: Root;
 
   beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -59,6 +74,7 @@ describe("Story authoring Agent gates", () => {
       isLoading: false,
       refresh: vi.fn(),
     } as never);
+    vi.mocked(useQuery).mockReturnValue({ data: [] } as never);
   });
 
   afterEach(async () => {
@@ -129,12 +145,13 @@ describe("Story authoring Agent gates", () => {
     expect(cancel.mutate).toHaveBeenCalledWith("legacy-run");
   });
 
-  it("requires the exact screenplay review before submitting Agent approval", async () => {
-    const onResolve = vi.fn().mockResolvedValue(undefined);
+  it("keeps the screenplay decision to a focused yes/no question", async () => {
+    const onResolve = vi.fn().mockResolvedValue(true);
     vi.mocked(useStoryAuthoringRunById).mockReturnValue({
       run: {
         id: "11111111-1111-4111-8111-111111111111",
-        status: "proposed",
+        chapterId: "chapter-1",
+        status: "succeeded",
         agentOsManaged: true,
         proposal: {
           schemaVersion: "story-screenplay-proposal-v1",
@@ -174,15 +191,218 @@ describe("Story authoring Agent gates", () => {
     expect(
       [...container.querySelectorAll("button")].some((item) => item.textContent === "apply")
     ).toBe(false);
-    await act(async () => button("reviewScreenplay").click());
-    expect(container.querySelector('[data-testid="proposal-dialog"]')).not.toBeNull();
-    expect(onResolve).not.toHaveBeenCalled();
-    await act(async () => button("dialog-apply").click());
-    expect(onResolve).toHaveBeenCalledWith("approve", "apply");
+    expect(container.textContent).toContain("proposalDecision.question.script");
+    expect(button("proposalDecision.no")).toBeTruthy();
+    await act(async () => button("proposalDecision.yes").click());
+    expect(onResolve).toHaveBeenCalledWith("approve", "proposalStage.script.approve");
 
-    await act(async () => button("reviewScreenplay").click());
-    await act(async () => button("dialog-discard").click());
-    expect(onResolve).toHaveBeenCalledWith("reject", "discard");
+    await act(async () => button("proposalDecision.no").click());
+    expect(onResolve).toHaveBeenCalledWith("reject", "proposalDecision.rejectResponse");
+  });
+
+  it.each([
+    ["plot", "story-plot-proposal-v1"],
+    ["assets", "story-asset-proposal-v1"],
+    ["storyboard", "story-storyboard-proposal-v1"],
+  ] as const)("asks a yes/no question for the %s approval", async (stage, schemaVersion) => {
+    const onResolve = vi.fn().mockResolvedValue(true);
+    vi.mocked(useStoryAuthoringRunById).mockReturnValue({
+      run: {
+        id: "11111111-1111-4111-8111-111111111111",
+        chapterId: "chapter-1",
+        status: "proposed",
+        agentOsManaged: true,
+        proposal: {
+          schemaVersion,
+          title: `${stage} proposal`,
+          summary: `${stage} is ready for review.`,
+        },
+      },
+      isLoading: false,
+      refresh: vi.fn(),
+    } as never);
+
+    await act(async () => {
+      root.render(
+        <StoryAuthoringProposalApproval
+          projectId="project-1"
+          approval={{
+            kind: "tool_approval",
+            approvalId: "22222222-2222-4222-8222-222222222222",
+            toolId: "story.applyProposal",
+            toolCallId: "tool-1",
+            arguments: { storyAgentRunId: "11111111-1111-4111-8111-111111111111" },
+            title: "Review",
+            description: "Review the proposal.",
+          }}
+          busy={false}
+          onResolve={onResolve}
+        />
+      );
+    });
+
+    expect(container.textContent).toContain(`proposalDecision.question.${stage}`);
+    expect(button("proposalDecision.no")).toBeTruthy();
+    await act(async () => button("proposalDecision.yes").click());
+    expect(onResolve).toHaveBeenCalledWith("approve", `proposalStage.${stage}.approve`);
+  });
+
+  it("keeps the yes/no question visible when Agent approval fails", async () => {
+    const onResolve = vi.fn().mockResolvedValue(false);
+    vi.mocked(useStoryAuthoringRunById).mockReturnValue({
+      run: {
+        id: "11111111-1111-4111-8111-111111111111",
+        status: "proposed",
+        agentOsManaged: true,
+        proposal: {
+          schemaVersion: "story-screenplay-proposal-v1",
+          title: "The Last Light",
+          summary: "A complete interactive-film proposal.",
+        },
+      },
+      isLoading: false,
+      refresh: vi.fn(),
+    } as never);
+
+    await act(async () => {
+      root.render(
+        <StoryAuthoringProposalApproval
+          projectId="project-1"
+          approval={{
+            kind: "tool_approval",
+            approvalId: "22222222-2222-4222-8222-222222222222",
+            toolId: "story.applyProposal",
+            toolCallId: "tool-1",
+            arguments: { storyAgentRunId: "11111111-1111-4111-8111-111111111111" },
+            title: "Review",
+            description: "Review the proposal.",
+          }}
+          busy={false}
+          onResolve={onResolve}
+        />
+      );
+    });
+
+    await act(async () => button("proposalDecision.yes").click());
+
+    expect(onResolve).toHaveBeenCalledWith("approve", "proposalStage.script.approve");
+    expect(button("proposalDecision.yes")).toBeTruthy();
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("approvalFailed");
+  });
+
+  it("renders Asset Specs directly in the Assistant transcript", async () => {
+    vi.mocked(useStoryAuthoringRunById).mockReturnValue({
+      run: {
+        id: "11111111-1111-4111-8111-111111111111",
+        chapterId: "chapter-1",
+        status: "proposed",
+        agentOsManaged: true,
+        proposal: {
+          schemaVersion: "story-asset-proposal-v1",
+          title: "Asset plan",
+          summary: "Reusable characters and locations.",
+          assetPlan: {
+            assetSpecs: [
+              {
+                stableKey: "character.courier",
+                kind: "character",
+                name: "Courier",
+                description: "A weathered desert courier.",
+                imagePrompt: "Courier reference",
+                sourceNodeIds: ["scene.arrival"],
+              },
+            ],
+          },
+        },
+      },
+      isLoading: false,
+      refresh: vi.fn(),
+    } as never);
+    vi.mocked(useQuery).mockReturnValue({
+      data: [{ stableKey: "character.courier" }],
+    } as never);
+
+    await act(async () => {
+      root.render(
+        <StoryAuthoringProposalTranscript
+          projectId="project-1"
+          artifact={{
+            id: "11111111-1111-4111-8111-111111111111",
+            reference: {
+              kind: "story_stage_proposal",
+              storyAgentRunId: "11111111-1111-4111-8111-111111111111",
+              workspaceId: "workspace-1",
+            },
+            status: "applied",
+            createdAt: "2026-08-25T00:00:00.000Z",
+            eventSequence: 4,
+          }}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-testid="story-proposal-transcript"]')).not.toBeNull();
+    expect(
+      container
+        .querySelector('[data-testid="story-proposal-transcript"]')
+        ?.getAttribute("data-artifact-status")
+    ).toBe("applied");
+    expect(container.querySelector('[data-testid="proposal-content"]')?.textContent).toContain(
+      "Courier"
+    );
+    expect(
+      container
+        .querySelector('[data-testid="proposal-content"]')
+        ?.getAttribute("data-current-assets")
+    ).toBe("character.courier");
+    expect(useQuery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: ["story-studio", "asset-specs", "project-1", "chapter-1"],
+        enabled: true,
+      })
+    );
+  });
+
+  it("routes Plot proposals to the compact canvas-preview card", async () => {
+    vi.mocked(useStoryAuthoringRunById).mockReturnValue({
+      run: {
+        id: "11111111-1111-4111-8111-111111111111",
+        chapterId: "chapter-1",
+        status: "proposed",
+        agentOsManaged: true,
+        proposal: {
+          schemaVersion: "story-plot-proposal-v1",
+          title: "Branching night route",
+          summary: "A compact Plot proposal.",
+        },
+      },
+      isLoading: false,
+      refresh: vi.fn(),
+    } as never);
+
+    await act(async () => {
+      root.render(
+        <StoryAuthoringProposalTranscript
+          projectId="project-1"
+          artifact={{
+            id: "11111111-1111-4111-8111-111111111111",
+            reference: {
+              kind: "story_stage_proposal",
+              storyAgentRunId: "11111111-1111-4111-8111-111111111111",
+              workspaceId: "workspace-1",
+            },
+            status: "proposed",
+            createdAt: "2026-08-25T00:00:00.000Z",
+            eventSequence: 4,
+          }}
+        />
+      );
+    });
+
+    expect(container.querySelector('[data-testid="plot-proposal-card"]')?.textContent).toBe(
+      "Branching night route"
+    );
+    expect(container.querySelector('[data-testid="proposal-content"]')).toBeNull();
   });
 
   it("loads the approval's exact Story run after the user switches chapters", async () => {
@@ -226,14 +446,14 @@ describe("Story authoring Agent gates", () => {
             description: "Review the proposal.",
           }}
           busy={false}
-          onResolve={vi.fn().mockResolvedValue(undefined)}
+          onResolve={vi.fn().mockResolvedValue(true)}
         />
       );
     });
 
     expect(useStoryAuthoringRunById).toHaveBeenCalledWith("project-1", approvalRunId);
-    expect(button("viewAll")).toBeTruthy();
-    expect(button("apply")).toBeTruthy();
+    expect(button("proposalDecision.no")).toBeTruthy();
+    expect(button("proposalDecision.yes")).toBeTruthy();
   });
 
   async function renderComposer() {

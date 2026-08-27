@@ -1,24 +1,44 @@
 import { describe, expect, it } from "vitest";
 import type { InteractiveStoryDraftContent, StoryClipGraphNode } from "@/lib/story-projects-api";
-import { buildStoryCanvasModel } from "./story-project-canvas-model";
+import { buildStoryCanvasModel, storyDecisionCanvasNodeId } from "./story-project-canvas-model";
 
 describe("film-only story canvas projection", () => {
-  it("projects clips and choices without cast members", () => {
+  it("projects one decision card whose option rows retain independent anchors", () => {
     const model = buildStoryCanvasModel(draft(), "en-US", { clip: "Clip" });
-    expect(model.nodes.map((node) => node.id)).toEqual(["clip:a", "clip:b"]);
-    expect(model.nodes.map((node) => node.data.kind)).toEqual(["clip", "clip"]);
+    const decisionNodeId = storyDecisionCanvasNodeId("clip:a", "decision:a");
+    expect(model.nodes.map((node) => node.id)).toEqual(["clip:a", decisionNodeId, "clip:b"]);
+    expect(model.nodes.map((node) => node.data.kind)).toEqual(["clip", "decision", "clip"]);
     expect(model.nodes[0]?.data).toMatchObject({
-      exitKind: "choice",
+      exitKind: "auto",
+      continuationTargetNodeId: decisionNodeId,
+    });
+    expect(model.nodes[1]?.data).toMatchObject({
+      kind: "decision",
+      sourceNodeId: "clip:a",
+      decisionId: "decision:a",
       summary: "Where next?",
-      choices: [{ choiceId: "go", targetNodeId: "clip:b" }],
+      choices: [
+        {
+          choiceId: "go",
+          label: "Go",
+          targetNodeId: "clip:b",
+          targetTitle: "Clip 2",
+        },
+      ],
     });
     expect(model.nodes.every((node) => node.dragHandle === undefined)).toBe(true);
   });
 
-  it("projects choice flow directly from its owning clip", () => {
+  it("projects scene completion into the decision and branches from option handles", () => {
     const model = buildStoryCanvasModel(draft(), "en-US");
-    expect(model.edges.map((edge) => edge.data.kind)).toEqual(["choice"]);
-    expect(model.edges[0]).toMatchObject({ source: "clip:a", target: "clip:b" });
+    const decisionNodeId = storyDecisionCanvasNodeId("clip:a", "decision:a");
+    expect(model.edges.map((edge) => edge.data.kind)).toEqual(["decision", "choice"]);
+    expect(model.edges[0]).toMatchObject({ source: "clip:a", target: decisionNodeId });
+    expect(model.edges[1]).toMatchObject({
+      source: decisionNodeId,
+      sourceHandle: "choice:go",
+      target: "clip:b",
+    });
   });
 
   it("keeps local hotspot actions inline and projects only cross-clip actions as edges", () => {
