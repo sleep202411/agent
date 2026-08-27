@@ -98,7 +98,7 @@ describe("Button", () => {
     await act(async () =>
       root.render(
         <Button asChild>
-          <a href="/x">Link</a>
+          <a href="https://example.com/x">Link</a>
         </Button>
       )
     );

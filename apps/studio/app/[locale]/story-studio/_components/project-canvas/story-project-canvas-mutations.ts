@@ -493,7 +493,8 @@ function omitInteractionOutcome(
   outcomes: StoryClipGraphNode["interactions"][number]["outcomes"],
   outcome: "failure" | "timeout"
 ): StoryClipGraphNode["interactions"][number]["outcomes"] {
-  const { [outcome]: _removed, ...remaining } = outcomes;
+  const remaining = { ...outcomes };
+  delete remaining[outcome];
   return remaining;
 }
 

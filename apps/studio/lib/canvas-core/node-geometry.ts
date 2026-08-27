@@ -65,8 +65,8 @@ function storyNodeGeometry(data: Record<string, unknown> | undefined): CanvasNod
   const interactionHeight = interactionCount > 0 ? 52 + interactionCount * 44 : 0;
   if (data?.kind === "decision") {
     const choiceCount = Array.isArray(data.choices) ? data.choices.length : 0;
-    const choiceHeight = Math.max(2, choiceCount) * 44;
-    return geometry(STANDARD_WIDTH, 180 + choiceHeight, 204 + choiceHeight);
+    const choiceHeight = Math.max(2, choiceCount) * 52;
+    return geometry(PRIMARY_WIDTH, 176 + choiceHeight, 200 + choiceHeight);
   }
   return geometry(STANDARD_WIDTH, 236 + interactionHeight, 268 + interactionHeight);
 }

@@ -3077,6 +3077,7 @@ function StoryPortHandle({
   color,
   label,
   isConnectable = true,
+  emphasized = false,
   className,
   style,
 }: {
@@ -3086,6 +3087,7 @@ function StoryPortHandle({
   color: string;
   label: string;
   isConnectable?: boolean;
+  emphasized?: boolean;
   className?: string;
   style?: CSSProperties;
 }) {
@@ -3097,13 +3099,13 @@ function StoryPortHandle({
       isConnectable={isConnectable}
       title={label}
       aria-label={label}
-      className={cn(
-        "z-30! size-3.5! border-0! transition-[transform,box-shadow] duration-150 hover:scale-125!",
-        className
-      )}
+      className={cn("z-30!", emphasized ? "size-4.5!" : "size-3.5! border-0!", className)}
       style={{
         backgroundColor: color,
-        boxShadow: `0 0 0 3px rgba(17,17,17,0.92), 0 0 16px ${color}`,
+        border: emphasized ? "3px solid rgba(20,20,20,0.96)" : undefined,
+        boxShadow: emphasized
+          ? `0 0 0 3px rgba(91,157,255,0.2), 0 0 18px ${color}`
+          : `0 0 0 3px rgba(17,17,17,0.92), 0 0 16px ${color}`,
         ...style,
       }}
     />
@@ -3151,8 +3153,14 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         style={{ backgroundColor: "rgba(255,255,255,0.14)" }}
       >
         <span
-          className="grid size-6 place-items-center rounded-full"
-          style={{ backgroundColor: "rgba(255,255,255,0.22)" }}
+          className={cn(
+            "grid size-6 place-items-center rounded-full",
+            data.kind === "decision" && "text-[#a9ceff]"
+          )}
+          style={{
+            backgroundColor:
+              data.kind === "decision" ? "rgba(91,157,255,0.2)" : "rgba(255,255,255,0.22)",
+          }}
         >
           {data.kind === "clip" ? <IconMovie className="size-3.5" stroke={2} /> : null}
           {isWorld ? <IconWorld className="size-3.5" stroke={2} /> : null}
@@ -3428,19 +3436,23 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             </div>
           ) : null}
           {interactionSourceNodeId ? (
-            <div className="mt-3 overflow-hidden rounded-[16px] border border-[#5b9dff]/20 bg-[#5b9dff]/[0.055]">
-              <div className="flex items-center gap-2 border-b border-[#5b9dff]/15 px-3 py-2.5">
-                <span className="grid size-6 place-items-center rounded-lg bg-[#5b9dff]/18 text-[#a9ceff]">
-                  <IconFocusCentered className="size-3.5" stroke={1.8} />
+            <section className="-m-3 overflow-visible" aria-label={t("nodeKinds.decision")}>
+              <header className="flex items-center gap-3 px-4 pt-4 pb-3">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.07] text-[#a9ceff]">
+                  <IconGitBranch className="size-4.5" stroke={1.8} />
                 </span>
-                <span className="min-w-0 flex-1 text-xs font-semibold text-white/78">
-                  {t("interactionAnchors.title")}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold text-white/88">
+                    {t("interactionCard.branchOptions")}
+                  </span>
+                  <span className="mt-0.5 block text-[10px] text-white/38">
+                    {t("interactionCard.anchorHint")}
+                  </span>
                 </span>
-                <span className="text-xs text-white/34 tabular-nums">{interactionChoiceCount}</span>
-                <span className="rounded-full bg-[#5b9dff]/12 px-2 py-1 text-xs font-semibold text-[#9bc4ff]">
-                  {t("interactionAnchors.choiceType")}
+                <span className="rounded-lg bg-white/[0.065] px-2 py-1 text-[10px] font-semibold text-white/52 tabular-nums">
+                  {t("interactionCard.optionCount", { count: interactionChoiceCount })}
                 </span>
-              </div>
+              </header>
               <textarea
                 rows={1}
                 value={data.summary ?? ""}
@@ -3454,105 +3466,118 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                 onChange={(event) =>
                   choiceContext?.updatePrompt(interactionSourceNodeId, event.target.value)
                 }
-                className="nodrag nopan nowheel field-sizing-content block max-h-20 min-h-10 w-full resize-none overflow-y-auto border-b border-white/[0.06] bg-transparent px-3 py-2.5 text-[12px] leading-5 font-semibold text-white/82 outline-none placeholder:text-white/32 disabled:cursor-default"
+                className="nodrag nopan nowheel field-sizing-content mx-3 mb-2 block max-h-24 min-h-14 w-[calc(100%-1.5rem)] resize-none overflow-y-auto rounded-xl bg-white/[0.045] px-3 py-2.5 text-[12px] leading-5 font-medium text-white/82 outline-none transition focus:bg-white/[0.065] placeholder:text-white/30 disabled:cursor-default"
               />
-              {interactionChoices.map((choice, index) => (
-                <div
-                  key={choice.choiceId}
-                  className="group/choice relative grid min-h-10 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 px-1 py-2 pr-3 text-xs transition-colors hover:bg-white/[0.025]"
-                >
-                  <span className="tabular-nums text-white/24">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <input
-                    value={choice.label}
-                    disabled={!choiceContext?.canEditContent}
-                    maxLength={4_000}
-                    placeholder={t("interactionCard.untitledOption")}
-                    aria-label={t("interactionCard.optionPlaceholder")}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => event.stopPropagation()}
-                    onChange={(event) => {
-                      choiceContext?.updateChoice(
-                        interactionSourceNodeId,
-                        choice.choiceId,
-                        event.target.value
-                      );
-                    }}
-                    className={cn(
-                      "nodrag nopan nowheel w-full min-w-0 rounded-md bg-transparent px-1 py-1 outline-none transition placeholder:text-[#e0a45c]/78 hover:bg-white/[0.03] focus:bg-white/[0.05] disabled:cursor-default",
-                      choice.label.trim() ? "text-white/72" : "text-[#e0a45c]/78"
-                    )}
-                  />
-                  <span className="max-w-[112px] truncate rounded-full bg-white/[0.055] px-2 py-1 text-xs text-white/38 group-hover/choice:hidden group-focus-within/choice:hidden">
-                    → {choice.targetTitle ?? t("interactionCard.linkedTarget")}
-                  </span>
-                  {choiceContext?.canEditContent ? (
-                    <span className="nodrag nopan hidden items-center gap-0.5 group-hover/choice:flex group-focus-within/choice:flex">
-                      <button
-                        type="button"
-                        disabled={index === 0}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          choiceContext.moveChoice(interactionSourceNodeId, choice.choiceId, "up");
-                        }}
-                        className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
-                        aria-label={t("inspector.moveChoiceUp")}
-                      >
-                        <IconArrowUp className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        disabled={index === interactionChoices.length - 1}
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          choiceContext.moveChoice(
-                            interactionSourceNodeId,
-                            choice.choiceId,
-                            "down"
-                          );
-                        }}
-                        className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
-                        aria-label={t("inspector.moveChoiceDown")}
-                      >
-                        <IconArrowDown className="size-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          choiceContext.removeChoice(interactionSourceNodeId, choice.choiceId);
-                        }}
-                        className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-[#ff9b9e]"
-                        aria-label={t("inspector.removeChoice")}
-                      >
-                        <IconTrash className="size-3" />
-                      </button>
+              <div className="border-y border-white/[0.065]">
+                {interactionChoices.map((choice, index) => (
+                  <div
+                    key={choice.choiceId}
+                    className="group/choice relative grid min-h-14 grid-cols-[32px_minmax(0,1fr)_auto_26px] items-center gap-2 border-b border-white/[0.055] px-3 text-xs transition-colors last:border-b-0 hover:bg-white/[0.035] focus-within:bg-white/[0.045]"
+                  >
+                    <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
+                      {String(index + 1).padStart(2, "0")}
                     </span>
-                  ) : null}
-                  <StoryPortHandle
-                    id={`choice:${choice.choiceId}`}
-                    type="source"
-                    position={Position.Right}
-                    isConnectable={isConnectable}
-                    color={STORY_PORT_COLORS.choice}
-                    label={t("ports.choiceOption", {
-                      label: choice.label.trim() || t("interactionCard.untitledOption"),
-                    })}
-                    className="-right-[23px]!"
-                  />
-                </div>
-              ))}
+                    <input
+                      value={choice.label}
+                      disabled={!choiceContext?.canEditContent}
+                      maxLength={4_000}
+                      placeholder={t("interactionCard.untitledOption")}
+                      aria-label={t("interactionCard.optionPlaceholder")}
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => event.stopPropagation()}
+                      onChange={(event) => {
+                        choiceContext?.updateChoice(
+                          interactionSourceNodeId,
+                          choice.choiceId,
+                          event.target.value
+                        );
+                      }}
+                      className={cn(
+                        "nodrag nopan nowheel w-full min-w-0 bg-transparent py-2 text-[12px] font-medium outline-none placeholder:text-white/36 disabled:cursor-default",
+                        choice.label.trim() ? "text-white/78" : "text-white/36"
+                      )}
+                    />
+                    <span className="max-w-[118px] truncate rounded-lg bg-white/[0.055] px-2 py-1.5 text-[10px] text-white/42 group-hover/choice:hidden group-focus-within/choice:hidden">
+                      → {choice.targetTitle ?? t("interactionCard.linkedTarget")}
+                    </span>
+                    {choiceContext?.canEditContent ? (
+                      <span className="nodrag nopan hidden items-center gap-0.5 group-hover/choice:flex group-focus-within/choice:flex">
+                        <button
+                          type="button"
+                          disabled={index === 0}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            choiceContext.moveChoice(
+                              interactionSourceNodeId,
+                              choice.choiceId,
+                              "up"
+                            );
+                          }}
+                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
+                          aria-label={t("inspector.moveChoiceUp")}
+                        >
+                          <IconArrowUp className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={index === interactionChoices.length - 1}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            choiceContext.moveChoice(
+                              interactionSourceNodeId,
+                              choice.choiceId,
+                              "down"
+                            );
+                          }}
+                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-20"
+                          aria-label={t("inspector.moveChoiceDown")}
+                        >
+                          <IconArrowDown className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            choiceContext.removeChoice(interactionSourceNodeId, choice.choiceId);
+                          }}
+                          className="grid size-6 place-items-center rounded-md text-white/32 transition hover:bg-white/[0.08] hover:text-[#ff9b9e]"
+                          aria-label={t("inspector.removeChoice")}
+                        >
+                          <IconTrash className="size-3" />
+                        </button>
+                      </span>
+                    ) : null}
+                    <span
+                      className="pointer-events-none relative flex h-full items-center justify-end"
+                      aria-hidden="true"
+                    >
+                      <span className="h-px w-4 bg-[#5b9dff]/55" />
+                    </span>
+                    <StoryPortHandle
+                      id={`choice:${choice.choiceId}`}
+                      type="source"
+                      position={Position.Right}
+                      isConnectable={isConnectable}
+                      emphasized
+                      color={STORY_PORT_COLORS.choice}
+                      label={t("ports.choiceOption", {
+                        label: choice.label.trim() || t("interactionCard.untitledOption"),
+                      })}
+                      className="-right-2.25!"
+                    />
+                  </div>
+                ))}
+              </div>
               {choiceDrafts.map((draft, index) => (
                 <div
                   key={draft.draftId}
-                  className="nodrag nopan nowheel relative mt-1 grid min-h-10 grid-cols-[22px_minmax(0,1fr)_auto] items-center gap-2 rounded-xl bg-white/[0.045] px-1 py-2 pr-3"
+                  className="nodrag nopan nowheel relative mx-3 mt-2 grid min-h-14 grid-cols-[32px_minmax(0,1fr)_26px] items-center gap-2 rounded-xl bg-white/[0.055] px-2"
                 >
-                  <span className="tabular-nums text-white/24">
+                  <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
                     {String(interactionChoiceCount + index + 1).padStart(2, "0")}
                   </span>
                   <input
@@ -3603,9 +3628,10 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                       type="source"
                       position={Position.Right}
                       isConnectable={isConnectable}
+                      emphasized
                       color={STORY_PORT_COLORS.choice}
                       label={t("interactionCard.connectOption")}
-                      className="-right-[23px]!"
+                      className="-right-5.25!"
                     />
                   ) : null}
                 </div>
@@ -3614,7 +3640,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
               choiceContext?.canCreateOption ? (
                 <button
                   type="button"
-                  className="nodrag nopan mt-1 flex h-10 w-full items-center gap-2 rounded-xl px-2.5 text-left text-xs font-semibold text-[#84b7ff]/78 transition hover:bg-[rgba(91,157,255,0.08)] hover:text-[#a9ceff]"
+                  className="nodrag nopan flex h-11 w-full items-center gap-2 px-4 text-left text-xs font-semibold text-[#84b7ff]/78 transition hover:bg-white/[0.035] hover:text-[#a9ceff]"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={(event) => {
                     event.stopPropagation();
@@ -3625,7 +3651,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                   {t("interactionCard.addOption")}
                 </button>
               ) : null}
-            </div>
+            </section>
           ) : null}
         </div>
         {worldEditorOpen && worldNode && worldContext ? (

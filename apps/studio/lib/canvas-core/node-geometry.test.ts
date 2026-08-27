@@ -19,7 +19,7 @@ describe("canvas node geometry", () => {
           choices: [{ choiceId: "left" }, { choiceId: "right" }, { choiceId: "stay" }],
         })
       )
-    ).toMatchObject({ width: 320, estimatedHeight: 336 });
+    ).toMatchObject({ width: 360, estimatedHeight: 356 });
   });
 
   it("uses live measurements only while available in the current client", () => {
