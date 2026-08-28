@@ -1095,6 +1095,17 @@
       "oneTime": "一次性"
     },
     "features": {
+      "estimate": {
+        "images": "约可生成 {count} 张 {model} 图片",
+        "videos": "约可生成 {count} 条 {model} 视频",
+        "details": "查看估算方式",
+        "lowQuality": "低质量",
+        "withAudio": "含音频",
+        "withoutAudio": "不含音频",
+        "imageTooltip": "按 {model} {resolution}、{quality}、单张输出且不含参考图估算（每张 {points} 算力积分）。实际用量会随参数、参考素材及后续计价调整而变化。",
+        "videoTooltip": "按 {model} {resolution}、{duration} 秒、{audio}、单条输出且不含参考素材估算（每条 {points} 算力积分）。实际用量会随参数、参考素材及后续计价调整而变化。",
+        "allocationDisclaimer": "以上每项均按全部 {amount} 积分仅用于该模型分别估算；各项是不同用法，不可同时获得。"
+      },
       "sharedCredits": "团队共享算力积分",
       "seatScope": "创作者席位在所有项目间共享；Viewer 和 Reviewer 不占席位",
       "concurrentJobs": "{count, plural, other {# 个并发任务}}",
