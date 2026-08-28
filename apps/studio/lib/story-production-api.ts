@@ -1,4 +1,8 @@
-import type { StoryAssetSpecPlanItem, StoryStoryboardSequencePlanItem } from "@repo/shared";
+import type {
+  PutStoryStoryboardTimelineInput,
+  StoryAssetSpecPlanItem,
+  StoryStoryboardSequencePlanItem,
+} from "@repo/shared";
 import { api } from "@/lib/api";
 
 export type StoryProductionStatus = "missing" | "current" | "stale";
@@ -274,14 +278,19 @@ export interface PatchStoryAssetSpecInput {
   name?: string;
   description?: string | null;
   imagePrompt?: string;
+  selectedMediaVersionId?: string | null;
+  sourceMediaAssetId?: string;
 }
 
 export interface PatchStoryStoryboardClipInput {
   expectedVersion: number;
+  kind?: StoryStoryboardClipKind;
   title?: string;
   description?: string | null;
   imagePrompt?: string | null;
   videoPrompt?: string | null;
+  selectedMediaVersionId?: string | null;
+  sourceMediaAssetId?: string;
 }
 
 export type StoryGenerationBatchStatus =
@@ -750,6 +759,32 @@ export async function patchStoryStoryboardClip(
     ),
     projectMutationConfig(idempotencyKey, input)
   );
+}
+
+/**
+ * Atomically replace one plot node's complete visual timeline. Retained clip
+ * ids preserve their generated media and Asset bindings on the server.
+ */
+export async function putStoryStoryboardTimeline(
+  projectId: string,
+  chapterId: string,
+  sequenceId: string,
+  idempotencyKey: string,
+  input: PutStoryStoryboardTimelineInput
+): Promise<StoryStoryboardSequence> {
+  const value = await api.put<StoryStoryboardSequence>(
+    chapterPath(
+      projectId,
+      chapterId,
+      `storyboard/sequences/${encodeURIComponent(sequenceId)}/timeline`
+    ),
+    projectMutationConfig(idempotencyKey, input)
+  );
+  assertStoryboardScope(value, projectId, chapterId);
+  if (value.id !== sequenceId) {
+    throw new Error("Story production API returned data outside the requested sequence scope.");
+  }
+  return value;
 }
 
 export async function resolveStoryAssetSpecConflict(

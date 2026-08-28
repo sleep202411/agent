@@ -1,0 +1,106 @@
+import { describe, expect, it } from "vitest";
+import type { StoryStoryboardClip, StoryStoryboardSequence } from "@/lib/story-production-api";
+import {
+  appendStoryTimelineClip,
+  createManualStoryTimelineClipStableKey,
+  storySequenceToTimeline,
+} from "./story-timeline";
+
+describe("Story timeline domain", () => {
+  it("projects a sequence into an ordered visual track without copying branching", () => {
+    const sequence = fixtureSequence();
+    sequence.clips = [fixtureClip({ id: "clip-2", rank: 1, startMs: 2_000 }), fixtureClip()];
+
+    const timeline = storySequenceToTimeline(sequence);
+
+    expect(timeline.sequenceId).toBe("sequence-1");
+    expect(timeline.visualTrack.id).toBe("visual");
+    expect(timeline.visualTrack.clips.map((clip) => clip.id)).toEqual(["clip-1", "clip-2"]);
+    expect(timeline).not.toHaveProperty("branches");
+  });
+
+  it("appends through one continuous atomic command and preserves retained clip identities", () => {
+    const input = appendStoryTimelineClip(fixtureSequence(), {
+      stableKey: "manual_clip_abc123",
+      kind: "video",
+      title: "Reaction",
+      durationMs: 1_500,
+      prompt: "The kitten turns toward the window",
+      description: null,
+      sourceMediaAssetId: "0198f744-32a0-7000-8000-000000000002",
+    });
+
+    expect(input.expectedVersion).toBe(4);
+    expect(input.durationMs).toBe(5_500);
+    expect(input.clips).toEqual([
+      expect.objectContaining({ id: "clip-1", expectedVersion: 7, startMs: 0, durationMs: 4_000 }),
+      expect.objectContaining({
+        expectedVersion: 0,
+        sourceMediaAssetId: "0198f744-32a0-7000-8000-000000000002",
+        stableKey: "manual_clip_abc123",
+        kind: "video",
+        imagePrompt: null,
+        videoPrompt: "The kitten turns toward the window",
+        startMs: 4_000,
+        durationMs: 1_500,
+      }),
+    ]);
+  });
+
+  it("creates schema-safe stable keys without leaking UUID punctuation", () => {
+    expect(createManualStoryTimelineClipStableKey("01234567-89ab-cdef-0123-456789abcdef")).toBe(
+      "manual_clip_0123456789abcdef01234567"
+    );
+  });
+});
+
+function fixtureSequence(): StoryStoryboardSequence {
+  return {
+    id: "sequence-1",
+    projectId: "project-1",
+    chapterId: "chapter-1",
+    plotNodeId: "plot-1",
+    stableKey: "sequence-1",
+    title: "Opening",
+    description: null,
+    suggestedDurationMs: 4_000,
+    durationMs: 4_000,
+    sourceFingerprint: "source-1",
+    status: "current",
+    planDisposition: "planned",
+    pendingSourceFingerprint: null,
+    conflict: null,
+    version: 4,
+    userModifiedAt: null,
+    clips: [fixtureClip()],
+    cues: [],
+    updatedAt: "2026-08-28T00:00:00.000Z",
+  };
+}
+
+function fixtureClip(overrides: Partial<StoryStoryboardClip> = {}): StoryStoryboardClip {
+  return {
+    id: "clip-1",
+    stableKey: "clip_1",
+    title: "Wake",
+    rank: 0,
+    kind: "image",
+    track: "visual",
+    startMs: 0,
+    durationMs: 4_000,
+    description: null,
+    imagePrompt: "A kitten opens its eyes",
+    videoPrompt: null,
+    negativePrompt: null,
+    generationConfig: {},
+    status: "current",
+    version: 7,
+    selectedMediaVersionId: null,
+    selectedMediaVersion: null,
+    mediaVersions: [],
+    latestGeneration: null,
+    userModifiedAt: null,
+    assetBindings: [],
+    ...overrides,
+  };
+}

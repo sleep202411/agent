@@ -102,6 +102,34 @@ describe("MediaTimelineRange pointer interactions", () => {
 
     expect(onScrub).toHaveBeenLastCalledWith(4, "move");
   });
+
+  it("scrubs against the time axis while clamping trailing canvas space", async () => {
+    const onSeek = vi.fn();
+    await act(async () => {
+      root.render(
+        <MediaTimelineTrack
+          durationSeconds={10}
+          timeAxisWidth={800}
+          seekOnPointerDrag
+          onSeek={onSeek}
+        >
+          Track
+        </MediaTimelineTrack>
+      );
+    });
+
+    const track = requiredElement(
+      container.querySelector<HTMLElement>('[data-slot="media-timeline-track"]')
+    );
+    await act(async () => {
+      track.dispatchEvent(pointerEvent("pointerdown", 400));
+      track.dispatchEvent(pointerEvent("pointermove", 900));
+      track.dispatchEvent(pointerEvent("pointerup", 900));
+    });
+
+    expect(onSeek).toHaveBeenNthCalledWith(1, 5);
+    expect(onSeek).toHaveBeenLastCalledWith(10);
+  });
 });
 
 function pointerEvent(type: string, clientX: number): Event {

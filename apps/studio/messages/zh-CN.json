@@ -849,6 +849,8 @@
       "rejected": "审核反馈",
       "requirements": {
         "name": "名称",
+        "image": "图片",
+        "video": "视频",
         "poster": "封面",
         "synopsis": "简介",
         "document": "世界观 DOCX"
@@ -2884,6 +2886,13 @@
         }
       },
       "details": "详情",
+      "mediaAction": {
+        "uploadImage": "上传图片",
+        "replaceImage": "替换图片",
+        "replacing": "正在替换图片…",
+        "replaceSuccess": "资产图片已替换。",
+        "replaceError": "无法替换资产图片。"
+      },
       "detailDialog": {
         "imagePrompt": "图片提示词",
         "model": "模型",
@@ -3006,7 +3015,6 @@
       "loadError": "无法加载分镜。",
       "retry": "重试",
       "plotNode": "情节节点 {index}",
-      "clipCount": "{count} 个片段",
       "noClips": "此序列没有片段。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。准备好后，可在已保存的片段上选择“生成”。",
       "status": {
@@ -3022,6 +3030,69 @@
       "clipKind": {
         "image": "图片",
         "video": "视频"
+      },
+      "editTimeline": "编辑"
+    },
+    "editorPage": {
+      "pageTitle": "剪辑 · 影游工作室",
+      "pageDescription": "编辑节点内部的局部画面时间轴，不复制情节树的分支关系。",
+      "title": "剪辑",
+      "description": "每个情节节点拥有一条局部时间轴；剧情分支仍由情节树管理。",
+      "loading": "正在加载时间轴…",
+      "loadError": "无法加载时间轴。",
+      "retry": "重试",
+      "emptyTitle": "还没有可剪辑的分镜时间轴",
+      "emptyDescription": "请先准备分镜序列，再进入剪辑器。",
+      "backToStoryboard": "返回分镜",
+      "saved": "已保存",
+      "saving": "正在保存…",
+      "clipCount": "{count} 个片段",
+      "seconds": "{value} 秒",
+      "addClip": "添加片段",
+      "newClipTitle": "未命名片段",
+      "newClipPrompt": "描述此片段中的画面或运动。",
+      "addSuccess": "片段已添加到时间轴。",
+      "addError": "无法添加片段。",
+      "preview": "所选片段预览",
+      "previewEmpty": "此片段还没有生成媒体",
+      "previewEmptyHint": "打开片段详情可调整提示词或开始生成。",
+      "details": "片段详情",
+      "clipList": "片段 / 帧",
+      "inspector": "片段",
+      "selectClip": "在时间轴上选择一个片段以查看详情。",
+      "kind": "类型",
+      "startsAt": "开始时间",
+      "duration": "时长",
+      "prompt": "提示词",
+      "timeline": "时间轴",
+      "timelineZoom": "时间轴缩放",
+      "play": "播放序列",
+      "pause": "暂停序列",
+      "restart": "回到开头",
+      "zoomOut": "缩小时间轴",
+      "zoomIn": "放大时间轴",
+      "decisionCue": "抉择提示点：{time}",
+      "playhead": "时间轴位置 {time}",
+      "inspectorForm": {
+        "name": "名称",
+        "model": "模型",
+        "loadingModels": "正在加载模型…",
+        "noModels": "暂无兼容模型",
+        "image": "图片",
+        "video": "视频",
+        "media": "图片 / 视频",
+        "noMedia": "尚无媒体",
+        "replaceMedia": "替换媒体",
+        "save": "保存",
+        "saved": "片段已保存。",
+        "saveError": "无法保存片段。",
+        "generate": "生成",
+        "generateStarted": "已开始生成。",
+        "generateError": "无法开始生成。",
+        "replaceSuccess": "片段媒体已替换。",
+        "replaceError": "无法替换片段媒体。",
+        "mediaUnavailable": "项目恢复为可编辑状态后才能替换媒体。",
+        "unsupportedMedia": "片段只能使用图片或视频媒体。"
       }
     },
     "canvas": {
@@ -3137,7 +3208,6 @@
         }
       },
       "workingPreview": {
-        "action": "预览试玩",
         "pageTitle": "故事试玩 · 影游工作室",
         "pageDescription": "使用正式玩家运行时试玩精确保存的私有草稿或不可变构建。",
         "draftRevision": "草稿 r{revision}",

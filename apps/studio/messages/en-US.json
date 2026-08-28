@@ -849,6 +849,8 @@
       "rejected": "Review feedback",
       "requirements": {
         "name": "Name",
+        "image": "Image",
+        "video": "Video",
         "poster": "Cover",
         "synopsis": "Synopsis",
         "document": "Worldview DOCX"
@@ -2884,6 +2886,13 @@
         }
       },
       "details": "Details",
+      "mediaAction": {
+        "uploadImage": "Upload image",
+        "replaceImage": "Replace image",
+        "replacing": "Replacing image…",
+        "replaceSuccess": "Asset image replaced.",
+        "replaceError": "Could not replace the Asset image."
+      },
       "detailDialog": {
         "imagePrompt": "Image Prompt",
         "model": "Model",
@@ -3006,7 +3015,6 @@
       "loadError": "The storyboard could not be loaded.",
       "retry": "Try again",
       "plotNode": "Plot node {index}",
-      "clipCount": "{count, plural, one {# clip} other {# clips}}",
       "noClips": "This sequence has no clips.",
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
       "status": {
@@ -3022,6 +3030,69 @@
       "clipKind": {
         "image": "Image",
         "video": "Video"
+      },
+      "editTimeline": "Edit"
+    },
+    "editorPage": {
+      "pageTitle": "Edit · Interactive Film Studio",
+      "pageDescription": "Edit the node-local visual timeline without duplicating Plot Tree branches.",
+      "title": "Edit",
+      "description": "Each Plot node owns one local timeline. Branching remains on the Plot Tree.",
+      "loading": "Loading timeline…",
+      "loadError": "The timeline could not be loaded.",
+      "retry": "Try again",
+      "emptyTitle": "No storyboard timelines yet",
+      "emptyDescription": "Prepare a Storyboard sequence before opening the editor.",
+      "backToStoryboard": "Back to Storyboard",
+      "saved": "Saved",
+      "saving": "Saving…",
+      "clipCount": "{count, plural, one {# clip} other {# clips}}",
+      "seconds": "{value}s",
+      "addClip": "Add clip",
+      "newClipTitle": "Untitled clip",
+      "newClipPrompt": "Describe the image or motion for this clip.",
+      "addSuccess": "Clip added to the timeline.",
+      "addError": "The clip could not be added.",
+      "preview": "Selected clip preview",
+      "previewEmpty": "No generated media for this clip",
+      "previewEmptyHint": "Open clip details to adjust its prompt or start generation.",
+      "details": "Clip details",
+      "clipList": "Clips / Frames",
+      "inspector": "Clip",
+      "selectClip": "Select a clip on the timeline to inspect it.",
+      "kind": "Type",
+      "startsAt": "Starts at",
+      "duration": "Duration",
+      "prompt": "Prompt",
+      "timeline": "Timeline",
+      "timelineZoom": "Timeline zoom",
+      "play": "Play sequence",
+      "pause": "Pause sequence",
+      "restart": "Return to start",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "decisionCue": "Decision cue at {time}",
+      "playhead": "Timeline position {time}",
+      "inspectorForm": {
+        "name": "Name",
+        "model": "Model",
+        "loadingModels": "Loading models…",
+        "noModels": "No compatible models available",
+        "image": "Image",
+        "video": "Video",
+        "media": "Image / video",
+        "noMedia": "No media yet",
+        "replaceMedia": "Replace media",
+        "save": "Save",
+        "saved": "Clip saved.",
+        "saveError": "The clip could not be saved.",
+        "generate": "Generate",
+        "generateStarted": "Generation started.",
+        "generateError": "Generation could not be started.",
+        "replaceSuccess": "Clip media replaced.",
+        "replaceError": "The clip media could not be replaced.",
+        "mediaUnavailable": "Media replacement is unavailable until this project is editable.",
+        "unsupportedMedia": "A clip can only use image or video media."
       }
     },
     "canvas": {
@@ -3137,7 +3208,6 @@
         }
       },
       "workingPreview": {
-        "action": "Preview playtest",
         "pageTitle": "Story Playtest · Interactive Film Studio",
         "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",

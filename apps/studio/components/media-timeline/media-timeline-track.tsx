@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
@@ -37,28 +38,69 @@ type TimelineRangeOperation = {
 export function MediaTimelineTrack({
   children,
   className,
+  dataSlot = "media-timeline-track",
   durationSeconds,
   onSeek,
+  seekOnPointerDrag = false,
+  style,
+  timeAxisWidth,
 }: {
   children: ReactNode;
   className?: string;
+  dataSlot?: string;
   durationSeconds: number;
   onSeek?: (seconds: number) => void;
+  seekOnPointerDrag?: boolean;
+  style?: CSSProperties;
+  timeAxisWidth?: number;
 }) {
   const trackRef = useRef<HTMLDivElement>(null);
-  const width = useElementWidth(trackRef);
+  const seekPointerIdRef = useRef<number | null>(null);
+  const measuredWidth = useElementWidth(trackRef);
+  const width = resolveTimelineWidth(timeAxisWidth, measuredWidth);
   const safeDuration = toPositiveDuration(durationSeconds);
   const context = useMemo(() => ({ durationSeconds: safeDuration, width }), [safeDuration, width]);
+
+  const seekFromClientX = (element: HTMLDivElement, clientX: number) => {
+    if (!onSeek || width <= 0) return;
+    const bounds = element.getBoundingClientRect();
+    onSeek(timelinePixelsToSeconds(clientX - bounds.left, width, safeDuration));
+  };
 
   return (
     <MediaTimelineContext.Provider value={context}>
       <div
         ref={trackRef}
+        data-slot={dataSlot}
         className={cn("relative", className)}
+        style={style}
         onClick={(event) => {
-          if (!onSeek || width <= 0) return;
-          const bounds = event.currentTarget.getBoundingClientRect();
-          onSeek(timelinePixelsToSeconds(event.clientX - bounds.left, width, safeDuration));
+          if (seekOnPointerDrag) return;
+          seekFromClientX(event.currentTarget, event.clientX);
+        }}
+        onPointerDown={(event) => {
+          if (!seekOnPointerDrag || !onSeek || width <= 0 || event.button !== 0) return;
+          seekPointerIdRef.current = event.pointerId;
+          event.currentTarget.setPointerCapture(event.pointerId);
+          seekFromClientX(event.currentTarget, event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (!seekOnPointerDrag || seekPointerIdRef.current !== event.pointerId) return;
+          seekFromClientX(event.currentTarget, event.clientX);
+        }}
+        onPointerUp={(event) => {
+          if (!seekOnPointerDrag || seekPointerIdRef.current !== event.pointerId) return;
+          seekPointerIdRef.current = null;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
+        }}
+        onPointerCancel={(event) => {
+          if (!seekOnPointerDrag || seekPointerIdRef.current !== event.pointerId) return;
+          seekPointerIdRef.current = null;
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+          }
         }}
       >
         {children}
@@ -329,4 +371,9 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 function toPositiveDuration(durationSeconds: number): number {
   return Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : 0.001;
+}
+
+function resolveTimelineWidth(timeAxisWidth: number | undefined, measuredWidth: number): number {
+  if (timeAxisWidth === undefined) return measuredWidth;
+  return Number.isFinite(timeAxisWidth) && timeAxisWidth > 0 ? timeAxisWidth : 0;
 }

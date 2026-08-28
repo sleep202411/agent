@@ -21,6 +21,7 @@ import {
   getStoryStoryboard,
   listStoryGenerationBatches,
   listStoryAssetSpecs,
+  putStoryStoryboardTimeline,
   quoteStoryAssetGenerationBatch,
   retryStoryAssetGenerationMaterialization,
   retryStoryStoryboardClipGeneration,
@@ -74,6 +75,46 @@ describe("Story production API", () => {
     expect(api.get).toHaveBeenCalledWith(
       "/aurora/story-projects/project-1/chapters/chapter-1/asset-specs",
       { requestScope: "project", signal: undefined }
+    );
+  });
+
+  it("atomically replaces a chapter-scoped Storyboard timeline", async () => {
+    vi.mocked(api.put).mockResolvedValueOnce(sequence());
+    const input = {
+      expectedVersion: 1,
+      durationMs: 3_000,
+      clips: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          expectedVersion: 2,
+          stableKey: "clip_1",
+          title: "Opening",
+          kind: "image" as const,
+          startMs: 0,
+          durationMs: 3_000,
+          description: null,
+          negativePrompt: null,
+          imagePrompt: "A quiet opening frame",
+          videoPrompt: null,
+        },
+      ],
+    };
+
+    await putStoryStoryboardTimeline(
+      "project-1",
+      "chapter-1",
+      "sequence-1",
+      "timeline:key-1",
+      input
+    );
+
+    expect(api.put).toHaveBeenCalledWith(
+      "/aurora/story-projects/project-1/chapters/chapter-1/storyboard/sequences/sequence-1/timeline",
+      {
+        data: input,
+        requestScope: "project",
+        headers: { "Idempotency-Key": "timeline:key-1" },
+      }
     );
   });
 
