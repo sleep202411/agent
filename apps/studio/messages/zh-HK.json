@@ -3015,6 +3015,7 @@
       "loadError": "無法載入分鏡。",
       "retry": "重試",
       "plotNode": "情節節點 {index}",
+      "clipCount": "{count} 個片段",
       "noClips": "此序列沒有片段。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。準備好後，可在已儲存的片段上選取「生成」。",
       "status": {
@@ -3046,7 +3047,6 @@
       "backToStoryboard": "返回分鏡",
       "saved": "已儲存",
       "saving": "正在儲存…",
-      "clipCount": "{count} 個片段",
       "seconds": "{value} 秒",
       "addClip": "加入片段",
       "newClipTitle": "未命名片段",

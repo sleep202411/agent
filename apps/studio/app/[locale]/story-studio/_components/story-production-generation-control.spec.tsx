@@ -106,6 +106,25 @@ describe("StoryProductionGenerationControl", () => {
     );
   });
 
+  it("shows a just-completed generation while the authoritative target projection refreshes", async () => {
+    const completed = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [mediaVersion("new-media", "https://media.example/new.jpg")];
+    apiMocks.createAsset.mockResolvedValue(completed);
+    apiMocks.getAsset.mockResolvedValue(completed);
+    await renderControl(assetTarget(null));
+
+    await act(async () => button("generate")?.click());
+
+    await vi.waitFor(() => {
+      const image = container.querySelector<HTMLImageElement>('img[alt="Production target"]');
+      expect(image?.getAttribute("src")).toBe("https://media.example/new.jpg");
+    });
+  });
+
   it("resumes an in-flight clip generation from the authoritative latest pointer and cancels it", async () => {
     const active = generation({
       kind: "storyboard_clip",
@@ -252,6 +271,50 @@ describe("StoryProductionGenerationControl", () => {
     await vi.waitFor(() => expect(apiMocks.getAsset).toHaveBeenCalled());
     const image = container.querySelector<HTMLImageElement>('img[alt="Production target"]');
     expect(image?.getAttribute("src")).toBe("https://media.example/replacement.jpg");
+  });
+
+  it("does not present a completed output from an older target version as current media", async () => {
+    const completed = generation({
+      kind: "storyboard_clip",
+      id: "clip-1",
+      sequenceId: "sequence-1",
+    });
+    completed.targetVersion = 2;
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [
+      mediaVersion("stale-generated-media", "https://media.example/stale-generated.jpg"),
+    ];
+    apiMocks.getClip.mockResolvedValue(completed);
+
+    await renderControl(clipTarget(latest(completed)));
+
+    await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
+    expect(container.querySelector<HTMLImageElement>('img[alt="Production target"]')).toBeNull();
+    expect(button("generate")).not.toBeNull();
+  });
+
+  it("does not revive unselected generation history when the target still has no media", async () => {
+    const completed = generation({
+      kind: "storyboard_clip",
+      id: "clip-1",
+      sequenceId: "sequence-1",
+    });
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [
+      mediaVersion("unselected-history", "https://media.example/unselected-history.jpg"),
+    ];
+    apiMocks.getClip.mockResolvedValue(completed);
+
+    await renderControl(clipTarget(latest(completed)));
+
+    await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
+    expect(container.querySelector<HTMLImageElement>('img[alt="Production target"]')).toBeNull();
   });
 
   async function renderControl(

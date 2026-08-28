@@ -123,9 +123,16 @@ export function StoryProductionGenerationControl({
       ? (generation.mediaVersions[0] ?? null)
       : null;
   // The target's selected media is authoritative. A completed generation is
-  // only a temporary preview fallback while the parent projection catches up;
-  // otherwise an older generation would mask a later manual replacement.
-  const previewMedia = selectedMedia ?? generatedMedia;
+  // only a temporary preview fallback while the same target version's parent
+  // projection catches up. Once the target version moves on, that output is
+  // history rather than current footage and must not appear on the Storyboard
+  // while the editor, preview, and release pipeline correctly treat the clip
+  // as unbound.
+  const previewMedia =
+    selectedMedia ??
+    (submittedGeneration?.id === generation?.id && !targetChanged && allowGeneration
+      ? generatedMedia
+      : null);
 
   const rememberGeneration = (value: StoryProductionGeneration) => {
     setSubmittedGeneration(value);

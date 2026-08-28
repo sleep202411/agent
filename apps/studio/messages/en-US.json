@@ -3015,6 +3015,7 @@
       "loadError": "The storyboard could not be loaded.",
       "retry": "Try again",
       "plotNode": "Plot node {index}",
+      "clipCount": "{count, plural, one {# clip} other {# clips}}",
       "noClips": "This sequence has no clips.",
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
       "status": {
@@ -3046,7 +3047,6 @@
       "backToStoryboard": "Back to Storyboard",
       "saved": "Saved",
       "saving": "Saving…",
-      "clipCount": "{count, plural, one {# clip} other {# clips}}",
       "seconds": "{value}s",
       "addClip": "Add clip",
       "newClipTitle": "Untitled clip",
