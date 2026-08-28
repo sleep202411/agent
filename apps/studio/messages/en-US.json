@@ -1095,10 +1095,6 @@
       "oneTime": "one-time"
     },
     "features": {
-      "imagesPerDay": "{count} image generations per day",
-      "imagesUnlimited": "Unlimited image generations",
-      "videosPerDay": "{count} video generations per day",
-      "videosUnlimited": "Unlimited video generations",
       "sharedCredits": "Shared team compute credits",
       "seatScope": "Creator seats are shared across all projects; viewers and reviewers are free",
       "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",

@@ -1095,10 +1095,6 @@
       "oneTime": "一次性"
     },
     "features": {
-      "imagesPerDay": "每天 {count} 次圖像生成",
-      "imagesUnlimited": "不限次數的圖像生成",
-      "videosPerDay": "每天 {count} 次影片生成",
-      "videosUnlimited": "不限次數的影片生成",
       "sharedCredits": "團隊共享算力積分",
       "seatScope": "創作者席位在所有專案間共享；Viewer 和 Reviewer 不佔席位",
       "concurrentJobs": "{count, plural, other {# 個並行任務}}",
