@@ -1,0 +1,207 @@
+/**
+ * Story Studio projects — same root as PC FizzAgent
+ * (`POST|GET /aurora/story-projects` with `x-fizz-workspace-id`).
+ *
+ * Paths omit `/aurora` — `auroraBaseUrl` already ends in `/aurora`.
+ * StoryProject ids are sovereign (not PlatformProject / section ids).
+ */
+
+import { getLocale } from "@/i18n";
+import { api } from "@/lib/api-client";
+
+const AURORA = { service: "aurora" as const };
+
+export type StudioWorkspace = {
+  id: string;
+  name: string;
+  type?: string;
+};
+
+/** Minimal StoryProject summary for Create / Agent OS. */
+export type StoryProjectSummary = {
+  id: string;
+  workspaceId: string;
+  title: string;
+  summary?: string | null;
+  updatedAt?: string;
+};
+
+export type StoryChapter = {
+  id: string;
+  projectId: string;
+  title: string;
+  rank?: number;
+};
+
+type StoryWorkbench = {
+  project: StoryProjectSummary;
+  chapters: StoryChapter[];
+  chapter: StoryChapter;
+};
+
+type StoryProjectPage = {
+  items: StoryProjectSummary[];
+  nextCursor: string | null;
+};
+
+/** FizzAgent / Story Studio Agent OS mode (PC uses the same). */
+export const AGENT_OS_STORY_WORKBENCH_MODE = "story";
+
+/** @deprecated Use AGENT_OS_STORY_WORKBENCH_MODE */
+export const AGENT_OS_PLATFORM_WORKBENCH_MODE = AGENT_OS_STORY_WORKBENCH_MODE;
+
+function workspaceHeaders(workspaceId: string): Record<string, string> {
+  const id = workspaceId.trim();
+  if (!id) throw new Error("Story Studio requires an active workspace");
+  return { "x-fizz-workspace-id": id };
+}
+
+export const storyProjectsApi = {
+  ensurePersonalWorkspace(signal?: AbortSignal) {
+    return api.post<{ workspace: StudioWorkspace }>("/workspaces/personal/ensure", {
+      ...AURORA,
+      data: {},
+      signal,
+      timeout: 30_000,
+    });
+  },
+
+  listStoryProjects(
+    workspaceId: string,
+    query?: { status?: "active" | "archived"; limit?: number; cursor?: string },
+    signal?: AbortSignal
+  ) {
+    return api.get<StoryProjectPage>("/story-projects", {
+      ...AURORA,
+      params: {
+        status: query?.status ?? "active",
+        limit: query?.limit ?? 100,
+        cursor: query?.cursor,
+      },
+      headers: workspaceHeaders(workspaceId),
+      signal,
+      timeout: 30_000,
+    });
+  },
+
+  createStoryProject(
+    workspaceId: string,
+    input: {
+      title: string;
+      defaultLocale: string;
+      summary?: string | null;
+      visibility?: "private" | "unlisted";
+    },
+    signal?: AbortSignal
+  ) {
+    return api.post<StoryWorkbench>("/story-projects", {
+      ...AURORA,
+      data: {
+        title: input.title,
+        defaultLocale: input.defaultLocale,
+        summary: input.summary ?? null,
+        visibility: input.visibility ?? "private",
+      },
+      headers: workspaceHeaders(workspaceId),
+      signal,
+      timeout: 60_000,
+    });
+  },
+
+  getProjectWorkspace(projectId: string, signal?: AbortSignal) {
+    return api.get<{ workspaceId: string }>(
+      `/story-projects/${encodeURIComponent(projectId)}/workspace`,
+      { ...AURORA, signal, timeout: 30_000 }
+    );
+  },
+
+  getWorkbench(workspaceId: string, projectId: string, signal?: AbortSignal) {
+    return api.get<StoryWorkbench>(`/story-projects/${encodeURIComponent(projectId)}/workbench`, {
+      ...AURORA,
+      headers: workspaceHeaders(workspaceId),
+      signal,
+      timeout: 30_000,
+    });
+  },
+};
+
+/** First chapter for Agent OS `workbenchMode: "story"`. */
+export async function resolveDefaultChapterId(
+  projectId: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const { workspaceId } = await storyProjectsApi.getProjectWorkspace(projectId, signal);
+  if (!workspaceId?.trim()) {
+    throw new Error("Story project has no workspace");
+  }
+  const workbench = await storyProjectsApi.getWorkbench(workspaceId, projectId, signal);
+  const chapterId = workbench.chapter?.id?.trim() || workbench.chapters?.[0]?.id?.trim();
+  if (!chapterId) {
+    throw new Error("Story project has no chapter for Agent OS story mode");
+  }
+  return chapterId;
+}
+
+/** @deprecated Use resolveDefaultChapterId */
+export const resolveDefaultSectionId = resolveDefaultChapterId;
+
+/** Ensure personal workspace, list story projects (does not auto-create). */
+export async function loadAgentProjects(signal?: AbortSignal): Promise<{
+  workspaceId: string;
+  projects: StoryProjectSummary[];
+}> {
+  const { workspace } = await storyProjectsApi.ensurePersonalWorkspace(signal);
+  const page = await storyProjectsApi.listStoryProjects(workspace.id, { limit: 100 }, signal);
+  return { workspaceId: workspace.id, projects: page.items ?? [] };
+}
+
+/**
+ * Create a Story Studio project — same as PC:
+ * `POST /aurora/story-projects` + `x-fizz-workspace-id`.
+ */
+export async function createAgentProject(opts?: {
+  title?: string;
+  summary?: string | null;
+  signal?: AbortSignal;
+}): Promise<{ project: StoryProjectSummary; chapterId: string }> {
+  const { workspace } = await storyProjectsApi.ensurePersonalWorkspace(opts?.signal);
+  const workbench = await storyProjectsApi.createStoryProject(
+    workspace.id,
+    {
+      title: opts?.title?.trim() || "Create",
+      defaultLocale: getLocale(),
+      summary: opts?.summary ?? null,
+      visibility: "private",
+    },
+    opts?.signal
+  );
+  const project = workbench.project;
+  const chapterId = workbench.chapter?.id?.trim() || workbench.chapters?.[0]?.id?.trim();
+  if (!project?.id) {
+    throw new Error("Story Studio did not return a project id");
+  }
+  if (!chapterId) {
+    throw new Error("Story Studio did not return a chapter id");
+  }
+  return { project, chapterId };
+}
+
+/** @deprecated Prefer loadAgentProjects + createAgentProject */
+export async function loadOrCreateAgentProjects(opts?: {
+  createName?: string;
+  signal?: AbortSignal;
+}): Promise<{
+  workspaceId: string;
+  projects: StoryProjectSummary[];
+}> {
+  const loaded = await loadAgentProjects(opts?.signal);
+  if (loaded.projects.length) return loaded;
+  const { project } = await createAgentProject({
+    title: opts?.createName,
+    signal: opts?.signal,
+  });
+  return { workspaceId: loaded.workspaceId, projects: [project] };
+}
+
+/** @deprecated Alias — Story projects use `title`, not platform `name`. */
+export type StudioPlatformProject = StoryProjectSummary & { name?: string };

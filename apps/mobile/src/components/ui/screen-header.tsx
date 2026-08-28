@@ -1,8 +1,7 @@
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
-import { Pressable, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
-import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -12,6 +11,14 @@ export type ScreenHeaderAction = {
   symbol: AppSymbol;
   onPress: () => void;
   accessibilityLabel: string;
+  /** Defaults to primary text. */
+  tintColor?: string;
+  /** Defaults to the muted surface token. */
+  buttonBackgroundColor?: string;
+  /** `rounded` = 8px square (default); `circle` = pill/circle brand CTA. */
+  buttonShape?: "rounded" | "circle";
+  /** When true, show a spinner and ignore presses. */
+  busy?: boolean;
 };
 
 export function ScreenHeader({
@@ -24,6 +31,8 @@ export function ScreenHeader({
   action?: ScreenHeaderAction;
 }) {
   const theme = useTheme();
+  const shape = action?.buttonShape ?? "rounded";
+  const busy = Boolean(action?.busy);
 
   return (
     <View style={styles.header}>
@@ -41,12 +50,29 @@ export function ScreenHeader({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={action.accessibilityLabel}
+          disabled={busy}
           onPress={action.onPress}
-          style={({ pressed }) => pressed && styles.pressed}
+          style={({ pressed }) => pressed && !busy && styles.pressed}
         >
-          <ThemedView type="backgroundElement" style={styles.iconButton}>
-            <SymbolView name={action.symbol} size={18} tintColor={theme.text} />
-          </ThemedView>
+          <View
+            style={[
+              styles.iconButton,
+              shape === "circle" && styles.iconButtonCircle,
+              {
+                backgroundColor: action.buttonBackgroundColor ?? theme.backgroundElement,
+              },
+            ]}
+          >
+            {busy ? (
+              <ActivityIndicator color={action.tintColor ?? theme.text} size="small" />
+            ) : (
+              <SymbolView
+                name={action.symbol}
+                size={shape === "circle" ? 20 : 18}
+                tintColor={action.tintColor ?? theme.text}
+              />
+            )}
+          </View>
         </Pressable>
       ) : null}
     </View>
@@ -76,6 +102,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
+  },
+  iconButtonCircle: {
+    borderRadius: 20,
   },
   pressed: {
     opacity: 0.72,

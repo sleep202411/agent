@@ -1,0 +1,292 @@
+/**
+ * Mobile client for Agent OS product gateway (`/aurora/agent-os/*`).
+ *
+ * Paths omit the `/aurora` prefix because `auroraBaseUrl` already ends in
+ * `/aurora` (same convention as ip-commerce / crews).
+ *
+ * Contract: docs/agent-os/mobile-core-endpoints.md + Nest gateway DTOs.
+ * Transport: poll `GET .../runs/:runId/events`. Ably token is optional only.
+ */
+
+import { api } from "@/lib/api-client";
+
+export type AgentOsRunStatus =
+  | "queued"
+  | "running"
+  | "waiting_for_approval"
+  | "waiting_for_input"
+  | "waiting_for_external"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type AgentOsPermissionMode = "ask" | "smart" | "full";
+
+export type AgentOsDisplayLocale = "en-US" | "zh-CN" | "zh-HK";
+
+export interface AgentOsEvent {
+  id: string;
+  protocolVersion: string;
+  sessionId: string;
+  runId: string;
+  conversationId: string;
+  sequence: number;
+  timestamp: string;
+  type: string;
+  data: Record<string, unknown>;
+}
+
+export interface AgentOsPendingApproval {
+  kind: string;
+  toolId: string;
+  toolCallId: string;
+  arguments: unknown;
+  title: string;
+  description: string;
+  approvalId: string;
+  turnId?: string;
+}
+
+export interface AgentOsPendingUserInputQuestion {
+  id: string;
+  header?: string;
+  question: string;
+  options: Array<{ value: string; label: string; description?: string }>;
+}
+
+/** Snapshot while status=waiting_for_input (UserInputRequired payload). */
+export interface AgentOsPendingUserInput {
+  requestId: string;
+  questions: AgentOsPendingUserInputQuestion[];
+  turnId?: string;
+}
+
+export interface AgentOsRunResponse {
+  runId: string;
+  status: AgentOsRunStatus;
+  pendingApproval?: AgentOsPendingApproval | null;
+  pendingUserInput?: AgentOsPendingUserInput | AgentOsPendingUserInputQuestion[] | null;
+  pendingExternal?: unknown;
+  events?: AgentOsEvent[];
+  assistantText?: string | null;
+  source?: string;
+}
+
+export interface AgentOsStartRunInput {
+  projectId: string;
+  message: string;
+  modelProfileId: string;
+  conversationId: string;
+  clientSubmissionId: string;
+  turnId: string;
+  messageId: string;
+  attachmentIds?: string[];
+  permissionMode?: AgentOsPermissionMode;
+  workbenchMode: string;
+  workbenchContext?: { chapterId?: string; sectionId?: string };
+  skillIds?: string[];
+  projectSkillInstallationIds?: string[];
+  disabledDefaultSkillInstallationIds?: string[];
+}
+
+export interface AgentOsApprovalInput {
+  runId: string;
+  projectId: string;
+  conversationId: string;
+  modelProfileId: string;
+  decision: "approve" | "reject";
+  approvalId: string;
+  responseId: string;
+  responseText: string;
+  locale: AgentOsDisplayLocale;
+  permissionMode?: AgentOsPermissionMode;
+}
+
+export interface AgentOsUserInputAnswer {
+  runId: string;
+  projectId: string;
+  conversationId: string;
+  modelProfileId: string;
+  requestId: string;
+  responseId: string;
+  answers: Record<string, string>;
+  permissionMode?: AgentOsPermissionMode;
+}
+
+export interface AgentOsConversationRun {
+  runId: string;
+  status: string;
+  modelProfileId: string;
+  events: AgentOsEvent[];
+  pendingApproval: AgentOsPendingApproval | null;
+  pendingUserInput?: AgentOsPendingUserInput | AgentOsPendingUserInputQuestion[] | null;
+  pendingExternal?: unknown;
+  assistantText: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentOsConversationHistory {
+  conversationId: string | null;
+  runs: AgentOsConversationRun[];
+}
+
+export interface AgentOsModelProfile {
+  id: string;
+  label: string;
+  hint?: string;
+}
+
+/** Normalize gateway pendingUserInput (object with questions, or bare question list). */
+export function normalizePendingUserInput(
+  raw: AgentOsRunResponse["pendingUserInput"]
+): AgentOsPendingUserInput | null {
+  if (!raw) return null;
+  if (Array.isArray(raw)) {
+    if (!raw.length) return null;
+    return { requestId: "", questions: raw };
+  }
+  if (typeof raw !== "object") return null;
+  const requestId = typeof raw.requestId === "string" ? raw.requestId : "";
+  const questions = Array.isArray(raw.questions) ? raw.questions : [];
+  if (!requestId || !questions.length) return null;
+  return {
+    requestId,
+    questions,
+    turnId: typeof raw.turnId === "string" ? raw.turnId : undefined,
+  };
+}
+
+const AGENT_OS = "/agent-os";
+const AURORA = { service: "aurora" as const };
+
+export const agentOsApi = {
+  listModels(signal?: AbortSignal) {
+    return api.get<{ models: AgentOsModelProfile[] }>(`${AGENT_OS}/models`, {
+      ...AURORA,
+      signal,
+      timeout: 20_000,
+    });
+  },
+
+  getConversation(projectId: string, conversationId?: string, signal?: AbortSignal) {
+    return api.get<AgentOsConversationHistory>(
+      `${AGENT_OS}/projects/${encodeURIComponent(projectId)}/conversation`,
+      {
+        ...AURORA,
+        params: conversationId ? { conversationId } : undefined,
+        signal,
+        timeout: 30_000,
+      }
+    );
+  },
+
+  startRun(input: AgentOsStartRunInput, signal?: AbortSignal) {
+    if (!input.modelProfileId.trim()) {
+      return Promise.reject(new Error("modelProfileId is required"));
+    }
+    return api.post<AgentOsRunResponse>(`${AGENT_OS}/runs`, {
+      ...AURORA,
+      data: {
+        projectId: input.projectId,
+        conversationId: input.conversationId,
+        clientSubmissionId: input.clientSubmissionId,
+        turnId: input.turnId,
+        messageId: input.messageId,
+        message: input.message,
+        modelProfileId: input.modelProfileId,
+        workbenchMode: input.workbenchMode,
+        attachmentIds: input.attachmentIds,
+        permissionMode: input.permissionMode,
+        workbenchContext: input.workbenchContext,
+        skillIds: input.skillIds,
+        projectSkillInstallationIds: input.projectSkillInstallationIds,
+        disabledDefaultSkillInstallationIds: input.disabledDefaultSkillInstallationIds,
+      },
+      signal,
+      timeout: 60_000,
+    });
+  },
+
+  listEvents(runId: string, projectId: string, after = 0, signal?: AbortSignal) {
+    return api.get<AgentOsRunResponse>(`${AGENT_OS}/runs/${encodeURIComponent(runId)}/events`, {
+      ...AURORA,
+      params: { projectId, after },
+      signal,
+      timeout: 30_000,
+    });
+  },
+
+  resolveApproval(input: AgentOsApprovalInput, signal?: AbortSignal) {
+    return api.post<AgentOsRunResponse>(
+      `${AGENT_OS}/runs/${encodeURIComponent(input.runId)}/approvals`,
+      {
+        ...AURORA,
+        data: {
+          approvalId: input.approvalId,
+          responseId: input.responseId,
+          decision: input.decision,
+          responseText: input.responseText,
+          locale: input.locale,
+          conversationId: input.conversationId,
+          projectId: input.projectId,
+          modelProfileId: input.modelProfileId,
+          permissionMode: input.permissionMode,
+        },
+        signal,
+        timeout: 60_000,
+      }
+    );
+  },
+
+  answerUserInput(input: AgentOsUserInputAnswer, signal?: AbortSignal) {
+    return api.post<AgentOsRunResponse>(
+      `${AGENT_OS}/runs/${encodeURIComponent(input.runId)}/user-input`,
+      {
+        ...AURORA,
+        data: {
+          requestId: input.requestId,
+          responseId: input.responseId,
+          answers: input.answers,
+          conversationId: input.conversationId,
+          projectId: input.projectId,
+          modelProfileId: input.modelProfileId,
+          permissionMode: input.permissionMode,
+        },
+        signal,
+        timeout: 60_000,
+      }
+    );
+  },
+
+  cancelRun(runId: string, projectId: string, reason?: string, signal?: AbortSignal) {
+    return api.post<AgentOsRunResponse>(`${AGENT_OS}/runs/${encodeURIComponent(runId)}/cancel`, {
+      ...AURORA,
+      data: { projectId, reason },
+      signal,
+      timeout: 15_000,
+    });
+  },
+
+  realtimeToken(projectId: string, conversationId: string, signal?: AbortSignal) {
+    return api.post<{
+      channel: string;
+      ttlMs: number;
+      tokenRequest: Record<string, unknown>;
+    }>(`${AGENT_OS}/realtime/token`, {
+      ...AURORA,
+      data: { projectId, conversationId },
+      signal,
+      timeout: 15_000,
+    });
+  },
+
+  health(signal?: AbortSignal) {
+    return api.get<{ ok: boolean; worker?: { ok: boolean } }>(`${AGENT_OS}/health`, {
+      ...AURORA,
+      signal,
+      timeout: 15_000,
+    });
+  },
+};

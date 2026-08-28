@@ -39,6 +39,8 @@
     "react-native": "0.86.0",
     "react-native-confirmation-code-field": "^9.0.0",
     "react-native-gesture-handler": "~2.32.0",
+    "react-native-keyboard-controller": "1.21.9",
+    "react-native-markdown-display": "^7.0.2",
     "react-native-qrcode-svg": "^6.3.21",
     "react-native-reanimated": "4.5.0",
     "react-native-reanimated-carousel": "^4.0.3",
