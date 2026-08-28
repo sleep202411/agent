@@ -34,6 +34,90 @@ export interface ExperienceMediaPlaybackHandle {
   setMuted(muted: boolean): void;
 }
 
+interface MediaReadinessWaiter {
+  resolve: () => void;
+  reject: (reason: unknown) => void;
+}
+
+/**
+ * A source-scoped readiness latch for imperative playback.
+ *
+ * Vidstack deliberately rejects `player.play()` before `can-play`. The host,
+ * however, can receive a playback handle before Vidstack has attached its
+ * native provider, especially when the viewer presses Start immediately. That
+ * is loading, not failure: callers wait here until the source becomes playable.
+ * A source swap aborts the old wait so a stale clip can never start later.
+ */
+export class ExperienceMediaReadinessGate {
+  private key: string;
+  private ready = false;
+  private failure: unknown = null;
+  private readonly waiters = new Set<MediaReadinessWaiter>();
+
+  constructor(key: string) {
+    this.key = key;
+  }
+
+  wait(key: string): Promise<void> {
+    if (key !== this.key) return Promise.reject(mediaReadinessAbort());
+    if (this.failure !== null) return Promise.reject(this.failure);
+    if (this.ready) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      this.waiters.add({ resolve, reject });
+    });
+  }
+
+  markReady(key: string): void {
+    if (key !== this.key || this.ready || this.failure !== null) return;
+    this.ready = true;
+    this.settleWaiters((waiter) => waiter.resolve());
+  }
+
+  fail(key: string, error: unknown): void {
+    if (key !== this.key || this.failure !== null) return;
+    this.failure = error;
+    this.settleWaiters((waiter) => waiter.reject(error));
+  }
+
+  reset(key: string): void {
+    if (key === this.key) {
+      // React Strict Mode replays layout-effect setup after immediately running
+      // its cleanup. The cleanup must reject a pending play on real unmount,
+      // but the replay is the same live source and must reopen that cancelled
+      // latch or every later play request will inherit the synthetic abort.
+      if (this.failure instanceof MediaReadinessAbortError) {
+        this.ready = false;
+        this.failure = null;
+      }
+      return;
+    }
+    this.cancel(this.key);
+    this.key = key;
+    this.ready = false;
+    this.failure = null;
+  }
+
+  cancel(key: string): void {
+    if (key !== this.key || this.failure !== null) return;
+    const error = mediaReadinessAbort();
+    this.failure = error;
+    this.settleWaiters((waiter) => waiter.reject(error));
+  }
+
+  private settleWaiters(settle: (waiter: MediaReadinessWaiter) => void): void {
+    this.waiters.forEach(settle);
+    this.waiters.clear();
+  }
+}
+
+class MediaReadinessAbortError extends Error {
+  override readonly name = "AbortError";
+}
+
+function mediaReadinessAbort(): Error {
+  return new MediaReadinessAbortError("Media source changed before playback became ready.");
+}
+
 /**
  * The clip the element is sourced from. Held in state, one render behind the
  * props, because `source` is the load-bearing field: writing it blanks the
@@ -136,6 +220,9 @@ export function ExperienceMediaPlayer({
   const [rendered, setRendered] = useState(clip);
   const [stillFrameHeld, setStillFrameHeld] = useState(false);
   const { durationSeconds: renderedDuration } = rendered;
+  const readinessKey = `${rendered.identity}\u0000${rendered.uri}`;
+  const readinessRef = useRef<ExperienceMediaReadinessGate | null>(null);
+  if (!readinessRef.current) readinessRef.current = new ExperienceMediaReadinessGate(readinessKey);
   useLayoutEffect(() => {
     if (rendered === clip) return;
     // A layout effect because of what is still true at this point: the DOM holds
@@ -154,6 +241,12 @@ export function ExperienceMediaPlayer({
     }
     setRendered(clip);
   }, [clip, rendered]);
+  useLayoutEffect(() => {
+    const readiness = readinessRef.current;
+    if (!readiness) return;
+    readiness.reset(readinessKey);
+    return () => readiness.cancel(readinessKey);
+  }, [readinessKey]);
   useEffect(() => {
     mutedRef.current = muted;
     const player = playerRef.current;
@@ -174,7 +267,12 @@ export function ExperienceMediaPlayer({
     // with no `playing` coming to take it down.
     onPlaybackHandle({
       playbackIdentity: rendered.identity,
-      play: () => playWithSoundFallback(soundFallbackTarget(player), mutedRef, onSoundBlocked),
+      play: () =>
+        playWithSoundFallback(
+          soundFallbackTarget(player, readinessRef.current!, readinessKey),
+          mutedRef,
+          onSoundBlocked
+        ),
       pause: () => pauseMediaPlayer(player),
       seek: (seconds) => seekMediaPlayer(player, seconds),
       setMuted: (nextMuted) => {
@@ -183,7 +281,7 @@ export function ExperienceMediaPlayer({
       },
     });
     return () => onPlaybackHandle(null);
-  }, [onPlaybackHandle, onSoundBlocked, rendered.identity, rendered.uri]);
+  }, [onPlaybackHandle, onSoundBlocked, readinessKey, rendered.identity, rendered.uri]);
   return (
     <MediaPlayer
       ref={playerRef}
@@ -206,6 +304,7 @@ export function ExperienceMediaPlayer({
       keyTarget="player"
       logLevel="silent"
       onCanPlay={() => {
+        readinessRef.current?.markReady(readinessKey);
         const player = playerRef.current;
         if (player) synchronizePlayerContract(player, renderedDuration, mutedRef.current);
       }}
@@ -220,7 +319,11 @@ export function ExperienceMediaPlayer({
       // The element's own decode/source failure. Always fatal, never routine:
       // `MediaErrorDetail` is not a DOM exception and carries no `name` to
       // classify, so it goes straight to the host.
-      onError={(detail) => onPlaybackError(detail.message)}
+      onError={(detail) => {
+        const error = new Error(detail.message);
+        readinessRef.current?.fail(readinessKey, error);
+        onPlaybackError(detail.message);
+      }}
       // `play-fail` re-delivers the rejected `play()` DOM exception, so the
       // WHOLE error is handed to the classifier. Reducing it to `.message`
       // first — what this did before — threw away the `name` the verdict is
@@ -392,9 +495,13 @@ export interface ExperienceSoundFallbackTarget {
   setMuted(muted: boolean): void;
 }
 
-function soundFallbackTarget(player: MediaPlayerInstance): ExperienceSoundFallbackTarget {
+function soundFallbackTarget(
+  player: MediaPlayerInstance,
+  readiness: ExperienceMediaReadinessGate,
+  readinessKey: string
+): ExperienceSoundFallbackTarget {
   return {
-    play: () => playMediaPlayer(player),
+    play: () => playMediaPlayerWhenReady(player, readiness, readinessKey),
     setMuted: (muted) => applyPlayerMuted(player, muted),
   };
 }
@@ -479,31 +586,35 @@ export async function playWithSoundFallback(
   }
 }
 
-function playMediaPlayer(player: MediaPlayerInstance): Promise<void> {
-  const provider = player.provider;
-  if (
-    provider?.type === "video" ||
-    provider?.type === "audio" ||
-    provider?.type === "hls" ||
-    provider?.type === "dash"
-  ) {
-    return provider.media.play();
-  }
+/**
+ * Preserve playback intent across a source change.
+ *
+ * Vidstack keeps the native provider mounted while writing the next source, so
+ * "provider exists" does not mean that source is playable. Calling native
+ * `play()` in that interval can reject with AbortError when the load completes;
+ * the interruption is routine, but without a queued retry the new clip remains
+ * paused forever. The source-scoped latch is therefore authoritative even when
+ * the provider already exists.
+ */
+export async function playMediaPlayerWhenReady(
+  player: MediaPlayerInstance,
+  readiness: ExperienceMediaReadinessGate,
+  readinessKey: string
+): Promise<void> {
+  await readiness.wait(readinessKey);
+  const readyMedia = providerMedia(player);
+  if (readyMedia) return readyMedia.play();
   return player.play();
 }
 
 function pauseMediaPlayer(player: MediaPlayerInstance): void {
-  const provider = player.provider;
-  if (
-    provider?.type === "video" ||
-    provider?.type === "audio" ||
-    provider?.type === "hls" ||
-    provider?.type === "dash"
-  ) {
-    provider.media.pause();
+  const media = providerMedia(player);
+  if (media) {
+    media.pause();
     return;
   }
-  void player.pause();
+  // With no provider attached there is nothing playing yet. Calling Vidstack's
+  // guarded pause here would manufacture the same not-ready error as play.
 }
 
 function seekMediaPlayer(player: MediaPlayerInstance, seconds: number): void {
@@ -523,6 +634,19 @@ function seekMediaPlayer(player: MediaPlayerInstance, seconds: number): void {
 
 function emitValidTimeUpdate(onTimeUpdate: (seconds: number) => void, seconds: number): void {
   if (Number.isFinite(seconds) && seconds >= 0) onTimeUpdate(seconds);
+}
+
+function providerMedia(player: MediaPlayerInstance): HTMLMediaElement | null {
+  const provider = player.provider;
+  if (
+    provider?.type === "video" ||
+    provider?.type === "audio" ||
+    provider?.type === "hls" ||
+    provider?.type === "dash"
+  ) {
+    return provider.media;
+  }
+  return null;
 }
 
 function synchronizePlayerContract(

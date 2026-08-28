@@ -105,49 +105,33 @@ export function ExperienceSpatialLayer({
 }) {
   const layerRef = useRef<HTMLDivElement>(null);
   const viewportSize = useElementSize(layerRef);
-  const settledRef = useRef<{ sceneId: string; gestureIds: Set<string> }>({
-    sceneId: scene.sceneId,
-    gestureIds: new Set(),
-  });
-  const [settledVersion, setSettledVersion] = useState(0);
-  if (settledRef.current.sceneId !== scene.sceneId) {
-    settledRef.current = { sceneId: scene.sceneId, gestureIds: new Set() };
-  }
-  const settledGestureIds = settledRef.current.gestureIds;
+  const [settledGestureIds, setSettledGestureIds] = useState<ReadonlySet<string>>(() => new Set());
+  const settledRef = useRef(settledGestureIds);
   // Timeline-control gate state per gesture, lifted from PressHoldControl so
-  // the host can pause/resume the scene media. Resets with the scene, like
-  // the settled set above.
-  const gateStatesRef = useRef<{ sceneId: string; gating: Map<string, boolean> }>({
-    sceneId: scene.sceneId,
-    gating: new Map(),
-  });
-  const [gateVersion, setGateVersion] = useState(0);
-  if (gateStatesRef.current.sceneId !== scene.sceneId) {
-    gateStatesRef.current = { sceneId: scene.sceneId, gating: new Map() };
-  }
+  // the host can pause/resume the scene media. The host keys this layer by
+  // scene id, so both collections have exactly one scene-local lifecycle.
+  const [gateStates, setGateStates] = useState<ReadonlyMap<string, boolean>>(() => new Map());
   const handleGateStateChange = useCallback((gestureId: string, gating: boolean) => {
-    const current = gateStatesRef.current;
-    if (current.gating.get(gestureId) === gating) return;
-    current.gating.set(gestureId, gating);
-    setGateVersion((version) => version + 1);
+    setGateStates((current) => {
+      if (current.get(gestureId) === gating) return current;
+      const next = new Map(current);
+      next.set(gestureId, gating);
+      return next;
+    });
   }, []);
-  const timelineHoldGate = [...gateStatesRef.current.gating.values()].some(Boolean);
+  const timelineHoldGate = [...gateStates.values()].some(Boolean);
   useEffect(() => {
     onTimelineHoldGateChange?.(timelineHoldGate);
   }, [onTimelineHoldGateChange, timelineHoldGate]);
 
-  const markGestureSettled = useCallback(
-    (gestureId: string) => {
-      if (settledRef.current.sceneId !== scene.sceneId) {
-        settledRef.current = { sceneId: scene.sceneId, gestureIds: new Set() };
-      }
-      if (settledRef.current.gestureIds.has(gestureId)) return false;
-      settledRef.current.gestureIds.add(gestureId);
-      setSettledVersion((version) => version + 1);
-      return true;
-    },
-    [scene.sceneId]
-  );
+  const markGestureSettled = useCallback((gestureId: string) => {
+    if (settledRef.current.has(gestureId)) return false;
+    const next = new Set(settledRef.current);
+    next.add(gestureId);
+    settledRef.current = next;
+    setSettledGestureIds(next);
+    return true;
+  }, []);
 
   const sceneHandlesGestureEvent = useCallback(
     (gestureId: string, eventType: "gesture.cancelled" | "gesture.timed-out") =>
@@ -172,7 +156,7 @@ export function ExperienceSpatialLayer({
         ) {
           return markGestureSettled(event.sourceId);
         }
-        return !settledRef.current.gestureIds.has(event.sourceId);
+        return !settledRef.current.has(event.sourceId);
       });
       if (forwarded.length > 0) onEvents(forwarded);
     },
@@ -247,7 +231,7 @@ export function ExperienceSpatialLayer({
     runtimeState,
     scene,
     sceneTimeMs,
-    settledVersion,
+    settledGestureIds,
     viewportSize,
   ]);
   const tapPresentations = useMemo(() => {
@@ -297,7 +281,7 @@ export function ExperienceSpatialLayer({
     runtimeState,
     scene,
     sceneTimeMs,
-    settledVersion,
+    settledGestureIds,
     viewportSize,
   ]);
   const swipePresentations = useMemo(() => {
@@ -347,7 +331,7 @@ export function ExperienceSpatialLayer({
     runtimeState,
     scene,
     sceneTimeMs,
-    settledVersion,
+    settledGestureIds,
     viewportSize,
   ]);
 
@@ -356,7 +340,7 @@ export function ExperienceSpatialLayer({
       if (
         !gesture.activeWindow ||
         sceneTimeMs < gesture.activeWindow.endMs ||
-        settledRef.current.gestureIds.has(gesture.gestureId) ||
+        settledRef.current.has(gesture.gestureId) ||
         !sceneHandlesGestureEvent(gesture.gestureId, "gesture.timed-out")
       ) {
         return [];
