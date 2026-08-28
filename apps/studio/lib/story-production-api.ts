@@ -286,6 +286,7 @@ export interface PatchStoryStoryboardClipInput {
 
 export type StoryGenerationBatchStatus =
   | "awaiting_confirmation"
+  | "blocked"
   | "queued"
   | "running"
   | "cancelling"
@@ -318,6 +319,7 @@ export interface StoryGenerationBatch {
   projectId: string;
   chapterId: string;
   status: StoryGenerationBatchStatus;
+  dispatchMode: "parallel" | "sequential";
   totalPoints: number;
   availablePoints: string | null;
   itemCount: number;
@@ -325,13 +327,17 @@ export interface StoryGenerationBatch {
   quoteExpiresAt: string;
   confirmedAt: string | null;
   completedAt: string | null;
+  blockedAt: string | null;
+  blockReason: unknown;
   canCancel: boolean;
   counts: Record<StoryGenerationBatchItemStatus, number>;
   items: Array<{
     id: string;
     ordinal: number;
     status: StoryGenerationBatchItemStatus;
+    targetKind: "asset_spec" | "storyboard_clip";
     targetId: string;
+    sequenceId: string | null;
     targetVersion: number;
     outputKind: StoryStoryboardClipKind;
     modelId: string;
@@ -345,22 +351,30 @@ export interface StoryGenerationBatch {
 export function storyGenerationBatchFailure(
   batch: StoryGenerationBatch
 ): StoryGenerationBatchItemError | null {
+  const blocked = generationBatchError(batch.blockReason);
+  if (blocked) return blocked;
   for (const item of batch.items) {
-    if (item.status !== "failed" || !item.error || typeof item.error !== "object") continue;
-    const error = item.error as Record<string, unknown>;
-    const code = typeof error.code === "string" ? error.code.trim() : "";
-    const message = typeof error.message === "string" ? error.message.trim() : "";
-    if (!code && !message) continue;
-    return {
-      code: code || null,
-      message: message || null,
-      retryable: typeof error.retryable === "boolean" ? error.retryable : null,
-      requiredAmount: stringDetail(error.requiredAmount),
-      availableBalance: stringDetail(error.availableBalance),
-      unavailableAmount: stringDetail(error.unavailableAmount),
-    };
+    if (item.status !== "failed") continue;
+    const failure = generationBatchError(item.error);
+    if (failure) return failure;
   }
   return null;
+}
+
+function generationBatchError(value: unknown): StoryGenerationBatchItemError | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const error = value as Record<string, unknown>;
+  const code = typeof error.code === "string" ? error.code.trim() : "";
+  const message = typeof error.message === "string" ? error.message.trim() : "";
+  if (!code && !message) return null;
+  return {
+    code: code || null,
+    message: message || null,
+    retryable: typeof error.retryable === "boolean" ? error.retryable : null,
+    requiredAmount: stringDetail(error.requiredAmount),
+    availableBalance: stringDetail(error.availableBalance),
+    unavailableAmount: stringDetail(error.unavailableAmount),
+  };
 }
 
 function stringDetail(value: unknown): string | null {
@@ -533,6 +547,17 @@ export async function cancelStoryGenerationBatch(
 ): Promise<StoryGenerationBatch> {
   return api.post<StoryGenerationBatch>(
     `${generationBatchesPath(projectId, chapterId)}/${encodeURIComponent(batchId)}/cancel`,
+    { requestScope: "project" }
+  );
+}
+
+export async function resumeStoryGenerationBatch(
+  projectId: string,
+  chapterId: string,
+  batchId: string
+): Promise<StoryGenerationBatch> {
+  return api.post<StoryGenerationBatch>(
+    `${generationBatchesPath(projectId, chapterId)}/${encodeURIComponent(batchId)}/resume`,
     { requestScope: "project" }
   );
 }

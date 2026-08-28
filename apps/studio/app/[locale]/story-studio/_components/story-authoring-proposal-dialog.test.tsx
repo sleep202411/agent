@@ -269,6 +269,49 @@ describe("StoryAuthoringProposalDialog exact production review", () => {
     );
   });
 
+  it("keeps H5 Asset Specs as a count summary without exposing future asset cards", async () => {
+    const proposal = {
+      schemaVersion: "story-asset-proposal-v1",
+      title: "Sequential asset plan",
+      summary: "Assets will be generated one at a time.",
+      assetPlan: {
+        assetSpecs: [
+          ...Array.from({ length: 4 }, (_, index) => ({
+            stableKey: `character.${index + 1}`,
+            kind: "character",
+            name: `Character ${index + 1}`,
+            description: `Character ${index + 1} description.`,
+            imagePrompt: `Character ${index + 1} prompt.`,
+            sourceNodeIds: ["scene.1"],
+          })),
+          {
+            stableKey: "location.1",
+            kind: "location",
+            name: "Location 1",
+            description: "Location 1 description.",
+            imagePrompt: "Location 1 prompt.",
+            sourceNodeIds: ["scene.1"],
+          },
+        ],
+      },
+    };
+
+    await act(async () => {
+      root.render(
+        <StoryAuthoringProposalContent proposal={proposal as never} embedded mobileAutoGenerate />
+      );
+    });
+
+    const review = container.querySelector('[data-mobile-asset-summary="true"]');
+    expect(review).not.toBeNull();
+    expect(review?.textContent).toContain("proposalStage.assets.mobileDescription:5");
+    expect(review?.textContent).toContain("proposal.metrics.characters");
+    expect(review?.textContent).toContain("proposal.metrics.locations");
+    expect(container.querySelector("[data-asset-row]")).toBeNull();
+    expect(container.querySelector('[data-testid="asset-kind-dialog"]')).toBeNull();
+    expect(container.textContent).not.toContain("Character 1");
+  });
+
   async function render(proposal: unknown) {
     await act(async () => {
       root.render(

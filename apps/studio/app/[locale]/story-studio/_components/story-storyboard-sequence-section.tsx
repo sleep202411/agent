@@ -36,7 +36,7 @@ function StoryClipTile({
   const [detailOpen, setDetailOpen] = useState(false);
   const KindIcon = clip.kind === "video" ? IconVideo : IconPhoto;
   return (
-    <div className="relative w-[200px]">
+    <div className="relative w-[min(78vw,240px)] shrink-0 snap-start sm:w-[220px]">
       <span
         role="img"
         aria-label={boardT(`clipKind.${clip.kind}`)}
@@ -229,7 +229,7 @@ export function StoryStoryboardSequenceSection({
       {sequence.clips.length === 0 ? (
         <p className="mt-4 text-sm text-white/64">{t("noClips")}</p>
       ) : (
-        <div className="mt-4 flex flex-wrap gap-4">
+        <div className="mt-4 flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
           {sequence.clips.map((clip) => (
             <StoryClipTile
               key={clip.id}

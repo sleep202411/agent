@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { useQuery } from "@tanstack/react-query";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 import {
   IconAlertCircle,
   IconAlertTriangle,
@@ -63,6 +64,7 @@ import { toAgentOsIssue, type AgentOsIssue } from "./agent-os-issue";
 import {
   deriveAgentActivity,
   useAgentOsRun,
+  type AgentOsChatMessage,
   type AgentOsTranscriptArtifact,
 } from "./use-agent-os-run";
 import { useOptionalProjectContext } from "@/app/[locale]/project/_components/project-context";
@@ -140,7 +142,7 @@ interface AgentOsPanelProps {
   onClose?: () => void;
   className?: string;
   variant?: "floating" | "docked";
-  /** Wrap or replace the composer while a blocking decision is pending. */
+  /** Host-owned transform for exceptional composer states. */
   composerGate?: (composer: ReactNode) => ReactNode;
   /** Host renderer for a domain-rich approval; null falls back to the generic card. */
   approvalGate?: (input: {
@@ -150,6 +152,8 @@ interface AgentOsPanelProps {
   }) => { composer: ReactNode } | null;
   /** Host renderer for durable, journal-backed domain artifacts. */
   artifactRenderer?: (artifact: AgentOsTranscriptArtifact) => ReactNode;
+  /** Host presentation override for replaying legacy Assistant copy. */
+  assistantTextResolver?: (content: string, message: AgentOsChatMessage) => string;
   /** Host-owned work that participates in the Agent's single activity line. */
   activityStatus?: AgentOsActivityStatus | null;
   /** Host-derived copy for the current product phase. */
@@ -177,6 +181,7 @@ function AgentOsProjectSession({
   composerGate,
   approvalGate,
   artifactRenderer,
+  assistantTextResolver,
   activityStatus,
   composerPlaceholder,
   composerPrefill,
@@ -189,6 +194,7 @@ function AgentOsProjectSession({
   const transcriptLocale = rawLocale;
   const t = useTranslations("agentOs");
   const ts = useTranslations("project.skills");
+  const tStoryProfile = useTranslations("storyStudio.canvas.filmFoundation.profile");
   const openSkills = useProjectUIStore((state) => state.openSkills);
   const projectContext = useOptionalProjectContext();
   const projectSkillsQuery = useQuery({
@@ -653,6 +659,9 @@ function AgentOsProjectSession({
         locale: transcriptLocale,
         modelProfileId,
         permissionMode,
+        ...(workbenchContext?.experience === "mobile_h5"
+          ? { experience: "mobile_h5" as const }
+          : {}),
       });
       return true;
     } catch (error) {
@@ -673,6 +682,38 @@ function AgentOsProjectSession({
       setBusy(false);
     }
   };
+
+  const resolveProfileOptionLabel = useCallback(
+    (questionId: string, value: string, fallback: string): string => {
+      if (questionId === "aspect_ratio") {
+        if (value === "portrait_9_16" || value === "landscape_16_9") {
+          return tStoryProfile(`frameProfiles.${value}`);
+        }
+      }
+      if (questionId === "target_runtime") {
+        if (value === "short_5_15" || value === "medium_15_30" || value === "long_30_60") {
+          return tStoryProfile(`durationPresets.${value}`);
+        }
+      }
+      if (
+        questionId === "visual_direction" &&
+        STORY_VISUAL_STYLE_SKILL_SLUGS.some((candidate) => candidate === value)
+      ) {
+        return tStoryProfile(
+          `visualStyles.${value as (typeof STORY_VISUAL_STYLE_SKILL_SLUGS)[number]}`
+        );
+      }
+      if (questionId === "story_language") {
+        try {
+          return new Intl.DisplayNames([transcriptLocale], { type: "language" }).of(value) ?? value;
+        } catch {
+          return fallback;
+        }
+      }
+      return fallback;
+    },
+    [tStoryProfile, transcriptLocale]
+  );
 
   const workerStatus =
     workerOk === false ? t("workerOffline") : workerOk === true ? t("workerOnline") : t("subtitle");
@@ -704,13 +745,11 @@ function AgentOsProjectSession({
       })
     : null;
 
-  // Every user decision replaces the input box (Claude/Codex
-  // approve-to-continue). Agent OS HITL wins over any host gate (for example
-  // story's proposal gate): the graph is paused, so this is the only way
-  // forward. The decision control stays composer-only; durable review content
-  // is rendered independently from Artifact events in the transcript.
-  const combinedComposerGate = (composerNode: ReactNode): ReactNode => {
-    const gated = composerGate ? composerGate(composerNode) : composerNode;
+  // Agent OS decisions pause the active run but no longer displace the input.
+  // Keeping the composer mounted preserves the creator's draft and gives the
+  // mobile layout one stable bottom anchor. Submission and composer tools stay
+  // disabled through `turnBusy` until the decision resolves.
+  const composerDecision: ReactNode = (() => {
     const inputRequest = state.pendingUserInput;
     if (inputRequest) {
       return (
@@ -725,11 +764,12 @@ function AgentOsProjectSession({
             submit: t("userInput.submit"),
             submitting: t("userInput.submitting"),
           }}
+          resolveProfileOptionLabel={resolveProfileOptionLabel}
           onSubmit={(answers) => void onResolveUserInput(inputRequest.requestId, answers)}
         />
       );
     }
-    if (!approval) return gated;
+    if (!approval) return null;
     if (hostApproval != null) return hostApproval.composer;
     return (
       <AgentOsApprovalComposer
@@ -744,13 +784,14 @@ function AgentOsProjectSession({
         onApprove={(decision) => void onApprove(decision)}
       />
     );
-  };
+  })();
 
   return (
     <FizzAgentSurface
       className={className}
       variant={variant}
-      composerGate={combinedComposerGate}
+      composerGate={composerGate}
+      composerAccessory={composerDecision}
       open={open}
       title={t("title")}
       subtitle={workerStatus}
@@ -1140,6 +1181,7 @@ function AgentOsProjectSession({
         busy={busy}
         activityStatus={effectiveActivityStatus}
         artifactRenderer={artifactRenderer}
+        assistantTextResolver={assistantTextResolver}
         labels={{
           transcript: t("transcriptLabel"),
           scrollToLatest: t("scrollToLatest"),

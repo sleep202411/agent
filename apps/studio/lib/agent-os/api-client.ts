@@ -135,6 +135,7 @@ export interface AgentOsApprovalInput {
   conversationId: string;
   modelProfileId: string;
   permissionMode?: AgentOsPermissionMode;
+  experience?: "mobile_h5";
 }
 
 export interface AgentOsUserInputResponse {
@@ -203,6 +204,7 @@ export class AgentOsApiClient {
           conversationId: input.conversationId,
           modelProfileId: input.modelProfileId,
           permissionMode: input.permissionMode,
+          experience: input.experience,
         },
         timeout: 10 * 60_000,
         signal,

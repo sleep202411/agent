@@ -107,7 +107,7 @@ describe("AgentOsActivityIndicator", () => {
     });
 
     expect(container.textContent).not.toContain("Old turn activity");
-    expect(container.querySelector("[role='status']")?.textContent).toBe("Thinking");
+    expect(container.querySelector("[role='status']")).toBeNull();
     expect(container.querySelector("[data-turn-id='turn-old']")).toBeNull();
 
     await act(async () => {
@@ -176,5 +176,44 @@ describe("AgentOsActivityIndicator", () => {
     expect(proposal?.textContent).toBe("Courier · Character");
     expect(proposal?.getAttribute("data-status")).toBe("applied");
     expect(turn?.querySelector("[role='status']")).toBeNull();
+  });
+
+  it("lets the host correct legacy Assistant presentation copy without mutating the journal", async () => {
+    const assistant: AgentOsChatMessage = {
+      id: "assistant-legacy",
+      role: "assistant",
+      content: "Legacy Asset copy",
+      createdAt: "2026-08-21T00:00:01.000Z",
+      turnId: "turn-current",
+      segments: [
+        {
+          id: "segment-legacy",
+          kind: "text",
+          content: "Legacy Asset copy",
+          createdAt: "2026-08-21T00:00:01.000Z",
+          eventSequence: 3,
+          completed: true,
+        },
+      ],
+    };
+
+    await act(async () => {
+      root.render(
+        <AgentOsTranscript
+          messages={[assistant]}
+          status="completed"
+          error={null}
+          busy={false}
+          assistantTextResolver={(content) =>
+            content === "Legacy Asset copy" ? "Sequential Asset copy" : content
+          }
+          labels={labels}
+          empty={null}
+        />
+      );
+    });
+
+    expect(container.textContent).toContain("Sequential Asset copy");
+    expect(container.textContent).not.toContain("Legacy Asset copy");
   });
 });

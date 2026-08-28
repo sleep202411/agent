@@ -624,6 +624,11 @@ export function deriveAgentActivity(
       ? (pendingExternal ?? derivePendingExternalFromEvents(events))
       : null;
   if (external) {
+    // A trusted H5 generation batch renders its complete live/blocked state in
+    // the transcript card itself. A second generic "updating project" spinner
+    // below that card is both redundant and wrong when the batch is paused for
+    // credits or a provider failure.
+    if (external.toolId === "story.generation.confirmBatch") return null;
     return { kind: "tool", toolId: external.toolId, turnId: external.turnId || turnId };
   }
   return activity;

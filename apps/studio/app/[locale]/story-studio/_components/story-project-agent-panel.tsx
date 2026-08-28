@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSelectedLayoutSegment } from "next/navigation";
@@ -56,6 +56,7 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
   const composerPrefill = useStoryProjectUiStore((state) => state.composerPrefillRequest);
   const consumeComposerPrefill = useStoryProjectUiStore((state) => state.consumeComposerPrefill);
   const panelActive = isProductionStepSegment(segment);
+  const mobileH5 = useMobileH5Experience();
   if (!panelActive) return null;
 
   const activeAuthoringStage =
@@ -93,7 +94,11 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
       projectId={projectId}
       projectKind="story"
       workbenchMode="story"
-      workbenchContext={activeChapterId ? { chapterId: activeChapterId } : undefined}
+      workbenchContext={
+        activeChapterId
+          ? { chapterId: activeChapterId, ...(mobileH5 ? { experience: "mobile_h5" } : {}) }
+          : undefined
+      }
       composerGate={(composer) => (
         <StoryAuthoringComposer
           composer={composer}
@@ -110,6 +115,7 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
                   approval={approval}
                   busy={busy}
                   onResolve={onResolve}
+                  mobileH5={mobileH5}
                 />
               ),
             }
@@ -117,12 +123,35 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
       }
       artifactRenderer={(artifact) => {
         if (artifact.reference.kind === "story_stage_proposal") {
-          return <StoryAuthoringProposalTranscript projectId={projectId} artifact={artifact} />;
+          return (
+            <StoryAuthoringProposalTranscript
+              projectId={projectId}
+              artifact={artifact}
+              mobileH5={mobileH5}
+            />
+          );
         }
         if (artifact.reference.kind === "story_generation_batch") {
-          return <StoryGenerationBatchTranscript reference={artifact.reference} />;
+          return (
+            <StoryGenerationBatchTranscript
+              reference={artifact.reference}
+              compactMobile={mobileH5}
+            />
+          );
         }
         return null;
+      }}
+      assistantTextResolver={(content, message) => {
+        if (!mobileH5) return content;
+        const includesAssetProposal = message.artifacts?.some(
+          (artifact) =>
+            artifact.reference.kind === "story_stage_proposal" &&
+            artifact.reference.stage === "assets"
+        );
+        if (!includesAssetProposal) return content;
+        return content.trim() === t("proposalStage.assets.legacyReadyMessage")
+          ? t("proposalStage.assets.mobileReadyMessage")
+          : content;
       }}
       activityStatus={authoringActivityStatus}
       composerPrefill={composerPrefill}
@@ -133,4 +162,16 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
       open
     />
   );
+}
+
+function useMobileH5Experience(): boolean {
+  const [mobileH5, setMobileH5] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const update = () => setMobileH5(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+  return mobileH5;
 }

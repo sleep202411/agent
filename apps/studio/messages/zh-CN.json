@@ -2526,8 +2526,20 @@
           "storyboard": "是否批准这份分镜方案？",
           "patch": "是否应用这次故事更新？"
         },
+        "questionMobile": {
+          "script": "继续保存这份剧本并进入下一步吗？",
+          "plot": "继续保存这份情节树吗？随后会自动准备并写入资产规格，再按顺序逐张生成图片；每张开始生成时扣除对应积分。",
+          "assets": "继续后将保存这 {count} 项资产规格，并逐一自动生成图片；每张开始生成时会自动扣除对应积分。是否继续？",
+          "storyboard": "继续保存这份分镜方案，并按顺序逐个生成其中的片段吗？每个片段开始生成时扣除对应积分。",
+          "patch": "继续应用这次故事更新吗？"
+        },
         "yes": "是",
         "no": "否",
+        "continue": "继续",
+        "continueResponse": "继续",
+        "stop": "不继续",
+        "stopLabel": "不继续，退出自动创作并返回聊天",
+        "stopResponse": "不继续",
         "rejectLabel": "否，退回调整",
         "rejectResponse": "退回调整"
       },
@@ -2555,7 +2567,11 @@
           "review": "审阅资产规格",
           "eyebrow": "资产规格提案",
           "description": "请审阅根据已批准情节树提取的可复用角色、场景和道具规格。批准后只保存逻辑规格，不生成媒体，也不消耗点数。",
+          "mobileDescription": "继续后会保存这 {count} 项资产规格，并按顺序逐张生成图片；每张开始生成时扣除对应积分，完成后自动回填。",
+          "legacyReadyMessage": "资产规格提案已准备好供你审核；批准后只会保存逻辑规格，不会生成媒体。",
+          "mobileReadyMessage": "资产规格已准备好。选择「继续」后会按顺序逐张生成图片；每张开始生成时扣除对应积分，完成后自动回填。",
           "approve": "批准资产规格",
+          "continueAndGenerate": "继续：保存 {count} 项资产规格并自动生图",
           "saving": "正在保存资产规格…",
           "savingHint": "正在记录你的批准，本次只保存逻辑资产规格，不会生成媒体。"
         },
@@ -2884,7 +2900,7 @@
     },
     "generationBatchTranscript": {
       "title": "资产媒体生成",
-      "summary": "已完成 {completed}/{total} · {points} 计算点",
+      "summary": "已处理 {processed}/{total} · {points} 计算点",
       "loading": "正在加载生成进度…",
       "loadError": "无法加载这个生成批次。",
       "mediaLoadError": "无法刷新已生成的资产媒体。",
@@ -2894,6 +2910,7 @@
       "progressLabel": "批量生成进度",
       "batchStatus": {
         "awaiting_confirmation": "等待确认",
+        "blocked": "已暂停",
         "queued": "排队中",
         "running": "生成中",
         "completed": "已完成",
@@ -2905,12 +2922,49 @@
       },
       "itemStatus": {
         "awaiting_confirmation": "等待确认",
+        "blocked": "已暂停",
+        "generating": "生图中",
         "ready": "排队中",
         "dispatching": "正在启动",
         "submitted": "生成中",
         "completed": "已完成",
         "failed": "失败",
         "cancelled": "已取消"
+      },
+      "assetKinds": {
+        "character": "角色",
+        "location": "场景",
+        "prop": "道具"
+      },
+      "mobileCard": {
+        "title": "{kind}：{name}",
+        "generating": "正在生成图片…",
+        "paused": "等待充值后继续",
+        "pausedHint": "生成停在这张卡片，充值后会从这里继续。",
+        "failed": "图片生成失败",
+        "failedStoppedHint": "生成已停在这里，前面完成的图片仍然保留。",
+        "failedRetainedHint": "这张图片没有生成，其他已生成图片仍然保留。",
+        "viewError": "查看错误详情",
+        "cancelled": "生成已停止"
+      },
+      "mobileStoryboard": {
+        "title": "分镜 {index}：{name}",
+        "untitled": "未命名场景",
+        "clip": "片段 {index}",
+        "generating": "正在生成片段…",
+        "paused": "等待充值后继续",
+        "failed": "片段生成失败",
+        "play": "开始游玩"
+      },
+      "recovery": {
+        "balanceTitle": "积分不足，生成已暂停",
+        "balanceBody": "已完成的内容会保留。充值后从当前卡片继续，不会跳到下一阶段。",
+        "failedTitle": "生成停在当前卡片",
+        "failedBody": "已完成的内容会保留。你可以重试当前卡片，或停止本次创作流程。",
+        "recharge": "充值",
+        "continue": "继续生成",
+        "stop": "不继续",
+        "resumeError": "暂时无法继续这个生成批次。"
       }
     },
     "storyboardPage": {

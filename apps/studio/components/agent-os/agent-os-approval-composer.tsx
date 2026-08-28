@@ -15,11 +15,11 @@ export interface AgentOsApprovalComposerLabels {
 }
 
 /**
- * A pending HITL tool approval, rendered IN THE COMPOSER (replacing the input,
- * blocking) rather than inline in the transcript — every user decision lives in
- * one place, the way Claude/Codex gate "approve to continue". Neither the card
- * nor a synthetic trace enters the transcript; the submitted decision returns
- * later as a normal durable user message.
+ * A pending HITL tool approval, rendered immediately above the composer rather
+ * than inline in the transcript. The active run remains paused and submission
+ * is disabled, but the input stays mounted so an in-progress draft is never
+ * hidden or discarded. The submitted decision returns later as a normal
+ * durable user message.
  */
 export function AgentOsApprovalComposer({
   approval,

@@ -598,6 +598,19 @@ describe("turn timeline projection", () => {
     ).toEqual({ kind: "tool", toolId: "story.author", turnId: "turn-2" });
   });
 
+  it("lets the H5 generation card own activity while a media batch is externally running or blocked", () => {
+    expect(
+      deriveAgentActivity([], "waiting_for_external", {
+        kind: "external_job",
+        jobId: "batch-1",
+        startedMessage: "Generating assets in order.",
+        turnId: "turn-media",
+        toolCallId: "confirm-batch-1",
+        toolId: "story.generation.confirmBatch",
+      })
+    ).toBeNull();
+  });
+
   it("keeps HITL waits as one ephemeral activity on the blocked turn", () => {
     const inputEvents = [
       ev(1, "UserMessage", { turnId: "turn-1", messageId: "u1", text: "Build a story" }),

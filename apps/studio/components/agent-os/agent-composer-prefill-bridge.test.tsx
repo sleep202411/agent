@@ -26,37 +26,27 @@ describe("AgentComposerPrefillBridge", () => {
     vi.restoreAllMocks();
   });
 
-  it("defers a prefill until the blocking gate releases the composer subtree", async () => {
+  it("applies a prefill while a decision and the composer remain mounted", async () => {
     const onPrefill = vi.fn();
     const onConsumed = vi.fn();
     const request = { id: 7, text: "Prepare Asset Specs for review." };
 
-    await render(true);
-    expect(onPrefill).not.toHaveBeenCalled();
-    expect(onConsumed).not.toHaveBeenCalled();
+    await act(async () => {
+      root.render(
+        <>
+          <div data-agent-composer-gate="approval">Approval required</div>
+          <AgentComposerPrefillBridge
+            request={request}
+            onPrefill={onPrefill}
+            onConsumed={onConsumed}
+          />
+          <textarea aria-label="Message" />
+        </>
+      );
+    });
 
-    await render(false);
     expect(onPrefill).toHaveBeenCalledOnce();
     expect(onPrefill).toHaveBeenCalledWith(request.text);
     expect(onConsumed).toHaveBeenCalledWith(request.id);
-
-    async function render(gated: boolean) {
-      await act(async () => {
-        root.render(
-          gated ? (
-            <div data-agent-composer-gate="approval">Approval required</div>
-          ) : (
-            <>
-              <AgentComposerPrefillBridge
-                request={request}
-                onPrefill={onPrefill}
-                onConsumed={onConsumed}
-              />
-              <textarea aria-label="Message" />
-            </>
-          )
-        );
-      });
-    }
   });
 });

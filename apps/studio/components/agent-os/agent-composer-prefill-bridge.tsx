@@ -3,9 +3,9 @@
 import { useEffect } from "react";
 
 /**
- * Applies a host-suggested draft only while the real composer subtree is
- * mounted. Approval and structured-input gates replace that subtree, so a
- * suggestion can never be consumed invisibly behind a blocking decision.
+ * Applies a host-suggested draft while the stable composer subtree is mounted.
+ * Decision surfaces sit above that subtree, so the suggested text stays
+ * visible even though submission remains paused until the decision resolves.
  */
 export function AgentComposerPrefillBridge({
   request,

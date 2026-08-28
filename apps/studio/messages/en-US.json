@@ -2526,8 +2526,20 @@
           "storyboard": "Approve this Storyboard plan?",
           "patch": "Apply this story update?"
         },
+        "questionMobile": {
+          "script": "Continue, save this Script, and move to the next step?",
+          "plot": "Continue and save this Plot Tree? Asset Specs will then be prepared and saved automatically, and their images will generate one at a time with credits charged as each image starts.",
+          "assets": "Continuing saves these {count} Asset Specs and automatically generates their images one by one. Credits are charged as each image starts. Continue?",
+          "storyboard": "Continue, save this Storyboard plan, and generate its clips one at a time? Credits are charged as each clip starts.",
+          "patch": "Continue and apply this story update?"
+        },
         "yes": "Yes",
         "no": "No",
+        "continue": "Continue",
+        "continueResponse": "Continue",
+        "stop": "Don’t continue",
+        "stopLabel": "Don’t continue; leave automatic creation and return to chat",
+        "stopResponse": "Don’t continue",
         "rejectLabel": "No, send back for revision",
         "rejectResponse": "Send back for revision"
       },
@@ -2555,7 +2567,11 @@
           "review": "Review Asset Specs",
           "eyebrow": "Asset Specs proposal",
           "description": "Review the reusable character, location, and prop specifications derived from the approved Plot Tree. Approving saves logical specs only; no media is generated or credits spent.",
+          "mobileDescription": "Continuing saves these {count} Asset Specs and generates their images sequentially. Credits are charged as each image starts, and completed images fill in automatically.",
+          "legacyReadyMessage": "The Asset Specs proposal is ready for review; approval saves logical specs only and generates no media.",
+          "mobileReadyMessage": "The Asset Specs are ready. Continuing generates images sequentially; credits are charged as each image starts, and completed images fill in automatically.",
           "approve": "Approve Asset Specs",
+          "continueAndGenerate": "Continue: save {count} Asset Specs and generate images",
           "saving": "Saving Asset Specs…",
           "savingHint": "Recording your approval and saving logical Asset Specs only. No media is being generated."
         },
@@ -2884,7 +2900,7 @@
     },
     "generationBatchTranscript": {
       "title": "Asset media generation",
-      "summary": "{completed}/{total} finished · {points} compute points",
+      "summary": "{processed}/{total} processed · {points} compute points",
       "loading": "Loading generation progress…",
       "loadError": "This generation batch could not be loaded.",
       "mediaLoadError": "Generated Asset media could not be refreshed.",
@@ -2894,6 +2910,7 @@
       "progressLabel": "Batch generation progress",
       "batchStatus": {
         "awaiting_confirmation": "Awaiting confirmation",
+        "blocked": "Paused",
         "queued": "Queued",
         "running": "Generating",
         "completed": "Completed",
@@ -2905,12 +2922,49 @@
       },
       "itemStatus": {
         "awaiting_confirmation": "Awaiting",
+        "blocked": "Paused",
+        "generating": "Generating image",
         "ready": "Queued",
         "dispatching": "Starting",
         "submitted": "Generating",
         "completed": "Completed",
         "failed": "Failed",
         "cancelled": "Cancelled"
+      },
+      "assetKinds": {
+        "character": "Character",
+        "location": "Location",
+        "prop": "Prop"
+      },
+      "mobileCard": {
+        "title": "{kind}: {name}",
+        "generating": "Generating image…",
+        "paused": "Waiting for credits",
+        "pausedHint": "Generation is paused on this card and will continue here after recharge.",
+        "failed": "Image generation failed",
+        "failedStoppedHint": "Generation stopped here. Your completed images are still available.",
+        "failedRetainedHint": "This image was not generated. Your other generated images are still available.",
+        "viewError": "View error details",
+        "cancelled": "Generation stopped"
+      },
+      "mobileStoryboard": {
+        "title": "Storyboard {index}: {name}",
+        "untitled": "Untitled scene",
+        "clip": "Clip {index}",
+        "generating": "Generating clip…",
+        "paused": "Waiting for credits",
+        "failed": "Clip generation failed",
+        "play": "Play this story"
+      },
+      "recovery": {
+        "balanceTitle": "Generation paused — low balance",
+        "balanceBody": "Completed work is preserved. Recharge to continue from this card without skipping ahead.",
+        "failedTitle": "Generation stopped on this card",
+        "failedBody": "Completed work is preserved. Retry this card or stop this creation flow.",
+        "recharge": "Add credits",
+        "continue": "Continue generating",
+        "stop": "Don't continue",
+        "resumeError": "This generation batch could not be resumed."
       }
     },
     "storyboardPage": {

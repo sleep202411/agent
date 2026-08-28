@@ -107,9 +107,11 @@ function useStoryProposal(projectId: string, storyRunId: string | null) {
 export function StoryAuthoringProposalTranscript({
   projectId,
   artifact,
+  mobileH5 = false,
 }: {
   projectId: string;
   artifact: AgentOsTranscriptArtifact;
+  mobileH5?: boolean;
 }) {
   const t = useTranslations("storyStudio.authoringRun");
   const reference = artifact.reference;
@@ -141,6 +143,7 @@ export function StoryAuthoringProposalTranscript({
           proposal={proposal}
           embedded
           currentAssets={currentAssetsQuery.data ?? []}
+          mobileAutoGenerate={mobileH5}
         />
       )}
     </section>
@@ -157,22 +160,31 @@ export function StoryAuthoringProposalApproval({
   approval,
   busy: agentBusy,
   onResolve,
+  mobileH5 = false,
 }: {
   projectId: string;
   approval: AgentOsPendingApproval;
   busy: boolean;
   onResolve: (decision: "approve" | "reject", responseText?: string) => Promise<boolean>;
+  mobileH5?: boolean;
 }) {
   const t = useTranslations("storyStudio.authoringRun");
   const [pendingDecision, setPendingDecision] = useState<"approve" | "reject" | null>(null);
   const [resolutionError, setResolutionError] = useState<string | null>(null);
   const { proposal, isLoading, refresh } = useStoryApprovalProposal(projectId, approval);
   const proposalStage = proposal ? storyAuthoringProposalStage(proposal) : null;
-  const decisionQuestion = proposalStage
-    ? t(`proposalDecision.question.${proposalStage}`)
-    : t("proposalDecision.question.patch");
-  const approveResponse =
-    proposalStage && proposalStage !== "patch"
+  const assetCount =
+    proposal && isStoryAssetProposal(proposal) ? proposal.assetPlan.assetSpecs.length : 0;
+  const decisionQuestion = mobileH5
+    ? proposalStage === "assets"
+      ? t("proposalDecision.questionMobile.assets", { count: assetCount })
+      : t(`proposalDecision.questionMobile.${proposalStage ?? "patch"}`)
+    : proposalStage
+      ? t(`proposalDecision.question.${proposalStage}`)
+      : t("proposalDecision.question.patch");
+  const approveResponse = mobileH5
+    ? t("proposalDecision.continueResponse")
+    : proposalStage && proposalStage !== "patch"
       ? t(`proposalStage.${proposalStage}.approve`)
       : t("proposalStage.patch.approve");
   const busy = agentBusy || pendingDecision !== null;
@@ -188,7 +200,9 @@ export function StoryAuthoringProposalApproval({
     try {
       const resolved = await onResolve(
         decision,
-        decision === "approve" ? approveResponse : t("proposalDecision.rejectResponse")
+        decision === "approve"
+          ? approveResponse
+          : t(mobileH5 ? "proposalDecision.stopResponse" : "proposalDecision.rejectResponse")
       );
       if (!resolved) setResolutionError(t("approvalFailed"));
     } finally {
@@ -277,12 +291,12 @@ export function StoryAuthoringProposalApproval({
           type="button"
           variant="quiet"
           className="h-10 min-w-0 text-xs font-medium"
-          aria-label={t("proposalDecision.rejectLabel")}
+          aria-label={t(mobileH5 ? "proposalDecision.stopLabel" : "proposalDecision.rejectLabel")}
           disabled={busy}
           onClick={() => void resolve("reject")}
         >
           {pendingDecision === "reject" ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-          {t("proposalDecision.no")}
+          {t(mobileH5 ? "proposalDecision.stop" : "proposalDecision.no")}
         </Button>
         <Button
           type="button"
@@ -292,7 +306,7 @@ export function StoryAuthoringProposalApproval({
           onClick={() => void resolve("approve")}
         >
           {pendingDecision === "approve" ? <IconLoader2 className="size-3.5 animate-spin" /> : null}
-          {t("proposalDecision.yes")}
+          {t(mobileH5 ? "proposalDecision.continue" : "proposalDecision.yes")}
         </Button>
       </div>
     </section>
