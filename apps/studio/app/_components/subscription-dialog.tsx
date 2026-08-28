@@ -697,17 +697,7 @@ function intervalLabel(interval: string, t: BillingTranslator) {
 
 function membershipFeatureItems(plan: MembershipPlan, t: BillingTranslator) {
   const items: string[] = [];
-  const { imageDaily, videoDaily, concurrentJobs, queuedJobs } = plan.benefits;
-  items.push(
-    imageDaily === "Infinity"
-      ? t("features.imagesUnlimited")
-      : t("features.imagesPerDay", { count: formatInteger(imageDaily) })
-  );
-  items.push(
-    videoDaily === "Infinity"
-      ? t("features.videosUnlimited")
-      : t("features.videosPerDay", { count: formatInteger(videoDaily) })
-  );
+  const { concurrentJobs, queuedJobs } = plan.benefits;
   if (plan.subjectType === "workspace") items.push(t("features.sharedCredits"));
   if (plan.subjectType === "workspace") items.push(t("features.seatScope"));
   if (concurrentJobs !== null) items.push(t("features.concurrentJobs", { count: concurrentJobs }));

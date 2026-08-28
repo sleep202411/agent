@@ -1095,10 +1095,6 @@
       "oneTime": "一次性"
     },
     "features": {
-      "imagesPerDay": "每天 {count} 次图像生成",
-      "imagesUnlimited": "不限次数的图像生成",
-      "videosPerDay": "每天 {count} 次视频生成",
-      "videosUnlimited": "不限次数的视频生成",
       "sharedCredits": "团队共享算力积分",
       "seatScope": "创作者席位在所有项目间共享；Viewer 和 Reviewer 不占席位",
       "concurrentJobs": "{count, plural, other {# 个并发任务}}",
@@ -3015,6 +3011,7 @@
       "loadError": "无法加载分镜。",
       "retry": "重试",
       "plotNode": "情节节点 {index}",
+      "clipCount": "{count} 个片段",
       "noClips": "此序列没有片段。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。准备好后，可在已保存的片段上选择“生成”。",
       "status": {
@@ -3046,7 +3043,6 @@
       "backToStoryboard": "返回分镜",
       "saved": "已保存",
       "saving": "正在保存…",
-      "clipCount": "{count} 个片段",
       "seconds": "{value} 秒",
       "addClip": "添加片段",
       "newClipTitle": "未命名片段",

@@ -1095,10 +1095,6 @@
       "oneTime": "one-time"
     },
     "features": {
-      "imagesPerDay": "{count} image generations per day",
-      "imagesUnlimited": "Unlimited image generations",
-      "videosPerDay": "{count} video generations per day",
-      "videosUnlimited": "Unlimited video generations",
       "sharedCredits": "Shared team compute credits",
       "seatScope": "Creator seats are shared across all projects; viewers and reviewers are free",
       "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",
@@ -3015,6 +3011,7 @@
       "loadError": "The storyboard could not be loaded.",
       "retry": "Try again",
       "plotNode": "Plot node {index}",
+      "clipCount": "{count, plural, one {# clip} other {# clips}}",
       "noClips": "This sequence has no clips.",
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
       "status": {
@@ -3046,7 +3043,6 @@
       "backToStoryboard": "Back to Storyboard",
       "saved": "Saved",
       "saving": "Saving…",
-      "clipCount": "{count, plural, one {# clip} other {# clips}}",
       "seconds": "{value}s",
       "addClip": "Add clip",
       "newClipTitle": "Untitled clip",
