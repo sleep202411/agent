@@ -141,6 +141,7 @@ describe("AgentOsUserInputCard", () => {
             submit: "Submit",
             submitting: "Submitting",
           }}
+          resolveProfileOptionLabel={(_questionId, value) => `Localized ${value}`}
           onSubmit={onSubmit}
         />
       );
@@ -165,6 +166,7 @@ describe("AgentOsUserInputCard", () => {
       )
     );
     const radios = Array.from(host.querySelectorAll<HTMLInputElement>("input[type='radio']"));
+    expect(host.textContent).toContain("Localized cinematic-realism");
     expect(radios.every((radio) => !radio.checked)).toBe(true);
     expect(
       radios.every((radio) => !radio.closest("label")?.className.includes("active:translate-y-px"))

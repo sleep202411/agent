@@ -16,6 +16,7 @@ import {
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
+import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { StoryAssetSpecCard } from "./story-asset-spec-card";
 import { StoryAssetBatchGeneration } from "./story-asset-batch-generation";
 import {
@@ -42,6 +43,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const workbenchQuery = useStoryChapterWorkbench(projectId);
   const kindParam = searchParams.get("kind");
   const active: StoryAssetSpecKind = TABS.includes(kindParam as StoryAssetSpecKind)
     ? (kindParam as StoryAssetSpecKind)
@@ -87,6 +89,11 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
     storyAssetsStageHasStaleContent(productionQuery.data, assetsQuery.data.length)
   );
   const generationAllowed = guidance === null && productionQuery.data?.assets.status === "current";
+  const mediaReplacementAllowed = Boolean(
+    generationAllowed &&
+    workbenchQuery.workspaceId &&
+    workbenchQuery.data?.project.capabilities.includes("story.edit")
+  );
   const resolvableStaleCount = (assetsQuery.data ?? []).filter(
     (asset) =>
       asset.status === "stale" &&
@@ -191,13 +198,16 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 </div>
                 {assets.length > 0 ? (
                   <div className={cn("mt-5 grid items-start gap-4", gridClass)}>
-                    {assets.map((asset) => (
+                    {assets.map((asset, index) => (
                       <StoryAssetSpecCard
                         key={`${asset.id}:${asset.version}`}
                         asset={asset}
                         projectId={projectId}
                         chapterId={activeChapterId}
                         allowGeneration={false}
+                        workspaceId={workbenchQuery.workspaceId}
+                        allowMediaReplacement={false}
+                        eagerMedia={index < 4}
                       />
                     ))}
                   </div>
@@ -239,13 +249,16 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
               />
             ) : assets.length > 0 ? (
               <div className={cn("mt-5 grid items-start gap-4", gridClass)}>
-                {assets.map((asset) => (
+                {assets.map((asset, index) => (
                   <StoryAssetSpecCard
                     key={`${asset.id}:${asset.version}`}
                     asset={asset}
                     projectId={projectId}
                     chapterId={activeChapterId}
                     allowGeneration={generationAllowed}
+                    workspaceId={workbenchQuery.workspaceId}
+                    allowMediaReplacement={mediaReplacementAllowed}
+                    eagerMedia={index < 4}
                   />
                 ))}
               </div>

@@ -42,6 +42,8 @@ describe("resolveSkillMounts", () => {
     expect(mount.toolIds).toContain("story.putInteraction");
     expect(mount.toolIds).toContain("story.removeInteraction");
     expect(mount.instructions).toMatch(/untrusted user data/i);
+    expect(mount.instructions).toMatch(/trusted-context creation-seed exception/i);
+    expect(mount.instructions).toContain("chapterHasNoScript=true");
   });
 
   it("applies turn skill ids when registered and context-allowed", () => {

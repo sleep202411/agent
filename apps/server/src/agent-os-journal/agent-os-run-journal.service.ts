@@ -13,7 +13,10 @@ import {
   type AgentEventEnvelope,
   type AgentRunStatus,
 } from '@repo/agent-protocol';
-import type { StoryProductionContinuationPlan } from '@repo/agent-tools';
+import type {
+  StoryProductionContinuationPlan,
+  StoryProductionTargetStage,
+} from '@repo/agent-tools';
 import {
   ProjectSkillResolutionSnapshotSchema,
   type ProjectSkillResolutionSnapshot,
@@ -212,6 +215,8 @@ type ExternalResultInput = {
   storyContinuation?: {
     locale: 'en-US' | 'zh-CN' | 'zh-HK';
     plan: StoryProductionContinuationPlan;
+    completedStage?: StoryProductionTargetStage;
+    mediaBatchCompleted?: boolean;
   };
   error?: {
     code: string;
@@ -2599,7 +2604,11 @@ export class AgentOsRunJournalService {
     const resumesAgentDecision =
       input.phase === 'apply' &&
       input.outcome === 'completed' &&
-      input.toolId === 'story.applyProposal';
+      (input.toolId === 'story.applyProposal' ||
+        (input.toolId === 'story.author' &&
+          input.storyContinuation !== undefined) ||
+        (input.toolId === 'story.generation.confirmBatch' &&
+          input.storyContinuation?.mediaBatchCompleted === true));
     const terminalEventId = stableUuid(`${eventSeed}:terminal`);
     const resultMessageEventId = stableUuid(`${eventSeed}:message-completed`);
     const priorResultMessage = await tx.agentOsRunEvent.findUnique({

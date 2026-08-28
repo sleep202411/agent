@@ -849,6 +849,8 @@
       "rejected": "審核回饋",
       "requirements": {
         "name": "名稱",
+        "image": "圖片",
+        "video": "影片",
         "poster": "封面",
         "synopsis": "簡介",
         "document": "世界觀 DOCX"
@@ -2526,8 +2528,20 @@
           "storyboard": "是否批准這份分鏡方案？",
           "patch": "是否套用這次故事更新？"
         },
+        "questionMobile": {
+          "script": "繼續儲存這份劇本並進入下一步嗎？",
+          "plot": "繼續儲存這份情節樹嗎？隨後會自動準備並寫入資產規格，再按順序逐張生成圖片；每張開始生成時扣除對應積分。",
+          "assets": "繼續後將儲存這 {count} 項資產規格，並逐一自動生成圖片；每張開始生成時會自動扣除對應積分。是否繼續？",
+          "storyboard": "繼續儲存這份分鏡方案，並按順序逐個生成其中的片段嗎？每個片段開始生成時扣除對應積分。",
+          "patch": "繼續套用這次故事更新嗎？"
+        },
         "yes": "是",
         "no": "否",
+        "continue": "繼續",
+        "continueResponse": "繼續",
+        "stop": "不繼續",
+        "stopLabel": "不繼續，退出自動創作並返回聊天",
+        "stopResponse": "不繼續",
         "rejectLabel": "否，退回調整",
         "rejectResponse": "退回調整"
       },
@@ -2555,7 +2569,11 @@
           "review": "審閱資產規格",
           "eyebrow": "資產規格提案",
           "description": "請審閱根據已批准情節樹提取的可重用角色、場景和道具規格。批准後只儲存邏輯規格，不生成媒體，也不消耗點數。",
+          "mobileDescription": "繼續後會儲存這 {count} 項資產規格，並按順序逐張生成圖片；每張開始生成時扣除對應積分，完成後自動回填。",
+          "legacyReadyMessage": "資產規格提案已準備好供你審核；核准後只會儲存邏輯規格，不會生成媒體。",
+          "mobileReadyMessage": "資產規格已準備好。選擇「繼續」後會按順序逐張生成圖片；每張開始生成時扣除對應積分，完成後自動回填。",
           "approve": "批准資產規格",
+          "continueAndGenerate": "繼續：儲存 {count} 項資產規格並自動生圖",
           "saving": "正在儲存資產規格…",
           "savingHint": "正在記錄你的批准，本次只儲存邏輯資產規格，不會生成媒體。"
         },
@@ -2868,6 +2886,13 @@
         }
       },
       "details": "詳情",
+      "mediaAction": {
+        "uploadImage": "上載圖片",
+        "replaceImage": "替換圖片",
+        "replacing": "正在替換圖片…",
+        "replaceSuccess": "資產圖片已替換。",
+        "replaceError": "無法替換資產圖片。"
+      },
       "detailDialog": {
         "imagePrompt": "圖片提示詞",
         "model": "模型",
@@ -2884,7 +2909,7 @@
     },
     "generationBatchTranscript": {
       "title": "資產媒體生成",
-      "summary": "已完成 {completed}/{total} · {points} 計算點",
+      "summary": "已處理 {processed}/{total} · {points} 計算點",
       "loading": "正在載入生成進度…",
       "loadError": "無法載入這個生成批次。",
       "mediaLoadError": "無法重新整理已生成的資產媒體。",
@@ -2894,6 +2919,7 @@
       "progressLabel": "批次生成進度",
       "batchStatus": {
         "awaiting_confirmation": "等待確認",
+        "blocked": "已暫停",
         "queued": "排隊中",
         "running": "生成中",
         "completed": "已完成",
@@ -2905,12 +2931,49 @@
       },
       "itemStatus": {
         "awaiting_confirmation": "等待確認",
+        "blocked": "已暫停",
+        "generating": "生成圖片中",
         "ready": "排隊中",
         "dispatching": "正在啟動",
         "submitted": "生成中",
         "completed": "已完成",
         "failed": "失敗",
         "cancelled": "已取消"
+      },
+      "assetKinds": {
+        "character": "角色",
+        "location": "場景",
+        "prop": "道具"
+      },
+      "mobileCard": {
+        "title": "{kind}：{name}",
+        "generating": "正在生成圖片…",
+        "paused": "等待儲值後繼續",
+        "pausedHint": "生成停在這張卡片，儲值後會從這裡繼續。",
+        "failed": "圖片生成失敗",
+        "failedStoppedHint": "生成已停在這裡，前面完成的圖片仍然保留。",
+        "failedRetainedHint": "這張圖片沒有生成，其他已生成圖片仍然保留。",
+        "viewError": "查看錯誤詳情",
+        "cancelled": "生成已停止"
+      },
+      "mobileStoryboard": {
+        "title": "分鏡 {index}：{name}",
+        "untitled": "未命名場景",
+        "clip": "片段 {index}",
+        "generating": "正在生成片段…",
+        "paused": "等待儲值後繼續",
+        "failed": "片段生成失敗",
+        "play": "開始遊玩"
+      },
+      "recovery": {
+        "balanceTitle": "積分不足，生成已暫停",
+        "balanceBody": "已完成的內容會保留。儲值後從目前卡片繼續，不會跳到下一階段。",
+        "failedTitle": "生成停在目前卡片",
+        "failedBody": "已完成的內容會保留。你可以重試目前卡片，或停止本次創作流程。",
+        "recharge": "儲值",
+        "continue": "繼續生成",
+        "stop": "不繼續",
+        "resumeError": "暫時無法繼續這個生成批次。"
       }
     },
     "storyboardPage": {
@@ -2952,7 +3015,6 @@
       "loadError": "無法載入分鏡。",
       "retry": "重試",
       "plotNode": "情節節點 {index}",
-      "clipCount": "{count} 個片段",
       "noClips": "此序列沒有片段。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。準備好後，可在已儲存的片段上選取「生成」。",
       "status": {
@@ -2968,6 +3030,69 @@
       "clipKind": {
         "image": "圖片",
         "video": "影片"
+      },
+      "editTimeline": "編輯"
+    },
+    "editorPage": {
+      "pageTitle": "剪輯 · 影遊工作室",
+      "pageDescription": "編輯節點內部的局部畫面時間軸，不複製情節樹的分支關係。",
+      "title": "剪輯",
+      "description": "每個情節節點擁有一條局部時間軸；劇情分支仍由情節樹管理。",
+      "loading": "正在載入時間軸…",
+      "loadError": "無法載入時間軸。",
+      "retry": "重試",
+      "emptyTitle": "還沒有可剪輯的分鏡時間軸",
+      "emptyDescription": "請先準備分鏡序列，再進入剪輯器。",
+      "backToStoryboard": "返回分鏡",
+      "saved": "已儲存",
+      "saving": "正在儲存…",
+      "clipCount": "{count} 個片段",
+      "seconds": "{value} 秒",
+      "addClip": "加入片段",
+      "newClipTitle": "未命名片段",
+      "newClipPrompt": "描述此片段中的畫面或動作。",
+      "addSuccess": "片段已加入時間軸。",
+      "addError": "無法加入片段。",
+      "preview": "所選片段預覽",
+      "previewEmpty": "此片段還沒有生成媒體",
+      "previewEmptyHint": "開啟片段詳情可調整提示詞或開始生成。",
+      "details": "片段詳情",
+      "clipList": "片段 / 畫格",
+      "inspector": "片段",
+      "selectClip": "在時間軸上選擇一個片段以檢視詳情。",
+      "kind": "類型",
+      "startsAt": "開始時間",
+      "duration": "時長",
+      "prompt": "提示詞",
+      "timeline": "時間軸",
+      "timelineZoom": "時間軸縮放",
+      "play": "播放序列",
+      "pause": "暫停序列",
+      "restart": "回到開頭",
+      "zoomOut": "縮小時間軸",
+      "zoomIn": "放大時間軸",
+      "decisionCue": "抉擇提示點：{time}",
+      "playhead": "時間軸位置 {time}",
+      "inspectorForm": {
+        "name": "名稱",
+        "model": "模型",
+        "loadingModels": "正在載入模型…",
+        "noModels": "暫無相容模型",
+        "image": "圖片",
+        "video": "影片",
+        "media": "圖片 / 影片",
+        "noMedia": "尚無媒體",
+        "replaceMedia": "替換媒體",
+        "save": "儲存",
+        "saved": "片段已儲存。",
+        "saveError": "無法儲存片段。",
+        "generate": "生成",
+        "generateStarted": "已開始生成。",
+        "generateError": "無法開始生成。",
+        "replaceSuccess": "片段媒體已替換。",
+        "replaceError": "無法替換片段媒體。",
+        "mediaUnavailable": "專案恢復為可編輯狀態後才能替換媒體。",
+        "unsupportedMedia": "片段只能使用圖片或影片媒體。"
       }
     },
     "canvas": {
@@ -3083,7 +3208,6 @@
         }
       },
       "workingPreview": {
-        "action": "預覽試玩",
         "pageTitle": "故事試玩 · 影遊工作室",
         "pageDescription": "使用正式玩家執行環境試玩精確儲存的私人草稿或不可變構建。",
         "draftRevision": "草稿 r{revision}",

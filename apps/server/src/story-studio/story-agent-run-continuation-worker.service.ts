@@ -242,6 +242,7 @@ export class StoryAgentRunContinuationWorkerService
         sourceAgentToolCallId: true,
         sourceCompletionMessage: true,
         sourceProposalReadyDeliveredAt: true,
+        sourceAutoAppliedAt: true,
         sourceTerminalDeliveredAt: true,
         sourceApprovalDecision: true,
         sourceApprovalDecisionTurnId: true,
@@ -303,6 +304,9 @@ export class StoryAgentRunContinuationWorkerService
         `Story Agent continuation ${run.id} does not match its durable external-handoff registration.`,
       );
     }
+    const continuationPlan = StoryProductionContinuationPlanSchema.safeParse(
+      registration.continuationPlan,
+    );
 
     let dispatch: AgentOsJournalDispatch;
     if (phase === 'legacy') {
@@ -351,11 +355,59 @@ export class StoryAgentRunContinuationWorkerService
           text: proposalReadyContinuationCopy(
             locale,
             storyProposalStage(run.proposal),
+            continuationPlan.success
+              ? continuationPlan.data.experience
+              : undefined,
           ),
           title: proposal.title,
           summary: proposal.summary,
         });
       dispatch = mergeDispatches(handoffDispatch, proposalDispatch);
+    } else if (phase === 'auto_apply_terminal') {
+      const completedStage = storyProposalStage(run.proposal);
+      const result = applyContinuationResult({
+        status: run.status,
+        authoringAttempts: run.authoringAttempts,
+        errorCode: run.errorCode,
+        errorDetail: run.errorDetail,
+        locale: run.project.defaultLocale,
+        stage: completedStage,
+        autoApplyAssetSpecs:
+          continuationPlan.success &&
+          continuationPlan.data.experience === 'mobile_h5' &&
+          continuationPlan.data.autoApplyAssetSpecs === true,
+        autoGenerateAssetImages:
+          continuationPlan.success &&
+          continuationPlan.data.autoGenerateAssetImages === true,
+        autoGenerateStoryboardMedia:
+          continuationPlan.success &&
+          continuationPlan.data.experience === 'mobile_h5' &&
+          continuationPlan.data.autoGenerateStoryboardMedia === true,
+      });
+      const handoffDispatch =
+        await this.journal.reconcileExternalHandoffInTransaction(tx, run.id);
+      const resultDispatch =
+        await this.journal.appendExternalResultInTransaction(tx, {
+          runId: run.sourceAgentRunId,
+          turnId: run.sourceAgentTurnId,
+          toolCallId: run.sourceAgentToolCallId,
+          toolId: 'story.author',
+          externalJobId: run.id,
+          phase: 'apply',
+          ...(result.outcome === 'completed' &&
+          continuationPlan.success &&
+          completedStage === 'assets'
+            ? {
+                storyContinuation: {
+                  locale: storyContinuationLocale(run.project.defaultLocale),
+                  plan: continuationPlan.data,
+                  completedStage,
+                },
+              }
+            : {}),
+          ...result,
+        });
+      dispatch = mergeDispatches(handoffDispatch, resultDispatch);
     } else if (phase === 'authoring_terminal') {
       const result =
         run.status === StoryAgentRunStatus.succeeded &&
@@ -384,9 +436,14 @@ export class StoryAgentRunContinuationWorkerService
         });
       dispatch = mergeDispatches(handoffDispatch, resultDispatch);
     } else {
-      const continuationPlan = StoryProductionContinuationPlanSchema.safeParse(
-        registration.continuationPlan,
-      );
+      const completedProposalStage = storyProposalStage(run.proposal);
+      const completedStage =
+        completedProposalStage === 'script' ||
+        completedProposalStage === 'plot' ||
+        completedProposalStage === 'assets' ||
+        completedProposalStage === 'storyboard'
+          ? completedProposalStage
+          : null;
       const result = applyContinuationResult({
         status: run.status,
         authoringAttempts: run.authoringAttempts,
@@ -394,6 +451,18 @@ export class StoryAgentRunContinuationWorkerService
         errorDetail: run.errorDetail,
         locale: run.sourceApprovalLocale,
         stage: storyProposalStage(run.proposal),
+        autoApplyAssetSpecs:
+          continuationPlan.success &&
+          continuationPlan.data.experience === 'mobile_h5' &&
+          continuationPlan.data.autoApplyAssetSpecs === true,
+        autoGenerateAssetImages:
+          continuationPlan.success &&
+          continuationPlan.data.experience === 'mobile_h5' &&
+          continuationPlan.data.autoGenerateAssetImages === true,
+        autoGenerateStoryboardMedia:
+          continuationPlan.success &&
+          continuationPlan.data.experience === 'mobile_h5' &&
+          continuationPlan.data.autoGenerateStoryboardMedia === true,
       });
       const resultDispatch =
         await this.journal.appendExternalResultInTransaction(tx, {
@@ -403,13 +472,16 @@ export class StoryAgentRunContinuationWorkerService
           toolId: 'story.applyProposal',
           externalJobId: run.id,
           phase: 'apply',
-          ...(result.outcome === 'completed' && continuationPlan.success
+          ...(result.outcome === 'completed' &&
+          continuationPlan.success &&
+          completedStage
             ? {
                 storyContinuation: {
                   locale: storyContinuationLocale(
                     run.sourceApprovalLocale ?? run.project.defaultLocale,
                   ),
                   plan: continuationPlan.data,
+                  completedStage,
                 },
               }
             : {}),
@@ -508,6 +580,7 @@ type ContinuationResult =
 type ContinuationPhase =
   | 'legacy'
   | 'proposal_ready'
+  | 'auto_apply_terminal'
   | 'authoring_terminal'
   | 'apply_terminal';
 
@@ -517,6 +590,7 @@ function continuationPhase(input: {
   authoringAttempts: number;
   sourceResultDeliveredAt: Date | null;
   sourceProposalReadyDeliveredAt: Date | null;
+  sourceAutoAppliedAt: Date | null;
   sourceTerminalDeliveredAt: Date | null;
   sourceApprovalDecision: string | null;
   sourceApprovalDecisionTurnId: string | null;
@@ -536,6 +610,15 @@ function continuationPhase(input: {
     input.sourceTerminalDeliveredAt !== null
   ) {
     return null;
+  }
+  if (
+    input.sourceAutoAppliedAt != null &&
+    (input.status === StoryAgentRunStatus.succeeded ||
+      input.status === StoryAgentRunStatus.failed ||
+      input.status === StoryAgentRunStatus.cancelled ||
+      input.status === StoryAgentRunStatus.stale)
+  ) {
+    return 'auto_apply_terminal';
   }
   if (input.sourceProposalReadyDeliveredAt === null) {
     if (input.status === StoryAgentRunStatus.proposed) return 'proposal_ready';
@@ -630,8 +713,17 @@ function applyContinuationResult(input: {
   errorDetail: string | null;
   locale: string | null;
   stage: StoryProposalStage;
+  autoApplyAssetSpecs: boolean;
+  autoGenerateAssetImages: boolean;
+  autoGenerateStoryboardMedia: boolean;
 }): ContinuationResult {
-  const copy = applyContinuationCopy(input.locale, input.stage);
+  const copy = applyContinuationCopy(
+    input.locale,
+    input.stage,
+    input.autoApplyAssetSpecs,
+    input.autoGenerateAssetImages,
+    input.autoGenerateStoryboardMedia,
+  );
   if (input.status === StoryAgentRunStatus.succeeded) {
     return {
       outcome: 'completed',
@@ -675,6 +767,9 @@ function applyContinuationResult(input: {
 function applyContinuationCopy(
   locale: string | null,
   stage: StoryProposalStage,
+  autoApplyAssetSpecs: boolean,
+  autoGenerateAssetImages: boolean,
+  autoGenerateStoryboardMedia: boolean,
 ): {
   completed: string;
   cancelled: string;
@@ -683,13 +778,19 @@ function applyContinuationCopy(
   if (locale === 'zh-CN') {
     const completed =
       stage === 'script'
-        ? '正式剧本已保存到 Script。本次应用没有生成情节树、资产规格、分镜、图片或视频。'
+        ? '剧本已保存。正在构建情节树。'
         : stage === 'plot'
-          ? '情节树已保存。资产规格现需基于这份情节树单独准备和审核；本次应用没有生成图片或视频。'
+          ? autoApplyAssetSpecs
+            ? '情节树已保存。正在构建资产规格。'
+            : '情节树已保存。资产规格现需基于这份情节树单独准备和审核；本次应用没有生成图片或视频。'
           : stage === 'assets'
-            ? '资产规格已保存。本阶段只写入角色、场景与道具等逻辑规格，没有生成图片或视频。'
+            ? autoGenerateAssetImages
+              ? '资产规格已保存。接下来逐张生成资产图片。'
+              : '资产规格已保存。本阶段只写入角色、场景与道具等逻辑规格，没有生成图片或视频。'
             : stage === 'storyboard'
-              ? '分镜规格已保存。本阶段只写入镜头与时间轴规格，没有生成任何图片或视频。'
+              ? autoGenerateStoryboardMedia
+                ? '分镜已保存。接下来逐个生成卡片中的片段。'
+                : '分镜规格已保存。本阶段只写入镜头与时间轴规格，没有生成任何图片或视频。'
               : '已批准的故事提案已应用。';
     return {
       completed,
@@ -700,13 +801,19 @@ function applyContinuationCopy(
   if (locale === 'zh-HK') {
     const completed =
       stage === 'script'
-        ? '正式劇本已儲存到 Script。本次套用沒有生成情節樹、資產規格、分鏡、圖片或影片。'
+        ? '劇本已儲存。正在構建情節樹。'
         : stage === 'plot'
-          ? '情節樹已儲存。資產規格現需基於這份情節樹單獨準備和審核；本次套用沒有生成圖片或影片。'
+          ? autoApplyAssetSpecs
+            ? '情節樹已儲存。正在構建資產規格。'
+            : '情節樹已儲存。資產規格現需基於這份情節樹單獨準備和審核；本次套用沒有生成圖片或影片。'
           : stage === 'assets'
-            ? '資產規格已儲存。本階段只寫入角色、場景與道具等邏輯規格，沒有生成圖片或影片。'
+            ? autoGenerateAssetImages
+              ? '資產規格已儲存。接下來逐張生成資產圖片。'
+              : '資產規格已儲存。本階段只寫入角色、場景與道具等邏輯規格，沒有生成圖片或影片。'
             : stage === 'storyboard'
-              ? '分鏡規格已儲存。本階段只寫入鏡頭與時間軸規格，沒有生成任何圖片或影片。'
+              ? autoGenerateStoryboardMedia
+                ? '分鏡已儲存。接下來逐個生成卡片中的片段。'
+                : '分鏡規格已儲存。本階段只寫入鏡頭與時間軸規格，沒有生成任何圖片或影片。'
               : '已核准的故事提案已套用。';
     return {
       completed,
@@ -716,13 +823,19 @@ function applyContinuationCopy(
   }
   const completed =
     stage === 'script'
-      ? 'The official screenplay was saved to Script. This apply did not create a Plot Tree, Asset Specs, Storyboard, images, or videos.'
+      ? 'The Script is saved. Building the Plot Tree next.'
       : stage === 'plot'
-        ? 'The Plot Tree was saved. Asset Specs must now be prepared and reviewed from this Plot separately; this apply generated no images or videos.'
+        ? autoApplyAssetSpecs
+          ? 'The Plot Tree is saved. Building the Asset Specs next.'
+          : 'The Plot Tree was saved. Asset Specs must now be prepared and reviewed from this Plot separately; this apply generated no images or videos.'
         : stage === 'assets'
-          ? 'The Asset Specs were saved. This stage writes only logical character, location, and prop specifications; it generated no images or videos.'
+          ? autoGenerateAssetImages
+            ? 'The Asset Specs are saved. Asset images will generate one at a time next.'
+            : 'The Asset Specs were saved. This stage writes only logical character, location, and prop specifications; it generated no images or videos.'
           : stage === 'storyboard'
-            ? 'The Storyboard Specs were saved. This stage writes only shot and timeline specifications; it generated no images or videos.'
+            ? autoGenerateStoryboardMedia
+              ? 'The Storyboard is saved. Its clips will generate one at a time next.'
+              : 'The Storyboard Specs were saved. This stage writes only shot and timeline specifications; it generated no images or videos.'
             : 'The approved story proposal was applied.';
   return {
     completed,
@@ -754,40 +867,65 @@ function storyProposalStage(value: Prisma.JsonValue): StoryProposalStage {
 function proposalReadyContinuationCopy(
   locale: string | null,
   stage: StoryProposalStage,
+  experience?: 'mobile_h5',
 ): string {
   if (locale === 'zh-CN') {
     if (stage === 'script')
-      return '剧本提案已准备好供你审核；批准后只会保存 Script。';
+      return experience === 'mobile_h5'
+        ? '剧本已起草。请选择「继续」或「不继续」。'
+        : '剧本提案已准备好供你审核；批准后只会保存 Script。';
     if (stage === 'plot')
-      return '情节树提案已准备好供你审核；批准后只会保存情节树。';
+      return experience === 'mobile_h5'
+        ? '情节树已构建。选择「继续」后会自动构建资产并逐张生成图片。'
+        : '情节树提案已准备好供你审核；批准后只会保存情节树。';
     if (stage === 'assets')
-      return '资产规格提案已准备好供你审核；批准后只会保存逻辑规格，不会生成媒体。';
+      return experience === 'mobile_h5'
+        ? '资产规格已准备好。选择「继续」后会按顺序逐张生成图片；每张开始生成时扣除对应积分，完成后自动回填。'
+        : '资产规格提案已准备好供你审核；批准后只会保存逻辑规格，不会生成媒体。';
     if (stage === 'storyboard')
-      return '分镜提案已准备好供你审核；批准后只会保存分镜规格，不会生成媒体。';
+      return experience === 'mobile_h5'
+        ? '分镜已准备好。选择「继续」后会按故事顺序逐卡片、逐片段生成。'
+        : '分镜提案已准备好供你审核；批准后只会保存分镜规格，不会生成媒体。';
     return '故事提案已准备好供你审核。';
   }
   if (locale === 'zh-HK') {
     if (stage === 'script')
-      return '劇本提案已準備好供你審核；核准後只會儲存 Script。';
+      return experience === 'mobile_h5'
+        ? '劇本已起草。請選擇「繼續」或「不繼續」。'
+        : '劇本提案已準備好供你審核；核准後只會儲存 Script。';
     if (stage === 'plot')
-      return '情節樹提案已準備好供你審核；核准後只會儲存情節樹。';
+      return experience === 'mobile_h5'
+        ? '情節樹已構建。選擇「繼續」後會自動構建資產並逐張生成圖片。'
+        : '情節樹提案已準備好供你審核；核准後只會儲存情節樹。';
     if (stage === 'assets')
-      return '資產規格提案已準備好供你審核；核准後只會儲存邏輯規格，不會生成媒體。';
+      return experience === 'mobile_h5'
+        ? '資產規格已準備好。選擇「繼續」後會按順序逐張生成圖片；每張開始生成時扣除對應積分，完成後自動回填。'
+        : '資產規格提案已準備好供你審核；核准後只會儲存邏輯規格，不會生成媒體。';
     if (stage === 'storyboard')
-      return '分鏡提案已準備好供你審核；核准後只會儲存分鏡規格，不會生成媒體。';
+      return experience === 'mobile_h5'
+        ? '分鏡已準備好。選擇「繼續」後會按故事順序逐卡片、逐片段生成。'
+        : '分鏡提案已準備好供你審核；核准後只會儲存分鏡規格，不會生成媒體。';
     return '故事提案已準備好供你審核。';
   }
   if (stage === 'script') {
-    return 'The Script proposal is ready for review; approval saves only Script.';
+    return experience === 'mobile_h5'
+      ? 'The Script is drafted. Choose Continue or Don’t continue.'
+      : 'The Script proposal is ready for review; approval saves only Script.';
   }
   if (stage === 'plot') {
-    return 'The Plot proposal is ready for review; approval saves only the Plot Tree.';
+    return experience === 'mobile_h5'
+      ? 'The Plot Tree is built. Continue to build the Assets and generate their images one at a time.'
+      : 'The Plot proposal is ready for review; approval saves only the Plot Tree.';
   }
   if (stage === 'assets') {
-    return 'The Asset Specs proposal is ready for review; approval saves logical specs only and generates no media.';
+    return experience === 'mobile_h5'
+      ? 'The Asset Specs are ready. Continuing generates images sequentially; credits are charged as each image starts, and completed images fill in automatically.'
+      : 'The Asset Specs proposal is ready for review; approval saves logical specs only and generates no media.';
   }
   if (stage === 'storyboard') {
-    return 'The Storyboard proposal is ready for review; approval saves Storyboard Specs only and generates no media.';
+    return experience === 'mobile_h5'
+      ? 'The Storyboard is ready. Continue to generate every card and clip in story order.'
+      : 'The Storyboard proposal is ready for review; approval saves Storyboard Specs only and generates no media.';
   }
   return 'The Story proposal is ready for review.';
 }

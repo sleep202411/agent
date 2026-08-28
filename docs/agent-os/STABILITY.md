@@ -154,7 +154,9 @@ follow-up.
 - [ ] Story Apply crash/retry produces one project mutation and one final Agent result on the decision turn
 - [ ] Script approval writes no Plot, Asset Spec, or Storyboard row; its stage-specific Story run terminalizes while the owning Agent run resumes once, reads canonical state, and follows its persisted `continueThrough` boundary
 - [ ] Script approval cannot mark an already-matching Plot current; Plot still requires its own approval
-- [ ] Plot, Asset Specs, and Storyboard each use a new auditable run and one independent approval; the workflow crosses terminal graph boundaries and prepares the next proposal automatically only while the persisted creator-authorized boundary requires it
+- [ ] Desktop Plot, Asset Specs, and Storyboard each use a new auditable run and one independent approval; trusted H5 Plot Continue persists the next Asset Specs without another approval while preserving a separately audited run and immutable source decision
+- [ ] H5 asset and Storyboard media batches admit exactly one item at a time; one failure atomically cancels every later unstarted item, completed media remains attached, and replay/reload shows the same terminal prefix
+- [ ] H5 Storyboard Continue creates one mixed image/video batch in story order; the transcript groups ordered Clips into one card per Plot-node sequence and exposes playtest only after every Clip completes
 - [ ] Asset approval writes no Storyboard row; Storyboard planning validates the current approved Asset Spec set
 - [ ] An approved empty Asset plan is durably current and lets the Agent select Storyboard on the next automatic or explicit `story.author` call
 - [ ] A stale parent Asset/Storyboard stage blocks paid generation and late media attachment for every child target

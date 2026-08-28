@@ -16,6 +16,9 @@ const STEP_BY_SEGMENT = {
   script: "script",
   assets: "assets",
   storyboard: "storyboard",
+  // The node-level timeline editor belongs to the Storyboard stage rather
+  // than introducing a second project-level production stage.
+  edit: "storyboard",
 } as const;
 
 /**

@@ -107,8 +107,9 @@ export type StoryProductionState = z.infer<typeof StoryProductionStateSchema>;
 /**
  * Furthest reviewable specification the creator asked this production request
  * to prepare. The model decides this scope once from the creator's words; the
- * durable workflow then advances deterministically and still pauses for a
- * separate approval at every stage.
+ * durable workflow then advances deterministically. Desktop pauses at every
+ * specification; trusted H5 uses the explicit Plot Continue decision to
+ * auto-persist Asset Specs before sequential paid image generation.
  */
 export const StoryProductionTargetStageSchema = z.enum(["script", "plot", "assets", "storyboard"]);
 export type StoryProductionTargetStage = z.infer<typeof StoryProductionTargetStageSchema>;
@@ -119,6 +120,18 @@ export const StoryProductionContinuationPlanSchema = z
     title: z.string().trim().min(1).max(160),
     summary: z.string().trim().min(1).max(4_000),
     brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
+    /** Presentation context only; this does not authorize paid generation. */
+    experience: z.literal("mobile_h5").optional(),
+    /**
+     * Server-owned H5 policy. A creator's Continue decision on the Plot Tree
+     * authorizes the logical Asset Specs to be persisted without manufacturing
+     * a second user decision.
+     */
+    autoApplyAssetSpecs: z.boolean().optional(),
+    /** Server-owned H5 authorization, never sourced from model arguments. */
+    autoGenerateAssetImages: z.boolean().optional(),
+    /** Server-owned H5 authorization from Continue on Storyboard Specs. */
+    autoGenerateStoryboardMedia: z.boolean().optional(),
   })
   .strict();
 export type StoryProductionContinuationPlan = z.infer<typeof StoryProductionContinuationPlanSchema>;
@@ -386,6 +399,7 @@ const StoryAuthorOutputSchema = z
 
 const StoryGenerationBatchStatusSchema = z.enum([
   "awaiting_confirmation",
+  "blocked",
   "queued",
   "running",
   "cancelling",
@@ -429,6 +443,8 @@ export const StoryQuoteAssetGenerationBatchInputSchema = z
         ])
       )
       .default({}),
+    /** Deterministic H5 continuation only; hidden from the free-form model binding. */
+    dispatchMode: z.literal("sequential").optional(),
   })
   .strict()
   .refine((value) => Boolean(value.modelId) === Boolean(value.schemaVersion), {
@@ -445,20 +461,32 @@ export const StoryConfirmGenerationBatchInputSchema = z
   .strict();
 export const StoryGetGenerationBatchInputSchema = z.object({ batchId: z.string().uuid() }).strict();
 
+export const StoryQuoteStoryboardGenerationBatchInputSchema = z
+  .object({
+    clipIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+    /** Deterministic H5 continuation only; hidden from the free-form model binding. */
+    dispatchMode: z.literal("sequential").optional(),
+  })
+  .strict();
+
 const StoryGenerationBatchOutputSchema = z
   .object({
     id: z.string().uuid(),
-    workspaceId: z.string().uuid(),
     projectId: z.string().uuid(),
     chapterId: z.string().uuid(),
     status: StoryGenerationBatchStatusSchema,
+    dispatchMode: z.enum(["parallel", "sequential"]),
     totalPoints: z.number().int().nonnegative(),
+    availablePoints: z.string().regex(/^\d+$/).nullable(),
     itemCount: z.number().int().positive().max(500),
     version: z.number().int().nonnegative(),
     quoteExpiresAt: z.string().datetime(),
     confirmedAt: z.string().datetime().nullable(),
     completedAt: z.string().datetime().nullable(),
+    blockedAt: z.string().datetime().nullable(),
+    blockReason: z.unknown().nullable(),
     canCancel: z.boolean(),
+    agentHandoff: AgentExternalJobHandoffSchema.optional(),
     counts: z.record(StoryGenerationBatchItemStatusSchema, z.number().int().nonnegative()),
     items: z.array(
       z
@@ -466,7 +494,9 @@ const StoryGenerationBatchOutputSchema = z
           id: z.string().uuid(),
           ordinal: z.number().int().nonnegative(),
           status: StoryGenerationBatchItemStatusSchema,
+          targetKind: z.enum(["asset_spec", "storyboard_clip"]),
           targetId: z.string().uuid(),
+          sequenceId: z.string().uuid().nullable(),
           targetVersion: z.number().int().nonnegative(),
           outputKind: z.enum(["image", "video"]),
           modelId: z.string().min(1),
@@ -629,7 +659,7 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.author",
     description:
-      "Hand an explicit Story creation or continue-production request to the Server-side canonical next-stage planner. Never call for greetings, casual conversation, capability questions, unrelated requests, or merely because Story mode is open. Call story.read first. The Server reuses every valid chapter stage and selects exactly one reviewable proposal: the earliest missing or stale artifact in Script -> Plot -> Asset Specs -> Storyboard order. Set continueThrough once to the furthest separately reviewable stage authorized by the creator: broad create/complete/adapt/continue-production requests normally select storyboard, while an explicit stage-only request selects that stage. The durable workflow re-reads canonical state and advances through this scope after each successful apply; it never asks the model to infer the old intent again. One call creates one independently auditable Story run and one approval boundary; approval writes only that artifact and never approves or applies the following stage. Preparing the next proposal may be automatic; approving it never is. Only when no valid Script exists may the Server author a screenplay proposal, asking for missing project-profile values first when necessary. A Plot proposal compiles the approved Script into the single canonical Plot topology. An Asset Specs proposal derives stably referenceable logical specs from that approved Plot and its Script interpretation and may have zero generated media. A Storyboard proposal creates one Storyboard sequence per Plot node with one or more ordered clips and consumes the approved Asset Specs. This tool never generates images or videos and never incurs media-generation work; the creator must use Generate later. For a narrow edit to an existing Plot, use the fine-grained story.* tools instead. Provide a specific startedMessage that acknowledges work without claiming success. completionMessage must name only the one proposal selected by canonical state and say that it is ready for creator review, not already applied. If the Server-selected stage is not exposed, use neutral handoff copy rather than predicting it. Always say that media has not been generated. The authoritative Server apply continuation announces only the single artifact persisted after approval. Runs asynchronously and returns a durable external-job handoff.",
+      "Hand an explicit Story creation or continue-production request to the Server-side canonical next-stage planner. Never call for greetings, casual conversation, capability questions, unrelated requests, or merely because Story mode is open. Call story.read first. The Server reuses every valid chapter stage and selects exactly one next artifact in Script -> Plot -> Asset Specs -> Storyboard order. Set continueThrough once to the furthest stage authorized by the creator: broad create/complete/adapt/continue-production requests normally select storyboard, while an explicit stage-only request selects that stage. The durable workflow re-reads canonical state and advances through this scope after each successful apply; it never asks the model to infer the old intent again. Only when no valid Script exists may the Server author a screenplay proposal, asking for missing project-profile values first when necessary. A Plot proposal compiles the approved Script into the single canonical Plot topology. An Asset Specs artifact derives stably referenceable logical specs from that approved Plot and its Script interpretation. A Storyboard proposal creates one Storyboard sequence per Plot node with one or more ordered clips and consumes the approved Asset Specs. On desktop, Script, Plot, Asset Specs, and Storyboard each remain a separate creator approval boundary, and the creator uses Generate later. On the trusted mobile_h5 surface, Script and Plot remain Continue/Don't continue boundaries; choosing Continue on Plot authorizes the Server to prepare and persist Asset Specs without a second Asset confirmation, then quote, confirm, and generate every current asset image sequentially with per-item compute-point billing. Storyboard remains a separate Continue/Don't continue boundary; choosing Continue on Storyboard authorizes its clips to generate sequentially in story order with per-item billing. The model must not call paid generation tools itself. This tool itself never generates media directly; the authoritative Server continuation owns auto-apply, quoting, billing, ordering, failure-stop, and resume semantics. For a narrow edit to an existing Plot, use the fine-grained story.* tools instead. Provide a specific startedMessage that acknowledges work without claiming success. completionMessage must name only the artifact selected by canonical state and must not claim it was already applied. If the Server-selected stage is not exposed, use neutral handoff copy rather than predicting it. Runs asynchronously and returns a durable external-job handoff.",
     kind: "command",
     // Reversible at the Agent tool boundary: this durably schedules the Server
     // plan and never starts paid media generation. The stage-specific
@@ -645,6 +675,15 @@ export const STORY_AGENT_OS_TOOLS = [
     kind: "command",
     risk: "reversible",
     inputSchema: StoryQuoteAssetGenerationBatchInputSchema,
+    outputSchema: StoryGenerationBatchOutputSchema,
+  },
+  {
+    id: "story.generation.quoteStoryboard",
+    description:
+      "Quote current Storyboard clips as one durable generation batch. Image and video clips keep their planned media kind and use the project's saved default model for that kind. On mobile_h5 this is called only by the deterministic post-Storyboard continuation, which requests sequential dispatch; the free-form model must not use it to bypass the Storyboard Continue boundary.",
+    kind: "command",
+    risk: "reversible",
+    inputSchema: StoryQuoteStoryboardGenerationBatchInputSchema,
     outputSchema: StoryGenerationBatchOutputSchema,
   },
   {

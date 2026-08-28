@@ -142,10 +142,12 @@ export function StoryAuthoringProposalContent({
   proposal,
   embedded = false,
   currentAssets = [],
+  mobileAutoGenerate = false,
 }: {
   proposal: StoryReviewableProposal;
   embedded?: boolean;
   currentAssets?: readonly CurrentStoryAssetSpec[];
+  mobileAutoGenerate?: boolean;
 }) {
   const screenplayDocument = isStoryScreenplayProposal(proposal)
     ? storyScreenplayDocument(proposal)
@@ -156,7 +158,12 @@ export function StoryAuthoringProposalContent({
   }
   if (isStoryAssetProposal(proposal)) {
     return (
-      <AssetProposalReview proposal={proposal} embedded={embedded} currentAssets={currentAssets} />
+      <AssetProposalReview
+        proposal={proposal}
+        embedded={embedded}
+        currentAssets={currentAssets}
+        mobileAutoGenerate={mobileAutoGenerate}
+      />
     );
   }
   if (isStoryStoryboardProposal(proposal)) {
@@ -301,15 +308,23 @@ function AssetProposalReview({
   proposal,
   embedded = false,
   currentAssets = [],
+  mobileAutoGenerate = false,
 }: {
   proposal: StoryAssetProposal;
   embedded?: boolean;
   currentAssets?: readonly CurrentStoryAssetSpec[];
+  mobileAutoGenerate?: boolean;
 }) {
   const t = useTranslations("storyStudio.authoringRun");
   const assets = proposal.assetPlan.assetSpecs;
   if (embedded) {
-    return <EmbeddedAssetProposalReview proposal={proposal} currentAssets={currentAssets} />;
+    return (
+      <EmbeddedAssetProposalReview
+        proposal={proposal}
+        currentAssets={currentAssets}
+        mobileAutoGenerate={mobileAutoGenerate}
+      />
+    );
   }
 
   return (
@@ -366,9 +381,11 @@ const STORY_ASSET_KINDS: readonly StoryAssetKind[] = ["character", "location", "
 function EmbeddedAssetProposalReview({
   proposal,
   currentAssets,
+  mobileAutoGenerate,
 }: {
   proposal: StoryAssetProposal;
   currentAssets: readonly CurrentStoryAssetSpec[];
+  mobileAutoGenerate: boolean;
 }) {
   const t = useTranslations("storyStudio.authoringRun");
   const assets = proposal.assetPlan.assetSpecs;
@@ -377,6 +394,36 @@ function EmbeddedAssetProposalReview({
   );
   const [dialogKind, setDialogKind] = useState<StoryAssetKind | null>(null);
   const dialogAssets = dialogKind ? assets.filter((asset) => asset.kind === dialogKind) : [];
+
+  if (mobileAutoGenerate) {
+    return (
+      <div
+        data-testid="asset-proposal-review"
+        data-mobile-asset-summary="true"
+        className="space-y-3 py-1"
+      >
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <AssetMetricChip value={assets.length} label={t("proposal.metrics.assetSpecs")} />
+          <AssetMetricChip
+            value={assets.filter((asset) => asset.kind === "character").length}
+            label={t("proposal.metrics.characters")}
+          />
+          <AssetMetricChip
+            value={assets.filter((asset) => asset.kind === "location").length}
+            label={t("proposal.metrics.locations")}
+          />
+          <AssetMetricChip
+            value={assets.filter((asset) => asset.kind === "prop").length}
+            label={t("proposal.metrics.props")}
+          />
+        </div>
+        <p className="text-xs leading-5 text-white/72">
+          {t("proposalStage.assets.mobileDescription", { count: assets.length })}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <>
       <div data-testid="asset-proposal-review" className="space-y-4 py-1">

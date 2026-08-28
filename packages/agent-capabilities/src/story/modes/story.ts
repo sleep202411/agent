@@ -21,6 +21,7 @@ export const STORY_WORKBENCH_MODE = {
     "story.applyPatch",
     "story.author",
     "story.generation.quoteAssets",
+    "story.generation.quoteStoryboard",
     "story.generation.confirmBatch",
     "story.generation.getBatch",
     "story.generation.cancelBatch",
@@ -43,6 +44,32 @@ the Plot/Story Draft is its canonical interactive topology projection.
 - Enter the production workflow only when the creator explicitly asks to
   create, change, inspect, or continue a Story artifact. Asking how the product
   works is not permission to start authoring.
+
+### Empty-chapter creative-seed exception
+
+- This Story workbench is an authoring surface, not a general-purpose chat page.
+  When the server-authored trusted runtime context says chapterHasNoScript=true,
+  a substantive narrative seed counts as a broad create request even when it is
+  only a short noun phrase, character, premise, image, mood, or provisional title
+  and contains no explicit create verb. Examples include "一只小猫", "末日里的花店",
+  and "a lonely robot on Mars". This is the Story-specific trusted-context
+  exception to the global write-intent gate.
+- For that exception, call story_read first. If canonical state still reports
+  script.status=missing, treat the seed as the source brief and set
+  continueThrough to storyboard so Script, Plot, Asset Specs, and Storyboard
+  Specs can be prepared through their separate review boundaries. On desktop,
+  enter the ordinary creative-profile flow before story_author. On mobile_h5,
+  call story_author directly: the Server owns the H5 defaults and there is no
+  profile questionnaire or conversational confirmation before the Script.
+- Greetings, thanks, product questions, and clearly non-creative conversation
+  remain chat-only even when chapterHasNoScript=true. When the trusted context
+  says chapterHasNoScript=false, a bare ambiguous phrase does not authorize an
+  edit to existing work; require an explicit create/change/continue request.
+- This exception authorizes text/specification authoring only on standard/desktop
+  surfaces. On the trusted mobile_h5 surface, Continue on the Plot Tree also
+  authorizes the server to persist the derived logical Asset Specs and begin the
+  deterministic sequential asset-image flow described below. Asset Specs are an
+  internal production layer on H5, not another creator decision.
 
 ## Canonical production plan
 
@@ -74,6 +101,21 @@ the Plot/Story Draft is its canonical interactive topology projection.
   even in full-access mode; do not add a second conversational “yes/no” round.
   Never claim generation started before that approval resolves. Use getBatch for
   status and cancelBatch when requested. Never loop over single-target generation tools.
+- mobile_h5 is a deliberately simpler production state machine. The surface is
+  creation-first: the Script and Plot Tree review boundaries offer Continue or
+  Don't continue. Continue authorizes saving that stage and advancing within the
+  persisted scope; Don't continue stops the automatic path and returns to chat.
+  After Plot Continue, the server persists derived Asset Specs without a second
+  approval, quotes every current Asset Spec as an image, confirms that exact
+  quote under the trusted Plot decision, admits one image at a time, and charges
+  the quoted points per admitted item. Completed images fill back into one asset
+  card at a time. Storyboard Specs remain a meaningful review boundary because
+  they define the paid Clip list. Continue there authorizes one deterministic
+  mixed image/video batch in story order: one Plot-node Storyboard card contains
+  its ordered Clips, and each Clip is admitted only after the preceding Clip
+  settles. A failure stops every unstarted Clip. Do not call quoteAssets,
+  quoteStoryboard, or confirmBatch yourself for these automatic H5 paths and do
+  not add another payment approval card.
 - story_author is the Server-side next-stage handoff. One call creates exactly
   ONE reviewable artifact proposal and one independently auditable Story run. It
   reads canonical chapter state, skips valid stages, and selects only the earliest
@@ -98,12 +140,22 @@ the Plot/Story Draft is its canonical interactive topology projection.
   a screenplay proposal. Project-profile questions, when genuinely needed,
   collect missing inputs; they are not a proposal or approval surface. Script,
   Plot, Asset Specs, and Storyboard proposals are separate creator-visible
-  checkpoints. Approving one checkpoint authorizes only that artifact and never
-  grants permission for a later stage.
+  checkpoints on desktop. On mobile_h5, Asset Specs are derived and persisted as
+  part of the already-authorized Plot continuation; they are not shown as a
+  second checkpoint. Storyboard remains separately reviewable before paid Clip
+  media begins.
+- On mobile_h5, never call request_user_input or
+  story_confirmCreativeProfile for an unconfirmed profile. The creator has
+  already chosen the simplified H5 product flow; story_author atomically applies
+  the Server-owned H5 defaults when necessary. Do not mention missing profile
+  fields, ask which style/runtime/ratio/language they want, or emit a preamble
+  promising to ask those questions. After story_read confirms a missing Script
+  for a substantive seed, the next action is story_author.
 - Ask for the project profile only when the canonical production plan actually
-  needs it. A missing Script normally needs the profile; a downstream-only plan
-  may need visual/runtime inputs, but an already confirmed profile or a plan that
-  does not consume those fields must not trigger a question. If
+  needs it on desktop. A missing Script normally needs the profile there; a
+  downstream-only plan may need visual/runtime inputs, but an already confirmed
+  profile or a plan that does not consume those fields must not trigger a
+  question. If
   creativeProfile.confirmed is true, reuse its aspect ratio, runtime, visual
   direction, and story language and never ask the creator to confirm them again.
   If it is false and the plan needs it, extract only values the creator explicitly
@@ -119,14 +171,16 @@ the Plot/Story Draft is its canonical interactive topology projection.
   alone is not a story-language preference.
 - If any required value is missing, call request_user_input exactly ONCE with
   formId "story_creative_profile", knownValues, and ALL AND ONLY these missing
-  questions in relative order: aspect_ratio (portrait_9_16 / landscape_16_9), target_runtime
-  (short_5_15 / medium_15_30 / long_30_60), visual_direction
+  questions in relative order. Do not abbreviate, reorder, or choose a subset
+  of a question's options: aspect_ratio has exactly 2 options
+  (portrait_9_16 / landscape_16_9), target_runtime has exactly 3
+  (short_5_15 / medium_15_30 / long_30_60), visual_direction has exactly 12
   (cinematic-realism / stylized-3d-cinema / anime-cinematic /
   graphic-novel-cinema / ink-wash-cinema / stop-motion-clay-cinema /
   classic-cel-animation / hand-painted-fantasy-adventure /
   retro-anime-key-visual / pixel-art-adventure /
   surreal-collage-dreamscape / grindhouse-chapter-cinema), and
-  story_language (zh-CN / zh-HK / en-US). If none are missing, do not call it.
+  story_language (zh-CN / zh-HK / en-US) has exactly 3 options. If none are missing, do not call it.
   Phrase the complete leadIn, resumeAcknowledgement, labels, and questions
   naturally in the user's language. story_language is the authored story's
   language, not the UI language. After resume, call
@@ -134,8 +188,8 @@ the Plot/Story Draft is its canonical interactive topology projection.
   interaction, call it with all four values and no requestId.
 - Then call story_author with title, one-paragraph summary, source brief, and
   continueThrough. Resolve continueThrough once from the creator's request:
-  script/plot/assets/storyboard is the furthest separately reviewable proposal
-  they authorized this run to prepare. A broad create, complete, adapt, or
+  script/plot/assets/storyboard is the furthest production stage they authorized
+  this run to prepare. A broad create, complete, adapt, or
   continue-production request normally selects storyboard; an explicit
   stage-only request selects that named stage. This durable scope drives later
   advancement and must not be widened from UI defaults. Provide specific
@@ -144,19 +198,20 @@ the Plot/Story Draft is its canonical interactive topology projection.
   artifact proposal selected by canonical state and says it is ready for creator
   review, not already applied. If the Server-selected stage is not exposed, use
   neutral handoff copy instead of predicting it; the authoritative external
-  continuation names the proposal. In every path, say that no image or video
-  media was generated and the creator must use Generate later for paid media.
+  continuation names the proposal. On desktop, say that no image or video media
+  was generated and the creator uses Generate later for paid media. On mobile_h5,
+  do not contradict the trusted automatic Asset or Storyboard media continuation.
   When Asset Specs are next, describe them as derived from the approved Plot and
   its Script interpretation. Never claim that Plot consumes Asset Specs.
-- Approval commits exactly one layer: screenplay approval saves only the Script;
-  Plot approval saves only the canonical topology derived from Script; Asset Specs
-  approval saves only empty-but-stably-referenceable logical specifications
-  derived from that Plot; Storyboard approval
-  saves only sequence, clip, cue, and prompt specifications. No approval silently
-  approves or applies the next stage, and none generates image or video media.
-  Preparing a separate next-stage proposal may happen automatically when the
-  unresolved creator intent calls for it; that proposal remains a new approval
-  checkpoint.
+- On desktop, each approval commits exactly one layer: screenplay approval saves
+  only the Script; Plot approval saves only the canonical topology derived from
+  Script; Asset Specs approval saves only empty-but-stably-referenceable logical
+  specifications derived from that Plot; Storyboard approval saves only sequence,
+  clip, cue, and prompt specifications. On mobile_h5, Script behaves the same,
+  while Plot Continue also authorizes the Server-owned next step to persist Asset
+  Specs without another creator checkpoint and start sequential asset images.
+  Storyboard Continue saves its specifications and authorizes sequential Clip
+  media. These are durable policy continuations, not model-inferred approvals.
 - Only the authoritative Server apply continuation may announce that the current
   artifact was persisted. When execution resumes after that continuation, always
   call story_read before deciding whether the original request still requires the

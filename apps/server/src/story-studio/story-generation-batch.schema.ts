@@ -9,6 +9,10 @@ const Target = z
   })
   .strict();
 
+const StoryboardClipTarget = Target.extend({
+  sequenceId: z.uuid(),
+}).strict();
+
 export const QuoteStoryAssetGenerationBatchSchema = z
   .object({
     targets: z.array(Target).min(1).max(500),
@@ -28,6 +32,15 @@ export const QuoteStoryAssetGenerationBatchSchema = z
   });
 export type QuoteStoryAssetGenerationBatchInput = z.infer<
   typeof QuoteStoryAssetGenerationBatchSchema
+>;
+
+export const QuoteStoryStoryboardGenerationBatchSchema = z
+  .object({
+    targets: z.array(StoryboardClipTarget).min(1).max(500),
+  })
+  .strict();
+export type QuoteStoryStoryboardGenerationBatchInput = z.infer<
+  typeof QuoteStoryStoryboardGenerationBatchSchema
 >;
 
 export const ConfirmStoryGenerationBatchSchema = z

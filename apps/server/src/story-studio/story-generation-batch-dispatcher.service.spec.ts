@@ -31,7 +31,34 @@ describe('Story generation batch fair dispatcher', () => {
     expect(sql).toContain('ORDER BY "fairness_at" ASC');
     expect(sql).toContain('CROSS JOIN LATERAL');
     expect(sql).toContain('FOR UPDATE OF item SKIP LOCKED');
+    expect(sql).toContain('batch."dispatch_mode" <> \'sequential\'');
+    expect(sql).toContain(
+      "active_item.\"status\" IN ('dispatching', 'submitted')",
+    );
+    expect(sql).toContain('active_item."status" = \'failed\'');
+    expect(sql).toContain('active_item."ordinal" < item."ordinal"');
     expect(sql).toContain('LIMIT ?');
+  });
+
+  it('stops the unstarted remainder of a sequential batch after an earlier failure', async () => {
+    const executeRaw = jest
+      .fn<Promise<number>, [unknown]>()
+      .mockResolvedValue(2);
+    const service = new StoryGenerationBatchDispatcherService(
+      { $executeRaw: executeRaw } as never,
+      {} as never,
+    ) as unknown as {
+      stopSequentialBatchesAfterFailure(): Promise<void>;
+    };
+
+    await service.stopSequentialBatchesAfterFailure();
+    const sql = sqlText(executeRaw.mock.calls[0]?.[0]);
+    expect(sql).toContain('batch."dispatch_mode" = \'sequential\'');
+    expect(sql).toContain('pending."status" = \'ready\'');
+    expect(sql).toContain('failed."status" = \'failed\'');
+    expect(sql).toContain('failed."ordinal" < pending."ordinal"');
+    expect(sql).toContain("'PREVIOUS_ITEM_FAILED'");
+    expect(sql).toContain('\'cancelled\'::"StoryGenerationBatchItemStatus"');
   });
 
   it('lets only one replica choose the globally fair actor set at a time', async () => {
@@ -99,6 +126,7 @@ describe('Story generation batch fair dispatcher', () => {
       options: {},
       quotedPoints: 12,
       pricingVersion: 'price-v1',
+      dispatchAttempts: 1,
       status: StoryGenerationBatchItemStatus.dispatching,
       batch: {
         actorUserId: 'actor-1',
@@ -117,7 +145,7 @@ describe('Story generation batch fair dispatcher', () => {
       'project-1',
       'chapter-1',
       'asset-1',
-      'story-generation-batch:item-1',
+      'story-generation-batch:item-1:attempt:1',
       expect.any(Object),
       { pricingVersion: 'price-v1', points: 12 },
       { type: 'workspace', id: 'actor-personal-workspace' },
@@ -125,37 +153,33 @@ describe('Story generation batch fair dispatcher', () => {
     );
   });
 
-  it('persists the actionable domain error instead of the generic HTTP exception text', async () => {
-    const updateMany = jest
-      .fn<Promise<{ count: number }>, [unknown]>()
-      .mockResolvedValue({ count: 1 });
-    const createQuotedAssetGeneration = jest.fn().mockRejectedValue(
-      new ConflictException({
-        code: 'INSUFFICIENT_COMPUTE_POINTS',
-        msg: 'Not enough compute points. Recharge and try again.',
-        requiredAmount: '60',
-        availableBalance: '0',
-      }),
-    );
+  it('dispatches a Storyboard clip with its sequence and frozen mixed-media quote', async () => {
+    const createQuotedStoryboardClipGeneration = jest
+      .fn()
+      .mockResolvedValue({});
     const service = new StoryGenerationBatchDispatcherService(
-      { storyGenerationBatchItem: { updateMany } } as never,
-      { createQuotedAssetGeneration } as never,
+      {} as never,
+      { createQuotedStoryboardClipGeneration } as never,
     ) as unknown as {
       dispatch(item: unknown): Promise<void>;
     };
 
     await service.dispatch({
-      id: 'item-1',
-      targetKind: StoryProductionGenerationTargetKind.asset_spec,
-      targetId: 'asset-1',
-      targetVersion: 0,
-      sequenceId: null,
-      outputKind: StoryProductionGenerationKind.image,
-      modelId: 'image-1',
-      schemaVersion: 'v1',
-      options: {},
-      quotedPoints: 60,
-      pricingVersion: 'price-v1',
+      id: 'item-video-1',
+      targetKind: StoryProductionGenerationTargetKind.storyboard_clip,
+      targetId: 'clip-1',
+      targetVersion: 2,
+      sequenceId: 'sequence-1',
+      outputKind: StoryProductionGenerationKind.video,
+      modelId: 'video-1',
+      schemaVersion: 'v2',
+      options: {
+        aspectRatio: '16:9',
+        duration: 6,
+      },
+      quotedPoints: 90,
+      pricingVersion: 'price-v2',
+      dispatchAttempts: 1,
       status: StoryGenerationBatchItemStatus.dispatching,
       batch: {
         actorUserId: 'actor-1',
@@ -168,15 +192,97 @@ describe('Story generation batch fair dispatcher', () => {
       },
     });
 
-    const update = updateMany.mock.calls[0]?.[0] as
+    expect(createQuotedStoryboardClipGeneration).toHaveBeenCalledWith(
+      { userId: 'actor-1' },
+      'workspace-1',
+      'project-1',
+      'chapter-1',
+      'sequence-1',
+      'clip-1',
+      'story-generation-batch:item-video-1:attempt:1',
+      expect.objectContaining({
+        expectedVersion: 2,
+        modelId: 'video-1',
+        schemaVersion: 'v2',
+        options: { aspectRatio: '16:9' },
+      }),
+      { pricingVersion: 'price-v2', points: 90 },
+      { type: 'workspace', id: 'actor-personal-workspace' },
+      expect.objectContaining({ itemId: 'item-video-1' }),
+    );
+  });
+
+  it('blocks a sequential batch on insufficient balance without failing the current item', async () => {
+    const itemUpdateMany = jest
+      .fn<Promise<{ count: number }>, [unknown]>()
+      .mockResolvedValue({ count: 1 });
+    const batchUpdateMany = jest
+      .fn<Promise<{ count: number }>, [unknown]>()
+      .mockResolvedValue({ count: 1 });
+    const createQuotedAssetGeneration = jest.fn().mockRejectedValue(
+      new ConflictException({
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        msg: 'Not enough compute points. Recharge and try again.',
+        requiredAmount: '60',
+        availableBalance: '0',
+      }),
+    );
+    const service = new StoryGenerationBatchDispatcherService(
+      {
+        $transaction: jest.fn((callback: (tx: unknown) => unknown) =>
+          callback({
+            storyGenerationBatchItem: { updateMany: itemUpdateMany },
+            storyGenerationBatch: { updateMany: batchUpdateMany },
+          }),
+        ),
+      } as never,
+      { createQuotedAssetGeneration } as never,
+    ) as unknown as {
+      dispatch(item: unknown): Promise<void>;
+    };
+
+    await service.dispatch({
+      id: 'item-1',
+      batchId: 'batch-1',
+      ordinal: 0,
+      targetKind: StoryProductionGenerationTargetKind.asset_spec,
+      targetId: 'asset-1',
+      targetVersion: 0,
+      sequenceId: null,
+      outputKind: StoryProductionGenerationKind.image,
+      modelId: 'image-1',
+      schemaVersion: 'v1',
+      options: {},
+      quotedPoints: 60,
+      pricingVersion: 'price-v1',
+      dispatchAttempts: 1,
+      status: StoryGenerationBatchItemStatus.dispatching,
+      batch: {
+        actorUserId: 'actor-1',
+        workspaceId: 'workspace-1',
+        storyProjectId: 'project-1',
+        storyChapterId: 'chapter-1',
+        billingSubjectType: 'workspace',
+        billingSubjectId: 'actor-personal-workspace',
+        dispatchMode: 'sequential',
+        status: StoryGenerationBatchStatus.running,
+      },
+    });
+
+    const update = itemUpdateMany.mock.calls[0]?.[0] as
       | { data?: Record<string, unknown> }
       | undefined;
     expect(update?.data).toMatchObject({
-      status: StoryGenerationBatchItemStatus.failed,
-      error: {
+      status: StoryGenerationBatchItemStatus.ready,
+    });
+    const batchUpdate = batchUpdateMany.mock.calls[0]?.[0] as
+      | { data?: Record<string, unknown> }
+      | undefined;
+    expect(batchUpdate?.data).toMatchObject({
+      status: StoryGenerationBatchStatus.blocked,
+      blockReason: {
         code: 'INSUFFICIENT_COMPUTE_POINTS',
-        message: 'Not enough compute points. Recharge and try again.',
-        retryable: false,
+        retryable: true,
         requiredAmount: '60',
         availableBalance: '0',
       },

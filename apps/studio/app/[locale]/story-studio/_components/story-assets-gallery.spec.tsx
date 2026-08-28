@@ -47,7 +47,17 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: readonly unknown[] }) => ({
-    data: queryKey[1] === "asset-specs" ? queryState.assets : queryState.production,
+    data:
+      queryKey[1] === "asset-specs"
+        ? queryState.assets
+        : queryKey[1] === "chapter-workbench"
+          ? {
+              project: {
+                workspaceId: "workspace-1",
+                capabilities: ["story.edit"],
+              },
+            }
+          : queryState.production,
     isPending: false,
     error: null,
     refetch: vi.fn(),

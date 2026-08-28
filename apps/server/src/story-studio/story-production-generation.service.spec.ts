@@ -3,9 +3,11 @@ import {
   StoryProductionGenerationService,
   assertStoryGenerationQuoteMatches,
   exactStoryDurationValue,
+  generationRequestFingerprint,
   isRetryableStoryMaterializationPrismaCode,
   missingRequiredStoryModelInputs,
   shortestStorySourceDuration,
+  storyGenerationClientOptionsFromSnapshot,
   storyModelSchemaDefaults,
 } from './story-production-generation.service';
 
@@ -164,6 +166,48 @@ describe('Story production generation model constraints', () => {
         },
       ),
     ).not.toThrow();
+  });
+
+  it('reattaches legacy batch snapshots without replaying server-owned duration as client input', () => {
+    expect(
+      storyGenerationClientOptionsFromSnapshot({
+        aspectRatio: '16:9',
+        duration: 6,
+        durationSeconds: 10,
+      }),
+    ).toEqual({ aspectRatio: '16:9' });
+
+    expect(() =>
+      storyGenerationClientOptionsFromSnapshot({
+        prompt: 'must remain server-owned',
+      }),
+    ).toThrow(
+      'Story generation prompts and media references are controlled by the target specification.',
+    );
+  });
+
+  it('fingerprints an automatic-model request without undefined JSON values', () => {
+    expect(
+      generationRequestFingerprint(
+        {
+          projectId: 'project-id',
+          chapterId: 'chapter-id',
+          targetKind: 'storyboard_clip',
+          targetId: 'clip-id',
+          sequenceId: 'sequence-id',
+          expectedVersion: 1,
+          modelId: undefined,
+          schemaVersion: undefined,
+          clientOptions: undefined,
+        } as never,
+        {
+          modelId: 'resolved-model',
+          schemaVersion: 'resolved-schema',
+          effectiveOptions: {},
+          targetSnapshotFingerprint: 'a'.repeat(64),
+        },
+      ),
+    ).toMatch(/^[a-f0-9]{64}$/);
   });
 });
 

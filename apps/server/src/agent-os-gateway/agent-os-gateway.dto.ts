@@ -28,6 +28,8 @@ export const AgentOsWorkbenchContextSchema = z
   .object({
     chapterId: z.string().uuid().optional(),
     sectionId: z.string().uuid().optional(),
+    /** Explicit responsive product surface; never inferred from chat text. */
+    experience: z.literal('mobile_h5').optional(),
   })
   .strict()
   .refine(
@@ -124,6 +126,8 @@ export const AgentOsApprovalBodySchema = z
     /** Required — must match the profile used for the run resume. */
     modelProfileId: modelProfileIdSchema,
     permissionMode: AgentOsPermissionModeSchema.optional(),
+    /** Current decision surface; used by the Story H5 approval coordinator. */
+    experience: z.literal('mobile_h5').optional(),
   })
   .strict();
 

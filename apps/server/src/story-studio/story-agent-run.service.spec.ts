@@ -16,6 +16,8 @@ import type {
 } from '@repo/shared/story-agent';
 import {
   buildStoryScreenplayDocument,
+  StoryAssetProposalSchema,
+  StoryPlotProposalSchema,
   StoryScreenplayProposalSchema,
 } from '@repo/shared/story-agent';
 import { storyVisualStyleSkillBySlug } from '@repo/shared';
@@ -141,6 +143,47 @@ const LEGACY_REARMED_PROPOSAL = StoryScreenplayProposalSchema.parse({
       },
     ],
   },
+});
+const H5_ASSET_PROPOSAL = StoryAssetProposalSchema.parse({
+  schemaVersion: 'story-asset-proposal-v1',
+  draftSchemaVersion: LEGACY_REARMED_PROPOSAL.draftSchemaVersion,
+  baseDraftRevision: LEGACY_REARMED_PROPOSAL.baseDraftRevision,
+  baseContentHash: LEGACY_REARMED_PROPOSAL.baseContentHash,
+  baseLayoutRevision: LEGACY_REARMED_PROPOSAL.baseLayoutRevision,
+  baseScriptDocumentId: LEGACY_SCRIPT_DOCUMENT_ID,
+  baseScriptSequence: 0,
+  baseScriptHash:
+    '96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7',
+  title: LEGACY_REARMED_PROPOSAL.title,
+  summary: 'Asset Specs are ready.',
+  screenplay: LEGACY_REARMED_PROPOSAL.screenplay,
+  assetPlan: {
+    assetSpecs: [
+      {
+        stableKey: 'location.dream-room',
+        kind: 'location',
+        name: 'Dream Room',
+        description: 'A dark room where pages turn themselves.',
+        imagePrompt: 'A cinematic dark room with a page turning by itself.',
+        sourceNodeIds: ['opening'],
+      },
+    ],
+  },
+});
+const H5_PLOT_PROPOSAL = StoryPlotProposalSchema.parse({
+  schemaVersion: 'story-plot-proposal-v1',
+  draftSchemaVersion: LEGACY_REARMED_PROPOSAL.draftSchemaVersion,
+  baseDraftRevision: LEGACY_REARMED_PROPOSAL.baseDraftRevision,
+  baseContentHash: LEGACY_REARMED_PROPOSAL.baseContentHash,
+  baseLayoutRevision: LEGACY_REARMED_PROPOSAL.baseLayoutRevision,
+  baseScriptDocumentId: LEGACY_SCRIPT_DOCUMENT_ID,
+  baseScriptSequence: 0,
+  baseScriptHash:
+    '96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7',
+  title: LEGACY_REARMED_PROPOSAL.title,
+  summary: 'Plot Tree is ready.',
+  screenplay: LEGACY_REARMED_PROPOSAL.screenplay,
+  document: buildStoryScreenplayDocument(LEGACY_REARMED_PROPOSAL.screenplay),
 });
 
 const changedOverviewOperation = {
@@ -493,6 +536,114 @@ describe('StoryAgentRunService', () => {
           call.data.status === undefined,
       ),
     ).toBe(false);
+  });
+
+  it('upgrades a pre-existing Asset proposal when Continue is decided on H5', async () => {
+    const fixture = agentOsDecisionTransaction(
+      agentManagedProposalRow({ proposal: H5_ASSET_PROPOSAL }),
+    );
+    mockCurrentEmptyScriptHead(fixture.tx);
+    const { service, agentOsJournal } = serviceWith(fixture.tx);
+    agentOsJournal.appendStoryProposalDecisionInTransaction.mockResolvedValue(
+      agentDispatch('waiting_for_external', '正在应用资产规格。'),
+    );
+
+    await service.resolveAgentOsProposalDecision({
+      user: USER,
+      workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
+      agentRunId: SOURCE_AGENT_RUN_ID,
+      conversationId: SOURCE_AGENT_CONVERSATION_ID,
+      storyRunId: RUN_ID,
+      approvalId: storyProposalApprovalId(RUN_ID),
+      responseId: '0197f4a2-0800-7000-8000-000000000099',
+      responseText: '继续：保存资产规格并自动生图',
+      locale: 'zh-CN',
+      decision: 'approve',
+      experience: 'mobile_h5',
+    });
+
+    expect(
+      fixture.tx.agentOsExternalHandoffRegistration.update,
+    ).toHaveBeenCalledWith({
+      where: { storyAgentRunId: RUN_ID },
+      data: {
+        continuationPlan: {
+          ...SOURCE_CONTINUATION_PLAN,
+          experience: 'mobile_h5',
+          autoGenerateAssetImages: true,
+        },
+      },
+    });
+  });
+
+  it('records H5 Plot Continue as authority to auto-apply Asset Specs and generate them sequentially', async () => {
+    const fixture = agentOsDecisionTransaction(
+      agentManagedProposalRow({ proposal: H5_PLOT_PROPOSAL }),
+    );
+    mockCurrentEmptyScriptHead(fixture.tx);
+    const { service, agentOsJournal } = serviceWith(fixture.tx);
+    agentOsJournal.appendStoryProposalDecisionInTransaction.mockResolvedValue(
+      agentDispatch('waiting_for_external', '正在应用情节树。'),
+    );
+
+    await service.resolveAgentOsProposalDecision({
+      user: USER,
+      workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
+      agentRunId: SOURCE_AGENT_RUN_ID,
+      conversationId: SOURCE_AGENT_CONVERSATION_ID,
+      storyRunId: RUN_ID,
+      approvalId: storyProposalApprovalId(RUN_ID),
+      responseId: '0197f4a2-0800-7000-8000-000000000097',
+      responseText: '继续',
+      locale: 'zh-CN',
+      decision: 'approve',
+      experience: 'mobile_h5',
+    });
+
+    expect(
+      fixture.tx.agentOsExternalHandoffRegistration.update,
+    ).toHaveBeenCalledWith({
+      where: { storyAgentRunId: RUN_ID },
+      data: {
+        continuationPlan: {
+          ...SOURCE_CONTINUATION_PLAN,
+          experience: 'mobile_h5',
+          autoApplyAssetSpecs: true,
+          autoGenerateAssetImages: true,
+        },
+      },
+    });
+  });
+
+  it('does not authorize automatic Asset generation from a desktop approval', async () => {
+    const fixture = agentOsDecisionTransaction(
+      agentManagedProposalRow({ proposal: H5_ASSET_PROPOSAL }),
+    );
+    mockCurrentEmptyScriptHead(fixture.tx);
+    const { service, agentOsJournal } = serviceWith(fixture.tx);
+    agentOsJournal.appendStoryProposalDecisionInTransaction.mockResolvedValue(
+      agentDispatch('waiting_for_external', 'Applying Asset Specs.'),
+    );
+
+    await service.resolveAgentOsProposalDecision({
+      user: USER,
+      workspaceId: WORKSPACE_ID,
+      projectId: PROJECT_ID,
+      agentRunId: SOURCE_AGENT_RUN_ID,
+      conversationId: SOURCE_AGENT_CONVERSATION_ID,
+      storyRunId: RUN_ID,
+      approvalId: storyProposalApprovalId(RUN_ID),
+      responseId: '0197f4a2-0800-7000-8000-000000000098',
+      responseText: 'Approve these Asset Specs.',
+      locale: 'en-US',
+      decision: 'approve',
+    });
+
+    expect(
+      fixture.tx.agentOsExternalHandoffRegistration.update,
+    ).not.toHaveBeenCalled();
   });
 
   it('atomically cancels initial v2 authoring but refuses Stop after proposal application commits', async () => {
@@ -3004,10 +3155,34 @@ function agentOsDecisionTransaction(
       storyProjectWriteState: {
         update: jest.fn().mockResolvedValue(undefined),
       },
+      studioDocument: {
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+      studioDocumentOperation: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       storyAgentRun,
+      agentOsExternalHandoffRegistration: {
+        findUnique: jest.fn().mockResolvedValue({
+          continuationPlan: SOURCE_CONTINUATION_PLAN,
+        }),
+        update: jest.fn().mockResolvedValue(undefined),
+      },
     },
     current: () => current,
   };
+}
+
+function mockCurrentEmptyScriptHead(
+  tx: ReturnType<typeof agentOsDecisionTransaction>['tx'],
+) {
+  tx.studioDocument.findFirst.mockResolvedValue({
+    id: LEGACY_SCRIPT_DOCUMENT_ID,
+    currentSequence: 0,
+    snapshotSequence: 0,
+    crdtState: Buffer.from([0, 0]),
+  });
+  tx.studioDocumentOperation.findMany.mockResolvedValue([]);
 }
 
 function agentDispatch(

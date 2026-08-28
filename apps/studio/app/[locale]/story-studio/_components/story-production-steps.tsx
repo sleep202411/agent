@@ -87,7 +87,9 @@ export function StoryProductionSteps({
         );
         return (
           <span key={step.key} className="inline-flex items-center">
-            {index > 0 ? <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" /> : null}
+            {index > 0 ? (
+              <span aria-hidden="true" className="mx-2 h-px w-4 bg-white/12 2xl:mx-3 2xl:w-8" />
+            ) : null}
             {isActive ? (
               <span
                 aria-current="page"

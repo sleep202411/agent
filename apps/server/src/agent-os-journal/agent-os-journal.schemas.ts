@@ -1,6 +1,7 @@
 import {
   AgentExternalJobHandoffSchema,
   StoryProductionContinuationPlanSchema,
+  StoryProductionTargetStageSchema,
 } from '@repo/agent-tools';
 import { ProjectSkillResolutionSnapshotSchema } from '@repo/agent-skills';
 import { z } from 'zod';
@@ -156,6 +157,8 @@ export const AgentOsContinuationCommandSchema = z.discriminatedUnion('kind', [
       .object({
         locale: z.enum(['en-US', 'zh-CN', 'zh-HK']),
         plan: StoryProductionContinuationPlanSchema,
+        completedStage: StoryProductionTargetStageSchema.optional(),
+        mediaBatchCompleted: z.boolean().optional(),
       })
       .strict()
       .optional(),

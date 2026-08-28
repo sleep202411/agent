@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import {
   MediaAssetKind,
+  MediaAssetModerationStatus,
+  MediaAssetStatus,
   MediaAssetVariantKind,
   MediaAssetVariantStatus,
   Prisma,
@@ -816,6 +818,37 @@ export class StoryProductionPlanService {
             chapterId,
           );
         }
+        let importedMediaVersionId: string | null = null;
+        if (input.sourceMediaAssetId) {
+          const source = await requireAssetSpecCandidateImage(
+            tx,
+            projectId,
+            input.sourceMediaAssetId,
+          );
+          const latest = await tx.storyAssetMediaVersion.findFirst({
+            where: { assetSpecId: current.id },
+            orderBy: { versionNumber: 'desc' },
+            select: { versionNumber: true },
+          });
+          const imported = await tx.storyAssetMediaVersion.create({
+            data: {
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+              assetSpecId: current.id,
+              versionNumber: (latest?.versionNumber ?? 0) + 1,
+              mediaAssetId: source.id,
+              sourceFingerprint: current.sourceFingerprint,
+              generationSnapshot: {
+                version: 1,
+                source: 'user_media',
+                mediaAssetId: source.id,
+              },
+              createdByUserId: user.userId,
+            },
+            select: { id: true },
+          });
+          importedMediaVersionId = imported.id;
+        }
         const semanticModified = storyAssetSemanticPatch(input);
         const updated = await tx.storyAssetSpec.updateMany({
           where: { id: current.id, version: input.expectedVersion },
@@ -825,7 +858,9 @@ export class StoryProductionPlanService {
             ...defined(input, 'imagePrompt'),
             ...defined(input, 'videoPrompt'),
             ...defined(input, 'negativePrompt'),
-            ...defined(input, 'selectedMediaVersionId'),
+            ...(importedMediaVersionId
+              ? { selectedMediaVersionId: importedMediaVersionId }
+              : defined(input, 'selectedMediaVersionId')),
             ...(semanticModified
               ? {
                   userModifiedAt: now,
@@ -947,10 +982,19 @@ export class StoryProductionPlanService {
               storyChapterId: chapterId,
               status: { not: StoryProductionSpecStatus.archived },
             },
-            select: { id: true, atMs: true },
+            select: { id: true, atMs: true, version: true },
           }),
         ]);
-        if (cues.some((cue) => cue.atMs > input.durationMs)) {
+        if (
+          cues.some(
+            (cue) =>
+              storyboardCueTimeAfterTimelineResize(
+                cue.atMs,
+                sequence.durationMs,
+                input.durationMs,
+              ) > input.durationMs,
+          )
+        ) {
           throw new BadRequestException({
             code: 'STORYBOARD_CUE_OUT_OF_RANGE',
             message:
@@ -966,6 +1010,10 @@ export class StoryProductionPlanService {
           allClips.map((clip) => [clip.stableKey, clip]),
         );
         const retainedIds = new Set<string>();
+        const importedMedia = new Map<
+          string,
+          { id: string; kind: MediaAssetKind }
+        >();
 
         for (const clipInput of input.clips) {
           if (!clipInput.id) {
@@ -975,6 +1023,15 @@ export class StoryProductionPlanService {
                 message:
                   'A new Storyboard clip must use a stable key that has never belonged to this sequence.',
               });
+            }
+            if (clipInput.sourceMediaAssetId) {
+              const source = await requireStoryboardCandidateMedia(
+                tx,
+                projectId,
+                clipInput.sourceMediaAssetId,
+                clipInput.kind,
+              );
+              importedMedia.set(source.id, source);
             }
             continue;
           }
@@ -1023,7 +1080,14 @@ export class StoryProductionPlanService {
             clipInput.videoPrompt,
           );
           if (!clipInput.id) {
-            await tx.storyStoryboardClip.create({
+            const sourceFingerprint = canonicalJsonHash({
+              kind: 'human-storyboard-clip',
+              projectId,
+              chapterId,
+              sequenceId,
+              stableKey: clipInput.stableKey,
+            });
+            const created = await tx.storyStoryboardClip.create({
               data: {
                 storyProjectId: projectId,
                 storyChapterId: chapterId,
@@ -1039,18 +1103,45 @@ export class StoryProductionPlanService {
                 imagePrompt: clipInput.imagePrompt,
                 videoPrompt: clipInput.videoPrompt,
                 negativePrompt: clipInput.negativePrompt,
-                sourceFingerprint: canonicalJsonHash({
-                  kind: 'human-storyboard-clip',
-                  projectId,
-                  chapterId,
-                  sequenceId,
-                  stableKey: clipInput.stableKey,
-                }),
+                sourceFingerprint,
                 createdByUserId: user.userId,
                 userModifiedAt: now,
                 userModifiedByUserId: user.userId,
               },
+              select: { id: true },
             });
+            if (clipInput.sourceMediaAssetId) {
+              const source = importedMedia.get(clipInput.sourceMediaAssetId);
+              if (!source) {
+                throw new InternalServerErrorException({
+                  code: 'STORYBOARD_CLIP_SOURCE_MEDIA_UNRESOLVED',
+                  message:
+                    'The validated imported media could not be resolved.',
+                });
+              }
+              const mediaVersion =
+                await tx.storyStoryboardClipMediaVersion.create({
+                  data: {
+                    storyProjectId: projectId,
+                    storyChapterId: chapterId,
+                    storyboardClipId: created.id,
+                    versionNumber: 1,
+                    mediaAssetId: source.id,
+                    sourceFingerprint,
+                    generationSnapshot: {
+                      version: 1,
+                      source: 'user_media',
+                      mediaAssetId: source.id,
+                    },
+                    createdByUserId: user.userId,
+                  },
+                  select: { id: true },
+                });
+              await tx.storyStoryboardClip.update({
+                where: { id: created.id },
+                data: { selectedMediaVersionId: mediaVersion.id },
+              });
+            }
             continue;
           }
           const existing = activeById.get(clipInput.id)!;
@@ -1122,6 +1213,33 @@ export class StoryProductionPlanService {
           });
         }
 
+        // Cues exactly on the old tail are semantically end-anchored. Keep a
+        // decision/interaction at the end when a creator appends or removes
+        // footage; otherwise appended clips would become unreachable during
+        // playback. Mid-timeline cues retain their absolute coordinates.
+        if (sequence.durationMs !== input.durationMs) {
+          for (const cue of cues) {
+            const nextAtMs = storyboardCueTimeAfterTimelineResize(
+              cue.atMs,
+              sequence.durationMs,
+              input.durationMs,
+            );
+            if (nextAtMs === cue.atMs) continue;
+            const updatedCue = await tx.storyStoryboardCue.updateMany({
+              where: { id: cue.id, version: cue.version },
+              data: {
+                atMs: nextAtMs,
+                userModifiedAt: now,
+                userModifiedByUserId: user.userId,
+                version: { increment: 1 },
+              },
+            });
+            if (updatedCue.count !== 1) {
+              throw productionCasConflict('Storyboard cue');
+            }
+          }
+        }
+
         const updatedSequence = await tx.storyStoryboardSequence.updateMany({
           where: { id: sequence.id, version: input.expectedVersion },
           data: {
@@ -1170,6 +1288,7 @@ export class StoryProductionPlanService {
           },
         });
         if (!clip) throw productionNotFound('Storyboard clip', clipId);
+        const nextKind = input.kind ?? clip.kind;
         if (input.selectedMediaVersionId) {
           await requireClipMediaVersion(
             tx,
@@ -1177,8 +1296,40 @@ export class StoryProductionPlanService {
             clip.id,
             projectId,
             chapterId,
-            clip.kind,
+            nextKind,
           );
+        }
+        let importedMediaVersionId: string | null = null;
+        if (input.sourceMediaAssetId) {
+          const source = await requireStoryboardCandidateMedia(
+            tx,
+            projectId,
+            input.sourceMediaAssetId,
+            nextKind,
+          );
+          const latest = await tx.storyStoryboardClipMediaVersion.findFirst({
+            where: { storyboardClipId: clip.id },
+            orderBy: { versionNumber: 'desc' },
+            select: { versionNumber: true },
+          });
+          const imported = await tx.storyStoryboardClipMediaVersion.create({
+            data: {
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+              storyboardClipId: clip.id,
+              versionNumber: (latest?.versionNumber ?? 0) + 1,
+              mediaAssetId: source.id,
+              sourceFingerprint: clip.sourceFingerprint,
+              generationSnapshot: {
+                version: 1,
+                source: 'user_media',
+                mediaAssetId: source.id,
+              },
+              createdByUserId: user.userId,
+            },
+            select: { id: true },
+          });
+          importedMediaVersionId = imported.id;
         }
         const nextImagePrompt =
           input.imagePrompt === undefined
@@ -1188,17 +1339,24 @@ export class StoryProductionPlanService {
           input.videoPrompt === undefined
             ? clip.videoPrompt
             : input.videoPrompt;
-        assertClipPromptShape(clip.kind, nextImagePrompt, nextVideoPrompt);
+        assertClipPromptShape(nextKind, nextImagePrompt, nextVideoPrompt);
         const semanticModified = storyboardClipSemanticPatch(input);
         const updated = await tx.storyStoryboardClip.updateMany({
           where: { id: clip.id, version: input.expectedVersion },
           data: {
+            ...defined(input, 'kind'),
             ...defined(input, 'title'),
             ...defined(input, 'description'),
             ...defined(input, 'imagePrompt'),
             ...defined(input, 'videoPrompt'),
             ...defined(input, 'negativePrompt'),
-            ...defined(input, 'selectedMediaVersionId'),
+            ...(importedMediaVersionId
+              ? { selectedMediaVersionId: importedMediaVersionId }
+              : input.selectedMediaVersionId !== undefined
+                ? { selectedMediaVersionId: input.selectedMediaVersionId }
+                : nextKind !== clip.kind
+                  ? { selectedMediaVersionId: null }
+                  : {}),
             ...(semanticModified
               ? {
                   userModifiedAt: now,
@@ -1209,12 +1367,20 @@ export class StoryProductionPlanService {
           },
         });
         if (updated.count !== 1) throw productionCasConflict('Storyboard clip');
-        return toStoryboardSequenceDto(
+        const sequence = toStoryboardSequenceDto(
           await tx.storyStoryboardSequence.findUniqueOrThrow({
             where: { id: sequenceId },
             include: STORYBOARD_INCLUDE,
           }),
         );
+        const patchedClip = sequence.clips.find((item) => item.id === clip.id);
+        if (!patchedClip) {
+          throw new InternalServerErrorException({
+            code: 'STORYBOARD_CLIP_PATCH_RESULT_MISSING',
+            message: 'The updated Storyboard clip could not be loaded.',
+          });
+        }
+        return patchedClip;
       },
     });
   }
@@ -3111,6 +3277,114 @@ async function requireClipMediaVersion(
   assertStoryboardClipMediaKind(clipKind, row.mediaAsset.kind);
 }
 
+async function requireStoryboardCandidateMedia(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  mediaAssetId: string,
+  clipKind: StoryStoryboardClip['kind'],
+): Promise<{ id: string; kind: MediaAssetKind }> {
+  return requireStoryCandidateMedia(
+    tx,
+    projectId,
+    mediaAssetId,
+    clipKind,
+    'storyboard_clip',
+  );
+}
+
+async function requireAssetSpecCandidateImage(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  mediaAssetId: string,
+): Promise<{ id: string; kind: MediaAssetKind }> {
+  return requireStoryCandidateMedia(
+    tx,
+    projectId,
+    mediaAssetId,
+    'image',
+    'asset_spec',
+  );
+}
+
+async function requireStoryCandidateMedia(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  mediaAssetId: string,
+  expectedKind: StoryStoryboardClip['kind'],
+  target: 'asset_spec' | 'storyboard_clip',
+): Promise<{ id: string; kind: MediaAssetKind }> {
+  const candidate = await tx.storyCandidateAsset.findUnique({
+    where: {
+      storyProjectId_mediaAssetId: {
+        storyProjectId: projectId,
+        mediaAssetId,
+      },
+    },
+    select: {
+      asset: {
+        select: {
+          id: true,
+          kind: true,
+          status: true,
+          moderationStatus: true,
+          deletedAt: true,
+        },
+      },
+    },
+  });
+  if (!candidate || candidate.asset.deletedAt) {
+    throw new BadRequestException({
+      code:
+        target === 'asset_spec'
+          ? 'ASSET_SPEC_SOURCE_MEDIA_INVALID'
+          : 'STORYBOARD_CLIP_SOURCE_MEDIA_INVALID',
+      message:
+        target === 'asset_spec'
+          ? 'The imported Asset image must belong to this project candidate library.'
+          : 'The imported media must belong to this project candidate library.',
+    });
+  }
+  if (candidate.asset.status !== MediaAssetStatus.ready) {
+    throw new BadRequestException({
+      code:
+        target === 'asset_spec'
+          ? 'ASSET_SPEC_SOURCE_MEDIA_NOT_READY'
+          : 'STORYBOARD_CLIP_SOURCE_MEDIA_NOT_READY',
+      message:
+        target === 'asset_spec'
+          ? 'The imported Asset image is not ready yet.'
+          : 'The imported media is not ready yet.',
+    });
+  }
+  if (candidate.asset.moderationStatus === MediaAssetModerationStatus.blocked) {
+    throw new BadRequestException({
+      code:
+        target === 'asset_spec'
+          ? 'ASSET_SPEC_SOURCE_MEDIA_BLOCKED'
+          : 'STORYBOARD_CLIP_SOURCE_MEDIA_BLOCKED',
+      message:
+        target === 'asset_spec'
+          ? 'The imported Asset image was blocked by moderation and cannot be used.'
+          : 'The imported media was blocked by moderation and cannot be used.',
+    });
+  }
+  if (target === 'asset_spec') {
+    assertAssetSpecImageKind(candidate.asset.kind);
+  } else {
+    assertStoryboardClipMediaKind(expectedKind, candidate.asset.kind);
+  }
+  return candidate.asset;
+}
+
+function assertAssetSpecImageKind(mediaKind: MediaAssetKind): void {
+  if (String(mediaKind) === 'image') return;
+  throw new BadRequestException({
+    code: 'ASSET_SPEC_MEDIA_KIND_MISMATCH',
+    message: 'An Asset Spec can only select image media.',
+    mediaKind,
+  });
+}
+
 export function assertStoryboardClipMediaKind(
   clipKind: StoryStoryboardClip['kind'],
   mediaKind: MediaAssetKind,
@@ -3441,12 +3715,25 @@ export function storyboardClipSemanticPatch(
   input: PatchStoryStoryboardClipInput,
 ): boolean {
   return (
+    input.kind !== undefined ||
     input.title !== undefined ||
     input.description !== undefined ||
     input.imagePrompt !== undefined ||
     input.videoPrompt !== undefined ||
     input.negativePrompt !== undefined
   );
+}
+
+/**
+ * Preserve the semantic meaning of a cue placed exactly at a sequence tail.
+ * Other cues are absolute timeline coordinates and do not drift on resize.
+ */
+export function storyboardCueTimeAfterTimelineResize(
+  cueAtMs: number,
+  previousDurationMs: number,
+  nextDurationMs: number,
+): number {
+  return cueAtMs === previousDurationMs ? nextDurationMs : cueAtMs;
 }
 
 function toLatestGenerationDto(

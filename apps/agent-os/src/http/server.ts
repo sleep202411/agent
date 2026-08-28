@@ -6,7 +6,11 @@ import {
   AgentDisplayLocaleSchema,
   AgentOsIdSchema,
 } from "@repo/agent-protocol";
-import { StoryProductionContinuationPlanSchema, type DomainPort } from "@repo/agent-tools";
+import {
+  StoryProductionContinuationPlanSchema,
+  StoryProductionTargetStageSchema,
+  type DomainPort,
+} from "@repo/agent-tools";
 import {
   verifyProjectSkillSnapshot,
   type ProjectSkillResolutionSnapshot,
@@ -74,16 +78,41 @@ function validatedStoryContinuation(value: unknown):
   | {
       locale: "en-US" | "zh-CN" | "zh-HK";
       plan: ReturnType<typeof StoryProductionContinuationPlanSchema.parse>;
+      completedStage?: ReturnType<typeof StoryProductionTargetStageSchema.parse>;
+      mediaBatchCompleted?: boolean;
     }
   | null
   | undefined {
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object") return null;
-  const candidate = value as { locale?: unknown; plan?: unknown };
+  const candidate = value as {
+    locale?: unknown;
+    plan?: unknown;
+    completedStage?: unknown;
+    mediaBatchCompleted?: unknown;
+  };
   const locale = AgentDisplayLocaleSchema.safeParse(candidate.locale);
   const plan = StoryProductionContinuationPlanSchema.safeParse(candidate.plan);
-  if (!locale.success || !plan.success) return null;
-  return { locale: locale.data, plan: plan.data };
+  const completedStage =
+    candidate.completedStage === undefined
+      ? undefined
+      : StoryProductionTargetStageSchema.safeParse(candidate.completedStage);
+  if (
+    !locale.success ||
+    !plan.success ||
+    (completedStage && !completedStage.success) ||
+    (candidate.mediaBatchCompleted !== undefined &&
+      typeof candidate.mediaBatchCompleted !== "boolean")
+  )
+    return null;
+  return {
+    locale: locale.data,
+    plan: plan.data,
+    ...(completedStage?.success ? { completedStage: completedStage.data } : {}),
+    ...(typeof candidate.mediaBatchCompleted === "boolean"
+      ? { mediaBatchCompleted: candidate.mediaBatchCompleted }
+      : {}),
+  };
 }
 
 /** Parse the complete external-result suffix so validated fields cannot be

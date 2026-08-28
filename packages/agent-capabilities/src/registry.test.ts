@@ -58,6 +58,25 @@ describe("agent capability registry", () => {
     expect(instructions).toMatch(/Asking how the product\s+works is not permission/);
   });
 
+  it("treats a creative seed in a canonically empty Story chapter as creation intent", () => {
+    const instructions = requireModeDefinition("story", "story").instructions;
+    expect(instructions).toContain("chapterHasNoScript=true");
+    expect(instructions).toContain('Examples include "一只小猫"');
+    expect(instructions).toMatch(/call story_read first/i);
+    expect(instructions).toMatch(/set\s+continueThrough to storyboard/);
+    expect(instructions).toMatch(
+      /there is no\s+profile questionnaire or conversational confirmation/
+    );
+    expect(instructions).toMatch(/On mobile_h5,\s+call story_author directly/);
+    expect(instructions).toMatch(
+      /text\/specification authoring only on standard\/desktop\s+surfaces/
+    );
+    expect(instructions).toMatch(/Continue on the Plot Tree also\s+authorizes the server/);
+    expect(instructions).toMatch(
+      /chapterHasNoScript=false, a bare ambiguous phrase does not authorize an\s+edit/
+    );
+  });
+
   it("routes production from canonical stages instead of a fixed rebuild wizard", () => {
     const instructions = requireModeDefinition("story", "story").instructions;
     expect(instructions).toMatch(/Preserve\s+every current stage/);
@@ -77,14 +96,13 @@ describe("agent capability registry", () => {
       /Plot compiles the approved Script into the ONE\s+narrative topology/
     );
     expect(instructions).toMatch(/each Plot node projects to one Storyboard sequence/);
-    expect(instructions).toMatch(
-      /Asset Specs\s+approval saves only empty-but-stably-referenceable logical specifications\s+derived from that Plot/
-    );
-    expect(instructions).toMatch(/creator must use Generate/);
+    expect(instructions).toMatch(/persist Asset\s+Specs without another creator checkpoint/);
+    expect(instructions).toMatch(/creator uses Generate/);
     expect(instructions).toMatch(
       /Script,\s+Plot, Asset Specs, and Storyboard proposals are separate creator-visible\s+checkpoints/
     );
-    expect(instructions).toMatch(/No approval silently\s+approves or applies the next stage/);
+    expect(instructions).toMatch(/Plot Continue also authorizes/);
+    expect(instructions).toMatch(/Storyboard Continue saves its specifications/);
     expect(instructions).toMatch(/Never treat automatic proposal preparation as approval/);
     expect(instructions).not.toContain("deterministic authoring pipeline");
     expect(instructions).not.toContain("hand-build a whole tree scene-by-scene");

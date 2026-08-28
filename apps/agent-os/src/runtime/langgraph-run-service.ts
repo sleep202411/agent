@@ -1015,6 +1015,7 @@ export class LangGraphRunService {
     const mountPreview = resolveAgentOsSkillMount({
       projectKind: input.projectKind,
       workbenchMode: input.workbenchMode,
+      workbenchContext: input.workbenchContext,
       turnSkillIds: input.turnSkillIds,
       skillMountSnapshot: input.skillMountSnapshot,
     });

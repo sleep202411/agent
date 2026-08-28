@@ -216,6 +216,7 @@ describe("Story authoring Agent gates", () => {
           schemaVersion,
           title: `${stage} proposal`,
           summary: `${stage} is ready for review.`,
+          ...(stage === "assets" ? { assetPlan: { assetSpecs: [] } } : {}),
         },
       },
       isLoading: false,
@@ -245,6 +246,58 @@ describe("Story authoring Agent gates", () => {
     expect(button("proposalDecision.no")).toBeTruthy();
     await act(async () => button("proposalDecision.yes").click());
     expect(onResolve).toHaveBeenCalledWith("approve", `proposalStage.${stage}.approve`);
+  });
+
+  it("uses Continue / Don't continue and authorizes H5 asset auto-generation", async () => {
+    const onResolve = vi.fn().mockResolvedValue(true);
+    vi.mocked(useStoryAuthoringRunById).mockReturnValue({
+      run: {
+        id: "11111111-1111-4111-8111-111111111111",
+        chapterId: "chapter-1",
+        status: "proposed",
+        agentOsManaged: true,
+        proposal: {
+          schemaVersion: "story-asset-proposal-v1",
+          title: "Asset proposal",
+          summary: "Logical specs.",
+          assetPlan: {
+            assetSpecs: [
+              { stableKey: "character.cat", kind: "character", name: "Cat" },
+              { stableKey: "location.alley", kind: "location", name: "Alley" },
+            ],
+          },
+        },
+      },
+      isLoading: false,
+      refresh: vi.fn(),
+    } as never);
+
+    await act(async () => {
+      root.render(
+        <StoryAuthoringProposalApproval
+          projectId="project-1"
+          approval={{
+            kind: "tool_approval",
+            approvalId: "22222222-2222-4222-8222-222222222222",
+            toolId: "story.applyProposal",
+            toolCallId: "tool-1",
+            arguments: { storyAgentRunId: "11111111-1111-4111-8111-111111111111" },
+            title: "Review",
+            description: "Review the proposal.",
+          }}
+          busy={false}
+          mobileH5
+          onResolve={onResolve}
+        />
+      );
+    });
+
+    expect(container.textContent).toContain("proposalDecision.questionMobile.assets");
+    await act(async () => button("proposalDecision.continue").click());
+    expect(onResolve).toHaveBeenCalledWith("approve", "proposalDecision.continueResponse");
+
+    await act(async () => button("proposalDecision.stop").click());
+    expect(onResolve).toHaveBeenCalledWith("reject", "proposalDecision.stopResponse");
   });
 
   it("keeps the yes/no question visible when Agent approval fails", async () => {

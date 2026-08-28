@@ -66,6 +66,7 @@ export function StoryProductionGenerationControl({
   secondaryAction,
   outputKind = "image",
   allowGeneration = true,
+  mediaLoading = "lazy",
 }: {
   scope: GenerationScope;
   target: GenerationTarget;
@@ -77,6 +78,8 @@ export function StoryProductionGenerationControl({
   secondaryAction?: React.ReactNode;
   /** Which modality this target generates; picks the page-header default. */
   outputKind?: ProductionModality;
+  /** Keep below-the-fold generation cards lazy while allowing the gallery's first row to be eager. */
+  mediaLoading?: "eager" | "lazy";
   /**
    * Stage-level fence. Stale aggregate stages may still render previews,
    * details, and conflict resolution, but they must not expose a new paid
@@ -119,7 +122,10 @@ export function StoryProductionGenerationControl({
     isFullGeneration(generation) && generation.materialization.status === "completed"
       ? (generation.mediaVersions[0] ?? null)
       : null;
-  const previewMedia = generatedMedia ?? selectedMedia;
+  // The target's selected media is authoritative. A completed generation is
+  // only a temporary preview fallback while the parent projection catches up;
+  // otherwise an older generation would mask a later manual replacement.
+  const previewMedia = selectedMedia ?? generatedMedia;
 
   const rememberGeneration = (value: StoryProductionGeneration) => {
     setSubmittedGeneration(value);
@@ -266,7 +272,7 @@ export function StoryProductionGenerationControl({
         aria-label={t("controlsAria", { name: label })}
       >
         {previewMedia ? (
-          <MediaPreview media={previewMedia} label={label} />
+          <MediaPreview media={previewMedia} label={label} loading={mediaLoading} />
         ) : actionButton || secondaryAction ? null : (
           <div className="grid size-full place-items-center">
             <IconPhotoOff className="size-6 text-white/40" aria-hidden="true" />
@@ -322,7 +328,15 @@ export function StoryProductionGenerationControl({
   );
 }
 
-function MediaPreview({ media, label }: { media: StoryCreativeMediaVersion; label: string }) {
+function MediaPreview({
+  media,
+  label,
+  loading,
+}: {
+  media: StoryCreativeMediaVersion;
+  label: string;
+  loading: "eager" | "lazy";
+}) {
   const video = media.mediaKind === "video" || media.mimeType?.startsWith("video/") === true;
   const source = video
     ? (media.previewUrl ?? media.thumbnailUrl)
@@ -347,6 +361,7 @@ function MediaPreview({ media, label }: { media: StoryCreativeMediaVersion; labe
           alt={label}
           fill
           unoptimized
+          loading={loading}
           sizes="(max-width: 768px) 100vw, 480px"
           className="object-cover"
         />

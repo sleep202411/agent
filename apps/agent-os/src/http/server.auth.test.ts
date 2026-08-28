@@ -36,7 +36,10 @@ describe("durable continuation request contract", () => {
             title: "逆流镇的信使",
             summary: "逐阶段完成剩余制作规格。",
             brief: "情节树、资产和分镜分别准备并等待审核。",
+            experience: "mobile_h5",
+            autoGenerateAssetImages: true,
           },
+          completedStage: "assets",
         },
       })
     ).toEqual({
@@ -53,7 +56,10 @@ describe("durable continuation request contract", () => {
           title: "逆流镇的信使",
           summary: "逐阶段完成剩余制作规格。",
           brief: "情节树、资产和分镜分别准备并等待审核。",
+          experience: "mobile_h5",
+          autoGenerateAssetImages: true,
         },
+        completedStage: "assets",
       },
     });
   });

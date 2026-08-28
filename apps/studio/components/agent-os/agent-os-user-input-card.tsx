@@ -15,6 +15,7 @@ export function AgentOsUserInputCard({
   request,
   busy,
   labels,
+  resolveProfileOptionLabel,
   onSubmit,
 }: {
   request: AgentOsPendingUserInput;
@@ -26,6 +27,8 @@ export function AgentOsUserInputCard({
     submit: string;
     submitting: string;
   };
+  /** Fixed creative-profile enum copy belongs to the client locale catalog. */
+  resolveProfileOptionLabel?: (questionId: string, value: string, fallback: string) => string;
   onSubmit: (answers: Record<string, string>) => void;
 }) {
   const [step, setStep] = useState(0);
@@ -127,6 +130,10 @@ export function AgentOsUserInputCard({
         >
           {question.options.map((option, optionIndex) => {
             const checked = option.value === selected;
+            const optionLabel =
+              request.formId === "story_creative_profile" && resolveProfileOptionLabel
+                ? resolveProfileOptionLabel(question.id, option.value, option.label)
+                : option.label;
             const visualStyle = isVisualStyleQuestion
               ? storyVisualStyleSkillBySlug(option.value)
               : undefined;
@@ -179,7 +186,7 @@ export function AgentOsUserInputCard({
                       className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/95 via-black/55 to-transparent"
                     />
                     <span className="relative z-10 block px-2.5 pb-2.5 text-[11px]/tight font-semibold text-white drop-shadow-sm">
-                      {option.label}
+                      {optionLabel}
                     </span>
                     {option.description ? (
                       <span id={descriptionId} className="sr-only">
@@ -190,7 +197,7 @@ export function AgentOsUserInputCard({
                 ) : (
                   <>
                     <OptionGlyph value={option.value} selected={checked} />
-                    <span className="block text-xs font-semibold text-white">{option.label}</span>
+                    <span className="block text-xs font-semibold text-white">{optionLabel}</span>
                     {option.description ? (
                       <span
                         id={descriptionId}

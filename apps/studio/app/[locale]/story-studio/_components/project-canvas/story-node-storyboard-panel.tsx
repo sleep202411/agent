@@ -67,11 +67,14 @@ export function StoryNodeStoryboardPanel({
       {clips.length > 0 ? (
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
           {clips.map((clip) => {
-            const thumbnail =
-              clip.selectedMediaVersion?.thumbnailUrl ??
-              clip.selectedMediaVersion?.previewUrl ??
-              null;
-            const KindIcon = clip.kind === "video" ? IconVideo : IconPhoto;
+            const media = clip.selectedMediaVersion;
+            const video = Boolean(
+              clip.kind === "video" ||
+              media?.mediaKind === "video" ||
+              media?.mimeType?.startsWith("video/")
+            );
+            const imageSource = video ? null : (media?.thumbnailUrl ?? media?.previewUrl ?? null);
+            const KindIcon = video ? IconVideo : IconPhoto;
             return (
               <Link
                 key={clip.id}
@@ -79,9 +82,25 @@ export function StoryNodeStoryboardPanel({
                 title={clip.title}
                 className="group relative h-14 w-24 shrink-0 overflow-hidden rounded-lg bg-black/30 ring-1 ring-white/[0.06] transition hover:ring-white/25"
               >
-                {thumbnail ? (
+                {video && media?.previewUrl ? (
+                  <video
+                    src={media.previewUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    aria-hidden="true"
+                    disablePictureInPicture
+                    onLoadedMetadata={(event) => {
+                      const element = event.currentTarget;
+                      if (Number.isFinite(element.duration) && element.duration > 0) {
+                        element.currentTime = Math.min(0.05, element.duration / 2);
+                      }
+                    }}
+                    className="absolute inset-0 size-full object-cover"
+                  />
+                ) : imageSource ? (
                   <Image
-                    src={thumbnail}
+                    src={imageSource}
                     alt={clip.title}
                     fill
                     sizes="96px"

@@ -171,6 +171,75 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     ).toBe(0);
   });
 
+  it('imports a project-candidate image as a new Asset Spec media version and selects it atomically', async () => {
+    const fixture = await createFixture(prisma, workspaceIds);
+    const uploaded = await prisma.mediaAsset.create({
+      data: {
+        kind: MediaAssetKind.image,
+        storageProvider: MediaStorageProvider.external_url,
+        workspaceId: fixture.workspaceId,
+        externalUrl: `https://example.test/${fixture.prefix}-upload.png`,
+        contentType: 'image/png',
+        source: MediaAssetSource.user_upload,
+        createdByUserId: fixture.userId,
+      },
+    });
+    await prisma.storyCandidateAsset.create({
+      data: {
+        storyProjectId: fixture.projectId,
+        mediaAssetId: uploaded.id,
+        addedByUserId: fixture.userId,
+      },
+    });
+    const permissions = {
+      requireProject: jest.fn().mockResolvedValue({
+        project: { workspaceId: fixture.workspaceId },
+      }),
+      requireProjectInTransaction: jest.fn().mockResolvedValue(undefined),
+    };
+    const plans = new StoryProductionPlanService(
+      prisma as unknown as PrismaService,
+      permissions as never,
+      {
+        assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
+      } as never,
+    );
+
+    const result = await plans.patchAssetSpec(
+      { userId: fixture.userId } as never,
+      fixture.projectId,
+      fixture.chapterId,
+      fixture.assetSpecId,
+      `${fixture.prefix}:replace-asset-image`,
+      {
+        expectedVersion: fixture.assetVersion,
+        sourceMediaAssetId: uploaded.id,
+      },
+    );
+
+    expect(result).toMatchObject({
+      id: fixture.assetSpecId,
+      version: fixture.assetVersion + 1,
+      userModifiedAt: null,
+      selectedMediaVersion: {
+        mediaAssetId: uploaded.id,
+        versionNumber: 1,
+      },
+    });
+    const [version] = await prisma.storyAssetMediaVersion.findMany({
+      where: { assetSpecId: fixture.assetSpecId },
+    });
+    expect(version).toMatchObject({
+      mediaAssetId: uploaded.id,
+      sourceFingerprint: fixture.assetSourceFingerprint,
+      generationSnapshot: {
+        version: 1,
+        source: 'user_media',
+        mediaAssetId: uploaded.id,
+      },
+    });
+  });
+
   it('uses the database reconciliation deadline so repeated GET polling cannot burn attempts', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
     const job = await createAiJob(prisma, fixture, {

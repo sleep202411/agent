@@ -51,7 +51,7 @@ describe("AgentOsApprovalComposer focus contract", () => {
     await act(async () => pending.forEach((callback) => callback(0)));
   };
 
-  it("announces and focuses the blocking gate, then restores the composer", async () => {
+  it("announces and focuses the decision above the mounted composer, then restores input focus", async () => {
     await act(async () => {
       root.render(<textarea data-agent-composer-input="true" aria-label="Message" />);
     });
@@ -59,17 +59,20 @@ describe("AgentOsApprovalComposer focus contract", () => {
 
     await act(async () => {
       root.render(
-        <AgentOsApprovalComposer
-          approval={{ toolId: "characters.upsert", arguments: { characters: [] } }}
-          busy={false}
-          labels={{
-            title: "Approval required",
-            approve: "Approve",
-            reject: "Reject",
-            payload: payloadLabels,
-          }}
-          onApprove={vi.fn()}
-        />
+        <>
+          <AgentOsApprovalComposer
+            approval={{ toolId: "characters.upsert", arguments: { characters: [] } }}
+            busy={false}
+            labels={{
+              title: "Approval required",
+              approve: "Approve",
+              reject: "Reject",
+              payload: payloadLabels,
+            }}
+            onApprove={vi.fn()}
+          />
+          <textarea data-agent-composer-input="true" aria-label="Message" />
+        </>
       );
     });
     await flushFrames();
@@ -80,6 +83,7 @@ describe("AgentOsApprovalComposer focus contract", () => {
     expect(region?.querySelector("[role='status'][aria-live='polite']")?.textContent).toBe(
       "Approval required"
     );
+    expect(host.querySelector("textarea")).not.toBeNull();
     expect(document.activeElement).toBe(title);
 
     await act(async () => {

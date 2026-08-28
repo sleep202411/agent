@@ -38,11 +38,16 @@ export interface FizzAgentSurfaceProps {
   composer?: ReactNode;
   headerActions?: ReactNode;
   /**
-   * Wrap or replace the composer for the duration of a blocking decision — the
-   * host returns the approval prompt to render in the composer's place, or the
-   * composer untouched. Mirrors the Claude/Codex "approve to continue" gate.
+   * Host-owned transform for exceptional composer states (for example a legacy
+   * failure recovery surface). Agent OS decisions use `composerAccessory` so
+   * the input remains visible and editable while the active run is paused.
    */
   composerGate?: (composer: ReactNode) => ReactNode;
+  /**
+   * A compact decision surface rendered immediately above the composer. It may
+   * pause submission, but it never displaces the input or destroys its draft.
+   */
+  composerAccessory?: ReactNode;
   busy?: boolean;
   /**
    * Retire this conversation and open an empty one. Omit to hide the control —
@@ -76,6 +81,7 @@ export function FizzAgentSurface({
   composer,
   headerActions,
   composerGate,
+  composerAccessory,
   busy = false,
   onNewConversation,
   onOpenChange,
@@ -160,7 +166,10 @@ export function FizzAgentSurface({
         <div className="min-h-0 flex-1">{children}</div>
         {composer ? (
           <footer className="shrink-0 p-3 pt-1">
-            {composerGate ? composerGate(composer) : composer}
+            <div className="space-y-2">
+              {composerAccessory}
+              {composerGate ? composerGate(composer) : composer}
+            </div>
           </footer>
         ) : null}
       </aside>

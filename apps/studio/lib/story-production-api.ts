@@ -1,4 +1,8 @@
-import type { StoryAssetSpecPlanItem, StoryStoryboardSequencePlanItem } from "@repo/shared";
+import type {
+  PutStoryStoryboardTimelineInput,
+  StoryAssetSpecPlanItem,
+  StoryStoryboardSequencePlanItem,
+} from "@repo/shared";
 import { api } from "@/lib/api";
 
 export type StoryProductionStatus = "missing" | "current" | "stale";
@@ -274,18 +278,24 @@ export interface PatchStoryAssetSpecInput {
   name?: string;
   description?: string | null;
   imagePrompt?: string;
+  selectedMediaVersionId?: string | null;
+  sourceMediaAssetId?: string;
 }
 
 export interface PatchStoryStoryboardClipInput {
   expectedVersion: number;
+  kind?: StoryStoryboardClipKind;
   title?: string;
   description?: string | null;
   imagePrompt?: string | null;
   videoPrompt?: string | null;
+  selectedMediaVersionId?: string | null;
+  sourceMediaAssetId?: string;
 }
 
 export type StoryGenerationBatchStatus =
   | "awaiting_confirmation"
+  | "blocked"
   | "queued"
   | "running"
   | "cancelling"
@@ -318,6 +328,7 @@ export interface StoryGenerationBatch {
   projectId: string;
   chapterId: string;
   status: StoryGenerationBatchStatus;
+  dispatchMode: "parallel" | "sequential";
   totalPoints: number;
   availablePoints: string | null;
   itemCount: number;
@@ -325,13 +336,17 @@ export interface StoryGenerationBatch {
   quoteExpiresAt: string;
   confirmedAt: string | null;
   completedAt: string | null;
+  blockedAt: string | null;
+  blockReason: unknown;
   canCancel: boolean;
   counts: Record<StoryGenerationBatchItemStatus, number>;
   items: Array<{
     id: string;
     ordinal: number;
     status: StoryGenerationBatchItemStatus;
+    targetKind: "asset_spec" | "storyboard_clip";
     targetId: string;
+    sequenceId: string | null;
     targetVersion: number;
     outputKind: StoryStoryboardClipKind;
     modelId: string;
@@ -345,22 +360,30 @@ export interface StoryGenerationBatch {
 export function storyGenerationBatchFailure(
   batch: StoryGenerationBatch
 ): StoryGenerationBatchItemError | null {
+  const blocked = generationBatchError(batch.blockReason);
+  if (blocked) return blocked;
   for (const item of batch.items) {
-    if (item.status !== "failed" || !item.error || typeof item.error !== "object") continue;
-    const error = item.error as Record<string, unknown>;
-    const code = typeof error.code === "string" ? error.code.trim() : "";
-    const message = typeof error.message === "string" ? error.message.trim() : "";
-    if (!code && !message) continue;
-    return {
-      code: code || null,
-      message: message || null,
-      retryable: typeof error.retryable === "boolean" ? error.retryable : null,
-      requiredAmount: stringDetail(error.requiredAmount),
-      availableBalance: stringDetail(error.availableBalance),
-      unavailableAmount: stringDetail(error.unavailableAmount),
-    };
+    if (item.status !== "failed") continue;
+    const failure = generationBatchError(item.error);
+    if (failure) return failure;
   }
   return null;
+}
+
+function generationBatchError(value: unknown): StoryGenerationBatchItemError | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const error = value as Record<string, unknown>;
+  const code = typeof error.code === "string" ? error.code.trim() : "";
+  const message = typeof error.message === "string" ? error.message.trim() : "";
+  if (!code && !message) return null;
+  return {
+    code: code || null,
+    message: message || null,
+    retryable: typeof error.retryable === "boolean" ? error.retryable : null,
+    requiredAmount: stringDetail(error.requiredAmount),
+    availableBalance: stringDetail(error.availableBalance),
+    unavailableAmount: stringDetail(error.unavailableAmount),
+  };
 }
 
 function stringDetail(value: unknown): string | null {
@@ -533,6 +556,17 @@ export async function cancelStoryGenerationBatch(
 ): Promise<StoryGenerationBatch> {
   return api.post<StoryGenerationBatch>(
     `${generationBatchesPath(projectId, chapterId)}/${encodeURIComponent(batchId)}/cancel`,
+    { requestScope: "project" }
+  );
+}
+
+export async function resumeStoryGenerationBatch(
+  projectId: string,
+  chapterId: string,
+  batchId: string
+): Promise<StoryGenerationBatch> {
+  return api.post<StoryGenerationBatch>(
+    `${generationBatchesPath(projectId, chapterId)}/${encodeURIComponent(batchId)}/resume`,
     { requestScope: "project" }
   );
 }
@@ -725,6 +759,32 @@ export async function patchStoryStoryboardClip(
     ),
     projectMutationConfig(idempotencyKey, input)
   );
+}
+
+/**
+ * Atomically replace one plot node's complete visual timeline. Retained clip
+ * ids preserve their generated media and Asset bindings on the server.
+ */
+export async function putStoryStoryboardTimeline(
+  projectId: string,
+  chapterId: string,
+  sequenceId: string,
+  idempotencyKey: string,
+  input: PutStoryStoryboardTimelineInput
+): Promise<StoryStoryboardSequence> {
+  const value = await api.put<StoryStoryboardSequence>(
+    chapterPath(
+      projectId,
+      chapterId,
+      `storyboard/sequences/${encodeURIComponent(sequenceId)}/timeline`
+    ),
+    projectMutationConfig(idempotencyKey, input)
+  );
+  assertStoryboardScope(value, projectId, chapterId);
+  if (value.id !== sequenceId) {
+    throw new Error("Story production API returned data outside the requested sequence scope.");
+  }
+  return value;
 }
 
 export async function resolveStoryAssetSpecConflict(

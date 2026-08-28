@@ -1,6 +1,6 @@
 "use client";
 
-import { IconCheck, IconCloudUpload, IconLoader2, IconPlayerPlay } from "@tabler/icons-react";
+import { IconCheck, IconCloudUpload, IconLoader2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useCallback } from "react";
@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { getStoryExperienceCurrentRelease, getStoryWorkbench } from "@/lib/story-projects-api";
 import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
-import { useStoryPreviewNavigation } from "../_lib/use-story-preview-navigation";
 import { isExactCurrentStoryRelease } from "./project-canvas/story-current-release";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
 import { StoryProjectCreditsBadge } from "./story-project-credits-badge";
@@ -81,8 +80,6 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     withSavedDraftSnapshot: draftBarrier ?? fallbackRunner,
   });
 
-  const { openPreview, pending: previewPending } = useStoryPreviewNavigation(projectId);
-
   // Both hashes of the local check were produced in THIS session; the
   // authority check compares against the stored release. Semantics preserved
   // verbatim from the canvas implementation.
@@ -136,19 +133,6 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => void openPreview()}
-        disabled={previewPending}
-        className="inline-flex h-9 items-center gap-2 rounded-[14px] bg-transparent px-3 text-xs font-semibold text-white/68 transition hover:bg-white/[0.1] hover:text-white disabled:cursor-wait disabled:opacity-50"
-      >
-        {previewPending ? (
-          <IconLoader2 className="size-4 animate-spin" />
-        ) : (
-          <IconPlayerPlay className="size-4" />
-        )}
-        <span className={LABEL_CLASS}>{t("workingPreview.action")}</span>
-      </button>
       {!canPublish && publishDisabledReason ? (
         <Tooltip>
           <TooltipTrigger asChild>

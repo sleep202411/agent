@@ -15,9 +15,14 @@ import {
 import { validateProductionPlanAgainstScreenplay } from './story-authoring-pipeline.service';
 import { canonicalJsonHash } from './canonical-json';
 import { InteractiveStoryDraftContentSchema } from './dto';
-import { PutStoryStoryboardTimelineSchema } from './story-production-plan.schema';
+import {
+  PatchStoryAssetSpecSchema,
+  PatchStoryStoryboardClipSchema,
+  PutStoryStoryboardTimelineSchema,
+} from './story-production-plan.schema';
 import {
   assertStoryboardClipMediaKind,
+  storyboardCueTimeAfterTimelineResize,
   storyboardClipSemanticPatch,
   storyAssetSemanticPatch,
   storyAssetPlanFingerprint,
@@ -970,6 +975,12 @@ describe('Story production semantic edit provenance', () => {
     expect(
       storyAssetSemanticPatch({
         expectedVersion: 2,
+        sourceMediaAssetId: '0198f744-32a0-7000-8000-000000000002',
+      }),
+    ).toBe(false);
+    expect(
+      storyAssetSemanticPatch({
+        expectedVersion: 2,
         imagePrompt: 'New prompt',
       }),
     ).toBe(true);
@@ -988,6 +999,64 @@ describe('Story production semantic edit provenance', () => {
         videoPrompt: 'New movement',
       }),
     ).toBe(true);
+    expect(
+      storyboardClipSemanticPatch({
+        expectedVersion: 3,
+        sourceMediaAssetId: '0198f744-32a0-7000-8000-000000000003',
+      }),
+    ).toBe(false);
+    expect(
+      storyboardClipSemanticPatch({ expectedVersion: 3, kind: 'video' }),
+    ).toBe(true);
+  });
+});
+
+describe('PatchStoryAssetSpecSchema', () => {
+  it('accepts candidate-image import and rejects two competing media selections', () => {
+    const sourceMediaAssetId = '0198f744-32a0-7000-8000-000000000003';
+    expect(
+      PatchStoryAssetSpecSchema.safeParse({
+        expectedVersion: 2,
+        sourceMediaAssetId,
+      }).success,
+    ).toBe(true);
+    expect(
+      PatchStoryAssetSpecSchema.safeParse({
+        expectedVersion: 2,
+        sourceMediaAssetId,
+        selectedMediaVersionId: '0198f744-32a0-7000-8000-000000000004',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('PatchStoryStoryboardClipSchema', () => {
+  it('accepts candidate-media import and rejects two competing media selections', () => {
+    const sourceMediaAssetId = '0198f744-32a0-7000-8000-000000000003';
+    expect(
+      PatchStoryStoryboardClipSchema.safeParse({
+        expectedVersion: 3,
+        sourceMediaAssetId,
+      }).success,
+    ).toBe(true);
+    expect(
+      PatchStoryStoryboardClipSchema.safeParse({
+        expectedVersion: 3,
+        sourceMediaAssetId,
+        selectedMediaVersionId: '0198f744-32a0-7000-8000-000000000004',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('Storyboard cue retiming', () => {
+  it('moves only an end-anchored cue when the visual timeline duration changes', () => {
+    expect(storyboardCueTimeAfterTimelineResize(10_000, 10_000, 14_000)).toBe(
+      14_000,
+    );
+    expect(storyboardCueTimeAfterTimelineResize(6_000, 10_000, 14_000)).toBe(
+      6_000,
+    );
   });
 });
 

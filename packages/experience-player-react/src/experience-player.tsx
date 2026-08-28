@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -605,6 +606,7 @@ function ActiveExperienceRuntimePlayer({
 
       {scene && started && !endingId ? (
         <ExperienceSpatialLayer
+          key={scene.sceneId}
           manifest={manifest}
           scene={scene}
           runtimeState={runtimeState}
@@ -971,6 +973,11 @@ type CoreVideoPlaybackState = {
   terminalMode: CoreVideoTerminalMode;
 };
 
+interface CoreVideoCompletionTimer {
+  readonly id: number;
+  readonly rendererInstanceId: string;
+}
+
 function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPlaybackState {
   return { rendererInstanceId, sequenceIndex: 0, terminalMode: null };
 }
@@ -1057,7 +1064,7 @@ function CoreVideoRenderer({
       ? playbackState
       : initialCoreVideoPlaybackState(renderer.instanceId);
   const { sequenceIndex, terminalMode } = activePlaybackState;
-  const completionTimerRef = useRef<number | null>(null);
+  const completionTimerRef = useRef<CoreVideoCompletionTimer | null>(null);
   const completedRendererIdRef = useRef<string | null>(null);
   const missingAssetRef = useRef<string | null>(null);
   const clip = config.sequence[sequenceIndex];
@@ -1086,17 +1093,27 @@ function CoreVideoRenderer({
     [config.autoplay, onPlaybackHandle, renderer.instanceId, terminalMode?.kind]
   );
 
-  useEffect(() => {
+  const clearCompletionTimer = useCallback((rendererInstanceId?: string) => {
+    const timer = completionTimerRef.current;
+    if (!timer || (rendererInstanceId && timer.rendererInstanceId !== rendererInstanceId)) return;
+    window.clearTimeout(timer.id);
+    completionTimerRef.current = null;
+  }, []);
+
+  // The core-video slot is intentionally reused between scenes so WebKit keeps
+  // the media element that received the user's audible-playback permission.
+  // Scene-owned resources must nevertheless be reset BEFORE a new child can
+  // register its playback handle: passive child effects run before passive
+  // parent effects, which previously let an opening still schedule its timer
+  // and then had this reset clear that brand-new timer. A layout effect runs the
+  // reset before any passive handle registration, while timer ownership makes a
+  // late cleanup from the old scene unable to touch the new scene's timer.
+  useLayoutEffect(() => {
     completedRendererIdRef.current = null;
     missingAssetRef.current = null;
-    if (completionTimerRef.current !== null) {
-      window.clearTimeout(completionTimerRef.current);
-      completionTimerRef.current = null;
-    }
-    return () => {
-      if (completionTimerRef.current !== null) window.clearTimeout(completionTimerRef.current);
-    };
-  }, [renderer.instanceId]);
+    clearCompletionTimer();
+    return () => clearCompletionTimer(renderer.instanceId);
+  }, [clearCompletionTimer, renderer.instanceId]);
 
   useEffect(() => {
     const missingAssetKey = `${renderer.instanceId}:${assetId}`;
@@ -1121,6 +1138,17 @@ function CoreVideoRenderer({
     }
     completeRenderer();
   };
+  const scheduleCompletion = (durationMs: number) => {
+    clearCompletionTimer();
+    const rendererInstanceId = renderer.instanceId;
+    const id = window.setTimeout(() => {
+      const timer = completionTimerRef.current;
+      if (!timer || timer.id !== id || timer.rendererInstanceId !== rendererInstanceId) return;
+      completionTimerRef.current = null;
+      advanceSequence();
+    }, durationMs);
+    completionTimerRef.current = { id, rendererInstanceId };
+  };
   const handleEnd = () => {
     if (!clip || terminalMode?.kind === "loop") return;
     const behavior = clip.endBehavior;
@@ -1132,7 +1160,7 @@ function CoreVideoRenderer({
         terminalMode: { kind: "held" },
       });
       if (behavior.durationMs !== undefined) {
-        completionTimerRef.current = window.setTimeout(advanceSequence, behavior.durationMs);
+        scheduleCompletion(behavior.durationMs);
       }
       return;
     }
@@ -1332,7 +1360,6 @@ function ExperienceStillSegment({
   }, [durationMs, onPlaybackHandle, playbackIdentity, stopTicking, timelineOffsetMs]);
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img src={uri} alt={title} className="absolute inset-0 size-full" style={{ objectFit: fit }} />
   );
 }

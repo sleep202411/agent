@@ -34,10 +34,9 @@ import { StoryPromptMentionField, useStoryAssetMentions } from "./story-prompt-m
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
- * Detail dialog for one Asset Spec: the full identity plus the two knobs the
- * card deliberately hides — an editable image prompt (PATCH, optimistic
- * version) and a model choice for the next generation. Generation stays
- * strictly user-clicked; closing the dialog never submits anything.
+ * Detail dialog for one Asset Spec: its editable prompt and generation model.
+ * Media replacement stays on the card; generation remains strictly
+ * user-clicked, and closing the dialog never submits anything.
  */
 export function StoryAssetSpecDetailDialog({
   asset,
@@ -139,7 +138,7 @@ export function StoryAssetSpecDetailDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="border-0 bg-[oklch(0.22_0_0)] text-white shadow-2xl sm:max-w-lg">
+      <DialogContent className="border-0 bg-[oklch(0.22_0_0)] text-white shadow-2xl sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="truncate">{asset.name}</DialogTitle>
           <DialogDescription className="truncate font-mono text-xs">{reference}</DialogDescription>
@@ -161,7 +160,7 @@ export function StoryAssetSpecDetailDialog({
 
         <Field dense label={t("model")} htmlFor={`asset-detail-model-${asset.id}`}>
           <Select
-            value={effectiveModelId ?? undefined}
+            value={effectiveModelId ?? ""}
             onValueChange={setModelId}
             disabled={busy || !editable || models.length === 0}
           >

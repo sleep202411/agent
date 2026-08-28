@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StoryLatestGeneration, StoryProductionGeneration } from "@/lib/story-production-api";
+import type {
+  StoryCreativeMediaVersion,
+  StoryLatestGeneration,
+  StoryProductionGeneration,
+} from "@/lib/story-production-api";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
 const apiMocks = vi.hoisted(() => ({
@@ -228,9 +232,32 @@ describe("StoryProductionGenerationControl", () => {
     expect(keys.flat()).not.toContain("chapter-2");
   });
 
+  it("shows manually selected media instead of an older completed generation result", async () => {
+    const completed = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [
+      mediaVersion("generated-media", "https://media.example/generated.jpg"),
+    ];
+    apiMocks.getAsset.mockResolvedValue(completed);
+
+    await renderControl(
+      assetTarget(latest(completed)),
+      true,
+      mediaVersion("replacement-media", "https://media.example/replacement.jpg")
+    );
+
+    await vi.waitFor(() => expect(apiMocks.getAsset).toHaveBeenCalled());
+    const image = container.querySelector<HTMLImageElement>('img[alt="Production target"]');
+    expect(image?.getAttribute("src")).toBe("https://media.example/replacement.jpg");
+  });
+
   async function renderControl(
     target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>,
-    allowGeneration = true
+    allowGeneration = true,
+    selectedMedia: StoryCreativeMediaVersion | null = null
   ) {
     await act(async () => {
       root.render(
@@ -242,7 +269,7 @@ describe("StoryProductionGenerationControl", () => {
             }}
             target={target}
             label="Production target"
-            selectedMedia={null}
+            selectedMedia={selectedMedia}
             allowGeneration={allowGeneration}
           />
         </QueryClientProvider>
@@ -258,6 +285,25 @@ describe("StoryProductionGenerationControl", () => {
     );
   }
 });
+
+function mediaVersion(id: string, previewUrl: string): StoryCreativeMediaVersion {
+  return {
+    id,
+    versionNumber: 1,
+    mediaAssetId: `${id}-asset`,
+    mediaKind: "image",
+    mediaStatus: "ready",
+    preferredVariantId: null,
+    previewUrl,
+    thumbnailUrl: previewUrl,
+    width: 1600,
+    height: 900,
+    durationSeconds: null,
+    mimeType: "image/jpeg",
+    sourceFingerprint: id,
+    createdAt: "2026-08-21T00:00:00.000Z",
+  };
+}
 
 function assetTarget(latestGeneration: StoryLatestGeneration | null) {
   return {
