@@ -8,6 +8,7 @@ import {
   IconBolt,
   IconCheck,
   IconChevronRight,
+  IconExclamationCircle,
   IconLoader2,
   IconShieldCheck,
   IconX,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/billing";
 import { WechatScanPayDialog } from "@/app/_components/wechat-scan-pay-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { cn } from "@/lib/utils";
@@ -403,6 +405,7 @@ function PlanCard({
 }) {
   const t = useTranslations("billing");
   const badge = stringField(plan.marketing, "badge");
+  const estimateItems = membershipGenerationEstimateItems(plan, t);
   const featureItems = membershipFeatureItems(plan, t);
   const originalAmount = price ? originalAmountMinor(price) : null;
   const hasOriginal =
@@ -432,7 +435,7 @@ function PlanCard({
         // neutral white rim. Either way the surface is AI glass, not a flat box.
         rim={!accent}
         className={cn(
-          "flex min-h-[524px] flex-1 flex-col overflow-hidden rounded-3xl p-5 shadow-2xl",
+          "flex min-h-[660px] flex-1 flex-col overflow-hidden rounded-3xl p-5 shadow-2xl",
           ribbon && "rounded-t-none"
         )}
       >
@@ -566,6 +569,38 @@ function PlanCard({
         </div>
 
         <ul className="relative space-y-3 pb-1">
+          {estimateItems.map((item) => (
+            <li
+              key={item.kind}
+              className="flex items-start gap-2 text-sm leading-5 text-muted-foreground"
+            >
+              <IconCheck
+                className={cn("mt-0.5 size-4 shrink-0", !accent && "text-foreground")}
+                stroke={2}
+                style={{ color: accent?.base }}
+              />
+              <span>{item.label}</span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t("features.estimate.details")}
+                    className="mt-0.5 shrink-0 text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+                  >
+                    <IconExclamationCircle className="size-4" stroke={1.9} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="top"
+                  sideOffset={8}
+                  className="max-w-72 leading-5"
+                  style={{ zIndex: 70 }}
+                >
+                  {item.tooltip}
+                </TooltipContent>
+              </Tooltip>
+            </li>
+          ))}
           {featureItems.map((item) => (
             <li
               key={item}
@@ -580,6 +615,13 @@ function PlanCard({
             </li>
           ))}
         </ul>
+        {estimateItems.length > 0 ? (
+          <p className="relative mt-auto border-t border-border pt-3 text-[11px] leading-4 text-muted-foreground">
+            {t("features.estimate.allocationDisclaimer", {
+              amount: formatInteger(plan.includedComputeCredits),
+            })}
+          </p>
+        ) : null}
       </FrostedPanel>
     </article>
   );
@@ -703,6 +745,54 @@ function membershipFeatureItems(plan: MembershipPlan, t: BillingTranslator) {
   if (concurrentJobs !== null) items.push(t("features.concurrentJobs", { count: concurrentJobs }));
   if (queuedJobs !== null) items.push(t("features.queuedJobs", { count: queuedJobs }));
   return items.slice(0, 6);
+}
+
+function membershipGenerationEstimateItems(plan: MembershipPlan, t: BillingTranslator) {
+  const items: Array<{
+    kind: string;
+    label: string;
+    tooltip: string;
+  }> = [];
+  for (const estimate of plan.generationEstimates ?? []) {
+    if (estimate.kind === "image") {
+      const quality =
+        estimate.quality === "low" ? t("features.estimate.lowQuality") : estimate.quality;
+      items.push({
+        kind: estimate.modelId,
+        label: t("features.estimate.images", {
+          count: formatInteger(estimate.estimatedOutputs),
+          model: estimate.modelName,
+        }),
+        tooltip: t("features.estimate.imageTooltip", {
+          model: estimate.modelName,
+          points: formatInteger(estimate.unitPoints),
+          quality: quality ?? "—",
+          resolution: estimate.resolution ?? "—",
+        }),
+      });
+      continue;
+    }
+
+    items.push({
+      kind: estimate.modelId,
+      label: t("features.estimate.videos", {
+        count: formatInteger(estimate.estimatedOutputs),
+        model: estimate.modelName,
+      }),
+      tooltip: t("features.estimate.videoTooltip", {
+        audio:
+          estimate.audioIncluded === false
+            ? t("features.estimate.withoutAudio")
+            : t("features.estimate.withAudio"),
+        duration: estimate.durationSeconds ?? "—",
+        model: estimate.modelName,
+        points: formatInteger(estimate.unitPoints),
+        resolution: estimate.resolution ?? "—",
+      }),
+    });
+  }
+
+  return items;
 }
 
 function stringField(record: Record<string, unknown>, key: string) {

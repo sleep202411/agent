@@ -1095,6 +1095,17 @@
       "oneTime": "one-time"
     },
     "features": {
+      "estimate": {
+        "images": "About {count} {model} images",
+        "videos": "About {count} {model} videos",
+        "details": "How this estimate is calculated",
+        "lowQuality": "low quality",
+        "withAudio": "with audio",
+        "withoutAudio": "without audio",
+        "imageTooltip": "Estimated at {model} {resolution}, {quality}, one output, and no reference images ({points} compute credits per image). Actual usage varies with settings, references, and future pricing.",
+        "videoTooltip": "Estimated at {model} {resolution}, {duration} seconds, {audio}, one output, and no reference media ({points} compute credits per video). Actual usage varies with settings, references, and future pricing.",
+        "allocationDisclaimer": "Each estimate independently uses all {amount} credits for that model only. These are alternatives, not combined output allowances."
+      },
       "sharedCredits": "Shared team compute credits",
       "seatScope": "Creator seats are shared across all projects; viewers and reviewers are free",
       "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",

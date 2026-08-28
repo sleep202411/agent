@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  AiControlPlaneStatus,
   BillingProviderBindingStatus,
   BillingRefundStatus,
   BillingOrderStatus,
@@ -120,6 +121,10 @@ import type {
   CreateProviderRefundResult,
   HostedCheckoutResult,
 } from './providers/payment-provider';
+import {
+  MEMBERSHIP_GENERATION_ESTIMATE_MODEL_SLUGS,
+  membershipGenerationEstimates,
+} from './membership-generation-estimates';
 import { BillingLedgerService } from './billing-ledger.service';
 import { AppLovinConversionService } from './applovin-conversion.service';
 
@@ -798,15 +803,33 @@ export class BillingService {
       status: BillingProviderBindingStatus.active,
       archivedAt: null,
     };
-    const plans = await this.prisma.billingMembershipPlan.findMany({
-      where: {
-        productType: query.productType as BillingProductType | undefined,
-        subjectType: query.subjectType as BillingSubjectType | undefined,
-        status: BillingMembershipPlanStatus.active,
-        archivedAt: null,
-      },
-      orderBy: [{ subjectType: 'asc' }, { rank: 'asc' }, { createdAt: 'asc' }],
-    });
+    const [plans, estimateModels] = await Promise.all([
+      this.prisma.billingMembershipPlan.findMany({
+        where: {
+          productType: query.productType as BillingProductType | undefined,
+          subjectType: query.subjectType as BillingSubjectType | undefined,
+          status: BillingMembershipPlanStatus.active,
+          archivedAt: null,
+        },
+        orderBy: [
+          { subjectType: 'asc' },
+          { rank: 'asc' },
+          { createdAt: 'asc' },
+        ],
+      }),
+      this.prisma.aiCanonicalModel.findMany({
+        where: {
+          slug: { in: [...MEMBERSHIP_GENERATION_ESTIMATE_MODEL_SLUGS] },
+          status: AiControlPlaneStatus.active,
+          archivedAt: null,
+        },
+        select: {
+          slug: true,
+          displayName: true,
+          billingPolicy: true,
+        },
+      }),
+    ]);
     const planKeys = plans.map((plan) => plan.planKey);
     const prices =
       planKeys.length === 0
@@ -874,6 +897,10 @@ export class BillingService {
           plan,
           pricesByPlan.get(plan.planKey) ?? [],
           discountByPriceId,
+          membershipGenerationEstimates(
+            plan.includedComputeCredits,
+            estimateModels,
+          ),
         ),
       ),
     };
@@ -7541,6 +7568,7 @@ export class BillingService {
     plan: BillingMembershipPlan,
     prices: MembershipPlanPriceRow[],
     discountByPriceId?: Map<string, PriceActiveDiscountDto>,
+    generationEstimates: ReturnType<typeof membershipGenerationEstimates> = [],
   ) {
     return {
       id: plan.id,
@@ -7557,6 +7585,7 @@ export class BillingService {
       seatOverageAllowed: plan.seatOverageAllowed,
       billingIntervalDefault: plan.billingIntervalDefault,
       benefits: plan.benefits,
+      generationEstimates,
       marketing: plan.marketing,
       metadata: plan.metadata,
       prices: prices.map((price) =>

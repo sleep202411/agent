@@ -1095,6 +1095,17 @@
       "oneTime": "一次性"
     },
     "features": {
+      "estimate": {
+        "images": "約可生成 {count} 張 {model} 圖片",
+        "videos": "約可生成 {count} 段 {model} 影片",
+        "details": "查看估算方式",
+        "lowQuality": "低品質",
+        "withAudio": "包含音訊",
+        "withoutAudio": "不含音訊",
+        "imageTooltip": "按 {model} {resolution}、{quality}、單張輸出且不含參考圖估算（每張 {points} 算力積分）。實際用量會隨參數、參考素材及後續計價調整而變化。",
+        "videoTooltip": "按 {model} {resolution}、{duration} 秒、{audio}、單段輸出且不含參考素材估算（每段 {points} 算力積分）。實際用量會隨參數、參考素材及後續計價調整而變化。",
+        "allocationDisclaimer": "以上每項均按全部 {amount} 積分只用於該模型分別估算；各項是不同用法，不可同時獲得。"
+      },
       "sharedCredits": "團隊共享算力積分",
       "seatScope": "創作者席位在所有專案間共享；Viewer 和 Reviewer 不佔席位",
       "concurrentJobs": "{count, plural, other {# 個並行任務}}",
