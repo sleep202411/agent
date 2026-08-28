@@ -349,7 +349,7 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
       requestedOutputKind: input.outputKind,
     });
   }
@@ -380,7 +380,7 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
       requestedOutputKind: input.outputKind,
     });
   }
@@ -414,7 +414,7 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
       requestedOutputKind: input.outputKind,
       expectedQuote,
       billingSubject,
@@ -443,7 +443,7 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
     });
   }
 
@@ -472,7 +472,7 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
       expectedQuote,
       billingSubject,
       batchAdmission,
@@ -506,7 +506,7 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
     });
   }
 
@@ -2740,7 +2740,7 @@ function providerPromptDocument(
   return { version: 1, nodes };
 }
 
-function generationRequestFingerprint(
+export function generationRequestFingerprint(
   command: SubmitGenerationCommand,
   resolved: ResolvedGenerationRequest,
 ): string {
@@ -2752,9 +2752,9 @@ function generationRequestFingerprint(
     targetId: command.targetId,
     sequenceId: command.sequenceId,
     expectedVersion: command.expectedVersion,
-    modelId: command.modelId,
-    schemaVersion: command.schemaVersion,
-    clientOptions: command.clientOptions,
+    modelId: command.modelId ?? null,
+    schemaVersion: command.schemaVersion ?? null,
+    clientOptions: command.clientOptions ?? {},
     requestedOutputKind: command.requestedOutputKind ?? null,
     expectedQuote: command.expectedQuote ?? null,
     retryOfGenerationId: command.retryOf?.generationId ?? null,

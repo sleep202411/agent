@@ -165,6 +165,116 @@ export const StoryStoryboardSequencePlanItemSchema = z
   .strict();
 export type StoryStoryboardSequencePlanItem = z.infer<typeof StoryStoryboardSequencePlanItemSchema>;
 
+const StoryStoryboardTimelineClipInputBaseSchema = z
+  .object({
+    /** Omit only when creating a brand-new clip in an atomic timeline replacement. */
+    id: z.uuid().optional(),
+    /** Existing clips require an exact CAS; new clips must use zero. */
+    expectedVersion: z.number().int().nonnegative(),
+    /**
+     * Optional project-candidate media imported as version 1 of a brand-new
+     * clip. Existing clips keep their media history and cannot set this.
+     */
+    sourceMediaAssetId: z.uuid().optional(),
+    stableKey: StoryProductionStableKeySchema,
+    title: z.string().trim().min(1).max(160),
+    startMs: z.number().int().min(0).max(3_600_000),
+    durationMs: z.number().int().min(250).max(3_600_000),
+    description: z.string().trim().max(4_000).nullable(),
+    negativePrompt: z.string().trim().min(1).max(4_000).nullable(),
+  })
+  .strict();
+
+/**
+ * One visual clip in the server-authoritative, atomic timeline command.
+ *
+ * This is deliberately a product-domain contract rather than a third-party
+ * editor shape. UI adapters may project it into any timeline widget, while
+ * retained clip ids keep media versions and Asset bindings attached.
+ */
+export const StoryStoryboardTimelineClipInputSchema = z.discriminatedUnion("kind", [
+  StoryStoryboardTimelineClipInputBaseSchema.extend({
+    kind: z.literal("image"),
+    imagePrompt: z.string().trim().min(1).max(12_000),
+    videoPrompt: z.null(),
+  }).strict(),
+  StoryStoryboardTimelineClipInputBaseSchema.extend({
+    kind: z.literal("video"),
+    imagePrompt: z.null(),
+    videoPrompt: z.string().trim().min(1).max(12_000),
+  }).strict(),
+]);
+export type StoryStoryboardTimelineClipInput = z.infer<
+  typeof StoryStoryboardTimelineClipInputSchema
+>;
+
+/**
+ * Complete replacement of one plot node's visual timeline. Editing is atomic
+ * because every intermediate multi-request state would violate continuous
+ * coverage. Branching remains authoritative in StoryDraft and is not copied
+ * into this document.
+ */
+export const PutStoryStoryboardTimelineSchema = z
+  .object({
+    expectedVersion: z.number().int().nonnegative(),
+    durationMs: z.number().int().min(250).max(3_600_000),
+    clips: z.array(StoryStoryboardTimelineClipInputSchema).min(1).max(1_000),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const ids = new Set<string>();
+    const stableKeys = new Set<string>();
+    let cursor = 0;
+    for (const [index, clip] of value.clips.entries()) {
+      if (!clip.id && clip.expectedVersion !== 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["clips", index, "expectedVersion"],
+          message: "A new Storyboard clip must use expectedVersion 0.",
+        });
+      }
+      if (clip.id && clip.sourceMediaAssetId) {
+        context.addIssue({
+          code: "custom",
+          path: ["clips", index, "sourceMediaAssetId"],
+          message: "Only a new Storyboard clip can import source media.",
+        });
+      }
+      if (clip.id && ids.has(clip.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["clips", index, "id"],
+          message: "A Storyboard clip id can appear only once in a timeline.",
+        });
+      }
+      if (stableKeys.has(clip.stableKey)) {
+        context.addIssue({
+          code: "custom",
+          path: ["clips", index, "stableKey"],
+          message: "A Storyboard clip stable key can appear only once in a timeline.",
+        });
+      }
+      if (clip.startMs !== cursor) {
+        context.addIssue({
+          code: "custom",
+          path: ["clips", index, "startMs"],
+          message: `Visual clips must be ordered and continuous; expected startMs ${cursor}.`,
+        });
+      }
+      if (clip.id) ids.add(clip.id);
+      stableKeys.add(clip.stableKey);
+      cursor = clip.startMs + clip.durationMs;
+    }
+    if (cursor !== value.durationMs) {
+      context.addIssue({
+        code: "custom",
+        path: ["durationMs"],
+        message: "Sequence duration must equal the end of its continuous visual clips.",
+      });
+    }
+  });
+export type PutStoryStoryboardTimelineInput = z.infer<typeof PutStoryStoryboardTimelineSchema>;
+
 const StoryboardSequencesSchema = z.array(StoryStoryboardSequencePlanItemSchema).min(1).max(200);
 
 /**
