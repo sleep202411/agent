@@ -53,79 +53,7 @@ export function GamesPageClient({
           </p>
         </section>
 
-        {textGameError ? (
-          <CatalogueError
-            title={t("textGames.unavailable")}
-            detail={typeof textGameError === "string" ? textGameError : undefined}
-          />
-        ) : null}
-
-        <section className="mt-12" aria-labelledby="text-game-catalogue">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <h2 id="text-game-catalogue" className="text-2xl font-semibold tracking-[-0.025em]">
-                {t("textGames.title")}
-              </h2>
-              <p className="mt-1 text-sm text-muted-foreground">{t("textGames.description")}</p>
-            </div>
-            {!textGameError && textGames.length > 0 ? (
-              <p className="hidden text-xs font-medium text-muted-foreground sm:block">
-                {t("textGames.count", { count: textGames.length })}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-            {textGames.map((game) => (
-              <Link
-                key={game.gameId}
-                href={localizePath(`/play/text-game/${encodeURIComponent(game.gameId)}`, locale)}
-                className="group block focus-visible:outline-none"
-              >
-                <article>
-                  <div className="relative aspect-[2/3] overflow-hidden rounded-2xl bg-secondary/60 ring-1 ring-foreground/6 transition duration-300 group-hover:-translate-y-1 group-hover:ring-foreground/14 group-focus-visible:ring-2 group-focus-visible:ring-primary">
-                    {game.posterUrl ? (
-                      <Image
-                        src={game.posterUrl}
-                        alt={game.name || t("textGames.untitled")}
-                        fill
-                        unoptimized
-                        sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
-                        className="object-cover transition-transform duration-500 group-hover:scale-[1.025]"
-                      />
-                    ) : null}
-                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-black/88 via-black/32 to-transparent" />
-                    <div className="absolute right-4 bottom-4 left-4 text-white">
-                      <p className="text-[11px] font-semibold tracking-[0.16em] text-white/62 uppercase">
-                        {t("textGames.label")}
-                      </p>
-                      <h3 className="mt-1.5 text-xl leading-tight font-semibold tracking-[-0.02em]">
-                        {game.name || t("textGames.untitled")}
-                      </h3>
-                    </div>
-                    <span className="absolute top-4 right-4 grid size-9 place-items-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                      <IconArrowUpRight className="size-4" />
-                    </span>
-                  </div>
-                  {game.synopsis ? (
-                    <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">
-                      {game.synopsis}
-                    </p>
-                  ) : null}
-                </article>
-              </Link>
-            ))}
-
-            {!textGameError && textGames.length === 0 ? (
-              <div className="col-span-full rounded-2xl bg-secondary/42 px-6 py-14 text-center">
-                <IconBook2 className="mx-auto size-8 text-muted-foreground" />
-                <p className="mt-3 text-sm text-muted-foreground">{t("textGames.empty")}</p>
-              </div>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="mt-20" aria-labelledby="film-catalogue">
+        <section className="mt-12" aria-labelledby="film-catalogue">
           <div className="max-w-2xl">
             <h2 id="film-catalogue" className="text-2xl font-semibold tracking-[-0.025em]">
               {t("films.title")}
@@ -191,6 +119,78 @@ export function GamesPageClient({
               <div className="rounded-2xl bg-secondary/42 p-8 text-center md:col-span-2">
                 <IconDeviceGamepad2 className="mx-auto size-8 text-muted-foreground" />
                 <p className="mt-3 text-sm text-muted-foreground">{t("films.empty")}</p>
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        {textGameError ? (
+          <CatalogueError
+            title={t("textGames.unavailable")}
+            detail={typeof textGameError === "string" ? textGameError : undefined}
+          />
+        ) : null}
+
+        <section className="mt-20" aria-labelledby="text-game-catalogue">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h2 id="text-game-catalogue" className="text-2xl font-semibold tracking-[-0.025em]">
+                {t("textGames.title")}
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">{t("textGames.description")}</p>
+            </div>
+            {!textGameError && textGames.length > 0 ? (
+              <p className="hidden text-xs font-medium text-muted-foreground sm:block">
+                {t("textGames.count", { count: textGames.length })}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="mt-6 grid grid-cols-2 gap-x-5 gap-y-8 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {textGames.map((game) => (
+              <Link
+                key={game.gameId}
+                href={localizePath(`/play/text-game/${encodeURIComponent(game.gameId)}`, locale)}
+                className="group block focus-visible:outline-none"
+              >
+                <article>
+                  <div className="relative aspect-[2/3] overflow-hidden rounded-2xl bg-secondary/60 ring-1 ring-foreground/6 transition duration-300 group-hover:-translate-y-1 group-hover:ring-foreground/14 group-focus-visible:ring-2 group-focus-visible:ring-primary">
+                    {game.posterUrl ? (
+                      <Image
+                        src={game.posterUrl}
+                        alt={game.name || t("textGames.untitled")}
+                        fill
+                        unoptimized
+                        sizes="(min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+                        className="object-cover transition-transform duration-500 group-hover:scale-[1.025]"
+                      />
+                    ) : null}
+                    <div className="absolute inset-x-0 bottom-0 h-1/2 bg-linear-to-t from-black/88 via-black/32 to-transparent" />
+                    <div className="absolute right-4 bottom-4 left-4 text-white">
+                      <p className="text-[11px] font-semibold tracking-[0.16em] text-white/62 uppercase">
+                        {t("textGames.label")}
+                      </p>
+                      <h3 className="mt-1.5 text-xl leading-tight font-semibold tracking-[-0.02em]">
+                        {game.name || t("textGames.untitled")}
+                      </h3>
+                    </div>
+                    <span className="absolute top-4 right-4 grid size-9 place-items-center rounded-full bg-black/45 text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                      <IconArrowUpRight className="size-4" />
+                    </span>
+                  </div>
+                  {game.synopsis ? (
+                    <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                      {game.synopsis}
+                    </p>
+                  ) : null}
+                </article>
+              </Link>
+            ))}
+
+            {!textGameError && textGames.length === 0 ? (
+              <div className="col-span-full rounded-2xl bg-secondary/42 px-6 py-14 text-center">
+                <IconBook2 className="mx-auto size-8 text-muted-foreground" />
+                <p className="mt-3 text-sm text-muted-foreground">{t("textGames.empty")}</p>
               </div>
             ) : null}
           </div>
