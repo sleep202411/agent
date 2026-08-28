@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 2d02a797ddaabfbbeaf93b2eda6ed99df3737640
+    tag: cf68d47c3521219917fc413b30a2b7b2f59336c7
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 6f33ec08aa9809091b87e869de6fb25a02ac83b0
+    tag: cf68d47c3521219917fc413b30a2b7b2f59336c7
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 6f33ec08aa9809091b87e869de6fb25a02ac83b0
+    tag: cf68d47c3521219917fc413b30a2b7b2f59336c7
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -541,7 +541,7 @@ agentOs:
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: 6f33ec08aa9809091b87e869de6fb25a02ac83b0
+    tag: cf68d47c3521219917fc413b30a2b7b2f59336c7
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
