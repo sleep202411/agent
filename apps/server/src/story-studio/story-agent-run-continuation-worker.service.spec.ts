@@ -25,6 +25,14 @@ const STORY_CONTINUATION_PLAN = {
   summary: 'Story summary',
   brief: 'Prepare the remaining production stages for separate review.',
 };
+const MOBILE_STORY_CONTINUATION_PLAN = {
+  ...STORY_CONTINUATION_PLAN,
+  experience: 'mobile_h5' as const,
+};
+const AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN = {
+  ...MOBILE_STORY_CONTINUATION_PLAN,
+  autoGenerateAssetImages: true,
+};
 const SCRIPT_PROPOSAL = StoryScreenplayProposalSchema.parse({
   schemaVersion: 'story-screenplay-proposal-v1',
   draftSchemaVersion: 'interactive-story-draft-v1',
@@ -365,6 +373,30 @@ describe('StoryAgentRunContinuationWorkerService', () => {
     expect(fixture.publishCommitted).toHaveBeenCalledTimes(1);
   });
 
+  it('describes sequential paid generation when an H5 Asset proposal becomes ready', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        sourceApprovalLocale: 'zh-CN',
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: MOBILE_STORY_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendStoryProposalReadyInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        stage: 'assets',
+        text: '资产规格已准备好。选择「继续」后会按顺序逐张生成图片；每张开始生成时扣除对应积分，完成后自动回填。',
+      }),
+    );
+  });
+
   it('delivers the approved v2 apply result on its decision turn and second tool phase', async () => {
     const fixture = createFixture({
       run: storyRun({
@@ -392,7 +424,7 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         externalJobId: STORY_RUN_ID,
         phase: 'apply',
         outcome: 'completed',
-        text: '正式剧本已保存到 Script。本次应用没有生成情节树、资产规格、分镜、图片或视频。',
+        text: '剧本已保存。正在构建情节树。',
       }),
     );
     expect(fixture.updateMany).toHaveBeenCalledWith(
@@ -429,6 +461,71 @@ describe('StoryAgentRunContinuationWorkerService', () => {
     );
   });
 
+  it('announces sequential generation after an authorized H5 Asset apply', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+        sourceProposalReadyDeliveredAt: new Date('2026-08-20T11:58:00.000Z'),
+        sourceApprovalDecision: 'approve',
+        sourceApprovalDecisionTurnId: DECISION_TURN_ID,
+        sourceApprovalLocale: 'zh-CN',
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        phase: 'apply',
+        outcome: 'completed',
+        text: '资产规格已保存。接下来逐张生成资产图片。',
+      }),
+    );
+  });
+
+  it('resumes the original story.author handoff after server-authorized H5 Asset auto-apply', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+        sourceAutoAppliedAt: NOW,
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.reconcileExternalHandoffInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      STORY_RUN_ID,
+    );
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        phase: 'apply',
+        toolId: 'story.author',
+        turnId: TURN_ID,
+        outcome: 'completed',
+        storyContinuation: {
+          locale: 'en-US',
+          plan: AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN,
+          completedStage: 'assets',
+        },
+      }),
+    );
+  });
+
   it('resumes a completed apply with the immutable production scope', async () => {
     const fixture = createFixture({
       run: storyRun({
@@ -456,6 +553,7 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         storyContinuation: {
           locale: 'zh-CN',
           plan: STORY_CONTINUATION_PLAN,
+          completedStage: 'assets',
         },
       }),
     );
@@ -658,6 +756,7 @@ function storyRun(
     authoringAttempts: number;
     decisionContractVersion: number;
     sourceProposalReadyDeliveredAt: Date | null;
+    sourceAutoAppliedAt: Date | null;
     sourceTerminalDeliveredAt: Date | null;
     sourceApprovalDecision: 'approve' | 'reject' | null;
     sourceApprovalDecisionTurnId: string | null;
@@ -684,6 +783,7 @@ function storyRun(
       'Your interactive-film proposal is ready to review.',
     sourceResultDeliveredAt: null,
     sourceProposalReadyDeliveredAt: null,
+    sourceAutoAppliedAt: null,
     sourceTerminalDeliveredAt: null,
     sourceApprovalDecision: null,
     sourceApprovalDecisionTurnId: null,
@@ -700,7 +800,11 @@ function registration(
   overrides: Partial<{
     sourceAgentToolCallId: string;
     decisionContractVersion: number;
-    continuationPlan: typeof STORY_CONTINUATION_PLAN | null;
+    continuationPlan:
+      | typeof STORY_CONTINUATION_PLAN
+      | typeof MOBILE_STORY_CONTINUATION_PLAN
+      | typeof AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN
+      | null;
   }> = {},
 ) {
   return {

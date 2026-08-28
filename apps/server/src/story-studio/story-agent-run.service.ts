@@ -1058,6 +1058,7 @@ export class StoryAgentRunService {
     decision: 'approve' | 'reject';
     responseText: string;
     locale: 'en-US' | 'zh-CN' | 'zh-HK';
+    experience?: 'mobile_h5';
   }): Promise<StoryAgentOsCoordinatorResult> {
     const responseText = z
       .string()
@@ -1159,10 +1160,29 @@ export class StoryAgentRunService {
       }
 
       const proposal = this.parseFullProposal(run.proposal);
+      const h5AssetGenerationAuthorized =
+        input.decision === 'approve' &&
+        input.experience === 'mobile_h5' &&
+        isStoryAssetProposal(proposal) &&
+        proposal.assetPlan.assetSpecs.length > 0;
+      const h5AssetAutoApplyAuthorized =
+        input.decision === 'approve' &&
+        input.experience === 'mobile_h5' &&
+        isStoryPlotProposal(proposal);
+      const h5StoryboardGenerationAuthorized =
+        input.decision === 'approve' &&
+        input.experience === 'mobile_h5' &&
+        isStoryStoryboardProposal(proposal) &&
+        proposal.storyboardPlan.storyboardSequences.some(
+          (sequence) => sequence.clips.length > 0,
+        );
+      const h5Continuation =
+        input.decision === 'approve' && input.experience === 'mobile_h5';
       const copy = storyProposalDecisionCopy(
         locale,
         input.decision,
         authoringStageForProposal(proposal),
+        h5Continuation,
       );
 
       this.assertProjectHasNoActiveRun(writeState);
@@ -1180,6 +1200,40 @@ export class StoryAgentRunService {
       let agentDispatch: AgentOsJournalDispatch;
       const decisionTurnId = storyProposalDecisionTurnId(input.responseId);
       if (input.decision === 'approve') {
+        if (h5Continuation) {
+          const registration =
+            await tx.agentOsExternalHandoffRegistration.findUnique({
+              where: { storyAgentRunId: run.id },
+              select: { continuationPlan: true },
+            });
+          const continuationPlan = StoryProductionContinuationPlanSchema.parse(
+            registration?.continuationPlan,
+          );
+          await tx.agentOsExternalHandoffRegistration.update({
+            where: { storyAgentRunId: run.id },
+            data: {
+              // The H5 Continue decision is the paid-media authorization. Add
+              // it atomically with that decision so pre-existing proposals
+              // receive the same deterministic continuation as new ones.
+              continuationPlan: {
+                ...continuationPlan,
+                experience: 'mobile_h5',
+                ...(h5AssetAutoApplyAuthorized
+                  ? {
+                      autoApplyAssetSpecs: true,
+                      autoGenerateAssetImages: true,
+                    }
+                  : {}),
+                ...(h5AssetGenerationAuthorized
+                  ? { autoGenerateAssetImages: true }
+                  : {}),
+                ...(h5StoryboardGenerationAuthorized
+                  ? { autoGenerateStoryboardMedia: true }
+                  : {}),
+              },
+            },
+          });
+        }
         const state = await this.loadCanonicalState(
           tx,
           input.workspaceId,
@@ -3471,6 +3525,23 @@ export class StoryAgentRunService {
           );
         }
 
+        const registration =
+          input.targetStage === 'assets'
+            ? await tx.agentOsExternalHandoffRegistration.findUnique({
+                where: { storyAgentRunId: run.id },
+                select: { continuationPlan: true },
+              })
+            : null;
+        const continuationPlan =
+          StoryProductionContinuationPlanSchema.safeParse(
+            registration?.continuationPlan,
+          );
+        const autoApplyAssets =
+          input.targetStage === 'assets' &&
+          continuationPlan.success &&
+          continuationPlan.data.experience === 'mobile_h5' &&
+          continuationPlan.data.autoApplyAssetSpecs === true;
+
         const superseded = await this.supersedeProposalScope(
           tx,
           run.storyProjectId,
@@ -3479,6 +3550,45 @@ export class StoryAgentRunService {
           writeState.databaseNow,
           run.id,
         );
+        if (autoApplyAssets) {
+          this.assertProjectHasNoActiveRun(writeState);
+          await this.writeGuard.assertAgentClaimAllowed(tx, run.storyProjectId);
+          const landed = await tx.storyAgentRun.update({
+            where: { id: run.id },
+            data: {
+              status: StoryAgentRunStatus.proposed,
+              proposal: proposal as unknown as Prisma.InputJsonObject,
+              authoringStages: Prisma.DbNull,
+              baseDraftRevision: proposal.baseDraftRevision,
+              baseLayoutRevision: proposal.baseLayoutRevision,
+              summary: proposal.summary,
+              fencingToken: null,
+              leaseOwner: null,
+              leaseAcquiredAt: null,
+              leaseExpiresAt: null,
+              expiresAt: plusMs(
+                writeState.databaseNow,
+                STORY_AGENT_PROPOSAL_TTL_MS,
+              ),
+            },
+            include: RUN_INCLUDE,
+          });
+          const applying = await this.claimProjectForRun(
+            tx,
+            landed,
+            writeState,
+            run.initiatedByUserId,
+            { sourceAutoAppliedAt: writeState.databaseNow },
+          );
+          return {
+            value: { kind: 'completed', run: applying },
+            dispatches: [
+              ...superseded.story,
+              await this.realtime.enqueue(tx, applying),
+            ],
+            agentDispatches: superseded.agent,
+          };
+        }
         const landed = await tx.storyAgentRun.update({
           where: { id: run.id },
           data: {
@@ -4143,16 +4253,18 @@ export class StoryAgentRunService {
     run: RunWithActiveLock,
     writeState: LockedWriteStateRow,
     confirmedByUserId: string,
-    approvalDecision?: {
-      sourceApprovalId: string;
-      sourceApprovalResponseId: string;
-      sourceApprovalResponseText: string;
-      sourceApprovalLocale: 'en-US' | 'zh-CN' | 'zh-HK';
-      sourceApprovalDecisionTurnId: string;
-      sourceApprovalDecision: StoryAgentProposalDecision;
-      sourceApprovalDecidedAt: Date;
-      sourceApprovalDecidedByUserId: string;
-    },
+    applyAuthority?:
+      | {
+          sourceApprovalId: string;
+          sourceApprovalResponseId: string;
+          sourceApprovalResponseText: string;
+          sourceApprovalLocale: 'en-US' | 'zh-CN' | 'zh-HK';
+          sourceApprovalDecisionTurnId: string;
+          sourceApprovalDecision: StoryAgentProposalDecision;
+          sourceApprovalDecidedAt: Date;
+          sourceApprovalDecidedByUserId: string;
+        }
+      | { sourceAutoAppliedAt: Date },
   ): Promise<StoryAgentRunDto> {
     if (writeState.activeAgentRunId !== null) {
       throw storyAgentLocked(writeState);
@@ -4171,7 +4283,7 @@ export class StoryAgentRunService {
         leaseExpiresAt: plusMs(now, PENDING_LEASE_TTL_MS),
         confirmedByUserId,
         confirmedAt: now,
-        ...approvalDecision,
+        ...applyAuthority,
       },
     });
     await tx.storyProjectWriteState.update({
@@ -4969,6 +5081,7 @@ function storyProposalDecisionCopy(
   locale: 'en-US' | 'zh-CN' | 'zh-HK',
   decision: 'approve' | 'reject',
   stage: Exclude<StoryAgentAuthoringTargetStage, 'noop'> | null,
+  mobileH5 = false,
 ): { assistantText: string; applyStartedMessage?: string } {
   if (decision === 'reject') {
     if (locale === 'zh-CN') {
@@ -4989,13 +5102,17 @@ function storyProposalDecisionCopy(
   if (locale === 'zh-CN') {
     if (stage === 'script') {
       return {
-        assistantText: '已收到你的确认。现在只保存本阶段的正式剧本。',
+        assistantText: mobileH5
+          ? '继续创作：正在保存剧本。'
+          : '已收到你的确认。现在只保存本阶段的正式剧本。',
         applyStartedMessage: '正在保存正式剧本。',
       };
     }
     if (stage === 'plot') {
       return {
-        assistantText: '已收到你的确认。现在只保存本阶段的情节树。',
+        assistantText: mobileH5
+          ? '继续创作：正在保存情节树并准备资产。'
+          : '已收到你的确认。现在只保存本阶段的情节树。',
         applyStartedMessage: '正在保存情节树。',
       };
     }
@@ -5007,8 +5124,12 @@ function storyProposalDecisionCopy(
     }
     if (stage === 'storyboard') {
       return {
-        assistantText: '已收到你的确认。现在只保存本阶段的分镜规格。',
-        applyStartedMessage: '正在保存分镜规格；不会生成图片或视频。',
+        assistantText: mobileH5
+          ? '继续创作：正在保存分镜并准备生成片段。'
+          : '已收到你的确认。现在只保存本阶段的分镜规格。',
+        applyStartedMessage: mobileH5
+          ? '正在保存分镜规格。'
+          : '正在保存分镜规格；不会生成图片或视频。',
       };
     }
     return {
@@ -5019,13 +5140,17 @@ function storyProposalDecisionCopy(
   if (locale === 'zh-HK') {
     if (stage === 'script') {
       return {
-        assistantText: '已收到你的確認。現在只儲存本階段的正式劇本。',
+        assistantText: mobileH5
+          ? '繼續創作：正在儲存劇本。'
+          : '已收到你的確認。現在只儲存本階段的正式劇本。',
         applyStartedMessage: '正在儲存正式劇本。',
       };
     }
     if (stage === 'plot') {
       return {
-        assistantText: '已收到你的確認。現在只儲存本階段的情節樹。',
+        assistantText: mobileH5
+          ? '繼續創作：正在儲存情節樹並準備資產。'
+          : '已收到你的確認。現在只儲存本階段的情節樹。',
         applyStartedMessage: '正在儲存情節樹。',
       };
     }
@@ -5037,8 +5162,12 @@ function storyProposalDecisionCopy(
     }
     if (stage === 'storyboard') {
       return {
-        assistantText: '已收到你的確認。現在只儲存本階段的分鏡規格。',
-        applyStartedMessage: '正在儲存分鏡規格；不會生成圖片或影片。',
+        assistantText: mobileH5
+          ? '繼續創作：正在儲存分鏡並準備生成片段。'
+          : '已收到你的確認。現在只儲存本階段的分鏡規格。',
+        applyStartedMessage: mobileH5
+          ? '正在儲存分鏡規格。'
+          : '正在儲存分鏡規格；不會生成圖片或影片。',
       };
     }
     return {
@@ -5048,15 +5177,17 @@ function storyProposalDecisionCopy(
   }
   if (stage === 'script') {
     return {
-      assistantText:
-        'I received your approval. I am saving only the official Script for this stage.',
+      assistantText: mobileH5
+        ? 'Continuing creation: saving the Script.'
+        : 'I received your approval. I am saving only the official Script for this stage.',
       applyStartedMessage: 'Saving the official Script.',
     };
   }
   if (stage === 'plot') {
     return {
-      assistantText:
-        'I received your approval. I am saving only the Plot Tree for this stage.',
+      assistantText: mobileH5
+        ? 'Continuing creation: saving the Plot Tree and preparing Assets.'
+        : 'I received your approval. I am saving only the Plot Tree for this stage.',
       applyStartedMessage: 'Saving the Plot Tree.',
     };
   }
@@ -5070,10 +5201,12 @@ function storyProposalDecisionCopy(
   }
   if (stage === 'storyboard') {
     return {
-      assistantText:
-        'I received your approval. I am saving only the Storyboard Specs for this stage.',
-      applyStartedMessage:
-        'Saving Storyboard Specs; no images or videos will be generated.',
+      assistantText: mobileH5
+        ? 'Continuing creation: saving the Storyboard and preparing its clips.'
+        : 'I received your approval. I am saving only the Storyboard Specs for this stage.',
+      applyStartedMessage: mobileH5
+        ? 'Saving Storyboard Specs.'
+        : 'Saving Storyboard Specs; no images or videos will be generated.',
     };
   }
   return {

@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../infra/db/db.module';
+import { StoryGenerationOptionsSchema } from './story-production-generation.schema';
 import { StoryProductionGenerationService } from './story-production-generation.service';
 
 const DEFAULT_INTERVAL_MS = 1_000;
@@ -69,6 +70,7 @@ export class StoryGenerationBatchDispatcherService
     this.draining = true;
     try {
       await this.reconcile();
+      await this.stopSequentialBatchesAfterFailure();
       const claimed = await this.claim(Math.max(1, Math.min(100, limit)));
       await Promise.all(claimed.map((item) => this.dispatch(item)));
       await this.refreshBatchStatuses();
@@ -130,6 +132,22 @@ export class StoryGenerationBatchDispatcherService
                 )
               )
               AND (item."next_dispatch_at" IS NULL OR item."next_dispatch_at" <= NOW())
+              AND (
+                batch."dispatch_mode" <> 'sequential'
+                OR NOT EXISTS (
+                  SELECT 1
+                  FROM "story_generation_batch_items" AS active_item
+                  WHERE active_item."batch_id" = batch."id"
+                    AND active_item."id" <> item."id"
+                    AND (
+                      active_item."status" IN ('dispatching', 'submitted')
+                      OR (
+                        active_item."status" = 'failed'
+                        AND active_item."ordinal" < item."ordinal"
+                      )
+                    )
+                )
+              )
             ORDER BY
               COALESCE(batch."last_dispatched_at", batch."confirmed_at", batch."created_at") ASC,
               batch."created_at" ASC,
@@ -166,45 +184,74 @@ export class StoryGenerationBatchDispatcherService
   }
 
   private async dispatch(item: ClaimedBatchItem): Promise<void> {
-    if (
-      item.targetKind !== StoryProductionGenerationTargetKind.asset_spec ||
-      item.sequenceId !== null
-    ) {
+    const isAsset =
+      item.targetKind === StoryProductionGenerationTargetKind.asset_spec &&
+      item.sequenceId === null;
+    const isStoryboardClip =
+      item.targetKind === StoryProductionGenerationTargetKind.storyboard_clip &&
+      item.sequenceId !== null;
+    if (!isAsset && !isStoryboardClip) {
       await this.fail(
-        item.id,
+        item,
         'UNSUPPORTED_BATCH_TARGET',
         'Unsupported batch target.',
       );
       return;
     }
     try {
-      await this.generations.createQuotedAssetGeneration(
-        { userId: item.batch.actorUserId },
-        item.batch.workspaceId,
-        item.batch.storyProjectId,
-        item.batch.storyChapterId,
-        item.targetId,
-        `story-generation-batch:${item.id}`,
-        {
-          expectedVersion: item.targetVersion,
-          modelId: item.modelId,
-          schemaVersion: item.schemaVersion,
-          outputKind: item.outputKind,
-          options: jsonOptions(item.options),
-        },
-        {
-          pricingVersion: item.pricingVersion,
-          points: item.quotedPoints,
-        },
-        {
-          type: item.batch.billingSubjectType,
-          id: item.batch.billingSubjectId,
-        },
-        {
-          itemId: item.id,
-          leaseOwner: this.workerId,
-        },
-      );
+      const actor = { userId: item.batch.actorUserId };
+      const expectedQuote = {
+        pricingVersion: item.pricingVersion,
+        points: item.quotedPoints,
+      };
+      const billingSubject = {
+        type: item.batch.billingSubjectType,
+        id: item.batch.billingSubjectId,
+      };
+      const batchAdmission = {
+        itemId: item.id,
+        leaseOwner: this.workerId,
+      };
+      const options = batchClientOptions(item.options);
+      if (isAsset) {
+        await this.generations.createQuotedAssetGeneration(
+          actor,
+          item.batch.workspaceId,
+          item.batch.storyProjectId,
+          item.batch.storyChapterId,
+          item.targetId,
+          `story-generation-batch:${item.id}:attempt:${item.dispatchAttempts}`,
+          {
+            expectedVersion: item.targetVersion,
+            modelId: item.modelId,
+            schemaVersion: item.schemaVersion,
+            outputKind: item.outputKind,
+            options,
+          },
+          expectedQuote,
+          billingSubject,
+          batchAdmission,
+        );
+      } else {
+        await this.generations.createQuotedStoryboardClipGeneration(
+          actor,
+          item.batch.workspaceId,
+          item.batch.storyProjectId,
+          item.batch.storyChapterId,
+          item.sequenceId!,
+          item.targetId,
+          `story-generation-batch:${item.id}:attempt:${item.dispatchAttempts}`,
+          {
+            expectedVersion: item.targetVersion,
+            modelId: item.modelId,
+            schemaVersion: item.schemaVersion,
+            options,
+          },
+          expectedQuote,
+          billingSubject,
+          batchAdmission,
+        );
+      }
     } catch (error) {
       if (errorCode(error) === 'QUEUE_LIMIT_EXCEEDED') {
         await this.prisma.storyGenerationBatchItem.updateMany({
@@ -223,7 +270,7 @@ export class StoryGenerationBatchDispatcherService
         return;
       }
       await this.fail(
-        item.id,
+        item,
         errorCode(error) ?? 'BATCH_ITEM_DISPATCH_FAILED',
         errorText(error),
         errorDetails(error),
@@ -232,24 +279,95 @@ export class StoryGenerationBatchDispatcherService
   }
 
   private async fail(
-    id: string,
+    item: ClaimedBatchItem,
     code: string,
     message: string,
     details: Record<string, string | number | boolean> = {},
   ): Promise<void> {
-    await this.prisma.storyGenerationBatchItem.updateMany({
-      where: {
-        id,
-        status: StoryGenerationBatchItemStatus.dispatching,
-        leaseOwner: this.workerId,
-      },
-      data: {
-        status: StoryGenerationBatchItemStatus.failed,
-        completedAt: new Date(),
-        leaseOwner: null,
-        leaseExpiresAt: null,
-        error: { code, message, retryable: false, ...details },
-      },
+    const failedAt = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      if (
+        item.batch.dispatchMode === 'sequential' &&
+        (code === 'INSUFFICIENT_COMPUTE_POINTS' ||
+          code === 'INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS')
+      ) {
+        const blocked = await tx.storyGenerationBatchItem.updateMany({
+          where: {
+            id: item.id,
+            status: StoryGenerationBatchItemStatus.dispatching,
+            leaseOwner: this.workerId,
+          },
+          data: {
+            status: StoryGenerationBatchItemStatus.ready,
+            nextDispatchAt: null,
+            leaseOwner: null,
+            leaseExpiresAt: null,
+          },
+        });
+        if (blocked.count !== 1) return;
+        await tx.storyGenerationBatch.updateMany({
+          where: {
+            id: item.batchId,
+            status: {
+              in: [
+                StoryGenerationBatchStatus.queued,
+                StoryGenerationBatchStatus.running,
+              ],
+            },
+          },
+          data: {
+            status: StoryGenerationBatchStatus.blocked,
+            blockedAt: failedAt,
+            blockReason: {
+              code,
+              message:
+                'Not enough compute points. Recharge and continue from this item.',
+              retryable: true,
+              ...details,
+            },
+            version: { increment: 1 },
+          },
+        });
+        return;
+      }
+      const failed = await tx.storyGenerationBatchItem.updateMany({
+        where: {
+          id: item.id,
+          status: StoryGenerationBatchItemStatus.dispatching,
+          leaseOwner: this.workerId,
+        },
+        data: {
+          status: StoryGenerationBatchItemStatus.failed,
+          completedAt: failedAt,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          error: { code, message, retryable: false, ...details },
+        },
+      });
+      if (failed.count !== 1 || item.batch.dispatchMode !== 'sequential') {
+        return;
+      }
+      // Publish one coherent failure-stop state. Without this transaction a
+      // client can briefly see item N failed while item N+1 still appears
+      // active until the next one-second dispatcher sweep.
+      await tx.storyGenerationBatchItem.updateMany({
+        where: {
+          batchId: item.batchId,
+          ordinal: { gt: item.ordinal },
+          status: StoryGenerationBatchItemStatus.ready,
+        },
+        data: {
+          status: StoryGenerationBatchItemStatus.cancelled,
+          completedAt: failedAt,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+          error: {
+            code: 'PREVIOUS_ITEM_FAILED',
+            message: 'Generation stopped because an earlier media item failed.',
+            retryable: false,
+          },
+        },
+      });
     });
   }
 
@@ -294,6 +412,41 @@ export class StoryGenerationBatchDispatcherService
         version: { increment: 1 },
       },
     });
+  }
+
+  /**
+   * H5 batches are a visible one-card-at-a-time workflow. Once the current
+   * sequential item fails, later unstarted items must become terminal before
+   * the next claim pass; otherwise the following image starts even though the
+   * creator is looking at an error card.
+   */
+  private async stopSequentialBatchesAfterFailure(): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE "story_generation_batch_items" AS pending
+      SET
+        "status" = 'cancelled'::"StoryGenerationBatchItemStatus",
+        "completed_at" = COALESCE(pending."completed_at", NOW()),
+        "error" = jsonb_build_object(
+          'code', 'PREVIOUS_ITEM_FAILED',
+          'message', 'Generation stopped because an earlier media item failed.',
+          'retryable', false
+        ),
+        "lease_owner" = NULL,
+        "lease_expires_at" = NULL,
+        "updated_at" = NOW()
+      FROM "story_generation_batches" AS batch
+      WHERE pending."batch_id" = batch."id"
+        AND batch."status" IN ('queued', 'running')
+        AND batch."dispatch_mode" = 'sequential'
+        AND pending."status" = 'ready'
+        AND EXISTS (
+          SELECT 1
+          FROM "story_generation_batch_items" AS failed
+          WHERE failed."batch_id" = pending."batch_id"
+            AND failed."status" = 'failed'
+            AND failed."ordinal" < pending."ordinal"
+        )
+    `;
   }
 
   private async refreshBatchStatuses(): Promise<void> {
@@ -348,6 +501,19 @@ export class StoryGenerationBatchDispatcherService
         AND batch."status" IN ('queued', 'running', 'cancelling')
     `;
   }
+}
+
+/**
+ * Quotes created before client/effective option separation may contain the
+ * server-derived source duration. It is safe to recompute from the immutable
+ * Storyboard target, but it must never be replayed through the client-options
+ * channel. The strict parse keeps every other reserved key fail-closed.
+ */
+function batchClientOptions(value: Prisma.JsonValue) {
+  const options = jsonOptions(value);
+  delete options.duration;
+  delete options.durationSeconds;
+  return StoryGenerationOptionsSchema.parse(options);
 }
 
 type ClaimedBatchItem = Prisma.StoryGenerationBatchItemGetPayload<{

@@ -1,6 +1,7 @@
 import type { RiskLevel } from "@repo/agent-policy";
 
 import { AGENT_OS_TOOLS, type AgentOsToolId } from "./definitions.js";
+import { canonicalizeStoryCreativeProfileInputRequest } from "./story-creative-profile.js";
 import type { ToolDefinition } from "./types.js";
 
 const byId = new Map<string, ToolDefinition>(
@@ -29,7 +30,9 @@ export function riskForTool(toolId: string): RiskLevel {
 
 export function parseToolInput(toolId: string, raw: unknown): unknown {
   const tool = getTool(toolId);
-  return tool.inputSchema.parse(raw);
+  return tool.inputSchema.parse(
+    toolId === "request_user_input" ? canonicalizeStoryCreativeProfileInputRequest(raw) : raw
+  );
 }
 
 export function parseToolOutput(toolId: string, raw: unknown): unknown {

@@ -1526,11 +1526,13 @@ model AgentOsExternalHandoffRegistration {
   /// Creator-authorized terminal specification plus the immutable source brief.
   /// Null is reserved for pre-scope-contract handoffs.
   continuationPlan        Json?    @map("continuation_plan") @db.JsonB
-  storyAgentRunId         String   @unique(map: "agent_os_external_handoffs_story_run_unique") @map("story_agent_run_id") @db.Uuid
+  storyAgentRunId         String?  @unique(map: "agent_os_external_handoffs_story_run_unique") @map("story_agent_run_id") @db.Uuid
+  generationBatchId       String?  @unique(map: "agent_os_external_handoffs_generation_batch_unique") @map("generation_batch_id") @db.Uuid
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  storyAgentRun  StoryAgentRun @relation(fields: [storyAgentRunId], references: [id], onDelete: Restrict)
-  sourceAgentRun AgentOsRun    @relation(fields: [sourceAgentRunId], references: [id], onDelete: Restrict)
+  storyAgentRun   StoryAgentRun?        @relation(fields: [storyAgentRunId], references: [id], onDelete: Restrict)
+  generationBatch StoryGenerationBatch? @relation(fields: [generationBatchId], references: [id], onDelete: Restrict)
+  sourceAgentRun  AgentOsRun            @relation(fields: [sourceAgentRunId], references: [id], onDelete: Restrict)
 
   @@unique([sourceAgentRunId, sourceAgentToolCallId], map: "agent_os_external_handoffs_source_tool_unique")
   @@index([sourceAgentRunId, createdAt], map: "agent_os_external_handoffs_source_run_idx")
@@ -8278,6 +8280,7 @@ enum StoryProductionGenerationTargetKind {
 
 enum StoryGenerationBatchStatus {
   awaiting_confirmation
+  blocked
   queued
   running
   cancelling
@@ -8549,6 +8552,9 @@ model StoryAgentRun {
   sourceStartedMessage               String?                     @map("source_started_message") @db.Text
   sourceCompletionMessage            String?                     @map("source_completion_message") @db.Text
   sourceProposalReadyDeliveredAt     DateTime?                   @map("source_proposal_ready_delivered_at") @db.Timestamptz(6)
+  /// Server-owned H5 authorization marker. The creator's prior Plot Continue
+  /// permits this derived Asset proposal to apply without a second approval.
+  sourceAutoAppliedAt                DateTime?                   @map("source_auto_applied_at") @db.Timestamptz(6)
   sourceTerminalDeliveredAt          DateTime?                   @map("source_terminal_delivered_at") @db.Timestamptz(6)
   sourceApprovalId                   String?                     @map("source_approval_id") @db.Uuid
   sourceApprovalResponseId           String?                     @map("source_approval_response_id") @db.Uuid
@@ -9139,34 +9145,41 @@ model StoryProductionGeneration {
 /// target version, or price. Items enter the generic AI queue gradually through
 /// the fair dispatcher instead of flooding it at confirmation time.
 model StoryGenerationBatch {
-  id                 String                     @id @default(uuid(7)) @db.Uuid
-  workspaceId        String                     @map("workspace_id") @db.Uuid
-  storyProjectId     String                     @map("story_project_id") @db.Uuid
-  storyChapterId     String                     @map("story_chapter_id") @db.Uuid
-  actorUserId        String                     @map("actor_user_id") @db.VarChar(64)
+  id                       String                     @id @default(uuid(7)) @db.Uuid
+  workspaceId              String                     @map("workspace_id") @db.Uuid
+  storyProjectId           String                     @map("story_project_id") @db.Uuid
+  storyChapterId           String                     @map("story_chapter_id") @db.Uuid
+  actorUserId              String                     @map("actor_user_id") @db.VarChar(64)
   /// Payer frozen when the quote is created; confirmation and delayed dispatch
   /// must charge the same account even if the project policy changes later.
-  billingSubjectType BillingSubjectType         @map("billing_subject_type")
-  billingSubjectId   String                     @map("billing_subject_id") @db.VarChar(64)
-  status             StoryGenerationBatchStatus @default(awaiting_confirmation)
-  sourceSurface      String                     @default("story-studio-batch") @map("source_surface") @db.VarChar(64)
-  idempotencyKey     String                     @map("idempotency_key") @db.VarChar(180)
-  requestFingerprint String                     @map("request_fingerprint") @db.VarChar(64)
-  quoteSnapshot      Json                       @map("quote_snapshot") @db.JsonB
-  totalPoints        Int                        @map("total_points")
-  itemCount          Int                        @map("item_count")
-  version            Int                        @default(0)
-  quoteExpiresAt     DateTime                   @map("quote_expires_at") @db.Timestamptz(6)
-  confirmedAt        DateTime?                  @map("confirmed_at") @db.Timestamptz(6)
-  cancelledAt        DateTime?                  @map("cancelled_at") @db.Timestamptz(6)
-  completedAt        DateTime?                  @map("completed_at") @db.Timestamptz(6)
-  lastDispatchedAt   DateTime?                  @map("last_dispatched_at") @db.Timestamptz(6)
-  createdAt          DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  billingSubjectType       BillingSubjectType         @map("billing_subject_type")
+  billingSubjectId         String                     @map("billing_subject_id") @db.VarChar(64)
+  status                   StoryGenerationBatchStatus @default(awaiting_confirmation)
+  blockedAt                DateTime?                  @map("blocked_at") @db.Timestamptz(6)
+  blockReason              Json?                      @map("block_reason") @db.JsonB
+  sourceSurface            String                     @default("story-studio-batch") @map("source_surface") @db.VarChar(64)
+  /// H5 auto-production admits exactly one provider job at a time. Desktop
+  /// batches retain fair parallel admission across dispatcher sweeps.
+  dispatchMode             String                     @default("parallel") @map("dispatch_mode") @db.VarChar(16)
+  idempotencyKey           String                     @map("idempotency_key") @db.VarChar(180)
+  requestFingerprint       String                     @map("request_fingerprint") @db.VarChar(64)
+  quoteSnapshot            Json                       @map("quote_snapshot") @db.JsonB
+  totalPoints              Int                        @map("total_points")
+  itemCount                Int                        @map("item_count")
+  version                  Int                        @default(0)
+  quoteExpiresAt           DateTime                   @map("quote_expires_at") @db.Timestamptz(6)
+  confirmedAt              DateTime?                  @map("confirmed_at") @db.Timestamptz(6)
+  cancelledAt              DateTime?                  @map("cancelled_at") @db.Timestamptz(6)
+  completedAt              DateTime?                  @map("completed_at") @db.Timestamptz(6)
+  handoffResultDeliveredAt DateTime?                  @map("handoff_result_delivered_at") @db.Timestamptz(6)
+  lastDispatchedAt         DateTime?                  @map("last_dispatched_at") @db.Timestamptz(6)
+  createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project StoryProject               @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
-  chapter StoryChapter               @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
-  items   StoryGenerationBatchItem[]
+  project                     StoryProject                        @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  chapter                     StoryChapter                        @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  items                       StoryGenerationBatchItem[]
+  externalHandoffRegistration AgentOsExternalHandoffRegistration?
 
   @@unique([storyChapterId, actorUserId, idempotencyKey], map: "story_generation_batches_actor_key_unique")
   @@index([actorUserId, status, lastDispatchedAt, createdAt], map: "story_generation_batches_fairness_idx")

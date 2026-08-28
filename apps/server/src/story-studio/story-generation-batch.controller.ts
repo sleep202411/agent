@@ -13,9 +13,11 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   ConfirmStoryGenerationBatchSchema,
   QuoteStoryAssetGenerationBatchSchema,
+  QuoteStoryStoryboardGenerationBatchSchema,
   StoryGenerationBatchParamsSchema,
   type ConfirmStoryGenerationBatchInput,
   type QuoteStoryAssetGenerationBatchInput,
+  type QuoteStoryStoryboardGenerationBatchInput,
   type StoryGenerationBatchParams,
 } from './story-generation-batch.schema';
 import { StoryGenerationBatchService } from './story-generation-batch.service';
@@ -40,6 +42,27 @@ export class StoryGenerationBatchController {
     return {
       code: 200,
       data: await this.batches.quoteAssets(
+        user,
+        params.projectId,
+        params.chapterId,
+        requiredIdempotencyHeader(idempotencyKey),
+        body,
+      ),
+    };
+  }
+
+  @Post('storyboard/clips/quote')
+  async quoteStoryboardClips(
+    @CurrentUser() user: AuthUser,
+    @Headers('idempotency-key') idempotencyKey: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProductionChapterParamsSchema))
+    params: StoryProductionChapterParams,
+    @Body(new ZodValidationPipe(QuoteStoryStoryboardGenerationBatchSchema))
+    body: QuoteStoryStoryboardGenerationBatchInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.batches.quoteStoryboardClips(
         user,
         params.projectId,
         params.chapterId,
@@ -108,6 +131,24 @@ export class StoryGenerationBatchController {
     return {
       code: 200,
       data: await this.batches.cancel(
+        user,
+        params.projectId,
+        params.chapterId,
+        params.batchId,
+      ),
+    };
+  }
+
+  @Post(':batchId/resume')
+  @HttpCode(202)
+  async resume(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(StoryGenerationBatchParamsSchema))
+    params: StoryGenerationBatchParams,
+  ) {
+    return {
+      code: 202,
+      data: await this.batches.resume(
         user,
         params.projectId,
         params.chapterId,

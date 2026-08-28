@@ -110,6 +110,60 @@ describe("agent-tools registry", () => {
     ).toThrow();
   });
 
+  it("accepts canonical target identity on sequential Story generation batches", () => {
+    const batchId = "10000000-0000-4000-8000-000000000001";
+    const targetId = "20000000-0000-4000-8000-000000000002";
+    expect(
+      parseToolOutput("story.generation.quoteAssets", {
+        id: batchId,
+        projectId: "30000000-0000-4000-8000-000000000003",
+        chapterId: "40000000-0000-4000-8000-000000000004",
+        status: "awaiting_confirmation",
+        dispatchMode: "sequential",
+        totalPoints: 10,
+        availablePoints: "100",
+        itemCount: 1,
+        version: 0,
+        quoteExpiresAt: "2026-08-27T18:00:00.000Z",
+        confirmedAt: null,
+        completedAt: null,
+        blockedAt: null,
+        blockReason: null,
+        canCancel: true,
+        counts: {
+          awaiting_confirmation: 1,
+          ready: 0,
+          dispatching: 0,
+          submitted: 0,
+          completed: 0,
+          failed: 0,
+          cancelled: 0,
+        },
+        items: [
+          {
+            id: "50000000-0000-4000-8000-000000000005",
+            ordinal: 0,
+            status: "awaiting_confirmation",
+            targetKind: "asset_spec",
+            targetId,
+            sequenceId: null,
+            targetVersion: 1,
+            outputKind: "image",
+            modelId: "fal-ai/nano-banana",
+            schemaVersion: "v1",
+            quotedPoints: 10,
+            generationId: null,
+            error: null,
+          },
+        ],
+      })
+    ).toMatchObject({
+      id: batchId,
+      dispatchMode: "sequential",
+      items: [{ targetKind: "asset_spec", targetId, sequenceId: null }],
+    });
+  });
+
   it("requires attachmentId for script.readSection", () => {
     expect(() =>
       parseToolInput("script.readSection", {
@@ -284,7 +338,7 @@ describe("agent-tools registry", () => {
     ).toThrow();
   });
 
-  it("accepts canonical missing-field subsets and rejects reordered creative-profile forms", () => {
+  it("canonicalizes fixed profile catalogs and rejects reordered creative-profile forms", () => {
     const questions = [
       {
         id: "aspect_ratio",
@@ -353,6 +407,45 @@ describe("agent-tools registry", () => {
         expect.objectContaining({ id: "story_language" }),
       ],
     });
+    const abbreviated = parseToolInput("request_user_input", {
+      ...QUESTION_TURN_COPY,
+      formId: "story_creative_profile",
+      knownValues: {
+        aspect_ratio: "landscape_16_9",
+        target_runtime: "short_5_15",
+        story_language: "zh-CN",
+      },
+      questions: [
+        {
+          ...questions[2],
+          options: [questions[2].options[0], questions[2].options[2]],
+        },
+      ],
+    }) as { questions: Array<{ options: Array<{ value: string; label: string }> }> };
+    expect(abbreviated.questions[0]?.options.map((option) => option.value)).toEqual(
+      STORY_VISUAL_STYLE_SKILL_SLUGS
+    );
+    expect(abbreviated.questions[0]?.options[1]).toEqual({
+      value: "stylized-3d-cinema",
+      label: "stylized-3d-cinema",
+    });
+    expect(() =>
+      parseToolInput("request_user_input", {
+        ...QUESTION_TURN_COPY,
+        formId: "story_creative_profile",
+        knownValues: {
+          aspect_ratio: "landscape_16_9",
+          target_runtime: "short_5_15",
+          story_language: "zh-CN",
+        },
+        questions: [
+          {
+            ...questions[2],
+            options: [questions[2].options[0], { value: "invented-style", label: "Invented" }],
+          },
+        ],
+      })
+    ).toThrow();
     expect(() =>
       parseToolInput("request_user_input", {
         ...QUESTION_TURN_COPY,
@@ -432,18 +525,15 @@ describe("agent-tools registry", () => {
     expect(description).toContain("Call story.read first");
     expect(description).toContain("reuses every valid chapter stage");
     expect(description).toContain("Only when no valid Script exists");
-    expect(description).toContain("selects exactly one reviewable proposal");
-    expect(description).toContain("approval writes only that artifact");
+    expect(description).toContain("selects exactly one next artifact");
     expect(description).toContain("Set continueThrough once");
     expect(description).toContain("never asks the model to infer the old intent again");
-    expect(description).toContain("Preparing the next proposal may be automatic");
-    expect(description).toContain("approving it never is");
     expect(description).toContain("single canonical Plot topology");
     expect(description).toContain("one Storyboard sequence per Plot node");
-    expect(description).toContain("zero generated media");
-    expect(description).toContain("creator must use Generate later");
-    expect(description).toContain("one proposal selected by canonical state");
-    expect(description).toContain("authoritative Server apply continuation");
+    expect(description).toContain("creator uses Generate later");
+    expect(description).toContain("without a second Asset confirmation");
+    expect(description).toContain("Storyboard remains a separate Continue/Don't continue boundary");
+    expect(description).toContain("authoritative Server continuation");
     expect(description).not.toContain("five-baton");
     expect(description).not.toContain("proposal for the whole tree");
   });

@@ -6,6 +6,7 @@ import {
   isRetryableStoryMaterializationPrismaCode,
   missingRequiredStoryModelInputs,
   shortestStorySourceDuration,
+  storyGenerationClientOptionsFromSnapshot,
   storyModelSchemaDefaults,
 } from './story-production-generation.service';
 
@@ -164,6 +165,24 @@ describe('Story production generation model constraints', () => {
         },
       ),
     ).not.toThrow();
+  });
+
+  it('reattaches legacy batch snapshots without replaying server-owned duration as client input', () => {
+    expect(
+      storyGenerationClientOptionsFromSnapshot({
+        aspectRatio: '16:9',
+        duration: 6,
+        durationSeconds: 10,
+      }),
+    ).toEqual({ aspectRatio: '16:9' });
+
+    expect(() =>
+      storyGenerationClientOptionsFromSnapshot({
+        prompt: 'must remain server-owned',
+      }),
+    ).toThrow(
+      'Story generation prompts and media references are controlled by the target specification.',
+    );
   });
 });
 

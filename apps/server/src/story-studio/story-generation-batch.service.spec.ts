@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest asymmetric matchers inspect structurally typed Prisma payloads. */
 import {
   Prisma,
   StoryGenerationBatchItemStatus,
@@ -20,6 +21,10 @@ function batch(
     version: number;
     confirmedAt: Date | null;
     actorUserId: string;
+    dispatchMode: 'parallel' | 'sequential';
+    totalPoints: number;
+    blockedAt: Date | null;
+    blockReason: Prisma.JsonValue | null;
   }> = {},
 ) {
   return {
@@ -31,18 +36,23 @@ function batch(
     billingSubjectType: 'workspace' as const,
     billingSubjectId: 'actor-personal-workspace',
     status: StoryGenerationBatchStatus.awaiting_confirmation,
+    dispatchMode: 'parallel' as const,
     totalPoints: 12,
     itemCount: 1,
     version: 0,
     quoteExpiresAt: new Date(Date.now() + 60_000),
     confirmedAt: null,
     completedAt: null,
+    blockedAt: null,
+    blockReason: null,
     items: [
       {
         id: 'item-1',
         ordinal: 0,
         status: itemStatus(overrides.status),
+        targetKind: 'asset_spec' as const,
         targetId: 'asset-1',
+        sequenceId: null,
         targetVersion: 0,
         outputKind: StoryProductionGenerationKind.image,
         modelId: 'image-1',
@@ -165,6 +175,7 @@ function makeService(
   const cancelJob = jest
     .fn<Promise<unknown>, [unknown, string]>()
     .mockResolvedValue({});
+  const createHandoff = jest.fn().mockResolvedValue({});
   const transaction = jest.fn<Promise<unknown>, [(tx: unknown) => unknown]>(
     (callback) =>
       Promise.resolve(
@@ -174,6 +185,7 @@ function makeService(
             updateMany: updateItems,
             count: countItems,
           },
+          agentOsExternalHandoffRegistration: { create: createHandoff },
         }),
       ),
   );
@@ -218,6 +230,7 @@ function makeService(
     cancelJob,
     getBillingSubjectComputeBalance,
     transaction,
+    createHandoff,
   };
 }
 
@@ -261,6 +274,28 @@ describe('StoryGenerationBatchService confirmation', () => {
         },
       }),
     );
+  });
+
+  it('admits a sequential H5 batch even when only the first items are currently affordable', async () => {
+    const initial = batch({ dispatchMode: 'sequential', totalPoints: 120 });
+    const winner = batch({
+      status: StoryGenerationBatchStatus.queued,
+      version: 1,
+      confirmedAt: new Date(),
+      dispatchMode: 'sequential',
+      totalPoints: 120,
+    });
+    const { service, updateBatch } = makeService(initial, winner);
+
+    await expect(
+      service.confirm(actor, scope.projectId, scope.chapterId, scope.batchId, {
+        expectedVersion: 0,
+      }),
+    ).resolves.toMatchObject({
+      status: StoryGenerationBatchStatus.queued,
+      dispatchMode: 'sequential',
+    });
+    expect(updateBatch).toHaveBeenCalled();
   });
 
   it('returns the concurrent winner instead of queueing the same batch twice', async () => {
@@ -331,6 +366,79 @@ describe('StoryGenerationBatchService confirmation', () => {
     expect(updateBatch).not.toHaveBeenCalled();
     expect(updateItems).not.toHaveBeenCalled();
   });
+
+  it('pauses an authorized H5 batch for recharge and preserves its Agent handoff', async () => {
+    const initial = batch({ dispatchMode: 'sequential' });
+    const winner = batch({
+      status: StoryGenerationBatchStatus.blocked,
+      version: 1,
+      confirmedAt: new Date(),
+      dispatchMode: 'sequential',
+      blockedAt: new Date(),
+      blockReason: {
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        requiredAmount: '12',
+        availableBalance: '0',
+      },
+    });
+    const {
+      service,
+      getBillingSubjectComputeBalance,
+      updateBatch,
+      updateItems,
+      createHandoff,
+    } = makeService(initial, winner);
+    getBillingSubjectComputeBalance.mockResolvedValue({
+      available: 0n,
+      held: 0n,
+      total: 0n,
+    });
+
+    await expect(
+      service.confirm(
+        actor,
+        scope.projectId,
+        scope.chapterId,
+        scope.batchId,
+        { expectedVersion: 0 },
+        {
+          sourceAgentRunId: 'agent-run-1',
+          sourceAgentTurnId: 'agent-turn-1',
+          sourceAgentToolCallId: 'tool-call-1',
+          sourceConversationId: 'conversation-1',
+          startedMessage: '正在逐张生成。',
+          completionMessage: '资产图片已全部生成。',
+          continuationPlan: {
+            continueThrough: 'storyboard',
+            title: 'Cat',
+            summary: 'Cat story',
+            brief: 'Create a cat story.',
+            experience: 'mobile_h5',
+            autoGenerateAssetImages: true,
+          },
+        },
+      ),
+    ).resolves.toMatchObject({ status: StoryGenerationBatchStatus.blocked });
+    expect(updateBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: StoryGenerationBatchStatus.blocked,
+          blockReason: expect.objectContaining({
+            code: 'INSUFFICIENT_COMPUTE_POINTS',
+          }),
+        }),
+      }),
+    );
+    expect(updateItems).not.toHaveBeenCalled();
+    expect(createHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          generationBatchId: scope.batchId,
+          sourceToolId: 'story.generation.confirmBatch',
+        }),
+      }),
+    );
+  });
 });
 
 describe('StoryGenerationBatchService cancellation', () => {
@@ -392,6 +500,66 @@ describe('StoryGenerationBatchService cancellation', () => {
   });
 });
 
+describe('StoryGenerationBatchService recovery', () => {
+  it('resumes the same blocked batch from its first unfinished item', async () => {
+    const initial = batch({
+      status: StoryGenerationBatchStatus.blocked,
+      version: 1,
+      confirmedAt: new Date(),
+      dispatchMode: 'sequential',
+      blockedAt: new Date(),
+      blockReason: { code: 'INSUFFICIENT_COMPUTE_POINTS' },
+    });
+    const winner = batch({
+      status: StoryGenerationBatchStatus.queued,
+      version: 2,
+      confirmedAt: initial.confirmedAt,
+      dispatchMode: 'sequential',
+    });
+    const { service, updateBatch, updateItems } = makeService(initial, winner);
+
+    await expect(
+      service.resume(actor, scope.projectId, scope.chapterId, scope.batchId),
+    ).resolves.toMatchObject({
+      id: scope.batchId,
+      status: StoryGenerationBatchStatus.queued,
+      version: 2,
+    });
+    expect(updateBatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          id: scope.batchId,
+          status: {
+            in: [
+              StoryGenerationBatchStatus.blocked,
+              StoryGenerationBatchStatus.failed,
+              StoryGenerationBatchStatus.partial_failed,
+            ],
+          },
+          handoffResultDeliveredAt: null,
+        }),
+        data: expect.objectContaining({
+          status: StoryGenerationBatchStatus.queued,
+          blockedAt: null,
+          blockReason: Prisma.DbNull,
+        }),
+      }),
+    );
+    expect(updateItems).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          batchId: scope.batchId,
+          ordinal: { gte: 0 },
+        }),
+        data: expect.objectContaining({
+          status: StoryGenerationBatchItemStatus.ready,
+          generationId: null,
+        }),
+      }),
+    );
+  });
+});
+
 describe('StoryGenerationBatchService collaboration visibility', () => {
   it('shows a collaborator active batch without granting cancel authority', async () => {
     const own = batch({ status: StoryGenerationBatchStatus.completed });
@@ -434,6 +602,7 @@ describe('StoryGenerationBatchService collaboration visibility', () => {
       {
         status: {
           in: [
+            StoryGenerationBatchStatus.blocked,
             StoryGenerationBatchStatus.queued,
             StoryGenerationBatchStatus.running,
             StoryGenerationBatchStatus.cancelling,

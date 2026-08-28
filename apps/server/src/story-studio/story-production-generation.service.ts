@@ -422,6 +422,63 @@ export class StoryProductionGenerationService
     });
   }
 
+  async quoteStoryboardClipGeneration(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    clipId: string,
+    input: CreateStoryStoryboardClipGenerationInput,
+  ) {
+    return this.quoteGeneration({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      targetKind: 'storyboard_clip',
+      targetId: clipId,
+      sequenceId,
+      idempotencyKey: 'quote-only',
+      expectedVersion: input.expectedVersion,
+      modelId: input.modelId,
+      schemaVersion: input.schemaVersion,
+      clientOptions: input.options,
+    });
+  }
+
+  async createQuotedStoryboardClipGeneration(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    clipId: string,
+    idempotencyKey: string,
+    input: CreateStoryStoryboardClipGenerationInput,
+    expectedQuote: { pricingVersion: string; points: number },
+    billingSubject: { type: 'user' | 'workspace'; id: string },
+    batchAdmission: { itemId: string; leaseOwner: string },
+  ) {
+    return this.submitGeneration({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      targetKind: 'storyboard_clip',
+      targetId: clipId,
+      sequenceId,
+      idempotencyKey,
+      expectedVersion: input.expectedVersion,
+      modelId: input.modelId,
+      schemaVersion: input.schemaVersion,
+      clientOptions: input.options,
+      expectedQuote,
+      billingSubject,
+      batchAdmission,
+    });
+  }
+
   async createStoryboardClipGeneration(
     user: AuthUser,
     projectId: string,
@@ -1296,7 +1353,13 @@ export class StoryProductionGenerationService
       outputKind: target.generationKind,
       modelId: model.id,
       schemaVersion: model.schemaVersion,
-      options: effectiveOptions,
+      // A durable batch replays creator-controlled options through the same
+      // target/model resolver at dispatch time. Do not persist the resolved
+      // `effectiveOptions` here: it contains server-owned fields such as
+      // duration/durationSeconds, which are intentionally rejected as client
+      // input and would later make the completed output impossible to
+      // materialize from its submission snapshot.
+      options: command.clientOptions,
       quotedPoints: estimate.sellPoints,
       pricingVersion: estimate.pricingVersion,
     };
@@ -2761,8 +2824,8 @@ function parseSubmissionSnapshot(
       message: 'The saved generation submission snapshot is invalid.',
     });
   }
-  const clientOptions = StoryGenerationOptionsSchema.parse(
-    jsonObject(row.clientOptions),
+  const clientOptions = storyGenerationClientOptionsFromSnapshot(
+    row.clientOptions,
   );
   return {
     version: 1,
@@ -2785,6 +2848,21 @@ function parseSubmissionSnapshot(
         : null,
     sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
   };
+}
+
+/**
+ * Early durable batches stored the server-resolved source duration in the
+ * snapshot's client-options field. The provider job is already immutable at
+ * this point, so discard only those two known server-owned keys while keeping
+ * every other reserved option subject to the normal strict validation.
+ */
+export function storyGenerationClientOptionsFromSnapshot(
+  value: unknown,
+): StoryGenerationOptions {
+  const options = jsonObject(value);
+  delete options.duration;
+  delete options.durationSeconds;
+  return StoryGenerationOptionsSchema.parse(options);
 }
 
 function materializationFailure(error: unknown): MaterializationFailureShape {

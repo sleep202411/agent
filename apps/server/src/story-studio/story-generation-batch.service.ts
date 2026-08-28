@@ -11,6 +11,7 @@ import {
   StoryGenerationBatchStatus,
   StoryProductionGenerationKind,
   StoryProductionGenerationTargetKind,
+  StoryProductionSpecStatus,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { AiGenerationService } from '../ai-generation/ai-generation.service';
@@ -20,12 +21,23 @@ import { canonicalJsonHash } from './canonical-json';
 import type {
   ConfirmStoryGenerationBatchInput,
   QuoteStoryAssetGenerationBatchInput,
+  QuoteStoryStoryboardGenerationBatchInput,
 } from './story-generation-batch.schema';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProductionGenerationService } from './story-production-generation.service';
 
 const QUOTE_TTL_MS = 15 * 60_000;
 const QUOTE_CONCURRENCY = 8;
+
+export interface StoryGenerationBatchAgentHandoffInput {
+  sourceAgentRunId: string;
+  sourceAgentTurnId: string;
+  sourceAgentToolCallId: string;
+  sourceConversationId: string;
+  startedMessage: string;
+  completionMessage: string;
+  continuationPlan: Prisma.InputJsonValue;
+}
 
 @Injectable()
 export class StoryGenerationBatchService {
@@ -42,6 +54,7 @@ export class StoryGenerationBatchService {
     chapterId: string,
     idempotencyKey: string,
     input: QuoteStoryAssetGenerationBatchInput,
+    execution?: { dispatchMode?: 'parallel' | 'sequential' },
   ) {
     const { project } = await this.permissions.requireProject(
       user.userId,
@@ -54,12 +67,14 @@ export class StoryGenerationBatchService {
       projectId,
     );
     const normalizedKey = requiredKey(idempotencyKey);
+    const dispatchMode = execution?.dispatchMode ?? 'parallel';
     const requestFingerprint = canonicalJsonHash({
       workspaceId,
       billingSubject,
       projectId,
       chapterId,
       input,
+      dispatchMode,
     });
     const replay = await this.prisma.storyGenerationBatch.findUnique({
       where: {
@@ -118,6 +133,7 @@ export class StoryGenerationBatchService {
           actorUserId: user.userId,
           billingSubjectType: billingSubject.type,
           billingSubjectId: billingSubject.id,
+          dispatchMode,
           idempotencyKey: normalizedKey,
           requestFingerprint,
           totalPoints,
@@ -171,12 +187,181 @@ export class StoryGenerationBatchService {
     }
   }
 
+  async quoteStoryboardClips(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    idempotencyKey: string,
+    input: QuoteStoryStoryboardGenerationBatchInput,
+    execution?: { dispatchMode?: 'parallel' | 'sequential' },
+  ) {
+    const { project } = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.generate',
+    );
+    const workspaceId = project.workspaceId;
+    const billingSubject = await this.aiGeneration.resolveStoryBillingSubject(
+      user,
+      projectId,
+    );
+    const normalizedKey = requiredKey(idempotencyKey);
+    const dispatchMode = execution?.dispatchMode ?? 'parallel';
+    const requestFingerprint = canonicalJsonHash({
+      workspaceId,
+      billingSubject,
+      projectId,
+      chapterId,
+      targetKind: 'storyboard_clip',
+      input,
+      dispatchMode,
+    });
+    const replay = await this.prisma.storyGenerationBatch.findUnique({
+      where: {
+        storyChapterId_actorUserId_idempotencyKey: {
+          storyChapterId: chapterId,
+          actorUserId: user.userId,
+          idempotencyKey: normalizedKey,
+        },
+      },
+      include: { items: { orderBy: { ordinal: 'asc' } } },
+    });
+    if (replay) {
+      assertReplay(replay.requestFingerprint, requestFingerprint);
+      return batchDto(replay, true, await this.availableBillingPoints(replay));
+    }
+
+    const targets = uniqueTargets(input.targets);
+    const rows = await this.prisma.storyStoryboardClip.findMany({
+      where: {
+        id: { in: targets.map((target) => target.id) },
+        storyProjectId: projectId,
+        storyChapterId: chapterId,
+        status: StoryProductionSpecStatus.current,
+        sequence: { status: StoryProductionSpecStatus.current },
+      },
+      select: { id: true, sequenceId: true, version: true, kind: true },
+    });
+    const rowsById = new Map(rows.map((row) => [row.id, row]));
+    for (const target of targets) {
+      const row = rowsById.get(target.id);
+      if (!row || row.sequenceId !== target.sequenceId) {
+        throw new NotFoundException({
+          code: 'STORYBOARD_CLIP_NOT_FOUND',
+          message: 'A current Storyboard clip was not found in this chapter.',
+          clipId: target.id,
+        });
+      }
+      if (row.version !== target.expectedVersion) {
+        throw new ConflictException({
+          code: 'STORYBOARD_CLIP_VERSION_CONFLICT',
+          message: 'A Storyboard clip changed. Refresh before generating.',
+          clipId: target.id,
+          actualVersion: row.version,
+        });
+      }
+    }
+    const [imageSelection, videoSelection] = await Promise.all([
+      this.resolvePersistedSelection(user, workspaceId, projectId, 'image'),
+      this.resolvePersistedSelection(user, workspaceId, projectId, 'video'),
+    ]);
+    const quotes = await mapLimit(targets, QUOTE_CONCURRENCY, (target) => {
+      const row = rowsById.get(target.id)!;
+      const preferredSelection =
+        row.kind === 'image' ? imageSelection : videoSelection;
+      return this.generations.quoteStoryboardClipGeneration(
+        user,
+        workspaceId,
+        projectId,
+        chapterId,
+        target.sequenceId,
+        target.id,
+        {
+          expectedVersion: target.expectedVersion,
+          modelId: preferredSelection?.modelId,
+          schemaVersion: preferredSelection?.schemaVersion,
+          options: {},
+        },
+      );
+    });
+    const totalPoints = quotes.reduce(
+      (total, quote) => total + quote.quotedPoints,
+      0,
+    );
+    const availablePoints = await this.availableBillingPoints(billingSubject);
+    const batchId = newUuidV7();
+    const quoteExpiresAt = new Date(Date.now() + QUOTE_TTL_MS);
+    try {
+      const created = await this.prisma.storyGenerationBatch.create({
+        data: {
+          id: batchId,
+          workspaceId,
+          storyProjectId: projectId,
+          storyChapterId: chapterId,
+          actorUserId: user.userId,
+          billingSubjectType: billingSubject.type,
+          billingSubjectId: billingSubject.id,
+          dispatchMode,
+          idempotencyKey: normalizedKey,
+          requestFingerprint,
+          totalPoints,
+          itemCount: quotes.length,
+          quoteExpiresAt,
+          quoteSnapshot: {
+            version: 1,
+            currency: 'COMPUTE_POINTS',
+            availablePoints: availablePoints.toString(),
+            quotedAt: new Date().toISOString(),
+            expiresAt: quoteExpiresAt.toISOString(),
+          },
+          items: {
+            create: quotes.map((quote, ordinal) => ({
+              id: newUuidV7(),
+              ordinal,
+              targetKind: StoryProductionGenerationTargetKind.storyboard_clip,
+              targetId: quote.targetId,
+              sequenceId: targets[ordinal].sequenceId,
+              targetVersion: quote.targetVersion,
+              outputKind:
+                quote.outputKind === 'image'
+                  ? StoryProductionGenerationKind.image
+                  : StoryProductionGenerationKind.video,
+              modelId: quote.modelId,
+              schemaVersion: quote.schemaVersion,
+              options: quote.options as Prisma.InputJsonValue,
+              quotedPoints: quote.quotedPoints,
+              pricingVersion: quote.pricingVersion,
+            })),
+          },
+        },
+        include: { items: { orderBy: { ordinal: 'asc' } } },
+      });
+      return batchDto(created, true, availablePoints);
+    } catch (error) {
+      if (!isUniqueConflict(error)) throw error;
+      const winner = await this.prisma.storyGenerationBatch.findUnique({
+        where: {
+          storyChapterId_actorUserId_idempotencyKey: {
+            storyChapterId: chapterId,
+            actorUserId: user.userId,
+            idempotencyKey: normalizedKey,
+          },
+        },
+        include: { items: { orderBy: { ordinal: 'asc' } } },
+      });
+      if (!winner) throw error;
+      assertReplay(winner.requestFingerprint, requestFingerprint);
+      return batchDto(winner, true, await this.availableBillingPoints(winner));
+    }
+  }
+
   async confirm(
     user: AuthUser,
     projectId: string,
     chapterId: string,
     batchId: string,
     input: ConfirmStoryGenerationBatchInput,
+    agentHandoff?: StoryGenerationBatchAgentHandoffInput,
   ) {
     const { project } = await this.permissions.requireProject(
       user.userId,
@@ -193,7 +378,7 @@ export class StoryGenerationBatchService {
       batchId,
     );
     if (batch.status !== StoryGenerationBatchStatus.awaiting_confirmation) {
-      return batchDto(batch);
+      return batchDto(batch, true, await this.availableBillingPoints(batch));
     }
     if (batch.quoteExpiresAt <= now) {
       const expired = await this.prisma.storyGenerationBatch.updateMany({
@@ -224,14 +409,19 @@ export class StoryGenerationBatchService {
     // dispatcher remains the billing authority because another job can spend
     // the same wallet balance after this check and before an item is admitted.
     const availablePoints = await this.availableBillingPoints(batch);
-    if (availablePoints < BigInt(batch.totalPoints)) {
+    const requiredAtConfirmation =
+      batch.dispatchMode === 'sequential'
+        ? BigInt(batch.items[0]?.quotedPoints ?? 0)
+        : BigInt(batch.totalPoints);
+    if (availablePoints < requiredAtConfirmation && !agentHandoff) {
       throw new ConflictException({
         code: 'INSUFFICIENT_COMPUTE_POINTS',
         msg: 'Not enough compute points. Recharge and try again.',
-        requiredAmount: batch.totalPoints.toString(),
+        requiredAmount: requiredAtConfirmation.toString(),
         availableBalance: availablePoints.toString(),
       });
     }
+    const blockedForFunds = availablePoints < requiredAtConfirmation;
     let confirmed: boolean;
     try {
       confirmed = await this.prisma.$transaction(async (tx) => {
@@ -242,22 +432,54 @@ export class StoryGenerationBatchService {
             version: input.expectedVersion,
           },
           data: {
-            status: StoryGenerationBatchStatus.queued,
+            status: blockedForFunds
+              ? StoryGenerationBatchStatus.blocked
+              : StoryGenerationBatchStatus.queued,
             confirmedAt: now,
+            blockedAt: blockedForFunds ? now : null,
+            blockReason: blockedForFunds
+              ? {
+                  code: 'INSUFFICIENT_COMPUTE_POINTS',
+                  message:
+                    'Not enough compute points. Recharge and continue from this item.',
+                  retryable: true,
+                  requiredAmount: requiredAtConfirmation.toString(),
+                  availableBalance: availablePoints.toString(),
+                }
+              : Prisma.DbNull,
             version: { increment: 1 },
           },
         });
         if (updated.count !== 1) return false;
-        await tx.storyGenerationBatchItem.updateMany({
-          where: {
-            batchId: batch.id,
-            status: StoryGenerationBatchItemStatus.awaiting_confirmation,
-          },
-          data: {
-            status: StoryGenerationBatchItemStatus.ready,
-            nextDispatchAt: now,
-          },
-        });
+        if (!blockedForFunds) {
+          await tx.storyGenerationBatchItem.updateMany({
+            where: {
+              batchId: batch.id,
+              status: StoryGenerationBatchItemStatus.awaiting_confirmation,
+            },
+            data: {
+              status: StoryGenerationBatchItemStatus.ready,
+              nextDispatchAt: now,
+            },
+          });
+        }
+        if (agentHandoff) {
+          await tx.agentOsExternalHandoffRegistration.create({
+            data: {
+              externalJobId: batch.id,
+              generationBatchId: batch.id,
+              sourceAgentRunId: agentHandoff.sourceAgentRunId,
+              sourceAgentTurnId: agentHandoff.sourceAgentTurnId,
+              sourceAgentToolCallId: agentHandoff.sourceAgentToolCallId,
+              sourceConversationId: agentHandoff.sourceConversationId,
+              sourceToolId: 'story.generation.confirmBatch',
+              decisionContractVersion: 2,
+              startedMessage: agentHandoff.startedMessage,
+              completionMessage: agentHandoff.completionMessage,
+              continuationPlan: agentHandoff.continuationPlan,
+            },
+          });
+        }
         return true;
       });
     } catch (error) {
@@ -267,6 +489,7 @@ export class StoryGenerationBatchService {
     if (!confirmed) {
       const winner = await this.get(user, projectId, chapterId, batchId);
       if (
+        winner.status === StoryGenerationBatchStatus.blocked ||
         winner.status === StoryGenerationBatchStatus.queued ||
         winner.status === StoryGenerationBatchStatus.running
       ) {
@@ -288,15 +511,14 @@ export class StoryGenerationBatchService {
       projectId,
       'story.read',
     );
-    return batchDto(
-      await this.requireOwnedBatch(
-        user.userId,
-        project.workspaceId,
-        projectId,
-        chapterId,
-        batchId,
-      ),
+    const batch = await this.requireOwnedBatch(
+      user.userId,
+      project.workspaceId,
+      projectId,
+      chapterId,
+      batchId,
     );
+    return batchDto(batch, true, await this.availableBillingPoints(batch));
   }
 
   async list(user: AuthUser, projectId: string, chapterId: string) {
@@ -306,6 +528,7 @@ export class StoryGenerationBatchService {
       'story.read',
     );
     const visibleActiveStatuses = [
+      StoryGenerationBatchStatus.blocked,
       StoryGenerationBatchStatus.queued,
       StoryGenerationBatchStatus.running,
       StoryGenerationBatchStatus.cancelling,
@@ -334,6 +557,100 @@ export class StoryGenerationBatchService {
     );
   }
 
+  /** Resume the same durable H5 batch from its first unfinished item. */
+  async resume(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    batchId: string,
+  ) {
+    const { project } = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      'story.generate',
+    );
+    const batch = await this.requireOwnedBatch(
+      user.userId,
+      project.workspaceId,
+      projectId,
+      chapterId,
+      batchId,
+    );
+    if (
+      batch.status !== StoryGenerationBatchStatus.blocked &&
+      batch.status !== StoryGenerationBatchStatus.failed &&
+      batch.status !== StoryGenerationBatchStatus.partial_failed
+    ) {
+      return batchDto(batch, true, await this.availableBillingPoints(batch));
+    }
+    const firstUnfinished = batch.items.find(
+      (item) => item.status !== StoryGenerationBatchItemStatus.completed,
+    );
+    if (!firstUnfinished) {
+      return batchDto(batch, true, await this.availableBillingPoints(batch));
+    }
+    const availablePoints = await this.availableBillingPoints(batch);
+    if (availablePoints < BigInt(firstUnfinished.quotedPoints)) {
+      throw new ConflictException({
+        code: 'INSUFFICIENT_COMPUTE_POINTS',
+        message:
+          'Not enough compute points. Recharge and continue from this item.',
+        requiredAmount: firstUnfinished.quotedPoints.toString(),
+        availableBalance: availablePoints.toString(),
+      });
+    }
+    const now = new Date();
+    await this.prisma.$transaction(async (tx) => {
+      const resumed = await tx.storyGenerationBatch.updateMany({
+        where: {
+          id: batch.id,
+          status: {
+            in: [
+              StoryGenerationBatchStatus.blocked,
+              StoryGenerationBatchStatus.failed,
+              StoryGenerationBatchStatus.partial_failed,
+            ],
+          },
+          version: batch.version,
+          handoffResultDeliveredAt: null,
+        },
+        data: {
+          status: StoryGenerationBatchStatus.queued,
+          blockedAt: null,
+          blockReason: Prisma.DbNull,
+          completedAt: null,
+          cancelledAt: null,
+          version: { increment: 1 },
+        },
+      });
+      if (resumed.count !== 1) return;
+      await tx.storyGenerationBatchItem.updateMany({
+        where: {
+          batchId: batch.id,
+          ordinal: { gte: firstUnfinished.ordinal },
+          status: {
+            in: [
+              StoryGenerationBatchItemStatus.awaiting_confirmation,
+              StoryGenerationBatchItemStatus.failed,
+              StoryGenerationBatchItemStatus.cancelled,
+            ],
+          },
+        },
+        data: {
+          status: StoryGenerationBatchItemStatus.ready,
+          generationId: null,
+          error: Prisma.DbNull,
+          submittedAt: null,
+          completedAt: null,
+          nextDispatchAt: now,
+          leaseOwner: null,
+          leaseExpiresAt: null,
+        },
+      });
+    });
+    return this.get(user, projectId, chapterId, batchId);
+  }
+
   async cancel(
     user: AuthUser,
     projectId: string,
@@ -353,7 +670,13 @@ export class StoryGenerationBatchService {
       chapterId,
       batchId,
     );
-    if (terminalBatchStatuses.has(batch.status)) return batchDto(batch);
+    if (
+      terminalBatchStatuses.has(batch.status) &&
+      batch.status !== StoryGenerationBatchStatus.failed &&
+      batch.status !== StoryGenerationBatchStatus.partial_failed
+    ) {
+      return batchDto(batch, true, await this.availableBillingPoints(batch));
+    }
     const now = new Date();
     await this.prisma.$transaction(async (tx) => {
       await tx.storyGenerationBatch.updateMany({
@@ -362,8 +685,11 @@ export class StoryGenerationBatchService {
           status: {
             in: [
               StoryGenerationBatchStatus.awaiting_confirmation,
+              StoryGenerationBatchStatus.blocked,
               StoryGenerationBatchStatus.queued,
               StoryGenerationBatchStatus.running,
+              StoryGenerationBatchStatus.failed,
+              StoryGenerationBatchStatus.partial_failed,
             ],
           },
         },
@@ -371,6 +697,8 @@ export class StoryGenerationBatchService {
           status: StoryGenerationBatchStatus.cancelling,
           cancelledAt: now,
           completedAt: null,
+          blockedAt: null,
+          blockReason: Prisma.DbNull,
           version: { increment: 1 },
         },
       });
@@ -426,6 +754,20 @@ export class StoryGenerationBatchService {
       ),
     );
     return this.get(user, projectId, chapterId, batchId);
+  }
+
+  async cancelAgentHandoff(user: AuthUser, projectId: string, batchId: string) {
+    const identity = await this.prisma.storyGenerationBatch.findUnique({
+      where: { id: batchId },
+      select: { storyProjectId: true, storyChapterId: true },
+    });
+    if (!identity || identity.storyProjectId !== projectId) {
+      throw new NotFoundException({
+        code: 'STORY_GENERATION_BATCH_NOT_FOUND',
+        message: 'Story generation batch not found.',
+      });
+    }
+    return this.cancel(user, projectId, identity.storyChapterId, batchId);
   }
 
   private async requireOwnedBatch(
@@ -520,17 +862,22 @@ function batchDto(
     storyProjectId: string;
     storyChapterId: string;
     status: StoryGenerationBatchStatus;
+    dispatchMode: string;
     totalPoints: number;
     itemCount: number;
     version: number;
     quoteExpiresAt: Date;
     confirmedAt: Date | null;
     completedAt: Date | null;
+    blockedAt: Date | null;
+    blockReason: Prisma.JsonValue | null;
     items: Array<{
       id: string;
       ordinal: number;
       status: StoryGenerationBatchItemStatus;
+      targetKind: StoryProductionGenerationTargetKind;
       targetId: string;
+      sequenceId: string | null;
       targetVersion: number;
       outputKind: StoryProductionGenerationKind;
       modelId: string;
@@ -552,6 +899,9 @@ function batchDto(
     projectId: batch.storyProjectId,
     chapterId: batch.storyChapterId,
     status: batch.status,
+    dispatchMode: batch.dispatchMode,
+    blockedAt: batch.blockedAt?.toISOString() ?? null,
+    blockReason: batch.blockReason,
     totalPoints: batch.totalPoints,
     availablePoints: availablePoints?.toString() ?? null,
     itemCount: batch.itemCount,
@@ -565,7 +915,9 @@ function batchDto(
       id: item.id,
       ordinal: item.ordinal,
       status: item.status,
+      targetKind: item.targetKind,
       targetId: item.targetId,
+      sequenceId: item.sequenceId,
       targetVersion: item.targetVersion,
       outputKind: item.outputKind,
       modelId: item.modelId,

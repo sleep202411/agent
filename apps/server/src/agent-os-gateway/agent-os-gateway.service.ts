@@ -49,6 +49,11 @@ import { AgentOsRunContinuationDispatcherService } from './agent-os-run-continua
 import { ProjectSkillsResolver } from '../project-skills';
 import { StoryAgentRunService } from '../story-studio/story-agent-run.service';
 import type { StoryAgentRunDto } from '@repo/shared/story-agent';
+import {
+  StoryProductionPlanService,
+  type StoryProductionStateDto,
+} from '../story-studio/story-production-plan.service';
+import { StoryGenerationBatchService } from '../story-studio/story-generation-batch.service';
 
 const USER_INPUT_RESPONSE_LEASE_MS = 30_000;
 const USER_INPUT_RESPONSE_WAIT_MS = 65_000;
@@ -106,18 +111,33 @@ function objectRecord(value: unknown): Record<string, unknown> | null {
  * transcript. Prior assistant prose is historical and must never masquerade as
  * the current background-job state after a discard/cancellation.
  */
-export function storyAuthoringModelContext(
-  run: Pick<StoryAgentRunDto, 'id' | 'status'> | null,
-): string {
-  const status = run?.status ?? 'none';
+export function storyAuthoringModelContext(input: {
+  latestRun: Pick<StoryAgentRunDto, 'id' | 'status'> | null;
+  productionState: StoryProductionStateDto;
+}): string {
+  const status = input.latestRun?.status ?? 'none';
   const active = status === 'authoring' || status === 'applying';
   const awaitingReview = status === 'proposed';
+  const canonicalProductionState = {
+    profile: input.productionState.profile.status,
+    script: input.productionState.script.status,
+    plot: input.productionState.plotTree.status,
+    assets: input.productionState.assets.status,
+    storyboard: input.productionState.storyboard.status,
+    ready: input.productionState.ready,
+  };
+  const chapterHasNoScript = input.productionState.script.status === 'missing';
   return [
     '[Trusted Story runtime state at turn admission]',
-    `latestAuthoringRun=${JSON.stringify(run ? { runId: run.id, status } : null)}`,
+    `latestAuthoringRun=${JSON.stringify(
+      input.latestRun ? { runId: input.latestRun.id, status } : null,
+    )}`,
     `authoringActive=${active}`,
     `proposalAwaitingReview=${awaitingReview}`,
+    `canonicalProductionState=${JSON.stringify(canonicalProductionState)}`,
+    `chapterHasNoScript=${chapterHasNoScript}`,
     'This server state overrides lifecycle claims in earlier conversation messages.',
+    'Treat chapterHasNoScript as a trusted scene fact only; call story_read before acting because canonical state may advance after admission.',
     'Before any Story write or any claim that authoring is in progress, call story_read for the latest state.',
     'Only authoring/applying is in progress. cancelled/stale/failed/succeeded is terminal and does not block a new create request.',
   ].join('\n');
@@ -177,6 +197,8 @@ export class AgentOsGatewayService {
     private readonly attachments: AgentOsAttachmentService,
     private readonly projectSkills: ProjectSkillsResolver,
     private readonly storyAgentRuns: StoryAgentRunService,
+    private readonly storyProductionPlans: StoryProductionPlanService,
+    private readonly storyGenerationBatches: StoryGenerationBatchService,
     private readonly runStarts: AgentOsRunStartDispatcherService,
     private readonly runContinuations: AgentOsRunContinuationDispatcherService,
   ) {}
@@ -277,17 +299,33 @@ export class AgentOsGatewayService {
             : undefined,
       },
     });
-    const modelContext =
-      project.projectKind === 'story'
-        ? storyAuthoringModelContext(
-            await this.storyAgentRuns.getLatestRun(
-              user,
-              project.workspaceId,
-              project.projectId,
-              workbenchContext?.chapterId,
-            ),
-          )
-        : undefined;
+    let modelContext: string | undefined;
+    if (project.projectKind === 'story') {
+      const chapterId = workbenchContext?.chapterId;
+      if (!chapterId) {
+        throw new BadRequestException({
+          code: 'AGENT_OS_WORKBENCH_CONTEXT_REQUIRED',
+          message: 'Story workbench context requires a chapterId.',
+        });
+      }
+      const [latestRun, productionState] = await Promise.all([
+        this.storyAgentRuns.getLatestRun(
+          user,
+          project.workspaceId,
+          project.projectId,
+          chapterId,
+        ),
+        this.storyProductionPlans.getProductionState(
+          user,
+          project.projectId,
+          chapterId,
+        ),
+      ]);
+      modelContext = storyAuthoringModelContext({
+        latestRun,
+        productionState,
+      });
+    }
     const proposedRunId = randomUUID();
     const reservation = await this.journal.reserveRunStart({
       runId: proposedRunId,
@@ -444,6 +482,7 @@ export class AgentOsGatewayService {
           decision: body.decision,
           responseText: body.responseText,
           locale: body.locale,
+          ...(body.experience ? { experience: body.experience } : {}),
         });
       return {
         ...coordinated,
@@ -678,6 +717,41 @@ export class AgentOsGatewayService {
       return {
         ...cancelled,
         assistantText: cancelled.assistantText ?? undefined,
+      };
+    }
+    if (pendingExternal?.toolId === 'story.generation.confirmBatch') {
+      if (!AgentOsIdSchema.safeParse(pendingExternal.jobId).success) {
+        throw new ConflictException({
+          code: 'AGENT_OS_STORY_GENERATION_CORRELATION_INVALID',
+          message:
+            'The Story generation handoff is missing its durable batch correlation.',
+        });
+      }
+      await this.storyGenerationBatches.cancelAgentHandoff(
+        user,
+        run.projectId,
+        pendingExternal.jobId,
+      );
+      void this.worker.cancelRun(runId, reason).catch((error) => {
+        this.logger.warn(
+          `Agent OS Worker cancel notification failed run=${runId}: ${journalErrorText(error)}`,
+        );
+      });
+      const durable = await this.journal.getEventsAfter(runId, 0);
+      if (!durable) {
+        throw new NotFoundException({
+          code: 'AGENT_OS_RUN_NOT_FOUND',
+          message: 'Agent OS run not found.',
+        });
+      }
+      return {
+        runId,
+        status: durable.status,
+        events: durable.events,
+        pendingApproval: durable.pendingApproval,
+        pendingUserInput: durable.pendingUserInput,
+        pendingExternal: durable.pendingExternal,
+        assistantText: durable.assistantText ?? undefined,
       };
     }
     await this.journal.cancelRun({
@@ -1100,10 +1174,16 @@ export class AgentOsGatewayService {
   ): Promise<Readonly<Record<string, string>> | undefined> {
     if (projectKind === 'story') {
       const chapterId = context?.chapterId;
-      return this.projects.requireStoryWorkbenchContext(
+      const validated = await this.projects.requireStoryWorkbenchContext(
         projectId,
         typeof chapterId === 'string' ? { chapterId } : undefined,
       );
+      return {
+        ...validated,
+        ...(context?.experience === 'mobile_h5'
+          ? { experience: 'mobile_h5' }
+          : {}),
+      };
     }
     if (workbenchMode === 'canvas' || workbenchMode === 'storyboard') {
       const sectionId = context?.sectionId;

@@ -7,6 +7,7 @@ import {
   userInputResumePayload,
   type ToolRuntimeContext,
 } from "./build-langchain-tools.js";
+import { resolveAgentOsSkillMount } from "./create-agent-graph.js";
 import { AgentOsExecutionSupersededError } from "../runtime/http-domain-port.js";
 
 const runtime = {
@@ -72,13 +73,16 @@ describe("skill mounts (system workbench skills)", () => {
     expect(names).not.toContain("characters_upsert");
     expect(mount.instructions).toMatch(/intent-level tools/i);
     expect(mount.instructions).toMatch(/answer normally and call NO Story tool/);
+    expect(mount.instructions).toContain("chapterHasNoScript=true");
+    expect(mount.instructions).toContain('Examples include "一只小猫"');
     expect(mount.instructions).toMatch(/Only when canonical context has no valid chapter Script/);
     expect(mount.instructions).toMatch(/script\.status=missing selects screenplay creation/);
     expect(mount.instructions).toMatch(/productionState\.ready=true\s+selects no-op/);
     const storyAuthor = tools.find((tool) => tool.name === "story_author");
     expect(storyAuthor?.description).toMatch(/Server-side canonical next-stage planner/);
     expect(storyAuthor?.description).toMatch(/Set continueThrough once/);
-    expect(storyAuthor?.description).toMatch(/never generates images or videos/i);
+    expect(storyAuthor?.description).toMatch(/never generates media directly/i);
+    expect(storyAuthor?.description).toMatch(/without a second Asset confirmation/i);
     const quoteAssets = tools.find((tool) => tool.name === "story_generation_quoteAssets");
     expect(
       quoteAssets?.schema.safeParse({
@@ -92,6 +96,24 @@ describe("skill mounts (system workbench skills)", () => {
         outputKind: "image",
       }).success
     ).toBe(false);
+  });
+
+  it("removes profile blockers from the trusted mobile H5 Story mount", () => {
+    const mount = resolveAgentOsSkillMount({
+      projectKind: "story",
+      workbenchMode: "story",
+      workbenchContext: { experience: "mobile_h5" },
+    });
+    const tools = buildLangChainTools(runtime, mount.toolIds);
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).toContain("story_read");
+    expect(names).toContain("story_author");
+    expect(names).not.toContain("request_user_input");
+    expect(names).not.toContain("story_confirmCreativeProfile");
+    expect(mount.instructions).toContain("Mandatory mobile H5 Story state machine");
+    expect(mount.instructions).toContain("call story_author immediately");
+    expect(mount.instructions).toContain("The Server atomically applies the H5 product defaults");
   });
 
   it("binds every curated Story visual-style Skill as a creative-profile value", () => {

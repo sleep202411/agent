@@ -128,13 +128,15 @@ convenience:
    including domain Artifact parts such as a Story proposal.
 2. **Activity** — one ephemeral live row whose label changes as planning, tools,
    and external work advance. It is not a transcript message or a checklist.
-3. **Decision surface** — Question or Approval controls replace/overlay the
-   composer while action is required. Controls never become chat-history rows;
-   review content that was shown in the conversation is a durable Transcript
-   Artifact instead.
-4. **Composer** — ordinary input only when the run is ready to accept it.
+3. **Decision surface** — Question or Approval controls sit immediately above
+   the composer while action is required. Controls never become chat-history
+   rows; review content that was shown in the conversation is a durable
+   Transcript Artifact instead.
+4. **Composer** — remains visible and editable so a creator draft is never
+   displaced. Submission and its attachment/model/Skill actions are unavailable
+   until the paused run is ready to accept another turn.
 
-When a Decision surface replaces the ordinary composer, it is a labelled
+When a Decision surface appears above the ordinary composer, it is a labelled
 interactive region with a live announcement. Keyboard focus moves to its title
 or first actionable control; after submission or dismissal, focus returns to
 the ordinary composer. A waiting-for-input / waiting-for-approval activity line
@@ -196,23 +198,34 @@ Script Apply is one durable stage transaction:
    checkpoint so the deterministic stage workflow can compare canonical state
    with the saved `continueThrough` boundary.
 
-Plot, Asset Specs, and Storyboard each use the same proposal-ready → approval →
-stage-apply lifecycle in a separately audited Story run. Plot Apply writes only
-the canonical branching topology compiled from the exact approved Script. Asset
-Apply writes only referenceable logical specifications derived from that Plot
-and its Script interpretation (possibly an intentionally empty set) and
-generates no media. Storyboard Apply writes only sequences, clips, cues,
-bindings, and prompts against that approved Plot and Asset set. The pages remain directly
-navigable; an unavailable stage explains its prerequisite instead of faking
-content or triggering work on load.
+On desktop, Plot, Asset Specs, and Storyboard each use the same proposal-ready →
+approval → stage-apply lifecycle in a separately audited Story run. Plot Apply
+writes only the canonical branching topology compiled from the exact approved
+Script. Asset Apply writes only referenceable logical specifications derived
+from that Plot and its Script interpretation (possibly an intentionally empty
+set) and generates no media. Storyboard Apply writes only sequences, clips,
+cues, bindings, and prompts against that approved Plot and Asset set.
+
+The trusted mobile H5 flow deliberately removes the Asset approval checkpoint.
+Plot Continue durably authorizes the Server to prepare and persist the derived
+Asset Specs, quote and confirm the exact current image set, and admit one image
+at a time with per-item billing. A failed item atomically stops every later
+unstarted item while retaining completed media. Storyboard remains a separate
+Continue/Don't continue boundary. Storyboard Continue saves its specifications
+and runs one mixed image/video batch in global story order; the transcript groups
+ordered Clips into one horizontally scrollable card per Plot-node sequence.
+After every Clip completes, playtest becomes available; publishing is still a
+separate creator action. The pages remain directly navigable, and opening one
+never silently starts work.
 
 If the Script changed during review, Apply becomes stale instead of overwriting
 the creator's edit. A later manual Script edit makes downstream structure stale;
 an explicit production request reads the exact current Script head, proposes
 only the earliest affected downstream stage, and never adds a Script operation
-or changes its text, sequence, or hash. Paid or slow media generation remains a
-later explicit Assets/Storyboard command rather than being triggered by any
-specification approval or page load.
+or changes its text, sequence, or hash. On desktop, paid or slow media generation
+remains a later explicit Assets/Storyboard command. On trusted mobile H5, it is
+authorized only by the explicit Plot or Storyboard Continue decisions described
+above, never by page load or model inference.
 
 Generation produces a media version for a logical Asset Spec or Storyboard
 clip; it does not replace that target's semantic specification. A completed
