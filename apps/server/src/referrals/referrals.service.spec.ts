@@ -5,6 +5,8 @@ import {
   computeTotals,
   formatBpsPercent,
 } from './referrals.service';
+import { COMMUNITY_MEMBERSHIP_PLAN_KEY } from '../entitlements/entitlement.service';
+import { REWARD_ITEM_KINDS } from './dto';
 
 // ─── fixtures ────────────────────────────────────────────────────────────
 
@@ -113,7 +115,15 @@ function makeService() {
     },
   };
   const prisma = {
-    referralProgram: { findUnique: jest.fn() },
+    referralProgram: {
+      findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'prog-1' }),
+      update: jest.fn().mockResolvedValue({}),
+    },
+    referralMilestoneConfig: {
+      create: jest.fn().mockResolvedValue({}),
+      update: jest.fn().mockResolvedValue({}),
+    },
     referralAttribution: {
       findUnique: jest.fn(),
       count: jest.fn().mockResolvedValue(0),
@@ -144,7 +154,10 @@ function makeService() {
     queryOne: jest.fn(),
     query: jest.fn().mockResolvedValue([]),
   };
-  const entitlements = { grantComplimentary: jest.fn().mockResolvedValue({}) };
+  const entitlements = {
+    grantComplimentary: jest.fn().mockResolvedValue({}),
+    assertPlanGrantable: jest.fn().mockResolvedValue(undefined),
+  };
   const walletLedger = { postEntry: jest.fn().mockResolvedValue({}) };
   const workspaces = {
     ensurePersonalWorkspace: jest.fn().mockResolvedValue({ id: 'ws-1' }),
@@ -520,6 +533,143 @@ describe('claimReward', () => {
     expect(walletLedger.postEntry).toHaveBeenCalledTimes(1);
     const entry = firstCallArg<Record<string, unknown>>(walletLedger.postEntry);
     expect(entry.availableDelta).toBe(100n);
+  });
+
+  // Every kind the admin config layer accepts must be payable. The two lists
+  // drifted once and it cost real rewards: milestones advertised community
+  // membership, `grantSingle` routed it to a validator that only knew compute
+  // tiers, and the claim 500'd while the reward was already marked paid_out.
+  // Reading REWARD_ITEM_KINDS (not a local copy) is the point — a new kind
+  // added to the config surface fails here until the payout path exists.
+  describe.each(REWARD_ITEM_KINDS)('claiming a %s bundle item', (kind) => {
+    it('pays out instead of throwing', async () => {
+      const { service, prisma, walletLedger, entitlements } = makeService();
+      prisma.referralReward.findUnique.mockResolvedValue(
+        rewardRow({ payoutType: kind }),
+      );
+      prisma.referralReward.updateMany.mockResolvedValue({ count: 1 });
+      prisma.referralRewardItem.findMany.mockResolvedValue([
+        cashItem({ payoutType: kind, amountMinor: 100n, days: 7 }),
+      ]);
+
+      await expect(service.claimReward(REFERRER, 'rw-1')).resolves.toEqual({
+        status: 'paid_out',
+      });
+
+      const paid =
+        walletLedger.postEntry.mock.calls.length +
+        entitlements.grantComplimentary.mock.calls.length;
+      expect(paid).toBe(1);
+    });
+  });
+
+  it('routes a community membership item to the community plan key', async () => {
+    const { service, prisma, entitlements } = makeService();
+    prisma.referralReward.findUnique.mockResolvedValue(
+      rewardRow({ payoutType: 'membership_community' }),
+    );
+    prisma.referralReward.updateMany.mockResolvedValue({ count: 1 });
+    prisma.referralRewardItem.findMany.mockResolvedValue([
+      cashItem({
+        payoutType: 'membership_community',
+        amountMinor: 0n,
+        days: 7,
+      }),
+    ]);
+
+    await service.claimReward(REFERRER, 'rw-1');
+
+    expect(entitlements.grantComplimentary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        planKey: COMMUNITY_MEMBERSHIP_PLAN_KEY,
+        durationDays: 7,
+      }),
+    );
+  });
+
+  it('releases the paid_out flip when the payout throws, so the holder can retry', async () => {
+    const { service, prisma, entitlements } = makeService();
+    prisma.referralReward.findUnique.mockResolvedValue(
+      rewardRow({ payoutType: 'membership_community' }),
+    );
+    prisma.referralReward.updateMany.mockResolvedValue({ count: 1 });
+    prisma.referralRewardItem.findMany.mockResolvedValue([
+      cashItem({
+        payoutType: 'membership_community',
+        amountMinor: 0n,
+        days: 7,
+      }),
+    ]);
+    entitlements.grantComplimentary.mockRejectedValue(new Error('boom'));
+
+    await expect(service.claimReward(REFERRER, 'rw-1')).rejects.toThrow('boom');
+
+    expect(prisma.referralReward.updateMany).toHaveBeenLastCalledWith({
+      where: { id: 'rw-1', status: 'paid_out' },
+      data: { status: 'accrued', paidOutAt: null },
+    });
+  });
+
+  // A membership payout is only as good as its plan row. Saving a tier that
+  // names an unbacked plan used to succeed and fail later at the recipient's
+  // claim — as a 500 on a reward already marked paid_out.
+  describe('milestone config guards the membership plans it promises', () => {
+    it('checks the community plan before saving a tier that grants it', async () => {
+      const { service, prisma, entitlements } = makeService();
+      prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+
+      await service.createMilestone({
+        inviteeThreshold: 5,
+        title: 'Invite 5 friends',
+        detail: null,
+        rank: 2,
+        rewardItems: [
+          { kind: 'membership_community', amountMinor: 0, days: 7 },
+        ],
+      } as never);
+
+      expect(entitlements.assertPlanGrantable).toHaveBeenCalledWith(
+        COMMUNITY_MEMBERSHIP_PLAN_KEY,
+        'user',
+      );
+    });
+
+    it('refuses the save — and writes nothing — when the plan is not grantable', async () => {
+      const { service, prisma, entitlements } = makeService();
+      prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+      entitlements.assertPlanGrantable.mockRejectedValue(
+        new Error('MEMBERSHIP_PLAN_NOT_GRANTABLE'),
+      );
+
+      await expect(
+        service.createMilestone({
+          inviteeThreshold: 5,
+          title: 'Invite 5 friends',
+          detail: null,
+          rank: 2,
+          rewardItems: [
+            { kind: 'membership_community', amountMinor: 0, days: 7 },
+          ],
+        } as never),
+      ).rejects.toThrow('MEMBERSHIP_PLAN_NOT_GRANTABLE');
+
+      expect(prisma.referralMilestoneConfig.create).not.toHaveBeenCalled();
+    });
+
+    it('leaves a points-only tier alone — no plan lookup at all', async () => {
+      const { service, prisma, entitlements } = makeService();
+      prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+
+      await service.createMilestone({
+        inviteeThreshold: 1,
+        title: 'Invite 1 friend',
+        detail: null,
+        rank: 1,
+        rewardItems: [{ kind: 'points_community', amountMinor: 100, days: 0 }],
+      } as never);
+
+      expect(entitlements.assertPlanGrantable).not.toHaveBeenCalled();
+    });
   });
 
   it('gifted compute points expire per the promo-credit policy (30d)', async () => {
