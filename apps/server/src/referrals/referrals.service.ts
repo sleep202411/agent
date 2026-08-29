@@ -854,7 +854,11 @@ export class ReferralsService {
       },
     });
     if (!program || !program.enabled || !program.milestones.length) return;
-    const availableAt = new Date(Date.now() + program.holdDays * DAY_MS);
+    // Immediately claimable — same as the invitee perk: tiers are registration-
+    // based and reverseForOrder never reverses them, so the program's holdDays
+    // (which exists to cover the refund window on purchase-backed cash rewards)
+    // buys nothing here and only delays the 领取 button.
+    const availableAt = new Date();
 
     await this.prisma.$transaction(async (tx) => {
       const earned = new Set(

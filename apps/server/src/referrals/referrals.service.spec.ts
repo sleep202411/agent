@@ -910,6 +910,11 @@ describe('accrueMilestonesForReferrer (registration-based)', () => {
     expect(tx.referralReward.createMany).toHaveBeenCalledWith(
       expect.objectContaining({ skipDuplicates: true }),
     );
+    // Milestones carry NO hold window (unlike cash commissions) — claimable now.
+    const tierRows = firstCallArg<{ data: { availableAt: Date }[] }>(
+      tx.referralReward.createMany,
+    ).data;
+    expect(tierRows[0].availableAt.getTime()).toBeLessThanOrEqual(Date.now());
     const itemRows = firstCallArg<{ data: Record<string, unknown>[] }>(
       tx.referralRewardItem.createMany,
     ).data;

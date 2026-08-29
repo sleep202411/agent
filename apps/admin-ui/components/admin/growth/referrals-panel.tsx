@@ -519,7 +519,10 @@ function ProgramForm({
         <FormLabel label="现金币种" help="3 位币种代码，例如 USD / CNY；仅现金奖励使用。">
           <TextInput name="currency" defaultValue={config.currency ?? ""} maxLength={3} />
         </FormLabel>
-        <FormLabel label="冻结天数" help="奖励发放后冻结的天数，用于防作弊回收期。">
+        <FormLabel
+          label="冻结天数"
+          help="仅约束消费返佣和首购邀请奖励（覆盖退款回收期）；里程碑和新人礼即时可领，不受此项影响。"
+        >
           <TextInput name="holdDays" type="number" min={0} defaultValue={config.holdDays} />
         </FormLabel>
         <FormLabel
