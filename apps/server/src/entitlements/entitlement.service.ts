@@ -329,8 +329,17 @@ export class EntitlementService {
     metadata?: Record<string, unknown>;
   }): Promise<EntitlementGrant> {
     // Store the key the same way resolution reads it, so the row the grant was
-    // validated against is the row that later resolves its benefits.
-    const planKey = this.normalizePlanKey(input.planKey);
+    // validated against is the row that later resolves its benefits. Community
+    // membership is grantable too (referral rewards, admin comps) but lives
+    // OUTSIDE the compute-tier rank ladder, so it must bypass normalizePlanKey
+    // — which validates against ENTITLEMENT_PLAN_RANK and would throw. It still
+    // goes through assertGrantablePlan below; resolution reads these grants by
+    // exact key (COMMUNITY_MEMBERSHIP_PLAN_KEY), never by rank.
+    const requestedKey = input.planKey.trim().toLowerCase();
+    const planKey =
+      requestedKey === COMMUNITY_MEMBERSHIP_PLAN_KEY
+        ? COMMUNITY_MEMBERSHIP_PLAN_KEY
+        : this.normalizePlanKey(input.planKey);
     return this.prisma.$transaction(async (tx) => {
       await this.assertGrantablePlan(planKey, input.subjectType, tx);
       const now = new Date();
