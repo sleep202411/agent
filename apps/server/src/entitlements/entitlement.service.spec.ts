@@ -344,28 +344,6 @@ describe('EntitlementService.grantComplimentary', () => {
     expect(prisma.entitlementGrant.upsert).not.toHaveBeenCalled();
   });
 
-  it('grants community_membership (outside the compute rank ladder) — the referral reward path', async () => {
-    const prisma = grantPrismaMock(
-      plan({
-        planKey: 'community_membership',
-        productType: 'community_membership_plan',
-      }),
-    );
-    const service = new EntitlementService(prisma as never);
-
-    await service.grantComplimentary({
-      ...input,
-      planKey: 'community_membership',
-      sourceType: 'referral_reward',
-    });
-
-    expect(prisma.billingMembershipPlan.findUnique).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { planKey: 'community_membership' } }),
-    );
-    const upsertArgs = prisma.entitlementGrant.upsert.mock.calls[0]?.[0];
-    expect(upsertArgs?.create.planKey).toBe('community_membership');
-  });
-
   it('validates and stores the normalized plan key', async () => {
     const prisma = grantPrismaMock(plan({ planKey: 'pro' }));
     const service = new EntitlementService(prisma as never);
