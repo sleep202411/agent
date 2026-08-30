@@ -1074,6 +1074,16 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         });
       }
 
+      // Chapter membership must be visible to the database Plot-node guard
+      // before a new node's empty Storyboard timeline is inserted.
+      await tx.storyChapter.update({
+        where: { id: state.chapter.id },
+        data: {
+          nodeIds: nextNodeIds,
+          entryNodeId: patched.draft.graph.entryNodeId,
+        },
+      });
+
       // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
       // their sequences immediately, undone deletions revive them.
       await reconcileStoryTimelinesWithDraft(
@@ -1082,15 +1092,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         mergedGlobalDraft as unknown as {
           graph: { nodes: Array<{ kind: string; nodeId: string }> };
         },
-      );
-
-      await tx.storyChapter.update({
-        where: { id: state.chapter.id },
-        data: {
-          nodeIds: nextNodeIds,
-          entryNodeId: patched.draft.graph.entryNodeId,
+        {
+          storyChapterId: state.chapter.id,
+          chapterNodeIds: nextNodeIds,
+          actorUserId: input.actorId,
         },
-      });
+      );
       if (patched.layoutChanged && state.layoutRow) {
         const updatedLayout = await tx.storyCanvasLayout.updateMany({
           where: {

@@ -26,6 +26,7 @@ export function StoryProductionPageHeader({
   title,
   description,
   meta,
+  actions,
   modalities = ["image", "video"],
   showGenerationControls = true,
 }: {
@@ -34,6 +35,8 @@ export function StoryProductionPageHeader({
   description: string;
   /** Small trailing annotation on the description row (e.g. an item count). */
   meta?: React.ReactNode;
+  /** Creator actions that remain available independently of AI generation. */
+  actions?: React.ReactNode;
   /** Which generation modalities this page actually submits. */
   modalities?: ProductionModality[];
   /** Hide model controls until there is an approved, generatable target. */
@@ -48,8 +51,13 @@ export function StoryProductionPageHeader({
           {meta ? <span className="ml-2 tabular-nums text-white/50">{meta}</span> : null}
         </p>
       </div>
-      {showGenerationControls ? (
-        <StoryProductionGenerationControls projectId={projectId} modalities={modalities} />
+      {actions || showGenerationControls ? (
+        <div className="flex shrink-0 items-center gap-2">
+          {actions}
+          {showGenerationControls ? (
+            <StoryProductionGenerationControls projectId={projectId} modalities={modalities} />
+          ) : null}
+        </div>
       ) : null}
     </div>
   );

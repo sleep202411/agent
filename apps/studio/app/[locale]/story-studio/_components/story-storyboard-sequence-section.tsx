@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { IconMessageCircle, IconPencil, IconPhoto, IconVideo } from "@tabler/icons-react";
+import { IconPencil, IconPhoto, IconVideo } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import type { StoryStoryboardSequence } from "@/lib/story-production-api";
 import { Button } from "@/components/ui/button";
@@ -126,60 +126,21 @@ export function StoryStoryboardChoiceCard({ options }: { options: StorySequenceC
 }
 
 /**
- * Placeholder section for a plot node that has never been planned into a
- * storyboard sequence. It keeps the node visible (and deep-linkable) on the
- * board so the graph and the board always list the same scenes.
- */
-export function StoryStoryboardUnplannedSection({
-  nodeId,
-  title,
-  index,
-  onRequestPlanning,
-}: {
-  nodeId: string;
-  title: string;
-  index: number;
-  onRequestPlanning?: () => void;
-}) {
-  const t = useTranslations("storyStudio.storyboardPage");
-  return (
-    <article
-      id={`plot-${nodeId}`}
-      className="scroll-mt-6 rounded-2xl bg-white/[0.045] p-4 text-white shadow-sm"
-      aria-label={title}
-    >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
-        {t("plotNode", { index: index + 1 })}
-      </span>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-base font-semibold text-white/94">{title}</h2>
-        <code className="text-xs text-white/62">@{nodeId}</code>
-      </div>
-      <p className="mt-4 text-sm text-white/64">{t("unplanned")}</p>
-      <p className="mt-1 text-xs text-white/50">{t("unplannedHint")}</p>
-      {onRequestPlanning ? (
-        <Button type="button" variant="secondary" className="mt-4" onClick={onRequestPlanning}>
-          <IconMessageCircle aria-hidden="true" className="size-4" />
-          {t("continueWithAgent")}
-        </Button>
-      ) : null}
-    </article>
-  );
-}
-
-/**
  * One plot node's planned sequence = one card on the flattened board: the
  * node's identity and its clips as a row of media slots, each with a single
  * generate action and a details dialog for its prompt and model.
  */
 export function StoryStoryboardSequenceSection({
   sequence,
+  title,
   index,
   projectId,
   chapterId,
   allowGeneration = true,
 }: {
   sequence: StoryStoryboardSequence;
+  /** Canonical scene title from StoryDraft, never the sequence cache column. */
+  title: string;
   index: number;
   projectId: string;
   chapterId: string;
@@ -194,7 +155,7 @@ export function StoryStoryboardSequenceSection({
     <article
       id={`plot-${sequence.plotNodeId}`}
       className="scroll-mt-6 rounded-2xl bg-white/[0.045] p-4 text-white shadow-sm"
-      aria-label={sequence.title?.trim() || sequence.plotNodeId}
+      aria-label={title}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
@@ -208,9 +169,7 @@ export function StoryStoryboardSequenceSection({
       </div>
       <div className="mt-1 flex items-center justify-between gap-3">
         <div className="min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h2 className="text-base font-semibold text-white/94">
-            {sequence.title?.trim() || sequence.plotNodeId}
-          </h2>
+          <h2 className="text-base font-semibold text-white/94">{title}</h2>
           <code className="text-xs text-white/62">@{sequence.plotNodeId}</code>
           <span className="text-xs tabular-nums text-white/62">
             {t("clipCount", { count: sequence.clips.length })} ·{" "}

@@ -1,12 +1,6 @@
 import type { StoryProductionState } from "@/lib/story-production-api";
 
 export type StoryAssetsStageGuidance = "plotRequired" | "assetsRequired" | "noAssets" | null;
-export type StoryStoryboardStageGuidance =
-  | "plotRequired"
-  | "assetsRequired"
-  | "storyboardRequired"
-  | "noScenes"
-  | null;
 
 /**
  * Derive page guidance exclusively from durable production state. These are
@@ -32,27 +26,4 @@ export function storyAssetsStageHasStaleContent(
   assetCount: number
 ): boolean {
   return production.assets.status === "stale" && production.assets.staleCount > 0 && assetCount > 0;
-}
-
-export function storyStoryboardStageGuidance(
-  production: StoryProductionState,
-  sceneCount: number
-): StoryStoryboardStageGuidance {
-  if (production.plotTree.status !== "current") return "plotRequired";
-  if (production.assets.status !== "current") return "assetsRequired";
-  if (production.storyboard.status !== "current") return "storyboardRequired";
-  if (sceneCount === 0) return "noScenes";
-  return null;
-}
-
-/** See storyAssetsStageHasStaleContent. Storyboard conflicts have the same UI invariant. */
-export function storyStoryboardStageHasStaleContent(
-  production: StoryProductionState,
-  sequenceCount: number
-): boolean {
-  return (
-    production.storyboard.status === "stale" &&
-    production.storyboard.staleCount > 0 &&
-    sequenceCount > 0
-  );
 }

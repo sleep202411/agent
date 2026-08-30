@@ -47,6 +47,27 @@ describe("Story timeline domain", () => {
     ]);
   });
 
+  it("adds the first shot directly to a canonical empty timeline", () => {
+    const empty = fixtureSequence();
+    empty.durationMs = 0;
+    empty.suggestedDurationMs = 0;
+    empty.clips = [];
+
+    const input = appendStoryTimelineClip(empty, {
+      stableKey: "manual_clip_first",
+      kind: "image",
+      title: "First shot",
+      durationMs: 4_000,
+      prompt: "The first frame",
+      description: null,
+    });
+
+    expect(input.durationMs).toBe(4_000);
+    expect(input.clips).toEqual([
+      expect.objectContaining({ startMs: 0, durationMs: 4_000, kind: "image" }),
+    ]);
+  });
+
   it("creates schema-safe stable keys without leaking UUID punctuation", () => {
     expect(createManualStoryTimelineClipStableKey("01234567-89ab-cdef-0123-456789abcdef")).toBe(
       "manual_clip_0123456789abcdef01234567"

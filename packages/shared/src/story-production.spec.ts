@@ -142,6 +142,26 @@ describe("independent production stage schemas", () => {
 });
 
 describe("PutStoryStoryboardTimelineSchema", () => {
+  it("accepts the canonical empty timeline for a Plot node without shots", () => {
+    expect(
+      PutStoryStoryboardTimelineSchema.safeParse({
+        expectedVersion: 0,
+        durationMs: 0,
+        clips: [],
+      }).success
+    ).toBe(true);
+  });
+
+  it("rejects a non-zero empty timeline", () => {
+    expect(
+      PutStoryStoryboardTimelineSchema.safeParse({
+        expectedVersion: 0,
+        durationMs: 1_000,
+        clips: [],
+      }).success
+    ).toBe(false);
+  });
+
   it("accepts one continuous atomic replacement with retained and new clips", () => {
     expect(
       PutStoryStoryboardTimelineSchema.safeParse({

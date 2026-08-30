@@ -2989,36 +2989,6 @@
       "loading": "正在載入分鏡…",
       "emptyChapter": "本章還沒有情節節點。",
       "emptyHint": "在情節樹中加入場景後，分鏡會在這裡逐場景展開。",
-      "continueWithAgent": "在 FizzAgent 中繼續",
-      "stage": {
-        "plotRequired": {
-          "title": "請先批准情節樹",
-          "description": "分鏡需要基於已批准的故事結構。請先在 FizzAgent 中準備、審閱並批准情節樹。"
-        },
-        "assetsRequired": {
-          "title": "請先批准資產規格",
-          "description": "分鏡規劃需要穩定的角色、場景和道具引用。請先在 FizzAgent 中審閱資產規格。"
-        },
-        "storyboardRequired": {
-          "title": "下一步是批准分鏡方案",
-          "description": "讓 FizzAgent 準備序列和鏡頭提示詞。儲存前會先由你審閱；此過程不會生成媒體。"
-        },
-        "stale": {
-          "title": "{count} 個分鏡序列需要處理",
-          "description": "現有序列會保留供你審閱。請在下方解決可處理的衝突；缺少對比詳情的序列需要讓 Agent 重新準備提案。在本階段恢復為目前版本前，媒體生成保持不可用。"
-        },
-        "noScenes": {
-          "title": "已批准的情節樹中沒有場景",
-          "description": "請讓 FizzAgent 加入或修改場景，再準備分鏡。"
-        }
-      },
-      "prompts": {
-        "plotRequired": "請根據已批准的劇本準備本章情節樹，進入資產規格前先交給我審閱和批准。不要生成媒體。",
-        "assetsRequired": "請根據已批准的情節樹及其劇本解讀準備本章資產規格，進入分鏡前先交給我審閱和批准。不要生成媒體。",
-        "storyboardRequired": "請根據已批准的情節樹和資產規格準備本章的分鏡方案，儲存前先交給我審閱和批准。不要生成媒體。",
-        "noScenes": "請修改本章的情節樹，加入可用於規劃分鏡的場景。",
-        "scene": "請為場景「{title}」準備分鏡序列，儲存前先交給我審閱。不要生成媒體。"
-      },
       "loadError": "無法載入分鏡。",
       "retry": "重試",
       "plotNode": "情節節點 {index}",
@@ -3032,8 +3002,11 @@
       },
       "seconds": "{value} 秒",
       "options": "選項",
-      "unplanned": "尚無分鏡",
-      "unplannedHint": "該場景還沒有規劃分鏡。可讓 FizzAgent 為本章規劃分鏡。",
+      "addNode": "新增分鏡節點",
+      "newNodeTitle": "未命名場景",
+      "nodeAdded": "節點已同時新增到分鏡和情節樹。",
+      "addNodeError": "無法新增分鏡節點。",
+      "missingChapter": "目前沒有可用章節。",
       "title": "分鏡",
       "clipKind": {
         "image": "圖片",
@@ -3672,8 +3645,8 @@
           "title": "分鏡",
           "summary": "{count} 個片段 · {ready} 個已有媒體",
           "loading": "分鏡載入中…",
-          "missing": "該場景還沒有分鏡序列。",
-          "open": "打開分鏡"
+          "open": "編輯分鏡",
+          "openError": "無法打開分鏡。"
         }
       },
       "conflict": {

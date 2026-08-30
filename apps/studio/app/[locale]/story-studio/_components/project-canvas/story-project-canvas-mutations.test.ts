@@ -23,6 +23,21 @@ describe("story canvas mutations", () => {
     expect(second.created.clipKey).not.toBe("A");
   });
 
+  it("creates a disconnected named Plot node from the Storyboard view", () => {
+    const result = createClipNode(draft(), {
+      nodeId: "clip:storyboard",
+      clipKey: "STORYBOARD",
+      name: "Untitled scene",
+    });
+    expect(result.created).toMatchObject({
+      kind: "clip",
+      nodeId: "clip:storyboard",
+      clipKey: "STORYBOARD",
+      name: "Untitled scene",
+      exit: { kind: "auto", nextNodeId: null },
+    });
+  });
+
   it("updates clip display metadata without changing its stable identity", () => {
     const created = createClipNode(draft(), { nodeId: "clip:a", clipKey: "A" });
     const next = updateStoryClipMeta(created.content, "clip:a", {

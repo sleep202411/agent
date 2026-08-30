@@ -217,8 +217,11 @@ export type StoryStoryboardTimelineClipInput = z.infer<
 export const PutStoryStoryboardTimelineSchema = z
   .object({
     expectedVersion: z.number().int().nonnegative(),
-    durationMs: z.number().int().min(250).max(3_600_000),
-    clips: z.array(StoryStoryboardTimelineClipInputSchema).min(1).max(1_000),
+    // A Plot node exists before its first shot. Zero duration with no clips is
+    // the canonical empty timeline; every non-empty timeline still has the
+    // ordinary 250ms minimum through its clip schema.
+    durationMs: z.number().int().min(0).max(3_600_000),
+    clips: z.array(StoryStoryboardTimelineClipInputSchema).max(1_000),
   })
   .strict()
   .superRefine((value, context) => {
@@ -270,6 +273,13 @@ export const PutStoryStoryboardTimelineSchema = z
         code: "custom",
         path: ["durationMs"],
         message: "Sequence duration must equal the end of its continuous visual clips.",
+      });
+    }
+    if (value.clips.length === 0 && value.durationMs !== 0) {
+      context.addIssue({
+        code: "custom",
+        path: ["durationMs"],
+        message: "An empty Storyboard timeline must have zero duration.",
       });
     }
   });

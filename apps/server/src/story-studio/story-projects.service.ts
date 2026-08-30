@@ -967,6 +967,17 @@ export class StoryProjectsService {
       });
       if (claimed.count !== 1) return null;
 
+      // The database Plot-node guard reads both the canonical draft and the
+      // chapter membership. Update the membership before materializing a new
+      // empty timeline; the transaction still rolls both writes back together.
+      await tx.storyChapter.update({
+        where: { id: chapter.id },
+        data: {
+          nodeIds: nextChapterNodeIds,
+          entryNodeId: input.content.graph.entryNodeId,
+        },
+      });
+
       // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
       // their sequences immediately, undone deletions revive them.
       await reconcileStoryTimelinesWithDraft(
@@ -975,15 +986,12 @@ export class StoryProjectsService {
         mergedContent as {
           graph: { nodes: Array<{ kind: string; nodeId: string }> };
         },
-      );
-
-      await tx.storyChapter.update({
-        where: { id: chapter.id },
-        data: {
-          nodeIds: nextChapterNodeIds,
-          entryNodeId: input.content.graph.entryNodeId,
+        {
+          storyChapterId: chapter.id,
+          chapterNodeIds: nextChapterNodeIds,
+          actorUserId: user.userId,
         },
-      });
+      );
 
       await tx.storyProject.update({
         where: { id: projectId },

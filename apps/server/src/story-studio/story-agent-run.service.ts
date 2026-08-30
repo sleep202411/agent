@@ -2264,7 +2264,7 @@ export class StoryAgentRunService {
             workspaceId: run.workspaceId,
             storyProjectId: run.storyProjectId,
             storyChapterId: run.storyChapterId,
-            actorUserId: run.confirmedByUserId,
+            actorUserId: run.confirmedByUserId ?? run.initiatedByUserId,
             screenplay: proposal.screenplay,
             document: storyScreenplayDocument(proposal),
             expected: {
@@ -2408,15 +2408,8 @@ export class StoryAgentRunService {
         if (updatedDraft.count !== 1) {
           throw new StoryAgentCasLostError('draft');
         }
-        // Plot tree and storyboard stay 1:1 on save: nodes removed by this
-        // apply archive their sequences immediately.
-        await reconcileStoryTimelinesWithDraft(
-          tx,
-          run.storyProjectId,
-          mergedGlobalDraft as unknown as {
-            graph: { nodes: Array<{ kind: string; nodeId: string }> };
-          },
-        );
+        // Chapter membership must be visible to the database Plot-node guard
+        // before a new node's empty Storyboard timeline is inserted.
         await tx.storyChapter.update({
           where: { id: run.storyChapterId },
           data: {
@@ -2432,6 +2425,20 @@ export class StoryAgentRunService {
               : {}),
           },
         });
+        // Plot tree and storyboard stay 1:1 on save: nodes removed by this
+        // apply archive their sequences immediately.
+        await reconcileStoryTimelinesWithDraft(
+          tx,
+          run.storyProjectId,
+          mergedGlobalDraft as unknown as {
+            graph: { nodes: Array<{ kind: string; nodeId: string }> };
+          },
+          {
+            storyChapterId: run.storyChapterId,
+            chapterNodeIds: nextChapterNodeIds,
+            actorUserId: run.confirmedByUserId ?? run.initiatedByUserId,
+          },
+        );
       } else if (screenplayLineage) {
         // Script is an independently authoritative stage. A newly approved
         // screenplay can legitimately compile to the same graph as an older
