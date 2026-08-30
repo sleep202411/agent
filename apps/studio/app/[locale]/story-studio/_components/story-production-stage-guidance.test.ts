@@ -3,8 +3,6 @@ import type { StoryProductionState, StoryProductionStatus } from "@/lib/story-pr
 import {
   storyAssetsStageGuidance,
   storyAssetsStageHasStaleContent,
-  storyStoryboardStageGuidance,
-  storyStoryboardStageHasStaleContent,
 } from "./story-production-stage-guidance";
 
 function productionState({
@@ -57,31 +55,5 @@ describe("story production stage guidance", () => {
     expect(storyAssetsStageHasStaleContent(stale, 0)).toBe(false);
     stale.assets.staleCount = 0;
     expect(storyAssetsStageHasStaleContent(stale, 2)).toBe(false);
-  });
-
-  it("requires every current upstream stage before Storyboard", () => {
-    expect(storyStoryboardStageGuidance(productionState({ plot: "stale" }), 2)).toBe(
-      "plotRequired"
-    );
-    expect(storyStoryboardStageGuidance(productionState({ assets: "stale" }), 2)).toBe(
-      "assetsRequired"
-    );
-    expect(storyStoryboardStageGuidance(productionState({ storyboard: "stale" }), 2)).toBe(
-      "storyboardRequired"
-    );
-  });
-
-  it("distinguishes a current empty Plot Tree from a missing Storyboard", () => {
-    expect(storyStoryboardStageGuidance(productionState(), 0)).toBe("noScenes");
-    expect(storyStoryboardStageGuidance(productionState(), 2)).toBeNull();
-  });
-
-  it("preserves stale Storyboard sequences only when a stale sequence exists", () => {
-    const stale = productionState({ storyboard: "stale" });
-    stale.storyboard.staleCount = 1;
-    expect(storyStoryboardStageHasStaleContent(stale, 2)).toBe(true);
-    expect(storyStoryboardStageHasStaleContent(stale, 0)).toBe(false);
-    stale.storyboard.staleCount = 0;
-    expect(storyStoryboardStageHasStaleContent(stale, 2)).toBe(false);
   });
 });

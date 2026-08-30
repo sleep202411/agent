@@ -634,8 +634,13 @@ function StoryProjectCanvasInner({
       queryClient.setQueryData<StoryWorkbench>(workbenchQueryKey, (current) =>
         current && saved.revision >= current.draft.revision ? { ...current, draft: saved } : current
       );
+      if (resolvedChapterId) {
+        void queryClient.invalidateQueries({
+          queryKey: storyProductionKeys.storyboard(projectId, resolvedChapterId),
+        });
+      }
     },
-    [queryClient, workbenchQueryKey]
+    [projectId, queryClient, resolvedChapterId, workbenchQueryKey]
   );
 
   useLayoutEffect(() => {
@@ -2949,13 +2954,18 @@ function StoryProjectCanvasInner({
               />
             ) : null}
 
-            {graphError ? (
+            {graphError || saveError ? (
               <FrostedPanel className="absolute right-5 bottom-20 z-50 flex max-w-[520px] items-center gap-3 rounded-[16px] bg-[oklch(0.24_0_0/0.9)] px-4 py-3 shadow-[0_20px_70px_rgba(0,0,0,0.48)] backdrop-blur-[30px]">
                 <IconAlertTriangle className="size-4 shrink-0 text-[#ff9b9e]" />
-                <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">{graphError}</p>
+                <p className="min-w-0 flex-1 text-xs leading-5 text-white/68">
+                  {graphError || saveError}
+                </p>
                 <button
                   type="button"
-                  onClick={() => setGraphError(null)}
+                  onClick={() => {
+                    setGraphError(null);
+                    setSaveError(null);
+                  }}
                   className="grid size-7 shrink-0 place-items-center rounded-lg bg-white/[0.06] text-white/42 transition hover:bg-white/[0.1] hover:text-white"
                   aria-label={t("graphError.dismiss")}
                 >

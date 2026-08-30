@@ -103,7 +103,8 @@ export type PatchStoryAssetSpecInput = z.infer<
 export const PatchStoryStoryboardSequenceSchema = z
   .object({
     expectedVersion: StoryProductionVersionSchema,
-    title: StoryProductionTextSchema(240).nullable().optional(),
+    // Scene title is canonical in StoryDraft and is edited on either the Plot
+    // Tree or Storyboard node card, never on the timeline child record.
     description: z.string().trim().max(4_000).nullable().optional(),
   })
   .strict()

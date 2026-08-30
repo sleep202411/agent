@@ -636,7 +636,8 @@ describe('Story production conflict resolution', () => {
       data: Record<string, unknown>;
     }>(tx.storyStoryboardSequence.updateMany);
     expect(updateCall?.data).toMatchObject({
-      title: 'Latest gate sequence',
+      // Plot title remains canonical in StoryDraft; the timeline child must
+      // not restore the planner's duplicate scene-name cache.
       durationMs: 5_000,
       pendingPlanSnapshotId: null,
       userModifiedAt: null,

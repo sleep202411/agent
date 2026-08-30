@@ -1,11 +1,14 @@
 "use client";
 
-import { IconArrowRight, IconMovie, IconPhoto, IconVideo } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { IconArrowRight, IconLoader2, IconMovie, IconPhoto, IconVideo } from "@tabler/icons-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
-import { Link } from "@/i18n/navigation";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Link, useRouter } from "@/i18n/navigation";
 import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
+import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../../_stores/story-project-ui-store";
 
 /**
@@ -21,7 +24,11 @@ export function StoryNodeStoryboardPanel({
   nodeId: string;
 }) {
   const t = useTranslations("storyStudio.canvas.inspector.storyboard");
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
+  const [opening, setOpening] = useState(false);
 
   const storyboardQuery = useQuery({
     queryKey: storyProductionKeys.storyboard(projectId, chapterId),
@@ -33,36 +40,56 @@ export function StoryNodeStoryboardPanel({
     storyboardQuery.data?.find((candidate) => candidate.plotNodeId === nodeId) ?? null;
   const clips = sequence?.clips ?? [];
   const readyCount = clips.filter((clip) => clip.selectedMediaVersion !== null).length;
-  const boardHref = `/story-studio/projects/${projectId}/storyboard?chapter=${encodeURIComponent(
+  const editorHref = `/story-studio/projects/${projectId}/edit?chapter=${encodeURIComponent(
     chapterId ?? ""
   )}&node=${encodeURIComponent(nodeId)}`;
 
+  const openEditor = async () => {
+    if (opening || !chapterId) return;
+    setOpening(true);
+    try {
+      // A newborn Plot node may still be inside the canvas autosave window.
+      // Crossing this barrier guarantees its canonical empty timeline exists
+      // before the editor reads the shared Storyboard query.
+      if (draftBarrier) await draftBarrier(async () => undefined);
+      await queryClient.invalidateQueries({
+        queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+      });
+      router.push(editorHref);
+    } catch (error) {
+      toast.error(storyApiErrorMessage(error, t("openError")));
+      setOpening(false);
+    }
+  };
+
   return (
     <section className="mt-4 rounded-[18px] bg-white/[0.045] p-3" aria-label={t("title")}>
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        disabled={opening || !chapterId}
+        onClick={() => void openEditor()}
+        className="group flex w-full items-center gap-2 text-left disabled:opacity-60"
+      >
         <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-white/55">
           <IconMovie className="size-4" stroke={1.7} />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[11px] font-semibold text-white/82">{t("title")}</span>
           <span className="mt-0.5 block text-[9px] leading-4 text-white/34">
-            {sequence
-              ? t("summary", { count: clips.length, ready: readyCount })
-              : storyboardQuery.isPending
-                ? t("loading")
-                : t("missing")}
+            {storyboardQuery.isPending
+              ? t("loading")
+              : t("summary", { count: clips.length, ready: readyCount })}
           </span>
         </span>
-        {sequence ? (
-          <Link
-            href={boardHref}
-            className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium text-white/62 transition hover:bg-white/[0.08] hover:text-white"
-          >
-            {t("open")}
+        <span className="flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium text-white/62 transition group-hover:bg-white/[0.08] group-hover:text-white">
+          {t("open")}
+          {opening ? (
+            <IconLoader2 className="size-3.5 animate-spin" stroke={1.8} />
+          ) : (
             <IconArrowRight className="size-3.5" stroke={1.8} />
-          </Link>
-        ) : null}
-      </div>
+          )}
+        </span>
+      </button>
 
       {clips.length > 0 ? (
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
@@ -78,7 +105,7 @@ export function StoryNodeStoryboardPanel({
             return (
               <Link
                 key={clip.id}
-                href={boardHref}
+                href={editorHref}
                 title={clip.title}
                 className="group relative h-14 w-24 shrink-0 overflow-hidden rounded-lg bg-black/30 ring-1 ring-white/[0.06] transition hover:ring-white/25"
               >

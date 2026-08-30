@@ -207,6 +207,7 @@ export interface StoryStoryboardSequence {
   chapterId: string;
   plotNodeId: string;
   stableKey: string;
+  /** @deprecated Display titles are projected from the canonical Plot node. */
   title: string | null;
   description: string | null;
   suggestedDurationMs: number;

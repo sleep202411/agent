@@ -252,6 +252,42 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     };
   }
 
+  it('fails loud instead of projecting a graph-only node as an unplanned Storyboard state', async () => {
+    const source = screenplay();
+    const prisma = {
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'chapter-1' }),
+        findFirstOrThrow: jest.fn().mockResolvedValue({
+          nodeIds: source.scenes.map((scene) => scene.nodeId),
+        }),
+      },
+      storyDraft: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          content: chapterDraft(source),
+        }),
+      },
+      storyStoryboardSequence: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const permissions = {
+      requireProject: jest.fn().mockResolvedValue(undefined),
+    };
+    const strictService = new StoryProductionPlanService(
+      prisma as never,
+      permissions as never,
+      null as never,
+    );
+
+    await expect(
+      strictService.getStoryboard(
+        { userId: 'creator-1' } as never,
+        'project-1',
+        'chapter-1',
+      ),
+    ).rejects.toThrow(/Plot tree and Storyboard are not one-to-one/);
+  });
+
   it('keeps Plot non-current after Script approval even when the graph happens to match', async () => {
     const source = screenplay();
     const draft = chapterDraft(source);

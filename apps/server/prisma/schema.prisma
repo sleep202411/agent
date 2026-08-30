@@ -8930,6 +8930,7 @@ model StoryStoryboardSequence {
   @@unique([storyChapterId, plotNodeId], map: "story_storyboard_sequences_chapter_plot_unique")
   @@unique([storyChapterId, stableKey], map: "story_storyboard_sequences_chapter_key_unique")
   @@unique([id, storyChapterId, storyProjectId], map: "story_storyboard_sequences_scope_unique")
+  @@index([storyProjectId, plotNodeId], map: "story_storyboard_sequences_project_plot_idx")
   @@index([storyProjectId, storyChapterId, status], map: "story_storyboard_sequences_chapter_status_idx")
   @@map("story_storyboard_sequences")
 }

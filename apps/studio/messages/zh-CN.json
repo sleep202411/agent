@@ -2989,36 +2989,6 @@
       "loading": "正在加载分镜…",
       "emptyChapter": "本章还没有情节节点。",
       "emptyHint": "在情节树中添加场景后，分镜会在这里逐场景展开。",
-      "continueWithAgent": "在 FizzAgent 中继续",
-      "stage": {
-        "plotRequired": {
-          "title": "请先批准情节树",
-          "description": "分镜需要基于已批准的故事结构。请先在 FizzAgent 中准备、审阅并批准情节树。"
-        },
-        "assetsRequired": {
-          "title": "请先批准资产规格",
-          "description": "分镜规划需要稳定的角色、场景和道具引用。请先在 FizzAgent 中审阅资产规格。"
-        },
-        "storyboardRequired": {
-          "title": "下一步是批准分镜方案",
-          "description": "让 FizzAgent 准备序列和镜头提示词。保存前会先由你审阅；此过程不会生成媒体。"
-        },
-        "stale": {
-          "title": "{count} 个分镜序列需要处理",
-          "description": "现有序列会保留供你审阅。请在下方解决可处理的冲突；缺少对比详情的序列需要让 Agent 重新准备提案。在本阶段恢复为当前版本前，媒体生成保持不可用。"
-        },
-        "noScenes": {
-          "title": "已批准的情节树中没有场景",
-          "description": "请让 FizzAgent 添加或修改场景，再准备分镜。"
-        }
-      },
-      "prompts": {
-        "plotRequired": "请根据已批准的剧本准备本章情节树，进入资产规格前先交给我审阅和批准。不要生成媒体。",
-        "assetsRequired": "请根据已批准的情节树及其剧本解释准备本章资产规格，进入分镜前先交给我审阅和批准。不要生成媒体。",
-        "storyboardRequired": "请根据已批准的情节树和资产规格准备本章的分镜方案，保存前先交给我审阅和批准。不要生成媒体。",
-        "noScenes": "请修改本章的情节树，加入可用于规划分镜的场景。",
-        "scene": "请为场景“{title}”准备分镜序列，保存前先交给我审阅。不要生成媒体。"
-      },
       "loadError": "无法加载分镜。",
       "retry": "重试",
       "plotNode": "情节节点 {index}",
@@ -3032,8 +3002,11 @@
       },
       "seconds": "{value} 秒",
       "options": "选项",
-      "unplanned": "尚无分镜",
-      "unplannedHint": "该场景还没有规划分镜。可让 FizzAgent 为本章规划分镜。",
+      "addNode": "添加分镜节点",
+      "newNodeTitle": "未命名场景",
+      "nodeAdded": "节点已同时添加到分镜和情节树。",
+      "addNodeError": "无法添加分镜节点。",
+      "missingChapter": "当前没有可用章节。",
       "title": "分镜",
       "clipKind": {
         "image": "图片",
@@ -3672,8 +3645,8 @@
           "title": "分镜",
           "summary": "{count} 个片段 · {ready} 个已有媒体",
           "loading": "分镜加载中…",
-          "missing": "该场景还没有分镜序列。",
-          "open": "打开分镜"
+          "open": "编辑分镜",
+          "openError": "无法打开分镜。"
         }
       },
       "conflict": {

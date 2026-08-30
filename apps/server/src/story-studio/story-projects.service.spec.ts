@@ -1067,6 +1067,14 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
       storyDraft,
       storyStoryboardSequence: {
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'sequence-opening',
+            storyChapterId: CHAPTER_ID,
+            plotNodeId: 'node.opening',
+            status: 'current',
+          },
+        ]),
       },
       storyChapter: {
         findMany: jest.fn().mockResolvedValue(chapters),
@@ -1109,6 +1117,80 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(result.chapterId).toBe(CHAPTER_ID);
     expect(result.content.graph.nodes).toHaveLength(1);
     expect(result.content.graph.nodes[0]).toMatchObject({ clipKey: 'S01' });
+  });
+
+  it('updates chapter membership before creating a new Plot node timeline', async () => {
+    const current = draftRow();
+    const next = lockableDraft();
+    next.graph.nodes.push({
+      kind: 'clip',
+      nodeId: 'node.second',
+      clipKey: 'S01',
+      interactions: [],
+      exit: { kind: 'auto', nextNodeId: null },
+    });
+    const savedChapter = chapterRow({
+      nodeIds: ['node.opening', 'node.second'],
+    });
+    const writeOrder: string[] = [];
+    const tx = {
+      storyDraft: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(current)
+          .mockResolvedValueOnce(draftRow({ content: next, revision: 4 })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      storyStoryboardSequence: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'sequence-opening',
+            storyChapterId: CHAPTER_ID,
+            plotNodeId: 'node.opening',
+            status: 'current',
+          },
+        ]),
+        create: jest.fn().mockImplementation(() => {
+          writeOrder.push('sequence');
+          return Promise.resolve({});
+        }),
+      },
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue([chapterRow()]),
+        update: jest.fn().mockImplementation(() => {
+          writeOrder.push('chapter');
+          return Promise.resolve(savedChapter);
+        }),
+        findUnique: jest.fn().mockResolvedValue(savedChapter),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.putDraft(
+        USER as never,
+        PROJECT_ID,
+        {
+          expectedRevision: 3,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+          content: next,
+          sessionId: 'chapter-save',
+        },
+        CHAPTER_ID,
+      ),
+    ).resolves.toMatchObject({ revision: 4 });
+
+    expect(writeOrder).toEqual(['chapter', 'sequence']);
+    expect(tx.storyStoryboardSequence.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storyProjectId: PROJECT_ID,
+        storyChapterId: CHAPTER_ID,
+        plotNodeId: 'node.second',
+        durationMs: 0,
+      }) as unknown,
+    });
   });
 
   it('rejects a chapter save that tries to claim another chapter scene id', async () => {

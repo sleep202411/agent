@@ -114,12 +114,19 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
   const requestedPlotNodeId = searchParams.get("node");
   const selectedSequence = useMemo(() => {
     const sequences = storyboardQuery.data ?? [];
-    return (
-      sequences.find((sequence) => sequence.plotNodeId === requestedPlotNodeId) ??
-      sequences[0] ??
-      null
-    );
+    if (requestedPlotNodeId) {
+      return sequences.find((sequence) => sequence.plotNodeId === requestedPlotNodeId) ?? null;
+    }
+    return sequences[0] ?? null;
   }, [requestedPlotNodeId, storyboardQuery.data]);
+  const selectedNodeTitle = useMemo(() => {
+    const plotNodeId = selectedSequence?.plotNodeId;
+    if (!plotNodeId) return "";
+    const node = workbenchQuery.data?.draft.content.graph.nodes.find(
+      (candidate) => candidate.kind === "clip" && candidate.nodeId === plotNodeId
+    );
+    return node && node.kind === "clip" ? node.name?.trim() || node.clipKey : plotNodeId;
+  }, [selectedSequence?.plotNodeId, workbenchQuery.data?.draft.content.graph.nodes]);
   const timeline = useMemo(
     () => (selectedSequence ? storySequenceToTimeline(selectedSequence) : null),
     [selectedSequence]
@@ -249,7 +256,9 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     );
   }
 
-  const canEdit =
+  // Approval state controls paid generation, never ordinary creator editing.
+  const canEdit = projectCanEdit;
+  const allowGeneration =
     productionQuery.data?.storyboard.status === "current" && selectedSequence.status === "current";
   const canImportMedia = canEdit && projectCanEdit && Boolean(workbenchQuery.workspaceId);
 
@@ -311,9 +320,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
           <div className="min-w-0">
             <div className="flex min-w-0 items-baseline gap-2">
               <h1 className="shrink-0 text-sm font-semibold text-white/92">{t("title")}</h1>
-              <span className="truncate text-xs text-white/48">
-                {selectedSequence.title?.trim() || selectedSequence.plotNodeId}
-              </span>
+              <span className="truncate text-xs text-white/48">{selectedNodeTitle}</span>
             </div>
             <p className="hidden truncate text-[10px] text-white/36 lg:block">{t("description")}</p>
           </div>
@@ -372,6 +379,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
               chapterId={chapterId}
               workspaceId={workbenchQuery.workspaceId}
               editable={canEdit}
+              allowGeneration={allowGeneration}
               canImportMedia={canImportMedia}
             />
           ) : (
@@ -904,6 +912,7 @@ function TimelineClipInspector({
   chapterId,
   workspaceId,
   editable,
+  allowGeneration,
   canImportMedia,
 }: {
   clip: StoryStoryboardClip;
@@ -912,6 +921,7 @@ function TimelineClipInspector({
   chapterId: string;
   workspaceId: string | null;
   editable: boolean;
+  allowGeneration: boolean;
   canImportMedia: boolean;
 }) {
   const t = useTranslations("storyStudio.editorPage");
@@ -1147,7 +1157,7 @@ function TimelineClipInspector({
             setModelId(value);
             setModelSettingsOverride(null);
           }}
-          disabled={!editable || busy || generationDefaults.loading || !selectedModel}
+          disabled={!allowGeneration || busy || generationDefaults.loading || !selectedModel}
         >
           <SelectTrigger className="w-full">
             <SelectValue
@@ -1183,7 +1193,9 @@ function TimelineClipInspector({
           {t("inspectorForm.save")}
         </Button>
         <Button
-          disabled={!editable || invalid || busy || generationDefaults.loading || !selectedModel}
+          disabled={
+            !allowGeneration || invalid || busy || generationDefaults.loading || !selectedModel
+          }
           loading={generateMutation.isPending}
           onClick={() => generateMutation.mutate()}
         >

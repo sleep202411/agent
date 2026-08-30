@@ -49,6 +49,7 @@ export class StoryDraftMutationError extends Error {
 export interface CreateClipNodeOptions {
   nodeId?: string;
   clipKey?: string;
+  name?: string;
 }
 
 export interface CreateWorldNodeOptions {
@@ -84,6 +85,7 @@ export function createClipNode(
     kind: "clip",
     nodeId,
     clipKey,
+    ...(options.name?.trim() ? { name: options.name.trim() } : {}),
     interactions: [],
     exit: { kind: "auto", nextNodeId: null },
   };

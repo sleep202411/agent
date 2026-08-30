@@ -2989,36 +2989,6 @@
       "loading": "Loading Storyboard…",
       "emptyChapter": "No scenes in this chapter yet.",
       "emptyHint": "Add scenes on the Plot Tree and the storyboard unfolds here scene by scene.",
-      "continueWithAgent": "Continue in FizzAgent",
-      "stage": {
-        "plotRequired": {
-          "title": "Approve the Plot Tree first",
-          "description": "The storyboard follows the approved story structure. Continue in FizzAgent to prepare and review the Plot Tree."
-        },
-        "assetsRequired": {
-          "title": "Approve Asset Specs before Storyboard",
-          "description": "Storyboard planning needs stable character, location, and prop references. Review the Asset Specs in FizzAgent first."
-        },
-        "storyboardRequired": {
-          "title": "Storyboard is the next approval stage",
-          "description": "Ask FizzAgent to prepare sequences and clip prompts. You will review them before they are saved; no media is generated."
-        },
-        "stale": {
-          "title": "{count, plural, one {# Storyboard sequence needs attention} other {# Storyboard sequences need attention}}",
-          "description": "Existing sequences remain visible for review. Resolve available conflicts below; sequences without comparison details need a refreshed Agent proposal. Media generation stays unavailable until this stage is current."
-        },
-        "noScenes": {
-          "title": "The approved Plot Tree has no scenes",
-          "description": "Ask FizzAgent to add or revise scenes before preparing a storyboard."
-        }
-      },
-      "prompts": {
-        "plotRequired": "Prepare the Plot Tree for this chapter from the approved Script. Let me review and approve it before Asset Specs. Do not generate media.",
-        "assetsRequired": "Prepare Asset Specs for this chapter from the approved Plot Tree and Script interpretation. Let me review and approve them before Storyboard. Do not generate media.",
-        "storyboardRequired": "Prepare a Storyboard plan for this chapter from the approved Plot Tree and Asset Specs. Let me review and approve it before saving. Do not generate media.",
-        "noScenes": "Revise the Plot Tree for this chapter so it has scenes that can be planned into a storyboard.",
-        "scene": "Prepare a storyboard sequence for the scene “{title}”. Let me review the plan before saving it. Do not generate media."
-      },
       "loadError": "The storyboard could not be loaded.",
       "retry": "Try again",
       "plotNode": "Plot node {index}",
@@ -3032,8 +3002,11 @@
       },
       "seconds": "{value}s",
       "options": "Options",
-      "unplanned": "No storyboard yet",
-      "unplannedHint": "This scene has not been planned into a storyboard. Ask FizzAgent to plan this chapter's storyboard.",
+      "addNode": "Add storyboard node",
+      "newNodeTitle": "Untitled scene",
+      "nodeAdded": "The node was added to both the Storyboard and Plot Tree.",
+      "addNodeError": "The storyboard node could not be added.",
+      "missingChapter": "No active chapter is available.",
       "title": "Storyboard",
       "clipKind": {
         "image": "Image",
@@ -3672,8 +3645,8 @@
           "title": "Storyboard",
           "summary": "{count} clips · {ready} with media",
           "loading": "Loading the storyboard…",
-          "missing": "This scene has no storyboard sequence yet.",
-          "open": "Open storyboard"
+          "open": "Edit storyboard",
+          "openError": "The storyboard could not be opened."
         }
       },
       "conflict": {

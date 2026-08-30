@@ -477,16 +477,58 @@ export class StoryProductionPlanService {
 
   async getStoryboard(user: AuthUser, projectId: string, chapterId: string) {
     await this.requireScope(user, projectId, chapterId, 'story.read');
-    const rows = await this.prisma.storyStoryboardSequence.findMany({
-      where: {
-        storyProjectId: projectId,
-        storyChapterId: chapterId,
-        status: { not: StoryProductionSpecStatus.archived },
-      },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      include: STORYBOARD_INCLUDE,
+    const [chapter, draft, rows] = await Promise.all([
+      this.prisma.storyChapter.findFirstOrThrow({
+        where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
+        select: { nodeIds: true },
+      }),
+      this.prisma.storyDraft.findUniqueOrThrow({
+        where: { storyProjectId: projectId },
+        select: { content: true },
+      }),
+      this.prisma.storyStoryboardSequence.findMany({
+        where: {
+          storyProjectId: projectId,
+          storyChapterId: chapterId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+        include: STORYBOARD_INCLUDE,
+      }),
+    ]);
+    const content = InteractiveStoryDraftContentSchema.parse(draft.content);
+    const ownedNodeIds = jsonStringArray(chapter.nodeIds);
+    const ownedPlotNodes = content.graph.nodes
+      .filter((node) => node.kind === 'clip')
+      .filter((node) => ownedNodeIds.includes(node.nodeId));
+    const sequenceByNode = new Map(
+      rows.map((row) => [row.plotNodeId, row] as const),
+    );
+    const missingPlotNodeIds = ownedPlotNodes
+      .filter((node) => !sequenceByNode.has(node.nodeId))
+      .map((node) => node.nodeId);
+    if (missingPlotNodeIds.length > 0) {
+      throw new ConflictException({
+        code: 'STORYBOARD_NODE_IDENTITY_CONFLICT',
+        message:
+          'The Plot tree and Storyboard are not one-to-one. Run the Storyboard identity repair before reading this chapter.',
+        missingPlotNodeIds,
+      });
+    }
+    return ownedPlotNodes.map((node) => {
+      const row = sequenceByNode.get(node.nodeId);
+      // Guarded above. Keeping this assertion local prevents a future query
+      // refactor from silently reintroducing a graph-only scene.
+      if (!row)
+        throw new InternalServerErrorException(
+          'Storyboard identity invariant failed.',
+        );
+      // Shared identity and title come only from StoryDraft. The relational
+      // row owns timed shots, prompts and media, not a second scene name.
+      return {
+        ...toStoryboardSequenceDto(row),
+        title: node.name?.trim() || node.clipKey,
+      };
     });
-    return rows.map(toStoryboardSequenceDto);
   }
 
   async resolveAssetSpecConflict(
@@ -727,7 +769,6 @@ export class StoryProductionPlanService {
             where: pendingConflictCasWhere(current, input),
             data: {
               stableKey: item.plotNodeId,
-              title: item.title,
               description: item.description,
               suggestedDurationMs: item.durationMs,
               durationMs: item.durationMs,
@@ -909,7 +950,6 @@ export class StoryProductionPlanService {
         const updated = await tx.storyStoryboardSequence.updateMany({
           where: { id: sequence.id, version: input.expectedVersion },
           data: {
-            ...defined(input, 'title'),
             ...defined(input, 'description'),
             userModifiedAt: now,
             userModifiedByUserId: user.userId,
@@ -2479,7 +2519,7 @@ export class StoryProductionPlanService {
             storyChapterId: input.storyChapterId,
             plotNodeId: item.plotNodeId,
             stableKey: item.plotNodeId,
-            title: item.title,
+            title: null,
             description: item.description,
             suggestedDurationMs: item.durationMs,
             durationMs: item.durationMs,
@@ -2503,7 +2543,6 @@ export class StoryProductionPlanService {
           where: { id: current.id },
           data: {
             stableKey: item.plotNodeId,
-            title: item.title,
             description: item.description,
             suggestedDurationMs: item.durationMs,
             durationMs: item.durationMs,
