@@ -106,8 +106,8 @@ const DEFAULT_COPY: StoryCanvasCopy = {
  * element. Its deterministic projection id lets layout survive reloads without
  * creating a second persistence model for the same runtime decision.
  */
-export function storyDecisionCanvasNodeId(sourceNodeId: string, decisionId: string): string {
-  return `@decision/${encodeURIComponent(sourceNodeId)}/${encodeURIComponent(decisionId)}`;
+export function storyDecisionCanvasNodeId(sourceNodeId: string): string {
+  return `__decision__:${sourceNodeId}`;
 }
 
 /**
@@ -211,14 +211,14 @@ export function buildStoryCanvasModel(
           continuationTargetNodeId:
             node.exit.kind === "auto"
               ? (node.exit.nextNodeId ?? undefined)
-              : storyDecisionCanvasNodeId(node.nodeId, node.exit.decisionId),
+              : storyDecisionCanvasNodeId(node.nodeId),
           frameAspectRatio: frameAspectRatioOf(frameProfile),
         },
       };
       if (node.exit.kind !== "choice") return [clipProjection];
 
       const choiceExit = node.exit;
-      const decisionNodeId = storyDecisionCanvasNodeId(node.nodeId, choiceExit.decisionId);
+      const decisionNodeId = storyDecisionCanvasNodeId(node.nodeId);
       return [
         clipProjection,
         {
@@ -325,7 +325,7 @@ function buildConnections(
     }
 
     if (node.exit.kind === "choice") {
-      const decisionNodeId = storyDecisionCanvasNodeId(node.nodeId, node.exit.decisionId);
+      const decisionNodeId = storyDecisionCanvasNodeId(node.nodeId);
       connections.push({
         order: order++,
         edge: {

@@ -3657,24 +3657,6 @@
       "layoutConflict": {
         "description": "其他会话重新排列了画布。你的本地布局已保留；如需留存，请先导出再丢弃。"
       },
-      "leaveGuard": {
-        "title": "仍有本地恢复内容，确定离开吗？",
-        "description": "部分内容目前只保存在这个浏览器中，无法安全写入。请先导出恢复文件，或明确丢弃后离开。",
-        "planes": {
-          "draft": {
-            "title": "故事草稿",
-            "description": "未保存或发生冲突的故事内容将会丢失。"
-          },
-          "layout": {
-            "title": "画布布局",
-            "description": "未保存的节点位置将会丢失。"
-          }
-        },
-        "stay": "留在画布",
-        "export": "导出恢复文件",
-        "discardAndLeave": "丢弃并离开",
-        "exported": "恢复文件已导出。请保留该文件，直到内容恢复完成。"
-      },
       "graphError": {
         "generic": "这次图修改与当前后续走向冲突。请先移除已有路由，或选择兼容的目标节点。",
         "dismiss": "关闭故事图提示"

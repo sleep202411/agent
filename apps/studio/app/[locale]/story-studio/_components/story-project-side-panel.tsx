@@ -36,8 +36,7 @@ export function StoryProjectSidePanelShell({
  * active tenant by `sidePanel`; adding a new docked panel is one case here
  * plus a `sidePanel` value. Tenants that touch canvas-owned draft state do so
  * through the store bridges the canvas registers while mounted
- * (guardedNavigate, foundationWriter, liveDraft/liveFoundation) — never by
- * being canvas-rendered.
+ * (foundationWriter and liveDraft) — never by being canvas-rendered.
  */
 export function StoryProjectSidePanel({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
