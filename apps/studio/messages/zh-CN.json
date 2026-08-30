@@ -3126,65 +3126,81 @@
         "close": "关闭章节导航"
       },
       "publish": {
-        "action": "发布",
-        "actionPending": "正在发布…",
+        "action": "提交审核",
+        "actionUpdate": "提交更新",
+        "actionResubmit": "重新提交",
+        "actionPending": "正在提交…",
+        "actionReviewing": "审核中",
         "actionPublished": "已发布",
-        "statusChecking": "正在确认当前线上版本…",
-        "title": "发布当前版本？",
-        "description": "系统会准备最新保存的故事，并将它设为玩家当前访问的线上版本。",
+        "statusChecking": "正在查询发布状态…",
+        "statusUnavailable": "暂时无法获取发布状态，请刷新后重试。",
+        "reviewingLocked": "当前项目已在审核中。",
+        "publishedUpdateLocked": "提交更新前请先将项目下线。",
+        "status": {
+          "draft": "草稿",
+          "reviewing": "审核中",
+          "published": "已发布",
+          "offline": "已下线",
+          "checking": "查询中…",
+          "unavailable": "状态不可用"
+        },
+        "rejectionReason": "审核反馈：{reason}",
+        "title": "提交当前版本审核？",
+        "description": "系统会准备最新保存的项目并提交平台审核，审核通过后才会对玩家开放。",
         "confirmation": {
-          "title": "确认发布",
+          "title": "确认提交审核",
           "draftRevision": "最新已保存内容 · 第 {revision} 次修订",
-          "detail": "发布后仍可继续编辑画布；后续修改在再次发布前不会影响线上版本。"
+          "detail": "提交后仍可继续编辑；后续修改不会影响正在审核的版本。"
         },
         "progress": {
-          "title": "正在发布当前版本",
-          "description": "正在保存、检查并发布故事，请保持此窗口打开。"
+          "title": "正在提交当前版本",
+          "description": "正在保存、准备并提交项目，请保持此窗口打开。"
         },
         "phases": {
           "saving": {
             "title": "保存最新修改",
             "description": "正在保存画布上的当前故事。"
           },
-          "building": {
-            "title": "检查播放内容",
-            "description": "正在检查故事路线、视频和玩家可见内容。"
+          "preparing": {
+            "title": "准备版本",
+            "description": "正在从当前项目生成不可变发布内容。"
           },
-          "publishing": {
-            "title": "正在发布",
-            "description": "正在将此版本设为玩家访问的线上版本。"
+          "submitting": {
+            "title": "提交平台",
+            "description": "正在上传版本并请求审核。"
           }
         },
         "actions": {
           "cancel": "取消",
-          "confirm": "发布当前版本",
+          "confirm": "提交审核",
           "close": "关闭",
           "retry": "重试"
         },
         "success": {
-          "title": "版本已发布",
-          "description": "当前版本已经上线。",
-          "version": "当前版本已上线",
-          "detail": "玩家现在会进入此版本。你可以继续编辑画布，不会影响已上线内容。"
+          "title": "版本已提交",
+          "description": "当前版本已进入平台审核。",
+          "version": "已请求审核",
+          "detail": "审核通过前玩家无法访问此版本。"
         },
         "failure": {
-          "title": "当前版本未发布",
-          "description": "请处理下方问题，然后重新发布。"
+          "title": "当前版本未提交",
+          "description": "请处理下方问题，然后重新提交。"
         },
-        "diagnostics": {
-          "title": "{count} 个待处理问题"
+        "offline": {
+          "action": "下线",
+          "title": "下线这部影游？",
+          "description": "玩家将无法再发现或开始此项目；审核中的版本也会退出审核流程。",
+          "confirm": "确认下线",
+          "success": "影游已下线。"
         },
         "errors": {
-          "workspaceRequired": "请先选择工作区再发布。",
-          "permissionDenied": "你在此项目中的角色没有发布权限。",
+          "permissionDenied": "只有项目所有者可以提交审核或下线。",
           "saveFailed": "无法保存最新修改。",
-          "workbenchFailed": "无法加载已保存的版本进行检查。",
-          "revisionMismatch": "准备的版本与已保存故事不一致，请刷新画布后重试。",
-          "buildFailed": "无法准备可播放版本。",
-          "buildNotReady": "当前版本还不能发布，请处理下方问题后重试。",
-          "runtimeUnavailable": "可播放内容暂不可用，请重新准备此版本。",
-          "publishFailed": "无法发布已准备的版本。",
-          "unexpected": "无法发布当前版本。"
+          "prepareFailed": "无法准备发布版本。",
+          "submitFailed": "无法将已准备的版本提交审核。",
+          "submitStatusInvalid": "Java 未确认该版本已进入审核。",
+          "offlineFailed": "无法下线这部影游。",
+          "unexpected": "无法提交当前版本。"
         }
       },
       "workingPreview": {

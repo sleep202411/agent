@@ -362,22 +362,6 @@ export interface StoryBuildAsset extends FrozenStoryAsset {
   role: string;
 }
 
-export interface StoryBuildPublication {
-  status: "pending" | "confirmed" | "uncertain" | "rejected";
-  gameId: string;
-  contentVersion: string;
-  manifestUrl: string | null;
-  publishedAt: string | null;
-  mediaAuthorizedAt: string;
-  mediaAuthorizationRevokedAt: string | null;
-  authorityIsCurrent: boolean | null;
-  authorityGameExists: boolean | null;
-  authorityCurrentVersion: string | null;
-  authorityCheckedAt: string | null;
-  lastErrorCode: string | null;
-  lastErrorDetail: string | null;
-}
-
 export interface StoryBuildSummary {
   id: string;
   number: number;
@@ -386,7 +370,6 @@ export interface StoryBuildSummary {
   sourceDraftRevision: number;
   videoSnapshotHash: string;
   diagnostics: StoryBuildDiagnostic[];
-  publication: StoryBuildPublication | null;
   createdAt: string;
   completedAt: string | null;
 }
@@ -408,31 +391,9 @@ export interface StoryBuild {
   assets: StoryBuildAsset[];
   diagnostics: StoryBuildDiagnostic[];
   pathReport: StoryBuildPathReport | null;
-  publication: StoryBuildPublication | null;
   createdByUserId: string;
   createdAt: string;
   completedAt: string | null;
-}
-
-export interface ExperienceReleaseResult {
-  gameId: string;
-  contentVersion: string;
-  status: "published" | "draft";
-  manifestUrl: string;
-}
-
-export interface StoryExperienceCurrentRelease {
-  projectId: string;
-  gameId: string;
-  published: boolean;
-  currentVersion: string | null;
-  manifestUrl: string | null;
-  currentBuild: {
-    id: string;
-    sourceDraftRevision: number;
-    videoSnapshotHash: string;
-  } | null;
-  checkedAt: string | null;
 }
 
 /**
@@ -745,26 +706,6 @@ export async function createStoryBuild(
 export async function getStoryBuild(projectId: string, buildId: string): Promise<StoryBuild> {
   return api.get<StoryBuild>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}`,
-    { requestScope: "project" }
-  );
-}
-
-export async function publishStoryBuild(
-  projectId: string,
-  buildId: string,
-  input: { status: "published" | "draft"; setCurrent: boolean }
-): Promise<ExperienceReleaseResult> {
-  return api.post<ExperienceReleaseResult>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/publish`,
-    { data: input, requestScope: "project" }
-  );
-}
-
-export async function getStoryExperienceCurrentRelease(
-  projectId: string
-): Promise<StoryExperienceCurrentRelease> {
-  return api.get<StoryExperienceCurrentRelease>(
-    `/aurora/story-projects/${encodeURIComponent(projectId)}/releases/current`,
     { requestScope: "project" }
   );
 }

@@ -27,7 +27,6 @@ import {
   archiveStoryChapter,
   addStoryCandidateAsset,
   createStoryProject,
-  getStoryExperienceCurrentRelease,
   getStoryCandidateAssets,
   getStoryWorkingPreview,
   listStoryProjects,
@@ -237,29 +236,6 @@ describe("current-draft Story production routes", () => {
     expect(api.get).toHaveBeenCalledWith("/aurora/story-projects/project-1/working-preview", {
       requestScope: "project",
     });
-  });
-
-  it("loads Java-authoritative current release identity for the project", async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({
-      projectId: "project / one",
-      gameId: "project / one",
-      published: true,
-      currentVersion: "build:build-1",
-      manifestUrl: "https://media.example.test/manifest.json",
-      currentBuild: {
-        id: "build-1",
-        sourceDraftRevision: 18,
-        videoSnapshotHash: "a".repeat(64),
-      },
-      checkedAt: "2026-07-16T12:00:00.000Z",
-    });
-
-    await getStoryExperienceCurrentRelease("project / one");
-
-    expect(api.get).toHaveBeenCalledWith(
-      "/aurora/story-projects/project%20%2F%20one/releases/current",
-      { requestScope: "project" }
-    );
   });
 });
 

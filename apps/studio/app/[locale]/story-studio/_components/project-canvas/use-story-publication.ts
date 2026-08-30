@@ -4,16 +4,11 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  createStoryBuild,
-  getStoryWorkbench,
-  publishStoryBuild,
-  storyApiErrorMessage,
-  type ExperienceReleaseResult,
-  type StoryBuild,
-  type StoryBuildDiagnostic,
-  type StoryCapability,
-  type StoryExperienceCurrentRelease,
-} from "@/lib/story-projects-api";
+  interactiveFilmPublicationQueryKey,
+  prepareInteractiveFilmRelease,
+  submitInteractiveFilmRelease,
+} from "@/lib/interactive-film-api";
+import { storyApiErrorMessage, type StoryCapability } from "@/lib/story-projects-api";
 import {
   runStoryPublication,
   StoryPublicationFlowError,
@@ -21,7 +16,6 @@ import {
   type StoryPublicationErrorCode,
   type StoryPublicationFlowResult,
 } from "./story-publication-flow";
-import { StorySubmissionKeyRegistry } from "./story-submission-key-registry";
 
 export type SavedDraftSnapshotRunner = <T>(
   submit: (expectedDraftRevision: number) => Promise<T>
@@ -36,25 +30,19 @@ export type StoryPublicationState =
   | { status: "closed" }
   | { status: "confirming" }
   | { status: StoryPublicationActivePhase }
-  | {
-      status: "succeeded";
-      sourceDraftRevision: number;
-      build: StoryBuild;
-      release: ExperienceReleaseResult;
-    }
+  | ({ status: "succeeded" } & StoryPublicationFlowResult)
   | {
       status: "failed";
       phase: StoryPublicationActivePhase | "permission";
       code: StoryPublicationFailureCode;
       message: string;
-      diagnostics: StoryBuildDiagnostic[];
     };
 
 export interface UseStoryPublicationOptions {
   projectId: string;
   capabilities: readonly StoryCapability[];
+  expectedVideoSnapshotHash: string | null;
   withSavedDraftSnapshot: SavedDraftSnapshotRunner;
-  onPublished?: (result: StoryPublicationFlowResult) => void | Promise<void>;
 }
 
 const REQUIRED_CAPABILITIES = [
@@ -66,31 +54,19 @@ const REQUIRED_CAPABILITIES = [
 export function useStoryPublication({
   projectId,
   capabilities,
+  expectedVideoSnapshotHash,
   withSavedDraftSnapshot,
-  onPublished,
 }: UseStoryPublicationOptions) {
   const t = useTranslations("storyStudio.canvas.publish");
   const queryClient = useQueryClient();
   const [state, setState] = useState<StoryPublicationState>({ status: "closed" });
-  const [lastSucceeded, setLastSucceeded] = useState<StoryPublicationFlowResult | null>(null);
   const runningRef = useRef(false);
-  const publicationSubmissionKeys = useMemo(
-    () =>
-      new StorySubmissionKeyRegistry(`story-publication:${projectId}`, () => {
-        try {
-          return globalThis.window?.sessionStorage ?? null;
-        } catch {
-          return null;
-        }
-      }),
-    [projectId]
-  );
 
   const missingCapabilities = useMemo(
     () => REQUIRED_CAPABILITIES.filter((capability) => !capabilities.includes(capability)),
     [capabilities]
   );
-  const canPublish = missingCapabilities.length === 0;
+  const canSubmit = missingCapabilities.length === 0;
   const disabledReason = missingCapabilities.length > 0 ? t("errors.permissionDenied") : null;
 
   const open = useCallback(() => {
@@ -101,7 +77,6 @@ export function useStoryPublication({
         phase: "permission",
         code: "PERMISSION_DENIED",
         message: t("errors.permissionDenied"),
-        diagnostics: [],
       });
       return;
     }
@@ -118,6 +93,15 @@ export function useStoryPublication({
       open();
       return;
     }
+    if (!expectedVideoSnapshotHash || !/^[a-f0-9]{64}$/.test(expectedVideoSnapshotHash)) {
+      setState({
+        status: "failed",
+        phase: "permission",
+        code: "UNEXPECTED",
+        message: t("errors.unexpected"),
+      });
+      return;
+    }
 
     runningRef.current = true;
     let currentPhase: StoryPublicationActivePhase = "saving";
@@ -126,73 +110,38 @@ export function useStoryPublication({
       result = await runStoryPublication({
         saveDraftSnapshot: () =>
           withSavedDraftSnapshot(async (expectedDraftRevision) => expectedDraftRevision),
-        loadWorkbench: () => getStoryWorkbench(projectId),
-        createProductionBuild: (input, idempotencyKey) =>
-          createStoryBuild(projectId, input, idempotencyKey),
-        publishProductionBuild: (buildId) =>
-          publishStoryBuild(projectId, buildId, {
-            status: "published",
-            setCurrent: true,
+        prepareRelease: (expectedDraftRevision) =>
+          prepareInteractiveFilmRelease(projectId, {
+            expectedDraftRevision,
+            expectedVideoSnapshotHash,
           }),
-        buildSubmissionKeys: {
-          keyFor: (fingerprint) =>
-            publicationSubmissionKeys.keyFor("production-full", fingerprint, () =>
-              globalThis.crypto.randomUUID()
-            ),
-          confirm: (fingerprint) =>
-            publicationSubmissionKeys.confirm("production-full", fingerprint),
-        },
+        submitRelease: (release) => submitInteractiveFilmRelease(projectId, release),
         onPhaseChange: (phase) => {
           currentPhase = phase;
           setState({ status: phase });
         },
       });
     } catch (error) {
-      const failure = toPublicationFailure(error, currentPhase, t);
       runningRef.current = false;
-      setState(failure);
+      setState(toPublicationFailure(error, currentPhase, t));
       return;
     }
 
-    setLastSucceeded(result);
-    const currentReleaseKey = ["story-studio", "current-release", projectId] as const;
-    queryClient.setQueryData<StoryExperienceCurrentRelease>(currentReleaseKey, {
-      projectId,
-      gameId: result.release.gameId,
-      published: result.release.status === "published",
-      currentVersion: result.release.contentVersion,
-      manifestUrl: result.release.manifestUrl,
-      currentBuild:
-        result.release.status === "published"
-          ? {
-              id: result.build.id,
-              sourceDraftRevision: result.build.sourceDraftRevision,
-              videoSnapshotHash: result.build.videoSnapshotHash,
-            }
-          : null,
-      checkedAt: new Date().toISOString(),
-    });
-    const refreshes: Promise<unknown>[] = [
-      queryClient.invalidateQueries({
-        queryKey: ["story-studio", "workbench", projectId],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: ["story-studio", "interactive-film-projects"],
-      }),
-      queryClient.invalidateQueries({
-        queryKey: currentReleaseKey,
-      }),
+    queryClient.setQueryData(interactiveFilmPublicationQueryKey(projectId), result.publication);
+    const refreshes = [
+      queryClient.invalidateQueries({ queryKey: ["story-studio", "workbench", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["story-studio", "chapter-workbench", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["story-studio", "script-workbench", projectId] }),
+      queryClient.invalidateQueries({ queryKey: interactiveFilmPublicationQueryKey(projectId) }),
     ];
-    if (onPublished) refreshes.push(Promise.resolve().then(() => onPublished(result)));
     runningRef.current = false;
     setState({ status: "succeeded", ...result });
     void Promise.allSettled(refreshes);
   }, [
+    expectedVideoSnapshotHash,
     missingCapabilities.length,
-    onPublished,
     open,
     projectId,
-    publicationSubmissionKeys,
     queryClient,
     t,
     withSavedDraftSnapshot,
@@ -200,12 +149,9 @@ export function useStoryPublication({
 
   return {
     state,
-    isOpen: state.status !== "closed",
     isPending: isStoryPublicationPending(state),
-    canPublish,
+    canSubmit,
     disabledReason,
-    missingCapabilities,
-    lastSucceeded,
     open,
     close,
     confirm: execute,
@@ -214,7 +160,7 @@ export function useStoryPublication({
 }
 
 export function isStoryPublicationPending(state: StoryPublicationState): boolean {
-  return state.status === "saving" || state.status === "building" || state.status === "publishing";
+  return state.status === "saving" || state.status === "preparing" || state.status === "submitting";
 }
 
 function toPublicationFailure(
@@ -228,10 +174,8 @@ function toPublicationFailure(
       phase: currentPhase,
       code: "UNEXPECTED",
       message: storyApiErrorMessage(error, t("errors.unexpected")),
-      diagnostics: [],
     };
   }
-
   const fallback = publicationErrorFallback(error.code, t);
   return {
     status: "failed",
@@ -241,7 +185,6 @@ function toPublicationFailure(
       error.upstreamError === undefined
         ? fallback
         : storyApiErrorMessage(error.upstreamError, fallback),
-    diagnostics: error.diagnostics,
   };
 }
 
@@ -252,17 +195,11 @@ function publicationErrorFallback(
   switch (code) {
     case "SAVE_FAILED":
       return t("errors.saveFailed");
-    case "WORKBENCH_FAILED":
-      return t("errors.workbenchFailed");
-    case "DRAFT_REVISION_MISMATCH":
-      return t("errors.revisionMismatch");
-    case "BUILD_FAILED":
-      return t("errors.buildFailed");
-    case "BUILD_NOT_READY":
-      return t("errors.buildNotReady");
-    case "RUNTIME_UNAVAILABLE":
-      return t("errors.runtimeUnavailable");
-    case "PUBLISH_FAILED":
-      return t("errors.publishFailed");
+    case "PREPARE_FAILED":
+      return t("errors.prepareFailed");
+    case "SUBMIT_FAILED":
+      return t("errors.submitFailed");
+    case "SUBMIT_STATUS_INVALID":
+      return t("errors.submitStatusInvalid");
   }
 }

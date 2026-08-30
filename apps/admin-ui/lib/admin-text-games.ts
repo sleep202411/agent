@@ -11,15 +11,9 @@ import {
   type TextGameDetail,
   type TextGameStatus,
 } from "@repo/shared/text-game";
-import { javaAdminAuthHeaders } from "@/lib/java-admin-auth";
+import { requestJavaStudioAdmin } from "@/lib/java-studio-admin";
 
 const ADMIN_TEXT_GAME_PATH = "/api/admin/text-game";
-
-type JavaEnvelope = {
-  code?: unknown;
-  msg?: unknown;
-  data?: unknown;
-};
 
 export type AdminTextGameStatusFilter = "all" | TextGameStatus;
 
@@ -67,13 +61,13 @@ export async function getAdminTextGames(
   if (keyword) query.set("q", keyword);
 
   return TextGameAdminListSchema.parse(
-    await requestJavaTextGame(`${ADMIN_TEXT_GAME_PATH}/reviewing?${query.toString()}`)
+    await requestJavaStudioAdmin(`${ADMIN_TEXT_GAME_PATH}/reviewing?${query.toString()}`)
   );
 }
 
 export async function getAdminTextGameDetail(gameId: string): Promise<TextGameDetail> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
-  const data = await requestJavaTextGame(
+  const data = await requestJavaStudioAdmin(
     `${ADMIN_TEXT_GAME_PATH}/${encodeURIComponent(requestedGameId)}`
   );
   return parseAdminTextGameDetail(data, requestedGameId);
@@ -85,7 +79,7 @@ export async function transitionAdminTextGame(
 ): Promise<TextGameDetail> {
   const requestedGameId = TextGameIdSchema.parse(gameId);
   const action = TextGameAdminActionSchema.parse(input);
-  const data = await requestJavaTextGame(
+  const data = await requestJavaStudioAdmin(
     `${ADMIN_TEXT_GAME_PATH}/${encodeURIComponent(requestedGameId)}/status`,
     {
       method: "POST",
@@ -109,41 +103,6 @@ function parseAdminTextGameDetail(data: unknown, expectedGameId: string): TextGa
     throw new Error(`Java 返回了作品 ${detail.gameId}，但请求的是 ${expectedGameId}。`);
   }
   return detail;
-}
-
-function textGameApiBaseUrl(): string {
-  const value = process.env.TEXT_GAME_API_BASE_URL?.trim();
-  if (!value) {
-    throw new Error("缺少 TEXT_GAME_API_BASE_URL，无法连接 Java 文游审核服务。");
-  }
-  return value.replace(/\/+$/, "");
-}
-
-async function requestJavaTextGame(path: string, init?: RequestInit): Promise<unknown> {
-  let response: Response;
-  try {
-    response = await fetch(`${textGameApiBaseUrl()}${path}`, {
-      ...init,
-      headers: {
-        Accept: "application/json",
-        ...javaAdminAuthHeaders(),
-        ...(init?.headers ?? {}),
-      },
-      cache: "no-store",
-    });
-  } catch (error) {
-    throw new Error(error instanceof Error ? error.message : "Java 文游审核服务暂时不可访问。");
-  }
-
-  const payload = (await response.json().catch(() => null)) as JavaEnvelope | null;
-  if (!response.ok || !payload || payload.code !== 200) {
-    throw new Error(
-      typeof payload?.msg === "string" && payload.msg.trim()
-        ? payload.msg
-        : `Java 文游审核请求失败：HTTP ${response.status}`
-    );
-  }
-  return payload.data;
 }
 
 function textGameErrorMessage(error: unknown): string {

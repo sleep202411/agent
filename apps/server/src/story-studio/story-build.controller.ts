@@ -12,21 +12,19 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { CurrentUser, Public, ViewerCookie, type AuthUser } from '../auth';
+import { CurrentUser, Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CancelStoryBuildSchema,
   CreateStoryBuildSchema,
-  PublishStoryBuildSchema,
-  PublishStoryProjectSchema,
+  PrepareStoryExperienceReleaseSchema,
   StoryBuildAssetParamsSchema,
   StoryBuildListQuerySchema,
   StoryBuildParamsSchema,
   StoryProjectIdParamsSchema,
   type CancelStoryBuildInput,
   type CreateStoryBuildInput,
-  type PublishStoryBuildInput,
-  type PublishStoryProjectInput,
+  type PrepareStoryExperienceReleaseInput,
   type StoryBuildAssetParams,
   type StoryBuildListQuery,
   type StoryBuildParams,
@@ -34,14 +32,12 @@ import {
 } from './dto';
 import { StoryBuildService } from './story-build.service';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
-import { StoryGameReleaseService } from './story-game-release.service';
 
 @Controller('story-projects')
 export class StoryBuildController {
   constructor(
     private readonly builds: StoryBuildService,
     private readonly releases: StoryExperienceReleaseService,
-    private readonly gameReleases: StoryGameReleaseService,
   ) {}
 
   @Post(':projectId/builds')
@@ -134,63 +130,21 @@ export class StoryBuildController {
     };
   }
 
-  @Get(':projectId/releases/current')
-  async getCurrentRelease(
+  @Post(':projectId/release-candidate')
+  @HttpCode(HttpStatus.OK)
+  async prepareReleaseCandidate(
     @CurrentUser() user: AuthUser,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(PrepareStoryExperienceReleaseSchema))
+    body: PrepareStoryExperienceReleaseInput,
   ) {
     return {
       code: 200,
-      data: await this.releases.getCurrentRelease(user, params.projectId),
-    };
-  }
-
-  /**
-   * Publishes the whole work: one release for a single-chapter project, and one
-   * Game Manifest listing every shipping chapter for a multi-chapter one. This
-   * is the endpoint a creator presses; the per-Build endpoint below stays for
-   * releasing one exact immutable Build.
-   */
-  @Post(':projectId/releases')
-  @HttpCode(HttpStatus.OK)
-  async publishProject(
-    @CurrentUser() user: AuthUser,
-    @ViewerCookie() viewerCookie: string,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(PublishStoryProjectSchema))
-    body: PublishStoryProjectInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.gameReleases.publishProject(
+      data: await this.releases.prepareProjectCandidate(
         user,
         params.projectId,
         body,
-        viewerCookie,
-      ),
-    };
-  }
-
-  @Post(':projectId/builds/:buildId/publish')
-  @HttpCode(HttpStatus.OK)
-  async publishBuild(
-    @CurrentUser() user: AuthUser,
-    @ViewerCookie() viewerCookie: string,
-    @Param(new ZodValidationPipe(StoryBuildParamsSchema))
-    params: StoryBuildParams,
-    @Body(new ZodValidationPipe(PublishStoryBuildSchema))
-    body: PublishStoryBuildInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.releases.publishBuild(
-        user,
-        params.projectId,
-        params.buildId,
-        body,
-        viewerCookie,
       ),
     };
   }

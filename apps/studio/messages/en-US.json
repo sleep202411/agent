@@ -3126,65 +3126,81 @@
         "close": "Close chapters"
       },
       "publish": {
-        "action": "Publish",
-        "actionPending": "Publishing…",
+        "action": "Submit for review",
+        "actionUpdate": "Submit update",
+        "actionResubmit": "Resubmit",
+        "actionPending": "Submitting…",
+        "actionReviewing": "In review",
         "actionPublished": "Published",
-        "statusChecking": "Checking the current live version…",
-        "title": "Publish current version?",
-        "description": "This will prepare the latest saved story and set it as the live version players receive.",
+        "statusChecking": "Checking publication status…",
+        "statusUnavailable": "Publication status is unavailable. Try again after it refreshes.",
+        "reviewingLocked": "This project is already in review.",
+        "publishedUpdateLocked": "Take the project offline before submitting an update.",
+        "status": {
+          "draft": "Draft",
+          "reviewing": "In review",
+          "published": "Published",
+          "offline": "Offline",
+          "checking": "Checking…",
+          "unavailable": "Status unavailable"
+        },
+        "rejectionReason": "Review feedback: {reason}",
+        "title": "Submit current version for review?",
+        "description": "This prepares the latest saved project and sends it to platform review. It will not go live until approved.",
         "confirmation": {
-          "title": "Ready to publish",
+          "title": "Ready for review",
           "draftRevision": "Latest saved story · revision {revision}",
-          "detail": "The canvas stays editable after publication. Future edits remain private until you publish again."
+          "detail": "You can keep editing after submission. Later changes will not alter the version under review."
         },
         "progress": {
-          "title": "Publishing current version",
-          "description": "Keep this window open while the story is saved, checked, and published."
+          "title": "Submitting current version",
+          "description": "Keep this window open while the project is saved, prepared, and submitted."
         },
         "phases": {
           "saving": {
             "title": "Save latest changes",
             "description": "Saving the exact story currently on the canvas."
           },
-          "building": {
-            "title": "Check playable content",
-            "description": "Checking routes, videos, and player-facing content."
+          "preparing": {
+            "title": "Prepare version",
+            "description": "Building the immutable release payload from this project."
           },
-          "publishing": {
-            "title": "Publish",
-            "description": "Setting this as the live version for players."
+          "submitting": {
+            "title": "Submit to platform",
+            "description": "Uploading the version to Java and requesting review."
           }
         },
         "actions": {
           "cancel": "Cancel",
-          "confirm": "Publish current version",
+          "confirm": "Submit for review",
           "close": "Close",
           "retry": "Try again"
         },
         "success": {
-          "title": "Version published",
-          "description": "The current version is now live.",
-          "version": "Current version is live",
-          "detail": "Players now enter this version. You can keep editing the canvas without changing it."
+          "title": "Version submitted",
+          "description": "The current version is now in platform review.",
+          "version": "Review requested",
+          "detail": "Players cannot access this version until it is approved."
         },
         "failure": {
-          "title": "This version was not published",
-          "description": "Resolve the issue below, then try publishing again."
+          "title": "This version was not submitted",
+          "description": "Resolve the issue below, then try submitting again."
         },
-        "diagnostics": {
-          "title": "{count, plural, one {# issue to resolve} other {# issues to resolve}}"
+        "offline": {
+          "action": "Take offline",
+          "title": "Take this interactive film offline?",
+          "description": "Players will no longer find or start this project. A version in review will also leave the review flow.",
+          "confirm": "Take offline",
+          "success": "Interactive film taken offline."
         },
         "errors": {
-          "workspaceRequired": "Select a workspace before publishing.",
-          "permissionDenied": "Your project role does not allow publishing.",
+          "permissionDenied": "Only the project owner can submit or take this work offline.",
           "saveFailed": "The latest changes could not be saved.",
-          "workbenchFailed": "The saved version could not be loaded for checking.",
-          "revisionMismatch": "The prepared version did not match the saved story. Refresh the canvas and try again.",
-          "buildFailed": "The playable version could not be prepared.",
-          "buildNotReady": "This version is not ready to publish. Resolve the issues below and try again.",
-          "runtimeUnavailable": "The playable content is unavailable. Try preparing this version again.",
-          "publishFailed": "The prepared version could not be published.",
-          "unexpected": "The current version could not be published."
+          "prepareFailed": "The release version could not be prepared.",
+          "submitFailed": "The prepared version could not be submitted for review.",
+          "submitStatusInvalid": "Java did not confirm that this version entered review.",
+          "offlineFailed": "The interactive film could not be taken offline.",
+          "unexpected": "The current version could not be submitted."
         }
       },
       "workingPreview": {
