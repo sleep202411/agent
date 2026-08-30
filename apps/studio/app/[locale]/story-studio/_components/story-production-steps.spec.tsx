@@ -49,7 +49,6 @@ describe("StoryProductionSteps", () => {
     useStoryProjectUiStore.setState({
       activeChapterId: "chapter-1",
       draftBarrier: null,
-      guardedNavigate: null,
     });
     container = document.createElement("div");
     document.body.append(container);
@@ -83,7 +82,6 @@ describe("StoryProductionSteps", () => {
     const barrier = vi.fn(async (run: () => Promise<unknown>) => run());
     useStoryProjectUiStore.setState({
       draftBarrier: barrier as never,
-      guardedNavigate: (proceed: () => void) => proceed(),
     });
     await act(async () => {
       root.render(<StoryProductionSteps projectId="project-1" active="storyboard" />);

@@ -85,7 +85,7 @@ import { resolveCanvasVideoControlDensity } from "@/components/media/studio-vide
 import { WorldModelExperienceRenderer } from "@/components/experience-runtime/world-model-experience-renderer";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
-import { Link, useRouter } from "@/i18n/navigation";
+import { Link } from "@/i18n/navigation";
 import { canonicalJsonString } from "@/lib/canonical-json";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import { cn } from "@/lib/utils";
@@ -142,15 +142,6 @@ import {
 import { createConnectedSceneForBlankDrop } from "./story-project-canvas-drop";
 import { deleteStoryCanvasElements } from "./story-project-canvas-deletion";
 import { shouldAdoptAuthoritativeStoryDraft } from "./story-canvas-draft-reconcile";
-import { StoryCanvasLeaveDialog } from "./story-canvas-leave-dialog";
-import {
-  coordinateStoryCanvasNavigation,
-  guardStoryCanvasHistoryTraversal,
-  resolveStoryCanvasLeaveRisk,
-  type StoryCanvasHistoryEntry,
-  type StoryCanvasLeaveRisk,
-  type StoryCanvasNavigationEvent,
-} from "./story-canvas-leave-guard";
 import {
   createStoryCanvasMutationBarrier,
   isStoryChapterProjectionPairReady,
@@ -338,7 +329,6 @@ function StoryProjectCanvasInner({
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
-  const router = useRouter();
   const { fitView, screenToFlowPosition } = useReactFlow<StoryCanvasNode, StoryCanvasEdge>();
   const queryClient = useQueryClient();
   const [content, setContent] = useState<InteractiveStoryDraftContent | null>(null);
@@ -355,9 +345,7 @@ function StoryProjectCanvasInner({
     if (sidePanel) setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
   }, [sidePanel, setInspectorTarget]);
   const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
-  const setBackGuard = useStoryProjectUiStore((state) => state.setBackGuard);
   const setDraftBarrier = useStoryProjectUiStore((state) => state.setDraftBarrier);
-  const setGuardedNavigate = useStoryProjectUiStore((state) => state.setGuardedNavigate);
   const setFoundationWriter = useStoryProjectUiStore((state) => state.setFoundationWriter);
   const [worldRun, setWorldRun] = useState<StoryWorldRunState | null>(null);
   const [interactionEditorNodeId, setInteractionEditorNodeId] = useState<string | null>(null);
@@ -374,8 +362,6 @@ function StoryProjectCanvasInner({
   const [conflict, setConflict] = useState<DraftRevisionConflict | null>(null);
   const [layoutConflict, setLayoutConflict] = useState<CanvasLayoutRevisionConflict | null>(null);
   const [draftRevision, setDraftRevision] = useState(0);
-  const [pendingLeaveRisk, setPendingLeaveRisk] = useState<StoryCanvasLeaveRisk | null>(null);
-  const [recoveryExported, setRecoveryExported] = useState(false);
   const [draftSnapshotCoordinator] = useState(() => new StoryDraftSnapshotCoordinator());
   const [canvasNodes, setCanvasNodes] = useNodesState<StoryCanvasNode>([]);
   const [canvasEdges, setCanvasEdges, onCanvasEdgesChange] = useEdgesState<StoryCanvasEdge>([]);
@@ -403,9 +389,6 @@ function StoryProjectCanvasInner({
   const finalFlushGenerationRef = useRef(0);
   const finalLayoutFlushActiveRef = useRef(false);
   const finalLayoutFlushGenerationRef = useRef(0);
-  const explicitDiscardAndLeaveRef = useRef(false);
-  const currentHistoryEntryRef = useRef<StoryCanvasHistoryEntry | null>(null);
-  const pendingLeaveActionRef = useRef<(() => void) | null>(null);
   const persistRef = useRef<
     (next: InteractiveStoryDraftContent, options?: PersistDraftOptions) => Promise<void>
   >(async () => {});
@@ -436,13 +419,6 @@ function StoryProjectCanvasInner({
   // Set true once a node actually moves during a drag; consumed by onNodeClick
   // so the pointer-up that ends a drag can never open the inspector.
   const didDragNodeRef = useRef(false);
-
-  useLayoutEffect(() => {
-    currentHistoryEntryRef.current = {
-      href: window.location.href,
-      state: window.history.state,
-    };
-  });
 
   const onCanvasNodesChange = useCallback(
     (changes: NodeChange<StoryCanvasNode>[]) => {
@@ -1560,70 +1536,6 @@ function StoryProjectCanvasInner({
 
   useEffect(() => () => clearLayoutSaveRetry(), [clearLayoutSaveRetry]);
 
-  const readLeaveRisk = useCallback((): StoryCanvasLeaveRisk => {
-    const latestDraft = latestContentRef.current;
-    const latestLayout = latestDesiredLayoutRef.current;
-    return resolveStoryCanvasLeaveRisk({
-      draftDirty: Boolean(
-        recoveryContentRef.current ||
-        inFlightContentRef.current ||
-        (latestDraft && canonicalJsonString(latestDraft) !== savedSignatureRef.current)
-      ),
-      draftSaveInFlight: saveInFlightRef.current,
-      draftConflict: conflictRef.current !== null,
-      layoutDirty: Boolean(
-        recoveryLayoutRef.current ||
-        (latestLayout && layoutPayloadSignature(latestLayout) !== layoutSavedSignatureRef.current)
-      ),
-      layoutSaveInFlight: layoutSaveInFlightRef.current,
-      layoutConflict: layoutConflictRef.current !== null,
-    });
-  }, []);
-
-  const queueBlockedNavigation = useCallback((risk: StoryCanvasLeaveRisk, resume: () => void) => {
-    pendingLeaveActionRef.current = resume;
-    setRecoveryExported(false);
-    setPendingLeaveRisk(risk);
-  }, []);
-
-  const requestStoryCanvasNavigation = useCallback(
-    (event: StoryCanvasNavigationEvent | null, resume: () => void) => {
-      if (explicitDiscardAndLeaveRef.current) {
-        if (!event) resume();
-        return false;
-      }
-      return coordinateStoryCanvasNavigation({
-        event,
-        risk: readLeaveRisk(),
-        resume,
-        onBlocked: queueBlockedNavigation,
-      });
-    },
-    [queueBlockedNavigation, readLeaveRisk]
-  );
-
-  useEffect(() => {
-    const guardHistoryTraversal = (event: PopStateEvent) => {
-      if (explicitDiscardAndLeaveRef.current) return;
-      const currentEntry = currentHistoryEntryRef.current;
-      if (!currentEntry) return;
-      guardStoryCanvasHistoryTraversal({
-        event,
-        risk: readLeaveRisk(),
-        currentEntry,
-        history: window.history,
-        onBlocked: queueBlockedNavigation,
-      });
-    };
-
-    // Next installs a bubble listener. Capturing lets the canvas restore the
-    // active entry before App Router consumes a dirty back/forward traversal.
-    window.addEventListener("popstate", guardHistoryTraversal, { capture: true });
-    return () => {
-      window.removeEventListener("popstate", guardHistoryTraversal, { capture: true });
-    };
-  }, [queueBlockedNavigation, readLeaveRisk]);
-
   const flushLayoutBeforeLeaving = useCallback(
     (keepalive: boolean) => {
       if (
@@ -1717,7 +1629,6 @@ function StoryProjectCanvasInner({
     disposedRef.current = false;
     let pageHiding = false;
     const flushBeforeLeaving = (keepalive: boolean) => {
-      if (explicitDiscardAndLeaveRef.current) return;
       if (saveDebounceTimerRef.current !== null) {
         window.clearTimeout(saveDebounceTimerRef.current);
         saveDebounceTimerRef.current = null;
@@ -1727,11 +1638,6 @@ function StoryProjectCanvasInner({
       flushDraftBeforeLeaving(keepalive);
       flushLayoutBeforeLeaving(keepalive);
     };
-    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (explicitDiscardAndLeaveRef.current || !readLeaveRisk().blocked) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
     const flushOnPageHide = () => {
       pageHiding = true;
       flushBeforeLeaving(true);
@@ -1739,7 +1645,6 @@ function StoryProjectCanvasInner({
     const restoreAfterPageShow = () => {
       pageHiding = false;
       disposedRef.current = false;
-      explicitDiscardAndLeaveRef.current = false;
       finalFlushGenerationRef.current += 1;
       finalFlushActiveRef.current = false;
       finalLayoutFlushGenerationRef.current += 1;
@@ -1769,23 +1674,15 @@ function StoryProjectCanvasInner({
       }
     };
 
-    window.addEventListener("beforeunload", warnBeforeUnload);
     window.addEventListener("pagehide", flushOnPageHide);
     window.addEventListener("pageshow", restoreAfterPageShow);
     return () => {
-      window.removeEventListener("beforeunload", warnBeforeUnload);
       window.removeEventListener("pagehide", flushOnPageHide);
       window.removeEventListener("pageshow", restoreAfterPageShow);
       disposedRef.current = true;
       flushBeforeLeaving(pageHiding);
     };
-  }, [
-    clearLayoutSaveRetry,
-    clearSaveRetry,
-    flushDraftBeforeLeaving,
-    flushLayoutBeforeLeaving,
-    readLeaveRisk,
-  ]);
+  }, [clearLayoutSaveRetry, clearSaveRetry, flushDraftBeforeLeaving, flushLayoutBeforeLeaving]);
 
   const focusedNode = useMemo(
     () => model?.nodes.find((node) => node.id === focusedNodeId) ?? null,
@@ -2254,7 +2151,7 @@ function StoryProjectCanvasInner({
         commitContent(next);
         selectCanvasNodeExclusively(
           updatedSource?.exit.kind === "choice"
-            ? storyDecisionCanvasNodeId(updatedSource.nodeId, updatedSource.exit.decisionId)
+            ? storyDecisionCanvasNodeId(updatedSource.nodeId)
             : source.data.nodeId
         );
       } else {
@@ -2496,111 +2393,17 @@ function StoryProjectCanvasInner({
     });
   };
 
-  const guardBackNavigation = useCallback(
-    (event: StoryCanvasNavigationEvent) => {
-      requestStoryCanvasNavigation(event, () => router.push("/story-studio"));
-    },
-    [requestStoryCanvasNavigation, router]
-  );
-
-  // Guarded programmatic navigation for the header's preview action — same
-  // leave protection as Back, minus a link event.
-  const guardedNavigate = useCallback(
-    (proceed: () => void) => {
-      requestStoryCanvasNavigation(null, proceed);
-    },
-    [requestStoryCanvasNavigation]
-  );
-
-  // Hand the canvas-owned pieces of the shared chrome to the store while
-  // mounted (Back leave guard, draft save barrier, guarded navigation); reset
-  // everything on unmount so the next visit starts clean.
+  // Hand the canvas-owned save and story-bible bridges to the shared chrome
+  // while mounted, then reset them on unmount.
   useEffect(() => {
-    setBackGuard(guardBackNavigation);
     setDraftBarrier(withSavedDraftSnapshot);
-    setGuardedNavigate(guardedNavigate);
     setFoundationWriter((field, value) => updateFoundationRef.current(field, value));
     return () => {
-      setBackGuard(null);
       setDraftBarrier(null);
-      setGuardedNavigate(null);
       setFoundationWriter(null);
       setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
     };
-  }, [
-    guardBackNavigation,
-    guardedNavigate,
-    withSavedDraftSnapshot,
-    setBackGuard,
-    setDraftBarrier,
-    setGuardedNavigate,
-    setFoundationWriter,
-    setInspectorTarget,
-  ]);
-
-  const exportFullCanvasRecovery = useCallback(() => {
-    const risk = readLeaveRisk();
-    if (!risk.blocked) {
-      pendingLeaveActionRef.current = null;
-      setPendingLeaveRisk(null);
-      return;
-    }
-
-    const draftContent = risk.planes.includes("draft")
-      ? (recoveryContentRef.current ?? inFlightContentRef.current ?? latestContentRef.current)
-      : null;
-    const layout = risk.planes.includes("layout")
-      ? (recoveryLayoutRef.current ?? latestDesiredLayoutRef.current)
-      : null;
-    downloadJsonArtifact(`fizzdragon-story-canvas-recovery-${projectId}.json`, {
-      artifactType: "fizzdragon.story-canvas-recovery",
-      schemaVersion: 1,
-      exportedAt: new Date().toISOString(),
-      workspaceId,
-      projectId,
-      recoveryPlanes: risk.planes,
-      draft: draftContent
-        ? {
-            localBaseRevision: revisionRef.current,
-            canonicalRevision: conflictRef.current?.current.revision ?? null,
-            content: draftContent,
-          }
-        : null,
-      layout: layout
-        ? {
-            localBaseRevision: layoutRevisionRef.current,
-            canonicalRevision: layoutConflictRef.current?.current.revision ?? null,
-            value: layout,
-          }
-        : null,
-    });
-    setPendingLeaveRisk(risk);
-    setRecoveryExported(true);
-  }, [projectId, readLeaveRisk, workspaceId]);
-
-  const discardRecoveryAndLeave = useCallback(() => {
-    const resume = pendingLeaveActionRef.current;
-    pendingLeaveActionRef.current = null;
-    explicitDiscardAndLeaveRef.current = true;
-    setPendingLeaveRisk(null);
-    setRecoveryExported(false);
-    resume?.();
-  }, []);
-
-  const leaveDialog = (
-    <StoryCanvasLeaveDialog
-      open={pendingLeaveRisk !== null}
-      planes={pendingLeaveRisk?.planes ?? []}
-      recoveryExported={recoveryExported}
-      onStay={() => {
-        pendingLeaveActionRef.current = null;
-        setPendingLeaveRisk(null);
-        setRecoveryExported(false);
-      }}
-      onExport={exportFullCanvasRecovery}
-      onDiscardAndLeave={discardRecoveryAndLeave}
-    />
-  );
+  }, [withSavedDraftSnapshot, setDraftBarrier, setFoundationWriter, setInspectorTarget]);
 
   // Full-screen surfaces are reserved for a true cold start. Canonical
   // projection refetches keep the previous snapshot mounted so the XYFlow
@@ -2621,20 +2424,16 @@ function StoryProjectCanvasInner({
     !model
   ) {
     return (
-      <>
-        <CanvasError
-          message={storyApiErrorMessage(
-            workbenchQuery.error ?? layoutQuery.error,
-            commonT("errors.generic")
-          )}
-          onBackNavigate={guardBackNavigation}
-          onRetry={() => {
-            void workbenchQuery.refetch();
-            void layoutQuery.refetch();
-          }}
-        />
-        {leaveDialog}
-      </>
+      <CanvasError
+        message={storyApiErrorMessage(
+          workbenchQuery.error ?? layoutQuery.error,
+          commonT("errors.generic")
+        )}
+        onRetry={() => {
+          void workbenchQuery.refetch();
+          void layoutQuery.refetch();
+        }}
+      />
     );
   }
 
@@ -2743,8 +2542,6 @@ function StoryProjectCanvasInner({
                 </button>
               </div>
             ) : null}
-
-            {leaveDialog}
 
             <section
               ref={canvasSectionRef}
@@ -3181,12 +2978,14 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
       <article
         {...mediaPreview.hoverProps}
         className={cn(
-          "relative overflow-visible rounded-[22px] bg-[oklch(0.205_0_0/0.72)] shadow-[0_22px_70px_rgba(0,0,0,0.38)] backdrop-blur-xl backdrop-saturate-150 transition",
-          selected && "bg-[oklch(0.24_0_0/0.86)] shadow-[0_28px_100px_rgba(0,0,0,0.55)]"
+          "relative isolate overflow-visible rounded-[22px] bg-popover/95 shadow-[0_24px_80px_rgba(0,0,0,0.5)] backdrop-blur-xl backdrop-saturate-150 transition-[background-color,box-shadow] duration-200",
+          selected
+            ? "bg-accent/95 shadow-[0_30px_100px_rgba(0,0,0,0.62)]"
+            : "hover:bg-muted/95 hover:shadow-[0_28px_90px_rgba(0,0,0,0.56)]"
         )}
         style={{ width: geometry.width, minHeight: geometry.minHeight }}
       >
-        <GlassRim width="1px" />
+        <GlassRim width={selected ? "1.5px" : "1px"} className="z-20" />
         <StoryPortHandle
           id="in"
           type="target"
@@ -3212,7 +3011,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         {data.kind === "clip" ? (
           coverage?.thumbnailUrl && !currentVideoSource ? (
             <div
-              className="relative overflow-hidden rounded-t-[22px] bg-black/30"
+              className="relative overflow-hidden rounded-t-[22px] bg-black/15"
               style={{ aspectRatio: data.frameAspectRatio }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element -- storyboard media thumbnail */}
@@ -3288,7 +3087,12 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             </div>
           </div>
         ) : null}
-        <div className="p-3">
+        <div
+          className={cn(
+            "p-3",
+            (data.kind === "clip" || isWorld) && "border-t border-white/[0.065] bg-white/[0.025]"
+          )}
+        >
           {data.kind === "clip" ? (
             <>
               {data.title ? (
@@ -3724,7 +3528,7 @@ function StoryVideoPreview({
 }) {
   return (
     <div
-      className={cn("relative w-full overflow-hidden bg-black/30", className)}
+      className={cn("relative w-full overflow-hidden bg-black/15", className)}
       style={{ aspectRatio: frameAspectRatio === "9:16" ? "9 / 16" : "16 / 9" }}
     >
       {source ? (
@@ -3897,15 +3701,7 @@ function CanvasLoading() {
   );
 }
 
-function CanvasError({
-  message,
-  onBackNavigate,
-  onRetry,
-}: {
-  message: string;
-  onBackNavigate: (event: StoryCanvasNavigationEvent) => void;
-  onRetry: () => void;
-}) {
+function CanvasError({ message, onRetry }: { message: string; onRetry: () => void }) {
   const t = useTranslations("storyStudio.canvas");
   return (
     <StoryProjectWorkState className="px-6">
@@ -3915,7 +3711,7 @@ function CanvasError({
         <p className="mt-2 text-xs leading-5 text-white/44">{message}</p>
         <div className="mt-5 flex justify-center gap-2">
           <Button variant="ghost" asChild>
-            <Link href="/story-studio" onNavigate={onBackNavigate}>
+            <Link href="/story-studio">
               <IconArrowLeft className="size-4" />
               {t("back")}
             </Link>

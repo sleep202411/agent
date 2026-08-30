@@ -25,8 +25,7 @@ import { StoryChaptersPanel } from "./project-canvas/story-chapters-panel";
  * Chapter manager as a layout-dock tenant: usable from every production step
  * without leaving it. Chapter data comes from the shared chapter-workbench
  * query; selection stays on the current step (only the ?chapter scope
- * changes) and runs through the canvas's leave guard when one is registered,
- * so unsaved-draft protection is identical to navigating from the canvas.
+ * changes).
  */
 export function StoryChaptersDock({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
@@ -34,7 +33,6 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment() ?? "canvas";
   const queryClient = useQueryClient();
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
-  const guardedNavigate = useStoryProjectUiStore((state) => state.guardedNavigate);
   const liveDraft = useStoryProjectUiStore((state) => state.liveDraft);
   const [creating, setCreating] = useState(false);
   const [pendingChapterId, setPendingChapterId] = useState<string | null>(null);
@@ -55,8 +53,7 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
     `/story-studio/projects/${encodeURIComponent(projectId)}/${segment}?chapter=${encodeURIComponent(chapterId)}`;
   const selectChapter = (chapterId: string) => {
     if (chapterId === activeChapterId) return;
-    const go = () => router.push(chapterHref(chapterId));
-    (guardedNavigate ?? ((proceed: () => void) => proceed()))(go);
+    router.push(chapterHref(chapterId));
   };
 
   const createChapter = async (title: string): Promise<boolean> => {

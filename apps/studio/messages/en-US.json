@@ -3657,24 +3657,6 @@
       "layoutConflict": {
         "description": "Someone rearranged this canvas. Your local layout is preserved; export it before discarding if needed."
       },
-      "leaveGuard": {
-        "title": "Leave with local recovery work?",
-        "description": "Some work exists only in this browser and cannot be saved safely right now. Export a recovery file before leaving, or explicitly discard it.",
-        "planes": {
-          "draft": {
-            "title": "Story draft",
-            "description": "Unsaved or conflicted story content will be lost."
-          },
-          "layout": {
-            "title": "Canvas layout",
-            "description": "Unsaved node positions will be lost."
-          }
-        },
-        "stay": "Stay on canvas",
-        "export": "Export recovery",
-        "discardAndLeave": "Discard and leave",
-        "exported": "Recovery file exported. Keep it until your work is restored."
-      },
       "graphError": {
         "generic": "That graph change conflicts with the current next step. Remove the existing route or choose a compatible target first.",
         "dismiss": "Dismiss graph message"

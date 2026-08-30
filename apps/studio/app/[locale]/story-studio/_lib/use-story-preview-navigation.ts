@@ -11,10 +11,9 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
  * Entering the preview, from wherever it is offered (header button, stepper).
  *
  * A preview compiles the latest SAVED draft, so this is never a plain link:
- * while the canvas is mounted it publishes a save barrier and a leave guard,
- * and both must run first — otherwise the creator walks a story that is one
- * autosave behind what they just edited. On the other steps both are absent
- * and this degrades to a normal navigation.
+ * while the canvas is mounted it publishes a save barrier that must run first
+ * — otherwise the creator walks a story that is one autosave behind what they
+ * just edited. On the other steps it degrades to normal navigation.
  */
 export function useStoryPreviewNavigation(projectId: string): {
   openPreview: () => Promise<void>;
@@ -24,7 +23,6 @@ export function useStoryPreviewNavigation(projectId: string): {
   const router = useRouter();
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
-  const guardedNavigate = useStoryProjectUiStore((state) => state.guardedNavigate);
   const [pending, setPending] = useState(false);
 
   const openPreview = useCallback(async () => {
@@ -39,21 +37,20 @@ export function useStoryPreviewNavigation(projectId: string): {
           `/story-studio/projects/${encodeURIComponent(projectId)}/playtest${chapterQuery}`
         );
       };
-      const go = () => (guardedNavigate ?? ((proceed: () => void) => proceed()))(navigate);
       if (draftBarrier) {
         await draftBarrier(async () => {
-          go();
+          navigate();
           return null;
         });
       } else {
-        go();
+        navigate();
       }
     } catch (error) {
       toast.error(storyApiErrorMessage(error, t("workingPreview.errorFallback")));
     } finally {
       setPending(false);
     }
-  }, [activeChapterId, draftBarrier, guardedNavigate, pending, projectId, router, t]);
+  }, [activeChapterId, draftBarrier, pending, projectId, router, t]);
 
   return { openPreview, pending };
 }

@@ -152,13 +152,13 @@ describe("StoryPlotProposalCard", () => {
     expect(model.edges).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          source: expect.stringContaining("@decision/"),
+          source: expect.stringContaining("__decision__:"),
           target: "scene.dawn",
           sourceHandle: "choice:open",
           data: expect.objectContaining({ choiceId: "open" }),
         }),
         expect.objectContaining({
-          source: expect.stringContaining("@decision/"),
+          source: expect.stringContaining("__decision__:"),
           target: "scene.dawn",
           sourceHandle: "choice:wait",
           data: expect.objectContaining({ choiceId: "wait" }),

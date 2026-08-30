@@ -31,7 +31,6 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio");
   // Phones give the chat view the whole screen — the bar only shows with work.
   const mobileView = useStoryProjectUiStore((state) => state.mobileView);
-  const backGuard = useStoryProjectUiStore((state) => state.backGuard);
   const active = STEP_BY_SEGMENT[segment as keyof typeof STEP_BY_SEGMENT];
 
   const workbenchQuery = useQuery({
@@ -56,7 +55,6 @@ export function StoryProjectHeader({ projectId }: { projectId: string }) {
       <div className="flex min-w-0 items-center gap-2.5">
         <Link
           href="/story-studio"
-          onNavigate={backGuard ?? undefined}
           aria-label={t("canvas.back")}
           className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-white/66 transition-colors hover:bg-white/[0.12] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
         >

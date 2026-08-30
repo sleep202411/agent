@@ -5,7 +5,7 @@ import { buildStoryCanvasModel, storyDecisionCanvasNodeId } from "./story-projec
 describe("film-only story canvas projection", () => {
   it("projects one decision card whose option rows retain independent anchors", () => {
     const model = buildStoryCanvasModel(draft(), "en-US", { clip: "Clip" });
-    const decisionNodeId = storyDecisionCanvasNodeId("clip:a", "decision:a");
+    const decisionNodeId = storyDecisionCanvasNodeId("clip:a");
     expect(model.nodes.map((node) => node.id)).toEqual(["clip:a", decisionNodeId, "clip:b"]);
     expect(model.nodes.map((node) => node.data.kind)).toEqual(["clip", "decision", "clip"]);
     expect(model.nodes[0]?.data).toMatchObject({
@@ -31,7 +31,7 @@ describe("film-only story canvas projection", () => {
 
   it("projects scene completion into the decision and branches from option handles", () => {
     const model = buildStoryCanvasModel(draft(), "en-US");
-    const decisionNodeId = storyDecisionCanvasNodeId("clip:a", "decision:a");
+    const decisionNodeId = storyDecisionCanvasNodeId("clip:a");
     expect(model.edges.map((edge) => edge.data.kind)).toEqual(["decision", "choice"]);
     expect(model.edges[0]).toMatchObject({ source: "clip:a", target: decisionNodeId });
     expect(model.edges[1]).toMatchObject({
@@ -65,6 +65,10 @@ describe("film-only story canvas projection", () => {
   it("omits story-bible characters from the canvas entirely", () => {
     const model = buildStoryCanvasModel(draft(), "en-US");
     expect(model.nodes.some((node) => node.id.startsWith("character:"))).toBe(false);
+  });
+
+  it("uses the persisted canvas-layout identity for decision projections", () => {
+    expect(storyDecisionCanvasNodeId("clip:a")).toBe("__decision__:clip:a");
   });
 });
 

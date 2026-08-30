@@ -3657,24 +3657,6 @@
       "layoutConflict": {
         "description": "其他工作階段重新排列了畫布。你的本機佈局已保留；如需留存，請先匯出再捨棄。"
       },
-      "leaveGuard": {
-        "title": "仍有本機恢復內容，確定離開嗎？",
-        "description": "部分內容目前只儲存在這個瀏覽器中，無法安全寫入。請先匯出恢復檔案，或明確捨棄後離開。",
-        "planes": {
-          "draft": {
-            "title": "故事草稿",
-            "description": "未儲存或發生衝突的故事內容將會遺失。"
-          },
-          "layout": {
-            "title": "畫布佈局",
-            "description": "未儲存的節點位置將會遺失。"
-          }
-        },
-        "stay": "留在畫布",
-        "export": "匯出恢復檔案",
-        "discardAndLeave": "捨棄並離開",
-        "exported": "恢復檔案已匯出。請保留該檔案，直到內容恢復完成。"
-      },
       "graphError": {
         "generic": "這次圖修改與目前後續走向衝突。請先移除已有路由，或選擇相容的目標節點。",
         "dismiss": "關閉故事圖提示"

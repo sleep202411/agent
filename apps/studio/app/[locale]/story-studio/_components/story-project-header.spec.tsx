@@ -45,7 +45,7 @@ describe("StoryProjectHeader", () => {
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    useStoryProjectUiStore.setState({ mobileView: "work", backGuard: null });
+    useStoryProjectUiStore.setState({ mobileView: "work" });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
