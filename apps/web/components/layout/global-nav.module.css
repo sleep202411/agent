@@ -724,6 +724,10 @@
     top: 24px;
   }
 
+  .fd-secret-header.fd-secret-header-with-page-rail {
+    inset-inline-start: 84px;
+  }
+
   .fd-secret-nav-shell {
     margin-left: 0;
   }
@@ -742,6 +746,12 @@
 
   .fd-secret-account-cluster {
     display: inline-flex;
+  }
+}
+
+@media (min-width: 1152px) {
+  .fd-secret-header.fd-secret-header-with-page-rail {
+    inset-inline-start: 204px;
   }
 }
 
@@ -825,5 +835,14 @@
 
   .fd-secret-header .fd-secret-account-bell :where(button) {
     width: 48px;
+  }
+}
+
+/* At the lower end of the desktop breakpoint, compact the menu spacing
+   so the header still clears the crew rail and right-side actions. */
+@media (min-width: 1024px) and (max-width: 1279px) {
+  .fd-secret-header.fd-secret-header-with-page-rail .fd-secret-nav-list,
+  .fd-secret-header.fd-secret-header-with-page-rail .fd-secret-nav-link {
+    padding-inline: 7px;
   }
 }
