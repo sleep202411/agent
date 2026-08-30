@@ -1,5 +1,5 @@
 /**
- * Minimal API client for the NestJS backend (`/aurora/*`).
+ * Minimal same-origin API client for Nest (`/aurora/*`) and Java (`/api/*`).
  *
  * Same-origin: studio proxies `/aurora/*` to the server and the satoken
  * cookie rides along (credentials: "include") — in local dev the cookie comes
@@ -33,7 +33,7 @@ export interface ApiRequestConfig extends Omit<RequestInit, "body"> {
    * routes derive tenancy and authorization from their project id and must
    * not inherit the ambient Workspace header.
    */
-  requestScope?: "workspace" | "project";
+  requestScope?: "workspace" | "project" | "user";
   /** Return the whole envelope instead of just `data`. */
   raw?: boolean;
 }

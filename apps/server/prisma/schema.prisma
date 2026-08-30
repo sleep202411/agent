@@ -9390,12 +9390,9 @@ model StoryExperiencePublication {
   @@map("story_experience_publications")
 }
 
-/// Durable exact-request receipt for a creator-only Java draft release.
-/// Drafts deliberately do not grant anonymous media access and never enter the
-/// public current-version reconciliation plane. An uncertain request is
-/// reconciled only by replaying the same immutable request under a fresh
-/// creator credential; `(gameId, contentVersion, draft)` is the Java
-/// idempotency identity.
+/// Legacy draft-release receipt, reused only to authorize the immutable media
+/// referenced by a prepared review candidate. Java owns the moderation state;
+/// this row does not claim that Java accepted or published the candidate.
 model StoryExperienceDraftRelease {
   id                String                           @id @default(uuid(7)) @db.Uuid
   buildId           String                           @unique @map("build_id") @db.Uuid
@@ -9436,7 +9433,7 @@ model StoryExperienceDraftRelease {
   @@map("story_experience_draft_releases")
 }
 
-/// Durable release lifecycle for a MULTI-CHAPTER work. A chapter ends in an
+/// Durable media receipt for a MULTI-CHAPTER release candidate. A chapter ends in an
 /// ending, so such a work has no single publishable Build: each chapter ships
 /// as its own Runtime Manifest object and Java receives the Game Manifest
 /// table of contents that lists them. This row therefore hangs off the project
@@ -9446,7 +9443,7 @@ model StoryExperienceDraftRelease {
 /// newly finished chapter changes the hash, which is what makes Java's
 /// immutable (gameId, contentVersion) identity land on a new release instead
 /// of silently re-serving the previous chapter set — while re-running the same
-/// publish converges on this row and re-POSTs nothing.
+/// candidate converges on this row. Java remains the only publication authority.
 model StoryExperienceGameRelease {
   id                  String                           @id @default(uuid(7)) @db.Uuid
   storyProjectId      String                           @map("story_project_id") @db.Uuid

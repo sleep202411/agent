@@ -4,10 +4,8 @@ import { StorageModule } from '../infra/storage/storage.module';
 import { MediaModule } from '../media/media.module';
 import { StoryBuildController } from './story-build.controller';
 import { StoryBuildService } from './story-build.service';
-import { StoryExperienceReleaseGateway } from './story-experience-release.gateway';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
 import { StoryChapterManifestStorageService } from './story-chapter-manifest-storage.service';
-import { StoryGameReleaseService } from './story-game-release.service';
 import { StoryReferenceController } from './story-reference.controller';
 import { StoryReferenceService } from './story-reference.service';
 import { StoryAccessModule } from './story-access.module';
@@ -35,10 +33,8 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryProjectsService,
     StoryReferenceService,
     StoryBuildService,
-    StoryExperienceReleaseGateway,
     StoryExperienceReleaseService,
     StoryChapterManifestStorageService,
-    StoryGameReleaseService,
     StoryWorkingPreviewService,
   ],
   exports: [StoryProjectsService, StoryAccessModule, StoryAgentRunModule],

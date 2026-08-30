@@ -11,12 +11,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import type { StoryBuildDiagnostic } from "@/lib/story-projects-api";
 import { cn } from "@/lib/utils";
 import { isStoryPublicationPending, type StoryPublicationState } from "./use-story-publication";
 import type { StoryPublicationActivePhase } from "./story-publication-flow";
 
-const PUBLICATION_PHASES = ["saving", "building", "publishing"] as const;
+const PUBLICATION_PHASES = ["saving", "preparing", "submitting"] as const;
 
 export function StoryPublicationDialog({
   state,
@@ -94,28 +93,19 @@ export function StoryPublicationDialog({
             <PublicationProgress phase={state.status} />
           ) : null}
 
-          {state.status === "failed" ? (
-            <PublicationFailure message={state.message} diagnostics={state.diagnostics} />
-          ) : null}
+          {state.status === "failed" ? <PublicationFailure message={state.message} /> : null}
 
           {state.status === "succeeded" ? (
-            <div className="space-y-3">
-              <div className="rounded-2xl bg-white/[0.055] p-4">
-                <div className="flex items-start gap-3">
-                  <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-black">
-                    <IconCheck className="size-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-white/80">{t("success.version")}</p>
-                    <p className="mt-1 text-[11px] leading-5 text-white/46">
-                      {t("success.detail")}
-                    </p>
-                  </div>
+            <div className="rounded-2xl bg-white/[0.055] p-4">
+              <div className="flex items-start gap-3">
+                <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white text-black">
+                  <IconCheck className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-white/80">{t("success.version")}</p>
+                  <p className="mt-1 text-[11px] leading-5 text-white/46">{t("success.detail")}</p>
                 </div>
               </div>
-              {/* Unfilled work never blocks a release, so the release itself is
-                  where the creator learns what shipped empty. */}
-              <PublishedGaps diagnostics={state.build.diagnostics} />
             </div>
           ) : null}
         </div>
@@ -224,81 +214,11 @@ function PublicationProgress({ phase }: { phase: StoryPublicationActivePhase }) 
   );
 }
 
-/**
- * What shipped unfilled. A release is never refused for missing footage — a
- * work in progress is a legitimate thing to publish — so this is where the
- * creator finds out which scenes their players will walk through empty.
- */
-function PublishedGaps({ diagnostics }: { diagnostics: StoryBuildDiagnostic[] }) {
-  const t = useTranslations("storyStudio.canvas.publish");
-  const gaps = diagnostics.filter(
-    (diagnostic) =>
-      diagnostic.code === "STORY_BUILD_CLIP_MEDIA_REQUIRED" ||
-      diagnostic.code === "STORY_BUILD_SEQUENCE_REQUIRED"
-  );
-  if (gaps.length === 0) return null;
-  const scenes = new Set(gaps.map((gap) => gap.entityId ?? "")).size;
+function PublicationFailure({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl bg-amber-300/[0.07] p-4">
-      <div className="flex items-start gap-3">
-        <IconAlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-200/80" />
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-amber-100/90">
-            {t("gaps.title", { count: scenes })}
-          </p>
-          <p className="mt-1 text-[11px] leading-5 text-white/52">{t("gaps.detail")}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PublicationFailure({
-  message,
-  diagnostics,
-}: {
-  message: string;
-  diagnostics: StoryBuildDiagnostic[];
-}) {
-  const t = useTranslations("storyStudio.canvas.publish");
-  return (
-    <div className="space-y-3">
-      <div className="flex items-start gap-3 rounded-2xl bg-destructive/10 p-4 text-destructive">
-        <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
-        <p className="min-w-0 text-xs leading-5">{message}</p>
-      </div>
-      {diagnostics.length > 0 ? (
-        <div className="rounded-2xl bg-white/[0.045] p-3">
-          <p className="px-1 text-[10px] font-semibold tracking-[0.08em] text-white/38 uppercase">
-            {t("diagnostics.title", { count: diagnostics.length })}
-          </p>
-          <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto">
-            {diagnostics.map((diagnostic, index) => (
-              <div
-                key={`${diagnostic.code}:${diagnostic.entityId ?? "global"}:${index}`}
-                className="rounded-xl bg-white/[0.045] px-3 py-2.5"
-              >
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      "text-[9px] font-semibold tracking-[0.08em] uppercase",
-                      diagnostic.severity === "error" ? "text-destructive" : "text-white/42"
-                    )}
-                  >
-                    {diagnostic.code}
-                  </span>
-                  {diagnostic.entityType || diagnostic.entityId ? (
-                    <span className="truncate text-[9px] text-white/28">
-                      {[diagnostic.entityType, diagnostic.entityId].filter(Boolean).join(" · ")}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="mt-1 text-[11px] leading-4 text-white/58">{diagnostic.message}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
+    <div className="flex items-start gap-3 rounded-2xl bg-destructive/10 p-4 text-destructive">
+      <IconAlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <p className="min-w-0 text-xs leading-5">{message}</p>
     </div>
   );
 }
@@ -312,8 +232,8 @@ function dialogTitle(state: StoryPublicationState, t: PublicationT): string {
     case "failed":
       return t("failure.title");
     case "saving":
-    case "building":
-    case "publishing":
+    case "preparing":
+    case "submitting":
       return t("progress.title");
     case "closed":
     case "confirming":
@@ -328,8 +248,8 @@ function dialogDescription(state: StoryPublicationState, t: PublicationT): strin
     case "failed":
       return t("failure.description");
     case "saving":
-    case "building":
-    case "publishing":
+    case "preparing":
+    case "submitting":
       return t("progress.description");
     case "closed":
     case "confirming":
@@ -341,10 +261,10 @@ function phaseTitle(phase: StoryPublicationActivePhase, t: PublicationT): string
   switch (phase) {
     case "saving":
       return t("phases.saving.title");
-    case "building":
-      return t("phases.building.title");
-    case "publishing":
-      return t("phases.publishing.title");
+    case "preparing":
+      return t("phases.preparing.title");
+    case "submitting":
+      return t("phases.submitting.title");
   }
 }
 
@@ -352,15 +272,15 @@ function phaseDescription(phase: StoryPublicationActivePhase, t: PublicationT): 
   switch (phase) {
     case "saving":
       return t("phases.saving.description");
-    case "building":
-      return t("phases.building.description");
-    case "publishing":
-      return t("phases.publishing.description");
+    case "preparing":
+      return t("phases.preparing.description");
+    case "submitting":
+      return t("phases.submitting.description");
   }
 }
 
 function isPublicationActivePhase(
   value: StoryPublicationState["status"]
 ): value is StoryPublicationActivePhase {
-  return value === "saving" || value === "building" || value === "publishing";
+  return value === "saving" || value === "preparing" || value === "submitting";
 }

@@ -354,39 +354,14 @@ application rollback with no database work. Note the direction: rolling back to
 release A is fine (its code writes the flag, which the relaxed schema still
 accepts); rolling back _past_ release A is fine too, for the same reason.
 
-### What creators see afterwards, and why it is correct
+### Creator publication status
 
-Retiring the flag removed a field from the preimage of `storyVideoSnapshotHash`,
-and that digest is persisted in `story_builds.video_snapshot_hash`. The Studio
-canvas compares a **stored** hash from the published Build against a **freshly
-computed** one to decide whether the header shows "Published". Two hashes made
-under two different definitions can never match, so from release B every project
-that was published before it reads as _not_ current, and its Publish button goes
-live again, until it is published once more.
-
-This was accepted rather than papered over, and it is not a false statement:
-
-- The digest only changes for a snapshot that has entries at all — i.e. a draft
-  with at least one clip node. A project with none hashes the empty list, which
-  is byte-identical before and after, and keeps reading as published.
-- A Build only reaches `ready` when every clip node froze a real video, so every
-  affected project's published manifest contains video assets — and those assets
-  carry the retired `audioMode` key, which the compiler no longer emits. The
-  live artifact really is not what Build would produce today. Republishing is
-  both the correct signal and the correct fix.
-
-Teaching the comparison to tolerate the old digest was rejected: recomputing a
-historical hash needs the selections as they were at build time, and
-`selectionVersion` is part of the digest but is frozen nowhere in the Build; and
-any tolerance keyed on the old preimage needs `current_has_audio`, which step 3
-drops — a compatibility shim with an expiry date, which is precisely what this
-three-release plan exists to avoid. The reasoning also lives on
-`isExactCurrentStoryRelease` in
-`apps/studio/app/[locale]/story-studio/_components/project-canvas/story-current-release.ts`.
-
-Nothing to do operationally. Expect creator questions of the form "why does my
-published film want publishing again"; the answer is "its published copy predates
-the audio-flag removal — publish once and it stops asking".
+The Studio header now reads the interactive-film status directly from Java by
+project ID. It does not infer publication state by comparing a Build's stored
+`storyVideoSnapshotHash` with the current Nest draft. A work published before
+this migration therefore remains `published` until the creator submits another
+version or the work is taken offline; Java remains the only publication-state
+authority.
 
 ---
 

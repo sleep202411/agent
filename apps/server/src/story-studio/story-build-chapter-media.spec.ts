@@ -45,6 +45,7 @@ function frozenChapterAsset(
       scope: { kind: 'subgraph', entryNodeId: 'clip:p-s1' },
       runtimeSchemaVersion: 2,
       experiencePublication: null,
+      experienceDraftRelease: null,
       gameReleaseChapters,
     },
     asset: {
@@ -81,7 +82,20 @@ function frozenChapterAsset(
   };
 }
 
-function serviceFor(frozen: ReturnType<typeof frozenChapterAsset>) {
+function frozenWholeAsset(experienceDraftRelease: { status: string } | null) {
+  const frozen = frozenChapterAsset([]);
+  return {
+    ...frozen,
+    build: {
+      ...frozen.build,
+      kind: StoryBuildKind.production,
+      scope: { kind: 'full' },
+      experienceDraftRelease,
+    },
+  };
+}
+
+function serviceFor(frozen: unknown) {
   const storage = {
     createReadUrl: jest.fn().mockResolvedValue({
       url: SIGNED_URL,
@@ -104,11 +118,42 @@ function serviceFor(frozen: ReturnType<typeof frozenChapterAsset>) {
   return { service, permissions, storage };
 }
 
-describe('published chapter media delivery', () => {
-  it('serves a chapter Build anonymously once a game release listed it', async () => {
+describe('release-candidate media delivery', () => {
+  it('keeps a whole production Build private without a candidate receipt', async () => {
+    const { service } = serviceFor(frozenWholeAsset(null));
+
+    await expect(
+      service.issueBuildAssetReadUrl(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('serves a whole production Build anonymously once a candidate receipt exists', async () => {
+    const { service } = serviceFor(frozenWholeAsset({ status: 'pending' }));
+
+    await expect(
+      service.issueBuildAssetReadUrl(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).resolves.toEqual({
+      url: 'https://cdn.example.test/video.mp4',
+      expiresAt: null,
+    });
+  });
+
+  it('serves a chapter Build anonymously once a candidate receipt lists it', async () => {
     const { service, permissions, storage } = serviceFor(
       frozenChapterAsset([
-        { release: { status: 'confirmed', mediaAuthorizationRevokedAt: null } },
+        { release: { status: 'pending', mediaAuthorizationRevokedAt: null } },
       ]),
     );
 

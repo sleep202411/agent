@@ -80,9 +80,11 @@ describe("admin text-game Java boundary", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       `${JAVA_URL}/api/admin/text-game/reviewing?status=published&page=2&pageSize=10&q=World`,
       expect.objectContaining({
-        headers: expect.objectContaining({ "X-Admin-Api-Token": API_TOKEN }),
+        headers: expect.any(Headers),
       })
     );
+    const [, listInit] = fetchMock.mock.calls[0] as unknown as [RequestInfo | URL, RequestInit];
+    expect(new Headers(listInit.headers).get("X-Admin-Api-Token")).toBe(API_TOKEN);
   });
 
   it("identity-checks moderation detail responses", async () => {
@@ -105,9 +107,14 @@ describe("admin text-game Java boundary", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ action: "approve" }),
-        headers: expect.objectContaining({ "X-Admin-Api-Token": API_TOKEN }),
+        headers: expect.any(Headers),
       })
     );
+    const [, transitionInit] = fetchMock.mock.calls[0] as unknown as [
+      RequestInfo | URL,
+      RequestInit,
+    ];
+    expect(new Headers(transitionInit.headers).get("X-Admin-Api-Token")).toBe(API_TOKEN);
 
     vi.stubGlobal(
       "fetch",

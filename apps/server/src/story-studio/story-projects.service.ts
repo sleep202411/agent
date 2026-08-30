@@ -1437,25 +1437,6 @@ export class StoryProjectsService {
             tx.storyBuild.findFirst({
               where: { storyProjectId: projectId },
               orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-              include: {
-                experiencePublication: {
-                  select: {
-                    status: true,
-                    gameId: true,
-                    contentVersion: true,
-                    manifestUrl: true,
-                    publishedAt: true,
-                    mediaAuthorizedAt: true,
-                    mediaAuthorizationRevokedAt: true,
-                    authorityIsCurrent: true,
-                    authorityGameExists: true,
-                    authorityCurrentVersion: true,
-                    authorityCheckedAt: true,
-                    lastErrorCode: true,
-                    lastErrorDetail: true,
-                  },
-                },
-              },
             }),
           ]);
         const draft = project.draft;
@@ -1892,21 +1873,6 @@ export class StoryProjectsService {
     sourceDraftRevision: number;
     videoSnapshotHash: string;
     diagnostics: Prisma.JsonValue;
-    experiencePublication: {
-      status: 'pending' | 'confirmed' | 'uncertain' | 'rejected';
-      gameId: string;
-      contentVersion: string;
-      manifestUrl: string | null;
-      publishedAt: Date | null;
-      mediaAuthorizedAt: Date;
-      mediaAuthorizationRevokedAt: Date | null;
-      authorityIsCurrent: boolean | null;
-      authorityGameExists: boolean | null;
-      authorityCurrentVersion: string | null;
-      authorityCheckedAt: Date | null;
-      lastErrorCode: string | null;
-      lastErrorDetail: string | null;
-    } | null;
     createdAt: Date;
     completedAt: Date | null;
   }): StoryBuildSummaryDto {
@@ -1923,30 +1889,6 @@ export class StoryProjectsService {
       sourceDraftRevision: row.sourceDraftRevision,
       videoSnapshotHash: row.videoSnapshotHash,
       diagnostics: buildDiagnostics(row.diagnostics),
-      publication: row.experiencePublication
-        ? {
-            status: row.experiencePublication.status,
-            gameId: row.experiencePublication.gameId,
-            contentVersion: row.experiencePublication.contentVersion,
-            manifestUrl: row.experiencePublication.manifestUrl,
-            publishedAt:
-              row.experiencePublication.publishedAt?.toISOString() ?? null,
-            mediaAuthorizedAt:
-              row.experiencePublication.mediaAuthorizedAt.toISOString(),
-            mediaAuthorizationRevokedAt:
-              row.experiencePublication.mediaAuthorizationRevokedAt?.toISOString() ??
-              null,
-            authorityIsCurrent: row.experiencePublication.authorityIsCurrent,
-            authorityGameExists: row.experiencePublication.authorityGameExists,
-            authorityCurrentVersion:
-              row.experiencePublication.authorityCurrentVersion,
-            authorityCheckedAt:
-              row.experiencePublication.authorityCheckedAt?.toISOString() ??
-              null,
-            lastErrorCode: row.experiencePublication.lastErrorCode,
-            lastErrorDetail: row.experiencePublication.lastErrorDetail,
-          }
-        : null,
       createdAt: row.createdAt.toISOString(),
       completedAt: row.completedAt?.toISOString() ?? null,
     };

@@ -1,41 +1,56 @@
 "use client";
 
-import { IconCheck, IconCloudUpload, IconLoader2 } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import {
+  IconAlertTriangle,
+  IconCheck,
+  IconCloudOff,
+  IconCloudUpload,
+  IconLoader2,
+} from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { getStoryExperienceCurrentRelease, getStoryWorkbench } from "@/lib/story-projects-api";
+import {
+  getInteractiveFilmPublication,
+  interactiveFilmPublicationQueryKey,
+  offlineInteractiveFilm,
+  type InteractiveFilmPublication,
+  type InteractiveFilmPublicationStatus,
+} from "@/lib/interactive-film-api";
+import { getStoryWorkbench, storyApiErrorMessage } from "@/lib/story-projects-api";
 import { storyChapterWorkbenchQueryKey } from "../_lib/use-story-chapter-workbench";
-import { isExactCurrentStoryRelease } from "./project-canvas/story-current-release";
 import { StoryPublicationDialog } from "./project-canvas/story-publication-dialog";
-import { StoryProjectCreditsBadge } from "./story-project-credits-badge";
 import {
   useStoryPublication,
   type SavedDraftSnapshotRunner,
 } from "./project-canvas/use-story-publication";
+import { StoryProjectCreditsBadge } from "./story-project-credits-badge";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 
 const LABEL_CLASS = "@max-[1000px]:sr-only";
 
-/**
- * Project-level Preview/Publish, mounted in the layout header on every step.
- * While the canvas is mounted it supplies live signals through the store
- * (draft head, save barrier, leave guard) so the buttons keep exact canvas
- * semantics; on the other steps the server projection is the truth and the
- * barrier is a plain pass-through of the stored revision.
- */
+/** Project publication status is read directly from Java by projectId. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
+  const queryClient = useQueryClient();
+  const [offlineIntent, setOfflineIntent] = useState(false);
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const liveDraft = useStoryProjectUiStore((state) => state.liveDraft);
   const draftBarrier = useStoryProjectUiStore((state) => state.draftBarrier);
 
   const workbenchQuery = useQuery({
-    // With a chapter in scope this shares the dock tenants' cache entry; the
-    // header also renders before one resolves, hence the project-level key.
     queryKey: activeChapterId
       ? storyChapterWorkbenchQueryKey(projectId, activeChapterId)
       : ["story-studio", "script-workbench", projectId],
@@ -43,133 +58,261 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     retry: false,
   });
   const workbench = workbenchQuery.data ?? null;
-
-  const currentReleaseQuery = useQuery({
-    queryKey: ["story-studio", "current-release", projectId],
-    queryFn: () => getStoryExperienceCurrentRelease(projectId),
+  const canRelease = Boolean(workbench?.project.capabilities.includes("story.release"));
+  const publicationKey = interactiveFilmPublicationQueryKey(projectId);
+  const publicationQuery = useQuery({
+    queryKey: publicationKey,
+    queryFn: () => getInteractiveFilmPublication(projectId),
+    enabled: canRelease,
     retry: 1,
     staleTime: 15_000,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
   });
+  const publication = publicationQuery.data ?? null;
+  const status = publication?.status ?? null;
 
-  // Canvas live head wins while it is mounted; other steps have nothing
-  // unsaved, so the stored draft is the head and the barrier is trivial.
   const draftRevision = liveDraft?.revision ?? workbench?.draft.revision ?? null;
-  const settled = liveDraft ? liveDraft.settled : true;
   const conflicted = liveDraft?.conflicted ?? false;
   const videoSnapshotHash = liveDraft
     ? liveDraft.videoSnapshotHash
     : (workbench?.video.snapshotHash ?? null);
   const ready = liveDraft !== null || workbench !== null;
-
   const storedRevision = workbench?.draft.revision;
   const fallbackRunner = useCallback<SavedDraftSnapshotRunner>(
     (submit) => {
-      if (storedRevision == null) {
-        return Promise.reject(new Error(commonT("errors.generic")));
-      }
+      if (storedRevision == null) return Promise.reject(new Error(commonT("errors.generic")));
       return submit(storedRevision);
     },
     [storedRevision, commonT]
   );
 
-  const publication = useStoryPublication({
+  const submission = useStoryPublication({
     projectId,
     capabilities: workbench?.project.capabilities ?? [],
+    expectedVideoSnapshotHash: videoSnapshotHash,
     withSavedDraftSnapshot: draftBarrier ?? fallbackRunner,
   });
-
-  // Both hashes of the local check were produced in THIS session; the
-  // authority check compares against the stored release. Semantics preserved
-  // verbatim from the canvas implementation.
-  const locallyConfirmed = Boolean(
-    settled &&
-    draftRevision != null &&
-    publication.lastSucceeded?.sourceDraftRevision === draftRevision &&
-    publication.lastSucceeded.build.videoSnapshotHash === videoSnapshotHash
-  );
-  const authorityConfirmed =
-    settled &&
-    draftRevision != null &&
-    isExactCurrentStoryRelease(currentReleaseQuery.data, {
-      draftRevision,
-      videoSnapshotHash: videoSnapshotHash ?? "",
-    });
-  const published = authorityConfirmed || (!currentReleaseQuery.data && locallyConfirmed);
-
-  const canMutate = publication.canPublish && ready && !conflicted;
-  const canPublish = canMutate && !currentReleaseQuery.isLoading;
-  const publishDisabledReason = currentReleaseQuery.isLoading
+  const canMutate = submission.canSubmit && ready && !conflicted;
+  const statusReady = !publicationQuery.isLoading && !publicationQuery.isError;
+  const canSubmitStatus = status === null || status === "draft" || status === "offline";
+  const canSubmit = canMutate && statusReady && canSubmitStatus;
+  const submitDisabledReason = publicationQuery.isLoading
     ? t("publish.statusChecking")
-    : publication.disabledReason;
+    : publicationQuery.isError
+      ? t("publish.statusUnavailable")
+      : status === "reviewing"
+        ? t("publish.reviewingLocked")
+        : status === "published"
+          ? t("publish.publishedUpdateLocked")
+          : submission.disabledReason;
+  const canOffline = canRelease && (status === "reviewing" || status === "published");
   const canEdit = !workbench || workbench.project.capabilities.includes("story.edit");
 
-  const publishButton = (
+  const offlineMutation = useMutation({
+    mutationFn: () => offlineInteractiveFilm(projectId),
+    onSuccess: (next) => {
+      queryClient.setQueryData<InteractiveFilmPublication>(publicationKey, next);
+      setOfflineIntent(false);
+      toast.success(t("publish.offline.success"));
+      void queryClient.invalidateQueries({ queryKey: publicationKey });
+    },
+    onError: (error) => toast.error(storyApiErrorMessage(error, t("publish.errors.offlineFailed"))),
+  });
+
+  const submitButton = (
     <Button
       type="button"
       variant="ghost"
       size="lg"
-      onClick={publication.open}
-      disabled={!canPublish || publication.isPending || published}
+      onClick={submission.open}
+      disabled={!canSubmit || submission.isPending}
       className="h-9 gap-2 rounded-[14px] bg-transparent px-3 font-semibold text-white/68 hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed"
     >
-      {publication.isPending ? (
+      {submission.isPending ? (
         <IconLoader2 className="size-4 animate-spin" />
-      ) : published ? (
+      ) : status === "reviewing" ? (
+        <IconLoader2 className="size-4" />
+      ) : status === "published" ? (
         <IconCheck className="size-4" />
       ) : (
         <IconCloudUpload className="size-4" />
       )}
       <span className={LABEL_CLASS}>
-        {publication.isPending
+        {submission.isPending
           ? t("publish.actionPending")
-          : published
-            ? t("publish.actionPublished")
-            : t("publish.action")}
+          : status === "reviewing"
+            ? t("publish.actionReviewing")
+            : status === "published"
+              ? t("publish.actionPublished")
+              : publication?.rejectReason
+                ? t("publish.actionResubmit")
+                : status === "offline"
+                  ? t("publish.actionUpdate")
+                  : t("publish.action")}
       </span>
     </Button>
   );
 
   return (
     <>
-      {!canPublish && publishDisabledReason ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              tabIndex={0}
-              className="inline-flex rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
-              aria-label={`${t("publish.action")}: ${publishDisabledReason}`}
+      {canRelease ? (
+        <>
+          <PublicationStatusBadge
+            status={status}
+            loading={publicationQuery.isLoading}
+            failed={publicationQuery.isError}
+            rejectReason={publication?.rejectReason ?? null}
+          />
+          {submitDisabledReason && (!canSubmit || submission.isPending) ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="inline-flex rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-white/55 [&>button]:pointer-events-none"
+                  aria-label={`${t("publish.action")}: ${submitDisabledReason}`}
+                >
+                  {submitButton}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" sideOffset={8}>
+                {submitDisabledReason}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            submitButton
+          )}
+          {canOffline ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="lg"
+              onClick={() => setOfflineIntent(true)}
+              disabled={submission.isPending || offlineMutation.isPending}
+              className="h-9 gap-2 rounded-[14px] px-3 font-semibold text-white/52 hover:bg-destructive/10 hover:text-destructive"
             >
-              {publishButton}
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" sideOffset={8}>
-            {publishDisabledReason}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        publishButton
-      )}
+              {offlineMutation.isPending ? (
+                <IconLoader2 className="size-4 animate-spin" />
+              ) : (
+                <IconCloudOff className="size-4" />
+              )}
+              <span className={LABEL_CLASS}>{t("publish.offline.action")}</span>
+            </Button>
+          ) : null}
+        </>
+      ) : null}
       <StoryProjectCreditsBadge projectId={projectId} />
       {!canEdit ? (
         <span className="inline-flex h-9 items-center gap-1.5 rounded-[14px] bg-white px-3 text-[11px] font-semibold text-black">
           {t("readOnly")}
         </span>
       ) : null}
-      <StoryPublicationDialog
-        state={publication.state}
-        draftRevision={draftRevision ?? 0}
-        canMutate={canMutate}
-        disabledReason={publication.disabledReason}
-        onClose={publication.close}
-        onConfirm={() => {
-          if (canMutate) void publication.confirm();
-        }}
-        onRetry={() => {
-          if (canMutate) void publication.retry();
-        }}
-      />
+      {canRelease ? (
+        <>
+          <StoryPublicationDialog
+            state={submission.state}
+            draftRevision={draftRevision ?? 0}
+            canMutate={canSubmit}
+            disabledReason={submitDisabledReason}
+            onClose={submission.close}
+            onConfirm={() => {
+              if (canSubmit) void submission.confirm();
+            }}
+            onRetry={() => {
+              if (canSubmit) void submission.retry();
+            }}
+          />
+          <Dialog
+            open={offlineIntent}
+            onOpenChange={(open) => {
+              if (!open && !offlineMutation.isPending) setOfflineIntent(false);
+            }}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t("publish.offline.title")}</DialogTitle>
+                <DialogDescription>{t("publish.offline.description")}</DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={offlineMutation.isPending}
+                  onClick={() => setOfflineIntent(false)}
+                >
+                  {t("publish.actions.cancel")}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={offlineMutation.isPending}
+                  onClick={() => offlineMutation.mutate()}
+                >
+                  {offlineMutation.isPending ? (
+                    <IconLoader2 className="size-4 animate-spin" />
+                  ) : (
+                    <IconCloudOff className="size-4" />
+                  )}
+                  {t("publish.offline.confirm")}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </>
+      ) : null}
     </>
   );
+}
+
+function PublicationStatusBadge({
+  status,
+  loading,
+  failed,
+  rejectReason,
+}: {
+  status: InteractiveFilmPublicationStatus | null;
+  loading: boolean;
+  failed: boolean;
+  rejectReason: string | null;
+}) {
+  const t = useTranslations("storyStudio.canvas.publish");
+  const label = loading
+    ? t("status.checking")
+    : failed
+      ? t("status.unavailable")
+      : publicationStatusLabel(status, t);
+  const badge = (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-white/[0.055] px-2 text-[10px] font-semibold text-white/48">
+      {rejectReason ? <IconAlertTriangle className="size-3.5 text-destructive" /> : null}
+      {label}
+    </span>
+  );
+  if (!rejectReason) return badge;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent side="bottom" sideOffset={8} className="max-w-80">
+        {t("rejectionReason", { reason: rejectReason })}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+type PublishT = ReturnType<typeof useTranslations<"storyStudio.canvas.publish">>;
+
+function publicationStatusLabel(
+  status: InteractiveFilmPublicationStatus | null,
+  t: PublishT
+): string {
+  switch (status) {
+    case "reviewing":
+      return t("status.reviewing");
+    case "published":
+      return t("status.published");
+    case "offline":
+      return t("status.offline");
+    case null:
+    case "draft":
+      return t("status.draft");
+  }
 }

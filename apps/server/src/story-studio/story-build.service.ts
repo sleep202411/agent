@@ -75,23 +75,6 @@ import {
 } from './story-video-production.schema';
 
 const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
-  experiencePublication: {
-    select: {
-      status: true,
-      gameId: true,
-      contentVersion: true,
-      manifestUrl: true,
-      publishedAt: true,
-      mediaAuthorizedAt: true,
-      mediaAuthorizationRevokedAt: true,
-      authorityIsCurrent: true,
-      authorityGameExists: true,
-      authorityCurrentVersion: true,
-      authorityCheckedAt: true,
-      lastErrorCode: true,
-      lastErrorDetail: true,
-    },
-  },
   assets: {
     orderBy: [{ rank: 'asc' }, { id: 'asc' }],
     include: {
@@ -140,6 +123,9 @@ const BUILD_DELIVERY_ASSET_INCLUDE =
             mediaAuthorizedAt: true,
             mediaAuthorizationRevokedAt: true,
           },
+        },
+        experienceDraftRelease: {
+          select: { status: true },
         },
         gameReleaseChapters: {
           select: {
@@ -566,22 +552,26 @@ export class StoryBuildService {
       throw buildAssetNotFound();
     }
     const scope = StoryBuildScopeSchema.safeParse(frozen.build.scope);
-    const publishedAsWholeWork =
+    const authorizedAsWholeWork =
       frozen.build.kind === StoryBuildKind.production &&
       scope.success &&
       scope.data.kind === 'full' &&
-      frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
-      frozen.build.experiencePublication.mediaAuthorizationRevokedAt === null;
+      ((frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
+        frozen.build.experiencePublication.mediaAuthorizationRevokedAt ===
+          null) ||
+        (frozen.build.experienceDraftRelease != null &&
+          frozen.build.experienceDraftRelease.status !==
+            StoryExperiencePublicationStatus.rejected));
     // A chapter Build is a subgraph and never carries a Build publication, so
     // its anonymous grant comes from the game release that listed it. Same
     // rule, different release kind: a durable row authorized the media before
     // Java could serve the manifest, and only a definitive rejection revokes.
-    const publishedAsChapter = frozen.build.gameReleaseChapters.some(
+    const authorizedAsChapter = frozen.build.gameReleaseChapters.some(
       (chapter) =>
         chapter.release.mediaAuthorizationRevokedAt === null &&
         chapter.release.status !== StoryExperiencePublicationStatus.rejected,
     );
-    const publiclyAuthorized = publishedAsWholeWork || publishedAsChapter;
+    const publiclyAuthorized = authorizedAsWholeWork || authorizedAsChapter;
     if (!publiclyAuthorized) {
       if (!user) {
         throw new UnauthorizedException({
@@ -772,30 +762,6 @@ export class StoryBuildService {
       assets: row.assets.map(toBuildAssetDto),
       diagnostics,
       pathReport: parsePathReport(row.pathReport),
-      publication: row.experiencePublication
-        ? {
-            status: row.experiencePublication.status,
-            gameId: row.experiencePublication.gameId,
-            contentVersion: row.experiencePublication.contentVersion,
-            manifestUrl: row.experiencePublication.manifestUrl,
-            publishedAt:
-              row.experiencePublication.publishedAt?.toISOString() ?? null,
-            mediaAuthorizedAt:
-              row.experiencePublication.mediaAuthorizedAt.toISOString(),
-            mediaAuthorizationRevokedAt:
-              row.experiencePublication.mediaAuthorizationRevokedAt?.toISOString() ??
-              null,
-            authorityIsCurrent: row.experiencePublication.authorityIsCurrent,
-            authorityGameExists: row.experiencePublication.authorityGameExists,
-            authorityCurrentVersion:
-              row.experiencePublication.authorityCurrentVersion,
-            authorityCheckedAt:
-              row.experiencePublication.authorityCheckedAt?.toISOString() ??
-              null,
-            lastErrorCode: row.experiencePublication.lastErrorCode,
-            lastErrorDetail: row.experiencePublication.lastErrorDetail,
-          }
-        : null,
       createdByUserId: row.createdByUserId,
       createdAt: row.createdAt.toISOString(),
       completedAt: row.completedAt?.toISOString() ?? null,
@@ -813,7 +779,6 @@ export class StoryBuildService {
       sourceDraftRevision: dto.sourceDraftRevision,
       videoSnapshotHash: dto.videoSnapshotHash,
       diagnostics: dto.diagnostics,
-      publication: dto.publication,
       createdAt: dto.createdAt,
       completedAt: dto.completedAt,
     };
