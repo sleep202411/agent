@@ -29,12 +29,18 @@ import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { KycGateDialog } from "@/app/_components/kyc-gate-dialog";
-import { useCrewList, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
+import { useCrewList, useMyCrews, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
+import {
+  CrewSwitcherRailView,
+  mergeCrewMemberships,
+  shouldShowCrewSwitcherRail,
+} from "@/app/(site)/crews/_components/crew-switcher-rail";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
 import { PlazaHero } from "@/components/layout/plaza-hero";
 import { useKycAuthStatus } from "@/src/hooks/use-kyc";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
 type ViewMode = "crews" | "positions";
 
@@ -46,6 +52,21 @@ export default function CrewsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isCnRegion = env.SITE_REGION === "cn";
+  const { user } = useCurrentUser();
+  const myCrews = useMyCrews(Boolean(user));
+  const myCrewItems = useMemo(
+    () => mergeCrewMemberships(myCrews.data?.founded ?? [], myCrews.data?.joined ?? []),
+    [myCrews.data]
+  );
+  const myCrewCount = (myCrews.data?.founded.length ?? 0) + (myCrews.data?.joined.length ?? 0);
+  const showMyCrewsRail = Boolean(
+    user &&
+    shouldShowCrewSwitcherRail({
+      crewCount: myCrewCount,
+      isPending: myCrews.isPending,
+      isError: myCrews.isError,
+    })
+  );
 
   const view: ViewMode = searchParams.get("view") === "positions" ? "positions" : "crews";
   const setView = (next: ViewMode) => {
@@ -93,7 +114,12 @@ export default function CrewsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div
+      className={cn(
+        "min-h-screen bg-background",
+        showMyCrewsRail && "lg:pl-[60px] min-[1152px]:!pl-[180px]"
+      )}
+    >
       <PlazaHero
         ambient="blue"
         backgroundImage="https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=2400&q=80"
@@ -128,63 +154,78 @@ export default function CrewsPage() {
         description={tCrew("createKycRequiredDesc")}
       />
 
-      <div className="mx-auto max-w-[1800px] px-6 pb-24 pt-8">
-        {/* Tabs — crews vs positions. URL state via `?view=positions`
-            so refreshes / shared links keep the same surface. */}
-        <div className="mb-6 flex items-center gap-2 border-b border-border">
-          <PlazaTab
-            label={tCrew("allCrewsTitle")}
-            icon={IconUsers}
-            active={view === "crews"}
-            onClick={() => setView("crews")}
+      <div className="mx-auto max-w-[1800px] px-4 pb-24 pt-8 sm:px-6">
+        {showMyCrewsRail ? (
+          <CrewSwitcherRailView
+            crews={myCrewItems}
+            allCrewsActive
+            rootLabel={tCrew("myCrewsTitle")}
+            showNames
+            isPending={myCrews.isPending}
+            error={myCrews.error}
+            onRetry={() => void myCrews.refetch()}
+            className="fixed inset-y-0 left-0 z-30 w-[60px] min-[1152px]:w-[180px] lg:flex"
           />
-          <PlazaTab
-            label={tCrew("allPositionsTab")}
-            icon={IconBriefcase}
-            active={view === "positions"}
-            onClick={() => setView("positions")}
-          />
-        </div>
+        ) : null}
 
-        {view === "crews" ? (
-          <section>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
-              {isLoading ? (
-                <CardSkeleton count={10} />
-              ) : isError ? (
-                <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-                  {tc("loadFailed")}
-                </div>
-              ) : items.length === 0 ? (
-                <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-                  {t("noData")}
-                </div>
-              ) : (
-                items.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
-              )}
-            </div>
+        <div className="min-w-0">
+          {/* Tabs — crews vs positions. URL state via `?view=positions`
+              so refreshes / shared links keep the same surface. */}
+          <div className="mb-6 flex items-center gap-2 border-b border-border">
+            <PlazaTab
+              label={tCrew("allCrewsTitle")}
+              icon={IconUsers}
+              active={view === "crews"}
+              onClick={() => setView("crews")}
+            />
+            <PlazaTab
+              label={tCrew("allPositionsTab")}
+              icon={IconBriefcase}
+              active={view === "positions"}
+              onClick={() => setView("positions")}
+            />
+          </div>
 
-            {items.length > 0 && hasNextPage && (
-              <div className="mt-10 flex justify-center">
-                <button
-                  type="button"
-                  disabled={isFetchingNextPage}
-                  onClick={() => fetchNextPage()}
-                  className={cn(
-                    "inline-flex h-11 items-center rounded-xl border border-border px-6 text-sm font-semibold transition-colors",
-                    isFetchingNextPage
-                      ? "cursor-wait text-muted-foreground"
-                      : "bg-secondary text-foreground hover:bg-secondary/80"
-                  )}
-                >
-                  {isFetchingNextPage ? t("loading") : t("loadMore")}
-                </button>
+          {view === "crews" ? (
+            <section>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
+                {isLoading ? (
+                  <CardSkeleton count={10} />
+                ) : isError ? (
+                  <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                    {tc("loadFailed")}
+                  </div>
+                ) : items.length === 0 ? (
+                  <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
+                    {t("noData")}
+                  </div>
+                ) : (
+                  items.map((c) => <CrewCard key={c.id} item={c} locale={locale} />)
+                )}
               </div>
-            )}
-          </section>
-        ) : (
-          <PositionsTab />
-        )}
+
+              {items.length > 0 && hasNextPage && (
+                <div className="mt-10 flex justify-center">
+                  <button
+                    type="button"
+                    disabled={isFetchingNextPage}
+                    onClick={() => fetchNextPage()}
+                    className={cn(
+                      "inline-flex h-11 items-center rounded-xl border border-border px-6 text-sm font-semibold transition-colors",
+                      isFetchingNextPage
+                        ? "cursor-wait text-muted-foreground"
+                        : "bg-secondary text-foreground hover:bg-secondary/80"
+                    )}
+                  >
+                    {isFetchingNextPage ? t("loading") : t("loadMore")}
+                  </button>
+                </div>
+              )}
+            </section>
+          ) : (
+            <PositionsTab />
+          )}
+        </div>
       </div>
     </div>
   );
