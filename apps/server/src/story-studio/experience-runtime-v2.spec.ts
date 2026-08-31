@@ -144,8 +144,19 @@ function textExperienceFixture() {
   };
 }
 
-/** The same experience with a cover: one image asset plus the metadata pointer. */
-function coverFixture(uri = 'https://media.example.com/lantern/cover.jpg') {
+/** Current manifests carry a catalogue cover directly as metadata. */
+function coverFixture(url = 'https://media.example.com/lantern/cover.jpg') {
+  const base = holdToLightFixture();
+  return {
+    ...base,
+    metadata: { ...base.metadata, coverUrl: url },
+  };
+}
+
+/** Immutable manifests published before direct cover URLs remain readable. */
+function legacyCoverFixture(
+  uri = 'https://media.example.com/lantern/cover.jpg',
+) {
   const base = holdToLightFixture();
   return {
     ...base,
@@ -752,10 +763,18 @@ describe('Experience Runtime Manifest v2', () => {
     expect(
       experienceReleaseCoverUrl(
         parseExperienceRuntimeManifest(
-          coverFixture('/media/lantern/cover.jpg'),
+          legacyCoverFixture('/media/lantern/cover.jpg'),
         ),
       ),
     ).toBeUndefined();
+  });
+
+  it('keeps reading covers from immutable legacy manifests', () => {
+    expect(
+      experienceReleaseCoverUrl(
+        parseExperienceRuntimeManifest(legacyCoverFixture()),
+      ),
+    ).toBe('https://media.example.com/lantern/cover.jpg');
   });
 
   it('keeps the Java release transport opaque while validating publisher output', () => {

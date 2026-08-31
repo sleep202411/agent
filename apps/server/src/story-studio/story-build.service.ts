@@ -185,7 +185,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 6;
+const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 7;
 
 interface BuildCursor {
   number: number;
@@ -210,7 +210,7 @@ interface ValidatedBuildSnapshot {
   entries: StoryVideoSnapshotEntry[];
   timelines: StoryBuildNodeTimelineInput[];
   worlds: StoryBuildWorldInput[];
-  /** Plain public cover reference; `asset: null` warns instead of failing. */
+  /** Plain public cover reference; an unavailable cover warns instead of failing. */
   cover: StoryBuildCoverInput;
 }
 
@@ -944,11 +944,7 @@ async function loadValidatedBuildSnapshot(
     entries,
     timelines,
     worlds,
-    cover: await resolveStoryCover(
-      tx,
-      project.workspaceId,
-      project.coverAssetId,
-    ),
+    cover: await resolveStoryCover(tx, project.coverAssetId),
   };
 }
 
@@ -1159,7 +1155,7 @@ export function storyBuildInputManifest(
   sourceRevisionId: string,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     compilerSemanticVersion: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
     scope: input.scope,
@@ -1169,15 +1165,10 @@ export function storyBuildInputManifest(
       defaultLocale: snapshot.project.defaultLocale,
       title: snapshot.project.title,
       summary: snapshot.project.summary,
-      // Content identity, not the resolved URL: swapping the cover image must
-      // make this a different Build input, while moving the CDN must not — the
-      // URL is deployment config that says nothing about what was published.
-      cover: snapshot.cover.asset
+      cover: snapshot.cover.reference
         ? {
-            mediaAssetId: snapshot.cover.asset.mediaAssetId,
-            sha256: snapshot.cover.asset.sha256,
-            width: snapshot.cover.asset.width,
-            height: snapshot.cover.asset.height,
+            mediaAssetId: snapshot.cover.reference.mediaAssetId,
+            url: snapshot.cover.reference.url,
           }
         : null,
     },

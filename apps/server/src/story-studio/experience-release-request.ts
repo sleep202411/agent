@@ -27,15 +27,17 @@ export type VerifiedExperienceReleaseRequest = Omit<
  * a retry that re-resolved a swapped or newly blocked cover would turn into a
  * receipt conflict instead of an idempotent replay.
  *
- * Only an absolute HTTPS URL can be sent. A manifest uri is allowed to be
- * root-relative and there is no public base URL in this service to absolutize
- * one with, so a relative uri is omitted — Java's contract is an absolute URL,
- * and a wrong one would be worse than none. The cover is single-master, so its
- * one variant is the one every consumer resolves to.
+ * Current manifests carry the URL directly. The image-asset lookup below only
+ * serves immutable manifests published before that field existed; a legacy
+ * root-relative URI is omitted because Java requires an absolute URL.
  */
 export function experienceReleaseCoverUrl(
   manifest: ExperienceRuntimeManifest,
 ): string | undefined {
+  if (manifest.metadata.coverUrl) return manifest.metadata.coverUrl;
+
+  // Immutable manifests published before catalogue covers were decoupled from
+  // runtime image assets still use this pointer.
   const coverAssetId = manifest.metadata.coverAssetId;
   if (!coverAssetId) return undefined;
   const cover = manifest.assets.find(
