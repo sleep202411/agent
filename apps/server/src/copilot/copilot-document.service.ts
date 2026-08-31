@@ -9,7 +9,6 @@
  * by documentId.
  */
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { convertToHtml } from 'mammoth';
 import {
   COPILOT_DOCUMENT_EXTENSIONS,
   COPILOT_DOCUMENT_MAX_FILE_BYTES,
@@ -20,6 +19,7 @@ import {
   type CopilotDocumentRef,
 } from '@repo/shared';
 import { PrismaService } from '../infra/db/db.module';
+import { extractDocxPlainText } from '../documents/docx-text';
 
 export interface CopilotDocumentUploadFile {
   originalname: string;
@@ -61,7 +61,7 @@ export function copilotDocumentFileRequired(): HttpException {
 export function decodeUploadFilename(raw: string): string {
   // A busboy latin1-decoded name can only contain code units ≤ 0xFF; anything
   // beyond means the name is already proper Unicode — leave it untouched.
-  if (!/^[\u0000-\u00ff]*$/.test(raw)) return raw;
+  if ([...raw].some((character) => character.charCodeAt(0) > 0xff)) return raw;
   const restored = Buffer.from(raw, 'latin1').toString('utf8');
   return restored.includes('�') ? raw : restored;
 }
@@ -109,25 +109,6 @@ function normalizeLineEndings(text: string): string {
 }
 
 /**
- * docx → plain text via mammoth's HTML output, not extractRawText: raw-text
- * extraction swallows soft line breaks (<w:br/>), which collapses screenplays
- * authored as one paragraph with soft returns into a single flat line (same
- * lesson as the StoryOS attachment pipeline). Each </p> and <br> becomes a
- * newline, tags are dropped, and the four entities mammoth emits are decoded.
- */
-function docxHtmlToPlainText(html: string): string {
-  return html
-    .replace(/<\/p>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"');
-}
-
-/**
  * Extract plain text from one uploaded document. Enforces the file-size cap,
  * the supported types, and the extracted-text cap — every rejection is a typed
  * error that tells the creator the exact limit. Text is never truncated.
@@ -161,9 +142,8 @@ export async function extractCopilotDocumentText(
 
   let text: string;
   if (extension === '.docx') {
-    let html: string;
     try {
-      html = (await convertToHtml({ buffer: file.buffer })).value;
+      text = await extractDocxPlainText(file.buffer);
     } catch {
       throw documentError(
         'COPILOT_DOCUMENT_PARSE_FAILED',
@@ -171,7 +151,6 @@ export async function extractCopilotDocumentText(
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
-    text = docxHtmlToPlainText(html);
   } else {
     text = decodePlainText(file.buffer);
   }

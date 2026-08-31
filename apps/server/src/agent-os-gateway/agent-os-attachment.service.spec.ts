@@ -2,6 +2,8 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { AgentOsAttachmentService } from './agent-os-attachment.service';
 import type { AgentOsProjectContext } from './agent-os-project-context.service';
 
@@ -106,6 +108,49 @@ describe('AgentOsAttachmentService', () => {
       platformProjectId: null,
       storyProjectId: STORY_PROJECT.projectId,
     });
+  });
+
+  it('extracts DOCX screenplay text before storing it for Agent OS tools', async () => {
+    const { service, attachment } = makeService(STORY_PROJECT);
+    const buffer = readFileSync(
+      join(__dirname, '..', 'copilot', '__fixtures__', 'sample-script.docx'),
+    );
+
+    const result = await service.upload('actor-1', STORY_PROJECT.projectId, {
+      originalname: 'screenplay.docx',
+      mimetype:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      size: buffer.length,
+      buffer,
+    });
+
+    expect(attachment.create.mock.calls[0]?.[0].data).toMatchObject({
+      filename: 'screenplay.docx',
+      mimeType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      textContent:
+        'INT. FOREST GATE - NIGHT\nThe gate creaks open.\nLIN: Who goes there?',
+      sections: [
+        'INT. FOREST GATE - NIGHT\nThe gate creaks open.\nLIN: Who goes there?',
+      ],
+    });
+    expect(result).toMatchObject({ status: 'ready', sectionCount: 1 });
+  });
+
+  it('returns a typed error for corrupt DOCX files', async () => {
+    const { service, attachment } = makeService(STORY_PROJECT);
+    await expect(
+      service.upload('actor-1', STORY_PROJECT.projectId, {
+        originalname: 'broken.docx',
+        mimetype:
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        size: 12,
+        buffer: Buffer.from('not a docx'),
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'AGENT_OS_ATTACHMENT_DOCX_PARSE_FAILED' },
+    });
+    expect(attachment.create).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported binary files without persisting failed rows', async () => {

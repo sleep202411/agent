@@ -90,7 +90,7 @@ const STORY_SUGGESTIONS = [
 ] as const;
 
 const ACCEPT =
-  ".txt,.md,.markdown,.fountain,.fdx,.csv,.json,.xml,.log,text/plain,text/markdown,text/x-markdown,text/csv,application/json,application/xml,text/xml";
+  ".docx,.txt,.md,.markdown,.fountain,.fdx,.csv,.json,.xml,.log,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/x-markdown,text/csv,application/json,application/xml,text/xml";
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_TURN = 20;
 const UPLOAD_CONCURRENCY = 3;

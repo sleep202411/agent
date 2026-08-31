@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import type { AgentProjectKind } from '@repo/agent-capabilities';
 import { PrismaService } from '../infra/db/db.module';
+import { extractDocxPlainText } from '../documents/docx-text';
 import {
   AgentOsProjectContextService,
   type AgentOsProjectContext,
@@ -31,6 +32,9 @@ const TEXT_MIME = new Set([
 ]);
 
 const TEXT_EXT = /\.(txt|md|markdown|fountain|fdx|csv|json|xml|log)$/i;
+const DOCX_EXT = /\.docx$/i;
+const DOCX_MIME =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 export type AgentOsAttachmentSummary = {
   id: string;
@@ -109,23 +113,41 @@ export class AgentOsAttachmentService {
 
     const filename = sanitizeFilename(file.originalname);
     const mimeType = normalizeMimeType(file.mimetype);
-    const extractable = isTextAttachment(filename, mimeType);
+    const docx = isDocxAttachment(filename, mimeType);
+    const extractable = docx || isTextAttachment(filename, mimeType);
 
     if (!extractable) {
       throw new UnprocessableEntityException({
         code: 'AGENT_OS_ATTACHMENT_UNSUPPORTED_TYPE',
         message:
-          'Only UTF-8 text documents are supported: txt, md, markdown, fountain, fdx, csv, json, xml, and log.',
+          'Supported documents: docx and UTF-8 txt, md, markdown, fountain, fdx, csv, json, xml, or log files.',
       });
     }
 
-    const textContent = file.buffer.toString('utf8');
-    if (textContent.includes('\uFFFD') && looksBinary(file.buffer)) {
-      throw new UnprocessableEntityException({
-        code: 'AGENT_OS_ATTACHMENT_INVALID_UTF8',
-        message: 'The attachment is not valid UTF-8 text.',
-      });
+    let textContent: string;
+    if (docx) {
+      try {
+        textContent = await extractDocxPlainText(file.buffer);
+      } catch {
+        throw new UnprocessableEntityException({
+          code: 'AGENT_OS_ATTACHMENT_DOCX_PARSE_FAILED',
+          message:
+            'The DOCX file could not be read. Re-export it from your editor and upload again.',
+        });
+      }
+    } else {
+      textContent = file.buffer.toString('utf8');
+      if (textContent.includes('\uFFFD') && looksBinary(file.buffer)) {
+        throw new UnprocessableEntityException({
+          code: 'AGENT_OS_ATTACHMENT_INVALID_UTF8',
+          message: 'The attachment is not valid UTF-8 text.',
+        });
+      }
     }
+    textContent = textContent
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .replace(/\s+$/u, '');
     if (!textContent.trim()) {
       throw new UnprocessableEntityException({
         code: 'AGENT_OS_ATTACHMENT_NO_TEXT',
@@ -303,6 +325,10 @@ function isTextAttachment(filename: string, mimeType: string): boolean {
   if (TEXT_MIME.has(mimeType.toLowerCase())) return true;
   if (mimeType.startsWith('text/')) return true;
   return TEXT_EXT.test(filename);
+}
+
+function isDocxAttachment(filename: string, mimeType: string): boolean {
+  return mimeType === DOCX_MIME || DOCX_EXT.test(filename);
 }
 
 function looksBinary(buf: Buffer): boolean {
