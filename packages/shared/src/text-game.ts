@@ -163,15 +163,101 @@ export const TextGameLocaleSchema = z.enum(["en-US", "zh-CN", "zh-HK"]);
 export type TextGameLocale = z.infer<typeof TextGameLocaleSchema>;
 
 export const TextGameStartInputSchema = z.object({
-  locale: TextGameLocaleSchema,
+  locale: TextGameLocaleSchema.optional(),
 });
 export type TextGameStartInput = z.infer<typeof TextGameStartInputSchema>;
 
 export const TextGameChatInputSchema = z.object({
   message: z.string().trim().min(1),
-  locale: TextGameLocaleSchema,
+  locale: TextGameLocaleSchema.optional(),
 });
 export type TextGameChatInput = z.infer<typeof TextGameChatInputSchema>;
+
+/** Java SSE play endpoints time out around 3 minutes. */
+export const TEXT_GAME_STREAM_TIMEOUT_MS = 180_000;
+
+/** Placeholder id for the in-flight assistant bubble until `done` supplies messageId. */
+export const TEXT_GAME_STREAMING_ASSISTANT_ID = "streaming-assistant";
+
+export const TextGameStreamStartMetaSchema = z.object({
+  sessionId: TextGameSessionIdSchema,
+  gameId: TextGameIdSchema,
+  resumed: z.boolean(),
+  bgmUrl: NullableTextSchema,
+  stillUrls: z
+    .array(z.string())
+    .nullish()
+    .transform((value) => value ?? []),
+  startedAt: z.string(),
+});
+export type TextGameStreamStartMeta = z.infer<typeof TextGameStreamStartMetaSchema>;
+
+export const TextGameStreamChatMetaSchema = z.object({
+  sessionId: TextGameSessionIdSchema,
+  userMessage: TextGameMessageSchema.extend({ role: z.literal("user") }),
+});
+export type TextGameStreamChatMeta = z.infer<typeof TextGameStreamChatMetaSchema>;
+
+export const TextGameStreamDoneSchema = z.object({
+  sessionId: TextGameSessionIdSchema,
+  messageId: TextGameWireIdSchema,
+  content: z.string(),
+});
+export type TextGameStreamDone = z.infer<typeof TextGameStreamDoneSchema>;
+
+export const TextGameStreamErrorSchema = z.object({
+  code: z.union([z.string(), z.number()]).optional(),
+  msg: z.string().optional(),
+  message: z.string().optional(),
+});
+export type TextGameStreamError = z.infer<typeof TextGameStreamErrorSchema>;
+
+export type TextGameSseEventName = "ready" | "meta" | "delta" | "done" | "error";
+
+export interface TextGameSseFrame {
+  event: TextGameSseEventName | string;
+  data: unknown;
+}
+
+/**
+ * Split a raw SSE buffer into complete frames (`\n\n` delimited).
+ * Comment / padding frames (no `data:`) are dropped. Incomplete tail is returned.
+ */
+export function takeTextGameSseFrames(buffer: string): {
+  frames: TextGameSseFrame[];
+  rest: string;
+} {
+  const parts = buffer.split("\n\n");
+  const rest = parts.pop() ?? "";
+  const frames: TextGameSseFrame[] = [];
+  for (const part of parts) {
+    const frame = parseTextGameSseFrame(part);
+    if (frame) frames.push(frame);
+  }
+  return { frames, rest };
+}
+
+export function parseTextGameSseFrame(raw: string): TextGameSseFrame | null {
+  let event: string = "message";
+  const dataLines: string[] = [];
+  for (const line of raw.split("\n")) {
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+  }
+  if (dataLines.length === 0) return null;
+  try {
+    return { event, data: JSON.parse(dataLines.join("\n")) as unknown };
+  } catch {
+    return null;
+  }
+}
+
+export function textGameStreamErrorMessage(data: unknown, fallback: string): string {
+  const parsed = TextGameStreamErrorSchema.safeParse(data);
+  if (!parsed.success) return fallback;
+  const text = parsed.data.msg?.trim() || parsed.data.message?.trim();
+  return text || fallback;
+}
 
 export const TextGameCreateInputSchema = z.object({
   worldviewDocxUrl: z.string().url(),

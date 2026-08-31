@@ -12,6 +12,16 @@ vi.mock("@/src/lib/api", () => ({
     get: vi.fn(),
     post: vi.fn(),
   },
+  ApiRequestError: class ApiRequestError extends Error {
+    code: string | number;
+    status: number;
+    constructor(code: string | number, message: string, status: number) {
+      super(message);
+      this.code = code;
+      this.status = status;
+    }
+  },
+  notifyUnauthorized: vi.fn(),
 }));
 
 const session = {
@@ -19,24 +29,63 @@ const session = {
   gameId: "tg_0123456789abcdef",
   resumed: false,
   bgmUrl: null,
-  stillUrls: [],
-  messages: [],
+  stillUrls: [] as string[],
+  messages: [] as { id: string; role: string; content: string; createdAt: string }[],
   startedAt: "2026-08-09T12:00:00Z",
 };
 
+function sseResponse(frames: string): Response {
+  return new Response(frames, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
 describe("text-game player session bootstrap", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn());
+  });
 
   it("starts a new session only when Java reports no playing session", async () => {
     vi.mocked(api.get).mockResolvedValue(null);
-    vi.mocked(api.post).mockResolvedValue(session);
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(
+        [
+          'event: ready\ndata: {"ok":true}\n\n',
+          `event: meta\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            gameId: session.gameId,
+            resumed: false,
+            bgmUrl: null,
+            stillUrls: [],
+            startedAt: session.startedAt,
+          })}\n\n`,
+          'event: delta\ndata: {"text":"Hello"}\n\n',
+          `event: done\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            messageId: "12",
+            content: "Hello",
+          })}\n\n`,
+        ].join("")
+      )
+    );
 
-    await expect(loadOrStartTextGameSession(session.gameId, "en-US")).resolves.toEqual(session);
-    expect(api.post).toHaveBeenCalledOnce();
-    expect(api.post).toHaveBeenCalledWith(`/api/player/text-game/${session.gameId}/start`, {
-      data: { locale: "en-US" },
-      timeout: 120_000,
-    });
+    const started = await loadOrStartTextGameSession(session.gameId, "en-US");
+    expect(started.sessionId).toBe(session.sessionId);
+    expect(started.messages).toEqual([
+      {
+        id: "12",
+        role: "assistant",
+        content: "Hello",
+        createdAt: session.startedAt,
+      },
+    ]);
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      `/api/player/text-game/${session.gameId}/start/stream`
+    );
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it("resumes an existing session without calling start", async () => {
@@ -46,7 +95,7 @@ describe("text-game player session bootstrap", () => {
       sessionId: session.sessionId,
       resumed: true,
     });
-    expect(api.post).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("rejects an existing session that Java labels as new", async () => {
@@ -55,7 +104,18 @@ describe("text-game player session bootstrap", () => {
   });
 
   it("rejects a newly started session that Java labels as resumed", async () => {
-    vi.mocked(api.post).mockResolvedValue({ ...session, resumed: true });
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(
+        `event: meta\ndata: ${JSON.stringify({
+          sessionId: session.sessionId,
+          gameId: session.gameId,
+          resumed: true,
+          bgmUrl: null,
+          stillUrls: [],
+          startedAt: session.startedAt,
+        })}\n\n`
+      )
+    );
     await expect(startTextGameSession(session.gameId, "en-US")).rejects.toThrow("resumed=true");
   });
 
@@ -68,36 +128,49 @@ describe("text-game player session bootstrap", () => {
     await expect(getPlayingTextGameSession(session.gameId)).rejects.toThrow("while");
   });
 
-  it("trims chat input and validates the returned session identity", async () => {
-    const response = {
+  it("trims chat input and streams the assistant reply", async () => {
+    const userMessage = {
+      id: "1",
+      role: "user",
+      content: "Open the door",
+      createdAt: session.startedAt,
+    };
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(
+        [
+          `event: meta\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            userMessage,
+          })}\n\n`,
+          'event: delta\ndata: {"text":"The door"}\n\n',
+          `event: done\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            messageId: "2",
+            content: "The door opens.",
+          })}\n\n`,
+        ].join("")
+      )
+    );
+
+    await expect(
+      sendTextGameAction(session.sessionId, "  Open the door  ", "zh-CN")
+    ).resolves.toEqual({
       sessionId: session.sessionId,
-      userMessage: {
-        id: "1",
-        role: "user",
-        content: "Open the door",
-        createdAt: session.startedAt,
-      },
+      userMessage,
       assistantMessage: {
         id: "2",
         role: "assistant",
         content: "The door opens.",
-        createdAt: session.startedAt,
+        createdAt: expect.any(String),
       },
-    };
-    vi.mocked(api.post).mockResolvedValue(response);
-
-    await expect(
-      sendTextGameAction(session.sessionId, "  Open the door  ", "zh-CN")
-    ).resolves.toEqual(response);
-    expect(api.post).toHaveBeenCalledWith(
-      `/api/player/text-game/sessions/${session.sessionId}/chat`,
-      { data: { message: "Open the door", locale: "zh-CN" }, timeout: 120_000 }
-    );
-
-    vi.mocked(api.post).mockResolvedValue({
-      ...response,
-      sessionId: "ts_fedcba9876543210",
     });
-    await expect(sendTextGameAction(session.sessionId, "Again", "zh-CN")).rejects.toThrow("while");
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      `/api/player/text-game/sessions/${session.sessionId}/chat/stream`
+    );
+    const init = vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({
+      message: "Open the door",
+      locale: "zh-CN",
+    });
   });
 });

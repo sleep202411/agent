@@ -12,8 +12,6 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import TextareaAutosize from "react-textarea-autosize";
 import { toast } from "sonner";
 import {
@@ -39,11 +37,12 @@ import {
   IconThumbUp,
   IconUser,
 } from "@tabler/icons-react";
-import type {
-  TextGameDetail,
-  TextGameMessage,
-  TextGamePlaySession,
-  TextGameSummary,
+import {
+  TEXT_GAME_STREAMING_ASSISTANT_ID,
+  type TextGameDetail,
+  type TextGameMessage,
+  type TextGamePlaySession,
+  type TextGameSummary,
 } from "@repo/shared/text-game";
 import {
   AlertDialog,
@@ -76,11 +75,14 @@ import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import {
+  getPlayingTextGameSession,
   loadOrStartTextGameSession,
   playerTextGameKeys,
   sendTextGameAction,
   startTextGameSession,
 } from "../../_lib/text-game-player-api";
+
+import { TextGameStreamBody } from "./text-game-stream-body";
 
 type StoryModelId = "qwen" | "kimi" | "deepseek" | "glm";
 
@@ -116,7 +118,11 @@ export function TextGamePlayer({
 
   const sessionQuery = useQuery({
     queryKey: playerTextGameKeys.session(game.gameId, locale),
-    queryFn: () => loadOrStartTextGameSession(game.gameId, locale),
+    queryFn: () =>
+      loadOrStartTextGameSession(game.gameId, locale, {
+        onSession: (next) =>
+          queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), next),
+      }),
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
   });
@@ -137,10 +143,14 @@ export function TextGamePlayer({
   const visibleStillIndex = stills.length > 0 ? stillIndex % stills.length : 0;
   const messages = session?.messages ?? [];
   const messageCount = session?.messages.length ?? 0;
+  const lastMessageContent = messages.at(-1)?.content ?? "";
+  const streamingAssistant = messages.some(
+    (message) => message.id === TEXT_GAME_STREAMING_ASSISTANT_ID
+  );
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: messageCount > 1 ? "smooth" : "auto" });
-  }, [messageCount, sending]);
+    endRef.current?.scrollIntoView({ behavior: messageCount > 1 || sending ? "smooth" : "auto" });
+  }, [messageCount, lastMessageContent, sending]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -211,36 +221,94 @@ export function TextGamePlayer({
     setSending(true);
     queryClient.setQueryData<TextGamePlaySession>(
       playerTextGameKeys.session(game.gameId, locale),
-      (current) => (current ? { ...current, messages: [...current.messages, optimistic] } : current)
+      (current) =>
+        current
+          ? {
+              ...current,
+              messages: [
+                ...current.messages,
+                optimistic,
+                {
+                  id: TEXT_GAME_STREAMING_ASSISTANT_ID,
+                  role: "assistant",
+                  content: "",
+                  createdAt: optimistic.createdAt,
+                },
+              ],
+            }
+          : current
     );
     try {
-      const response = await sendTextGameAction(session.sessionId, value, locale);
-      queryClient.setQueryData<TextGamePlaySession>(
-        playerTextGameKeys.session(game.gameId, locale),
-        (current) =>
-          current
-            ? {
-                ...current,
-                messages: [
-                  ...current.messages.filter((message) => message.id !== optimisticId),
-                  response.userMessage,
-                  response.assistantMessage,
-                ],
-              }
-            : current
-      );
+      await sendTextGameAction(session.sessionId, value, locale, {
+        onUserMessage: (userMessage) => {
+          queryClient.setQueryData<TextGamePlaySession>(
+            playerTextGameKeys.session(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.map((item) =>
+                      item.id === optimisticId ? userMessage : item
+                    ),
+                  }
+                : current
+          );
+        },
+        onAssistantDelta: (text) => {
+          queryClient.setQueryData<TextGamePlaySession>(
+            playerTextGameKeys.session(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.map((item) =>
+                      item.id === TEXT_GAME_STREAMING_ASSISTANT_ID
+                        ? { ...item, content: `${item.content}${text}` }
+                        : item
+                    ),
+                  }
+                : current
+          );
+        },
+        onAssistantDone: (assistantMessage) => {
+          queryClient.setQueryData<TextGamePlaySession>(
+            playerTextGameKeys.session(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.map((item) =>
+                      item.id === TEXT_GAME_STREAMING_ASSISTANT_ID ? assistantMessage : item
+                    ),
+                  }
+                : current
+          );
+        },
+      });
     } catch (error) {
-      queryClient.setQueryData<TextGamePlaySession>(
-        playerTextGameKeys.session(game.gameId, locale),
-        (current) =>
-          current
-            ? {
-                ...current,
-                messages: current.messages.filter((message) => message.id !== optimisticId),
-              }
-            : current
-      );
-      setDraft(value);
+      try {
+        const recovered = await getPlayingTextGameSession(game.gameId);
+        if (recovered) {
+          queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), recovered);
+        } else {
+          queryClient.setQueryData<TextGamePlaySession>(
+            playerTextGameKeys.session(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.filter(
+                      (item) =>
+                        item.id !== optimisticId && item.id !== TEXT_GAME_STREAMING_ASSISTANT_ID
+                    ),
+                  }
+                : current
+          );
+          setDraft(value);
+        }
+      } catch {
+        setDraft(value);
+      }
       toast.error(error instanceof Error ? error.message : t("sendFailed"));
     } finally {
       sendingRef.current = false;
@@ -255,7 +323,10 @@ export function TextGamePlayer({
     setRestarting(true);
     const toastId = toast.loading(t("restartingStory"));
     try {
-      const next = await startTextGameSession(game.gameId, locale);
+      const next = await startTextGameSession(game.gameId, locale, {
+        onSession: (sessionNext) =>
+          queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), sessionNext),
+      });
       queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), next);
       setDraft("");
       setStillIndex(0);
@@ -495,7 +566,7 @@ export function TextGamePlayer({
               </div>
             </div>
 
-            {sessionQuery.isLoading ? (
+            {sessionQuery.isLoading && !session ? (
               <div className="flex flex-col items-center py-24 text-center">
                 <IconLoader2 className="size-6 animate-spin text-white/48" />
                 <p className="mt-4 text-sm text-white/46">{t("openingStory")}</p>
@@ -523,9 +594,14 @@ export function TextGamePlayer({
 
             <div className="space-y-10">
               {messages.map((message) => (
-                <StoryMessage key={message.id} message={message} actionLabel={t("yourAction")} />
+                <StoryMessage
+                  key={message.id}
+                  message={message}
+                  actionLabel={t("yourAction")}
+                  generatingLabel={t("storyResponding")}
+                />
               ))}
-              {sending ? (
+              {sending && !streamingAssistant ? (
                 <div className="flex items-center gap-3 py-3 text-sm text-white/42">
                   <IconLoader2 className="size-4 animate-spin" />
                   {t("storyResponding")}
@@ -658,7 +734,15 @@ export function TextGamePlayer({
   );
 }
 
-function StoryMessage({ message, actionLabel }: { message: TextGameMessage; actionLabel: string }) {
+function StoryMessage({
+  message,
+  actionLabel,
+  generatingLabel,
+}: {
+  message: TextGameMessage;
+  actionLabel: string;
+  generatingLabel: string;
+}) {
   if (message.role === "system") {
     return <p className="text-center text-xs text-white/30">{message.content}</p>;
   }
@@ -675,9 +759,11 @@ function StoryMessage({ message, actionLabel }: { message: TextGameMessage; acti
     );
   }
   return (
-    <article className="text-[1.05rem] leading-8 text-[#f5f4f1]/78 text-pretty sm:text-[1.1rem] [&>*+*]:mt-[1.15em] [&_blockquote]:border-l-2 [&_blockquote]:border-white/15 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-white/58 [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:text-white/92 [&_h2]:text-white/92 [&_h3]:text-white/92 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_strong]:font-semibold [&_strong]:text-white/90">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-    </article>
+    <TextGameStreamBody
+      content={message.content}
+      streaming={message.id === TEXT_GAME_STREAMING_ASSISTANT_ID}
+      generatingLabel={generatingLabel}
+    />
   );
 }
 

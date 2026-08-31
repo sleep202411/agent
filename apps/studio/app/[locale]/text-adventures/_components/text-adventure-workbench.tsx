@@ -3,8 +3,6 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import {
   IconAlertTriangle,
   IconArrowLeft,
@@ -33,6 +31,7 @@ import { toast } from "sonner";
 import {
   isTextGameCreatorActionAllowed,
   isTextGameEditableByCreator,
+  TEXT_GAME_STREAMING_ASSISTANT_ID,
   TextGameLocaleSchema,
   type TextGameCreatorAction,
   type TextGameDetail,
@@ -67,6 +66,7 @@ import {
   updateCreatorTextAdventure,
 } from "../_lib/text-adventure-api";
 import {
+  getPlayingTextAdventureSession,
   loadOrStartTextAdventureSession,
   sendTextAdventureAction,
   startTextAdventureSession,
@@ -77,6 +77,7 @@ import {
   toTextAdventureUpdateInput,
   type TextAdventureDraftForm,
 } from "../_lib/text-adventure-draft";
+import { TextAdventureStreamBody } from "./text-adventure-stream-body";
 
 type UploadTarget = "poster" | "document" | "stills" | "bgm" | null;
 type InspectorPanel = "basics" | "characters" | "stills";
@@ -818,7 +819,11 @@ function TextAdventureConversation({
 
   const sessionQuery = useQuery({
     queryKey: textAdventureSessionKeys.detail(game.gameId, locale),
-    queryFn: () => loadOrStartTextAdventureSession(game.gameId, locale),
+    queryFn: () =>
+      loadOrStartTextAdventureSession(game.gameId, locale, {
+        onSession: (next) =>
+          queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale), next),
+      }),
     enabled: canPlay,
     staleTime: Number.POSITIVE_INFINITY,
     retry: false,
@@ -826,6 +831,10 @@ function TextAdventureConversation({
 
   const session = sessionQuery.data;
   const messages = session?.messages ?? [];
+  const lastMessageContent = messages.at(-1)?.content ?? "";
+  const streamingAssistant = messages.some(
+    (message) => message.id === TEXT_GAME_STREAMING_ASSISTANT_ID
+  );
 
   useEffect(() => {
     const scrollContainer = scrollRef.current;
@@ -834,7 +843,7 @@ function TextAdventureConversation({
       top: scrollContainer.scrollHeight,
       behavior: messages.length > 1 || sending ? "smooth" : "auto",
     });
-  }, [messages.length, sending]);
+  }, [messages.length, lastMessageContent, sending]);
 
   const submitAction = async () => {
     const value = draft.trim();
@@ -852,37 +861,95 @@ function TextAdventureConversation({
     setSending(true);
     queryClient.setQueryData<TextGamePlaySession>(
       textAdventureSessionKeys.detail(game.gameId, locale),
-      (current) => (current ? { ...current, messages: [...current.messages, optimistic] } : current)
+      (current) =>
+        current
+          ? {
+              ...current,
+              messages: [
+                ...current.messages,
+                optimistic,
+                {
+                  id: TEXT_GAME_STREAMING_ASSISTANT_ID,
+                  role: "assistant",
+                  content: "",
+                  createdAt: optimistic.createdAt,
+                },
+              ],
+            }
+          : current
     );
 
     try {
-      const response = await sendTextAdventureAction(session.sessionId, value, locale);
-      queryClient.setQueryData<TextGamePlaySession>(
-        textAdventureSessionKeys.detail(game.gameId, locale),
-        (current) =>
-          current
-            ? {
-                ...current,
-                messages: [
-                  ...current.messages.filter((message) => message.id !== optimisticId),
-                  response.userMessage,
-                  response.assistantMessage,
-                ],
-              }
-            : current
-      );
+      await sendTextAdventureAction(session.sessionId, value, locale, {
+        onUserMessage: (userMessage) => {
+          queryClient.setQueryData<TextGamePlaySession>(
+            textAdventureSessionKeys.detail(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.map((item) =>
+                      item.id === optimisticId ? userMessage : item
+                    ),
+                  }
+                : current
+          );
+        },
+        onAssistantDelta: (text) => {
+          queryClient.setQueryData<TextGamePlaySession>(
+            textAdventureSessionKeys.detail(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.map((item) =>
+                      item.id === TEXT_GAME_STREAMING_ASSISTANT_ID
+                        ? { ...item, content: `${item.content}${text}` }
+                        : item
+                    ),
+                  }
+                : current
+          );
+        },
+        onAssistantDone: (assistantMessage) => {
+          queryClient.setQueryData<TextGamePlaySession>(
+            textAdventureSessionKeys.detail(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.map((item) =>
+                      item.id === TEXT_GAME_STREAMING_ASSISTANT_ID ? assistantMessage : item
+                    ),
+                  }
+                : current
+          );
+        },
+      });
     } catch (error) {
-      queryClient.setQueryData<TextGamePlaySession>(
-        textAdventureSessionKeys.detail(game.gameId, locale),
-        (current) =>
-          current
-            ? {
-                ...current,
-                messages: current.messages.filter((message) => message.id !== optimisticId),
-              }
-            : current
-      );
-      setDraft(value);
+      try {
+        const recovered = await getPlayingTextAdventureSession(game.gameId);
+        if (recovered) {
+          queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale), recovered);
+        } else {
+          queryClient.setQueryData<TextGamePlaySession>(
+            textAdventureSessionKeys.detail(game.gameId, locale),
+            (current) =>
+              current
+                ? {
+                    ...current,
+                    messages: current.messages.filter(
+                      (item) =>
+                        item.id !== optimisticId && item.id !== TEXT_GAME_STREAMING_ASSISTANT_ID
+                    ),
+                  }
+                : current
+          );
+          setDraft(value);
+        }
+      } catch {
+        setDraft(value);
+      }
       toast.error(errorMessage(error, t("playtest.sendFailed")));
     } finally {
       sendingRef.current = false;
@@ -897,7 +964,13 @@ function TextAdventureConversation({
     setRestarting(true);
     const toastId = toast.loading(t("playtest.restarting"));
     try {
-      const next = await startTextAdventureSession(game.gameId, locale);
+      const next = await startTextAdventureSession(game.gameId, locale, {
+        onSession: (sessionNext) =>
+          queryClient.setQueryData(
+            textAdventureSessionKeys.detail(game.gameId, locale),
+            sessionNext
+          ),
+      });
       queryClient.setQueryData(textAdventureSessionKeys.detail(game.gameId, locale), next);
       setDraft("");
       toast.success(t("playtest.restartComplete"), { id: toastId });
@@ -993,7 +1066,7 @@ function TextAdventureConversation({
                 </div>
               ) : null}
 
-              {sessionQuery.isLoading ? (
+              {sessionQuery.isLoading && !session ? (
                 <div className="flex flex-col items-center py-24 text-center">
                   <IconLoader2 className="size-6 animate-spin text-white/42" />
                   <p className="mt-4 text-sm text-white/40">{t("playtest.opening")}</p>
@@ -1035,9 +1108,10 @@ function TextAdventureConversation({
                     key={message.id}
                     message={message}
                     actionLabel={t("playtest.yourAction")}
+                    generatingLabel={t("playtest.responding")}
                   />
                 ))}
-                {sending ? (
+                {sending && !streamingAssistant ? (
                   <div className="flex items-center gap-3 py-3 text-sm text-white/40">
                     <IconLoader2 className="size-4 animate-spin" />
                     {t("playtest.responding")}
@@ -1086,9 +1160,11 @@ function TextAdventureConversation({
 function TextAdventureMessage({
   message,
   actionLabel,
+  generatingLabel,
 }: {
   message: TextGameMessage;
   actionLabel: string;
+  generatingLabel: string;
 }) {
   if (message.role === "system") {
     return <p className="text-center text-xs text-white/28">{message.content}</p>;
@@ -1106,9 +1182,11 @@ function TextAdventureMessage({
     );
   }
   return (
-    <article className="text-[1.02rem] leading-8 text-white/76 text-pretty sm:text-[1.08rem] [&>*+*]:mt-[1.15em] [&_blockquote]:border-l-2 [&_blockquote]:border-white/15 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-white/56 [&_h1]:text-2xl [&_h2]:text-xl [&_h3]:text-lg [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold [&_h1]:text-white/90 [&_h2]:text-white/90 [&_h3]:text-white/90 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6 [&_strong]:font-semibold [&_strong]:text-white/88">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
-    </article>
+    <TextAdventureStreamBody
+      content={message.content}
+      streaming={message.id === TEXT_GAME_STREAMING_ASSISTANT_ID}
+      generatingLabel={generatingLabel}
+    />
   );
 }
 
