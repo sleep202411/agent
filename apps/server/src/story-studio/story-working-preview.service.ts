@@ -286,11 +286,7 @@ export class StoryWorkingPreviewService {
       timelines: prepared.map((item) => item.timeline),
       worlds,
       // Preview validates and paints the selected cover through ExperiencePlayer.
-      cover: await resolveStoryCover(
-        tx,
-        project.workspaceId,
-        project.coverAssetId,
-      ),
+      cover: await resolveStoryCover(tx, project.coverAssetId),
     });
 
     return {

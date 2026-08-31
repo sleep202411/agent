@@ -49,14 +49,7 @@ export interface StoryExperienceManifestCompilerInput {
   metadata: {
     title: string;
     summary?: string | null;
-    /**
-     * Must name an image in `release.media`. The manifest schema validates that
-     * the reference resolves, so an id with no matching asset is a compiler bug
-     * and is reported as one (STORY_EXPERIENCE_MANIFEST_SCHEMA_INVALID) rather
-     * than quietly dropped — a story whose cover silently vanishes is the exact
-     * failure this field exists to end.
-     */
-    coverAssetId?: string;
+    coverUrl?: string;
   };
   mediaIdentities: readonly StoryExperienceMediaIdentity[];
 }
@@ -192,9 +185,7 @@ export function compileStoryExperienceManifest(
             ),
           }
         : {}),
-      ...(input.metadata.coverAssetId
-        ? { coverAssetId: input.metadata.coverAssetId }
-        : {}),
+      ...(input.metadata.coverUrl ? { coverUrl: input.metadata.coverUrl } : {}),
     },
     compatibility: {
       engineApiVersion: '2.0.0',

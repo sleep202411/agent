@@ -226,9 +226,11 @@ function ActiveExperienceRuntimePlayer({
   // The cover is the only art that exists before any clip has played, so it is
   // what the loading and title screen should stand on — otherwise the viewer
   // waits on a black rectangle. Absent cover simply falls back to that.
-  const coverUri = manifest.metadata.coverAssetId
-    ? resolveImageUri(manifest.assets, manifest.metadata.coverAssetId, orientation)
-    : undefined;
+  const coverUri =
+    manifest.metadata.coverUrl ??
+    (manifest.metadata.coverAssetId
+      ? resolveImageUri(manifest.assets, manifest.metadata.coverAssetId, orientation)
+      : undefined);
   const experienceProfile = manifest.metadata.experienceProfile ?? "cinematic";
   const playbackLocale = resolvePlaybackLocale(manifest, locale);
   const {
