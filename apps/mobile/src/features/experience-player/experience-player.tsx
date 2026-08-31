@@ -664,6 +664,10 @@ function resolveCoverCandidates(
     uris.push(absolute);
   };
 
+  push(manifest.metadata.coverUrl);
+
+  // Compatibility with immutable manifests published before covers became
+  // direct catalogue metadata.
   const assetId = manifest.metadata.coverAssetId;
   if (assetId) {
     const asset = manifest.assets.find(

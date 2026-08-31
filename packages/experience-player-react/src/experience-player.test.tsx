@@ -42,6 +42,7 @@ function localized(english: string, chinese: string) {
 }
 
 function runtimeFixture(input: {
+  coverUrl?: string;
   experienceProfile?: "cinematic" | "narrative";
   completion: "continue" | "passive";
   rendererKind?: "text" | "video" | "world";
@@ -70,6 +71,7 @@ function runtimeFixture(input: {
     completionPolicy: "finite",
     metadata: {
       title: localized("A text experience", "文字体验"),
+      ...(input.coverUrl ? { coverUrl: input.coverUrl } : {}),
       ...(input.experienceProfile ? { experienceProfile: input.experienceProfile } : {}),
     },
     compatibility: {
@@ -281,6 +283,22 @@ function runtimeFixture(input: {
 }
 
 describe("ExperiencePlayer core.text", () => {
+  it("renders a direct catalogue cover without a runtime image asset", () => {
+    const html = renderToStaticMarkup(
+      <ExperiencePlayer
+        runtime={runtimeFixture({
+          completion: "passive",
+          coverUrl: "https://media.example.com/story-cover.jpg",
+        })}
+        locale="en-US"
+        copy={copy}
+        randomSeed="direct-cover-test"
+      />
+    );
+
+    expect(html).toContain('src="https://media.example.com/story-cover.jpg"');
+  });
+
   it("renders localized scrollable narrative text with the existing continue copy", () => {
     const html = renderToStaticMarkup(
       <ExperiencePlayer

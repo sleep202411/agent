@@ -84,6 +84,15 @@ export const ExperienceRuntimeUriSchema = z
     });
   });
 
+export const ExperienceHttpUrlSchema = z.url().superRefine((value, context) => {
+  const protocol = new URL(value).protocol;
+  if (protocol === "http:" || protocol === "https:") return;
+  context.addIssue({
+    code: "custom",
+    message: "URLs must use HTTP or HTTPS",
+  });
+});
+
 export const ExperienceOrientationSchema = z.enum(["landscape", "portrait", "square"]);
 export type ExperienceOrientation = z.infer<typeof ExperienceOrientationSchema>;
 

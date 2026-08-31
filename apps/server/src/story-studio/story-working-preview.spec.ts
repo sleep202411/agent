@@ -23,10 +23,10 @@ function previewCoverRow() {
     status: 'ready',
     moderationStatus: 'approved',
     deletedAt: null,
-    contentType: 'image/jpeg',
-    width: 1600,
-    height: 900,
-    checksumSha256: 'c'.repeat(64),
+    contentType: null,
+    width: null,
+    height: null,
+    checksumSha256: null,
     placements: [],
   };
 }
@@ -186,18 +186,11 @@ describe('StoryWorkingPreviewService', () => {
 
     expect(preview.diagnostics).toEqual([]);
     const runtime = preview.runtime as {
-      metadata: { coverAssetId?: string };
-      assets: { assetId: string; kind: string; variants: { uri: string }[] }[];
+      metadata: { coverUrl?: string };
+      assets: { kind: string }[];
     };
-    expect(runtime.metadata.coverAssetId).toBe(`image:${COVER_ASSET_ID}`);
-    expect(
-      runtime.assets.find(
-        (asset) => asset.assetId === `image:${COVER_ASSET_ID}`,
-      ),
-    ).toMatchObject({
-      kind: 'image',
-      variants: [{ uri: 'https://assets.example/cover.jpg' }],
-    });
+    expect(runtime.metadata.coverUrl).toBe('https://assets.example/cover.jpg');
+    expect(runtime.assets.some((asset) => asset.kind === 'image')).toBe(false);
     expect(tx.mediaAsset.findFirst).toHaveBeenCalledTimes(1);
   });
 
@@ -209,7 +202,7 @@ describe('StoryWorkingPreviewService', () => {
 
     expect(
       (preview.runtime as { metadata: Record<string, unknown> }).metadata,
-    ).not.toHaveProperty('coverAssetId');
+    ).not.toHaveProperty('coverUrl');
     expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
   });
 
