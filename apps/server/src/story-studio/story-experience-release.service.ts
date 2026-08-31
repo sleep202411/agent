@@ -24,7 +24,6 @@ import type {
 import {
   createExperienceGameReleaseRequest,
   createExperienceReleaseRequest,
-  experienceReleaseCoverUrl,
 } from './experience-release-request';
 import {
   planStoryChapterRelease,
@@ -75,6 +74,7 @@ export class StoryExperienceReleaseService {
     );
     const workbench = await this.projects.workbench(user, projectId, {});
     assertExpectedSnapshot(workbench, input);
+    const coverUrl = requireReleaseCoverUrl(workbench);
 
     const chapters = await this.buildCurrentChapters(
       user,
@@ -111,7 +111,7 @@ export class StoryExperienceReleaseService {
     if (plan.chapters.length === 0) {
       const chapter = byBuildId.get(plan.opening.buildId);
       if (!chapter) throw releaseCorrupt('The opening Build is missing.');
-      const request = runtimeReleaseRequest(chapter.manifest);
+      const request = runtimeReleaseRequest(chapter.manifest, coverUrl);
       await this.authorizeSingleCandidate(
         projectId,
         user.userId,
@@ -147,7 +147,6 @@ export class StoryExperienceReleaseService {
           opening.manifest.localization.defaultLocale,
         )
       : undefined;
-    const coverUrl = experienceReleaseCoverUrl(opening.manifest);
     const request = createExperienceGameReleaseRequest(
       {
         gameId: projectId,
@@ -388,6 +387,7 @@ export class StoryExperienceReleaseService {
 
 function runtimeReleaseRequest(
   manifest: ExperienceRuntimeManifest,
+  coverUrl: string,
 ): ExperienceReleaseRequest {
   const subtitle = manifest.metadata.summary
     ? localizedText(
@@ -395,7 +395,6 @@ function runtimeReleaseRequest(
         manifest.localization.defaultLocale,
       )
     : undefined;
-  const coverUrl = experienceReleaseCoverUrl(manifest);
   return createExperienceReleaseRequest(
     {
       gameId: manifest.gameId,
@@ -405,12 +404,22 @@ function runtimeReleaseRequest(
         manifest.localization.defaultLocale,
       ),
       ...(subtitle ? { subtitle } : {}),
-      ...(coverUrl ? { coverUrl } : {}),
+      coverUrl,
       status: 'draft',
       setCurrent: true,
     },
     manifest,
   );
+}
+
+function requireReleaseCoverUrl(workbench: StoryWorkbenchDto): string {
+  const coverUrl = workbench.project.cover?.previewUrl?.trim();
+  if (coverUrl) return coverUrl;
+  throw new UnprocessableEntityException({
+    code: 'STORY_RELEASE_COVER_REQUIRED',
+    message:
+      'Select a ready project cover before submitting this work for review.',
+  });
 }
 
 function preparedChapter(

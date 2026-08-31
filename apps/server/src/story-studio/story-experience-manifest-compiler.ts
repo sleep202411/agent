@@ -49,7 +49,6 @@ export interface StoryExperienceManifestCompilerInput {
   metadata: {
     title: string;
     summary?: string | null;
-    coverUrl?: string;
   };
   mediaIdentities: readonly StoryExperienceMediaIdentity[];
 }
@@ -185,7 +184,6 @@ export function compileStoryExperienceManifest(
             ),
           }
         : {}),
-      ...(input.metadata.coverUrl ? { coverUrl: input.metadata.coverUrl } : {}),
     },
     compatibility: {
       engineApiVersion: '2.0.0',

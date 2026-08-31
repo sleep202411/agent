@@ -408,6 +408,7 @@ export interface StoryWorkingPreview {
   videoSnapshotHash: string | null;
   runtimeSchemaVersion: 2;
   runtime: Record<string, unknown> | null;
+  coverUrl: string | null;
   diagnostics: StoryBuildDiagnostic[];
   pathReport: StoryBuildPathReport | null;
   sources: Array<{

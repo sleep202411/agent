@@ -173,7 +173,7 @@ describe('StoryWorkingPreviewService', () => {
    * is where a creator actually sees the cover they just picked. Without it the
    * only way to find out whether a cover works would be to publish.
    */
-  it('paints the project cover into the Preview manifest', async () => {
+  it('returns the project cover beside the Preview manifest', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, tx } = scopedService(
       draft,
@@ -185,11 +185,8 @@ describe('StoryWorkingPreviewService', () => {
     const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.diagnostics).toEqual([]);
-    const runtime = preview.runtime as {
-      metadata: { coverUrl?: string };
-      assets: { kind: string }[];
-    };
-    expect(runtime.metadata.coverUrl).toBe('https://assets.example/cover.jpg');
+    const runtime = preview.runtime as { assets: { kind: string }[] };
+    expect(preview.coverUrl).toBe('https://assets.example/cover.jpg');
     expect(runtime.assets.some((asset) => asset.kind === 'image')).toBe(false);
     expect(tx.mediaAsset.findFirst).toHaveBeenCalledTimes(1);
   });
@@ -200,9 +197,7 @@ describe('StoryWorkingPreviewService', () => {
 
     const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
-    expect(
-      (preview.runtime as { metadata: Record<string, unknown> }).metadata,
-    ).not.toHaveProperty('coverUrl');
+    expect(preview.coverUrl).toBeNull();
     expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
   });
 

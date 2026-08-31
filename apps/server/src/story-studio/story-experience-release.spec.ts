@@ -7,6 +7,7 @@ import { StoryExperienceReleaseService } from './story-experience-release.servic
 const PROJECT_ID = '019f60f4-b101-70d4-8000-000000000002';
 const USER_ID = 'creator-1';
 const HASH = 'a'.repeat(64);
+const COVER_URL = 'https://media.example.test/project-cover.jpg';
 const FIRST_BUILD_ID = '019f60f4-b101-70d4-8000-000000000011';
 const SECOND_BUILD_ID = '019f60f4-b101-70d4-8000-000000000012';
 
@@ -43,6 +44,7 @@ describe('StoryExperienceReleaseService', () => {
       status: 'draft',
       setCurrent: true,
       title: 'Interactive Film',
+      coverUrl: COVER_URL,
     });
     expect(release.manifest).toEqual(manifest);
     expect(dependencies.permissions.requireProject).toHaveBeenCalledWith(
@@ -118,6 +120,7 @@ describe('StoryExperienceReleaseService', () => {
       gameId: PROJECT_ID,
       status: 'draft',
       setCurrent: true,
+      coverUrl: COVER_URL,
       manifest: {
         manifestType: 'fizzdragon.experience-game',
         gameId: PROJECT_ID,
@@ -143,6 +146,32 @@ describe('StoryExperienceReleaseService', () => {
         }),
       }),
     );
+  });
+
+  it('rejects review submission when the project has no public cover URL', async () => {
+    const dependencies = serviceDependencies({
+      workbench: workbenchFixture(
+        [
+          {
+            id: '019f60f4-b101-70d4-8000-000000000021',
+            title: 'Opening',
+            rank: 0,
+          },
+        ],
+        null,
+      ),
+      builds: [],
+    });
+
+    await expect(
+      dependencies.service.prepareProjectCandidate(
+        { userId: USER_ID } as never,
+        PROJECT_ID,
+        { expectedDraftRevision: 7, expectedVideoSnapshotHash: HASH },
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_RELEASE_COVER_REQUIRED' },
+    });
   });
 });
 
@@ -206,9 +235,14 @@ function workbenchFixture(
     rank: number;
     entryNodeId?: string;
   }>,
+  coverUrl: string | null = COVER_URL,
 ): StoryWorkbenchDto {
   return {
-    project: { id: PROJECT_ID, projectVersion: 3 },
+    project: {
+      id: PROJECT_ID,
+      projectVersion: 3,
+      cover: coverUrl ? { previewUrl: coverUrl } : null,
+    },
     draft: { revision: 7 },
     video: { snapshotHash: HASH },
     chapters: chapters.map((chapter) => ({ entryNodeId: null, ...chapter })),

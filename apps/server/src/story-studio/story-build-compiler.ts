@@ -68,17 +68,6 @@ interface FrozenNodeTimeline {
   segments: FrozenStoryBuildSegment[];
 }
 
-/** Catalogue cover identity frozen into a Build. */
-export interface StoryCoverReference {
-  mediaAssetId: string;
-  url: string;
-}
-
-export interface StoryBuildCoverInput {
-  reference: StoryCoverReference | null;
-  eligibilityDiagnostics: StoryBuildDiagnosticDto[];
-}
-
 export interface StoryBuildCompilerInput {
   projectId: string;
   buildId: string;
@@ -97,8 +86,6 @@ export interface StoryBuildCompilerInput {
    * which is why nothing here can ever produce a diagnostic.
    */
   musicUrls?: ReadonlyMap<string, string>;
-  /** Absent for a project with no cover — the common case, and no diagnostic. */
-  cover?: StoryBuildCoverInput;
   diagnostics?: StoryBuildDiagnosticDto[];
 }
 
@@ -118,10 +105,7 @@ export interface StoryBuildCompilerResult {
 export function compileStoryBuild(
   input: StoryBuildCompilerInput,
 ): StoryBuildCompilerResult {
-  const diagnostics = [
-    ...(input.diagnostics ?? []),
-    ...(input.cover?.eligibilityDiagnostics ?? []),
-  ];
+  const diagnostics = [...(input.diagnostics ?? [])];
   const nodes = new Map(
     input.draft.graph.nodes.map((node) => [node.nodeId, node]),
   );
@@ -298,7 +282,6 @@ export function compileStoryBuild(
         ),
       );
     } else {
-      const cover = input.cover?.reference ?? null;
       const mediaIdentities: StoryExperienceMediaIdentity[] =
         includedSegments.map((segment) => ({
           runtimeAssetId: storyRuntimeAssetId(segment.clipKey),
@@ -310,7 +293,6 @@ export function compileStoryBuild(
         experienceProfile: 'cinematic',
         metadata: {
           ...input.metadata,
-          ...(cover ? { coverUrl: cover.url } : {}),
         },
         mediaIdentities,
       });

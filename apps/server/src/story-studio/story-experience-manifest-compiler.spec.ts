@@ -17,7 +17,6 @@ const BUILD_ID = '0197f4a2-0800-7000-8000-000000000004';
 const ASSET_ID = '0197f4a2-0800-7000-8000-000000000006';
 const VARIANT_ID = '0197f4a2-0800-7000-8000-000000000007';
 const CHECKSUM = 'a'.repeat(64);
-const COVER_URL = 'https://media.example.com/workspace/image/cover.jpg';
 
 function release(): InteractiveFilmRelease {
   return InteractiveFilmReleaseSchema.parse({
@@ -363,38 +362,10 @@ describe('Story Runtime Manifest v2 compiler', () => {
     ]);
   });
 
-  it('emits the catalogue cover URL without inventing a runtime image asset', () => {
-    const result = compileStoryExperienceManifest({
-      release: release(),
-      experienceProfile: 'cinematic',
-      metadata: {
-        title: 'Story',
-        summary: null,
-        coverUrl: COVER_URL,
-      },
-      mediaIdentities: [
-        {
-          runtimeAssetId: 'video:START',
-          variantId: VARIANT_ID,
-          mediaType: 'video/mp4',
-        },
-      ],
-    });
-
-    expect(result.diagnostics).toEqual([]);
-    expect(result.manifest?.metadata.coverUrl).toBe(COVER_URL);
-    expect(
-      result.manifest?.assets.some((asset) => asset.kind === 'image'),
-    ).toBe(false);
-    expect(
-      ExperienceRuntimeManifestSchema.safeParse(result.manifest).success,
-    ).toBe(true);
-  });
-
   it('keeps a story with no cover free of any cover key', () => {
     const result = compile();
 
-    expect(result.manifest?.metadata).not.toHaveProperty('coverUrl');
+    expect(result.manifest?.metadata).not.toHaveProperty('coverAssetId');
     expect(
       result.manifest?.assets.some((asset) => asset.kind === 'image'),
     ).toBe(false);
