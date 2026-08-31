@@ -807,6 +807,7 @@ export interface StoryWorkingPreviewDto {
   videoSnapshotHash: string | null;
   runtimeSchemaVersion: 2;
   runtime: Record<string, unknown> | null;
+  coverUrl: string | null;
   diagnostics: StoryBuildDiagnosticDto[];
   pathReport: StoryBuildPathReportDto | null;
   sources: Array<{

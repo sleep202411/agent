@@ -61,7 +61,6 @@
       "properties": {
         "title": { "$ref": "#/$defs/__schema6" },
         "summary": { "$ref": "#/$defs/__schema6" },
-        "coverUrl": { "type": "string", "format": "uri" },
         "coverAssetId": { "$ref": "#/$defs/__schema3" },
         "experienceProfile": { "type": "string", "enum": ["cinematic", "narrative"] }
       },

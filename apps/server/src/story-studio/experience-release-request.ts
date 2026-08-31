@@ -19,34 +19,6 @@ export type VerifiedExperienceReleaseRequest = Omit<
   setCurrent: boolean;
 };
 
-/**
- * The catalogue cover URL for a release, read out of the FROZEN manifest.
- *
- * Deriving it from the manifest rather than re-reading the live project is what
- * keeps the request byte-stable: `requestHash` identifies a release receipt, so
- * a retry that re-resolved a swapped or newly blocked cover would turn into a
- * receipt conflict instead of an idempotent replay.
- *
- * Current manifests carry the URL directly. The image-asset lookup below only
- * serves immutable manifests published before that field existed; a legacy
- * root-relative URI is omitted because Java requires an absolute URL.
- */
-export function experienceReleaseCoverUrl(
-  manifest: ExperienceRuntimeManifest,
-): string | undefined {
-  if (manifest.metadata.coverUrl) return manifest.metadata.coverUrl;
-
-  // Immutable manifests published before catalogue covers were decoupled from
-  // runtime image assets still use this pointer.
-  const coverAssetId = manifest.metadata.coverAssetId;
-  if (!coverAssetId) return undefined;
-  const cover = manifest.assets.find(
-    (asset) => asset.assetId === coverAssetId && asset.kind === 'image',
-  );
-  const uri = cover?.kind === 'image' ? cover.variants[0]?.uri : undefined;
-  return uri?.startsWith('https://') ? uri : undefined;
-}
-
 export class ExperienceReleaseRequestError extends Error {
   constructor(
     readonly code:

@@ -58,12 +58,10 @@ import {
   compileStoryBuild,
   storyRuntimeAssetId,
   type FrozenStoryVideoAsset,
-  type StoryBuildCoverInput,
   type StoryBuildNodeTimelineInput,
   type StoryBuildSegmentInput,
   type StoryBuildWorldInput,
 } from './story-build-compiler';
-import { resolveStoryCover } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
@@ -210,8 +208,6 @@ interface ValidatedBuildSnapshot {
   entries: StoryVideoSnapshotEntry[];
   timelines: StoryBuildNodeTimelineInput[];
   worlds: StoryBuildWorldInput[];
-  /** Plain public cover reference; an unavailable cover warns instead of failing. */
-  cover: StoryBuildCoverInput;
 }
 
 @Injectable()
@@ -311,7 +307,6 @@ export class StoryBuildService {
               draft: snapshot.draft.content,
               timelines: snapshot.timelines,
               worlds: snapshot.worlds,
-              cover: snapshot.cover,
             });
             if (
               !compilation.runtime &&
@@ -801,7 +796,6 @@ async function loadValidatedBuildSnapshot(
       summary: true,
       defaultLocale: true,
       frameProfile: true,
-      coverAssetId: true,
     },
   });
   if (!project) throw projectNotFound();
@@ -944,7 +938,6 @@ async function loadValidatedBuildSnapshot(
     entries,
     timelines,
     worlds,
-    cover: await resolveStoryCover(tx, project.coverAssetId),
   };
 }
 
@@ -1165,12 +1158,6 @@ export function storyBuildInputManifest(
       defaultLocale: snapshot.project.defaultLocale,
       title: snapshot.project.title,
       summary: snapshot.project.summary,
-      cover: snapshot.cover.reference
-        ? {
-            mediaAssetId: snapshot.cover.reference.mediaAssetId,
-            url: snapshot.cover.reference.url,
-          }
-        : null,
     },
     story: {
       sourceRevisionId,

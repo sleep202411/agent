@@ -1,11 +1,5 @@
 import { MediaAssetKind, Prisma, type PrismaClient } from '@prisma/client';
-import { ExperienceHttpUrlSchema } from '@repo/shared/experience-runtime';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
-import type { StoryBuildDiagnosticDto } from './dto';
-import type {
-  StoryBuildCoverInput,
-  StoryCoverReference,
-} from './story-build-compiler';
 
 /**
  * A project cover is catalogue metadata. Publishing and displaying it only
@@ -14,7 +8,6 @@ import type {
  */
 
 const COVER_ASSET_SELECT = Prisma.validator<Prisma.MediaAssetSelect>()({
-  id: true,
   storageProvider: true,
   bucket: true,
   region: true,
@@ -26,14 +19,14 @@ const COVER_ASSET_SELECT = Prisma.validator<Prisma.MediaAssetSelect>()({
   placements: true,
 });
 
-/** Resolves the project's selected image to the URL a release carries. */
-export async function resolveStoryCover(
+/** Resolves the project's selected image to its public catalogue URL. */
+export async function resolveStoryCoverUrl(
   db: Pick<PrismaClient, 'mediaAsset'>,
   coverAssetId: string | null,
-): Promise<StoryBuildCoverInput> {
+): Promise<string | null> {
   // The overwhelming majority of projects have no cover, and those must cost no
   // query at all.
-  if (!coverAssetId) return { reference: null, eligibilityDiagnostics: [] };
+  if (!coverAssetId) return null;
 
   // Ownership was checked when this id was set on the project. Some uploads do
   // not carry a workspace id, so re-scoping the lookup would discard a valid
@@ -45,47 +38,16 @@ export async function resolveStoryCover(
     },
     select: COVER_ASSET_SELECT,
   });
-  if (!row) return unusable(coverAssetId, 'is not a publishable project image');
+  if (!row) return null;
 
   // `resolvePublicUrl` is the single gate for deleted, unready, moderation
   // blocked and unresolvable media, and never throws.
   const url = resolveMediaPublicUrl(row)?.trim();
-  if (!url) {
-    return unusable(
-      coverAssetId,
-      'is deleted, still processing, blocked, or has no storage placement',
-    );
+  if (!url) return null;
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === 'http:' || protocol === 'https:' ? url : null;
+  } catch {
+    return null;
   }
-  if (!ExperienceHttpUrlSchema.safeParse(url).success) {
-    return unusable(
-      coverAssetId,
-      `resolves to ${url}, which is not a public HTTP URL`,
-    );
-  }
-
-  const reference: StoryCoverReference = {
-    mediaAssetId: row.id,
-    url,
-  };
-  return { reference, eligibilityDiagnostics: [] };
-}
-
-function unusable(mediaAssetId: string, reason: string): StoryBuildCoverInput {
-  return {
-    reference: null,
-    eligibilityDiagnostics: [coverWarning(mediaAssetId, reason)],
-  };
-}
-
-function coverWarning(
-  mediaAssetId: string,
-  reason: string,
-): StoryBuildDiagnosticDto {
-  return {
-    severity: 'warning',
-    code: 'STORY_BUILD_COVER_UNUSABLE',
-    message: `The project cover ${reason}, so this release ships without one.`,
-    entityType: 'asset',
-    entityId: mediaAssetId,
-  };
 }

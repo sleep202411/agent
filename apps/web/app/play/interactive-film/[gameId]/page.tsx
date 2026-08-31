@@ -98,6 +98,7 @@ export default async function InteractiveFilmPage({ params, searchParams }: Rout
           runtime={published.manifest}
           locale={locale}
           randomSeed={randomUUID()}
+          coverUrl={published.game.coverUrl}
         />
         <ChapterMenu published={published} gameId={gameId} locale={locale} copy={playerCopy} />
         <PlayShareButton

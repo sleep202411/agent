@@ -1,12 +1,20 @@
 import { z } from "zod";
 import {
-  ExperienceHttpUrlSchema,
   ExperienceJsonObjectSchema,
   ExperienceStableIdSchema,
   type ExperienceJsonObject,
 } from "./common.js";
 
 const ExperienceDisplayTextSchema = z.string().trim().min(1).max(240);
+
+const ExperienceHttpUrlSchema = z.url().superRefine((value, context) => {
+  const protocol = new URL(value).protocol;
+  if (protocol === "http:" || protocol === "https:") return;
+  context.addIssue({
+    code: "custom",
+    message: "Release URLs must use HTTP or HTTPS",
+  });
+});
 
 // Decorative catalogue fields must NEVER drop a game: Java sends explicit
 // null (no cover / no subtitle) and occasionally a malformed value. A valid
