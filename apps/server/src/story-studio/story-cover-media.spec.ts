@@ -1,4 +1,4 @@
-import { resolveStoryCover } from './story-cover-media';
+import { resolveStoryCoverUrl } from './story-cover-media';
 
 const COVER_ASSET_ID = '0197f4a2-0800-7000-8000-00000000000a';
 
@@ -44,31 +44,22 @@ function readyImage(objectKey = 'story-cover/hero.jpg') {
   };
 }
 
-describe('resolveStoryCover', () => {
+describe('resolveStoryCoverUrl', () => {
   it('never queries for a project with no cover', async () => {
     const { db, findFirst } = prismaReturning(readyImage());
 
-    expect(await resolveStoryCover(db as never, null)).toEqual({
-      reference: null,
-      eligibilityDiagnostics: [],
-    });
+    expect(await resolveStoryCoverUrl(db as never, null)).toBeNull();
     expect(findFirst).not.toHaveBeenCalled();
   });
 
   it('resolves a cover from its public URL without requiring technical metadata', async () => {
     const { db, queries } = prismaReturning(readyImage());
 
-    const cover = await resolveStoryCover(db as never, COVER_ASSET_ID);
+    const coverUrl = await resolveStoryCoverUrl(db as never, COVER_ASSET_ID);
 
     // No signature and no expiry: a catalogue tile and an og:image crawler
     // cannot follow a short-lived signed link.
-    expect(cover).toEqual({
-      reference: {
-        mediaAssetId: COVER_ASSET_ID,
-        url: 'https://media.example.com/story-cover/hero.jpg',
-      },
-      eligibilityDiagnostics: [],
-    });
+    expect(coverUrl).toBe('https://media.example.com/story-cover/hero.jpg');
     // Image-kind stays a query predicate — a cover has to be a still. Workspace
     // does NOT: uploads record no workspace, so scoping by it made an uploaded
     // cover unpublishable, and the id was already accepted when the cover was
@@ -81,13 +72,7 @@ describe('resolveStoryCover', () => {
     ).not.toHaveProperty('workspaceId');
   });
 
-  /**
-   * The contract of this module: it can refuse to publish a cover, but it can
-   * never fail a Build. Every refusal is a WARNING, because the creator set that
-   * cover on purpose and a silent drop would leave them with a black title
-   * screen and no explanation.
-   */
-  it('warns rather than failing for media that must not be served', async () => {
+  it('returns no URL for media that must not be served', async () => {
     for (const unusable of [
       null,
       { ...readyImage(), deletedAt: new Date() },
@@ -97,17 +82,9 @@ describe('resolveStoryCover', () => {
     ]) {
       const { db } = prismaReturning(unusable);
 
-      const cover = await resolveStoryCover(db as never, COVER_ASSET_ID);
-
-      expect(cover.reference).toBeNull();
-      expect(cover.eligibilityDiagnostics).toEqual([
-        expect.objectContaining({
-          severity: 'warning',
-          code: 'STORY_BUILD_COVER_UNUSABLE',
-          entityType: 'asset',
-          entityId: COVER_ASSET_ID,
-        }),
-      ]);
+      expect(
+        await resolveStoryCoverUrl(db as never, COVER_ASSET_ID),
+      ).toBeNull();
     }
   });
 
@@ -120,9 +97,6 @@ describe('resolveStoryCover', () => {
     };
     const { db } = prismaReturning(misconfigured);
 
-    const cover = await resolveStoryCover(db as never, COVER_ASSET_ID);
-
-    expect(cover.reference).toBeNull();
-    expect(cover.eligibilityDiagnostics).toHaveLength(1);
+    expect(await resolveStoryCoverUrl(db as never, COVER_ASSET_ID)).toBeNull();
   });
 });

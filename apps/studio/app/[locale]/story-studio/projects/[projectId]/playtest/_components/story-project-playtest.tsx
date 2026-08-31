@@ -116,6 +116,7 @@ export function StoryProjectPlaytest({
           key={parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}
           runtime={runtime}
           locale={locale}
+          coverUrl={loadedRuntime.kind === "draft" ? loadedRuntime.preview.coverUrl : undefined}
         />
       </div>
 

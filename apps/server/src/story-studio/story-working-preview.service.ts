@@ -30,7 +30,7 @@ import {
   type StoryBuildSegmentInput,
   type StoryBuildWorldInput,
 } from './story-build-compiler';
-import { resolveStoryCover } from './story-cover-media';
+import { resolveStoryCoverUrl } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
 import {
   chooseStoryboardClipVariant,
@@ -265,6 +265,7 @@ export class StoryWorkingPreviewService {
       draft.contentHash,
       videoSnapshotHash,
     );
+    const coverUrl = await resolveStoryCoverUrl(tx, project.coverAssetId);
 
     const compiled = compileStoryBuild({
       projectId,
@@ -285,8 +286,6 @@ export class StoryWorkingPreviewService {
       draft: playableDraft.data,
       timelines: prepared.map((item) => item.timeline),
       worlds,
-      // Preview validates and paints the selected cover through ExperiencePlayer.
-      cover: await resolveStoryCover(tx, project.coverAssetId),
     });
 
     return {
@@ -295,6 +294,7 @@ export class StoryWorkingPreviewService {
       videoSnapshotHash,
       runtimeSchemaVersion: 2,
       runtime: compiled.runtime as Record<string, unknown> | null,
+      coverUrl,
       diagnostics: compiled.diagnostics,
       pathReport: compiled.pathReport,
       sources: prepared.flatMap((item) =>
@@ -544,6 +544,7 @@ function emptyWorkingPreview(
     videoSnapshotHash,
     runtimeSchemaVersion: 2,
     runtime: null,
+    coverUrl: null,
     diagnostics: diagnostic ? [diagnostic] : [],
     pathReport: null,
     sources: [],

@@ -9,10 +9,12 @@ export function ExperienceRuntimePlayer({
   runtime,
   locale,
   randomSeed,
+  coverUrl,
 }: {
   runtime: ExperienceRuntimeManifest;
   locale: string;
   randomSeed: string;
+  coverUrl?: string;
 }) {
   const t = useTranslations("experiencePlayer");
   const copy = useMemo<ExperiencePlayerCopy>(
@@ -49,5 +51,13 @@ export function ExperienceRuntimePlayer({
     [t]
   );
 
-  return <ExperiencePlayer runtime={runtime} locale={locale} randomSeed={randomSeed} copy={copy} />;
+  return (
+    <ExperiencePlayer
+      runtime={runtime}
+      locale={locale}
+      randomSeed={randomSeed}
+      copy={copy}
+      coverUrl={coverUrl}
+    />
+  );
 }

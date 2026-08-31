@@ -42,7 +42,6 @@ function localized(english: string, chinese: string) {
 }
 
 function runtimeFixture(input: {
-  coverUrl?: string;
   experienceProfile?: "cinematic" | "narrative";
   completion: "continue" | "passive";
   rendererKind?: "text" | "video" | "world";
@@ -71,7 +70,6 @@ function runtimeFixture(input: {
     completionPolicy: "finite",
     metadata: {
       title: localized("A text experience", "文字体验"),
-      ...(input.coverUrl ? { coverUrl: input.coverUrl } : {}),
       ...(input.experienceProfile ? { experienceProfile: input.experienceProfile } : {}),
     },
     compatibility: {
@@ -288,8 +286,8 @@ describe("ExperiencePlayer core.text", () => {
       <ExperiencePlayer
         runtime={runtimeFixture({
           completion: "passive",
-          coverUrl: "https://media.example.com/story-cover.jpg",
         })}
+        coverUrl="https://media.example.com/story-cover.jpg"
         locale="en-US"
         copy={copy}
         randomSeed="direct-cover-test"

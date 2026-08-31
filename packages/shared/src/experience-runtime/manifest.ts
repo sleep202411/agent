@@ -5,7 +5,6 @@ import {
   EXPERIENCE_RUNTIME_SCHEMA_VERSION,
   EXPERIENCE_SEMANTIC_RULES_VERSION,
   ExperienceEventTypeSchema,
-  ExperienceHttpUrlSchema,
   ExperienceLocaleSchema,
   ExperienceLocalizedTextSchema,
   ExperienceStableIdSchema,
@@ -39,11 +38,6 @@ const ExperienceMetadataSchema = z
   .object({
     title: ExperienceLocalizedTextSchema,
     summary: ExperienceLocalizedTextSchema.optional(),
-    coverUrl: ExperienceHttpUrlSchema.optional(),
-    /**
-     * Legacy manifests reference a cover image in `assets`. New manifests use
-     * `coverUrl` because a catalogue cover is not runtime scene media.
-     */
     coverAssetId: ExperienceStableIdSchema.optional(),
     experienceProfile: ExperienceProfileSchema.optional(),
   })

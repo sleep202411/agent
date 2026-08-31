@@ -84,6 +84,7 @@ export interface ExperiencePlayerProps {
   runtime: unknown;
   locale: string;
   copy: ExperiencePlayerCopy;
+  coverUrl?: string;
   randomSeed?: string;
   frameProfile?: ExperiencePlayerFrameProfile;
   loadTheme?: ExperienceThemeLoader;
@@ -98,6 +99,7 @@ const SECONDARY_BUTTON =
 export function ExperiencePlayer({
   runtime,
   locale,
+  coverUrl,
   randomSeed: initialRandomSeed,
   copy,
   frameProfile = "auto",
@@ -162,6 +164,7 @@ export function ExperiencePlayer({
       controller={prepared.controller}
       locale={locale}
       copy={copy}
+      coverUrl={coverUrl}
       frameProfile={frameProfile}
       loadTheme={loadTheme}
       renderWorldModel={renderWorldModel}
@@ -178,6 +181,7 @@ function ActiveExperienceRuntimePlayer({
   controller,
   locale,
   copy,
+  coverUrl,
   frameProfile,
   loadTheme,
   renderWorldModel,
@@ -187,6 +191,7 @@ function ActiveExperienceRuntimePlayer({
   controller: ExperienceRuntimeController;
   locale: string;
   copy: ExperiencePlayerCopy;
+  coverUrl?: string;
   frameProfile: ExperiencePlayerFrameProfile;
   loadTheme: ExperienceThemeLoader;
   renderWorldModel?: (props: ExperienceWorldModelRendererProps) => ReactNode;
@@ -227,7 +232,7 @@ function ActiveExperienceRuntimePlayer({
   // what the loading and title screen should stand on — otherwise the viewer
   // waits on a black rectangle. Absent cover simply falls back to that.
   const coverUri =
-    manifest.metadata.coverUrl ??
+    coverUrl ??
     (manifest.metadata.coverAssetId
       ? resolveImageUri(manifest.assets, manifest.metadata.coverAssetId, orientation)
       : undefined);
