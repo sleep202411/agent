@@ -161,54 +161,126 @@ const STORY_PRODUCTION_STAGE_TERMS: Readonly<
 const STORY_PRODUCTION_SCOPE_DIRECTIVE =
   /(?:逐阶段|逐階段|分阶段|分階段|分别审核|分別審核|全部阶段|全部階段|完整流程|完整制作|完整製作|后续制作|後續製作|all\s+stages|each\s+stage|stage\s+by\s+stage|end[\s-]*to[\s-]*end|complete\s+production)/iu;
 const STORY_PRODUCTION_SINGLE_STAGE_DIRECTIVE =
-  /(?:生成|创建|創建|制作|製作|准备|準備|提供|完成|推进|推進|generate|create|build|prepare|provide|complete|continue)/iu;
-const STORY_PRODUCTION_NARROWING_DIRECTIVE = /(?:只|仅|僅|先做|先生成|只需要|只需|only|just)/iu;
+  /(?:生成|创建|創建|制作|製作|准备|準備|提供|完成|推进|推進|做|写|寫|起草|改编|改編|generate|create|build|prepare|provide|complete|continue|write|draft|produce|adapt)/iu;
+const STORY_PRODUCTION_BROAD_DIRECTIVE =
+  /(?:生成|创建|創建|制作|製作|完成|继续|繼續|完善|推进|推進|改编|改編|适配|適配|generate|create|build|complete|continue|finish|adapt|produce)/iu;
+const STORY_PRODUCTION_NARROWING_DIRECTIVE =
+  /(?:只|仅|僅|先做|先生成|只需要|只需|为止|為止|到此|不要后续|不要後續|only|just|stop\s+at|through\s+only|no\s+later)/iu;
 const STORY_PRODUCTION_NEGATED_STAGE_PREFIX =
   /(?:不要|不需要|无需|無需|别|別|跳过|跳過|略过|略過|排除|do\s+not|don't|without|skip|exclude)[^，,。；;!?\n]{0,48}$/iu;
+const STORY_PRODUCTION_SOURCE_PREFIX =
+  /(?:根据|根據|基于|基於|参考|參考|依照|按照|使用|用|from|based\s+on|using|reference)[^，,。；;!?\n]{0,24}$/iu;
 
 /**
- * Reconcile the model-proposed production boundary with the creator's exact,
- * immutable request. The model may interpret ambiguous prose, but it may not
- * shrink an explicit "stage by stage / review each stage" authorization or
- * widen an explicit single-stage request.
+ * Resolve the production boundary from the creator's immutable request and
+ * canonical chapter state. The model proposal is only an ambiguity fallback:
+ * a canonically empty chapter defaults to the complete reviewable production
+ * path, while only a direct stage request or explicit narrowing may stop it
+ * earlier. Merely naming source material ("generate from this script") never
+ * turns that source noun into an output boundary.
  */
 export function resolveStoryProductionTargetStage(input: {
   creatorRequest: string | null | undefined;
   proposed: StoryProductionTargetStage;
+  productionState: Pick<StoryProductionState, "script">;
 }): StoryProductionTargetStage {
   const request = input.creatorRequest?.trim();
-  if (!request) return input.proposed;
+  if (!request) {
+    return input.productionState.script.status === "missing" ? "storyboard" : input.proposed;
+  }
 
   const mentioned = STORY_PRODUCTION_STAGE_ORDER.filter((stage) =>
     STORY_PRODUCTION_STAGE_TERMS[stage].some((term) =>
       [...request.matchAll(term)].some((match) => !storyStageMentionIsNegated(request, match.index))
     )
   );
-  if (mentioned.length === 0) return input.proposed;
+  const directlyRequested = STORY_PRODUCTION_STAGE_ORDER.filter((stage) =>
+    STORY_PRODUCTION_STAGE_TERMS[stage].some((term) =>
+      [...request.matchAll(term)].some(
+        (match) =>
+          !storyStageMentionIsNegated(request, match.index) &&
+          storyStageMentionIsDirectRequest(request, match.index, match[0]?.length ?? 0)
+      )
+    )
+  );
+  const explicitlyExcluded = STORY_PRODUCTION_STAGE_ORDER.filter((stage) =>
+    STORY_PRODUCTION_STAGE_TERMS[stage].some((term) =>
+      [...request.matchAll(term)].some((match) => storyStageMentionIsNegated(request, match.index))
+    )
+  );
 
   const explicitlyScopesMultipleStages = STORY_PRODUCTION_SCOPE_DIRECTIVE.test(request);
   const explicitlyNarrowsScope = STORY_PRODUCTION_NARROWING_DIRECTIVE.test(request);
-  const explicitlyRequestsOneStage =
-    mentioned.length === 1 && STORY_PRODUCTION_SINGLE_STAGE_DIRECTIVE.test(request);
-  if (!explicitlyScopesMultipleStages && !explicitlyNarrowsScope && !explicitlyRequestsOneStage) {
-    return input.proposed;
+  if (explicitlyNarrowsScope && directlyRequested.length > 0) {
+    return directlyRequested.at(-1) ?? input.proposed;
+  }
+  const firstExcludedStage = explicitlyExcluded.at(0);
+  if (firstExcludedStage) {
+    const excludedIndex = STORY_PRODUCTION_STAGE_ORDER.indexOf(firstExcludedStage);
+    if (excludedIndex > 0) return STORY_PRODUCTION_STAGE_ORDER[excludedIndex - 1] ?? "script";
+  }
+  if (explicitlyScopesMultipleStages) {
+    return mentioned.length > 1 ? (mentioned.at(-1) ?? "storyboard") : "storyboard";
+  }
+  if (directlyRequested.length > 0 && STORY_PRODUCTION_SINGLE_STAGE_DIRECTIVE.test(request)) {
+    return directlyRequested.at(-1) ?? input.proposed;
+  }
+  if (
+    input.productionState.script.status === "missing" ||
+    STORY_PRODUCTION_BROAD_DIRECTIVE.test(request)
+  ) {
+    return "storyboard";
   }
 
-  return mentioned.at(-1) ?? input.proposed;
+  return input.proposed;
+}
+
+function storyStageMentionIsDirectRequest(
+  request: string,
+  matchIndex: number | undefined,
+  matchLength: number
+): boolean {
+  if (matchIndex === undefined) return false;
+  const clauseStart = storyClauseStart(request, matchIndex);
+  const clauseEnd = storyClauseEnd(request, matchIndex + matchLength);
+  const prefix = request.slice(clauseStart, matchIndex);
+  if (STORY_PRODUCTION_SOURCE_PREFIX.test(prefix)) return false;
+
+  const suffix = request.slice(matchIndex + matchLength, clauseEnd);
+  const directPrefix =
+    /(?:生成|创建|創建|制作|製作|准备|準備|提供|完成|推进|推進|做|写|寫|起草|改编|改編|只要|只需|仅需|僅需)[^，,。；;!?\n]{0,24}$/iu;
+  const directEnglishPrefix =
+    /\b(?:generate|create|build|prepare|provide|complete|continue|write|draft|produce|adapt)\b(?:\s+(?:a|an|the|this|that|new|complete|full|final|reviewable|production))*\s*$/iu;
+  const directSuffix =
+    /^\s*(?:(?:先|请|請|帮我|幫我)?\s*(?:生成|创建|創建|制作|製作|准备|準備|完成|推进|推進|做|写|寫|起草)|(?:为止|為止)|(?:(?:please\s+)?(?:generate|create|build|prepare|complete|continue|write|draft|produce)))/iu;
+  return directPrefix.test(prefix) || directEnglishPrefix.test(prefix) || directSuffix.test(suffix);
 }
 
 function storyStageMentionIsNegated(request: string, matchIndex: number | undefined): boolean {
   if (matchIndex === undefined) return false;
-  const clauseStart = Math.max(
-    request.lastIndexOf("。", matchIndex - 1),
-    request.lastIndexOf("；", matchIndex - 1),
-    request.lastIndexOf(";", matchIndex - 1),
-    request.lastIndexOf("!", matchIndex - 1),
-    request.lastIndexOf("?", matchIndex - 1),
-    request.lastIndexOf("\n", matchIndex - 1)
-  );
-  const prefix = request.slice(clauseStart + 1, matchIndex);
+  const clauseStart = storyClauseStart(request, matchIndex);
+  const prefix = request.slice(clauseStart, matchIndex);
   return STORY_PRODUCTION_NEGATED_STAGE_PREFIX.test(prefix);
+}
+
+function storyClauseStart(request: string, before: number): number {
+  return (
+    Math.max(
+      request.lastIndexOf("。", before - 1),
+      request.lastIndexOf("；", before - 1),
+      request.lastIndexOf(";", before - 1),
+      request.lastIndexOf("!", before - 1),
+      request.lastIndexOf("?", before - 1),
+      request.lastIndexOf("\n", before - 1)
+    ) + 1
+  );
+}
+
+function storyClauseEnd(request: string, after: number): number {
+  const candidates = ["。", "；", ";", "!", "?", "\n"]
+    .map((separator) => request.indexOf(separator, after))
+    .filter((index) => index >= 0);
+  return candidates.length > 0 ? Math.min(...candidates) : request.length;
 }
 
 /** True while any stage inside the creator-authorized scope is not current. */

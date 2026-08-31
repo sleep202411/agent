@@ -80,6 +80,33 @@ const STYLIZED_3D_SKILL = storyVisualStyleSkillBySlug('stylized-3d-cinema')!;
 const CINEMATIC_REALISM_SKILL =
   storyVisualStyleSkillBySlug('cinematic-realism')!;
 
+function canonicalProductionState(
+  scriptStatus: 'missing' | 'current' | 'stale' = 'missing',
+) {
+  return {
+    projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+    chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+    profile: { status: 'current' as const },
+    script: {
+      status: scriptStatus,
+      documentId:
+        scriptStatus === 'missing'
+          ? null
+          : '019a034d-4000-7000-8000-000000000001',
+      sequence: scriptStatus === 'missing' ? null : 1,
+    },
+    plotTree: { status: 'missing' as const, nodeCount: 0 },
+    assets: { status: 'missing' as const, currentCount: 0, staleCount: 0 },
+    storyboard: {
+      status: 'missing' as const,
+      sequenceCount: 0,
+      staleCount: 0,
+      missingPlotNodeIds: [],
+    },
+    ready: false,
+  };
+}
+
 describe('StoryAgentCapabilityHandler', () => {
   const handler = new StoryAgentCapabilityHandler(
     {} as never,
@@ -259,7 +286,11 @@ describe('StoryAgentCapabilityHandler', () => {
       {} as never,
       { createAuthoringRun } as never,
       { fenceBusinessMutationInTx: jest.fn() } as never,
-      {} as never,
+      {
+        getProductionState: jest
+          .fn()
+          .mockResolvedValue(canonicalProductionState()),
+      } as never,
       {} as never,
     );
     const input = {
@@ -395,7 +426,11 @@ describe('StoryAgentCapabilityHandler', () => {
       {} as never,
       { createAuthoringRun } as never,
       { fenceBusinessMutationInTx } as never,
-      {} as never,
+      {
+        getProductionState: jest
+          .fn()
+          .mockResolvedValue(canonicalProductionState()),
+      } as never,
       {} as never,
     );
 
@@ -489,7 +524,11 @@ describe('StoryAgentCapabilityHandler', () => {
       {} as never,
       { createAuthoringRun } as never,
       { fenceBusinessMutationInTx: jest.fn() } as never,
-      {} as never,
+      {
+        getProductionState: jest
+          .fn()
+          .mockResolvedValue(canonicalProductionState('current')),
+      } as never,
       {} as never,
     );
 
@@ -566,7 +605,11 @@ describe('StoryAgentCapabilityHandler', () => {
       {} as never,
       { createAuthoringRun } as never,
       { fenceBusinessMutationInTx: jest.fn() } as never,
-      {} as never,
+      {
+        getProductionState: jest
+          .fn()
+          .mockResolvedValue(canonicalProductionState()),
+      } as never,
       {} as never,
     );
 
@@ -594,6 +637,75 @@ describe('StoryAgentCapabilityHandler', () => {
       },
     });
 
+    expect(createAuthoringRun).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+      '019a034d-36a6-70df-91b1-1d030480f7d4',
+      expect.objectContaining({
+        sourceContinuationPlan: expect.objectContaining({
+          continueThrough: 'storyboard',
+        }) as unknown,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('defaults an empty chapter with a referenced screenplay to the full review path', async () => {
+    const createAuthoringRun = jest.fn().mockResolvedValue({
+      id: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+      status: 'authoring',
+    });
+    const getProductionState = jest
+      .fn()
+      .mockResolvedValue(canonicalProductionState());
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {
+        getInitialUserMessageText: jest
+          .fn()
+          .mockResolvedValue('根据这个剧本生成'),
+      } as never,
+      {
+        requireWrite: jest.fn().mockResolvedValue({
+          workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+        }),
+      } as never,
+      {} as never,
+      { createAuthoringRun } as never,
+      { fenceBusinessMutationInTx: jest.fn() } as never,
+      { getProductionState } as never,
+      {} as never,
+    );
+
+    await scoped.execute({
+      toolId: 'story.author',
+      runId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+      conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+      turnId: '019a034d-34a7-7542-a554-4a7dbdb247dd',
+      toolCallId: 'call_story_author_from_screenplay',
+      actorId: 'creator-1',
+      projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+      skillResolutionId: '019a034d-37f5-7d82-9075-a502131a0a69',
+      skillVersionIds: [],
+      workbenchContext: {
+        chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+      },
+      idempotencyKey: 'story-author-from-screenplay-test',
+      arguments: {
+        title: '虎豹花园',
+        summary: '一部互动影游。',
+        brief: '根据上传的剧本完成互动影游制作。',
+        continueThrough: 'script',
+        startedMessage: '开始创作。',
+        completionMessage: '提案已就绪。',
+      },
+    });
+
+    expect(getProductionState).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '019a034d-36a6-70df-91b1-1d030480f7d4',
+      '019a034d-397a-7dac-8d77-fad8dd15038e',
+    );
     expect(createAuthoringRun).toHaveBeenCalledWith(
       { userId: 'creator-1' },
       '019a034d-2dbd-760b-bec6-dcc9fc5fc724',

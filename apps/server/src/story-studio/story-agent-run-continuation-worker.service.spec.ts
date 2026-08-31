@@ -25,6 +25,10 @@ const STORY_CONTINUATION_PLAN = {
   summary: 'Story summary',
   brief: 'Prepare the remaining production stages for separate review.',
 };
+const SCRIPT_CONTINUATION_PLAN = {
+  ...STORY_CONTINUATION_PLAN,
+  continueThrough: 'script' as const,
+};
 const MOBILE_STORY_CONTINUATION_PLAN = {
   ...STORY_CONTINUATION_PLAN,
   experience: 'mobile_h5' as const,
@@ -270,7 +274,10 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         errorCode: 'STORY_AGENT_STAGE_FAILED',
         errorDetail: 'The structure stage exhausted its attempts.',
       }),
-      registration: registration({ decisionContractVersion: 2 }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: STORY_CONTINUATION_PLAN,
+      }),
     });
 
     await fixture.worker.drainOnce();
@@ -287,6 +294,34 @@ describe('StoryAgentRunContinuationWorkerService', () => {
           message: 'The structure stage exhausted its attempts.',
           retryable: false,
         },
+      }),
+    );
+  });
+
+  it('does not claim Plot work after an explicitly Script-only apply', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+        sourceProposalReadyDeliveredAt: new Date('2026-08-20T11:58:00.000Z'),
+        sourceApprovalDecision: 'approve',
+        sourceApprovalDecisionTurnId: DECISION_TURN_ID,
+        sourceApprovalLocale: 'zh-CN',
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: SCRIPT_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        phase: 'apply',
+        outcome: 'completed',
+        text: '剧本已保存。',
       }),
     );
   });
@@ -335,7 +370,10 @@ describe('StoryAgentRunContinuationWorkerService', () => {
   it('pauses a v2 proposal for durable approval without terminalizing its Agent run', async () => {
     const fixture = createFixture({
       run: storyRun({ decisionContractVersion: 2 }),
-      registration: registration({ decisionContractVersion: 2 }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: STORY_CONTINUATION_PLAN,
+      }),
     });
 
     await fixture.worker.drainOnce();
@@ -407,7 +445,10 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         sourceApprovalDecisionTurnId: DECISION_TURN_ID,
         sourceApprovalLocale: 'zh-CN',
       }),
-      registration: registration({ decisionContractVersion: 2 }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: STORY_CONTINUATION_PLAN,
+      }),
     });
 
     await fixture.worker.drainOnce();
@@ -802,6 +843,7 @@ function registration(
     decisionContractVersion: number;
     continuationPlan:
       | typeof STORY_CONTINUATION_PLAN
+      | typeof SCRIPT_CONTINUATION_PLAN
       | typeof MOBILE_STORY_CONTINUATION_PLAN
       | typeof AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN
       | null;

@@ -270,7 +270,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       }
       case 'story.author': {
         const args = StoryAuthorInputSchema.parse(input.arguments);
-        const [creatorRequest, trustedContinuationPolicy] = await Promise.all([
+        const [
+          creatorRequest,
+          trustedContinuationPolicy,
+          context,
+          productionState,
+        ] = await Promise.all([
           this.initialCreatorRequest(input.runId),
           input.workbenchContext?.experience === 'mobile_h5'
             ? this.trustedMobileContinuationPolicy(
@@ -279,15 +284,18 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
                 chapterId,
               )
             : Promise.resolve(null),
+          this.projects.requireWrite(input.actorId, input.projectId),
+          this.production.getProductionState(
+            { userId: input.actorId },
+            input.projectId,
+            chapterId,
+          ),
         ]);
         const continueThrough = resolveStoryProductionTargetStage({
           creatorRequest,
           proposed: args.continueThrough,
+          productionState,
         });
-        const context = await this.projects.requireWrite(
-          input.actorId,
-          input.projectId,
-        );
         const run = await this.agentRuns.createAuthoringRun(
           { userId: input.actorId },
           context.workspaceId,

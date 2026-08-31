@@ -7,7 +7,10 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { Prisma, StoryAgentRunStatus } from '@prisma/client';
-import { StoryProductionContinuationPlanSchema } from '@repo/agent-tools';
+import {
+  StoryProductionContinuationPlanSchema,
+  type StoryProductionTargetStage,
+} from '@repo/agent-tools';
 import {
   isStoryAssetProposal,
   isStoryNoopProposal,
@@ -383,6 +386,14 @@ export class StoryAgentRunContinuationWorkerService
           continuationPlan.success &&
           continuationPlan.data.experience === 'mobile_h5' &&
           continuationPlan.data.autoGenerateStoryboardMedia === true,
+        continueThrough: continuationPlan.success
+          ? continuationPlan.data.continueThrough
+          : completedStage === 'script' ||
+              completedStage === 'plot' ||
+              completedStage === 'assets' ||
+              completedStage === 'storyboard'
+            ? completedStage
+            : undefined,
       });
       const handoffDispatch =
         await this.journal.reconcileExternalHandoffInTransaction(tx, run.id);
@@ -463,6 +474,9 @@ export class StoryAgentRunContinuationWorkerService
           continuationPlan.success &&
           continuationPlan.data.experience === 'mobile_h5' &&
           continuationPlan.data.autoGenerateStoryboardMedia === true,
+        continueThrough: continuationPlan.success
+          ? continuationPlan.data.continueThrough
+          : (completedStage ?? undefined),
       });
       const resultDispatch =
         await this.journal.appendExternalResultInTransaction(tx, {
@@ -716,6 +730,7 @@ function applyContinuationResult(input: {
   autoApplyAssetSpecs: boolean;
   autoGenerateAssetImages: boolean;
   autoGenerateStoryboardMedia: boolean;
+  continueThrough: StoryProductionTargetStage | undefined;
 }): ContinuationResult {
   const copy = applyContinuationCopy(
     input.locale,
@@ -723,6 +738,7 @@ function applyContinuationResult(input: {
     input.autoApplyAssetSpecs,
     input.autoGenerateAssetImages,
     input.autoGenerateStoryboardMedia,
+    input.continueThrough,
   );
   if (input.status === StoryAgentRunStatus.succeeded) {
     return {
@@ -770,23 +786,31 @@ function applyContinuationCopy(
   autoApplyAssetSpecs: boolean,
   autoGenerateAssetImages: boolean,
   autoGenerateStoryboardMedia: boolean,
+  continueThrough: StoryProductionTargetStage | undefined,
 ): {
   completed: string;
   cancelled: string;
   failed: string;
 } {
+  const hasLaterStage = storyStageHasLaterTarget(stage, continueThrough);
   if (locale === 'zh-CN') {
     const completed =
       stage === 'script'
-        ? '剧本已保存。正在构建情节树。'
+        ? hasLaterStage
+          ? '剧本已保存。正在构建情节树。'
+          : '剧本已保存。'
         : stage === 'plot'
-          ? autoApplyAssetSpecs
-            ? '情节树已保存。正在构建资产规格。'
-            : '情节树已保存。资产规格现需基于这份情节树单独准备和审核；本次应用没有生成图片或视频。'
+          ? hasLaterStage
+            ? autoApplyAssetSpecs
+              ? '情节树已保存。正在构建资产规格。'
+              : '情节树已保存。正在准备资产规格供你单独审核；本次应用没有生成图片或视频。'
+            : '情节树已保存。'
           : stage === 'assets'
             ? autoGenerateAssetImages
               ? '资产规格已保存。接下来逐张生成资产图片。'
-              : '资产规格已保存。本阶段只写入角色、场景与道具等逻辑规格，没有生成图片或视频。'
+              : hasLaterStage
+                ? '资产规格已保存。正在准备分镜规格供你单独审核；本阶段没有生成图片或视频。'
+                : '资产规格已保存。本阶段只写入角色、场景与道具等逻辑规格，没有生成图片或视频。'
             : stage === 'storyboard'
               ? autoGenerateStoryboardMedia
                 ? '分镜已保存。接下来逐个生成卡片中的片段。'
@@ -801,15 +825,21 @@ function applyContinuationCopy(
   if (locale === 'zh-HK') {
     const completed =
       stage === 'script'
-        ? '劇本已儲存。正在構建情節樹。'
+        ? hasLaterStage
+          ? '劇本已儲存。正在構建情節樹。'
+          : '劇本已儲存。'
         : stage === 'plot'
-          ? autoApplyAssetSpecs
-            ? '情節樹已儲存。正在構建資產規格。'
-            : '情節樹已儲存。資產規格現需基於這份情節樹單獨準備和審核；本次套用沒有生成圖片或影片。'
+          ? hasLaterStage
+            ? autoApplyAssetSpecs
+              ? '情節樹已儲存。正在構建資產規格。'
+              : '情節樹已儲存。正在準備資產規格供你單獨審核；本次套用沒有生成圖片或影片。'
+            : '情節樹已儲存。'
           : stage === 'assets'
             ? autoGenerateAssetImages
               ? '資產規格已儲存。接下來逐張生成資產圖片。'
-              : '資產規格已儲存。本階段只寫入角色、場景與道具等邏輯規格，沒有生成圖片或影片。'
+              : hasLaterStage
+                ? '資產規格已儲存。正在準備分鏡規格供你單獨審核；本階段沒有生成圖片或影片。'
+                : '資產規格已儲存。本階段只寫入角色、場景與道具等邏輯規格，沒有生成圖片或影片。'
             : stage === 'storyboard'
               ? autoGenerateStoryboardMedia
                 ? '分鏡已儲存。接下來逐個生成卡片中的片段。'
@@ -823,15 +853,21 @@ function applyContinuationCopy(
   }
   const completed =
     stage === 'script'
-      ? 'The Script is saved. Building the Plot Tree next.'
+      ? hasLaterStage
+        ? 'The Script is saved. Building the Plot Tree next.'
+        : 'The Script is saved.'
       : stage === 'plot'
-        ? autoApplyAssetSpecs
-          ? 'The Plot Tree is saved. Building the Asset Specs next.'
-          : 'The Plot Tree was saved. Asset Specs must now be prepared and reviewed from this Plot separately; this apply generated no images or videos.'
+        ? hasLaterStage
+          ? autoApplyAssetSpecs
+            ? 'The Plot Tree is saved. Building the Asset Specs next.'
+            : 'The Plot Tree is saved. Preparing the Asset Specs for separate review; this apply generated no images or videos.'
+          : 'The Plot Tree is saved.'
         : stage === 'assets'
           ? autoGenerateAssetImages
             ? 'The Asset Specs are saved. Asset images will generate one at a time next.'
-            : 'The Asset Specs were saved. This stage writes only logical character, location, and prop specifications; it generated no images or videos.'
+            : hasLaterStage
+              ? 'The Asset Specs are saved. Preparing the Storyboard Specs for separate review; this stage generated no images or videos.'
+              : 'The Asset Specs were saved. This stage writes only logical character, location, and prop specifications; it generated no images or videos.'
           : stage === 'storyboard'
             ? autoGenerateStoryboardMedia
               ? 'The Storyboard is saved. Its clips will generate one at a time next.'
@@ -842,6 +878,16 @@ function applyContinuationCopy(
     cancelled: 'Story proposal application was cancelled before it completed.',
     failed: 'The approved story proposal could not be applied.',
   };
+}
+
+function storyStageHasLaterTarget(
+  stage: StoryProposalStage,
+  continueThrough: StoryProductionTargetStage | undefined,
+): boolean {
+  if (!continueThrough) return false;
+  const order = ['script', 'plot', 'assets', 'storyboard'] as const;
+  const stageIndex = order.indexOf(stage as (typeof order)[number]);
+  return stageIndex >= 0 && order.indexOf(continueThrough) > stageIndex;
 }
 
 type StoryProposalStage =
