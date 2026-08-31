@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, SkillCatalogStatus } from '@prisma/client';
 import {
   StoryAddBranchInputSchema,
   StoryAddSceneInputSchema,
@@ -22,7 +22,13 @@ import {
   StoryRemoveInteractionInputSchema,
   StoryRemoveSubtreeInputSchema,
   StoryReorderInputSchema,
+  resolveStoryProductionTargetStage,
   StorySetEntryInputSchema,
+  StoryQuoteAssetGenerationBatchInputSchema,
+  StoryQuoteStoryboardGenerationBatchInputSchema,
+  StoryConfirmGenerationBatchInputSchema,
+  StoryGetGenerationBatchInputSchema,
+  StoryProductionContinuationPlanSchema,
   StoryUpdateBibleInputSchema,
 } from '@repo/agent-tools';
 import {
@@ -30,6 +36,10 @@ import {
   StoryPatchOperationsSchema,
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
+import {
+  storyVisualStyleSkillBySlug,
+  type StoryVisualStyleSkillSlug,
+} from '@repo/shared';
 import { AgentOsRunJournalService } from '../../agent-os-journal/agent-os-run-journal.service';
 import { PrismaService } from '../../infra/db/db.module';
 import { canonicalJsonHash } from '../../story-studio/canonical-json';
@@ -50,6 +60,10 @@ import {
 } from '../../story-studio/story-agent-patch.executor';
 import { StoryAgentRunService } from '../../story-studio/story-agent-run.service';
 import { StoryProductionPlanService } from '../../story-studio/story-production-plan.service';
+import {
+  StoryGenerationBatchService,
+  type StoryGenerationBatchAgentHandoffInput,
+} from '../../story-studio/story-generation-batch.service';
 import { StoryProjectWriteGuardService } from '../../story-studio/story-project-write-guard.service';
 import { reconcileStoryTimelinesWithDraft } from '../../story-studio/story-timeline-reconcile';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
@@ -73,7 +87,15 @@ const STORY_TOOL_IDS = new Set([
   'story.reorder',
   'story.applyPatch',
   'story.author',
+  'story.generation.quoteAssets',
+  'story.generation.quoteStoryboard',
+  'story.generation.confirmBatch',
+  'story.generation.getBatch',
+  'story.generation.cancelBatch',
 ]);
+
+const MOBILE_H5_DEFAULT_DURATION = 'short_5_15' as const;
+const MOBILE_H5_DEFAULT_VISUAL_STYLE = 'cinematic-realism' as const;
 
 type StoryNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryClipNode = Extract<StoryNode, { kind: 'clip' }>;
@@ -94,6 +116,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     private readonly agentRuns: StoryAgentRunService,
     private readonly receipts: AgentOsToolExecutionReceiptService,
     private readonly production: StoryProductionPlanService,
+    private readonly generationBatches: StoryGenerationBatchService,
   ) {}
 
   supports(toolId: string): boolean {
@@ -247,6 +270,20 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       }
       case 'story.author': {
         const args = StoryAuthorInputSchema.parse(input.arguments);
+        const [creatorRequest, trustedContinuationPolicy] = await Promise.all([
+          this.initialCreatorRequest(input.runId),
+          input.workbenchContext?.experience === 'mobile_h5'
+            ? this.trustedMobileContinuationPolicy(
+                input.runId,
+                input.projectId,
+                chapterId,
+              )
+            : Promise.resolve(null),
+        ]);
+        const continueThrough = resolveStoryProductionTargetStage({
+          creatorRequest,
+          proposed: args.continueThrough,
+        });
         const context = await this.projects.requireWrite(
           input.actorId,
           input.projectId,
@@ -267,10 +304,25 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             sourceAgentToolCallId: input.toolCallId,
             sourceStartedMessage: args.startedMessage,
             sourceCompletionMessage: args.completionMessage,
+            sourceContinuationPlan: {
+              continueThrough,
+              title: args.title,
+              summary: args.summary,
+              brief: args.brief,
+              ...(input.workbenchContext?.experience === 'mobile_h5'
+                ? {
+                    experience: 'mobile_h5' as const,
+                    ...trustedContinuationPolicy,
+                  }
+                : {}),
+            },
           },
           {
             canonicalizeAndFence: async (tx, request) => {
               await this.receipts.fenceBusinessMutationInTx(tx, input);
+              if (input.workbenchContext?.experience === 'mobile_h5') {
+                await this.ensureMobileCreativeProfile(tx, input.projectId);
+              }
               return {
                 ...request,
                 initiatedBySessionId: input.conversationId,
@@ -293,9 +345,390 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           },
         };
       }
+      case 'story.generation.quoteAssets': {
+        const args = StoryQuoteAssetGenerationBatchInputSchema.parse(
+          input.arguments,
+        );
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        const assets = await this.prisma.storyAssetSpec.findMany({
+          where: {
+            storyProjectId: input.projectId,
+            storyChapterId: chapterId,
+            status: 'current',
+            ...(args.assetIds ? { id: { in: args.assetIds } } : {}),
+            ...(args.assetKinds ? { kind: { in: args.assetKinds } } : {}),
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: { id: true, version: true },
+        });
+        if (assets.length === 0) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_NO_CURRENT_ASSETS',
+            message: 'No current Asset Specs are available to generate.',
+          });
+        }
+        if (args.assetIds && assets.length !== new Set(args.assetIds).size) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_ASSET_NOT_CURRENT',
+            message:
+              'One or more requested Asset Specs are missing or stale. Read the project again before quoting.',
+          });
+        }
+        return this.generationBatches.quoteAssets(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          input.idempotencyKey,
+          {
+            targets: assets.map((asset) => ({
+              id: asset.id,
+              expectedVersion: asset.version,
+            })),
+            outputKind: args.outputKind,
+            ...(args.modelId && args.schemaVersion
+              ? {
+                  modelId: args.modelId,
+                  schemaVersion: args.schemaVersion,
+                }
+              : {}),
+            options: args.options,
+          },
+          args.dispatchMode === 'sequential' ||
+            input.workbenchContext?.experience === 'mobile_h5'
+            ? { dispatchMode: 'sequential' }
+            : undefined,
+        );
+      }
+      case 'story.generation.quoteStoryboard': {
+        const args = StoryQuoteStoryboardGenerationBatchInputSchema.parse(
+          input.arguments,
+        );
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        const requestedClipIds = args.clipIds ? new Set(args.clipIds) : null;
+        const sequences = await this.prisma.storyStoryboardSequence.findMany({
+          where: {
+            storyProjectId: input.projectId,
+            storyChapterId: chapterId,
+            status: 'current',
+          },
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          select: {
+            clips: {
+              where: {
+                status: 'current',
+                ...(requestedClipIds
+                  ? { id: { in: [...requestedClipIds] } }
+                  : {}),
+              },
+              orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+              select: { id: true, sequenceId: true, version: true },
+            },
+          },
+        });
+        const clips = sequences.flatMap((sequence) => sequence.clips);
+        if (clips.length === 0) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_NO_CURRENT_STORYBOARD_CLIPS',
+            message: 'No current Storyboard clips are available to generate.',
+          });
+        }
+        if (requestedClipIds && clips.length !== requestedClipIds.size) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_STORYBOARD_CLIP_NOT_CURRENT',
+            message:
+              'One or more requested Storyboard clips are missing or stale. Read the project again before quoting.',
+          });
+        }
+        return this.generationBatches.quoteStoryboardClips(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          input.idempotencyKey,
+          {
+            targets: clips.map((clip) => ({
+              id: clip.id,
+              sequenceId: clip.sequenceId,
+              expectedVersion: clip.version,
+            })),
+          },
+          args.dispatchMode === 'sequential' ||
+            input.workbenchContext?.experience === 'mobile_h5'
+            ? { dispatchMode: 'sequential' }
+            : undefined,
+        );
+      }
+      case 'story.generation.confirmBatch': {
+        const args = StoryConfirmGenerationBatchInputSchema.parse(
+          input.arguments,
+        );
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        const quote = await this.generationBatches.get(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+        );
+        if (
+          quote.itemCount !== args.expectedItemCount ||
+          quote.totalPoints !== args.expectedTotalPoints
+        ) {
+          throw new ConflictException({
+            code: 'STORY_GENERATION_BATCH_APPROVAL_MISMATCH',
+            message:
+              'The generation quote no longer matches the approval summary. Read the batch again before confirming it.',
+            actualItemCount: quote.itemCount,
+            actualTotalPoints: quote.totalPoints,
+          });
+        }
+        const handoff = await this.trustedMobileGenerationHandoff(
+          input,
+          chapterId,
+          quote,
+        );
+        const confirmed = await this.generationBatches.confirm(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+          { expectedVersion: args.expectedVersion },
+          handoff ?? undefined,
+        );
+        return handoff
+          ? {
+              ...confirmed,
+              agentHandoff: {
+                kind: 'external_job' as const,
+                jobId: confirmed.id,
+                startedMessage: handoff.startedMessage,
+              },
+            }
+          : confirmed;
+      }
+      case 'story.generation.getBatch': {
+        const args = StoryGetGenerationBatchInputSchema.parse(input.arguments);
+        await this.projects.requireRead(input.actorId, input.projectId);
+        return this.generationBatches.get(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+        );
+      }
+      case 'story.generation.cancelBatch': {
+        const args = StoryGetGenerationBatchInputSchema.parse(input.arguments);
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        return this.generationBatches.cancel(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.batchId,
+        );
+      }
       default:
         throw new Error(`Story handler does not implement ${input.toolId}`);
     }
+  }
+
+  private async initialCreatorRequest(runId: string): Promise<string | null> {
+    return this.journal.getInitialUserMessageText(runId);
+  }
+
+  /**
+   * H5 has no profile wizard. Its product defaults are committed in the same
+   * fenced transaction as the first `story.author` handoff, so a model cannot
+   * improvise values and a crash cannot leave a half-confirmed profile.
+   *
+   * Preserve an already confirmed profile and any preselected frame profile.
+   * New H5 projects use the short-film runtime, cinematic-realism Skill, and
+   * the project's validated authored-language locale.
+   */
+  private async ensureMobileCreativeProfile(
+    tx: Prisma.TransactionClient,
+    storyProjectId: string,
+  ): Promise<void> {
+    const visualStyleSkill = storyVisualStyleSkillBySlug(
+      MOBILE_H5_DEFAULT_VISUAL_STYLE,
+    );
+    if (!visualStyleSkill) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_H5_DEFAULT_VISUAL_STYLE_INVALID',
+        message: 'The mobile Story default visual-style Skill is invalid.',
+      });
+    }
+    const publishedVisualStyleSkill = await tx.skillCatalogItem.findFirst({
+      where: {
+        id: visualStyleSkill.skillId,
+        slug: visualStyleSkill.slug,
+        category: 'style',
+        status: SkillCatalogStatus.published,
+        latestPublishedVersionId: visualStyleSkill.versionId,
+      },
+      select: { id: true },
+    });
+    if (!publishedVisualStyleSkill) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_H5_DEFAULT_VISUAL_STYLE_UNAVAILABLE',
+        message:
+          'The mobile Story default visual-style Skill is not published in this deployment.',
+        visualStyle: MOBILE_H5_DEFAULT_VISUAL_STYLE,
+      });
+    }
+
+    const project = await tx.storyProject.findUnique({
+      where: { id: storyProjectId },
+      select: {
+        defaultLocale: true,
+        creativeProfileConfirmedAt: true,
+      },
+    });
+    if (!project) {
+      throw new NotFoundException({
+        code: 'STORY_PROJECT_NOT_FOUND',
+        message: 'Story project not found.',
+      });
+    }
+    if (project.creativeProfileConfirmedAt) return;
+
+    const language = StoryCreativeProfileLanguageSchema.safeParse(
+      project.defaultLocale,
+    );
+    if (!language.success) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_H5_DEFAULT_LANGUAGE_UNSUPPORTED',
+        message:
+          'The project language is not supported by the mobile Story creation flow.',
+        storyLanguage: project.defaultLocale,
+      });
+    }
+
+    const confirmedAt = new Date();
+    const updated = await tx.storyProject.updateMany({
+      where: {
+        id: storyProjectId,
+        creativeProfileConfirmedAt: null,
+      },
+      data: {
+        durationPreset: MOBILE_H5_DEFAULT_DURATION,
+        visualStyle: MOBILE_H5_DEFAULT_VISUAL_STYLE,
+        visualStyleSkillId: visualStyleSkill.skillId,
+        visualStyleSkillVersionId: visualStyleSkill.versionId,
+        defaultLocale: language.data,
+        creativeProfileConfirmedAt: confirmedAt,
+        version: { increment: 1 },
+      },
+    });
+    if (updated.count !== 1) {
+      const concurrentlyConfirmed = await tx.storyProject.findUnique({
+        where: { id: storyProjectId },
+        select: { creativeProfileConfirmedAt: true },
+      });
+      if (!concurrentlyConfirmed?.creativeProfileConfirmedAt) {
+        throw new ConflictException({
+          code: 'STORY_H5_DEFAULT_PROFILE_CONFLICT',
+          message:
+            'The mobile Story creative profile changed concurrently. Retry the same creation request.',
+        });
+      }
+    }
+  }
+
+  /**
+   * H5 continuation flags are creator decisions persisted by Nest, never
+   * model-authored tool arguments. Every deterministic `story.author`
+   * continuation creates a new external job, so carry the latest trusted
+   * policy forward from the same Agent run and exact Story chapter.
+   */
+  private async trustedMobileContinuationPolicy(
+    sourceAgentRunId: string,
+    storyProjectId: string,
+    storyChapterId: string,
+  ): Promise<{
+    autoApplyAssetSpecs?: true;
+    autoGenerateAssetImages?: true;
+    autoGenerateStoryboardMedia?: true;
+  } | null> {
+    const registration =
+      await this.prisma.agentOsExternalHandoffRegistration.findFirst({
+        where: {
+          sourceAgentRunId,
+          storyAgentRun: { storyProjectId, storyChapterId },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { continuationPlan: true },
+      });
+    const parsed = StoryProductionContinuationPlanSchema.safeParse(
+      registration?.continuationPlan,
+    );
+    if (!parsed.success || parsed.data.experience !== 'mobile_h5') return null;
+    return {
+      ...(parsed.data.autoApplyAssetSpecs === true
+        ? { autoApplyAssetSpecs: true as const }
+        : {}),
+      ...(parsed.data.autoGenerateAssetImages === true
+        ? { autoGenerateAssetImages: true as const }
+        : {}),
+      ...(parsed.data.autoGenerateStoryboardMedia === true
+        ? { autoGenerateStoryboardMedia: true as const }
+        : {}),
+    };
+  }
+
+  private async trustedMobileGenerationHandoff(
+    input: AgentOsCapabilityExecuteInput,
+    storyChapterId: string,
+    batch: {
+      dispatchMode: string;
+      items: Array<{ targetKind: 'asset_spec' | 'storyboard_clip' }>;
+    },
+  ): Promise<StoryGenerationBatchAgentHandoffInput | null> {
+    if (
+      input.workbenchContext?.experience !== 'mobile_h5' ||
+      batch.dispatchMode !== 'sequential'
+    ) {
+      return null;
+    }
+    const registration =
+      await this.prisma.agentOsExternalHandoffRegistration.findFirst({
+        where: {
+          sourceAgentRunId: input.runId,
+          storyAgentRun: {
+            storyProjectId: input.projectId,
+            storyChapterId,
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          continuationPlan: true,
+          storyAgentRun: {
+            select: { project: { select: { defaultLocale: true } } },
+          },
+        },
+      });
+    const plan = StoryProductionContinuationPlanSchema.safeParse(
+      registration?.continuationPlan,
+    );
+    const targetKind = batch.items[0]?.targetKind;
+    const authorized =
+      plan.success &&
+      plan.data.experience === 'mobile_h5' &&
+      ((targetKind === 'asset_spec' &&
+        plan.data.autoGenerateAssetImages === true) ||
+        (targetKind === 'storyboard_clip' &&
+          plan.data.autoGenerateStoryboardMedia === true));
+    if (!authorized || !plan.success || !targetKind) return null;
+    const locale = storyContinuationLocale(
+      registration?.storyAgentRun?.project.defaultLocale,
+    );
+    const copy = generationBatchHandoffCopy(locale, targetKind);
+    return {
+      sourceAgentRunId: input.runId,
+      sourceAgentTurnId: input.turnId,
+      sourceAgentToolCallId: input.toolCallId,
+      sourceConversationId: input.conversationId,
+      startedMessage: copy.started,
+      completionMessage: copy.completed,
+      continuationPlan: plan.data as unknown as Prisma.InputJsonValue,
+    };
   }
 
   private async readStory(
@@ -314,7 +747,6 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       ),
       this.production.getProductionState(
         { userId: actorId },
-        context.workspaceId,
         projectId,
         chapterId,
       ),
@@ -360,6 +792,13 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     const frameProfile = StoryFrameProfileSchema.parse(args.aspectRatio);
     const durationPreset = StoryDurationPresetSchema.parse(args.targetRuntime);
     const visualStyle = StoryVisualStyleSchema.parse(args.visualDirection);
+    const visualStyleSkill = storyVisualStyleSkillBySlug(visualStyle);
+    if (!visualStyleSkill) {
+      throw new UnprocessableEntityException({
+        code: 'STORY_VISUAL_STYLE_SKILL_INVALID',
+        message: 'Select a published Story visual-style Skill.',
+      });
+    }
     const storyLanguage = StoryCreativeProfileLanguageSchema.parse(
       args.storyLanguage,
     );
@@ -405,12 +844,32 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
     return this.prisma.$transaction(async (tx) => {
       await this.receipts.fenceBusinessMutationInTx(tx, input);
       await this.writeGuard.acquireAgentOsMutationFence(tx, input.projectId);
+      const publishedVisualStyleSkill = await tx.skillCatalogItem.findFirst({
+        where: {
+          id: visualStyleSkill.skillId,
+          slug: visualStyleSkill.slug,
+          category: 'style',
+          status: SkillCatalogStatus.published,
+          latestPublishedVersionId: visualStyleSkill.versionId,
+        },
+        select: { id: true },
+      });
+      if (!publishedVisualStyleSkill) {
+        throw new UnprocessableEntityException({
+          code: 'STORY_VISUAL_STYLE_SKILL_UNAVAILABLE',
+          message:
+            'The selected Story visual-style Skill is not published in this deployment.',
+          visualStyle,
+        });
+      }
       const project = await tx.storyProject.findUnique({
         where: { id: input.projectId },
         select: {
           frameProfile: true,
           durationPreset: true,
           visualStyle: true,
+          visualStyleSkillId: true,
+          visualStyleSkillVersionId: true,
           defaultLocale: true,
           creativeProfileConfirmedAt: true,
           builds: { select: { id: true }, take: 1 },
@@ -435,6 +894,8 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           project.frameProfile === frameProfile &&
           project.durationPreset === durationPreset &&
           project.visualStyle === visualStyle &&
+          project.visualStyleSkillId === visualStyleSkill.skillId &&
+          project.visualStyleSkillVersionId === visualStyleSkill.versionId &&
           project.defaultLocale === storyLanguage
         ) {
           const result = {
@@ -477,6 +938,8 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           frameProfile,
           durationPreset,
           visualStyle,
+          visualStyleSkillId: visualStyleSkill.skillId,
+          visualStyleSkillVersionId: visualStyleSkill.versionId,
           defaultLocale: storyLanguage,
           creativeProfileConfirmedAt: confirmedAt,
           version: { increment: 1 },
@@ -611,6 +1074,16 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         });
       }
 
+      // Chapter membership must be visible to the database Plot-node guard
+      // before a new node's empty Storyboard timeline is inserted.
+      await tx.storyChapter.update({
+        where: { id: state.chapter.id },
+        data: {
+          nodeIds: nextNodeIds,
+          entryNodeId: patched.draft.graph.entryNodeId,
+        },
+      });
+
       // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
       // their sequences immediately, undone deletions revive them.
       await reconcileStoryTimelinesWithDraft(
@@ -619,15 +1092,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         mergedGlobalDraft as unknown as {
           graph: { nodes: Array<{ kind: string; nodeId: string }> };
         },
-      );
-
-      await tx.storyChapter.update({
-        where: { id: state.chapter.id },
-        data: {
-          nodeIds: nextNodeIds,
-          entryNodeId: patched.draft.graph.entryNodeId,
+        {
+          storyChapterId: state.chapter.id,
+          chapterNodeIds: nextNodeIds,
+          actorUserId: input.actorId,
         },
-      });
+      );
       if (patched.layoutChanged && state.layoutRow) {
         const updatedLayout = await tx.storyCanvasLayout.updateMany({
           where: {
@@ -753,7 +1223,10 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       project: {
         frameProfile: project.frameProfile,
         durationPreset: project.durationPreset,
-        visualStyle: project.visualStyle,
+        visualStyle: StoryVisualStyleSchema.safeParse(project.visualStyle)
+          .success
+          ? StoryVisualStyleSchema.parse(project.visualStyle)
+          : null,
         defaultLocale: project.defaultLocale,
         creativeProfileConfirmedAt: project.creativeProfileConfirmedAt,
       },
@@ -773,12 +1246,7 @@ interface StoryDraftState {
   project: {
     frameProfile: 'landscape_16_9' | 'portrait_9_16';
     durationPreset: 'short_5_15' | 'medium_15_30' | 'long_30_60' | null;
-    visualStyle:
-      | 'cinematic_realism'
-      | 'stylized_3d'
-      | 'graphic_novel'
-      | 'anime_cinematic'
-      | null;
+    visualStyle: StoryVisualStyleSkillSlug | null;
     defaultLocale: string;
     creativeProfileConfirmedAt: Date | null;
   };
@@ -1164,6 +1632,49 @@ function requireOpenAutoExit(node: StoryNode): void {
 function jsonStringArray(value: Prisma.JsonValue): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((item): item is string => typeof item === 'string');
+}
+
+function storyContinuationLocale(
+  value: string | null | undefined,
+): 'en-US' | 'zh-CN' | 'zh-HK' {
+  return value === 'zh-CN' || value === 'zh-HK' ? value : 'en-US';
+}
+
+function generationBatchHandoffCopy(
+  locale: 'en-US' | 'zh-CN' | 'zh-HK',
+  targetKind: 'asset_spec' | 'storyboard_clip',
+): { started: string; completed: string } {
+  if (locale === 'zh-CN') {
+    return targetKind === 'asset_spec'
+      ? {
+          started: '正在按故事顺序逐张生成资产图片。',
+          completed: '资产图片已全部生成，正在准备分镜方案。',
+        }
+      : {
+          started: '正在按故事顺序逐个生成分镜片段。',
+          completed: '所有分镜片段已生成，可以开始试玩。',
+        };
+  }
+  if (locale === 'zh-HK') {
+    return targetKind === 'asset_spec'
+      ? {
+          started: '正在按故事順序逐張生成資產圖片。',
+          completed: '資產圖片已全部生成，正在準備分鏡方案。',
+        }
+      : {
+          started: '正在按故事順序逐個生成分鏡片段。',
+          completed: '所有分鏡片段已生成，可以開始試玩。',
+        };
+  }
+  return targetKind === 'asset_spec'
+    ? {
+        started: 'Generating Asset images one at a time in story order.',
+        completed: 'All Asset images are ready. Preparing the Storyboard plan.',
+      }
+    : {
+        started: 'Generating Storyboard clips one at a time in story order.',
+        completed: 'All Storyboard clips are ready. You can start playtesting.',
+      };
 }
 
 function parseLayout(

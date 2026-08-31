@@ -47,6 +47,35 @@ describe('AgentOsDomainExecuteBodySchema durable execution identity', () => {
     ).toEqual(continuationExecution);
   });
 
+  it('accepts checkpoint-backed execution proofs from the durable worker', () => {
+    const startExecution = {
+      executionToken: '019a0361-44d7-7caf-96d9-14b866fa3b57',
+      executionAttemptId: '019a0361-45d7-7caf-96d9-14b866fa3b57',
+      executionEpoch: 2,
+      executionOwnerId: '019a0361-46d7-7caf-96d9-14b866fa3b57',
+      checkpointId: 'checkpoint-1',
+      checkpointNamespace: '',
+      checkpointThreadId: VALID_BODY.conversationId,
+      checkpointMessageId: '019a0361-47d7-7caf-96d9-14b866fa3b57',
+    };
+
+    expect(
+      AgentOsDomainExecuteBodySchema.parse({
+        ...VALID_BODY,
+        startExecution,
+      }).startExecution,
+    ).toEqual(startExecution);
+    expect(
+      AgentOsDomainExecuteBodySchema.safeParse({
+        ...VALID_BODY,
+        startExecution: {
+          ...startExecution,
+          checkpointMessageId: undefined,
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it('rejects partial or competing execution authorities', () => {
     expect(
       AgentOsDomainExecuteBodySchema.safeParse({

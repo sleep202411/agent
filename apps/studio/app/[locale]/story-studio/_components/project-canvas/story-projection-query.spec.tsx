@@ -21,7 +21,6 @@ function Harness({ chapterId = "chapter-1", queryFn }: HarnessProps) {
   const query = useQuery(
     storyProjectionQueryOptions({
       kind: "workbench",
-      workspaceId: "workspace-1",
       projectId: "project-1",
       chapterId,
       queryFn,
@@ -29,7 +28,6 @@ function Harness({ chapterId = "chapter-1", queryFn }: HarnessProps) {
   );
   const projection = useLastDefinedData(query.data);
   const readiness = resolveStoryProjectionReadiness({
-    hasWorkspace: true,
     workbenchFetchedAfterMount: query.isFetchedAfterMount,
     workbenchError: query.isError,
     layoutFetchedAfterMount: query.isFetchedAfterMount,

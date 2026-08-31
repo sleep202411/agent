@@ -63,10 +63,7 @@ describe("StoryProductionConflictPanel", () => {
       item: resolved,
       productionState: productionState(),
     });
-    client.setQueryData(
-      ["story-studio", "asset-specs", "workspace-1", "project-1", "chapter-1"],
-      [asset]
-    );
+    client.setQueryData(["story-studio", "asset-specs", "project-1", "chapter-1"], [asset]);
     await renderPanel({ kind: "asset_spec", item: asset });
 
     expect(container.textContent).toContain("latestAsset:Latest Hero,character");
@@ -79,7 +76,6 @@ describe("StoryProductionConflictPanel", () => {
 
     await vi.waitFor(() => expect(apiMocks.resolveAsset).toHaveBeenCalledTimes(1));
     expect(apiMocks.resolveAsset).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -94,7 +90,6 @@ describe("StoryProductionConflictPanel", () => {
       client.getQueryData<StoryAssetSpec[]>([
         "story-studio",
         "asset-specs",
-        "workspace-1",
         "project-1",
         "chapter-1",
       ])?.[0]?.status
@@ -103,7 +98,6 @@ describe("StoryProductionConflictPanel", () => {
       client.getQueryData<StoryProductionState>([
         "story-studio",
         "production-state",
-        "workspace-1",
         "project-1",
         "chapter-1",
       ])?.ready
@@ -144,7 +138,6 @@ describe("StoryProductionConflictPanel", () => {
         <QueryClientProvider client={client}>
           <StoryProductionConflictPanel
             scope={{
-              workspaceId: "workspace-1",
               projectId: "project-1",
               chapterId: "chapter-1",
             }}

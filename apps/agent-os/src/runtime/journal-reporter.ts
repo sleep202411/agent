@@ -1,5 +1,9 @@
 import { AgentEventEnvelopeSchema, type AgentEventEnvelope } from "@repo/agent-protocol";
 import type { AgentProjectKind } from "@repo/agent-capabilities";
+import type {
+  StoryProductionContinuationPlan,
+  StoryProductionTargetStage,
+} from "@repo/agent-tools";
 import {
   verifyProjectSkillSnapshot,
   type ProjectSkillResolutionSnapshot,
@@ -64,6 +68,33 @@ export type ContinuationCommand =
       responseId: string;
       requestId: string;
       answers: Record<string, string>;
+      projectId: string;
+      conversationId: string;
+      actorId: string;
+      modelProfileId: string;
+      projectKind: AgentProjectKind;
+      workbenchMode: string;
+      workbenchContext?: Readonly<Record<string, string>>;
+      permissionMode: "ask" | "smart" | "full";
+      skillMountSnapshot: ProjectSkillResolutionSnapshot;
+    }
+  | {
+      kind: "external_result";
+      runId: string;
+      turnId: string;
+      responseId: string;
+      externalJobId: string;
+      toolCallId: string;
+      toolId: string;
+      resultMessageId: string;
+      phase: "apply";
+      outcome: "completed";
+      storyContinuation?: {
+        locale: "en-US" | "zh-CN" | "zh-HK";
+        plan: StoryProductionContinuationPlan;
+        completedStage?: StoryProductionTargetStage;
+        mediaBatchCompleted?: boolean;
+      };
       projectId: string;
       conversationId: string;
       actorId: string;

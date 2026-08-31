@@ -1,55 +1,66 @@
 "use client";
 
-import { IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
-import { useQuery } from "@tanstack/react-query";
+import { IconAlertTriangle, IconPlus, IconRefresh } from "@tabler/icons-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
-import { useWorkspace } from "@/app/_components/workspace-context";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
 import {
+  getStoryProductionState,
+  getStoryStoryboard,
+  storyProductionKeys,
+} from "@/lib/story-production-api";
+import {
+  putStoryDraft,
   storyApiErrorMessage,
   type StoryClipGraphNode,
   type StoryGraphNode,
 } from "@/lib/story-projects-api";
-import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
+import { createClipNode } from "./project-canvas/story-project-canvas-mutations";
+import {
+  storyChapterWorkbenchQueryKey,
+  useStoryChapterWorkbench,
+} from "../_lib/use-story-chapter-workbench";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { localizedText } from "./project-canvas/story-project-canvas-model";
 import { StoryProductionPageHeader } from "./story-production-page-header";
+import { StoryStageLoadingState } from "./story-stage-empty-state";
 import {
   StoryStoryboardChoiceCard,
   StoryStoryboardSequenceSection,
-  StoryStoryboardUnplannedSection,
   type StorySequenceChoiceOptions,
 } from "./story-storyboard-sequence-section";
 
 /**
  * Chapter-owned production board. The chapter graph is the board's skeleton —
- * every plot node renders one section in narrative (authoring) order, numbered
- * exactly like the catalog. A storyboard sequence fills its node's section;
- * a node that has never been planned shows an unplanned placeholder instead
- * of silently disappearing. A ?node= deep link (from the catalog or the
- * canvas) scrolls to its section.
+ * every Plot node renders its one canonical Storyboard sequence in narrative
+ * (authoring) order, numbered exactly like the catalog. A ?node= deep link
+ * (from the catalog or the canvas) scrolls to its section.
  */
 export function StoryStoryboardView({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.storyboardPage");
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
+  const queryClient = useQueryClient();
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
+  const workbenchQuery = useStoryChapterWorkbench(projectId, { chapterId });
   const searchParams = useSearchParams();
+  const sessionId = useRef(globalThis.crypto.randomUUID());
 
   const storyboardQuery = useQuery({
-    queryKey: storyProductionKeys.storyboard(workspaceId, projectId, chapterId),
-    queryFn: ({ signal }) =>
-      getStoryStoryboard(workspaceId as string, projectId, chapterId as string, signal),
-    enabled: Boolean(workspaceId && chapterId),
+    queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+    queryFn: ({ signal }) => getStoryStoryboard(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId),
+    retry: false,
+  });
+  const productionQuery = useQuery({
+    queryKey: storyProductionKeys.state(projectId, chapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, chapterId as string, signal),
+    enabled: Boolean(chapterId),
     retry: false,
   });
 
   const locale = useLocale();
-  const workbenchQuery = useStoryChapterWorkbench(projectId, { chapterId });
   const nodes = useMemo(
     () => workbenchQuery.data?.draft.content.graph.nodes ?? [],
     [workbenchQuery.data?.draft.content.graph.nodes]
@@ -87,10 +98,50 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     [storyboardQuery.data]
   );
   const requestedPlotNodeId = searchParams.get("node");
+  const projectCanEdit = workbenchQuery.data?.project.capabilities.includes("story.edit") ?? false;
+
+  const addNodeMutation = useMutation({
+    retry: false,
+    mutationFn: async () => {
+      if (!chapterId || !workbenchQuery.data) throw new Error(t("missingChapter"));
+      const created = createClipNode(workbenchQuery.data.draft.content, {
+        name: t("newNodeTitle"),
+      });
+      const draft = await putStoryDraft(projectId, chapterId, {
+        expectedRevision: workbenchQuery.data.draft.revision,
+        content: created.content,
+        sessionId: sessionId.current,
+      });
+      return { draft, plotNodeId: created.created.nodeId };
+    },
+    onSuccess: async ({ draft, plotNodeId }) => {
+      // The draft save created the Plot node and its empty timeline in one
+      // server transaction. Refresh the timeline projection first so React
+      // never observes a graph-only node while the two query caches settle.
+      await queryClient.invalidateQueries({
+        queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+      });
+      queryClient.setQueryData(
+        storyChapterWorkbenchQueryKey(projectId, chapterId),
+        (current: typeof workbenchQuery.data) => (current ? { ...current, draft } : current)
+      );
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: storyChapterWorkbenchQueryKey(projectId, chapterId),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: storyProductionKeys.state(projectId, chapterId),
+        }),
+      ]);
+      toast.success(t("nodeAdded"));
+      document.getElementById(`plot-${plotNodeId}`)?.scrollIntoView({ block: "start" });
+    },
+    onError: (error) => toast.error(storyApiErrorMessage(error, t("addNodeError"))),
+  });
 
   const loading =
-    workspaceLoading ||
-    (Boolean(workspaceId) && (storyboardQuery.isPending || workbenchQuery.isPending));
+    workbenchQuery.isPending ||
+    (Boolean(chapterId) && (storyboardQuery.isPending || productionQuery.isPending));
 
   // Consume the deep link exactly once, after the board has actually rendered
   // (both queries settled): refetches must not yank the viewport back to the
@@ -108,21 +159,22 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
 
   if (loading) {
     return (
-      <main className="min-w-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-6">
-        {[0, 1, 2].map((key) => (
-          <Skeleton key={key} className="h-56 rounded-2xl" />
-        ))}
+      <main aria-busy="true" className="h-full min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+        <StoryStageLoadingState label={t("loading")} />
       </main>
     );
   }
 
-  if (storyboardQuery.isError || workbenchQuery.isError) {
+  if (storyboardQuery.isError || workbenchQuery.isError || productionQuery.isError) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
           <IconAlertTriangle className="mx-auto size-6 text-white/58" aria-hidden="true" />
-          <p className="mt-3 max-w-lg text-sm text-white/72">
-            {storyApiErrorMessage(storyboardQuery.error ?? workbenchQuery.error, t("loadError"))}
+          <p role="alert" className="mt-3 max-w-lg text-sm text-white/72">
+            {storyApiErrorMessage(
+              storyboardQuery.error ?? workbenchQuery.error ?? productionQuery.error,
+              t("loadError")
+            )}
           </p>
           <Button
             variant="secondary"
@@ -130,6 +182,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
             onClick={() => {
               void storyboardQuery.refetch();
               void workbenchQuery.refetch();
+              void productionQuery.refetch();
             }}
           >
             <IconRefresh />
@@ -140,7 +193,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (sceneNodes.length === 0 || !workspaceId || !chapterId) {
+  if (!chapterId || !productionQuery.data) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
@@ -151,30 +204,63 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
+  const generationAllowed =
+    sceneNodes.length > 0 &&
+    productionQuery.data.plotTree.status === "current" &&
+    productionQuery.data.assets.status === "current" &&
+    productionQuery.data.storyboard.status === "current";
+
   return (
     <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-      <StoryProductionPageHeader title={t("title")} description={t("generationHint")} />
+      <StoryProductionPageHeader
+        projectId={projectId}
+        title={t("title")}
+        description={t("generationHint")}
+        showGenerationControls={generationAllowed && (storyboardQuery.data?.length ?? 0) > 0}
+        actions={
+          projectCanEdit ? (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={addNodeMutation.isPending}
+              onClick={() => addNodeMutation.mutate()}
+            >
+              {addNodeMutation.isPending ? (
+                <IconRefresh className="animate-spin" aria-hidden="true" />
+              ) : (
+                <IconPlus aria-hidden="true" />
+              )}
+              {t("addNode")}
+            </Button>
+          ) : null
+        }
+      />
       <div className="mt-5 space-y-8">
+        {sceneNodes.length === 0 ? (
+          <div className="rounded-2xl bg-white/[0.045] px-5 py-10 text-center text-white shadow-sm">
+            <p className="text-sm font-medium text-white/78">{t("emptyChapter")}</p>
+            <p className="mt-1.5 text-xs text-white/54">{t("emptyHint")}</p>
+          </div>
+        ) : null}
         {sceneNodes.map((node, index) => {
           const sequence = sequenceByNode.get(node.nodeId);
           const choiceOptions = choiceOptionsByNode.get(node.nodeId);
+          if (!sequence) {
+            // The server rejects this invariant before returning a response.
+            // Never silently revive the removed graph-only product state if
+            // a future cache/write path violates the contract client-side.
+            throw new Error(`Storyboard sequence missing for Plot node ${node.nodeId}.`);
+          }
           return (
             <div key={node.nodeId} className="space-y-4">
-              {sequence ? (
-                <StoryStoryboardSequenceSection
-                  sequence={sequence}
-                  index={index}
-                  workspaceId={workspaceId}
-                  projectId={projectId}
-                  chapterId={chapterId}
-                />
-              ) : (
-                <StoryStoryboardUnplannedSection
-                  nodeId={node.nodeId}
-                  title={node.name?.trim() || node.clipKey}
-                  index={index}
-                />
-              )}
+              <StoryStoryboardSequenceSection
+                sequence={sequence}
+                title={node.name?.trim() || node.clipKey}
+                index={index}
+                projectId={projectId}
+                chapterId={chapterId}
+                allowGeneration={generationAllowed}
+              />
               {choiceOptions ? <StoryStoryboardChoiceCard options={choiceOptions} /> : null}
             </div>
           );

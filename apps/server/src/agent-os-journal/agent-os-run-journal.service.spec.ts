@@ -18,7 +18,16 @@ const RUN_ID = '11111111-1111-4111-8111-111111111111';
 const CONVERSATION_ID = '22222222-2222-4222-8222-222222222222';
 const TURN_ID = '33333333-3333-4333-8333-333333333333';
 const PROJECT_ID = '44444444-4444-4444-8444-444444444444';
+const CHAPTER_ID = '55555555-5555-4555-8555-555555555555';
+const WORKSPACE_ID = '66666666-6666-4666-8666-666666666666';
 const EXTERNAL_JOB_ID = '77777777-7777-4777-8777-777777777777';
+const STORY_PROPOSAL_ARTIFACT = {
+  storyProjectId: PROJECT_ID,
+  storyChapterId: CHAPTER_ID,
+  workspaceId: WORKSPACE_ID,
+  stage: 'assets' as const,
+  schemaVersion: 'story-asset-proposal-v1',
+};
 const EVENT_IDS = [
   '50000000-0000-4000-8000-000000000001',
   '50000000-0000-4000-8000-000000000002',
@@ -33,9 +42,50 @@ const EVENT_IDS = [
   '50000000-0000-4000-8000-000000000011',
   '50000000-0000-4000-8000-000000000012',
   '50000000-0000-4000-8000-000000000013',
+  '50000000-0000-4000-8000-000000000014',
+  '50000000-0000-4000-8000-000000000015',
+  '50000000-0000-4000-8000-000000000016',
+  '50000000-0000-4000-8000-000000000017',
+  '50000000-0000-4000-8000-000000000018',
+  '50000000-0000-4000-8000-000000000019',
+  '50000000-0000-4000-8000-000000000020',
 ];
 
 describe('AgentOsRunJournalService', () => {
+  it('reads the earliest immutable user message without loading the full journal', async () => {
+    const fixture = createFixture();
+    const started = event(1, 'RunStarted', {
+      turnId: TURN_ID,
+      status: 'running',
+      workspaceType: 'story',
+      modelProfileId: 'qwen-plus',
+    });
+    const initial = event(2, 'UserMessage', {
+      messageId: 'user-message-1',
+      turnId: TURN_ID,
+      text: 'Complete Script, Plot, Assets, and Storyboard stage by stage.',
+    });
+    const followUp = event(3, 'UserMessage', {
+      messageId: 'user-message-2',
+      turnId: TURN_ID,
+      text: 'Approve Script.',
+    });
+    await fixture.service.upsertSnapshot(
+      input('running', [started, initial, followUp]),
+    );
+
+    await expect(
+      fixture.service.getInitialUserMessageText(RUN_ID),
+    ).resolves.toBe(
+      'Complete Script, Plot, Assets, and Storyboard stage by stage.',
+    );
+    expect(fixture.tx.agentOsRunEvent.findFirst).toHaveBeenLastCalledWith({
+      where: { runId: RUN_ID, type: 'UserMessage' },
+      orderBy: { sequence: 'asc' },
+      select: { data: true },
+    });
+  });
+
   it('ignores a late shorter snapshot instead of truncating a terminal run', async () => {
     const fixture = createFixture();
     const started = event(1, 'RunStarted', {
@@ -238,6 +288,84 @@ describe('AgentOsRunJournalService', () => {
     });
   });
 
+  it('repairs a stale external wait projection before retrying its continuation', async () => {
+    const fixture = createFixture();
+    const toolCallId = 'story-author-call-1';
+    const events = [
+      event(1, 'RunStarted', {
+        turnId: TURN_ID,
+        status: 'running',
+        workspaceType: 'story',
+        modelProfileId: 'qwen-plus',
+      }),
+      event(2, 'ToolCompleted', {
+        turnId: TURN_ID,
+        toolCallId,
+        toolId: 'story.author',
+        agentHandoff: {
+          kind: 'external_job',
+          jobId: EXTERNAL_JOB_ID,
+          startedMessage: 'Preparing a reviewable proposal.',
+        },
+      }),
+      event(3, 'RunPaused', {
+        turnId: TURN_ID,
+        status: 'waiting_for_external',
+        externalJobId: EXTERNAL_JOB_ID,
+        toolCallId,
+        toolId: 'story.author',
+      }),
+      event(4, 'RunResumed', {
+        turnId: TURN_ID,
+        reason: 'external_job_completed',
+        externalJobId: EXTERNAL_JOB_ID,
+      }),
+      // Legacy checkpoint replay: immutable evidence, but no longer allowed
+      // to move the canonical projection back to waiting.
+      event(5, 'RunPaused', {
+        turnId: TURN_ID,
+        status: 'waiting_for_external',
+        externalJobId: EXTERNAL_JOB_ID,
+        toolCallId,
+        toolId: 'story.author',
+      }),
+    ];
+    fixture.state.events = events.map((item) =>
+      storedEvent({
+        ...item,
+        occurredAt: new Date(item.timestamp),
+      }),
+    );
+    if (!fixture.state.run) throw new Error('run missing');
+    Object.assign(fixture.state.run, {
+      status: 'waiting_for_external',
+      lastSequence: 5,
+      pendingExternal: {
+        kind: 'external_job',
+        jobId: EXTERNAL_JOB_ID,
+        turnId: TURN_ID,
+        toolCallId,
+        toolId: 'story.author',
+        startedMessage: 'Preparing a reviewable proposal.',
+      },
+      continuationCommand: externalResultContinuationCommand(toolCallId),
+      continuationExecutionToken: '88888888-8888-4888-8888-888888888888',
+      continuationExecutionAttemptId: null,
+      continuationExecutionLeaseExpiresAt: null,
+      continuationExecutionFinishedAt: null,
+      continuationDispatchNextAttemptAt: fixture.state.now,
+    });
+
+    const claim = await fixture.service.claimRunContinuationDispatch(RUN_ID);
+
+    expect(claim).toMatchObject({ kind: 'claimed', executionEpoch: 1 });
+    expect(fixture.state.run).toMatchObject({
+      status: 'running',
+      pendingExternal: null,
+      continuationExecutionEpoch: 1,
+    });
+  });
+
   it('does not let an equal-tail report erase a pending external decision', async () => {
     const fixture = createFixture();
     const started = event(1, 'RunStarted', {
@@ -317,6 +445,7 @@ describe('AgentOsRunJournalService', () => {
         turnId: TURN_ID,
         authorToolCallId: 'story-author-call-1',
         externalJobId: EXTERNAL_JOB_ID,
+        ...STORY_PROPOSAL_ARTIFACT,
         text: 'The proposal is ready for review.',
         title: 'Late Ming interactive film',
         summary: 'A branching survival drama.',
@@ -327,6 +456,7 @@ describe('AgentOsRunJournalService', () => {
       turnId: TURN_ID,
       authorToolCallId: 'story-author-call-1',
       externalJobId: EXTERNAL_JOB_ID,
+      ...STORY_PROPOSAL_ARTIFACT,
       text: 'The proposal is ready for review.',
       title: 'Late Ming interactive film',
       summary: 'A branching survival drama.',
@@ -342,6 +472,7 @@ describe('AgentOsRunJournalService', () => {
       'MessageStarted',
       'MessageDelta',
       'MessageCompleted',
+      'ArtifactCreated',
       'ToolProposed',
       'ApprovalRequired',
       'RunPaused',
@@ -397,6 +528,7 @@ describe('AgentOsRunJournalService', () => {
     expect(approved.events.map((item) => item.type)).toEqual([
       'UserMessage',
       'ApprovalResolved',
+      'ArtifactUpdated',
       'RunResumed',
       'MessageStarted',
       'MessageDelta',
@@ -413,7 +545,7 @@ describe('AgentOsRunJournalService', () => {
     expect(duplicate.events).toEqual([]);
     expect(fixture.state.run).toMatchObject({
       status: 'waiting_for_external',
-      pendingApproval: expect.anything(),
+      pendingApproval: null,
       pendingExternal: {
         jobId: EXTERNAL_JOB_ID,
         turnId: decisionTurnId,
@@ -453,13 +585,25 @@ describe('AgentOsRunJournalService', () => {
       );
     expect(applied.events.map((item) => item.type)).toEqual([
       'RunResumed',
+      'ArtifactUpdated',
       'MessageStarted',
       'MessageDelta',
       'MessageCompleted',
-      'RunCompleted',
     ]);
     expect(appliedRetry.events).toEqual([]);
-    expect(fixture.state.run?.status).toBe('completed');
+    expect(fixture.state.run).toMatchObject({
+      status: 'running',
+      pendingExternal: null,
+      continuationCommand: expect.objectContaining({
+        kind: 'external_result',
+        externalJobId: EXTERNAL_JOB_ID,
+        toolId: 'story.applyProposal',
+        phase: 'apply',
+        outcome: 'completed',
+      }),
+      continuationExecutionToken: expect.any(String),
+      continuationDispatchNextAttemptAt: expect.any(Date),
+    });
     expect(
       fixture.state.events.filter((item) => item.type === 'ToolCompleted'),
     ).toHaveLength(2);
@@ -515,6 +659,7 @@ describe('AgentOsRunJournalService', () => {
         turnId: TURN_ID,
         authorToolCallId: 'story-author-call-1',
         externalJobId: EXTERNAL_JOB_ID,
+        ...STORY_PROPOSAL_ARTIFACT,
         text: 'The proposal is ready for review.',
         title: 'Story draft',
         summary: 'A branching story.',
@@ -541,6 +686,7 @@ describe('AgentOsRunJournalService', () => {
       );
 
     expect(first.events.map((item) => item.type)).toEqual([
+      'ArtifactUpdated',
       'ToolFailed',
       'MessageStarted',
       'MessageDelta',
@@ -883,6 +1029,7 @@ describe('AgentOsRunJournalService', () => {
         turnId: TURN_ID,
         authorToolCallId: 'story-author-call-1',
         externalJobId: EXTERNAL_JOB_ID,
+        ...STORY_PROPOSAL_ARTIFACT,
         text: 'The proposal is ready for review.',
         title: 'Story proposal',
         summary: 'A branching story proposal.',
@@ -1455,10 +1602,15 @@ function initialExecutionEvents(
       modelProfileId: 'qwen-plus',
       projectKind: 'story',
       workbenchMode: 'story-canvas',
+      workbenchContext: { chapterId: 'chapter-1' },
     }),
-    startEvent(admission, 3, 'PlanCreated', {
+    startEvent(admission, 3, 'StepStarted', {
       turnId: TURN_ID,
-      steps: ['Understand the request', 'Build the story'],
+      step: 'permission',
+      permissionMode: 'smart',
+      agentMode: 'ASSIST',
+      projectKind: 'story',
+      workbenchMode: 'story-canvas',
     }),
   ];
 }
@@ -1640,6 +1792,29 @@ function continuationInput(
   };
 }
 
+function externalResultContinuationCommand(toolCallId: string) {
+  return {
+    kind: 'external_result' as const,
+    runId: RUN_ID,
+    turnId: TURN_ID,
+    responseId: '99999999-9999-4999-8999-999999999999',
+    externalJobId: EXTERNAL_JOB_ID,
+    toolCallId,
+    toolId: 'story.author',
+    resultMessageId: 'external-result-message',
+    phase: 'apply' as const,
+    outcome: 'completed' as const,
+    projectId: PROJECT_ID,
+    conversationId: CONVERSATION_ID,
+    actorId: 'user-1',
+    modelProfileId: 'qwen-plus',
+    projectKind: 'story' as const,
+    workbenchMode: 'story-canvas',
+    permissionMode: 'smart' as const,
+    skillMountSnapshot: startCommand().skillMountSnapshot,
+  };
+}
+
 function resequence(events: AgentEventEnvelope[]): AgentEventEnvelope[] {
   return events.map((item, index) => ({
     ...item,
@@ -1759,8 +1934,11 @@ function createFixture() {
       conversationId: CONVERSATION_ID,
       actorId: 'user-1',
       modelProfileId: 'qwen-plus',
+      permissionMode: 'smart',
       projectKind: 'story',
       workbenchMode: 'story-canvas',
+      workbenchContext: { chapterId: 'chapter-1' },
+      skillSnapshot: startCommand().skillMountSnapshot,
       status: 'queued',
       lastSequence: 0,
       assistantText: null,
@@ -1779,6 +1957,7 @@ function createFixture() {
       startAdmissionVersion: 1,
       startCommand: null,
       startExecutionFinishedAt: null,
+      continuationExecutionEpoch: 0,
     },
     events: [],
     now: new Date('2026-08-20T12:00:00.000Z'),
@@ -1829,7 +2008,8 @@ function createFixture() {
       if (!state.run) throw new Error('run missing');
       for (const [key, value] of Object.entries(data)) {
         if (value !== undefined) {
-          state.run[key] = value === Prisma.DbNull ? null : value;
+          state.run[key] =
+            value === Prisma.DbNull || value === Prisma.JsonNull ? null : value;
         }
       }
       return state.run;
@@ -1910,13 +2090,27 @@ function createFixture() {
         state.events.find((item) => item.id === where.id) ?? null,
     ),
     findFirst: jest.fn(
-      async ({ where }: { where?: { type?: { in?: string[] } } }) => {
-        const allowed = where?.type?.in;
-        return (
-          [...state.events]
-            .reverse()
-            .find((item) => !allowed || allowed.includes(item.type)) ?? null
+      async ({
+        where,
+        orderBy,
+      }: {
+        where?: {
+          runId?: string;
+          type?: string | { in?: string[] };
+        };
+        orderBy?: { sequence?: 'asc' | 'desc' };
+        select?: unknown;
+      }) => {
+        const allowed =
+          typeof where?.type === 'string' ? [where.type] : where?.type?.in;
+        const candidates = state.events.filter(
+          (item) =>
+            (!where?.runId || item.runId === where.runId) &&
+            (!allowed || allowed.includes(item.type)),
         );
+        candidates.sort((left, right) => left.sequence - right.sequence);
+        if (orderBy?.sequence !== 'asc') candidates.reverse();
+        return candidates[0] ?? null;
       },
     ),
     createMany: jest.fn(

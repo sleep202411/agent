@@ -1,9 +1,13 @@
+import { ConflictException } from '@nestjs/common';
 import {
   StoryProductionGenerationService,
+  assertStoryGenerationQuoteMatches,
   exactStoryDurationValue,
+  generationRequestFingerprint,
   isRetryableStoryMaterializationPrismaCode,
   missingRequiredStoryModelInputs,
   shortestStorySourceDuration,
+  storyGenerationClientOptionsFromSnapshot,
   storyModelSchemaDefaults,
 } from './story-production-generation.service';
 
@@ -121,6 +125,90 @@ describe('Story production generation model constraints', () => {
     expect(isRetryableStoryMaterializationPrismaCode('P2002')).toBe(true);
     expect(isRetryableStoryMaterializationPrismaCode('P2003')).toBe(false);
   });
+
+  it('fails closed when a confirmed batch quote no longer matches pricing', () => {
+    const model = {
+      billing_policy: {
+        productPricing: {
+          mode: 'fixed_per_output',
+          version: 'image-price-v2',
+          currency: 'COMPUTE_POINTS',
+          pointsPerOutput: 14,
+        },
+      },
+    } as never;
+    let error: unknown;
+    try {
+      assertStoryGenerationQuoteMatches(
+        model,
+        { numOutputs: 2 },
+        {
+          pricingVersion: 'image-price-v1',
+          points: 24,
+        },
+      );
+    } catch (cause) {
+      error = cause;
+    }
+    expect(error).toBeInstanceOf(ConflictException);
+    expect((error as ConflictException).getResponse()).toMatchObject({
+      code: 'STORY_GENERATION_BATCH_QUOTE_STALE',
+      currentPricingVersion: 'image-price-v2',
+      currentPoints: 28,
+    });
+    expect(() =>
+      assertStoryGenerationQuoteMatches(
+        model,
+        { numOutputs: 2 },
+        {
+          pricingVersion: 'image-price-v2',
+          points: 28,
+        },
+      ),
+    ).not.toThrow();
+  });
+
+  it('reattaches legacy batch snapshots without replaying server-owned duration as client input', () => {
+    expect(
+      storyGenerationClientOptionsFromSnapshot({
+        aspectRatio: '16:9',
+        duration: 6,
+        durationSeconds: 10,
+      }),
+    ).toEqual({ aspectRatio: '16:9' });
+
+    expect(() =>
+      storyGenerationClientOptionsFromSnapshot({
+        prompt: 'must remain server-owned',
+      }),
+    ).toThrow(
+      'Story generation prompts and media references are controlled by the target specification.',
+    );
+  });
+
+  it('fingerprints an automatic-model request without undefined JSON values', () => {
+    expect(
+      generationRequestFingerprint(
+        {
+          projectId: 'project-id',
+          chapterId: 'chapter-id',
+          targetKind: 'storyboard_clip',
+          targetId: 'clip-id',
+          sequenceId: 'sequence-id',
+          expectedVersion: 1,
+          modelId: undefined,
+          schemaVersion: undefined,
+          clientOptions: undefined,
+        } as never,
+        {
+          modelId: 'resolved-model',
+          schemaVersion: 'resolved-schema',
+          effectiveOptions: {},
+          targetSnapshotFingerprint: 'a'.repeat(64),
+        },
+      ),
+    ).toMatch(/^[a-f0-9]{64}$/);
+  });
 });
 
 function videoModel(
@@ -168,6 +256,7 @@ async function resolveDefaultVideoModel(models: unknown[]) {
     {
       listCatalog: jest.fn().mockResolvedValue({ models, presets: [] }),
     } as never,
+    {} as never,
     {} as never,
     {} as never,
   );

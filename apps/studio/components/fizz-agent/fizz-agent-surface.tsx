@@ -38,11 +38,16 @@ export interface FizzAgentSurfaceProps {
   composer?: ReactNode;
   headerActions?: ReactNode;
   /**
-   * Wrap or replace the composer for the duration of a blocking decision — the
-   * host returns the approval prompt to render in the composer's place, or the
-   * composer untouched. Mirrors the Claude/Codex "approve to continue" gate.
+   * Host-owned transform for exceptional composer states (for example a legacy
+   * failure recovery surface). Agent OS decisions use `composerAccessory` so
+   * the input remains visible and editable while the active run is paused.
    */
   composerGate?: (composer: ReactNode) => ReactNode;
+  /**
+   * A compact decision surface rendered immediately above the composer. It may
+   * pause submission, but it never displaces the input or destroys its draft.
+   */
+  composerAccessory?: ReactNode;
   busy?: boolean;
   /**
    * Retire this conversation and open an empty one. Omit to hide the control —
@@ -76,6 +81,7 @@ export function FizzAgentSurface({
   composer,
   headerActions,
   composerGate,
+  composerAccessory,
   busy = false,
   onNewConversation,
   onOpenChange,
@@ -94,8 +100,10 @@ export function FizzAgentSurface({
         aria-label={labels.surface}
         role="complementary"
         className={cn(
-          "flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden bg-[oklch(0.145_0_0_/_0.94)] text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200",
-          variant === "docked" ? "rounded-none max-md:w-full" : "liquid-rim rounded-[26px]"
+          "flex h-full min-h-0 w-[clamp(360px,30vw,460px)] flex-col overflow-hidden text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_28px_90px_rgba(0,0,0,0.6)] backdrop-blur-[44px] backdrop-saturate-[1.35] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-4 motion-safe:duration-200",
+          variant === "docked"
+            ? "border-border rounded-none border-l bg-card max-md:w-full"
+            : "liquid-rim rounded-[26px] bg-[oklch(0.145_0_0_/_0.94)]"
         )}
       >
         <header className="flex h-14 shrink-0 items-center gap-3 px-4">
@@ -158,7 +166,10 @@ export function FizzAgentSurface({
         <div className="min-h-0 flex-1">{children}</div>
         {composer ? (
           <footer className="shrink-0 p-3 pt-1">
-            {composerGate ? composerGate(composer) : composer}
+            <div className="space-y-2">
+              {composerAccessory}
+              {composerGate ? composerGate(composer) : composer}
+            </div>
           </footer>
         ) : null}
       </aside>

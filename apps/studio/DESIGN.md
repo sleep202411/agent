@@ -83,6 +83,13 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
      wires are colored. The video connector is the one sanctioned, deliberate
      use of brand red as a functional accent (rule 3) — it is still not a
      token and never tints a surface.
+   - **Story decision nodes** are one neutral branch card, not a blue card
+     nested inside another card. The question sits above a stable list of
+     options; every option owns a dedicated right-edge connector rail and an
+     always-visible blue source handle centred on that row. Hover editing may
+     replace destination metadata, but it must never hide, move, or resize the
+     handle. Interaction blue is confined to the branch icon, indices, rail,
+     and handle; the card and rows remain zero-chroma.
    - **Commerce accents** (subscription / pricing surfaces only, decided
      2026-06-12 against the imagine.art reference, restyled to the AI-glass
      language 2026-06-22): the cards are AI-glass surfaces — every plan card
@@ -231,12 +238,13 @@ pause/resume, and the UI events that represent those facts.
   its creator decision appears only with the resulting proposal (Apply or
   Discard). A discarded/cancelled run is terminal, and historical assistant
   prose must never be used as current job-state authority.
-- A structured interaction is rendered only after Agent OS requests it; it
-  replaces and blocks the normal composer, exactly like a Claude/Codex
-  approve-to-continue gate. It is never rendered in the transcript, never a
-  permanent project-settings form, and never an unconditional empty-state
-  control. When submitted, the interaction disappears and only the
-  human-readable answer is appended as a durable user message in normal
+- A structured interaction is rendered only after Agent OS requests it. Its
+  compact decision surface sits immediately above the normal composer; it never
+  enters the transcript and never displaces or destroys the creator's draft.
+  The active run is still paused, so send, attachment, model, and Skill actions
+  stay unavailable until the decision resolves, while the textarea remains
+  visible and editable. When submitted, the interaction disappears and only
+  the human-readable answer is appended as a durable user message in normal
   timeline order.
 - A blocking interaction pauses the same logical run at a checkpoint. The user
   response is a new visible message turn, then Agent OS resumes that run. The
@@ -246,6 +254,27 @@ pause/resume, and the UI events that represent those facts.
 - Completed answer copy uses white as the primary foreground on the dark
   surface. Gray is reserved for subordinate hints and metadata, not applied to
   the whole conversation by default.
+
+### H5 asset-generation transcript
+
+On the mobile/H5 Story Studio, generated media is the conversation content,
+not batch telemetry.
+
+- After Asset Specs are saved, images start without another confirmation.
+  Exactly one asset is admitted at a time and charged when that generation
+  starts.
+- Each revealed asset owns one full-width result card: a compact
+  character/location/prop title row and one large media body. The generating
+  placeholder is replaced in that same card when media arrives; the next card
+  appears only after the current item settles.
+- A completed image is self-evident. Do not add progress bars, percentages,
+  checkmarks, “completed” labels, or a separate batch-summary row to H5 cards.
+- A failed sequential item stops every unstarted item. Keep the failure in the
+  current large card, retain earlier completed cards, and place verbatim
+  provider detail behind an explicit disclosure instead of dumping it into the
+  primary transcript rhythm.
+- This projection is H5-specific. Desktop batch galleries retain their compact
+  overview and parallel execution unless their own product contract changes.
 
 ## Type scale
 

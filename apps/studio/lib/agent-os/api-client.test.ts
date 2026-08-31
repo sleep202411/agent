@@ -90,6 +90,7 @@ describe("AgentOsApiClient structured input", () => {
       conversationId: "44444444-4444-4444-8444-444444444444",
       modelProfileId: "qwen-plus",
       permissionMode: "smart",
+      experience: "mobile_h5",
     });
 
     expect(api.post).toHaveBeenCalledWith(
@@ -101,6 +102,7 @@ describe("AgentOsApiClient structured input", () => {
           decision: "approve",
           responseText: "Approved",
           locale: "en-US",
+          experience: "mobile_h5",
         }),
       })
     );

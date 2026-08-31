@@ -23,7 +23,6 @@ export interface StoryCanvasEditPolicyInput {
 }
 
 export interface StoryProjectionReadinessInput {
-  hasWorkspace: boolean;
   workbenchFetchedAfterMount: boolean;
   workbenchError: boolean;
   layoutFetchedAfterMount: boolean;
@@ -60,17 +59,12 @@ export function isStoryChapterProjectionPairReady({
   );
 }
 
-export function shouldFetchStoryProjection(hasWorkspace: boolean): boolean {
-  return hasWorkspace;
-}
-
 export function storyProjectionQueryKey(
   kind: "workbench" | "canvas-layout",
-  workspaceId: string | null,
   projectId: string,
   chapterId: string | null
 ) {
-  return ["story-studio", kind, workspaceId, projectId, "chapter", chapterId ?? "default"] as const;
+  return ["story-studio", kind, projectId, "chapter", chapterId ?? "default"] as const;
 }
 
 /**
@@ -78,8 +72,8 @@ export function storyProjectionQueryKey(
  * chapter) for a project. Used to invalidate the canvas when an out-of-band
  * mutation may have bumped the draft revision, so it refetches instead of
  * showing a stale draft/layout — see `requiresStoryProjectionReconcile` for the
- * triggers. Matched on projectId (globally unique) rather than workspaceId to
- * stay robust to a null-vs-string workspace key.
+ * triggers. Project IDs are globally unique, so no ambient scope belongs in
+ * this canonical key.
  */
 export function matchesStoryProjectionQueryKey(
   queryKey: readonly unknown[],
@@ -88,7 +82,7 @@ export function matchesStoryProjectionQueryKey(
   return (
     queryKey[0] === "story-studio" &&
     (queryKey[1] === "workbench" || queryKey[1] === "canvas-layout") &&
-    queryKey[3] === projectId
+    queryKey[2] === projectId
   );
 }
 
@@ -103,22 +97,14 @@ export function matchesStoryProjectionQueryKey(
  */
 export function storyProjectionQueryOptions<TData>(input: {
   kind: "workbench" | "canvas-layout";
-  workspaceId: string | null;
   projectId: string;
   chapterId: string | null;
   queryFn: () => Promise<TData>;
 }) {
   return {
-    queryKey: storyProjectionQueryKey(
-      input.kind,
-      input.workspaceId,
-      input.projectId,
-      input.chapterId
-    ),
+    queryKey: storyProjectionQueryKey(input.kind, input.projectId, input.chapterId),
     queryFn: input.queryFn,
-    enabled:
-      shouldFetchStoryProjection(Boolean(input.workspaceId)) &&
-      (input.kind === "workbench" || Boolean(input.chapterId)),
+    enabled: input.kind === "workbench" || Boolean(input.chapterId),
     retry: false,
     placeholderData: keepPreviousData,
   } as const;
@@ -131,13 +117,11 @@ export function storyProjectionQueryOptions<TData>(input: {
  * from each observer before editing.
  */
 export function resolveStoryProjectionReadiness({
-  hasWorkspace,
   workbenchFetchedAfterMount,
   workbenchError,
   layoutFetchedAfterMount,
   layoutError,
 }: StoryProjectionReadinessInput): StoryProjectionReadinessState {
-  if (!hasWorkspace) return "unavailable";
   if (!workbenchFetchedAfterMount || !layoutFetchedAfterMount) return "loading";
   if (workbenchError || layoutError) return "unavailable";
   return "ready";

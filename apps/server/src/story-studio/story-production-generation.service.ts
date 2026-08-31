@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -15,6 +16,8 @@ import {
   MediaAssetVariantKind,
   MediaAssetVariantStatus,
   Prisma,
+  StoryGenerationBatchItemStatus,
+  StoryGenerationBatchStatus,
   StoryProductionGenerationKind,
   StoryProductionGenerationTargetKind,
   StoryProductionSpecStatus,
@@ -22,6 +25,7 @@ import {
   type StoryFrameProfile,
 } from '@prisma/client';
 import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
+import { estimateProductModelPoints } from '@repo/shared';
 import type { AuthUser } from '../auth';
 import {
   AiGenerationCompletionObserverRegistry,
@@ -51,12 +55,14 @@ import {
   StoryGenerationOptionsSchema,
 } from './story-production-generation.schema';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
+import { StoryProductionPlanService } from './story-production-plan.service';
 
 const DEFAULT_RECONCILE_INTERVAL_MS = 15_000;
 const DEFAULT_RECONCILE_BATCH_SIZE = 25;
 const RECONCILE_LEASE_MS = 60_000;
 const MAX_RECONCILE_ATTEMPTS = 12;
 const GENERATION_TARGET_SNAPSHOT_VERSION = 1;
+const STORYBOARD_CLIP_TARGET_SNAPSHOT_VERSION = 2;
 const GENERATION_SUBMISSION_SNAPSHOT_VERSION = 1;
 const SERVER_OWNED_AI_INPUT_FIELDS = new Set([
   'prompt',
@@ -117,6 +123,14 @@ const REFERENCE_MEDIA_VERSION_INCLUDE =
 const CLIP_TARGET_INCLUDE =
   Prisma.validator<Prisma.StoryStoryboardClipInclude>()({
     project: { select: { frameProfile: true } },
+    sequence: {
+      select: {
+        id: true,
+        status: true,
+        version: true,
+        sourceFingerprint: true,
+      },
+    },
     assetBindings: {
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       include: {
@@ -215,6 +229,15 @@ interface SubmitGenerationCommand {
   schemaVersion?: string;
   clientOptions: StoryGenerationOptions;
   requestedOutputKind?: 'image' | 'video';
+  expectedQuote?: {
+    pricingVersion: string;
+    points: number;
+  };
+  billingSubject?: { type: 'user' | 'workspace'; id: string };
+  batchAdmission?: {
+    itemId: string;
+    leaseOwner: string;
+  };
   retryOf?: GenerationRetrySource;
 }
 
@@ -270,6 +293,7 @@ export class StoryProductionGenerationService
     private readonly aiGeneration: AiGenerationService,
     private readonly completionObservers: AiGenerationCompletionObserverRegistry,
     private readonly assetUrls: MediaAssetUrlResolverService,
+    private readonly productionPlans: StoryProductionPlanService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -301,12 +325,82 @@ export class StoryProductionGenerationService
 
   async createAssetGeneration(
     user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    assetSpecId: string,
+    idempotencyKey: string,
+    input: CreateStoryAssetGenerationInput,
+  ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
+    return this.submitGeneration({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      targetKind: 'asset_spec',
+      targetId: assetSpecId,
+      sequenceId: null,
+      idempotencyKey,
+      expectedVersion: input.expectedVersion,
+      modelId: input.modelId,
+      schemaVersion: input.schemaVersion,
+      clientOptions: input.options ?? {},
+      requestedOutputKind: input.outputKind,
+    });
+  }
+
+  /**
+   * Server-authoritative preflight used by durable batches. It resolves the
+   * same target snapshot, references, model compatibility, defaults, and
+   * pricing contract as submission without reserving points or creating an AI
+   * job. The returned values are frozen into the quote item.
+   */
+  async quoteAssetGeneration(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    assetSpecId: string,
+    input: CreateStoryAssetGenerationInput,
+  ) {
+    return this.quoteGeneration({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      targetKind: 'asset_spec',
+      targetId: assetSpecId,
+      sequenceId: null,
+      idempotencyKey: 'quote-only',
+      expectedVersion: input.expectedVersion,
+      modelId: input.modelId,
+      schemaVersion: input.schemaVersion,
+      clientOptions: input.options ?? {},
+      requestedOutputKind: input.outputKind,
+    });
+  }
+
+  /**
+   * Executes one creator-confirmed batch item against the exact quote that was
+   * shown to the creator. A catalog price change never silently changes the
+   * amount approved by the creator; the item fails closed and must be requoted.
+   */
+  async createQuotedAssetGeneration(
+    user: AuthUser,
     workspaceId: string,
     projectId: string,
     chapterId: string,
     assetSpecId: string,
     idempotencyKey: string,
     input: CreateStoryAssetGenerationInput,
+    expectedQuote: { pricingVersion: string; points: number },
+    billingSubject: { type: 'user' | 'workspace'; id: string },
+    batchAdmission: { itemId: string; leaseOwner: string },
   ) {
     return this.submitGeneration({
       user,
@@ -320,12 +414,40 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
       requestedOutputKind: input.outputKind,
+      expectedQuote,
+      billingSubject,
+      batchAdmission,
     });
   }
 
-  async createStoryboardClipGeneration(
+  async quoteStoryboardClipGeneration(
+    user: AuthUser,
+    workspaceId: string,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    clipId: string,
+    input: CreateStoryStoryboardClipGenerationInput,
+  ) {
+    return this.quoteGeneration({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      targetKind: 'storyboard_clip',
+      targetId: clipId,
+      sequenceId,
+      idempotencyKey: 'quote-only',
+      expectedVersion: input.expectedVersion,
+      modelId: input.modelId,
+      schemaVersion: input.schemaVersion,
+      clientOptions: input.options ?? {},
+    });
+  }
+
+  async createQuotedStoryboardClipGeneration(
     user: AuthUser,
     workspaceId: string,
     projectId: string,
@@ -334,6 +456,9 @@ export class StoryProductionGenerationService
     clipId: string,
     idempotencyKey: string,
     input: CreateStoryStoryboardClipGenerationInput,
+    expectedQuote: { pricingVersion: string; points: number },
+    billingSubject: { type: 'user' | 'workspace'; id: string },
+    batchAdmission: { itemId: string; leaseOwner: string },
   ) {
     return this.submitGeneration({
       user,
@@ -347,25 +472,52 @@ export class StoryProductionGenerationService
       expectedVersion: input.expectedVersion,
       modelId: input.modelId,
       schemaVersion: input.schemaVersion,
-      clientOptions: input.options,
+      clientOptions: input.options ?? {},
+      expectedQuote,
+      billingSubject,
+      batchAdmission,
+    });
+  }
+
+  async createStoryboardClipGeneration(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    sequenceId: string,
+    clipId: string,
+    idempotencyKey: string,
+    input: CreateStoryStoryboardClipGenerationInput,
+  ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
+    return this.submitGeneration({
+      user,
+      workspaceId,
+      projectId,
+      chapterId,
+      targetKind: 'storyboard_clip',
+      targetId: clipId,
+      sequenceId,
+      idempotencyKey,
+      expectedVersion: input.expectedVersion,
+      modelId: input.modelId,
+      schemaVersion: input.schemaVersion,
+      clientOptions: input.options ?? {},
     });
   }
 
   async getAssetGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     assetSpecId: string,
     generationId: string,
   ) {
-    await this.requireScope(
-      user,
-      workspaceId,
-      projectId,
-      chapterId,
-      'story.read',
-    );
+    await this.requireProjectScope(user, projectId, chapterId, 'story.read');
     await this.reconcileCompletedGeneration(generationId, false);
     const row = await this.requireGeneration({
       generationId,
@@ -380,20 +532,13 @@ export class StoryProductionGenerationService
 
   async getStoryboardClipGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
     clipId: string,
     generationId: string,
   ) {
-    await this.requireScope(
-      user,
-      workspaceId,
-      projectId,
-      chapterId,
-      'story.read',
-    );
+    await this.requireProjectScope(user, projectId, chapterId, 'story.read');
     await this.reconcileCompletedGeneration(generationId, false);
     const row = await this.requireGeneration({
       generationId,
@@ -408,12 +553,17 @@ export class StoryProductionGenerationService
 
   async cancelAssetGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     assetSpecId: string,
     generationId: string,
   ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
     return this.cancelGeneration({
       user,
       workspaceId,
@@ -428,13 +578,18 @@ export class StoryProductionGenerationService
 
   async cancelStoryboardClipGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
     clipId: string,
     generationId: string,
   ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
     return this.cancelGeneration({
       user,
       workspaceId,
@@ -449,7 +604,6 @@ export class StoryProductionGenerationService
 
   async retryAssetGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     assetSpecId: string,
@@ -457,6 +611,12 @@ export class StoryProductionGenerationService
     idempotencyKey: string,
     input: RetryStoryProductionGenerationInput,
   ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
     return this.retryGeneration({
       user,
       workspaceId,
@@ -473,7 +633,6 @@ export class StoryProductionGenerationService
 
   async retryStoryboardClipGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -482,6 +641,12 @@ export class StoryProductionGenerationService
     idempotencyKey: string,
     input: RetryStoryProductionGenerationInput,
   ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
     return this.retryGeneration({
       user,
       workspaceId,
@@ -498,13 +663,18 @@ export class StoryProductionGenerationService
 
   async reattachAssetGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     assetSpecId: string,
     generationId: string,
     idempotencyKey: string,
   ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
     return this.reattachGeneration({
       user,
       workspaceId,
@@ -520,7 +690,6 @@ export class StoryProductionGenerationService
 
   async reattachStoryboardClipGeneration(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     chapterId: string,
     sequenceId: string,
@@ -528,6 +697,12 @@ export class StoryProductionGenerationService
     generationId: string,
     idempotencyKey: string,
   ) {
+    const workspaceId = await this.requireProjectScope(
+      user,
+      projectId,
+      chapterId,
+      'story.generate',
+    );
     return this.reattachGeneration({
       user,
       workspaceId,
@@ -834,15 +1009,28 @@ export class StoryProductionGenerationService
       return this.toGenerationDto(await this.requireGenerationById(replay.id));
     }
 
-    const target = await this.loadTarget(
-      this.prisma,
-      command.projectId,
-      command.chapterId,
-      command.targetKind,
-      command.targetId,
-      command.sequenceId,
-      command.requestedOutputKind,
-    );
+    const target = await this.prisma.$transaction(async (tx) => {
+      const loadedTarget = await this.loadTarget(
+        tx,
+        command.projectId,
+        command.chapterId,
+        command.targetKind,
+        command.targetId,
+        command.sequenceId,
+        command.requestedOutputKind,
+      );
+      const productionState =
+        await this.productionPlans.getProductionStateInTransaction(
+          tx,
+          command.projectId,
+          command.chapterId,
+        );
+      this.assertProductionStageCanGenerate(
+        productionState,
+        command.targetKind,
+      );
+      return loadedTarget;
+    });
     this.assertTargetCanGenerate(target, command);
     const targetSnapshotFingerprint = canonicalJsonHash(target.logicalSnapshot);
     if (
@@ -887,6 +1075,9 @@ export class StoryProductionGenerationService
       effectiveOptions,
       references,
     );
+    if (command.expectedQuote) {
+      assertStoryGenerationQuoteMatches(model, aiInput, command.expectedQuote);
+    }
     const promptDocument = providerPromptDocument(
       target.prompt,
       target.references,
@@ -934,6 +1125,7 @@ export class StoryProductionGenerationService
         {
           retryOfJobId: command.retryOf?.aiJobId,
           frozenSkillSnapshot: command.retryOf?.skillSnapshot,
+          billingSubject: command.billingSubject,
           afterJobCreate: async (tx, job) => {
             await this.writeGuard.assertHumanWriteAllowed(
               tx,
@@ -945,6 +1137,29 @@ export class StoryProductionGenerationService
               command.projectId,
               'story.generate',
             );
+            if (command.batchAdmission) {
+              const admission = await tx.storyGenerationBatchItem.findUnique({
+                where: { id: command.batchAdmission.itemId },
+                select: {
+                  status: true,
+                  leaseOwner: true,
+                  batch: { select: { status: true } },
+                },
+              });
+              if (
+                admission?.status !==
+                  StoryGenerationBatchItemStatus.dispatching ||
+                admission.leaseOwner !== command.batchAdmission.leaseOwner ||
+                (admission.batch.status !== StoryGenerationBatchStatus.queued &&
+                  admission.batch.status !== StoryGenerationBatchStatus.running)
+              ) {
+                throw new ConflictException({
+                  code: 'STORY_GENERATION_BATCH_ADMISSION_REVOKED',
+                  message:
+                    'This batch item is no longer eligible for generation.',
+                });
+              }
+            }
             await tx.$executeRaw`
               SELECT pg_advisory_xact_lock(
                 hashtext(${`story-production-generation:${command.chapterId}:${command.user.userId}:${idempotencyKey}`})::bigint
@@ -974,6 +1189,16 @@ export class StoryProductionGenerationService
               command.targetId,
               command.sequenceId,
               command.requestedOutputKind,
+            );
+            const productionState =
+              await this.productionPlans.getProductionStateInTransaction(
+                tx,
+                command.projectId,
+                command.chapterId,
+              );
+            this.assertProductionStageCanGenerate(
+              productionState,
+              command.targetKind,
             );
             this.assertTargetCanGenerate(lockedTarget, command);
             if (
@@ -1024,6 +1249,31 @@ export class StoryProductionGenerationService
                 retryOfGenerationId: command.retryOf?.generationId ?? null,
               },
             });
+            if (command.batchAdmission) {
+              const admitted = await tx.storyGenerationBatchItem.updateMany({
+                where: {
+                  id: command.batchAdmission.itemId,
+                  status: StoryGenerationBatchItemStatus.dispatching,
+                  leaseOwner: command.batchAdmission.leaseOwner,
+                },
+                data: {
+                  status: StoryGenerationBatchItemStatus.submitted,
+                  generationId,
+                  submittedAt: new Date(),
+                  leaseOwner: null,
+                  leaseExpiresAt: null,
+                  nextDispatchAt: null,
+                  error: Prisma.JsonNull,
+                },
+              });
+              if (admitted.count !== 1) {
+                throw new ConflictException({
+                  code: 'STORY_GENERATION_BATCH_ADMISSION_REVOKED',
+                  message:
+                    'This batch item was cancelled while generation was being submitted.',
+                });
+              }
+            }
           },
         },
       );
@@ -1039,6 +1289,80 @@ export class StoryProductionGenerationService
     }
 
     return this.toGenerationDto(await this.requireGenerationById(generationId));
+  }
+
+  private async quoteGeneration(command: SubmitGenerationCommand) {
+    await this.requireScope(
+      command.user,
+      command.workspaceId,
+      command.projectId,
+      command.chapterId,
+      'story.generate',
+    );
+    const target = await this.prisma.$transaction(async (tx) => {
+      const loadedTarget = await this.loadTarget(
+        tx,
+        command.projectId,
+        command.chapterId,
+        command.targetKind,
+        command.targetId,
+        command.sequenceId,
+        command.requestedOutputKind,
+      );
+      const productionState =
+        await this.productionPlans.getProductionStateInTransaction(
+          tx,
+          command.projectId,
+          command.chapterId,
+        );
+      this.assertProductionStageCanGenerate(
+        productionState,
+        command.targetKind,
+      );
+      return loadedTarget;
+    });
+    this.assertTargetCanGenerate(target, command);
+    const references = this.resolveProviderReferences(target);
+    const model = await this.requireCompatibleModel(
+      command.user,
+      command.workspaceId,
+      command.modelId,
+      command.schemaVersion,
+      target,
+      references,
+      command.clientOptions,
+    );
+    const effectiveOptions = this.effectiveOptions(
+      model,
+      target,
+      command.clientOptions,
+    );
+    const aiInput = this.buildAiInput(
+      model,
+      target,
+      effectiveOptions,
+      references,
+    );
+    const estimate = estimateGenerationPoints(model, aiInput);
+    return {
+      targetKind: command.targetKind,
+      targetId: command.targetId,
+      sequenceId: command.sequenceId,
+      targetVersion: target.version,
+      targetSnapshotFingerprint: canonicalJsonHash(target.logicalSnapshot),
+      outputKind: target.generationKind,
+      modelId: model.id,
+      schemaVersion: model.schemaVersion,
+      // A durable batch replays creator-controlled options through the same
+      // target/model resolver at dispatch time. Do not persist the resolved
+      // `effectiveOptions` here: it contains server-owned fields such as
+      // duration/durationSeconds, which are intentionally rejected as client
+      // input and would later make the completed output impossible to
+      // materialize from its submission snapshot.
+      options: command.clientOptions,
+      quotedPoints: estimate.sellPoints,
+      pricingVersion: estimate.pricingVersion,
+    };
   }
 
   private async retryGeneration(input: {
@@ -1460,6 +1784,32 @@ export class StoryProductionGenerationService
     }
   }
 
+  private assertProductionStageCanGenerate(
+    state: Awaited<
+      ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
+    >,
+    targetKind: SubmitGenerationCommand['targetKind'],
+  ): void {
+    if (this.productionStageCanGenerate(state, targetKind)) return;
+    throw new ConflictException({
+      code: 'STORY_GENERATION_TARGET_STALE',
+      message:
+        targetKind === 'asset_spec'
+          ? 'Asset Specs are no longer current with the approved Script. Reconcile them before generating media.'
+          : 'The Storyboard or its upstream Asset Specs are no longer current with the approved Script and Plot Tree. Reconcile them before generating media.',
+    });
+  }
+
+  private productionStageCanGenerate(
+    state: Awaited<
+      ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
+    >,
+    targetKind: SubmitGenerationCommand['targetKind'],
+  ): boolean {
+    if (state.assets.status !== 'current') return false;
+    return targetKind === 'asset_spec' || state.storyboard.status === 'current';
+  }
+
   private async loadTarget(
     db: PrismaService | Prisma.TransactionClient,
     projectId: string,
@@ -1637,22 +1987,43 @@ export class StoryProductionGenerationService
         SELECT pg_advisory_xact_lock(hashtext(${targetLockKey})::bigint)
       `;
 
+      const targetKind =
+        generation.targetKind === StoryProductionGenerationTargetKind.asset_spec
+          ? 'asset_spec'
+          : 'storyboard_clip';
       const target = await this.loadTarget(
         tx,
         generation.storyProjectId,
         generation.storyChapterId,
-        generation.targetKind === StoryProductionGenerationTargetKind.asset_spec
-          ? 'asset_spec'
-          : 'storyboard_clip',
+        targetKind,
         generation.assetSpecId ?? generation.storyboardClipId ?? '',
         null,
         generation.generationKind,
       );
+      let productionStageCanAutoSelect = false;
+      try {
+        const productionState =
+          await this.productionPlans.getProductionStateInTransaction(
+            tx,
+            generation.storyProjectId,
+            generation.storyChapterId,
+          );
+        productionStageCanAutoSelect = this.productionStageCanGenerate(
+          productionState,
+          targetKind,
+        );
+      } catch (error) {
+        if (!isCanonicalProductionStateUnavailable(error)) throw error;
+        this.logger.warn(
+          `Story generation ${generation.id} will preserve completed media without auto-selection because the canonical production state is unavailable: ${safeErrorMessage(error)}`,
+        );
+      }
       const promptSnapshot = jsonObject(generation.promptSnapshot);
       const originalTargetFingerprint = stringValue(
         promptSnapshot.targetSnapshotFingerprint,
       );
       const targetStillCurrent =
+        productionStageCanAutoSelect &&
         originalTargetFingerprint !== null &&
         target.status === StoryProductionSpecStatus.current &&
         target.version === generation.targetVersion &&
@@ -1934,22 +2305,37 @@ export class StoryProductionGenerationService
     chapterId: string,
     capability: 'story.read' | 'story.generate',
   ): Promise<void> {
-    const { project } = await this.permissions.requireProject(
-      user.userId,
+    const projectWorkspaceId = await this.requireProjectScope(
+      user,
       projectId,
+      chapterId,
       capability,
     );
-    if (project.workspaceId !== workspaceId) {
+    if (projectWorkspaceId !== workspaceId) {
       throw new NotFoundException({
         code: 'STORY_PROJECT_NOT_FOUND',
         message: 'Story project not found.',
       });
     }
+  }
+
+  private async requireProjectScope(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    capability: 'story.read' | 'story.generate',
+  ): Promise<string> {
+    const { project } = await this.permissions.requireProject(
+      user.userId,
+      projectId,
+      capability,
+    );
     const chapter = await this.prisma.storyChapter.findFirst({
       where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
       select: { id: true },
     });
     if (!chapter) throw productionNotFound('Story chapter', chapterId);
+    return project.workspaceId;
   }
 
   private toGenerationDto(row: GenerationResponseRow) {
@@ -2162,6 +2548,11 @@ function assetTarget(
 }
 
 function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
+  const targetStatus =
+    row.status === StoryProductionSpecStatus.current &&
+    row.sequence.status !== StoryProductionSpecStatus.current
+      ? StoryProductionSpecStatus.stale
+      : row.status;
   const references = row.assetBindings.map((binding) => {
     const mediaVersion =
       binding.mode === StoryStoryboardBindingMode.pinned
@@ -2186,12 +2577,18 @@ function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
     } satisfies ResolvedTargetReference;
   });
   const logicalSnapshot = {
-    version: GENERATION_TARGET_SNAPSHOT_VERSION,
+    version: STORYBOARD_CLIP_TARGET_SNAPSHOT_VERSION,
     targetKind: 'storyboard_clip',
     id: row.id,
     sequenceId: row.sequenceId,
+    sequence: {
+      id: row.sequence.id,
+      versionNumber: row.sequence.version,
+      status: row.sequence.status,
+      sourceFingerprint: row.sequence.sourceFingerprint,
+    },
     versionNumber: row.version,
-    status: row.status,
+    status: targetStatus,
     sourceFingerprint: row.sourceFingerprint,
     selectedMediaVersionId: row.selectedMediaVersionId,
     kind: row.kind,
@@ -2233,7 +2630,7 @@ function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
     generationKind: row.kind,
     version: row.version,
     sourceFingerprint: row.sourceFingerprint,
-    status: row.status,
+    status: targetStatus,
     prompt:
       row.kind === 'video' ? (row.videoPrompt ?? '') : (row.imagePrompt ?? ''),
     negativePrompt: row.negativePrompt,
@@ -2343,7 +2740,7 @@ function providerPromptDocument(
   return { version: 1, nodes };
 }
 
-function generationRequestFingerprint(
+export function generationRequestFingerprint(
   command: SubmitGenerationCommand,
   resolved: ResolvedGenerationRequest,
 ): string {
@@ -2355,10 +2752,11 @@ function generationRequestFingerprint(
     targetId: command.targetId,
     sequenceId: command.sequenceId,
     expectedVersion: command.expectedVersion,
-    modelId: command.modelId,
-    schemaVersion: command.schemaVersion,
-    clientOptions: command.clientOptions,
+    modelId: command.modelId ?? null,
+    schemaVersion: command.schemaVersion ?? null,
+    clientOptions: command.clientOptions ?? {},
     requestedOutputKind: command.requestedOutputKind ?? null,
+    expectedQuote: command.expectedQuote ?? null,
     retryOfGenerationId: command.retryOf?.generationId ?? null,
     resolved,
   });
@@ -2426,8 +2824,8 @@ function parseSubmissionSnapshot(
       message: 'The saved generation submission snapshot is invalid.',
     });
   }
-  const clientOptions = StoryGenerationOptionsSchema.parse(
-    jsonObject(row.clientOptions),
+  const clientOptions = storyGenerationClientOptionsFromSnapshot(
+    row.clientOptions,
   );
   return {
     version: 1,
@@ -2450,6 +2848,21 @@ function parseSubmissionSnapshot(
         : null,
     sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
   };
+}
+
+/**
+ * Early durable batches stored the server-resolved source duration in the
+ * snapshot's client-options field. The provider job is already immutable at
+ * this point, so discard only those two known server-owned keys while keeping
+ * every other reserved option subject to the normal strict validation.
+ */
+export function storyGenerationClientOptionsFromSnapshot(
+  value: unknown,
+): StoryGenerationOptions {
+  const options = jsonObject(value);
+  delete options.duration;
+  delete options.durationSeconds;
+  return StoryGenerationOptionsSchema.parse(options);
 }
 
 function materializationFailure(error: unknown): MaterializationFailureShape {
@@ -2534,6 +2947,92 @@ function jsonObject(value: unknown): Record<string, unknown> {
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function estimateGenerationPoints(
+  model: AiModelDefinition,
+  aiInput: Record<string, unknown>,
+) {
+  const pricing = model.billing_policy?.productPricing;
+  if (!pricing) {
+    throw new BadRequestException({
+      code: 'MODEL_PRICING_NOT_CONFIGURED',
+      message: 'The selected generation model is missing product pricing.',
+    });
+  }
+  return estimateProductModelPoints({
+    policy: pricing,
+    numOutputs: finiteNumber(aiInput.numOutputs),
+    resolution: optionalString(aiInput.resolution),
+    quality: optionalString(aiInput.quality),
+    duration: durationValue(aiInput.duration),
+    durationSeconds: finiteNumber(aiInput.durationSeconds),
+    text: optionalString(aiInput.prompt),
+    referenceImageCount: arraySize(aiInput.referenceImages),
+    referenceVideoSeconds: mediaDurationSeconds(aiInput.referenceVideos),
+    generateAudio:
+      typeof aiInput.generateAudio === 'boolean'
+        ? aiInput.generateAudio
+        : undefined,
+    hasMask: aiInput.maskImage !== undefined && aiInput.maskImage !== null,
+  });
+}
+
+export function assertStoryGenerationQuoteMatches(
+  model: AiModelDefinition,
+  aiInput: Record<string, unknown>,
+  expectedQuote: { pricingVersion: string; points: number },
+): void {
+  const currentQuote = estimateGenerationPoints(model, aiInput);
+  if (
+    currentQuote.pricingVersion === expectedQuote.pricingVersion &&
+    currentQuote.sellPoints === expectedQuote.points
+  ) {
+    return;
+  }
+  throw new ConflictException({
+    code: 'STORY_GENERATION_BATCH_QUOTE_STALE',
+    message:
+      'The selected model pricing changed after confirmation. Request a fresh batch quote before generating.',
+    quotedPricingVersion: expectedQuote.pricingVersion,
+    currentPricingVersion: currentQuote.pricingVersion,
+    quotedPoints: expectedQuote.points,
+    currentPoints: currentQuote.sellPoints,
+  });
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function durationValue(value: unknown): string | number | undefined {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : optionalString(value);
+}
+
+function arraySize(value: unknown): number | undefined {
+  return Array.isArray(value) ? value.length : undefined;
+}
+
+function mediaDurationSeconds(value: unknown): number | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const total = (value as unknown[]).reduce<number>((sum, item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return sum;
+    const record = item as Record<string, unknown>;
+    const seconds =
+      finiteNumber(record.durationSeconds) ??
+      finiteNumber(record.duration) ??
+      (finiteNumber(record.durationMs) ?? 0) / 1000;
+    return sum + Math.max(0, seconds ?? 0);
+  }, 0);
+  return total > 0 ? total : undefined;
 }
 
 function numberValue(value: unknown): number | null {
@@ -2678,6 +3177,17 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 
 function reconcileBackoffMs(attempt: number): number {
   return Math.min(15 * 60_000, 2 ** Math.min(10, attempt) * 1_000);
+}
+
+function isCanonicalProductionStateUnavailable(error: unknown): boolean {
+  if (error instanceof HttpException) return true;
+  if (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2025'
+  ) {
+    return true;
+  }
+  return error instanceof Error && error.name === 'ZodError';
 }
 
 function safeErrorMessage(error: unknown): string {

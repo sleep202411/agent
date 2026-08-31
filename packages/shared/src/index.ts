@@ -26,6 +26,7 @@ export * from "./regions.js";
 export * from "./interactive-film-runtime.js";
 export * from "./experience-runtime.js";
 export * from "./story-directing-skills.js";
+export * from "./story-visual-style-skills.js";
 export * from "./story-agent.js";
 export * from "./agent-os-transport.js";
 export * from "./fractional-index.js";

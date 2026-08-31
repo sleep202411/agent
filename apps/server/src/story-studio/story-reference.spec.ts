@@ -174,7 +174,6 @@ describe('StoryReferenceController', () => {
     await expect(
       controller.createVersion(
         USER as never,
-        WORKSPACE_ID,
         'reference-request-1',
         { projectId: PROJECT_ID, slotId: SLOT_ID },
         body,
@@ -182,7 +181,6 @@ describe('StoryReferenceController', () => {
     ).resolves.toEqual({ code: 200, data: version });
     expect(service.createVersion).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       SLOT_ID,
       body,
@@ -209,7 +207,7 @@ describe('StoryReferenceService', () => {
     );
 
     await expect(
-      service.createSlots(USER as never, WORKSPACE_ID, PROJECT_ID, {
+      service.createSlots(USER as never, PROJECT_ID, {
         slots: [
           {
             key: 'CHARACTER_HERO',
@@ -292,7 +290,6 @@ describe('StoryReferenceService', () => {
     await expect(
       service.createVersion(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         SLOT_ID,
         input,
@@ -370,7 +367,6 @@ describe('StoryReferenceService', () => {
     await expect(
       service.createVersion(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         SLOT_ID,
         {
@@ -409,7 +405,6 @@ describe('StoryReferenceService', () => {
     await expect(
       service.createVersion(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         SLOT_ID,
         exact,
@@ -419,7 +414,6 @@ describe('StoryReferenceService', () => {
     await expect(
       service.createVersion(
         USER as never,
-        WORKSPACE_ID,
         PROJECT_ID,
         SLOT_ID,
         { ...exact, expectedSlotVersion: 1 },
@@ -474,23 +468,16 @@ describe('StoryReferenceService', () => {
     );
 
     await expect(
-      service.reviewVersion(
-        USER as never,
-        WORKSPACE_ID,
-        PROJECT_ID,
-        SLOT_ID,
-        VERSION_ID,
-        {
-          expectedReviewRevision: 0,
-          decision: 'approve',
-          checklist: {
-            technical: 'pass',
-            identityContinuity: 'pass',
-            rights: 'pass',
-            safety: 'pass',
-          },
+      service.reviewVersion(USER as never, PROJECT_ID, SLOT_ID, VERSION_ID, {
+        expectedReviewRevision: 0,
+        decision: 'approve',
+        checklist: {
+          technical: 'pass',
+          identityContinuity: 'pass',
+          rights: 'pass',
+          safety: 'pass',
         },
-      ),
+      }),
     ).resolves.toMatchObject({
       reference: { id: VERSION_ID, reviewRevision: 1 },
       review: { id: REVIEW_ID, decision: 'approve' },
@@ -562,7 +549,7 @@ describe('StoryReferenceService', () => {
     );
 
     await expect(
-      service.approveVersion(USER as never, WORKSPACE_ID, PROJECT_ID, SLOT_ID, {
+      service.approveVersion(USER as never, PROJECT_ID, SLOT_ID, {
         expectedSlotVersion: 2,
         referenceVersionId: VERSION_ID,
         approveReviewId: REVIEW_ID,

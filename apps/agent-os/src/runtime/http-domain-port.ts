@@ -166,19 +166,18 @@ function isExecutionFenceCode(code: string): boolean {
 async function retryDelay(ms: number, signal?: AbortSignal): Promise<void> {
   throwIfAborted(signal);
   await new Promise<void>((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const cleanup = (): void => {
-      if (timer) clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-    const onAbort = (): void => {
-      cleanup();
-      reject(signal ? abortReason(signal) : new DOMException("Aborted", "AbortError"));
-    };
-    timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       cleanup();
       resolve();
     }, ms);
+    function cleanup(): void {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+    }
+    function onAbort(): void {
+      cleanup();
+      reject(signal ? abortReason(signal) : new DOMException("Aborted", "AbortError"));
+    }
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 }
@@ -223,7 +222,7 @@ export function resolveWorkerDomainMode(): WorkerDomainMode {
   );
 }
 
-export function createWorkerDomainPort(_scriptText?: string): DomainPort {
+export function createWorkerDomainPort(): DomainPort {
   const local = new InMemoryStoryDomain();
   // Offline demos / tests: seed a default script under a fixed attachment id.
   local.setScript(

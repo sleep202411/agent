@@ -1,4 +1,0 @@
-interface:
-  display_name: "Surreal Collage Dreamscape"
-  short_description: "Analog paper textures, unexpected scale and poetic photomontage "
-  default_prompt: "Use $surreal-collage-dreamscape to apply this creative direction to my request."

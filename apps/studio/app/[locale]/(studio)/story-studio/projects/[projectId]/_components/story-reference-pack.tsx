@@ -128,7 +128,6 @@ export function StoryReferencePack({
     if (!apiConnected) return Promise.resolve(false);
     return run(`version:${slot.id}`, () =>
       createStoryReferenceVersion(
-        workspaceId,
         projectId,
         slot.id,
         { expectedSlotVersion: slot.version, assetId, variantId, source },
@@ -355,12 +354,11 @@ export function StoryReferencePack({
           const current = references.find((slot) => slot.id === editorSlotId);
           void run("slot", () =>
             current
-              ? updateStoryReferenceSlot(workspaceId, projectId, current.id, {
+              ? updateStoryReferenceSlot(projectId, current.id, {
                   expectedSlotVersion: current.version,
                   slot: spec,
                 })
               : createStoryReferenceSlots(
-                  workspaceId,
                   projectId,
                   { slots: [spec] },
                   globalThis.crypto.randomUUID()
@@ -381,15 +379,14 @@ export function StoryReferencePack({
           const version = slot?.versions.find((candidate) => candidate.id === target?.versionId);
           if (!target || !slot || !version || !apiConnected) return;
           void run(`review:${version.id}`, async () => {
-            const result = await reviewStoryReferenceVersion(
-              workspaceId,
-              projectId,
-              slot.id,
-              version.id,
-              { expectedReviewRevision: version.reviewRevision, decision, checklist, comment }
-            );
+            const result = await reviewStoryReferenceVersion(projectId, slot.id, version.id, {
+              expectedReviewRevision: version.reviewRevision,
+              decision,
+              checklist,
+              comment,
+            });
             if (decision === "approve") {
-              await approveStoryReferenceVersion(workspaceId, projectId, slot.id, {
+              await approveStoryReferenceVersion(projectId, slot.id, {
                 expectedSlotVersion: slot.version,
                 referenceVersionId: version.id,
                 approveReviewId: result.review.id,

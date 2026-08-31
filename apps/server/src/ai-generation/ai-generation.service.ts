@@ -72,6 +72,8 @@ interface AiJobContext {
   workspaceId: string;
   projectId?: string;
   storyProjectId?: string;
+  billingSubjectType?: 'user' | 'workspace';
+  billingSubjectId?: string;
   documentId?: string;
   documentBlockId?: string;
   sourceSurface?: string;
@@ -91,6 +93,8 @@ export interface AiJobSubmissionHooks {
    * request it supersedes.
    */
   retryOfJobId?: string;
+  /** Trusted quote-time payer snapshot for delayed product-plane dispatch. */
+  billingSubject?: { type: 'user' | 'workspace'; id: string };
 }
 
 /**
@@ -209,7 +213,12 @@ export class AiGenerationService {
     hooks: AiJobSubmissionHooks = {},
   ): Promise<AiSubmitResponse> {
     const now = new Date().toISOString();
-    const context = await this.resolveJobContext(user, body, workspaceHeaderId);
+    const context = await this.resolveJobContext(
+      user,
+      body,
+      workspaceHeaderId,
+      hooks.billingSubject,
+    );
 
     // Character bindings expand FIRST — before routing — because routing,
     // quota pricing, and input-shape matching must all see the true
@@ -365,6 +374,8 @@ export class AiGenerationService {
             workspaceId: context.workspaceId,
             projectId: context.projectId,
             storyProjectId: context.storyProjectId,
+            billingSubjectType: context.billingSubjectType,
+            billingSubjectId: context.billingSubjectId,
             documentId: context.documentId,
             documentBlockId: context.documentBlockId,
             sourceSurface: context.sourceSurface,
@@ -929,6 +940,7 @@ export class AiGenerationService {
     user: AuthUser,
     body: AiSubmitJobBody,
     workspaceHeaderId?: string,
+    frozenBillingSubject?: { type: 'user' | 'workspace'; id: string },
   ): Promise<AiJobContext> {
     // The x-fizz-workspace-id header is UI scope only (the studio client
     // stamps the ACTIVE workspace on every request). When the body pins an
@@ -973,10 +985,19 @@ export class AiGenerationService {
           msg: 'Document does not belong to the selected Story project.',
         });
       }
+      const billingSubject = document.storyProjectId
+        ? (frozenBillingSubject ??
+          (await this.resolveStoryBillingSubject(
+            user,
+            document.storyProjectId,
+          )))
+        : null;
       return {
         workspaceId: document.workspaceId,
         projectId: document.platformProjectId ?? undefined,
         storyProjectId: document.storyProjectId ?? undefined,
+        billingSubjectType: billingSubject?.type,
+        billingSubjectId: billingSubject?.id,
         documentId: document.id,
         documentBlockId: this.normalizeDocumentBlockId(documentBlockId),
         sourceSurface,
@@ -1014,9 +1035,14 @@ export class AiGenerationService {
           msg: 'Story project does not belong to the selected workspace.',
         });
       }
+      const billingSubject =
+        frozenBillingSubject ??
+        (await this.resolveStoryBillingSubject(user, project.id));
       return {
         workspaceId: project.workspaceId,
         storyProjectId: project.id,
+        billingSubjectType: billingSubject.type,
+        billingSubjectId: billingSubject.id,
         sourceSurface,
       };
     }
@@ -1039,6 +1065,42 @@ export class AiGenerationService {
 
     const workspace = await this.workspaces.ensurePersonalWorkspace(user);
     return { workspaceId: workspace.id, sourceSurface };
+  }
+
+  async resolveStoryBillingSubject(
+    user: AuthUser,
+    storyProjectId: string,
+  ): Promise<{ type: 'user' | 'workspace'; id: string }> {
+    // The product no longer asks the creator to choose a Workspace, but legacy
+    // personal balances still live on the hidden personal-workspace account.
+    // Ensure that compatibility identity exists before freezing it on the job.
+    await this.workspaces.ensurePersonalWorkspace(user);
+    return this.billingWallet.resolveStoryProjectPayer(
+      storyProjectId,
+      user.userId,
+    );
+  }
+
+  async getStoryBillingBalance(user: AuthUser, storyProjectId: string) {
+    await this.storyPermissions.requireProject(
+      user.userId,
+      storyProjectId,
+      'story.read',
+    );
+    const subject = await this.resolveStoryBillingSubject(user, storyProjectId);
+    const balance = await this.billingWallet.getComputeBalance(subject);
+    return {
+      availablePoints: balance.available.toString(),
+      heldPoints: balance.held.toString(),
+      totalPoints: balance.total.toString(),
+    };
+  }
+
+  async getBillingSubjectComputeBalance(subject: {
+    type: 'user' | 'workspace';
+    id: string;
+  }) {
+    return this.billingWallet.getComputeBalance(subject);
   }
 
   private async resolveListScope(

@@ -8,6 +8,7 @@ import { StoryAgentRunContinuationWorkerService } from './story-agent-run-contin
 import { StoryAgentRunRealtimeService } from './story-agent-run-realtime.service';
 import { StoryAgentRunService } from './story-agent-run.service';
 import { StoryAgentRunWorkerService } from './story-agent-run-worker.service';
+import { StoryGenerationBatchContinuationWorkerService } from './story-generation-batch-continuation-worker.service';
 import { StoryAuthoringPipelineService } from './story-authoring-pipeline.service';
 import { StoryProductionPlanModule } from './story-production-plan.module';
 
@@ -27,6 +28,7 @@ import { StoryProductionPlanModule } from './story-production-plan.module';
     StoryAuthoringPipelineService,
     StoryAgentRunWorkerService,
     StoryAgentRunContinuationWorkerService,
+    StoryGenerationBatchContinuationWorkerService,
   ],
   exports: [StoryAgentRunService],
 })

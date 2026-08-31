@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   IconAdjustments,
@@ -103,7 +103,6 @@ export function StudioComposer({
   const tc = useTranslations("common");
   const ml = useModeLabel();
   const [panel, setPanel] = useState<"model" | "settings" | "mode" | null>(null);
-  const [errorDialogOpen, setErrorDialogOpen] = useState(false);
   const [mentionActive, setMentionActive] = useState(0);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -119,11 +118,6 @@ export function StudioComposer({
   const gatedSubmit = () => requireAuth(onSubmit);
 
   const validationOpen = Boolean(validationIssues && validationIssues.length > 0);
-  // Plain submit errors (e.g. insufficient credits) also use Alert Dialog.
-  useEffect(() => {
-    if (error) setErrorDialogOpen(true);
-  }, [error]);
-
   const showReferences = referenceFields.length > 0;
   const showSettingsButton = useMemo(() => hasRenderableModelSettings(model, true), [model]);
   const mentionables = useMemo(
@@ -299,9 +293,8 @@ export function StudioComposer({
         formatIssue={t}
       />
       <ValidationAlertDialog
-        open={!validationOpen && errorDialogOpen && Boolean(error)}
+        open={!validationOpen && Boolean(error)}
         onOpenChange={(open) => {
-          setErrorDialogOpen(open);
           if (!open) onDismissValidation?.();
         }}
         title={t("validationBlockedTitle")}

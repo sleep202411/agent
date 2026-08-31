@@ -24,6 +24,8 @@ const labels: ApprovalPayloadLabels = {
   storyEntry: "Story entry",
   sceneOrder: "Scene order",
   storyScene: "Story scene",
+  generationBatch: "Asset media generation",
+  generationBatchSummary: (count, points) => `${count} Assets · ${points} compute points`,
 };
 
 let container: HTMLDivElement;
@@ -118,6 +120,17 @@ describe("ApprovalPayload", () => {
     const text = renderPayload("story.removeSubtree", { nodeId: "branch.bad-ending" });
     expect(text).toContain("Deletes 1");
     expect(text).toContain("branch.bad-ending");
+  });
+
+  it("shows the exact paid generation quote being approved", () => {
+    const text = renderPayload("story.generation.confirmBatch", {
+      batchId: "11111111-1111-4111-8111-111111111111",
+      expectedVersion: 0,
+      expectedItemCount: 11,
+      expectedTotalPoints: 660,
+    });
+    expect(text).toContain("Asset media generation");
+    expect(text).toContain("11 Assets · 660 compute points");
   });
 
   it("renders nothing when there is no payload at all", () => {

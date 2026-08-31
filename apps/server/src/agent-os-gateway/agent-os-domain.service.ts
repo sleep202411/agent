@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { HttpException, Injectable } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { getTool, UnknownToolError } from '@repo/agent-tools';
 import { AgentOsProjectContextService } from './agent-os-project-context.service';
 import { AgentOsToolExecutionReceiptService } from './agent-os-tool-execution-receipt.service';
@@ -24,6 +24,7 @@ export type AgentOsDomainResult =
 /** Resolve the trusted project kind, then delegate to its compiled handler. */
 @Injectable()
 export class AgentOsDomainService {
+  private readonly logger = new Logger(AgentOsDomainService.name);
   private readonly handlers: ReadonlyMap<string, AgentOsCapabilityHandler>;
 
   constructor(
@@ -82,7 +83,22 @@ export class AgentOsDomainService {
       return { ok: true, data: await handler.execute(input) };
     } catch (error) {
       if (error instanceof HttpException) return domainError(error);
-      throw error;
+      this.logger.error(
+        `Unhandled ${input.toolId} domain error for run ${input.runId}, tool call ${input.toolCallId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      return {
+        ok: false,
+        code: 'AGENT_OS_DOMAIN_INTERNAL_ERROR',
+        message:
+          'The Agent domain could not complete this tool because of an internal error.',
+        retryable: false,
+        details: {
+          runId: input.runId,
+          toolCallId: input.toolCallId,
+          toolId: input.toolId,
+        },
+      };
     }
   }
 }

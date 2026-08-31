@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { IconPhoto, IconVideo } from "@tabler/icons-react";
+import { IconPencil, IconPhoto, IconVideo } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import type { StoryStoryboardSequence } from "@/lib/story-production-api";
+import { Button } from "@/components/ui/button";
+import { Link } from "@/i18n/navigation";
 import { StoryProductionConflictPanel } from "./story-production-conflict-panel";
 import { StoryClipDetailDialog } from "./story-clip-detail-dialog";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
@@ -22,18 +24,20 @@ function StoryClipTile({
   sequenceId,
   scope,
   durationLabel,
+  allowGeneration,
 }: {
   clip: StoryStoryboardSequence["clips"][number];
   sequenceId: string;
-  scope: { workspaceId: string; projectId: string; chapterId: string };
+  scope: { projectId: string; chapterId: string };
   durationLabel: string;
+  allowGeneration: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage");
   const boardT = useTranslations("storyStudio.storyboardPage");
   const [detailOpen, setDetailOpen] = useState(false);
   const KindIcon = clip.kind === "video" ? IconVideo : IconPhoto;
   return (
-    <div className="relative w-[200px]">
+    <div className="relative w-[min(68vw,184px)] shrink-0 snap-start sm:w-[184px]">
       <span
         role="img"
         aria-label={boardT(`clipKind.${clip.kind}`)}
@@ -55,7 +59,7 @@ function StoryClipTile({
         label={clip.title}
         selectedMedia={clip.selectedMediaVersion}
         outputKind={clip.kind}
-        clipDurationMs={clip.durationMs}
+        allowGeneration={allowGeneration && !clip.selectedMediaVersion}
         secondaryAction={
           <button
             type="button"
@@ -72,11 +76,11 @@ function StoryClipTile({
       <StoryClipDetailDialog
         clip={clip}
         sequenceId={sequenceId}
-        workspaceId={scope.workspaceId}
         projectId={scope.projectId}
         chapterId={scope.chapterId}
         open={detailOpen}
         onOpenChange={setDetailOpen}
+        editable={allowGeneration}
       />
     </div>
   );
@@ -122,59 +126,28 @@ export function StoryStoryboardChoiceCard({ options }: { options: StorySequenceC
 }
 
 /**
- * Placeholder section for a plot node that has never been planned into a
- * storyboard sequence. It keeps the node visible (and deep-linkable) on the
- * board so the graph and the board always list the same scenes.
- */
-export function StoryStoryboardUnplannedSection({
-  nodeId,
-  title,
-  index,
-}: {
-  nodeId: string;
-  title: string;
-  index: number;
-}) {
-  const t = useTranslations("storyStudio.storyboardPage");
-  return (
-    <article
-      id={`plot-${nodeId}`}
-      className="scroll-mt-6 rounded-2xl bg-white/[0.045] p-4 text-white shadow-sm"
-      aria-label={title}
-    >
-      <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
-        {t("plotNode", { index: index + 1 })}
-      </span>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-base font-semibold text-white/94">{title}</h2>
-        <code className="text-xs text-white/62">@{nodeId}</code>
-      </div>
-      <p className="mt-4 text-sm text-white/64">{t("unplanned")}</p>
-      <p className="mt-1 text-xs text-white/50">{t("unplannedHint")}</p>
-    </article>
-  );
-}
-
-/**
  * One plot node's planned sequence = one card on the flattened board: the
  * node's identity and its clips as a row of media slots, each with a single
  * generate action and a details dialog for its prompt and model.
  */
 export function StoryStoryboardSequenceSection({
   sequence,
+  title,
   index,
-  workspaceId,
   projectId,
   chapterId,
+  allowGeneration = true,
 }: {
   sequence: StoryStoryboardSequence;
+  /** Canonical scene title from StoryDraft, never the sequence cache column. */
+  title: string;
   index: number;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
+  allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.storyboardPage");
-  const scope = { workspaceId, projectId, chapterId };
+  const scope = { projectId, chapterId };
   // Storage and timeline invariants stay in milliseconds; seconds are display-only.
   const seconds = (ms: number) => Number((ms / 1000).toFixed(1));
 
@@ -182,7 +155,7 @@ export function StoryStoryboardSequenceSection({
     <article
       id={`plot-${sequence.plotNodeId}`}
       className="scroll-mt-6 rounded-2xl bg-white/[0.045] p-4 text-white shadow-sm"
-      aria-label={sequence.title?.trim() || sequence.plotNodeId}
+      aria-label={title}
     >
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
@@ -194,15 +167,28 @@ export function StoryStoryboardSequenceSection({
           </span>
         ) : null}
       </div>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h2 className="text-base font-semibold text-white/94">
-          {sequence.title?.trim() || sequence.plotNodeId}
-        </h2>
-        <code className="text-xs text-white/62">@{sequence.plotNodeId}</code>
-        <span className="text-xs tabular-nums text-white/62">
-          {t("clipCount", { count: sequence.clips.length })} ·{" "}
-          {t("seconds", { value: seconds(sequence.durationMs) })}
-        </span>
+      <div className="mt-1 flex items-center justify-between gap-3">
+        <div className="min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h2 className="text-base font-semibold text-white/94">{title}</h2>
+          <code className="text-xs text-white/62">@{sequence.plotNodeId}</code>
+          <span className="text-xs tabular-nums text-white/62">
+            {t("clipCount", { count: sequence.clips.length })} ·{" "}
+            {t("seconds", { value: seconds(sequence.durationMs) })}
+          </span>
+        </div>
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="border-primary/45 text-primary hover:border-primary/70 hover:bg-primary/10 hover:text-primary"
+        >
+          <Link
+            href={`/story-studio/projects/${projectId}/edit?chapter=${encodeURIComponent(chapterId)}&node=${encodeURIComponent(sequence.plotNodeId)}`}
+          >
+            <IconPencil aria-hidden="true" />
+            {t("editTimeline")}
+          </Link>
+        </Button>
       </div>
       {sequence.description ? (
         <p className="mt-2 line-clamp-2 max-w-3xl text-sm leading-6 text-white/70">
@@ -218,7 +204,7 @@ export function StoryStoryboardSequenceSection({
       {sequence.clips.length === 0 ? (
         <p className="mt-4 text-sm text-white/64">{t("noClips")}</p>
       ) : (
-        <div className="mt-4 flex flex-wrap gap-4">
+        <div className="mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
           {sequence.clips.map((clip) => (
             <StoryClipTile
               key={clip.id}
@@ -226,6 +212,7 @@ export function StoryStoryboardSequenceSection({
               sequenceId={sequence.id}
               scope={scope}
               durationLabel={t("seconds", { value: seconds(clip.durationMs) })}
+              allowGeneration={allowGeneration}
             />
           ))}
         </div>

@@ -2,9 +2,52 @@ import { MODEL_PROFILE_ID_PATTERN } from '@repo/shared';
 
 import {
   AgentOsApprovalBodySchema,
+  AgentOsModelPreferencesBodySchema,
   AgentOsStartRunBodySchema,
   AgentOsUserInputBodySchema,
 } from './agent-os-gateway.dto';
+
+describe('AgentOsModelPreferencesBodySchema', () => {
+  const valid = {
+    expectedVersion: 0,
+    chatModelProfileId: 'qwen3.7-plus',
+    imageModelId: 'image-model',
+    videoModelId: null,
+  };
+
+  it('accepts explicit models and automatic nulls', () => {
+    expect(AgentOsModelPreferencesBodySchema.safeParse(valid).success).toBe(
+      true,
+    );
+    expect(
+      AgentOsModelPreferencesBodySchema.safeParse({
+        expectedVersion: 2,
+        chatModelProfileId: null,
+        imageModelId: null,
+        videoModelId: null,
+      }).success,
+    ).toBe(true);
+  });
+
+  it('rejects omitted fields, negative versions, and unknown keys', () => {
+    expect(
+      AgentOsModelPreferencesBodySchema.safeParse({
+        ...valid,
+        imageModelId: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentOsModelPreferencesBodySchema.safeParse({
+        ...valid,
+        expectedVersion: -1,
+      }).success,
+    ).toBe(false);
+    expect(
+      AgentOsModelPreferencesBodySchema.safeParse({ ...valid, extra: true })
+        .success,
+    ).toBe(false);
+  });
+});
 
 describe('AgentOsApprovalBodySchema', () => {
   const valid = {

@@ -28,6 +28,8 @@ export const AgentOsWorkbenchContextSchema = z
   .object({
     chapterId: z.string().uuid().optional(),
     sectionId: z.string().uuid().optional(),
+    /** Explicit responsive product surface; never inferred from chat text. */
+    experience: z.literal('mobile_h5').optional(),
   })
   .strict()
   .refine(
@@ -89,6 +91,25 @@ export const AgentOsStartRunBodySchema = z
 
 export type AgentOsStartRunBody = z.infer<typeof AgentOsStartRunBodySchema>;
 
+const generationModelIdSchema = z.string().trim().min(1).max(180);
+
+/**
+ * One complete replacement of the actor's project-scoped model defaults.
+ * Null means "automatic"; clients never invent a concrete fallback id.
+ */
+export const AgentOsModelPreferencesBodySchema = z
+  .object({
+    expectedVersion: z.number().int().nonnegative(),
+    chatModelProfileId: modelProfileIdSchema.nullable(),
+    imageModelId: generationModelIdSchema.nullable(),
+    videoModelId: generationModelIdSchema.nullable(),
+  })
+  .strict();
+
+export type AgentOsModelPreferencesBody = z.infer<
+  typeof AgentOsModelPreferencesBodySchema
+>;
+
 export const AgentOsApprovalBodySchema = z
   .object({
     /** Durable pending approval being answered. */
@@ -105,6 +126,8 @@ export const AgentOsApprovalBodySchema = z
     /** Required — must match the profile used for the run resume. */
     modelProfileId: modelProfileIdSchema,
     permissionMode: AgentOsPermissionModeSchema.optional(),
+    /** Current decision surface; used by the Story H5 approval coordinator. */
+    experience: z.literal('mobile_h5').optional(),
   })
   .strict();
 

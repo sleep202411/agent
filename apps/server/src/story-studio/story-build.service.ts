@@ -58,12 +58,10 @@ import {
   compileStoryBuild,
   storyRuntimeAssetId,
   type FrozenStoryVideoAsset,
-  type StoryBuildCoverInput,
   type StoryBuildNodeTimelineInput,
   type StoryBuildSegmentInput,
   type StoryBuildWorldInput,
 } from './story-build-compiler';
-import { resolveStoryCover } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import {
@@ -75,23 +73,6 @@ import {
 } from './story-video-production.schema';
 
 const BUILD_INCLUDE = Prisma.validator<Prisma.StoryBuildInclude>()({
-  experiencePublication: {
-    select: {
-      status: true,
-      gameId: true,
-      contentVersion: true,
-      manifestUrl: true,
-      publishedAt: true,
-      mediaAuthorizedAt: true,
-      mediaAuthorizationRevokedAt: true,
-      authorityIsCurrent: true,
-      authorityGameExists: true,
-      authorityCurrentVersion: true,
-      authorityCheckedAt: true,
-      lastErrorCode: true,
-      lastErrorDetail: true,
-    },
-  },
   assets: {
     orderBy: [{ rank: 'asc' }, { id: 'asc' }],
     include: {
@@ -140,6 +121,9 @@ const BUILD_DELIVERY_ASSET_INCLUDE =
             mediaAuthorizedAt: true,
             mediaAuthorizationRevokedAt: true,
           },
+        },
+        experienceDraftRelease: {
+          select: { status: true },
         },
         gameReleaseChapters: {
           select: {
@@ -199,7 +183,7 @@ const BUILD_MEDIA_READ_URL_TTL_SECONDS = positiveInt(
   process.env.MEDIA_USER_READ_URL_TTL_SECONDS,
   5 * 60,
 );
-const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 6;
+const STORY_BUILD_COMPILER_SEMANTIC_VERSION = 7;
 
 interface BuildCursor {
   number: number;
@@ -224,8 +208,6 @@ interface ValidatedBuildSnapshot {
   entries: StoryVideoSnapshotEntry[];
   timelines: StoryBuildNodeTimelineInput[];
   worlds: StoryBuildWorldInput[];
-  /** Plain public cover reference; `asset: null` warns instead of failing. */
-  cover: StoryBuildCoverInput;
 }
 
 @Injectable()
@@ -239,12 +221,16 @@ export class StoryBuildService {
 
   async createBuild(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: CreateStoryBuildInput,
     idempotencyKey: string,
   ): Promise<StoryBuildDto> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.build');
+    const access = await this.requireProjectScope(
+      user,
+      projectId,
+      'story.build',
+    );
+    const workspaceId = access.project.workspaceId;
     const submissionKey = storyBuildSubmissionKey(
       user.userId,
       projectId,
@@ -321,7 +307,6 @@ export class StoryBuildService {
               draft: snapshot.draft.content,
               timelines: snapshot.timelines,
               worlds: snapshot.worlds,
-              cover: snapshot.cover,
             });
             if (
               !compilation.runtime &&
@@ -499,11 +484,10 @@ export class StoryBuildService {
 
   async listBuilds(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     query: StoryBuildListQuery,
   ): Promise<CursorPageDto<StoryBuildSummaryDto>> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.read');
+    await this.requireProjectScope(user, projectId, 'story.read');
     const cursor = query.cursor ? decodeBuildCursor(query.cursor) : null;
     const rows = await this.prisma.storyBuild.findMany({
       where: {
@@ -537,11 +521,10 @@ export class StoryBuildService {
 
   async getBuild(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     buildId: string,
   ): Promise<StoryBuildDto> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.read');
+    await this.requireProjectScope(user, projectId, 'story.read');
     return this.toBuildDto(await this.loadBuild(projectId, buildId));
   }
 
@@ -564,22 +547,26 @@ export class StoryBuildService {
       throw buildAssetNotFound();
     }
     const scope = StoryBuildScopeSchema.safeParse(frozen.build.scope);
-    const publishedAsWholeWork =
+    const authorizedAsWholeWork =
       frozen.build.kind === StoryBuildKind.production &&
       scope.success &&
       scope.data.kind === 'full' &&
-      frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
-      frozen.build.experiencePublication.mediaAuthorizationRevokedAt === null;
+      ((frozen.build.experiencePublication?.mediaAuthorizedAt != null &&
+        frozen.build.experiencePublication.mediaAuthorizationRevokedAt ===
+          null) ||
+        (frozen.build.experienceDraftRelease != null &&
+          frozen.build.experienceDraftRelease.status !==
+            StoryExperiencePublicationStatus.rejected));
     // A chapter Build is a subgraph and never carries a Build publication, so
     // its anonymous grant comes from the game release that listed it. Same
     // rule, different release kind: a durable row authorized the media before
     // Java could serve the manifest, and only a definitive rejection revokes.
-    const publishedAsChapter = frozen.build.gameReleaseChapters.some(
+    const authorizedAsChapter = frozen.build.gameReleaseChapters.some(
       (chapter) =>
         chapter.release.mediaAuthorizationRevokedAt === null &&
         chapter.release.status !== StoryExperiencePublicationStatus.rejected,
     );
-    const publiclyAuthorized = publishedAsWholeWork || publishedAsChapter;
+    const publiclyAuthorized = authorizedAsWholeWork || authorizedAsChapter;
     if (!publiclyAuthorized) {
       if (!user) {
         throw new UnauthorizedException({
@@ -644,12 +631,11 @@ export class StoryBuildService {
 
   async cancelBuild(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     buildId: string,
     input: CancelStoryBuildInput,
   ): Promise<StoryBuildDto> {
-    await this.requireProjectScope(user, workspaceId, projectId, 'story.build');
+    await this.requireProjectScope(user, projectId, 'story.build');
     const current = await this.loadBuild(projectId, buildId);
     assertCurrentBuildContract(current);
     if (current.version !== input.expectedBuildVersion) {
@@ -711,7 +697,6 @@ export class StoryBuildService {
 
   private async requireProjectScope(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     capability: Parameters<StoryPermissionService['requireProject']>[2],
   ) {
@@ -720,7 +705,6 @@ export class StoryBuildService {
       projectId,
       capability,
     );
-    if (scope.project.workspaceId !== workspaceId) throw projectNotFound();
     return scope;
   }
 
@@ -773,30 +757,6 @@ export class StoryBuildService {
       assets: row.assets.map(toBuildAssetDto),
       diagnostics,
       pathReport: parsePathReport(row.pathReport),
-      publication: row.experiencePublication
-        ? {
-            status: row.experiencePublication.status,
-            gameId: row.experiencePublication.gameId,
-            contentVersion: row.experiencePublication.contentVersion,
-            manifestUrl: row.experiencePublication.manifestUrl,
-            publishedAt:
-              row.experiencePublication.publishedAt?.toISOString() ?? null,
-            mediaAuthorizedAt:
-              row.experiencePublication.mediaAuthorizedAt.toISOString(),
-            mediaAuthorizationRevokedAt:
-              row.experiencePublication.mediaAuthorizationRevokedAt?.toISOString() ??
-              null,
-            authorityIsCurrent: row.experiencePublication.authorityIsCurrent,
-            authorityGameExists: row.experiencePublication.authorityGameExists,
-            authorityCurrentVersion:
-              row.experiencePublication.authorityCurrentVersion,
-            authorityCheckedAt:
-              row.experiencePublication.authorityCheckedAt?.toISOString() ??
-              null,
-            lastErrorCode: row.experiencePublication.lastErrorCode,
-            lastErrorDetail: row.experiencePublication.lastErrorDetail,
-          }
-        : null,
       createdByUserId: row.createdByUserId,
       createdAt: row.createdAt.toISOString(),
       completedAt: row.completedAt?.toISOString() ?? null,
@@ -814,7 +774,6 @@ export class StoryBuildService {
       sourceDraftRevision: dto.sourceDraftRevision,
       videoSnapshotHash: dto.videoSnapshotHash,
       diagnostics: dto.diagnostics,
-      publication: dto.publication,
       createdAt: dto.createdAt,
       completedAt: dto.completedAt,
     };
@@ -829,7 +788,7 @@ async function loadValidatedBuildSnapshot(
   buildId: string,
 ): Promise<ValidatedBuildSnapshot> {
   const project = await tx.storyProject.findFirst({
-    where: { id: projectId, workspaceId },
+    where: { id: projectId },
     select: {
       id: true,
       workspaceId: true,
@@ -837,7 +796,6 @@ async function loadValidatedBuildSnapshot(
       summary: true,
       defaultLocale: true,
       frameProfile: true,
-      coverAssetId: true,
     },
   });
   if (!project) throw projectNotFound();
@@ -980,11 +938,6 @@ async function loadValidatedBuildSnapshot(
     entries,
     timelines,
     worlds,
-    cover: await resolveStoryCover(
-      tx,
-      project.workspaceId,
-      project.coverAssetId,
-    ),
   };
 }
 
@@ -1195,7 +1148,7 @@ export function storyBuildInputManifest(
   sourceRevisionId: string,
 ): Record<string, unknown> {
   return {
-    schemaVersion: 6,
+    schemaVersion: 7,
     compilerSemanticVersion: STORY_BUILD_COMPILER_SEMANTIC_VERSION,
     runtimeSchemaVersion: EXPERIENCE_RUNTIME_SCHEMA_VERSION,
     scope: input.scope,
@@ -1205,17 +1158,6 @@ export function storyBuildInputManifest(
       defaultLocale: snapshot.project.defaultLocale,
       title: snapshot.project.title,
       summary: snapshot.project.summary,
-      // Content identity, not the resolved URL: swapping the cover image must
-      // make this a different Build input, while moving the CDN must not — the
-      // URL is deployment config that says nothing about what was published.
-      cover: snapshot.cover.asset
-        ? {
-            mediaAssetId: snapshot.cover.asset.mediaAssetId,
-            sha256: snapshot.cover.asset.sha256,
-            width: snapshot.cover.asset.width,
-            height: snapshot.cover.asset.height,
-          }
-        : null,
     },
     story: {
       sourceRevisionId,

@@ -1,4 +1,8 @@
-import { AgentExternalJobHandoffSchema } from '@repo/agent-tools';
+import {
+  AgentExternalJobHandoffSchema,
+  StoryProductionContinuationPlanSchema,
+  StoryProductionTargetStageSchema,
+} from '@repo/agent-tools';
 import { ProjectSkillResolutionSnapshotSchema } from '@repo/agent-skills';
 import { z } from 'zod';
 
@@ -124,9 +128,11 @@ const AgentOsContinuationCommandBaseSchema = z.object({
 });
 
 /**
- * One checkpoint-resume command admitted by an append-only HITL resolution.
- * It is deliberately distinct from initial start: both use leased dispatch,
- * but only a continuation may resume an existing interrupt checkpoint.
+ * One durable continuation command admitted by an append-only HITL resolution
+ * or an authoritative external-job result. It is deliberately distinct from
+ * initial start: both use leased dispatch. Approval/input commands resume an
+ * interrupt; an external result either resumes pending graph work or starts a
+ * new deterministic Story stage cycle from its persisted continuation plan.
  */
 export const AgentOsContinuationCommandSchema = z.discriminatedUnion('kind', [
   AgentOsContinuationCommandBaseSchema.extend({
@@ -138,6 +144,24 @@ export const AgentOsContinuationCommandSchema = z.discriminatedUnion('kind', [
     kind: z.literal('user_input'),
     requestId: z.string().uuid(),
     answers: z.record(z.string().trim().min(1), z.string().trim().min(1)),
+  }).strict(),
+  AgentOsContinuationCommandBaseSchema.extend({
+    kind: z.literal('external_result'),
+    externalJobId: z.string().uuid(),
+    toolCallId: z.string().trim().min(1).max(256),
+    toolId: z.string().trim().min(1).max(128),
+    resultMessageId: z.string().trim().min(1).max(256),
+    phase: z.literal('apply'),
+    outcome: z.literal('completed'),
+    storyContinuation: z
+      .object({
+        locale: z.enum(['en-US', 'zh-CN', 'zh-HK']),
+        plan: StoryProductionContinuationPlanSchema,
+        completedStage: StoryProductionTargetStageSchema.optional(),
+        mediaBatchCompleted: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
   }).strict(),
 ]);
 

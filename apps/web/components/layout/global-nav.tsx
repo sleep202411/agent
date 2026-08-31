@@ -35,6 +35,8 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useInbox } from "@/app/(site)/creators/_hooks/use-conversations";
+import { useMyCrews } from "@/app/(site)/crews/_hooks/use-crew";
+import { shouldShowCrewSwitcherRail } from "@/app/(site)/crews/_components/crew-switcher-rail";
 import { cn } from "@/lib/utils";
 import styles from "./global-nav.module.css";
 
@@ -64,12 +66,25 @@ type NavItem = {
 
 export function GlobalNav() {
   const pathname = usePathname() ?? "/";
+  const normalizedPathname = stripLocalePrefix(pathname);
   const router = useRouter();
   const t = useTranslations("nav");
   const commonT = useTranslations("common");
   const locale = useLocale() as Locale;
 
   const { user } = useCurrentUser();
+  const isCrewHall = normalizedPathname === "/crews";
+  const myCrews = useMyCrews(Boolean(user && isCrewHall));
+  const myCrewCount = (myCrews.data?.founded.length ?? 0) + (myCrews.data?.joined.length ?? 0);
+  const hasDesktopCrewRail = Boolean(
+    user &&
+    isCrewHall &&
+    shouldShowCrewSwitcherRail({
+      crewCount: myCrewCount,
+      isPending: myCrews.isPending,
+      isError: myCrews.isError,
+    })
+  );
   const logout = useLogout();
   // "Get started" opens the sign-in dialog over whatever the visitor is
   // reading instead of navigating to /login and losing the page. The
@@ -117,8 +132,6 @@ export function GlobalNav() {
     // there and let studio handle its own login — gating here would build a
     // /login?redirect=/art-studio bounce to the retired in-web studio path.
   };
-
-  const normalizedPathname = stripLocalePrefix(pathname);
 
   const isActive = (href: string) =>
     !href.startsWith("http") && !href.startsWith("mailto:") && normalizedPathname.startsWith(href);
@@ -194,7 +207,7 @@ export function GlobalNav() {
   return (
     <header
       ref={headerRef}
-      className={navCx("fd-secret-header")}
+      className={navCx("fd-secret-header", hasDesktopCrewRail && "fd-secret-header-with-page-rail")}
       data-mobile-open={mobileOpen ? "true" : "false"}
       style={{ opacity: 0 }}
     >

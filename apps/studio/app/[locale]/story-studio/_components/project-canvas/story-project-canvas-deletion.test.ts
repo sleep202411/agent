@@ -32,6 +32,27 @@ describe("deleteStoryCanvasElements", () => {
     expect(result.graph.nodes[0]?.exit).toMatchObject({ kind: "choice", choices: [] });
   });
 
+  it("deleting a projected decision removes the scene choice without deleting the scene", () => {
+    const content = choiceDraft();
+    const model = buildStoryCanvasModel(content, "en-US");
+    const decision = model.nodes.find((node) => node.data.kind === "decision")!;
+
+    const result = deleteStoryCanvasElements(content, { nodes: [decision], edges: [] });
+
+    expect(result.graph.nodes.map((node) => node.nodeId)).toEqual(["clip:a", "clip:b"]);
+    expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
+  });
+
+  it("deleting the scene-to-decision edge removes the same canonical choice", () => {
+    const content = choiceDraft();
+    const model = buildStoryCanvasModel(content, "en-US");
+    const decisionEdge = model.edges.find((edge) => edge.data.kind === "decision")!;
+
+    const result = deleteStoryCanvasElements(content, { nodes: [], edges: [decisionEdge] });
+
+    expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
+  });
+
   it("deleting a hotspot branch keeps the hotspot and changes it to continue locally", () => {
     const content = draft();
     const source = content.graph.nodes[0]!;

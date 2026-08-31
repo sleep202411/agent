@@ -3,7 +3,6 @@
 import { IconAlertTriangle, IconCheck, IconCircleDashed, IconLoader2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Link } from "@/i18n/navigation";
 import {
   getStoryProductionState,
@@ -53,14 +52,11 @@ export function StoryProductionSteps({
   className?: string;
 }) {
   const t = useTranslations("storyStudio.canvas.steps");
-  const { activeWorkspace } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(workspaceId, projectId, activeChapterId),
-    queryFn: ({ signal }) =>
-      getStoryProductionState(workspaceId as string, projectId, activeChapterId as string, signal),
-    enabled: Boolean(workspaceId && activeChapterId),
+    queryKey: storyProductionKeys.state(projectId, activeChapterId),
+    queryFn: ({ signal }) => getStoryProductionState(projectId, activeChapterId as string, signal),
+    enabled: Boolean(activeChapterId),
     retry: false,
   });
   const { openPreview, pending: previewPending } = useStoryPreviewNavigation(projectId);
@@ -75,7 +71,7 @@ export function StoryProductionSteps({
     preview: productionReady === null ? null : productionReady ? "current" : "stale",
   };
   return (
-    <nav aria-label={t(active)} className={cn("items-center", className)}>
+    <nav aria-label={t("navigationLabel")} className={cn("items-center", className)}>
       {STEPS.map((step, index) => {
         const isActive = step.key === active;
         const status = statuses[step.key];
@@ -91,7 +87,9 @@ export function StoryProductionSteps({
         );
         return (
           <span key={step.key} className="inline-flex items-center">
-            {index > 0 ? <span aria-hidden="true" className="mx-3 h-px w-8 bg-white/12" /> : null}
+            {index > 0 ? (
+              <span aria-hidden="true" className="mx-2 h-px w-4 bg-white/12 2xl:mx-3 2xl:w-8" />
+            ) : null}
             {isActive ? (
               <span
                 aria-current="page"

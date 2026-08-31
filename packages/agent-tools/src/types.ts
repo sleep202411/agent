@@ -45,6 +45,10 @@ export interface ToolExecutionContext {
     executionAttemptId: string;
     executionEpoch: number;
     executionOwnerId: string;
+    checkpointId?: string;
+    checkpointNamespace?: string;
+    checkpointThreadId?: string;
+    checkpointMessageId?: string;
   };
   /** Present while a durable HITL checkpoint resume owns a leased epoch. */
   continuationExecution?: {
@@ -52,6 +56,9 @@ export interface ToolExecutionContext {
     executionAttemptId: string;
     executionEpoch: number;
     executionOwnerId: string;
+    checkpointId?: string;
+    checkpointNamespace?: string;
+    checkpointThreadId?: string;
   };
   abortSignal?: AbortSignal;
 }

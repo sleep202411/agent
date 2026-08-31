@@ -44,9 +44,12 @@ export {
 export type {
   AgentOsActivity,
   AgentOsActivityPhase,
+  AgentOsArtifactReference,
+  AgentOsArtifactStatus,
   AgentOsAssistantSegment,
   AgentOsChatMessage,
   AgentOsSessionStatus,
+  AgentOsTranscriptArtifact,
 } from "./agent-os-timeline";
 
 export interface AgentOsSessionState {
@@ -1762,6 +1765,7 @@ export function useAgentOsRun(projectId: string) {
       locale: "en-US" | "zh-CN" | "zh-HK";
       modelProfileId: string;
       permissionMode?: "ask" | "smart" | "full";
+      experience?: "mobile_h5";
     }) => {
       const runId = activeRunIdRef.current ?? state.runId;
       const conversationId = conversationRef.current;
@@ -1827,6 +1831,7 @@ export function useAgentOsRun(projectId: string) {
           conversationId,
           modelProfileId: input.modelProfileId,
           permissionMode: input.permissionMode,
+          experience: input.experience,
         });
         activeRunIdRef.current = response.runId;
         applyToRunBuffer({

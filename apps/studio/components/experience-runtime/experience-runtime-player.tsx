@@ -10,10 +10,12 @@ export function ExperienceRuntimePlayer({
   runtime,
   locale,
   frameProfile,
+  coverUrl,
 }: {
   runtime: Record<string, unknown>;
   locale: string;
   frameProfile?: StoryFrameProfile;
+  coverUrl?: string | null;
 }) {
   const t = useTranslations("experiencePlayer");
   const copy = useMemo<ExperiencePlayerCopy>(
@@ -54,6 +56,7 @@ export function ExperienceRuntimePlayer({
     <ExperiencePlayer
       runtime={runtime}
       locale={locale}
+      coverUrl={coverUrl ?? undefined}
       frameProfile={
         frameProfile ? (frameProfile === "portrait_9_16" ? "portrait" : "landscape") : "auto"
       }

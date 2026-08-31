@@ -9,7 +9,6 @@ import StarterKit from "@tiptap/starter-kit";
 import { useTranslations } from "next-intl";
 import type * as Y from "yjs";
 import { useAuth } from "@/app/_components/auth-provider";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { toCollabUser } from "@/lib/collab/collab-user";
 import { ensureStoryScriptDocument } from "@/lib/collab/projects-api";
 import { RICH_TEXT_DOC_ROOT_SCHEMA } from "@/lib/collab/protocol";
@@ -29,14 +28,12 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
   const projectT = useTranslations("project");
   const { user } = useAuth();
   const collabUser = useMemo(() => toCollabUser(user), [user]);
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "script-workbench", workspaceId, projectId, activeChapterId],
-    queryFn: () => getStoryWorkbench(workspaceId as string, projectId, activeChapterId as string),
-    enabled: Boolean(workspaceId && activeChapterId),
+    queryKey: ["story-studio", "script-workbench", projectId, activeChapterId],
+    queryFn: () => getStoryWorkbench(projectId, activeChapterId as string),
+    enabled: Boolean(activeChapterId),
     retry: false,
   });
   const canEdit = workbenchQuery.data?.project.capabilities.includes("story.edit") ?? false;
@@ -44,7 +41,7 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
   const documentQuery = useQuery({
     queryKey: ["story-studio", "script-document", projectId, activeChapterId],
     queryFn: () => ensureStoryScriptDocument(projectId, activeChapterId as string),
-    enabled: Boolean(workspaceId && activeChapterId),
+    enabled: Boolean(activeChapterId),
     retry: false,
   });
   const { doc, status: connStatus } = useCollabDoc(
@@ -64,7 +61,7 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
           <ScriptEditor
             key={documentQuery.data?.id}
             doc={doc}
-            canEdit={canEdit && !workspaceLoading}
+            canEdit={canEdit}
             placeholder={t("scriptDoc.placeholder")}
           />
         ) : null}

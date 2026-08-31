@@ -15,12 +15,11 @@ describe("canvas node geometry", () => {
     expect(
       canvasNodeGeometry(
         node("storyCanvas", {
-          kind: "clip",
-          exitKind: "choice",
-          choices: [{}, {}, {}],
+          kind: "decision",
+          choices: [{ choiceId: "left" }, { choiceId: "right" }, { choiceId: "stay" }],
         })
       )
-    ).toMatchObject({ width: 320, estimatedHeight: 508 });
+    ).toMatchObject({ width: 360, estimatedHeight: 356 });
   });
 
   it("uses live measurements only while available in the current client", () => {

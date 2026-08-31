@@ -1,10 +1,46 @@
 import { StoryProjectsController } from './story-projects.controller';
 
 const USER = { userId: 'user-1' };
-const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000003';
 const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000004';
+
+describe('StoryProjectsController list', () => {
+  it('creates a personal-first Story project without a workspace header', async () => {
+    const project = { id: PROJECT_ID, title: 'Moving Pictures' };
+    const service = {
+      create: jest.fn(() => Promise.resolve(project)),
+    };
+    const controller = new StoryProjectsController(service as never);
+    const body = {
+      title: 'Moving Pictures',
+      summary: null,
+      defaultLocale: 'en-US',
+      visibility: 'private' as const,
+    };
+
+    await expect(controller.create(USER as never, body)).resolves.toEqual({
+      code: 200,
+      data: project,
+    });
+    expect(service.create).toHaveBeenCalledWith(USER, body);
+  });
+
+  it('lists every project membership without a workspace header', async () => {
+    const page = { items: [], nextCursor: null };
+    const service = {
+      list: jest.fn(() => Promise.resolve(page)),
+    };
+    const controller = new StoryProjectsController(service as never);
+    const query = { status: 'active' as const, limit: 20 };
+
+    await expect(controller.list(USER as never, query)).resolves.toEqual({
+      code: 200,
+      data: page,
+    });
+    expect(service.list).toHaveBeenCalledWith(USER, query);
+  });
+});
 
 describe('StoryProjectsController chapters', () => {
   it('creates a chapter inside the tenant-scoped project', async () => {
@@ -21,17 +57,13 @@ describe('StoryProjectsController chapters', () => {
     await expect(
       controller.createChapter(
         USER as never,
-        WORKSPACE_ID,
         { projectId: PROJECT_ID },
         { title: 'A New Chapter' },
       ),
     ).resolves.toEqual({ code: 200, data: chapter });
-    expect(service.createChapter).toHaveBeenCalledWith(
-      USER,
-      WORKSPACE_ID,
-      PROJECT_ID,
-      { title: 'A New Chapter' },
-    );
+    expect(service.createChapter).toHaveBeenCalledWith(USER, PROJECT_ID, {
+      title: 'A New Chapter',
+    });
   });
 
   it('passes the chapter id through the nested layout route', async () => {
@@ -43,11 +75,10 @@ describe('StoryProjectsController chapters', () => {
     const params = { projectId: PROJECT_ID, chapterId: CHAPTER_ID };
 
     await expect(
-      controller.getChapterCanvasLayout(USER as never, WORKSPACE_ID, params),
+      controller.getChapterCanvasLayout(USER as never, params),
     ).resolves.toEqual({ code: 200, data: layout });
     expect(service.getCanvasLayout).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       CHAPTER_ID,
     );
@@ -64,14 +95,12 @@ describe('StoryProjectsController chapters', () => {
     await expect(
       controller.reorderChapters(
         USER as never,
-        WORKSPACE_ID,
         { projectId: PROJECT_ID },
         body,
       ),
     ).resolves.toEqual({ code: 200, data: [] });
     expect(service.reorderChapters).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       body,
     );
@@ -87,14 +116,12 @@ describe('StoryProjectsController chapters', () => {
     await expect(
       controller.patchChapter(
         USER as never,
-        WORKSPACE_ID,
         { projectId: PROJECT_ID, chapterId: CHAPTER_ID },
         { title: 'A New Name' },
       ),
     ).resolves.toEqual({ code: 200, data: chapter });
     expect(service.patchChapter).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       CHAPTER_ID,
       { title: 'A New Name' },
@@ -109,14 +136,13 @@ describe('StoryProjectsController chapters', () => {
     const controller = new StoryProjectsController(service as never);
 
     await expect(
-      controller.archiveChapter(USER as never, WORKSPACE_ID, {
+      controller.archiveChapter(USER as never, {
         projectId: PROJECT_ID,
         chapterId: CHAPTER_ID,
       }),
     ).resolves.toEqual({ code: 200, data: chapter });
     expect(service.archiveChapter).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       CHAPTER_ID,
     );
@@ -134,47 +160,23 @@ describe('StoryProjectsController chapters', () => {
     const params = { projectId: PROJECT_ID, mediaAssetId: MEDIA_ASSET_ID };
 
     await expect(
-      controller.addCandidateAsset(USER as never, WORKSPACE_ID, params),
+      controller.addCandidateAsset(USER as never, params),
     ).resolves.toEqual({ code: 200, data: candidate });
     await expect(
-      controller.removeCandidateAsset(USER as never, WORKSPACE_ID, params),
+      controller.removeCandidateAsset(USER as never, params),
     ).resolves.toEqual({
       code: 200,
       data: { mediaAssetId: MEDIA_ASSET_ID },
     });
     expect(service.addCandidateAsset).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       MEDIA_ASSET_ID,
     );
     expect(service.removeCandidateAsset).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       MEDIA_ASSET_ID,
     );
-  });
-});
-
-describe('StoryProjectsController shared-link workspace resolve', () => {
-  /**
-   * A shared project link carries no workspace, so this route must not take the
-   * header every sibling route requires. Pinning the call shape keeps a later
-   * "make it consistent" edit from reintroducing `requiredWorkspaceId` on the
-   * one route that cannot have it.
-   */
-  it('resolves a project workspace without a workspace header', async () => {
-    const service = {
-      resolveWorkspace: jest.fn(() =>
-        Promise.resolve({ workspaceId: WORKSPACE_ID }),
-      ),
-    };
-    const controller = new StoryProjectsController(service as never);
-
-    await expect(
-      controller.resolveWorkspace(USER as never, { projectId: PROJECT_ID }),
-    ).resolves.toEqual({ code: 200, data: { workspaceId: WORKSPACE_ID } });
-    expect(service.resolveWorkspace).toHaveBeenCalledWith(USER, PROJECT_ID);
   });
 });

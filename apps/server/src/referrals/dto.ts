@@ -13,7 +13,7 @@ const PAYOUT_TYPES = [
 
 // A reward BUNDLE item is a SINGLE payout — never membership_both (that is two
 // items: membership_compute + membership_community). A tier grants ALL items.
-const REWARD_ITEM_KINDS = [
+export const REWARD_ITEM_KINDS = [
   'cash',
   'points_compute',
   'points_community',

@@ -33,7 +33,7 @@ describe("story canvas blank-drop connections", () => {
 
     const retargeted = createConnectedSceneForBlankDrop(
       content,
-      canvasNode(content, "opening").data,
+      decisionNode(content, "opening").data,
       "choice:stay",
       "en-US"
     )!;
@@ -44,7 +44,7 @@ describe("story canvas blank-drop connections", () => {
 
     const appended = createConnectedSceneForBlankDrop(
       retargeted.content,
-      canvasNode(retargeted.content, "opening").data,
+      decisionNode(retargeted.content, "opening").data,
       "choice-new:draft-1",
       "en-US",
       { newChoiceLabel: "Take the new path" }
@@ -68,7 +68,7 @@ describe("story canvas blank-drop connections", () => {
 
     content = convertSceneExitToChoice(content, "opening", "en-US");
     expect(
-      resolveBlankDropConnectionPlan(canvasNode(content, "opening").data, "completion")
+      resolveBlankDropConnectionPlan(decisionNode(content, "opening").data, "completion")
     ).toBeNull();
   });
 });
@@ -79,6 +79,24 @@ function canvasNode(content: InteractiveStoryDraftContent, nodeId: string) {
   );
   if (!node) throw new Error(`Missing canvas node ${nodeId}`);
   return node;
+}
+
+function decisionNode(content: InteractiveStoryDraftContent, sourceNodeId: string) {
+  const node = buildStoryCanvasModel(content, "en-US").nodes.find(
+    (candidate) =>
+      candidate.data.kind === "decision" && candidate.data.sourceNodeId === sourceNodeId
+  );
+  if (!node) throw new Error(`Missing decision for ${sourceNodeId}`);
+  return {
+    ...node,
+    data: {
+      ...node.data,
+      // The blank-drop domain accepts the canonical source scene shape. The
+      // canvas controller performs this projection-boundary translation too.
+      kind: "clip" as const,
+      nodeId: sourceNodeId,
+    },
+  };
 }
 
 function graphNode(content: InteractiveStoryDraftContent, nodeId: string) {

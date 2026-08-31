@@ -31,10 +31,24 @@ export interface MembershipPlan {
   seatOverageAllowed: boolean;
   billingIntervalDefault: "one_time" | "month" | "year" | null;
   benefits: MembershipBenefits;
+  generationEstimates?: MembershipGenerationEstimate[];
   marketing: Record<string, unknown>;
   metadata: Record<string, unknown>;
   prices: MembershipPrice[];
   updatedAt: string;
+}
+
+export interface MembershipGenerationEstimate {
+  kind: "image" | "video";
+  modelId: string;
+  modelName: string;
+  estimatedOutputs: string;
+  unitPoints: number;
+  pricingVersion: string;
+  resolution: string | null;
+  quality: string | null;
+  durationSeconds: number | null;
+  audioIncluded: boolean | null;
 }
 
 export interface MembershipBenefits {

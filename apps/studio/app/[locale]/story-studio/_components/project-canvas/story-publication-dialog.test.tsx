@@ -12,40 +12,38 @@ const messages = {
   storyStudio: {
     canvas: {
       publish: {
-        title: "Publish current version?",
-        description: "Set the latest saved story as the live version.",
+        title: "Submit current version for review?",
+        description: "Send the latest saved story to platform review.",
         confirmation: {
-          title: "Ready to publish",
+          title: "Ready for review",
           draftRevision: "Latest saved story · revision {revision}",
-          detail: "Future edits remain private until you publish again.",
+          detail: "Future edits do not alter the version under review.",
         },
         progress: {
-          title: "Publishing current version",
+          title: "Submitting current version",
           description: "Keep this window open.",
         },
         phases: {
           saving: { title: "Save latest changes", description: "Saving the story." },
-          locking: { title: "Prepare release version", description: "Preparing the version." },
-          building: { title: "Check playable content", description: "Checking the story." },
-          publishing: { title: "Publish", description: "Setting the live version." },
+          preparing: { title: "Prepare version", description: "Preparing the version." },
+          submitting: { title: "Submit", description: "Requesting review." },
         },
         actions: {
           cancel: "Cancel",
-          confirm: "Publish current version",
+          confirm: "Submit for review",
           close: "Close",
           retry: "Try again",
         },
         success: {
-          title: "Version published",
-          description: "The current version is now live.",
-          version: "Current version is live",
-          detail: "Players now enter this version.",
+          title: "Version submitted",
+          description: "The current version is in review.",
+          version: "Review requested",
+          detail: "Players cannot access it until approval.",
         },
         failure: {
-          title: "This version was not published",
+          title: "This version was not submitted",
           description: "Resolve the issue below, then try again.",
         },
-        diagnostics: { title: "{count} issues to resolve" },
       },
     },
   },
@@ -71,36 +69,26 @@ describe("StoryPublicationDialog", () => {
     const onConfirm = vi.fn();
     await renderDialog({ status: "confirming" }, { onConfirm });
 
-    expect(document.body.textContent).toContain("Publish current version?");
-    expect(document.body.textContent).toContain("Future edits remain private");
+    expect(document.body.textContent).toContain("Submit current version for review?");
+    expect(document.body.textContent).toContain("Future edits do not alter");
     expect(document.body.textContent).not.toContain("manifest");
-    await click(buttonByText("Publish current version"));
+    await click(buttonByText("Submit for review"));
     expect(onConfirm).toHaveBeenCalledOnce();
   });
 
-  it("shows the upstream failure and actionable diagnostics, then permits retry", async () => {
+  it("shows the upstream failure and permits retry", async () => {
     const onRetry = vi.fn();
     await renderDialog(
       {
         status: "failed",
-        phase: "building",
-        code: "BUILD_NOT_READY",
+        phase: "preparing",
+        code: "PREPARE_FAILED",
         message: "Add a current video to the entrance clip.",
-        diagnostics: [
-          {
-            severity: "error",
-            code: "CLIP_VIDEO_MISSING",
-            message: "Entrance clip needs a video before publishing.",
-            entityType: "clip",
-            entityId: "entrance",
-          },
-        ],
       },
       { onRetry }
     );
 
     expect(document.body.textContent).toContain("Add a current video to the entrance clip.");
-    expect(document.body.textContent).toContain("Entrance clip needs a video before publishing.");
     await click(buttonByText("Try again"));
     expect(onRetry).toHaveBeenCalledOnce();
   });
@@ -129,7 +117,7 @@ describe("StoryPublicationDialog", () => {
       }
     );
 
-    const confirm = buttonByText("Publish current version");
+    const confirm = buttonByText("Submit for review");
     expect(confirm.disabled).toBe(true);
     expect(confirm.title).toBe("Agent is updating the project.");
     confirm.click();

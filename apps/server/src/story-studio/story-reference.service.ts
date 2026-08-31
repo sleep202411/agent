@@ -71,10 +71,9 @@ export class StoryReferenceService {
 
   async listSlots(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
   ): Promise<StoryReferenceSlotDto[]> {
-    await this.requireScope(user, workspaceId, projectId, 'story.read');
+    await this.requireProject(user, projectId, 'story.read');
     const rows = await this.prisma.storyReferenceSlot.findMany({
       where: { storyProjectId: projectId, archivedAt: null },
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
@@ -85,11 +84,10 @@ export class StoryReferenceService {
 
   async createSlots(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     input: CreateStoryReferenceSlotsBatchInput,
   ): Promise<StoryReferenceSlotDto[]> {
-    await this.requireScope(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
     const rows = await this.prisma.$transaction(
       async (tx) => {
         await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
@@ -143,12 +141,11 @@ export class StoryReferenceService {
 
   async putSlot(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     slotId: string,
     input: PutStoryReferenceSlotInput,
   ): Promise<StoryReferenceSlotDto> {
-    await this.requireScope(user, workspaceId, projectId, 'story.edit');
+    await this.requireProject(user, projectId, 'story.edit');
     const row = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await lockReferenceProject(tx, projectId);
@@ -205,29 +202,22 @@ export class StoryReferenceService {
 
   async listVersions(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     slotId: string,
   ): Promise<StoryReferenceVersionDto[]> {
-    await this.requireScope(user, workspaceId, projectId, 'story.read');
+    await this.requireProject(user, projectId, 'story.read');
     const slot = await this.loadSlot(projectId, slotId);
     return slot.versions.map(toReferenceVersionDto);
   }
 
   async createVersion(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     slotId: string,
     input: CreateStoryReferenceVersionInput,
     idempotencyKey: string,
   ): Promise<StoryReferenceVersionDto> {
-    const scope = await this.requireScope(
-      user,
-      workspaceId,
-      projectId,
-      'story.edit',
-    );
+    const scope = await this.requireProject(user, projectId, 'story.edit');
     const submissionKey = referenceSubmissionKey(
       user.userId,
       projectId,
@@ -369,7 +359,6 @@ export class StoryReferenceService {
 
   async reviewVersion(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     slotId: string,
     referenceVersionId: string,
@@ -378,7 +367,7 @@ export class StoryReferenceService {
     reference: StoryReferenceVersionDto;
     review: StoryReferenceReviewDto;
   }> {
-    await this.requireScope(user, workspaceId, projectId, 'story.review');
+    await this.requireProject(user, projectId, 'story.review');
     const result = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await lockReferenceVersion(tx, referenceVersionId);
@@ -463,12 +452,11 @@ export class StoryReferenceService {
 
   async approveVersion(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     slotId: string,
     input: ApproveStoryReferenceVersionInput,
   ): Promise<StoryReferenceSlotDto> {
-    await this.requireScope(user, workspaceId, projectId, 'story.review');
+    await this.requireProject(user, projectId, 'story.review');
     const row = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
       await lockReferenceSlot(tx, slotId);
@@ -587,24 +575,12 @@ export class StoryReferenceService {
     return row;
   }
 
-  private async requireScope(
+  private async requireProject(
     user: AuthUser,
-    workspaceId: string,
     projectId: string,
     capability: Parameters<StoryPermissionService['requireProject']>[2],
   ) {
-    const scope = await this.permissions.requireProject(
-      user.userId,
-      projectId,
-      capability,
-    );
-    if (scope.project.workspaceId !== workspaceId) {
-      throw new NotFoundException({
-        code: 'STORY_PROJECT_NOT_FOUND',
-        message: 'Story project not found.',
-      });
-    }
-    return scope;
+    return this.permissions.requireProject(user.userId, projectId, capability);
   }
 }
 

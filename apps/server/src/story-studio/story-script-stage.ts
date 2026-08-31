@@ -182,6 +182,59 @@ export async function readApprovedStoryScreenplaySnapshot(
 }
 
 /**
+ * Read the structured screenplay snapshot attached to the exact current Script
+ * head, independently of Plot Tree lineage. Script approval advances this head;
+ * Plot approval later binds the chapter's sourceScript* tuple to the same
+ * version. A creator edit after approval advances the CRDT sequence without a
+ * matching structured version and therefore returns null.
+ */
+export async function readCurrentStoryScreenplaySnapshot(
+  tx: Prisma.TransactionClient,
+  storyProjectId: string,
+  storyChapterId: string,
+): Promise<ApprovedStoryScreenplaySnapshot | null> {
+  const document = await tx.studioDocument.findFirst({
+    where: {
+      storyProjectId,
+      storyChapterId,
+      type: StudioDocumentType.script,
+      status: StudioDocumentStatus.active,
+      deletedAt: null,
+    },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      currentSequence: true,
+      currentVersionId: true,
+    },
+  });
+  if (!document?.currentVersionId) return null;
+  const version = await tx.studioDocumentVersion.findFirst({
+    where: {
+      id: document.currentVersionId,
+      documentId: document.id,
+      sequence: document.currentSequence,
+    },
+    select: { id: true, documentId: true, sequence: true, snapshot: true },
+  });
+  if (!version || !isJsonRecord(version.snapshot)) return null;
+  const screenplay = StoryScreenplaySchema.safeParse(
+    version.snapshot.screenplay,
+  );
+  const screenplayDocument = StoryScreenplayDocumentSchema.safeParse(
+    version.snapshot.document,
+  );
+  if (!screenplay.success || !screenplayDocument.success) return null;
+  return {
+    documentId: version.documentId,
+    versionId: version.id,
+    sequence: version.sequence,
+    screenplay: screenplay.data,
+    document: screenplayDocument.data,
+  };
+}
+
+/**
  * Persist only a structured interpretation of an existing Script head. This
  * creates a restorable version of the exact current CRDT state and binds the
  * chapter lineage to it; it never appends a document operation, changes the
@@ -270,9 +323,9 @@ export async function commitDerivedStoryScreenplaySnapshot(
 
 /**
  * Persist the approved screenplay as the authoritative collaborative Script.
- * This is an intentional durable stage boundary: the caller commits the exact
- * creator-seen Script first, then re-arms the same Story run to reconcile
- * downstream structure from that committed head.
+ * This is an intentional durable stage boundary: the caller commits only the
+ * exact creator-seen Script. A later explicit Story run may propose Plot from
+ * that committed head; Script approval never binds chapter Plot lineage.
  */
 export async function commitApprovedScreenplay(
   tx: Prisma.TransactionClient,

@@ -4,7 +4,6 @@ import {
   CLOSED_STORY_CANVAS_INSPECTOR,
   type StoryCanvasInspectorTarget,
 } from "../_components/project-canvas/story-canvas-inspector-target";
-import type { StoryCanvasNavigationEvent } from "../_components/project-canvas/story-canvas-leave-guard";
 import type { SavedDraftSnapshotRunner } from "../_components/project-canvas/use-story-publication";
 
 /**
@@ -25,6 +24,11 @@ export interface StoryLiveDraftSignals {
   videoSnapshotHash: string | null;
 }
 
+export interface StoryComposerPrefillRequest {
+  id: number;
+  text: string;
+}
+
 /**
  * Story project shell UI state — cross-page switches shared by every
  * production step surface (script page, canvas once it adopts the shell).
@@ -39,6 +43,16 @@ interface StoryProjectUIState {
    */
   mobileView: "chat" | "work";
   setMobileView: (view: "chat" | "work") => void;
+  /**
+   * One-shot page -> FizzAgent bridge. Stage surfaces may suggest a natural
+   * language next action, but the Agent remains the only place that submits or
+   * approves work. The monotonically increasing id lets the same prompt be
+   * requested repeatedly without becoming persistent project state.
+   */
+  composerPrefillSequence: number;
+  composerPrefillRequest: StoryComposerPrefillRequest | null;
+  openAgentComposer: (text: string) => void;
+  consumeComposerPrefill: (id: number) => void;
   /**
    * Which rail-toggled panel is docked in the side-panel slot, or null when
    * closed. Drives — and is highlighted by — the rail's panel buttons.
@@ -63,23 +77,15 @@ interface StoryProjectUIState {
   shareOpen: boolean;
   setShareOpen: (open: boolean) => void;
   /**
-   * Leave guard the canvas registers while mounted; the rail's Back link runs
-   * it so unsaved-draft protection survives the move to the shared rail.
-   */
-  backGuard: ((event: StoryCanvasNavigationEvent) => void) | null;
-  setBackGuard: (guard: ((event: StoryCanvasNavigationEvent) => void) | null) => void;
-  /**
    * Canvas → header-actions bridge. While the canvas is mounted it publishes
-   * its live draft head and registers its save barrier / guarded navigation so
-   * the layout header's preview/publish keep exact canvas semantics; on other
-   * steps all three are null and the server projection is the truth.
+   * its live draft head and registers its save barrier so the layout header's
+   * preview/publish keep exact canvas semantics; on other steps both are null
+   * and the server projection is the truth.
    */
   liveDraft: StoryLiveDraftSignals | null;
   setLiveDraft: (signals: StoryLiveDraftSignals | null) => void;
   draftBarrier: SavedDraftSnapshotRunner | null;
   setDraftBarrier: (barrier: SavedDraftSnapshotRunner | null) => void;
-  guardedNavigate: ((proceed: () => void) => void) | null;
-  setGuardedNavigate: (navigate: ((proceed: () => void) => void) | null) => void;
   /**
    * Story-bible writer the canvas registers while mounted. The overview dock
    * routes bible edits through it so the mounted canvas stays the draft's
@@ -96,6 +102,28 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
     (set) => ({
       mobileView: "chat",
       setMobileView: (view) => set({ mobileView: view }, false, "setMobileView"),
+      composerPrefillSequence: 0,
+      composerPrefillRequest: null,
+      openAgentComposer: (text) =>
+        set(
+          (state) => {
+            const id = state.composerPrefillSequence + 1;
+            return {
+              mobileView: "chat",
+              composerPrefillSequence: id,
+              composerPrefillRequest: { id, text },
+            };
+          },
+          false,
+          "openAgentComposer"
+        ),
+      consumeComposerPrefill: (id) =>
+        set(
+          (state) =>
+            state.composerPrefillRequest?.id === id ? { composerPrefillRequest: null } : state,
+          false,
+          "consumeComposerPrefill"
+        ),
       sidePanel: null,
       setSidePanel: (panel) => set({ sidePanel: panel }, false, "setSidePanel"),
       activeChapterId: null,
@@ -112,15 +140,10 @@ export const useStoryProjectUiStore = create<StoryProjectUIState>()(
         ),
       shareOpen: false,
       setShareOpen: (open) => set({ shareOpen: open }, false, "setShareOpen"),
-      backGuard: null,
-      setBackGuard: (guard) => set({ backGuard: guard }, false, "setBackGuard"),
       liveDraft: null,
       setLiveDraft: (signals) => set({ liveDraft: signals }, false, "setLiveDraft"),
       draftBarrier: null,
       setDraftBarrier: (barrier) => set({ draftBarrier: barrier }, false, "setDraftBarrier"),
-      guardedNavigate: null,
-      setGuardedNavigate: (navigate) =>
-        set({ guardedNavigate: navigate }, false, "setGuardedNavigate"),
       foundationWriter: null,
       setFoundationWriter: (writer) =>
         set({ foundationWriter: writer }, false, "setFoundationWriter"),

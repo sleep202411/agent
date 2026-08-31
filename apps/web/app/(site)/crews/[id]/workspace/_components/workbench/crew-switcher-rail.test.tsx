@@ -4,7 +4,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { CrewSwitcherRail } from "./crew-switcher-rail";
+import {
+  CrewSwitcherRail,
+  CrewSwitcherRailView,
+  shouldShowCrewSwitcherRail,
+} from "@/app/(site)/crews/_components/crew-switcher-rail";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -69,6 +73,21 @@ afterEach(() => {
 });
 
 describe("crew switcher rail", () => {
+  it("hides after a successful empty membership response", () => {
+    expect(shouldShowCrewSwitcherRail({ crewCount: 0, isPending: false, isError: false })).toBe(
+      false
+    );
+    expect(shouldShowCrewSwitcherRail({ crewCount: 1, isPending: false, isError: false })).toBe(
+      true
+    );
+    expect(shouldShowCrewSwitcherRail({ crewCount: 0, isPending: true, isError: false })).toBe(
+      true
+    );
+    expect(shouldShowCrewSwitcherRail({ crewCount: 0, isPending: false, isError: true })).toBe(
+      true
+    );
+  });
+
   it("deduplicates memberships and links every crew to its workspace", () => {
     render();
 
@@ -78,5 +97,29 @@ describe("crew switcher rail", () => {
     expect(document.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
       "/zh-CN/crews/crew_1/workspace"
     );
+  });
+
+  it("uses the same rail for Crew Hall with the all-crews entry active", () => {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    act(() =>
+      root!.render(
+        <CrewSwitcherRailView
+          crews={state.query.data.founded}
+          allCrewsActive
+          rootLabel="My Crews"
+          className="flex"
+        />
+      )
+    );
+
+    expect(document.querySelector('a[aria-current="page"]')?.getAttribute("href")).toBe(
+      "/zh-CN/crews"
+    );
+    expect(document.querySelector('a[aria-current="page"]')?.getAttribute("aria-label")).toBe(
+      "My Crews"
+    );
+    expect(document.querySelector('a[href="/zh-CN/crews/crew_1/workspace"]')).not.toBeNull();
   });
 });

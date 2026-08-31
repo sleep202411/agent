@@ -32,7 +32,6 @@ import {
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 
 interface ConflictScope {
-  workspaceId: string;
   projectId: string;
   chapterId: string;
 }
@@ -254,16 +253,8 @@ function resolveConflict(
   };
   const key = createStoryProductionIdempotencyKey("story-conflict-resolution");
   return target.kind === "asset_spec"
-    ? resolveStoryAssetSpecConflict(
-        scope.workspaceId,
-        scope.projectId,
-        scope.chapterId,
-        target.item.id,
-        key,
-        input
-      )
+    ? resolveStoryAssetSpecConflict(scope.projectId, scope.chapterId, target.item.id, key, input)
     : resolveStoryStoryboardSequenceConflict(
-        scope.workspaceId,
         scope.projectId,
         scope.chapterId,
         target.item.id,
@@ -278,21 +269,21 @@ function applyConflictResult(
   result: ConflictResult
 ): void {
   queryClient.setQueryData<StoryProductionState>(
-    storyProductionKeys.state(scope.workspaceId, scope.projectId, scope.chapterId),
+    storyProductionKeys.state(scope.projectId, scope.chapterId),
     result.productionState
   );
   if (result.targetKind === "asset_spec") {
     queryClient.setQueryData<StoryAssetSpec[]>(
-      storyProductionKeys.assets(scope.workspaceId, scope.projectId, scope.chapterId),
+      storyProductionKeys.assets(scope.projectId, scope.chapterId),
       (current) => replaceOrRemove(current, result.item)
     );
     void queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.storyboard(scope.workspaceId, scope.projectId, scope.chapterId),
+      queryKey: storyProductionKeys.storyboard(scope.projectId, scope.chapterId),
     });
     return;
   }
   queryClient.setQueryData<StoryStoryboardSequence[]>(
-    storyProductionKeys.storyboard(scope.workspaceId, scope.projectId, scope.chapterId),
+    storyProductionKeys.storyboard(scope.projectId, scope.chapterId),
     (current) => replaceOrRemove(current, result.item)
   );
 }

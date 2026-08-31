@@ -12,22 +12,19 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
-import { CurrentUser, Public, ViewerCookie, type AuthUser } from '../auth';
+import { CurrentUser, Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   CancelStoryBuildSchema,
   CreateStoryBuildSchema,
-  PublishStoryBuildSchema,
-  PublishStoryProjectSchema,
+  PrepareStoryExperienceReleaseSchema,
   StoryBuildAssetParamsSchema,
   StoryBuildListQuerySchema,
   StoryBuildParamsSchema,
   StoryProjectIdParamsSchema,
-  StoryUuidSchema,
   type CancelStoryBuildInput,
   type CreateStoryBuildInput,
-  type PublishStoryBuildInput,
-  type PublishStoryProjectInput,
+  type PrepareStoryExperienceReleaseInput,
   type StoryBuildAssetParams,
   type StoryBuildListQuery,
   type StoryBuildParams,
@@ -35,22 +32,18 @@ import {
 } from './dto';
 import { StoryBuildService } from './story-build.service';
 import { StoryExperienceReleaseService } from './story-experience-release.service';
-import { StoryGameReleaseService } from './story-game-release.service';
 
 @Controller('story-projects')
 export class StoryBuildController {
   constructor(
     private readonly builds: StoryBuildService,
     private readonly releases: StoryExperienceReleaseService,
-    private readonly gameReleases: StoryGameReleaseService,
   ) {}
 
   @Post(':projectId/builds')
   @HttpCode(HttpStatus.CREATED)
   async createBuild(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
@@ -62,7 +55,6 @@ export class StoryBuildController {
       code: 200,
       data: await this.builds.createBuild(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         body,
         requiredIdempotencyKey(idempotencyHeader),
@@ -73,8 +65,6 @@ export class StoryBuildController {
   @Get(':projectId/builds')
   async listBuilds(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
     @Query(new ZodValidationPipe(StoryBuildListQuerySchema))
@@ -82,31 +72,19 @@ export class StoryBuildController {
   ) {
     return {
       code: 200,
-      data: await this.builds.listBuilds(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        query,
-      ),
+      data: await this.builds.listBuilds(user, params.projectId, query),
     };
   }
 
   @Get(':projectId/builds/:buildId')
   async getBuild(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryBuildParamsSchema))
     params: StoryBuildParams,
   ) {
     return {
       code: 200,
-      data: await this.builds.getBuild(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.buildId,
-      ),
+      data: await this.builds.getBuild(user, params.projectId, params.buildId),
     };
   }
 
@@ -136,8 +114,6 @@ export class StoryBuildController {
   @HttpCode(HttpStatus.OK)
   async cancelBuild(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryBuildParamsSchema))
     params: StoryBuildParams,
     @Body(new ZodValidationPipe(CancelStoryBuildSchema))
@@ -147,7 +123,6 @@ export class StoryBuildController {
       code: 200,
       data: await this.builds.cancelBuild(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.buildId,
         body,
@@ -155,94 +130,24 @@ export class StoryBuildController {
     };
   }
 
-  @Get(':projectId/releases/current')
-  async getCurrentRelease(
+  @Post(':projectId/release-candidate')
+  @HttpCode(HttpStatus.OK)
+  async prepareReleaseCandidate(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
+    @Body(new ZodValidationPipe(PrepareStoryExperienceReleaseSchema))
+    body: PrepareStoryExperienceReleaseInput,
   ) {
     return {
       code: 200,
-      data: await this.releases.getCurrentRelease(
+      data: await this.releases.prepareProjectCandidate(
         user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-      ),
-    };
-  }
-
-  /**
-   * Publishes the whole work: one release for a single-chapter project, and one
-   * Game Manifest listing every shipping chapter for a multi-chapter one. This
-   * is the endpoint a creator presses; the per-Build endpoint below stays for
-   * releasing one exact immutable Build.
-   */
-  @Post(':projectId/releases')
-  @HttpCode(HttpStatus.OK)
-  async publishProject(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @ViewerCookie() viewerCookie: string,
-    @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
-    params: StoryProjectIdParams,
-    @Body(new ZodValidationPipe(PublishStoryProjectSchema))
-    body: PublishStoryProjectInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.gameReleases.publishProject(
-        user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         body,
-        viewerCookie,
       ),
     };
   }
-
-  @Post(':projectId/builds/:buildId/publish')
-  @HttpCode(HttpStatus.OK)
-  async publishBuild(
-    @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
-    @ViewerCookie() viewerCookie: string,
-    @Param(new ZodValidationPipe(StoryBuildParamsSchema))
-    params: StoryBuildParams,
-    @Body(new ZodValidationPipe(PublishStoryBuildSchema))
-    body: PublishStoryBuildInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.releases.publishBuild(
-        user,
-        requiredWorkspaceId(workspaceHeader),
-        params.projectId,
-        params.buildId,
-        body,
-        viewerCookie,
-      ),
-    };
-  }
-}
-
-function requiredWorkspaceId(value: string | string[] | undefined): string {
-  const normalized = firstHeader(value)?.trim();
-  const parsed = StoryUuidSchema.safeParse(normalized);
-  if (!parsed.success) {
-    throw new BadRequestException({
-      code: normalized
-        ? 'WORKSPACE_HEADER_INVALID'
-        : 'WORKSPACE_HEADER_REQUIRED',
-      message: normalized
-        ? 'x-fizz-workspace-id must be a valid UUID.'
-        : 'x-fizz-workspace-id is required.',
-    });
-  }
-  return parsed.data;
 }
 
 function requiredIdempotencyKey(value: string | string[] | undefined): string {

@@ -1,14 +1,14 @@
 /**
  * Fail the rollout, not the reviewer, when a server-only credential is absent.
  *
- * Every variable below is already required at REQUEST time — the four call
- * sites listed against them each throw when their value is missing. That is too
+ * Every variable below is already required at REQUEST time — the consumers
+ * listed against them each throw when their value is missing. That is too
  * late to be useful: the chart mounts admin-ui's secret with `optional: true`
  * (deploy/helm/fizzdragon/templates/admin-ui.yaml), so a gap starts a perfectly
  * healthy pod, every page renders, and the failure only surfaces when somebody
- * opens the one screen that needs it — as an opaque upstream error.
+ * opens a screen that needs it — as an opaque upstream error.
  *
- * That is exactly how the Java text-game review API ran unauthenticated in
+ * That is exactly how the Java review API ran unauthenticated in
  * production: the pod predated the secret's key rename, `envFrom` does not
  * hot-reload, and nothing noticed until a reviewer opened 文游审核 and got a 502
  * reading "Not logged in!" — a message about Java's session, shown to an admin
@@ -28,7 +28,7 @@ const REQUIRED_IN_PRODUCTION: ReadonlyArray<readonly [string, string]> = [
   ["NEWS_API_BASE_URL", "lib/admin-news.ts — Java 资讯 backend origin (must include /content)"],
   [
     "TEXT_GAME_API_BASE_URL",
-    "lib/admin-text-games.ts — Java 文游审核 origin (must include /studio)",
+    "lib/java-studio-admin.ts — Java 文游/影游审核 origin (must include /studio)",
   ],
 ];
 

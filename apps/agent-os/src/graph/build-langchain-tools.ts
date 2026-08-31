@@ -8,7 +8,10 @@ import {
   parseToolInput,
   parseToolOutput,
   type DomainPort,
+  type StoryProductionContinuationPlan,
+  type StoryProductionTargetStage,
 } from "@repo/agent-tools";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 import { STORY_PATCH_OPERATION_LABELS } from "@repo/shared/story-agent";
 import { z } from "zod/v3";
 
@@ -37,6 +40,17 @@ export interface ToolRuntimeContext {
     executionAttemptId: string;
     executionEpoch: number;
     executionOwnerId: string;
+  };
+  /**
+   * Trusted post-approval production scope. When present, the graph—not the
+   * model—owns the next story.author arguments and lifecycle copy.
+   */
+  storyContinuation?: {
+    responseId: string;
+    locale: "en-US" | "zh-CN" | "zh-HK";
+    plan: StoryProductionContinuationPlan;
+    completedStage?: StoryProductionTargetStage;
+    mediaBatchCompleted?: boolean;
   };
   /** Cancels an in-flight Domain receipt poll when the creator stops the run. */
   abortSignal?: AbortSignal;
@@ -155,7 +169,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
                   })
                 )
                 .min(2)
-                .max(5),
+                .max(12),
             })
           )
           .min(1)
@@ -407,12 +421,7 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
       requestId: z.string().uuid().optional(),
       aspectRatio: z.enum(["landscape_16_9", "portrait_9_16"]),
       targetRuntime: z.enum(["short_5_15", "medium_15_30", "long_30_60"]),
-      visualDirection: z.enum([
-        "cinematic_realism",
-        "stylized_3d",
-        "graphic_novel",
-        "anime_cinematic",
-      ]),
+      visualDirection: z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS),
       storyLanguage: z.enum(["zh-CN", "zh-HK", "en-US"]),
     })
   );
@@ -493,13 +502,66 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
   );
   const storyAuthor = bindStoryTool(
     "story.author",
+    runtime.storyContinuation
+      ? z.object({}).strict()
+      : z.object({
+          title: z.string().trim().min(1).max(160),
+          summary: z.string().trim().min(1).max(4_000),
+          brief: z.string().trim().min(1).max(8_000),
+          continueThrough: z.enum(["script", "plot", "assets", "storyboard"]),
+          startedMessage: z.string().trim().min(1).max(2_000),
+          completionMessage: z.string().trim().min(1).max(2_000),
+        })
+  );
+  const generationOptionValue = z.union([
+    z.boolean(),
+    z.number(),
+    z.string().trim().min(1).max(180),
+    z.array(z.union([z.boolean(), z.number(), z.string().trim().min(1).max(180)])).max(32),
+  ]);
+  const storyQuoteAssetGenerationBatch = bindStoryTool(
+    "story.generation.quoteAssets",
     z.object({
-      title: z.string().trim().min(1).max(160),
-      summary: z.string().trim().min(1).max(4_000),
-      brief: z.string().trim().min(1).max(8_000),
-      startedMessage: z.string().trim().min(1).max(2_000),
-      completionMessage: z.string().trim().min(1).max(2_000),
+      assetIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+      assetKinds: z
+        .array(z.enum(["character", "location", "prop"]))
+        .min(1)
+        .max(3)
+        .optional(),
+      outputKind: z.enum(["image", "video"]).optional(),
+      modelId: z.string().trim().min(1).max(180).optional(),
+      schemaVersion: z.string().trim().min(1).max(180).optional(),
+      options: z.record(generationOptionValue).optional(),
+      ...(runtime.storyContinuation?.plan.autoGenerateAssetImages === true
+        ? { dispatchMode: z.literal("sequential").optional() }
+        : {}),
     })
+  );
+  const storyQuoteStoryboardGenerationBatch = bindStoryTool(
+    "story.generation.quoteStoryboard",
+    z.object({
+      clipIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+      ...(runtime.storyContinuation?.plan.autoGenerateStoryboardMedia === true
+        ? { dispatchMode: z.literal("sequential").optional() }
+        : {}),
+    })
+  );
+  const storyConfirmGenerationBatch = bindStoryTool(
+    "story.generation.confirmBatch",
+    z.object({
+      batchId: z.string().uuid(),
+      expectedVersion: z.number().int().nonnegative(),
+      expectedItemCount: z.number().int().positive().max(500),
+      expectedTotalPoints: z.number().int().nonnegative(),
+    })
+  );
+  const storyGetGenerationBatch = bindStoryTool(
+    "story.generation.getBatch",
+    z.object({ batchId: z.string().uuid() })
+  );
+  const storyCancelGenerationBatch = bindStoryTool(
+    "story.generation.cancelBatch",
+    z.object({ batchId: z.string().uuid() })
   );
   const storyApplyPatch = tool(
     async (raw, config) => {
@@ -577,6 +639,11 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.reorder": storyReorder,
     "story.applyPatch": storyApplyPatch,
     "story.author": storyAuthor,
+    "story.generation.quoteAssets": storyQuoteAssetGenerationBatch,
+    "story.generation.quoteStoryboard": storyQuoteStoryboardGenerationBatch,
+    "story.generation.confirmBatch": storyConfirmGenerationBatch,
+    "story.generation.getBatch": storyGetGenerationBatch,
+    "story.generation.cancelBatch": storyCancelGenerationBatch,
   } as const;
 
   const allowed = new Set(toolIds);
@@ -602,26 +669,57 @@ async function executeBound(
   toolCallId: string | undefined
 ): Promise<string> {
   const definition = getTool(toolId);
+  const continuationCopy = runtime.storyContinuation
+    ? storyContinuationLifecycleCopy(runtime.storyContinuation.locale, {
+        mediaGenerationStarted:
+          runtime.storyContinuation.mediaBatchCompleted !== true &&
+          ((runtime.storyContinuation.plan.autoGenerateAssetImages === true &&
+            runtime.storyContinuation.completedStage === "assets") ||
+            (runtime.storyContinuation.plan.autoGenerateStoryboardMedia === true &&
+              runtime.storyContinuation.completedStage === "storyboard")),
+        mobileH5: runtime.storyContinuation.plan.experience === "mobile_h5",
+        completedStage: runtime.storyContinuation.completedStage,
+      })
+    : null;
+  const effectiveRaw =
+    toolId === "story.author" && runtime.storyContinuation && continuationCopy
+      ? {
+          continueThrough: runtime.storyContinuation.plan.continueThrough,
+          title: runtime.storyContinuation.plan.title,
+          summary: runtime.storyContinuation.plan.summary,
+          brief: runtime.storyContinuation.plan.brief,
+          ...continuationCopy,
+        }
+      : raw;
   const parsed = parseToolInput(
     toolId,
     toolId === "script.readSection"
       ? {
-          ...(raw as object),
+          ...(effectiveRaw as object),
           maxChars:
-            (raw as { maxChars?: number }).maxChars === undefined
+            (effectiveRaw as { maxChars?: number }).maxChars === undefined
               ? 8000
-              : (raw as { maxChars?: number }).maxChars,
+              : (effectiveRaw as { maxChars?: number }).maxChars,
         }
-      : raw
+      : effectiveRaw
   );
 
   const callId = toolCallId ?? crypto.randomUUID();
   const emit = runtime.onToolEvent;
-  const gate = requiresApproval({
-    mode: runtime.agentMode,
-    permissionMode: runtime.permissionMode,
-    risk: definition.risk,
-  });
+  const trustedMobileGeneration =
+    toolId === "story.generation.confirmBatch" &&
+    runtime.storyContinuation?.mediaBatchCompleted !== true &&
+    ((runtime.storyContinuation?.completedStage === "assets" &&
+      runtime.storyContinuation.plan.autoGenerateAssetImages === true) ||
+      (runtime.storyContinuation?.completedStage === "storyboard" &&
+        runtime.storyContinuation.plan.autoGenerateStoryboardMedia === true));
+  const gate = trustedMobileGeneration
+    ? { required: false as const, reason: "Authorized by the trusted H5 Continue decision." }
+    : requiresApproval({
+        mode: runtime.agentMode,
+        permissionMode: runtime.permissionMode,
+        risk: definition.risk,
+      });
 
   if (gate.required) {
     if (runtime.agentMode === "DISCUSS" && definition.risk !== "read") {
@@ -750,4 +848,123 @@ async function executeBound(
     });
     throw error;
   }
+}
+
+function storyContinuationLifecycleCopy(
+  locale: "en-US" | "zh-CN" | "zh-HK",
+  input: {
+    mediaGenerationStarted: boolean;
+    mobileH5: boolean;
+    completedStage?: StoryProductionTargetStage;
+  }
+) {
+  const { mediaGenerationStarted, mobileH5, completedStage } = input;
+  if (locale === "zh-CN") {
+    if (mediaGenerationStarted) {
+      return {
+        startedMessage: "正在按故事顺序逐项生成。",
+        completionMessage: "本阶段媒体已全部生成。",
+      };
+    }
+    if (mobileH5) {
+      if (completedStage === "script") {
+        return {
+          startedMessage: "正在构建情节树。",
+          completionMessage: "情节树已构建，请选择「继续」或「不继续」。",
+        };
+      }
+      if (completedStage === "plot") {
+        return {
+          startedMessage: "正在构建角色、场景和道具资产。",
+          completionMessage: "资产规格已构建。",
+        };
+      }
+      if (completedStage === "assets") {
+        return {
+          startedMessage: "资产图片已生成，正在构建分镜。",
+          completionMessage: "分镜已准备好，请选择「继续」或「不继续」。",
+        };
+      }
+      return {
+        startedMessage: "正在继续创作。",
+        completionMessage: "下一阶段已准备好，请选择「继续」或「不继续」。",
+      };
+    }
+    return {
+      startedMessage: "已开始准备下一份可审核的制作规格；本阶段不会生成任何图片或视频。",
+      completionMessage: "下一份制作规格提案已准备好供你审核；本阶段没有生成任何图片或视频。",
+    };
+  }
+  if (locale === "zh-HK") {
+    if (mediaGenerationStarted) {
+      return {
+        startedMessage: "正在按故事順序逐項生成。",
+        completionMessage: "本階段媒體已全部生成。",
+      };
+    }
+    if (mobileH5) {
+      if (completedStage === "script") {
+        return {
+          startedMessage: "正在構建情節樹。",
+          completionMessage: "情節樹已構建，請選擇「繼續」或「不繼續」。",
+        };
+      }
+      if (completedStage === "plot") {
+        return {
+          startedMessage: "正在構建角色、場景和道具資產。",
+          completionMessage: "資產規格已構建。",
+        };
+      }
+      if (completedStage === "assets") {
+        return {
+          startedMessage: "資產圖片已生成，正在構建分鏡。",
+          completionMessage: "分鏡已準備好，請選擇「繼續」或「不繼續」。",
+        };
+      }
+      return {
+        startedMessage: "正在繼續創作。",
+        completionMessage: "下一階段已準備好，請選擇「繼續」或「不繼續」。",
+      };
+    }
+    return {
+      startedMessage: "已開始準備下一份可審核的製作規格；本階段不會生成任何圖片或影片。",
+      completionMessage: "下一份製作規格提案已準備好供你審核；本階段沒有生成任何圖片或影片。",
+    };
+  }
+  if (mediaGenerationStarted) {
+    return {
+      startedMessage: "Generating one item at a time in story order.",
+      completionMessage: "All media for this stage is ready.",
+    };
+  }
+  if (mobileH5) {
+    if (completedStage === "script") {
+      return {
+        startedMessage: "Building the Plot Tree.",
+        completionMessage: "The Plot Tree is ready. Choose Continue or Don’t continue.",
+      };
+    }
+    if (completedStage === "plot") {
+      return {
+        startedMessage: "Building Character, Location, and Prop Assets.",
+        completionMessage: "The Asset Specs are ready.",
+      };
+    }
+    if (completedStage === "assets") {
+      return {
+        startedMessage: "Asset images are ready. Building the Storyboard.",
+        completionMessage: "The Storyboard is ready. Choose Continue or Don’t continue.",
+      };
+    }
+    return {
+      startedMessage: "Continuing creation.",
+      completionMessage: "The next stage is ready. Choose Continue or Don’t continue.",
+    };
+  }
+  return {
+    startedMessage:
+      "I’m preparing the next reviewable production specification. No image or video generation has started.",
+    completionMessage:
+      "The next production specification is ready for review. No image or video media was generated.",
+  };
 }

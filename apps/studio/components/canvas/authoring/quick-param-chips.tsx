@@ -94,11 +94,7 @@ function ParamChip({
           {label}
         </button>
       </PopoverTrigger>
-      <PopoverContent
-        align="start"
-        sideOffset={6}
-        className="w-[260px] gap-0 p-2"
-      >
+      <PopoverContent align="start" sideOffset={6} className="w-[260px] gap-0 p-2">
         {/* Field title (imagine shows "Aspect Ratio" / "Duration" above the list). */}
         <p className="px-2 pb-1.5 pt-0.5 text-xs font-medium text-muted-foreground">
           {fieldLabel(field)}
@@ -147,24 +143,31 @@ export function QuickParamChips({
   model,
   settings,
   onChange,
+  excludedFieldNames = [],
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
   onChange: (next: ModelSettings) => void;
+  /** Fields owned by the surrounding editor rather than the provider form. */
+  excludedFieldNames?: readonly string[];
 }) {
   const fields = useMemo(() => schemaFields(model), [model]);
+  const editableFields = useMemo(() => {
+    const excluded = new Set(excludedFieldNames);
+    return fields.filter((field) => !excluded.has(field.name));
+  }, [excludedFieldNames, fields]);
 
   // Same quick-field set as ComposerQuickSettings: duration/resolution/quality/
   // outputs + the size (aspect) field. Order: non-size quick fields first, size
   // last (matches the pollo/composer convention).
-  const sizeField = fields.find(isSizeField);
+  const sizeField = editableFields.find(isSizeField);
   const quick = useMemo(
     () =>
       [
-        ...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)),
+        ...editableFields.filter((f) => !isSizeField(f) && isQuickSettingField(f)),
         sizeField,
       ].filter((f): f is SchemaFieldDescriptor => Boolean(f)),
-    [fields, sizeField]
+    [editableFields, sizeField]
   );
 
   if (!model || quick.length === 0) return null;
@@ -173,8 +176,7 @@ export function QuickParamChips({
     const v = settings[name];
     return Array.isArray(v) ? undefined : v;
   };
-  const set = (name: string, v: string | number | boolean) =>
-    onChange({ ...settings, [name]: v });
+  const set = (name: string, v: string | number | boolean) => onChange({ ...settings, [name]: v });
 
   return (
     <div className="flex flex-wrap gap-2">

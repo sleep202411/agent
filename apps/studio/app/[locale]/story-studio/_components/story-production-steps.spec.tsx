@@ -3,6 +3,9 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import enUS from "@/messages/en-US.json";
+import zhCN from "@/messages/zh-CN.json";
+import zhHK from "@/messages/zh-HK.json";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { StoryProductionSteps } from "./story-production-steps";
 
@@ -23,10 +26,6 @@ vi.mock("@tanstack/react-query", () => ({
       ready: false,
     },
   }),
-}));
-
-vi.mock("@/app/_components/workspace-context", () => ({
-  useWorkspace: () => ({ activeWorkspace: { id: "workspace-1" } }),
 }));
 
 vi.mock("@/i18n/navigation", () => ({
@@ -50,7 +49,6 @@ describe("StoryProductionSteps", () => {
     useStoryProjectUiStore.setState({
       activeChapterId: "chapter-1",
       draftBarrier: null,
-      guardedNavigate: null,
     });
     container = document.createElement("div");
     document.body.append(container);
@@ -74,6 +72,9 @@ describe("StoryProductionSteps", () => {
       "/story-studio/projects/project-1/storyboard?chapter=chapter-1",
     ]);
     expect(container.querySelector('[aria-current="page"]')?.textContent).toContain("assets");
+    const navigationText = container.querySelector("nav")?.textContent ?? "";
+    expect(navigationText.indexOf("tree")).toBeLessThan(navigationText.indexOf("assets"));
+    expect(container.querySelector("nav")?.getAttribute("aria-label")).toBe("navigationLabel");
     expect(container.textContent).not.toMatch(/\b[1-4]\b/);
   });
 
@@ -81,7 +82,6 @@ describe("StoryProductionSteps", () => {
     const barrier = vi.fn(async (run: () => Promise<unknown>) => run());
     useStoryProjectUiStore.setState({
       draftBarrier: barrier as never,
-      guardedNavigate: (proceed: () => void) => proceed(),
     });
     await act(async () => {
       root.render(<StoryProductionSteps projectId="project-1" active="storyboard" />);
@@ -101,5 +101,13 @@ describe("StoryProductionSteps", () => {
     expect(navigation.push).toHaveBeenCalledWith(
       "/story-studio/projects/project-1/playtest?chapter=chapter-1"
     );
+  });
+
+  it.each([
+    ["en-US", enUS.storyStudio.canvas.steps.navigationLabel],
+    ["zh-CN", zhCN.storyStudio.canvas.steps.navigationLabel],
+    ["zh-HK", zhHK.storyStudio.canvas.steps.navigationLabel],
+  ])("provides a dedicated production navigation label in %s", (_locale, label) => {
+    expect(label).toBeTruthy();
   });
 });

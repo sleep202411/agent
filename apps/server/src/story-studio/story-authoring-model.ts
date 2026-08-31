@@ -154,6 +154,7 @@ export async function runStoryAuthoringStage<T>(
   );
 
   let repairNote: string | null = null;
+  let lastFailureDetail: string | null = null;
   for (let attempt = 1; attempt <= call.maxAttempts; attempt += 1) {
     try {
       const result = await generateObject({
@@ -174,11 +175,13 @@ export async function runStoryAuthoringStage<T>(
         call.onAttempt?.(attempt, 'ok');
         return value;
       }
-      call.onAttempt?.(attempt, 'error', issues.join('; '));
+      lastFailureDetail = issues.join('; ');
+      call.onAttempt?.(attempt, 'error', lastFailureDetail);
       repairNote = buildRepairNote(issues);
     } catch (error) {
       if (call.signal.aborted) throw error;
       const detail = describeModelError(error);
+      lastFailureDetail = detail;
       call.onAttempt?.(attempt, 'error', detail);
       if (isContentModerationRejection(detail)) {
         throw new StoryAuthoringStageError(
@@ -191,7 +194,12 @@ export async function runStoryAuthoringStage<T>(
   }
   throw new StoryAuthoringStageError(
     `STORY_AGENT_STAGE_FAILED:${call.stage}`,
-    `The "${call.stage}" stage exhausted ${call.maxAttempts} attempts.`,
+    [
+      `The "${call.stage}" stage exhausted ${call.maxAttempts} attempts.`,
+      lastFailureDetail
+        ? `Last failure: ${lastFailureDetail}`
+        : 'No attempt detail was captured.',
+    ].join(' '),
   );
 }
 

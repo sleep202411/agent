@@ -1,0 +1,27 @@
+{
+  "$schema": "../fizzdragon-skill.schema.json",
+  "schemaVersion": "fizzdragon.catalog-source/v1",
+  "skillId": "10000000-0000-7000-8000-000000000030",
+  "catalogOrder": 30,
+  "displayDescription": "Feature-animation 3D with designed proportions, tactile materials, graphic lighting and cinematic camera language.",
+  "translationKey": "stylized3dCinema",
+  "publisherName": "FizzDragon",
+  "category": "style",
+  "kind": "general",
+  "visibility": "public",
+  "status": "published",
+  "preview": { "image": "stylized-3d-cinema.jpg", "video": null },
+  "version": {
+    "id": "20000000-0000-7000-8000-000000000030",
+    "version": "1.0.0",
+    "manifestSchemaVersion": "fizzdragon.skill/v1",
+    "publishedAt": "2026-08-25T12:00:00.000Z",
+    "capabilities": ["agent_prompt", "prompt_authoring", "image_generation", "video_generation"],
+    "projectKinds": ["platform", "story"],
+    "workbenchModes": [],
+    "toolIds": [],
+    "configSchema": { "type": "object", "additionalProperties": false, "properties": {} },
+    "riskPolicy": { "allowsWrite": false, "allowsPaidGeneration": false },
+    "evalSuite": "evals/project-skills/stylized-3d-cinema/v1"
+  }
+}

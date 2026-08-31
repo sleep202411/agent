@@ -25,8 +25,7 @@ import { StoryChaptersPanel } from "./project-canvas/story-chapters-panel";
  * Chapter manager as a layout-dock tenant: usable from every production step
  * without leaving it. Chapter data comes from the shared chapter-workbench
  * query; selection stays on the current step (only the ?chapter scope
- * changes) and runs through the canvas's leave guard when one is registered,
- * so unsaved-draft protection is identical to navigating from the canvas.
+ * changes).
  */
 export function StoryChaptersDock({ projectId }: { projectId: string }) {
   const t = useTranslations("storyStudio.canvas");
@@ -34,13 +33,11 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment() ?? "canvas";
   const queryClient = useQueryClient();
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
-  const guardedNavigate = useStoryProjectUiStore((state) => state.guardedNavigate);
   const liveDraft = useStoryProjectUiStore((state) => state.liveDraft);
   const [creating, setCreating] = useState(false);
   const [pendingChapterId, setPendingChapterId] = useState<string | null>(null);
 
   const workbenchQuery = useStoryChapterWorkbench(projectId);
-  const { workspaceId } = workbenchQuery;
   const workbench = workbenchQuery.data ?? null;
   const canEdit = workbench?.project.capabilities.includes("story.edit") ?? false;
 
@@ -56,15 +53,14 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
     `/story-studio/projects/${encodeURIComponent(projectId)}/${segment}?chapter=${encodeURIComponent(chapterId)}`;
   const selectChapter = (chapterId: string) => {
     if (chapterId === activeChapterId) return;
-    const go = () => router.push(chapterHref(chapterId));
-    (guardedNavigate ?? ((proceed: () => void) => proceed()))(go);
+    router.push(chapterHref(chapterId));
   };
 
   const createChapter = async (title: string): Promise<boolean> => {
-    if (!workspaceId || creating || !canEdit) return false;
+    if (creating || !canEdit) return false;
     setCreating(true);
     try {
-      const chapter = await createStoryChapter(workspaceId, projectId, { title });
+      const chapter = await createStoryChapter(projectId, { title });
       await refreshChapterProjections();
       selectChapter(chapter.id);
       return true;
@@ -77,10 +73,10 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
   };
 
   const renameChapter = async (chapter: StoryChapter, title: string): Promise<boolean> => {
-    if (!workspaceId || pendingChapterId || !canEdit) return false;
+    if (pendingChapterId || !canEdit) return false;
     setPendingChapterId(chapter.id);
     try {
-      await updateStoryChapter(workspaceId, projectId, chapter.id, { title });
+      await updateStoryChapter(projectId, chapter.id, { title });
       await refreshChapterProjections();
       return true;
     } catch (error) {
@@ -92,7 +88,7 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
   };
 
   const moveChapter = async (chapter: StoryChapter, direction: -1 | 1): Promise<boolean> => {
-    if (!workspaceId || !workbench || pendingChapterId || !canEdit) return false;
+    if (!workbench || pendingChapterId || !canEdit) return false;
     const currentIndex = workbench.chapters.findIndex((candidate) => candidate.id === chapter.id);
     const targetIndex = currentIndex + direction;
     if (currentIndex < 0 || targetIndex < 0 || targetIndex >= workbench.chapters.length) {
@@ -105,7 +101,7 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
     ];
     setPendingChapterId(chapter.id);
     try {
-      await reorderStoryChapters(workspaceId, projectId, {
+      await reorderStoryChapters(projectId, {
         expectedProjectVersion: workbench.project.projectVersion,
         chapterIds,
       });
@@ -120,7 +116,7 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
   };
 
   const archiveChapter = async (chapter: StoryChapter): Promise<boolean> => {
-    if (!workspaceId || !workbench || pendingChapterId || !canEdit) return false;
+    if (!workbench || pendingChapterId || !canEdit) return false;
     // Archiving the chapter that is open in an unsettled canvas would discard
     // its unsaved edits — the canvas publishes that risk via liveDraft.
     if (
@@ -134,7 +130,7 @@ export function StoryChaptersDock({ projectId }: { projectId: string }) {
     const nextChapter = workbench.chapters.find((candidate) => candidate.id !== chapter.id);
     setPendingChapterId(chapter.id);
     try {
-      await archiveStoryChapter(workspaceId, projectId, chapter.id);
+      await archiveStoryChapter(projectId, chapter.id);
       await refreshChapterProjections();
       if (chapter.id === activeChapterId && nextChapter) {
         router.push(chapterHref(nextChapter.id));

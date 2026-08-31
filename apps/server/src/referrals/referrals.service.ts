@@ -111,6 +111,17 @@ export class ReferralsService {
         `lazy invitee perk failed for ${userId}: ${e instanceof Error ? e.message : e}`,
       ),
     );
+    // Finish rewards left marked paid_out with items still ungranted. A claim
+    // flips the status before paying, so a crash between the two strands the
+    // reward: the UI reads "Granted" and offers no button, leaving the holder
+    // no way to reach the heal inside claimReward. claimReward now releases the
+    // flip when the payout THROWS, but a crash cannot — so this read-time sweep
+    // is the only self-service repair. Best-effort.
+    await this.settleUnfinishedPaidOutRewards(userId).catch((e) =>
+      this.logger.warn(
+        `lazy reward settle failed for ${userId}: ${e instanceof Error ? e.message : e}`,
+      ),
+    );
     const program = await this.prisma.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
       include: {
@@ -267,6 +278,7 @@ export class ReferralsService {
         days: it.days ?? 0,
         rank: idx,
       }));
+      await this.assertBundlePayable(items);
       data.inviteeBenefitItems = { deleteMany: {}, create: items };
       const primary = items[0];
       data.inviteeBenefitMinor =
@@ -290,6 +302,7 @@ export class ReferralsService {
     if (!items?.length) {
       throw new BadRequestException('Reward bundle is required');
     }
+    await this.assertBundlePayable(items);
     const legacy = legacyColumnsFromItems(items);
     await this.prisma.referralMilestoneConfig.create({
       data: {
@@ -326,6 +339,7 @@ export class ReferralsService {
     // REPLACE the bundle and re-mirror the legacy payout columns from items[0].
     const items = resolveTierItems(input);
     if (items?.length) {
+      await this.assertBundlePayable(items);
       const legacy = legacyColumnsFromItems(items);
       data.payoutType = legacy.payoutType;
       data.rewardMinor = legacy.rewardMinor;
@@ -342,6 +356,33 @@ export class ReferralsService {
     }
     await this.prisma.referralMilestoneConfig.update({ where: { id }, data });
     return this.loadAdminConfig();
+  }
+
+  /**
+   * Refuse a reward bundle the payout path could not honour. A membership item
+   * is only as good as its plan row: archive `community_membership` and every
+   * tier carrying it becomes unclaimable, which the operator learns from a
+   * recipient's failed claim rather than from the save that caused it. Checking
+   * here moves that discovery to the person who can still fix it, and each
+   * membership kind is mapped to the SAME plan key `grantSingle` will use.
+   */
+  private async assertBundlePayable(
+    items: { payoutType: string }[],
+  ): Promise<void> {
+    const planKeys = new Set<string>();
+    for (const item of items) {
+      if (item.payoutType === 'membership_compute') {
+        planKeys.add(COMPUTE_PLAN_KEY);
+      } else if (item.payoutType === 'membership_community') {
+        planKeys.add(COMMUNITY_MEMBERSHIP_PLAN_KEY);
+      }
+    }
+    for (const planKey of planKeys) {
+      await this.entitlements.assertPlanGrantable(
+        planKey,
+        BillingSubjectType.user,
+      );
+    }
   }
 
   async archiveMilestone(id: string) {
@@ -854,7 +895,11 @@ export class ReferralsService {
       },
     });
     if (!program || !program.enabled || !program.milestones.length) return;
-    const availableAt = new Date(Date.now() + program.holdDays * DAY_MS);
+    // Immediately claimable — same as the invitee perk: tiers are registration-
+    // based and reverseForOrder never reverses them, so the program's holdDays
+    // (which exists to cover the refund window on purchase-backed cash rewards)
+    // buys nothing here and only delays the 领取 button.
+    const availableAt = new Date();
 
     await this.prisma.$transaction(async (tx) => {
       const earned = new Set(
@@ -1150,8 +1195,54 @@ export class ReferralsService {
       throw new BadRequestException('Reward is not claimable');
     }
 
-    await this.grantIgnoringUniqueRace(reward);
+    // The CAS stays AHEAD of the payout on purpose: it is what stops a reward a
+    // refund already reversed from being paid. What it did NOT do was undo
+    // itself — a grant that threw left the reward reading "paid_out" to the UI
+    // with items never granted, and the heal branch above re-threw on every
+    // retry, so the holder had no way back. Release the flip on failure and let
+    // them claim again; granting is per-item idempotent, so whatever already
+    // went out is not re-sent. A crash between the two lands in
+    // settleUnfinishedPaidOutRewards on the next dashboard read.
+    try {
+      await this.grantIgnoringUniqueRace(reward);
+    } catch (e) {
+      await this.prisma.referralReward
+        .updateMany({
+          where: { id: reward.id, status: 'paid_out' },
+          data: { status: 'accrued', paidOutAt: null },
+        })
+        .catch(() => undefined);
+      throw e;
+    }
     return { status: 'paid_out' };
+  }
+
+  /**
+   * Re-run the payout for this user's `paid_out` rewards that still hold
+   * ungranted bundle items. `grantReward` skips anything already granted, so
+   * this only ever pays the remainder; a still-broken item logs and leaves the
+   * rest of the dashboard to render.
+   */
+  private async settleUnfinishedPaidOutRewards(userId: string): Promise<void> {
+    const stranded = await this.prisma.referralReward.findMany({
+      where: {
+        userId,
+        status: 'paid_out',
+        items: { some: { grantedAt: null } },
+      },
+      select: { id: true, userId: true, currency: true },
+      take: 20,
+    });
+    for (const reward of stranded) {
+      try {
+        await this.grantIgnoringUniqueRace(reward);
+        this.logger.log(`Settled stranded reward ${reward.id} for ${userId}`);
+      } catch (e) {
+        this.logger.warn(
+          `settle failed for reward ${reward.id}: ${e instanceof Error ? e.message : e}`,
+        );
+      }
+    }
   }
 
   /** grantReward, swallowing unique-key races (a concurrent grant won → the

@@ -40,24 +40,20 @@ function catalog(models: FizzAiModel[]): FizzAiCatalog {
 }
 
 describe("canvasDefaultModel", () => {
-  it("defaults new video cards to Seedance 2.5 regardless of catalog order", () => {
+  it("defaults new video cards to Wan 3.0 regardless of catalog order", () => {
     const agnes = videoModel("quick-video-1-0", ["multimodal_to_video"]);
-    const seedance = videoModel("seedance-2-5", [
-      "text_to_video",
-      "image_to_video",
-      "multimodal_to_video",
-    ]);
+    const wan = videoModel("wan-3-0", ["text_to_video", "image_to_video", "multimodal_to_video"]);
 
-    expect(canvasDefaultModel(catalog([agnes, seedance]), "video")).toBe(seedance);
+    expect(canvasDefaultModel(catalog([agnes, wan]), "video")).toBe(wan);
   });
 
-  it("falls back to a usable reference-capable model when Seedance is unavailable", () => {
+  it("falls back to a usable reference-capable model when the preferred one is unavailable", () => {
     const agnes = videoModel("quick-video-1-0", ["multimodal_to_video"]);
-    const seedance = videoModel("seedance-2-5", ["multimodal_to_video"], {
+    const wan = videoModel("wan-3-0", ["multimodal_to_video"], {
       access: { allowed: false },
     });
 
-    expect(canvasDefaultModel(catalog([agnes, seedance]), "video")).toBe(agnes);
+    expect(canvasDefaultModel(catalog([agnes, wan]), "video")).toBe(agnes);
   });
 });
 

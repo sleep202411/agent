@@ -23,10 +23,10 @@ function previewCoverRow() {
     status: 'ready',
     moderationStatus: 'approved',
     deletedAt: null,
-    contentType: 'image/jpeg',
-    width: 1600,
-    height: 900,
-    checksumSha256: 'c'.repeat(64),
+    contentType: null,
+    width: null,
+    height: null,
+    checksumSha256: null,
     placements: [],
   };
 }
@@ -173,7 +173,7 @@ describe('StoryWorkingPreviewService', () => {
    * is where a creator actually sees the cover they just picked. Without it the
    * only way to find out whether a cover works would be to publish.
    */
-  it('paints the project cover into the Preview manifest', async () => {
+  it('returns the project cover beside the Preview manifest', async () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, tx } = scopedService(
       draft,
@@ -182,26 +182,12 @@ describe('StoryWorkingPreviewService', () => {
       { coverAssetId: COVER_ASSET_ID, row: previewCoverRow() },
     );
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.diagnostics).toEqual([]);
-    const runtime = preview.runtime as {
-      metadata: { coverAssetId?: string };
-      assets: { assetId: string; kind: string; variants: { uri: string }[] }[];
-    };
-    expect(runtime.metadata.coverAssetId).toBe(`image:${COVER_ASSET_ID}`);
-    expect(
-      runtime.assets.find(
-        (asset) => asset.assetId === `image:${COVER_ASSET_ID}`,
-      ),
-    ).toMatchObject({
-      kind: 'image',
-      variants: [{ uri: 'https://assets.example/cover.jpg' }],
-    });
+    const runtime = preview.runtime as { assets: { kind: string }[] };
+    expect(preview.coverUrl).toBe('https://assets.example/cover.jpg');
+    expect(runtime.assets.some((asset) => asset.kind === 'image')).toBe(false);
     expect(tx.mediaAsset.findFirst).toHaveBeenCalledTimes(1);
   });
 
@@ -209,15 +195,9 @@ describe('StoryWorkingPreviewService', () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, tx } = scopedService(draft);
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
-    expect(
-      (preview.runtime as { metadata: Record<string, unknown> }).metadata,
-    ).not.toHaveProperty('coverAssetId');
+    expect(preview.coverUrl).toBeNull();
     expect(tx.mediaAsset.findFirst).not.toHaveBeenCalled();
   });
 
@@ -226,11 +206,7 @@ describe('StoryWorkingPreviewService', () => {
     draft.graph.entryNodeId = null;
     const { service, tx } = scopedService(draft);
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.runtime).toMatchObject({
       graph: { entrySceneId: draft.graph.nodes[0]?.nodeId },
@@ -251,7 +227,6 @@ describe('StoryWorkingPreviewService', () => {
     choiceNode.exit.choices[0].label = {};
     const preview = await scopedService(draft).service.getWorkingPreview(
       USER as never,
-      WORKSPACE_ID,
       PROJECT_ID,
     );
 
@@ -265,11 +240,7 @@ describe('StoryWorkingPreviewService', () => {
     const draft = buildInteractiveFilmTestBundle().draftContent;
     const { service, contentHash, prisma, tx } = scopedService(draft);
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.draftRevision).toBe(9);
     expect(preview.contentHash).toBe(contentHash);
@@ -339,7 +310,7 @@ describe('StoryWorkingPreviewService', () => {
     const firstPreview = await scopedService(
       draft,
       previewSequences(draft),
-    ).service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID);
+    ).service.getWorkingPreview(USER as never, PROJECT_ID);
     const changedSequences = previewSequences(draft);
     const changedClip = changedSequences[0]?.clips[0];
     if (!changedClip) throw new Error('Fixture clip missing.');
@@ -356,7 +327,7 @@ describe('StoryWorkingPreviewService', () => {
     const secondPreview = await scopedService(
       draft,
       changedSequences,
-    ).service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID);
+    ).service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(secondPreview.videoSnapshotHash).not.toBe(
       firstPreview.videoSnapshotHash,
@@ -376,11 +347,7 @@ describe('StoryWorkingPreviewService', () => {
     if (!missing) throw new Error('Fixture sequence missing.');
     const { service } = scopedService(draft, sequences);
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.runtime).not.toBeNull();
     expect(preview.sources).toHaveLength(20);
@@ -403,11 +370,7 @@ describe('StoryWorkingPreviewService', () => {
     Object.assign(bare, { selectedMediaVersion: null });
     const { service } = scopedService(draft, sequences);
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.runtime).not.toBeNull();
     expect(preview.sources).toHaveLength(20);
@@ -437,11 +400,7 @@ describe('StoryWorkingPreviewService', () => {
     };
     const { service } = scopedService(draft, sequences);
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.runtime).not.toBeNull();
     expect(preview.diagnostics).toContainEqual(
@@ -466,11 +425,7 @@ describe('StoryWorkingPreviewService', () => {
     };
     const { service } = scopedService(draft, sequences);
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.videoSnapshotHash).toMatch(/^[a-f0-9]{64}$/);
     // A browser-unsafe MP4 that is otherwise technically complete must not
@@ -491,11 +446,7 @@ describe('StoryWorkingPreviewService', () => {
       throw new Error('storage is not configured');
     });
 
-    const preview = await service.getWorkingPreview(
-      USER as never,
-      WORKSPACE_ID,
-      PROJECT_ID,
-    );
+    const preview = await service.getWorkingPreview(USER as never, PROJECT_ID);
 
     expect(preview.runtime).not.toBeNull();
     expect(preview.diagnostics).toContainEqual(
@@ -515,7 +466,7 @@ describe('StoryWorkingPreviewService', () => {
     );
 
     await expect(
-      service.getWorkingPreview(USER as never, WORKSPACE_ID, PROJECT_ID),
+      service.getWorkingPreview(USER as never, PROJECT_ID),
     ).resolves.toMatchObject({
       runtime: null,
       videoSnapshotHash: null,
@@ -532,7 +483,7 @@ describe('StoryWorkingPreviewService', () => {
 });
 
 describe('StoryWorkingPreviewController', () => {
-  it('forwards the current project and Workspace scope without a revision query', async () => {
+  it('forwards the current project without a revision query', async () => {
     const preview = {
       draftRevision: 9,
       contentHash: 'a'.repeat(64),
@@ -547,13 +498,12 @@ describe('StoryWorkingPreviewController', () => {
     const controller = new StoryWorkingPreviewController(service as never);
 
     await expect(
-      controller.getWorkingPreview(USER as never, WORKSPACE_ID, {
+      controller.getWorkingPreview(USER as never, {
         projectId: PROJECT_ID,
       }),
     ).resolves.toEqual({ code: 200, data: preview });
     expect(service.getWorkingPreview).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       undefined,
     );
@@ -568,14 +518,12 @@ describe('StoryWorkingPreviewController', () => {
 
     void controller.getWorkingPreview(
       USER as never,
-      WORKSPACE_ID,
       { projectId: PROJECT_ID },
       { chapterId },
     );
 
     expect(service.getWorkingPreview).toHaveBeenCalledWith(
       USER,
-      WORKSPACE_ID,
       PROJECT_ID,
       chapterId,
     );

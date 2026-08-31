@@ -45,6 +45,25 @@ const STORY_OWNERSHIP = {
     chapterId: 'dddddddd-1111-4111-8111-111111111111',
   },
 };
+const EMPTY_STORY_PRODUCTION_STATE = {
+  projectId: ATTACKER_PROJECT,
+  chapterId: '11111111-1111-4111-8111-111111111111',
+  profile: { status: 'missing' as const },
+  script: {
+    status: 'missing' as const,
+    documentId: null,
+    sequence: null,
+  },
+  plotTree: { status: 'missing' as const, nodeCount: 0 },
+  assets: { status: 'missing' as const, currentCount: 0, staleCount: 0 },
+  storyboard: {
+    status: 'missing' as const,
+    sequenceCount: 0,
+    staleCount: 0,
+    missingPlotNodeIds: [],
+  },
+  ready: false,
+};
 
 function pendingApprovalSnapshot(
   toolId = 'characters.upsert',
@@ -120,6 +139,7 @@ function makeService(overrides?: {
   conversationConflicts?: boolean;
   projectKind?: 'platform' | 'story';
   latestStoryRun?: { id: string; status: 'cancelled' | 'authoring' } | null;
+  storyProductionState?: typeof EMPTY_STORY_PRODUCTION_STATE;
 }) {
   let reservedStart: Record<string, unknown> | null = null;
   const worker = {
@@ -311,6 +331,13 @@ function makeService(overrides?: {
       assistantText: 'Story authoring was stopped.',
     }),
   };
+  const storyProductionPlans = {
+    getProductionState: jest
+      .fn()
+      .mockResolvedValue(
+        overrides?.storyProductionState ?? EMPTY_STORY_PRODUCTION_STATE,
+      ),
+  };
   const runStarts = {
     dispatch: jest.fn().mockImplementation((): Promise<unknown> => {
       if (!reservedStart) throw new Error('Start was not reserved');
@@ -332,6 +359,8 @@ function makeService(overrides?: {
     attachments as never,
     { resolve: jest.fn().mockResolvedValue({ skills: [] }) } as never,
     storyAgentRuns as never,
+    storyProductionPlans as never,
+    { cancelAgentHandoff: jest.fn() } as never,
     runStarts as never,
     runContinuations as never,
   );
@@ -343,19 +372,27 @@ function makeService(overrides?: {
     realtimeTokens,
     attachments,
     storyAgentRuns,
+    storyProductionPlans,
     runStarts,
     runContinuations,
   };
 }
 
 describe('Story authoring model context', () => {
-  it('marks a cancelled background run as terminal instead of active', () => {
+  it('marks a cancelled background run as terminal and exposes canonical empty state', () => {
     const context = storyAuthoringModelContext({
-      id: '11111111-1111-4111-8111-111111111111',
-      status: 'cancelled',
+      latestRun: {
+        id: '11111111-1111-4111-8111-111111111111',
+        status: 'cancelled',
+      },
+      productionState: EMPTY_STORY_PRODUCTION_STATE,
     });
     expect(context).toContain('"status":"cancelled"');
     expect(context).toContain('authoringActive=false');
+    expect(context).toContain(
+      'canonicalProductionState={"profile":"missing","script":"missing","plot":"missing","assets":"missing","storyboard":"missing","ready":false}',
+    );
+    expect(context).toContain('chapterHasNoScript=true');
     expect(context).toContain('does not block a new create request');
   });
 });
@@ -1106,6 +1143,7 @@ describe('run-scoped authorization', () => {
         projectId: VICTIM.projectId,
         conversationId: VICTIM.conversationId,
         modelProfileId: 'qwen-plus',
+        experience: 'mobile_h5',
       },
     );
 
@@ -1121,6 +1159,7 @@ describe('run-scoped authorization', () => {
       responseId: APPROVAL_RESPONSE_ID,
       decision: 'approve',
       ...APPROVAL_DISPLAY,
+      experience: 'mobile_h5',
     });
     expect(result.status).toBe('waiting_for_external');
   });
@@ -1263,13 +1302,14 @@ describe('run-scoped authorization', () => {
     );
   });
 
-  it('passes only the validated Story chapter scope to the worker', async () => {
+  it('preserves the validated mobile H5 Story surface for the worker', async () => {
     const cancelledRunId = '99999999-9999-4999-8999-999999999999';
-    const { service, worker, projects, storyAgentRuns } = makeService({
-      projectKind: 'story',
-      conversationConflicts: false,
-      latestStoryRun: { id: cancelledRunId, status: 'cancelled' },
-    });
+    const { service, worker, projects, storyAgentRuns, storyProductionPlans } =
+      makeService({
+        projectKind: 'story',
+        conversationConflicts: false,
+        latestStoryRun: { id: cancelledRunId, status: 'cancelled' },
+      });
     await service.startRun(ATTACKER, {
       ...START_IDENTITIES,
       projectId: ATTACKER_PROJECT,
@@ -1278,6 +1318,7 @@ describe('run-scoped authorization', () => {
       workbenchMode: 'story',
       workbenchContext: {
         chapterId: '11111111-1111-4111-8111-111111111111',
+        experience: 'mobile_h5',
       },
     });
     expect(projects.requireStoryWorkbenchContext).toHaveBeenCalledWith(
@@ -1290,16 +1331,22 @@ describe('run-scoped authorization', () => {
       ATTACKER_PROJECT,
       '11111111-1111-4111-8111-111111111111',
     );
+    expect(storyProductionPlans.getProductionState).toHaveBeenCalledWith(
+      ATTACKER,
+      ATTACKER_PROJECT,
+      '11111111-1111-4111-8111-111111111111',
+    );
     expect(worker.startRun).toHaveBeenCalledWith(
       expect.objectContaining({
         projectKind: 'story',
         workbenchMode: 'story',
         workbenchContext: {
           chapterId: '11111111-1111-4111-8111-111111111111',
+          experience: 'mobile_h5',
         },
         modelContext: storyAuthoringModelContext({
-          id: cancelledRunId,
-          status: 'cancelled',
+          latestRun: { id: cancelledRunId, status: 'cancelled' },
+          productionState: EMPTY_STORY_PRODUCTION_STATE,
         }),
       }),
     );

@@ -22,8 +22,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { isOperationOnlyModel } from "@/lib/canvas-authoring/generation-api";
-import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import {
   createStoryProductionIdempotencyKey,
   createStoryStoryboardClipGeneration,
@@ -33,7 +31,7 @@ import {
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { StoryPromptMentionField, useStoryAssetMentions } from "./story-prompt-mention-field";
-import { useStoryProductionSettingsStore } from "../_stores/story-production-settings-store";
+import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
  * Detail dialog for one Storyboard clip — the clip-side twin of the Asset Spec
@@ -44,43 +42,40 @@ import { useStoryProductionSettingsStore } from "../_stores/story-production-set
 export function StoryClipDetailDialog({
   clip,
   sequenceId,
-  workspaceId,
   projectId,
   chapterId,
   open,
   onOpenChange,
+  editable = true,
 }: {
   clip: StoryStoryboardClip;
   sequenceId: string;
-  workspaceId: string;
   projectId: string;
   chapterId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** False while the aggregate Storyboard stage is stale; inspection stays available. */
+  editable?: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage.detailDialog");
   const queryClient = useQueryClient();
-  const catalog = useAiCatalog();
-  const models = usableModelsByModality(catalog.data, clip.kind).filter(
-    (model) => !isOperationOnlyModel(model) && !/hunyuan|panorama/i.test(model.id)
-  );
-  const pageDefault = useStoryProductionSettingsStore((state) => state[clip.kind].selection);
-  const mentions = useStoryAssetMentions(workspaceId, projectId, chapterId);
+  const defaults = useStoryProductionGenerationDefaults(projectId, clip.kind);
+  const models = defaults.models;
+  const mentions = useStoryAssetMentions(projectId, chapterId);
   const savedPrompt = (clip.kind === "image" ? clip.imagePrompt : clip.videoPrompt) ?? "";
   const [prompt, setPrompt] = useState(savedPrompt);
   // null = follow the page-level default until the creator picks explicitly.
   const [modelId, setModelId] = useState<string | null>(null);
-  const effectiveModelId = modelId ?? pageDefault?.modelId ?? models[0]?.id ?? null;
+  const effectiveModelId = modelId ?? defaults.model?.id ?? null;
   const promptDirty = prompt.trim() !== savedPrompt;
 
   const invalidateStoryboard = () =>
     queryClient.invalidateQueries({
-      queryKey: storyProductionKeys.storyboard(workspaceId, projectId, chapterId),
+      queryKey: storyProductionKeys.storyboard(projectId, chapterId),
     });
 
   const patchPrompt = () =>
     patchStoryStoryboardClip(
-      workspaceId,
       projectId,
       chapterId,
       sequenceId,
@@ -116,7 +111,6 @@ export function StoryClipDetailDialog({
       }
       const model = models.find((candidate) => candidate.id === effectiveModelId);
       return createStoryStoryboardClipGeneration(
-        workspaceId,
         projectId,
         chapterId,
         sequenceId,
@@ -170,7 +164,7 @@ export function StoryClipDetailDialog({
           <StoryPromptMentionField
             id={`clip-detail-prompt-${clip.id}`}
             value={prompt}
-            disabled={busy}
+            disabled={busy || !editable}
             onChange={setPrompt}
             mentions={mentions}
           />
@@ -180,7 +174,7 @@ export function StoryClipDetailDialog({
           <Select
             value={effectiveModelId ?? undefined}
             onValueChange={setModelId}
-            disabled={busy || models.length === 0}
+            disabled={busy || !editable || models.length === 0}
           >
             <SelectTrigger id={`clip-detail-model-${clip.id}`} className="w-full">
               <SelectValue />
@@ -199,28 +193,32 @@ export function StoryClipDetailDialog({
           <Button type="button" variant="ghost" disabled={busy} onClick={() => onOpenChange(false)}>
             {t("close")}
           </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={!promptDirty || busy}
-            loading={saveMutation.isPending}
-            onClick={() => saveMutation.mutate()}
-          >
-            {t("save")}
-          </Button>
-          <Button
-            type="button"
-            disabled={busy}
-            loading={generateMutation.isPending}
-            onClick={() => generateMutation.mutate()}
-          >
-            {generateMutation.isPending ? (
-              <IconLoader2 className="animate-spin" />
-            ) : (
-              <IconSparkles />
-            )}
-            {t("generate")}
-          </Button>
+          {editable ? (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!promptDirty || busy}
+                loading={saveMutation.isPending}
+                onClick={() => saveMutation.mutate()}
+              >
+                {t("save")}
+              </Button>
+              <Button
+                type="button"
+                disabled={busy}
+                loading={generateMutation.isPending}
+                onClick={() => generateMutation.mutate()}
+              >
+                {generateMutation.isPending ? (
+                  <IconLoader2 className="animate-spin" />
+                ) : (
+                  <IconSparkles />
+                )}
+                {t("generate")}
+              </Button>
+            </>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>

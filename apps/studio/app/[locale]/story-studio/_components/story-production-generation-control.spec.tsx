@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StoryLatestGeneration, StoryProductionGeneration } from "@/lib/story-production-api";
+import type {
+  StoryCreativeMediaVersion,
+  StoryLatestGeneration,
+  StoryProductionGeneration,
+} from "@/lib/story-production-api";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
 const apiMocks = vi.hoisted(() => ({
@@ -72,6 +76,15 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.getAsset).not.toHaveBeenCalled();
   });
 
+  it("keeps stale production targets inspectable without exposing generation actions", async () => {
+    await renderControl(assetTarget(null), false);
+
+    expect(button("generate")).toBeNull();
+    expect(button("retry")).toBeNull();
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
+    expect(apiMocks.retryAsset).not.toHaveBeenCalled();
+  });
+
   it("submits one default command even when the Generate button is clicked twice rapidly", async () => {
     const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
     apiMocks.createAsset.mockResolvedValue(accepted);
@@ -85,13 +98,31 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(1));
     expect(apiMocks.createAsset).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
       expect.stringMatching(/^story-generate:/),
       { expectedVersion: 3 }
     );
+  });
+
+  it("shows a just-completed generation while the authoritative target projection refreshes", async () => {
+    const completed = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [mediaVersion("new-media", "https://media.example/new.jpg")];
+    apiMocks.createAsset.mockResolvedValue(completed);
+    apiMocks.getAsset.mockResolvedValue(completed);
+    await renderControl(assetTarget(null));
+
+    await act(async () => button("generate")?.click());
+
+    await vi.waitFor(() => {
+      const image = container.querySelector<HTMLImageElement>('img[alt="Production target"]');
+      expect(image?.getAttribute("src")).toBe("https://media.example/new.jpg");
+    });
   });
 
   it("resumes an in-flight clip generation from the authoritative latest pointer and cancels it", async () => {
@@ -109,7 +140,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
     expect(apiMocks.getClip).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -121,7 +151,6 @@ describe("StoryProductionGenerationControl", () => {
     await act(async () => button("cancel")?.click());
     await vi.waitFor(() => expect(apiMocks.cancelClip).toHaveBeenCalledTimes(1));
     expect(apiMocks.cancelClip).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -145,7 +174,6 @@ describe("StoryProductionGenerationControl", () => {
 
     await vi.waitFor(() => expect(apiMocks.retryAsset).toHaveBeenCalledTimes(1));
     expect(apiMocks.retryAsset).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -190,7 +218,6 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.retryClip).not.toHaveBeenCalled();
     expect(apiMocks.createClip).not.toHaveBeenCalled();
     expect(apiMocks.retryClipAttachment).toHaveBeenCalledWith(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -216,29 +243,97 @@ describe("StoryProductionGenerationControl", () => {
     const keys = invalidate.mock.calls.map(([filters]) => filters?.queryKey);
     expect(keys).toEqual(
       expect.arrayContaining([
-        ["story-studio", "production-state", "workspace-1", "project-1", "chapter-1"],
-        ["story-studio", "asset-specs", "workspace-1", "project-1", "chapter-1"],
-        ["story-studio", "storyboard", "workspace-1", "project-1", "chapter-1"],
+        ["story-studio", "production-state", "project-1", "chapter-1"],
+        ["story-studio", "asset-specs", "project-1", "chapter-1"],
+        ["story-studio", "storyboard", "project-1", "chapter-1"],
       ])
     );
     expect(keys.flat()).not.toContain("chapter-2");
   });
 
+  it("shows manually selected media instead of an older completed generation result", async () => {
+    const completed = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [
+      mediaVersion("generated-media", "https://media.example/generated.jpg"),
+    ];
+    apiMocks.getAsset.mockResolvedValue(completed);
+
+    await renderControl(
+      assetTarget(latest(completed)),
+      true,
+      mediaVersion("replacement-media", "https://media.example/replacement.jpg")
+    );
+
+    await vi.waitFor(() => expect(apiMocks.getAsset).toHaveBeenCalled());
+    const image = container.querySelector<HTMLImageElement>('img[alt="Production target"]');
+    expect(image?.getAttribute("src")).toBe("https://media.example/replacement.jpg");
+  });
+
+  it("does not present a completed output from an older target version as current media", async () => {
+    const completed = generation({
+      kind: "storyboard_clip",
+      id: "clip-1",
+      sequenceId: "sequence-1",
+    });
+    completed.targetVersion = 2;
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [
+      mediaVersion("stale-generated-media", "https://media.example/stale-generated.jpg"),
+    ];
+    apiMocks.getClip.mockResolvedValue(completed);
+
+    await renderControl(clipTarget(latest(completed)));
+
+    await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
+    expect(container.querySelector<HTMLImageElement>('img[alt="Production target"]')).toBeNull();
+    expect(button("generate")).not.toBeNull();
+  });
+
+  it("does not revive unselected generation history when the target still has no media", async () => {
+    const completed = generation({
+      kind: "storyboard_clip",
+      id: "clip-1",
+      sequenceId: "sequence-1",
+    });
+    completed.aiJob.status = "completed";
+    completed.aiJob.progress = 1;
+    completed.materialization.status = "completed";
+    completed.materialization.materializedAt = "2026-08-21T00:01:00.000Z";
+    completed.mediaVersions = [
+      mediaVersion("unselected-history", "https://media.example/unselected-history.jpg"),
+    ];
+    apiMocks.getClip.mockResolvedValue(completed);
+
+    await renderControl(clipTarget(latest(completed)));
+
+    await vi.waitFor(() => expect(apiMocks.getClip).toHaveBeenCalled());
+    expect(container.querySelector<HTMLImageElement>('img[alt="Production target"]')).toBeNull();
+  });
+
   async function renderControl(
-    target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>
+    target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>,
+    allowGeneration = true,
+    selectedMedia: StoryCreativeMediaVersion | null = null
   ) {
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
           <StoryProductionGenerationControl
             scope={{
-              workspaceId: "workspace-1",
               projectId: "project-1",
               chapterId: "chapter-1",
             }}
             target={target}
             label="Production target"
-            selectedMedia={null}
+            selectedMedia={selectedMedia}
+            allowGeneration={allowGeneration}
           />
         </QueryClientProvider>
       );
@@ -253,6 +348,25 @@ describe("StoryProductionGenerationControl", () => {
     );
   }
 });
+
+function mediaVersion(id: string, previewUrl: string): StoryCreativeMediaVersion {
+  return {
+    id,
+    versionNumber: 1,
+    mediaAssetId: `${id}-asset`,
+    mediaKind: "image",
+    mediaStatus: "ready",
+    preferredVariantId: null,
+    previewUrl,
+    thumbnailUrl: previewUrl,
+    width: 1600,
+    height: 900,
+    durationSeconds: null,
+    mimeType: "image/jpeg",
+    sourceFingerprint: id,
+    createdAt: "2026-08-21T00:00:00.000Z",
+  };
+}
 
 function assetTarget(latestGeneration: StoryLatestGeneration | null) {
   return {

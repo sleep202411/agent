@@ -9,14 +9,17 @@ import { StoryProjectRail } from "./story-project-rail";
 const navigation = vi.hoisted(() => ({
   segment: "script",
   push: vi.fn(),
+  replace: vi.fn(),
 }));
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+  useLocale: () => "en-US",
 }));
 
 vi.mock("next/navigation", () => ({
   useSelectedLayoutSegment: () => navigation.segment,
+  useSearchParams: () => new URLSearchParams("chapter=chapter-1"),
 }));
 
 vi.mock("@/i18n/navigation", () => ({
@@ -25,7 +28,8 @@ vi.mock("@/i18n/navigation", () => ({
       {children}
     </a>
   ),
-  useRouter: () => ({ push: navigation.push }),
+  usePathname: () => "/story-studio/projects/project-1/script",
+  useRouter: () => ({ push: navigation.push, replace: navigation.replace }),
 }));
 
 describe("StoryProjectRail", () => {
@@ -36,6 +40,7 @@ describe("StoryProjectRail", () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     navigation.segment = "script";
     navigation.push.mockReset();
+    navigation.replace.mockReset();
     useStoryProjectUiStore.setState({
       sidePanel: null,
       shareOpen: false,
@@ -60,6 +65,7 @@ describe("StoryProjectRail", () => {
       "sidebar.world",
       "sidebar.catalog",
       "chapters.action",
+      "label",
       "share",
     ]);
     expect(items.every((item) => !(item instanceof HTMLButtonElement) || !item.disabled)).toBe(

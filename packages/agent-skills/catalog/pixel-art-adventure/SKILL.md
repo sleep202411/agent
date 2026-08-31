@@ -31,6 +31,14 @@ Render on a consistent pixel grid with crisp nearest-neighbor edges, disciplined
 
 <!-- fizzdragon:policy:image:end -->
 
+## Video Generation
+
+<!-- fizzdragon:policy:video:start -->
+
+Animate on one stable pixel grid with deliberate frame timing, readable key poses, crisp nearest-neighbor edges, coherent palette ramps, tile-aware parallax, and restrained camera movement aligned to whole pixels. Preserve sprite scale and silhouette; avoid subpixel shimmer, anti-aliasing, interpolation blur, or mixed-resolution effects.
+
+<!-- fizzdragon:policy:video:end -->
+
 ## Boundaries
 
 - Do not override explicit user requirements, approved references, permissions, safety policy, model capability, or tool contracts.

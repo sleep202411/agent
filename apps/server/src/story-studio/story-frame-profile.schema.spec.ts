@@ -1,3 +1,4 @@
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from '@repo/shared';
 import {
   CreateStoryProjectSchema,
   PatchStoryProjectSchema,
@@ -34,7 +35,7 @@ describe('StoryProject frame profile contract', () => {
         expectedProjectVersion: 0,
         frameProfile: 'portrait_9_16',
         durationPreset: 'short_5_15',
-        visualStyle: 'cinematic_realism',
+        visualStyle: 'cinematic-realism',
         confirmCreativeProfile: true,
       }).success,
     ).toBe(true);
@@ -46,24 +47,21 @@ describe('StoryProject frame profile contract', () => {
       'medium_15_30',
       'long_30_60',
     ]);
-    expect(StoryVisualStyleSchema.options).toEqual([
-      'cinematic_realism',
-      'stylized_3d',
-      'graphic_novel',
-      'anime_cinematic',
-    ]);
+    expect(StoryVisualStyleSchema.options).toEqual(
+      STORY_VISUAL_STYLE_SKILL_SLUGS,
+    );
     expect(
       PatchStoryProjectSchema.parse({
         expectedProjectVersion: 0,
         frameProfile: 'landscape_16_9',
         durationPreset: 'short_5_15',
-        visualStyle: 'cinematic_realism',
+        visualStyle: 'cinematic-realism',
         confirmCreativeProfile: true,
       }),
     ).toMatchObject({
       frameProfile: 'landscape_16_9',
       durationPreset: 'short_5_15',
-      visualStyle: 'cinematic_realism',
+      visualStyle: 'cinematic-realism',
       confirmCreativeProfile: true,
     });
     expect(
@@ -77,7 +75,7 @@ describe('StoryProject frame profile contract', () => {
       PatchStoryProjectSchema.safeParse({
         expectedProjectVersion: 0,
         frameProfile: 'landscape_16_9',
-        visualStyle: 'cinematic_realism',
+        visualStyle: 'cinematic-realism',
         confirmCreativeProfile: true,
       }).success,
     ).toBe(false);

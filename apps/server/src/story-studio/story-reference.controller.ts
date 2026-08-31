@@ -21,7 +21,6 @@ import {
   StoryProjectIdParamsSchema,
   StoryReferenceSlotParamsSchema,
   StoryReferenceVersionParamsSchema,
-  StoryUuidSchema,
   type ApproveStoryReferenceVersionInput,
   type CreateStoryReferenceReviewInput,
   type CreateStoryReferenceSlotsBatchInput,
@@ -40,17 +39,12 @@ export class StoryReferenceController {
   @Get(':projectId/reference-slots')
   async listSlots(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id') workspace: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
   ) {
     return {
       code: 200,
-      data: await this.references.listSlots(
-        user,
-        requiredWorkspaceId(workspace),
-        params.projectId,
-      ),
+      data: await this.references.listSlots(user, params.projectId),
     };
   }
 
@@ -58,7 +52,6 @@ export class StoryReferenceController {
   @HttpCode(HttpStatus.CREATED)
   async createSlots(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id') workspace: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryProjectIdParamsSchema))
     params: StoryProjectIdParams,
     @Body(new ZodValidationPipe(CreateStoryReferenceSlotsBatchSchema))
@@ -66,19 +59,13 @@ export class StoryReferenceController {
   ) {
     return {
       code: 200,
-      data: await this.references.createSlots(
-        user,
-        requiredWorkspaceId(workspace),
-        params.projectId,
-        body,
-      ),
+      data: await this.references.createSlots(user, params.projectId, body),
     };
   }
 
   @Put(':projectId/reference-slots/:slotId')
   async putSlot(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id') workspace: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryReferenceSlotParamsSchema))
     params: StoryReferenceSlotParams,
     @Body(new ZodValidationPipe(PutStoryReferenceSlotSchema))
@@ -88,7 +75,6 @@ export class StoryReferenceController {
       code: 200,
       data: await this.references.putSlot(
         user,
-        requiredWorkspaceId(workspace),
         params.projectId,
         params.slotId,
         body,
@@ -99,7 +85,6 @@ export class StoryReferenceController {
   @Get(':projectId/reference-slots/:slotId/versions')
   async listVersions(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id') workspace: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryReferenceSlotParamsSchema))
     params: StoryReferenceSlotParams,
   ) {
@@ -107,7 +92,6 @@ export class StoryReferenceController {
       code: 200,
       data: await this.references.listVersions(
         user,
-        requiredWorkspaceId(workspace),
         params.projectId,
         params.slotId,
       ),
@@ -118,7 +102,6 @@ export class StoryReferenceController {
   @HttpCode(HttpStatus.CREATED)
   async createVersion(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id') workspace: string | string[] | undefined,
     @Headers('idempotency-key') idempotency: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryReferenceSlotParamsSchema))
     params: StoryReferenceSlotParams,
@@ -129,7 +112,6 @@ export class StoryReferenceController {
       code: 200,
       data: await this.references.createVersion(
         user,
-        requiredWorkspaceId(workspace),
         params.projectId,
         params.slotId,
         body,
@@ -144,7 +126,6 @@ export class StoryReferenceController {
   @HttpCode(HttpStatus.CREATED)
   async reviewVersion(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id') workspace: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryReferenceVersionParamsSchema))
     params: StoryReferenceVersionParams,
     @Body(new ZodValidationPipe(CreateStoryReferenceReviewSchema))
@@ -154,7 +135,6 @@ export class StoryReferenceController {
       code: 200,
       data: await this.references.reviewVersion(
         user,
-        requiredWorkspaceId(workspace),
         params.projectId,
         params.slotId,
         params.referenceVersionId,
@@ -167,7 +147,6 @@ export class StoryReferenceController {
   @HttpCode(HttpStatus.CREATED)
   async approveVersion(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id') workspace: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryReferenceSlotParamsSchema))
     params: StoryReferenceSlotParams,
     @Body(new ZodValidationPipe(ApproveStoryReferenceVersionSchema))
@@ -177,29 +156,12 @@ export class StoryReferenceController {
       code: 200,
       data: await this.references.approveVersion(
         user,
-        requiredWorkspaceId(workspace),
         params.projectId,
         params.slotId,
         body,
       ),
     };
   }
-}
-
-function requiredWorkspaceId(value: string | string[] | undefined): string {
-  const normalized = firstHeader(value)?.trim();
-  const parsed = StoryUuidSchema.safeParse(normalized);
-  if (!parsed.success) {
-    throw new BadRequestException({
-      code: normalized
-        ? 'WORKSPACE_HEADER_INVALID'
-        : 'WORKSPACE_HEADER_REQUIRED',
-      message: normalized
-        ? 'x-fizz-workspace-id must be a valid UUID.'
-        : 'x-fizz-workspace-id is required.',
-    });
-  }
-  return parsed.data;
 }
 
 function requiredIdempotencyKey(value: string | string[] | undefined): string {

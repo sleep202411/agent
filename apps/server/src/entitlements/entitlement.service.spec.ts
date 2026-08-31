@@ -5,7 +5,10 @@ import {
   WorkspaceType,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
-import { EntitlementService } from './entitlement.service';
+import {
+  COMMUNITY_MEMBERSHIP_PLAN_KEY,
+  EntitlementService,
+} from './entitlement.service';
 import { DEFAULT_FREE_BENEFITS } from './membership-benefits';
 import {
   DEFAULT_TEAM_SEAT_POLICY,
@@ -279,14 +282,34 @@ describe('EntitlementService.grantComplimentary', () => {
     );
   });
 
-  it('rejects a non-canonical plan key before looking up a plan row', async () => {
+  it('rejects an unknown plan key on the plan row, not on the compute rank table', async () => {
     const prisma = grantPrismaMock(null);
     const service = new EntitlementService(prisma as never);
 
+    // The rank table ranks COMPUTE tiers; it is not the list of grantable
+    // plans. Gating writes on it rejected community_membership — a real plan
+    // with a real row — so billing_membership_plans is the only authority here.
     await expect(
       service.grantComplimentary({ ...input, planKey: 'unknown_plan' }),
-    ).rejects.toThrow('Unknown compute membership plan key: unknown_plan');
+    ).rejects.toMatchObject({
+      response: { code: 'MEMBERSHIP_PLAN_NOT_GRANTABLE' },
+    });
     expect(prisma.entitlementGrant.upsert).not.toHaveBeenCalled();
+  });
+
+  it('grants community membership, which the compute rank table does not list', async () => {
+    const prisma = grantPrismaMock(
+      plan({ planKey: COMMUNITY_MEMBERSHIP_PLAN_KEY }),
+    );
+    const service = new EntitlementService(prisma as never);
+
+    await expect(
+      service.grantComplimentary({
+        ...input,
+        planKey: COMMUNITY_MEMBERSHIP_PLAN_KEY,
+      }),
+    ).resolves.toBeDefined();
+    expect(prisma.entitlementGrant.upsert).toHaveBeenCalled();
   });
 
   it('refuses a canonical plan with no active row instead of granting free benefits', async () => {

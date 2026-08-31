@@ -1,4 +1,0 @@
-interface:
-  display_name: "Stop-motion Clay Cinema"
-  short_description: "Handcrafted clay characters, miniature sets, practical lighting "
-  default_prompt: "Use $stop-motion-clay-cinema to apply this creative direction to my request."

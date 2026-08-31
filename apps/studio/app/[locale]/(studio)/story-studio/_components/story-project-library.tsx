@@ -19,7 +19,6 @@ import {
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { ShareDialog } from "@/app/_components/share-dialog";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -46,7 +45,6 @@ import {
   archiveStoryProject,
   createStoryProject,
   listStoryProjects,
-  listJoinedStoryProjects,
   storyApiErrorMessage,
   updateStoryProject,
   type StoryProjectSummary,
@@ -62,32 +60,19 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
   const locale = useLocale();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { activeWorkspace, workspaces, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<StoryProjectSummary | null>(null);
   const [archiving, setArchiving] = useState<StoryProjectSummary | null>(null);
   const [sharing, setSharing] = useState<StoryProjectSummary | null>(null);
-  const [tab, setTab] = useState<"all" | "joined">("all");
 
   const projectsQuery = useQuery({
-    queryKey: [...STORY_PROJECTS_QUERY, workspaceId],
-    queryFn: () => listStoryProjects(workspaceId as string, { limit: 100 }),
-    enabled: Boolean(workspaceId),
+    queryKey: STORY_PROJECTS_QUERY,
+    queryFn: () => listStoryProjects({ limit: 100 }),
     retry: false,
   });
 
-  // Spans every tenant, so it is deliberately NOT keyed on the active
-  // workspace: switching workspaces must not refetch or invalidate it.
-  const joinedQuery = useQuery({
-    queryKey: [...STORY_PROJECTS_QUERY, "joined"],
-    queryFn: () => listJoinedStoryProjects({ limit: 100 }),
-    retry: false,
-  });
-
-  const joined = joinedQuery.data?.items ?? [];
   const projects = projectsQuery.data?.items ?? [];
-  const isLoading = workspaceLoading || (Boolean(workspaceId) && projectsQuery.isLoading);
+  const isLoading = projectsQuery.isLoading;
   const featuredProject = projects.find(
     (project) =>
       project.title.trim() === JINLING_SOURCE_TITLE &&
@@ -122,7 +107,6 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
             <Button
               type="button"
               onClick={() => setCreateOpen(true)}
-              disabled={!workspaceId}
               className="h-10 rounded-xl bg-[#E52227] px-4 text-white hover:bg-[#f02b30]"
             >
               <IconPlus className="size-4" stroke={2} />
@@ -135,29 +119,6 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
               <h3 id="story-projects-heading" className="sr-only">
                 {t("projects.title")}
               </h3>
-              {joined.length > 0 ? (
-                // Only rendered once you have actually been invited somewhere.
-                // A permanently empty tab would be noise for the majority who
-                // only ever work in their own workspace.
-                <div role="tablist" aria-label={t("projects.title")} className="flex gap-1">
-                  {(["all", "joined"] as const).map((value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      role="tab"
-                      aria-selected={tab === value}
-                      onClick={() => setTab(value)}
-                      className={
-                        tab === value
-                          ? "rounded-lg bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white"
-                          : "rounded-lg px-3 py-1.5 text-[12px] font-medium text-white/48 transition hover:text-white/72"
-                      }
-                    >
-                      {value === "all" ? t("projects.tabAll") : t("projects.tabJoined")}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
               {projectsQuery.isError ? (
                 <Button variant="ghost" size="sm" onClick={() => void projectsQuery.refetch()}>
                   <IconRefresh className="size-4" />
@@ -166,24 +127,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
               ) : null}
             </div>
 
-            {tab === "joined" ? (
-              <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-                {joined.map((project) => (
-                  <StoryProjectCard
-                    key={project.id}
-                    project={project}
-                    locale={locale}
-                    workspaceLabel={
-                      workspaces.find((w) => w.id === project.workspaceId)?.name ??
-                      t("projects.otherWorkspace")
-                    }
-                    onEdit={() => undefined}
-                    onShare={() => undefined}
-                    onArchive={() => undefined}
-                  />
-                ))}
-              </div>
-            ) : isLoading ? (
+            {isLoading ? (
               <ProjectSkeletons />
             ) : projectsQuery.isError ? (
               <FrostedPanel className="mt-5 flex min-h-48 flex-col items-center justify-center px-6 text-center">
@@ -214,7 +158,6 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
         <CreateProjectDialog
           open={createOpen}
           onOpenChange={setCreateOpen}
-          workspaceId={workspaceId}
           defaultLocale={locale}
           onCreated={(project) => {
             void refresh();
@@ -225,7 +168,6 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
           <EditProjectDialog
             key={`${editing.id}:${editing.projectVersion}`}
             project={editing}
-            workspaceId={workspaceId as string}
             onOpenChange={(open) => !open && setEditing(null)}
             onSaved={() => {
               setEditing(null);
@@ -244,7 +186,6 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
         {archiving ? (
           <ArchiveProjectDialog
             project={archiving}
-            workspaceId={workspaceId as string}
             onOpenChange={(open) => !open && setArchiving(null)}
             onArchived={() => {
               setArchiving(null);
@@ -263,21 +204,12 @@ function StoryProjectCard({
   onEdit,
   onShare,
   onArchive,
-  workspaceLabel = null,
 }: {
   project: StoryProjectSummary;
   locale: string;
   onEdit: () => void;
   onShare: () => void;
   onArchive: () => void;
-  /**
-   * Set only for a project in someone else's workspace. Its presence also
-   * suppresses the action menu: every dialog behind it mutates through the
-   * ACTIVE workspace, which for a joined project is the wrong tenant, so those
-   * actions would 404 rather than edit. Opening the project switches workspace
-   * first, and the actions come back once you are there.
-   */
-  workspaceLabel?: string | null;
 }) {
   const t = useTranslations("storyStudio");
   const canEdit = project.capabilities.includes("story.edit");
@@ -338,11 +270,6 @@ function StoryProjectCard({
         </div>
 
         <div className="p-3.5">
-          {workspaceLabel ? (
-            <p className="mb-1 truncate text-[10px] font-semibold tracking-[0.08em] text-white/34 uppercase">
-              {workspaceLabel}
-            </p>
-          ) : null}
           <h3 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-white">
             {project.title}
           </h3>
@@ -370,7 +297,7 @@ function StoryProjectCard({
         </div>
       </Link>
 
-      {!workspaceLabel && (canEdit || canAdmin) ? (
+      {canEdit || canAdmin ? (
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label={t("actions.projectMenu")}
@@ -461,13 +388,11 @@ function EmptyProjects({ onCreate }: { onCreate: () => void }) {
 function CreateProjectDialog({
   open,
   onOpenChange,
-  workspaceId,
   defaultLocale,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  workspaceId: string | null;
   defaultLocale: string;
   onCreated: (project: StoryProjectSummary) => void;
 }) {
@@ -475,19 +400,15 @@ function CreateProjectDialog({
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const createMutation = useMutation({
-    mutationFn: () => {
-      if (!workspaceId) {
-        throw new Error(t("errors.createProject"));
-      }
-      return createStoryProject(workspaceId, {
+    mutationFn: () =>
+      createStoryProject({
         title: title.trim(),
         summary: summary.trim() || null,
         // Provisional only. FizzAgent confirms the authored story language as
         // part of the creative profile when the creator first asks it to work.
         defaultLocale,
         visibility: "private",
-      });
-    },
+      }),
     onSuccess: (project) => {
       setTitle("");
       setSummary("");
@@ -541,7 +462,7 @@ function CreateProjectDialog({
             size="xl"
             className="sm:min-w-32"
             onClick={() => createMutation.mutate()}
-            disabled={!workspaceId || !title.trim() || createMutation.isPending}
+            disabled={!title.trim() || createMutation.isPending}
           >
             {createMutation.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {t("actions.create")}
@@ -554,12 +475,10 @@ function CreateProjectDialog({
 
 function EditProjectDialog({
   project,
-  workspaceId,
   onOpenChange,
   onSaved,
 }: {
   project: StoryProjectSummary;
-  workspaceId: string;
   onOpenChange: (open: boolean) => void;
   onSaved: () => void;
 }) {
@@ -568,7 +487,7 @@ function EditProjectDialog({
   const [summary, setSummary] = useState(project.summary ?? "");
   const updateMutation = useMutation({
     mutationFn: () =>
-      updateStoryProject(workspaceId, project.id, {
+      updateStoryProject(project.id, {
         expectedProjectVersion: project.projectVersion,
         title: title.trim(),
         summary: summary.trim() || null,
@@ -643,18 +562,16 @@ function EditProjectDialog({
 
 function ArchiveProjectDialog({
   project,
-  workspaceId,
   onOpenChange,
   onArchived,
 }: {
   project: StoryProjectSummary;
-  workspaceId: string;
   onOpenChange: (open: boolean) => void;
   onArchived: () => void;
 }) {
   const t = useTranslations("storyStudio");
   const archiveMutation = useMutation({
-    mutationFn: () => archiveStoryProject(workspaceId, project.id, project.projectVersion),
+    mutationFn: () => archiveStoryProject(project.id, project.projectVersion),
     onSuccess: onArchived,
     onError: (error) => toast.error(storyApiErrorMessage(error, t("errors.archiveProject"))),
   });

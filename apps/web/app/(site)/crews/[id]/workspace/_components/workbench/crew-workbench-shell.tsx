@@ -19,7 +19,7 @@ import type {
   WorkspaceTab,
   WorkspaceTabId,
 } from "@/app/(site)/crews/[id]/workspace/_lib/workspace-tabs";
-import { CrewSwitcherRail } from "./crew-switcher-rail";
+import { CrewSwitcherRail } from "@/app/(site)/crews/_components/crew-switcher-rail";
 
 const RAIL_ICONS: Record<WorkspaceTabId, typeof IconHome> = {
   overview: IconHome,
@@ -57,8 +57,11 @@ export function CrewWorkbenchShell({
   const t = useTranslations("workspace");
   const tw = useTranslations("crewWorkbench");
   return (
-    <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)]">
-      <CrewSwitcherRail currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }} />
+    <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)] min-[1152px]:!grid-cols-[180px_220px_minmax(0,1fr)]">
+      <CrewSwitcherRail
+        currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }}
+        showNames
+      />
 
       <aside
         aria-label={tw("globalNavigation")}

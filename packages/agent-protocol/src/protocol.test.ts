@@ -200,6 +200,99 @@ describe("fizz.agent.v1", () => {
     ).toThrow(/responseId/);
   });
 
+  it("persists domain artifacts by immutable reference and validates lifecycle updates", () => {
+    expect(
+      parseAgentEventDataForWrite("ArtifactCreated", {
+        turnId: uuid,
+        artifactId: uuid,
+        artifact: {
+          kind: "story_stage_proposal",
+          storyAgentRunId: uuid,
+          storyProjectId: uuid,
+          storyChapterId: uuid,
+          workspaceId: uuid,
+          stage: "assets",
+          schemaVersion: "story-asset-proposal-v1",
+        },
+        status: "proposed",
+      })
+    ).toMatchObject({
+      artifact: { kind: "story_stage_proposal", stage: "assets" },
+      status: "proposed",
+    });
+    expect(
+      parseAgentEventDataForWrite("ArtifactUpdated", {
+        turnId: uuid,
+        artifactId: uuid,
+        status: "applied",
+      })
+    ).toMatchObject({ artifactId: uuid, status: "applied" });
+    expect(() =>
+      parseAgentEventDataForWrite("ArtifactUpdated", {
+        turnId: uuid,
+        artifactId: uuid,
+        status: "proposed",
+      })
+    ).toThrow();
+    expect(() =>
+      parseAgentEventDataForWrite("ArtifactCreated", {
+        turnId: uuid,
+        artifactId: uuid,
+        artifact: {
+          kind: "story_stage_proposal",
+          storyAgentRunId: uuid,
+          storyProjectId: uuid,
+          storyChapterId: uuid,
+          workspaceId: uuid,
+          stage: "assets",
+        },
+        status: "proposed",
+      })
+    ).toThrow(/schemaVersion/);
+
+    expect(
+      parseAgentEventDataForWrite("ArtifactCreated", {
+        turnId: uuid,
+        artifactId: uuid,
+        artifact: {
+          kind: "story_generation_batch",
+          generationBatchId: uuid,
+          storyProjectId: uuid,
+          storyChapterId: uuid,
+          schemaVersion: "story-generation-batch-artifact/v1",
+        },
+        status: "active",
+      })
+    ).toMatchObject({
+      artifact: { kind: "story_generation_batch", generationBatchId: uuid },
+      status: "active",
+    });
+    expect(
+      parseAgentEventDataForWrite("ArtifactCreated", {
+        turnId: uuid,
+        artifactId: uuid,
+        artifact: {
+          kind: "story_generation_batch",
+          generationBatchId: uuid,
+          storyProjectId: uuid,
+          storyChapterId: uuid,
+          workspaceId: uuid,
+          schemaVersion: "story-generation-batch-artifact/v1",
+        },
+        status: "active",
+      })
+    ).toMatchObject({
+      artifact: { kind: "story_generation_batch", workspaceId: uuid },
+    });
+    expect(() =>
+      parseAgentEventDataForWrite("ArtifactUpdated", {
+        turnId: uuid,
+        artifactId: uuid,
+        status: "active",
+      })
+    ).toThrow();
+  });
+
   it("persists ordered attachment display metadata without inventing transcript text", () => {
     const attachmentOnly = parseAgentEventDataForWrite("UserMessage", {
       turnId: uuid,

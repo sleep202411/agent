@@ -36,22 +36,74 @@ function fixture() {
       }),
     },
   };
-  const workspacePermissions = {
-    requireWorkspacePresence: jest.fn().mockResolvedValue(undefined),
-    requireWorkspaceRole: jest.fn().mockResolvedValue(undefined),
-  };
   const writeGuard = {
     assertHumanWriteAllowedEarly: jest.fn().mockResolvedValue(undefined),
   };
   return {
-    service: new StoryPermissionService(
-      prisma as never,
-      workspacePermissions as never,
-      writeGuard as never,
-    ),
+    service: new StoryPermissionService(prisma as never, writeGuard as never),
+    prisma,
     writeGuard,
   };
 }
+
+describe('StoryPermissionService project scope', () => {
+  it('authorizes from active Story project membership without a Workspace lookup', async () => {
+    const { service } = fixture();
+
+    await expect(
+      service.requireProject(USER_ID, PROJECT_ID, 'story.read'),
+    ).resolves.toMatchObject({
+      project: { id: PROJECT_ID, workspaceId: WORKSPACE_ID },
+      role: StoryProjectMemberRole.owner,
+    });
+  });
+
+  it('fails closed when the actor is not an active Story project member', async () => {
+    const { service, prisma } = fixture();
+    prisma.storyProject.findFirst.mockResolvedValueOnce(null);
+
+    await expect(
+      service.requireProject(USER_ID, PROJECT_ID, 'story.read'),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_PROJECT_NOT_FOUND' },
+    });
+  });
+
+  it('re-checks only project membership on the authoritative write snapshot', async () => {
+    const { service } = fixture();
+    const query = jest
+      .fn<
+        Promise<Array<{ storyProjectMemberRole: StoryProjectMemberRole }>>,
+        [TemplateStringsArray, ...unknown[]]
+      >()
+      .mockResolvedValue([
+        { storyProjectMemberRole: StoryProjectMemberRole.owner },
+      ]);
+    const tx = {
+      $queryRaw: query,
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue({
+          id: PROJECT_ID,
+          workspaceId: WORKSPACE_ID,
+        }),
+      },
+    };
+
+    await expect(
+      service.requireProjectInTransaction(
+        tx as never,
+        USER_ID,
+        PROJECT_ID,
+        'story.generate',
+      ),
+    ).resolves.toMatchObject({ role: StoryProjectMemberRole.owner });
+
+    const sql = query.mock.calls[0]?.[0].join('') ?? '';
+    expect(sql).toContain('story_project_members');
+    expect(sql).not.toContain('workspace_members');
+    expect(sql).not.toContain('workspaces');
+  });
+});
 
 describe('StoryPermissionService write-lock preflight', () => {
   it.each([

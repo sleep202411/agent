@@ -701,7 +701,7 @@ const CANVAS_DEFAULT_MODE_PRIORITY: Record<FizzAiJobType, readonly FizzAiGenerat
  * falls through to the capability-based policy below.
  */
 const CANVAS_PREFERRED_MODEL_ID: Partial<Record<FizzAiJobType, string>> = {
-  video: "seedance-2-5",
+  video: "wan-3-0",
 };
 
 /** New blank canvas cards should start in reference-friendly modes. */

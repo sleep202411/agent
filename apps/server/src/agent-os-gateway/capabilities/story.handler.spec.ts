@@ -5,6 +5,10 @@ import {
   StoryRemoveInteractionInputSchema,
 } from '@repo/agent-tools';
 import {
+  STORY_VISUAL_STYLE_SKILL_SLUGS,
+  storyVisualStyleSkillBySlug,
+} from '@repo/shared';
+import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   type InteractiveStoryDraftContent,
 } from '../../story-studio/interactive-film.schema';
@@ -65,21 +69,20 @@ const CREATIVE_PROFILE_QUESTIONS = [
   },
   {
     id: 'visual_direction',
-    options: [
-      { value: 'cinematic_realism' },
-      { value: 'stylized_3d' },
-      { value: 'graphic_novel' },
-      { value: 'anime_cinematic' },
-    ],
+    options: STORY_VISUAL_STYLE_SKILL_SLUGS.map((value) => ({ value })),
   },
   {
     id: 'story_language',
     options: [{ value: 'zh-CN' }, { value: 'zh-HK' }, { value: 'en-US' }],
   },
 ] as const;
+const STYLIZED_3D_SKILL = storyVisualStyleSkillBySlug('stylized-3d-cinema')!;
+const CINEMATIC_REALISM_SKILL =
+  storyVisualStyleSkillBySlug('cinematic-realism')!;
 
 describe('StoryAgentCapabilityHandler', () => {
   const handler = new StoryAgentCapabilityHandler(
+    {} as never,
     {} as never,
     {} as never,
     {} as never,
@@ -95,8 +98,141 @@ describe('StoryAgentCapabilityHandler', () => {
     expect(handler.supports('story.addBranch')).toBe(true);
     expect(handler.supports('story.putInteraction')).toBe(true);
     expect(handler.supports('story.removeInteraction')).toBe(true);
+    expect(handler.supports('story.generation.quoteAssets')).toBe(true);
+    expect(handler.supports('story.generation.quoteStoryboard')).toBe(true);
+    expect(handler.supports('story.generation.confirmBatch')).toBe(true);
     expect(handler.supports('characters.upsert')).toBe(false);
     expect(handler.supports('canvas.applyPatch')).toBe(false);
+  });
+
+  it('rejects paid batch confirmation when the approved count or points no longer match', async () => {
+    const requireWrite = jest.fn().mockResolvedValue({
+      workspaceId: '11111111-1111-4111-8111-111111111111',
+    });
+    const confirm = jest.fn();
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {} as never,
+      { requireWrite } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        get: jest.fn().mockResolvedValue({ itemCount: 3, totalPoints: 180 }),
+        confirm,
+      } as never,
+    );
+
+    await expect(
+      scoped.execute({
+        toolId: 'story.generation.confirmBatch',
+        runId: '22222222-2222-4222-8222-222222222222',
+        conversationId: '33333333-3333-4333-8333-333333333333',
+        turnId: '44444444-4444-4444-8444-444444444444',
+        toolCallId: 'confirm-generation-batch-1',
+        actorId: 'creator-1',
+        projectId: '55555555-5555-4555-8555-555555555555',
+        skillResolutionId: '66666666-6666-4666-8666-666666666666',
+        skillVersionIds: [],
+        workbenchContext: {
+          chapterId: '77777777-7777-4777-8777-777777777777',
+        },
+        idempotencyKey: 'confirm-generation-batch-key-1',
+        arguments: {
+          batchId: '88888888-8888-4888-8888-888888888888',
+          expectedVersion: 0,
+          expectedItemCount: 3,
+          expectedTotalPoints: 120,
+        },
+      }),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'STORY_GENERATION_BATCH_APPROVAL_MISMATCH',
+        actualItemCount: 3,
+        actualTotalPoints: 180,
+      },
+    });
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('quotes only the requested asset kind without forwarding absent model fields', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { id: '11111111-1111-4111-8111-111111111111', version: 2 },
+      { id: '22222222-2222-4222-8222-222222222222', version: 4 },
+    ]);
+    const quoteAssets = jest.fn().mockResolvedValue({
+      id: '33333333-3333-4333-8333-333333333333',
+    });
+    const scoped = new StoryAgentCapabilityHandler(
+      { storyAssetSpec: { findMany } } as never,
+      {} as never,
+      {
+        requireWrite: jest.fn().mockResolvedValue({
+          workspaceId: '44444444-4444-4444-8444-444444444444',
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { quoteAssets } as never,
+    );
+
+    await expect(
+      scoped.execute({
+        toolId: 'story.generation.quoteAssets',
+        runId: '55555555-5555-4555-8555-555555555555',
+        conversationId: '66666666-6666-4666-8666-666666666666',
+        turnId: '77777777-7777-4777-8777-777777777777',
+        toolCallId: 'quote-character-assets-1',
+        actorId: 'creator-1',
+        projectId: '88888888-8888-4888-8888-888888888888',
+        skillResolutionId: '99999999-9999-4999-8999-999999999999',
+        skillVersionIds: [],
+        workbenchContext: {
+          chapterId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          experience: 'mobile_h5',
+        },
+        idempotencyKey: 'quote-character-assets-key-1',
+        arguments: {
+          assetKinds: ['character'],
+          outputKind: 'image',
+        },
+      }),
+    ).resolves.toEqual({ id: '33333333-3333-4333-8333-333333333333' });
+
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        storyProjectId: '88888888-8888-4888-8888-888888888888',
+        storyChapterId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        status: 'current',
+        kind: { in: ['character'] },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true, version: true },
+    });
+    expect(quoteAssets).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '88888888-8888-4888-8888-888888888888',
+      'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      'quote-character-assets-key-1',
+      {
+        targets: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            expectedVersion: 2,
+          },
+          {
+            id: '22222222-2222-4222-8222-222222222222',
+            expectedVersion: 4,
+          },
+        ],
+        outputKind: 'image',
+        options: {},
+      },
+      { dispatchMode: 'sequential' },
+    );
   });
 
   it('returns the stable external-job handoff when an idempotent retry already reached proposed', async () => {
@@ -107,13 +243,23 @@ describe('StoryAgentCapabilityHandler', () => {
     const requireWrite = jest.fn().mockResolvedValue({
       workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
     });
+    const getInitialUserMessageText = jest
+      .fn()
+      .mockResolvedValue(
+        'Create the complete interactive film and review every stage through Storyboard.',
+      );
     const scoped = new StoryAgentCapabilityHandler(
-      {} as never,
-      {} as never,
+      {
+        agentOsExternalHandoffRegistration: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      } as never,
+      { getInitialUserMessageText } as never,
       { requireWrite } as never,
       {} as never,
       { createAuthoringRun } as never,
       { fenceBusinessMutationInTx: jest.fn() } as never,
+      {} as never,
       {} as never,
     );
     const input = {
@@ -128,6 +274,7 @@ describe('StoryAgentCapabilityHandler', () => {
       skillVersionIds: [],
       workbenchContext: {
         chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+        experience: 'mobile_h5',
       },
       idempotencyKey:
         '019a034d-36a6-70df-91b1-1d030480f7d4:019a034d-31a5-7d7f-8329-a91739a701b0:call_story_author_1:v1',
@@ -136,6 +283,7 @@ describe('StoryAgentCapabilityHandler', () => {
         summary: 'A final imperial guard chooses whom to save.',
         brief:
           'Create an interactive film set on the final night of Ming rule.',
+        continueThrough: 'storyboard',
         startedMessage:
           'I have the direction and am shaping the interactive-film proposal now.',
         completionMessage:
@@ -165,10 +313,297 @@ describe('StoryAgentCapabilityHandler', () => {
         sourceAgentToolCallId: input.toolCallId,
         sourceStartedMessage: input.arguments.startedMessage,
         sourceCompletionMessage: input.arguments.completionMessage,
+        sourceContinuationPlan: {
+          continueThrough: 'storyboard',
+          title: input.arguments.title,
+          summary: input.arguments.summary,
+          brief: input.arguments.brief,
+          experience: 'mobile_h5',
+        },
       }),
       expect.objectContaining({
-        canonicalizeAndFence: expect.any(Function),
+        canonicalizeAndFence: expect.any(Function) as (
+          ...args: unknown[]
+        ) => unknown,
       }),
+    );
+    expect(getInitialUserMessageText).toHaveBeenCalledWith(input.runId);
+  });
+
+  it('atomically applies server-owned H5 profile defaults before the first authoring job', async () => {
+    const tx = {
+      skillCatalogItem: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: CINEMATIC_REALISM_SKILL.skillId,
+        }),
+      },
+      storyProject: {
+        findUnique: jest.fn().mockResolvedValue({
+          defaultLocale: 'zh-CN',
+          creativeProfileConfirmedAt: null,
+        }),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    const fenceBusinessMutationInTx = jest.fn().mockResolvedValue(undefined);
+    const createAuthoringRun = jest.fn().mockImplementation(
+      async (
+        _user: unknown,
+        _workspaceId: unknown,
+        _projectId: unknown,
+        request: {
+          title: string;
+          summary: string;
+          brief: string;
+        },
+        authority: {
+          canonicalizeAndFence: (
+            transaction: typeof tx,
+            input: {
+              proposal: { title: string; summary: string; brief: string };
+            },
+          ) => Promise<unknown>;
+        },
+      ) => {
+        await authority.canonicalizeAndFence(tx, {
+          proposal: {
+            title: request.title,
+            summary: request.summary,
+            brief: request.brief,
+          },
+        });
+        return {
+          id: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+          status: 'authoring',
+        };
+      },
+    );
+    const scoped = new StoryAgentCapabilityHandler(
+      {
+        agentOsExternalHandoffRegistration: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      } as never,
+      {
+        getInitialUserMessageText: jest.fn().mockResolvedValue('一只小猫'),
+      } as never,
+      {
+        requireWrite: jest.fn().mockResolvedValue({
+          workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+        }),
+      } as never,
+      {} as never,
+      { createAuthoringRun } as never,
+      { fenceBusinessMutationInTx } as never,
+      {} as never,
+      {} as never,
+    );
+
+    await scoped.execute({
+      toolId: 'story.author',
+      runId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+      conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+      turnId: '019a034d-34a7-7542-a554-4a7dbdb247dd',
+      toolCallId: 'call_story_author_h5_defaults',
+      actorId: 'creator-1',
+      projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+      skillResolutionId: '019a034d-37f5-7d82-9075-a502131a0a69',
+      skillVersionIds: [],
+      workbenchContext: {
+        chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+        experience: 'mobile_h5',
+      },
+      idempotencyKey: 'story-author-h5-defaults-test',
+      arguments: {
+        title: '一只小猫',
+        summary: '一只小猫开始一段意外的旅程。',
+        brief: '一只小猫',
+        continueThrough: 'storyboard',
+        startedMessage: '正在起草剧本。',
+        completionMessage: '剧本已起草。',
+      },
+    });
+
+    expect(fenceBusinessMutationInTx).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ toolId: 'story.author' }),
+    );
+    expect(tx.skillCatalogItem.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: CINEMATIC_REALISM_SKILL.skillId,
+        slug: CINEMATIC_REALISM_SKILL.slug,
+        category: 'style',
+        status: 'published',
+        latestPublishedVersionId: CINEMATIC_REALISM_SKILL.versionId,
+      },
+      select: { id: true },
+    });
+    expect(tx.storyProject.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: '019a034d-36a6-70df-91b1-1d030480f7d4',
+        creativeProfileConfirmedAt: null,
+      },
+      data: expect.objectContaining({
+        durationPreset: 'short_5_15',
+        visualStyle: 'cinematic-realism',
+        visualStyleSkillId: CINEMATIC_REALISM_SKILL.skillId,
+        visualStyleSkillVersionId: CINEMATIC_REALISM_SKILL.versionId,
+        defaultLocale: 'zh-CN',
+        creativeProfileConfirmedAt: expect.any(Date) as Date,
+        version: { increment: 1 },
+      }) as unknown,
+    });
+  });
+
+  it('carries creator-authorized H5 auto-apply policy into the next Story authoring job', async () => {
+    const createAuthoringRun = jest.fn().mockResolvedValue({
+      id: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+      status: 'authoring',
+    });
+    const previousPlan = {
+      continueThrough: 'storyboard',
+      title: '雨夜归途',
+      summary: '一只小猫在雨夜寻找回家的路。',
+      brief: '完成剧本、情节树、资产与分镜。',
+      experience: 'mobile_h5',
+      autoApplyAssetSpecs: true,
+      autoGenerateAssetImages: true,
+    } as const;
+    const findFirst = jest.fn().mockResolvedValue({
+      continuationPlan: previousPlan,
+    });
+    const scoped = new StoryAgentCapabilityHandler(
+      {
+        agentOsExternalHandoffRegistration: { findFirst },
+      } as never,
+      {
+        getInitialUserMessageText: jest
+          .fn()
+          .mockResolvedValue('请完整创作到可游玩的分镜。'),
+      } as never,
+      {
+        requireWrite: jest.fn().mockResolvedValue({
+          workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+        }),
+      } as never,
+      {} as never,
+      { createAuthoringRun } as never,
+      { fenceBusinessMutationInTx: jest.fn() } as never,
+      {} as never,
+      {} as never,
+    );
+
+    await scoped.execute({
+      toolId: 'story.author',
+      runId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+      conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+      turnId: '019a034d-34a7-7542-a554-4a7dbdb247dd',
+      toolCallId: 'call_story_author_assets',
+      actorId: 'creator-1',
+      projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+      skillResolutionId: '019a034d-37f5-7d82-9075-a502131a0a69',
+      skillVersionIds: [],
+      workbenchContext: {
+        chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+        experience: 'mobile_h5',
+      },
+      idempotencyKey: 'story-author-assets-continuation-test',
+      arguments: {
+        title: previousPlan.title,
+        summary: previousPlan.summary,
+        brief: previousPlan.brief,
+        continueThrough: 'storyboard',
+        startedMessage: '正在准备资产规格。',
+        completionMessage: '资产规格已准备好。',
+      },
+    });
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: {
+        sourceAgentRunId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+        storyAgentRun: {
+          storyProjectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+          storyChapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+        },
+      },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { continuationPlan: true },
+    });
+    expect(createAuthoringRun).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+      '019a034d-36a6-70df-91b1-1d030480f7d4',
+      expect.objectContaining({
+        sourceContinuationPlan: expect.objectContaining({
+          experience: 'mobile_h5',
+          autoApplyAssetSpecs: true,
+          autoGenerateAssetImages: true,
+        }) as unknown,
+      }),
+      expect.any(Object),
+    );
+  });
+
+  it('persists the creator-authorized multi-stage scope when the model proposes only Script', async () => {
+    const createAuthoringRun = jest.fn().mockResolvedValue({
+      id: '019a034d-2af8-71e2-b961-b18ca7590a9f',
+      status: 'authoring',
+    });
+    const scoped = new StoryAgentCapabilityHandler(
+      {} as never,
+      {
+        getInitialUserMessageText: jest
+          .fn()
+          .mockResolvedValue(
+            '请逐阶段提供剧本、情节树、资产规格和分镜规格供我分别审核。',
+          ),
+      } as never,
+      {
+        requireWrite: jest.fn().mockResolvedValue({
+          workspaceId: '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+        }),
+      } as never,
+      {} as never,
+      { createAuthoringRun } as never,
+      { fenceBusinessMutationInTx: jest.fn() } as never,
+      {} as never,
+      {} as never,
+    );
+
+    await scoped.execute({
+      toolId: 'story.author',
+      runId: '019a034d-31a5-7d7f-8329-a91739a701b0',
+      conversationId: '019a034d-3334-765c-a055-a40cd5ae6403',
+      turnId: '019a034d-34a7-7542-a554-4a7dbdb247dd',
+      toolCallId: 'call_story_author_scope',
+      actorId: 'creator-1',
+      projectId: '019a034d-36a6-70df-91b1-1d030480f7d4',
+      skillResolutionId: '019a034d-37f5-7d82-9075-a502131a0a69',
+      skillVersionIds: [],
+      workbenchContext: {
+        chapterId: '019a034d-397a-7dac-8d77-fad8dd15038e',
+      },
+      idempotencyKey: 'story-author-scope-test',
+      arguments: {
+        title: '断电之城',
+        summary: '海上城市停电。',
+        brief: '创作一部互动影游。',
+        continueThrough: 'script',
+        startedMessage: '开始创作。',
+        completionMessage: '提案已就绪。',
+      },
+    });
+
+    expect(createAuthoringRun).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '019a034d-2dbd-760b-bec6-dcc9fc5fc724',
+      '019a034d-36a6-70df-91b1-1d030480f7d4',
+      expect.objectContaining({
+        sourceContinuationPlan: expect.objectContaining({
+          continueThrough: 'storyboard',
+        }) as unknown,
+      }),
+      expect.any(Object),
     );
   });
 
@@ -193,18 +628,25 @@ describe('StoryAgentCapabilityHandler', () => {
           answers: {
             aspect_ratio: 'landscape_16_9',
             target_runtime: 'medium_15_30',
-            visual_direction: 'stylized_3d',
+            visual_direction: 'stylized-3d-cinema',
             story_language: 'zh-CN',
           },
         },
       },
     ]);
     const tx = {
+      skillCatalogItem: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: STYLIZED_3D_SKILL.skillId }),
+      },
       storyProject: {
         findUnique: jest.fn().mockResolvedValue({
           frameProfile: 'landscape_16_9',
           durationPreset: null,
           visualStyle: null,
+          visualStyleSkillId: null,
+          visualStyleSkillVersionId: null,
           defaultLocale: 'en-US',
           creativeProfileConfirmedAt: null,
           builds: [],
@@ -238,6 +680,7 @@ describe('StoryAgentCapabilityHandler', () => {
         completeSuccessInTx: jest.fn().mockResolvedValue(undefined),
       } as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -256,14 +699,14 @@ describe('StoryAgentCapabilityHandler', () => {
           requestId,
           aspectRatio: 'landscape_16_9',
           targetRuntime: 'medium_15_30',
-          visualDirection: 'stylized_3d',
+          visualDirection: 'stylized-3d-cinema',
           storyLanguage: 'zh-CN',
         },
       }),
     ).resolves.toMatchObject({
       frameProfile: 'landscape_16_9',
       durationPreset: 'medium_15_30',
-      visualStyle: 'stylized_3d',
+      visualStyle: 'stylized-3d-cinema',
       storyLanguage: 'zh-CN',
     });
     expect(prisma.agentOsRun.findFirst).toHaveBeenCalledWith({
@@ -303,7 +746,7 @@ describe('StoryAgentCapabilityHandler', () => {
               answers: {
                 aspect_ratio: 'landscape_16_9',
                 target_runtime: 'medium_15_30',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
                 story_language: 'zh-CN',
               },
             },
@@ -314,7 +757,7 @@ describe('StoryAgentCapabilityHandler', () => {
     ).toEqual({
       aspect_ratio: 'landscape_16_9',
       target_runtime: 'medium_15_30',
-      visual_direction: 'stylized_3d',
+      visual_direction: 'stylized-3d-cinema',
       story_language: 'zh-CN',
     });
   });
@@ -341,7 +784,7 @@ describe('StoryAgentCapabilityHandler', () => {
               answers: {
                 aspect_ratio: 'landscape_16_9',
                 target_runtime: 'medium_15_30',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
                 story_language: 'zh-HK',
               },
             },
@@ -365,7 +808,7 @@ describe('StoryAgentCapabilityHandler', () => {
               formId: 'story_creative_profile',
               knownValues: {
                 aspect_ratio: 'landscape_16_9',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
               },
               questions: [
                 CREATIVE_PROFILE_QUESTIONS[1],
@@ -390,7 +833,7 @@ describe('StoryAgentCapabilityHandler', () => {
     ).toEqual({
       aspect_ratio: 'landscape_16_9',
       target_runtime: 'medium_15_30',
-      visual_direction: 'stylized_3d',
+      visual_direction: 'stylized-3d-cinema',
       story_language: 'en-US',
     });
   });
@@ -408,7 +851,7 @@ describe('StoryAgentCapabilityHandler', () => {
               formId: 'story_creative_profile',
               knownValues: {
                 aspect_ratio: 'landscape_16_9',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
               },
               questions: [
                 CREATIVE_PROFILE_QUESTIONS[3],
@@ -446,7 +889,7 @@ describe('StoryAgentCapabilityHandler', () => {
               answers: {
                 aspect_ratio: 'landscape_16_9',
                 target_runtime: 'medium_15_30',
-                visual_direction: 'stylized_3d',
+                visual_direction: 'stylized-3d-cinema',
                 story_language: 'en-US',
               },
             },

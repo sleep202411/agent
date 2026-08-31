@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import {
+  STORY_VISUAL_STYLE_SKILL_SLUGS,
+  type StoryVisualStyleSkillSlug,
+} from '@repo/shared';
+import {
   StoryBuildScopeSchema,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   InteractiveStoryDraftContentSchema,
@@ -45,13 +49,8 @@ export const StoryDurationPresetSchema = z.enum([
 ]);
 export type StoryDurationPreset = z.infer<typeof StoryDurationPresetSchema>;
 
-export const StoryVisualStyleSchema = z.enum([
-  'cinematic_realism',
-  'stylized_3d',
-  'graphic_novel',
-  'anime_cinematic',
-]);
-export type StoryVisualStyle = z.infer<typeof StoryVisualStyleSchema>;
+export const StoryVisualStyleSchema = z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS);
+export type StoryVisualStyle = StoryVisualStyleSkillSlug;
 
 export const STORY_FRAME_PROFILE_CONTRACTS = {
   landscape_16_9: {
@@ -515,7 +514,7 @@ export const CreateStoryBuildSchema = z
     // Omitted keeps the historical default: full ⇒ production, subgraph ⇒
     // preview. A chapter Build stays `preview` in practice, because
     // `story_builds_production_scope_chk` admits only full-scope Builds as
-    // `production`; StoryGameReleaseService therefore verifies chapter Builds
+    // `production`; the release candidate compiler therefore verifies chapter Builds
     // itself rather than trusting the kind.
     kind: z.enum(['preview', 'production']).optional(),
   })
@@ -527,31 +526,14 @@ export const CancelStoryBuildSchema = z
   .strict();
 export type CancelStoryBuildInput = z.infer<typeof CancelStoryBuildSchema>;
 
-export const PublishStoryBuildSchema = z
+export const PrepareStoryExperienceReleaseSchema = z
   .object({
-    status: z.enum(['published', 'draft']).default('published'),
-    setCurrent: z.boolean().default(true),
+    expectedDraftRevision: NonNegativeVersionSchema,
+    expectedVideoSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
-  .strict()
-  .superRefine((input, context) => {
-    if (input.status === 'draft' && input.setCurrent) {
-      context.addIssue({
-        code: 'custom',
-        path: ['setCurrent'],
-        message: 'A draft release cannot become the current published version.',
-      });
-    }
-  });
-export type PublishStoryBuildInput = z.infer<typeof PublishStoryBuildSchema>;
-
-// Publishing a whole work has no `status`: a draft release deliberately grants
-// no anonymous media, and a chapter manifest is useless without its media, so
-// there is nothing a draft chapter set could usefully deliver.
-export const PublishStoryProjectSchema = z
-  .object({ setCurrent: z.boolean().default(true) })
   .strict();
-export type PublishStoryProjectInput = z.infer<
-  typeof PublishStoryProjectSchema
+export type PrepareStoryExperienceReleaseInput = z.infer<
+  typeof PrepareStoryExperienceReleaseSchema
 >;
 
 export const CreateFilmPreviewTokenSchema = z
@@ -795,43 +777,6 @@ export interface StoryBuildAssetDto extends FrozenStoryAssetDto {
   role: string;
 }
 
-export interface StoryBuildPublicationDto {
-  status: StoryBuildPublicationLifecycleStatus;
-  gameId: string;
-  contentVersion: string;
-  manifestUrl: string | null;
-  publishedAt: string | null;
-  mediaAuthorizedAt: string;
-  mediaAuthorizationRevokedAt: string | null;
-  authorityIsCurrent: boolean | null;
-  authorityGameExists: boolean | null;
-  authorityCurrentVersion: string | null;
-  authorityCheckedAt: string | null;
-  lastErrorCode: string | null;
-  lastErrorDetail: string | null;
-}
-
-export type StoryBuildPublicationLifecycleStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'uncertain'
-  | 'rejected';
-
-/** Fresh projection of Java's player-visible current version. */
-export interface StoryExperienceCurrentReleaseDto {
-  projectId: string;
-  gameId: string;
-  published: boolean;
-  currentVersion: string | null;
-  manifestUrl: string | null;
-  currentBuild: {
-    id: string;
-    sourceDraftRevision: number;
-    videoSnapshotHash: string;
-  } | null;
-  checkedAt: string | null;
-}
-
 export interface StoryBuildDto {
   id: string;
   projectId: string;
@@ -850,7 +795,6 @@ export interface StoryBuildDto {
   assets: StoryBuildAssetDto[];
   diagnostics: StoryBuildDiagnosticDto[];
   pathReport: StoryBuildPathReportDto | null;
-  publication: StoryBuildPublicationDto | null;
   createdByUserId: string;
   createdAt: string;
   completedAt: string | null;
@@ -863,6 +807,7 @@ export interface StoryWorkingPreviewDto {
   videoSnapshotHash: string | null;
   runtimeSchemaVersion: 2;
   runtime: Record<string, unknown> | null;
+  coverUrl: string | null;
   diagnostics: StoryBuildDiagnosticDto[];
   pathReport: StoryBuildPathReportDto | null;
   sources: Array<{
@@ -884,7 +829,6 @@ export type StoryBuildSummaryDto = Pick<
   | 'sourceDraftRevision'
   | 'videoSnapshotHash'
   | 'diagnostics'
-  | 'publication'
   | 'createdAt'
   | 'completedAt'
 >;

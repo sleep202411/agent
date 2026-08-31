@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STORY_VISUAL_STYLE_SKILL_SLUGS } from "@repo/shared";
 
 import { buildToolIdempotencyKey } from "./idempotency.js";
 import {
@@ -28,6 +29,9 @@ describe("agent-tools registry", () => {
     expect(toolDescriptorsForModel().some((t) => t.id === "story.confirmCreativeProfile")).toBe(
       true
     );
+    expect(riskForTool("story.generation.quoteAssets")).toBe("reversible");
+    expect(riskForTool("story.generation.confirmBatch")).toBe("critical");
+    expect(riskForTool("story.generation.getBatch")).toBe("read");
   });
 
   it("validates bounded structured user questions", () => {
@@ -85,6 +89,79 @@ describe("agent-tools registry", () => {
         questions,
       })
     ).toThrow();
+  });
+
+  it("supports server-verifiable asset-kind generation scopes", () => {
+    expect(
+      parseToolInput("story.generation.quoteAssets", {
+        assetKinds: ["character"],
+        outputKind: "image",
+      })
+    ).toEqual({
+      assetKinds: ["character"],
+      outputKind: "image",
+      options: {},
+    });
+    expect(() =>
+      parseToolInput("story.generation.quoteAssets", {
+        assetKinds: ["character", "costume"],
+        outputKind: "image",
+      })
+    ).toThrow();
+  });
+
+  it("accepts canonical target identity on sequential Story generation batches", () => {
+    const batchId = "10000000-0000-4000-8000-000000000001";
+    const targetId = "20000000-0000-4000-8000-000000000002";
+    expect(
+      parseToolOutput("story.generation.quoteAssets", {
+        id: batchId,
+        projectId: "30000000-0000-4000-8000-000000000003",
+        chapterId: "40000000-0000-4000-8000-000000000004",
+        status: "awaiting_confirmation",
+        dispatchMode: "sequential",
+        totalPoints: 10,
+        availablePoints: "100",
+        itemCount: 1,
+        version: 0,
+        quoteExpiresAt: "2026-08-27T18:00:00.000Z",
+        confirmedAt: null,
+        completedAt: null,
+        blockedAt: null,
+        blockReason: null,
+        canCancel: true,
+        counts: {
+          awaiting_confirmation: 1,
+          ready: 0,
+          dispatching: 0,
+          submitted: 0,
+          completed: 0,
+          failed: 0,
+          cancelled: 0,
+        },
+        items: [
+          {
+            id: "50000000-0000-4000-8000-000000000005",
+            ordinal: 0,
+            status: "awaiting_confirmation",
+            targetKind: "asset_spec",
+            targetId,
+            sequenceId: null,
+            targetVersion: 1,
+            outputKind: "image",
+            modelId: "fal-ai/nano-banana",
+            schemaVersion: "v1",
+            quotedPoints: 10,
+            generationId: null,
+            error: null,
+          },
+        ],
+      })
+    ).toMatchObject({
+      id: batchId,
+      dispatchMode: "sequential",
+      items: [{ targetKind: "asset_spec", targetId, sequenceId: null }],
+    });
   });
 
   it("requires attachmentId for script.readSection", () => {
@@ -187,7 +264,7 @@ describe("agent-tools registry", () => {
       creativeProfile: {
         frameProfile: "landscape_16_9",
         durationPreset: "medium_15_30",
-        visualStyle: "stylized_3d",
+        visualStyle: "stylized-3d-cinema",
         storyLanguage: "zh-CN",
         confirmed: true,
       },
@@ -261,7 +338,7 @@ describe("agent-tools registry", () => {
     ).toThrow();
   });
 
-  it("accepts canonical missing-field subsets and rejects reordered creative-profile forms", () => {
+  it("canonicalizes fixed profile catalogs and rejects reordered creative-profile forms", () => {
     const questions = [
       {
         id: "aspect_ratio",
@@ -287,10 +364,10 @@ describe("agent-tools registry", () => {
         header: "Visual direction",
         question: "Choose a style",
         options: [
-          { value: "cinematic_realism", label: "Cinematic realism" },
-          { value: "stylized_3d", label: "Stylized 3D" },
-          { value: "graphic_novel", label: "Graphic novel" },
-          { value: "anime_cinematic", label: "Cinematic anime" },
+          ...STORY_VISUAL_STYLE_SKILL_SLUGS.map((value) => ({
+            value,
+            label: value,
+          })),
         ],
       },
       {
@@ -320,7 +397,7 @@ describe("agent-tools registry", () => {
         formId: "story_creative_profile",
         knownValues: {
           aspect_ratio: "landscape_16_9",
-          visual_direction: "cinematic_realism",
+          visual_direction: "cinematic-realism",
         },
         questions: [questions[1], questions[3]],
       })
@@ -330,6 +407,45 @@ describe("agent-tools registry", () => {
         expect.objectContaining({ id: "story_language" }),
       ],
     });
+    const abbreviated = parseToolInput("request_user_input", {
+      ...QUESTION_TURN_COPY,
+      formId: "story_creative_profile",
+      knownValues: {
+        aspect_ratio: "landscape_16_9",
+        target_runtime: "short_5_15",
+        story_language: "zh-CN",
+      },
+      questions: [
+        {
+          ...questions[2],
+          options: [questions[2].options[0], questions[2].options[2]],
+        },
+      ],
+    }) as { questions: Array<{ options: Array<{ value: string; label: string }> }> };
+    expect(abbreviated.questions[0]?.options.map((option) => option.value)).toEqual(
+      STORY_VISUAL_STYLE_SKILL_SLUGS
+    );
+    expect(abbreviated.questions[0]?.options[1]).toEqual({
+      value: "stylized-3d-cinema",
+      label: "stylized-3d-cinema",
+    });
+    expect(() =>
+      parseToolInput("request_user_input", {
+        ...QUESTION_TURN_COPY,
+        formId: "story_creative_profile",
+        knownValues: {
+          aspect_ratio: "landscape_16_9",
+          target_runtime: "short_5_15",
+          story_language: "zh-CN",
+        },
+        questions: [
+          {
+            ...questions[2],
+            options: [questions[2].options[0], { value: "invented-style", label: "Invented" }],
+          },
+        ],
+      })
+    ).toThrow();
     expect(() =>
       parseToolInput("request_user_input", {
         ...QUESTION_TURN_COPY,
@@ -352,7 +468,7 @@ describe("agent-tools registry", () => {
     const complete = {
       aspectRatio: "landscape_16_9",
       targetRuntime: "short_5_15",
-      visualDirection: "cinematic_realism",
+      visualDirection: "cinematic-realism",
       storyLanguage: "en-US",
     };
     expect(parseToolInput("story.confirmCreativeProfile", complete)).toEqual(complete);
@@ -374,6 +490,7 @@ describe("agent-tools registry", () => {
       title: "The Last Watch",
       summary: "A final imperial guard chooses whom to save.",
       brief: "Create an interactive film set on the final night of Ming rule.",
+      continueThrough: "storyboard" as const,
       startedMessage: "I have your direction and am preparing the production plan now.",
       completionMessage:
         "The screenplay is ready for your review. No media has been generated; use Generate when you want to create it.",
@@ -408,13 +525,15 @@ describe("agent-tools registry", () => {
     expect(description).toContain("Call story.read first");
     expect(description).toContain("reuses every valid chapter stage");
     expect(description).toContain("Only when no valid Script exists");
+    expect(description).toContain("selects exactly one next artifact");
+    expect(description).toContain("Set continueThrough once");
+    expect(description).toContain("never asks the model to infer the old intent again");
     expect(description).toContain("single canonical Plot topology");
     expect(description).toContain("one Storyboard sequence per Plot node");
-    expect(description).toContain("zero generated media");
-    expect(description).toContain("creator must use Generate later");
-    expect(description).toContain("say only that the screenplay is ready for creator review");
-    expect(description).toContain("never present production specifications as a second review");
-    expect(description).toContain("authoritative Server apply continuation");
+    expect(description).toContain("creator uses Generate later");
+    expect(description).toContain("without a second Asset confirmation");
+    expect(description).toContain("Storyboard remains a separate Continue/Don't continue boundary");
+    expect(description).toContain("authoritative Server continuation");
     expect(description).not.toContain("five-baton");
     expect(description).not.toContain("proposal for the whole tree");
   });

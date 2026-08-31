@@ -4,7 +4,6 @@ import { IconAlertTriangle, IconArrowLeft, IconLoader2, IconRefresh } from "@tab
 import { ExperienceRuntimeManifestSchema } from "@repo/shared/experience-runtime";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { useWorkspace } from "@/app/_components/workspace-context";
 import { ExperienceRuntimePlayer } from "@/components/experience-runtime/experience-runtime-player";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
@@ -31,44 +30,31 @@ export function StoryProjectPlaytest({
 }) {
   const t = useTranslations("storyStudio.canvas.workingPreview");
   const locale = useLocale();
-  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
-  const workspaceId = activeWorkspace?.id ?? null;
   const runtimeQuery = useQuery<LoadedPlaytestRuntime>({
     queryKey: [
       "story-studio",
       "playtest-runtime",
-      workspaceId,
       projectId,
       source.kind,
       source.kind === "build" ? source.buildId : (source.chapterId ?? "current-draft"),
     ],
     queryFn: async () => {
-      if (!workspaceId) throw new Error(t("errorFallback"));
       return source.kind === "draft"
         ? {
             kind: "draft" as const,
-            preview: await getStoryWorkingPreview(workspaceId, projectId, source.chapterId),
+            preview: await getStoryWorkingPreview(projectId, source.chapterId),
           }
         : {
             kind: "build" as const,
-            build: await getStoryBuild(workspaceId, projectId, source.buildId),
+            build: await getStoryBuild(projectId, source.buildId),
           };
     },
-    enabled: Boolean(workspaceId),
     retry: false,
   });
 
-  const loading = workspaceLoading || runtimeQuery.isLoading;
+  const loading = runtimeQuery.isLoading;
   const loadError = runtimeQuery.error;
   if (loading) return <PlaytestLoading />;
-  if (!workspaceId) {
-    return (
-      <PlaytestFailure
-        projectId={projectId}
-        message={storyApiErrorMessage(loadError, t("errorFallback"))}
-      />
-    );
-  }
   if (loadError || !runtimeQuery.data) {
     return (
       <PlaytestFailure
@@ -130,6 +116,7 @@ export function StoryProjectPlaytest({
           key={parsedRuntime.success ? parsedRuntime.data.buildId : "invalid-runtime"}
           runtime={runtime}
           locale={locale}
+          coverUrl={loadedRuntime.kind === "draft" ? loadedRuntime.preview.coverUrl : undefined}
         />
       </div>
 

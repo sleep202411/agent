@@ -11,12 +11,18 @@ vi.mock("@/lib/api", () => ({
 
 import { api } from "@/lib/api";
 import {
+  cancelStoryGenerationBatch,
   cancelStoryStoryboardClipGeneration,
+  confirmStoryGenerationBatch,
   createStoryAssetGeneration,
+  getStoryGenerationBatch,
   getStoryProductionState,
   getStoryStoryboardClipGeneration,
   getStoryStoryboard,
+  listStoryGenerationBatches,
   listStoryAssetSpecs,
+  putStoryStoryboardTimeline,
+  quoteStoryAssetGenerationBatch,
   retryStoryAssetGenerationMaterialization,
   retryStoryStoryboardClipGeneration,
   retryStoryStoryboardClipGenerationMaterialization,
@@ -27,7 +33,7 @@ import {
 describe("Story production API", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("scopes production reads to the encoded project, chapter, and workspace", async () => {
+  it("scopes production reads to the encoded project and chapter", async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       projectId: "project / one",
       chapterId: "chapter / one",
@@ -44,12 +50,12 @@ describe("Story production API", () => {
       ready: true,
     });
 
-    await getStoryProductionState("workspace-1", "project / one", "chapter / one");
+    await getStoryProductionState("project / one", "chapter / one");
 
     expect(api.get).toHaveBeenCalledWith(
       "/aurora/story-projects/project%20%2F%20one/chapters/chapter%20%2F%20one/production-state",
       {
-        headers: { "x-fizz-workspace-id": "workspace-1" },
+        requestScope: "project",
         signal: undefined,
       }
     );
@@ -63,8 +69,52 @@ describe("Story production API", () => {
       },
     ]);
 
-    await expect(listStoryAssetSpecs("workspace-1", "project-1", "chapter-1")).rejects.toThrow(
+    await expect(listStoryAssetSpecs("project-1", "chapter-1")).rejects.toThrow(
       "outside the requested chapter scope"
+    );
+    expect(api.get).toHaveBeenCalledWith(
+      "/aurora/story-projects/project-1/chapters/chapter-1/asset-specs",
+      { requestScope: "project", signal: undefined }
+    );
+  });
+
+  it("atomically replaces a chapter-scoped Storyboard timeline", async () => {
+    vi.mocked(api.put).mockResolvedValueOnce(sequence());
+    const input = {
+      expectedVersion: 1,
+      durationMs: 3_000,
+      clips: [
+        {
+          id: "00000000-0000-0000-0000-000000000001",
+          expectedVersion: 2,
+          stableKey: "clip_1",
+          title: "Opening",
+          kind: "image" as const,
+          startMs: 0,
+          durationMs: 3_000,
+          description: null,
+          negativePrompt: null,
+          imagePrompt: "A quiet opening frame",
+          videoPrompt: null,
+        },
+      ],
+    };
+
+    await putStoryStoryboardTimeline(
+      "project-1",
+      "chapter-1",
+      "sequence-1",
+      "timeline:key-1",
+      input
+    );
+
+    expect(api.put).toHaveBeenCalledWith(
+      "/aurora/story-projects/project-1/chapters/chapter-1/storyboard/sequences/sequence-1/timeline",
+      {
+        data: input,
+        requestScope: "project",
+        headers: { "Idempotency-Key": "timeline:key-1" },
+      }
     );
   });
 
@@ -85,7 +135,7 @@ describe("Story production API", () => {
       },
     ]);
 
-    await expect(getStoryStoryboard("workspace-1", "project-1", "chapter-1")).rejects.toThrow(
+    await expect(getStoryStoryboard("project-1", "chapter-1")).rejects.toThrow(
       "outside the requested chapter scope"
     );
   });
@@ -95,25 +145,54 @@ describe("Story production API", () => {
       generation({ kind: "asset_spec", id: "asset-1", sequenceId: null })
     );
 
-    await createStoryAssetGeneration(
-      "workspace-1",
-      "project-1",
-      "chapter-1",
-      "asset-1",
-      "generate:key-1",
-      { expectedVersion: 7 }
-    );
+    await createStoryAssetGeneration("project-1", "chapter-1", "asset-1", "generate:key-1", {
+      expectedVersion: 7,
+    });
 
     expect(api.post).toHaveBeenCalledWith(
       "/aurora/story-projects/project-1/chapters/chapter-1/asset-specs/asset-1/generations",
       {
         data: { expectedVersion: 7 },
-        headers: {
-          "x-fizz-workspace-id": "workspace-1",
-          "Idempotency-Key": "generate:key-1",
-        },
+        requestScope: "project",
+        headers: { "Idempotency-Key": "generate:key-1" },
       }
     );
+  });
+
+  it("uses Project Scope for every generation-batch command and query", async () => {
+    vi.mocked(api.post).mockResolvedValue({});
+    vi.mocked(api.get).mockResolvedValueOnce([]).mockResolvedValueOnce({});
+
+    await quoteStoryAssetGenerationBatch("project / one", "chapter / one", "quote:key-1", {
+      targets: [{ id: "asset-1", expectedVersion: 3 }],
+    });
+    await confirmStoryGenerationBatch("project / one", "chapter / one", "batch / one", 4);
+    await listStoryGenerationBatches("project / one", "chapter / one");
+    await getStoryGenerationBatch("project / one", "chapter / one", "batch / one");
+    await cancelStoryGenerationBatch("project / one", "chapter / one", "batch / one");
+
+    const base =
+      "/aurora/story-projects/project%20%2F%20one/chapters/chapter%20%2F%20one/generation-batches";
+    expect(api.post).toHaveBeenNthCalledWith(1, `${base}/asset-specs/quote`, {
+      data: { targets: [{ id: "asset-1", expectedVersion: 3 }] },
+      requestScope: "project",
+      headers: { "Idempotency-Key": "quote:key-1" },
+    });
+    expect(api.post).toHaveBeenNthCalledWith(2, `${base}/batch%20%2F%20one/confirm`, {
+      data: { expectedVersion: 4 },
+      requestScope: "project",
+    });
+    expect(api.get).toHaveBeenNthCalledWith(1, base, {
+      requestScope: "project",
+      signal: undefined,
+    });
+    expect(api.get).toHaveBeenNthCalledWith(2, `${base}/batch%20%2F%20one`, {
+      requestScope: "project",
+      signal: undefined,
+    });
+    expect(api.post).toHaveBeenNthCalledWith(3, `${base}/batch%20%2F%20one/cancel`, {
+      requestScope: "project",
+    });
   });
 
   it("uses target-scoped clip polling, cancel, and retry routes", async () => {
@@ -126,7 +205,6 @@ describe("Story production API", () => {
     vi.mocked(api.post).mockResolvedValue(value);
 
     await getStoryStoryboardClipGeneration(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence / one",
@@ -134,7 +212,6 @@ describe("Story production API", () => {
       "generation / one"
     );
     await cancelStoryStoryboardClipGeneration(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence / one",
@@ -142,7 +219,6 @@ describe("Story production API", () => {
       "generation / one"
     );
     await retryStoryStoryboardClipGeneration(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence / one",
@@ -155,18 +231,16 @@ describe("Story production API", () => {
     const base =
       "/aurora/story-projects/project-1/chapters/chapter-1/storyboard/sequences/sequence%20%2F%20one/clips/clip%20%2F%20one/generations/generation%20%2F%20one";
     expect(api.get).toHaveBeenCalledWith(base, {
-      headers: { "x-fizz-workspace-id": "workspace-1" },
+      requestScope: "project",
       signal: undefined,
     });
     expect(api.post).toHaveBeenNthCalledWith(1, `${base}/cancel`, {
-      headers: { "x-fizz-workspace-id": "workspace-1" },
+      requestScope: "project",
     });
     expect(api.post).toHaveBeenNthCalledWith(2, `${base}/retry`, {
       data: { expectedVersion: 9 },
-      headers: {
-        "x-fizz-workspace-id": "workspace-1",
-        "Idempotency-Key": "retry:key-1",
-      },
+      requestScope: "project",
+      headers: { "Idempotency-Key": "retry:key-1" },
     });
   });
 
@@ -179,7 +253,6 @@ describe("Story production API", () => {
     );
 
     await retryStoryAssetGenerationMaterialization(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -188,7 +261,6 @@ describe("Story production API", () => {
       "attach:key-1"
     );
     await retryStoryStoryboardClipGenerationMaterialization(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -202,20 +274,16 @@ describe("Story production API", () => {
       1,
       "/aurora/story-projects/project-1/chapters/chapter-1/asset-specs/asset-1/generations/generation-1/materialization/retry",
       {
-        headers: {
-          "x-fizz-workspace-id": "workspace-1",
-          "Idempotency-Key": "attach:key-1",
-        },
+        requestScope: "project",
+        headers: { "Idempotency-Key": "attach:key-1" },
       }
     );
     expect(api.post).toHaveBeenNthCalledWith(
       2,
       "/aurora/story-projects/project-1/chapters/chapter-1/storyboard/sequences/sequence-1/clips/clip-1/generations/generation-1/materialization/retry",
       {
-        headers: {
-          "x-fizz-workspace-id": "workspace-1",
-          "Idempotency-Key": "attach:key-2",
-        },
+        requestScope: "project",
+        headers: { "Idempotency-Key": "attach:key-2" },
       }
     );
   });
@@ -223,7 +291,6 @@ describe("Story production API", () => {
   it("rejects a materialization retry URL outside the requested target scope", async () => {
     await expect(
       retryStoryAssetGenerationMaterialization(
-        "workspace-1",
         "project-1",
         "chapter-1",
         "asset-1",
@@ -242,7 +309,6 @@ describe("Story production API", () => {
 
     await expect(
       getStoryStoryboardClipGeneration(
-        "workspace-1",
         "project-1",
         "chapter-1",
         "sequence-1",
@@ -272,7 +338,6 @@ describe("Story production API", () => {
 
     const fingerprint = "a".repeat(64);
     await resolveStoryAssetSpecConflict(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "asset-1",
@@ -284,7 +349,6 @@ describe("Story production API", () => {
       }
     );
     await resolveStoryStoryboardSequenceConflict(
-      "workspace-1",
       "project-1",
       "chapter-1",
       "sequence-1",
@@ -305,10 +369,8 @@ describe("Story production API", () => {
           expectedPendingSourceFingerprint: fingerprint,
           resolution: "keep_current",
         },
-        headers: {
-          "x-fizz-workspace-id": "workspace-1",
-          "Idempotency-Key": "asset-conflict:key-1",
-        },
+        requestScope: "project",
+        headers: { "Idempotency-Key": "asset-conflict:key-1" },
       }
     );
     expect(api.post).toHaveBeenNthCalledWith(
@@ -331,18 +393,11 @@ describe("Story production API", () => {
     });
 
     await expect(
-      resolveStoryAssetSpecConflict(
-        "workspace-1",
-        "project-1",
-        "chapter-1",
-        "asset-1",
-        "conflict:key-1",
-        {
-          expectedVersion: 1,
-          expectedPendingSourceFingerprint: "b".repeat(64),
-          resolution: "keep_current",
-        }
-      )
+      resolveStoryAssetSpecConflict("project-1", "chapter-1", "asset-1", "conflict:key-1", {
+        expectedVersion: 1,
+        expectedPendingSourceFingerprint: "b".repeat(64),
+        resolution: "keep_current",
+      })
     ).rejects.toThrow("outside the requested chapter scope");
   });
 });

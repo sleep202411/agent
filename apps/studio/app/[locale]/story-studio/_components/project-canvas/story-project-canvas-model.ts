@@ -10,7 +10,7 @@ import type {
 import type { WorldModelWorld } from "@repo/shared/world-model-protocol";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 
-type StoryCanvasNodeKind = "clip" | "world";
+type StoryCanvasNodeKind = "clip" | "world" | "decision";
 type StoryCanvasExitKind = "auto" | "choice";
 
 export interface StoryCanvasChoiceData {
@@ -43,6 +43,8 @@ export interface StoryCanvasNodeData extends Record<string, unknown> {
   title: string;
   eyebrow: string;
   nodeId: string;
+  /** Canonical scene whose completion presents this derived decision node. */
+  sourceNodeId?: string;
   decisionId?: string;
   clipKey?: string;
   worldId?: string | null;
@@ -62,6 +64,7 @@ export type StoryCanvasNode = Node<StoryCanvasNodeData, "storyCanvas">;
 
 type StoryCanvasEdgeData =
   | { kind: "continuation" }
+  | { kind: "decision"; sourceNodeId: string; decisionId: string }
   | { kind: "choice"; sourceNodeId: string; choiceId: string }
   | {
       kind: "interaction";
@@ -89,12 +92,23 @@ const ROW_GAP = 220;
 export interface StoryCanvasCopy {
   clip: string;
   world: string;
+  decision: string;
 }
 
 const DEFAULT_COPY: StoryCanvasCopy = {
   clip: "Clip",
   world: "World",
+  decision: "Player decision",
 };
+
+/**
+ * A decision is canonical data on a scene exit, but it is a first-class canvas
+ * element. Its deterministic projection id lets layout survive reloads without
+ * creating a second persistence model for the same runtime decision.
+ */
+export function storyDecisionCanvasNodeId(sourceNodeId: string): string {
+  return `__decision__:${sourceNodeId}`;
+}
 
 /**
  * Projects the canonical interactive-story draft into a presentation-only
@@ -120,32 +134,34 @@ export function buildStoryCanvasModel(
   const worldsById = new Map(worlds.map((world) => [world.id, world]));
   let clipOrdinal = 0;
 
-  const projections: CanvasProjection[] = [
-    ...content.graph.nodes.map<CanvasProjection>((node, index) => {
+  const projections: CanvasProjection[] = content.graph.nodes.flatMap<CanvasProjection>(
+    (node, index) => {
       if (node.kind === "world") {
         const worldOrdinal = content.graph.nodes
           .slice(0, index + 1)
           .filter((candidate) => candidate.kind === "world").length;
         const world = node.worldId ? (worldsById.get(node.worldId) ?? null) : null;
-        return {
-          id: node.nodeId,
-          order: index,
-          data: {
-            kind: "world",
-            title: node.name?.trim() || world?.name?.trim() || `${copy.world} ${worldOrdinal}`,
-            eyebrow: `${copy.world} ${String(worldOrdinal).padStart(2, "0")}`,
-            nodeId: node.nodeId,
-            worldId: node.worldId,
-            world,
-            worldEntryInstruction: node.entryInstruction,
-            maxExperienceSeconds: node.maxExperienceSeconds,
-            exitKind: "auto",
-            continuationTargetNodeId: node.exit.nextNodeId ?? undefined,
-            summary: world?.prompt,
+        return [
+          {
+            id: node.nodeId,
+            order: index * 10,
+            data: {
+              kind: "world",
+              title: node.name?.trim() || world?.name?.trim() || `${copy.world} ${worldOrdinal}`,
+              eyebrow: `${copy.world} ${String(worldOrdinal).padStart(2, "0")}`,
+              nodeId: node.nodeId,
+              worldId: node.worldId,
+              world,
+              worldEntryInstruction: node.entryInstruction,
+              maxExperienceSeconds: node.maxExperienceSeconds,
+              exitKind: "auto",
+              continuationTargetNodeId: node.exit.nextNodeId ?? undefined,
+              summary: world?.prompt,
+            },
           },
-        };
+        ];
       }
-      const choices =
+      const choices: StoryCanvasChoiceData[] | undefined =
         node.exit.kind === "choice"
           ? node.exit.choices.map((choice) => ({
               choiceId: choice.choiceId,
@@ -180,28 +196,49 @@ export function buildStoryCanvasModel(
       clipOrdinal += 1;
       const clipProjection: CanvasProjection = {
         id: node.nodeId,
-        order: index,
+        order: index * 10,
         data: {
           kind: "clip",
           title: node.name?.trim() || `${copy.clip} ${clipOrdinal}`,
           eyebrow: `${copy.clip} ${String(clipOrdinal).padStart(2, "0")}`,
           nodeId: node.nodeId,
           clipKey: node.clipKey,
-          exitKind: node.exit.kind,
-          decisionId: node.exit.kind === "choice" ? node.exit.decisionId : undefined,
-          choices,
+          // A choice scene completes into a derived Decision node. Keeping the
+          // scene itself automatic makes the visual grammar unambiguous:
+          // Scene -> Decision -> destination Scene.
+          exitKind: "auto",
           interactions,
           continuationTargetNodeId:
-            node.exit.kind === "auto" ? (node.exit.nextNodeId ?? undefined) : undefined,
+            node.exit.kind === "auto"
+              ? (node.exit.nextNodeId ?? undefined)
+              : storyDecisionCanvasNodeId(node.nodeId),
           frameAspectRatio: frameAspectRatioOf(frameProfile),
         },
       };
-      if (node.exit.kind === "choice") {
-        clipProjection.data.summary = localizedText(node.exit.prompt, locale, "");
-      }
-      return clipProjection;
-    }),
-  ];
+      if (node.exit.kind !== "choice") return [clipProjection];
+
+      const choiceExit = node.exit;
+      const decisionNodeId = storyDecisionCanvasNodeId(node.nodeId);
+      return [
+        clipProjection,
+        {
+          id: decisionNodeId,
+          order: index * 10 + 1,
+          data: {
+            kind: "decision",
+            title: copy.decision,
+            eyebrow: copy.decision,
+            nodeId: decisionNodeId,
+            sourceNodeId: node.nodeId,
+            decisionId: choiceExit.decisionId,
+            exitKind: "choice",
+            choices,
+            summary: localizedText(choiceExit.prompt, locale, ""),
+          },
+        },
+      ];
+    }
+  );
 
   const connections = buildConnections(content.graph.nodes, graphNodesById, locale);
   const storyEdges = connections
@@ -288,13 +325,29 @@ function buildConnections(
     }
 
     if (node.exit.kind === "choice") {
+      const decisionNodeId = storyDecisionCanvasNodeId(node.nodeId);
+      connections.push({
+        order: order++,
+        edge: {
+          id: `decision:${node.nodeId}:${node.exit.decisionId}`,
+          source: node.nodeId,
+          target: decisionNodeId,
+          sourceHandle: "completion",
+          targetHandle: "in",
+          data: {
+            kind: "decision",
+            sourceNodeId: node.nodeId,
+            decisionId: node.exit.decisionId,
+          },
+        },
+      });
       for (const choice of node.exit.choices) {
         if (!graphNodesById.has(choice.nextNodeId)) continue;
         connections.push({
           order: order++,
           edge: {
             id: `choice:${node.nodeId}:${choice.choiceId}:${choice.nextNodeId}`,
-            source: node.nodeId,
+            source: decisionNodeId,
             target: choice.nextNodeId,
             sourceHandle: `choice:${choice.choiceId}`,
             targetHandle: "in",

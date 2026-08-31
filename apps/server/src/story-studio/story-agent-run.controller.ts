@@ -45,8 +45,6 @@ export class StoryAgentRunController {
   @Get('active')
   async getLatest(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentProjectParamsSchema))
     params: StoryAgentProjectParams,
     @Query(new ZodValidationPipe(StoryAgentRunScopeQuerySchema))
@@ -54,9 +52,8 @@ export class StoryAgentRunController {
   ) {
     return {
       code: 200,
-      data: await this.runs.getLatestRun(
+      data: await this.runs.getLatestRunForProject(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         query.chapterId,
       ),
@@ -70,8 +67,6 @@ export class StoryAgentRunController {
   @Get('undoable')
   async getUndoable(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentProjectParamsSchema))
     params: StoryAgentProjectParams,
     @Query(new ZodValidationPipe(StoryAgentRunScopeQuerySchema))
@@ -79,9 +74,8 @@ export class StoryAgentRunController {
   ) {
     return {
       code: 200,
-      data: await this.runs.getUndoableRun(
+      data: await this.runs.getUndoableRunForProject(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         query.chapterId,
       ),
@@ -91,16 +85,13 @@ export class StoryAgentRunController {
   @Get(':runId')
   async getRun(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentRunParamsSchema))
     params: StoryAgentRunParams,
   ) {
     return {
       code: 200,
-      data: await this.runs.getRun(
+      data: await this.runs.getRunForProject(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.runId,
       ),
@@ -111,16 +102,13 @@ export class StoryAgentRunController {
   @HttpCode(HttpStatus.OK)
   async confirm(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentRunParamsSchema))
     params: StoryAgentRunParams,
   ) {
-    const data = await this.runs.confirm(
+    const data = await this.runs.confirmForProject(
       user,
-      requiredWorkspaceId(workspaceHeader),
       params.projectId,
       params.runId,
       requiredIdempotencyKey(idempotencyHeader),
@@ -134,14 +122,11 @@ export class StoryAgentRunController {
   @HttpCode(HttpStatus.OK)
   async retryAuthoring(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentRunParamsSchema))
     params: StoryAgentRunParams,
   ) {
-    const data = await this.runs.retryAuthoring(
+    const data = await this.runs.retryAuthoringForProject(
       user,
-      requiredWorkspaceId(workspaceHeader),
       params.projectId,
       params.runId,
     );
@@ -153,16 +138,13 @@ export class StoryAgentRunController {
   @HttpCode(HttpStatus.OK)
   async cancel(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentRunParamsSchema))
     params: StoryAgentRunParams,
   ) {
     return {
       code: 200,
-      data: await this.runs.cancel(
+      data: await this.runs.cancelForProject(
         user,
-        requiredWorkspaceId(workspaceHeader),
         params.projectId,
         params.runId,
       ),
@@ -173,16 +155,13 @@ export class StoryAgentRunController {
   @HttpCode(HttpStatus.OK)
   async undo(
     @CurrentUser() user: AuthUser,
-    @Headers('x-fizz-workspace-id')
-    workspaceHeader: string | string[] | undefined,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAgentRunParamsSchema))
     params: StoryAgentRunParams,
   ) {
-    const data = await this.runs.undo(
+    const data = await this.runs.undoForProject(
       user,
-      requiredWorkspaceId(workspaceHeader),
       params.projectId,
       params.runId,
       requiredIdempotencyKey(idempotencyHeader),
@@ -190,18 +169,6 @@ export class StoryAgentRunController {
     if (data.status === 'applying') this.worker.wake();
     return { code: 200, data };
   }
-}
-
-function requiredWorkspaceId(value: string | string[] | undefined): string {
-  const candidate = Array.isArray(value) ? value[0] : value;
-  const parsed = StoryUuidSchema.safeParse(candidate);
-  if (!parsed.success) {
-    throw new BadRequestException({
-      code: 'WORKSPACE_CONTEXT_REQUIRED',
-      message: 'A valid x-fizz-workspace-id header is required.',
-    });
-  }
-  return parsed.data;
 }
 
 function requiredIdempotencyKey(value: string | string[] | undefined): string {

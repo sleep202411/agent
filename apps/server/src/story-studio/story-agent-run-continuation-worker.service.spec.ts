@@ -1,9 +1,17 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest assertions inspect structurally typed Prisma payloads. */
 import { StoryAgentRunStatus } from '@prisma/client';
+import {
+  StoryAssetProposalSchema,
+  StoryNoopProposalSchema,
+  StoryScreenplayProposalSchema,
+} from '@repo/shared/story-agent';
 import { AgentOsContinuationNotReadyError } from '../agent-os-journal/agent-os-run-journal.service';
 import { StoryAgentRunContinuationWorkerService } from './story-agent-run-continuation-worker.service';
 
 const STORY_RUN_ID = '019a0331-2fa4-7f0b-a42f-88c00c07b936';
+const STORY_PROJECT_ID = '019a0331-5000-7000-8000-000000000001';
+const STORY_CHAPTER_ID = '019a0331-5000-7000-8000-000000000002';
+const WORKSPACE_ID = '019a0331-5000-7000-8000-000000000003';
 const AGENT_RUN_ID = '019a0331-327d-7b70-827c-ece76580783e';
 const TURN_ID = '019a0331-343d-7a2f-9025-556dbafcccd4';
 const TOOL_CALL_ID = 'call_story_author_1';
@@ -11,6 +19,78 @@ const CONVERSATION_ID = '019a0331-38cb-780d-a5e5-294d17b5ef22';
 const DECISION_TURN_ID = '019a0331-4000-7000-8000-000000000001';
 const NOW = new Date('2026-08-20T12:00:00.000Z');
 const LEASE_EXPIRES_AT = new Date('2026-08-20T12:00:30.000Z');
+const STORY_CONTINUATION_PLAN = {
+  continueThrough: 'storyboard' as const,
+  title: 'Story title',
+  summary: 'Story summary',
+  brief: 'Prepare the remaining production stages for separate review.',
+};
+const MOBILE_STORY_CONTINUATION_PLAN = {
+  ...STORY_CONTINUATION_PLAN,
+  experience: 'mobile_h5' as const,
+};
+const AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN = {
+  ...MOBILE_STORY_CONTINUATION_PLAN,
+  autoGenerateAssetImages: true,
+};
+const SCRIPT_PROPOSAL = StoryScreenplayProposalSchema.parse({
+  schemaVersion: 'story-screenplay-proposal-v1',
+  draftSchemaVersion: 'interactive-story-draft-v1',
+  baseDraftRevision: 1,
+  baseContentHash: 'a'.repeat(64),
+  baseLayoutRevision: 1,
+  baseScriptDocumentId: '019a0331-5000-7000-8000-000000000010',
+  baseScriptSequence: 0,
+  baseScriptHash: 'b'.repeat(64),
+  title: 'Story title',
+  summary: 'Story summary',
+  screenplay: {
+    schemaVersion: 'interactive-screenplay-v1',
+    storyLanguage: 'en-US',
+    title: 'Story title',
+    logline: 'A creator opens a new story.',
+    synopsis: 'The first scene establishes the premise.',
+    characters: [],
+    entrySceneId: 'opening',
+    scenes: [
+      {
+        nodeId: 'opening',
+        clipKey: 'OPENING',
+        heading: 'INT. STUDIO – DAY',
+        beat: 'The story begins.',
+        action: 'A blank page fills with light.',
+        dialogue: [],
+        exit: { kind: 'auto', nextNodeId: null },
+      },
+    ],
+  },
+});
+const ASSET_PROPOSAL = StoryAssetProposalSchema.parse({
+  schemaVersion: 'story-asset-proposal-v1',
+  draftSchemaVersion: SCRIPT_PROPOSAL.draftSchemaVersion,
+  baseDraftRevision: SCRIPT_PROPOSAL.baseDraftRevision,
+  baseContentHash: SCRIPT_PROPOSAL.baseContentHash,
+  baseLayoutRevision: SCRIPT_PROPOSAL.baseLayoutRevision,
+  baseScriptDocumentId: SCRIPT_PROPOSAL.baseScriptDocumentId,
+  baseScriptSequence: SCRIPT_PROPOSAL.baseScriptSequence,
+  baseScriptHash: SCRIPT_PROPOSAL.baseScriptHash,
+  title: SCRIPT_PROPOSAL.title,
+  summary: SCRIPT_PROPOSAL.summary,
+  screenplay: SCRIPT_PROPOSAL.screenplay,
+  assetPlan: { assetSpecs: [] },
+});
+const NOOP_PROPOSAL = StoryNoopProposalSchema.parse({
+  schemaVersion: 'story-noop-proposal-v1',
+  draftSchemaVersion: SCRIPT_PROPOSAL.draftSchemaVersion,
+  baseDraftRevision: SCRIPT_PROPOSAL.baseDraftRevision,
+  baseContentHash: SCRIPT_PROPOSAL.baseContentHash,
+  baseLayoutRevision: SCRIPT_PROPOSAL.baseLayoutRevision,
+  baseScriptDocumentId: SCRIPT_PROPOSAL.baseScriptDocumentId,
+  baseScriptSequence: SCRIPT_PROPOSAL.baseScriptSequence,
+  baseScriptHash: SCRIPT_PROPOSAL.baseScriptHash,
+  title: 'Everything is current',
+  summary: 'No production stage needs another proposal.',
+});
 
 describe('StoryAgentRunContinuationWorkerService', () => {
   const originalEnabled = process.env.STORY_AGENT_CONTINUATION_WORKER_ENABLED;
@@ -181,6 +261,36 @@ describe('StoryAgentRunContinuationWorkerService', () => {
     );
   });
 
+  it('reports a terminal failed authoring run as failed rather than cancelled', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.failed,
+        authoringAttempts: 1,
+        errorCode: 'STORY_AGENT_STAGE_FAILED',
+        errorDetail: 'The structure stage exhausted its attempts.',
+      }),
+      registration: registration({ decisionContractVersion: 2 }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        toolId: 'story.author',
+        phase: 'authoring',
+        outcome: 'failed',
+        text: 'The structure stage exhausted its attempts.',
+        error: {
+          code: 'STORY_AGENT_STAGE_FAILED',
+          message: 'The structure stage exhausted its attempts.',
+          retryable: false,
+        },
+      }),
+    );
+  });
+
   it('backs off without stamping delivery while the Agent run has not journaled the handoff', async () => {
     const fixture = createFixture({
       reconcileError: new AgentOsContinuationNotReadyError(
@@ -237,7 +347,12 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         turnId: TURN_ID,
         authorToolCallId: TOOL_CALL_ID,
         externalJobId: STORY_RUN_ID,
-        text: 'Your interactive-film proposal is ready to review.',
+        storyProjectId: STORY_PROJECT_ID,
+        storyChapterId: STORY_CHAPTER_ID,
+        workspaceId: WORKSPACE_ID,
+        stage: 'script',
+        schemaVersion: 'story-screenplay-proposal-v1',
+        text: 'The Script proposal is ready for review; approval saves only Script.',
         title: 'Story title',
         summary: 'Story summary',
       },
@@ -256,6 +371,30 @@ describe('StoryAgentRunContinuationWorkerService', () => {
       }),
     );
     expect(fixture.publishCommitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('describes sequential paid generation when an H5 Asset proposal becomes ready', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        sourceApprovalLocale: 'zh-CN',
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: MOBILE_STORY_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendStoryProposalReadyInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        stage: 'assets',
+        text: '资产规格已准备好。选择「继续」后会按顺序逐张生成图片；每张开始生成时扣除对应积分，完成后自动回填。',
+      }),
+    );
   });
 
   it('delivers the approved v2 apply result on its decision turn and second tool phase', async () => {
@@ -285,13 +424,160 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         externalJobId: STORY_RUN_ID,
         phase: 'apply',
         outcome: 'completed',
-        text: '已批准的剧本已写入 Script，并据此构建了情节树、资产规格与分镜时间轴。尚未生成任何图片或视频——准备好后，请在资产页与分镜页点击生成。',
+        text: '剧本已保存。正在构建情节树。',
       }),
     );
     expect(fixture.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ sourceTerminalDeliveredAt: null }),
         data: expect.objectContaining({ sourceTerminalDeliveredAt: NOW }),
+      }),
+    );
+  });
+
+  it('names character, location, and prop specs in the Asset apply result', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+        sourceProposalReadyDeliveredAt: new Date('2026-08-20T11:58:00.000Z'),
+        sourceApprovalDecision: 'approve',
+        sourceApprovalDecisionTurnId: DECISION_TURN_ID,
+        sourceApprovalLocale: 'en-US',
+      }),
+      registration: registration({ decisionContractVersion: 2 }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        phase: 'apply',
+        outcome: 'completed',
+        text: 'The Asset Specs were saved. This stage writes only logical character, location, and prop specifications; it generated no images or videos.',
+      }),
+    );
+  });
+
+  it('announces sequential generation after an authorized H5 Asset apply', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+        sourceProposalReadyDeliveredAt: new Date('2026-08-20T11:58:00.000Z'),
+        sourceApprovalDecision: 'approve',
+        sourceApprovalDecisionTurnId: DECISION_TURN_ID,
+        sourceApprovalLocale: 'zh-CN',
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        phase: 'apply',
+        outcome: 'completed',
+        text: '资产规格已保存。接下来逐张生成资产图片。',
+      }),
+    );
+  });
+
+  it('resumes the original story.author handoff after server-authorized H5 Asset auto-apply', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+        sourceAutoAppliedAt: NOW,
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.reconcileExternalHandoffInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      STORY_RUN_ID,
+    );
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        phase: 'apply',
+        toolId: 'story.author',
+        turnId: TURN_ID,
+        outcome: 'completed',
+        storyContinuation: {
+          locale: 'en-US',
+          plan: AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN,
+          completedStage: 'assets',
+        },
+      }),
+    );
+  });
+
+  it('resumes a completed apply with the immutable production scope', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: ASSET_PROPOSAL,
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+        sourceProposalReadyDeliveredAt: new Date('2026-08-20T11:58:00.000Z'),
+        sourceApprovalDecision: 'approve',
+        sourceApprovalDecisionTurnId: DECISION_TURN_ID,
+        sourceApprovalLocale: 'zh-CN',
+      }),
+      registration: registration({
+        decisionContractVersion: 2,
+        continuationPlan: STORY_CONTINUATION_PLAN,
+      }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        phase: 'apply',
+        outcome: 'completed',
+        storyContinuation: {
+          locale: 'zh-CN',
+          plan: STORY_CONTINUATION_PLAN,
+          completedStage: 'assets',
+        },
+      }),
+    );
+  });
+
+  it('delivers a terminal Noop as a truthful no-write authoring result', async () => {
+    const fixture = createFixture({
+      run: storyRun({
+        proposal: NOOP_PROPOSAL,
+        decisionContractVersion: 2,
+        status: StoryAgentRunStatus.succeeded,
+      }),
+      registration: registration({ decisionContractVersion: 2 }),
+    });
+
+    await fixture.worker.drainOnce();
+
+    expect(fixture.appendExternalResultInTransaction).toHaveBeenCalledWith(
+      fixture.tx,
+      expect.objectContaining({
+        toolId: 'story.author',
+        phase: 'authoring',
+        outcome: 'completed',
+        text: 'Script, Plot Tree, Asset Specs, and Storyboard Specs are already current. This run wrote nothing and generated no images or videos.',
       }),
     );
   });
@@ -470,21 +756,26 @@ function storyRun(
     authoringAttempts: number;
     decisionContractVersion: number;
     sourceProposalReadyDeliveredAt: Date | null;
+    sourceAutoAppliedAt: Date | null;
     sourceTerminalDeliveredAt: Date | null;
     sourceApprovalDecision: 'approve' | 'reject' | null;
     sourceApprovalDecisionTurnId: string | null;
     sourceApprovalLocale: 'en-US' | 'zh-CN' | 'zh-HK' | null;
     errorCode: string | null;
     errorDetail: string | null;
+    proposal: unknown;
   }> = {},
 ) {
   return {
     id: STORY_RUN_ID,
-    storyProjectId: '019a0331-5000-7000-8000-000000000001',
+    storyProjectId: STORY_PROJECT_ID,
+    storyChapterId: STORY_CHAPTER_ID,
+    workspaceId: WORKSPACE_ID,
     status: StoryAgentRunStatus.proposed,
     authoringAttempts: 1,
     decisionContractVersion: 1,
-    proposal: { title: 'Story title', summary: 'Story summary' },
+    proposal: SCRIPT_PROPOSAL,
+    project: { defaultLocale: 'en-US' },
     sourceAgentRunId: AGENT_RUN_ID,
     sourceAgentTurnId: TURN_ID,
     sourceAgentToolCallId: TOOL_CALL_ID,
@@ -492,6 +783,7 @@ function storyRun(
       'Your interactive-film proposal is ready to review.',
     sourceResultDeliveredAt: null,
     sourceProposalReadyDeliveredAt: null,
+    sourceAutoAppliedAt: null,
     sourceTerminalDeliveredAt: null,
     sourceApprovalDecision: null,
     sourceApprovalDecisionTurnId: null,
@@ -508,6 +800,11 @@ function registration(
   overrides: Partial<{
     sourceAgentToolCallId: string;
     decisionContractVersion: number;
+    continuationPlan:
+      | typeof STORY_CONTINUATION_PLAN
+      | typeof MOBILE_STORY_CONTINUATION_PLAN
+      | typeof AUTHORIZED_MOBILE_STORY_CONTINUATION_PLAN
+      | null;
   }> = {},
 ) {
   return {
@@ -522,6 +819,7 @@ function registration(
     sourceToolId: 'story.author',
     startedMessage: 'I am shaping the proposal now.',
     completionMessage: 'Your interactive-film proposal is ready to review.',
+    continuationPlan: null,
     createdAt: NOW,
     ...overrides,
   };

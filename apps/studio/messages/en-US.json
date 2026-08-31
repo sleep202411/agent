@@ -849,6 +849,8 @@
       "rejected": "Review feedback",
       "requirements": {
         "name": "Name",
+        "image": "Image",
+        "video": "Video",
         "poster": "Cover",
         "synopsis": "Synopsis",
         "document": "Worldview DOCX"
@@ -1093,10 +1095,17 @@
       "oneTime": "one-time"
     },
     "features": {
-      "imagesPerDay": "{count} image generations per day",
-      "imagesUnlimited": "Unlimited image generations",
-      "videosPerDay": "{count} video generations per day",
-      "videosUnlimited": "Unlimited video generations",
+      "estimate": {
+        "images": "About {count} {model} images",
+        "videos": "About {count} {model} videos",
+        "details": "How this estimate is calculated",
+        "lowQuality": "low quality",
+        "withAudio": "with audio",
+        "withoutAudio": "without audio",
+        "imageTooltip": "Estimated at {model} {resolution}, {quality}, one output, and no reference images ({points} compute credits per image). Actual usage varies with settings, references, and future pricing.",
+        "videoTooltip": "Estimated at {model} {resolution}, {duration} seconds, {audio}, one output, and no reference media ({points} compute credits per video). Actual usage varies with settings, references, and future pricing.",
+        "allocationDisclaimer": "Each estimate independently uses all {amount} credits for that model only. These are alternatives, not combined output allowances."
+      },
       "sharedCredits": "Shared team compute credits",
       "seatScope": "Creator seats are shared across all projects; viewers and reviewers are free",
       "concurrentJobs": "{count, plural, one {# concurrent job} other {# concurrent jobs}}",
@@ -1979,6 +1988,22 @@
         "qa": "QA"
       },
       "items": {
+        "cinematicRealism": {
+          "name": "Cinematic Realism",
+          "description": "Grounded live-action cinema with physically credible light, lenses, materials and human performance."
+        },
+        "stylized3dCinema": {
+          "name": "Stylized 3D Cinema",
+          "description": "Feature-animation 3D with designed proportions, tactile materials, graphic lighting and cinematic camera language."
+        },
+        "animeCinematic": {
+          "name": "Anime Cinematic",
+          "description": "Contemporary cinematic anime with authored layouts, expressive acting and atmospheric backgrounds."
+        },
+        "graphicNovelCinema": {
+          "name": "Graphic Novel Cinema",
+          "description": "Bold ink structure, designed value masses, selective color and panel-aware visual storytelling."
+        },
         "wesAndersonCinematic": {
           "name": "Wes Anderson Cinematic",
           "description": "Centered storybook compositions, restrained performances, tactile sets and precise lateral movement."
@@ -2423,6 +2448,8 @@
         "structure": "Structure",
         "branch": "Branches",
         "scene": "Scenes",
+        "assets": "Assets",
+        "storyboard": "Storyboard",
         "validate": "Validate"
       },
       "activity": {
@@ -2430,39 +2457,221 @@
         "structure": "Structuring the narrative…",
         "branch": "Designing story branches…",
         "scene": "Writing the screenplay…",
+        "assets": "Preparing Asset Specs…",
+        "storyboard": "Planning the Storyboard…",
         "validate": "Checking story continuity…",
-        "applying": "Saving the screenplay and building the story…",
+        "applying": "Applying the approved story update…",
         "savingScript": "Saving the approved screenplay to Script…",
-        "buildingProduction": "Script saved. Building Plot, Asset Specs, and Storyboard…",
-        "finalizingProduction": "Plot, Asset Specs, and Storyboard are ready. Finishing…"
+        "savingPlot": "Saving the approved structure to Plot Tree…",
+        "savingAssets": "Saving the approved logical Asset Specs…",
+        "savingStoryboard": "Saving the approved Storyboard plan…",
+        "savingUpdate": "Applying the approved story update…",
+        "buildingProduction": "Saving approved production changes…",
+        "finalizingProduction": "Finishing the approved production update…"
       },
-      "applyingHint": "Saving the screenplay and building the story…",
-      "apply": "Approve and build",
+      "applyingHint": "Applying the approved story update…",
+      "apply": "Apply update",
       "savingScript": "Saving Script…",
-      "savingScriptHint": "Recording your approval and saving the screenplay to Script. Production continues in the Agent activity.",
+      "savingScriptHint": "Recording your approval and saving the screenplay to Script only.",
       "discard": "Discard",
       "discarding": "Discarding…",
       "failedHint": "Drafting didn't finish. You can retry.",
       "retry": "Retry",
       "viewAll": "View all",
       "reviewScreenplay": "Review screenplay",
+      "screenplayCard": {
+        "eyebrow": "Script proposal",
+        "review": "Review full Script",
+        "dialogDescription": "Read the complete Script exactly as it will be saved. Approval remains in the conversation decision area.",
+        "reviewRegion": "Complete Script proposal",
+        "metrics": {
+          "scenes": "Scenes",
+          "characters": "Characters",
+          "choices": "Choices"
+        },
+        "status": {
+          "proposed": "Awaiting review",
+          "active": "Awaiting review",
+          "applying": "Saving",
+          "applied": "Approved",
+          "rejected": "Returned",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        }
+      },
+      "plotCard": {
+        "eyebrow": "Plot Tree proposal",
+        "review": "Open canvas preview",
+        "dialogDescription": "Explore the exact scene topology, branches, and endings in a read-only canvas. Approval remains in the conversation decision area.",
+        "canvasRegion": "Read-only Plot Tree canvas preview",
+        "scene": "Scene",
+        "decision": "Player decision",
+        "entry": "Entry",
+        "ending": "Ending",
+        "continues": "Continues",
+        "metrics": {
+          "nodes": "Nodes",
+          "branches": "Branches",
+          "endings": "Endings"
+        },
+        "status": {
+          "proposed": "Awaiting review",
+          "active": "Awaiting review",
+          "applying": "Saving",
+          "applied": "Approved",
+          "rejected": "Returned",
+          "failed": "Failed",
+          "cancelled": "Cancelled"
+        }
+      },
       "proposalLoading": "Loading the Story proposal…",
       "proposalUnavailable": "The proposal could not be loaded. Refresh it or discard it to continue.",
+      "approvalFailed": "Approval could not be recorded. The review remains open; try again.",
+      "proposalDecision": {
+        "question": {
+          "script": "Approve this Script?",
+          "plot": "Approve this Plot Tree?",
+          "assets": "Approve these Asset Specs?",
+          "storyboard": "Approve this Storyboard plan?",
+          "patch": "Apply this story update?"
+        },
+        "questionMobile": {
+          "script": "Continue, save this Script, and move to the next step?",
+          "plot": "Continue and save this Plot Tree? Asset Specs will then be prepared and saved automatically, and their images will generate one at a time with credits charged as each image starts.",
+          "assets": "Continuing saves these {count} Asset Specs and automatically generates their images one by one. Credits are charged as each image starts. Continue?",
+          "storyboard": "Continue, save this Storyboard plan, and generate its clips one at a time? Credits are charged as each clip starts.",
+          "patch": "Continue and apply this story update?"
+        },
+        "yes": "Yes",
+        "no": "No",
+        "continue": "Continue",
+        "continueResponse": "Continue",
+        "stop": "Don’t continue",
+        "stopLabel": "Don’t continue; leave automatic creation and return to chat",
+        "stopResponse": "Don’t continue",
+        "rejectLabel": "No, send back for revision",
+        "rejectResponse": "Send back for revision"
+      },
+      "proposalStage": {
+        "script": {
+          "ready": "Script ready",
+          "review": "Review Script",
+          "eyebrow": "Script draft",
+          "description": "Review the complete screenplay. Approving saves Script only; the Plot Tree is prepared as the next separate review stage.",
+          "approve": "Approve Script",
+          "saving": "Saving Script…",
+          "savingHint": "Recording your approval and saving this screenplay to Script only."
+        },
+        "plot": {
+          "ready": "Plot Tree ready",
+          "review": "Review Plot Tree",
+          "eyebrow": "Plot Tree proposal",
+          "description": "Review the scene topology, branches, and endings compiled from the approved Script. Approving saves the Plot Tree only; Asset Specs remain a separate review stage.",
+          "approve": "Approve Plot Tree",
+          "saving": "Saving Plot Tree…",
+          "savingHint": "Recording your approval and saving this story structure to the Plot Tree only."
+        },
+        "assets": {
+          "ready": "Asset Specs ready",
+          "review": "Review Asset Specs",
+          "eyebrow": "Asset Specs proposal",
+          "description": "Review the reusable character, location, and prop specifications derived from the approved Plot Tree. Approving saves logical specs only; no media is generated or credits spent.",
+          "mobileDescription": "Continuing saves these {count} Asset Specs and generates their images sequentially. Credits are charged as each image starts, and completed images fill in automatically.",
+          "legacyReadyMessage": "The Asset Specs proposal is ready for review; approval saves logical specs only and generates no media.",
+          "mobileReadyMessage": "The Asset Specs are ready. Continuing generates images sequentially; credits are charged as each image starts, and completed images fill in automatically.",
+          "approve": "Approve Asset Specs",
+          "continueAndGenerate": "Continue: save {count} Asset Specs and generate images",
+          "saving": "Saving Asset Specs…",
+          "savingHint": "Recording your approval and saving logical Asset Specs only. No media is being generated."
+        },
+        "storyboard": {
+          "ready": "Storyboard ready",
+          "review": "Review Storyboard",
+          "eyebrow": "Storyboard proposal",
+          "description": "Review the sequences, clips, timing, and prompts. Approving saves the plan only; no media is generated or credits spent.",
+          "approve": "Approve Storyboard",
+          "saving": "Saving Storyboard…",
+          "savingHint": "Recording your approval and saving storyboard sequences and clip prompts only."
+        },
+        "patch": {
+          "ready": "Story update ready",
+          "review": "Review update",
+          "eyebrow": "Story update",
+          "description": "Review the exact story changes before applying them.",
+          "approve": "Apply update",
+          "saving": "Applying update…",
+          "savingHint": "Applying the approved story changes."
+        }
+      },
       "proposal": {
         "eyebrow": "Screenplay draft",
-        "description": "Review the complete screenplay. What you see here is saved to Script exactly, then used to build the Plot Tree.",
+        "description": "Review the complete screenplay. What you see here is saved to Script exactly, then compiled into the Plot Tree before Asset Specs are prepared.",
+        "reviewRegion": "Proposal content to review",
         "metrics": {
           "scenes": "Scenes",
           "branches": "Branches",
           "endings": "Endings",
-          "interactions": "Interactions"
+          "interactions": "Interactions",
+          "assetSpecs": "Asset Specs",
+          "characters": "Characters",
+          "locations": "Locations",
+          "props": "Props",
+          "sequences": "Sequences",
+          "clips": "Clips",
+          "seconds": "Seconds"
         },
         "sections": {
           "summary": "Story overview",
           "characters": "Characters",
           "structure": "Screenplay scenes and branches",
-          "productionNotes": "Production notes"
+          "productionNotes": "Production notes",
+          "assetSpecs": "Reusable Asset Specs",
+          "storyboard": "Sequences and clips"
         },
+        "assetKinds": {
+          "character": "Character",
+          "location": "Location",
+          "prop": "Prop"
+        },
+        "clipKinds": {
+          "image": "Image",
+          "video": "Video"
+        },
+        "imagePrompt": "Reference image prompt",
+        "showMoreAssets": "Show {count} more assets",
+        "viewMoreAssets": "Click to view more",
+        "assetKindDialogTitle": "{kind} assets · {count}",
+        "assetKindDialogDescription": "All {kind} assets included in this proposal.",
+        "videoPrompt": "Motion / video prompt",
+        "negativePrompt": "Negative prompt",
+        "sourceCharacter": "Source Story Bible character",
+        "sourceNodes": "{count, plural, one {# source scene} other {# source scenes}}",
+        "noAssetSpecs": "This proposal does not require reusable Asset Specs.",
+        "sequenceMeta": "{count, plural, one {# clip} other {# clips}} · {seconds}s",
+        "storyboardTable": {
+          "sequence": "Sequence",
+          "shots": "Shots",
+          "duration": "Duration",
+          "seconds": "{value}s",
+          "viewAll": "View all Storyboard",
+          "more": "+{count} more",
+          "dialogTitle": "Storyboard details · {count} sequences",
+          "dialogDescription": "Review every sequence, shot, timing, prompt, and decision cue in this proposal.",
+          "shot": "Shot",
+          "type": "Type",
+          "timing": "Timing",
+          "prompt": "Prompt",
+          "fromTo": "{start}–{end} ms",
+          "durationValue": "{value} ms duration"
+        },
+        "start": "Start",
+        "end": "End",
+        "duration": "Duration",
+        "milliseconds": "{value} ms",
+        "decisionCues": "Decision cues",
+        "cueAt": "{value} ms",
+        "decision": "Decision",
+        "noDecisionCues": "No decision cues.",
         "untitledScene": "Untitled scene",
         "continuesTo": "Continues to {scene}",
         "ending": "Ending",
@@ -2477,14 +2686,11 @@
     "newProject": "New story project",
     "projects": {
       "title": "Story projects",
-      "subtitle": "All editable stories in the active workspace.",
+      "subtitle": "All stories you can access, in one place.",
       "draft": "Draft",
       "noSummary": "No project summary yet.",
       "videoProgress": "{current}/{total} current videos",
-      "updatedUnknown": "Update time unavailable",
-      "tabAll": "All",
-      "tabJoined": "Shared with me",
-      "otherWorkspace": "Another workspace"
+      "updatedUnknown": "Update time unavailable"
     },
     "metrics": {
       "references": "References",
@@ -2589,7 +2795,7 @@
       "cancel": "Cancel generation",
       "retry": "Retry generation",
       "retryAttachment": "Retry attachment",
-      "generate": "Quick Generate",
+      "generate": "Generate",
       "generateAgain": "Generate again",
       "progressAria": "Generation progress",
       "targetNotCurrent": "Reconcile this stale production target before generating media.",
@@ -2609,9 +2815,42 @@
       }
     },
     "assetsPage": {
+      "pageTitle": "Asset Specs · Interactive Film Studio",
+      "pageDescription": "Manage chapter-local logical Asset Specs and selected media.",
+      "loading": "Loading Asset Specs…",
       "empty": "No production assets in this chapter yet.",
       "emptyHint": "Asset Specs appear here after the approved story plan is applied.",
+      "categoryEmpty": {
+        "character": "No character Asset Specs in this chapter",
+        "location": "No location Asset Specs in this chapter",
+        "prop": "No prop Asset Specs in this chapter"
+      },
+      "categoryEmptyHint": "This category is empty. Choose another category to review the remaining Asset Specs.",
       "generationHint": "Opening this page never generates media or spends credits.",
+      "continueWithAgent": "Continue in FizzAgent",
+      "stage": {
+        "plotRequired": {
+          "title": "Approve the Plot Tree first",
+          "description": "Asset planning follows the approved narrative topology. Continue in FizzAgent to prepare and review the Plot Tree before extracting reusable assets."
+        },
+        "assetsRequired": {
+          "title": "Asset Specs are the next approval stage",
+          "description": "Ask FizzAgent to derive the reusable characters, locations, and props from the approved Plot Tree and Script interpretation. You will review them before Storyboard; no media is generated."
+        },
+        "stale": {
+          "title": "{count, plural, one {# Asset Spec needs attention} other {# Asset Specs need attention}}",
+          "description": "Existing work remains visible for review. Resolve available conflicts below; items without comparison details need a refreshed Agent proposal. Media generation stays unavailable until this stage is current."
+        },
+        "noAssets": {
+          "title": "No reusable Asset Specs are needed",
+          "description": "This approved chapter can continue to Storyboard without creating reusable characters, locations, or props."
+        }
+      },
+      "prompts": {
+        "plot": "Prepare the Plot Tree for this chapter from the approved Script. Let me review and approve it before Asset Specs. Do not generate media.",
+        "assets": "Prepare Asset Specs for this chapter from the approved Plot Tree and Script interpretation. Let me review and approve them before Storyboard. Do not generate media.",
+        "storyboard": "Continue this chapter to Storyboard. Prepare the storyboard plan for my review and approval. Do not generate media."
+      },
       "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
       "loadError": "Asset Specs could not be loaded.",
       "retry": "Try again",
@@ -2621,7 +2860,46 @@
         "prop": "Props"
       },
       "filterLabel": "Filter Asset Specs by type",
+      "batch": {
+        "generate": "Generate",
+        "allGenerated": "All generated",
+        "running": "Generating",
+        "runningOther": "A collaborator is generating",
+        "cancelling": "Cancelling",
+        "cancel": "Cancel batch",
+        "quoting": "Calculating an exact server quote…",
+        "quoteError": "Unable to prepare the batch quote.",
+        "confirmError": "Unable to start the generation batch.",
+        "cancelError": "Unable to cancel the generation batch.",
+        "cancelled": "Cancellation requested. Any submitted items will finish settling.",
+        "completed": "Batch generation completed and Asset media is up to date.",
+        "partialFailed": "Some Assets failed to generate; completed results were still saved.",
+        "failed": "This generation batch failed. Review the task details and try again.",
+        "dialog": {
+          "title": "Confirm remaining Asset generation",
+          "description": "Review the exact cost before generating every Asset in this category that does not have media yet.",
+          "items": "Assets",
+          "points": "Compute points",
+          "available": "Available",
+          "unavailable": "—",
+          "model": "Image model: {model}",
+          "expires": "Quote expires at {time}",
+          "insufficientPoints": "Not enough compute points: {required} required, {available} available. Add credits before continuing.",
+          "insufficientConfirm": "Not enough points",
+          "billingNotice": "Items are admitted fairly across creators. Points are charged only when each item enters generation; a price change requires a fresh quote.",
+          "back": "Back",
+          "confirm": "Confirm · {points} points",
+          "confirmEmpty": "Confirm"
+        }
+      },
       "details": "Details",
+      "mediaAction": {
+        "uploadImage": "Upload image",
+        "replaceImage": "Replace image",
+        "replacing": "Replacing image…",
+        "replaceSuccess": "Asset image replaced.",
+        "replaceError": "Could not replace the Asset image."
+      },
       "detailDialog": {
         "imagePrompt": "Image Prompt",
         "model": "Model",
@@ -2636,7 +2914,79 @@
       },
       "title": "Asset Specs"
     },
+    "generationBatchTranscript": {
+      "title": "Asset media generation",
+      "summary": "{processed}/{total} processed · {points} compute points",
+      "loading": "Loading generation progress…",
+      "loadError": "This generation batch could not be loaded.",
+      "mediaLoadError": "Generated Asset media could not be refreshed.",
+      "cancelError": "This generation batch could not be cancelled.",
+      "retry": "Try again",
+      "cancel": "Cancel",
+      "progressLabel": "Batch generation progress",
+      "batchStatus": {
+        "awaiting_confirmation": "Awaiting confirmation",
+        "blocked": "Paused",
+        "queued": "Queued",
+        "running": "Generating",
+        "completed": "Completed",
+        "partial_failed": "Partially completed",
+        "cancelling": "Cancelling",
+        "cancelled": "Cancelled",
+        "failed": "Failed",
+        "expired": "Quote expired"
+      },
+      "itemStatus": {
+        "awaiting_confirmation": "Awaiting",
+        "blocked": "Paused",
+        "generating": "Generating image",
+        "ready": "Queued",
+        "dispatching": "Starting",
+        "submitted": "Generating",
+        "completed": "Completed",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "assetKinds": {
+        "character": "Character",
+        "location": "Location",
+        "prop": "Prop"
+      },
+      "mobileCard": {
+        "title": "{kind}: {name}",
+        "generating": "Generating image…",
+        "paused": "Waiting for credits",
+        "pausedHint": "Generation is paused on this card and will continue here after recharge.",
+        "failed": "Image generation failed",
+        "failedStoppedHint": "Generation stopped here. Your completed images are still available.",
+        "failedRetainedHint": "This image was not generated. Your other generated images are still available.",
+        "viewError": "View error details",
+        "cancelled": "Generation stopped"
+      },
+      "mobileStoryboard": {
+        "title": "Storyboard {index}: {name}",
+        "untitled": "Untitled scene",
+        "clip": "Clip {index}",
+        "generating": "Generating clip…",
+        "paused": "Waiting for credits",
+        "failed": "Clip generation failed",
+        "play": "Play this story"
+      },
+      "recovery": {
+        "balanceTitle": "Generation paused — low balance",
+        "balanceBody": "Completed work is preserved. Recharge to continue from this card without skipping ahead.",
+        "failedTitle": "Generation stopped on this card",
+        "failedBody": "Completed work is preserved. Retry this card or stop this creation flow.",
+        "recharge": "Add credits",
+        "continue": "Continue generating",
+        "stop": "Don't continue",
+        "resumeError": "This generation batch could not be resumed."
+      }
+    },
     "storyboardPage": {
+      "pageTitle": "Storyboard · Interactive Film Studio",
+      "pageDescription": "Edit chapter-local Plot sequences, clips, cues, and Asset bindings.",
+      "loading": "Loading Storyboard…",
       "emptyChapter": "No scenes in this chapter yet.",
       "emptyHint": "Add scenes on the Plot Tree and the storyboard unfolds here scene by scene.",
       "loadError": "The storyboard could not be loaded.",
@@ -2652,18 +3002,84 @@
       },
       "seconds": "{value}s",
       "options": "Options",
-      "unplanned": "No storyboard yet",
-      "unplannedHint": "This scene has not been planned into a storyboard. Ask FizzAgent to plan this chapter's storyboard.",
+      "addNode": "Add storyboard node",
+      "newNodeTitle": "Untitled scene",
+      "nodeAdded": "The node was added to both the Storyboard and Plot Tree.",
+      "addNodeError": "The storyboard node could not be added.",
+      "missingChapter": "No active chapter is available.",
       "title": "Storyboard",
       "clipKind": {
         "image": "Image",
         "video": "Video"
+      },
+      "editTimeline": "Edit"
+    },
+    "editorPage": {
+      "pageTitle": "Edit · Interactive Film Studio",
+      "pageDescription": "Edit the node-local visual timeline without duplicating Plot Tree branches.",
+      "title": "Edit",
+      "description": "Each Plot node owns one local timeline. Branching remains on the Plot Tree.",
+      "loading": "Loading timeline…",
+      "loadError": "The timeline could not be loaded.",
+      "retry": "Try again",
+      "emptyTitle": "No storyboard timelines yet",
+      "emptyDescription": "Prepare a Storyboard sequence before opening the editor.",
+      "backToStoryboard": "Back to Storyboard",
+      "saved": "Saved",
+      "saving": "Saving…",
+      "seconds": "{value}s",
+      "addClip": "Add clip",
+      "newClipTitle": "Untitled clip",
+      "newClipPrompt": "Describe the image or motion for this clip.",
+      "addSuccess": "Clip added to the timeline.",
+      "addError": "The clip could not be added.",
+      "preview": "Selected clip preview",
+      "previewEmpty": "No generated media for this clip",
+      "previewEmptyHint": "Open clip details to adjust its prompt or start generation.",
+      "details": "Clip details",
+      "clipList": "Clips / Frames",
+      "inspector": "Clip",
+      "selectClip": "Select a clip on the timeline to inspect it.",
+      "kind": "Type",
+      "startsAt": "Starts at",
+      "duration": "Duration",
+      "prompt": "Prompt",
+      "timeline": "Timeline",
+      "timelineZoom": "Timeline zoom",
+      "play": "Play sequence",
+      "pause": "Pause sequence",
+      "restart": "Return to start",
+      "zoomOut": "Zoom out",
+      "zoomIn": "Zoom in",
+      "decisionCue": "Decision cue at {time}",
+      "playhead": "Timeline position {time}",
+      "inspectorForm": {
+        "name": "Name",
+        "model": "Model",
+        "loadingModels": "Loading models…",
+        "noModels": "No compatible models available",
+        "image": "Image",
+        "video": "Video",
+        "media": "Image / video",
+        "noMedia": "No media yet",
+        "replaceMedia": "Replace media",
+        "save": "Save",
+        "saved": "Clip saved.",
+        "saveError": "The clip could not be saved.",
+        "generate": "Generate",
+        "generateStarted": "Generation started.",
+        "generateError": "Generation could not be started.",
+        "replaceSuccess": "Clip media replaced.",
+        "replaceError": "The clip media could not be replaced.",
+        "mediaUnavailable": "Media replacement is unavailable until this project is editable.",
+        "unsupportedMedia": "A clip can only use image or video media."
       }
     },
     "canvas": {
       "back": "Back to Interactive Film Studio",
       "mode": "Story canvas",
       "steps": {
+        "navigationLabel": "Story production stages",
         "script": "Script",
         "tree": "Plot Tree",
         "assets": "Assets",
@@ -2710,69 +3126,84 @@
         "close": "Close chapters"
       },
       "publish": {
-        "action": "Publish",
-        "actionPending": "Publishing…",
+        "action": "Submit for review",
+        "actionUpdate": "Submit update",
+        "actionResubmit": "Resubmit",
+        "actionPending": "Submitting…",
+        "actionReviewing": "In review",
         "actionPublished": "Published",
-        "statusChecking": "Checking the current live version…",
-        "title": "Publish current version?",
-        "description": "This will prepare the latest saved story and set it as the live version players receive.",
+        "statusChecking": "Checking publication status…",
+        "statusUnavailable": "Publication status is unavailable. Try again after it refreshes.",
+        "reviewingLocked": "This project is already in review.",
+        "publishedUpdateLocked": "Take the project offline before submitting an update.",
+        "status": {
+          "draft": "Draft",
+          "reviewing": "In review",
+          "published": "Published",
+          "offline": "Offline",
+          "checking": "Checking…",
+          "unavailable": "Status unavailable"
+        },
+        "rejectionReason": "Review feedback: {reason}",
+        "title": "Submit current version for review?",
+        "description": "This prepares the latest saved project and sends it to platform review. It will not go live until approved.",
         "confirmation": {
-          "title": "Ready to publish",
+          "title": "Ready for review",
           "draftRevision": "Latest saved story · revision {revision}",
-          "detail": "The canvas stays editable after publication. Future edits remain private until you publish again."
+          "detail": "You can keep editing after submission. Later changes will not alter the version under review."
         },
         "progress": {
-          "title": "Publishing current version",
-          "description": "Keep this window open while the story is saved, checked, and published."
+          "title": "Submitting current version",
+          "description": "Keep this window open while the project is saved, prepared, and submitted."
         },
         "phases": {
           "saving": {
             "title": "Save latest changes",
             "description": "Saving the exact story currently on the canvas."
           },
-          "building": {
-            "title": "Check playable content",
-            "description": "Checking routes, videos, and player-facing content."
+          "preparing": {
+            "title": "Prepare version",
+            "description": "Building the immutable release payload from this project."
           },
-          "publishing": {
-            "title": "Publish",
-            "description": "Setting this as the live version for players."
+          "submitting": {
+            "title": "Submit to platform",
+            "description": "Uploading the version to Java and requesting review."
           }
         },
         "actions": {
           "cancel": "Cancel",
-          "confirm": "Publish current version",
+          "confirm": "Submit for review",
           "close": "Close",
           "retry": "Try again"
         },
         "success": {
-          "title": "Version published",
-          "description": "The current version is now live.",
-          "version": "Current version is live",
-          "detail": "Players now enter this version. You can keep editing the canvas without changing it."
+          "title": "Version submitted",
+          "description": "The current version is now in platform review.",
+          "version": "Review requested",
+          "detail": "Players cannot access this version until it is approved."
         },
         "failure": {
-          "title": "This version was not published",
-          "description": "Resolve the issue below, then try publishing again."
+          "title": "This version was not submitted",
+          "description": "Resolve the issue below, then try submitting again."
         },
-        "diagnostics": {
-          "title": "{count, plural, one {# issue to resolve} other {# issues to resolve}}"
+        "offline": {
+          "action": "Take offline",
+          "title": "Take this interactive film offline?",
+          "description": "Players will no longer find or start this project. A version in review will also leave the review flow.",
+          "confirm": "Take offline",
+          "success": "Interactive film taken offline."
         },
         "errors": {
-          "workspaceRequired": "Select a workspace before publishing.",
-          "permissionDenied": "Your project role does not allow publishing.",
+          "permissionDenied": "Only the project owner can submit or take this work offline.",
           "saveFailed": "The latest changes could not be saved.",
-          "workbenchFailed": "The saved version could not be loaded for checking.",
-          "revisionMismatch": "The prepared version did not match the saved story. Refresh the canvas and try again.",
-          "buildFailed": "The playable version could not be prepared.",
-          "buildNotReady": "This version is not ready to publish. Resolve the issues below and try again.",
-          "runtimeUnavailable": "The playable content is unavailable. Try preparing this version again.",
-          "publishFailed": "The prepared version could not be published.",
-          "unexpected": "The current version could not be published."
+          "prepareFailed": "The release version could not be prepared.",
+          "submitFailed": "The prepared version could not be submitted for review.",
+          "submitStatusInvalid": "Java did not confirm that this version entered review.",
+          "offlineFailed": "The interactive film could not be taken offline.",
+          "unexpected": "The current version could not be submitted."
         }
       },
       "workingPreview": {
-        "action": "Preview playtest",
         "pageTitle": "Story Playtest · Interactive Film Studio",
         "pageDescription": "Play an exact private draft or immutable build with the production experience runtime.",
         "draftRevision": "Draft r{revision}",
@@ -2798,6 +3229,7 @@
       },
       "nodeKinds": {
         "clip": "Film clip",
+        "decision": "Player decision",
         "world": "World experience"
       },
       "ports": {
@@ -2813,7 +3245,10 @@
         "addOption": "Add option",
         "cancelOption": "Cancel adding option",
         "optionPlaceholder": "Write the player-facing option",
-        "connectOption": "Connect this option"
+        "connectOption": "Connect this option",
+        "branchOptions": "Branch options",
+        "anchorHint": "Each option has its own connection anchor",
+        "optionCount": "{count} options"
       },
       "interactionAnchors": {
         "title": "Interaction anchors",
@@ -2861,6 +3296,7 @@
       },
       "projection": {
         "clip": "Clip",
+        "decision": "Player decision",
         "world": "World"
       },
       "worldNode": {
@@ -2950,10 +3386,18 @@
             "long_30_60": "30–60 minutes"
           },
           "visualStyles": {
-            "cinematic_realism": "Cinematic realism",
-            "stylized_3d": "Stylized 3D",
-            "graphic_novel": "Graphic novel",
-            "anime_cinematic": "Cinematic anime"
+            "cinematic-realism": "Cinematic realism",
+            "stylized-3d-cinema": "Stylized 3D",
+            "anime-cinematic": "Anime cinematic",
+            "graphic-novel-cinema": "Graphic novel",
+            "ink-wash-cinema": "Ink-wash cinema",
+            "stop-motion-clay-cinema": "Stop-motion clay",
+            "classic-cel-animation": "Classic cel animation",
+            "hand-painted-fantasy-adventure": "Hand-painted fantasy",
+            "retro-anime-key-visual": "Retro anime",
+            "pixel-art-adventure": "Pixel art",
+            "surreal-collage-dreamscape": "Surreal collage",
+            "grindhouse-chapter-cinema": "Vintage genre cinema"
           }
         },
         "cover": {
@@ -3217,8 +3661,8 @@
           "title": "Storyboard",
           "summary": "{count} clips · {ready} with media",
           "loading": "Loading the storyboard…",
-          "missing": "This scene has no storyboard sequence yet.",
-          "open": "Open storyboard"
+          "open": "Edit storyboard",
+          "openError": "The storyboard could not be opened."
         }
       },
       "conflict": {
@@ -3228,24 +3672,6 @@
       },
       "layoutConflict": {
         "description": "Someone rearranged this canvas. Your local layout is preserved; export it before discarding if needed."
-      },
-      "leaveGuard": {
-        "title": "Leave with local recovery work?",
-        "description": "Some work exists only in this browser and cannot be saved safely right now. Export a recovery file before leaving, or explicitly discard it.",
-        "planes": {
-          "draft": {
-            "title": "Story draft",
-            "description": "Unsaved or conflicted story content will be lost."
-          },
-          "layout": {
-            "title": "Canvas layout",
-            "description": "Unsaved node positions will be lost."
-          }
-        },
-        "stay": "Stay on canvas",
-        "export": "Export recovery",
-        "discardAndLeave": "Discard and leave",
-        "exported": "Recovery file exported. Keep it until your work is restored."
       },
       "graphError": {
         "generic": "That graph change conflicts with the current next step. Remove the existing route or choose a compatible target first.",
@@ -3464,6 +3890,24 @@
     "emptyHint": "Attach a script, tell FizzAgent what to do, approve writes, and keep going.",
     "emptyHintStory": "Attach source material or tell FizzAgent how to evolve this chapter, then keep refining the story.",
     "modelProfile": "Model",
+    "modelSettings": {
+      "title": "Model settings",
+      "description": "Choose the project defaults FizzAgent uses for conversation, image, and video work. These settings follow you across devices.",
+      "conversationModel": "Conversation model",
+      "conversationModelHint": "Reasoning and tool use",
+      "imageModel": "Image model",
+      "imageModelHint": "Asset and frame generation",
+      "videoModel": "Video model",
+      "videoModelHint": "Shot and clip generation",
+      "automatic": "Automatic",
+      "automaticHint": "Automatic lets FizzDragon choose an available model for each request. Per-request overrides remain possible.",
+      "open": "Model settings",
+      "cancel": "Cancel",
+      "save": "Save settings",
+      "saving": "Saving…",
+      "loadFailed": "Model settings could not be loaded. Try again.",
+      "saveFailed": "Model settings changed or a selected model is no longer available. Refresh and try again."
+    },
     "permissionMode": "Permission mode",
     "permAsk": "Ask every time",
     "permSmart": "Smart",
@@ -3575,6 +4019,8 @@
     "approvalStoryEntry": "Story entry",
     "approvalSceneOrder": "Scene order",
     "approvalStoryScene": "Story scene",
+    "approvalGenerationBatch": "Asset media generation",
+    "approvalGenerationBatchSummary": "{count} Assets · {points} compute points",
     "approvalNotReady": "Approval is still preparing — wait a moment and try again",
     "userInput": {
       "step": "STEP {current}/{total}",
