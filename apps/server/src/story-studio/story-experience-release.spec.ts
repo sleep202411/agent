@@ -64,6 +64,12 @@ describe('StoryExperienceReleaseService', () => {
         }),
       }),
     );
+    expect(dependencies.buildService.createBuild).toHaveBeenCalledWith(
+      expect.anything(),
+      PROJECT_ID,
+      expect.anything(),
+      expect.stringMatching(/^story-review:v2:/),
+    );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -216,6 +222,7 @@ function serviceDependencies({
     ),
   };
   return {
+    buildService,
     permissions,
     manifests,
     service: new StoryExperienceReleaseService(
