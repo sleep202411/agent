@@ -13,6 +13,7 @@ import {
   isTextGameAdminActionAllowed,
   isTextGameCreatorActionAllowed,
   isTextGameEditableByCreator,
+  takeTextGameSseFrames,
   textGameStatusAfterAdminAction,
   textGameStatusAfterCreatorAction,
 } from "./text-game";
@@ -268,14 +269,31 @@ describe("text-game wire contracts", () => {
     expect(textGameStatusAfterAdminAction("force_offline")).toBe("offline");
   });
 
-  it("requires a platform locale on start and chat input", () => {
+  it("accepts optional locale on start and chat input", () => {
     expect(TextGameStartInputSchema.parse({ locale: "en-US" })).toEqual({ locale: "en-US" });
+    expect(TextGameStartInputSchema.parse({})).toEqual({});
     expect(TextGameChatInputSchema.parse({ message: "  Look around  ", locale: "zh-CN" })).toEqual({
       message: "Look around",
       locale: "zh-CN",
     });
-    expect(TextGameStartInputSchema.safeParse({}).success).toBe(false);
-    expect(TextGameChatInputSchema.safeParse({ message: "Look around" }).success).toBe(false);
+    expect(TextGameChatInputSchema.parse({ message: "Look around" })).toEqual({
+      message: "Look around",
+    });
     expect(TextGameStartInputSchema.safeParse({ locale: "en" }).success).toBe(false);
+  });
+
+  it("parses SSE frames and ignores incomplete tails", () => {
+    const { frames, rest } = takeTextGameSseFrames(
+      [
+        'event:ready\ndata:{"ok":true}\n\n',
+        'event:delta\ndata:{"text":"Hi"}\n\n',
+        "event:delta\ndata:",
+      ].join("")
+    );
+    expect(frames).toEqual([
+      { event: "ready", data: { ok: true } },
+      { event: "delta", data: { text: "Hi" } },
+    ]);
+    expect(rest).toBe("event:delta\ndata:");
   });
 });
