@@ -37,6 +37,10 @@ import { StoryProjectsService } from './story-projects.service';
 
 const RELEASE_BUILD_CONCURRENCY = 8;
 const CHAPTER_MANIFEST_UPLOAD_CONCURRENCY = 16;
+// A release Build may be replayed indefinitely by its idempotency key. Bump
+// this only when candidate materialization changes, so an older immutable
+// receipt cannot be mistaken for the new request shape.
+const RELEASE_BUILD_KEY_VERSION = 2;
 
 interface PreparedChapter {
   chapterId: string;
@@ -489,7 +493,7 @@ function releaseBuildKey(
   input: PrepareStoryExperienceReleaseInput,
   chapter: Pick<StoryChapterDto, 'id'>,
 ): string {
-  return `story-review:${canonicalJsonHash({
+  return `story-review:v${RELEASE_BUILD_KEY_VERSION}:${canonicalJsonHash({
     projectId: workbench.project.id,
     projectVersion: workbench.project.projectVersion,
     draftRevision: input.expectedDraftRevision,
