@@ -69,8 +69,6 @@ const SERVER_OWNED_AI_INPUT_FIELDS = new Set([
   'referenceImages',
   'referenceVideos',
   'referenceAudios',
-  'duration',
-  'durationSeconds',
 ]);
 
 const GENERATION_RESPONSE_INCLUDE =
@@ -1354,11 +1352,8 @@ export class StoryProductionGenerationService
       modelId: model.id,
       schemaVersion: model.schemaVersion,
       // A durable batch replays creator-controlled options through the same
-      // target/model resolver at dispatch time. Do not persist the resolved
-      // `effectiveOptions` here: it contains server-owned fields such as
-      // duration/durationSeconds, which are intentionally rejected as client
-      // input and would later make the completed output impossible to
-      // materialize from its submission snapshot.
+      // target/model resolver at dispatch time. Persist only those authored
+      // values, not the schema defaults added to `effectiveOptions`.
       options: command.clientOptions,
       quotedPoints: estimate.sellPoints,
       pricingVersion: estimate.pricingVersion,
@@ -1623,22 +1618,14 @@ export class StoryProductionGenerationService
       target.durationMs !== null
     ) {
       const seconds = target.durationMs / 1_000;
-      const field = properties.durationSeconds
-        ? 'durationSeconds'
-        : properties.duration
-          ? 'duration'
-          : null;
-      const sourceDuration = field
-        ? shortestStorySourceDuration(properties[field], seconds)
-        : undefined;
-      if (!field || sourceDuration === undefined) {
-        throw new BadRequestException({
-          code: 'STORY_GENERATION_MODEL_DURATION_UNSUPPORTED',
-          message: `The selected model cannot generate a source video long enough for this ${seconds}-second Storyboard clip. Split the timeline into shorter clips or choose a model with a longer supported duration.`,
-          timelineDurationSeconds: seconds,
-        });
+      const field = storyDurationProperty(properties);
+      if (field && clientOptions[field] === undefined) {
+        const defaultDuration = nearestStoryDurationValue(
+          properties[field],
+          seconds,
+        );
+        if (defaultDuration) options[field] = defaultDuration.value;
       }
-      options[field] = sourceDuration.value;
     }
     return options;
   }
@@ -2092,6 +2079,13 @@ export class StoryProductionGenerationService
           });
         }
       } else {
+        if (target.targetKind !== 'storyboard_clip') {
+          throw new StoryMaterializationError(
+            'STORY_GENERATION_TARGET_KIND_MISMATCH',
+            'The completed Storyboard generation resolved to an invalid target kind.',
+            false,
+          );
+        }
         const latest = await tx.storyStoryboardClipMediaVersion.findFirst({
           where: { storyboardClipId: generation.storyboardClipId! },
           orderBy: { versionNumber: 'desc' },
@@ -2123,7 +2117,23 @@ export class StoryProductionGenerationService
           createdIds.push(created.id);
         }
         if (targetStillCurrent && createdIds[0]) {
-          await tx.storyStoryboardClip.updateMany({
+          const generatedDurationMs =
+            generation.generationKind === StoryProductionGenerationKind.video
+              ? generatedVideoDurationMs(outputRows[0].asset!.durationSeconds)
+              : null;
+          const timelineResize = generatedDurationMs
+            ? await this.productionPlans.prepareStoryboardTimelineResizeInTransaction(
+                tx,
+                {
+                  projectId: generation.storyProjectId,
+                  chapterId: generation.storyChapterId,
+                  sequenceId: target.sequenceId,
+                  clipId: generation.storyboardClipId!,
+                  durationMs: generatedDurationMs,
+                },
+              )
+            : null;
+          const selected = await tx.storyStoryboardClip.updateMany({
             where: {
               id: generation.storyboardClipId!,
               version: generation.targetVersion,
@@ -2132,9 +2142,22 @@ export class StoryProductionGenerationService
             },
             data: {
               selectedMediaVersionId: createdIds[0],
+              ...(generatedDurationMs
+                ? { durationMs: generatedDurationMs }
+                : {}),
               version: { increment: 1 },
             },
           });
+          if (selected.count === 1 && timelineResize) {
+            await this.productionPlans.applyStoryboardTimelineResizeInTransaction(
+              tx,
+              {
+                sequenceId: target.sequenceId,
+                clipId: generation.storyboardClipId!,
+                resize: timelineResize,
+              },
+            );
+          }
         }
       }
       await tx.storyProductionGeneration.update({
@@ -2796,12 +2819,16 @@ function sourceDurationSeconds(
     return null;
   }
   const properties = model.input_schema.properties ?? {};
-  const field = properties.durationSeconds
-    ? 'durationSeconds'
-    : properties.duration
-      ? 'duration'
-      : null;
+  const field = storyDurationProperty(properties);
   return field ? numericDuration(effectiveOptions[field]) : null;
+}
+
+function storyDurationProperty(
+  properties: Record<string, unknown>,
+): 'duration' | 'durationSeconds' | 'duration_seconds' | null {
+  if (properties.durationSeconds) return 'durationSeconds';
+  if (properties.duration_seconds) return 'duration_seconds';
+  return properties.duration ? 'duration' : null;
 }
 
 function parseSubmissionSnapshot(
@@ -2859,10 +2886,7 @@ function parseSubmissionSnapshot(
 export function storyGenerationClientOptionsFromSnapshot(
   value: unknown,
 ): StoryGenerationOptions {
-  const options = jsonObject(value);
-  delete options.duration;
-  delete options.durationSeconds;
-  return StoryGenerationOptionsSchema.parse(options);
+  return StoryGenerationOptionsSchema.parse(jsonObject(value));
 }
 
 function materializationFailure(error: unknown): MaterializationFailureShape {
@@ -3075,36 +3099,30 @@ export function missingRequiredStoryModelInputs(
   );
 }
 
-export function exactStoryDurationValue(
-  property: unknown,
-  seconds: number,
-): unknown {
-  const resolved = shortestStorySourceDuration(property, seconds);
-  return resolved?.seconds === seconds ? resolved.value : undefined;
-}
-
 /**
- * Resolve the shortest provider-supported source video that fully covers the
- * Storyboard playback interval. A longer source is trimmed by the timeline;
- * it is never silently shortened or looped.
+ * Seed the generation form from the current clip without coupling the two
+ * values afterwards. Choose the closest provider-supported value; ties prefer
+ * the longer source.
  */
-export function shortestStorySourceDuration(
+export function nearestStoryDurationValue(
   property: unknown,
-  timelineSeconds: number,
+  clipSeconds: number,
 ): { value: unknown; seconds: number } | undefined {
   const schema = jsonObject(property);
-  if (!Number.isFinite(timelineSeconds) || timelineSeconds <= 0) {
-    return undefined;
-  }
+  if (!Number.isFinite(clipSeconds) || clipSeconds <= 0) return undefined;
   if (Array.isArray(schema.enum)) {
-    const enumValues = schema.enum as unknown[];
-    return enumValues
+    return (schema.enum as unknown[])
       .map((value) => ({ value, seconds: numericDuration(value) }))
       .filter(
         (candidate): candidate is { value: unknown; seconds: number } =>
-          candidate.seconds !== null && candidate.seconds >= timelineSeconds,
+          candidate.seconds !== null,
       )
-      .sort((left, right) => left.seconds - right.seconds)[0];
+      .sort((left, right) => {
+        const distance =
+          Math.abs(left.seconds - clipSeconds) -
+          Math.abs(right.seconds - clipSeconds);
+        return distance || right.seconds - left.seconds;
+      })[0];
   }
 
   const declaredTypes = Array.isArray(schema.type)
@@ -3116,7 +3134,10 @@ export function shortestStorySourceDuration(
     const exclusiveMinimum = numberValue(schema.exclusiveMinimum);
     const exclusiveMaximum = numberValue(schema.exclusiveMaximum);
     const multipleOf = numberValue(schema.multipleOf);
-    let candidate = Math.max(timelineSeconds, minimum ?? timelineSeconds);
+    let candidate = Math.min(
+      maximum ?? clipSeconds,
+      Math.max(minimum ?? clipSeconds, clipSeconds),
+    );
     if (exclusiveMinimum !== null && candidate <= exclusiveMinimum) {
       if (multipleOf !== null && multipleOf > 0) {
         candidate =
@@ -3124,25 +3145,25 @@ export function shortestStorySourceDuration(
       } else if (declaredTypes.includes('integer')) {
         candidate = Math.floor(exclusiveMinimum) + 1;
       } else {
-        // A continuous exclusive bound has no canonical "shortest" value.
         return undefined;
       }
     }
     if (multipleOf !== null && multipleOf > 0) {
-      candidate = Math.ceil(candidate / multipleOf - 1e-9) * multipleOf;
+      candidate = Math.round(candidate / multipleOf) * multipleOf;
+      if (minimum !== null) candidate = Math.max(candidate, minimum);
+      if (maximum !== null) candidate = Math.min(candidate, maximum);
     }
     if (declaredTypes.includes('integer')) {
-      candidate = Math.ceil(candidate - 1e-9);
+      candidate = Math.round(candidate);
     }
     candidate = Number(candidate.toFixed(9));
-    if (maximum !== null && candidate > maximum) return undefined;
     if (exclusiveMaximum !== null && candidate >= exclusiveMaximum) {
       return undefined;
     }
-    return { value: candidate, seconds: candidate };
+    return candidate > 0 ? { value: candidate, seconds: candidate } : undefined;
   }
   if (declaredTypes.includes('string') && schema.pattern === undefined) {
-    return { value: String(timelineSeconds), seconds: timelineSeconds };
+    return { value: String(clipSeconds), seconds: clipSeconds };
   }
   return undefined;
 }
@@ -3154,6 +3175,17 @@ function numericDuration(value: unknown): number | null {
   if (typeof value !== 'string' || !value.trim()) return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function generatedVideoDurationMs(durationSeconds: number | null): number {
+  const durationMs =
+    durationSeconds !== null ? Math.round(durationSeconds * 1_000) : 0;
+  if (durationMs >= 250) return durationMs;
+  throw new StoryMaterializationError(
+    'STORY_GENERATION_OUTPUT_DURATION_MISSING',
+    'The generated video has no valid duration metadata and cannot be placed on the Storyboard timeline.',
+    false,
+  );
 }
 
 function httpsUrl(value: string | null): string | null {
