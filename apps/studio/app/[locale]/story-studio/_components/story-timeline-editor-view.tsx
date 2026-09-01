@@ -13,6 +13,7 @@ import {
   IconRefresh,
   IconSparkles,
   IconTimeline,
+  IconTrash,
   IconVideo,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +24,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MediaTimelineTrack, timelineSecondsToPixels } from "@/components/media-timeline";
 import { toast } from "sonner";
 import { QuickParamChips } from "@/components/canvas/authoring/quick-param-chips";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -58,6 +69,7 @@ import { cn } from "@/lib/utils";
 import {
   appendStoryTimelineClip,
   createManualStoryTimelineClipStableKey,
+  removeStoryTimelineClip,
   storySequenceToTimeline,
   type NewStoryTimelineClip,
 } from "../_lib/story-timeline";
@@ -204,6 +216,49 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     onError: (error) => toast.error(storyApiErrorMessage(error, t("addError"))),
   });
 
+  const deleteMutation = useMutation({
+    retry: false,
+    mutationFn: ({
+      sequence,
+      clipId,
+    }: {
+      sequence: StoryStoryboardSequence;
+      clipId: string;
+      activeClipId: string | null;
+    }) =>
+      putStoryStoryboardTimeline(
+        projectId,
+        sequence.chapterId,
+        sequence.id,
+        createStoryProductionIdempotencyKey("story-timeline-delete"),
+        removeStoryTimelineClip(sequence, clipId)
+      ),
+    onSuccess: async (updated, { sequence, clipId, activeClipId }) => {
+      queryClient.setQueryData<StoryStoryboardSequence[]>(
+        storyProductionKeys.storyboard(projectId, updated.chapterId),
+        (current) => current?.map((item) => (item.id === updated.id ? updated : item))
+      );
+      const deletedIndex = sequence.clips
+        .slice()
+        .sort((left, right) => left.rank - right.rank)
+        .findIndex((clip) => clip.id === clipId);
+      const remaining = storySequenceToTimeline(updated).visualTrack.clips;
+      const adjacent = remaining[Math.min(Math.max(0, deletedIndex), remaining.length - 1)] ?? null;
+      const nextSelection =
+        activeClipId && activeClipId !== clipId
+          ? (remaining.find((clip) => clip.id === activeClipId) ?? adjacent)
+          : adjacent;
+      setIsPlaying(false);
+      setSelectedClipId(nextSelection?.id ?? null);
+      setPlayheadMs(nextSelection?.startMs ?? 0);
+      toast.success(t("deleteSuccess"));
+      await queryClient.invalidateQueries({
+        queryKey: storyProductionKeys.storyboard(projectId, updated.chapterId),
+      });
+    },
+    onError: (error) => toast.error(storyApiErrorMessage(error, t("deleteError"))),
+  });
+
   const loading = Boolean(chapterId) && (storyboardQuery.isPending || productionQuery.isPending);
   if (loading) {
     return (
@@ -330,24 +385,32 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
             className="hidden items-center gap-1.5 text-[11px] text-white/45 sm:inline-flex"
             aria-live="polite"
           >
-            {addMutation.isPending ? (
+            {addMutation.isPending || deleteMutation.isPending ? (
               <IconRefresh className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
               <IconCircleCheck className="size-3.5" aria-hidden="true" />
             )}
-            {t(addMutation.isPending ? "saving" : "saved")}
+            {t(addMutation.isPending || deleteMutation.isPending ? "saving" : "saved")}
           </span>
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[220px_minmax(0,1fr)_280px] xl:grid-cols-[248px_minmax(0,1fr)_320px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[240px_minmax(0,1fr)_280px] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
         <TimelineClipSidebar
           clips={timeline.visualTrack.clips}
           selectedClipId={selectedClip?.id ?? null}
           onSelectClip={selectClip}
-          canAdd={canEdit}
+          canEdit={canEdit}
           adding={addMutation.isPending}
+          deleting={deleteMutation.isPending}
           onAddClip={addClip}
+          onDeleteClip={(clip) =>
+            deleteMutation.mutate({
+              sequence: selectedSequence,
+              clipId: clip.id,
+              activeClipId: selectedClip?.id ?? null,
+            })
+          }
         />
         <section
           aria-label={t("preview")}
@@ -406,18 +469,23 @@ function TimelineClipSidebar({
   clips,
   selectedClipId,
   onSelectClip,
-  canAdd,
+  canEdit,
   adding,
+  deleting,
   onAddClip,
+  onDeleteClip,
 }: {
   clips: readonly StoryStoryboardClip[];
   selectedClipId: string | null;
   onSelectClip: (clip: StoryStoryboardClip, timeMs?: number) => void;
-  canAdd: boolean;
+  canEdit: boolean;
   adding: boolean;
+  deleting: boolean;
   onAddClip: () => void;
+  onDeleteClip: (clip: StoryStoryboardClip) => void;
 }) {
   const t = useTranslations("storyStudio.editorPage");
+  const [pendingDelete, setPendingDelete] = useState<StoryStoryboardClip | null>(null);
 
   return (
     <aside
@@ -437,16 +505,14 @@ function TimelineClipSidebar({
             const KindIcon = clip.kind === "video" ? IconVideo : IconPhoto;
 
             return (
-              <li key={clip.id}>
+              <li key={clip.id} className="group/clip relative">
                 <button
                   type="button"
                   aria-current={selected ? "true" : undefined}
                   onClick={() => onSelectClip(clip)}
                   className={cn(
-                    "group grid w-full grid-cols-[72px_minmax(0,1fr)] gap-2 rounded-lg border border-transparent p-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-                    selected
-                      ? "border-white/14 bg-white/[0.11]"
-                      : "hover:border-white/8 hover:bg-white/[0.055]"
+                    "group grid w-full grid-cols-[72px_minmax(0,1fr)] gap-2 rounded-lg p-1.5 pr-9 text-left transition-colors focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+                    selected ? "bg-white/[0.11]" : "hover:bg-white/[0.055]"
                   )}
                 >
                   <span className="relative aspect-video overflow-hidden rounded-md bg-black/45">
@@ -469,6 +535,17 @@ function TimelineClipSidebar({
                     </span>
                   </span>
                 </button>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    aria-label={`${t("deleteClip")}: ${clip.title}`}
+                    disabled={deleting}
+                    onClick={() => setPendingDelete(clip)}
+                    className="absolute top-1/2 right-2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-lg bg-destructive/10 text-destructive opacity-0 transition-[opacity,background-color] hover:bg-destructive/20 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-destructive/45 focus-visible:outline-none disabled:pointer-events-none group-focus-within/clip:opacity-100 group-hover/clip:opacity-100"
+                  >
+                    <IconTrash className="size-3.5" aria-hidden="true" />
+                  </button>
+                ) : null}
               </li>
             );
           })}
@@ -479,13 +556,39 @@ function TimelineClipSidebar({
           variant="secondary"
           block
           loading={adding}
-          disabled={!canAdd || adding}
+          disabled={!canEdit || adding || deleting}
           onClick={onAddClip}
         >
           <IconPlus />
           {t("addClip")}
         </Button>
       </div>
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDelete ? t("deleteTitle", { name: pendingDelete.title }) : null}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("deleteCancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (pendingDelete) onDeleteClip(pendingDelete);
+              }}
+            >
+              {t("deleteConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   );
 }
