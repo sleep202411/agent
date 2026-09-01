@@ -47,7 +47,13 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Link } from "@/i18n/navigation";
-import { defaultSettingsForModel, type ModelSettings } from "@/lib/canvas-authoring/generation-api";
+import {
+  defaultSettingsForModel,
+  schemaFields,
+  type FizzAiModel,
+  type ModelSettings,
+  type SchemaFieldDescriptor,
+} from "@/lib/canvas-authoring/generation-api";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import {
   createStoryProductionIdempotencyKey,
@@ -91,12 +97,6 @@ import {
 import { useStoryCandidateAssets } from "./project-canvas/use-story-candidate-assets";
 import { StoryStageLoadingState } from "./story-stage-empty-state";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
-
-const STORY_TIMELINE_OWNED_MODEL_FIELDS = [
-  "duration",
-  "durationSeconds",
-  "duration_seconds",
-] as const;
 
 /**
  * Node-local editing workspace. It projects the server Storyboard sequence
@@ -1044,12 +1044,16 @@ function TimelineClipInspector({
     modelId: string;
     settings: ModelSettings;
   } | null>(null);
-  const modelSettings =
+  const baseModelSettings =
     modelSettingsOverride && modelSettingsOverride.modelId === selectedModel?.id
       ? modelSettingsOverride.settings
       : modelId === null
         ? generationDefaults.options
         : defaultSettingsForModel(selectedModel);
+  const modelSettings =
+    modelSettingsOverride && modelSettingsOverride.modelId === selectedModel?.id
+      ? baseModelSettings
+      : storyTimelineDefaultGenerationSettings(selectedModel, baseModelSettings, clip.durationMs);
   const updateModelSettings = (settings: ModelSettings) => {
     if (!selectedModel) return;
     setModelSettingsOverride({ modelId: selectedModel.id, settings });
@@ -1119,9 +1123,12 @@ function TimelineClipInspector({
   const replaceMutation = useMutation({
     retry: false,
     mutationFn: (source: StoryCandidateAsset) => persistDraft(source),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
       cacheClip(updated);
       toast.success(t("inspectorForm.replaceSuccess"));
+      await queryClient.invalidateQueries({
+        queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+      });
     },
     onError: (error) => toast.error(storyApiErrorMessage(error, t("inspectorForm.replaceError"))),
   });
@@ -1144,7 +1151,7 @@ function TimelineClipInspector({
           expectedVersion: target.version,
           modelId: selectedModel.id,
           schemaVersion: selectedModel.schemaVersion,
-          options: storyTimelineGenerationOptions(modelSettings),
+          options: storyGenerationOptions(modelSettings),
         }
       );
     },
@@ -1284,7 +1291,6 @@ function TimelineClipInspector({
         model={selectedModel}
         settings={modelSettings}
         onChange={updateModelSettings}
-        excludedFieldNames={STORY_TIMELINE_OWNED_MODEL_FIELDS}
       />
       <div className="grid grid-cols-2 gap-2">
         <Button
@@ -1333,10 +1339,44 @@ function storyTimelineUploadKind(file: File): StoryStoryboardClip["kind"] {
   return "image";
 }
 
-function storyTimelineGenerationOptions(modelSettings: ModelSettings) {
-  const options = storyGenerationOptions(modelSettings);
-  for (const field of STORY_TIMELINE_OWNED_MODEL_FIELDS) delete options[field];
-  return options;
+export function storyTimelineDefaultGenerationSettings(
+  model: FizzAiModel | undefined,
+  settings: ModelSettings,
+  clipDurationMs: number
+): ModelSettings {
+  const durationField = schemaFields(model).find(isStoryDurationField);
+  if (!durationField) return settings;
+  const value = nearestStoryDurationValue(durationField, clipDurationMs / 1_000);
+  return value === undefined ? settings : { ...settings, [durationField.name]: value };
+}
+
+function isStoryDurationField(field: SchemaFieldDescriptor): boolean {
+  return ["duration", "durationseconds"].includes(field.name.replaceAll(/[_-]/g, "").toLowerCase());
+}
+
+function nearestStoryDurationValue(
+  field: SchemaFieldDescriptor,
+  clipSeconds: number
+): string | number | undefined {
+  if (!Number.isFinite(clipSeconds) || clipSeconds <= 0) return undefined;
+  if (field.enum?.length) {
+    return field.enum
+      .map((value) => ({ value, seconds: Number(value) }))
+      .filter((candidate) => Number.isFinite(candidate.seconds) && candidate.seconds > 0)
+      .sort((left, right) => {
+        const distance =
+          Math.abs(left.seconds - clipSeconds) - Math.abs(right.seconds - clipSeconds);
+        return distance || right.seconds - left.seconds;
+      })[0]?.value;
+  }
+  if (field.type !== "number" && field.type !== "integer") return undefined;
+  const bounded = Math.min(
+    field.max ?? clipSeconds,
+    Math.max(field.min ?? clipSeconds, clipSeconds)
+  );
+  const stepped = field.step ? Math.round(bounded / field.step) * field.step : bounded;
+  const normalized = field.type === "integer" ? Math.round(stepped) : stepped;
+  return Number(normalized.toFixed(9));
 }
 
 function InspectorRow({ label, children }: { label: string; children: React.ReactNode }) {

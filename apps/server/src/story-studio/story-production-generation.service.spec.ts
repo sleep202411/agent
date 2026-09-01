@@ -2,69 +2,56 @@ import { ConflictException } from '@nestjs/common';
 import {
   StoryProductionGenerationService,
   assertStoryGenerationQuoteMatches,
-  exactStoryDurationValue,
   generationRequestFingerprint,
   isRetryableStoryMaterializationPrismaCode,
   missingRequiredStoryModelInputs,
-  shortestStorySourceDuration,
+  nearestStoryDurationValue,
   storyGenerationClientOptionsFromSnapshot,
   storyModelSchemaDefaults,
 } from './story-production-generation.service';
 
 describe('Story production generation model constraints', () => {
-  it('rejects a 7 second clip when the provider only supports 5 or 10 seconds', () => {
+  it('defaults duration to the closest provider-supported form value', () => {
     expect(
-      exactStoryDurationValue(
+      nearestStoryDurationValue(
         { type: 'string', enum: ['5', '10'], default: '5' },
-        7,
+        6,
       ),
-    ).toBeUndefined();
+    ).toEqual({ value: '5', seconds: 5 });
+    expect(
+      nearestStoryDurationValue({ type: 'number', enum: [5, 10] }, 9),
+    ).toEqual({ value: 10, seconds: 10 });
   });
 
-  it('accepts an exact numeric duration that satisfies range and multipleOf', () => {
+  it('clamps a continuous duration to the model range', () => {
     expect(
-      exactStoryDurationValue(
+      nearestStoryDurationValue(
         { type: 'number', minimum: 1, maximum: 30, multipleOf: 0.5 },
-        7.5,
+        45,
       ),
-    ).toBe(7.5);
+    ).toEqual({ value: 30, seconds: 30 });
   });
 
-  it('uses the shortest supported source duration that covers the timeline', () => {
-    expect(
-      shortestStorySourceDuration({ type: 'number', enum: [3, 4, 8] }, 1),
-    ).toEqual({ value: 3, seconds: 3 });
-    expect(
-      shortestStorySourceDuration({ type: 'string', enum: ['5', '10'] }, 7),
-    ).toEqual({ value: '10', seconds: 10 });
-  });
-
-  it('requires the timeline to be split when no supported source is long enough', () => {
-    expect(
-      shortestStorySourceDuration({ type: 'number', enum: [3, 4, 8] }, 9),
-    ).toBeUndefined();
-  });
-
-  it('selects the first default model that can fully cover the timeline', async () => {
+  it('does not couple default model selection to the current clip length', async () => {
     const resolved = await resolveDefaultVideoModel([
-      videoModel('short', ['3', '5']),
-      videoModel('covering', ['5', '10']),
+      videoModel('a-short', ['3', '5']),
+      videoModel('z-covering', ['5', '10']),
     ]);
-    expect(resolved.id).toBe('covering');
+    expect(resolved.id).toBe('a-short');
   });
 
-  it('returns the split-clip action when every default model is too short', async () => {
-    await expect(
-      resolveDefaultVideoModel([
-        videoModel('short-a', [3, 5]),
-        videoModel('short-b', [4, 6]),
-      ]),
-    ).rejects.toMatchObject({
-      response: {
-        code: 'STORY_GENERATION_MODEL_DURATION_UNSUPPORTED',
-        timelineDurationSeconds: 7,
-      },
-    });
+  it('keeps an explicit model-supported duration as the independent form value', () => {
+    expect(
+      resolveVideoOptions(videoModel('selected', [5, 10]), {
+        durationSeconds: 10,
+      }),
+    ).toMatchObject({ durationSeconds: 10 });
+
+    expect(
+      resolveVideoOptions(videoModel('selected', [5, 10]), {
+        durationSeconds: 5,
+      }),
+    ).toMatchObject({ durationSeconds: 5 });
   });
 
   it('reports required settings instead of falsely prescribing a split', async () => {
@@ -76,7 +63,7 @@ describe('Story production generation model constraints', () => {
     ];
     configurable.input_schema.properties.cameraRig = { type: 'string' };
     await expect(
-      resolveDefaultVideoModel([videoModel('short', [5]), configurable]),
+      resolveDefaultVideoModel([configurable]),
     ).rejects.toMatchObject({
       response: {
         code: 'STORY_GENERATION_MODEL_INPUT_REQUIRED',
@@ -168,14 +155,13 @@ describe('Story production generation model constraints', () => {
     ).not.toThrow();
   });
 
-  it('reattaches legacy batch snapshots without replaying server-owned duration as client input', () => {
+  it('preserves creator-selected duration when replaying a generation', () => {
     expect(
       storyGenerationClientOptionsFromSnapshot({
         aspectRatio: '16:9',
-        duration: 6,
         durationSeconds: 10,
       }),
-    ).toEqual({ aspectRatio: '16:9' });
+    ).toEqual({ aspectRatio: '16:9', durationSeconds: 10 });
 
     expect(() =>
       storyGenerationClientOptionsFromSnapshot({
@@ -294,5 +280,38 @@ async function resolveDefaultVideoModel(models: unknown[]) {
     },
     [],
     {},
+  );
+}
+
+function resolveVideoOptions(
+  model: ReturnType<typeof videoModel>,
+  clientOptions: Record<string, string | number>,
+) {
+  const service = new StoryProductionGenerationService(
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const resolver = service as unknown as {
+    effectiveOptions(
+      selectedModel: unknown,
+      target: unknown,
+      options: Record<string, string | number>,
+    ): Record<string, unknown>;
+  };
+  return resolver.effectiveOptions(
+    model,
+    {
+      targetKind: 'storyboard_clip',
+      generationKind: 'video',
+      frameProfile: 'landscape_16_9',
+      generationConfig: {},
+      durationMs: 7_000,
+    },
+    clientOptions,
   );
 }

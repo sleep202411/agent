@@ -319,18 +319,24 @@ describePostgres('Story production generation PostgreSQL integration', () => {
       trimToTimeline: true,
     });
 
-    const generatedTargets = await Promise.all([
-      prisma.storyAssetSpec.findUniqueOrThrow({
-        where: { id: fixture.assetSpecId },
-      }),
-      prisma.storyStoryboardClip.findUniqueOrThrow({
-        where: { id: fixture.clipId },
-      }),
-    ]);
-    expect(generatedTargets[0].userModifiedAt).toBeNull();
-    expect(generatedTargets[0].selectedMediaVersionId).not.toBeNull();
-    expect(generatedTargets[1].userModifiedAt).toBeNull();
-    expect(generatedTargets[1].selectedMediaVersionId).not.toBeNull();
+    const [generatedAsset, generatedClip, generatedSequence] =
+      await Promise.all([
+        prisma.storyAssetSpec.findUniqueOrThrow({
+          where: { id: fixture.assetSpecId },
+        }),
+        prisma.storyStoryboardClip.findUniqueOrThrow({
+          where: { id: fixture.clipId },
+        }),
+        prisma.storyStoryboardSequence.findUniqueOrThrow({
+          where: { id: fixture.sequenceId },
+        }),
+      ]);
+    expect(generatedAsset.userModifiedAt).toBeNull();
+    expect(generatedAsset.selectedMediaVersionId).not.toBeNull();
+    expect(generatedClip.userModifiedAt).toBeNull();
+    expect(generatedClip.selectedMediaVersionId).not.toBeNull();
+    expect(generatedClip.durationMs).toBe(10_000);
+    expect(generatedSequence.durationMs).toBe(10_000);
 
     const permissions = {
       requireProject: jest.fn().mockResolvedValue({
@@ -406,7 +412,7 @@ describePostgres('Story production generation PostgreSQL integration', () => {
       status: 'current',
       pendingSourceFingerprint: null,
       userModifiedAt: null,
-      selectedMediaVersionId: generatedTargets[0].selectedMediaVersionId,
+      selectedMediaVersionId: generatedAsset.selectedMediaVersionId,
     });
     expect(sequence).toMatchObject({
       status: 'current',
@@ -416,7 +422,7 @@ describePostgres('Story production generation PostgreSQL integration', () => {
       status: 'current',
       pendingSourceFingerprint: null,
       userModifiedAt: null,
-      selectedMediaVersionId: generatedTargets[1].selectedMediaVersionId,
+      selectedMediaVersionId: generatedClip.selectedMediaVersionId,
     });
     expect(productionState).toMatchObject({
       assets: { status: 'current', staleCount: 0 },
