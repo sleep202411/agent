@@ -3,7 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { IconChevronRight, IconDatabase, IconLogout, IconMenu2, IconX } from "@tabler/icons-react";
+import {
+  IconChevronRight,
+  IconDatabase,
+  IconExternalLink,
+  IconLogout,
+  IconMenu2,
+  IconX,
+} from "@tabler/icons-react";
 import { BrandLogo } from "@/components/admin/brand-logo";
 import {
   activeModule,
@@ -70,6 +77,10 @@ export function AdminShell({
     .sort((left, right) => right.href.length - left.href.length)[0];
 
   const headerTitle = activeModuleItem?.label ?? activeGlobalEntry?.label ?? "管理工作台";
+  const peerAdmin =
+    session.site.key === "cn"
+      ? { href: "https://admin.fizzdragon.com", label: "Global admin" }
+      : { href: "https://admin.fizzspace.cn", label: "China admin" };
 
   async function logout() {
     await fetch(adminUiApiPath("/api/admin/auth/logout"), { method: "POST" });
@@ -228,6 +239,18 @@ export function AdminShell({
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button asChild variant="outline" size="sm" className="h-8 text-[12px]">
+                <a
+                  href={peerAdmin.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Open ${peerAdmin.label} in a new tab`}
+                  aria-label={`Open ${peerAdmin.label} in a new tab`}
+                >
+                  <span className="hidden sm:inline">{peerAdmin.label}</span>
+                  <IconExternalLink className="size-3.5" />
+                </a>
+              </Button>
               <span className="hidden rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 sm:inline">
                 {session.user.displayName}
               </span>
