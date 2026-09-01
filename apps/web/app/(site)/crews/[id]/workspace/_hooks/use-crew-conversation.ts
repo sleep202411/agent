@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * The crew's one group chat.
+ * The crew's fixed internal team chat.
  *
- * Doc §3.1: 一个剧组只有一个群聊 — so there is nothing to list and
- * nothing to create from the client. The crew owns its Conversation
+ * There is nothing to list or create from the client. The crew owns its
+ * internal Conversation
  * (`crew:<crewId>`), the crews module opens it and keeps the
  * participant list in sync with `crew_members`, and this endpoint just
  * hands the caller the row for that crew:
@@ -16,7 +16,7 @@
  * deliberately, so the thread is not probeable: "you may not read
  * this crew's chat" and "there is no such crew" must be one answer. Once we have the id, every subsequent read and
  * write goes through the shared conversations data layer — the crew
- * chat is the same Conversation the inbox shows, not a parallel one.
+ * team chat is the same Conversation the inbox shows, not a parallel one.
  */
 
 import { useQuery } from "@tanstack/react-query";

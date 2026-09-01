@@ -35,11 +35,14 @@
  *   - order: lookup key `order:<orderId>`. Rewritten in
  *     `persistEvolveToOrder()` inside the proposal-accept tx so the
  *     UNIQUE constraint shifts atomically.
- *   - crew: lookup key `crew:<crewId>` — one crew, one group chat.
+ *   - crew team channel: lookup key `crew:<crewId>`.
+ *   - crew community channel: lookup key `crew:<crewId>:community`.
  *
- * Crew conversations (group chat):
+ * Crew team conversations (internal group chat):
  *   `ConversationParticipant` is a *projection* of crew membership,
- *   kept in step by `syncCrewParticipant()`. A projection can go
+ *   kept in step by `syncCrewParticipant()`. Community-channel participants are
+ *   explicit subscribers and are never projected into `crew_members`. A
+ *   team-channel projection can go
  *   stale (a missed sync, a crew soft-deleted out from under it), so
  *   every crew read, every crew send and every crew read-cursor
  *   advance re-checks live crew membership against `crews` /
@@ -54,13 +57,14 @@
  *
  * Authorization (controllers re-check; service is the last line):
  *   - Read / send / mark-read: caller must be a participant (and not
- *     `leftAt`-set), plus — on `crew` conversations — an active crew
- *     member. An outsider gets 404, never 403: `assertParticipant`'s
- *     posture is deliberately non-probeable and the crew gate matches
- *     it. Everything that touches thread content, or emits a frame
- *     into the thread, goes through `assertConversationAccess` —
- *     never `assertParticipant` alone, which a stale projection
- *     satisfies.
+ *     `leftAt`-set). The internal crew channel additionally requires an
+ *     active crew membership; the community channel requires a live crew plus an
+ *     active community subscription. An outsider gets 404, never 403:
+ *     `assertParticipant`'s posture is deliberately non-probeable and the
+ *     crew gate matches it. Everything that touches thread content, or
+ *     emits a frame into the thread, goes through
+ *     `assertConversationAccess` — never `assertParticipant` alone, which
+ *     a stale team projection satisfies.
  *   - System messages: only callable from within other services
  *     (no public REST), authorId=null.
  *   - Proposal post: only the `creator` role can post; service
@@ -92,6 +96,7 @@ import {
 import {
   ConversationContextType,
   ConversationParticipantRole,
+  CrewConversationChannel,
   CrewAssetNodeKind,
   CrewAssetNodeStatus,
   MediaAssetStatus,
@@ -281,7 +286,23 @@ export class ConversationsService {
     crewId: string,
     db: DbClient = this.prisma,
   ): Promise<PrismaConversation> {
-    const lookupKey = crewLookupKey(crewId);
+    return this.openCrewChannel(crewId, CrewConversationChannel.team, db);
+  }
+
+  /** The crew's separate community room. It never grants crew membership. */
+  async openCrewCommunityConversation(
+    crewId: string,
+    db: DbClient = this.prisma,
+  ): Promise<PrismaConversation> {
+    return this.openCrewChannel(crewId, CrewConversationChannel.community, db);
+  }
+
+  private async openCrewChannel(
+    crewId: string,
+    channel: CrewConversationChannel,
+    db: DbClient,
+  ): Promise<PrismaConversation> {
+    const lookupKey = crewChannelLookupKey(crewId, channel);
 
     // Fast path — same argument as the service variant: a crew
     // conversation's lookupKey is written once and never rewritten
@@ -316,6 +337,7 @@ export class ConversationsService {
           id: newShortId(),
           contextType: ConversationContextType.crew,
           contextId: crewId,
+          crewChannel: channel,
           lookupKey,
         },
       });
@@ -328,6 +350,54 @@ export class ConversationsService {
         })),
         skipDuplicates: true,
       });
+      return conversation;
+    });
+  }
+
+  /**
+   * Add one account to the community channel without adding it to `crew_members`.
+   * The participant role describes room membership only; workspace authority
+   * still comes exclusively from `crew_members`. Re-entry is idempotent.
+   */
+  async joinCrewCommunityConversation(
+    crewId: string,
+    userId: string,
+    db: DbClient = this.prisma,
+  ): Promise<PrismaConversation> {
+    return this.runInTx(db, async (tx) => {
+      const crew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!crew) throw new NotFoundException('Crew not found');
+
+      const conversation = await this.openCrewCommunityConversation(crewId, tx);
+      await tx.$executeRaw(Prisma.sql`
+        INSERT INTO conversation_participants (
+          conversation_id,
+          user_id,
+          role,
+          last_read_message_id,
+          last_read_at
+        )
+        SELECT
+          ${conversation.id},
+          ${userId},
+          ${ConversationParticipantRole.member}::conversation_participant_role,
+          latest.id,
+          latest.created_at
+        FROM (SELECT 1) AS seed
+        LEFT JOIN LATERAL (
+          SELECT m.id, m.created_at
+          FROM messages AS m
+          WHERE m.conversation_id = ${conversation.id}
+            AND m.deleted_at IS NULL
+          ORDER BY m.created_at DESC, m.id DESC
+          LIMIT 1
+        ) AS latest ON TRUE
+        ON CONFLICT (conversation_id, user_id)
+        DO UPDATE SET left_at = NULL, role = EXCLUDED.role
+      `);
       return conversation;
     });
   }
@@ -484,7 +554,11 @@ export class ConversationsService {
    * deleted crew's inbox row.
    */
   private async filterLiveCrewRows<
-    T extends { contextType: ConversationContextType; contextId: string },
+    T extends {
+      contextType: ConversationContextType;
+      contextId: string;
+      crewChannel?: CrewConversationChannel | null;
+    },
   >(rows: T[], userId: string, db: DbClient = this.prisma): Promise<T[]> {
     const crewIds = [
       ...new Set(
@@ -511,6 +585,7 @@ export class ConversationsService {
     return rows.filter((r) => {
       if (r.contextType !== ConversationContextType.crew) return true;
       if (!liveCrews.has(r.contextId)) return false;
+      if (r.crewChannel === CrewConversationChannel.community) return true;
       return memberOf.has(r.contextId);
     });
   }
@@ -538,6 +613,7 @@ export class ConversationsService {
       select: { id: true },
     });
     if (!crew) return { ...conv, participants: [] };
+    if (conv.crewChannel === CrewConversationChannel.community) return conv;
 
     const projectedUserIds = conv.participants.map((p) => p.userId);
     const memberships =
@@ -559,8 +635,8 @@ export class ConversationsService {
   }
 
   /**
-   * The recipient-shaped mirror of `filterLiveCrewRows`: one crew,
-   * many users, rather than one user, many crews.
+   * The recipient-shaped mirror of `filterLiveCrewRows`: one channel,
+   * many users, rather than one user, many channels.
    *
    * Fan-out is content-bearing — a frame carries the message body —
    * so it owes the same distrust of the participant projection that
@@ -575,19 +651,19 @@ export class ConversationsService {
    */
   private async liveCrewRecipients(
     crewId: string,
+    channel: CrewConversationChannel | null,
     userIds: string[],
   ): Promise<Set<string>> {
-    const [crew, memberships] = await Promise.all([
-      this.prisma.crew.findFirst({
-        where: { id: crewId, deletedAt: null },
-        select: { id: true },
-      }),
-      this.prisma.crewMember.findMany({
-        where: { crewId, userId: { in: userIds }, status: 'active' },
-        select: { userId: true },
-      }),
-    ]);
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { id: true },
+    });
     if (!crew) return new Set();
+    if (channel === CrewConversationChannel.community) return new Set(userIds);
+    const memberships = await this.prisma.crewMember.findMany({
+      where: { crewId, userId: { in: userIds }, status: 'active' },
+      select: { userId: true },
+    });
     return new Set(memberships.map((m) => m.userId));
   }
 
@@ -906,6 +982,7 @@ export class ConversationsService {
       conv.contextType === ConversationContextType.crew
         ? await this.liveCrewRecipients(
             conv.contextId,
+            conv.crewChannel,
             conv.participants.map((p) => p.userId),
           ).then((live) => conv.participants.filter((p) => live.has(p.userId)))
         : conv.participants;
@@ -976,6 +1053,7 @@ export class ConversationsService {
       change.conversation.contextType === ConversationContextType.crew
         ? await this.liveCrewRecipients(
             change.conversation.contextId,
+            change.conversation.crewChannel,
             projected.map((p) => p.userId),
           ).then((live) => projected.filter((p) => live.has(p.userId)))
         : projected;
@@ -1213,7 +1291,10 @@ export class ConversationsService {
       conversationId,
       authorId,
     );
-    if (access.conversation.contextType !== ConversationContextType.crew) {
+    if (
+      access.conversation.contextType !== ConversationContextType.crew ||
+      access.conversation.crewChannel === CrewConversationChannel.community
+    ) {
       throw new BadRequestException(
         'Attachments are currently available in crew conversations only',
       );
@@ -1713,6 +1794,7 @@ export class ConversationsService {
       conversation.contextType === ConversationContextType.crew
         ? await this.liveCrewRecipients(
             conversation.contextId,
+            conversation.crewChannel,
             projected.map((p) => p.userId),
           ).then((live) => projected.filter((p) => live.has(p.userId)))
         : projected;
@@ -1759,7 +1841,10 @@ export class ConversationsService {
       conversationId,
       authorId,
     );
-    if (conversation.contextType !== ConversationContextType.crew) {
+    if (
+      conversation.contextType !== ConversationContextType.crew ||
+      conversation.crewChannel === CrewConversationChannel.community
+    ) {
       throw new BadRequestException(
         'Mentions are currently available in crew conversations only',
       );
@@ -1787,6 +1872,7 @@ export class ConversationsService {
     const normalized = [...unique.values()];
     const live = await this.liveCrewRecipients(
       conversation.contextId,
+      conversation.crewChannel,
       normalized.map((mention) => mention.userId),
     );
     if (live.size !== normalized.length) {
@@ -1817,7 +1903,10 @@ export class ConversationsService {
       conversationId,
       authorId,
     );
-    if (conversation.contextType !== ConversationContextType.crew) {
+    if (
+      conversation.contextType !== ConversationContextType.crew ||
+      conversation.crewChannel === CrewConversationChannel.community
+    ) {
       throw new BadRequestException(
         'Task references are currently available in crew conversations only',
       );
@@ -1974,10 +2063,17 @@ export class ConversationsService {
         if (authorId !== null) {
           const context = await tx.conversation.findUnique({
             where: { id: conversationId },
-            select: { contextType: true, contextId: true },
+            select: {
+              contextType: true,
+              contextId: true,
+              crewChannel: true,
+            },
           });
           if (!context) throw new NotFoundException('Conversation not found');
-          if (context.contextType === ConversationContextType.crew) {
+          if (
+            context.contextType === ConversationContextType.crew &&
+            context.crewChannel !== CrewConversationChannel.community
+          ) {
             await this.lockCrewMembership(context.contextId, authorId, tx);
           }
           // Re-check after taking the membership lock. A concurrent
@@ -2232,6 +2328,7 @@ export class ConversationsService {
     conversation: {
       contextType: ConversationContextType;
       contextId: string;
+      crewChannel: CrewConversationChannel | null;
     };
   }> {
     const participant = await this.assertParticipant(
@@ -2241,7 +2338,7 @@ export class ConversationsService {
     );
     const conv = await db.conversation.findUnique({
       where: { id: conversationId },
-      select: { contextType: true, contextId: true },
+      select: { contextType: true, contextId: true, crewChannel: true },
     });
     if (!conv) throw new NotFoundException('Conversation not found');
     await this.assertCrewMembership(conv, userId, db);
@@ -2250,11 +2347,23 @@ export class ConversationsService {
 
   /** No-op for non-crew conversations. 404 (never 403) for outsiders. */
   private async assertCrewMembership(
-    conv: { contextType: ConversationContextType; contextId: string },
+    conv: {
+      contextType: ConversationContextType;
+      contextId: string;
+      crewChannel: CrewConversationChannel | null;
+    },
     userId: string,
     db: DbClient = this.prisma,
   ): Promise<void> {
     if (conv.contextType !== ConversationContextType.crew) return;
+    if (conv.crewChannel === CrewConversationChannel.community) {
+      const crew = await db.crew.findFirst({
+        where: { id: conv.contextId, deletedAt: null },
+        select: { id: true },
+      });
+      if (crew) return;
+      throw new NotFoundException('Conversation not found');
+    }
     if (await this.isActiveCrewMember(conv.contextId, userId, db)) return;
     throw new NotFoundException('Conversation not found');
   }
@@ -2341,6 +2450,20 @@ export function orderLookupKey(orderId: string): string {
  */
 export function crewLookupKey(crewId: string): string {
   return `crew:${crewId}`;
+}
+
+/** Fixed community-room identity. The existing team-room key stays unchanged. */
+export function crewCommunityLookupKey(crewId: string): string {
+  return `crew:${crewId}:community`;
+}
+
+function crewChannelLookupKey(
+  crewId: string,
+  channel: CrewConversationChannel,
+): string {
+  return channel === CrewConversationChannel.team
+    ? crewLookupKey(crewId)
+    : crewCommunityLookupKey(crewId);
 }
 
 function isUniqueViolation(err: unknown): boolean {

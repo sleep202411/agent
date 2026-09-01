@@ -375,6 +375,8 @@ export type CreateCrewInvitationInput = z.infer<
  */
 export const CreateCrewInviteLinkSchema = z
   .object({
+    /** Omitted by the existing member-invite UI; community links opt in explicitly. */
+    kind: z.enum(['member', 'community']).default('member'),
     policyKeys: z.array(crewPolicyKey).max(CREW_POLICY_KEYS.length).default([]),
     /** Omit for a link that never expires. */
     expiresInDays: z.number().int().min(1).max(365).optional(),

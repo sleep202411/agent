@@ -12,6 +12,7 @@ import type {
 } from '@prisma/client';
 import type {
   ConversationCardDTO,
+  CrewConversationChannel,
   ConversationDTO,
   ConversationParticipantDTO,
   ConversationParticipantRole,
@@ -65,6 +66,7 @@ export function toConversationDTO(
     id: conv.id,
     contextType: conv.contextType,
     contextId: conv.contextId,
+    crewChannel: (conv.crewChannel as CrewConversationChannel | null) ?? null,
     participants,
     lastMessage: conv._lastMessage ? toMessageDTO(conv._lastMessage) : null,
     lastMessageAt: conv.lastMessageAt.toISOString(),
@@ -122,6 +124,7 @@ export function toConversationCardDTO(
     id: conv.id,
     contextType: conv.contextType,
     contextId: conv.contextId,
+    crewChannel: (conv.crewChannel as CrewConversationChannel | null) ?? null,
     lastMessagePreview: preview,
     lastMessageType: (lm?.type ?? 'text') as ConversationMessageType,
     lastMessageAt: conv.lastMessageAt.toISOString(),

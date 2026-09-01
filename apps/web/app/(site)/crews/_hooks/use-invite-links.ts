@@ -9,6 +9,7 @@ export type CrewInviteLinkState = "active" | "revoked" | "expired" | "exhausted"
 export interface CrewInviteLinkDTO {
   id: string;
   crewId: string;
+  kind: "member" | "community";
   policyKeys: string[];
   maxUses: number | null;
   useCount: number;
@@ -19,6 +20,7 @@ export interface CrewInviteLinkDTO {
 }
 
 export interface CreateCrewInviteLinkInput {
+  kind?: "member" | "community";
   policyKeys?: string[];
   /** Omit for a link that never expires. */
   expiresInDays?: number;

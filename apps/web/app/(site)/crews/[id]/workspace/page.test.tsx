@@ -335,7 +335,8 @@ describe("crew workspace tabs", () => {
     expect(nav.replaced).toEqual([]);
     // Doc §4 order, with the member-only asset center in the primary rail.
     expect(navLabels()).toEqual([
-      "Group Chat",
+      "Team chat",
+      "Community chat",
       "Tasks",
       "Income",
       "Asset Center",
@@ -352,7 +353,7 @@ describe("crew workspace tabs", () => {
 
     // Every tab spells itself out, chat included — the bare URL means
     // "open this workspace", which is not the same instruction.
-    click(tabButton("Group Chat"));
+    click(tabButton("Team chat"));
     expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=chat");
     reload();
     expect(pane()).toBe("chat");
@@ -422,7 +423,7 @@ describe("crew workspace tabs", () => {
       document.querySelector("[data-pane='tasks']")?.getAttribute("data-deeplink-task-id")
     ).toBe("task_42");
 
-    click(tabButton("Group Chat"));
+    click(tabButton("Team chat"));
     expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=chat");
     reload();
     expect(pane()).toBe("chat");
@@ -444,7 +445,7 @@ describe("crew workspace tabs", () => {
 
     expect(document.body.textContent).toContain("This workspace is for crew members");
     expect(document.body.textContent).toContain("View public crew page");
-    expect(navLabels()).not.toContain("Group Chat");
+    expect(navLabels()).not.toContain("Team chat");
     expect(pane()).toBeNull();
     expect(activeTabLabel()).toBeNull();
   });
@@ -536,7 +537,8 @@ describe("crew workspace with an unresolvable chat thread", () => {
     // The whole workspace is still there: the tab is not removed, the
     // member is still entitled to it, and every other surface works.
     expect(navLabels()).toEqual([
-      "Group Chat",
+      "Team chat",
+      "Community chat",
       "Tasks",
       "Income",
       "Asset Center",
@@ -567,7 +569,7 @@ describe("crew workspace with an unresolvable chat thread", () => {
     // (`crew-chat-tab.test.tsx`). Bouncing the click elsewhere would
     // leave the 群聊 button looking broken and the reason unread.
     render();
-    click(tabButton("Group Chat"));
+    click(tabButton("Team chat"));
     expect(nav.replaced.at(-1)).toBe("/crews/crew_1/workspace?tab=chat");
     reload();
     expect(pane()).toBe("chat");

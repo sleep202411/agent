@@ -112,6 +112,16 @@ export class CrewsController {
     return this.svc.conversation(id, user.userId);
   }
 
+  /** Separate community channel. Members enter directly; others enter by invitation. */
+  @Get(':id/community-conversation')
+  communityConversation(
+    @Param('id') idRaw: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const id = parseIdParam(idRaw, 'id');
+    return this.svc.communityConversation(id, user.userId);
+  }
+
   @Public()
   @Get(':id')
   detail(@Param('id') idRaw: string, @CurrentUser() user?: AuthUser) {

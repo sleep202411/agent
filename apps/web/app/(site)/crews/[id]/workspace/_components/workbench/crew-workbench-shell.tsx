@@ -4,12 +4,15 @@ import type { ReactNode } from "react";
 import {
   IconBriefcase,
   IconFolder,
+  IconHash,
   IconHome,
   IconMessageCircle,
   IconCheckbox,
   IconCoins,
   IconSettings,
+  IconUserPlus,
   IconUsers,
+  IconUsersGroup,
 } from "@tabler/icons-react";
 
 import { CrewLogo } from "@/app/(site)/messages/_components/crew-logo";
@@ -32,34 +35,47 @@ const RAIL_ICONS: Record<WorkspaceTabId, typeof IconHome> = {
 };
 
 interface CrewWorkbenchShellProps {
+  activeChatChannel: "team" | "community";
   activeTab: WorkspaceTabId;
   tabs: readonly WorkspaceTab[];
   children: ReactNode;
   crewId: string;
   crewLogo?: string | null;
   crewName: string;
+  currentCrewHref?: string;
   isOwner: boolean;
-  onEditCrew: () => void;
+  onEditCrew?: () => void;
+  onInviteCommunity?: () => void;
+  onSelectChatChannel: (channel: "team" | "community") => void;
   onSelectTab: (tab: WorkspaceTabId) => void;
+  showTeamChat: boolean;
 }
 
 export function CrewWorkbenchShell({
+  activeChatChannel,
   activeTab,
   tabs,
   children,
   crewId,
   crewLogo,
   crewName,
+  currentCrewHref,
   isOwner,
   onEditCrew,
+  onInviteCommunity,
+  onSelectChatChannel,
   onSelectTab,
+  showTeamChat,
 }: CrewWorkbenchShellProps) {
   const t = useTranslations("workspace");
   const tw = useTranslations("crewWorkbench");
+  const tc = useTranslations("crewCommunityChat");
+  const hasChat = tabs.some((tab) => tab.id === "chat");
   return (
     <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)] min-[1152px]:!grid-cols-[180px_220px_minmax(0,1fr)]">
       <CrewSwitcherRail
         currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }}
+        currentCrewHref={currentCrewHref}
         showNames
       />
 
@@ -77,21 +93,50 @@ export function CrewWorkbenchShell({
         <div className="my-2 h-px bg-white/[0.075]" />
 
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5">
-          {tabs.map((tab) => {
-            const Icon = RAIL_ICONS[tab.id];
-            return (
+          {hasChat ? (
+            <div className="mb-2 flex flex-col gap-0.5">
+              <div className="flex h-8 items-center justify-between px-3">
+                <span className="hidden text-xs font-semibold uppercase tracking-wider text-[#858a95] md:block">
+                  {tc("channels")}
+                </span>
+              </div>
+              {showTeamChat ? (
+                <RailButton
+                  icon={IconHash}
+                  label={tc("teamChannel")}
+                  active={activeTab === "chat" && activeChatChannel === "team"}
+                  onClick={() => onSelectChatChannel("team")}
+                />
+              ) : null}
               <RailButton
-                key={tab.id}
-                icon={Icon}
-                label={t(tab.labelKey)}
-                active={activeTab === tab.id}
-                onClick={() => onSelectTab(tab.id)}
+                icon={IconUsersGroup}
+                label={tc("communityChannel")}
+                active={activeTab === "chat" && activeChatChannel === "community"}
+                onClick={() => onSelectChatChannel("community")}
+                actionLabel={onInviteCommunity ? tc("inviteCommunity") : undefined}
+                onAction={onInviteCommunity}
               />
-            );
-          })}
+              <div className="mx-2 mt-2 h-px bg-white/[0.075]" />
+            </div>
+          ) : null}
+
+          {tabs
+            .filter((tab) => tab.id !== "chat")
+            .map((tab) => {
+              const Icon = RAIL_ICONS[tab.id];
+              return (
+                <RailButton
+                  key={tab.id}
+                  icon={Icon}
+                  label={t(tab.labelKey)}
+                  active={activeTab === tab.id}
+                  onClick={() => onSelectTab(tab.id)}
+                />
+              );
+            })}
         </nav>
 
-        {isOwner ? (
+        {isOwner && onEditCrew ? (
           <RailButton icon={IconSettings} label={tw("crewSettings")} onClick={onEditCrew} />
         ) : null}
       </aside>
@@ -106,15 +151,60 @@ function RailButton({
   label,
   active = false,
   onClick,
+  actionLabel,
+  onAction,
 }: {
   icon: typeof IconHome;
   label: string;
   active?: boolean;
   onClick?: () => void;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
-  const className = cn(
-    "relative flex h-10 w-full shrink-0 items-center justify-center gap-3 rounded-[8px] text-[#858a95] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[#e52227]/70 md:justify-start md:px-3",
+  const surfaceClassName = cn(
+    "relative flex h-10 w-full shrink-0 items-center rounded-[8px] text-[#858a95] transition-colors",
     active ? "bg-[#1b1d22] text-[#f5f5f6]" : "hover:bg-white/[0.055] hover:text-[#d8dae0]"
+  );
+
+  const labelContent = (
+    <>
+      <Icon className="size-[18px] shrink-0" stroke={1.75} />
+      <span className="hidden min-w-0 truncate text-[12px] font-medium md:block">{label}</span>
+    </>
+  );
+
+  if (onClick && onAction && actionLabel) {
+    return (
+      <div className={surfaceClassName}>
+        {active ? (
+          <span className="absolute -left-1.5 h-5 w-0.5 rounded-r bg-[#e52227] md:-left-2" />
+        ) : null}
+        <button
+          type="button"
+          className="flex h-full min-w-0 flex-1 items-center justify-center gap-3 rounded-[8px] outline-none focus-visible:ring-2 focus-visible:ring-[#e52227]/70 md:justify-start md:pl-3"
+          title={label}
+          aria-label={label}
+          aria-current={active ? "page" : undefined}
+          onClick={onClick}
+        >
+          {labelContent}
+        </button>
+        <button
+          type="button"
+          className="mr-1 grid size-8 shrink-0 place-items-center rounded-md text-[#aeb2bb] outline-none transition-colors hover:bg-white/[0.08] hover:text-[#f5f5f6] focus-visible:ring-2 focus-visible:ring-[#e52227]/70"
+          title={actionLabel}
+          aria-label={actionLabel}
+          onClick={onAction}
+        >
+          <IconUserPlus className="size-[17px]" stroke={1.75} />
+        </button>
+      </div>
+    );
+  }
+
+  const className = cn(
+    surfaceClassName,
+    "justify-center gap-3 outline-none focus-visible:ring-2 focus-visible:ring-[#e52227]/70 md:justify-start md:px-3"
   );
 
   const content = (
@@ -122,8 +212,7 @@ function RailButton({
       {active ? (
         <span className="absolute -left-1.5 h-5 w-0.5 rounded-r bg-[#e52227] md:-left-2" />
       ) : null}
-      <Icon className="size-[18px] shrink-0" stroke={1.75} />
-      <span className="hidden min-w-0 truncate text-[12px] font-medium md:block">{label}</span>
+      {labelContent}
     </>
   );
 

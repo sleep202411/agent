@@ -11,10 +11,10 @@
  *   - `order`    — a buyer + creator are executing a ServiceOrder.
  *                  Always exactly one conversation per order.
  *
- *   - `crew`     — one crew, one group chat. Conversation identity is
- *                  the crew: lookup key `crew:<crewId>`. Participants
- *                  are the crew's active members (role `member`),
- *                  synced from `crew_members` by the crews module.
+ *   - `crew`     — a channel inside one crew. `crewChannel` separates the
+ *                  private team room (`crew:<crewId>`) from the public community
+ *                  room (`crew:<crewId>:community`) without pretending they are
+ *                  different domain contexts.
  *                  Unlike service/order this is an N-party thread, so
  *                  the inbox card projects the CREW (name / logo /
  *                  member count) instead of a single counterparty.
@@ -45,6 +45,9 @@ import type { NotificationDTO } from "./notifications.js";
 
 export const CONVERSATION_CONTEXT_TYPES = ["service", "order", "crew"] as const;
 export type ConversationContextType = (typeof CONVERSATION_CONTEXT_TYPES)[number];
+
+export const CREW_CONVERSATION_CHANNELS = ["team", "community"] as const;
+export type CrewConversationChannel = (typeof CREW_CONVERSATION_CHANNELS)[number];
 
 /**
  * Participant roles.
@@ -227,6 +230,8 @@ export interface ConversationDTO {
   id: string;
   contextType: ConversationContextType;
   contextId: string;
+  /** Present only when contextType is `crew`; absent legacy rows are the team channel. */
+  crewChannel?: CrewConversationChannel | null;
   participants: ConversationParticipantDTO[];
 
   /** Most recent message preview, for the inbox row. NULL only on
@@ -266,6 +271,8 @@ export interface ConversationCardDTO {
   id: string;
   contextType: ConversationContextType;
   contextId: string;
+  /** Present only when contextType is `crew`; absent legacy rows are the team channel. */
+  crewChannel?: CrewConversationChannel | null;
   /** The other participant from the viewer's perspective. For a `crew`
    *  row there is no single other party — this is the crew id. */
   counterpartyId: string;

@@ -447,7 +447,10 @@ export function ConversationView({ conversationId, surface = "inbox" }: Conversa
               <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
             </div>
           ) : items.length === 0 && !messages.isError ? (
-            <EmptyCrewTimeline isCrew={conversation.contextType === "crew"} />
+            <EmptyCrewTimeline
+              isCrew={conversation.contextType === "crew"}
+              crewChannel={conversation.crewChannel}
+            />
           ) : (
             items.map((message, index) => (
               <MessageRow
@@ -474,13 +477,14 @@ export function ConversationView({ conversationId, surface = "inbox" }: Conversa
           conversationId={conversationId}
           contextType={conversation.contextType}
           contextId={conversation.contextId}
+          crewChannel={conversation.crewChannel}
           participants={conversation.participants}
           displays={displays}
           viewerId={user?.id ?? null}
           canSendProposal={myRole === "creator" && conversation.contextType === "service"}
         />
       </div>
-      {conversation.contextType === "crew" && crewContext ? (
+      {conversation.contextType === "crew" && conversation.crewChannel === "team" && crewContext ? (
         <CrewChatContextPanel
           crewId={conversation.contextId}
           context={crewContext}
@@ -526,7 +530,13 @@ function QueryFailure({
   );
 }
 
-function EmptyCrewTimeline({ isCrew }: { isCrew: boolean }) {
+function EmptyCrewTimeline({
+  isCrew,
+  crewChannel,
+}: {
+  isCrew: boolean;
+  crewChannel: ConversationDTO["crewChannel"];
+}) {
   const tm = useTranslations("messages");
   if (!isCrew) {
     return (
@@ -540,9 +550,13 @@ function EmptyCrewTimeline({ isCrew }: { isCrew: boolean }) {
       <span className="grid size-11 place-items-center rounded-xl bg-white/[0.045] text-[#858b95]">
         <IconHash className="size-5" />
       </span>
-      <h2 className="mt-4 text-[13px] font-semibold text-[#eceef2]">{tm("emptyCrewChatTitle")}</h2>
-      <p className="mt-1.5 text-[10px] leading-4 text-[#707681]">
-        {tm("emptyCrewChatDescription")}
+      <h2 className="mt-4 text-[13px] font-semibold text-[#eceef2]">
+        {crewChannel === "community" ? tm("emptyCommunityChatTitle") : tm("emptyCrewChatTitle")}
+      </h2>
+      <p className="mt-1.5 text-[12px] leading-5 text-[#c2c6cd]">
+        {crewChannel === "community"
+          ? tm("emptyCommunityChatDescription")
+          : tm("emptyCrewChatDescription")}
       </p>
     </div>
   );
@@ -571,6 +585,7 @@ function ConversationHeader({
   // there); the member count is the participant list, which the server
   // keeps in sync with `crew_members`.
   const isCrew = conversation.contextType === "crew";
+  const isCommunityChannel = isCrew && conversation.crewChannel === "community";
   const crew = useCrewDetail(isCrew ? conversation.contextId : "");
 
   const counterparty = isCrew
@@ -599,7 +614,9 @@ function ConversationHeader({
       : conversation.contextType === "order"
         ? localizePath(`/orders/${conversation.contextId}`, locale)
         : isCrew
-          ? localizePath(`/crews/${conversation.contextId}/workspace`, locale)
+          ? `${localizePath(`/crews/${conversation.contextId}/workspace`, locale)}${
+              isCommunityChannel ? "?tab=chat&channel=community" : ""
+            }`
           : null;
 
   if (surface === "workspace" && isCrew) {
@@ -610,12 +627,20 @@ function ConversationHeader({
         </span>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[12px] font-semibold text-[#eceef2]">
-            {tm("crewChannelName")}
+            {isCommunityChannel ? tm("communityChannelName") : tm("crewChannelName")}
           </div>
-          <div className="mt-0.5 flex items-center gap-2 text-[9px] text-[#666c76]">
-            <span>{tm("crewMemberCount", { count: conversation.participants.length })}</span>
+          <div className="mt-0.5 flex items-center gap-2 text-[12px] text-[#c2c6cd]">
+            <span>
+              {isCommunityChannel
+                ? tm("communityParticipantCount", { count: conversation.participants.length })
+                : tm("crewMemberCount", { count: conversation.participants.length })}
+            </span>
             <span aria-hidden="true">·</span>
-            <span>{tm("crewChannelDescription")}</span>
+            <span>
+              {isCommunityChannel
+                ? tm("communityChannelDescription")
+                : tm("crewChannelDescription")}
+            </span>
           </div>
         </div>
       </header>
@@ -653,13 +678,19 @@ function ConversationHeader({
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <Icon className="size-3" />
           {isCrew
-            ? tm("crewMemberCount", { count: conversation.participants.length })
+            ? isCommunityChannel
+              ? tm("communityParticipantCount", { count: conversation.participants.length })
+              : tm("crewMemberCount", { count: conversation.participants.length })
             : tm(`contextType.${conversation.contextType}`)}
           {contextHref ? (
             <>
               <span>·</span>
               <Link href={contextHref} className="text-primary hover:underline">
-                {isCrew ? tm("openCrewWorkspace") : tm("openOrder")}
+                {isCrew
+                  ? isCommunityChannel
+                    ? tm("openCommunityChannel")
+                    : tm("openCrewWorkspace")
+                  : tm("openOrder")}
               </Link>
             </>
           ) : null}
@@ -1436,6 +1467,7 @@ function Composer({
   conversationId,
   contextType,
   contextId,
+  crewChannel,
   participants,
   displays,
   viewerId,
@@ -1444,6 +1476,7 @@ function Composer({
   conversationId: string;
   contextType: ConversationDTO["contextType"];
   contextId: string;
+  crewChannel: ConversationDTO["crewChannel"];
   participants: ConversationDTO["participants"];
   displays: DisplayMap;
   viewerId: string | null;
@@ -1453,7 +1486,7 @@ function Composer({
   const tc = useTranslations("common");
   const sendText = useSendText(conversationId, viewerId);
   const sendAttachments = useSendAttachments(conversationId);
-  const isCrew = contextType === "crew";
+  const isCrew = contextType === "crew" && crewChannel === "team";
   const crewId = isCrew ? contextId : "";
   const assetContext = useCrewAssetContext(crewId, isCrew);
   const [text, setText] = useState("");
@@ -1576,7 +1609,7 @@ function Composer({
       value.includes(`#${task.label}`)
     );
     taskReferencesRef.current = retainedTasks;
-    const nextMentionSearch = findMentionSearch(value, caret);
+    const nextMentionSearch = isCrew ? findMentionSearch(value, caret) : null;
     const nextTaskSearch = isCrew ? findTaskSearch(value, caret) : null;
     setMentionSearch(nextTaskSearch ? null : nextMentionSearch);
     setTaskSearch(nextMentionSearch ? null : nextTaskSearch);
@@ -2174,7 +2207,7 @@ function Composer({
             onClick={(event) => {
               const value = event.currentTarget.value;
               const caret = event.currentTarget.selectionStart;
-              const nextMentionSearch = findMentionSearch(value, caret);
+              const nextMentionSearch = isCrew ? findMentionSearch(value, caret) : null;
               const nextTaskSearch = isCrew ? findTaskSearch(value, caret) : null;
               setMentionSearch(nextTaskSearch ? null : nextMentionSearch);
               setTaskSearch(nextMentionSearch ? null : nextTaskSearch);
