@@ -35,6 +35,7 @@ import { generateInviteToken } from '../../sharing/invite-token';
 import { CrewCollaborationService } from '../collaboration/crew-collaboration.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import type { CreateCrewInviteLinkInput } from '../dto';
+import { resolveCrewLogoUrl } from '../mappers';
 import { joinCrewInTransaction } from './join-crew';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -232,7 +233,7 @@ export class CrewInviteLinksService {
           : ('crew' as const),
       crewId: link.crewId,
       targetName: crew?.name ?? 'a crew',
-      logo: crew?.logo ?? null,
+      logo: crew?.logo ? resolveCrewLogoUrl(crew.logo) : null,
       tagline: crew?.tagline ?? null,
       memberCount,
       // A crew that was deleted after the link went out reads as expired
