@@ -2942,8 +2942,6 @@
         "deleteError": "无法删除资产规格。"
       },
       "workbench": {
-        "mediaTitle": "参考图片",
-        "mediaDescription": "当前选中的图片会统一用于分镜和后续生成。",
         "versionSelected": "已切换图片版本。",
         "versionSelectError": "无法切换到这个图片版本。",
         "noVersions": "尚未生成或上传图片。",

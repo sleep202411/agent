@@ -143,7 +143,7 @@ describe("StoryAssetSpecCard media replacement", () => {
     );
     expect(uploadImage).not.toBeNull();
     expect(uploadImage?.className).toContain("aspect-video");
-    expect(container.textContent).not.toContain("mediaTitle");
+    expect(container.querySelectorAll("article > section")).toHaveLength(1);
     await act(async () => uploadImage?.click());
 
     const input = document.body.querySelector<HTMLInputElement>('input[type="file"]');

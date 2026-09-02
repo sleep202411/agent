@@ -75,7 +75,9 @@ vi.mock("./story-production-page-header", () => ({
 }));
 
 vi.mock("./story-asset-spec-card", () => ({
-  StoryAssetSpecCard: ({ asset }: { asset: { kind: string } }) => <div>{asset.kind}</div>,
+  StoryAssetSpecCard: ({ asset }: { asset: { kind: string } }) => (
+    <div data-testid={`asset-${asset.kind}`}>{asset.kind}</div>
+  ),
 }));
 
 vi.mock("./story-asset-batch-generation", () => ({
@@ -196,6 +198,19 @@ describe("StoryAssetsGallery empty states", () => {
     await renderGallery();
     expect(batchCount()).toBe("3");
   });
+
+  it.each(["location", "prop"] as const)(
+    "uses the shared two-column single-image grid for %s assets",
+    async (kind) => {
+      navigationState.kind = kind;
+      queryState.assets = makeAssets(kind, 1);
+
+      await renderGallery();
+
+      const card = container.querySelector(`[data-testid="asset-${kind}"]`);
+      expect(card?.parentElement?.className).toContain("lg:grid-cols-2");
+    }
+  );
 
   async function renderGallery() {
     await act(async () => {

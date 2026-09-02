@@ -204,7 +204,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 <div
                   className={cn(
                     "mt-3",
-                    active === "location" && "grid items-stretch gap-3 lg:grid-cols-2"
+                    active !== "character" && "grid items-stretch gap-3 lg:grid-cols-2"
                   )}
                 >
                   {assets.map((asset, index) => (

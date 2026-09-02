@@ -2942,8 +2942,6 @@
         "deleteError": "Could not delete the Asset Spec."
       },
       "workbench": {
-        "mediaTitle": "Reference image",
-        "mediaDescription": "The selected image is used consistently by Storyboard and generation.",
         "versionSelected": "Image version selected.",
         "versionSelectError": "Could not select this image version.",
         "noVersions": "No image has been generated or uploaded yet.",

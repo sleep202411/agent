@@ -2942,8 +2942,6 @@
         "deleteError": "無法刪除資產規格。"
       },
       "workbench": {
-        "mediaTitle": "參考圖片",
-        "mediaDescription": "目前選取的圖片會統一用於分鏡和後續生成。",
         "versionSelected": "已切換圖片版本。",
         "versionSelectError": "無法切換到這個圖片版本。",
         "noVersions": "尚未生成或上載圖片。",

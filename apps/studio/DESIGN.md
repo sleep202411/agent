@@ -259,6 +259,16 @@ pause/resume, and the UI events that represent those facts.
   surface. Gray is reserved for subordinate hints and metadata, not applied to
   the whole conversation by default.
 
+### Desktop Asset Specs
+
+- Character is the only asset kind with a dedicated secondary pane: its
+  three-view reference. Scenes and props use the same single-image card,
+  generation controls, upload entry, and landscape media-version strip in the
+  same two-column grid. Their UI differs only in asset-specific copy and data.
+- Do not add a separate reference-image preview pane to scene or prop cards;
+  the selected version in the card's media strip is already the reusable
+  reference for downstream generation.
+
 ### H5 asset-generation transcript
 
 On the mobile/H5 Story Studio, generated media is the conversation content,

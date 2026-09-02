@@ -8,7 +8,6 @@ import {
   IconFolderPlus,
   IconId,
   IconLoader2,
-  IconPhoto,
   IconPhotoOff,
   IconPlus,
   IconTrash,
@@ -58,7 +57,7 @@ import { StoryProductionGenerationControl } from "./story-production-generation-
 
 /**
  * One Asset Spec workbench row. Primary media history stays with the editable
- * spec; characters add a three-view pane and props add a large preview pane.
+ * spec; characters alone add a dedicated three-view pane.
  */
 export function StoryAssetSpecCard({
   asset,
@@ -108,7 +107,7 @@ export function StoryAssetSpecCard({
   const latestTurnaround =
     asset.latestGenerations?.turnaround ??
     (asset.latestGeneration?.purpose === "turnaround" ? asset.latestGeneration : null);
-  const isScene = asset.kind === "location";
+  const isSingleImageAsset = asset.kind !== "character";
 
   const updateCachedAsset = (updated: StoryAssetSpec) => {
     queryClient.setQueryData<StoryAssetSpec[]>(
@@ -198,17 +197,17 @@ export function StoryAssetSpecCard({
     <article
       className={cn(
         "grid min-w-0 items-stretch gap-3 text-white",
-        isScene ? "h-full" : "py-3 first:pt-0 last:pb-0 lg:grid-cols-2"
+        isSingleImageAsset ? "h-full" : "py-3 first:pt-0 last:pb-0 lg:grid-cols-2"
       )}
     >
       <section
         className={cn(
           "flex min-w-0 flex-col overflow-visible rounded-2xl border border-white/[0.09] bg-white/[0.045]",
-          isScene && "h-full"
+          isSingleImageAsset && "h-full"
         )}
         aria-label={asset.name}
       >
-        <div className={cn("p-3", isScene && "flex-1")}>
+        <div className={cn("p-3", isSingleImageAsset && "flex-1")}>
           <div className="flex min-w-0 items-start gap-2">
             <label className="sr-only" htmlFor={`asset-name-${asset.id}`}>
               {detailT("name")}
@@ -325,7 +324,7 @@ export function StoryAssetSpecCard({
           canAdd={canReplaceMedia}
           pendingPreviewCount={primaryPendingPreviewCount}
           pendingPreviewLabel={generationT("status.inProgress")}
-          landscape={isScene}
+          landscape={isSingleImageAsset}
           onAdd={() => setAssetPickerOpen(true)}
           onSelect={(version) => selectVersionMutation.mutate(version)}
         />
@@ -448,26 +447,6 @@ export function StoryAssetSpecCard({
             nextLabel={workbenchT("nextVersion")}
             onAdd={() => setTurnaroundPickerOpen(true)}
           />
-        </section>
-      ) : asset.kind === "prop" ? (
-        <section className="min-w-0 overflow-visible rounded-2xl border border-white/[0.09] bg-white/[0.035]">
-          <div className="p-4 pb-3">
-            <div className="min-w-0">
-              <h3 className="flex items-center gap-2 text-base font-semibold text-white">
-                <IconPhoto className="size-4 text-white/72" stroke={1.7} aria-hidden="true" />
-                {workbenchT("mediaTitle")}
-              </h3>
-              <p className="mt-1 text-xs leading-5 text-white/58">
-                {workbenchT("mediaDescription")}
-              </p>
-            </div>
-            <AssetMediaStage
-              media={asset.selectedMediaVersion}
-              label={asset.name}
-              eager={eagerMedia}
-              emptyLabel={workbenchT("noVersions")}
-            />
-          </div>
         </section>
       ) : null}
 
@@ -631,42 +610,6 @@ function MediaVersionStrip({
           </button>
         </>
       ) : null}
-    </div>
-  );
-}
-
-function AssetMediaStage({
-  media,
-  label,
-  eager,
-  emptyLabel,
-}: {
-  media: StoryCreativeMediaVersion | null;
-  label: string;
-  eager: boolean;
-  emptyLabel: string;
-}) {
-  const source = media?.previewUrl ?? media?.thumbnailUrl ?? null;
-  return (
-    <div className="relative mt-3 aspect-video overflow-hidden rounded-xl bg-black/28">
-      {source ? (
-        <Image
-          src={source}
-          alt={label}
-          fill
-          unoptimized
-          loading={eager ? "eager" : "lazy"}
-          sizes="(max-width: 1024px) 100vw, 54vw"
-          className="object-contain"
-        />
-      ) : (
-        <div className="grid size-full place-items-center text-center">
-          <div>
-            <IconPhotoOff className="mx-auto size-7 text-white/32" stroke={1.5} />
-            <p className="mt-2 text-sm text-white/42">{emptyLabel}</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

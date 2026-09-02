@@ -59,6 +59,7 @@ describe("StoryAssetSpecCard", () => {
               asset={assetSpec({ kind })}
               projectId="project-1"
               chapterId="chapter-1"
+              workspaceId="workspace-1"
             />
           </QueryClientProvider>
         );
@@ -73,16 +74,20 @@ describe("StoryAssetSpecCard", () => {
       expect(text).toContain("generate:primary");
       if (kind === "character") {
         expect(text).toContain("turnaroundTitle");
-      } else if (kind === "prop") {
-        expect(text).toContain("mediaTitle");
       } else {
-        expect(text).not.toContain("mediaTitle");
         expect(article?.className).toContain("h-full");
         expect(article?.className).not.toContain("lg:grid-cols-2");
       }
+      expect(container.querySelectorAll("article > section")).toHaveLength(
+        kind === "character" ? 2 : 1
+      );
       expect(text).not.toContain("Lead character");
       expect(text).not.toContain("advancedSettings");
-      expect(container.querySelector('[class*="aspect-video"]') !== null).toBe(kind !== "location");
+      const uploadButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="uploadImage"]'
+      );
+      expect(uploadButton).not.toBeNull();
+      expect(uploadButton?.className).toContain(kind === "character" ? "size-24" : "aspect-video");
       expect(container.querySelectorAll("textarea")).toHaveLength(1);
       expect(container.querySelectorAll('section[aria-label="Hero"]')).toHaveLength(1);
       expect(container.querySelector('button[aria-label="delete"]')).not.toBeNull();
