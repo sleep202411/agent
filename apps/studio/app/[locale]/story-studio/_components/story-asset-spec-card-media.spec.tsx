@@ -142,6 +142,8 @@ describe("StoryAssetSpecCard media replacement", () => {
       'button[aria-label="uploadImage"]'
     );
     expect(uploadImage).not.toBeNull();
+    expect(uploadImage?.className).toContain("aspect-video");
+    expect(container.textContent).not.toContain("mediaTitle");
     await act(async () => uploadImage?.click());
 
     const input = document.body.querySelector<HTMLInputElement>('input[type="file"]');

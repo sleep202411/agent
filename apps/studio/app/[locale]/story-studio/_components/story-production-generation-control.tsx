@@ -86,7 +86,7 @@ export function StoryProductionGenerationControl({
   target: GenerationTarget;
   label: string;
   selectedMedia: StoryCreativeMediaVersion | null;
-  /** Media-slot shape; character cards use portrait (3:4), location cards landscape (16:9). */
+  /** Media-slot shape; character cards use portrait (3:4), scene cards landscape (16:9). */
   aspect?: "square" | "portrait" | "landscape";
   /** Extra card-owned action stacked directly under the primary action. */
   secondaryAction?: React.ReactNode;
@@ -114,7 +114,9 @@ export function StoryProductionGenerationControl({
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
   const [submittedGenerations, setSubmittedGenerations] = useState<StoryProductionGeneration[]>([]);
-  const [pendingSubmissionIds, setPendingSubmissionIds] = useState<string[]>([]);
+  const [pendingSubmissions, setPendingSubmissions] = useState<
+    Array<{ idempotencyKey: string; requestedOutputCount: number }>
+  >([]);
   const commandInFlight = useRef(false);
   const rememberGenerationState = (value: StoryProductionGeneration) => {
     setSubmittedGenerations((current) => {
@@ -189,7 +191,7 @@ export function StoryProductionGenerationControl({
   const effectiveOptions = generationOptions ?? generationDefaults.options;
   const createMutation = useMutation({
     retry: false,
-    mutationFn: ({ idempotencyKey }: { idempotencyKey: string }) =>
+    mutationFn: ({ idempotencyKey }: { idempotencyKey: string; requestedOutputCount: number }) =>
       createGeneration(
         scope,
         target,
@@ -198,13 +200,15 @@ export function StoryProductionGenerationControl({
         purpose,
         idempotencyKey
       ),
-    onMutate: ({ idempotencyKey }) => {
-      setPendingSubmissionIds((current) => [...current, idempotencyKey]);
+    onMutate: ({ idempotencyKey, requestedOutputCount }) => {
+      setPendingSubmissions((current) => [...current, { idempotencyKey, requestedOutputCount }]);
     },
     onSuccess: rememberGeneration,
     onError: (error) => toast.error(storyApiErrorMessage(error, t("requestError"))),
     onSettled: (_data, _error, { idempotencyKey }) => {
-      setPendingSubmissionIds((current) => current.filter((id) => id !== idempotencyKey));
+      setPendingSubmissions((current) =>
+        current.filter((submission) => submission.idempotencyKey !== idempotencyKey)
+      );
     },
   });
 
@@ -252,7 +256,6 @@ export function StoryProductionGenerationControl({
     }
   }, [generations, queryClient, scope, target]);
 
-  const blockedReason = target.status !== "current" ? t("targetNotCurrent") : null;
   const status = attachmentRetryMutation.isPending
     ? { label: t("status.retryingAttachment"), icon: "running" as const }
     : generationStatus(generation, createMutation.isPending, t);
@@ -267,7 +270,10 @@ export function StoryProductionGenerationControl({
       : null);
   const progress = generation?.aiJob.progress;
   const pendingPreviewCount =
-    pendingSubmissionIds.length + generations.filter(isGenerationRunning).length;
+    pendingSubmissions.reduce((total, submission) => total + submission.requestedOutputCount, 0) +
+    generations
+      .filter(isGenerationRunning)
+      .reduce((total, current) => total + current.requestedOutputCount, 0);
   useEffect(() => {
     onPendingPreviewCountChange?.(pendingPreviewCount);
   }, [onPendingPreviewCountChange, pendingPreviewCount]);
@@ -280,6 +286,7 @@ export function StoryProductionGenerationControl({
     cancelMutation.isPending ||
     retryMutation.isPending ||
     attachmentRetryMutation.isPending;
+  const generationEnabled = allowGeneration && target.status !== "archived";
   const runCommandOnce = async (command: () => Promise<StoryProductionGeneration>) => {
     if (commandInFlight.current) return;
     commandInFlight.current = true;
@@ -299,10 +306,11 @@ export function StoryProductionGenerationControl({
       aria-label={layout === "inline" ? generateLabel : undefined}
       title={layout === "inline" ? generateLabel : undefined}
       loading={!allowConcurrent && layout === "stage" && createMutation.isPending}
-      disabled={Boolean(blockedReason) || (!allowConcurrent && actionPending)}
+      disabled={!allowConcurrent && actionPending}
       onClick={() => {
         const request = {
           idempotencyKey: createStoryProductionIdempotencyKey("story-generate"),
+          requestedOutputCount: requestedOutputCountFromSettings(effectiveOptions),
         };
         if (allowConcurrent) {
           createMutation.mutate(request);
@@ -318,7 +326,7 @@ export function StoryProductionGenerationControl({
   );
 
   const actionButton = allowConcurrent ? (
-    allowGeneration ? (
+    generationEnabled ? (
       generateAction
     ) : null
   ) : cancellable ? (
@@ -332,7 +340,7 @@ export function StoryProductionGenerationControl({
       <IconX />
       {t("cancel")}
     </Button>
-  ) : running || !allowGeneration ? null : attachmentRetryable ? (
+  ) : running || !generationEnabled ? null : attachmentRetryable ? (
     <Button
       size="sm"
       loading={attachmentRetryMutation.isPending}
@@ -346,7 +354,7 @@ export function StoryProductionGenerationControl({
     <Button
       size="sm"
       loading={retryMutation.isPending}
-      disabled={Boolean(blockedReason) || actionPending}
+      disabled={actionPending}
       onClick={() => void runCommandOnce(() => retryMutation.mutateAsync())}
     >
       <IconRefresh />
@@ -360,9 +368,6 @@ export function StoryProductionGenerationControl({
     return (
       <div className="min-w-0">
         <div className="flex min-h-9 items-center justify-end">{actionButton}</div>
-        {blockedReason ? (
-          <p className="mt-2 text-[11px] leading-4 text-amber-100/82">{blockedReason}</p>
-        ) : null}
         {errorMessage ? (
           <p className="mt-2 text-[11px] leading-4 text-red-100/88" role="alert">
             {errorMessage}
@@ -430,9 +435,6 @@ export function StoryProductionGenerationControl({
           </div>
         ) : null}
       </section>
-      {blockedReason ? (
-        <p className="mt-2 text-[11px] leading-4 text-amber-100/82">{blockedReason}</p>
-      ) : null}
       {errorMessage ? (
         <p className="mt-2 text-[11px] leading-4 text-red-100/88" role="alert">
           {errorMessage}
@@ -440,6 +442,11 @@ export function StoryProductionGenerationControl({
       ) : null}
     </div>
   );
+}
+
+function requestedOutputCountFromSettings(settings: ModelSettings): number {
+  const value = Number(settings.numOutputs ?? 1);
+  return Number.isSafeInteger(value) && value > 0 ? value : 1;
 }
 
 function MediaPreview({

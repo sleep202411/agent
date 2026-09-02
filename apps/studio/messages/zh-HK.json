@@ -2798,7 +2798,6 @@
       "generate": "生成",
       "generateAgain": "再次生成",
       "progressAria": "生成進度",
-      "targetNotCurrent": "請先將此過期製作目標與目前情節同步，再生成媒體。",
       "status": {
         "idle": "可使用預設相容模型生成",
         "submitting": "正在提交生成…",
@@ -2866,8 +2865,10 @@
       },
       "filterLabel": "按類型篩選資產規格",
       "batch": {
-        "generate": "生成",
+        "generate": "批量生成",
         "allGenerated": "目前分類已全部生成",
+        "tooltip": "使用 {model} 及目前參數，批量生成此分類中剩餘的 {count} 項空資產。",
+        "allGeneratedTooltip": "此分類中的資產都已有媒體。",
         "running": "正在生成",
         "runningOther": "協作者正在生成",
         "cancelling": "正在取消",
@@ -2918,6 +2919,11 @@
       "detailDialog": {
         "name": "名稱",
         "imagePrompt": "圖片提示詞",
+        "imagePromptPlaceholder": {
+          "character": "描述角色的外貌、服裝與風格；輸入 @ 引用已有資產…",
+          "location": "描述場景的環境、構圖、光線與氣氛；輸入 @ 引用已有資產…",
+          "prop": "描述道具的造型、材質與細節；輸入 @ 引用已有資產…"
+        },
         "model": "模型",
         "save": "儲存",
         "saved": "已儲存。",

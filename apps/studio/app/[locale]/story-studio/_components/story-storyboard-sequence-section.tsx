@@ -176,12 +176,7 @@ export function StoryStoryboardSequenceSection({
             {t("seconds", { value: seconds(sequence.durationMs) })}
           </span>
         </div>
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="border-primary/45 text-primary hover:border-primary/70 hover:bg-primary/10 hover:text-primary"
-        >
+        <Button asChild variant="primary-ghost" size="sm">
           <Link
             href={`/story-studio/projects/${projectId}/edit?chapter=${encodeURIComponent(chapterId)}&node=${encodeURIComponent(sequence.plotNodeId)}`}
           >

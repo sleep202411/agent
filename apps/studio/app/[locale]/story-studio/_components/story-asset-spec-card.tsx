@@ -45,6 +45,7 @@ import {
   storyApiErrorMessage,
   type StoryCandidateAsset,
 } from "@/lib/story-projects-api";
+import { cn } from "@/lib/utils";
 import {
   StoryCandidateAssetPickerDialog,
   type StoryCandidateAssetUploadState,
@@ -56,9 +57,8 @@ import { StoryProductionConflictPanel } from "./story-production-conflict-panel"
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
 /**
- * One Asset Spec workbench row: the durable spec edits in the left pane and
- * its current media plus real version history in the right pane. This keeps
- * the manual authoring path visible without hiding it behind a card dialog.
+ * One Asset Spec workbench row. Primary media history stays with the editable
+ * spec; characters add a three-view pane and props add a large preview pane.
  */
 export function StoryAssetSpecCard({
   asset,
@@ -108,6 +108,7 @@ export function StoryAssetSpecCard({
   const latestTurnaround =
     asset.latestGenerations?.turnaround ??
     (asset.latestGeneration?.purpose === "turnaround" ? asset.latestGeneration : null);
+  const isScene = asset.kind === "location";
 
   const updateCachedAsset = (updated: StoryAssetSpec) => {
     queryClient.setQueryData<StoryAssetSpec[]>(
@@ -194,12 +195,20 @@ export function StoryAssetSpecCard({
   const turnaroundTarget = { ...primaryTarget, latestGeneration: latestTurnaround };
 
   return (
-    <article className="grid min-w-0 items-stretch gap-3 py-3 text-white first:pt-0 last:pb-0 lg:grid-cols-2">
+    <article
+      className={cn(
+        "grid min-w-0 items-stretch gap-3 text-white",
+        isScene ? "h-full" : "py-3 first:pt-0 last:pb-0 lg:grid-cols-2"
+      )}
+    >
       <section
-        className="flex min-w-0 flex-col overflow-visible rounded-2xl border border-white/[0.09] bg-white/[0.045]"
+        className={cn(
+          "flex min-w-0 flex-col overflow-visible rounded-2xl border border-white/[0.09] bg-white/[0.045]",
+          isScene && "h-full"
+        )}
         aria-label={asset.name}
       >
-        <div className="p-3">
+        <div className={cn("p-3", isScene && "flex-1")}>
           <div className="flex min-w-0 items-start gap-2">
             <label className="sr-only" htmlFor={`asset-name-${asset.id}`}>
               {detailT("name")}
@@ -273,15 +282,11 @@ export function StoryAssetSpecCard({
             disabled={busy || !allowEditing}
             required
             maxLength={12_000}
+            placeholder={detailT(`imagePromptPlaceholder.${asset.kind}`)}
             onChange={setPrompt}
             mentions={mentions}
             excludeMentionId={asset.id}
           />
-          <div className="mt-1 flex justify-end">
-            <span className="shrink-0 text-xs tabular-nums text-white/45">
-              {prompt.length.toLocaleString()}/12,000
-            </span>
-          </div>
 
           <div className="mt-2">
             <StoryAssetGenerationToolbar projectId={projectId} prompt={prompt}>
@@ -320,6 +325,7 @@ export function StoryAssetSpecCard({
           canAdd={canReplaceMedia}
           pendingPreviewCount={primaryPendingPreviewCount}
           pendingPreviewLabel={generationT("status.inProgress")}
+          landscape={isScene}
           onAdd={() => setAssetPickerOpen(true)}
           onSelect={(version) => selectVersionMutation.mutate(version)}
         />
@@ -443,7 +449,7 @@ export function StoryAssetSpecCard({
             onAdd={() => setTurnaroundPickerOpen(true)}
           />
         </section>
-      ) : (
+      ) : asset.kind === "prop" ? (
         <section className="min-w-0 overflow-visible rounded-2xl border border-white/[0.09] bg-white/[0.035]">
           <div className="p-4 pb-3">
             <div className="min-w-0">
@@ -458,13 +464,12 @@ export function StoryAssetSpecCard({
             <AssetMediaStage
               media={asset.selectedMediaVersion}
               label={asset.name}
-              fit={asset.kind === "location" ? "cover" : "contain"}
               eager={eagerMedia}
               emptyLabel={workbenchT("noVersions")}
             />
           </div>
         </section>
-      )}
+      ) : null}
 
       {assetPickerOpen && workspaceId ? (
         <StoryAssetSpecCardMediaPicker
@@ -503,6 +508,7 @@ function MediaVersionStrip({
   canAdd,
   pendingPreviewCount = 0,
   pendingPreviewLabel,
+  landscape = false,
   showScrollControls = false,
   previousLabel,
   nextLabel,
@@ -519,6 +525,7 @@ function MediaVersionStrip({
   canAdd: boolean;
   pendingPreviewCount?: number;
   pendingPreviewLabel?: string;
+  landscape?: boolean;
   showScrollControls?: boolean;
   previousLabel?: string;
   nextLabel?: string;
@@ -529,6 +536,7 @@ function MediaVersionStrip({
   const scroll = (direction: -1 | 1) => {
     scrollerRef.current?.scrollBy({ left: direction * 216, behavior: "smooth" });
   };
+  const itemClassName = landscape ? "h-24 aspect-video" : "size-24";
 
   return (
     <div className="relative rounded-b-2xl border-t border-white/[0.08] bg-black/18">
@@ -540,7 +548,10 @@ function MediaVersionStrip({
           <button
             type="button"
             onClick={onAdd}
-            className="grid size-24 shrink-0 place-items-center rounded-xl bg-white/[0.055] text-white/56 transition hover:bg-white/[0.09] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+            className={cn(
+              "grid shrink-0 place-items-center rounded-xl bg-white/[0.055] text-white/56 transition hover:bg-white/[0.09] hover:text-white focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+              itemClassName
+            )}
             aria-label={addLabel}
             title={addLabel}
           >
@@ -552,7 +563,10 @@ function MediaVersionStrip({
             key={index}
             role="status"
             aria-label={pendingPreviewLabel}
-            className="grid size-24 shrink-0 place-items-center rounded-xl border border-white/[0.1] bg-white/[0.055] text-white/58"
+            className={cn(
+              "grid shrink-0 place-items-center rounded-xl border border-white/[0.1] bg-white/[0.055] text-white/58",
+              itemClassName
+            )}
           >
             <IconLoader2 className="size-5 animate-spin" stroke={1.7} aria-hidden="true" />
           </div>
@@ -567,7 +581,10 @@ function MediaVersionStrip({
               aria-pressed={selected}
               disabled={!allowSelection || busy || selected || !source}
               onClick={() => onSelect?.(version)}
-              className="group relative size-24 shrink-0 overflow-hidden rounded-xl border border-white/[0.1] bg-black/30 transition-colors hover:border-white/35 disabled:opacity-100"
+              className={cn(
+                "group relative shrink-0 overflow-hidden rounded-xl border border-white/[0.1] bg-black/30 transition-colors hover:border-white/35 disabled:opacity-100",
+                itemClassName
+              )}
             >
               {source ? (
                 <Image
@@ -621,13 +638,11 @@ function MediaVersionStrip({
 function AssetMediaStage({
   media,
   label,
-  fit,
   eager,
   emptyLabel,
 }: {
   media: StoryCreativeMediaVersion | null;
   label: string;
-  fit: "cover" | "contain";
   eager: boolean;
   emptyLabel: string;
 }) {
@@ -642,7 +657,7 @@ function AssetMediaStage({
           unoptimized
           loading={eager ? "eager" : "lazy"}
           sizes="(max-width: 1024px) 100vw, 54vw"
-          className={fit === "cover" ? "object-cover" : "object-contain"}
+          className="object-contain"
         />
       ) : (
         <div className="grid size-full place-items-center text-center">

@@ -160,18 +160,19 @@ export function SizeGrid({
           <button
             key={token}
             type="button"
+            aria-pressed={selected}
             onClick={() => onChange(token)}
             className={cn(
-              "flex flex-col items-center justify-center gap-1.5 rounded-xl py-2.5 transition-colors",
+              "flex min-h-16 flex-col items-center justify-center gap-1.5 rounded-xl px-1.5 py-2 text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
               selected
-                ? "bg-white/[0.08] ring-2 ring-white/80"
-                : "bg-white/[0.04] hover:bg-white/[0.08]"
+                ? "bg-white/[0.14] text-foreground"
+                : "bg-white/[0.045] hover:bg-white/[0.08] hover:text-foreground"
             )}
           >
             <span className="flex h-5 items-center">
               <AspectGlyph w={w} h={h} />
             </span>
-            <span className="whitespace-nowrap text-[11px] text-muted-foreground">{label}</span>
+            <span className="whitespace-nowrap text-xs">{label}</span>
           </button>
         );
       })}
@@ -192,22 +193,26 @@ function Segmented({
   onChange: (v: string | number) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {options.map((opt, i) => (
-        <button
-          key={String(opt)}
-          type="button"
-          onClick={() => onChange(opt)}
-          className={cn(
-            "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-            String(value) === String(opt)
-              ? "bg-white/[0.12] text-foreground"
-              : "bg-white/[0.05] text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {labels?.[i] ?? String(opt)}
-        </button>
-      ))}
+    <div className="flex w-fit max-w-full flex-wrap items-center gap-1 rounded-xl bg-input/20 p-1">
+      {options.map((opt, i) => {
+        const selected = String(value) === String(opt);
+        return (
+          <button
+            key={String(opt)}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onChange(opt)}
+            className={cn(
+              "min-h-8 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35",
+              selected
+                ? "bg-white/[0.14] text-foreground"
+                : "text-muted-foreground hover:bg-white/[0.07] hover:text-foreground"
+            )}
+          >
+            {labels?.[i] ?? String(opt)}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -236,7 +241,7 @@ export function Field({
   return (
     <div>
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">{fieldLabel(field)}</span>
+        <span className="text-xs font-medium text-muted-foreground">{fieldLabel(field)}</span>
         {showInline && (
           <span className="text-xs text-white/70 tabular-nums">
             {`${sliderValue}${field.unit ?? ""}`}
@@ -280,12 +285,12 @@ export function Field({
       )}
 
       {field.control === "stepper" && (
-        <div className="flex h-9 w-full items-center gap-2 rounded-lg bg-input/20 px-2">
+        <div className="flex h-10 w-full items-center gap-2 rounded-xl bg-input/20 px-1.5">
           <button
             type="button"
             aria-label={t("stepper.decrease")}
             onClick={() => set(Math.max(field.min ?? 0, Number(value ?? field.min ?? 0) - 1))}
-            className="flex size-6 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
+            className="flex size-7 items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
           >
             <IconMinus className="size-3.5" stroke={2} />
           </button>
@@ -301,7 +306,7 @@ export function Field({
             type="button"
             aria-label={t("stepper.increase")}
             onClick={() => set(Number(value ?? field.min ?? 0) + 1)}
-            className="flex size-6 items-center justify-center rounded-full text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
+            className="flex size-7 items-center justify-center rounded-lg text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/35"
           >
             <IconPlus className="size-3.5" stroke={2} />
           </button>

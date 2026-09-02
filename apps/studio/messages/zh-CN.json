@@ -2798,7 +2798,6 @@
       "generate": "生成",
       "generateAgain": "再次生成",
       "progressAria": "生成进度",
-      "targetNotCurrent": "请先将此过期制作目标与当前情节同步，再生成媒体。",
       "status": {
         "idle": "可使用默认兼容模型生成",
         "submitting": "正在提交生成…",
@@ -2866,8 +2865,10 @@
       },
       "filterLabel": "按类型筛选资产规格",
       "batch": {
-        "generate": "生成",
+        "generate": "批量生成",
         "allGenerated": "当前分类已全部生成",
+        "tooltip": "使用 {model} 及当前参数，批量生成此分类中剩余的 {count} 项空资产。",
+        "allGeneratedTooltip": "此分类中的资产都已有媒体。",
         "running": "正在生成",
         "runningOther": "协作者正在生成",
         "cancelling": "正在取消",
@@ -2918,6 +2919,11 @@
       "detailDialog": {
         "name": "名称",
         "imagePrompt": "图片提示词",
+        "imagePromptPlaceholder": {
+          "character": "描述角色的外貌、服装与风格；输入 @ 引用已有资产…",
+          "location": "描述场景的环境、构图、光线与氛围；输入 @ 引用已有资产…",
+          "prop": "描述道具的造型、材质与细节；输入 @ 引用已有资产…"
+        },
         "model": "模型",
         "save": "保存",
         "saved": "已保存。",

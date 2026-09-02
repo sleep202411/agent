@@ -13,7 +13,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { IconChevronDown, IconClock } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
-import { GlassRim } from "@/components/ui/glass-rim";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   schemaFields,
@@ -174,29 +173,23 @@ export function ComposerQuickSettings({
         </PopoverTrigger>
 
         <PopoverContent
+          aria-label={t("generationSettings")}
           side={placement === "above" ? "top" : "bottom"}
           align={align === "left" ? "start" : "end"}
           sideOffset={8}
           collisionPadding={8}
           sticky="always"
-          className="liquid-rim nodrag nowheel max-h-[var(--radix-popover-content-available-height)] w-[320px] max-w-[calc(100vw-1rem)] gap-0 overflow-y-auto overscroll-contain rounded-2xl bg-[oklch(0.19_0_0_/_0.97)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-24px_48px_rgba(0,0,0,0.28),0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-[56px] backdrop-saturate-[1.25]"
+          className="nodrag nowheel max-h-[var(--radix-popover-content-available-height)] w-[320px] max-w-[calc(100vw-1rem)] gap-0 overflow-y-auto overscroll-contain rounded-2xl bg-popover p-3 shadow-2xl shadow-black/50"
         >
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-0 rounded-[inherit] bg-[linear-gradient(180deg,rgba(255,255,255,0.11)_0%,rgba(255,255,255,0.035)_38%,rgba(0,0,0,0.22)_100%)]"
-          />
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-x-3 top-0 h-px bg-white/30"
-          />
-          <GlassRim className="opacity-80" />
-          <div className="relative z-10">
+          <div>
             {quick.map((field, i) => (
-              <div key={field.name} className={i > 0 ? "mt-4" : ""}>
+              <div key={field.name} className={i > 0 ? "mt-3" : ""}>
                 {isSizeField(field) ? (
                   <>
                     {/* SizeGrid has no built-in label; the others self-label. */}
-                    <div className="mb-2 text-sm text-muted-foreground">{fieldLabel(field)}</div>
+                    <div className="mb-2 text-xs font-medium text-muted-foreground">
+                      {fieldLabel(field)}
+                    </div>
                     <SizeGrid
                       field={field}
                       value={String(scalar(field.name) ?? field.default ?? field.enum?.[0] ?? "")}

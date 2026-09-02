@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  IconAlertTriangle,
-  IconBox,
-  IconPhoto,
-  IconPlus,
-  IconRefresh,
-  IconUser,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
@@ -28,7 +21,10 @@ import { useStoryChapterWorkbench } from "../_lib/use-story-chapter-workbench";
 import { StoryAssetSpecCard } from "./story-asset-spec-card";
 import { StoryAssetSpecCreateDialog } from "./story-asset-spec-create-dialog";
 import { StoryAssetBatchGeneration } from "./story-asset-batch-generation";
-import { StoryProductionPageHeader } from "./story-production-page-header";
+import {
+  StoryProductionGenerationControls,
+  StoryProductionPageHeader,
+} from "./story-production-page-header";
 import { storyAssetsStageHasStaleContent } from "./story-production-stage-guidance";
 import {
   StoryStageEmptyState,
@@ -37,12 +33,6 @@ import {
 } from "./story-stage-empty-state";
 
 const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
-
-const CATEGORY_ICONS = {
-  character: IconUser,
-  location: IconPhoto,
-  prop: IconBox,
-} as const;
 
 /** Chapter-scoped logical Asset Specs. A spec remains usable by @stable-key
  * before any media exists; this view never starts paid generation on load. */
@@ -89,8 +79,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   const canEdit = Boolean(workbenchQuery.data?.project.capabilities.includes("story.edit"));
   // Asset Specs are creator-owned chapter resources. Plot/plan state only
   // governs what FizzAgent may derive automatically; it must never lock the
-  // manual media workbench. Individual stale targets still fail closed inside
-  // StoryProductionGenerationControl.
+  // manual media workbench.
   const generationAllowed = canEdit;
   const mediaReplacementAllowed = Boolean(canEdit && workbenchQuery.workspaceId);
   const resolvableStaleCount = (assetsQuery.data ?? []).filter(
@@ -100,8 +89,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
       asset.pendingSourceFingerprint === asset.conflict.pendingSourceFingerprint
   ).length;
   const staleNeedsAgent = (productionQuery.data?.assets.staleCount ?? 0) > resolvableStaleCount;
-  const CategoryIcon = CATEGORY_ICONS[active];
-
   return (
     <main aria-busy={loading} className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -149,7 +136,23 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 })}
               </nav>
               {activeChapterId && generationAllowed ? (
-                <div className="ml-auto flex shrink-0 items-center gap-2">
+                <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
+                  <StoryProductionGenerationControls
+                    projectId={projectId}
+                    modalities={["image"]}
+                    appearance="plain"
+                  />
+                  {canEdit ? (
+                    <Button
+                      type="button"
+                      variant="primary-ghost"
+                      className="shrink-0"
+                      onClick={() => setCreateOpen(true)}
+                    >
+                      <IconPlus />
+                      {t(`addByKind.${active}`)}
+                    </Button>
+                  ) : null}
                   <StoryAssetBatchGeneration
                     projectId={projectId}
                     chapterId={activeChapterId}
@@ -197,26 +200,13 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 </div>
               ) : null}
 
-              <div className="mt-5 flex min-h-11 items-center justify-between gap-4 border-b border-white/[0.08] pb-3">
-                <h2 className="flex min-w-0 items-center gap-2 text-sm font-semibold text-white">
-                  <CategoryIcon className="size-4 text-white/72" stroke={1.8} aria-hidden="true" />
-                  {t(`tabs.${active}`)}
-                </h2>
-                {canEdit ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="shrink-0 text-white/82 hover:bg-white/[0.07] hover:text-white"
-                    onClick={() => setCreateOpen(true)}
-                  >
-                    <IconPlus />
-                    {t(`addByKind.${active}`)}
-                  </Button>
-                ) : null}
-              </div>
-
               {assets.length > 0 ? (
-                <div>
+                <div
+                  className={cn(
+                    "mt-3",
+                    active === "location" && "grid items-stretch gap-3 lg:grid-cols-2"
+                  )}
+                >
                   {assets.map((asset, index) => (
                     <StoryAssetSpecCard
                       key={`${asset.id}:${asset.version}`}
@@ -258,7 +248,7 @@ const ACTIVE_GENERATION_STATUSES = new Set(["created", "in_queue", "in_progress"
 const ACTIVE_MATERIALIZATION_STATUSES = new Set(["waiting_for_job", "pending"]);
 
 function isAvailableForBatchGeneration(asset: StoryAssetSpec) {
-  if (asset.status !== "current" || asset.selectedMediaVersion !== null) return false;
+  if (asset.status === "archived" || asset.selectedMediaVersion !== null) return false;
   const latest = asset.latestGenerations?.primary ?? asset.latestGeneration;
   if (!latest) return true;
   if (ACTIVE_GENERATION_STATUSES.has(latest.aiJob.status)) return false;

@@ -76,13 +76,38 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.getAsset).not.toHaveBeenCalled();
   });
 
-  it("keeps stale production targets inspectable without exposing generation actions", async () => {
+  it("respects an explicit generation permission without deriving it from workflow state", async () => {
     await renderControl(assetTarget(null), false);
 
     expect(button("generate")).toBeNull();
     expect(button("retry")).toBeNull();
     expect(apiMocks.createAsset).not.toHaveBeenCalled();
     expect(apiMocks.retryAsset).not.toHaveBeenCalled();
+  });
+
+  it("allows a stale target to generate from its persisted version", async () => {
+    const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    apiMocks.createAsset.mockResolvedValue(accepted);
+    apiMocks.getAsset.mockResolvedValue(accepted);
+
+    await renderControl(assetTarget(null, "stale"));
+    await act(async () => button("generate")?.click());
+
+    await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(1));
+    expect(apiMocks.createAsset).toHaveBeenCalledWith(
+      "project-1",
+      "chapter-1",
+      "asset-1",
+      expect.stringMatching(/^story-generate:/),
+      { expectedVersion: 3, purpose: "primary" }
+    );
+  });
+
+  it("does not expose generation for an archived target", async () => {
+    await renderControl(assetTarget(null, "archived"));
+
+    expect(button("generate")).toBeNull();
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
   });
 
   it("submits one default command even when the Generate button is clicked twice rapidly", async () => {
@@ -149,6 +174,44 @@ describe("StoryProductionGenerationControl", () => {
     expect(calls[1]?.[4]).toEqual({ expectedVersion: 3, purpose: "turnaround" });
     expect(calls[0]?.[3]).not.toBe(calls[1]?.[3]);
     expect(pendingCounts).toHaveBeenCalledWith(2);
+  });
+
+  it("reports one pending preview for every output requested by a generation", async () => {
+    const pendingCounts = vi.fn();
+    const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    accepted.requestedOutputCount = 2;
+    let resolveGeneration!: (value: StoryProductionGeneration) => void;
+    apiMocks.createAsset.mockReturnValue(
+      new Promise<StoryProductionGeneration>((resolve) => {
+        resolveGeneration = resolve;
+      })
+    );
+    apiMocks.getAsset.mockResolvedValue(accepted);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryProductionGenerationControl
+            scope={{ projectId: "project-1", chapterId: "chapter-1" }}
+            target={assetTarget(null)}
+            label="Production target"
+            selectedMedia={null}
+            layout="inline"
+            modelSelection={{ modelId: "model-1", schemaVersion: "1" }}
+            generationOptions={{ numOutputs: 2 }}
+            allowConcurrent
+            onPendingPreviewCountChange={pendingCounts}
+          />
+        </QueryClientProvider>
+      );
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="generate"]')?.click();
+    });
+    await vi.waitFor(() => expect(pendingCounts).toHaveBeenCalledWith(2));
+
+    await act(async () => resolveGeneration(accepted));
   });
 
   it("keeps an earlier concurrent failure visible while a later run is still active", async () => {
@@ -464,13 +527,16 @@ function mediaVersion(id: string, previewUrl: string): StoryCreativeMediaVersion
   };
 }
 
-function assetTarget(latestGeneration: StoryLatestGeneration | null) {
+function assetTarget(
+  latestGeneration: StoryLatestGeneration | null,
+  status: "current" | "stale" | "archived" = "current"
+) {
   return {
     kind: "asset_spec" as const,
     id: "asset-1",
     sequenceId: null,
     version: 3,
-    status: "current" as const,
+    status,
     latestGeneration,
   };
 }
@@ -501,6 +567,7 @@ function generation(
       : `/aurora/story-projects/project-1/chapters/chapter-1/storyboard/sequences/${target.sequenceId}/clips/${target.id}/generations/generation-1/materialization/retry`;
   return {
     id: "generation-1",
+    requestedOutputCount: 1,
     projectId: "project-1",
     chapterId: "chapter-1",
     target,

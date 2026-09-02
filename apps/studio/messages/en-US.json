@@ -2050,7 +2050,7 @@
         },
         "visualContinuityGuardian": {
           "name": "Visual Continuity Guardian",
-          "description": "Keep characters, wardrobe, locations, props and screen direction consistent."
+          "description": "Keep characters, wardrobe, scenes, props and screen direction consistent."
         },
         "imageToVideoMotionDirector": {
           "name": "Image-to-Video Motion Director",
@@ -2575,7 +2575,7 @@
           "ready": "Asset Specs ready",
           "review": "Review Asset Specs",
           "eyebrow": "Asset Specs proposal",
-          "description": "Review the reusable character, location, and prop specifications derived from the approved Plot Tree. Approving saves logical specs only; no media is generated or credits spent.",
+          "description": "Review the reusable character, scene, and prop specifications derived from the approved Plot Tree. Approving saves logical specs only; no media is generated or credits spent.",
           "mobileDescription": "Continuing saves these {count} Asset Specs and generates their images sequentially. Credits are charged as each image starts, and completed images fill in automatically.",
           "legacyReadyMessage": "The Asset Specs proposal is ready for review; approval saves logical specs only and generates no media.",
           "mobileReadyMessage": "The Asset Specs are ready. Continuing generates images sequentially; credits are charged as each image starts, and completed images fill in automatically.",
@@ -2614,7 +2614,7 @@
           "interactions": "Interactions",
           "assetSpecs": "Asset Specs",
           "characters": "Characters",
-          "locations": "Locations",
+          "locations": "Scenes",
           "props": "Props",
           "sequences": "Sequences",
           "clips": "Clips",
@@ -2630,7 +2630,7 @@
         },
         "assetKinds": {
           "character": "Character",
-          "location": "Location",
+          "location": "Scene",
           "prop": "Prop"
         },
         "clipKinds": {
@@ -2798,7 +2798,6 @@
       "generate": "Generate",
       "generateAgain": "Generate again",
       "progressAria": "Generation progress",
-      "targetNotCurrent": "Reconcile this stale production target before generating media.",
       "status": {
         "idle": "Ready to generate with the default compatible model",
         "submitting": "Submitting generation…",
@@ -2822,14 +2821,14 @@
       "emptyHint": "Asset Specs appear here after the approved story plan is applied.",
       "categoryEmpty": {
         "character": "No character Asset Specs in this chapter",
-        "location": "No location Asset Specs in this chapter",
+        "location": "No scene Asset Specs in this chapter",
         "prop": "No prop Asset Specs in this chapter"
       },
       "categoryEmptyHint": "This category is empty. Add an Asset Spec manually or choose another category.",
       "generationHint": "Opening this page never generates media or spends credits.",
       "addByKind": {
         "character": "Add Character",
-        "location": "Add Location",
+        "location": "Add Scene",
         "prop": "Add Prop"
       },
       "continueWithAgent": "Continue in FizzAgent",
@@ -2840,7 +2839,7 @@
         },
         "assetsRequired": {
           "title": "AI asset planning is ready",
-          "description": "Ask FizzAgent to derive reusable characters, locations, and props, or continue managing Asset Specs manually. No media is generated automatically."
+          "description": "Ask FizzAgent to derive reusable characters, scenes, and props, or continue managing Asset Specs manually. No media is generated automatically."
         },
         "stale": {
           "title": "{count, plural, one {# Asset Spec needs attention} other {# Asset Specs need attention}}",
@@ -2848,7 +2847,7 @@
         },
         "noAssets": {
           "title": "No reusable Asset Specs are needed",
-          "description": "This approved chapter can continue to Storyboard without creating reusable characters, locations, or props."
+          "description": "This approved chapter can continue to Storyboard without creating reusable characters, scenes, or props."
         }
       },
       "prompts": {
@@ -2861,13 +2860,15 @@
       "retry": "Try again",
       "tabs": {
         "character": "Characters",
-        "location": "Locations",
+        "location": "Scenes",
         "prop": "Props"
       },
       "filterLabel": "Filter Asset Specs by type",
       "batch": {
-        "generate": "Generate",
+        "generate": "Batch generate",
         "allGenerated": "All generated",
+        "tooltip": "Use {model} with the selected parameters to batch generate the remaining {count, plural, one {# empty asset} other {# empty assets}} in this category.",
+        "allGeneratedTooltip": "Every asset in this category already has media.",
         "running": "Generating",
         "runningOther": "A collaborator is generating",
         "cancelling": "Cancelling",
@@ -2899,7 +2900,7 @@
       },
       "details": "Details",
       "createDialog": {
-        "description": "Create a reusable character, location, or prop manually. This does not generate media or spend credits.",
+        "description": "Create a reusable character, scene, or prop manually. This does not generate media or spend credits.",
         "name": "Name",
         "cancel": "Cancel",
         "create": "Add asset",
@@ -2918,6 +2919,11 @@
       "detailDialog": {
         "name": "Name",
         "imagePrompt": "Image Prompt",
+        "imagePromptPlaceholder": {
+          "character": "Describe the character’s appearance, clothing, and style. Type @ to reference an existing asset…",
+          "location": "Describe the scene’s setting, composition, light, and mood. Type @ to reference an existing asset…",
+          "prop": "Describe the prop’s form, materials, and details. Type @ to reference an existing asset…"
+        },
         "model": "Model",
         "save": "Save",
         "saved": "Saved.",
@@ -2988,7 +2994,7 @@
       },
       "assetKinds": {
         "character": "Character",
-        "location": "Location",
+        "location": "Scene",
         "prop": "Prop"
       },
       "mobileCard": {
@@ -3778,7 +3784,7 @@
     },
     "references": {
       "title": "Reference pack",
-      "subtitle": "Characters, locations, props, styles, and frames available to video recipes.",
+      "subtitle": "Characters, scenes, props, styles, and frames available to video recipes.",
       "approvedCount": "{approved} of {total} approved",
       "required": "Required",
       "optional": "Optional",
@@ -3790,7 +3796,7 @@
       },
       "kind": {
         "character": "Character",
-        "location": "Location",
+        "location": "Scene",
         "prop": "Prop",
         "graphic": "Graphic",
         "style": "Style",
@@ -3810,7 +3816,7 @@
       },
       "empty": {
         "title": "No reference slots",
-        "description": "Create a typed slot for every character, location, prop, style, or frame that production must keep stable."
+        "description": "Create a typed slot for every character, scene, prop, style, or frame that production must keep stable."
       },
       "detail": {
         "noDescription": "No production responsibility has been described.",

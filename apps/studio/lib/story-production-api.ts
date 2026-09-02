@@ -51,6 +51,7 @@ export interface StoryLatestGeneration {
   id: string;
   outputKind: StoryStoryboardClipKind;
   purpose?: StoryAssetGenerationPurpose;
+  requestedOutputCount: number;
   targetVersion: number;
   targetSourceFingerprint: string;
   retryOfGenerationId: string | null;

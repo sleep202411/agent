@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -18,7 +17,6 @@ import {
   Prisma,
   StoryGenerationBatchItemStatus,
   StoryGenerationBatchStatus,
-  StoryProductionPlanDisposition,
   StoryProductionGenerationKind,
   StoryProductionGenerationTargetKind,
   StoryProductionSpecStatus,
@@ -190,7 +188,6 @@ type StoryGenerationTarget =
       generationConfig: Prisma.JsonValue;
       frameProfile: StoryFrameProfile;
       assetKind: 'character' | 'location' | 'prop';
-      planDisposition: StoryProductionPlanDisposition;
       purpose: StoryAssetGenerationPurpose;
       durationMs: null;
       logicalSnapshot: Record<string, unknown>;
@@ -1025,8 +1022,8 @@ export class StoryProductionGenerationService
       return this.toGenerationDto(await this.requireGenerationById(replay.id));
     }
 
-    const target = await this.prisma.$transaction(async (tx) => {
-      const loadedTarget = await this.loadTarget(
+    const target = await this.prisma.$transaction((tx) =>
+      this.loadTarget(
         tx,
         command.projectId,
         command.chapterId,
@@ -1035,16 +1032,8 @@ export class StoryProductionGenerationService
         command.sequenceId,
         command.requestedOutputKind,
         command.requestedPurpose,
-      );
-      const productionState =
-        await this.productionPlans.getProductionStateInTransaction(
-          tx,
-          command.projectId,
-          command.chapterId,
-        );
-      this.assertProductionStageCanGenerate(productionState, loadedTarget);
-      return loadedTarget;
-    });
+      ),
+    );
     this.assertTargetCanGenerate(target, command);
     const targetSnapshotFingerprint = canonicalJsonHash(target.logicalSnapshot);
     if (
@@ -1206,16 +1195,6 @@ export class StoryProductionGenerationService
               command.requestedOutputKind,
               command.requestedPurpose,
             );
-            const productionState =
-              await this.productionPlans.getProductionStateInTransaction(
-                tx,
-                command.projectId,
-                command.chapterId,
-              );
-            this.assertProductionStageCanGenerate(
-              productionState,
-              lockedTarget,
-            );
             this.assertTargetCanGenerate(lockedTarget, command);
             if (
               canonicalJsonHash(lockedTarget.logicalSnapshot) !==
@@ -1316,8 +1295,8 @@ export class StoryProductionGenerationService
       command.chapterId,
       'story.generate',
     );
-    const target = await this.prisma.$transaction(async (tx) => {
-      const loadedTarget = await this.loadTarget(
+    const target = await this.prisma.$transaction((tx) =>
+      this.loadTarget(
         tx,
         command.projectId,
         command.chapterId,
@@ -1326,16 +1305,8 @@ export class StoryProductionGenerationService
         command.sequenceId,
         command.requestedOutputKind,
         command.requestedPurpose,
-      );
-      const productionState =
-        await this.productionPlans.getProductionStateInTransaction(
-          tx,
-          command.projectId,
-          command.chapterId,
-        );
-      this.assertProductionStageCanGenerate(productionState, loadedTarget);
-      return loadedTarget;
-    });
+      ),
+    );
     this.assertTargetCanGenerate(target, command);
     const references = this.resolveProviderReferences(target);
     const model = await this.requireCompatibleModel(
@@ -1747,11 +1718,10 @@ export class StoryProductionGenerationService
       'expectedVersion' | 'requestedOutputKind'
     >,
   ): void {
-    if (target.status !== StoryProductionSpecStatus.current) {
+    if (target.status === StoryProductionSpecStatus.archived) {
       throw new ConflictException({
-        code: 'STORY_GENERATION_TARGET_STALE',
-        message:
-          'This production target is stale or archived. Reconcile it with the current Plot Tree before generating media.',
+        code: 'STORY_GENERATION_TARGET_ARCHIVED',
+        message: 'This production target has been archived.',
       });
     }
     if (target.version !== command.expectedVersion) {
@@ -1776,51 +1746,6 @@ export class StoryProductionGenerationService
         message: 'The production target has no prompt for this output kind.',
       });
     }
-    const staleReference = target.references.find((reference) =>
-      reference.refId.startsWith('stale:'),
-    );
-    if (staleReference) {
-      throw new ConflictException({
-        code: 'STORY_GENERATION_REFERENCE_STALE',
-        message:
-          'A referenced @Asset or binding is stale. Reconcile the production plan before generating this clip.',
-        bindingId: staleReference.bindingId,
-      });
-    }
-  }
-
-  private assertProductionStageCanGenerate(
-    state: Awaited<
-      ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
-    >,
-    target: StoryGenerationTarget,
-  ): void {
-    if (this.productionStageCanGenerate(state, target)) return;
-    throw new ConflictException({
-      code: 'STORY_GENERATION_TARGET_STALE',
-      message:
-        target.targetKind === 'asset_spec'
-          ? 'This planned Asset Spec is no longer current with the approved Script and Plot Tree. Reconcile it before generating media.'
-          : 'The Storyboard or its upstream Asset Specs are no longer current with the approved Script and Plot Tree. Reconcile them before generating media.',
-    });
-  }
-
-  private productionStageCanGenerate(
-    state: Awaited<
-      ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
-    >,
-    target: StoryGenerationTarget,
-  ): boolean {
-    if (target.targetKind === 'asset_spec') {
-      return (
-        target.planDisposition ===
-          StoryProductionPlanDisposition.user_override ||
-        state.assets.status === 'current'
-      );
-    }
-    return (
-      state.assets.status === 'current' && state.storyboard.status === 'current'
-    );
   }
 
   private async loadTarget(
@@ -2035,32 +1960,13 @@ export class StoryProductionGenerationService
         generation.generationKind,
         parseSubmissionSnapshot(generation.submissionSnapshot).purpose,
       );
-      let productionStageCanAutoSelect = false;
-      try {
-        const productionState =
-          await this.productionPlans.getProductionStateInTransaction(
-            tx,
-            generation.storyProjectId,
-            generation.storyChapterId,
-          );
-        productionStageCanAutoSelect = this.productionStageCanGenerate(
-          productionState,
-          target,
-        );
-      } catch (error) {
-        if (!isCanonicalProductionStateUnavailable(error)) throw error;
-        this.logger.warn(
-          `Story generation ${generation.id} will preserve completed media without auto-selection because the canonical production state is unavailable: ${safeErrorMessage(error)}`,
-        );
-      }
       const promptSnapshot = jsonObject(generation.promptSnapshot);
       const originalTargetFingerprint = stringValue(
         promptSnapshot.targetSnapshotFingerprint,
       );
-      const targetStillCurrent =
-        productionStageCanAutoSelect &&
+      const targetStillUnchanged =
         originalTargetFingerprint !== null &&
-        target.status === StoryProductionSpecStatus.current &&
+        target.status !== StoryProductionSpecStatus.archived &&
         target.version === generation.targetVersion &&
         target.sourceFingerprint === generation.targetSourceFingerprint &&
         canonicalJsonHash(target.logicalSnapshot) === originalTargetFingerprint;
@@ -2115,7 +2021,7 @@ export class StoryProductionGenerationService
         }
         if (
           submission.purpose === 'primary' &&
-          targetStillCurrent &&
+          targetStillUnchanged &&
           createdIds[0]
         ) {
           await tx.storyAssetSpec.updateMany({
@@ -2123,7 +2029,7 @@ export class StoryProductionGenerationService
               id: generation.assetSpecId!,
               version: generation.targetVersion,
               sourceFingerprint: generation.targetSourceFingerprint,
-              status: StoryProductionSpecStatus.current,
+              status: { not: StoryProductionSpecStatus.archived },
             },
             data: {
               selectedMediaVersionId: createdIds[0],
@@ -2169,7 +2075,7 @@ export class StoryProductionGenerationService
           });
           createdIds.push(created.id);
         }
-        if (targetStillCurrent && createdIds[0]) {
+        if (targetStillUnchanged && createdIds[0]) {
           const generatedDurationMs =
             generation.generationKind === StoryProductionGenerationKind.video
               ? generatedVideoDurationMs(outputRows[0].asset!.durationSeconds)
@@ -2191,7 +2097,7 @@ export class StoryProductionGenerationService
               id: generation.storyboardClipId!,
               version: generation.targetVersion,
               sourceFingerprint: generation.targetSourceFingerprint,
-              status: StoryProductionSpecStatus.current,
+              status: { not: StoryProductionSpecStatus.archived },
             },
             data: {
               selectedMediaVersionId: createdIds[0],
@@ -2625,11 +2531,10 @@ function assetTarget(
   ).flatMap((stableKey, index) => {
     const asset = mentionedAssets.get(stableKey);
     if (!asset || asset.id === row.id) return [];
-    const stale = asset.status !== StoryProductionSpecStatus.current;
     return [
       {
         bindingId: `asset-mention:${row.id}:${asset.id}`,
-        refId: stale ? `stale:${asset.id}` : `asset:${asset.id}:selected`,
+        refId: `asset:${asset.id}:selected`,
         role: 'reference',
         stableKey: asset.stableKey,
         label: asset.name,
@@ -2679,7 +2584,6 @@ function assetTarget(
     sourceFingerprint: row.sourceFingerprint,
     status: row.status,
     assetKind: row.kind,
-    planDisposition: row.planDisposition,
     purpose,
     prompt: assetGenerationPrompt(row, generationKind, purpose),
     negativePrompt: row.negativePrompt,
@@ -2741,12 +2645,9 @@ function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
       binding.mode === StoryStoryboardBindingMode.pinned
         ? binding.pinnedMediaVersion
         : binding.assetSpec.selectedMediaVersion;
-    const stale =
-      binding.status !== StoryProductionSpecStatus.current ||
-      binding.assetSpec.status !== StoryProductionSpecStatus.current;
     return {
       bindingId: binding.id,
-      refId: stale ? `stale:${binding.id}` : binding.id,
+      refId: binding.id,
       role: binding.role,
       stableKey: binding.assetSpec.stableKey,
       label: binding.assetSpec.name,
@@ -3373,17 +3274,6 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 
 function reconcileBackoffMs(attempt: number): number {
   return Math.min(15 * 60_000, 2 ** Math.min(10, attempt) * 1_000);
-}
-
-function isCanonicalProductionStateUnavailable(error: unknown): boolean {
-  if (error instanceof HttpException) return true;
-  if (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === 'P2025'
-  ) {
-    return true;
-  }
-  return error instanceof Error && error.name === 'ZodError';
 }
 
 function safeErrorMessage(error: unknown): string {

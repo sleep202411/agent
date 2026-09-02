@@ -71,6 +71,7 @@ vi.mock("@/i18n/navigation", () => ({
 
 vi.mock("./story-production-page-header", () => ({
   StoryProductionPageHeader: () => null,
+  StoryProductionGenerationControls: () => <span data-testid="generation-controls" />,
 }));
 
 vi.mock("./story-asset-spec-card", () => ({
@@ -143,6 +144,14 @@ describe("StoryAssetsGallery empty states", () => {
     expect(container.textContent).not.toContain("stage.noAssets.title");
   });
 
+  it("keeps one category label and moves creation plus generation controls into the tab toolbar", async () => {
+    await renderGallery();
+
+    expect(container.textContent?.match(/tabs\.character/g)).toHaveLength(1);
+    expect(container.textContent).toContain("addByKind.character");
+    expect(container.querySelector('[data-testid="generation-controls"]')).not.toBeNull();
+  });
+
   it("keeps manual asset controls available before Plot approval", async () => {
     queryState.production.plotTree.status = "missing";
     queryState.production.assets = { status: "missing", currentCount: 0, staleCount: 0 };
@@ -163,14 +172,18 @@ describe("StoryAssetsGallery empty states", () => {
     expect(messages.categoryEmpty.location).toBeTruthy();
     expect(messages.categoryEmpty.prop).toBeTruthy();
     expect(messages.categoryEmptyHint).toBeTruthy();
+    expect(messages.batch.generate).toBeTruthy();
+    expect(messages.batch.tooltip).toBeTruthy();
+    expect(messages.batch.allGeneratedTooltip).toBeTruthy();
   });
 
-  it("batches only current-tab assets that still need media", async () => {
+  it("batches available current-tab assets that still need media, including stale specs", async () => {
     queryState.assets = [
       ...makeAssets("character", 3, 1, 1),
       ...makeAssets("location", 4),
       ...makeAssets("prop", 3),
     ];
+    queryState.assets.at(-1)!.status = "stale";
 
     await renderGallery();
     expect(batchCount()).toBe("1");

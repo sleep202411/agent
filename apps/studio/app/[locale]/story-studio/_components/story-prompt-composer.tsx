@@ -56,6 +56,7 @@ export function StoryPromptComposer({
   disabled = false,
   required = false,
   maxLength,
+  placeholder,
   mentions,
   excludeMentionId,
 }: {
@@ -65,6 +66,7 @@ export function StoryPromptComposer({
   disabled?: boolean;
   required?: boolean;
   maxLength?: number;
+  placeholder?: string;
   mentions: readonly MentionItem[];
   excludeMentionId?: string;
 }) {
@@ -129,6 +131,7 @@ export function StoryPromptComposer({
         mentions={mentions}
         disabled={disabled}
         maxLength={maxLength}
+        placeholder={placeholder}
         rows={6}
         aria-required={required}
         className="h-auto min-h-40"

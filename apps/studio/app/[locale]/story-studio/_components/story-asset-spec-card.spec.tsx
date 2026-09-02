@@ -49,7 +49,7 @@ describe("StoryAssetSpecCard", () => {
   });
 
   it.each(["character", "location", "prop"] as const)(
-    "renders a %s spec as an inline two-pane workbench row",
+    "renders the appropriate %s asset workbench",
     async (kind) => {
       const client = new QueryClient();
       await act(async () => {
@@ -65,15 +65,24 @@ describe("StoryAssetSpecCard", () => {
       });
 
       const text = container.textContent ?? "";
+      const article = container.querySelector("article");
       expect(container.querySelector<HTMLInputElement>('input[value="Hero"]')?.value).toBe("Hero");
       expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
         "A consistent red flight suit"
       );
       expect(text).toContain("generate:primary");
-      expect(text).toContain(kind === "character" ? "turnaroundTitle" : "mediaTitle");
+      if (kind === "character") {
+        expect(text).toContain("turnaroundTitle");
+      } else if (kind === "prop") {
+        expect(text).toContain("mediaTitle");
+      } else {
+        expect(text).not.toContain("mediaTitle");
+        expect(article?.className).toContain("h-full");
+        expect(article?.className).not.toContain("lg:grid-cols-2");
+      }
       expect(text).not.toContain("Lead character");
       expect(text).not.toContain("advancedSettings");
-      expect(container.querySelector('[class*="aspect-video"]')).not.toBeNull();
+      expect(container.querySelector('[class*="aspect-video"]') !== null).toBe(kind !== "location");
       expect(container.querySelectorAll("textarea")).toHaveLength(1);
       expect(container.querySelectorAll('section[aria-label="Hero"]')).toHaveLength(1);
       expect(container.querySelector('button[aria-label="delete"]')).not.toBeNull();
