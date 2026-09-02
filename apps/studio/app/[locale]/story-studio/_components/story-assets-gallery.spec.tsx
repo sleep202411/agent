@@ -71,7 +71,6 @@ vi.mock("@/i18n/navigation", () => ({
 
 vi.mock("./story-production-page-header", () => ({
   StoryProductionPageHeader: () => null,
-  StoryProductionGenerationControls: () => null,
 }));
 
 vi.mock("./story-asset-spec-card", () => ({
@@ -102,6 +101,7 @@ describe("StoryAssetsGallery empty states", () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     queryState.assets = [];
     navigationState.kind = "character";
+    queryState.production.plotTree = { status: "current", nodeCount: 1 };
     queryState.production.assets = { status: "current", currentCount: 1, staleCount: 0 };
     useStoryProjectUiStore.setState({ activeChapterId: "chapter-1" });
     container = document.createElement("div");
@@ -133,13 +133,25 @@ describe("StoryAssetsGallery empty states", () => {
     expect(container.textContent).not.toContain("stage.noAssets.title");
   });
 
-  it("keeps the chapter-level empty state when the chapter has no Asset Specs", async () => {
+  it("keeps manual asset creation available when the approved plan has no Asset Specs", async () => {
     queryState.production.assets.currentCount = 0;
 
     await renderGallery();
 
-    expect(container.textContent).toContain("stage.noAssets.title");
-    expect(container.textContent).not.toContain("categoryEmpty.character");
+    expect(container.textContent).toContain("categoryEmpty.character");
+    expect(container.textContent).toContain("addByKind.character");
+    expect(container.textContent).not.toContain("stage.noAssets.title");
+  });
+
+  it("keeps manual asset controls available before Plot approval", async () => {
+    queryState.production.plotTree.status = "missing";
+    queryState.production.assets = { status: "missing", currentCount: 0, staleCount: 0 };
+
+    await renderGallery();
+
+    expect(container.textContent).toContain("addByKind.character");
+    expect(container.textContent).toContain("tabs.character");
+    expect(container.textContent).toContain("categoryEmpty.character");
   });
 
   it.each([

@@ -30,7 +30,7 @@ import {
   type StoryStoryboardClip,
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
-import { StoryPromptMentionField, useStoryAssetMentions } from "./story-prompt-mention-field";
+import { StoryPromptComposer, useStoryAssetMentions } from "./story-prompt-composer";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
@@ -161,7 +161,7 @@ export function StoryClipDetailDialog({
           label={clip.kind === "image" ? t("imagePrompt") : t("videoPrompt")}
           htmlFor={`clip-detail-prompt-${clip.id}`}
         >
-          <StoryPromptMentionField
+          <StoryPromptComposer
             id={`clip-detail-prompt-${clip.id}`}
             value={prompt}
             disabled={busy || !editable}

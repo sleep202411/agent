@@ -16,6 +16,8 @@ import { validateProductionPlanAgainstScreenplay } from './story-authoring-pipel
 import { canonicalJsonHash } from './canonical-json';
 import { InteractiveStoryDraftContentSchema } from './dto';
 import {
+  ArchiveStoryAssetSpecSchema,
+  CreateStoryAssetSpecSchema,
   PatchStoryAssetSpecSchema,
   PatchStoryStoryboardClipSchema,
   PutStoryStoryboardTimelineSchema,
@@ -1061,9 +1063,41 @@ describe('PatchStoryAssetSpecSchema', () => {
       PatchStoryAssetSpecSchema.safeParse({
         expectedVersion: 2,
         sourceMediaAssetId,
+        sourceMediaPurpose: 'turnaround',
+      }).success,
+    ).toBe(true);
+    expect(
+      PatchStoryAssetSpecSchema.safeParse({
+        expectedVersion: 2,
+        sourceMediaPurpose: 'turnaround',
+      }).success,
+    ).toBe(false);
+    expect(
+      PatchStoryAssetSpecSchema.safeParse({
+        expectedVersion: 2,
+        sourceMediaAssetId,
         selectedMediaVersionId: '0198f744-32a0-7000-8000-000000000004',
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('Manual Story Asset Spec schemas', () => {
+  it('requires complete create data and a version-fenced archive', () => {
+    expect(
+      CreateStoryAssetSpecSchema.safeParse({
+        kind: 'prop',
+        name: 'Sealed letter',
+        imagePrompt: 'A wax-sealed letter on dark wood.',
+      }).success,
+    ).toBe(true);
+    expect(
+      CreateStoryAssetSpecSchema.safeParse({ kind: 'prop', name: 'Letter' })
+        .success,
+    ).toBe(false);
+    expect(
+      ArchiveStoryAssetSpecSchema.safeParse({ expectedVersion: 2 }).success,
+    ).toBe(true);
   });
 });
 

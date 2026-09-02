@@ -171,6 +171,55 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     ).toBe(0);
   });
 
+  it('returns the latest generation for each Asset purpose after many repeated runs', async () => {
+    const fixture = await createFixture(prisma, workspaceIds);
+    const turnaroundJob = await createAiJob(prisma, fixture, {
+      status: AiJobStatus.failed,
+      suffix: 'turnaround-history',
+    });
+    const turnaround = await prisma.storyProductionGeneration.create({
+      data: generationData(fixture, turnaroundJob.id, {
+        suffix: 'turnaround-history',
+        purpose: 'turnaround',
+      }),
+    });
+
+    for (let index = 0; index < 9; index += 1) {
+      const job = await createAiJob(prisma, fixture, {
+        status: AiJobStatus.failed,
+        suffix: `primary-history-${index}`,
+      });
+      await prisma.storyProductionGeneration.create({
+        data: generationData(fixture, job.id, {
+          suffix: `primary-history-${index}`,
+        }),
+      });
+    }
+
+    const service = new StoryProductionPlanService(
+      prisma as unknown as PrismaService,
+      {
+        requireProject: jest.fn().mockResolvedValue({
+          project: { workspaceId: fixture.workspaceId },
+        }),
+      } as never,
+      {} as never,
+    );
+    const [asset] = await service.listAssetSpecs(
+      { userId: fixture.userId } as never,
+      fixture.projectId,
+      fixture.chapterId,
+    );
+
+    expect(asset.latestGenerations.turnaround).toMatchObject({
+      id: turnaround.id,
+      purpose: 'turnaround',
+    });
+    expect(asset.latestGenerations.primary).toMatchObject({
+      purpose: 'primary',
+    });
+  });
+
   it('imports a project-candidate image as a new Asset Spec media version and selects it atomically', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
     const uploaded = await prisma.mediaAsset.create({
@@ -530,70 +579,45 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     expect(aiGeneration.submitJob).not.toHaveBeenCalled();
   });
 
+  it('allows a current manually owned Asset to generate without a current canonical plan', async () => {
+    const fixture = await createFixture(prisma, workspaceIds);
+    await prisma.storyAssetSpec.update({
+      where: { id: fixture.assetSpecId },
+      data: { planDisposition: 'user_override' },
+    });
+    await driftScriptWithoutInvalidatingProductionRows(prisma, fixture);
+    const aiGeneration = acceptingImageGenerationGateway(prisma, fixture);
+    const service = materializationService(prisma, fixture, true, aiGeneration);
+
+    await expect(
+      service.createAssetGeneration(
+        { userId: fixture.userId } as never,
+        fixture.projectId,
+        fixture.chapterId,
+        fixture.assetSpecId,
+        `${fixture.prefix}:manual-asset-submit`,
+        {
+          expectedVersion: fixture.assetVersion,
+          modelId: 'fake-image',
+          schemaVersion: 'test-v1',
+          outputKind: 'image',
+          options: {},
+        },
+      ),
+    ).resolves.toMatchObject({
+      target: { kind: 'asset_spec', id: fixture.assetSpecId },
+      purpose: 'primary',
+    });
+    expect(aiGeneration.submitJob).toHaveBeenCalledTimes(1);
+  });
+
   it('rechecks canonical lineage in the locked AI-job transaction before accepting paid work', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
-    const aiGeneration = {
-      listCatalog: jest.fn().mockResolvedValue({
-        models: [
-          {
-            id: 'fake-image',
-            enabled: true,
-            type: 'image',
-            schemaVersion: 'test-v1',
-            input_schema: {
-              type: 'object',
-              required: ['prompt'],
-              properties: { prompt: { type: 'string' } },
-            },
-            ui_policy: {},
-            access: { allowed: true },
-          },
-        ],
-        presets: [],
-      }),
-      submitJob: jest.fn(
-        async (
-          _user: unknown,
-          _body: unknown,
-          _workspaceId: string,
-          hooks: {
-            afterJobCreate?: (
-              tx: Prisma.TransactionClient,
-              job: AiJob,
-            ) => Promise<void>;
-          },
-        ) =>
-          prisma.$transaction(async (tx) => {
-            await driftScriptWithoutInvalidatingProductionRows(tx, fixture);
-            const job = await tx.aiJob.create({
-              data: {
-                id: randomUUID(),
-                userId: fixture.userId,
-                type: AiJobType.image,
-                provider: 'fake-story-integration',
-                modelId: 'fake-image',
-                deployment: 'never-called',
-                schemaVersion: 'test-v1',
-                workspaceId: fixture.workspaceId,
-                storyProjectId: fixture.projectId,
-                sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
-                status: AiJobStatus.in_queue,
-                stage: AiJobStage.queued,
-                queueName: 'story-generation-integration',
-                prompt: 'No provider is called by this integration fixture.',
-                idempotencyKey: `${fixture.prefix}:locked-race-ai-job`,
-                input: {},
-                normalizedInput: {},
-                logs: [],
-                metrics: {},
-                progress: 0,
-              },
-            });
-            await hooks.afterJobCreate?.(tx, job as unknown as AiJob);
-            return { id: job.id };
-          }),
-      ),
-    };
+    const aiGeneration = acceptingImageGenerationGateway(
+      prisma,
+      fixture,
+      (tx) => driftScriptWithoutInvalidatingProductionRows(tx, fixture),
+    );
     const service = materializationService(prisma, fixture, true, aiGeneration);
 
     await expect(
@@ -1575,6 +1599,7 @@ function generationData(
   aiJobId: string,
   input: {
     suffix: string;
+    purpose?: 'primary' | 'turnaround';
     retryOfGenerationId?: string;
     promptSnapshot?: Prisma.InputJsonValue;
   },
@@ -1585,6 +1610,7 @@ function generationData(
     storyChapterId: fixture.chapterId,
     targetKind: StoryProductionGenerationTargetKind.asset_spec,
     generationKind: StoryProductionGenerationKind.image,
+    purpose: input.purpose ?? 'primary',
     assetSpecId: fixture.assetSpecId,
     aiJobId,
     actorUserId: fixture.userId,
@@ -1598,6 +1624,7 @@ function generationData(
       modelId: 'fake-image',
       schemaVersion: 'test-v1',
       outputKind: 'image',
+      purpose: input.purpose ?? 'primary',
       clientOptions: {},
       effectiveOptions: {},
       timelineDurationMs: null,
@@ -1632,6 +1659,7 @@ function clipGenerationData(
       modelId: 'fake-video',
       schemaVersion: 'test-v1',
       outputKind: 'video',
+      purpose: 'primary',
       clientOptions: {},
       effectiveOptions: { durationSeconds: 10 },
       timelineDurationMs: 7_000,
@@ -1653,11 +1681,14 @@ function assetTargetSnapshot(
     status: 'current',
     sourceFingerprint: fixture.assetSourceFingerprint,
     selectedMediaVersionId: null,
+    purpose: 'primary',
+    promptProfile: null,
     imagePrompt: 'A neutral full-body character reference.',
     videoPrompt: null,
     negativePrompt: null,
     generationConfig: {},
     frameProfile: StoryFrameProfile.landscape_16_9,
+    references: [],
   };
 }
 
@@ -1696,6 +1727,75 @@ function materializationService(
       writeGuard as never,
     ),
   );
+}
+
+function acceptingImageGenerationGateway(
+  prisma: ReturnType<typeof buildPrisma>,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  beforeLockedCreate?: (tx: Prisma.TransactionClient) => Promise<void>,
+) {
+  return {
+    listCatalog: jest.fn().mockResolvedValue({
+      models: [
+        {
+          id: 'fake-image',
+          enabled: true,
+          type: 'image',
+          schemaVersion: 'test-v1',
+          input_schema: {
+            type: 'object',
+            required: ['prompt'],
+            properties: { prompt: { type: 'string' } },
+          },
+          ui_policy: {},
+          access: { allowed: true },
+        },
+      ],
+      presets: [],
+    }),
+    submitJob: jest.fn(
+      async (
+        _user: unknown,
+        _body: unknown,
+        _workspaceId: string,
+        hooks: {
+          afterJobCreate?: (
+            tx: Prisma.TransactionClient,
+            job: AiJob,
+          ) => Promise<void>;
+        },
+      ) =>
+        prisma.$transaction(async (tx) => {
+          await beforeLockedCreate?.(tx);
+          const job = await tx.aiJob.create({
+            data: {
+              id: randomUUID(),
+              userId: fixture.userId,
+              type: AiJobType.image,
+              provider: 'fake-story-integration',
+              modelId: 'fake-image',
+              deployment: 'never-called',
+              schemaVersion: 'test-v1',
+              workspaceId: fixture.workspaceId,
+              storyProjectId: fixture.projectId,
+              sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
+              status: AiJobStatus.in_queue,
+              stage: AiJobStage.queued,
+              queueName: 'story-generation-integration',
+              prompt: 'No provider is called by this integration fixture.',
+              idempotencyKey: `${fixture.prefix}:accepted-image-ai-job:${randomUUID()}`,
+              input: {},
+              normalizedInput: {},
+              logs: [],
+              metrics: {},
+              progress: 0,
+            },
+          });
+          await hooks.afterJobCreate?.(tx, job as unknown as AiJob);
+          return { id: job.id };
+        }),
+    ),
+  };
 }
 
 async function assertGenerationMigrationPresent(

@@ -2825,21 +2825,26 @@
         "location": "No location Asset Specs in this chapter",
         "prop": "No prop Asset Specs in this chapter"
       },
-      "categoryEmptyHint": "This category is empty. Choose another category to review the remaining Asset Specs.",
+      "categoryEmptyHint": "This category is empty. Add an Asset Spec manually or choose another category.",
       "generationHint": "Opening this page never generates media or spends credits.",
+      "addByKind": {
+        "character": "Add Character",
+        "location": "Add Location",
+        "prop": "Add Prop"
+      },
       "continueWithAgent": "Continue in FizzAgent",
       "stage": {
         "plotRequired": {
-          "title": "Approve the Plot Tree first",
-          "description": "Asset planning follows the approved narrative topology. Continue in FizzAgent to prepare and review the Plot Tree before extracting reusable assets."
+          "title": "AI asset planning is waiting for the Plot Tree",
+          "description": "FizzAgent needs an approved narrative topology before extracting reusable assets. You can still add and manage Asset Specs manually."
         },
         "assetsRequired": {
-          "title": "Asset Specs are the next approval stage",
-          "description": "Ask FizzAgent to derive the reusable characters, locations, and props from the approved Plot Tree and Script interpretation. You will review them before Storyboard; no media is generated."
+          "title": "AI asset planning is ready",
+          "description": "Ask FizzAgent to derive reusable characters, locations, and props, or continue managing Asset Specs manually. No media is generated automatically."
         },
         "stale": {
           "title": "{count, plural, one {# Asset Spec needs attention} other {# Asset Specs need attention}}",
-          "description": "Existing work remains visible for review. Resolve available conflicts below; items without comparison details need a refreshed Agent proposal. Media generation stays unavailable until this stage is current."
+          "description": "Existing work remains visible for review. Resolve the stale items below; current Asset Specs remain editable and generatable."
         },
         "noAssets": {
           "title": "No reusable Asset Specs are needed",
@@ -2893,14 +2898,25 @@
         }
       },
       "details": "Details",
+      "createDialog": {
+        "description": "Create a reusable character, location, or prop manually. This does not generate media or spend credits.",
+        "name": "Name",
+        "cancel": "Cancel",
+        "create": "Add asset",
+        "created": "Asset Spec added.",
+        "createError": "Could not add the Asset Spec."
+      },
       "mediaAction": {
         "uploadImage": "Upload image",
         "replaceImage": "Replace image",
         "replacing": "Replacing image…",
         "replaceSuccess": "Asset image replaced.",
-        "replaceError": "Could not replace the Asset image."
+        "replaceError": "Could not replace the Asset image.",
+        "turnaroundReplaceSuccess": "Three-view image added.",
+        "turnaroundReplaceError": "Could not add the three-view image."
       },
       "detailDialog": {
+        "name": "Name",
         "imagePrompt": "Image Prompt",
         "model": "Model",
         "save": "Save",
@@ -2910,7 +2926,30 @@
         "generateStarted": "Generation started.",
         "generateError": "Could not start generating media.",
         "close": "Close",
-        "videoPrompt": "Video Prompt"
+        "videoPrompt": "Video Prompt",
+        "delete": "Delete",
+        "deleteTitle": "Delete {name}?",
+        "deleteDescription": "This removes the Asset Spec from the chapter. Existing media history is preserved. An Asset Spec still used by Storyboard clips must be unlinked first.",
+        "deleteCancel": "Cancel",
+        "deleteConfirm": "Delete",
+        "deleted": "Asset Spec deleted.",
+        "deleteError": "Could not delete the Asset Spec."
+      },
+      "workbench": {
+        "mediaTitle": "Reference image",
+        "mediaDescription": "The selected image is used consistently by Storyboard and generation.",
+        "versionSelected": "Image version selected.",
+        "versionSelectError": "Could not select this image version.",
+        "noVersions": "No image has been generated or uploaded yet.",
+        "turnaroundTitle": "Three-view",
+        "turnaroundDescription": "AI video generation prioritizes the three-view as its character reference.",
+        "turnaroundFor": "Three-view for {name}",
+        "turnaroundNeedsPrimary": "Generate or upload the character image first.",
+        "turnaroundEmpty": "No three-view has been generated yet.",
+        "turnaroundUpload": "Upload three-view",
+        "turnaroundDownload": "Download three-view",
+        "previousVersion": "Previous versions",
+        "nextVersion": "Next versions"
       },
       "title": "Asset Specs"
     },

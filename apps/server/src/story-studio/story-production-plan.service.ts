@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   MediaAssetKind,
   MediaAssetModerationStatus,
@@ -12,6 +13,7 @@ import {
   MediaAssetVariantKind,
   MediaAssetVariantStatus,
   Prisma,
+  StoryAssetGenerationPurpose,
   StoryProductionPlanDisposition,
   StoryProductionSpecStatus,
   StoryStoryboardBindingMode,
@@ -52,6 +54,8 @@ import {
   readStoryScriptHead,
 } from './story-script-stage';
 import type {
+  ArchiveStoryAssetSpecInput,
+  CreateStoryAssetSpecInput,
   PatchStoryAssetSpecInput,
   PatchStoryStoryboardClipInput,
   PatchStoryStoryboardCueInput,
@@ -97,7 +101,8 @@ const ASSET_SPEC_INCLUDE = Prisma.validator<Prisma.StoryAssetSpecInclude>()({
   },
   generations: {
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: 1,
+    distinct: ['purpose'],
+    take: 2,
     include: { aiJob: true },
   },
 });
@@ -545,6 +550,74 @@ export class StoryProductionPlanService {
     return rows.map(toAssetSpecDto);
   }
 
+  async createAssetSpec(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    idempotencyKey: string,
+    input: CreateStoryAssetSpecInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'asset-spec.create',
+      request: input,
+      mutate: async (tx, now) => {
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtext(${`story-production-asset-create:${chapterId}`})::bigint
+          )
+        `;
+        const activeCount = await tx.storyAssetSpec.count({
+          where: {
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+        });
+        if (activeCount >= 500) {
+          throw new BadRequestException({
+            code: 'STORY_PRODUCTION_ASSET_LIMIT_REACHED',
+            message: 'A chapter can contain at most 500 Asset Specs.',
+          });
+        }
+        const stableKey = `manual.${input.kind}.${randomUUID()}`;
+        const sourceFingerprint = canonicalJsonHash({
+          kind: 'human-asset-spec',
+          projectId,
+          chapterId,
+          stableKey,
+        });
+        const created = await tx.storyAssetSpec.create({
+          data: {
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            stableKey,
+            kind: input.kind,
+            sourceCharacterId: null,
+            sourceNodeIds: [],
+            name: input.name,
+            description: input.description ?? null,
+            imagePrompt: input.imagePrompt,
+            videoPrompt: input.videoPrompt ?? null,
+            negativePrompt: input.negativePrompt ?? null,
+            sourceFingerprint,
+            planDisposition: StoryProductionPlanDisposition.user_override,
+            status: StoryProductionSpecStatus.current,
+            createdByUserId: user.userId,
+            userModifiedAt: now,
+            userModifiedByUserId: user.userId,
+            lastPlannedAt: now,
+          },
+          include: ASSET_SPEC_INCLUDE,
+        });
+        return toAssetSpecDto(created);
+      },
+    });
+  }
+
   async getStoryboard(user: AuthUser, projectId: string, chapterId: string) {
     await this.requireScope(user, projectId, chapterId, 'story.read');
     const [chapter, draft, rows] = await Promise.all([
@@ -920,6 +993,16 @@ export class StoryProductionPlanService {
           },
         });
         if (!current) throw productionNotFound('Asset Spec', assetSpecId);
+        if (
+          input.sourceMediaPurpose === 'turnaround' &&
+          current.kind !== 'character'
+        ) {
+          throw new BadRequestException({
+            code: 'STORY_PRODUCTION_ASSET_MEDIA_PURPOSE_UNSUPPORTED',
+            message:
+              'Three-view media can only be added to character Asset Specs.',
+          });
+        }
         if (input.selectedMediaVersionId) {
           await requireAssetMediaVersion(
             tx,
@@ -936,6 +1019,13 @@ export class StoryProductionPlanService {
             projectId,
             input.sourceMediaAssetId,
           );
+          // Use the same target lock as AI materialization so uploads and
+          // concurrently completed generations share one version sequence.
+          await tx.$executeRaw`
+            SELECT pg_advisory_xact_lock(
+              hashtext(${`story-production-media-version:asset_spec:${current.id}`})::bigint
+            )
+          `;
           const latest = await tx.storyAssetMediaVersion.findFirst({
             where: { assetSpecId: current.id },
             orderBy: { versionNumber: 'desc' },
@@ -953,6 +1043,7 @@ export class StoryProductionPlanService {
                 version: 1,
                 source: 'user_media',
                 mediaAssetId: source.id,
+                purpose: input.sourceMediaPurpose ?? 'primary',
               },
               createdByUserId: user.userId,
             },
@@ -969,7 +1060,8 @@ export class StoryProductionPlanService {
             ...defined(input, 'imagePrompt'),
             ...defined(input, 'videoPrompt'),
             ...defined(input, 'negativePrompt'),
-            ...(importedMediaVersionId
+            ...(importedMediaVersionId &&
+            (input.sourceMediaPurpose ?? 'primary') === 'primary'
               ? { selectedMediaVersionId: importedMediaVersionId }
               : defined(input, 'selectedMediaVersionId')),
             ...(semanticModified
@@ -982,6 +1074,86 @@ export class StoryProductionPlanService {
           },
         });
         if (updated.count !== 1) throw productionCasConflict('Asset Spec');
+        return toAssetSpecDto(
+          await tx.storyAssetSpec.findUniqueOrThrow({
+            where: { id: current.id },
+            include: ASSET_SPEC_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  async archiveAssetSpec(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    assetSpecId: string,
+    idempotencyKey: string,
+    input: ArchiveStoryAssetSpecInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'asset-spec.archive',
+      request: { assetSpecId, input },
+      mutate: async (tx, now) => {
+        const current = await tx.storyAssetSpec.findFirst({
+          where: {
+            id: assetSpecId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+        });
+        if (!current) throw productionNotFound('Asset Spec', assetSpecId);
+        const activeBindingCount =
+          await tx.storyStoryboardClipAssetBinding.count({
+            where: {
+              assetSpecId: current.id,
+              status: { not: StoryProductionSpecStatus.archived },
+              storyboardClip: {
+                status: { not: StoryProductionSpecStatus.archived },
+                sequence: {
+                  status: { not: StoryProductionSpecStatus.archived },
+                },
+              },
+            },
+          });
+        if (activeBindingCount > 0) {
+          throw new ConflictException({
+            code: 'STORY_PRODUCTION_ASSET_STILL_REFERENCED',
+            message:
+              'Remove this Asset Spec from its Storyboard clips before deleting it.',
+          });
+        }
+        const sourceFingerprint = canonicalJsonHash({
+          kind: 'human-asset-spec-archived',
+          projectId,
+          chapterId,
+          assetSpecId,
+          previousSourceFingerprint: current.sourceFingerprint,
+        });
+        const archived = await tx.storyAssetSpec.updateMany({
+          where: {
+            id: current.id,
+            version: input.expectedVersion,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+          data: {
+            sourceFingerprint,
+            pendingSourceFingerprint: null,
+            pendingPlanSnapshotId: null,
+            planDisposition: StoryProductionPlanDisposition.user_override,
+            status: StoryProductionSpecStatus.archived,
+            userModifiedAt: now,
+            userModifiedByUserId: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (archived.count !== 1) throw productionCasConflict('Asset Spec');
         return toAssetSpecDto(
           await tx.storyAssetSpec.findUniqueOrThrow({
             where: { id: current.id },
@@ -2240,8 +2412,12 @@ export class StoryProductionPlanService {
     ) {
       return null;
     }
+    // Creator-only additions are valid chapter resources but are not silently
+    // injected into an Agent-approved plan. If a later approved plan adopts
+    // the same stable key it becomes part of this canonical projection.
+    const approvedRows = rows.filter((row) => expectedKeys.has(row.stableKey));
     return StoryAssetPlanSchema.parse({
-      assetSpecs: rows.map((row) => ({
+      assetSpecs: approvedRows.map((row) => ({
         stableKey: row.stableKey,
         kind: row.kind,
         name: row.name,
@@ -2610,6 +2786,8 @@ export class StoryProductionPlanService {
     for (const current of existing) {
       if (
         plannedKeys.has(current.stableKey) ||
+        current.planDisposition ===
+          StoryProductionPlanDisposition.user_override ||
         current.status === StoryProductionSpecStatus.archived
       )
         continue;
@@ -3763,6 +3941,19 @@ function plotMatchesApprovedScreenplay(
 }
 
 function toAssetSpecDto(row: AssetSpecRow) {
+  const latestPrimary = row.generations.find(
+    (generation) => generation.purpose === StoryAssetGenerationPurpose.primary,
+  );
+  const latestTurnaround = row.generations.find(
+    (generation) =>
+      generation.purpose === StoryAssetGenerationPurpose.turnaround,
+  );
+  const generationTarget = {
+    projectId: row.storyProjectId,
+    chapterId: row.storyChapterId,
+    kind: 'asset_spec' as const,
+    targetId: row.id,
+  };
   return {
     id: row.id,
     projectId: row.storyProjectId,
@@ -3789,13 +3980,16 @@ function toAssetSpecDto(row: AssetSpecRow) {
       : null,
     mediaVersions: row.mediaVersions.map(toCreativeMediaVersionDto),
     latestGeneration: row.generations[0]
-      ? toLatestGenerationDto(row.generations[0], {
-          projectId: row.storyProjectId,
-          chapterId: row.storyChapterId,
-          kind: 'asset_spec',
-          targetId: row.id,
-        })
+      ? toLatestGenerationDto(row.generations[0], generationTarget)
       : null,
+    latestGenerations: {
+      primary: latestPrimary
+        ? toLatestGenerationDto(latestPrimary, generationTarget)
+        : null,
+      turnaround: latestTurnaround
+        ? toLatestGenerationDto(latestTurnaround, generationTarget)
+        : null,
+    },
     userModifiedAt: row.userModifiedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -3831,6 +4025,7 @@ function toCreativeMediaVersionDto(row: CreativeMediaVersionRow) {
     durationSeconds: row.mediaAsset.durationSeconds,
     mimeType: row.mediaAsset.contentType,
     sourceFingerprint: row.sourceFingerprint,
+    purpose: generationPurpose(row.generationSnapshot),
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -4058,6 +4253,7 @@ function toLatestGenerationDto(
   return {
     id: generation.id,
     outputKind: generation.generationKind,
+    purpose: generation.purpose,
     targetVersion: generation.targetVersion,
     targetSourceFingerprint: generation.targetSourceFingerprint,
     retryOfGenerationId: generation.retryOfGenerationId,
@@ -4072,4 +4268,13 @@ function toLatestGenerationDto(
     createdAt: generation.createdAt.toISOString(),
     updatedAt: generation.updatedAt.toISOString(),
   };
+}
+
+function generationPurpose(value: Prisma.JsonValue): 'primary' | 'turnaround' {
+  return value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    value.purpose === 'turnaround'
+    ? 'turnaround'
+    : 'primary';
 }

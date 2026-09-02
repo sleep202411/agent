@@ -9,11 +9,12 @@
  * duplicated logic, same value binding. The full `⊟` panel keeps the long tail
  * (pass `hideQuickFields` there so it doesn't duplicate these).
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
-import { IconClock } from "@tabler/icons-react";
+import { IconChevronDown, IconClock } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { GlassRim } from "@/components/ui/glass-rim";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   schemaFields,
   normalizeSchemaFieldNumber,
@@ -40,6 +41,7 @@ export function ComposerQuickSettings({
   className,
   placement = "above",
   align = "left",
+  appearance = "pill",
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
@@ -50,10 +52,11 @@ export function ComposerQuickSettings({
    *  sit at the bottom of the screen and open above; page headers open below. */
   placement?: "above" | "below";
   align?: "left" | "right";
+  /** Asset workbench rows use Onsolo-style unboxed values instead of a pill. */
+  appearance?: "pill" | "plain";
 }) {
   const t = useTranslations("canvasControls");
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   const scalar = useCallback(
     (name: string): string | number | boolean | undefined => {
@@ -65,24 +68,14 @@ export function ComposerQuickSettings({
   const set = (name: string, v: string | number | boolean) => onChange({ ...settings, [name]: v });
 
   const fields = model ? schemaFields(model) : [];
-  // Order matches pollo: duration / resolution / quality / outputs first, then
-  // the size (aspect-ratio) grid last.
+  // Composer pills keep the established order. Compact asset rows lead with
+  // aspect ratio so their plain-text summary reads like the generation spec.
   const sizeField = fields.find(isSizeField);
-  const quick = [
-    ...fields.filter((f) => !isSizeField(f) && isQuickSettingField(f)),
-    sizeField,
-  ].filter((f): f is SchemaFieldDescriptor => Boolean(f));
+  const nonSizeQuick = fields.filter((f) => !isSizeField(f) && isQuickSettingField(f));
+  const quick = (
+    appearance === "plain" ? [sizeField, ...nonSizeQuick] : [...nonSizeQuick, sizeField]
+  ).filter((f): f is SchemaFieldDescriptor => Boolean(f));
   const effectiveOpen = open && Boolean(model) && quick.length > 0;
-
-  // Close the popover on an outside click.
-  useEffect(() => {
-    if (!effectiveOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [effectiveOpen]);
 
   useEffect(() => {
     onOpenChange?.(effectiveOpen);
@@ -111,7 +104,9 @@ export function ComposerQuickSettings({
       } else {
         label = "labelKey" in info ? t(`sizePresets.${info.labelKey}`) : info.label;
       }
-      return (
+      return appearance === "plain" ? (
+        <span className="whitespace-nowrap">{label}</span>
+      ) : (
         <span className="flex items-center gap-1.5">
           <AspectGlyph w={info.w} h={info.h} />
           <span className="whitespace-nowrap">{label}</span>
@@ -140,38 +135,51 @@ export function ComposerQuickSettings({
   // ONE combined popover with every quick setting as a labeled section — not a
   // separate popover per chip.
   return (
-    <div ref={ref} className={cn("relative shrink-0", className)}>
-      <button
-        type="button"
-        aria-label={t("generationSettings")}
-        onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "flex h-10 items-center rounded-xl px-2.5 text-sm font-medium text-foreground transition-colors",
-          effectiveOpen ? "bg-white/[0.14]" : "bg-white/[0.08] hover:bg-white/[0.12]"
-        )}
-      >
-        {quick.map((field, i) => (
-          <span key={field.name} className="flex items-center">
-            {i > 0 ? <span aria-hidden className="mx-1.5 h-3.5 w-px bg-white/15" /> : null}
-            {chipLabel(field)}
-          </span>
-        ))}
-      </button>
+    <Popover open={effectiveOpen} onOpenChange={setOpen}>
+      <div className={cn("shrink-0", className)}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label={t("generationSettings")}
+            className={cn(
+              "flex h-10 items-center text-sm transition-colors focus-visible:outline-none",
+              appearance === "plain"
+                ? "rounded-lg px-0 font-normal text-white/72 hover:text-white focus-visible:ring-2 focus-visible:ring-white/35"
+                : "rounded-xl px-2.5 font-medium text-foreground",
+              appearance === "pill"
+                ? effectiveOpen
+                  ? "bg-white/[0.14]"
+                  : "bg-white/[0.08] hover:bg-white/[0.12]"
+                : null
+            )}
+          >
+            {quick.map((field, i) => (
+              <span key={field.name} className="flex items-center">
+                {i > 0 ? (
+                  appearance === "plain" ? (
+                    <span aria-hidden className="mx-1 text-white/24">
+                      ·
+                    </span>
+                  ) : (
+                    <span aria-hidden className="mx-1.5 h-3.5 w-px bg-white/15" />
+                  )
+                ) : null}
+                {chipLabel(field)}
+              </span>
+            ))}
+            {appearance === "plain" ? (
+              <IconChevronDown className="ml-0.5 size-3.5 shrink-0 text-white/42" stroke={1.8} />
+            ) : null}
+          </button>
+        </PopoverTrigger>
 
-      {effectiveOpen && (
-        <div
-          className={cn(
-            "liquid-rim nodrag nowheel absolute z-50 w-[320px] overflow-hidden rounded-2xl bg-[oklch(0.19_0_0_/_0.97)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-24px_48px_rgba(0,0,0,0.28),0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-[56px] backdrop-saturate-[1.25] duration-150 animate-in fade-in-0 zoom-in-95",
-            placement === "above" ? "bottom-full mb-2" : "top-full mt-2",
-            align === "left" ? "left-0" : "right-0",
-            placement === "above"
-              ? align === "left"
-                ? "origin-bottom-left"
-                : "origin-bottom-right"
-              : align === "left"
-                ? "origin-top-left"
-                : "origin-top-right"
-          )}
+        <PopoverContent
+          side={placement === "above" ? "top" : "bottom"}
+          align={align === "left" ? "start" : "end"}
+          sideOffset={8}
+          collisionPadding={8}
+          sticky="always"
+          className="liquid-rim nodrag nowheel max-h-[var(--radix-popover-content-available-height)] w-[320px] max-w-[calc(100vw-1rem)] gap-0 overflow-y-auto overscroll-contain rounded-2xl bg-[oklch(0.19_0_0_/_0.97)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.18),inset_0_-24px_48px_rgba(0,0,0,0.28),0_30px_90px_rgba(0,0,0,0.72)] backdrop-blur-[56px] backdrop-saturate-[1.25]"
         >
           <span
             aria-hidden
@@ -205,8 +213,8 @@ export function ComposerQuickSettings({
               </div>
             ))}
           </div>
-        </div>
-      )}
-    </div>
+        </PopoverContent>
+      </div>
+    </Popover>
   );
 }

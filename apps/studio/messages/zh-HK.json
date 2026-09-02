@@ -2825,21 +2825,26 @@
         "location": "本章沒有場景資產規格",
         "prop": "本章沒有道具資產規格"
       },
-      "categoryEmptyHint": "目前分類為空。切換到其他分類可查看本章其餘資產規格。",
+      "categoryEmptyHint": "目前分類為空。你可以手動新增資產規格，或切換到其他分類。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。",
+      "addByKind": {
+        "character": "新增角色",
+        "location": "新增場景",
+        "prop": "新增道具"
+      },
       "continueWithAgent": "在 FizzAgent 中繼續",
       "stage": {
         "plotRequired": {
-          "title": "請先批准情節樹",
-          "description": "資產規劃應基於已批准的敘事拓撲。請先在 FizzAgent 中準備並審核情節樹，再提取可重用資產。"
+          "title": "AI 資產規劃正在等待情節樹",
+          "description": "FizzAgent 需要基於已批准的敘事拓撲提取可重用資產；你仍可在此手動新增和管理資產規格。"
         },
         "assetsRequired": {
-          "title": "下一步是批准資產規格",
-          "description": "讓 FizzAgent 根據已批准的情節樹及其劇本解讀整理可重用的角色、場景和道具。進入分鏡前會先由你審閱；此過程不會生成媒體。"
+          "title": "AI 資產規劃已就緒",
+          "description": "你可以讓 FizzAgent 整理可重用的角色、場景和道具，也可以繼續手動管理資產規格。系統不會自動生成媒體。"
         },
         "stale": {
           "title": "{count} 項資產規格需要處理",
-          "description": "現有內容會保留供你審閱。請在下方解決可處理的衝突；缺少對比詳情的項目需要讓 Agent 重新準備提案。在本階段恢復為目前版本前，媒體生成保持不可用。"
+          "description": "現有內容仍可繼續檢視和編輯。請在下方處理過期項目；目前狀態的資產規格仍可正常生成媒體。"
         },
         "noAssets": {
           "title": "本章不需要可重用的資產規格",
@@ -2893,14 +2898,25 @@
         }
       },
       "details": "詳情",
+      "createDialog": {
+        "description": "手動建立可重用的角色、場景或道具。此操作不會生成媒體，也不會消耗點數。",
+        "name": "名稱",
+        "cancel": "取消",
+        "create": "新增資產",
+        "created": "資產規格已新增。",
+        "createError": "無法新增資產規格。"
+      },
       "mediaAction": {
         "uploadImage": "上載圖片",
         "replaceImage": "替換圖片",
         "replacing": "正在替換圖片…",
         "replaceSuccess": "資產圖片已替換。",
-        "replaceError": "無法替換資產圖片。"
+        "replaceError": "無法替換資產圖片。",
+        "turnaroundReplaceSuccess": "已加入三視圖圖片。",
+        "turnaroundReplaceError": "無法加入三視圖圖片。"
       },
       "detailDialog": {
+        "name": "名稱",
         "imagePrompt": "圖片提示詞",
         "model": "模型",
         "save": "儲存",
@@ -2910,7 +2926,30 @@
         "generateStarted": "已開始生成。",
         "generateError": "無法開始生成媒體。",
         "close": "關閉",
-        "videoPrompt": "影片提示詞"
+        "videoPrompt": "影片提示詞",
+        "delete": "刪除",
+        "deleteTitle": "刪除{name}？",
+        "deleteDescription": "該資產規格會從本章移除，已有媒體歷史仍會保留。如分鏡片段仍在使用它，需要先解除引用。",
+        "deleteCancel": "取消",
+        "deleteConfirm": "刪除",
+        "deleted": "資產規格已刪除。",
+        "deleteError": "無法刪除資產規格。"
+      },
+      "workbench": {
+        "mediaTitle": "參考圖片",
+        "mediaDescription": "目前選取的圖片會統一用於分鏡和後續生成。",
+        "versionSelected": "已切換圖片版本。",
+        "versionSelectError": "無法切換到這個圖片版本。",
+        "noVersions": "尚未生成或上載圖片。",
+        "turnaroundTitle": "三視圖",
+        "turnaroundDescription": "AI 影片生成會優先使用三視圖作為角色參考。",
+        "turnaroundFor": "{name}的三視圖",
+        "turnaroundNeedsPrimary": "請先生成或上載角色形象圖。",
+        "turnaroundEmpty": "尚未生成三視圖。",
+        "turnaroundUpload": "上載三視圖",
+        "turnaroundDownload": "下載三視圖",
+        "previousVersion": "上一組版本",
+        "nextVersion": "下一組版本"
       },
       "title": "資產規格"
     },

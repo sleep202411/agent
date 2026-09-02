@@ -2825,21 +2825,26 @@
         "location": "本章没有场景资产规格",
         "prop": "本章没有道具资产规格"
       },
-      "categoryEmptyHint": "当前分类为空。切换到其他分类可查看本章其余资产规格。",
+      "categoryEmptyHint": "当前分类为空。你可以手动新增资产规格，或切换到其他分类。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。",
+      "addByKind": {
+        "character": "新增角色",
+        "location": "新增场景",
+        "prop": "新增道具"
+      },
       "continueWithAgent": "在 FizzAgent 中继续",
       "stage": {
         "plotRequired": {
-          "title": "请先批准情节树",
-          "description": "资产规划应基于已批准的叙事拓扑。请先在 FizzAgent 中准备并审核情节树，再提取可复用资产。"
+          "title": "AI 资产规划正在等待情节树",
+          "description": "FizzAgent 需要基于已批准的叙事拓扑提取可复用资产；你仍可在这里手动新增和管理资产规格。"
         },
         "assetsRequired": {
-          "title": "下一步是批准资产规格",
-          "description": "让 FizzAgent 根据已批准的情节树及其剧本解释整理可复用的角色、场景和道具。进入分镜前会先由你审阅；此过程不会生成媒体。"
+          "title": "AI 资产规划已就绪",
+          "description": "你可以让 FizzAgent 整理可复用的角色、场景和道具，也可以继续手动管理资产规格。系统不会自动生成媒体。"
         },
         "stale": {
           "title": "{count} 项资产规格需要处理",
-          "description": "现有内容会保留供你审阅。请在下方解决可处理的冲突；缺少对比详情的项目需要让 Agent 重新准备提案。在本阶段恢复为当前版本前，媒体生成保持不可用。"
+          "description": "现有内容仍可继续查看和编辑。请在下方处理过期项目；当前状态的资产规格仍可正常生成媒体。"
         },
         "noAssets": {
           "title": "本章不需要可复用的资产规格",
@@ -2893,14 +2898,25 @@
         }
       },
       "details": "详情",
+      "createDialog": {
+        "description": "手动创建可复用的角色、场景或道具。此操作不会生成媒体，也不会消耗点数。",
+        "name": "名称",
+        "cancel": "取消",
+        "create": "新增资产",
+        "created": "资产规格已新增。",
+        "createError": "无法新增资产规格。"
+      },
       "mediaAction": {
         "uploadImage": "上传图片",
         "replaceImage": "替换图片",
         "replacing": "正在替换图片…",
         "replaceSuccess": "资产图片已替换。",
-        "replaceError": "无法替换资产图片。"
+        "replaceError": "无法替换资产图片。",
+        "turnaroundReplaceSuccess": "已添加三视图图片。",
+        "turnaroundReplaceError": "无法添加三视图图片。"
       },
       "detailDialog": {
+        "name": "名称",
         "imagePrompt": "图片提示词",
         "model": "模型",
         "save": "保存",
@@ -2910,7 +2926,30 @@
         "generateStarted": "已开始生成。",
         "generateError": "无法开始生成媒体。",
         "close": "关闭",
-        "videoPrompt": "视频提示词"
+        "videoPrompt": "视频提示词",
+        "delete": "删除",
+        "deleteTitle": "删除{name}？",
+        "deleteDescription": "该资产规格会从本章移除，已有媒体历史仍会保留。如果分镜片段仍在使用它，需要先解除引用。",
+        "deleteCancel": "取消",
+        "deleteConfirm": "删除",
+        "deleted": "资产规格已删除。",
+        "deleteError": "无法删除资产规格。"
+      },
+      "workbench": {
+        "mediaTitle": "参考图片",
+        "mediaDescription": "当前选中的图片会统一用于分镜和后续生成。",
+        "versionSelected": "已切换图片版本。",
+        "versionSelectError": "无法切换到这个图片版本。",
+        "noVersions": "尚未生成或上传图片。",
+        "turnaroundTitle": "三视图",
+        "turnaroundDescription": "AI 视频生成会优先使用三视图作为角色参考。",
+        "turnaroundFor": "{name}的三视图",
+        "turnaroundNeedsPrimary": "请先生成或上传角色形象图。",
+        "turnaroundEmpty": "尚未生成三视图。",
+        "turnaroundUpload": "上传三视图",
+        "turnaroundDownload": "下载三视图",
+        "previousVersion": "上一组版本",
+        "nextVersion": "下一组版本"
       },
       "title": "资产规格"
     },

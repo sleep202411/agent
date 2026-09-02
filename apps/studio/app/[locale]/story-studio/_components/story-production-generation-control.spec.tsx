@@ -102,8 +102,104 @@ describe("StoryProductionGenerationControl", () => {
       "chapter-1",
       "asset-1",
       expect.stringMatching(/^story-generate:/),
-      { expectedVersion: 3 }
+      { expectedVersion: 3, purpose: "primary" }
     );
+  });
+
+  it("submits every paid click with a unique key when concurrent Asset generation is enabled", async () => {
+    const pendingCounts = vi.fn();
+    const first = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    const second = {
+      ...first,
+      id: "generation-2",
+      aiJob: { ...first.aiJob, id: "job-2" },
+    };
+    apiMocks.createAsset.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    apiMocks.getAsset.mockImplementation(async (_projectId, _chapterId, _assetId, generationId) =>
+      generationId === second.id ? second : first
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryProductionGenerationControl
+            scope={{ projectId: "project-1", chapterId: "chapter-1" }}
+            target={assetTarget(null)}
+            label="Production target"
+            selectedMedia={null}
+            layout="inline"
+            purpose="turnaround"
+            allowConcurrent
+            onPendingPreviewCountChange={pendingCounts}
+          />
+        </QueryClientProvider>
+      );
+    });
+
+    const generate = container.querySelector<HTMLButtonElement>('button[aria-label="generate"]');
+    expect(generate).not.toBeNull();
+    await act(async () => {
+      generate?.click();
+      generate?.click();
+    });
+
+    await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(2));
+    const calls = apiMocks.createAsset.mock.calls;
+    expect(calls[0]?.[4]).toEqual({ expectedVersion: 3, purpose: "turnaround" });
+    expect(calls[1]?.[4]).toEqual({ expectedVersion: 3, purpose: "turnaround" });
+    expect(calls[0]?.[3]).not.toBe(calls[1]?.[3]);
+    expect(pendingCounts).toHaveBeenCalledWith(2);
+  });
+
+  it("keeps an earlier concurrent failure visible while a later run is still active", async () => {
+    const first = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    const second = {
+      ...first,
+      id: "generation-2",
+      createdAt: "2026-08-21T00:00:01.000Z",
+      updatedAt: "2026-08-21T00:00:01.000Z",
+      aiJob: { ...first.aiJob, id: "job-2" },
+    };
+    const failed = {
+      ...first,
+      aiJob: {
+        ...first.aiJob,
+        status: "failed" as const,
+        error: { message: "The provider rejected the first run", retryable: true },
+      },
+    };
+    apiMocks.createAsset.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    apiMocks.getAsset.mockImplementation(async (_projectId, _chapterId, _assetId, generationId) =>
+      generationId === first.id ? failed : second
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryProductionGenerationControl
+            scope={{ projectId: "project-1", chapterId: "chapter-1" }}
+            target={assetTarget(null)}
+            label="Production target"
+            selectedMedia={null}
+            layout="inline"
+            allowConcurrent
+          />
+        </QueryClientProvider>
+      );
+    });
+
+    const generate = container.querySelector<HTMLButtonElement>('button[aria-label="generate"]');
+    await act(async () => {
+      generate?.click();
+      generate?.click();
+    });
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+        "The provider rejected the first run"
+      );
+    });
+    expect(container.querySelector('button[aria-label="generate"]')).not.toBeNull();
   });
 
   it("shows a just-completed generation while the authoritative target projection refreshes", async () => {

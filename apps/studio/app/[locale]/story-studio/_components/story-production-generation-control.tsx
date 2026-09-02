@@ -1,7 +1,14 @@
 "use client";
 
-import { IconLoader2, IconPhotoOff, IconRefresh, IconSparkles, IconX } from "@tabler/icons-react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  IconArrowUp,
+  IconLoader2,
+  IconPhotoOff,
+  IconRefresh,
+  IconSparkles,
+  IconX,
+} from "@tabler/icons-react";
+import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
 import Image from "next/image";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
@@ -32,6 +39,7 @@ import {
   type ProductionModality,
   type ProductionModelSelection,
 } from "../_stores/story-production-settings-store";
+import type { ModelSettings } from "@/lib/canvas-authoring/generation-api";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 interface GenerationScope {
@@ -67,6 +75,12 @@ export function StoryProductionGenerationControl({
   outputKind = "image",
   allowGeneration = true,
   mediaLoading = "lazy",
+  layout = "stage",
+  purpose = "primary",
+  modelSelection,
+  generationOptions,
+  allowConcurrent = false,
+  onPendingPreviewCountChange,
 }: {
   scope: GenerationScope;
   target: GenerationTarget;
@@ -80,6 +94,16 @@ export function StoryProductionGenerationControl({
   outputKind?: ProductionModality;
   /** Keep below-the-fold generation cards lazy while allowing the gallery's first row to be eager. */
   mediaLoading?: "eager" | "lazy";
+  /** The compact form places the action beside per-asset model settings. */
+  layout?: "stage" | "inline";
+  /** Asset generations can create either the canonical image or its three-view sheet. */
+  purpose?: "primary" | "turnaround";
+  /** Per-asset controls override the page default without mutating other rows. */
+  modelSelection?: ProductionModelSelection | null;
+  generationOptions?: ModelSettings;
+  /** Asset output rows may submit another paid run while earlier runs remain active. */
+  allowConcurrent?: boolean;
+  onPendingPreviewCountChange?: (count: number) => void;
   /**
    * Stage-level fence. Stale aggregate stages may still render previews,
    * details, and conflict resolution, but they must not expose a new paid
@@ -89,29 +113,47 @@ export function StoryProductionGenerationControl({
 }) {
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
-  const [submittedGeneration, setSubmittedGeneration] = useState<StoryProductionGeneration | null>(
-    null
-  );
+  const [submittedGenerations, setSubmittedGenerations] = useState<StoryProductionGeneration[]>([]);
+  const [pendingSubmissionIds, setPendingSubmissionIds] = useState<string[]>([]);
   const commandInFlight = useRef(false);
-  const trackedGeneration = newerGeneration(submittedGeneration, target.latestGeneration);
-  const generationId = trackedGeneration?.id ?? null;
-  const queryKey = generationQueryKey(scope, target, generationId);
-
-  const generationQuery = useQuery({
-    queryKey,
-    enabled: generationId !== null,
-    queryFn: ({ signal }) => {
-      if (!generationId) throw new Error("A Story generation id is required.");
-      return getGeneration(scope, target, generationId, signal);
-    },
-    refetchInterval: (query) =>
-      shouldPollGeneration(query.state.data ?? trackedGeneration) ? 1_500 : false,
-    refetchIntervalInBackground: true,
-    staleTime: 0,
+  const rememberGenerationState = (value: StoryProductionGeneration) => {
+    setSubmittedGenerations((current) => {
+      if (!allowConcurrent) return [value];
+      return retainConcurrentGenerations(mergeGenerations(current, [value]));
+    });
+  };
+  const trackedGeneration = newerGeneration(
+    submittedGenerations.at(-1) ?? null,
+    target.latestGeneration
+  );
+  const generationSeeds = allowConcurrent
+    ? mergeGenerations(
+        target.latestGeneration ? [target.latestGeneration] : [],
+        submittedGenerations
+      )
+    : trackedGeneration
+      ? [trackedGeneration]
+      : [];
+  const generationQueries = useQueries({
+    queries: generationSeeds.map((seed) => ({
+      queryKey: generationQueryKey(scope, target, seed.id),
+      enabled: allowConcurrent ? isGenerationRunning(seed) : true,
+      queryFn: async ({ signal }: { signal: AbortSignal }) => {
+        const value = await getGeneration(scope, target, seed.id, signal);
+        if (allowConcurrent) rememberGenerationState(value);
+        return value;
+      },
+      refetchInterval: (query: { state: { data?: StoryProductionGeneration } }) =>
+        shouldPollGeneration(query.state.data ?? seed) ? 1_500 : false,
+      refetchIntervalInBackground: true,
+      staleTime: 0,
+    })),
   });
-
-  const generation =
-    queryGeneration(queryKey, queryClient, generationQuery.data) ?? trackedGeneration;
+  const generations = generationSeeds.map((seed, index) => {
+    const key = generationQueryKey(scope, target, seed.id);
+    return queryGeneration(key, queryClient, generationQueries[index]?.data) ?? seed;
+  });
+  const generation = newestGeneration(generations);
   const running = isGenerationRunning(generation);
   const cancellable = isGenerationCancellable(generation);
   const targetChanged = Boolean(generation && generation.targetVersion !== target.version);
@@ -130,22 +172,40 @@ export function StoryProductionGenerationControl({
   // as unbound.
   const previewMedia =
     selectedMedia ??
-    (submittedGeneration?.id === generation?.id && !targetChanged && allowGeneration
+    (submittedGenerations.some((submitted) => submitted.id === generation?.id) &&
+    !targetChanged &&
+    allowGeneration
       ? generatedMedia
       : null);
 
   const rememberGeneration = (value: StoryProductionGeneration) => {
-    setSubmittedGeneration(value);
+    rememberGenerationState(value);
     queryClient.setQueryData(generationQueryKey(scope, target, value.id), value);
   };
 
   const generationDefaults = useStoryProductionGenerationDefaults(scope.projectId, outputKind);
+  const effectiveSelection =
+    modelSelection === undefined ? generationDefaults.selection : modelSelection;
+  const effectiveOptions = generationOptions ?? generationDefaults.options;
   const createMutation = useMutation({
     retry: false,
-    mutationFn: () =>
-      createGeneration(scope, target, generationDefaults.selection, generationDefaults.options),
+    mutationFn: ({ idempotencyKey }: { idempotencyKey: string }) =>
+      createGeneration(
+        scope,
+        target,
+        effectiveSelection,
+        effectiveOptions,
+        purpose,
+        idempotencyKey
+      ),
+    onMutate: ({ idempotencyKey }) => {
+      setPendingSubmissionIds((current) => [...current, idempotencyKey]);
+    },
     onSuccess: rememberGeneration,
     onError: (error) => toast.error(storyApiErrorMessage(error, t("requestError"))),
+    onSettled: (_data, _error, { idempotencyKey }) => {
+      setPendingSubmissionIds((current) => current.filter((id) => id !== idempotencyKey));
+    },
   });
 
   const cancelMutation = useMutation({
@@ -180,31 +240,41 @@ export function StoryProductionGenerationControl({
 
   const invalidatedGenerationIds = useRef(new Set<string>());
   useEffect(() => {
-    if (
-      !generation ||
-      generation.materialization.status !== "completed" ||
-      invalidatedGenerationIds.current.has(generation.id)
-    ) {
-      return;
+    for (const currentGeneration of generations) {
+      if (
+        currentGeneration.materialization.status !== "completed" ||
+        invalidatedGenerationIds.current.has(currentGeneration.id)
+      ) {
+        continue;
+      }
+      invalidatedGenerationIds.current.add(currentGeneration.id);
+      void invalidateProductionTarget(queryClient, scope, target);
     }
-    invalidatedGenerationIds.current.add(generation.id);
-    void invalidateProductionTarget(queryClient, scope, target);
-  }, [generation, queryClient, scope, target]);
+  }, [generations, queryClient, scope, target]);
 
   const blockedReason = target.status !== "current" ? t("targetNotCurrent") : null;
   const status = attachmentRetryMutation.isPending
     ? { label: t("status.retryingAttachment"), icon: "running" as const }
     : generationStatus(generation, createMutation.isPending, t);
+  const latestIssue = generations.findLast(hasGenerationIssue) ?? null;
   const errorMessage =
-    generationErrorMessage(generation?.materialization.error) ??
-    generationErrorMessage(generation?.aiJob.error) ??
-    (generationQuery.error
-      ? storyApiErrorMessage(generationQuery.error, t("statusRefreshError"))
+    generationIssueMessage(latestIssue, t) ??
+    (generationQueries.find((query) => query.error)?.error
+      ? storyApiErrorMessage(
+          generationQueries.find((query) => query.error)?.error,
+          t("statusRefreshError")
+        )
       : null);
   const progress = generation?.aiJob.progress;
+  const pendingPreviewCount =
+    pendingSubmissionIds.length + generations.filter(isGenerationRunning).length;
+  useEffect(() => {
+    onPendingPreviewCountChange?.(pendingPreviewCount);
+  }, [onPendingPreviewCountChange, pendingPreviewCount]);
   // targetChanged already covers every version drift, including the
   // "completed at an older target version" regeneration case.
-  const showGenerate = !generation || targetChanged;
+  const showGenerate =
+    !generation || targetChanged || generation.materialization.status === "completed";
   const actionPending =
     createMutation.isPending ||
     cancelMutation.isPending ||
@@ -221,8 +291,37 @@ export function StoryProductionGenerationControl({
       commandInFlight.current = false;
     }
   };
+  const generateLabel = selectedMedia ? t("generateAgain") : t("generate");
+  const generateAction = (
+    <Button
+      size={layout === "inline" ? "icon" : "sm"}
+      className={layout === "inline" ? "rounded-full" : undefined}
+      aria-label={layout === "inline" ? generateLabel : undefined}
+      title={layout === "inline" ? generateLabel : undefined}
+      loading={!allowConcurrent && layout === "stage" && createMutation.isPending}
+      disabled={Boolean(blockedReason) || (!allowConcurrent && actionPending)}
+      onClick={() => {
+        const request = {
+          idempotencyKey: createStoryProductionIdempotencyKey("story-generate"),
+        };
+        if (allowConcurrent) {
+          createMutation.mutate(request);
+        } else {
+          void runCommandOnce(() => createMutation.mutateAsync(request));
+        }
+      }}
+    >
+      {layout === "inline" ? <IconArrowUp stroke={2.2} /> : null}
+      {layout === "stage" ? generateLabel : null}
+      {layout === "stage" ? <IconSparkles /> : null}
+    </Button>
+  );
 
-  const actionButton = cancellable ? (
+  const actionButton = allowConcurrent ? (
+    allowGeneration ? (
+      generateAction
+    ) : null
+  ) : cancellable ? (
     <Button
       variant="secondary"
       size="sm"
@@ -254,16 +353,24 @@ export function StoryProductionGenerationControl({
       {t("retry")}
     </Button>
   ) : showGenerate ? (
-    <Button
-      size="sm"
-      loading={createMutation.isPending}
-      disabled={Boolean(blockedReason) || actionPending}
-      onClick={() => void runCommandOnce(() => createMutation.mutateAsync())}
-    >
-      <IconSparkles />
-      {selectedMedia ? t("generateAgain") : t("generate")}
-    </Button>
+    generateAction
   ) : null;
+
+  if (layout === "inline") {
+    return (
+      <div className="min-w-0">
+        <div className="flex min-h-9 items-center justify-end">{actionButton}</div>
+        {blockedReason ? (
+          <p className="mt-2 text-[11px] leading-4 text-amber-100/82">{blockedReason}</p>
+        ) : null}
+        {errorMessage ? (
+          <p className="mt-2 text-[11px] leading-4 text-red-100/88" role="alert">
+            {errorMessage}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -409,6 +516,34 @@ function newerGeneration(
   return Date.parse(submitted.createdAt) >= Date.parse(latest.createdAt) ? submitted : latest;
 }
 
+function mergeGenerations<T extends StoryLatestGeneration>(current: T[], incoming: T[]): T[] {
+  const byId = new Map(current.map((generation) => [generation.id, generation]));
+  for (const generation of incoming) byId.set(generation.id, generation);
+  return [...byId.values()].sort(
+    (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
+  );
+}
+
+function newestGeneration(
+  generations: Array<StoryLatestGeneration | StoryProductionGeneration>
+): StoryLatestGeneration | StoryProductionGeneration | null {
+  return generations.at(-1) ?? null;
+}
+
+function retainConcurrentGenerations(
+  generations: StoryProductionGeneration[]
+): StoryProductionGeneration[] {
+  const active = generations.filter(isGenerationRunning);
+  const latestTerminal = generations.findLast((generation) => !isGenerationRunning(generation));
+  const latestIssue = generations.findLast(hasGenerationIssue);
+  return mergeGenerations(
+    active,
+    [latestTerminal, latestIssue].filter((generation): generation is StoryProductionGeneration =>
+      Boolean(generation)
+    )
+  );
+}
+
 function getGeneration(
   scope: GenerationScope,
   target: GenerationTarget,
@@ -431,9 +566,10 @@ function createGeneration(
   scope: GenerationScope,
   target: GenerationTarget,
   selection: ProductionModelSelection | null,
-  options: Parameters<typeof storyGenerationOptions>[0]
+  options: Parameters<typeof storyGenerationOptions>[0],
+  purpose: "primary" | "turnaround",
+  idempotencyKey: string
 ) {
-  const idempotencyKey = createStoryProductionIdempotencyKey("story-generate");
   // The page-header default rides along only when a model is explicitly
   // chosen; option keys are schema-bound to that model.
   const modelInput = selection
@@ -446,6 +582,7 @@ function createGeneration(
   return target.kind === "asset_spec"
     ? createStoryAssetGeneration(scope.projectId, scope.chapterId, target.id, idempotencyKey, {
         expectedVersion: target.version,
+        purpose,
         ...modelInput,
       })
     : createStoryStoryboardClipGeneration(
@@ -595,6 +732,30 @@ function generationErrorMessage(value: unknown): string | null {
   const record = recordValue(value);
   const message = record?.message;
   return typeof message === "string" && message.trim() ? message.trim() : null;
+}
+
+function hasGenerationIssue(
+  generation: StoryLatestGeneration | StoryProductionGeneration
+): boolean {
+  return (
+    generation.materialization.status === "failed" ||
+    ["failed", "cancelled", "expired"].includes(generation.aiJob.status)
+  );
+}
+
+function generationIssueMessage(
+  generation: StoryLatestGeneration | StoryProductionGeneration | null,
+  t: ReturnType<typeof useTranslations<"storyStudio.productionGeneration">>
+): string | null {
+  if (!generation) return null;
+  const upstream =
+    generationErrorMessage(generation.materialization.error) ??
+    generationErrorMessage(generation.aiJob.error);
+  if (upstream) return upstream;
+  if (generation.materialization.status === "failed") return t("status.materializationFailed");
+  if (generation.aiJob.status === "cancelled") return t("status.cancelled");
+  if (generation.aiJob.status === "expired") return t("status.expired");
+  return generation.aiJob.status === "failed" ? t("status.failed") : null;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | null {

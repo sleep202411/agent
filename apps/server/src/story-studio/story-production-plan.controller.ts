@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -12,6 +13,8 @@ import {
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
+  ArchiveStoryAssetSpecSchema,
+  CreateStoryAssetSpecSchema,
   PatchStoryAssetSpecSchema,
   PatchStoryStoryboardClipSchema,
   PatchStoryStoryboardCueSchema,
@@ -25,6 +28,8 @@ import {
   StoryStoryboardClipParamsSchema,
   StoryStoryboardCueParamsSchema,
   StoryStoryboardSequenceParamsSchema,
+  type ArchiveStoryAssetSpecInput,
+  type CreateStoryAssetSpecInput,
   type PatchStoryAssetSpecInput,
   type PatchStoryStoryboardClipInput,
   type PatchStoryStoryboardCueInput,
@@ -77,6 +82,28 @@ export class StoryProductionPlanController {
     };
   }
 
+  @Post('asset-specs')
+  async createAssetSpec(
+    @CurrentUser() user: AuthUser,
+    @Headers('idempotency-key')
+    idempotencyHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProductionChapterParamsSchema))
+    params: StoryProductionChapterParams,
+    @Body(new ZodValidationPipe(CreateStoryAssetSpecSchema))
+    body: CreateStoryAssetSpecInput,
+  ) {
+    return {
+      code: 201,
+      data: await this.production.createAssetSpec(
+        user,
+        params.projectId,
+        params.chapterId,
+        requiredIdempotencyKey(idempotencyHeader),
+        body,
+      ),
+    };
+  }
+
   @Patch('asset-specs/:assetSpecId')
   async patchAssetSpec(
     @CurrentUser() user: AuthUser,
@@ -90,6 +117,29 @@ export class StoryProductionPlanController {
     return {
       code: 200,
       data: await this.production.patchAssetSpec(
+        user,
+        params.projectId,
+        params.chapterId,
+        params.assetSpecId,
+        requiredIdempotencyKey(idempotencyHeader),
+        body,
+      ),
+    };
+  }
+
+  @Delete('asset-specs/:assetSpecId')
+  async archiveAssetSpec(
+    @CurrentUser() user: AuthUser,
+    @Headers('idempotency-key')
+    idempotencyHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryAssetSpecParamsSchema))
+    params: StoryAssetSpecParams,
+    @Body(new ZodValidationPipe(ArchiveStoryAssetSpecSchema))
+    body: ArchiveStoryAssetSpecInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.production.archiveAssetSpec(
         user,
         params.projectId,
         params.chapterId,

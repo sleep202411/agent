@@ -35,6 +35,34 @@ describe('Story production generation command schemas', () => {
     ).toEqual({ expectedVersion: 3, options: {} });
   });
 
+  it('defaults Asset Spec generation to the primary image purpose', () => {
+    expect(
+      CreateStoryAssetGenerationSchema.parse({ expectedVersion: 3 }),
+    ).toEqual({
+      expectedVersion: 3,
+      options: {},
+      outputKind: 'image',
+      purpose: 'primary',
+    });
+  });
+
+  it('accepts image turnarounds and rejects video turnarounds', () => {
+    expect(
+      CreateStoryAssetGenerationSchema.parse({
+        expectedVersion: 3,
+        outputKind: 'image',
+        purpose: 'turnaround',
+      }),
+    ).toMatchObject({ outputKind: 'image', purpose: 'turnaround' });
+    expect(() =>
+      CreateStoryAssetGenerationSchema.parse({
+        expectedVersion: 3,
+        outputKind: 'video',
+        purpose: 'turnaround',
+      }),
+    ).toThrow('Character turnaround generation only supports image output.');
+  });
+
   it('requires model id and schema version as one atomic selection', () => {
     expect(() =>
       CreateStoryAssetGenerationSchema.parse({
@@ -50,7 +78,6 @@ describe('Story production generation command schemas', () => {
     ['referenceImages', ['https://cdn.example.com/reference.png']],
     ['startFrame', 'https://cdn.example.com/start.png'],
     ['subjectReferenceStrength', 0.8],
-    ['durationSeconds', 7],
   ])('rejects client authority over %s', (key, value) => {
     expect(() =>
       CreateStoryStoryboardClipGenerationSchema.parse({
@@ -58,6 +85,15 @@ describe('Story production generation command schemas', () => {
         options: { [key]: value },
       }),
     ).toThrow();
+  });
+
+  it('accepts model-schema duration controls', () => {
+    expect(
+      CreateStoryAssetGenerationSchema.parse({
+        ...base,
+        options: { durationSeconds: 7 },
+      }).options,
+    ).toEqual({ durationSeconds: 7 });
   });
 
   it('rejects a media URL even when hidden under an unknown option name', () => {

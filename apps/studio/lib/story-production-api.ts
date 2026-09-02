@@ -12,6 +12,7 @@ export type StoryAssetSpecKind = "character" | "location" | "prop";
 export type StoryStoryboardClipKind = "image" | "video";
 export type StoryStoryboardBindingMode = "follow_selected" | "pinned";
 export type StoryProductionPlanDisposition = "planned" | "user_override";
+export type StoryAssetGenerationPurpose = "primary" | "turnaround";
 export type StoryProductionConflictResolution = "keep_current" | "use_latest_plan";
 export type StoryAiJobStatus =
   | "created"
@@ -42,12 +43,14 @@ export interface StoryCreativeMediaVersion {
   durationSeconds: number | null;
   mimeType: string | null;
   sourceFingerprint: string;
+  purpose?: StoryAssetGenerationPurpose;
   createdAt: string;
 }
 
 export interface StoryLatestGeneration {
   id: string;
   outputKind: StoryStoryboardClipKind;
+  purpose?: StoryAssetGenerationPurpose;
   targetVersion: number;
   targetSourceFingerprint: string;
   retryOfGenerationId: string | null;
@@ -120,6 +123,7 @@ export interface StoryAssetSpec {
   selectedMediaVersion: StoryCreativeMediaVersion | null;
   mediaVersions: StoryCreativeMediaVersion[];
   latestGeneration: StoryLatestGeneration | null;
+  latestGenerations?: Record<StoryAssetGenerationPurpose, StoryLatestGeneration | null>;
   userModifiedAt: string | null;
   updatedAt: string;
 }
@@ -258,6 +262,7 @@ export interface StoryStoryboardSequenceConflictResolutionResult {
 export interface CreateStoryAssetGenerationInput {
   expectedVersion: number;
   outputKind?: StoryStoryboardClipKind;
+  purpose?: StoryAssetGenerationPurpose;
   modelId?: string;
   schemaVersion?: string;
   options?: Record<string, boolean | number | string | Array<boolean | number | string>>;
@@ -279,8 +284,24 @@ export interface PatchStoryAssetSpecInput {
   name?: string;
   description?: string | null;
   imagePrompt?: string;
+  videoPrompt?: string | null;
+  negativePrompt?: string | null;
   selectedMediaVersionId?: string | null;
   sourceMediaAssetId?: string;
+  sourceMediaPurpose?: StoryAssetGenerationPurpose;
+}
+
+export interface CreateStoryAssetSpecInput {
+  kind: StoryAssetSpecKind;
+  name: string;
+  description?: string | null;
+  imagePrompt: string;
+  videoPrompt?: string | null;
+  negativePrompt?: string | null;
+}
+
+export interface ArchiveStoryAssetSpecInput {
+  expectedVersion: number;
 }
 
 export interface PatchStoryStoryboardClipInput {
@@ -470,6 +491,20 @@ export async function listStoryAssetSpecs(
   });
   values.forEach((value) => assertChapterScope(value, projectId, chapterId));
   return values;
+}
+
+export async function createStoryAssetSpec(
+  projectId: string,
+  chapterId: string,
+  idempotencyKey: string,
+  input: CreateStoryAssetSpecInput
+): Promise<StoryAssetSpec> {
+  const value = await api.post<StoryAssetSpec>(
+    chapterPath(projectId, chapterId, "asset-specs"),
+    projectMutationConfig(idempotencyKey, input)
+  );
+  assertChapterScope(value, projectId, chapterId);
+  return value;
 }
 
 export async function getStoryStoryboard(
@@ -742,6 +777,21 @@ export async function patchStoryAssetSpec(
     chapterPath(projectId, chapterId, `asset-specs/${encodeURIComponent(assetSpecId)}`),
     projectMutationConfig(idempotencyKey, input)
   );
+}
+
+export async function archiveStoryAssetSpec(
+  projectId: string,
+  chapterId: string,
+  assetSpecId: string,
+  idempotencyKey: string,
+  input: ArchiveStoryAssetSpecInput
+): Promise<StoryAssetSpec> {
+  const value = await api.delete<StoryAssetSpec>(
+    chapterPath(projectId, chapterId, `asset-specs/${encodeURIComponent(assetSpecId)}`),
+    projectMutationConfig(idempotencyKey, input)
+  );
+  assertChapterScope(value, projectId, chapterId);
+  return value;
 }
 
 export async function patchStoryStoryboardClip(

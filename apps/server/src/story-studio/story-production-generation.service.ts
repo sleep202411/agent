@@ -18,6 +18,7 @@ import {
   Prisma,
   StoryGenerationBatchItemStatus,
   StoryGenerationBatchStatus,
+  StoryProductionPlanDisposition,
   StoryProductionGenerationKind,
   StoryProductionGenerationTargetKind,
   StoryProductionSpecStatus,
@@ -25,7 +26,10 @@ import {
   type StoryFrameProfile,
 } from '@prisma/client';
 import type { ProjectSkillResolutionSnapshot } from '@repo/agent-skills';
-import { estimateProductModelPoints } from '@repo/shared';
+import {
+  estimateProductModelPoints,
+  extractStoryAssetMentions,
+} from '@repo/shared';
 import type { AuthUser } from '../auth';
 import {
   AiGenerationCompletionObserverRegistry,
@@ -51,6 +55,7 @@ import {
   type CreateStoryAssetGenerationInput,
   type CreateStoryStoryboardClipGenerationInput,
   type RetryStoryProductionGenerationInput,
+  type StoryAssetGenerationPurpose,
   type StoryGenerationOptions,
   StoryGenerationOptionsSchema,
 } from './story-production-generation.schema';
@@ -64,6 +69,10 @@ const MAX_RECONCILE_ATTEMPTS = 12;
 const GENERATION_TARGET_SNAPSHOT_VERSION = 1;
 const STORYBOARD_CLIP_TARGET_SNAPSHOT_VERSION = 2;
 const GENERATION_SUBMISSION_SNAPSHOT_VERSION = 1;
+// Version the server-owned layout contract so retries cannot silently cross
+// prompt-template revisions while the creator-authored Asset Spec is unchanged.
+const CHARACTER_TURNAROUND_PROMPT_PROFILE =
+  'character-turnaround-reference-board.v2';
 const SERVER_OWNED_AI_INPUT_FIELDS = new Set([
   'prompt',
   'referenceImages',
@@ -148,6 +157,7 @@ const CLIP_TARGET_INCLUDE =
 
 const ASSET_TARGET_INCLUDE = Prisma.validator<Prisma.StoryAssetSpecInclude>()({
   project: { select: { frameProfile: true } },
+  selectedMediaVersion: { include: REFERENCE_MEDIA_VERSION_INCLUDE },
 });
 
 type GenerationResponseRow = Prisma.StoryProductionGenerationGetPayload<{
@@ -179,6 +189,9 @@ type StoryGenerationTarget =
       negativePrompt: string | null;
       generationConfig: Prisma.JsonValue;
       frameProfile: StoryFrameProfile;
+      assetKind: 'character' | 'location' | 'prop';
+      planDisposition: StoryProductionPlanDisposition;
+      purpose: StoryAssetGenerationPurpose;
       durationMs: null;
       logicalSnapshot: Record<string, unknown>;
       references: ResolvedTargetReference[];
@@ -227,6 +240,7 @@ interface SubmitGenerationCommand {
   schemaVersion?: string;
   clientOptions: StoryGenerationOptions;
   requestedOutputKind?: 'image' | 'video';
+  requestedPurpose?: StoryAssetGenerationPurpose;
   expectedQuote?: {
     pricingVersion: string;
     points: number;
@@ -251,6 +265,7 @@ interface StoryGenerationSubmissionSnapshot {
   modelId: string;
   schemaVersion: string;
   outputKind: 'image' | 'video';
+  purpose: StoryAssetGenerationPurpose;
   clientOptions: StoryGenerationOptions;
   effectiveOptions: Record<string, unknown>;
   timelineDurationMs: number | null;
@@ -349,6 +364,7 @@ export class StoryProductionGenerationService
       schemaVersion: input.schemaVersion,
       clientOptions: input.options ?? {},
       requestedOutputKind: input.outputKind,
+      requestedPurpose: input.purpose,
     });
   }
 
@@ -380,6 +396,7 @@ export class StoryProductionGenerationService
       schemaVersion: input.schemaVersion,
       clientOptions: input.options ?? {},
       requestedOutputKind: input.outputKind,
+      requestedPurpose: input.purpose,
     });
   }
 
@@ -414,6 +431,7 @@ export class StoryProductionGenerationService
       schemaVersion: input.schemaVersion,
       clientOptions: input.options ?? {},
       requestedOutputKind: input.outputKind,
+      requestedPurpose: input.purpose,
       expectedQuote,
       billingSubject,
       batchAdmission,
@@ -1016,6 +1034,7 @@ export class StoryProductionGenerationService
         command.targetId,
         command.sequenceId,
         command.requestedOutputKind,
+        command.requestedPurpose,
       );
       const productionState =
         await this.productionPlans.getProductionStateInTransaction(
@@ -1023,10 +1042,7 @@ export class StoryProductionGenerationService
           command.projectId,
           command.chapterId,
         );
-      this.assertProductionStageCanGenerate(
-        productionState,
-        command.targetKind,
-      );
+      this.assertProductionStageCanGenerate(productionState, loadedTarget);
       return loadedTarget;
     });
     this.assertTargetCanGenerate(target, command);
@@ -1093,6 +1109,7 @@ export class StoryProductionGenerationService
       modelId: model.id,
       schemaVersion: model.schemaVersion,
       outputKind: target.generationKind,
+      purpose: command.requestedPurpose ?? 'primary',
       clientOptions: command.clientOptions,
       effectiveOptions,
       timelineDurationMs: target.durationMs,
@@ -1187,6 +1204,7 @@ export class StoryProductionGenerationService
               command.targetId,
               command.sequenceId,
               command.requestedOutputKind,
+              command.requestedPurpose,
             );
             const productionState =
               await this.productionPlans.getProductionStateInTransaction(
@@ -1196,7 +1214,7 @@ export class StoryProductionGenerationService
               );
             this.assertProductionStageCanGenerate(
               productionState,
-              command.targetKind,
+              lockedTarget,
             );
             this.assertTargetCanGenerate(lockedTarget, command);
             if (
@@ -1229,6 +1247,7 @@ export class StoryProductionGenerationService
                   target.generationKind === 'image'
                     ? StoryProductionGenerationKind.image
                     : StoryProductionGenerationKind.video,
+                purpose: submissionSnapshot.purpose,
                 assetSpecId:
                   command.targetKind === 'asset_spec' ? command.targetId : null,
                 storyboardClipId:
@@ -1306,6 +1325,7 @@ export class StoryProductionGenerationService
         command.targetId,
         command.sequenceId,
         command.requestedOutputKind,
+        command.requestedPurpose,
       );
       const productionState =
         await this.productionPlans.getProductionStateInTransaction(
@@ -1313,10 +1333,7 @@ export class StoryProductionGenerationService
           command.projectId,
           command.chapterId,
         );
-      this.assertProductionStageCanGenerate(
-        productionState,
-        command.targetKind,
-      );
+      this.assertProductionStageCanGenerate(productionState, loadedTarget);
       return loadedTarget;
     });
     this.assertTargetCanGenerate(target, command);
@@ -1441,6 +1458,7 @@ export class StoryProductionGenerationService
       schemaVersion: submission.schemaVersion,
       clientOptions: submission.clientOptions,
       requestedOutputKind: submission.outputKind,
+      requestedPurpose: submission.purpose,
       retryOf: {
         generationId: original.id,
         aiJobId: original.aiJobId,
@@ -1775,14 +1793,14 @@ export class StoryProductionGenerationService
     state: Awaited<
       ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
     >,
-    targetKind: SubmitGenerationCommand['targetKind'],
+    target: StoryGenerationTarget,
   ): void {
-    if (this.productionStageCanGenerate(state, targetKind)) return;
+    if (this.productionStageCanGenerate(state, target)) return;
     throw new ConflictException({
       code: 'STORY_GENERATION_TARGET_STALE',
       message:
-        targetKind === 'asset_spec'
-          ? 'Asset Specs are no longer current with the approved Script. Reconcile them before generating media.'
+        target.targetKind === 'asset_spec'
+          ? 'This planned Asset Spec is no longer current with the approved Script and Plot Tree. Reconcile it before generating media.'
           : 'The Storyboard or its upstream Asset Specs are no longer current with the approved Script and Plot Tree. Reconcile them before generating media.',
     });
   }
@@ -1791,10 +1809,18 @@ export class StoryProductionGenerationService
     state: Awaited<
       ReturnType<StoryProductionPlanService['getProductionStateInTransaction']>
     >,
-    targetKind: SubmitGenerationCommand['targetKind'],
+    target: StoryGenerationTarget,
   ): boolean {
-    if (state.assets.status !== 'current') return false;
-    return targetKind === 'asset_spec' || state.storyboard.status === 'current';
+    if (target.targetKind === 'asset_spec') {
+      return (
+        target.planDisposition ===
+          StoryProductionPlanDisposition.user_override ||
+        state.assets.status === 'current'
+      );
+    }
+    return (
+      state.assets.status === 'current' && state.storyboard.status === 'current'
+    );
   }
 
   private async loadTarget(
@@ -1805,6 +1831,7 @@ export class StoryProductionGenerationService
     targetId: string,
     sequenceId: string | null,
     requestedOutputKind?: 'image' | 'video',
+    requestedPurpose: StoryAssetGenerationPurpose = 'primary',
   ): Promise<StoryGenerationTarget> {
     if (targetKind === 'asset_spec') {
       const row = await db.storyAssetSpec.findFirst({
@@ -1816,7 +1843,27 @@ export class StoryProductionGenerationService
         include: ASSET_TARGET_INCLUDE,
       });
       if (!row) throw productionNotFound('Asset Spec', targetId);
-      return assetTarget(row, requestedOutputKind ?? 'image');
+      const generationKind = requestedOutputKind ?? 'image';
+      const mentionKeys = extractStoryAssetMentions(
+        assetGenerationPrompt(row, generationKind, requestedPurpose),
+      ).filter((stableKey) => stableKey !== row.stableKey);
+      const referencedAssets = mentionKeys.length
+        ? await db.storyAssetSpec.findMany({
+            where: {
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+              stableKey: { in: mentionKeys },
+              status: { not: StoryProductionSpecStatus.archived },
+            },
+            include: ASSET_TARGET_INCLUDE,
+          })
+        : [];
+      return assetTarget(
+        row,
+        generationKind,
+        requestedPurpose,
+        referencedAssets,
+      );
     }
     const row = await db.storyStoryboardClip.findFirst({
       where: {
@@ -1986,6 +2033,7 @@ export class StoryProductionGenerationService
         generation.assetSpecId ?? generation.storyboardClipId ?? '',
         null,
         generation.generationKind,
+        parseSubmissionSnapshot(generation.submissionSnapshot).purpose,
       );
       let productionStageCanAutoSelect = false;
       try {
@@ -1997,7 +2045,7 @@ export class StoryProductionGenerationService
           );
         productionStageCanAutoSelect = this.productionStageCanGenerate(
           productionState,
-          targetKind,
+          target,
         );
       } catch (error) {
         if (!isCanonicalProductionStateUnavailable(error)) throw error;
@@ -2029,6 +2077,7 @@ export class StoryProductionGenerationService
         timelineDurationMs: submission.timelineDurationMs,
         requestedSourceDurationSeconds:
           submission.requestedSourceDurationSeconds,
+        purpose: submission.purpose,
       };
 
       if (
@@ -2064,7 +2113,11 @@ export class StoryProductionGenerationService
           });
           createdIds.push(created.id);
         }
-        if (targetStillCurrent && createdIds[0]) {
+        if (
+          submission.purpose === 'primary' &&
+          targetStillCurrent &&
+          createdIds[0]
+        ) {
           await tx.storyAssetSpec.updateMany({
             where: {
               id: generation.assetSpecId!,
@@ -2392,10 +2445,10 @@ export class StoryProductionGenerationService
     const mediaVersions =
       targetKind === 'asset_spec'
         ? row.assetMediaVersions.map((version) =>
-            this.toCreativeMediaVersionDto(version),
+            this.toCreativeMediaVersionDto(version, submission.purpose),
           )
         : row.storyboardMediaVersions.map((version) =>
-            this.toCreativeMediaVersionDto(version),
+            this.toCreativeMediaVersionDto(version, 'primary'),
           );
     const generatedSourceDurationSeconds =
       mediaVersions.find((version) => version.durationSeconds !== null)
@@ -2410,6 +2463,7 @@ export class StoryProductionGenerationService
         sequenceId,
       },
       outputKind: row.generationKind,
+      purpose: submission.purpose,
       targetVersion: row.targetVersion,
       targetSourceFingerprint: row.targetSourceFingerprint,
       retryOfGenerationId: row.retryOfGenerationId,
@@ -2440,7 +2494,10 @@ export class StoryProductionGenerationService
     };
   }
 
-  private toCreativeMediaVersionDto(row: GenerationCreativeMediaVersionRow) {
+  private toCreativeMediaVersionDto(
+    row: GenerationCreativeMediaVersionRow,
+    purpose: StoryAssetGenerationPurpose,
+  ) {
     const previewUrl = this.assetUrls.resolvePublicUrl(row.mediaAsset);
     const preferredKey =
       row.preferredVariant?.status === MediaAssetVariantStatus.ready &&
@@ -2469,6 +2526,7 @@ export class StoryProductionGenerationService
       durationSeconds: row.mediaAsset.durationSeconds,
       mimeType: row.mediaAsset.contentType,
       sourceFingerprint: row.sourceFingerprint,
+      purpose,
       createdAt: row.createdAt.toISOString(),
     };
   }
@@ -2536,7 +2594,58 @@ function modelCompatibilityIssue(
 function assetTarget(
   row: AssetTargetRow,
   generationKind: 'image' | 'video',
+  purpose: StoryAssetGenerationPurpose,
+  referencedAssets: AssetTargetRow[] = [],
 ): StoryGenerationTarget {
+  if (purpose === 'turnaround' && row.kind !== 'character') {
+    throw new BadRequestException({
+      code: 'STORY_GENERATION_PURPOSE_UNSUPPORTED',
+      message: 'Three-view generation is only available for character assets.',
+    });
+  }
+  const turnaroundReference: ResolvedTargetReference | null =
+    purpose === 'turnaround'
+      ? {
+          bindingId: `turnaround:${row.id}`,
+          refId: `asset:${row.id}:primary`,
+          role: 'identity_reference',
+          stableKey: row.stableKey,
+          label: row.name,
+          rank: 0,
+          required: true,
+          mediaVersionId: row.selectedMediaVersionId,
+          mediaAsset: row.selectedMediaVersion?.mediaAsset ?? null,
+        }
+      : null;
+  const mentionedAssets = new Map(
+    referencedAssets.map((asset) => [asset.stableKey, asset]),
+  );
+  const promptReferences = extractStoryAssetMentions(
+    assetGenerationPrompt(row, generationKind, purpose),
+  ).flatMap((stableKey, index) => {
+    const asset = mentionedAssets.get(stableKey);
+    if (!asset || asset.id === row.id) return [];
+    const stale = asset.status !== StoryProductionSpecStatus.current;
+    return [
+      {
+        bindingId: `asset-mention:${row.id}:${asset.id}`,
+        refId: stale ? `stale:${asset.id}` : `asset:${asset.id}:selected`,
+        role: 'reference',
+        stableKey: asset.stableKey,
+        label: asset.name,
+        rank: index + (turnaroundReference ? 1 : 0),
+        required: false,
+        mediaVersionId: asset.selectedMediaVersionId,
+        mediaAsset:
+          asset.selectedMediaVersion?.archivedAt === null
+            ? asset.selectedMediaVersion.mediaAsset
+            : null,
+      } satisfies ResolvedTargetReference,
+    ];
+  });
+  const references = turnaroundReference
+    ? [turnaroundReference, ...promptReferences]
+    : promptReferences;
   const logicalSnapshot = {
     version: GENERATION_TARGET_SNAPSHOT_VERSION,
     targetKind: 'asset_spec',
@@ -2545,11 +2654,21 @@ function assetTarget(
     status: row.status,
     sourceFingerprint: row.sourceFingerprint,
     selectedMediaVersionId: row.selectedMediaVersionId,
+    purpose,
+    promptProfile:
+      purpose === 'turnaround' ? CHARACTER_TURNAROUND_PROMPT_PROFILE : null,
     imagePrompt: row.imagePrompt,
     videoPrompt: row.videoPrompt,
     negativePrompt: row.negativePrompt,
     generationConfig: row.generationConfig,
     frameProfile: row.project.frameProfile,
+    references: references.map((reference) => ({
+      bindingId: reference.bindingId,
+      refId: reference.refId,
+      stableKey: reference.stableKey,
+      mediaVersionId: reference.mediaVersionId,
+      mediaAssetId: reference.mediaAsset?.id ?? null,
+    })),
   };
   return {
     targetKind: 'asset_spec',
@@ -2559,15 +2678,56 @@ function assetTarget(
     version: row.version,
     sourceFingerprint: row.sourceFingerprint,
     status: row.status,
-    prompt:
-      generationKind === 'video' ? (row.videoPrompt ?? '') : row.imagePrompt,
+    assetKind: row.kind,
+    planDisposition: row.planDisposition,
+    purpose,
+    prompt: assetGenerationPrompt(row, generationKind, purpose),
     negativePrompt: row.negativePrompt,
     generationConfig: row.generationConfig,
     frameProfile: row.project.frameProfile,
     durationMs: null,
     logicalSnapshot,
-    references: [],
+    references,
   };
+}
+
+function assetGenerationPrompt(
+  row: Pick<AssetTargetRow, 'imagePrompt' | 'name' | 'videoPrompt'>,
+  generationKind: 'image' | 'video',
+  purpose: StoryAssetGenerationPurpose,
+): string {
+  if (purpose === 'turnaround') {
+    return characterTurnaroundPrompt(row.name, row.imagePrompt);
+  }
+  return generationKind === 'video' ? (row.videoPrompt ?? '') : row.imagePrompt;
+}
+
+function characterTurnaroundPrompt(
+  name: string,
+  identityPrompt: string,
+): string {
+  return [
+    `Create a high-resolution professional character turnaround and detail reference board for "${name}".`,
+    '',
+    'IDENTITY SOURCE',
+    'Treat the attached primary character image as the authoritative identity reference. Preserve the same face, head shape, hairstyle or fur, body proportions, apparent age, wardrobe, materials, colors, accessories, and overall silhouette in every view and detail.',
+    `Character specification: ${identityPrompt}`,
+    '',
+    'CANVAS AND PRESENTATION',
+    'Use a landscape composition on a pure white background. The board must feel minimal, spacious, orderly, and premium, like a professional game-art modeling sheet, character design reference page, or 3D character turnaround board. Preserve the source art direction while rendering materials and anatomy with precise, high-fidelity detail. Use consistent eye-level camera height, neutral studio lighting, sharp silhouettes, natural hair or fur, and no dramatic perspective.',
+    '',
+    'LEFT MAIN REGION — FULL-BODY TURNAROUND',
+    "Show exactly three complete, uncropped full-body views at the same scale: front, left profile, and back. These are three views of one identical character, not three different characters. Keep facial structure, hair or fur, clothing when present, body shape, proportions, materials, and colors identical. Use a relaxed neutral model-reference pose appropriate to the character's anatomy; for humanoids, let the arms rest naturally at the sides. Keep silhouettes unobstructed with enough spacing for character-modeling reference.",
+    '',
+    'RIGHT UPPER REGION — HEAD-ANGLE GRID',
+    'Arrange exactly six clear head or head-and-shoulder studies of the same character in a clean grid: front, slightly elevated view revealing the crown, rear of the head, left profile, near-profile comparison, and three-quarter view. Preserve the same facial anatomy, hair or fur separation, proportions, and identity in all six studies.',
+    '',
+    'RIGHT LOWER REGION — DESIGN-DETAIL GRID',
+    "Arrange exactly six close-up studies of the character's most identity-defining details. Select only details that truly exist in the reference, such as garment fabric and construction, upper- or lower-body tailoring, hair or fur, skin or surface texture, eyes or facial features, footwear, or a signature accessory. Keep every material, color, shape, and construction detail consistent with the main turnaround; do not invent clothing, anatomy, footwear, or accessories that the character does not have.",
+    '',
+    'OUTPUT CONSTRAINTS',
+    'Keep every full-body view completely visible with generous white space. No cropped bodies, extra full-body poses, unrelated people, extra props, scenery, complex background, captions, annotations, logos, watermarks, interface elements, social-media framing, like buttons, or save buttons.',
+  ].join('\n');
 }
 
 function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
@@ -2779,6 +2939,7 @@ export function generationRequestFingerprint(
     schemaVersion: command.schemaVersion ?? null,
     clientOptions: command.clientOptions ?? {},
     requestedOutputKind: command.requestedOutputKind ?? null,
+    requestedPurpose: command.requestedPurpose ?? 'primary',
     expectedQuote: command.expectedQuote ?? null,
     retryOfGenerationId: command.retryOf?.generationId ?? null,
     resolved,
@@ -2838,12 +2999,14 @@ function parseSubmissionSnapshot(
   const modelId = stringValue(row.modelId);
   const schemaVersion = stringValue(row.schemaVersion);
   const outputKind = stringValue(row.outputKind);
+  const purpose = stringValue(row.purpose) ?? 'primary';
   const sourceSurface = stringValue(row.sourceSurface);
   if (
     row.version !== GENERATION_SUBMISSION_SNAPSHOT_VERSION ||
     !modelId ||
     !schemaVersion ||
     (outputKind !== 'image' && outputKind !== 'video') ||
+    (purpose !== 'primary' && purpose !== 'turnaround') ||
     sourceSurface !== STORY_STUDIO_WORKBENCH_SURFACE
   ) {
     throw new InternalServerErrorException({
@@ -2859,6 +3022,7 @@ function parseSubmissionSnapshot(
     modelId,
     schemaVersion,
     outputKind,
+    purpose,
     clientOptions,
     effectiveOptions: jsonObject(row.effectiveOptions),
     timelineDurationMs:

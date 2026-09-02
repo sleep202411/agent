@@ -8300,6 +8300,13 @@ enum StoryProductionGenerationTargetKind {
   storyboard_clip
 }
 
+/// Distinguishes a character's canonical image from its model-reference
+/// turnaround board. Storyboard generations always use `primary`.
+enum StoryAssetGenerationPurpose {
+  primary
+  turnaround
+}
+
 enum StoryGenerationBatchStatus {
   awaiting_confirmation
   blocked
@@ -9125,6 +9132,7 @@ model StoryProductionGeneration {
   storyChapterId          String                              @map("story_chapter_id") @db.Uuid
   targetKind              StoryProductionGenerationTargetKind @map("target_kind")
   generationKind          StoryProductionGenerationKind       @map("generation_kind")
+  purpose                 StoryAssetGenerationPurpose         @default(primary)
   assetSpecId             String?                             @map("asset_spec_id") @db.Uuid
   storyboardClipId        String?                             @map("storyboard_clip_id") @db.Uuid
   aiJobId                 String                              @unique(map: "story_production_generations_ai_job_unique") @map("ai_job_id") @db.Uuid
@@ -9158,6 +9166,7 @@ model StoryProductionGeneration {
   @@unique([id, aiJobId], map: "story_production_generations_id_job_unique")
   @@unique([storyChapterId, actorUserId, idempotencyKey], map: "story_production_generations_actor_key_unique")
   @@index([storyProjectId, storyChapterId, targetKind, assetSpecId, storyboardClipId, createdAt(sort: Desc)], map: "story_production_generations_target_recent_idx")
+  @@index([assetSpecId, purpose, createdAt(sort: Desc)], map: "story_production_generations_asset_purpose_recent_idx")
   @@index([materializedAt, nextReconcileAt, createdAt], map: "story_production_generations_reconcile_idx")
   @@index([retryOfGenerationId], map: "story_production_generations_retry_idx")
   @@map("story_production_generations")
