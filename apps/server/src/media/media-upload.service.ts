@@ -119,6 +119,27 @@ interface UploadKindPolicy {
 
 const MiB = 1024 * 1024;
 
+const UPLOAD_KIND_LABEL = {
+  episode_video: 'Episode video',
+  episode_cover: 'Episode cover image',
+  ip_banner: 'IP banner',
+  news_cover: 'News cover image',
+  ai_reference_image: 'Reference image',
+  agent_attachment_image: 'Image attachment',
+  agent_attachment_document: 'Document attachment',
+  ai_reference_video: 'Reference video',
+  ai_reference_audio: 'Reference audio',
+  story_music_audio: 'Story music',
+  crew_asset_file: 'Crew asset file',
+} satisfies Record<UploadKind, string>;
+
+function mediaFileTooLargeError(uploadKind: UploadKind, maxBytes: number) {
+  return new PayloadTooLargeException({
+    code: 'MEDIA_FILE_TOO_LARGE',
+    message: `${UPLOAD_KIND_LABEL[uploadKind]} is too large. Maximum size is ${maxBytes / MiB} MB.`,
+  });
+}
+
 /** Video upload kinds that generic confirm must not transcode. Reference
  *  videos are generation-only inputs; story clips are enqueued later by the
  *  story domain after checksum/ffprobe verification and workspace claim. */
@@ -396,10 +417,7 @@ export class MediaUploadService {
     //    the client's DECLARED size (advisory); the true byte count is read
     //    from the HEAD at confirm time and is what gets persisted.
     if (input.sizeBytes > policy.maxBytes) {
-      throw new PayloadTooLargeException({
-        code: 'MEDIA_FILE_TOO_LARGE',
-        message: `file too large for ${input.kind} (max ${policy.maxBytes} bytes)`,
-      });
+      throw mediaFileTooLargeError(input.kind, policy.maxBytes);
     }
 
     // 3. Server-decided, scoped, collision-free key. Verified images receive
@@ -1189,10 +1207,7 @@ function requireVerifiedImageHead(
     });
   }
   if (head.sizeBytes > policy.maxBytes) {
-    throw new PayloadTooLargeException({
-      code: 'MEDIA_FILE_TOO_LARGE',
-      message: `file too large for ${uploadKind} (max ${policy.maxBytes} bytes)`,
-    });
+    throw mediaFileTooLargeError(uploadKind, policy.maxBytes);
   }
   if (!head.bucket) {
     throw new ServiceUnavailableException({
