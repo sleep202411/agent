@@ -33,7 +33,7 @@ const StoryMutationBaseSchema = z
 
 export const StoryReadInputSchema = z.object({}).strict();
 
-const StoryProductionStageStatusSchema = z.enum(["missing", "current", "stale"]);
+const StoryProductionStageStatusSchema = z.enum(["missing", "current"]);
 
 /**
  * Canonical chapter-stage readiness projected by the Server. The model uses
@@ -62,14 +62,12 @@ export const StoryProductionStateSchema = z
       .object({
         status: StoryProductionStageStatusSchema,
         currentCount: z.number().int().nonnegative(),
-        staleCount: z.number().int().nonnegative(),
       })
       .strict(),
     storyboard: z
       .object({
         status: StoryProductionStageStatusSchema,
         sequenceCount: z.number().int().nonnegative(),
-        staleCount: z.number().int().nonnegative(),
         missingPlotNodeIds: z.array(StoryAgentStableIdSchema).max(500),
       })
       .strict(),

@@ -141,6 +141,10 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
    - Neutral/secondary actions (Cancel, Close, Back) use `ghost`,
      `secondary`, or `quiet` — not `default`. With a red primary, reaching
      for `default` on an incidental action shouts.
+   - `primary-ghost` is the supporting positive action beside a solid primary:
+     an 8% primary tint, restrained primary border and primary content, all
+     strengthening on hover. Use it for actions such as Add beside Batch
+     generate; never use it for neutral or destructive actions.
 
    Other systematic red uses, unchanged:
    - **Option-card selected state** (signed off 2026-07-20; full red fill
@@ -197,8 +201,8 @@ authoritative: the tables below map tokens to roles, and where a value is shown,
      `bg-popover` + shadow, de-ringed at the component source.
    - Other permitted boundaries: the **focus ring**
      (`focus-visible:ring-*`), internal **separators**
-     (`h-px bg-border` dividers between rows), and variants whose _name_
-     is the border (`outline` button/badge).
+     (`h-px bg-border` dividers between rows), and explicit bordered button
+     variants (`outline`, `primary-ghost`).
    - The **frosted rim-light** (signed off 2026-06-19) is a sanctioned soft
      edge — NOT an outline: a low-alpha gradient hairline masked to a 0.5–1.5px
      ring (`mask-composite: exclude`; see `_pollo/glyphs.tsx` `GradientRing`)
@@ -254,6 +258,16 @@ pause/resume, and the UI events that represent those facts.
 - Completed answer copy uses white as the primary foreground on the dark
   surface. Gray is reserved for subordinate hints and metadata, not applied to
   the whole conversation by default.
+
+### Desktop Asset Specs
+
+- Character is the only asset kind with a dedicated secondary pane: its
+  three-view reference. Scenes and props use the same single-image card,
+  generation controls, upload entry, and landscape media-version strip in the
+  same two-column grid. Their UI differs only in asset-specific copy and data.
+- Do not add a separate reference-image preview pane to scene or prop cards;
+  the selected version in the card's media strip is already the reusable
+  reference for downstream generation.
 
 ### H5 asset-generation transcript
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeStoryboardAssetMentions,
   PutStoryStoryboardTimelineSchema,
   StoryAssetPlanSchema,
   StoryProductionPlanSchema,
@@ -86,6 +87,20 @@ describe("StoryProductionPlanSchema", () => {
         issue.message.includes("within its sequence")
       )
     ).toBe(true);
+  });
+
+  it("normalizes aliases and degrades unknown mentions to ordinary prompt text", () => {
+    const value = plan();
+    const sequence = value.storyboardSequences[0]!;
+    const clip = sequence.clips[0]!;
+    if (clip.kind !== "image") throw new Error("Expected image fixture");
+    clip.imagePrompt = "Frame @character.shen_du beside @invented_extra.";
+
+    const normalized = normalizeStoryboardAssetMentions(sequence, value.assetSpecs);
+
+    expect(normalized.clips[0]).toMatchObject({
+      imagePrompt: "Frame @asset.character.shen_du beside invented_extra.",
+    });
   });
 
   it("keeps Plot topology external and stores only a decision cue reference", () => {

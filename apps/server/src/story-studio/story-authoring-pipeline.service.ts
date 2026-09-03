@@ -21,6 +21,7 @@ import {
 } from '@repo/shared/story-agent';
 import {
   STORY_PRODUCTION_PLAN_SCHEMA_VERSION,
+  normalizeStoryboardAssetMentions,
   StoryAssetPlanSchema,
   StoryProductionPlanSchema,
   StoryStoryboardSequencePlanItemSchema,
@@ -374,10 +375,10 @@ export class StoryAuthoringPipelineService {
       for (;;) {
         const scene = queue.shift();
         if (!scene) return;
-        const relevantAssets = assetPlan.assetSpecs.filter((asset) =>
-          asset.sourceNodeIds.includes(scene.nodeId),
-        );
-        const sequence =
+        const relevantAssetKeys = assetPlan.assetSpecs
+          .filter((asset) => asset.sourceNodeIds.includes(scene.nodeId))
+          .map((asset) => asset.stableKey);
+        const rawSequence =
           await runStoryAuthoringStage<StoryStoryboardSequencePlanItem>(model, {
             stage: 'storyboard',
             schema: StoryStoryboardSequencePlanItemSchema,
@@ -385,18 +386,22 @@ export class StoryAuthoringPipelineService {
             prompt: [
               creativeProfile,
               `<screenplay_scene>\n${JSON.stringify(scene)}\n</screenplay_scene>`,
-              `<available_asset_specs>\n${JSON.stringify(relevantAssets)}\n</available_asset_specs>`,
-              `Create exactly one continuous storyboard sequence for Plot node "${scene.nodeId}". Use only exact Asset Spec stableKey values from available_asset_specs.`,
+              `<available_asset_specs>\n${JSON.stringify(assetPlan.assetSpecs)}\n</available_asset_specs>`,
+              `<likely_asset_keys>\n${JSON.stringify(relevantAssetKeys)}\n</likely_asset_keys>`,
+              `Create exactly one continuous storyboard sequence for Plot node "${scene.nodeId}". All chapter Asset Specs are available; sourceNodeIds and likely_asset_keys are relevance hints, not an allowlist. Use an exact stableKey when writing an @ reference.`,
             ].join('\n\n'),
             maxOutputTokens: 8_192,
             timeoutMs: STAGE_TIMEOUT_MS,
             maxAttempts: STAGE_MAX_ATTEMPTS,
             signal,
-            validate: (value) =>
-              validateStoryboardSequence(value, scene, relevantAssets),
+            validate: (value) => validateStoryboardSequence(value, scene),
             onAttempt: (attempt, outcome, detail) =>
               this.log(`storyboard:${scene.nodeId}`, attempt, outcome, detail),
           });
+        const sequence = normalizeStoryboardAssetMentions(
+          rawSequence,
+          assetPlan.assetSpecs,
+        );
         sequences.push(sequence);
       }
     };
@@ -549,31 +554,12 @@ function validateAssetPlan(
 function validateStoryboardSequence(
   sequence: StoryStoryboardSequencePlanItem,
   scene: StoryScreenplay['scenes'][number],
-  availableAssets: StoryAssetPlan['assetSpecs'],
 ): string[] {
   const issues: string[] = [];
   if (sequence.plotNodeId !== scene.nodeId) {
     issues.push(
       `Expected plotNodeId "${scene.nodeId}", got "${sequence.plotNodeId}".`,
     );
-  }
-  const parsed = StoryProductionPlanSchema.safeParse({
-    schemaVersion: STORY_PRODUCTION_PLAN_SCHEMA_VERSION,
-    assetSpecs: availableAssets,
-    storyboardSequences: [sequence],
-  });
-  if (!parsed.success) {
-    issues.push(...parsed.error.issues.map((issue) => issue.message));
-  }
-  const mentionedAssetKeys = new Set(
-    sequence.clips.flatMap((clip) => storyClipAssetMentions(clip)),
-  );
-  for (const asset of availableAssets) {
-    if (!mentionedAssetKeys.has(asset.stableKey)) {
-      issues.push(
-        `Storyboard sequence for Plot node "${scene.nodeId}" must @mention Asset Spec "${asset.stableKey}" because that Asset Spec declares this node in sourceNodeIds.`,
-      );
-    }
   }
   if (scene.exit.kind === 'choice') {
     const decisionId = scene.exit.decisionId;
@@ -605,24 +591,18 @@ export function validateProductionPlanAgainstScreenplay(
   const assetByKey = new Map(
     plan.assetSpecs.map((asset) => [asset.stableKey, asset]),
   );
-  const usedAssetKeys = new Set<string>();
-
   for (const scene of screenplay.scenes) {
     const sequence = sequenceByNode.get(scene.nodeId);
     if (!sequence) {
       issues.push(`Plot node "${scene.nodeId}" has no storyboard sequence.`);
       continue;
     }
-    const relevantAssets = plan.assetSpecs.filter((asset) =>
-      asset.sourceNodeIds.includes(scene.nodeId),
-    );
-    issues.push(...validateStoryboardSequence(sequence, scene, relevantAssets));
+    issues.push(...validateStoryboardSequence(sequence, scene));
     for (const clip of sequence.clips) {
       for (const assetKey of storyClipAssetMentions(clip)) {
-        usedAssetKeys.add(assetKey);
-        if (!assetByKey.get(assetKey)?.sourceNodeIds.includes(scene.nodeId)) {
+        if (!assetByKey.has(assetKey)) {
           issues.push(
-            `Storyboard clip "${clip.stableKey}" uses Asset Spec "${assetKey}" without chapter-node lineage to "${scene.nodeId}".`,
+            `Storyboard clip "${clip.stableKey}" references unknown Asset Spec "${assetKey}".`,
           );
         }
       }
@@ -632,13 +612,6 @@ export function validateProductionPlanAgainstScreenplay(
     if (!sceneIds.has(sequence.plotNodeId)) {
       issues.push(
         `Storyboard sequence references unknown Plot node "${sequence.plotNodeId}".`,
-      );
-    }
-  }
-  for (const asset of plan.assetSpecs) {
-    if (!usedAssetKeys.has(asset.stableKey)) {
-      issues.push(
-        `Asset Spec "${asset.stableKey}" is orphaned; at least one storyboard clip must bind it.`,
       );
     }
   }
@@ -861,15 +834,15 @@ const ASSET_SYSTEM = [
   'You are the Production Asset Planner. Derive the smallest complete set of reusable logical Asset Specs needed to produce the screenplay. Asset Specs are empty placeholders with stable identity, metadata, and generation prompts; they are not image or video files.',
   'Use only these semantic kinds: character, location, prop. Create exactly one character Asset Spec for every canonical screenplay character and copy its exact id into sourceCharacterId. For non-character specs omit sourceCharacterId. A recurring non-physical visual motif (a vision, projection, or on-screen document) is a prop spec.',
   'The overall visual style is NOT an Asset Spec: it comes from the confirmed visual direction and must be written directly into every imagePrompt and videoPrompt so all specs read as one production.',
-  'Every Asset Spec must list every exact screenplay nodeId where it is needed in sourceNodeIds. Every screenplay node must be covered by at least one spec. Stable keys must be descriptive and durable, not array indexes.',
+  'For each Asset Spec, sourceNodeIds may list the exact screenplay nodes where it is likely to be useful; it is planning metadata, not a coverage requirement or binding allowlist. A screenplay node does not need an Asset Spec, and the plan may be empty when the screenplay has no reusable subjects. Stable keys must be descriptive and durable, not array indexes.',
   'Write provider-neutral production prompts consistent with the confirmed visual direction. imagePrompt is always required; videoPrompt is optional motion guidance. Do not output URLs, generated-media ids, model names, billing actions, or duplicate variants.',
 ].join('\n\n');
 
 const STORYBOARD_SYSTEM = [
   'You are the Storyboard Director. Turn one screenplay scene into one continuous visual timeline sequence. The Plot Tree already owns branching: never create choices, targets, or another graph. Use the exact screenplay nodeId as plotNodeId. Give the sequence a one-or-two-sentence description summarizing what this node’s footage shows.',
   'Split the sequence into the fewest useful image or video clips. Each clip has a flexible millisecond start and duration; clips start at 0, are contiguous, never overlap, and exactly cover durationMs. An image may hold for any duration. Each clip carries exactly one prompt for its own kind: an image clip only imagePrompt, a video clip only videoPrompt. When a held opening frame matters, make it its own short image clip.',
-  'Clip and cue stableKeys must be unique across the WHOLE production plan, and other scenes are planned in parallel without seeing yours — always namespace keys with this exact nodeId (e.g. "shot.<nodeId>.opening"), never generic names like "clip_opening". Every Asset Spec listed for this scene MUST be @mentioned by at least one clip prompt in this sequence. Its sourceNodeIds declares that this exact scene needs it, so never defer the reference to another scene.',
-  'Reference assets by writing @stableKey inline in imagePrompt and videoPrompt at the exact place the asset appears — for example "LIN WAN (@character_LinWan) grips the rail of @location_lighthouse_top_platform". Use only keys supplied in available_asset_specs. A reference that is not written in a prompt does not exist; an Asset Spec remains valid and mentionable before any media has been generated. Never output media URLs.',
+  'Clip and cue stableKeys must be unique across the WHOLE production plan, and other scenes are planned in parallel without seeing yours — always namespace keys with this exact nodeId (e.g. "shot.<nodeId>.opening"), never generic names like "clip_opening".',
+  'Reference a reusable chapter asset by writing its exact @stableKey inline in imagePrompt or videoPrompt where it appears. sourceNodeIds is only a relevance hint: any supplied chapter Asset Spec may be used, and no Asset Spec is mandatory in a scene. An Asset Spec remains mentionable before media has been generated. Never invent an @ key and never output media URLs.',
   'For a choice scene, add exactly one decision cue with the exact screenplay decisionId, normally at the end of the sequence. For an auto or terminal scene, cues must be empty. Do not trigger generation or claim media exists.',
 ].join('\n\n');
 

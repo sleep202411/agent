@@ -76,13 +76,38 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.getAsset).not.toHaveBeenCalled();
   });
 
-  it("keeps stale production targets inspectable without exposing generation actions", async () => {
+  it("respects an explicit generation permission without deriving it from workflow state", async () => {
     await renderControl(assetTarget(null), false);
 
     expect(button("generate")).toBeNull();
     expect(button("retry")).toBeNull();
     expect(apiMocks.createAsset).not.toHaveBeenCalled();
     expect(apiMocks.retryAsset).not.toHaveBeenCalled();
+  });
+
+  it("generates from the target's persisted version", async () => {
+    const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    apiMocks.createAsset.mockResolvedValue(accepted);
+    apiMocks.getAsset.mockResolvedValue(accepted);
+
+    await renderControl(assetTarget(null));
+    await act(async () => button("generate")?.click());
+
+    await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(1));
+    expect(apiMocks.createAsset).toHaveBeenCalledWith(
+      "project-1",
+      "chapter-1",
+      "asset-1",
+      expect.stringMatching(/^story-generate:/),
+      { expectedVersion: 3, purpose: "primary" }
+    );
+  });
+
+  it("does not expose generation for an archived target", async () => {
+    await renderControl(assetTarget(null, "archived"));
+
+    expect(button("generate")).toBeNull();
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
   });
 
   it("submits one default command even when the Generate button is clicked twice rapidly", async () => {
@@ -102,8 +127,142 @@ describe("StoryProductionGenerationControl", () => {
       "chapter-1",
       "asset-1",
       expect.stringMatching(/^story-generate:/),
-      { expectedVersion: 3 }
+      { expectedVersion: 3, purpose: "primary" }
     );
+  });
+
+  it("submits every paid click with a unique key when concurrent Asset generation is enabled", async () => {
+    const pendingCounts = vi.fn();
+    const first = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    const second = {
+      ...first,
+      id: "generation-2",
+      aiJob: { ...first.aiJob, id: "job-2" },
+    };
+    apiMocks.createAsset.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    apiMocks.getAsset.mockImplementation(async (_projectId, _chapterId, _assetId, generationId) =>
+      generationId === second.id ? second : first
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryProductionGenerationControl
+            scope={{ projectId: "project-1", chapterId: "chapter-1" }}
+            target={assetTarget(null)}
+            label="Production target"
+            selectedMedia={null}
+            layout="inline"
+            purpose="turnaround"
+            allowConcurrent
+            onPendingPreviewCountChange={pendingCounts}
+          />
+        </QueryClientProvider>
+      );
+    });
+
+    const generate = container.querySelector<HTMLButtonElement>('button[aria-label="generate"]');
+    expect(generate).not.toBeNull();
+    await act(async () => {
+      generate?.click();
+      generate?.click();
+    });
+
+    await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(2));
+    const calls = apiMocks.createAsset.mock.calls;
+    expect(calls[0]?.[4]).toEqual({ expectedVersion: 3, purpose: "turnaround" });
+    expect(calls[1]?.[4]).toEqual({ expectedVersion: 3, purpose: "turnaround" });
+    expect(calls[0]?.[3]).not.toBe(calls[1]?.[3]);
+    expect(pendingCounts).toHaveBeenCalledWith(2);
+  });
+
+  it("reports one pending preview for every output requested by a generation", async () => {
+    const pendingCounts = vi.fn();
+    const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    accepted.requestedOutputCount = 2;
+    let resolveGeneration!: (value: StoryProductionGeneration) => void;
+    apiMocks.createAsset.mockReturnValue(
+      new Promise<StoryProductionGeneration>((resolve) => {
+        resolveGeneration = resolve;
+      })
+    );
+    apiMocks.getAsset.mockResolvedValue(accepted);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryProductionGenerationControl
+            scope={{ projectId: "project-1", chapterId: "chapter-1" }}
+            target={assetTarget(null)}
+            label="Production target"
+            selectedMedia={null}
+            layout="inline"
+            modelSelection={{ modelId: "model-1", schemaVersion: "1" }}
+            generationOptions={{ numOutputs: 2 }}
+            allowConcurrent
+            onPendingPreviewCountChange={pendingCounts}
+          />
+        </QueryClientProvider>
+      );
+    });
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="generate"]')?.click();
+    });
+    await vi.waitFor(() => expect(pendingCounts).toHaveBeenCalledWith(2));
+
+    await act(async () => resolveGeneration(accepted));
+  });
+
+  it("keeps an earlier concurrent failure visible while a later run is still active", async () => {
+    const first = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    const second = {
+      ...first,
+      id: "generation-2",
+      createdAt: "2026-08-21T00:00:01.000Z",
+      updatedAt: "2026-08-21T00:00:01.000Z",
+      aiJob: { ...first.aiJob, id: "job-2" },
+    };
+    const failed = {
+      ...first,
+      aiJob: {
+        ...first.aiJob,
+        status: "failed" as const,
+        error: { message: "The provider rejected the first run", retryable: true },
+      },
+    };
+    apiMocks.createAsset.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    apiMocks.getAsset.mockImplementation(async (_projectId, _chapterId, _assetId, generationId) =>
+      generationId === first.id ? failed : second
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryProductionGenerationControl
+            scope={{ projectId: "project-1", chapterId: "chapter-1" }}
+            target={assetTarget(null)}
+            label="Production target"
+            selectedMedia={null}
+            layout="inline"
+            allowConcurrent
+          />
+        </QueryClientProvider>
+      );
+    });
+
+    const generate = container.querySelector<HTMLButtonElement>('button[aria-label="generate"]');
+    await act(async () => {
+      generate?.click();
+      generate?.click();
+    });
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+        "The provider rejected the first run"
+      );
+    });
+    expect(container.querySelector('button[aria-label="generate"]')).not.toBeNull();
   });
 
   it("shows a just-completed generation while the authoritative target projection refreshes", async () => {
@@ -368,13 +527,16 @@ function mediaVersion(id: string, previewUrl: string): StoryCreativeMediaVersion
   };
 }
 
-function assetTarget(latestGeneration: StoryLatestGeneration | null) {
+function assetTarget(
+  latestGeneration: StoryLatestGeneration | null,
+  status: "current" | "archived" = "current"
+) {
   return {
     kind: "asset_spec" as const,
     id: "asset-1",
     sequenceId: null,
     version: 3,
-    status: "current" as const,
+    status,
     latestGeneration,
   };
 }
@@ -405,6 +567,7 @@ function generation(
       : `/aurora/story-projects/project-1/chapters/chapter-1/storyboard/sequences/${target.sequenceId}/clips/${target.id}/generations/generation-1/materialization/retry`;
   return {
     id: "generation-1",
+    requestedOutputCount: 1,
     projectId: "project-1",
     chapterId: "chapter-1",
     target,

@@ -35,6 +35,9 @@ describe('Story production generation DTO projection', () => {
   it('projects a terminal non-retryable materialization failure distinctly from the AI job', () => {
     expect(
       toStoryProductionGenerationProgressDto({
+        submissionSnapshot: {
+          effectiveOptions: { numOutputs: 2 },
+        },
         materializedAt: null,
         materializationError: {
           code: 'STORY_GENERATION_OUTPUT_MISSING',
@@ -58,6 +61,7 @@ describe('Story production generation DTO projection', () => {
         },
       }),
     ).toMatchObject({
+      requestedOutputCount: 2,
       aiJob: { id: 'job-id', status: AiJobStatus.completed },
       materialization: {
         status: 'failed',
@@ -74,6 +78,7 @@ describe('Story production generation DTO projection', () => {
   it('exposes explicit attachment retry only after automatic retries are exhausted', () => {
     expect(
       toStoryProductionGenerationProgressDto({
+        submissionSnapshot: { effectiveOptions: {} },
         materializedAt: null,
         materializationError: {
           code: 'STORY_PROJECT_WRITE_BUSY',
@@ -98,6 +103,7 @@ describe('Story production generation DTO projection', () => {
         },
       }),
     ).toMatchObject({
+      requestedOutputCount: 1,
       materialization: { status: 'failed', canRetry: true },
     });
   });

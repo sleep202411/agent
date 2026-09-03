@@ -5,6 +5,7 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import {
   MediaAssetKind,
   MediaAssetModerationStatus,
@@ -12,7 +13,7 @@ import {
   MediaAssetVariantKind,
   MediaAssetVariantStatus,
   Prisma,
-  StoryProductionPlanDisposition,
+  StoryAssetGenerationPurpose,
   StoryProductionSpecStatus,
   StoryStoryboardBindingMode,
   type StoryAssetSpec,
@@ -20,6 +21,7 @@ import {
   type StoryStoryboardSequence,
 } from '@prisma/client';
 import {
+  normalizeStoryboardAssetMentions,
   StoryAssetPlanSchema,
   StoryProductionPlanSchema,
   StoryStoryboardPlanSchema,
@@ -28,7 +30,6 @@ import {
   type StoryProductionPlan,
   type StoryStoryboardPlan,
 } from '@repo/shared/story-production';
-import type { StoryScreenplay } from '@repo/shared/story-agent';
 import type { AuthUser } from '../auth';
 import { PrismaService } from '../infra/db/db.module';
 import {
@@ -36,29 +37,23 @@ import {
   resolveMediaPublicVariantUrl,
 } from '../infra/storage/media-asset-url-resolver.service';
 import { canonicalJsonHash } from './canonical-json';
-import {
-  InteractiveStoryDraftContentSchema,
-  type InteractiveStoryDraftContent,
-} from './dto';
+import { InteractiveStoryDraftContentSchema } from './dto';
 import { StoryPermissionService } from './story-permission.service';
 import {
   storyProductionGenerationBasePath,
   toStoryProductionGenerationProgressDto,
 } from './story-production-generation.dto';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
-import {
-  readApprovedStoryScreenplaySnapshot,
-  readCurrentStoryScreenplaySnapshot,
-  readStoryScriptHead,
-} from './story-script-stage';
+import { readStoryScriptHead } from './story-script-stage';
 import type {
+  ArchiveStoryAssetSpecInput,
+  CreateStoryAssetSpecInput,
   PatchStoryAssetSpecInput,
   PatchStoryStoryboardClipInput,
   PatchStoryStoryboardCueInput,
   PatchStoryStoryboardSequenceInput,
   PutStoryStoryboardTimelineInput,
   PutStoryStoryboardBindingInput,
-  ResolveStoryProductionConflictInput,
 } from './story-production-plan.schema';
 
 const PUBLIC_MEDIA_ASSET_INCLUDE = Prisma.validator<Prisma.MediaAssetInclude>()(
@@ -80,13 +75,6 @@ const CREATIVE_MEDIA_VERSION_INCLUDE = {
 } as const;
 
 const ASSET_SPEC_INCLUDE = Prisma.validator<Prisma.StoryAssetSpecInclude>()({
-  pendingPlanSnapshot: {
-    select: {
-      sourceFingerprint: true,
-      planFingerprint: true,
-      productionPlan: true,
-    },
-  },
   mediaVersions: {
     where: { archivedAt: null },
     orderBy: [{ versionNumber: 'desc' }, { id: 'asc' }],
@@ -97,20 +85,14 @@ const ASSET_SPEC_INCLUDE = Prisma.validator<Prisma.StoryAssetSpecInclude>()({
   },
   generations: {
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-    take: 1,
+    distinct: ['purpose'],
+    take: 2,
     include: { aiJob: true },
   },
 });
 
 const STORYBOARD_INCLUDE =
   Prisma.validator<Prisma.StoryStoryboardSequenceInclude>()({
-    pendingPlanSnapshot: {
-      select: {
-        sourceFingerprint: true,
-        planFingerprint: true,
-        productionPlan: true,
-      },
-    },
     clips: {
       where: { status: { not: StoryProductionSpecStatus.archived } },
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
@@ -242,16 +224,7 @@ export interface ApplyApprovedAssetPlanInput extends StoryProductionApplyContext
 }
 
 export interface ApplyApprovedStoryboardPlanInput extends StoryProductionApplyContext {
-  /** Immutable Asset source snapshot embedded in the Storyboard proposal. */
-  assetPlan: StoryAssetPlan;
   storyboardPlan: StoryStoryboardPlan;
-}
-
-export interface InvalidateStoryProductionDownstreamInput extends StoryProductionApplyContext {
-  /** The approval boundary whose true downstream stages must be invalidated. */
-  upstreamStage: 'script' | 'plot';
-  /** Unique approved upstream run; repeated approvals must invalidate too. */
-  upstreamRunId: string;
 }
 
 /** Legacy whole-plan helper retained for old proposals and tests. */
@@ -263,10 +236,8 @@ export interface ApplyApprovedProductionPlanInput extends StoryProductionApplyCo
 export interface StoryProductionReconcileResult {
   assetSpecsCreated: number;
   assetSpecsUpdated: number;
-  assetSpecsMarkedStale: number;
   sequencesCreated: number;
   sequencesUpdated: number;
-  sequencesMarkedStale: number;
 }
 
 export interface ValidateApprovedProductionPlanInput {
@@ -289,7 +260,7 @@ export interface ValidateApprovedStoryboardPlanInput {
   chapterNodeIds: readonly string[];
 }
 
-export type StoryProductionStageStatus = 'missing' | 'current' | 'stale';
+export type StoryProductionStageStatus = 'missing' | 'current';
 
 export interface StoryProductionStateDto {
   projectId: string;
@@ -304,12 +275,10 @@ export interface StoryProductionStateDto {
   assets: {
     status: StoryProductionStageStatus;
     currentCount: number;
-    staleCount: number;
   };
   storyboard: {
     status: StoryProductionStageStatus;
     sequenceCount: number;
-    staleCount: number;
     missingPlotNodeIds: string[];
   };
   ready: boolean;
@@ -355,6 +324,7 @@ export class StoryProductionPlanService {
       tx.storyProject.findUniqueOrThrow({ where: { id: projectId } }),
       tx.storyChapter.findFirstOrThrow({
         where: { id: chapterId, storyProjectId: projectId, archivedAt: null },
+        select: { nodeIds: true },
       }),
       tx.storyDraft.findUniqueOrThrow({
         where: { storyProjectId: projectId },
@@ -368,7 +338,6 @@ export class StoryProductionPlanService {
         select: {
           stableKey: true,
           status: true,
-          planDisposition: true,
         },
       }),
       tx.storyStoryboardSequence.findMany({
@@ -393,111 +362,20 @@ export class StoryProductionPlanService {
     const missingPlotNodeIds = plotNodeIds.filter(
       (nodeId) => !sequenceByPlotNode.has(nodeId),
     );
-    const staleSequenceCount = sequenceRows.filter(
-      (sequence) => sequence.status === StoryProductionSpecStatus.stale,
-    ).length;
-    const currentAssetRows = assetRows.filter(
-      (row) => row.status === StoryProductionSpecStatus.current,
-    );
-    const staleAssetRows = assetRows.filter(
-      (row) => row.status === StoryProductionSpecStatus.stale,
-    );
-    const assetCurrent = currentAssetRows.length;
-    const assetStale = staleAssetRows.length;
-    const lineageMatchesHead =
-      chapter.sourceScriptDocumentId === scriptHead.documentId &&
-      chapter.sourceScriptSequence === scriptHead.sequence &&
-      chapter.sourceScriptHash === scriptHead.hash;
-    const [currentScreenplay, approvedPlotScreenplay] = await Promise.all([
-      readCurrentStoryScreenplaySnapshot(tx, projectId, chapterId),
-      lineageMatchesHead
-        ? readApprovedStoryScreenplaySnapshot(tx, projectId, chapterId)
-        : Promise.resolve(null),
-    ]);
-    const scriptStatus: StoryProductionStageStatus = !scriptHead.hasContent
-      ? 'missing'
-      : currentScreenplay !== null &&
-          currentScreenplay.documentId === scriptHead.documentId &&
-          currentScreenplay.sequence === scriptHead.sequence
-        ? 'current'
-        : 'stale';
+    const assetCurrent = assetRows.length;
+    const scriptStatus: StoryProductionStageStatus = scriptHead.hasContent
+      ? 'current'
+      : 'missing';
     const plotStatus: StoryProductionStageStatus =
-      plotNodeIds.length === 0
-        ? 'missing'
-        : scriptStatus === 'current' &&
-            approvedPlotScreenplay !== null &&
-            approvedPlotScreenplay.versionId === currentScreenplay?.versionId &&
-            plotMatchesApprovedScreenplay(
-              approvedPlotScreenplay.screenplay,
-              parsedDraft,
-              chapter.entryNodeId,
-              ownedNodeIds,
-            )
-          ? 'current'
-          : 'stale';
-    const plotSourceFingerprint = chapterPlotFingerprint(
-      parsedDraft,
-      chapter.entryNodeId,
-      ownedNodeIds,
-    );
-    const ownStoryboardStatus =
-      sequenceRows.length === 0
-        ? 'missing'
-        : staleSequenceCount > 0 || missingPlotNodeIds.length > 0
-          ? 'stale'
-          : 'current';
-    const assetMarkerMatchesPlot =
-      approvedAssetPlanMarker !== null &&
-      plotStatus === 'current' &&
-      approvedAssetPlanMarker.sourceFingerprint === plotSourceFingerprint;
-    const assetMarkerIsStale =
-      approvedAssetPlanMarker !== null && !assetMarkerMatchesPlot;
-    const expectedAssetKeys = assetMarkerMatchesPlot
-      ? new Set(
-          approvedAssetPlanMarker.plan.assetSpecs.map(
-            (asset) => asset.stableKey,
-          ),
-        )
-      : null;
-    const currentAssetKeys = new Set(
-      currentAssetRows.map((asset) => asset.stableKey),
-    );
-    const expectedAssetMissing =
-      expectedAssetKeys !== null &&
-      [...expectedAssetKeys].some(
-        (stableKey) => !currentAssetKeys.has(stableKey),
-      );
-    const unexpectedPlannedAsset =
-      expectedAssetKeys !== null &&
-      currentAssetRows.some(
-        (asset) =>
-          !expectedAssetKeys.has(asset.stableKey) &&
-          asset.planDisposition !==
-            StoryProductionPlanDisposition.user_override,
-      );
-    const ownAssetStatus: StoryProductionStageStatus = assetMarkerIsStale
-      ? 'stale'
-      : expectedAssetKeys !== null
-        ? assetStale === 0 && !expectedAssetMissing && !unexpectedPlannedAsset
-          ? 'current'
-          : 'stale'
-        : assetRows.length > 0
-          ? 'stale'
-          : 'missing';
-    const assetStatus =
-      ownAssetStatus === 'missing'
-        ? 'missing'
-        : plotStatus === 'current' && ownAssetStatus === 'current'
-          ? 'current'
-          : 'stale';
-    const storyboardStatus =
-      ownStoryboardStatus === 'missing'
-        ? 'missing'
-        : plotStatus === 'current' &&
-            assetStatus === 'current' &&
-            ownStoryboardStatus === 'current'
-          ? 'current'
-          : 'stale';
+      plotNodeIds.length > 0 ? 'current' : 'missing';
+    const assetStatus: StoryProductionStageStatus =
+      approvedAssetPlanMarker !== null || assetRows.length > 0
+        ? 'current'
+        : 'missing';
+    const storyboardStatus: StoryProductionStageStatus =
+      sequenceRows.length > 0 && missingPlotNodeIds.length === 0
+        ? 'current'
+        : 'missing';
     const profileStatus = project.creativeProfileConfirmedAt
       ? 'current'
       : 'missing';
@@ -514,12 +392,10 @@ export class StoryProductionPlanService {
       assets: {
         status: assetStatus,
         currentCount: assetCurrent,
-        staleCount: assetStale,
       },
       storyboard: {
         status: storyboardStatus,
         sequenceCount: sequenceRows.length,
-        staleCount: staleSequenceCount,
         missingPlotNodeIds,
       },
       ready:
@@ -543,6 +419,73 @@ export class StoryProductionPlanService {
       include: ASSET_SPEC_INCLUDE,
     });
     return rows.map(toAssetSpecDto);
+  }
+
+  async createAssetSpec(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    idempotencyKey: string,
+    input: CreateStoryAssetSpecInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'asset-spec.create',
+      request: input,
+      mutate: async (tx, now) => {
+        await tx.$executeRaw`
+          SELECT pg_advisory_xact_lock(
+            hashtext(${`story-production-asset-create:${chapterId}`})::bigint
+          )
+        `;
+        const activeCount = await tx.storyAssetSpec.count({
+          where: {
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+        });
+        if (activeCount >= 500) {
+          throw new BadRequestException({
+            code: 'STORY_PRODUCTION_ASSET_LIMIT_REACHED',
+            message: 'A chapter can contain at most 500 Asset Specs.',
+          });
+        }
+        const stableKey = `manual.${input.kind}.${randomUUID()}`;
+        const sourceFingerprint = canonicalJsonHash({
+          kind: 'human-asset-spec',
+          projectId,
+          chapterId,
+          stableKey,
+        });
+        const created = await tx.storyAssetSpec.create({
+          data: {
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            stableKey,
+            kind: input.kind,
+            sourceCharacterId: null,
+            sourceNodeIds: [],
+            name: input.name,
+            description: input.description ?? null,
+            imagePrompt: input.imagePrompt,
+            videoPrompt: input.videoPrompt ?? null,
+            negativePrompt: input.negativePrompt ?? null,
+            sourceFingerprint,
+            status: StoryProductionSpecStatus.current,
+            createdByUserId: user.userId,
+            userModifiedAt: now,
+            userModifiedByUserId: user.userId,
+            lastPlannedAt: now,
+          },
+          include: ASSET_SPEC_INCLUDE,
+        });
+        return toAssetSpecDto(created);
+      },
+    });
   }
 
   async getStoryboard(user: AuthUser, projectId: string, chapterId: string) {
@@ -601,301 +544,6 @@ export class StoryProductionPlanService {
     });
   }
 
-  async resolveAssetSpecConflict(
-    user: AuthUser,
-    projectId: string,
-    chapterId: string,
-    assetSpecId: string,
-    idempotencyKey: string,
-    input: ResolveStoryProductionConflictInput,
-  ) {
-    return this.mutateWithReceipt({
-      user,
-      projectId,
-      chapterId,
-      idempotencyKey,
-      operation: 'asset-spec.conflict-resolution',
-      request: { assetSpecId, input },
-      mutate: async (tx, now) => {
-        const current = await tx.storyAssetSpec.findFirst({
-          where: {
-            id: assetSpecId,
-            storyProjectId: projectId,
-            storyChapterId: chapterId,
-          },
-          include: { pendingPlanSnapshot: true },
-        });
-        if (!current) throw productionNotFound('Asset Spec', assetSpecId);
-        const pending = readPendingConflict(current, input, 'Asset Spec');
-        const pendingAssetPlan = assetPlanFromSnapshot(pending.plan);
-        const item = pendingAssetPlan.assetSpecs.find(
-          (candidate) => candidate.stableKey === current.stableKey,
-        );
-        const expectedFingerprint = item
-          ? planFingerprint(pending.sourceFingerprint, 'asset', item)
-          : planFingerprint(pending.sourceFingerprint, 'asset-removed', {
-              stableKey: current.stableKey,
-            });
-        assertPendingFingerprint(current, expectedFingerprint);
-
-        let outcome: 'kept_current' | 'applied_latest' | 'archived';
-        if (input.resolution === 'keep_current') {
-          const updated = await tx.storyAssetSpec.updateMany({
-            where: pendingConflictCasWhere(current, input),
-            data: {
-              sourceFingerprint: expectedFingerprint,
-              pendingSourceFingerprint: null,
-              pendingPlanSnapshotId: null,
-              planDisposition: StoryProductionPlanDisposition.user_override,
-              status: StoryProductionSpecStatus.current,
-              userModifiedAt: current.userModifiedAt ?? now,
-              userModifiedByUserId: current.userModifiedByUserId ?? user.userId,
-              version: { increment: 1 },
-            },
-          });
-          if (updated.count !== 1) throw productionCasConflict('Asset Spec');
-          outcome = 'kept_current';
-        } else if (item) {
-          const updated = await tx.storyAssetSpec.updateMany({
-            where: pendingConflictCasWhere(current, input),
-            data: {
-              kind: item.kind,
-              sourceCharacterId: item.sourceCharacterId ?? null,
-              sourceNodeIds: item.sourceNodeIds,
-              name: item.name,
-              description: item.description,
-              imagePrompt: item.imagePrompt,
-              videoPrompt: item.videoPrompt ?? null,
-              negativePrompt: item.negativePrompt ?? null,
-              sourceFingerprint: expectedFingerprint,
-              pendingSourceFingerprint: null,
-              pendingPlanSnapshotId: null,
-              planDisposition: StoryProductionPlanDisposition.planned,
-              status: StoryProductionSpecStatus.current,
-              userModifiedAt: null,
-              userModifiedByUserId: null,
-              lastPlannedAt: now,
-              version: { increment: 1 },
-            },
-          });
-          if (updated.count !== 1) throw productionCasConflict('Asset Spec');
-          outcome = 'applied_latest';
-        } else {
-          const activeBindingCount =
-            await tx.storyStoryboardClipAssetBinding.count({
-              where: {
-                assetSpecId: current.id,
-                status: { not: StoryProductionSpecStatus.archived },
-                storyboardClip: {
-                  status: { not: StoryProductionSpecStatus.archived },
-                  sequence: {
-                    status: { not: StoryProductionSpecStatus.archived },
-                  },
-                },
-              },
-            });
-          if (activeBindingCount > 0) {
-            throw new ConflictException({
-              code: 'STORY_PRODUCTION_ASSET_STILL_REFERENCED',
-              message:
-                'Resolve the affected Storyboard sequence with the latest plan before removing this Asset Spec, or keep the Asset Spec override.',
-            });
-          }
-          const updated = await tx.storyAssetSpec.updateMany({
-            where: pendingConflictCasWhere(current, input),
-            data: {
-              sourceFingerprint: expectedFingerprint,
-              pendingSourceFingerprint: null,
-              pendingPlanSnapshotId: null,
-              planDisposition: StoryProductionPlanDisposition.planned,
-              status: StoryProductionSpecStatus.archived,
-              userModifiedAt: null,
-              userModifiedByUserId: null,
-              lastPlannedAt: now,
-              version: { increment: 1 },
-            },
-          });
-          if (updated.count !== 1) throw productionCasConflict('Asset Spec');
-          outcome = 'archived';
-        }
-
-        const resolved = await tx.storyAssetSpec.findUniqueOrThrow({
-          where: { id: current.id },
-          include: ASSET_SPEC_INCLUDE,
-        });
-        return {
-          targetKind: 'asset_spec' as const,
-          targetId: resolved.id,
-          resolution: input.resolution,
-          outcome,
-          item: toAssetSpecDto(resolved),
-          productionState: await this.getProductionStateInTransaction(
-            tx,
-            projectId,
-            chapterId,
-          ),
-        };
-      },
-    });
-  }
-
-  async resolveStoryboardSequenceConflict(
-    user: AuthUser,
-    projectId: string,
-    chapterId: string,
-    sequenceId: string,
-    idempotencyKey: string,
-    input: ResolveStoryProductionConflictInput,
-  ) {
-    return this.mutateWithReceipt({
-      user,
-      projectId,
-      chapterId,
-      idempotencyKey,
-      operation: 'storyboard-sequence.conflict-resolution',
-      request: { sequenceId, input },
-      mutate: async (tx, now) => {
-        const current = await tx.storyStoryboardSequence.findFirst({
-          where: {
-            id: sequenceId,
-            storyProjectId: projectId,
-            storyChapterId: chapterId,
-          },
-          include: { pendingPlanSnapshot: true },
-        });
-        if (!current) {
-          throw productionNotFound('Storyboard sequence', sequenceId);
-        }
-        const pending = readPendingConflict(
-          current,
-          input,
-          'Storyboard sequence',
-        );
-        const pendingStoryboardPlan = storyboardPlanFromSnapshot(pending.plan);
-        const item = pendingStoryboardPlan.storyboardSequences.find(
-          (candidate) => candidate.plotNodeId === current.plotNodeId,
-        );
-        const expectedFingerprint = item
-          ? planFingerprint(pending.sourceFingerprint, 'sequence', item)
-          : planFingerprint(pending.sourceFingerprint, 'sequence-removed', {
-              plotNodeId: current.plotNodeId,
-            });
-        assertPendingFingerprint(current, expectedFingerprint);
-
-        let outcome: 'kept_current' | 'applied_latest' | 'archived';
-        if (input.resolution === 'keep_current') {
-          if (!item) {
-            throw new ConflictException({
-              code: 'STORY_PRODUCTION_REMOVED_SEQUENCE_OVERRIDE_UNSUPPORTED',
-              message:
-                'A Storyboard sequence whose Plot node was removed cannot remain as an override. Use the latest plan to archive it.',
-            });
-          }
-          const updated = await tx.storyStoryboardSequence.updateMany({
-            where: pendingConflictCasWhere(current, input),
-            data: {
-              sourceFingerprint: expectedFingerprint,
-              pendingSourceFingerprint: null,
-              pendingPlanSnapshotId: null,
-              planDisposition: StoryProductionPlanDisposition.user_override,
-              status: StoryProductionSpecStatus.current,
-              userModifiedAt: current.userModifiedAt ?? now,
-              userModifiedByUserId: current.userModifiedByUserId ?? user.userId,
-              version: { increment: 1 },
-            },
-          });
-          if (updated.count !== 1) {
-            throw productionCasConflict('Storyboard sequence');
-          }
-          outcome = 'kept_current';
-        } else if (!item) {
-          await this.archiveSequenceChildren(tx, current.id);
-          const updated = await tx.storyStoryboardSequence.updateMany({
-            where: pendingConflictCasWhere(current, input),
-            data: {
-              sourceFingerprint: expectedFingerprint,
-              pendingSourceFingerprint: null,
-              pendingPlanSnapshotId: null,
-              planDisposition: StoryProductionPlanDisposition.planned,
-              status: StoryProductionSpecStatus.archived,
-              userModifiedAt: null,
-              userModifiedByUserId: null,
-              lastPlannedAt: now,
-              version: { increment: 1 },
-            },
-          });
-          if (updated.count !== 1) {
-            throw productionCasConflict('Storyboard sequence');
-          }
-          outcome = 'archived';
-        } else {
-          const assetRows = await tx.storyAssetSpec.findMany({
-            where: {
-              storyProjectId: projectId,
-              storyChapterId: chapterId,
-            },
-          });
-          const updated = await tx.storyStoryboardSequence.updateMany({
-            where: pendingConflictCasWhere(current, input),
-            data: {
-              stableKey: item.plotNodeId,
-              description: item.description,
-              suggestedDurationMs: item.durationMs,
-              durationMs: item.durationMs,
-              sourceFingerprint: expectedFingerprint,
-              pendingSourceFingerprint: null,
-              pendingPlanSnapshotId: null,
-              planDisposition: StoryProductionPlanDisposition.planned,
-              status: StoryProductionSpecStatus.current,
-              userModifiedAt: null,
-              userModifiedByUserId: null,
-              lastPlannedAt: now,
-              version: { increment: 1 },
-            },
-          });
-          if (updated.count !== 1) {
-            throw productionCasConflict('Storyboard sequence');
-          }
-          await this.reconcileSequenceChildren(
-            tx,
-            {
-              storyProjectId: projectId,
-              storyChapterId: chapterId,
-              actorUserId: user.userId,
-              sourceFingerprint: pending.sourceFingerprint,
-            },
-            item,
-            { ...current, version: current.version + 1 },
-            new Map(assetRows.map((asset) => [asset.stableKey, asset])),
-            now,
-            {
-              clearUserModifications: true,
-              preserveCompatibleBindings: true,
-            },
-          );
-          outcome = 'applied_latest';
-        }
-
-        const resolved = await tx.storyStoryboardSequence.findUniqueOrThrow({
-          where: { id: current.id },
-          include: STORYBOARD_INCLUDE,
-        });
-        return {
-          targetKind: 'storyboard_sequence' as const,
-          targetId: resolved.id,
-          resolution: input.resolution,
-          outcome,
-          item: toStoryboardSequenceDto(resolved),
-          productionState: await this.getProductionStateInTransaction(
-            tx,
-            projectId,
-            chapterId,
-          ),
-        };
-      },
-    });
-  }
-
   async patchAssetSpec(
     user: AuthUser,
     projectId: string,
@@ -920,6 +568,16 @@ export class StoryProductionPlanService {
           },
         });
         if (!current) throw productionNotFound('Asset Spec', assetSpecId);
+        if (
+          input.sourceMediaPurpose === 'turnaround' &&
+          current.kind !== 'character'
+        ) {
+          throw new BadRequestException({
+            code: 'STORY_PRODUCTION_ASSET_MEDIA_PURPOSE_UNSUPPORTED',
+            message:
+              'Three-view media can only be added to character Asset Specs.',
+          });
+        }
         if (input.selectedMediaVersionId) {
           await requireAssetMediaVersion(
             tx,
@@ -936,6 +594,13 @@ export class StoryProductionPlanService {
             projectId,
             input.sourceMediaAssetId,
           );
+          // Use the same target lock as AI materialization so uploads and
+          // concurrently completed generations share one version sequence.
+          await tx.$executeRaw`
+            SELECT pg_advisory_xact_lock(
+              hashtext(${`story-production-media-version:asset_spec:${current.id}`})::bigint
+            )
+          `;
           const latest = await tx.storyAssetMediaVersion.findFirst({
             where: { assetSpecId: current.id },
             orderBy: { versionNumber: 'desc' },
@@ -953,6 +618,7 @@ export class StoryProductionPlanService {
                 version: 1,
                 source: 'user_media',
                 mediaAssetId: source.id,
+                purpose: input.sourceMediaPurpose ?? 'primary',
               },
               createdByUserId: user.userId,
             },
@@ -969,7 +635,8 @@ export class StoryProductionPlanService {
             ...defined(input, 'imagePrompt'),
             ...defined(input, 'videoPrompt'),
             ...defined(input, 'negativePrompt'),
-            ...(importedMediaVersionId
+            ...(importedMediaVersionId &&
+            (input.sourceMediaPurpose ?? 'primary') === 'primary'
               ? { selectedMediaVersionId: importedMediaVersionId }
               : defined(input, 'selectedMediaVersionId')),
             ...(semanticModified
@@ -982,6 +649,73 @@ export class StoryProductionPlanService {
           },
         });
         if (updated.count !== 1) throw productionCasConflict('Asset Spec');
+        return toAssetSpecDto(
+          await tx.storyAssetSpec.findUniqueOrThrow({
+            where: { id: current.id },
+            include: ASSET_SPEC_INCLUDE,
+          }),
+        );
+      },
+    });
+  }
+
+  async archiveAssetSpec(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+    assetSpecId: string,
+    idempotencyKey: string,
+    input: ArchiveStoryAssetSpecInput,
+  ) {
+    return this.mutateWithReceipt({
+      user,
+      projectId,
+      chapterId,
+      idempotencyKey,
+      operation: 'asset-spec.archive',
+      request: { assetSpecId, input },
+      mutate: async (tx, now) => {
+        const current = await tx.storyAssetSpec.findFirst({
+          where: {
+            id: assetSpecId,
+            storyProjectId: projectId,
+            storyChapterId: chapterId,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+        });
+        if (!current) throw productionNotFound('Asset Spec', assetSpecId);
+        const sourceFingerprint = canonicalJsonHash({
+          kind: 'human-asset-spec-archived',
+          projectId,
+          chapterId,
+          assetSpecId,
+          previousSourceFingerprint: current.sourceFingerprint,
+        });
+        const archived = await tx.storyAssetSpec.updateMany({
+          where: {
+            id: current.id,
+            version: input.expectedVersion,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+          data: {
+            sourceFingerprint,
+            status: StoryProductionSpecStatus.archived,
+            userModifiedAt: now,
+            userModifiedByUserId: user.userId,
+            version: { increment: 1 },
+          },
+        });
+        if (archived.count !== 1) throw productionCasConflict('Asset Spec');
+        await tx.storyStoryboardClipAssetBinding.updateMany({
+          where: {
+            assetSpecId: current.id,
+            status: { not: StoryProductionSpecStatus.archived },
+          },
+          data: {
+            status: StoryProductionSpecStatus.archived,
+            version: { increment: 1 },
+          },
+        });
         return toAssetSpecDto(
           await tx.storyAssetSpec.findUniqueOrThrow({
             where: { id: current.id },
@@ -1285,7 +1019,6 @@ export class StoryProductionPlanService {
             where: { storyboardClipId: clip.id },
             data: {
               status: StoryProductionSpecStatus.archived,
-              pendingSourceFingerprint: null,
             },
           });
           await tx.storyStoryboardCue.updateMany({
@@ -1302,7 +1035,6 @@ export class StoryProductionPlanService {
             data: {
               rank: archivedRank++,
               status: StoryProductionSpecStatus.archived,
-              pendingSourceFingerprint: null,
               userModifiedAt: now,
               userModifiedByUserId: user.userId,
               version: { increment: 1 },
@@ -1743,7 +1475,6 @@ export class StoryProductionPlanService {
               required: input.required,
               rank: input.rank,
               status: StoryProductionSpecStatus.current,
-              pendingSourceFingerprint: null,
               userModifiedAt: now,
               userModifiedByUserId: user.userId,
               version: { increment: 1 },
@@ -1881,7 +1612,6 @@ export class StoryProductionPlanService {
       tx,
       rawInput,
       assetPlan,
-      planSnapshot.id,
       now,
       result,
     );
@@ -1889,7 +1619,6 @@ export class StoryProductionPlanService {
       tx,
       rawInput,
       storyboardPlan,
-      planSnapshot.id,
       assetByKey,
       now,
       result,
@@ -1897,30 +1626,19 @@ export class StoryProductionPlanService {
     return result;
   }
 
-  /**
-   * Apply only approved logical Asset Specs. Any existing Storyboard becomes
-   * stale when the approved Asset set changes; no Storyboard is generated or
-   * reconciled in this stage.
-   */
+  /** Apply an approved logical Asset plan without invalidating creator work. */
   async applyApprovedAssetPlanInTransaction(
     tx: Prisma.TransactionClient,
     rawInput: ApplyApprovedAssetPlanInput,
   ): Promise<StoryProductionReconcileResult> {
     const assetPlan = StoryAssetPlanSchema.parse(rawInput.assetPlan);
     assertProductionSourceFingerprint(rawInput.sourceFingerprint);
-    const [chapter, beforeAssetPlan] = await Promise.all([
-      tx.storyChapter.findFirst({
-        where: {
-          id: rawInput.storyChapterId,
-          storyProjectId: rawInput.storyProjectId,
-        },
-      }),
-      this.readCurrentAssetPlanInTransaction(
-        tx,
-        rawInput.storyProjectId,
-        rawInput.storyChapterId,
-      ),
-    ]);
+    const chapter = await tx.storyChapter.findFirst({
+      where: {
+        id: rawInput.storyChapterId,
+        storyProjectId: rawInput.storyProjectId,
+      },
+    });
     if (!chapter) {
       throw new NotFoundException({
         code: 'STORY_CHAPTER_NOT_FOUND',
@@ -1942,44 +1660,11 @@ export class StoryProductionPlanService {
       rawInput.storyChapterId,
       snapshot.id,
     );
-    await this.reconcileAssetSpecs(
-      tx,
-      rawInput,
-      assetPlan,
-      snapshot.id,
-      now,
-      result,
-    );
-    const afterAssetPlan = await this.readCurrentAssetPlanInTransaction(
-      tx,
-      rawInput.storyProjectId,
-      rawInput.storyChapterId,
-    );
-    const beforeFingerprint = beforeAssetPlan
-      ? storyAssetPlanFingerprint(beforeAssetPlan)
-      : null;
-    const afterFingerprint = afterAssetPlan
-      ? storyAssetPlanFingerprint(afterAssetPlan)
-      : null;
-    if (
-      result.assetSpecsMarkedStale > 0 ||
-      beforeFingerprint !== afterFingerprint
-    ) {
-      result.sequencesMarkedStale +=
-        await this.invalidateStoryboardForAssetPlan(
-          tx,
-          rawInput,
-          storyAssetPlanFingerprint(assetPlan),
-          now,
-        );
-    }
+    await this.reconcileAssetSpecs(tx, rawInput, assetPlan, now, result);
     return result;
   }
 
-  /**
-   * Apply only approved Storyboard sequences. The proposal's embedded Asset
-   * source must still exactly match the current approved Asset Specs.
-   */
+  /** Apply a Storyboard proposal against the chapter state visible now. */
   async applyApprovedStoryboardPlanInTransaction(
     tx: Prisma.TransactionClient,
     rawInput: ApplyApprovedStoryboardPlanInput,
@@ -1987,7 +1672,6 @@ export class StoryProductionPlanService {
     const storyboardPlan = StoryStoryboardPlanSchema.parse(
       rawInput.storyboardPlan,
     );
-    const proposalAssetPlan = StoryAssetPlanSchema.parse(rawInput.assetPlan);
     assertProductionSourceFingerprint(rawInput.sourceFingerprint);
     const [chapter, draftRow, currentAssetPlan] = await Promise.all([
       tx.storyChapter.findFirst({
@@ -2011,31 +1695,22 @@ export class StoryProductionPlanService {
         message: 'Story chapter not found.',
       });
     }
-    if (
-      currentAssetPlan === null ||
-      storyAssetPlanFingerprint(currentAssetPlan) !==
-        storyAssetPlanFingerprint(proposalAssetPlan)
-    ) {
-      throw new ConflictException({
-        code: 'STORY_PRODUCTION_ASSET_PLAN_STALE',
-        message:
-          'The approved Asset Specs changed after this Storyboard proposal was authored. Create a fresh Storyboard proposal.',
-      });
-    }
+    const liveAssetPlan =
+      currentAssetPlan ?? StoryAssetPlanSchema.parse({ assetSpecs: [] });
+    const normalizedStoryboardPlan = StoryStoryboardPlanSchema.parse({
+      storyboardSequences: storyboardPlan.storyboardSequences.map((sequence) =>
+        normalizeStoryboardAssetMentions(sequence, liveAssetPlan.assetSpecs),
+      ),
+    });
     this.validateApprovedStoryboardPlan({
-      storyboardPlan,
-      assetPlan: currentAssetPlan,
+      storyboardPlan: normalizedStoryboardPlan,
+      assetPlan: liveAssetPlan,
       draft: draftRow.content,
       chapterNodeIds: jsonStringArray(chapter.nodeIds),
     });
 
     const result = emptyReconcileResult();
     const now = new Date();
-    const snapshot = await this.ensurePlanSnapshot(
-      tx,
-      rawInput,
-      storyboardPlan,
-    );
     const assetRows = await tx.storyAssetSpec.findMany({
       where: {
         storyProjectId: rawInput.storyProjectId,
@@ -2046,8 +1721,7 @@ export class StoryProductionPlanService {
     await this.reconcileStoryboard(
       tx,
       rawInput,
-      storyboardPlan,
-      snapshot.id,
+      normalizedStoryboardPlan,
       new Map(assetRows.map((asset) => [asset.stableKey, asset])),
       now,
       result,
@@ -2055,115 +1729,13 @@ export class StoryProductionPlanService {
     return result;
   }
 
-  /**
-   * Invalidate only true downstream stages. Script and Plot both invalidate
-   * Assets and Storyboard; Asset approval independently invalidates Storyboard
-   * when its semantic plan changes. Stale rows receive deterministic pending
-   * fingerprints required by the database lifecycle checks.
-   */
-  async invalidateDownstreamAfterUpstreamApprovalInTransaction(
-    tx: Prisma.TransactionClient,
-    input: InvalidateStoryProductionDownstreamInput,
-  ): Promise<void> {
-    assertProductionSourceFingerprint(input.sourceFingerprint);
-    const now = new Date();
-    const storyboardInvalidationFingerprint = planFingerprint(
-      input.sourceFingerprint,
-      'storyboard-invalidated-by-upstream',
-      {
-        upstreamStage: input.upstreamStage,
-        upstreamRunId: input.upstreamRunId,
-      },
-    );
-
-    if (input.upstreamStage === 'script' || input.upstreamStage === 'plot') {
-      const chapter = await tx.storyChapter.findFirst({
-        where: {
-          id: input.storyChapterId,
-          storyProjectId: input.storyProjectId,
-        },
-        select: { approvedAssetPlanSnapshotId: true },
-      });
-      if (!chapter) {
-        throw new NotFoundException({
-          code: 'STORY_CHAPTER_NOT_FOUND',
-          message: 'Story chapter not found.',
-        });
-      }
-      const assetInvalidationFingerprint = planFingerprint(
-        input.sourceFingerprint,
-        'asset-invalidated-by-upstream',
-        {
-          upstreamStage: input.upstreamStage,
-          upstreamRunId: input.upstreamRunId,
-        },
-      );
-      if (chapter.approvedAssetPlanSnapshotId !== null) {
-        // Pin an explicit mismatching marker so a previously-approved empty
-        // Asset plan also becomes stale; row counts alone cannot represent it.
-        const invalidationSnapshot = await this.ensurePlanSnapshot(
-          tx,
-          {
-            storyProjectId: input.storyProjectId,
-            storyChapterId: input.storyChapterId,
-            actorUserId: input.actorUserId,
-            sourceFingerprint: assetInvalidationFingerprint,
-          },
-          StoryAssetPlanSchema.parse({ assetSpecs: [] }),
-        );
-        await this.pinApprovedAssetPlanSnapshotInTransaction(
-          tx,
-          input.storyProjectId,
-          input.storyChapterId,
-          invalidationSnapshot.id,
-        );
-      }
-      await tx.storyAssetSpec.updateMany({
-        where: {
-          storyProjectId: input.storyProjectId,
-          storyChapterId: input.storyChapterId,
-          status: { not: StoryProductionSpecStatus.archived },
-        },
-        data: {
-          status: StoryProductionSpecStatus.stale,
-          pendingSourceFingerprint: assetInvalidationFingerprint,
-          pendingPlanSnapshotId: null,
-          lastPlannedAt: now,
-          version: { increment: 1 },
-        },
-      });
-    }
-    await tx.storyStoryboardSequence.updateMany({
-      where: {
-        storyProjectId: input.storyProjectId,
-        storyChapterId: input.storyChapterId,
-        status: { not: StoryProductionSpecStatus.archived },
-      },
-      data: {
-        status: StoryProductionSpecStatus.stale,
-        pendingSourceFingerprint: storyboardInvalidationFingerprint,
-        pendingPlanSnapshotId: null,
-        lastPlannedAt: now,
-        version: { increment: 1 },
-      },
-    });
-  }
-
-  /** Exact Plot-derived Asset source used to author and fence Storyboards. */
+  /** Current chapter assets are the source used for the next Agent turn. */
   async readCurrentAssetPlanInTransaction(
     tx: Prisma.TransactionClient,
     storyProjectId: string,
     storyChapterId: string,
   ): Promise<StoryAssetPlan | null> {
-    const [
-      rows,
-      marker,
-      scriptHead,
-      chapter,
-      draft,
-      currentScreenplay,
-      approvedPlotScreenplay,
-    ] = await Promise.all([
+    const [rows, marker] = await Promise.all([
       tx.storyAssetSpec.findMany({
         where: {
           storyProjectId,
@@ -2177,68 +1749,12 @@ export class StoryProductionPlanService {
         storyProjectId,
         storyChapterId,
       ),
-      readStoryScriptHead(tx, storyProjectId, storyChapterId),
-      tx.storyChapter.findFirst({
-        where: {
-          id: storyChapterId,
-          storyProjectId,
-          archivedAt: null,
-        },
-      }),
-      tx.storyDraft.findUnique({ where: { storyProjectId } }),
-      readCurrentStoryScreenplaySnapshot(tx, storyProjectId, storyChapterId),
-      readApprovedStoryScreenplaySnapshot(tx, storyProjectId, storyChapterId),
     ]);
-    if (marker === null || !chapter || !draft || !scriptHead.hasContent) {
-      return null;
-    }
-    const parsedDraft = InteractiveStoryDraftContentSchema.parse(draft.content);
-    const ownedNodeIds = new Set(jsonStringArray(chapter.nodeIds));
-    const lineageMatchesHead =
-      chapter.sourceScriptDocumentId === scriptHead.documentId &&
-      chapter.sourceScriptSequence === scriptHead.sequence &&
-      chapter.sourceScriptHash === scriptHead.hash;
-    const plotIsCurrent =
-      ownedNodeIds.size > 0 &&
-      lineageMatchesHead &&
-      currentScreenplay !== null &&
-      currentScreenplay.documentId === scriptHead.documentId &&
-      currentScreenplay.sequence === scriptHead.sequence &&
-      approvedPlotScreenplay !== null &&
-      approvedPlotScreenplay.versionId === currentScreenplay.versionId &&
-      plotMatchesApprovedScreenplay(
-        approvedPlotScreenplay.screenplay,
-        parsedDraft,
-        chapter.entryNodeId,
-        ownedNodeIds,
-      );
-    const plotSourceFingerprint = chapterPlotFingerprint(
-      parsedDraft,
-      chapter.entryNodeId,
-      ownedNodeIds,
-    );
-    if (!plotIsCurrent || marker.sourceFingerprint !== plotSourceFingerprint) {
-      return null;
-    }
-    if (rows.some((row) => row.status !== StoryProductionSpecStatus.current)) {
+    if (marker === null && rows.length === 0) {
       return null;
     }
     if (rows.length === 0) {
-      return marker.plan.assetSpecs.length === 0 ? marker.plan : null;
-    }
-    const expectedKeys = new Set(
-      marker.plan.assetSpecs.map((asset) => asset.stableKey),
-    );
-    const currentKeys = new Set(rows.map((row) => row.stableKey));
-    if (
-      [...expectedKeys].some((stableKey) => !currentKeys.has(stableKey)) ||
-      rows.some(
-        (row) =>
-          !expectedKeys.has(row.stableKey) &&
-          row.planDisposition !== StoryProductionPlanDisposition.user_override,
-      )
-    ) {
-      return null;
+      return marker?.plan ?? StoryAssetPlanSchema.parse({ assetSpecs: [] });
     }
     return StoryAssetPlanSchema.parse({
       assetSpecs: rows.map((row) => ({
@@ -2446,12 +1962,6 @@ export class StoryProductionPlanService {
               message: `Storyboard clip ${clip.stableKey} references missing approved Asset Spec @${mention}.`,
             });
           }
-          if (!asset.sourceNodeIds.includes(sequence.plotNodeId)) {
-            throw new BadRequestException({
-              code: 'STORY_PRODUCTION_ASSET_LINEAGE_INVALID',
-              message: `Storyboard clip ${clip.stableKey} cannot bind Asset Spec @${mention} outside its Plot node lineage ${sequence.plotNodeId}.`,
-            });
-          }
         }
       }
     }
@@ -2470,41 +1980,10 @@ export class StoryProductionPlanService {
     return storyboardPlan;
   }
 
-  private async invalidateStoryboardForAssetPlan(
-    tx: Prisma.TransactionClient,
-    input: StoryProductionApplyContext,
-    assetPlanFingerprint: string,
-    now: Date,
-  ): Promise<number> {
-    const invalidationFingerprint = planFingerprint(
-      input.sourceFingerprint,
-      'storyboard-invalidated-by-assets',
-      { assetPlanFingerprint },
-    );
-    const invalidated = await tx.storyStoryboardSequence.updateMany({
-      where: {
-        storyProjectId: input.storyProjectId,
-        storyChapterId: input.storyChapterId,
-        status: { not: StoryProductionSpecStatus.archived },
-      },
-      data: {
-        status: StoryProductionSpecStatus.stale,
-        pendingSourceFingerprint: invalidationFingerprint,
-        // An Asset change invalidates any older pending Storyboard candidate;
-        // a fresh explicit Storyboard proposal must be authored and approved.
-        pendingPlanSnapshotId: null,
-        lastPlannedAt: now,
-        version: { increment: 1 },
-      },
-    });
-    return invalidated.count;
-  }
-
   private async reconcileAssetSpecs(
     tx: Prisma.TransactionClient,
     input: StoryProductionApplyContext,
     plan: StoryAssetPlan,
-    planSnapshotId: string,
     now: Date,
     result: StoryProductionReconcileResult,
   ): Promise<Map<string, StoryAssetSpec>> {
@@ -2548,40 +2027,12 @@ export class StoryProductionPlanService {
         result.assetSpecsCreated += 1;
         continue;
       }
-      if (
-        current.sourceFingerprint === fingerprint &&
-        current.status === StoryProductionSpecStatus.current
-      ) {
+      if (current.userModifiedAt) continue;
+      if (current.sourceFingerprint === fingerprint) {
         await tx.storyAssetSpec.update({
           where: { id: current.id },
           data: { lastPlannedAt: now },
         });
-        continue;
-      }
-      if (current.userModifiedAt) {
-        if (
-          current.status === StoryProductionSpecStatus.stale &&
-          current.pendingSourceFingerprint === fingerprint &&
-          current.pendingPlanSnapshotId === planSnapshotId
-        ) {
-          await tx.storyAssetSpec.update({
-            where: { id: current.id },
-            data: { lastPlannedAt: now },
-          });
-          continue;
-        }
-        const stale = await tx.storyAssetSpec.update({
-          where: { id: current.id },
-          data: {
-            status: StoryProductionSpecStatus.stale,
-            pendingSourceFingerprint: fingerprint,
-            pendingPlanSnapshotId: planSnapshotId,
-            lastPlannedAt: now,
-            version: { increment: 1 },
-          },
-        });
-        existingByKey.set(item.stableKey, stale);
-        result.assetSpecsMarkedStale += 1;
         continue;
       }
       const updated = await tx.storyAssetSpec.update({
@@ -2596,9 +2047,6 @@ export class StoryProductionPlanService {
           videoPrompt: item.videoPrompt ?? null,
           negativePrompt: item.negativePrompt ?? null,
           sourceFingerprint: fingerprint,
-          pendingSourceFingerprint: null,
-          pendingPlanSnapshotId: null,
-          planDisposition: StoryProductionPlanDisposition.planned,
           status: StoryProductionSpecStatus.current,
           lastPlannedAt: now,
           version: { increment: 1 },
@@ -2613,47 +2061,17 @@ export class StoryProductionPlanService {
         current.status === StoryProductionSpecStatus.archived
       )
         continue;
-      const removalFingerprint = planFingerprint(
-        input.sourceFingerprint,
-        'asset-removed',
-        {
-          stableKey: current.stableKey,
-        },
-      );
-      if (
-        current.userModifiedAt &&
-        current.status === StoryProductionSpecStatus.stale &&
-        current.pendingSourceFingerprint === removalFingerprint &&
-        current.pendingPlanSnapshotId === planSnapshotId
-      ) {
-        await tx.storyAssetSpec.update({
-          where: { id: current.id },
-          data: { lastPlannedAt: now },
-        });
-        continue;
-      }
+      if (current.userModifiedAt) continue;
       const updated = await tx.storyAssetSpec.update({
         where: { id: current.id },
-        data: current.userModifiedAt
-          ? {
-              status: StoryProductionSpecStatus.stale,
-              pendingSourceFingerprint: removalFingerprint,
-              pendingPlanSnapshotId: planSnapshotId,
-              lastPlannedAt: now,
-              version: { increment: 1 },
-            }
-          : {
-              status: StoryProductionSpecStatus.archived,
-              pendingSourceFingerprint: null,
-              pendingPlanSnapshotId: null,
-              planDisposition: StoryProductionPlanDisposition.planned,
-              lastPlannedAt: now,
-              version: { increment: 1 },
-            },
+        data: {
+          status: StoryProductionSpecStatus.archived,
+          lastPlannedAt: now,
+          version: { increment: 1 },
+        },
       });
       existingByKey.set(current.stableKey, updated);
-      if (current.userModifiedAt) result.assetSpecsMarkedStale += 1;
-      else result.assetSpecsUpdated += 1;
+      result.assetSpecsUpdated += 1;
     }
     return existingByKey;
   }
@@ -2662,7 +2080,6 @@ export class StoryProductionPlanService {
     tx: Prisma.TransactionClient,
     input: StoryProductionApplyContext,
     plan: StoryStoryboardPlan,
-    planSnapshotId: string,
     assetByKey: Map<string, StoryAssetSpec>,
     now: Date,
     result: StoryProductionReconcileResult,
@@ -2687,8 +2104,6 @@ export class StoryProductionPlanService {
         item,
       );
       const current = existingByNode.get(item.plotNodeId);
-      // Archived children are dead history: their userModifiedAt stamps must
-      // not keep re-conflicting a sequence the creator already reconciled.
       const subtreeWasModified =
         current?.userModifiedAt !== null &&
         current?.userModifiedAt !== undefined
@@ -2710,35 +2125,7 @@ export class StoryProductionPlanService {
                   cue.userModifiedAt,
               ),
             );
-      if (
-        current &&
-        current.sourceFingerprint !== fingerprint &&
-        subtreeWasModified
-      ) {
-        if (
-          current.status === StoryProductionSpecStatus.stale &&
-          current.pendingSourceFingerprint === fingerprint &&
-          current.pendingPlanSnapshotId === planSnapshotId
-        ) {
-          await tx.storyStoryboardSequence.update({
-            where: { id: current.id },
-            data: { lastPlannedAt: now },
-          });
-          continue;
-        }
-        await tx.storyStoryboardSequence.update({
-          where: { id: current.id },
-          data: {
-            status: StoryProductionSpecStatus.stale,
-            pendingSourceFingerprint: fingerprint,
-            pendingPlanSnapshotId: planSnapshotId,
-            lastPlannedAt: now,
-            version: { increment: 1 },
-          },
-        });
-        result.sequencesMarkedStale += 1;
-        continue;
-      }
+      if (current && subtreeWasModified) continue;
       let sequence: StoryStoryboardSequence;
       if (!current) {
         sequence = await tx.storyStoryboardSequence.create({
@@ -2757,10 +2144,7 @@ export class StoryProductionPlanService {
           },
         });
         result.sequencesCreated += 1;
-      } else if (
-        current.sourceFingerprint === fingerprint &&
-        current.status === StoryProductionSpecStatus.current
-      ) {
+      } else if (current.sourceFingerprint === fingerprint) {
         await tx.storyStoryboardSequence.update({
           where: { id: current.id },
           data: { lastPlannedAt: now },
@@ -2775,9 +2159,6 @@ export class StoryProductionPlanService {
             suggestedDurationMs: item.durationMs,
             durationMs: item.durationMs,
             sourceFingerprint: fingerprint,
-            pendingSourceFingerprint: null,
-            pendingPlanSnapshotId: null,
-            planDisposition: StoryProductionPlanDisposition.planned,
             status: StoryProductionSpecStatus.current,
             lastPlannedAt: now,
             version: { increment: 1 },
@@ -2800,88 +2181,29 @@ export class StoryProductionPlanService {
         current.status === StoryProductionSpecStatus.archived
       )
         continue;
-      const subtreeWasModified =
-        Boolean(current.userModifiedAt) ||
-        current.clips.some(
-          (clip) =>
-            clip.status !== StoryProductionSpecStatus.archived &&
-            (clip.userModifiedAt ||
-              clip.assetBindings.some(
-                (binding) =>
-                  binding.status !== StoryProductionSpecStatus.archived &&
-                  binding.userModifiedAt,
-              )),
-        ) ||
-        current.cues.some(
-          (cue) =>
-            cue.status !== StoryProductionSpecStatus.archived &&
-            cue.userModifiedAt,
-        );
-      if (subtreeWasModified) {
-        const removalFingerprint = planFingerprint(
-          input.sourceFingerprint,
-          'sequence-removed',
-          { plotNodeId: current.plotNodeId },
-        );
-        if (
-          current.status === StoryProductionSpecStatus.stale &&
-          current.pendingSourceFingerprint === removalFingerprint &&
-          current.pendingPlanSnapshotId === planSnapshotId
-        ) {
-          await tx.storyStoryboardSequence.update({
-            where: { id: current.id },
-            data: { lastPlannedAt: now },
-          });
-          continue;
-        }
-        await tx.storyStoryboardSequence.update({
-          where: { id: current.id },
-          data: {
-            status: StoryProductionSpecStatus.stale,
-            pendingSourceFingerprint: removalFingerprint,
-            pendingPlanSnapshotId: planSnapshotId,
-            lastPlannedAt: now,
-            version: { increment: 1 },
-          },
-        });
-        result.sequencesMarkedStale += 1;
-      } else {
-        await Promise.all([
-          tx.storyStoryboardClipAssetBinding.updateMany({
-            where: { storyboardClip: { sequenceId: current.id } },
-            data: {
-              status: StoryProductionSpecStatus.archived,
-              pendingSourceFingerprint: null,
-            },
-          }),
-          tx.storyStoryboardCue.updateMany({
-            where: { sequenceId: current.id },
-            data: {
-              status: StoryProductionSpecStatus.archived,
-              pendingSourceFingerprint: null,
-            },
-          }),
-          tx.storyStoryboardClip.updateMany({
-            where: { sequenceId: current.id },
-            data: {
-              status: StoryProductionSpecStatus.archived,
-              pendingSourceFingerprint: null,
-            },
-          }),
-        ]);
-        await tx.storyStoryboardSequence.update({
-          where: { id: current.id },
-          data: {
-            status: StoryProductionSpecStatus.archived,
-            pendingSourceFingerprint: null,
-            pendingPlanSnapshotId: null,
-            planDisposition: StoryProductionPlanDisposition.planned,
-            lastPlannedAt: now,
-            version: { increment: 1 },
-          },
-        });
-        result.sequencesUpdated += 1;
-      }
+      await Promise.all([
+        tx.storyStoryboardClipAssetBinding.updateMany({
+          where: { storyboardClip: { sequenceId: current.id } },
+          data: { status: StoryProductionSpecStatus.archived },
+        }),
+        tx.storyStoryboardCue.updateMany({
+          where: { sequenceId: current.id },
+          data: { status: StoryProductionSpecStatus.archived },
+        }),
+        tx.storyStoryboardClip.updateMany({
+          where: { sequenceId: current.id },
+          data: { status: StoryProductionSpecStatus.archived },
+        }),
+      ]);
+      await tx.storyStoryboardSequence.update({
+        where: { id: current.id },
+        data: {
+          status: StoryProductionSpecStatus.archived,
+          lastPlannedAt: now,
+          version: { increment: 1 },
+        },
+      });
+      result.sequencesUpdated += 1;
     }
   }
 
@@ -2928,7 +2250,6 @@ export class StoryProductionPlanService {
         videoPrompt: clipPlan.kind === 'video' ? clipPlan.videoPrompt : null,
         negativePrompt: clipPlan.negativePrompt ?? null,
         sourceFingerprint: fingerprint,
-        pendingSourceFingerprint: null,
         status: StoryProductionSpecStatus.current,
         lastPlannedAt: now,
         ...(options.clearUserModifications
@@ -2978,7 +2299,6 @@ export class StoryProductionPlanService {
         where: { storyboardClipId: current.id },
         data: {
           status: StoryProductionSpecStatus.archived,
-          pendingSourceFingerprint: null,
           ...(options.clearUserModifications
             ? { userModifiedAt: null, userModifiedByUserId: null }
             : {}),
@@ -2988,7 +2308,6 @@ export class StoryProductionPlanService {
         where: { id: current.id },
         data: {
           status: StoryProductionSpecStatus.archived,
-          pendingSourceFingerprint: null,
           version: { increment: 1 },
         },
       });
@@ -3005,21 +2324,18 @@ export class StoryProductionPlanService {
         where: { storyboardClip: { sequenceId } },
         data: {
           status: StoryProductionSpecStatus.archived,
-          pendingSourceFingerprint: null,
         },
       }),
       tx.storyStoryboardCue.updateMany({
         where: { sequenceId },
         data: {
           status: StoryProductionSpecStatus.archived,
-          pendingSourceFingerprint: null,
         },
       }),
       tx.storyStoryboardClip.updateMany({
         where: { sequenceId },
         data: {
           status: StoryProductionSpecStatus.archived,
-          pendingSourceFingerprint: null,
         },
       }),
     ]);
@@ -3099,7 +2415,6 @@ export class StoryProductionPlanService {
               : false,
             rank,
             sourceFingerprint: fingerprint,
-            pendingSourceFingerprint: null,
             status: StoryProductionSpecStatus.current,
             lastPlannedAt: now,
             ...(options.clearUserModifications &&
@@ -3122,7 +2437,6 @@ export class StoryProductionPlanService {
       },
       data: {
         status: StoryProductionSpecStatus.archived,
-        pendingSourceFingerprint: null,
       },
     });
   }
@@ -3166,7 +2480,6 @@ export class StoryProductionPlanService {
             plotDecisionId: cue.decisionId,
             atMs: cue.atMs,
             sourceFingerprint: fingerprint,
-            pendingSourceFingerprint: null,
             status: StoryProductionSpecStatus.current,
             lastPlannedAt: now,
             ...(options.clearUserModifications
@@ -3187,7 +2500,6 @@ export class StoryProductionPlanService {
       },
       data: {
         status: StoryProductionSpecStatus.archived,
-        pendingSourceFingerprint: null,
       },
     });
   }
@@ -3293,27 +2605,12 @@ function planFingerprint(source: string, kind: string, value: unknown): string {
   return canonicalJsonHash({ source, kind, value });
 }
 
-/** Stable semantic identity for the Asset source embedded by Storyboard. */
-export function storyAssetPlanFingerprint(value: unknown): string {
-  const plan = StoryAssetPlanSchema.parse(value);
-  return canonicalJsonHash({
-    assetSpecs: [...plan.assetSpecs]
-      .map((asset) => ({
-        ...asset,
-        sourceNodeIds: [...asset.sourceNodeIds].sort(),
-      }))
-      .sort((left, right) => left.stableKey.localeCompare(right.stableKey)),
-  });
-}
-
 function emptyReconcileResult(): StoryProductionReconcileResult {
   return {
     assetSpecsCreated: 0,
     assetSpecsUpdated: 0,
-    assetSpecsMarkedStale: 0,
     sequencesCreated: 0,
     sequencesUpdated: 0,
-    sequencesMarkedStale: 0,
   };
 }
 
@@ -3326,7 +2623,7 @@ function assertProductionSourceFingerprint(value: string): void {
   });
 }
 
-type PendingPlanSnapshotValue = {
+type PlanSnapshotValue = {
   sourceFingerprint: string;
   planFingerprint: string;
   productionPlan: Prisma.JsonValue;
@@ -3337,17 +2634,8 @@ type StoryProductionSnapshotPlan =
   | StoryAssetPlan
   | StoryStoryboardPlan;
 
-type PendingConflictTarget = {
-  id: string;
-  version: number;
-  status: StoryProductionSpecStatus;
-  pendingSourceFingerprint: string | null;
-  pendingPlanSnapshotId: string | null;
-  pendingPlanSnapshot: PendingPlanSnapshotValue | null;
-};
-
 function parsePlanSnapshot(
-  snapshot: PendingPlanSnapshotValue,
+  snapshot: PlanSnapshotValue,
 ): StoryProductionSnapshotPlan {
   const parsed = parseProductionSnapshotPayload(snapshot.productionPlan);
   if (
@@ -3378,76 +2666,6 @@ function assetPlanFromSnapshot(
 ): StoryAssetPlan {
   if (!('assetSpecs' in plan)) throw productionSnapshotCorrupt();
   return StoryAssetPlanSchema.parse({ assetSpecs: plan.assetSpecs });
-}
-
-function storyboardPlanFromSnapshot(
-  plan: StoryProductionSnapshotPlan,
-): StoryStoryboardPlan {
-  if (!('storyboardSequences' in plan)) throw productionSnapshotCorrupt();
-  return StoryStoryboardPlanSchema.parse({
-    storyboardSequences: plan.storyboardSequences,
-  });
-}
-
-function readPendingConflict(
-  row: PendingConflictTarget,
-  input: ResolveStoryProductionConflictInput,
-  resource: string,
-): {
-  plan: StoryProductionSnapshotPlan;
-  sourceFingerprint: string;
-} {
-  if (row.version !== input.expectedVersion) {
-    throw productionCasConflict(resource);
-  }
-  if (
-    row.status !== StoryProductionSpecStatus.stale ||
-    !row.pendingSourceFingerprint
-  ) {
-    throw new ConflictException({
-      code: 'STORY_PRODUCTION_CONFLICT_NOT_PENDING',
-      message: `${resource} has no pending planner conflict to resolve.`,
-    });
-  }
-  if (row.pendingSourceFingerprint !== input.expectedPendingSourceFingerprint) {
-    throw new ConflictException({
-      code: 'STORY_PRODUCTION_PENDING_CHANGED',
-      message: `${resource} received a newer pending plan. Reload and choose again.`,
-    });
-  }
-  if (!row.pendingPlanSnapshotId || !row.pendingPlanSnapshot) {
-    throw new ConflictException({
-      code: 'STORY_PRODUCTION_PENDING_SNAPSHOT_MISSING',
-      message:
-        'This legacy conflict predates durable plan snapshots. Re-run Story planning once, then resolve the refreshed conflict.',
-    });
-  }
-  return {
-    plan: parsePlanSnapshot(row.pendingPlanSnapshot),
-    sourceFingerprint: row.pendingPlanSnapshot.sourceFingerprint,
-  };
-}
-
-function assertPendingFingerprint(
-  row: { pendingSourceFingerprint: string | null },
-  expected: string,
-): void {
-  if (row.pendingSourceFingerprint !== expected) {
-    throw productionSnapshotCorrupt();
-  }
-}
-
-function pendingConflictCasWhere(
-  row: PendingConflictTarget,
-  input: ResolveStoryProductionConflictInput,
-) {
-  return {
-    id: row.id,
-    version: input.expectedVersion,
-    status: StoryProductionSpecStatus.stale,
-    pendingSourceFingerprint: input.expectedPendingSourceFingerprint,
-    pendingPlanSnapshotId: row.pendingPlanSnapshotId,
-  };
 }
 
 function productionSnapshotCorrupt(): InternalServerErrorException {
@@ -3718,51 +2936,20 @@ function jsonStringArray(value: Prisma.JsonValue): string[] {
   return value as string[];
 }
 
-/** Chapter-scoped semantic Plot version used as the Asset upstream fence. */
-function chapterPlotFingerprint(
-  draft: InteractiveStoryDraftContent,
-  chapterEntryNodeId: string | null,
-  ownedNodeIds: ReadonlySet<string>,
-): string {
-  return canonicalJsonHash(
-    InteractiveStoryDraftContentSchema.parse({
-      ...draft,
-      graph: {
-        entryNodeId: chapterEntryNodeId,
-        nodes: draft.graph.nodes.filter((node) =>
-          ownedNodeIds.has(node.nodeId),
-        ),
-      },
-    }),
-  );
-}
-
-function plotMatchesApprovedScreenplay(
-  screenplay: StoryScreenplay,
-  draft: InteractiveStoryDraftContent,
-  chapterEntryNodeId: string | null,
-  ownedNodeIds: ReadonlySet<string>,
-): boolean {
-  const expected = {
-    entryNodeId: screenplay.entrySceneId,
-    nodes: screenplay.scenes.map((scene) => ({
-      kind: 'clip' as const,
-      nodeId: scene.nodeId,
-      clipKey: scene.clipKey,
-      ...(scene.name ? { name: scene.name } : {}),
-      description: [scene.heading, scene.action].join('\n\n'),
-      interactions: [],
-      exit: scene.exit,
-    })),
-  };
-  const actual = {
-    entryNodeId: chapterEntryNodeId,
-    nodes: draft.graph.nodes.filter((node) => ownedNodeIds.has(node.nodeId)),
-  };
-  return canonicalJsonHash(actual) === canonicalJsonHash(expected);
-}
-
 function toAssetSpecDto(row: AssetSpecRow) {
+  const latestPrimary = row.generations.find(
+    (generation) => generation.purpose === StoryAssetGenerationPurpose.primary,
+  );
+  const latestTurnaround = row.generations.find(
+    (generation) =>
+      generation.purpose === StoryAssetGenerationPurpose.turnaround,
+  );
+  const generationTarget = {
+    projectId: row.storyProjectId,
+    chapterId: row.storyChapterId,
+    kind: 'asset_spec' as const,
+    targetId: row.id,
+  };
   return {
     id: row.id,
     projectId: row.storyProjectId,
@@ -3778,9 +2965,6 @@ function toAssetSpecDto(row: AssetSpecRow) {
     negativePrompt: row.negativePrompt,
     generationConfig: row.generationConfig,
     sourceFingerprint: row.sourceFingerprint,
-    pendingSourceFingerprint: row.pendingSourceFingerprint,
-    planDisposition: row.planDisposition,
-    conflict: toAssetSpecConflictDto(row),
     status: row.status,
     version: row.version,
     selectedMediaVersionId: row.selectedMediaVersionId,
@@ -3789,13 +2973,16 @@ function toAssetSpecDto(row: AssetSpecRow) {
       : null,
     mediaVersions: row.mediaVersions.map(toCreativeMediaVersionDto),
     latestGeneration: row.generations[0]
-      ? toLatestGenerationDto(row.generations[0], {
-          projectId: row.storyProjectId,
-          chapterId: row.storyChapterId,
-          kind: 'asset_spec',
-          targetId: row.id,
-        })
+      ? toLatestGenerationDto(row.generations[0], generationTarget)
       : null,
+    latestGenerations: {
+      primary: latestPrimary
+        ? toLatestGenerationDto(latestPrimary, generationTarget)
+        : null,
+      turnaround: latestTurnaround
+        ? toLatestGenerationDto(latestTurnaround, generationTarget)
+        : null,
+    },
     userModifiedAt: row.userModifiedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -3831,6 +3018,7 @@ function toCreativeMediaVersionDto(row: CreativeMediaVersionRow) {
     durationSeconds: row.mediaAsset.durationSeconds,
     mimeType: row.mediaAsset.contentType,
     sourceFingerprint: row.sourceFingerprint,
+    purpose: generationPurpose(row.generationSnapshot),
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -3847,9 +3035,6 @@ function toStoryboardSequenceDto(row: StoryboardSequenceRow) {
     suggestedDurationMs: row.suggestedDurationMs,
     durationMs: row.durationMs,
     sourceFingerprint: row.sourceFingerprint,
-    pendingSourceFingerprint: row.pendingSourceFingerprint,
-    planDisposition: row.planDisposition,
-    conflict: toStoryboardConflictDto(row),
     status: row.status,
     version: row.version,
     userModifiedAt: row.userModifiedAt?.toISOString() ?? null,
@@ -3924,69 +3109,13 @@ function toStoryboardSequenceDto(row: StoryboardSequenceRow) {
   };
 }
 
-function toAssetSpecConflictDto(row: AssetSpecRow) {
-  if (!row.pendingSourceFingerprint || !row.pendingPlanSnapshot) return null;
-  const plan = assetPlanFromSnapshot(
-    parsePlanSnapshot(row.pendingPlanSnapshot),
-  );
-  const pendingItem = plan.assetSpecs.find(
-    (item) => item.stableKey === row.stableKey,
-  );
-  const expected = pendingItem
-    ? planFingerprint(
-        row.pendingPlanSnapshot.sourceFingerprint,
-        'asset',
-        pendingItem,
-      )
-    : planFingerprint(
-        row.pendingPlanSnapshot.sourceFingerprint,
-        'asset-removed',
-        { stableKey: row.stableKey },
-      );
-  assertPendingFingerprint(row, expected);
-  return {
-    pendingSourceFingerprint: row.pendingSourceFingerprint,
-    pendingPlanFingerprint: row.pendingPlanSnapshot.planFingerprint,
-    removed: !pendingItem,
-    pendingItem: pendingItem ?? null,
-  };
-}
-
-function toStoryboardConflictDto(row: StoryboardSequenceRow) {
-  if (!row.pendingSourceFingerprint || !row.pendingPlanSnapshot) return null;
-  const plan = storyboardPlanFromSnapshot(
-    parsePlanSnapshot(row.pendingPlanSnapshot),
-  );
-  const pendingItem = plan.storyboardSequences.find(
-    (item) => item.plotNodeId === row.plotNodeId,
-  );
-  const expected = pendingItem
-    ? planFingerprint(
-        row.pendingPlanSnapshot.sourceFingerprint,
-        'sequence',
-        pendingItem,
-      )
-    : planFingerprint(
-        row.pendingPlanSnapshot.sourceFingerprint,
-        'sequence-removed',
-        { plotNodeId: row.plotNodeId },
-      );
-  assertPendingFingerprint(row, expected);
-  return {
-    pendingSourceFingerprint: row.pendingSourceFingerprint,
-    pendingPlanFingerprint: row.pendingPlanSnapshot.planFingerprint,
-    removed: !pendingItem,
-    pendingItem: pendingItem ?? null,
-  };
-}
-
 type LatestGenerationRow = AssetSpecRow['generations'][number];
 
 /**
  * Creative-media selection is presentation state, not a semantic edit to the
  * logical production specification. Keeping this distinction explicit lets a
  * later approved Script/plan reconcile update prompts and topology normally,
- * while still protecting genuine creator-authored spec changes as stale.
+ * while preserving genuine creator-authored spec changes as user-owned work.
  */
 export function storyAssetSemanticPatch(
   input: PatchStoryAssetSpecInput,
@@ -4058,6 +3187,7 @@ function toLatestGenerationDto(
   return {
     id: generation.id,
     outputKind: generation.generationKind,
+    purpose: generation.purpose,
     targetVersion: generation.targetVersion,
     targetSourceFingerprint: generation.targetSourceFingerprint,
     retryOfGenerationId: generation.retryOfGenerationId,
@@ -4072,4 +3202,13 @@ function toLatestGenerationDto(
     createdAt: generation.createdAt.toISOString(),
     updatedAt: generation.updatedAt.toISOString(),
   };
+}
+
+function generationPurpose(value: Prisma.JsonValue): 'primary' | 'turnaround' {
+  return value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    value.purpose === 'turnaround'
+    ? 'turnaround'
+    : 'primary';
 }

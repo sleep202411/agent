@@ -2144,23 +2144,6 @@ export class StoryAgentRunService {
               'The collaborative Script changed after this stage proposal was approved.',
           });
         }
-        const productionState =
-          await this.productionPlans?.getProductionStateInTransaction(
-            tx,
-            run.storyProjectId,
-            run.storyChapterId,
-          );
-        if (
-          proposalStage !== 'script' &&
-          productionState &&
-          nextAuthoringTargetStage(productionState) !== proposalStage
-        ) {
-          return this.finishClaimedTerminal(tx, run, 'stale', {
-            code: 'STORY_AGENT_STAGE_BASE_CHANGED',
-            detail:
-              'The canonical production stage changed before this proposal could be applied.',
-          });
-        }
       }
 
       let nextDraft: InteractiveStoryDraftContent;
@@ -2485,8 +2468,6 @@ export class StoryAgentRunService {
           storyProjectId: run.storyProjectId,
           storyChapterId: run.storyChapterId,
           actorUserId: run.confirmedByUserId,
-          // Asset Specs are pinned to the exact approved chapter Plot. Any
-          // later topology change makes the plan stale before Storyboard use.
           sourceFingerprint: afterDraftHash,
           canonicalCharacterIds: proposal.screenplay.characters.map(
             (character) => character.id,
@@ -2504,30 +2485,7 @@ export class StoryAgentRunService {
             storyChapterId: run.storyChapterId,
             actorUserId: run.confirmedByUserId,
             sourceFingerprint: afterDraftHash,
-            assetPlan: proposal.assetPlan,
             storyboardPlan: proposal.storyboardPlan,
-          },
-        );
-      }
-      if (
-        isStoryScreenplayProposal(proposal) ||
-        isStoryPlotProposal(proposal)
-      ) {
-        // Invalidate only true downstream stages in Script -> Plot -> Assets
-        // -> Storyboard order.
-        await this.productionPlans!.invalidateDownstreamAfterUpstreamApprovalInTransaction(
-          tx,
-          {
-            storyProjectId: run.storyProjectId,
-            storyChapterId: run.storyChapterId,
-            actorUserId: run.confirmedByUserId,
-            sourceFingerprint: isStoryScreenplayProposal(proposal)
-              ? (scriptCommit?.hash ?? proposal.baseScriptHash)
-              : afterDraftHash,
-            upstreamStage: isStoryScreenplayProposal(proposal)
-              ? 'script'
-              : 'plot',
-            upstreamRunId: run.id,
           },
         );
       }
@@ -3447,14 +3405,11 @@ export class StoryAgentRunService {
         if (!authoringSnapshotMatchesState(input.authoredAgainst, state)) {
           return { value: { kind: 'stale_base' }, dispatches: [] };
         }
-        const [scriptHead, productionState] = await Promise.all([
-          readStoryScriptHead(tx, run.storyProjectId, run.storyChapterId),
-          this.productionPlans!.getProductionStateInTransaction(
-            tx,
-            run.storyProjectId,
-            run.storyChapterId,
-          ),
-        ]);
+        const scriptHead = await readStoryScriptHead(
+          tx,
+          run.storyProjectId,
+          run.storyChapterId,
+        );
         if (
           !scriptHead.hasContent ||
           scriptHead.documentId === null ||
@@ -3464,10 +3419,6 @@ export class StoryAgentRunService {
         ) {
           return { value: { kind: 'stale_base' }, dispatches: [] };
         }
-        if (nextAuthoringTargetStage(productionState) !== input.targetStage) {
-          return { value: { kind: 'stale_base' }, dispatches: [] };
-        }
-
         let proposal:
           | StoryPlotProposal
           | StoryAssetProposal
@@ -3687,21 +3638,17 @@ export class StoryAgentRunService {
         if (!authoringSnapshotMatchesState(authoredAgainst, state)) {
           return { value: { kind: 'stale_base' }, dispatches: [] };
         }
-        const [scriptHead, productionState] = await Promise.all([
-          readStoryScriptHead(tx, run.storyProjectId, run.storyChapterId),
-          this.productionPlans!.getProductionStateInTransaction(
-            tx,
-            run.storyProjectId,
-            run.storyChapterId,
-          ),
-        ]);
+        const scriptHead = await readStoryScriptHead(
+          tx,
+          run.storyProjectId,
+          run.storyChapterId,
+        );
         if (
           !scriptHead.hasContent ||
           scriptHead.documentId === null ||
           authoredAgainst.scriptDocumentId !== scriptHead.documentId ||
           authoredAgainst.scriptSequence !== scriptHead.sequence ||
-          authoredAgainst.scriptHash !== scriptHead.hash ||
-          nextAuthoringTargetStage(productionState) !== 'noop'
+          authoredAgainst.scriptHash !== scriptHead.hash
         ) {
           return { value: { kind: 'stale_base' }, dispatches: [] };
         }
@@ -5650,24 +5597,6 @@ function parseStagedScreenplayProposal(
   delete normalized.productionPlan;
   const legacy = StoryScreenplayProposalSchema.safeParse(normalized);
   return legacy.success ? legacy.data : null;
-}
-
-function nextAuthoringTargetStage(state: {
-  script: { status: 'missing' | 'current' | 'stale' };
-  plotTree: { status: 'missing' | 'current' | 'stale' };
-  assets: { status: 'missing' | 'current' | 'stale' };
-  storyboard: { status: 'missing' | 'current' | 'stale' };
-}): StoryAgentAuthoringTargetStage {
-  if (state.script.status === 'missing') return 'script';
-  if (
-    state.script.status !== 'current' ||
-    state.plotTree.status !== 'current'
-  ) {
-    return 'plot';
-  }
-  if (state.assets.status !== 'current') return 'assets';
-  if (state.storyboard.status !== 'current') return 'storyboard';
-  return 'noop';
 }
 
 function authoringStageForProposal(

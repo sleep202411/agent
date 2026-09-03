@@ -7,11 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  getStoryProductionState,
-  getStoryStoryboard,
-  storyProductionKeys,
-} from "@/lib/story-production-api";
+import { getStoryStoryboard, storyProductionKeys } from "@/lib/story-production-api";
 import {
   putStoryDraft,
   storyApiErrorMessage,
@@ -53,13 +49,6 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     enabled: Boolean(chapterId),
     retry: false,
   });
-  const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(projectId, chapterId),
-    queryFn: ({ signal }) => getStoryProductionState(projectId, chapterId as string, signal),
-    enabled: Boolean(chapterId),
-    retry: false,
-  });
-
   const locale = useLocale();
   const nodes = useMemo(
     () => workbenchQuery.data?.draft.content.graph.nodes ?? [],
@@ -139,9 +128,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     onError: (error) => toast.error(storyApiErrorMessage(error, t("addNodeError"))),
   });
 
-  const loading =
-    workbenchQuery.isPending ||
-    (Boolean(chapterId) && (storyboardQuery.isPending || productionQuery.isPending));
+  const loading = workbenchQuery.isPending || (Boolean(chapterId) && storyboardQuery.isPending);
 
   // Consume the deep link exactly once, after the board has actually rendered
   // (both queries settled): refetches must not yank the viewport back to the
@@ -165,16 +152,13 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (storyboardQuery.isError || workbenchQuery.isError || productionQuery.isError) {
+  if (storyboardQuery.isError || workbenchQuery.isError) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
           <IconAlertTriangle className="mx-auto size-6 text-white/58" aria-hidden="true" />
           <p role="alert" className="mt-3 max-w-lg text-sm text-white/72">
-            {storyApiErrorMessage(
-              storyboardQuery.error ?? workbenchQuery.error ?? productionQuery.error,
-              t("loadError")
-            )}
+            {storyApiErrorMessage(storyboardQuery.error ?? workbenchQuery.error, t("loadError"))}
           </p>
           <Button
             variant="secondary"
@@ -182,7 +166,6 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
             onClick={() => {
               void storyboardQuery.refetch();
               void workbenchQuery.refetch();
-              void productionQuery.refetch();
             }}
           >
             <IconRefresh />
@@ -193,7 +176,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (!chapterId || !productionQuery.data) {
+  if (!chapterId) {
     return (
       <main className="grid h-full min-w-0 flex-1 place-items-center px-6 text-center">
         <div>
@@ -204,11 +187,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     );
   }
 
-  const generationAllowed =
-    sceneNodes.length > 0 &&
-    productionQuery.data.plotTree.status === "current" &&
-    productionQuery.data.assets.status === "current" &&
-    productionQuery.data.storyboard.status === "current";
+  const generationAllowed = projectCanEdit && sceneNodes.length > 0;
 
   return (
     <main className="min-w-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">

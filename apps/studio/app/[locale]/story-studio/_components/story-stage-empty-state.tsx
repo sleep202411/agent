@@ -55,8 +55,8 @@ export function StoryStageEmptyState({
 
 /**
  * In-flow operational guidance for a stage that still has useful content.
- * Unlike StoryStageEmptyState it never replaces that content or its conflict
- * controls; the optional Agent action remains a prefill-only bridge.
+ * Unlike StoryStageEmptyState it never replaces that content; the optional
+ * Agent action remains a prefill-only bridge.
  */
 export function StoryStageNotice({
   title,

@@ -10,6 +10,7 @@ export interface StoryProductionGenerationTargetLink {
 }
 
 interface StoryProductionGenerationProgressRow {
+  submissionSnapshot: Prisma.JsonValue;
   materializedAt: Date | null;
   materializationError: Prisma.JsonValue | null;
   reconcileAttempts: number;
@@ -43,6 +44,9 @@ export function storyProductionGenerationBasePath(
 export function toStoryProductionGenerationProgressDto(
   row: StoryProductionGenerationProgressRow,
 ) {
+  const requestedOutputCount = storyGenerationRequestedOutputCount(
+    row.submissionSnapshot,
+  );
   const materializationError = jsonObject(row.materializationError);
   const hasMaterializationError = Object.keys(materializationError).length > 0;
   const attachmentRetryable = materializationError.attachmentRetryable === true;
@@ -57,6 +61,7 @@ export function toStoryProductionGenerationProgressDto(
         : 'waiting_for_job';
 
   return {
+    requestedOutputCount,
     aiJob: {
       id: row.aiJob.id,
       modelId: row.aiJob.modelId,
@@ -82,7 +87,19 @@ export function toStoryProductionGenerationProgressDto(
   };
 }
 
-function jsonObject(value: Prisma.JsonValue | null): Record<string, unknown> {
+function storyGenerationRequestedOutputCount(
+  submissionSnapshot: Prisma.JsonValue,
+): number {
+  const effectiveOptions = jsonObject(
+    jsonObject(submissionSnapshot).effectiveOptions,
+  );
+  const value = effectiveOptions.numOutputs;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+    ? value
+    : 1;
+}
+
+function jsonObject(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};

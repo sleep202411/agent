@@ -2759,33 +2759,6 @@
     "scriptDoc": {
       "placeholder": "寫下你的劇本——流水線會從這裡讀取原文…"
     },
-    "productionConflict": {
-      "ariaLabel": "製作方案衝突",
-      "title": "你的編輯與最新批准方案存在衝突",
-      "description": "請先查看待套用方案，再決定本章是保留目前製作內容，還是採用最新編譯版本。",
-      "metadataUnavailable": "伺服器尚未傳回衝突摘要。請重新整理本章後再選擇解決方式。",
-      "latestRemovesItem": "最新方案將移除此項目",
-      "assetRemovalSummary": "採用最新方案會封存{name}；如果引用條件允許，保留目前內容會將其儲存為本章覆寫項。",
-      "sequenceRemovalSummary": "由於對應的情節節點已不存在，採用最新方案會封存{name}及其片段。",
-      "latestAsset": "最新資產規格 · {name} · {kind}",
-      "latestPrompt": "圖片提示詞：{prompt}",
-      "latestSequence": "最新序列 · {name}",
-      "latestSequenceSummary": "{duration} 毫秒 · {clips} 個片段 · {cues} 個決策提示點",
-      "keepCurrent": "保留目前內容",
-      "useLatestPlan": "採用最新方案",
-      "removedSequenceCannotKeep": "此情節節點已被移除，因此目前序列不能保留為覆寫項。",
-      "resolved": "製作衝突已解決。",
-      "resolveError": "無法解決製作衝突。",
-      "confirmKeepTitle": "保留目前製作內容？",
-      "confirmLatestTitle": "採用最新批准方案？",
-      "confirmKeepDescription": "目前編輯會成為本章的明確覆寫項；後續方案更新會與這個保留版本比較。",
-      "confirmLatestDescription": "最新編譯的製作指令會取代存在衝突的可編輯欄位；已有的相容媒體仍可繼續使用。",
-      "confirmRemoveAssetDescription": "最新方案會移除此資產規格。只有在沒有有效分鏡引用需要它時，系統才會將其封存。",
-      "confirmRemoveSequenceDescription": "最新方案已移除此情節節點；該序列及其製作片段將被封存。",
-      "cancel": "取消",
-      "confirmKeep": "保留目前內容",
-      "confirmLatest": "採用最新方案"
-    },
     "productionGeneration": {
       "controlsAria": "為{name}生成媒體",
       "requestError": "無法開始生成媒體。",
@@ -2798,7 +2771,6 @@
       "generate": "生成",
       "generateAgain": "再次生成",
       "progressAria": "生成進度",
-      "targetNotCurrent": "請先將此過期製作目標與目前情節同步，再生成媒體。",
       "status": {
         "idle": "可使用預設相容模型生成",
         "submitting": "正在提交生成…",
@@ -2825,31 +2797,12 @@
         "location": "本章沒有場景資產規格",
         "prop": "本章沒有道具資產規格"
       },
-      "categoryEmptyHint": "目前分類為空。切換到其他分類可查看本章其餘資產規格。",
+      "categoryEmptyHint": "目前分類為空。你可以手動新增資產規格，或切換到其他分類。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。",
-      "continueWithAgent": "在 FizzAgent 中繼續",
-      "stage": {
-        "plotRequired": {
-          "title": "請先批准情節樹",
-          "description": "資產規劃應基於已批准的敘事拓撲。請先在 FizzAgent 中準備並審核情節樹，再提取可重用資產。"
-        },
-        "assetsRequired": {
-          "title": "下一步是批准資產規格",
-          "description": "讓 FizzAgent 根據已批准的情節樹及其劇本解讀整理可重用的角色、場景和道具。進入分鏡前會先由你審閱；此過程不會生成媒體。"
-        },
-        "stale": {
-          "title": "{count} 項資產規格需要處理",
-          "description": "現有內容會保留供你審閱。請在下方解決可處理的衝突；缺少對比詳情的項目需要讓 Agent 重新準備提案。在本階段恢復為目前版本前，媒體生成保持不可用。"
-        },
-        "noAssets": {
-          "title": "本章不需要可重用的資產規格",
-          "description": "無需建立可重用的角色、場景或道具，可直接繼續規劃分鏡。"
-        }
-      },
-      "prompts": {
-        "plot": "請根據已批准的劇本準備本章情節樹，進入資產規格前先交給我審閱和批准。不要生成媒體。",
-        "assets": "請根據已批准的情節樹及其劇本解讀準備本章資產規格，進入分鏡前先交給我審閱和批准。不要生成媒體。",
-        "storyboard": "繼續為本章準備分鏡方案，儲存前先交給我審閱和批准。不要生成媒體。"
+      "addByKind": {
+        "character": "新增角色",
+        "location": "新增場景",
+        "prop": "新增道具"
       },
       "count": "{count} 項資產規格",
       "loadError": "無法載入資產規格。",
@@ -2861,8 +2814,10 @@
       },
       "filterLabel": "按類型篩選資產規格",
       "batch": {
-        "generate": "生成",
+        "generate": "批量生成",
         "allGenerated": "目前分類已全部生成",
+        "tooltip": "使用 {model} 及目前參數，批量生成此分類中剩餘的 {count} 項空資產。",
+        "allGeneratedTooltip": "此分類中的資產都已有媒體。",
         "running": "正在生成",
         "runningOther": "協作者正在生成",
         "cancelling": "正在取消",
@@ -2893,15 +2848,31 @@
         }
       },
       "details": "詳情",
+      "createDialog": {
+        "description": "手動建立可重用的角色、場景或道具。此操作不會生成媒體，也不會消耗點數。",
+        "name": "名稱",
+        "cancel": "取消",
+        "create": "新增資產",
+        "created": "資產規格已新增。",
+        "createError": "無法新增資產規格。"
+      },
       "mediaAction": {
         "uploadImage": "上載圖片",
         "replaceImage": "替換圖片",
         "replacing": "正在替換圖片…",
         "replaceSuccess": "資產圖片已替換。",
-        "replaceError": "無法替換資產圖片。"
+        "replaceError": "無法替換資產圖片。",
+        "turnaroundReplaceSuccess": "已加入三視圖圖片。",
+        "turnaroundReplaceError": "無法加入三視圖圖片。"
       },
       "detailDialog": {
+        "name": "名稱",
         "imagePrompt": "圖片提示詞",
+        "imagePromptPlaceholder": {
+          "character": "描述角色的外貌、服裝與風格；輸入 @ 引用已有資產…",
+          "location": "描述場景的環境、構圖、光線與氣氛；輸入 @ 引用已有資產…",
+          "prop": "描述道具的造型、材質與細節；輸入 @ 引用已有資產…"
+        },
         "model": "模型",
         "save": "儲存",
         "saved": "已儲存。",
@@ -2910,7 +2881,28 @@
         "generateStarted": "已開始生成。",
         "generateError": "無法開始生成媒體。",
         "close": "關閉",
-        "videoPrompt": "影片提示詞"
+        "videoPrompt": "影片提示詞",
+        "delete": "刪除",
+        "deleteTitle": "刪除{name}？",
+        "deleteDescription": "該資產規格及其分鏡引用會從本章移除，已有媒體歷史仍會保留。",
+        "deleteCancel": "取消",
+        "deleteConfirm": "刪除",
+        "deleted": "資產規格已刪除。",
+        "deleteError": "無法刪除資產規格。"
+      },
+      "workbench": {
+        "versionSelected": "已切換圖片版本。",
+        "versionSelectError": "無法切換到這個圖片版本。",
+        "noVersions": "尚未生成或上載圖片。",
+        "turnaroundTitle": "三視圖",
+        "turnaroundDescription": "AI 影片生成會優先使用三視圖作為角色參考。",
+        "turnaroundFor": "{name}的三視圖",
+        "turnaroundNeedsPrimary": "請先生成或上載角色形象圖。",
+        "turnaroundEmpty": "尚未生成三視圖。",
+        "turnaroundUpload": "上載三視圖",
+        "turnaroundDownload": "下載三視圖",
+        "previousVersion": "上一組版本",
+        "nextVersion": "下一組版本"
       },
       "title": "資產規格"
     },
@@ -2995,11 +2987,6 @@
       "clipCount": "{count} 個片段",
       "noClips": "此序列沒有片段。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。準備好後，可在已儲存的片段上選取「生成」。",
-      "status": {
-        "current": "目前版本",
-        "stale": "需要覆核",
-        "archived": "已封存"
-      },
       "seconds": "{value} 秒",
       "options": "選項",
       "addNode": "新增分鏡節點",
@@ -3095,7 +3082,6 @@
         "stepAria": "{step}：{status}",
         "status": {
           "current": "目前版本",
-          "stale": "需要覆核",
           "missing": "尚未就緒",
           "unknown": "狀態不可用"
         }

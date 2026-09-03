@@ -66,14 +66,21 @@ export function StoryProductionPageHeader({
 export function StoryProductionGenerationControls({
   projectId,
   modalities = ["image", "video"],
+  appearance = "default",
 }: {
   projectId: string;
   modalities?: ProductionModality[];
+  appearance?: "default" | "plain";
 }) {
   return (
     <div className="flex shrink-0 items-center gap-2">
       {modalities.map((modality) => (
-        <ModalityPicker key={modality} projectId={projectId} modality={modality} />
+        <ModalityPicker
+          key={modality}
+          projectId={projectId}
+          modality={modality}
+          appearance={appearance}
+        />
       ))}
     </div>
   );
@@ -82,9 +89,11 @@ export function StoryProductionGenerationControls({
 function ModalityPicker({
   projectId,
   modality,
+  appearance,
 }: {
   projectId: string;
   modality: ProductionModality;
+  appearance: "default" | "plain";
 }) {
   const t = useTranslations("storyStudio.productionHeader");
   const defaults = useStoryProductionGenerationDefaults(projectId, modality);
@@ -122,6 +131,16 @@ function ModalityPicker({
     setOptions(projectId, modality, defaultSettingsForModel(model));
     setPickerOpen(false);
   };
+  const applyOptions = (options: Parameters<typeof setOptions>[2]) => {
+    if (!selected) return;
+    if (entry.selection?.modelId !== selected.id) {
+      setModel(projectId, modality, {
+        modelId: selected.id,
+        schemaVersion: selected.schemaVersion,
+      });
+    }
+    setOptions(projectId, modality, options);
+  };
 
   return (
     <div className="flex items-center gap-1">
@@ -130,12 +149,20 @@ function ModalityPicker({
           type="button"
           aria-label={t(`${modality}Model`)}
           onClick={() => setPickerOpen((open) => !open)}
-          className="flex h-9 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-xs font-medium text-white/88 transition hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+          className={
+            appearance === "plain"
+              ? "flex h-9 max-w-28 items-center gap-1 text-xs text-white/78 transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/35"
+              : "flex h-9 items-center gap-2 rounded-lg bg-white/[0.06] px-3 text-xs font-medium text-white/88 transition hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none"
+          }
         >
-          <span className="shrink-0 text-[10px] font-semibold tracking-[0.08em] text-white/45 uppercase">
-            {t(`${modality}Label`)}
+          {appearance === "default" ? (
+            <span className="shrink-0 text-[10px] font-semibold tracking-[0.08em] text-white/45 uppercase">
+              {t(`${modality}Label`)}
+            </span>
+          ) : null}
+          <span className={appearance === "plain" ? "min-w-0 truncate" : "max-w-36 truncate"}>
+            {selected?.name ?? "…"}
           </span>
-          <span className="max-w-36 truncate">{selected?.name ?? "…"}</span>
           <IconChevronDown className="size-3.5 shrink-0 text-white/45" stroke={1.8} />
         </button>
         {pickerOpen ? (
@@ -155,10 +182,11 @@ function ModalityPicker({
       {selected ? (
         <ComposerQuickSettings
           model={selected}
-          settings={entry.options}
-          onChange={(next) => setOptions(projectId, modality, next)}
+          settings={defaults.options}
+          onChange={applyOptions}
           placement="below"
           align="right"
+          appearance={appearance === "plain" ? "plain" : "pill"}
           className="[&>button]:h-9 [&>button]:rounded-lg [&>button]:text-xs"
         />
       ) : null}

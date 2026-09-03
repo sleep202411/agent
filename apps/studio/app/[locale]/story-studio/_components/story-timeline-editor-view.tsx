@@ -58,7 +58,6 @@ import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import {
   createStoryProductionIdempotencyKey,
   createStoryStoryboardClipGeneration,
-  getStoryProductionState,
   getStoryStoryboard,
   patchStoryStoryboardClip,
   putStoryStoryboardTimeline,
@@ -116,13 +115,6 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     enabled: Boolean(chapterId),
     retry: false,
   });
-  const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(projectId, chapterId),
-    queryFn: ({ signal }) => getStoryProductionState(projectId, chapterId as string, signal),
-    enabled: Boolean(chapterId),
-    retry: false,
-  });
-
   const requestedPlotNodeId = searchParams.get("node");
   const selectedSequence = useMemo(() => {
     const sequences = storyboardQuery.data ?? [];
@@ -259,7 +251,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     onError: (error) => toast.error(storyApiErrorMessage(error, t("deleteError"))),
   });
 
-  const loading = Boolean(chapterId) && (storyboardQuery.isPending || productionQuery.isPending);
+  const loading = Boolean(chapterId) && storyboardQuery.isPending;
   if (loading) {
     return (
       <main aria-busy="true" className="h-full min-h-0 min-w-0 overflow-hidden px-4 py-5 sm:px-6">
@@ -268,20 +260,19 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (storyboardQuery.isError || productionQuery.isError) {
+  if (storyboardQuery.isError) {
     return (
       <main className="grid h-full min-h-0 min-w-0 place-items-center px-6 text-center">
         <div>
           <IconAlertTriangle className="mx-auto size-6 text-white/58" aria-hidden="true" />
           <p role="alert" className="mt-3 max-w-lg text-sm text-white/72">
-            {storyApiErrorMessage(storyboardQuery.error ?? productionQuery.error, t("loadError"))}
+            {storyApiErrorMessage(storyboardQuery.error, t("loadError"))}
           </p>
           <Button
             variant="secondary"
             className="mt-5"
             onClick={() => {
               void storyboardQuery.refetch();
-              void productionQuery.refetch();
             }}
           >
             <IconRefresh />
@@ -311,11 +302,9 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
     );
   }
 
-  // Approval state controls paid generation, never ordinary creator editing.
   const canEdit = projectCanEdit;
-  const allowGeneration =
-    productionQuery.data?.storyboard.status === "current" && selectedSequence.status === "current";
-  const canImportMedia = canEdit && projectCanEdit && Boolean(workbenchQuery.workspaceId);
+  const allowGeneration = projectCanEdit;
+  const canImportMedia = canEdit && Boolean(workbenchQuery.workspaceId);
 
   const addClip = () =>
     addMutation.mutate({

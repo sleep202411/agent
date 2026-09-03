@@ -2050,7 +2050,7 @@
         },
         "visualContinuityGuardian": {
           "name": "Visual Continuity Guardian",
-          "description": "Keep characters, wardrobe, locations, props and screen direction consistent."
+          "description": "Keep characters, wardrobe, scenes, props and screen direction consistent."
         },
         "imageToVideoMotionDirector": {
           "name": "Image-to-Video Motion Director",
@@ -2575,7 +2575,7 @@
           "ready": "Asset Specs ready",
           "review": "Review Asset Specs",
           "eyebrow": "Asset Specs proposal",
-          "description": "Review the reusable character, location, and prop specifications derived from the approved Plot Tree. Approving saves logical specs only; no media is generated or credits spent.",
+          "description": "Review the reusable character, scene, and prop specifications derived from the approved Plot Tree. Approving saves logical specs only; no media is generated or credits spent.",
           "mobileDescription": "Continuing saves these {count} Asset Specs and generates their images sequentially. Credits are charged as each image starts, and completed images fill in automatically.",
           "legacyReadyMessage": "The Asset Specs proposal is ready for review; approval saves logical specs only and generates no media.",
           "mobileReadyMessage": "The Asset Specs are ready. Continuing generates images sequentially; credits are charged as each image starts, and completed images fill in automatically.",
@@ -2614,7 +2614,7 @@
           "interactions": "Interactions",
           "assetSpecs": "Asset Specs",
           "characters": "Characters",
-          "locations": "Locations",
+          "locations": "Scenes",
           "props": "Props",
           "sequences": "Sequences",
           "clips": "Clips",
@@ -2630,7 +2630,7 @@
         },
         "assetKinds": {
           "character": "Character",
-          "location": "Location",
+          "location": "Scene",
           "prop": "Prop"
         },
         "clipKinds": {
@@ -2759,33 +2759,6 @@
     "scriptDoc": {
       "placeholder": "Write your script — the pipeline reads it from here…"
     },
-    "productionConflict": {
-      "ariaLabel": "Production plan conflict",
-      "title": "Your edits conflict with the latest approved plan",
-      "description": "Review the pending plan before deciding whether this chapter keeps your current production work or adopts the latest compiled version.",
-      "metadataUnavailable": "The conflict summary has not arrived from the server yet. Refresh this chapter before choosing a resolution.",
-      "latestRemovesItem": "The latest plan removes this item",
-      "assetRemovalSummary": "Use latest plan will archive {name}. Keep current preserves it as a chapter override when references allow.",
-      "sequenceRemovalSummary": "Use latest plan will archive {name} and its clips because its Plot node no longer exists.",
-      "latestAsset": "Latest Asset Spec · {name} · {kind}",
-      "latestPrompt": "Image prompt: {prompt}",
-      "latestSequence": "Latest sequence · {name}",
-      "latestSequenceSummary": "{duration} ms · {clips} clips · {cues} decision cues",
-      "keepCurrent": "Keep current",
-      "useLatestPlan": "Use latest plan",
-      "removedSequenceCannotKeep": "This Plot node was removed, so the current sequence cannot remain as an override.",
-      "resolved": "Production conflict resolved.",
-      "resolveError": "The production conflict could not be resolved.",
-      "confirmKeepTitle": "Keep the current production work?",
-      "confirmLatestTitle": "Use the latest approved plan?",
-      "confirmKeepDescription": "Your current edits become an explicit chapter override. Future plan updates will compare against this preserved version.",
-      "confirmLatestDescription": "The latest compiled production instructions replace the conflicting editable fields. Existing compatible media remains available.",
-      "confirmRemoveAssetDescription": "The latest plan removes this Asset Spec. It will be archived only when no active Storyboard reference still requires it.",
-      "confirmRemoveSequenceDescription": "The latest plan removes this Plot node. This sequence and its production clips will be archived.",
-      "cancel": "Cancel",
-      "confirmKeep": "Keep current",
-      "confirmLatest": "Use latest plan"
-    },
     "productionGeneration": {
       "controlsAria": "Media generation for {name}",
       "requestError": "Media generation could not be started.",
@@ -2798,7 +2771,6 @@
       "generate": "Generate",
       "generateAgain": "Generate again",
       "progressAria": "Generation progress",
-      "targetNotCurrent": "Reconcile this stale production target before generating media.",
       "status": {
         "idle": "Ready to generate with the default compatible model",
         "submitting": "Submitting generation…",
@@ -2822,47 +2794,30 @@
       "emptyHint": "Asset Specs appear here after the approved story plan is applied.",
       "categoryEmpty": {
         "character": "No character Asset Specs in this chapter",
-        "location": "No location Asset Specs in this chapter",
+        "location": "No scene Asset Specs in this chapter",
         "prop": "No prop Asset Specs in this chapter"
       },
-      "categoryEmptyHint": "This category is empty. Choose another category to review the remaining Asset Specs.",
+      "categoryEmptyHint": "This category is empty. Add an Asset Spec manually or choose another category.",
       "generationHint": "Opening this page never generates media or spends credits.",
-      "continueWithAgent": "Continue in FizzAgent",
-      "stage": {
-        "plotRequired": {
-          "title": "Approve the Plot Tree first",
-          "description": "Asset planning follows the approved narrative topology. Continue in FizzAgent to prepare and review the Plot Tree before extracting reusable assets."
-        },
-        "assetsRequired": {
-          "title": "Asset Specs are the next approval stage",
-          "description": "Ask FizzAgent to derive the reusable characters, locations, and props from the approved Plot Tree and Script interpretation. You will review them before Storyboard; no media is generated."
-        },
-        "stale": {
-          "title": "{count, plural, one {# Asset Spec needs attention} other {# Asset Specs need attention}}",
-          "description": "Existing work remains visible for review. Resolve available conflicts below; items without comparison details need a refreshed Agent proposal. Media generation stays unavailable until this stage is current."
-        },
-        "noAssets": {
-          "title": "No reusable Asset Specs are needed",
-          "description": "This approved chapter can continue to Storyboard without creating reusable characters, locations, or props."
-        }
-      },
-      "prompts": {
-        "plot": "Prepare the Plot Tree for this chapter from the approved Script. Let me review and approve it before Asset Specs. Do not generate media.",
-        "assets": "Prepare Asset Specs for this chapter from the approved Plot Tree and Script interpretation. Let me review and approve them before Storyboard. Do not generate media.",
-        "storyboard": "Continue this chapter to Storyboard. Prepare the storyboard plan for my review and approval. Do not generate media."
+      "addByKind": {
+        "character": "Add Character",
+        "location": "Add Scene",
+        "prop": "Add Prop"
       },
       "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
       "loadError": "Asset Specs could not be loaded.",
       "retry": "Try again",
       "tabs": {
         "character": "Characters",
-        "location": "Locations",
+        "location": "Scenes",
         "prop": "Props"
       },
       "filterLabel": "Filter Asset Specs by type",
       "batch": {
-        "generate": "Generate",
+        "generate": "Batch generate",
         "allGenerated": "All generated",
+        "tooltip": "Use {model} with the selected parameters to batch generate the remaining {count, plural, one {# empty asset} other {# empty assets}} in this category.",
+        "allGeneratedTooltip": "Every asset in this category already has media.",
         "running": "Generating",
         "runningOther": "A collaborator is generating",
         "cancelling": "Cancelling",
@@ -2893,15 +2848,31 @@
         }
       },
       "details": "Details",
+      "createDialog": {
+        "description": "Create a reusable character, scene, or prop manually. This does not generate media or spend credits.",
+        "name": "Name",
+        "cancel": "Cancel",
+        "create": "Add asset",
+        "created": "Asset Spec added.",
+        "createError": "Could not add the Asset Spec."
+      },
       "mediaAction": {
         "uploadImage": "Upload image",
         "replaceImage": "Replace image",
         "replacing": "Replacing image…",
         "replaceSuccess": "Asset image replaced.",
-        "replaceError": "Could not replace the Asset image."
+        "replaceError": "Could not replace the Asset image.",
+        "turnaroundReplaceSuccess": "Three-view image added.",
+        "turnaroundReplaceError": "Could not add the three-view image."
       },
       "detailDialog": {
+        "name": "Name",
         "imagePrompt": "Image Prompt",
+        "imagePromptPlaceholder": {
+          "character": "Describe the character’s appearance, clothing, and style. Type @ to reference an existing asset…",
+          "location": "Describe the scene’s setting, composition, light, and mood. Type @ to reference an existing asset…",
+          "prop": "Describe the prop’s form, materials, and details. Type @ to reference an existing asset…"
+        },
         "model": "Model",
         "save": "Save",
         "saved": "Saved.",
@@ -2910,7 +2881,28 @@
         "generateStarted": "Generation started.",
         "generateError": "Could not start generating media.",
         "close": "Close",
-        "videoPrompt": "Video Prompt"
+        "videoPrompt": "Video Prompt",
+        "delete": "Delete",
+        "deleteTitle": "Delete {name}?",
+        "deleteDescription": "This removes the Asset Spec and its Storyboard references from the chapter. Existing media history is preserved.",
+        "deleteCancel": "Cancel",
+        "deleteConfirm": "Delete",
+        "deleted": "Asset Spec deleted.",
+        "deleteError": "Could not delete the Asset Spec."
+      },
+      "workbench": {
+        "versionSelected": "Image version selected.",
+        "versionSelectError": "Could not select this image version.",
+        "noVersions": "No image has been generated or uploaded yet.",
+        "turnaroundTitle": "Three-view",
+        "turnaroundDescription": "AI video generation prioritizes the three-view as its character reference.",
+        "turnaroundFor": "Three-view for {name}",
+        "turnaroundNeedsPrimary": "Generate or upload the character image first.",
+        "turnaroundEmpty": "No three-view has been generated yet.",
+        "turnaroundUpload": "Upload three-view",
+        "turnaroundDownload": "Download three-view",
+        "previousVersion": "Previous versions",
+        "nextVersion": "Next versions"
       },
       "title": "Asset Specs"
     },
@@ -2949,7 +2941,7 @@
       },
       "assetKinds": {
         "character": "Character",
-        "location": "Location",
+        "location": "Scene",
         "prop": "Prop"
       },
       "mobileCard": {
@@ -2995,11 +2987,6 @@
       "clipCount": "{count, plural, one {# clip} other {# clips}}",
       "noClips": "This sequence has no clips.",
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
-      "status": {
-        "current": "Current",
-        "stale": "Needs review",
-        "archived": "Archived"
-      },
       "seconds": "{value}s",
       "options": "Options",
       "addNode": "Add storyboard node",
@@ -3095,7 +3082,6 @@
         "stepAria": "{step}: {status}",
         "status": {
           "current": "current",
-          "stale": "needs review",
           "missing": "not ready",
           "unknown": "status unavailable"
         }
@@ -3739,7 +3725,7 @@
     },
     "references": {
       "title": "Reference pack",
-      "subtitle": "Characters, locations, props, styles, and frames available to video recipes.",
+      "subtitle": "Characters, scenes, props, styles, and frames available to video recipes.",
       "approvedCount": "{approved} of {total} approved",
       "required": "Required",
       "optional": "Optional",
@@ -3751,7 +3737,7 @@
       },
       "kind": {
         "character": "Character",
-        "location": "Location",
+        "location": "Scene",
         "prop": "Prop",
         "graphic": "Graphic",
         "style": "Style",
@@ -3771,7 +3757,7 @@
       },
       "empty": {
         "title": "No reference slots",
-        "description": "Create a typed slot for every character, location, prop, style, or frame that production must keep stable."
+        "description": "Create a typed slot for every character, scene, prop, style, or frame that production must keep stable."
       },
       "detail": {
         "noDescription": "No production responsibility has been described.",

@@ -1,8 +1,4 @@
-import {
-  Prisma,
-  StoryProductionPlanDisposition,
-  StoryProductionSpecStatus,
-} from '@prisma/client';
+import { Prisma, StoryProductionSpecStatus } from '@prisma/client';
 import { canonicalJsonHash } from './canonical-json';
 
 interface DraftGraphContent {
@@ -40,8 +36,6 @@ export async function reconcileStoryTimelinesWithDraft(
     },
     data: {
       status: StoryProductionSpecStatus.archived,
-      pendingSourceFingerprint: null,
-      pendingPlanSnapshotId: null,
     },
   });
   const chapterNodeIds = new Set(scope.chapterNodeIds);
@@ -98,22 +92,14 @@ export async function reconcileStoryTimelinesWithDraft(
         data: {
           storyChapterId: scope.storyChapterId,
           status: StoryProductionSpecStatus.current,
-          pendingSourceFingerprint: null,
-          pendingPlanSnapshotId: null,
         },
       });
       continue;
     }
     if (owned) {
-      // `stale` legally requires pending authority, so undo revives the same
-      // timeline as `current`; the next plan reconcile handles content drift.
       await tx.storyStoryboardSequence.update({
         where: { id: owned.id },
-        data: {
-          status: StoryProductionSpecStatus.current,
-          pendingSourceFingerprint: null,
-          pendingPlanSnapshotId: null,
-        },
+        data: { status: StoryProductionSpecStatus.current },
       });
       continue;
     }
@@ -128,8 +114,6 @@ export async function reconcileStoryTimelinesWithDraft(
         data: {
           storyChapterId: scope.storyChapterId,
           status: StoryProductionSpecStatus.current,
-          pendingSourceFingerprint: null,
-          pendingPlanSnapshotId: null,
         },
       });
       continue;
@@ -150,7 +134,6 @@ export async function reconcileStoryTimelinesWithDraft(
           storyProjectId,
           plotNodeId,
         }),
-        planDisposition: StoryProductionPlanDisposition.user_override,
         createdByUserId: scope.actorUserId,
       },
     });
