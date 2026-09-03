@@ -25,6 +25,10 @@ export type AgentOsPermissionMode = "ask" | "smart" | "full";
 
 export type AgentOsDisplayLocale = "en-US" | "zh-CN" | "zh-HK";
 
+/** Same continuation contract as Studio H5 — native Story is not a separate server surface. */
+export const AGENT_OS_MOBILE_EXPERIENCE = "mobile_h5" as const;
+export type AgentOsMobileExperience = typeof AGENT_OS_MOBILE_EXPERIENCE;
+
 export interface AgentOsEvent {
   id: string;
   protocolVersion: string;
@@ -62,12 +66,22 @@ export interface AgentOsPendingUserInput {
   turnId?: string;
 }
 
+/** Durable domain job which owns the open turn while the Agent worker is paused. */
+export interface AgentOsPendingExternal {
+  kind: "external_job";
+  jobId: string;
+  startedMessage: string;
+  turnId: string;
+  toolCallId: string;
+  toolId: string;
+}
+
 export interface AgentOsRunResponse {
   runId: string;
   status: AgentOsRunStatus;
   pendingApproval?: AgentOsPendingApproval | null;
   pendingUserInput?: AgentOsPendingUserInput | AgentOsPendingUserInputQuestion[] | null;
-  pendingExternal?: unknown;
+  pendingExternal?: AgentOsPendingExternal | null;
   events?: AgentOsEvent[];
   assistantText?: string | null;
   source?: string;
@@ -84,7 +98,11 @@ export interface AgentOsStartRunInput {
   attachmentIds?: string[];
   permissionMode?: AgentOsPermissionMode;
   workbenchMode: string;
-  workbenchContext?: { chapterId?: string; sectionId?: string };
+  workbenchContext?: {
+    chapterId?: string;
+    sectionId?: string;
+    experience?: AgentOsMobileExperience;
+  };
   skillIds?: string[];
   projectSkillInstallationIds?: string[];
   disabledDefaultSkillInstallationIds?: string[];
@@ -101,6 +119,7 @@ export interface AgentOsApprovalInput {
   responseText: string;
   locale: AgentOsDisplayLocale;
   permissionMode?: AgentOsPermissionMode;
+  experience?: AgentOsMobileExperience;
 }
 
 export interface AgentOsUserInputAnswer {
@@ -121,7 +140,7 @@ export interface AgentOsConversationRun {
   events: AgentOsEvent[];
   pendingApproval: AgentOsPendingApproval | null;
   pendingUserInput?: AgentOsPendingUserInput | AgentOsPendingUserInputQuestion[] | null;
-  pendingExternal?: unknown;
+  pendingExternal?: AgentOsPendingExternal | null;
   assistantText: string | null;
   createdAt: string;
   updatedAt: string;
@@ -136,6 +155,41 @@ export interface AgentOsModelProfile {
   id: string;
   label: string;
   hint?: string;
+}
+
+export interface AgentOsModelPreferences {
+  projectId: string;
+  projectKind: "platform" | "story";
+  chatModelProfileId: string | null;
+  imageModelId: string | null;
+  videoModelId: string | null;
+  version: number;
+  updatedAt: string | null;
+}
+
+export interface AgentOsModelPreferencesUpdate {
+  expectedVersion: number;
+  chatModelProfileId: string | null;
+  imageModelId: string | null;
+  videoModelId: string | null;
+}
+
+export function normalizePendingExternal(raw: unknown): AgentOsPendingExternal | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const jobId = typeof record.jobId === "string" ? record.jobId.trim() : "";
+  const turnId = typeof record.turnId === "string" ? record.turnId.trim() : "";
+  const toolCallId = typeof record.toolCallId === "string" ? record.toolCallId.trim() : "";
+  const toolId = typeof record.toolId === "string" ? record.toolId.trim() : "";
+  if (record.kind !== "external_job" || !jobId || !turnId || !toolCallId || !toolId) return null;
+  return {
+    kind: "external_job",
+    jobId,
+    startedMessage: typeof record.startedMessage === "string" ? record.startedMessage : "",
+    turnId,
+    toolCallId,
+    toolId,
+  };
 }
 
 /** Normalize gateway pendingUserInput (object with questions, or bare question list). */
@@ -168,6 +222,20 @@ export const agentOsApi = {
       signal,
       timeout: 20_000,
     });
+  },
+
+  getModelPreferences(projectId: string, signal?: AbortSignal) {
+    return api.get<AgentOsModelPreferences>(
+      `${AGENT_OS}/projects/${encodeURIComponent(projectId)}/model-preferences`,
+      { ...AURORA, signal, timeout: 20_000 }
+    );
+  },
+
+  updateModelPreferences(projectId: string, input: AgentOsModelPreferencesUpdate) {
+    return api.post<AgentOsModelPreferences>(
+      `${AGENT_OS}/projects/${encodeURIComponent(projectId)}/model-preferences`,
+      { ...AURORA, data: input, timeout: 30_000 }
+    );
   },
 
   getConversation(projectId: string, conversationId?: string, signal?: AbortSignal) {
@@ -233,6 +301,7 @@ export const agentOsApi = {
           projectId: input.projectId,
           modelProfileId: input.modelProfileId,
           permissionMode: input.permissionMode,
+          experience: input.experience,
         },
         signal,
         timeout: 60_000,

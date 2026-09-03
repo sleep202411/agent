@@ -17,13 +17,27 @@ export type StudioWorkspace = {
   type?: string;
 };
 
-/** Minimal StoryProject summary for Create / Agent OS. */
+/** Minimal StoryProject summary for Create / Agent OS (list + workbench). */
+export type StoryProjectCover = {
+  kind?: string;
+  status?: string;
+  moderationStatus?: string | null;
+  previewUrl?: string | null;
+};
+
+export type StoryProjectProductionSummary = {
+  clipCount: number;
+  currentVideoCount: number;
+};
+
 export type StoryProjectSummary = {
   id: string;
   workspaceId: string;
   title: string;
   summary?: string | null;
   updatedAt?: string;
+  cover?: StoryProjectCover | null;
+  production?: StoryProjectProductionSummary;
 };
 
 export type StoryChapter = {
@@ -33,10 +47,33 @@ export type StoryChapter = {
   rank?: number;
 };
 
-type StoryWorkbench = {
-  project: StoryProjectSummary;
+export type StoryCapability =
+  | "story.read"
+  | "story.edit"
+  | "story.generate"
+  | "story.review"
+  | "story.build"
+  | "story.release"
+  | "story.admin";
+
+export type StoryBillingBalance = {
+  availablePoints: string;
+  heldPoints: string;
+  totalPoints: string;
+};
+
+export type StoryWorkbench = {
+  project: StoryProjectSummary & {
+    capabilities?: StoryCapability[];
+  };
   chapters: StoryChapter[];
   chapter: StoryChapter;
+  draft?: {
+    revision?: number;
+  };
+  video?: {
+    snapshotHash?: string;
+  };
 };
 
 type StoryProjectPage = {
@@ -46,9 +83,6 @@ type StoryProjectPage = {
 
 /** FizzAgent / Story Studio Agent OS mode (PC uses the same). */
 export const AGENT_OS_STORY_WORKBENCH_MODE = "story";
-
-/** @deprecated Use AGENT_OS_STORY_WORKBENCH_MODE */
-export const AGENT_OS_PLATFORM_WORKBENCH_MODE = AGENT_OS_STORY_WORKBENCH_MODE;
 
 function workspaceHeaders(workspaceId: string): Record<string, string> {
   const id = workspaceId.trim();
@@ -108,20 +142,25 @@ export const storyProjectsApi = {
     });
   },
 
-  getProjectWorkspace(projectId: string, signal?: AbortSignal) {
-    return api.get<{ workspaceId: string }>(
-      `/story-projects/${encodeURIComponent(projectId)}/workspace`,
-      { ...AURORA, signal, timeout: 30_000 }
-    );
-  },
-
-  getWorkbench(workspaceId: string, projectId: string, signal?: AbortSignal) {
+  getWorkbench(projectId: string, chapterId?: string, signal?: AbortSignal) {
     return api.get<StoryWorkbench>(`/story-projects/${encodeURIComponent(projectId)}/workbench`, {
       ...AURORA,
-      headers: workspaceHeaders(workspaceId),
+      params: chapterId ? { chapterId } : undefined,
       signal,
       timeout: 30_000,
     });
+  },
+
+  /** Project-payer compute balance. */
+  getBillingBalance(projectId: string, signal?: AbortSignal) {
+    return api.get<StoryBillingBalance>(
+      `/story-projects/${encodeURIComponent(projectId)}/billing/balance`,
+      {
+        ...AURORA,
+        signal,
+        timeout: 30_000,
+      }
+    );
   },
 };
 
@@ -130,20 +169,13 @@ export async function resolveDefaultChapterId(
   projectId: string,
   signal?: AbortSignal
 ): Promise<string> {
-  const { workspaceId } = await storyProjectsApi.getProjectWorkspace(projectId, signal);
-  if (!workspaceId?.trim()) {
-    throw new Error("Story project has no workspace");
-  }
-  const workbench = await storyProjectsApi.getWorkbench(workspaceId, projectId, signal);
+  const workbench = await storyProjectsApi.getWorkbench(projectId, undefined, signal);
   const chapterId = workbench.chapter?.id?.trim() || workbench.chapters?.[0]?.id?.trim();
   if (!chapterId) {
     throw new Error("Story project has no chapter for Agent OS story mode");
   }
   return chapterId;
 }
-
-/** @deprecated Use resolveDefaultChapterId */
-export const resolveDefaultSectionId = resolveDefaultChapterId;
 
 /** Ensure personal workspace, list story projects (does not auto-create). */
 export async function loadAgentProjects(signal?: AbortSignal): Promise<{
@@ -185,23 +217,3 @@ export async function createAgentProject(opts?: {
   }
   return { project, chapterId };
 }
-
-/** @deprecated Prefer loadAgentProjects + createAgentProject */
-export async function loadOrCreateAgentProjects(opts?: {
-  createName?: string;
-  signal?: AbortSignal;
-}): Promise<{
-  workspaceId: string;
-  projects: StoryProjectSummary[];
-}> {
-  const loaded = await loadAgentProjects(opts?.signal);
-  if (loaded.projects.length) return loaded;
-  const { project } = await createAgentProject({
-    title: opts?.createName,
-    signal: opts?.signal,
-  });
-  return { workspaceId: loaded.workspaceId, projects: [project] };
-}
-
-/** @deprecated Alias — Story projects use `title`, not platform `name`. */
-export type StudioPlatformProject = StoryProjectSummary & { name?: string };

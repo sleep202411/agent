@@ -1,13 +1,11 @@
 import { memo, useMemo } from "react";
-import { Linking, Platform, StyleSheet, View } from "react-native";
+import { Linking, Platform, StyleSheet, Text, View } from "react-native";
 import Markdown, { MarkdownIt, type RenderRules } from "react-native-markdown-display";
 
 import { Fonts } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 
-/**
- * Light normalize for model quirks before Markdown (mirrors PC Story Studio).
- */
+/** Light normalize for model quirks (mirrors PC Story Studio). */
 export function prepareAgentOsMarkdown(text: string): string {
   return text
     .replace(/<br\s*\/?>/gi, "\n")
@@ -24,10 +22,16 @@ function isSafeLink(href: string): boolean {
   );
 }
 
-const markdownIt = MarkdownIt({ typographer: true, linkify: true, html: false });
+const markdownIt = MarkdownIt({ typographer: false, linkify: true, html: false });
 
-const NO_IMAGES: RenderRules = {
+const RULES: RenderRules = {
   image: () => null,
+  // Avoid inheriting View layout props (e.g. heading flexDirection) onto Text.
+  text: (node, _children, _parent, styles) => (
+    <Text key={node.key} style={styles.text}>
+      {node.content}
+    </Text>
+  ),
 };
 
 type ThemeShape = ReturnType<typeof useTheme>;
@@ -41,12 +45,18 @@ function createMarkdownStyles(theme: ThemeShape) {
 
   return StyleSheet.create({
     body: {
-      color: theme.textSecondary,
+      color: theme.text,
       fontSize: 15,
-      lineHeight: 21,
+      lineHeight: 22,
+    },
+    text: {
+      color: theme.text,
+      fontSize: 15,
+      lineHeight: 22,
     },
     heading1: {
       color: theme.text,
+      flexDirection: "column",
       fontSize: 16,
       fontWeight: "600",
       marginTop: 20,
@@ -54,6 +64,7 @@ function createMarkdownStyles(theme: ThemeShape) {
     },
     heading2: {
       color: theme.text,
+      flexDirection: "column",
       fontSize: 15,
       fontWeight: "600",
       marginTop: 20,
@@ -61,6 +72,7 @@ function createMarkdownStyles(theme: ThemeShape) {
     },
     heading3: {
       color: theme.text,
+      flexDirection: "column",
       fontSize: 14,
       fontWeight: "600",
       marginTop: 16,
@@ -68,6 +80,7 @@ function createMarkdownStyles(theme: ThemeShape) {
     },
     heading4: {
       color: theme.text,
+      flexDirection: "column",
       fontSize: 14,
       fontWeight: "500",
       marginTop: 12,
@@ -75,6 +88,7 @@ function createMarkdownStyles(theme: ThemeShape) {
     },
     heading5: {
       color: theme.text,
+      flexDirection: "column",
       fontSize: 13,
       fontWeight: "500",
       marginTop: 10,
@@ -82,6 +96,7 @@ function createMarkdownStyles(theme: ThemeShape) {
     },
     heading6: {
       color: theme.text,
+      flexDirection: "column",
       fontSize: 12,
       fontWeight: "500",
       marginTop: 8,
@@ -110,15 +125,9 @@ function createMarkdownStyles(theme: ThemeShape) {
       paddingVertical: 10,
       marginVertical: 12,
     },
-    bullet_list: {
-      marginVertical: 8,
-    },
-    ordered_list: {
-      marginVertical: 8,
-    },
-    list_item: {
-      marginVertical: 2,
-    },
+    bullet_list: { marginVertical: 8 },
+    ordered_list: { marginVertical: 8 },
+    list_item: { marginVertical: 2 },
     code_inline: {
       backgroundColor: "rgba(255,255,255,0.07)",
       borderWidth: 0,
@@ -158,51 +167,31 @@ function createMarkdownStyles(theme: ThemeShape) {
       marginVertical: 12,
       overflow: "hidden",
     },
-    thead: {
-      backgroundColor: "rgba(255,255,255,0.055)",
-    },
-    th: {
-      color: theme.text,
-      fontWeight: "600",
-      padding: 10,
-    },
-    tr: {
-      borderBottomColor: theme.border,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-    },
-    td: {
-      color: theme.textSecondary,
-      padding: 10,
-    },
-    link: {
-      color: theme.text,
-      textDecorationLine: "underline",
-    },
-    paragraph: {
-      marginTop: 8,
-      marginBottom: 8,
-    },
+    thead: { backgroundColor: "rgba(255,255,255,0.055)" },
+    th: { color: theme.text, fontWeight: "600", padding: 10 },
+    tr: { borderBottomColor: theme.border, borderBottomWidth: StyleSheet.hairlineWidth },
+    td: { color: theme.textSecondary, padding: 10 },
+    link: { color: theme.text, textDecorationLine: "underline" },
+    paragraph: { marginTop: 0, marginBottom: 8 },
   });
 }
 
-/** Agent OS assistant body — GFM-ish Markdown for the mobile chat panel. */
+/** Assistant body — GFM-ish Markdown (PC uses the same contract). */
 export const AgentOsMarkdown = memo(function AgentOsMarkdown({ children }: { children: string }) {
   const theme = useTheme();
   const styles = useMemo(() => createMarkdownStyles(theme), [theme]);
 
-  const onLinkPress = (url: string) => {
-    if (!isSafeLink(url)) return false;
-    void Linking.openURL(url);
-    return false;
-  };
-
   return (
-    <View style={markdownStyles.root}>
+    <View style={rootStyles.root}>
       <Markdown
         markdownit={markdownIt}
         mergeStyle
-        onLinkPress={onLinkPress}
-        rules={NO_IMAGES}
+        onLinkPress={(url) => {
+          if (!isSafeLink(url)) return false;
+          void Linking.openURL(url);
+          return false;
+        }}
+        rules={RULES}
         style={styles}
       >
         {prepareAgentOsMarkdown(children)}
@@ -211,7 +200,7 @@ export const AgentOsMarkdown = memo(function AgentOsMarkdown({ children }: { chi
   );
 });
 
-const markdownStyles = StyleSheet.create({
+const rootStyles = StyleSheet.create({
   root: {
     alignSelf: "stretch",
     maxWidth: "100%",

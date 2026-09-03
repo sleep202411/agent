@@ -52,7 +52,7 @@ export default function RootLayout() {
               <Stack screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="agent/index" options={detailHeader} />
-                <Stack.Screen name="agent/[threadId]" options={detailHeader} />
+                <Stack.Screen name="agent/[projectId]" options={{ headerShown: false }} />
                 {/* Login / register / reset — a full-page route the gate pushes
                   (or replaces) onto the stack; always skippable. */}
                 <Stack.Screen name="(auth)" />

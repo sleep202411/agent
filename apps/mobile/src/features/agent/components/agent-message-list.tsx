@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { SymbolView, type SymbolViewProps } from "expo-symbols";
 import { Image } from "expo-image";
 import { Pressable, StyleSheet, View } from "react-native";
@@ -5,8 +6,14 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { useTranslations } from "@/i18n";
 
-import type { AgentCardKind, AgentMessage, AgentPipelineCard } from "../types";
+import type {
+  AgentCardKind,
+  AgentMessage,
+  AgentPipelineCard,
+  StoryTranscriptArtifact,
+} from "../types";
 import { AgentOsMarkdown } from "./agent-os-markdown";
 
 type AppSymbol = SymbolViewProps["name"];
@@ -19,40 +26,69 @@ const CARD_ICON: Record<AgentCardKind, AppSymbol> = {
   stage: { ios: "chart.bar", android: "bar_chart", web: "bar_chart" },
 };
 
-export function AgentMessageList({ messages }: { messages: AgentMessage[] }) {
+export function AgentMessageList({
+  messages,
+  renderStoryArtifact,
+}: {
+  messages: AgentMessage[];
+  renderStoryArtifact?: (artifact: StoryTranscriptArtifact) => ReactNode;
+}) {
   return (
     <View style={styles.list}>
       {messages.map((message) => (
-        <AgentMessageBlock key={message.id} message={message} />
+        <AgentMessageBlock
+          key={message.id}
+          message={message}
+          renderStoryArtifact={renderStoryArtifact}
+        />
       ))}
     </View>
   );
 }
 
-function AgentMessageBlock({ message }: { message: AgentMessage }) {
+function AgentMessageBlock({
+  message,
+  renderStoryArtifact,
+}: {
+  message: AgentMessage;
+  renderStoryArtifact?: (artifact: StoryTranscriptArtifact) => ReactNode;
+}) {
   const theme = useTheme();
+  const t = useTranslations();
   const isUser = message.role === "user";
+  const assistantText =
+    message.text && message.text.trim() === t("agent.proposal.assets.legacyReadyMessage")
+      ? t("agent.proposal.assets.mobileReadyMessage")
+      : message.text;
 
   return (
     <View style={[styles.block, isUser && styles.blockUser]}>
-      {message.text ? (
+      {assistantText ? (
         <View
           style={[
             styles.bubble,
             isUser
               ? { backgroundColor: theme.backgroundSelected, alignSelf: "flex-end" }
-              : { backgroundColor: "transparent", alignSelf: "stretch", paddingHorizontal: 0 },
+              : styles.bubbleAssistant,
           ]}
         >
           {isUser ? (
             <ThemedText type="small" style={[styles.bubbleText, { color: theme.text }]}>
-              {message.text}
+              {assistantText}
             </ThemedText>
           ) : (
-            <AgentOsMarkdown>{message.text}</AgentOsMarkdown>
+            <AgentOsMarkdown>{assistantText}</AgentOsMarkdown>
           )}
         </View>
       ) : null}
+
+      {message.artifacts?.length && renderStoryArtifact
+        ? message.artifacts.map((artifact) => (
+            <View key={artifact.id} style={styles.artifact}>
+              {renderStoryArtifact(artifact)}
+            </View>
+          ))
+        : null}
 
       {message.cards?.length ? (
         <View style={styles.cards}>
@@ -127,12 +163,22 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.two,
     maxWidth: "88%",
   },
+  bubbleAssistant: {
+    alignSelf: "stretch",
+    backgroundColor: "transparent",
+    maxWidth: "100%",
+    paddingHorizontal: 0,
+  },
   bubbleText: {
     fontSize: 15,
-    lineHeight: 21,
+    lineHeight: 22,
   },
   cards: {
     gap: Spacing.two,
+    width: "100%",
+  },
+  artifact: {
+    alignSelf: "stretch",
     width: "100%",
   },
   card: {

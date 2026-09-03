@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
@@ -17,28 +17,18 @@ export type CreateStoryProjectValues = {
 type CreateStoryProjectFormProps = {
   busy?: boolean;
   onSubmit: (values: CreateStoryProjectValues) => void;
-  /** When true, clears fields (e.g. sheet closed). */
-  reset?: boolean;
   submitLabel?: string;
 };
 
-/** Inline title + summary fields — shared by hub and bottom sheet. */
+/** Inline title + summary fields on the Create hub. */
 export function CreateStoryProjectForm({
   busy = false,
   onSubmit,
-  reset = false,
   submitLabel,
 }: CreateStoryProjectFormProps) {
   const t = useTranslations();
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
-
-  useEffect(() => {
-    if (reset) {
-      setTitle("");
-      setSummary("");
-    }
-  }, [reset]);
 
   const trimmed = title.trim();
   const canSubmit = trimmed.length > 0 && !busy;
@@ -105,7 +95,7 @@ export function CreateStoryProjectForm({
   );
 }
 
-export const createStoryProjectFormStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   root: {
     gap: Spacing.two,
   },
@@ -183,5 +173,3 @@ export const createStoryProjectFormStyles = StyleSheet.create({
     opacity: 0.75,
   },
 });
-
-const styles = createStoryProjectFormStyles;

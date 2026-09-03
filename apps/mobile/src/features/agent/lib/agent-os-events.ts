@@ -1,6 +1,11 @@
-import type { AgentOsConversationRun, AgentOsEvent } from "../api/agent-os-api";
+import type {
+  AgentOsConversationRun,
+  AgentOsEvent,
+  AgentOsPendingExternal,
+} from "../api/agent-os-api";
 import type { MessageKey } from "@/i18n";
-import type { AgentMessage, AgentPipelineCard } from "../types";
+import type { AgentMessage, StoryProposalArtifactStatus, StoryTranscriptArtifact } from "../types";
+import { isStoryStageProposalArtifact } from "../types";
 
 const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 const WAITING_FOR_USER = new Set(["waiting_for_approval", "waiting_for_input"]);
@@ -19,9 +24,29 @@ const TOOL_ACTIVITY_KEYS: Record<string, string> = {
   "story.updateBible": "updatingStory",
   "story.addScene": "writingScenes",
   "story.addBranch": "designingBranches",
+  "story.editNode": "updatingStory",
+  "story.putInteraction": "updatingStory",
+  "story.removeInteraction": "updatingStory",
+  "story.removeSubtree": "updatingStory",
+  "story.setEntry": "updatingStory",
+  "story.reorder": "updatingStory",
+  "story.applyPatch": "updatingStory",
+  "canvas.read": "readingCanvas",
+  "canvas.applyPatch": "updatingCanvas",
+  "script.store": "savingSource",
+  "script.readSection": "readingSource",
+  "characters.list": "readingCharacters",
+  "characters.upsert": "updatingCharacters",
+  "storyboard.listShots": "readingStoryboard",
+  "storyboard.upsertShots": "updatingStoryboard",
+  "storyboard.deleteShots": "updatingStoryboard",
 };
 
-export function agentActivityLabelKey(activity: AgentOsActivityPhase): string {
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function agentActivityLabelKey(activity: AgentOsActivityPhase): string {
   if (activity.kind === "planning") return "planning";
   if (activity.kind === "thinking") return "thinking";
   if (activity.kind === "waiting_for_input") return "waitingForInput";
@@ -39,11 +64,13 @@ export function agentActivityMessageKey(activity: AgentOsActivityPhase): Message
 
 /**
  * One live status line for the current turn (mirrors PC `deriveAgentActivity`).
- * Returns null once streamed assistant copy is visible (`MessageDelta`).
+ * Streamed assistant copy clears the generic spinner; a pending external job
+ * (story.author) keeps a tool phase so the host can overlay stage copy.
  */
 export function deriveAgentActivity(
   events: AgentOsEvent[],
-  status: string
+  status: string,
+  pendingExternal?: AgentOsPendingExternal | null
 ): AgentOsActivityPhase | null {
   if (
     status !== "running" &&
@@ -58,7 +85,7 @@ export function deriveAgentActivity(
   if (status === "waiting_for_approval") return { kind: "waiting_for_approval" };
   if (status === "queued") return { kind: "thinking" };
 
-  let activity: AgentOsActivityPhase = { kind: "thinking" };
+  let activity: AgentOsActivityPhase | null = { kind: "thinking" };
   for (const event of events) {
     switch (event.type) {
       case "PlanCreated":
@@ -73,20 +100,114 @@ export function deriveAgentActivity(
         break;
       }
       case "MessageDelta":
-        return null;
+        activity = null;
+        break;
       case "MessageCompleted":
       case "ToolCompleted":
       case "ToolFailed":
       case "MessageStarted":
       case "RunStarted":
       case "RunResumed":
+      case "UserInputResolved":
+      case "ApprovalResolved":
         activity = { kind: "thinking" };
         break;
       default:
         break;
     }
   }
+  const external =
+    status === "waiting_for_external"
+      ? (pendingExternal ?? derivePendingExternalFromEvents(events))
+      : null;
+  if (external) {
+    if (external.toolId === "story.generation.confirmBatch") return null;
+    return { kind: "tool", toolId: external.toolId };
+  }
   return activity;
+}
+
+/** True while the open assistant message is still receiving deltas. */
+export function currentTurnIsStreaming(events: AgentOsEvent[]): boolean {
+  let streaming = false;
+  for (const event of events) {
+    switch (event.type) {
+      case "MessageDelta":
+        streaming = true;
+        break;
+      case "MessageCompleted":
+      case "UserInputRequired":
+      case "ApprovalRequired":
+      case "RunPaused":
+        streaming = false;
+        break;
+      default:
+        break;
+    }
+  }
+  return streaming;
+}
+
+/** Rebuild the durable host-job handoff so reload keeps meaningful activity. */
+export function derivePendingExternalFromEvents(
+  events: AgentOsEvent[]
+): AgentOsPendingExternal | null {
+  let pending: AgentOsPendingExternal | null = null;
+  let latestMessage = "";
+
+  for (const event of [...events].sort((a, b) => a.sequence - b.sequence)) {
+    if (event.type === "MessageCompleted") {
+      latestMessage = nonEmptyString(event.data.text) ?? latestMessage;
+      continue;
+    }
+    if (event.type === "ToolCompleted") {
+      const handoff = event.data.agentHandoff;
+      if (!handoff || typeof handoff !== "object" || Array.isArray(handoff)) continue;
+      const record = handoff as Record<string, unknown>;
+      const jobId = nonEmptyString(record.jobId);
+      const turnId = nonEmptyString(event.data.turnId);
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      const toolId = nonEmptyString(event.data.toolId);
+      if (record.kind !== "external_job" || !jobId || !turnId || !toolCallId || !toolId) continue;
+      pending = {
+        kind: "external_job",
+        jobId,
+        startedMessage: nonEmptyString(record.startedMessage) ?? latestMessage,
+        turnId,
+        toolCallId,
+        toolId,
+      };
+      continue;
+    }
+    if (event.type === "RunPaused" && event.data.status === "waiting_for_external") {
+      const jobId: string | null =
+        nonEmptyString(event.data.externalJobId) ?? pending?.jobId ?? null;
+      const turnId: string | null = nonEmptyString(event.data.turnId) ?? pending?.turnId ?? null;
+      const toolCallId: string | null =
+        nonEmptyString(event.data.toolCallId) ?? pending?.toolCallId ?? null;
+      const toolId: string | null = nonEmptyString(event.data.toolId) ?? pending?.toolId ?? null;
+      if (!jobId || !turnId || !toolCallId || !toolId) continue;
+      pending = {
+        kind: "external_job",
+        jobId,
+        startedMessage: pending?.startedMessage || latestMessage,
+        turnId,
+        toolCallId,
+        toolId,
+      };
+      continue;
+    }
+    if (
+      event.type === "RunResumed" ||
+      event.type === "RunCompleted" ||
+      event.type === "RunCancelled" ||
+      event.type === "RunFailed"
+    ) {
+      pending = null;
+    }
+  }
+
+  return pending;
 }
 
 /** True when the latest user turn already has visible assistant copy. */
@@ -115,39 +236,93 @@ export function isWaitingForUserStatus(status: string): boolean {
   return WAITING_FOR_USER.has(status);
 }
 
+const ARTIFACT_STATUSES = new Set<StoryProposalArtifactStatus>([
+  "proposed",
+  "active",
+  "applying",
+  "applied",
+  "rejected",
+  "failed",
+  "cancelled",
+]);
+
+function isArtifactStatus(value: unknown): value is StoryProposalArtifactStatus {
+  return typeof value === "string" && ARTIFACT_STATUSES.has(value as StoryProposalArtifactStatus);
+}
+
 /**
  * Fold Agent OS journal events into the Dreem-style message list used by
  * mobile thread UI. Streaming deltas coalesce into one assistant bubble per
- * open stream; tool / plan events become pipeline cards.
+ * open stream. Story proposal artifacts stay on the Assistant turn (H5).
  */
 export function eventsToMessages(
   events: AgentOsEvent[],
-  opts?: { runId?: string; userText?: string; userAt?: string }
+  opts?: {
+    runId?: string;
+    userText?: string;
+    userAt?: string;
+    hitlText?: string;
+    hitlAt?: string;
+    hitlDecision?: "approve" | "reject";
+  }
 ): AgentMessage[] {
   const out: AgentMessage[] = [];
+  const sorted = [...events].sort((a, b) => a.sequence - b.sequence);
+  const artifactById = new Map<string, StoryTranscriptArtifact>();
+  const artifactIdByToolCall = new Map<string, string>();
+  const artifactIdByApproval = new Map<string, string>();
+  let lastAssistant: AgentMessage | null = null;
 
   let streamText = "";
   let streamStartedAt: string | null = null;
   let streamSeq = 0;
-  const cards: AgentPipelineCard[] = [];
+
+  const ensureAssistantHost = (timestamp: string, sequence: number) => {
+    if (lastAssistant) return lastAssistant;
+    lastAssistant = {
+      id: `asst:${opts?.runId ?? "run"}:artifact:${sequence}`,
+      role: "assistant",
+      createdAt: timestamp,
+      artifacts: [],
+    };
+    out.push(lastAssistant);
+    return lastAssistant;
+  };
+
+  const attachArtifact = (
+    artifact: StoryTranscriptArtifact,
+    timestamp: string,
+    sequence: number
+  ) => {
+    artifactById.set(artifact.id, artifact);
+    const host = ensureAssistantHost(timestamp, sequence);
+    host.artifacts = [
+      ...(host.artifacts ?? []).filter((item) => item.id !== artifact.id),
+      artifact,
+    ];
+  };
 
   const flushAssistant = (kind: string, sequence: number, timestamp: string) => {
     const text = streamText.trim();
-    if (!text && cards.length === 0) return;
-    out.push({
-      id: `asst:${opts?.runId ?? "run"}:${sequence}`,
-      role: "assistant",
-      text: text || undefined,
-      cards: cards.length ? [...cards] : undefined,
-      createdAt: streamStartedAt ?? timestamp,
-    });
+    if (!text) return;
+    if (lastAssistant && !lastAssistant.text) {
+      lastAssistant.text = text;
+      lastAssistant.id = `asst:${opts?.runId ?? "run"}:${sequence}`;
+    } else {
+      lastAssistant = {
+        id: `asst:${opts?.runId ?? "run"}:${sequence}`,
+        role: "assistant",
+        text,
+        createdAt: streamStartedAt ?? timestamp,
+      };
+      out.push(lastAssistant);
+    }
     streamText = "";
     streamStartedAt = null;
-    cards.length = 0;
     void kind;
   };
 
-  for (const event of events) {
+  for (const event of sorted) {
     if (event.type === "UserMessage") {
       flushAssistant("before_user", event.sequence, event.timestamp);
       const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
@@ -180,59 +355,153 @@ export function eventsToMessages(
       continue;
     }
 
-    if (event.type === "PlanProposed" && Array.isArray(event.data.steps)) {
-      cards.push({
-        id: `plan:${event.sequence}`,
-        kind: "stage",
-        title: (event.data.steps as string[]).join(" → "),
-        detail: "plan",
-      });
+    if (event.type === "ArtifactCreated") {
+      const artifactId = nonEmptyString(event.data.artifactId);
+      const raw = event.data.artifact;
+      if (!artifactId || !raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const reference = raw as Record<string, unknown>;
+      if (reference.kind === "story_generation_batch") {
+        const generationBatchId = nonEmptyString(reference.generationBatchId ?? reference.id);
+        const storyProjectId = nonEmptyString(reference.storyProjectId ?? reference.projectId);
+        const storyChapterId = nonEmptyString(reference.storyChapterId ?? reference.chapterId);
+        if (!generationBatchId || !storyProjectId || !storyChapterId) continue;
+        attachArtifact(
+          {
+            kind: "story_generation_batch",
+            id: artifactId,
+            generationBatchId,
+            storyProjectId,
+            storyChapterId,
+          },
+          event.timestamp,
+          event.sequence
+        );
+        continue;
+      }
+      const storyAgentRunId = nonEmptyString(reference.storyAgentRunId);
+      if (reference.kind !== "story_stage_proposal" || !storyAgentRunId) continue;
+      const existing = [...artifactById.values()].find(
+        (item) => isStoryStageProposalArtifact(item) && item.storyAgentRunId === storyAgentRunId
+      );
+      if (existing) {
+        artifactById.set(artifactId, existing);
+      } else {
+        attachArtifact(
+          {
+            kind: "story_stage_proposal",
+            id: artifactId,
+            storyAgentRunId,
+            status: event.data.status === "active" ? "active" : "proposed",
+          },
+          event.timestamp,
+          event.sequence
+        );
+      }
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      if (toolCallId) {
+        artifactIdByToolCall.set(toolCallId, existing?.id ?? artifactId);
+      }
       continue;
     }
 
-    if (event.type === "ToolCompleted" || event.type === "ToolStarted") {
-      const toolId = typeof event.data.toolId === "string" ? event.data.toolId : "tool";
-      const title =
-        typeof event.data.title === "string"
-          ? event.data.title
-          : event.type === "ToolCompleted"
-            ? `Done · ${toolId}`
-            : `Running · ${toolId}`;
-      cards.push({
-        id: `tool:${event.sequence}`,
-        kind: toolId.includes("character")
-          ? "character"
-          : toolId.includes("script")
-            ? "script"
-            : "stage",
-        title,
-        detail: toolId,
-        actionLabel: event.type === "ToolCompleted" ? "View" : undefined,
-      });
+    if (event.type === "ToolProposed" && event.data.toolId === "story.applyProposal") {
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      const args = event.data.arguments;
+      if (!toolCallId || !args || typeof args !== "object" || Array.isArray(args)) continue;
+      const storyAgentRunId = nonEmptyString((args as Record<string, unknown>).storyAgentRunId);
+      if (!storyAgentRunId) continue;
+      const existing = [...artifactById.values()].find(
+        (item) => isStoryStageProposalArtifact(item) && item.storyAgentRunId === storyAgentRunId
+      );
+      if (!existing) {
+        attachArtifact(
+          {
+            kind: "story_stage_proposal",
+            id: storyAgentRunId,
+            storyAgentRunId,
+            status: "proposed",
+          },
+          event.timestamp,
+          event.sequence
+        );
+      }
+      artifactIdByToolCall.set(toolCallId, existing?.id ?? storyAgentRunId);
+      continue;
+    }
+
+    if (event.type === "ApprovalRequired") {
+      const approvalId = nonEmptyString(event.data.approvalId);
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      const artifactId = toolCallId ? artifactIdByToolCall.get(toolCallId) : null;
+      if (approvalId && artifactId) artifactIdByApproval.set(approvalId, artifactId);
+      continue;
+    }
+
+    if (event.type === "ApprovalResolved") {
+      const approvalId = nonEmptyString(event.data.approvalId);
+      const mapped = approvalId
+        ? artifactById.get(artifactIdByApproval.get(approvalId) ?? "")
+        : undefined;
+      const artifact =
+        (mapped && isStoryStageProposalArtifact(mapped) ? mapped : undefined) ??
+        [...artifactById.values()].find(
+          (item) =>
+            isStoryStageProposalArtifact(item) &&
+            (item.status === "proposed" || item.status === "active" || item.status === "applying")
+        );
+      if (artifact && isStoryStageProposalArtifact(artifact)) {
+        artifact.status = event.data.decision === "reject" ? "rejected" : "applying";
+      }
+      continue;
+    }
+
+    if (event.type === "ArtifactUpdated") {
+      const artifactId = nonEmptyString(event.data.artifactId);
+      const artifact = artifactId ? artifactById.get(artifactId) : undefined;
+      if (
+        artifact &&
+        isStoryStageProposalArtifact(artifact) &&
+        isArtifactStatus(event.data.status)
+      ) {
+        artifact.status = event.data.status;
+      }
+      continue;
+    }
+
+    if (event.type === "ToolStarted" || event.type === "ToolFailed") {
+      const toolCallId = nonEmptyString(event.data.toolCallId);
+      const artifact = toolCallId
+        ? artifactById.get(artifactIdByToolCall.get(toolCallId) ?? "")
+        : undefined;
+      if (artifact && isStoryStageProposalArtifact(artifact)) {
+        artifact.status =
+          event.type === "ToolStarted"
+            ? "applying"
+            : event.data.code === "STORY_PROPOSAL_REJECTED"
+              ? "rejected"
+              : "failed";
+      }
       continue;
     }
 
     if (event.type === "RunFailed") {
-      const message = typeof event.data.message === "string" ? event.data.message : "Run failed";
+      // H5 keeps RunFailed off the transcript. Progress copy and generation
+      // cards stay; the host surfaces a short failed banner instead of the
+      // English diagnostic dump.
       flushAssistant("failed", event.sequence, event.timestamp);
-      out.push({
-        id: `err:${event.sequence}`,
-        role: "assistant",
-        text: message,
-        createdAt: event.timestamp,
-      });
+      continue;
     }
   }
 
-  if (streamText.trim() || cards.length) {
+  if (streamText.trim()) {
     flushAssistant(
       "streaming",
-      streamSeq || events.at(-1)?.sequence || 0,
+      streamSeq || sorted.at(-1)?.sequence || 0,
       new Date().toISOString()
     );
   }
 
-  const hasUserMessage = events.some((event) => event.type === "UserMessage");
+  const hasUserMessage = sorted.some((event) => event.type === "UserMessage");
   if (!hasUserMessage && opts?.userText?.trim()) {
     out.unshift({
       id: `user:${opts?.runId ?? "local"}`,
@@ -240,6 +509,28 @@ export function eventsToMessages(
       text: opts.userText.trim(),
       createdAt: opts.userAt ?? new Date().toISOString(),
     });
+  }
+
+  const hitlText = opts?.hitlText?.trim();
+  if (hitlText && !out.some((message) => message.role === "user" && message.text === hitlText)) {
+    out.push({
+      id: `user:${opts?.runId ?? "run"}:hitl`,
+      role: "user",
+      text: hitlText,
+      createdAt: opts?.hitlAt ?? new Date().toISOString(),
+    });
+  }
+
+  if (opts?.hitlDecision === "reject" || opts?.hitlDecision === "approve") {
+    const nextStatus = opts.hitlDecision === "reject" ? "rejected" : "applying";
+    for (const artifact of artifactById.values()) {
+      if (
+        isStoryStageProposalArtifact(artifact) &&
+        (artifact.status === "proposed" || artifact.status === "active")
+      ) {
+        artifact.status = nextStatus;
+      }
+    }
   }
 
   return out;

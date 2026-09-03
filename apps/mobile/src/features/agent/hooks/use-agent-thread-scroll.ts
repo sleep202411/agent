@@ -37,7 +37,9 @@ export function useAgentThreadScroll(scrollDeps: DependencyList) {
 
   const handleContentSizeChange = useCallback(() => {
     if (!pinnedRef.current) return;
-    scrollRef.current?.scrollToEnd({ animated: false });
+    requestAnimationFrame(() => {
+      scrollRef.current?.scrollToEnd({ animated: false });
+    });
   }, []);
 
   useEffect(() => {

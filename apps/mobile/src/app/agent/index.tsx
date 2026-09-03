@@ -1,5 +1,5 @@
-import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,7 @@ import {
   CreateStoryProjectForm,
   isAgentOsId,
   loadAgentProjects,
+  StoryProjectCard,
   type CreateStoryProjectValues,
   type StoryProjectSummary,
 } from "@/features/agent";
@@ -37,16 +38,6 @@ function chunkPairs<T>(items: T[]): [T, T | undefined][] {
   return rows;
 }
 
-function formatProjectDate(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return undefined;
-  return date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
-}
-
 /** Create hub — name a new story project or continue an existing one. */
 export default function AgentHubScreen() {
   const t = useTranslations();
@@ -58,25 +49,34 @@ export default function AgentHubScreen() {
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const loadedOnceRef = useRef(false);
 
-  const loadProjects = useCallback(async () => {
-    setLoading(true);
+  const loadProjects = useCallback(async (opts?: { blocking?: boolean }) => {
+    const blocking = opts?.blocking ?? !loadedOnceRef.current;
+    if (blocking) setLoading(true);
     setError(undefined);
     try {
       const { projects: rows } = await loadAgentProjects();
       setProjects(rows);
+      loadedOnceRef.current = true;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setProjects([]);
     } finally {
-      setLoading(false);
+      if (blocking) setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    void loadProjects();
-  }, [isAuthenticated, loadProjects]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!isAuthenticated) {
+        setProjects([]);
+        loadedOnceRef.current = false;
+        return;
+      }
+      void loadProjects();
+    }, [isAuthenticated, loadProjects])
+  );
 
   const openThread = useCallback(
     (projectId: string) => {
@@ -140,7 +140,7 @@ export default function AgentHubScreen() {
           isAuthenticated ? (
             <RefreshControl
               refreshing={loading && projects.length > 0}
-              onRefresh={() => void loadProjects()}
+              onRefresh={() => void loadProjects({ blocking: true })}
               tintColor={theme.brand}
             />
           ) : undefined
@@ -218,47 +218,12 @@ export default function AgentHubScreen() {
                         <View key={`empty-${rowIndex}-${cellIndex}`} style={styles.cardCell} />
                       );
                     }
-                    const updated = formatProjectDate(project.updatedAt);
                     return (
                       <View key={project.id} style={styles.cardCell}>
-                        <Pressable
+                        <StoryProjectCard
+                          project={project}
                           onPress={() => openThread(project.id)}
-                          style={({ pressed }) => [
-                            styles.projectCard,
-                            {
-                              borderColor: theme.border,
-                              backgroundColor: theme.backgroundElement,
-                            },
-                            pressed && styles.pressed,
-                          ]}
-                        >
-                          <View
-                            style={[styles.poster, { backgroundColor: theme.backgroundSelected }]}
-                          >
-                            <View
-                              style={[styles.statusBadge, { backgroundColor: theme.background }]}
-                            >
-                              <ThemedText type="code" themeColor="textSecondary">
-                                {t("agent.projectStatusDraft")}
-                              </ThemedText>
-                            </View>
-                          </View>
-                          <View style={styles.cardCopy}>
-                            <ThemedText type="smallBold" numberOfLines={2}>
-                              {project.title}
-                            </ThemedText>
-                            {project.summary ? (
-                              <ThemedText type="code" themeColor="textSecondary" numberOfLines={2}>
-                                {project.summary}
-                              </ThemedText>
-                            ) : null}
-                            {updated ? (
-                              <ThemedText type="code" themeColor="textSecondary">
-                                {updated}
-                              </ThemedText>
-                            ) : null}
-                          </View>
-                        </Pressable>
+                        />
                       </View>
                     );
                   })}
@@ -307,27 +272,6 @@ const styles = StyleSheet.create({
   cardCell: {
     flex: 1,
     minWidth: 0,
-  },
-  projectCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
-    overflow: "hidden",
-    width: "100%",
-  },
-  poster: {
-    aspectRatio: 16 / 9,
-    justifyContent: "flex-start",
-    padding: Spacing.two,
-  },
-  statusBadge: {
-    alignSelf: "flex-start",
-    borderRadius: 6,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-  },
-  cardCopy: {
-    gap: Spacing.one,
-    padding: Spacing.three,
   },
   pressed: {
     opacity: 0.8,
