@@ -4,15 +4,15 @@
  *
  * The link is a bearer secret: only `sha256(token)` is stored and the raw token
  * is returned exactly once, at creation. Access is fixed when the link is
- * minted, so a link can never widen someone's permissions later. Redemption
- * goes through the same `joinCrewInTransaction` as a named invitation — the two
- * paths differ only in what authorized the join.
+ * minted, so a link can never widen someone's permissions later. One table and
+ * one token route serve every access choice: member links redeem through
+ * `joinCrewInTransaction`, while community links join only the public community conversation.
  *
  * Usability is decided under a row lock: expiry, revocation and the use cap are
- * all read inside the same transaction that inserts the membership, so two
- * people redeeming the last seat cannot both win. A second click by someone
- * already in is a no-op, not a consumed use — that is what the redemption row's
- * unique (link, user) pair buys.
+ * all read inside the same transaction that grants access, so two people
+ * redeeming the last use cannot both win. Reopening a redeemed link is a no-op,
+ * not a consumed use — that is what the redemption row's unique (link, user)
+ * pair buys.
  */
 import {
   ForbiddenException,
@@ -21,6 +21,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CrewInviteLinkKind,
   CrewMembershipStatus,
   Prisma,
   type CrewInviteLink,
@@ -30,13 +31,11 @@ import type { AuthUser } from '../../auth';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { PrismaService } from '../../infra/db/db.module';
 import { NotificationService } from '../../notification';
-import {
-  hashInviteToken,
-  generateInviteToken,
-} from '../../sharing/invite-token';
+import { generateInviteToken } from '../../sharing/invite-token';
 import { CrewCollaborationService } from '../collaboration/crew-collaboration.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import type { CreateCrewInviteLinkInput } from '../dto';
+import { resolveCrewLogoUrl } from '../mappers';
 import { joinCrewInTransaction } from './join-crew';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -50,6 +49,7 @@ export type CrewInviteLinkState =
 export interface CrewInviteLinkDTO {
   id: string;
   crewId: string;
+  kind: 'member' | 'community';
   policyKeys: string[];
   maxUses: number | null;
   useCount: number;
@@ -81,6 +81,7 @@ function toDTO(link: CrewInviteLink): CrewInviteLinkDTO {
   return {
     id: link.id,
     crewId: link.crewId,
+    kind: link.kind,
     policyKeys: link.policyKeys,
     maxUses: link.maxUses,
     useCount: link.useCount,
@@ -113,9 +114,15 @@ export class CrewInviteLinksService {
       userId,
       'members.invite',
     );
+    const kind =
+      input.kind === 'community'
+        ? CrewInviteLinkKind.community
+        : CrewInviteLinkKind.member;
+    const policyKeys =
+      kind === CrewInviteLinkKind.community ? [] : input.policyKeys;
     // Granting access you do not administer yourself would let an inviter
     // escalate through a link; the named-invitation path guards the same way.
-    if (input.policyKeys.length > 0) {
+    if (policyKeys.length > 0) {
       await this.authorization.require(
         crewId,
         userId,
@@ -127,8 +134,9 @@ export class CrewInviteLinksService {
     const link = await this.prisma.crewInviteLink.create({
       data: {
         crewId,
+        kind,
         tokenHash,
-        policyKeys: input.policyKeys,
+        policyKeys,
         createdByUserId: userId,
         maxUses: input.maxUses ?? null,
         expiresAt:
@@ -145,7 +153,8 @@ export class CrewInviteLinksService {
         action: 'invite_link.created',
         after: {
           linkId: link.id,
-          policyKeys: input.policyKeys,
+          kind,
+          policyKeys,
           maxUses: link.maxUses,
           expiresAt: link.expiresAt?.toISOString() ?? null,
         },
@@ -158,7 +167,11 @@ export class CrewInviteLinksService {
   async list(crewId: string, userId: string): Promise<CrewInviteLinkDTO[]> {
     await this.authorization.require(crewId, userId, 'members.invite');
     const links = await this.prisma.crewInviteLink.findMany({
-      where: { crewId, revokedAt: null },
+      where: {
+        crewId,
+        kind: CrewInviteLinkKind.member,
+        revokedAt: null,
+      },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -189,7 +202,7 @@ export class CrewInviteLinksService {
         actorMemberId: actor.memberId,
         actorUserId: userId,
         action: 'invite_link.revoked',
-        after: { linkId, useCount: link.useCount },
+        after: { linkId, kind: link.kind, useCount: link.useCount },
       },
     });
   }
@@ -214,10 +227,13 @@ export class CrewInviteLinksService {
         })
       : 0;
     return {
-      scope: 'crew' as const,
+      scope:
+        link.kind === CrewInviteLinkKind.community
+          ? ('crew_community' as const)
+          : ('crew' as const),
       crewId: link.crewId,
       targetName: crew?.name ?? 'a crew',
-      logo: crew?.logo ?? null,
+      logo: crew?.logo ? resolveCrewLogoUrl(crew.logo) : null,
       tagline: crew?.tagline ?? null,
       memberCount,
       // A crew that was deleted after the link went out reads as expired
@@ -228,19 +244,31 @@ export class CrewInviteLinksService {
   }
 
   /**
-   * Join through the link. Idempotent per account: someone who already came in
-   * through this link gets their existing membership back without burning a use.
+   * Join through the link. Redemption is idempotent per account, so reopening
+   * the same link never consumes another use.
    */
   async accept(
     link: CrewInviteLink,
     user: AuthUser,
-  ): Promise<{
-    scope: 'crew';
-    crewId: string;
-    memberId: string;
-    targetName: string;
-    workspaceHref: string;
-  }> {
+  ): Promise<
+    | {
+        scope: 'crew';
+        crewId: string;
+        memberId: string;
+        targetName: string;
+        workspaceHref: string;
+      }
+    | {
+        scope: 'crew_community';
+        crewId: string;
+        conversationId: string;
+        targetName: string;
+        channelHref: string;
+      }
+  > {
+    if (link.kind === CrewInviteLinkKind.community) {
+      return this.acceptCommunity(link, user);
+    }
     const crew = await this.requireCrew(link.crewId);
     const pendingMessages: Message[] = [];
 
@@ -373,6 +401,96 @@ export class CrewInviteLinksService {
       memberId: result.memberId,
       targetName: crew.name,
       workspaceHref: `/crews/${link.crewId}/workspace`,
+    };
+  }
+
+  /** Redeem a community link without creating or mutating a crew membership. */
+  private async acceptCommunity(
+    link: CrewInviteLink,
+    user: AuthUser,
+  ): Promise<{
+    scope: 'crew_community';
+    crewId: string;
+    conversationId: string;
+    targetName: string;
+    channelHref: string;
+  }> {
+    const crew = await this.requireCrew(link.crewId);
+    const conversationId = await this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        {
+          kind: CrewInviteLinkKind;
+          revoked_at: Date | null;
+          expires_at: Date | null;
+          max_uses: number | null;
+          use_count: number;
+        }[]
+      >`SELECT kind, revoked_at, expires_at, max_uses, use_count
+          FROM crew_invite_links WHERE id = ${link.id}::uuid FOR UPDATE`;
+      const row = locked[0];
+      if (!row || row.kind !== CrewInviteLinkKind.community) {
+        throw new NotFoundException({
+          message: 'This community invitation link is invalid.',
+        });
+      }
+
+      const already = await tx.crewInviteLinkRedemption.findUnique({
+        where: { linkId_userId: { linkId: link.id, userId: user.userId } },
+      });
+      if (already) {
+        return (
+          await this.conversations.joinCrewCommunityConversation(
+            link.crewId,
+            user.userId,
+            tx,
+          )
+        ).id;
+      }
+
+      const state = crewInviteLinkState({
+        revokedAt: row.revoked_at,
+        expiresAt: row.expires_at,
+        maxUses: row.max_uses,
+        useCount: row.use_count,
+      });
+      if (state !== 'active') {
+        throw new GoneException({
+          code: 'CREW_COMMUNITY_INVITE_LINK_NOT_ACTIVE',
+          message:
+            state === 'revoked'
+              ? 'This community invitation link has been revoked.'
+              : state === 'expired'
+                ? 'This community invitation link has expired.'
+                : 'This community invitation link has reached its limit.',
+        });
+      }
+
+      const conversation =
+        await this.conversations.joinCrewCommunityConversation(
+          link.crewId,
+          user.userId,
+          tx,
+        );
+      await tx.crewInviteLinkRedemption.create({
+        data: {
+          linkId: link.id,
+          userId: user.userId,
+          memberId: null,
+        },
+      });
+      await tx.crewInviteLink.update({
+        where: { id: link.id },
+        data: { useCount: { increment: 1 } },
+      });
+      return conversation.id;
+    });
+
+    return {
+      scope: 'crew_community',
+      crewId: link.crewId,
+      conversationId,
+      targetName: crew.name,
+      channelHref: `/crews/${link.crewId}/workspace?tab=chat&channel=community`,
     };
   }
 

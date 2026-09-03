@@ -5245,27 +5245,37 @@ model CrewInvitation {
 /// at creation. Access granted on redemption is fixed when the link is minted,
 /// so a link can never widen someone's permissions after the fact.
 model CrewInviteLink {
-  id              String    @id @default(uuid(7)) @db.Uuid
-  crewId          String    @map("crew_id")
-  tokenHash       String    @unique(map: "crew_invite_links_token_hash_unique") @map("token_hash") @db.VarChar(128)
+  id              String             @id @default(uuid(7)) @db.Uuid
+  crewId          String             @map("crew_id")
+  /// Member links enter the private workspace; community links enter only the
+  /// public community channel. The bearer token decides one immutable destination.
+  kind            CrewInviteLinkKind @default(member)
+  tokenHash       String             @unique(map: "crew_invite_links_token_hash_unique") @map("token_hash") @db.VarChar(128)
   /// Additive policies every joiner receives. Empty = plain member.
-  policyKeys      String[]  @default([]) @map("policy_keys")
-  createdByUserId String    @map("created_by_user_id") @db.VarChar(64)
+  policyKeys      String[]           @default([]) @map("policy_keys")
+  createdByUserId String             @map("created_by_user_id") @db.VarChar(64)
   /// Null means unlimited. Checked against `useCount` under a row lock.
-  maxUses         Int?      @map("max_uses")
-  useCount        Int       @default(0) @map("use_count")
+  maxUses         Int?               @map("max_uses")
+  useCount        Int                @default(0) @map("use_count")
   /// Null means it never expires. Expiry is lazy — nothing sweeps these.
-  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
-  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(6)
-  revokedByUserId String?   @map("revoked_by_user_id") @db.VarChar(64)
-  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  expiresAt       DateTime?          @map("expires_at") @db.Timestamptz(6)
+  revokedAt       DateTime?          @map("revoked_at") @db.Timestamptz(6)
+  revokedByUserId String?            @map("revoked_by_user_id") @db.VarChar(64)
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime           @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   crew        Crew                       @relation(fields: [crewId], references: [id], onDelete: Cascade)
   redemptions CrewInviteLinkRedemption[]
 
-  @@index([crewId, createdAt(sort: Desc)], map: "crew_invite_links_crew_created_idx")
+  @@index([crewId, kind, createdAt(sort: Desc)], map: "crew_invite_links_crew_kind_created_idx")
   @@map("crew_invite_links")
+}
+
+enum CrewInviteLinkKind {
+  member
+  community
+
+  @@map("crew_invite_link_kind")
 }
 
 /// One row per account that arrived through a link. The unique pair is what
@@ -7176,6 +7186,15 @@ enum ConversationParticipantRole {
   @@map("conversation_participant_role")
 }
 
+enum CrewConversationChannel {
+  /// Private production collaboration for active crew members.
+  team
+  /// Public-facing community chat entered through a community invitation.
+  community
+
+  @@map("crew_conversation_channel")
+}
+
 enum MessageType {
   text
   image
@@ -7189,8 +7208,11 @@ enum MessageType {
 model Conversation {
   id String @id
 
-  contextType ConversationContextType @map("context_type")
-  contextId   String                  @map("context_id")
+  contextType ConversationContextType  @map("context_type")
+  contextId   String                   @map("context_id")
+  /// Set only for crew conversations. The context remains the crew while this
+  /// field separates its private team channel from the public community channel.
+  crewChannel CrewConversationChannel? @map("crew_channel")
 
   /// Stable lookup token used for "find or create" semantics.
   ///   service inquiry: `service:<serviceId>:<buyerId>:<creatorId>`

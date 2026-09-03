@@ -40,12 +40,14 @@ import {
   useCrewDetail,
   useCrewMembers,
   useCrewPositions,
+  type CrewDTO,
   type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
 import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 import { useCrewPermissions } from "@/app/(site)/crews/_hooks/use-crew-permissions";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
+import { CommunityInviteDialog } from "@/app/(site)/crews/_components/community-invite-dialog";
 import { ApplicationReviewDialog } from "@/app/(site)/crews/_components/application-review-dialog";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
 import { CreateCrewJobDialog } from "@/app/(site)/crews/_components/create-crew-job-dialog";
@@ -59,6 +61,7 @@ import { CrewAssetsTab } from "@/app/(site)/crews/[id]/workspace/_components/ass
 import { CrewIncomeTab } from "@/app/(site)/crews/[id]/workspace/_components/income/crew-income-tab";
 import { CrewTransfersProvider } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
 import { CrewWorkbenchShell } from "@/app/(site)/crews/[id]/workspace/_components/workbench/crew-workbench-shell";
+import { CrewLogo } from "@/app/(site)/messages/_components/crew-logo";
 import { useAnchorDeeplink } from "@/app/(site)/crews/[id]/workspace/_hooks/use-anchor-deeplink";
 import { useCrewConversation } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
 import { workspaceDeeplinkAnchors } from "@/app/(site)/crews/[id]/workspace/_lib/deeplink-anchors";
@@ -68,6 +71,7 @@ import {
   isWorkspaceTabId,
   resolveWorkspaceTab,
   workspaceTabsFor,
+  type WorkspaceTab,
   type WorkspaceTabId,
 } from "@/app/(site)/crews/[id]/workspace/_lib/workspace-tabs";
 import { Button } from "@/components/ui/button";
@@ -87,6 +91,7 @@ export default function CrewWorkspacePage() {
   const router = useRouter();
   const reviewApplicationId = searchParams.get("application");
   const agreementId = searchParams.get("agreement");
+  const requestedCommunityChannel = searchParams.get("channel") === "community";
 
   // Every URL edit on this page is a `replace`: the query string carries
   // view state (tab, consumed deeplinks), and pushing it would make the
@@ -147,7 +152,19 @@ export default function CrewWorkspacePage() {
     [replaceParams]
   );
 
+  const selectChatChannel = useCallback(
+    (channel: "team" | "community") => {
+      replaceParams((next) => {
+        applyWorkspaceTab(next, "chat");
+        if (channel === "community") next.set("channel", "community");
+        else next.delete("channel");
+      });
+    },
+    [replaceParams]
+  );
+
   const [addMemberOpen, setAddMemberOpen] = useState(false);
+  const [communityInviteOpen, setCommunityInviteOpen] = useState(false);
   const [publishJobOpen, setPublishJobOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   // Member-remove confirmation state moved into MembersGrid — the only
@@ -271,6 +288,9 @@ export default function CrewWorkspacePage() {
     (process.env.NODE_ENV !== "production" && !viewer.isMember);
 
   if (membershipDenied) {
+    if (requestedCommunityChannel) {
+      return <CommunityWorkspace crew={crewDetail} />;
+    }
     return (
       <WorkspaceState
         icon={<IconLock className="size-6 text-primary" />}
@@ -324,6 +344,7 @@ export default function CrewWorkspacePage() {
       <DevIdentitySwitcher />
 
       <CrewWorkbenchShell
+        activeChatChannel={requestedCommunityChannel ? "community" : "team"}
         activeTab={activeTab}
         tabs={tabs}
         crewId={id}
@@ -331,7 +352,12 @@ export default function CrewWorkspacePage() {
         crewName={crewDetail.name}
         isOwner={viewer.can("crew.settings.manage")}
         onEditCrew={() => setEditOpen(true)}
+        onInviteCommunity={
+          viewer.can("members.invite") ? () => setCommunityInviteOpen(true) : undefined
+        }
+        onSelectChatChannel={selectChatChannel}
         onSelectTab={selectTab}
+        showTeamChat
       >
         {activeTab === "assets" ? (
           <CrewAssetsTab
@@ -348,7 +374,9 @@ export default function CrewWorkspacePage() {
             isChat={isChat}
             isTaskWorkspace={activeTab === "tasks"}
           >
-            {activeTab === "chat" ? <CrewChatTab crewId={id} /> : null}
+            {activeTab === "chat" ? (
+              <CrewChatTab crewId={id} channel={requestedCommunityChannel ? "community" : "team"} />
+            ) : null}
 
             {activeTab === "overview" ? (
               <OverviewTab
@@ -428,6 +456,9 @@ export default function CrewWorkspacePage() {
         crewId={id}
         canGrantPolicies={viewer.can("members.permissions.manage")}
       />
+      {communityInviteOpen ? (
+        <CommunityInviteDialog crewId={id} open onOpenChange={setCommunityInviteOpen} />
+      ) : null}
       <CreateCrewJobDialog open={publishJobOpen} onOpenChange={setPublishJobOpen} crewId={id} />
       {/* Notification deeplink → direct review. Only mounted for the
           owner so applicants who somehow land on this URL never see
@@ -456,6 +487,85 @@ export default function CrewWorkspacePage() {
       {/* Freeze-position confirmation moved into PositionDetailSheet
           (the only place that surfaces the freeze action now). */}
     </CrewTransfersProvider>
+  );
+}
+
+const COMMUNITY_WORKSPACE_TABS = [
+  { id: "chat", labelKey: "tabChat", membersOnly: false },
+  { id: "overview", labelKey: "tabOverview", membersOnly: false },
+] as const satisfies readonly WorkspaceTab[];
+
+/**
+ * The community invitation lands in the existing crew workbench, not a second page.
+ * This restricted shell exposes exactly two surfaces: the public community channel
+ * and basic crew information. Internal team navigation is never mounted.
+ */
+function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
+  const t = useTranslations("workspace");
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const activeTab: WorkspaceTabId = searchParams.get("tab") === "overview" ? "overview" : "chat";
+
+  const selectTab = useCallback(
+    (tab: WorkspaceTabId) => {
+      if (tab !== "chat" && tab !== "overview") return;
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("tab", tab);
+      next.set("channel", "community");
+      router.replace(`${pathname}?${next.toString()}`, { scroll: false });
+    },
+    [pathname, router, searchParams]
+  );
+
+  return (
+    <>
+      <DevIdentitySwitcher />
+      <CrewWorkbenchShell
+        activeChatChannel="community"
+        activeTab={activeTab}
+        tabs={COMMUNITY_WORKSPACE_TABS}
+        crewId={crew.id}
+        crewLogo={crew.logo}
+        crewName={crew.name}
+        currentCrewHref={`${pathname}?tab=chat&channel=community`}
+        isOwner={false}
+        onSelectChatChannel={() => selectTab("chat")}
+        onSelectTab={selectTab}
+        showTeamChat={false}
+      >
+        <StandardWorkspaceSurface
+          title={t(activeTab === "chat" ? "tabChat" : "tabOverview")}
+          description={crew.tagline || crew.description}
+          isChat={activeTab === "chat"}
+          isTaskWorkspace={false}
+        >
+          {activeTab === "chat" ? <CrewChatTab crewId={crew.id} channel="community" /> : null}
+          {activeTab === "overview" ? <CommunityCrewBasicInfo crew={crew} /> : null}
+        </StandardWorkspaceSurface>
+      </CrewWorkbenchShell>
+    </>
+  );
+}
+
+function CommunityCrewBasicInfo({ crew }: { crew: CrewDTO }) {
+  return (
+    <section className="mx-auto max-w-3xl py-6">
+      <div className="flex items-start gap-4">
+        <CrewLogo logo={crew.logo} name={crew.name} crewId={crew.id} className="size-16 shrink-0" />
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold text-foreground">{crew.name}</h2>
+          {crew.tagline ? (
+            <p className="mt-2 text-sm leading-6 text-foreground/85">{crew.tagline}</p>
+          ) : null}
+        </div>
+      </div>
+      {crew.description ? (
+        <p className="mt-6 whitespace-pre-line text-sm leading-7 text-foreground/85">
+          {crew.description}
+        </p>
+      ) : null}
+    </section>
   );
 }
 

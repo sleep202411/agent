@@ -503,17 +503,8 @@ export class StoryGenerationBatchDispatcherService
   }
 }
 
-/**
- * Quotes created before client/effective option separation may contain the
- * server-derived source duration. It is safe to recompute from the immutable
- * Storyboard target, but it must never be replayed through the client-options
- * channel. The strict parse keeps every other reserved key fail-closed.
- */
 function batchClientOptions(value: Prisma.JsonValue) {
-  const options = jsonOptions(value);
-  delete options.duration;
-  delete options.durationSeconds;
-  return StoryGenerationOptionsSchema.parse(options);
+  return StoryGenerationOptionsSchema.parse(jsonOptions(value));
 }
 
 type ClaimedBatchItem = Prisma.StoryGenerationBatchItemGetPayload<{

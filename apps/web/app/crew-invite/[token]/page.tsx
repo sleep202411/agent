@@ -16,7 +16,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { IconAlertCircle, IconCheck, IconLoader2, IconUsers } from "@tabler/icons-react";
+import {
+  IconAlertCircle,
+  IconCheck,
+  IconLoader2,
+  IconUsers,
+  IconUsersGroup,
+} from "@tabler/icons-react";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -25,7 +31,7 @@ import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { CrewApiError, crewApi } from "@/app/(site)/crews/_hooks/api";
 
 interface CrewInvitePreview {
-  scope: "crew";
+  scope: "crew" | "crew_community";
   crewId: string;
   targetName: string;
   logo: string | null;
@@ -35,13 +41,21 @@ interface CrewInvitePreview {
   expiresAt: string | null;
 }
 
-interface CrewInviteAccepted {
-  scope: "crew";
-  crewId: string;
-  memberId: string;
-  targetName: string;
-  workspaceHref: string;
-}
+type CrewInviteAccepted =
+  | {
+      scope: "crew";
+      crewId: string;
+      memberId: string;
+      targetName: string;
+      workspaceHref: string;
+    }
+  | {
+      scope: "crew_community";
+      crewId: string;
+      conversationId: string;
+      targetName: string;
+      channelHref: string;
+    };
 
 type Envelope<T> = { code?: number; data?: T };
 
@@ -59,16 +73,22 @@ type View =
   | { kind: "removed" }
   | { kind: "signIn" }
   | { kind: "ready"; preview: CrewInvitePreview }
-  | { kind: "joined"; crewName: string; workspaceHref: string };
+  | {
+      kind: "joined";
+      scope: "crew" | "crew_community";
+      crewName: string;
+      destinationHref: string;
+    };
 
 export default function CrewInvitePage() {
   const t = useTranslations("crewInvite");
+  const tc = useTranslations("crewCommunityInvite");
   const router = useRouter();
   const locale = useLocale() as Locale;
   const params = useParams<{ token: string }>();
   const token = typeof params?.token === "string" ? params.token : "";
 
-  const [view, setView] = useState<View>({ kind: "loading" });
+  const [view, setView] = useState<View>(() => (token ? { kind: "loading" } : { kind: "invalid" }));
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
   // Preview is session-gated server-side, so a signed-out recipient sees the
@@ -78,10 +98,7 @@ export default function CrewInvitePage() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!token) {
-      setView({ kind: "invalid" });
-      return;
-    }
+    if (!token) return;
     void (async () => {
       try {
         const body = await crewApi.get<Envelope<CrewInvitePreview> | CrewInvitePreview>(
@@ -90,7 +107,7 @@ export default function CrewInvitePage() {
         );
         if (cancelled) return;
         const preview = unwrap(body);
-        if (preview.scope !== "crew") {
+        if (preview.scope !== "crew" && preview.scope !== "crew_community") {
           setView({ kind: "invalid" });
           return;
         }
@@ -135,8 +152,10 @@ export default function CrewInvitePage() {
       const accepted = unwrap(body);
       setView({
         kind: "joined",
+        scope: accepted.scope,
         crewName: accepted.targetName,
-        workspaceHref: accepted.workspaceHref,
+        destinationHref:
+          accepted.scope === "crew_community" ? accepted.channelHref : accepted.workspaceHref,
       });
     } catch (err) {
       if (err instanceof CrewApiError && err.status === 401) {
@@ -152,8 +171,12 @@ export default function CrewInvitePage() {
         // Already a member through some other door — that is a success here.
         setView({
           kind: "joined",
+          scope: view.preview.scope,
           crewName: view.preview.targetName,
-          workspaceHref: `/crews/${view.preview.crewId}/workspace`,
+          destinationHref:
+            view.preview.scope === "crew_community"
+              ? `/crews/${view.preview.crewId}/workspace?tab=chat&channel=community`
+              : `/crews/${view.preview.crewId}/workspace`,
         });
         return;
       }
@@ -213,24 +236,38 @@ export default function CrewInvitePage() {
               <img src={view.preview.logo} alt="" className="size-16 rounded-2xl object-cover" />
             ) : (
               <span className="flex size-16 items-center justify-center rounded-2xl bg-white/[0.06] text-white/60">
-                <IconUsers className="size-7" />
+                {view.preview.scope === "crew_community" ? (
+                  <IconUsersGroup className="size-7" />
+                ) : (
+                  <IconUsers className="size-7" />
+                )}
               </span>
             )}
             <div className="flex flex-col gap-1.5">
               <h1 className="m-0 text-xl font-semibold text-white">
-                {t("joinTitle", { crew: view.preview.targetName })}
+                {view.preview.scope === "crew_community"
+                  ? tc("joinTitle", { crew: view.preview.targetName })
+                  : t("joinTitle", { crew: view.preview.targetName })}
               </h1>
               {view.preview.tagline ? (
                 <p className="m-0 text-sm leading-relaxed text-white/55">{view.preview.tagline}</p>
               ) : null}
               <p className="m-0 text-xs text-white/40">
-                {t("memberCount", { count: view.preview.memberCount })}
+                {view.preview.scope === "crew_community"
+                  ? tc("crewMemberCount", { count: view.preview.memberCount })
+                  : t("memberCount", { count: view.preview.memberCount })}
               </p>
             </div>
             {error ? <p className="m-0 text-sm text-[#ff6b6b]">{error}</p> : null}
             <Button onClick={() => void join()} disabled={joining} className="h-11 w-full">
               {joining ? <IconLoader2 className="mr-2 size-4 animate-spin" /> : null}
-              {joining ? t("joining") : t("join")}
+              {joining
+                ? view.preview.scope === "crew_community"
+                  ? tc("joining")
+                  : t("joining")
+                : view.preview.scope === "crew_community"
+                  ? tc("join")
+                  : t("join")}
             </Button>
           </div>
         )}
@@ -241,13 +278,15 @@ export default function CrewInvitePage() {
               <IconCheck className="size-7" />
             </span>
             <h1 className="m-0 text-xl font-semibold text-white">
-              {t("joined", { crew: view.crewName })}
+              {view.scope === "crew_community"
+                ? tc("joined", { crew: view.crewName })
+                : t("joined", { crew: view.crewName })}
             </h1>
             <Button
-              onClick={() => router.push(localizePath(view.workspaceHref, locale))}
+              onClick={() => router.push(localizePath(view.destinationHref, locale))}
               className="h-11 w-full"
             >
-              {t("openWorkspace")}
+              {view.scope === "crew_community" ? tc("openChannel") : t("openWorkspace")}
             </Button>
           </div>
         )}

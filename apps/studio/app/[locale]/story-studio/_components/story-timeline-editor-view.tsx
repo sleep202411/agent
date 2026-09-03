@@ -13,6 +13,7 @@ import {
   IconRefresh,
   IconSparkles,
   IconTimeline,
+  IconTrash,
   IconVideo,
 } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,6 +24,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MediaTimelineTrack, timelineSecondsToPixels } from "@/components/media-timeline";
 import { toast } from "sonner";
 import { QuickParamChips } from "@/components/canvas/authoring/quick-param-chips";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -36,7 +47,13 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Link } from "@/i18n/navigation";
-import { defaultSettingsForModel, type ModelSettings } from "@/lib/canvas-authoring/generation-api";
+import {
+  defaultSettingsForModel,
+  schemaFields,
+  type FizzAiModel,
+  type ModelSettings,
+  type SchemaFieldDescriptor,
+} from "@/lib/canvas-authoring/generation-api";
 import { uploadFileViaSignedUrl } from "@/lib/media-upload";
 import {
   createStoryProductionIdempotencyKey,
@@ -58,6 +75,7 @@ import { cn } from "@/lib/utils";
 import {
   appendStoryTimelineClip,
   createManualStoryTimelineClipStableKey,
+  removeStoryTimelineClip,
   storySequenceToTimeline,
   type NewStoryTimelineClip,
 } from "../_lib/story-timeline";
@@ -79,12 +97,6 @@ import {
 import { useStoryCandidateAssets } from "./project-canvas/use-story-candidate-assets";
 import { StoryStageLoadingState } from "./story-stage-empty-state";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
-
-const STORY_TIMELINE_OWNED_MODEL_FIELDS = [
-  "duration",
-  "durationSeconds",
-  "duration_seconds",
-] as const;
 
 /**
  * Node-local editing workspace. It projects the server Storyboard sequence
@@ -202,6 +214,49 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
       });
     },
     onError: (error) => toast.error(storyApiErrorMessage(error, t("addError"))),
+  });
+
+  const deleteMutation = useMutation({
+    retry: false,
+    mutationFn: ({
+      sequence,
+      clipId,
+    }: {
+      sequence: StoryStoryboardSequence;
+      clipId: string;
+      activeClipId: string | null;
+    }) =>
+      putStoryStoryboardTimeline(
+        projectId,
+        sequence.chapterId,
+        sequence.id,
+        createStoryProductionIdempotencyKey("story-timeline-delete"),
+        removeStoryTimelineClip(sequence, clipId)
+      ),
+    onSuccess: async (updated, { sequence, clipId, activeClipId }) => {
+      queryClient.setQueryData<StoryStoryboardSequence[]>(
+        storyProductionKeys.storyboard(projectId, updated.chapterId),
+        (current) => current?.map((item) => (item.id === updated.id ? updated : item))
+      );
+      const deletedIndex = sequence.clips
+        .slice()
+        .sort((left, right) => left.rank - right.rank)
+        .findIndex((clip) => clip.id === clipId);
+      const remaining = storySequenceToTimeline(updated).visualTrack.clips;
+      const adjacent = remaining[Math.min(Math.max(0, deletedIndex), remaining.length - 1)] ?? null;
+      const nextSelection =
+        activeClipId && activeClipId !== clipId
+          ? (remaining.find((clip) => clip.id === activeClipId) ?? adjacent)
+          : adjacent;
+      setIsPlaying(false);
+      setSelectedClipId(nextSelection?.id ?? null);
+      setPlayheadMs(nextSelection?.startMs ?? 0);
+      toast.success(t("deleteSuccess"));
+      await queryClient.invalidateQueries({
+        queryKey: storyProductionKeys.storyboard(projectId, updated.chapterId),
+      });
+    },
+    onError: (error) => toast.error(storyApiErrorMessage(error, t("deleteError"))),
   });
 
   const loading = Boolean(chapterId) && (storyboardQuery.isPending || productionQuery.isPending);
@@ -330,24 +385,32 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
             className="hidden items-center gap-1.5 text-[11px] text-white/45 sm:inline-flex"
             aria-live="polite"
           >
-            {addMutation.isPending ? (
+            {addMutation.isPending || deleteMutation.isPending ? (
               <IconRefresh className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
               <IconCircleCheck className="size-3.5" aria-hidden="true" />
             )}
-            {t(addMutation.isPending ? "saving" : "saved")}
+            {t(addMutation.isPending || deleteMutation.isPending ? "saving" : "saved")}
           </span>
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[220px_minmax(0,1fr)_280px] xl:grid-cols-[248px_minmax(0,1fr)_320px]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden md:grid-cols-[240px_minmax(0,1fr)_280px] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
         <TimelineClipSidebar
           clips={timeline.visualTrack.clips}
           selectedClipId={selectedClip?.id ?? null}
           onSelectClip={selectClip}
-          canAdd={canEdit}
+          canEdit={canEdit}
           adding={addMutation.isPending}
+          deleting={deleteMutation.isPending}
           onAddClip={addClip}
+          onDeleteClip={(clip) =>
+            deleteMutation.mutate({
+              sequence: selectedSequence,
+              clipId: clip.id,
+              activeClipId: selectedClip?.id ?? null,
+            })
+          }
         />
         <section
           aria-label={t("preview")}
@@ -406,18 +469,23 @@ function TimelineClipSidebar({
   clips,
   selectedClipId,
   onSelectClip,
-  canAdd,
+  canEdit,
   adding,
+  deleting,
   onAddClip,
+  onDeleteClip,
 }: {
   clips: readonly StoryStoryboardClip[];
   selectedClipId: string | null;
   onSelectClip: (clip: StoryStoryboardClip, timeMs?: number) => void;
-  canAdd: boolean;
+  canEdit: boolean;
   adding: boolean;
+  deleting: boolean;
   onAddClip: () => void;
+  onDeleteClip: (clip: StoryStoryboardClip) => void;
 }) {
   const t = useTranslations("storyStudio.editorPage");
+  const [pendingDelete, setPendingDelete] = useState<StoryStoryboardClip | null>(null);
 
   return (
     <aside
@@ -437,16 +505,14 @@ function TimelineClipSidebar({
             const KindIcon = clip.kind === "video" ? IconVideo : IconPhoto;
 
             return (
-              <li key={clip.id}>
+              <li key={clip.id} className="group/clip relative">
                 <button
                   type="button"
                   aria-current={selected ? "true" : undefined}
                   onClick={() => onSelectClip(clip)}
                   className={cn(
-                    "group grid w-full grid-cols-[72px_minmax(0,1fr)] gap-2 rounded-lg border border-transparent p-1.5 text-left transition-colors focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
-                    selected
-                      ? "border-white/14 bg-white/[0.11]"
-                      : "hover:border-white/8 hover:bg-white/[0.055]"
+                    "group grid w-full grid-cols-[72px_minmax(0,1fr)] gap-2 rounded-lg p-1.5 pr-9 text-left transition-colors focus-visible:ring-2 focus-visible:ring-white/35 focus-visible:outline-none",
+                    selected ? "bg-white/[0.11]" : "hover:bg-white/[0.055]"
                   )}
                 >
                   <span className="relative aspect-video overflow-hidden rounded-md bg-black/45">
@@ -469,6 +535,17 @@ function TimelineClipSidebar({
                     </span>
                   </span>
                 </button>
+                {canEdit ? (
+                  <button
+                    type="button"
+                    aria-label={`${t("deleteClip")}: ${clip.title}`}
+                    disabled={deleting}
+                    onClick={() => setPendingDelete(clip)}
+                    className="absolute top-1/2 right-2 z-10 grid size-7 -translate-y-1/2 place-items-center rounded-lg bg-destructive/10 text-destructive opacity-0 transition-[opacity,background-color] hover:bg-destructive/20 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-destructive/45 focus-visible:outline-none disabled:pointer-events-none group-focus-within/clip:opacity-100 group-hover/clip:opacity-100"
+                  >
+                    <IconTrash className="size-3.5" aria-hidden="true" />
+                  </button>
+                ) : null}
               </li>
             );
           })}
@@ -479,13 +556,39 @@ function TimelineClipSidebar({
           variant="secondary"
           block
           loading={adding}
-          disabled={!canAdd || adding}
+          disabled={!canEdit || adding || deleting}
           onClick={onAddClip}
         >
           <IconPlus />
           {t("addClip")}
         </Button>
       </div>
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingDelete ? t("deleteTitle", { name: pendingDelete.title }) : null}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteDescription")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("deleteCancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (pendingDelete) onDeleteClip(pendingDelete);
+              }}
+            >
+              {t("deleteConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   );
 }
@@ -941,12 +1044,16 @@ function TimelineClipInspector({
     modelId: string;
     settings: ModelSettings;
   } | null>(null);
-  const modelSettings =
+  const baseModelSettings =
     modelSettingsOverride && modelSettingsOverride.modelId === selectedModel?.id
       ? modelSettingsOverride.settings
       : modelId === null
         ? generationDefaults.options
         : defaultSettingsForModel(selectedModel);
+  const modelSettings =
+    modelSettingsOverride && modelSettingsOverride.modelId === selectedModel?.id
+      ? baseModelSettings
+      : storyTimelineDefaultGenerationSettings(selectedModel, baseModelSettings, clip.durationMs);
   const updateModelSettings = (settings: ModelSettings) => {
     if (!selectedModel) return;
     setModelSettingsOverride({ modelId: selectedModel.id, settings });
@@ -1016,9 +1123,12 @@ function TimelineClipInspector({
   const replaceMutation = useMutation({
     retry: false,
     mutationFn: (source: StoryCandidateAsset) => persistDraft(source),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
       cacheClip(updated);
       toast.success(t("inspectorForm.replaceSuccess"));
+      await queryClient.invalidateQueries({
+        queryKey: storyProductionKeys.storyboard(projectId, chapterId),
+      });
     },
     onError: (error) => toast.error(storyApiErrorMessage(error, t("inspectorForm.replaceError"))),
   });
@@ -1041,7 +1151,7 @@ function TimelineClipInspector({
           expectedVersion: target.version,
           modelId: selectedModel.id,
           schemaVersion: selectedModel.schemaVersion,
-          options: storyTimelineGenerationOptions(modelSettings),
+          options: storyGenerationOptions(modelSettings),
         }
       );
     },
@@ -1181,7 +1291,6 @@ function TimelineClipInspector({
         model={selectedModel}
         settings={modelSettings}
         onChange={updateModelSettings}
-        excludedFieldNames={STORY_TIMELINE_OWNED_MODEL_FIELDS}
       />
       <div className="grid grid-cols-2 gap-2">
         <Button
@@ -1230,10 +1339,44 @@ function storyTimelineUploadKind(file: File): StoryStoryboardClip["kind"] {
   return "image";
 }
 
-function storyTimelineGenerationOptions(modelSettings: ModelSettings) {
-  const options = storyGenerationOptions(modelSettings);
-  for (const field of STORY_TIMELINE_OWNED_MODEL_FIELDS) delete options[field];
-  return options;
+export function storyTimelineDefaultGenerationSettings(
+  model: FizzAiModel | undefined,
+  settings: ModelSettings,
+  clipDurationMs: number
+): ModelSettings {
+  const durationField = schemaFields(model).find(isStoryDurationField);
+  if (!durationField) return settings;
+  const value = nearestStoryDurationValue(durationField, clipDurationMs / 1_000);
+  return value === undefined ? settings : { ...settings, [durationField.name]: value };
+}
+
+function isStoryDurationField(field: SchemaFieldDescriptor): boolean {
+  return ["duration", "durationseconds"].includes(field.name.replaceAll(/[_-]/g, "").toLowerCase());
+}
+
+function nearestStoryDurationValue(
+  field: SchemaFieldDescriptor,
+  clipSeconds: number
+): string | number | undefined {
+  if (!Number.isFinite(clipSeconds) || clipSeconds <= 0) return undefined;
+  if (field.enum?.length) {
+    return field.enum
+      .map((value) => ({ value, seconds: Number(value) }))
+      .filter((candidate) => Number.isFinite(candidate.seconds) && candidate.seconds > 0)
+      .sort((left, right) => {
+        const distance =
+          Math.abs(left.seconds - clipSeconds) - Math.abs(right.seconds - clipSeconds);
+        return distance || right.seconds - left.seconds;
+      })[0]?.value;
+  }
+  if (field.type !== "number" && field.type !== "integer") return undefined;
+  const bounded = Math.min(
+    field.max ?? clipSeconds,
+    Math.max(field.min ?? clipSeconds, clipSeconds)
+  );
+  const stepped = field.step ? Math.round(bounded / field.step) * field.step : bounded;
+  const normalized = field.type === "integer" ? Math.round(stepped) : stepped;
+  return Number(normalized.toFixed(9));
 }
 
 function InspectorRow({ label, children }: { label: string; children: React.ReactNode }) {

@@ -27,12 +27,17 @@ export function shouldShowCrewSwitcherRail({
 
 interface CrewSwitcherRailProps {
   currentCrew: RailCrew;
+  currentCrewHref?: string;
   showNames?: boolean;
 }
 
 /** Workspace adapter: owns the shared query and ensures the open crew is
  * always present, even while the membership cache is refreshing. */
-export function CrewSwitcherRail({ currentCrew, showNames = false }: CrewSwitcherRailProps) {
+export function CrewSwitcherRail({
+  currentCrew,
+  currentCrewHref,
+  showNames = false,
+}: CrewSwitcherRailProps) {
   const myCrews = useMyCrews();
   const crews = useMemo(
     () =>
@@ -44,6 +49,7 @@ export function CrewSwitcherRail({ currentCrew, showNames = false }: CrewSwitche
     <CrewSwitcherRailView
       crews={crews}
       currentCrewId={currentCrew.id}
+      currentCrewHref={currentCrewHref}
       showNames={showNames}
       isPending={myCrews.isPending}
       error={myCrews.error}
@@ -56,6 +62,7 @@ export function CrewSwitcherRail({ currentCrew, showNames = false }: CrewSwitche
 interface CrewSwitcherRailViewProps {
   crews: RailCrew[];
   currentCrewId?: string;
+  currentCrewHref?: string;
   allCrewsActive?: boolean;
   rootLabel?: string;
   showNames?: boolean;
@@ -69,6 +76,7 @@ interface CrewSwitcherRailViewProps {
 export function CrewSwitcherRailView({
   crews,
   currentCrewId,
+  currentCrewHref,
   allCrewsActive = false,
   rootLabel,
   showNames = false,
@@ -139,7 +147,11 @@ export function CrewSwitcherRailView({
               return (
                 <Link
                   key={crew.id}
-                  href={localizePath(`/crews/${encodeURIComponent(crew.id)}/workspace`, locale)}
+                  href={
+                    active && currentCrewHref
+                      ? currentCrewHref
+                      : localizePath(`/crews/${encodeURIComponent(crew.id)}/workspace`, locale)
+                  }
                   aria-label={crew.name}
                   aria-current={active ? "page" : undefined}
                   title={crew.name}

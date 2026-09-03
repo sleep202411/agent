@@ -12,6 +12,15 @@ vi.mock("@/lib/api", () => ({
     get: vi.fn(),
     post: vi.fn(),
   },
+  ApiRequestError: class ApiRequestError extends Error {
+    code: string | number;
+    status: number;
+    constructor(code: string | number, message: string, status: number) {
+      super(message);
+      this.code = code;
+      this.status = status;
+    }
+  },
 }));
 
 const session = {
@@ -19,26 +28,54 @@ const session = {
   gameId: "tg_0123456789abcdef",
   resumed: false,
   bgmUrl: null,
-  stillUrls: [],
-  messages: [],
+  stillUrls: [] as string[],
+  messages: [] as { id: string; role: string; content: string; createdAt: string }[],
   startedAt: "2026-08-09T12:00:00Z",
 };
 
+function sseResponse(frames: string): Response {
+  return new Response(frames, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream" },
+  });
+}
+
 describe("creator text-adventure playtest session", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn());
+  });
 
   it("starts a session only when no playing session exists", async () => {
     vi.mocked(api.get).mockResolvedValue(null);
-    vi.mocked(api.post).mockResolvedValue(session);
-
-    await expect(loadOrStartTextAdventureSession(session.gameId, "en-US")).resolves.toEqual(
-      session
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(
+        [
+          `event: meta\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            gameId: session.gameId,
+            resumed: false,
+            bgmUrl: null,
+            stillUrls: [],
+            startedAt: session.startedAt,
+          })}\n\n`,
+          `event: done\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            messageId: "12",
+            content: "Hello",
+          })}\n\n`,
+        ].join("")
+      )
     );
-    expect(api.post).toHaveBeenCalledOnce();
-    expect(api.post).toHaveBeenCalledWith(`/api/player/text-game/${session.gameId}/start`, {
-      data: { locale: "en-US" },
-      timeout: 120_000,
+
+    await expect(loadOrStartTextAdventureSession(session.gameId, "en-US")).resolves.toMatchObject({
+      sessionId: session.sessionId,
+      resumed: false,
     });
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      `/api/player/text-game/${session.gameId}/start/stream`
+    );
+    expect(api.post).not.toHaveBeenCalled();
   });
 
   it("resumes an existing session without starting another", async () => {
@@ -47,51 +84,62 @@ describe("creator text-adventure playtest session", () => {
     await expect(loadOrStartTextAdventureSession(session.gameId, "en-US")).resolves.toMatchObject({
       resumed: true,
     });
-    expect(api.post).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("rejects mismatched resume and start flags", async () => {
     vi.mocked(api.get).mockResolvedValue(session);
     await expect(getPlayingTextAdventureSession(session.gameId)).rejects.toThrow("resumed=false");
 
-    vi.mocked(api.post).mockResolvedValue({ ...session, resumed: true });
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(
+        `event: meta\ndata: ${JSON.stringify({
+          sessionId: session.sessionId,
+          gameId: session.gameId,
+          resumed: true,
+          bgmUrl: null,
+          stillUrls: [],
+          startedAt: session.startedAt,
+        })}\n\n`
+      )
+    );
     await expect(startTextAdventureSession(session.gameId, "en-US")).rejects.toThrow(
       "resumed=true"
     );
   });
 
-  it("trims actions and validates the returned session", async () => {
-    const response = {
-      sessionId: session.sessionId,
-      userMessage: {
-        id: "1",
-        role: "user",
-        content: "Open the door",
-        createdAt: session.startedAt,
-      },
-      assistantMessage: {
-        id: "2",
-        role: "assistant",
-        content: "The door opens.",
-        createdAt: session.startedAt,
-      },
+  it("trims actions and streams the returned session", async () => {
+    const userMessage = {
+      id: "1",
+      role: "user",
+      content: "Open the door",
+      createdAt: session.startedAt,
     };
-    vi.mocked(api.post).mockResolvedValue(response);
+    vi.mocked(fetch).mockResolvedValue(
+      sseResponse(
+        [
+          `event: meta\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            userMessage,
+          })}\n\n`,
+          `event: done\ndata: ${JSON.stringify({
+            sessionId: session.sessionId,
+            messageId: "2",
+            content: "The door opens.",
+          })}\n\n`,
+        ].join("")
+      )
+    );
 
     await expect(
       sendTextAdventureAction(session.sessionId, "  Open the door  ", "zh-HK")
-    ).resolves.toEqual(response);
-    expect(api.post).toHaveBeenCalledWith(
-      `/api/player/text-game/sessions/${session.sessionId}/chat`,
-      { data: { message: "Open the door", locale: "zh-HK" }, timeout: 120_000 }
-    );
-
-    vi.mocked(api.post).mockResolvedValue({
-      ...response,
-      sessionId: "ts_fedcba9876543210",
+    ).resolves.toMatchObject({
+      sessionId: session.sessionId,
+      userMessage,
+      assistantMessage: { id: "2", content: "The door opens." },
     });
-    await expect(sendTextAdventureAction(session.sessionId, "Again", "zh-HK")).rejects.toThrow(
-      "while"
+    expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe(
+      `/api/player/text-game/sessions/${session.sessionId}/chat/stream`
     );
   });
 });

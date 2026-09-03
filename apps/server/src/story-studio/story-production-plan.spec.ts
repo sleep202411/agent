@@ -22,6 +22,7 @@ import {
 } from './story-production-plan.schema';
 import {
   assertStoryboardClipMediaKind,
+  resizeStoryboardTimelineClip,
   storyboardCueTimeAfterTimelineResize,
   storyboardClipSemanticPatch,
   storyAssetSemanticPatch,
@@ -1093,6 +1094,29 @@ describe('Storyboard cue retiming', () => {
     expect(storyboardCueTimeAfterTimelineResize(6_000, 10_000, 14_000)).toBe(
       6_000,
     );
+  });
+});
+
+describe('Storyboard video duration synchronization', () => {
+  it('resizes the selected clip and reflows every following clip', () => {
+    expect(
+      resizeStoryboardTimelineClip(
+        [
+          { id: 'opening', rank: 0, startMs: 0, durationMs: 6_000 },
+          { id: 'middle', rank: 1, startMs: 6_000, durationMs: 7_000 },
+          { id: 'ending', rank: 2, startMs: 13_000, durationMs: 5_000 },
+        ],
+        'opening',
+        111_000,
+      ),
+    ).toEqual({
+      durationMs: 123_000,
+      clips: [
+        { id: 'opening', rank: 0, startMs: 0, durationMs: 111_000 },
+        { id: 'middle', rank: 1, startMs: 111_000, durationMs: 7_000 },
+        { id: 'ending', rank: 2, startMs: 118_000, durationMs: 5_000 },
+      ],
+    });
   });
 });
 

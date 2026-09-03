@@ -146,6 +146,76 @@ const STORYBOARD_INCLUDE =
     },
   });
 
+const STORYBOARD_TIMELINE_MIN_CLIP_DURATION_MS = 250;
+const STORYBOARD_TIMELINE_MAX_DURATION_MS = 3_600_000;
+
+interface StoryCandidateMedia {
+  id: string;
+  kind: MediaAssetKind;
+  durationMs: number | null;
+}
+
+interface StoryboardClipTiming {
+  id: string;
+  rank: number;
+  startMs: number;
+  durationMs: number;
+}
+
+interface StoryboardTimelineResizeContext {
+  sequenceVersion: number;
+  previousDurationMs: number;
+  durationMs: number;
+  previousClips: Array<StoryboardClipTiming & { version: number }>;
+  clips: StoryboardClipTiming[];
+  cues: Array<{
+    id: string;
+    storyboardClipId: string | null;
+    atMs: number;
+    version: number;
+  }>;
+}
+
+/**
+ * Resize one clip and rebuild the continuous visual track around it. Media
+ * selection is a server-owned mutation, so every affected timestamp is
+ * derived here rather than patched independently by the browser.
+ */
+export function resizeStoryboardTimelineClip(
+  clips: readonly StoryboardClipTiming[],
+  clipId: string,
+  durationMs: number,
+): { durationMs: number; clips: StoryboardClipTiming[] } {
+  if (
+    !Number.isInteger(durationMs) ||
+    durationMs < STORYBOARD_TIMELINE_MIN_CLIP_DURATION_MS
+  ) {
+    throw new RangeError('A Storyboard clip duration must be at least 250ms.');
+  }
+  const ordered = [...clips].sort(
+    (left, right) => left.rank - right.rank || left.id.localeCompare(right.id),
+  );
+  if (!ordered.some((clip) => clip.id === clipId)) {
+    throw new RangeError(
+      'The resized Storyboard clip is not on this timeline.',
+    );
+  }
+  let cursor = 0;
+  const resized = ordered.map((clip) => {
+    const next = {
+      ...clip,
+      startMs: cursor,
+      durationMs: clip.id === clipId ? durationMs : clip.durationMs,
+    };
+    cursor += next.durationMs;
+    return next;
+  });
+  if (cursor > STORYBOARD_TIMELINE_MAX_DURATION_MS) {
+    throw new RangeError('A Storyboard timeline cannot exceed one hour.');
+  }
+  return { durationMs: cursor, clips: resized };
+}
+
 type AssetSpecRow = Prisma.StoryAssetSpecGetPayload<{
   include: typeof ASSET_SPEC_INCLUDE;
 }>;
@@ -1050,10 +1120,7 @@ export class StoryProductionPlanService {
           allClips.map((clip) => [clip.stableKey, clip]),
         );
         const retainedIds = new Set<string>();
-        const importedMedia = new Map<
-          string,
-          { id: string; kind: MediaAssetKind }
-        >();
+        const importedMedia = new Map<string, StoryCandidateMedia>();
 
         for (const clipInput of input.clips) {
           if (!clipInput.id) {
@@ -1302,6 +1369,134 @@ export class StoryProductionPlanService {
     });
   }
 
+  async prepareStoryboardTimelineResizeInTransaction(
+    tx: Prisma.TransactionClient,
+    input: {
+      projectId: string;
+      chapterId: string;
+      sequenceId: string;
+      clipId: string;
+      durationMs: number;
+    },
+  ): Promise<StoryboardTimelineResizeContext> {
+    const timeline = await tx.storyStoryboardSequence.findFirst({
+      where: {
+        id: input.sequenceId,
+        storyProjectId: input.projectId,
+        storyChapterId: input.chapterId,
+        status: { not: StoryProductionSpecStatus.archived },
+      },
+      select: {
+        version: true,
+        durationMs: true,
+        clips: {
+          where: { status: { not: StoryProductionSpecStatus.archived } },
+          orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+          select: {
+            id: true,
+            rank: true,
+            startMs: true,
+            durationMs: true,
+            version: true,
+          },
+        },
+        cues: {
+          where: { status: { not: StoryProductionSpecStatus.archived } },
+          select: {
+            id: true,
+            storyboardClipId: true,
+            atMs: true,
+            version: true,
+          },
+        },
+      },
+    });
+    if (!timeline) {
+      throw productionNotFound('Storyboard sequence', input.sequenceId);
+    }
+    try {
+      const resized = resizeStoryboardTimelineClip(
+        timeline.clips,
+        input.clipId,
+        input.durationMs,
+      );
+      return {
+        sequenceVersion: timeline.version,
+        previousDurationMs: timeline.durationMs,
+        durationMs: resized.durationMs,
+        previousClips: timeline.clips,
+        clips: resized.clips,
+        cues: timeline.cues,
+      };
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      throw new BadRequestException({
+        code: 'STORYBOARD_CLIP_SOURCE_DURATION_INVALID',
+        message: error.message,
+      });
+    }
+  }
+
+  async applyStoryboardTimelineResizeInTransaction(
+    tx: Prisma.TransactionClient,
+    input: {
+      sequenceId: string;
+      clipId: string;
+      resize: StoryboardTimelineResizeContext;
+    },
+  ): Promise<void> {
+    const previousById = new Map(
+      input.resize.previousClips.map((clip) => [clip.id, clip]),
+    );
+    const nextById = new Map(input.resize.clips.map((clip) => [clip.id, clip]));
+    for (const nextClip of input.resize.clips) {
+      if (nextClip.id === input.clipId) continue;
+      const previousClip = previousById.get(nextClip.id);
+      if (!previousClip || previousClip.startMs === nextClip.startMs) continue;
+      const shifted = await tx.storyStoryboardClip.updateMany({
+        where: { id: nextClip.id, version: previousClip.version },
+        data: { startMs: nextClip.startMs, version: { increment: 1 } },
+      });
+      if (shifted.count !== 1) throw productionCasConflict('Storyboard clip');
+    }
+    for (const cue of input.resize.cues) {
+      let nextAtMs = storyboardCueTimeAfterTimelineResize(
+        cue.atMs,
+        input.resize.previousDurationMs,
+        input.resize.durationMs,
+      );
+      if (cue.storyboardClipId) {
+        const previousClip = previousById.get(cue.storyboardClipId);
+        const nextClip = nextById.get(cue.storyboardClipId);
+        if (previousClip && nextClip) {
+          const localOffsetMs = Math.max(0, cue.atMs - previousClip.startMs);
+          nextAtMs =
+            nextClip.startMs +
+            (localOffsetMs === previousClip.durationMs
+              ? nextClip.durationMs
+              : Math.min(localOffsetMs, nextClip.durationMs));
+        }
+      }
+      if (nextAtMs === cue.atMs) continue;
+      const shifted = await tx.storyStoryboardCue.updateMany({
+        where: { id: cue.id, version: cue.version },
+        data: { atMs: nextAtMs, version: { increment: 1 } },
+      });
+      if (shifted.count !== 1) throw productionCasConflict('Storyboard cue');
+    }
+    if (input.resize.durationMs === input.resize.previousDurationMs) return;
+    const resized = await tx.storyStoryboardSequence.updateMany({
+      where: {
+        id: input.sequenceId,
+        version: input.resize.sequenceVersion,
+      },
+      data: { durationMs: input.resize.durationMs, version: { increment: 1 } },
+    });
+    if (resized.count !== 1) {
+      throw productionCasConflict('Storyboard sequence');
+    }
+  }
+
   async patchClip(
     user: AuthUser,
     projectId: string,
@@ -1340,6 +1535,7 @@ export class StoryProductionPlanService {
           );
         }
         let importedMediaVersionId: string | null = null;
+        let timelineResize: StoryboardTimelineResizeContext | null = null;
         if (input.sourceMediaAssetId) {
           const source = await requireStoryboardCandidateMedia(
             tx,
@@ -1347,6 +1543,27 @@ export class StoryProductionPlanService {
             input.sourceMediaAssetId,
             nextKind,
           );
+          if (nextKind === 'video') {
+            if (
+              source.durationMs === null ||
+              !Number.isInteger(source.durationMs) ||
+              source.durationMs < STORYBOARD_TIMELINE_MIN_CLIP_DURATION_MS
+            ) {
+              throw new BadRequestException({
+                code: 'STORYBOARD_CLIP_SOURCE_DURATION_REQUIRED',
+                message:
+                  'The uploaded video has no valid duration metadata and cannot be placed on the Storyboard timeline.',
+              });
+            }
+            timelineResize =
+              await this.prepareStoryboardTimelineResizeInTransaction(tx, {
+                projectId,
+                chapterId,
+                sequenceId,
+                clipId: clip.id,
+                durationMs: source.durationMs,
+              });
+          }
           const latest = await tx.storyStoryboardClipMediaVersion.findFirst({
             where: { storyboardClipId: clip.id },
             orderBy: { versionNumber: 'desc' },
@@ -1381,6 +1598,9 @@ export class StoryProductionPlanService {
             : input.videoPrompt;
         assertClipPromptShape(nextKind, nextImagePrompt, nextVideoPrompt);
         const semanticModified = storyboardClipSemanticPatch(input);
+        const resizedClip = timelineResize?.clips.find(
+          (candidate) => candidate.id === clip.id,
+        );
         const updated = await tx.storyStoryboardClip.updateMany({
           where: { id: clip.id, version: input.expectedVersion },
           data: {
@@ -1390,6 +1610,7 @@ export class StoryProductionPlanService {
             ...defined(input, 'imagePrompt'),
             ...defined(input, 'videoPrompt'),
             ...defined(input, 'negativePrompt'),
+            ...(resizedClip ? { durationMs: resizedClip.durationMs } : {}),
             ...(importedMediaVersionId
               ? { selectedMediaVersionId: importedMediaVersionId }
               : input.selectedMediaVersionId !== undefined
@@ -1407,6 +1628,13 @@ export class StoryProductionPlanService {
           },
         });
         if (updated.count !== 1) throw productionCasConflict('Storyboard clip');
+        if (timelineResize) {
+          await this.applyStoryboardTimelineResizeInTransaction(tx, {
+            sequenceId,
+            clipId: clip.id,
+            resize: timelineResize,
+          });
+        }
         const sequence = toStoryboardSequenceDto(
           await tx.storyStoryboardSequence.findUniqueOrThrow({
             where: { id: sequenceId },
@@ -3321,7 +3549,7 @@ async function requireStoryboardCandidateMedia(
   projectId: string,
   mediaAssetId: string,
   clipKind: StoryStoryboardClip['kind'],
-): Promise<{ id: string; kind: MediaAssetKind }> {
+): Promise<StoryCandidateMedia> {
   return requireStoryCandidateMedia(
     tx,
     projectId,
@@ -3335,7 +3563,7 @@ async function requireAssetSpecCandidateImage(
   tx: Prisma.TransactionClient,
   projectId: string,
   mediaAssetId: string,
-): Promise<{ id: string; kind: MediaAssetKind }> {
+): Promise<StoryCandidateMedia> {
   return requireStoryCandidateMedia(
     tx,
     projectId,
@@ -3351,7 +3579,7 @@ async function requireStoryCandidateMedia(
   mediaAssetId: string,
   expectedKind: StoryStoryboardClip['kind'],
   target: 'asset_spec' | 'storyboard_clip',
-): Promise<{ id: string; kind: MediaAssetKind }> {
+): Promise<StoryCandidateMedia> {
   const candidate = await tx.storyCandidateAsset.findUnique({
     where: {
       storyProjectId_mediaAssetId: {
@@ -3367,6 +3595,16 @@ async function requireStoryCandidateMedia(
           status: true,
           moderationStatus: true,
           deletedAt: true,
+          durationSeconds: true,
+          variants: {
+            where: {
+              variantKey: 'original',
+              status: MediaAssetVariantStatus.ready,
+              deletedAt: null,
+            },
+            select: { durationMs: true, durationSeconds: true },
+            take: 1,
+          },
         },
       },
     },
@@ -3412,7 +3650,19 @@ async function requireStoryCandidateMedia(
   } else {
     assertStoryboardClipMediaKind(expectedKind, candidate.asset.kind);
   }
-  return candidate.asset;
+  const original = candidate.asset.variants[0] ?? null;
+  const durationMs =
+    original?.durationMs ??
+    (original?.durationSeconds
+      ? original.durationSeconds * 1_000
+      : candidate.asset.durationSeconds
+        ? candidate.asset.durationSeconds * 1_000
+        : null);
+  return {
+    id: candidate.asset.id,
+    kind: candidate.asset.kind,
+    durationMs,
+  };
 }
 
 function assertAssetSpecImageKind(mediaKind: MediaAssetKind): void {

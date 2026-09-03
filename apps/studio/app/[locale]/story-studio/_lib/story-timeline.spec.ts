@@ -3,6 +3,7 @@ import type { StoryStoryboardClip, StoryStoryboardSequence } from "@/lib/story-p
 import {
   appendStoryTimelineClip,
   createManualStoryTimelineClipStableKey,
+  removeStoryTimelineClip,
   storySequenceToTimeline,
 } from "./story-timeline";
 
@@ -65,6 +66,36 @@ describe("Story timeline domain", () => {
     expect(input.durationMs).toBe(4_000);
     expect(input.clips).toEqual([
       expect.objectContaining({ startMs: 0, durationMs: 4_000, kind: "image" }),
+    ]);
+  });
+
+  it("removes a clip and closes the timeline gap without changing retained identities", () => {
+    const sequence = fixtureSequence();
+    sequence.durationMs = 9_000;
+    sequence.clips = [
+      fixtureClip({ durationMs: 2_000 }),
+      fixtureClip({ id: "clip-2", stableKey: "clip_2", rank: 1, startMs: 2_000 }),
+      fixtureClip({
+        id: "clip-3",
+        stableKey: "clip_3",
+        rank: 2,
+        startMs: 6_000,
+        durationMs: 3_000,
+      }),
+    ];
+
+    const input = removeStoryTimelineClip(sequence, "clip-2");
+
+    expect(input.expectedVersion).toBe(4);
+    expect(input.durationMs).toBe(5_000);
+    expect(input.clips).toEqual([
+      expect.objectContaining({ id: "clip-1", expectedVersion: 7, startMs: 0, durationMs: 2_000 }),
+      expect.objectContaining({
+        id: "clip-3",
+        expectedVersion: 7,
+        startMs: 2_000,
+        durationMs: 3_000,
+      }),
     ]);
   });
 

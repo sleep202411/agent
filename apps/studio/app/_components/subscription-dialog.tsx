@@ -23,7 +23,7 @@ import {
 } from "@/lib/billing";
 import { WechatScanPayDialog } from "@/app/_components/wechat-scan-pay-dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { cn } from "@/lib/utils";
@@ -253,11 +253,12 @@ export function SubscriptionDialog({
   if (!open || typeof document === "undefined") return null;
 
   return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("dialogLabel")}
-      /*
+    <TooltipProvider delayDuration={200}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={t("dialogLabel")}
+        /*
         z-60 + pointer-events-auto, not the usual z-50: this dialog is opened
         from inside the Radix settings overlay, which is modal and therefore
         sets `pointer-events: none` on <body> and paints its own z-50 backdrop
@@ -265,125 +266,126 @@ export function SubscriptionDialog({
         rendered on top visually but every click landed on the settings
         backdrop instead (live incident 2026-08-03).
       */
-      className="pointer-events-auto fixed left-0 top-0 z-60 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
-    >
-      {wechatScan && (
-        <WechatScanPayDialog
-          key={wechatScan.orderId}
-          open
-          orderId={wechatScan.orderId}
-          codeUrl={wechatScan.codeUrl}
-          onClose={() => setWechatScan(null)}
-          onPaid={() => {
-            toast.success(t("toast.membershipActivated"));
-            setWechatScan(null);
-            onOpenChange(false);
-          }}
-        />
-      )}
-      <button
-        type="button"
-        aria-label={t("closeDialog")}
-        onClick={() => onOpenChange(false)}
-        className="fixed right-4 top-4 z-20 flex size-11 items-center justify-center rounded-full bg-popover text-muted-foreground shadow-2xl transition-colors hover:bg-secondary hover:text-foreground sm:right-6 sm:top-6"
+        className="pointer-events-auto fixed left-0 top-0 z-60 h-[100dvh] w-screen overflow-hidden bg-background text-foreground"
       >
-        <IconX className="size-5" stroke={1.9} />
-      </button>
+        {wechatScan && (
+          <WechatScanPayDialog
+            key={wechatScan.orderId}
+            open
+            orderId={wechatScan.orderId}
+            codeUrl={wechatScan.codeUrl}
+            onClose={() => setWechatScan(null)}
+            onPaid={() => {
+              toast.success(t("toast.membershipActivated"));
+              setWechatScan(null);
+              onOpenChange(false);
+            }}
+          />
+        )}
+        <button
+          type="button"
+          aria-label={t("closeDialog")}
+          onClick={() => onOpenChange(false)}
+          className="fixed right-4 top-4 z-20 flex size-11 items-center justify-center rounded-full bg-popover text-muted-foreground shadow-2xl transition-colors hover:bg-secondary hover:text-foreground sm:right-6 sm:top-6"
+        >
+          <IconX className="size-5" stroke={1.9} />
+        </button>
 
-      <div className="relative z-10 h-[100dvh] overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
-        <div className="flex min-h-full w-full flex-col">
-          <header className="flex flex-col items-center gap-3 pb-8 pt-14 text-center sm:pt-12">
-            <h1 className="text-3xl font-bold uppercase tracking-tight sm:text-4xl">
-              {t("header.title")}
-            </h1>
-            <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
-              {t("header.subtitle")}
-            </p>
-            {!isCn && (
-              <Tabs
-                className="mt-3"
-                value={billingInterval}
-                onValueChange={(value) => setBillingInterval(value as BillingInterval)}
-              >
-                <TabsList>
-                  <TabsTrigger value="month" className="px-2.5">
-                    {t("interval.monthly")}
-                  </TabsTrigger>
-                  <TabsTrigger value="year" className="px-2.5">
-                    {t("interval.yearly")}
-                    <span
-                      className="rounded-full px-1.5 py-px text-[10px] font-bold text-white"
-                      style={{
-                        background: `linear-gradient(90deg, ${ACCENT_RED.deep}, ${ACCENT_RED.base} 33%, ${ACCENT_RED.base} 67%, ${ACCENT_RED.deep})`,
-                      }}
-                    >
-                      -25%
-                    </span>
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            )}
-          </header>
-
-          {loading ? (
-            <LoadingPlans />
-          ) : plans.length === 0 ? (
-            <div className="flex min-h-[380px] items-center justify-center rounded-3xl bg-card p-8 text-center shadow-2xl">
-              <div className="max-w-md">
-                <p className="text-lg font-semibold">
-                  {errorMessage ? t("empty.errorTitle") : t("empty.title")}
-                </p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  {errorMessage || t("empty.description")}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setReloadKey((value) => value + 1)}
-                  className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+        <div className="relative z-10 h-[100dvh] overflow-y-auto px-4 py-6 sm:px-6 lg:px-10">
+          <div className="flex min-h-full w-full flex-col">
+            <header className="flex flex-col items-center gap-3 pb-8 pt-14 text-center sm:pt-12">
+              <h1 className="text-3xl font-bold uppercase tracking-tight sm:text-4xl">
+                {t("header.title")}
+              </h1>
+              <p className="max-w-2xl text-base leading-7 text-muted-foreground sm:text-lg">
+                {t("header.subtitle")}
+              </p>
+              {!isCn && (
+                <Tabs
+                  className="mt-3"
+                  value={billingInterval}
+                  onValueChange={(value) => setBillingInterval(value as BillingInterval)}
                 >
-                  {tc("retry")}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div
-                className={cn(
-                  "grid grid-cols-1 gap-4 md:grid-cols-2",
-                  visiblePlans.length >= 4 ? "xl:grid-cols-4" : "xl:grid-cols-3"
-                )}
-              >
-                {visiblePlans.map((plan) => {
-                  const price = priceForInterval(plan, billingInterval) ?? plan.prices[0] ?? null;
-                  return (
-                    <PlanCard
-                      key={plan.id}
-                      plan={plan}
-                      price={price}
-                      accent={accentForPlan(plan)}
-                      interval={billingInterval}
-                      paying={payingPriceId === price?.id}
-                      onSubscribe={() => void subscribe(price)}
-                    />
-                  );
-                })}
-              </div>
-              <div className="pb-8" />
-            </>
-          )}
+                  <TabsList>
+                    <TabsTrigger value="month" className="px-2.5">
+                      {t("interval.monthly")}
+                    </TabsTrigger>
+                    <TabsTrigger value="year" className="px-2.5">
+                      {t("interval.yearly")}
+                      <span
+                        className="rounded-full px-1.5 py-px text-[10px] font-bold text-white"
+                        style={{
+                          background: `linear-gradient(90deg, ${ACCENT_RED.deep}, ${ACCENT_RED.base} 33%, ${ACCENT_RED.base} 67%, ${ACCENT_RED.deep})`,
+                        }}
+                      >
+                        -25%
+                      </span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              )}
+            </header>
 
-          <FaqSection />
+            {loading ? (
+              <LoadingPlans />
+            ) : plans.length === 0 ? (
+              <div className="flex min-h-[380px] items-center justify-center rounded-3xl bg-card p-8 text-center shadow-2xl">
+                <div className="max-w-md">
+                  <p className="text-lg font-semibold">
+                    {errorMessage ? t("empty.errorTitle") : t("empty.title")}
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {errorMessage || t("empty.description")}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setReloadKey((value) => value + 1)}
+                    className="mt-5 inline-flex h-11 items-center justify-center rounded-full bg-primary px-5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                  >
+                    {tc("retry")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div
+                  className={cn(
+                    "grid grid-cols-1 gap-4 md:grid-cols-2",
+                    visiblePlans.length >= 4 ? "xl:grid-cols-4" : "xl:grid-cols-3"
+                  )}
+                >
+                  {visiblePlans.map((plan) => {
+                    const price = priceForInterval(plan, billingInterval) ?? plan.prices[0] ?? null;
+                    return (
+                      <PlanCard
+                        key={plan.id}
+                        plan={plan}
+                        price={price}
+                        accent={accentForPlan(plan)}
+                        interval={billingInterval}
+                        paying={payingPriceId === price?.id}
+                        onSubscribe={() => void subscribe(price)}
+                      />
+                    );
+                  })}
+                </div>
+                <div className="pb-8" />
+              </>
+            )}
 
-          <footer className="mt-auto flex flex-col gap-3 py-5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2">
-              <IconShieldCheck className="size-4" stroke={1.9} />
-              <span>{t("footer.secureCheckout")}</span>
-            </div>
-            <p className="max-w-3xl">{t("footer.disclaimer")}</p>
-          </footer>
+            <FaqSection />
+
+            <footer className="mt-auto flex flex-col gap-3 py-5 text-xs leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-2">
+                <IconShieldCheck className="size-4" stroke={1.9} />
+                <span>{t("footer.secureCheckout")}</span>
+              </div>
+              <p className="max-w-3xl">{t("footer.disclaimer")}</p>
+            </footer>
+          </div>
         </div>
       </div>
-    </div>,
+    </TooltipProvider>,
     document.body
   );
 }
@@ -739,7 +741,7 @@ function intervalLabel(interval: string, t: BillingTranslator) {
 
 function membershipFeatureItems(plan: MembershipPlan, t: BillingTranslator) {
   const items: string[] = [];
-  const { concurrentJobs, queuedJobs } = plan.benefits;
+  const { concurrentJobs, queuedJobs } = plan.benefits ?? {};
   if (plan.subjectType === "workspace") items.push(t("features.sharedCredits"));
   if (plan.subjectType === "workspace") items.push(t("features.seatScope"));
   if (concurrentJobs !== null) items.push(t("features.concurrentJobs", { count: concurrentJobs }));

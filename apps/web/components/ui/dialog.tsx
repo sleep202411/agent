@@ -87,10 +87,7 @@ function DialogHeader({ className, children, ...props }: React.ComponentProps<"d
   return (
     <div
       data-slot="dialog-header"
-      className={cn(
-        "flex items-center justify-between gap-2 border-b border-border p-4",
-        className
-      )}
+      className={cn("flex items-start justify-between gap-2 border-b border-border p-4", className)}
       {...props}
     >
       <div className="flex flex-col gap-1">{children}</div>

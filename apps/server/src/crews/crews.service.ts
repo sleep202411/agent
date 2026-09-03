@@ -11,14 +11,16 @@
  * are joined here so list / detail responses are render-complete in
  * one round trip.
  *
- * Crew group chat: one crew = one Conversation (`crew:<crewId>`). It is
+ * The internal crew channel owns one Conversation (`crew:<crewId>`). It is
  * opened in the same transaction that creates the crew, and every
  * membership change made here syncs the matching ConversationParticipant
  * INSIDE that transaction — a failed sync must roll the membership
  * change back, never leave the roster and the chat disagreeing.
  * `conversation()` is the read side of that: the crew workspace's chat
- * panel resolves its thread there, and a crew that predates crew chat
+ * panel resolves its team thread there, and a crew that predates crew chat
  * gets one opened on the spot.
+ * The public community channel is a separate Conversation (`crew:<crewId>:community`)
+ * whose participants are subscribers, not crew members.
  */
 import { randomUUID } from 'node:crypto';
 import {
@@ -39,6 +41,7 @@ import {
 import type { ConversationDTO } from '@repo/shared/conversation';
 import {
   ConversationsService,
+  crewCommunityLookupKey,
   crewLookupKey,
 } from '../conversations/conversations.service';
 import { toConversationDTO } from '../conversations/mappers';
@@ -376,10 +379,10 @@ export class CrewsService {
   }
 
   /**
-   * The crew's one group chat, resolved for a member.
+   * The crew's internal team chat, resolved for a member.
    *
-   * Doc §3.1: one crew, one conversation — so there is nothing to list
-   * and nothing for the client to create. The caller hands us a crew id
+   * The team channel is fixed — so there is nothing to list or create from
+   * the client. The caller hands us a crew id
    * and gets back the same `ConversationDTO` that
    * `GET /aurora/conversations/:id` serves, so every read and write
    * after this one goes through the shared conversations data layer.
@@ -430,6 +433,49 @@ export class CrewsService {
     // the hydrate (unread count, last message) and re-runs its own crew
     // gate, so this route cannot serve a shape or a permission the
     // conversations surface would not.
+    const detail = await this.conversations.detail(conversationId, viewerId);
+    return toConversationDTO(detail, viewerId);
+  }
+
+  /**
+   * Resolve the crew's separate community channel.
+   *
+   * Active crew members may enter directly. Everyone else must already be a
+   * live participant, which is created only by redeeming a community invitation.
+   * No path here creates a CrewMember or exposes the private team channel.
+   */
+  async communityConversation(
+    crewId: string,
+    viewerId: string,
+  ): Promise<ConversationDTO> {
+    const crew = await this.prisma.crew.findFirst({
+      where: { id: crewId, deletedAt: null },
+      select: { id: true },
+    });
+    if (!crew) throw new NotFoundException('Crew not found');
+
+    const existing = await this.prisma.conversation.findUnique({
+      where: { lookupKey: crewCommunityLookupKey(crewId) },
+      select: {
+        id: true,
+        participants: {
+          where: { userId: viewerId, leftAt: null },
+          select: { userId: true },
+        },
+      },
+    });
+
+    let conversationId =
+      existing?.participants.length === 1 ? existing.id : null;
+    if (!conversationId) {
+      const membership = await this.authorization.resolve(crewId, viewerId);
+      if (!membership)
+        throw new NotFoundException('Community channel not found');
+      conversationId = (
+        await this.conversations.joinCrewCommunityConversation(crewId, viewerId)
+      ).id;
+    }
+
     const detail = await this.conversations.detail(conversationId, viewerId);
     return toConversationDTO(detail, viewerId);
   }

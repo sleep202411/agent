@@ -25,8 +25,6 @@ const RESERVED_OPTION_KEYS = new Set([
   'imagereference',
   'videoreference',
   'audioreference',
-  'duration',
-  'durationseconds',
 ]);
 
 const GenerationOptionScalarSchema = z.union([
@@ -41,9 +39,10 @@ const GenerationOptionValueSchema = z.union([
 ]);
 
 /**
- * Model knobs are deliberately scalar-only. Prompt text, reference media and
- * provider URLs are server-owned snapshots of the Story target, never an
- * alternate client-controlled input channel hidden inside an "options" bag.
+ * Model knobs are deliberately scalar-only. Duration is a normal generation
+ * setting; prompt text, reference media and provider URLs remain server-owned
+ * snapshots of the Story target, never an alternate client-controlled input
+ * channel hidden inside an "options" bag.
  */
 export const StoryGenerationOptionsSchema = z
   .record(z.string().trim().min(1).max(120), GenerationOptionValueSchema)

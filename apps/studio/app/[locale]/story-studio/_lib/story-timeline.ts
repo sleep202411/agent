@@ -103,6 +103,35 @@ export function appendStoryTimelineClip(
   };
 }
 
+/**
+ * Remove one clip while keeping the visual track continuous. The timeline PUT
+ * archives the omitted clip server-side and preserves every retained clip id.
+ */
+export function removeStoryTimelineClip(
+  sequence: StoryStoryboardSequence,
+  clipId: string
+): PutStoryStoryboardTimelineInput {
+  const orderedClips = sequence.clips.slice().sort((left, right) => left.rank - right.rank);
+  if (!orderedClips.some((clip) => clip.id === clipId)) {
+    throw new Error(`Storyboard clip ${clipId} does not exist in this timeline.`);
+  }
+
+  let startMs = 0;
+  const clips = orderedClips
+    .filter((clip) => clip.id !== clipId)
+    .map((clip) => {
+      const input = { ...storyboardClipToTimelineInput(clip), startMs };
+      startMs += clip.durationMs;
+      return input;
+    });
+
+  return {
+    expectedVersion: sequence.version,
+    durationMs: startMs,
+    clips,
+  };
+}
+
 export function createManualStoryTimelineClipStableKey(
   uuid: string = globalThis.crypto.randomUUID()
 ): string {

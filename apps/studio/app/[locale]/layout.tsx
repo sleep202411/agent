@@ -78,12 +78,16 @@ export default async function LocaleLayout({
               the dialog's legal links to .com on the .cn cell. */}
           <RegionProvider country={country} siteRegion={siteRegion}>
             <Providers>
-              <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
-              {/* SettingsOverlay renders the billing panel, which reads
-                  useIsCnSite() for cell-aware pricing — still inside RegionProvider. */}
-              <RouteAuthGuard />
-              <SettingsOverlay />
-              <NotificationsListener />
+              {/* SettingsOverlay (hash modal) and RouteAuthGuard sit beside {children},
+                  not inside it — they still need TooltipProvider: the billing → Manage
+                  plan path opens SubscriptionDialog, whose plan cards render Radix
+                  tooltips for generation estimates (2026-08-28). */}
+              <TooltipProvider delayDuration={200}>
+                {children}
+                <RouteAuthGuard />
+                <SettingsOverlay />
+                <NotificationsListener />
+              </TooltipProvider>
             </Providers>
           </RegionProvider>
           <Toaster />
