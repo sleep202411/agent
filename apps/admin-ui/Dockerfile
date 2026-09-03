@@ -14,9 +14,13 @@ RUN npm ci --ignore-scripts --registry="$NPM_REGISTRY"
 ARG NEXT_PUBLIC_ADMIN_UI_BASE_PATH
 ARG ADMIN_GLOBAL_API_BASE_URL=http://fizzdragon-server:3001/admin
 ARG ADMIN_API_BASE_URL=http://fizzdragon-server:3001/admin
+# Regional banner OSS public origin — baked into client for course cover previews.
+# CN temporarily shares the .com SG bucket for preview.
+ARG NEXT_PUBLIC_BANNER_BASE_URL=https://fizzdragon-banner-sg.oss-ap-southeast-1.aliyuncs.com
 ENV NEXT_PUBLIC_ADMIN_UI_BASE_PATH=$NEXT_PUBLIC_ADMIN_UI_BASE_PATH
 ENV ADMIN_GLOBAL_API_BASE_URL=$ADMIN_GLOBAL_API_BASE_URL
 ENV ADMIN_API_BASE_URL=$ADMIN_API_BASE_URL
+ENV NEXT_PUBLIC_BANNER_BASE_URL=$NEXT_PUBLIC_BANNER_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV TURBO_TELEMETRY_DISABLED=1
 
