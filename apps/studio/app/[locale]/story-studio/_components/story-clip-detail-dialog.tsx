@@ -30,7 +30,7 @@ import {
   type StoryStoryboardClip,
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
-import { StoryPromptMentionField, useStoryAssetMentions } from "./story-prompt-mention-field";
+import { StoryPromptComposer, useStoryAssetMentions } from "./story-prompt-composer";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
@@ -54,7 +54,7 @@ export function StoryClipDetailDialog({
   chapterId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** False while the aggregate Storyboard stage is stale; inspection stays available. */
+  /** False when the owning surface is read-only; inspection stays available. */
   editable?: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage.detailDialog");
@@ -161,7 +161,7 @@ export function StoryClipDetailDialog({
           label={clip.kind === "image" ? t("imagePrompt") : t("videoPrompt")}
           htmlFor={`clip-detail-prompt-${clip.id}`}
         >
-          <StoryPromptMentionField
+          <StoryPromptComposer
             id={`clip-detail-prompt-${clip.id}`}
             value={prompt}
             disabled={busy || !editable}

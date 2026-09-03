@@ -8258,20 +8258,12 @@ enum StoryReferenceVersionStatus {
   failed
 }
 
-/// Lifecycle of an editable, chapter-scoped production specification. Media
-/// generation has its own lifecycle; these values describe only whether the
-/// specification still matches the Plot source from which it was planned.
+/// Lifecycle of an editable chapter-scoped production record. Source changes
+/// never invalidate creator work; records leave the live surface only when
+/// explicitly or structurally archived.
 enum StoryProductionSpecStatus {
   current
-  stale
   archived
-}
-
-/// Whether the current specification came from the planner or is a creator
-/// value explicitly rebased onto the latest approved plan.
-enum StoryProductionPlanDisposition {
-  planned
-  user_override
 }
 
 /// A durable logical asset can exist before any image or video is generated.
@@ -8298,6 +8290,13 @@ enum StoryProductionGenerationKind {
 enum StoryProductionGenerationTargetKind {
   asset_spec
   storyboard_clip
+}
+
+/// Distinguishes a character's canonical image from its model-reference
+/// turnaround board. Storyboard generations always use `primary`.
+enum StoryAssetGenerationPurpose {
+  primary
+  turnaround
 }
 
 enum StoryGenerationBatchStatus {
@@ -8808,8 +8807,8 @@ model StoryCandidateAsset {
   @@map("story_candidate_assets")
 }
 
-/// Immutable record of an approved production plan, referenced by stale
-/// targets so conflict resolution always applies the exact plan it offered.
+/// Immutable record of an approved Asset plan used as the durable completion
+/// marker, including the intentionally-empty plan case.
 model StoryProductionPlanSnapshot {
   id                String   @id @default(uuid(7)) @db.Uuid
   storyProjectId    String   @map("story_project_id") @db.Uuid
@@ -8820,11 +8819,9 @@ model StoryProductionPlanSnapshot {
   createdByUserId   String   @map("created_by_user_id") @db.VarChar(64)
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  project                    StoryProject              @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  chapter                    StoryChapter              @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
-  pendingAssetSpecs          StoryAssetSpec[]          @relation("StoryAssetSpecPendingPlan")
-  pendingStoryboardSequences StoryStoryboardSequence[] @relation("StoryStoryboardSequencePendingPlan")
-  approvedAssetPlanChapters  StoryChapter[]            @relation("StoryChapterApprovedAssetPlan")
+  project                   StoryProject   @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter                   StoryChapter   @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  approvedAssetPlanChapters StoryChapter[] @relation("StoryChapterApprovedAssetPlan")
 
   @@unique([storyChapterId, planFingerprint], map: "story_production_plan_snapshots_chapter_fingerprint_unique")
   @@unique([id, storyChapterId, storyProjectId], map: "story_production_plan_snapshots_scope_unique")
@@ -8836,34 +8833,31 @@ model StoryProductionPlanSnapshot {
 /// while `selectedMediaVersionId` is null, which is what makes an empty asset
 /// a stable @ reference for Storyboard clips.
 model StoryAssetSpec {
-  id                       String                         @id @default(uuid(7)) @db.Uuid
-  storyProjectId           String                         @map("story_project_id") @db.Uuid
-  storyChapterId           String                         @map("story_chapter_id") @db.Uuid
-  stableKey                String                         @map("stable_key") @db.VarChar(120)
-  kind                     StoryAssetSpecKind
-  sourceCharacterId        String?                        @map("source_character_id") @db.VarChar(120)
-  /// Exact scene node ids from the approved Script snapshot. Plot later keeps
-  /// these ids while projecting the same screenplay into the interactive graph.
-  sourceNodeIds            Json                           @map("source_node_ids") @db.JsonB
-  name                     String                         @db.VarChar(240)
-  description              String?                        @db.Text
-  imagePrompt              String                         @map("image_prompt") @db.Text
-  videoPrompt              String?                        @map("video_prompt") @db.Text
-  negativePrompt           String?                        @map("negative_prompt") @db.Text
-  generationConfig         Json                           @default("{}") @map("generation_config") @db.JsonB
-  sourceFingerprint        String                         @map("source_fingerprint") @db.VarChar(64)
-  pendingSourceFingerprint String?                        @map("pending_source_fingerprint") @db.VarChar(64)
-  pendingPlanSnapshotId    String?                        @map("pending_plan_snapshot_id") @db.Uuid
-  planDisposition          StoryProductionPlanDisposition @default(planned) @map("plan_disposition")
-  status                   StoryProductionSpecStatus      @default(current)
-  version                  Int                            @default(0)
-  selectedMediaVersionId   String?                        @map("selected_media_version_id") @db.Uuid
-  userModifiedAt           DateTime?                      @map("user_modified_at") @db.Timestamptz(6)
-  userModifiedByUserId     String?                        @map("user_modified_by_user_id") @db.VarChar(64)
-  createdByUserId          String                         @map("created_by_user_id") @db.VarChar(64)
-  lastPlannedAt            DateTime                       @default(now()) @map("last_planned_at") @db.Timestamptz(6)
-  createdAt                DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                     String                    @id @default(uuid(7)) @db.Uuid
+  storyProjectId         String                    @map("story_project_id") @db.Uuid
+  storyChapterId         String                    @map("story_chapter_id") @db.Uuid
+  stableKey              String                    @map("stable_key") @db.VarChar(120)
+  kind                   StoryAssetSpecKind
+  sourceCharacterId      String?                   @map("source_character_id") @db.VarChar(120)
+  /// Optional relevance hints into the Script snapshot. These ids help the
+  /// planner but never restrict where the asset may be used.
+  sourceNodeIds          Json                      @map("source_node_ids") @db.JsonB
+  name                   String                    @db.VarChar(240)
+  description            String?                   @db.Text
+  imagePrompt            String                    @map("image_prompt") @db.Text
+  videoPrompt            String?                   @map("video_prompt") @db.Text
+  negativePrompt         String?                   @map("negative_prompt") @db.Text
+  generationConfig       Json                      @default("{}") @map("generation_config") @db.JsonB
+  sourceFingerprint      String                    @map("source_fingerprint") @db.VarChar(64)
+  status                 StoryProductionSpecStatus @default(current)
+  version                Int                       @default(0)
+  selectedMediaVersionId String?                   @map("selected_media_version_id") @db.Uuid
+  userModifiedAt         DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId   String?                   @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId        String                    @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt          DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project              StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
   chapter              StoryChapter                      @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
@@ -8871,7 +8865,6 @@ model StoryAssetSpec {
   selectedMediaVersion StoryAssetMediaVersion?           @relation("StoryAssetSpecSelectedMediaVersion", fields: [selectedMediaVersionId, id, storyChapterId, storyProjectId], references: [id, assetSpecId, storyChapterId, storyProjectId], onDelete: NoAction)
   storyboardBindings   StoryStoryboardClipAssetBinding[]
   generations          StoryProductionGeneration[]
-  pendingPlanSnapshot  StoryProductionPlanSnapshot?      @relation("StoryAssetSpecPendingPlan", fields: [pendingPlanSnapshotId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: NoAction)
 
   @@unique([storyChapterId, stableKey], map: "story_asset_specs_chapter_key_unique")
   @@unique([id, storyChapterId, storyProjectId], map: "story_asset_specs_scope_unique")
@@ -8921,33 +8914,29 @@ model StoryAssetMediaVersion {
 /// The one Storyboard timeline owned by one chapter Plot node. Plot topology
 /// remains authoritative in StoryDraft; this sequence owns only presentation.
 model StoryStoryboardSequence {
-  id                       String                         @id @default(uuid(7)) @db.Uuid
-  storyProjectId           String                         @map("story_project_id") @db.Uuid
-  storyChapterId           String                         @map("story_chapter_id") @db.Uuid
-  plotNodeId               String                         @map("plot_node_id") @db.VarChar(120)
-  stableKey                String                         @map("stable_key") @db.VarChar(120)
-  title                    String?                        @db.VarChar(240)
-  description              String?                        @db.Text
-  suggestedDurationMs      Int                            @map("suggested_duration_ms")
-  durationMs               Int                            @map("duration_ms")
-  sourceFingerprint        String                         @map("source_fingerprint") @db.VarChar(64)
-  pendingSourceFingerprint String?                        @map("pending_source_fingerprint") @db.VarChar(64)
-  pendingPlanSnapshotId    String?                        @map("pending_plan_snapshot_id") @db.Uuid
-  planDisposition          StoryProductionPlanDisposition @default(planned) @map("plan_disposition")
-  status                   StoryProductionSpecStatus      @default(current)
-  version                  Int                            @default(0)
-  userModifiedAt           DateTime?                      @map("user_modified_at") @db.Timestamptz(6)
-  userModifiedByUserId     String?                        @map("user_modified_by_user_id") @db.VarChar(64)
-  createdByUserId          String                         @map("created_by_user_id") @db.VarChar(64)
-  lastPlannedAt            DateTime                       @default(now()) @map("last_planned_at") @db.Timestamptz(6)
-  createdAt                DateTime                       @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                       @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String                    @id @default(uuid(7)) @db.Uuid
+  storyProjectId       String                    @map("story_project_id") @db.Uuid
+  storyChapterId       String                    @map("story_chapter_id") @db.Uuid
+  plotNodeId           String                    @map("plot_node_id") @db.VarChar(120)
+  stableKey            String                    @map("stable_key") @db.VarChar(120)
+  title                String?                   @db.VarChar(240)
+  description          String?                   @db.Text
+  suggestedDurationMs  Int                       @map("suggested_duration_ms")
+  durationMs           Int                       @map("duration_ms")
+  sourceFingerprint    String                    @map("source_fingerprint") @db.VarChar(64)
+  status               StoryProductionSpecStatus @default(current)
+  version              Int                       @default(0)
+  userModifiedAt       DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId String?                   @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId      String                    @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt        DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project             StoryProject                 @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
-  chapter             StoryChapter                 @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
-  clips               StoryStoryboardClip[]
-  cues                StoryStoryboardCue[]
-  pendingPlanSnapshot StoryProductionPlanSnapshot? @relation("StoryStoryboardSequencePendingPlan", fields: [pendingPlanSnapshotId, storyChapterId, storyProjectId], references: [id, storyChapterId, storyProjectId], onDelete: NoAction)
+  project StoryProject          @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+  chapter StoryChapter          @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
+  clips   StoryStoryboardClip[]
+  cues    StoryStoryboardCue[]
 
   @@unique([storyChapterId, plotNodeId], map: "story_storyboard_sequences_chapter_plot_unique")
   @@unique([storyChapterId, stableKey], map: "story_storyboard_sequences_chapter_key_unique")
@@ -8960,33 +8949,32 @@ model StoryStoryboardSequence {
 /// One timed visual item inside a StoryboardSequence. A Plot node may use one
 /// image, several videos, or any image/video combination without a Frame cap.
 model StoryStoryboardClip {
-  id                       String                    @id @default(uuid(7)) @db.Uuid
-  storyProjectId           String                    @map("story_project_id") @db.Uuid
-  storyChapterId           String                    @map("story_chapter_id") @db.Uuid
-  sequenceId               String                    @map("sequence_id") @db.Uuid
-  stableKey                String                    @map("stable_key") @db.VarChar(120)
-  title                    String                    @db.VarChar(160)
-  rank                     Int
-  kind                     StoryStoryboardClipKind
-  track                    String                    @db.VarChar(64)
-  startMs                  Int                       @map("start_ms")
-  durationMs               Int                       @map("duration_ms")
-  description              String?                   @db.Text
-  imagePrompt              String?                   @map("image_prompt") @db.Text
-  videoPrompt              String?                   @map("video_prompt") @db.Text
-  negativePrompt           String?                   @map("negative_prompt") @db.Text
-  generationConfig         Json                      @default("{}") @map("generation_config") @db.JsonB
-  sourceFingerprint        String                    @map("source_fingerprint") @db.VarChar(64)
-  pendingSourceFingerprint String?                   @map("pending_source_fingerprint") @db.VarChar(64)
-  status                   StoryProductionSpecStatus @default(current)
-  version                  Int                       @default(0)
-  selectedMediaVersionId   String?                   @map("selected_media_version_id") @db.Uuid
-  userModifiedAt           DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
-  userModifiedByUserId     String?                   @map("user_modified_by_user_id") @db.VarChar(64)
-  createdByUserId          String                    @map("created_by_user_id") @db.VarChar(64)
-  lastPlannedAt            DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
-  createdAt                DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                     String                    @id @default(uuid(7)) @db.Uuid
+  storyProjectId         String                    @map("story_project_id") @db.Uuid
+  storyChapterId         String                    @map("story_chapter_id") @db.Uuid
+  sequenceId             String                    @map("sequence_id") @db.Uuid
+  stableKey              String                    @map("stable_key") @db.VarChar(120)
+  title                  String                    @db.VarChar(160)
+  rank                   Int
+  kind                   StoryStoryboardClipKind
+  track                  String                    @db.VarChar(64)
+  startMs                Int                       @map("start_ms")
+  durationMs             Int                       @map("duration_ms")
+  description            String?                   @db.Text
+  imagePrompt            String?                   @map("image_prompt") @db.Text
+  videoPrompt            String?                   @map("video_prompt") @db.Text
+  negativePrompt         String?                   @map("negative_prompt") @db.Text
+  generationConfig       Json                      @default("{}") @map("generation_config") @db.JsonB
+  sourceFingerprint      String                    @map("source_fingerprint") @db.VarChar(64)
+  status                 StoryProductionSpecStatus @default(current)
+  version                Int                       @default(0)
+  selectedMediaVersionId String?                   @map("selected_media_version_id") @db.Uuid
+  userModifiedAt         DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId   String?                   @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId        String                    @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt          DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt              DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project              StoryProject                      @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
   chapter              StoryChapter                      @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
@@ -9009,26 +8997,25 @@ model StoryStoryboardClip {
 /// Structured @AssetSpec reference. `follow_selected` is valid while the
 /// AssetSpec is empty; `pinned` must name one creative version of that spec.
 model StoryStoryboardClipAssetBinding {
-  id                       String                     @id @default(uuid(7)) @db.Uuid
-  storyProjectId           String                     @map("story_project_id") @db.Uuid
-  storyChapterId           String                     @map("story_chapter_id") @db.Uuid
-  storyboardClipId         String                     @map("storyboard_clip_id") @db.Uuid
-  assetSpecId              String                     @map("asset_spec_id") @db.Uuid
-  role                     String                     @db.VarChar(64)
-  mode                     StoryStoryboardBindingMode @default(follow_selected)
-  pinnedMediaVersionId     String?                    @map("pinned_media_version_id") @db.Uuid
-  required                 Boolean                    @default(true)
-  rank                     Int                        @default(0)
-  sourceFingerprint        String                     @map("source_fingerprint") @db.VarChar(64)
-  pendingSourceFingerprint String?                    @map("pending_source_fingerprint") @db.VarChar(64)
-  status                   StoryProductionSpecStatus  @default(current)
-  version                  Int                        @default(0)
-  userModifiedAt           DateTime?                  @map("user_modified_at") @db.Timestamptz(6)
-  userModifiedByUserId     String?                    @map("user_modified_by_user_id") @db.VarChar(64)
-  createdByUserId          String                     @map("created_by_user_id") @db.VarChar(64)
-  lastPlannedAt            DateTime                   @default(now()) @map("last_planned_at") @db.Timestamptz(6)
-  createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String                     @id @default(uuid(7)) @db.Uuid
+  storyProjectId       String                     @map("story_project_id") @db.Uuid
+  storyChapterId       String                     @map("story_chapter_id") @db.Uuid
+  storyboardClipId     String                     @map("storyboard_clip_id") @db.Uuid
+  assetSpecId          String                     @map("asset_spec_id") @db.Uuid
+  role                 String                     @db.VarChar(64)
+  mode                 StoryStoryboardBindingMode @default(follow_selected)
+  pinnedMediaVersionId String?                    @map("pinned_media_version_id") @db.Uuid
+  required             Boolean                    @default(true)
+  rank                 Int                        @default(0)
+  sourceFingerprint    String                     @map("source_fingerprint") @db.VarChar(64)
+  status               StoryProductionSpecStatus  @default(current)
+  version              Int                        @default(0)
+  userModifiedAt       DateTime?                  @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId String?                    @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId      String                     @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt        DateTime                   @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt            DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project            StoryProject            @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
   chapter            StoryChapter            @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
@@ -9082,27 +9069,26 @@ model StoryStoryboardClipMediaVersion {
 /// Timed presentation metadata. Plot exits and choices remain authoritative
 /// in StoryDraft; a cue only places that decision or interaction on a sequence.
 model StoryStoryboardCue {
-  id                       String                    @id @default(uuid(7)) @db.Uuid
-  storyProjectId           String                    @map("story_project_id") @db.Uuid
-  storyChapterId           String                    @map("story_chapter_id") @db.Uuid
-  sequenceId               String                    @map("sequence_id") @db.Uuid
-  storyboardClipId         String?                   @map("storyboard_clip_id") @db.Uuid
-  stableKey                String                    @map("stable_key") @db.VarChar(120)
-  kind                     StoryStoryboardCueKind
-  plotDecisionId           String?                   @map("plot_decision_id") @db.VarChar(120)
-  atMs                     Int                       @map("at_ms")
-  durationMs               Int?                      @map("duration_ms")
-  payload                  Json                      @default("{}") @db.JsonB
-  sourceFingerprint        String                    @map("source_fingerprint") @db.VarChar(64)
-  pendingSourceFingerprint String?                   @map("pending_source_fingerprint") @db.VarChar(64)
-  status                   StoryProductionSpecStatus @default(current)
-  version                  Int                       @default(0)
-  userModifiedAt           DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
-  userModifiedByUserId     String?                   @map("user_modified_by_user_id") @db.VarChar(64)
-  createdByUserId          String                    @map("created_by_user_id") @db.VarChar(64)
-  lastPlannedAt            DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
-  createdAt                DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  id                   String                    @id @default(uuid(7)) @db.Uuid
+  storyProjectId       String                    @map("story_project_id") @db.Uuid
+  storyChapterId       String                    @map("story_chapter_id") @db.Uuid
+  sequenceId           String                    @map("sequence_id") @db.Uuid
+  storyboardClipId     String?                   @map("storyboard_clip_id") @db.Uuid
+  stableKey            String                    @map("stable_key") @db.VarChar(120)
+  kind                 StoryStoryboardCueKind
+  plotDecisionId       String?                   @map("plot_decision_id") @db.VarChar(120)
+  atMs                 Int                       @map("at_ms")
+  durationMs           Int?                      @map("duration_ms")
+  payload              Json                      @default("{}") @db.JsonB
+  sourceFingerprint    String                    @map("source_fingerprint") @db.VarChar(64)
+  status               StoryProductionSpecStatus @default(current)
+  version              Int                       @default(0)
+  userModifiedAt       DateTime?                 @map("user_modified_at") @db.Timestamptz(6)
+  userModifiedByUserId String?                   @map("user_modified_by_user_id") @db.VarChar(64)
+  createdByUserId      String                    @map("created_by_user_id") @db.VarChar(64)
+  lastPlannedAt        DateTime                  @default(now()) @map("last_planned_at") @db.Timestamptz(6)
+  createdAt            DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   project        StoryProject            @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
   chapter        StoryChapter            @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
@@ -9125,6 +9111,7 @@ model StoryProductionGeneration {
   storyChapterId          String                              @map("story_chapter_id") @db.Uuid
   targetKind              StoryProductionGenerationTargetKind @map("target_kind")
   generationKind          StoryProductionGenerationKind       @map("generation_kind")
+  purpose                 StoryAssetGenerationPurpose         @default(primary)
   assetSpecId             String?                             @map("asset_spec_id") @db.Uuid
   storyboardClipId        String?                             @map("storyboard_clip_id") @db.Uuid
   aiJobId                 String                              @unique(map: "story_production_generations_ai_job_unique") @map("ai_job_id") @db.Uuid
@@ -9158,6 +9145,7 @@ model StoryProductionGeneration {
   @@unique([id, aiJobId], map: "story_production_generations_id_job_unique")
   @@unique([storyChapterId, actorUserId, idempotencyKey], map: "story_production_generations_actor_key_unique")
   @@index([storyProjectId, storyChapterId, targetKind, assetSpecId, storyboardClipId, createdAt(sort: Desc)], map: "story_production_generations_target_recent_idx")
+  @@index([assetSpecId, purpose, createdAt(sort: Desc)], map: "story_production_generations_asset_purpose_recent_idx")
   @@index([materializedAt, nextReconcileAt, createdAt], map: "story_production_generations_reconcile_idx")
   @@index([retryOfGenerationId], map: "story_production_generations_retry_idx")
   @@map("story_production_generations")

@@ -48,13 +48,16 @@ vi.mock("./project-canvas/use-story-candidate-assets", () => ({
   }),
 }));
 
-vi.mock("./story-asset-spec-detail-dialog", () => ({
-  StoryAssetSpecDetailDialog: () => null,
-}));
-
 vi.mock("./story-production-generation-control", () => ({
   StoryProductionGenerationControl: ({ secondaryAction }: { secondaryAction?: ReactNode }) => (
     <div>{secondaryAction}</div>
+  ),
+}));
+
+vi.mock("./story-prompt-composer", () => ({
+  useStoryAssetMentions: () => [],
+  StoryPromptComposer: ({ id, value }: { id: string; value: string }) => (
+    <textarea id={id} value={value} readOnly />
   ),
 }));
 
@@ -135,10 +138,12 @@ describe("StoryAssetSpecCard media replacement", () => {
       );
     });
 
-    const uploadImage = [...document.body.querySelectorAll("button")].find(
-      (button) => button.textContent?.trim() === "uploadImage"
+    const uploadImage = document.body.querySelector<HTMLButtonElement>(
+      'button[aria-label="uploadImage"]'
     );
-    expect(uploadImage).toBeDefined();
+    expect(uploadImage).not.toBeNull();
+    expect(uploadImage?.className).toContain("aspect-video");
+    expect(container.querySelectorAll("article > section")).toHaveLength(1);
     await act(async () => uploadImage?.click());
 
     const input = document.body.querySelector<HTMLInputElement>('input[type="file"]');
@@ -168,6 +173,7 @@ describe("StoryAssetSpecCard media replacement", () => {
       {
         expectedVersion: asset.version,
         sourceMediaAssetId: candidate.asset.id,
+        sourceMediaPurpose: "primary",
       }
     );
   });
@@ -190,9 +196,6 @@ function assetSpec(): StoryAssetSpec {
     generationConfig: {},
     sourceFingerprint: "source-asset-1",
     status: "current",
-    planDisposition: "planned",
-    pendingSourceFingerprint: null,
-    conflict: null,
     version: 1,
     selectedMediaVersionId: null,
     selectedMediaVersion: null,

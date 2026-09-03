@@ -12,6 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import {
+  Extension,
   mergeAttributes,
   Node,
   nodePasteRule,
@@ -72,6 +73,13 @@ type MentionMenuState = {
   suggestion: SuggestionProps<MentionItem>;
 };
 
+type ReferencePickerRuntime = {
+  enabled: boolean;
+  open: (session: { editor: Editor; range: Range }) => void;
+  isOpen: () => boolean;
+  updateRange: (range: Range) => void;
+};
+
 type PromptMentionNodeOptions = {
   setMenu: (state: MentionMenuState | null) => void;
 };
@@ -79,6 +87,8 @@ type PromptMentionNodeOptions = {
 type PromptMentionNodeStorage = {
   mentions: readonly MentionItem[];
   placeholder: string;
+  referencePicker: ReferencePickerRuntime | null;
+  maxLength: number | null;
 };
 
 type SkillDialogState = {
@@ -88,6 +98,11 @@ type SkillDialogState = {
 
 export type PromptTextareaHandle = {
   openSkillPicker: () => void;
+};
+
+export type PromptReferencePickerSession = {
+  pick: (item: MentionItem) => void;
+  dismiss: () => void;
 };
 
 declare module "@tiptap/core" {
@@ -227,6 +242,25 @@ function mentionInsertion(editor: Editor, range: Range, item: MentionItem) {
   editor.chain().focus().insertContentAt({ from: range.from, to: replaceTo }, content).run();
 }
 
+const PromptCharacterLimit = Extension.create({
+  name: "promptCharacterLimit",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        filterTransaction: (transaction, state) => {
+          if (!transaction.docChanged) return true;
+          const limit = this.editor.storage.promptMention.maxLength;
+          if (limit === null) return true;
+          const currentLength = promptDocumentToText(state.doc.toJSON()).length;
+          const nextLength = promptDocumentToText(transaction.doc.toJSON()).length;
+          return nextLength <= limit || nextLength < currentLength;
+        },
+      }),
+    ];
+  },
+});
+
 function PromptMentionNodeView({ editor, getPos, node }: NodeViewProps) {
   const { editable, mentions, onMentionActivate } = useContext(PromptEditorContext);
   const storedMention = mentionFromNode(node);
@@ -289,6 +323,8 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
     return {
       mentions: EMPTY_MENTIONS,
       placeholder: "",
+      referencePicker: null,
+      maxLength: null,
     };
   },
 
@@ -297,6 +333,10 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
       updatePromptMentionRuntime: (runtime) => () => {
         if (runtime.mentions !== undefined) this.storage.mentions = runtime.mentions;
         if (runtime.placeholder !== undefined) this.storage.placeholder = runtime.placeholder;
+        if (runtime.referencePicker !== undefined) {
+          this.storage.referencePicker = runtime.referencePicker;
+        }
+        if (runtime.maxLength !== undefined) this.storage.maxLength = runtime.maxLength;
         return true;
       },
     };
@@ -463,9 +503,10 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
         // standard command boundary to avoid opening on URLs and aspect ratios.
         allowedPrefixes: kind === "reference" ? null : [" "],
         allow: () =>
-          storage.mentions.some((item) =>
-            kind === "skill" ? item.kind === "skill" : item.kind !== "skill"
-          ),
+          kind === "reference"
+            ? Boolean(storage.referencePicker?.enabled) ||
+              storage.mentions.some((item) => item.kind !== "skill")
+            : storage.mentions.some((item) => item.kind === "skill"),
         shouldShow: ({ editor, text }) => {
           if (!editor.isFocused) return false;
           if (!userActivated && text === char && triggerActivation[kind]) {
@@ -475,6 +516,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
           return userActivated;
         },
         items: ({ query }) => {
+          if (kind === "reference" && storage.referencePicker?.enabled) return [];
           const normalized = query.toLowerCase();
           const filtered = storage.mentions.filter(
             (item) =>
@@ -495,11 +537,23 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
 
           return {
             onStart: (props) => {
+              const picker = storage.referencePicker;
+              if (kind === "reference" && picker?.enabled) {
+                picker.open({ editor: props.editor, range: props.range });
+                suggestion = null;
+                publish();
+                return;
+              }
               active = 0;
               suggestion = props;
               publish();
             },
             onUpdate: (props) => {
+              const picker = storage.referencePicker;
+              if (kind === "reference" && picker?.enabled) {
+                picker.updateRange(props.range);
+                return;
+              }
               suggestion = props;
               const visibleCount = Math.min(props.items.length, kind === "skill" ? 8 : 10);
               active = Math.max(0, Math.min(active, visibleCount - 1));
@@ -507,6 +561,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
             },
             onKeyDown: ({ event, view }: SuggestionKeyDownProps) => {
               if (view.composing || event.isComposing || event.keyCode === 229) return false;
+              if (kind === "reference" && storage.referencePicker?.enabled) return false;
               if (!suggestion) return false;
               if (
                 (event.key === "ArrowDown" || event.key === "ArrowUp") &&
@@ -534,6 +589,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
             },
             onExit: () => {
               userActivated = false;
+              if (kind === "reference" && storage.referencePicker?.isOpen()) return;
               suggestion = null;
               publish();
             },
@@ -672,15 +728,19 @@ export function PromptTextarea({
   skillMarketLoading = false,
   skillMarketError = false,
   className,
+  editorClassName: editorClassNameProp,
   placeholder,
   rows = 4,
   autoFocus = false,
   disabled = false,
   readOnly = false,
+  maxLength,
   id,
   "aria-label": ariaLabel,
   "aria-describedby": ariaDescribedBy,
+  "aria-required": ariaRequired,
   onMentionActivate,
+  onOpenReferencePicker,
   onSkillMarketRetry,
   onOpenSkillMarket,
   onKeyDown,
@@ -694,16 +754,21 @@ export function PromptTextarea({
   skillMarketLoading?: boolean;
   skillMarketError?: boolean;
   className?: string;
+  editorClassName?: string;
   placeholder?: string;
   rows?: number;
   autoFocus?: boolean;
   disabled?: boolean;
   readOnly?: boolean;
+  maxLength?: number;
   id?: string;
   "aria-label"?: string;
   "aria-describedby"?: string;
+  "aria-required"?: boolean;
   /** Opens contextual UI for actionable inline entities such as Skills. */
   onMentionActivate?: (mention: MentionItem) => void;
+  /** Replaces the inline `@` menu with a caller-owned asset library. */
+  onOpenReferencePicker?: (session: PromptReferencePickerSession) => void;
   onSkillMarketRetry?: () => void;
   onOpenSkillMarket?: (catalogId: string, applySkill: (item: MentionItem) => void) => void;
   /** Capture keydown at the editor DOM level (for grid Tab/Enter/Esc nav). */
@@ -715,6 +780,9 @@ export function PromptTextarea({
   const [composing, setComposing] = useState(false);
   const [menuState, setMenuState] = useState<MentionMenuState | null>(null);
   const [skillDialogState, setSkillDialogState] = useState<SkillDialogState | null>(null);
+  const pendingReferenceRef = useRef<{ editor: Editor; range: Range } | null>(null);
+  const referencePickerOpenRef = useRef(false);
+  const onOpenReferencePickerRef = useRef(onOpenReferencePicker);
   const lastCommittedRef = useRef(value);
   const onCommitRef = useRef(onCommit);
 
@@ -725,6 +793,10 @@ export function PromptTextarea({
   useEffect(() => {
     onCommitRef.current = onCommit;
   }, [onCommit]);
+
+  useEffect(() => {
+    onOpenReferencePickerRef.current = onOpenReferencePicker;
+  }, [onOpenReferencePicker]);
 
   const extensions = useMemo(
     () => [
@@ -750,6 +822,7 @@ export function PromptTextarea({
       Placeholder.configure({
         placeholder: ({ editor }) => editor.storage.promptMention.placeholder,
       }),
+      PromptCharacterLimit,
       PromptMentionNode.configure({
         setMenu: setMenuState,
       }),
@@ -764,7 +837,7 @@ export function PromptTextarea({
   };
 
   const editorClassName = cn(
-    className,
+    editorClassNameProp ?? className,
     "h-full cursor-text whitespace-pre-wrap break-words scroll-pb-2 overflow-y-auto",
     "[&>p]:m-0",
     "[&_.is-editor-empty:first-child]:before:pointer-events-none",
@@ -784,6 +857,7 @@ export function PromptTextarea({
         attributes: {
           ...(id ? { id } : {}),
           ...(ariaDescribedBy ? { "aria-describedby": ariaDescribedBy } : {}),
+          ...(ariaRequired ? { "aria-required": "true" } : {}),
           "aria-label": ariaLabel ?? placeholder ?? "Prompt",
           "aria-multiline": "true",
           "data-canvas-scroll-owner": "y",
@@ -807,6 +881,7 @@ export function PromptTextarea({
       },
       onFocus: () => setFocused(true),
       onBlur: ({ editor: instance }) => {
+        if (referencePickerOpenRef.current) return;
         setFocused(false);
         setMenuState(null);
         if (!instance.view.composing) {
@@ -827,8 +902,60 @@ export function PromptTextarea({
 
   useEffect(() => {
     if (!editor) return;
+    if (!onOpenReferencePicker || disabled || readOnly) {
+      editor.commands.updatePromptMentionRuntime({ referencePicker: null });
+      return;
+    }
+    const referencePicker: ReferencePickerRuntime = {
+      enabled: true,
+      isOpen: () => referencePickerOpenRef.current,
+      open: (pending) => {
+        pendingReferenceRef.current = pending;
+        referencePickerOpenRef.current = true;
+        onOpenReferencePickerRef.current?.({
+          pick: (item) => {
+            const session = pendingReferenceRef.current;
+            referencePickerOpenRef.current = false;
+            pendingReferenceRef.current = null;
+            if (!session || session.editor.isDestroyed) return;
+            if (!session.editor.view.composing) {
+              mentionInsertion(session.editor, session.range, item);
+            }
+            exitSuggestion(session.editor.view, REFERENCE_SUGGESTION_KEY);
+            requestAnimationFrame(() => session.editor.commands.focus());
+          },
+          dismiss: () => {
+            const session = pendingReferenceRef.current;
+            referencePickerOpenRef.current = false;
+            pendingReferenceRef.current = null;
+            if (!session || session.editor.isDestroyed) return;
+            exitSuggestion(session.editor.view, REFERENCE_SUGGESTION_KEY);
+            requestAnimationFrame(() => session.editor.commands.focus());
+          },
+        });
+      },
+      updateRange: (range) => {
+        const session = pendingReferenceRef.current;
+        if (session) session.range = range;
+      },
+    };
+    editor.commands.updatePromptMentionRuntime({ referencePicker });
+    return () => {
+      if (!editor.isDestroyed) {
+        editor.commands.updatePromptMentionRuntime({ referencePicker: null });
+      }
+    };
+  }, [disabled, editor, onOpenReferencePicker, readOnly]);
+
+  useEffect(() => {
+    if (!editor) return;
     editor.commands.updatePromptMentionRuntime({ mentions });
   }, [editor, mentions]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.commands.updatePromptMentionRuntime({ maxLength: maxLength ?? null });
+  }, [editor, maxLength]);
 
   useEffect(() => {
     if (!editor || focused || composing || editor.view.composing) return;

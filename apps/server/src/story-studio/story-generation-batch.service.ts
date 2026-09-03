@@ -237,8 +237,8 @@ export class StoryGenerationBatchService {
         id: { in: targets.map((target) => target.id) },
         storyProjectId: projectId,
         storyChapterId: chapterId,
-        status: StoryProductionSpecStatus.current,
-        sequence: { status: StoryProductionSpecStatus.current },
+        status: { not: StoryProductionSpecStatus.archived },
+        sequence: { status: { not: StoryProductionSpecStatus.archived } },
       },
       select: { id: true, sequenceId: true, version: true, kind: true },
     });
@@ -248,7 +248,8 @@ export class StoryGenerationBatchService {
       if (!row || row.sequenceId !== target.sequenceId) {
         throw new NotFoundException({
           code: 'STORYBOARD_CLIP_NOT_FOUND',
-          message: 'A current Storyboard clip was not found in this chapter.',
+          message:
+            'An available Storyboard clip was not found in this chapter.',
           clipId: target.id,
         });
       }

@@ -57,15 +57,27 @@ export type StoryStoryboardCueParams = z.infer<
   typeof StoryStoryboardCueParamsSchema
 >;
 
-export const ResolveStoryProductionConflictSchema = z
+export const CreateStoryAssetSpecSchema = z
   .object({
-    expectedVersion: StoryProductionVersionSchema,
-    expectedPendingSourceFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
-    resolution: z.enum(['keep_current', 'use_latest_plan']),
+    kind: z.enum(['character', 'location', 'prop']),
+    name: StoryProductionTextSchema(240),
+    description: z.string().trim().max(4_000).nullable().optional(),
+    imagePrompt: StoryProductionTextSchema(12_000),
+    videoPrompt: StoryProductionTextSchema(12_000).nullable().optional(),
+    negativePrompt: StoryProductionTextSchema(4_000).nullable().optional(),
   })
   .strict();
-export type ResolveStoryProductionConflictInput = z.infer<
-  typeof ResolveStoryProductionConflictSchema
+export type CreateStoryAssetSpecInput = z.infer<
+  typeof CreateStoryAssetSpecSchema
+>;
+
+export const ArchiveStoryAssetSpecSchema = z
+  .object({
+    expectedVersion: StoryProductionVersionSchema,
+  })
+  .strict();
+export type ArchiveStoryAssetSpecInput = z.infer<
+  typeof ArchiveStoryAssetSpecSchema
 >;
 
 export const PatchStoryAssetSpecSchema = z
@@ -79,6 +91,8 @@ export const PatchStoryAssetSpecSchema = z
     selectedMediaVersionId: StoryProductionUuidSchema.nullable().optional(),
     /** Import a project-candidate image as a new creative version and select it. */
     sourceMediaAssetId: StoryProductionUuidSchema.optional(),
+    /** Route imported media to the canonical image or the character three-view history. */
+    sourceMediaPurpose: z.enum(['primary', 'turnaround']).optional(),
   })
   .strict()
   .refine(
@@ -88,6 +102,14 @@ export const PatchStoryAssetSpecSchema = z
       message:
         'Importing source media and selecting an existing media version are mutually exclusive.',
       path: ['sourceMediaAssetId'],
+    },
+  )
+  .refine(
+    (value) =>
+      value.sourceMediaAssetId || value.sourceMediaPurpose === undefined,
+    {
+      message: 'A source media purpose requires source media to import.',
+      path: ['sourceMediaPurpose'],
     },
   )
   .refine(

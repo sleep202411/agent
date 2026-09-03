@@ -1292,9 +1292,9 @@ export const StoryAssetProposalSchema = z
 export type StoryAssetProposal = z.infer<typeof StoryAssetProposalSchema>;
 
 /**
- * Creator review payload for Storyboard sequences. The embedded Asset plan is
- * the immutable source snapshot that must still match current approved Asset
- * Specs when this proposal is applied.
+ * Creator review payload for Storyboard sequences. The embedded Asset plan
+ * records the authoring context; apply resolves mentions against the chapter's
+ * live Asset Specs so later creator edits never create a plan-conflict gate.
  */
 export const StoryStoryboardProposalSchema = z
   .object({

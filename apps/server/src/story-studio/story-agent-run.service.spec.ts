@@ -1101,7 +1101,7 @@ describe('StoryAgentRunService', () => {
           }),
         },
       };
-      const { service, realtime, productionPlans } = serviceWith(tx);
+      const { service, realtime } = serviceWith(tx);
 
       await service.executeClaimedRun(RUN_ID, WORKER_ID);
 
@@ -1127,9 +1127,6 @@ describe('StoryAgentRunService', () => {
       );
       expect(scriptCreate).not.toHaveBeenCalled();
       expect(scriptUpdate).not.toHaveBeenCalled();
-      expect(
-        productionPlans.invalidateDownstreamAfterUpstreamApprovalInTransaction,
-      ).not.toHaveBeenCalled();
       expect(realtime.enqueue).toHaveBeenCalledTimes(1);
     },
   );
@@ -1185,11 +1182,10 @@ describe('StoryAgentRunService', () => {
         sequence: 1,
       },
       plotTree: { status: 'current', nodeCount: 1 },
-      assets: { status: 'current', currentCount: 0, staleCount: 0 },
+      assets: { status: 'current', currentCount: 0 },
       storyboard: {
         status: 'missing',
         sequenceCount: 0,
-        staleCount: 0,
         missingPlotNodeIds: ['opening'],
       },
       ready: false,
@@ -1216,7 +1212,7 @@ describe('StoryAgentRunService', () => {
     );
   });
 
-  it('selects Assets before Storyboard when current Storyboard rows have stale Asset lineage', async () => {
+  it('selects Assets before Storyboard when Asset specs are missing', async () => {
     const authoringRun = authoringRunRow();
     const tx = {
       $executeRaw: jest.fn().mockResolvedValue(0),
@@ -1267,11 +1263,10 @@ describe('StoryAgentRunService', () => {
         sequence: 1,
       },
       plotTree: { status: 'current', nodeCount: 1 },
-      assets: { status: 'stale', currentCount: 1, staleCount: 1 },
+      assets: { status: 'missing', currentCount: 0 },
       storyboard: {
-        status: 'stale',
+        status: 'current',
         sequenceCount: 1,
-        staleCount: 0,
         missingPlotNodeIds: [],
       },
       ready: false,
@@ -2990,19 +2985,15 @@ function serviceWith(
       profile: { status: 'current' },
       script: { status: 'missing', documentId: null, sequence: null },
       plotTree: { status: 'missing', nodeCount: 0 },
-      assets: { status: 'missing', currentCount: 0, staleCount: 0 },
+      assets: { status: 'missing', currentCount: 0 },
       storyboard: {
         status: 'missing',
         sequenceCount: 0,
-        staleCount: 0,
         missingPlotNodeIds: [],
       },
       ready: false,
     }),
     readCurrentAssetPlanInTransaction: jest.fn().mockResolvedValue(null),
-    invalidateDownstreamAfterUpstreamApprovalInTransaction: jest
-      .fn()
-      .mockResolvedValue(undefined),
   };
   return {
     service: new StoryAgentRunService(

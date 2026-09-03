@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StoryAssetSpec } from "@/lib/story-production-api";
@@ -9,6 +9,27 @@ import { StoryAssetSpecCard } from "./story-asset-spec-card";
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
+}));
+
+vi.mock("./story-prompt-composer", () => ({
+  useStoryAssetMentions: () => [],
+  StoryPromptComposer: ({ id, value }: { id: string; value: string }) => (
+    <textarea id={id} value={value} readOnly />
+  ),
+}));
+
+vi.mock("./story-asset-generation-toolbar", () => ({
+  StoryAssetGenerationToolbar: ({
+    children,
+  }: {
+    children: (settings: { selection: null; options: Record<string, never> }) => ReactNode;
+  }) => children({ selection: null, options: {} }),
+}));
+
+vi.mock("./story-production-generation-control", () => ({
+  StoryProductionGenerationControl: ({ purpose = "primary" }: { purpose?: string }) => (
+    <button type="button">generate:{purpose}</button>
+  ),
 }));
 
 describe("StoryAssetSpecCard", () => {
@@ -27,35 +48,52 @@ describe("StoryAssetSpecCard", () => {
     container.remove();
   });
 
-  it.each([
-    ["character", "aspect-[3/4]"],
-    ["location", "aspect-video"],
-    ["prop", "aspect-square"],
-  ] as const)("renders a %s spec as a minimal media card (%s)", async (kind, aspectClass) => {
-    const client = new QueryClient();
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={client}>
-          <StoryAssetSpecCard
-            asset={assetSpec({ kind })}
-            projectId="project-1"
-            chapterId="chapter-1"
-          />
-        </QueryClientProvider>
-      );
-    });
+  it.each(["character", "location", "prop"] as const)(
+    "renders the appropriate %s asset workbench",
+    async (kind) => {
+      const client = new QueryClient();
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={client}>
+            <StoryAssetSpecCard
+              asset={assetSpec({ kind })}
+              projectId="project-1"
+              chapterId="chapter-1"
+              workspaceId="workspace-1"
+            />
+          </QueryClientProvider>
+        );
+      });
 
-    const text = container.textContent ?? "";
-    expect(text).toContain("Hero");
-    expect(text).toContain("Lead character");
-    expect(text).toContain("generate");
-    expect(text).toContain("details");
-    expect(container.querySelector(`[class*="${aspectClass}"]`)).not.toBeNull();
-    // The card stays minimal: no @key and no prompt textarea until the
-    // detail dialog is opened.
-    expect(text).not.toContain("@hero");
-    expect(container.querySelector("textarea")).toBeNull();
-  });
+      const text = container.textContent ?? "";
+      const article = container.querySelector("article");
+      expect(container.querySelector<HTMLInputElement>('input[value="Hero"]')?.value).toBe("Hero");
+      expect(container.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe(
+        "A consistent red flight suit"
+      );
+      expect(text).toContain("generate:primary");
+      if (kind === "character") {
+        expect(text).toContain("turnaroundTitle");
+      } else {
+        expect(article?.className).toContain("h-full");
+        expect(article?.className).not.toContain("lg:grid-cols-2");
+      }
+      expect(container.querySelectorAll("article > section")).toHaveLength(
+        kind === "character" ? 2 : 1
+      );
+      expect(text).not.toContain("Lead character");
+      expect(text).not.toContain("advancedSettings");
+      const uploadButton = container.querySelector<HTMLButtonElement>(
+        'button[aria-label="uploadImage"]'
+      );
+      expect(uploadButton).not.toBeNull();
+      expect(uploadButton?.className).toContain(kind === "character" ? "size-24" : "aspect-video");
+      expect(container.querySelectorAll("textarea")).toHaveLength(1);
+      expect(container.querySelectorAll('section[aria-label="Hero"]')).toHaveLength(1);
+      expect(container.querySelector('button[aria-label="delete"]')).not.toBeNull();
+      expect(text.includes("generate:turnaround")).toBe(kind === "character");
+    }
+  );
 });
 
 function assetSpec(overrides: Partial<StoryAssetSpec> = {}): StoryAssetSpec {
@@ -82,9 +120,6 @@ function baseAssetSpec(): StoryAssetSpec {
     generationConfig: {},
     sourceFingerprint: "source-asset-1",
     status: "current",
-    planDisposition: "planned",
-    pendingSourceFingerprint: null,
-    conflict: null,
     version: 1,
     selectedMediaVersionId: null,
     selectedMediaVersion: null,

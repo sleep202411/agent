@@ -96,11 +96,10 @@ function canonicalProductionState(
       sequence: scriptStatus === 'missing' ? null : 1,
     },
     plotTree: { status: 'missing' as const, nodeCount: 0 },
-    assets: { status: 'missing' as const, currentCount: 0, staleCount: 0 },
+    assets: { status: 'missing' as const, currentCount: 0 },
     storyboard: {
       status: 'missing' as const,
       sequenceCount: 0,
-      staleCount: 0,
       missingPlotNodeIds: [],
     },
     ready: false,

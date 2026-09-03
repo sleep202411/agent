@@ -40,11 +40,10 @@ function state(input: {
     profile: { status: "current" },
     script: { status: input.script, documentId: null, sequence: input.sequence },
     plotTree: { status: input.ready ? "current" : "missing", nodeCount: 0 },
-    assets: { status: input.ready ? "current" : "missing", currentCount: 0, staleCount: 0 },
+    assets: { status: input.ready ? "current" : "missing", currentCount: 0 },
     storyboard: {
       status: input.ready ? "current" : "missing",
       sequenceCount: 0,
-      staleCount: 0,
       missingPlotNodeIds: [],
     },
     ready: input.ready,

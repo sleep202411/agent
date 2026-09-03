@@ -1,6 +1,6 @@
 "use client";
 
-import { IconAlertTriangle, IconCheck, IconCircleDashed, IconLoader2 } from "@tabler/icons-react";
+import { IconCheck, IconCircleDashed, IconLoader2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
@@ -66,9 +66,9 @@ export function StoryProductionSteps({
     tree: productionQuery.data?.plotTree.status ?? null,
     assets: productionQuery.data?.assets.status ?? null,
     storyboard: productionQuery.data?.storyboard.status ?? null,
-    // A preview has no plan of its own to be current or stale: it is walkable
-    // whenever the earlier stages are, and worth flagging when they are not.
-    preview: productionReady === null ? null : productionReady ? "current" : "stale",
+    // Preview has no persisted stage of its own; this dot reports whether the
+    // chapter has all material normally used for a complete preview.
+    preview: productionReady === null ? null : productionReady ? "current" : "missing",
   };
   return (
     <nav aria-label={t("navigationLabel")} className={cn("items-center", className)}>
@@ -80,8 +80,6 @@ export function StoryProductionSteps({
           <IconLoader2 className="size-3 animate-spin" aria-hidden="true" />
         ) : status === "current" ? (
           <IconCheck className="size-3" aria-hidden="true" />
-        ) : status === "stale" ? (
-          <IconAlertTriangle className="size-3" aria-hidden="true" />
         ) : (
           <IconCircleDashed className="size-3" aria-hidden="true" />
         );
@@ -99,11 +97,7 @@ export function StoryProductionSteps({
                 <span
                   className={cn(
                     "grid size-5 place-items-center rounded-full",
-                    status === "stale"
-                      ? "bg-amber-100 text-amber-950"
-                      : status === "missing"
-                        ? "bg-white/18 text-white"
-                        : "bg-white text-black"
+                    status === "missing" ? "bg-white/18 text-white" : "bg-white text-black"
                   )}
                 >
                   {icon}
@@ -116,7 +110,7 @@ export function StoryProductionSteps({
                 aria-label={t("stepAria", { step: t(step.key), status: statusLabel })}
                 className="group inline-flex items-center gap-2"
               >
-                <StepFace icon={icon} label={t(step.key)} status={status} />
+                <StepFace icon={icon} label={t(step.key)} />
               </Link>
             ) : (
               <button
@@ -129,7 +123,6 @@ export function StoryProductionSteps({
                 <StepFace
                   icon={previewPending ? <IconLoader2 className="size-3 animate-spin" /> : icon}
                   label={t(step.key)}
-                  status={status}
                 />
               </button>
             )}
@@ -140,22 +133,14 @@ export function StoryProductionSteps({
   );
 }
 
-/** The shared inactive-step face: status dot plus label. */
-function StepFace({
-  icon,
-  label,
-  status,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  status: StoryProductionStatus | null;
-}) {
+/** The shared inactive-step face. */
+function StepFace({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
     <>
       <span
         className={cn(
           "grid size-5 place-items-center rounded-full transition group-hover:bg-white/18 group-hover:text-white",
-          status === "stale" ? "bg-amber-300/14 text-amber-100/80" : "bg-white/10 text-white/62"
+          "bg-white/10 text-white/62"
         )}
       >
         {icon}

@@ -12,11 +12,7 @@ import 'dotenv/config';
  * Remote access is always opt-in. Ambiguous projects are reported and left
  * untouched; safe projects are repaired transactionally and idempotently.
  */
-import {
-  Prisma,
-  StoryProductionPlanDisposition,
-  StoryProductionSpecStatus,
-} from '@prisma/client';
+import { Prisma, StoryProductionSpecStatus } from '@prisma/client';
 import { buildPrisma } from '../src/infra/db/db.module';
 import { canonicalJsonHash } from '../src/story-studio/canonical-json';
 import { InteractiveStoryDraftContentSchema } from '../src/story-studio/dto';
@@ -253,7 +249,6 @@ async function repairProject(storyProjectId: string): Promise<void> {
             storyProjectId,
             plotNodeId: node.nodeId,
           }),
-          planDisposition: StoryProductionPlanDisposition.user_override,
           createdByUserId: draft.updatedByUserId,
         },
       });
