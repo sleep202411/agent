@@ -1,15 +1,17 @@
 FROM node:24.18.1-bookworm-slim AS base
 
 FROM base AS pruner
-RUN npm install -g turbo@^2
+ARG NPM_REGISTRY=https://registry.npmjs.org
+RUN npm install -g turbo@^2 --registry="$NPM_REGISTRY"
 WORKDIR /app
 COPY . .
 RUN turbo prune agent-os --docker
 
 FROM base AS deps
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts
+RUN npm ci --ignore-scripts --registry="$NPM_REGISTRY"
 
 FROM base AS builder
 WORKDIR /app
@@ -19,6 +21,7 @@ RUN npx turbo run build --filter=agent-os
 
 FROM base AS runner
 LABEL org.opencontainers.image.source=https://github.com/Fizzdragon-Pte-Ltd-2/fizzdragon-platform
+ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 ENV NODE_ENV=production
 ENV AGENT_OS_PORT=4301
@@ -33,7 +36,7 @@ RUN groupadd --system --gid 1001 agentos \
   && useradd --system --uid 1001 --gid agentos agentos
 
 COPY --from=pruner /app/out/json/ .
-RUN npm ci --ignore-scripts --omit=dev
+RUN npm ci --ignore-scripts --omit=dev --registry="$NPM_REGISTRY"
 
 # Every @repo/* dependency is consumed as built dist, and the pruned install
 # leaves those directories with a package.json and nothing else.
