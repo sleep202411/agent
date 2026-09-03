@@ -57,17 +57,6 @@ export type StoryStoryboardCueParams = z.infer<
   typeof StoryStoryboardCueParamsSchema
 >;
 
-export const ResolveStoryProductionConflictSchema = z
-  .object({
-    expectedVersion: StoryProductionVersionSchema,
-    expectedPendingSourceFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
-    resolution: z.enum(['keep_current', 'use_latest_plan']),
-  })
-  .strict();
-export type ResolveStoryProductionConflictInput = z.infer<
-  typeof ResolveStoryProductionConflictSchema
->;
-
 export const CreateStoryAssetSpecSchema = z
   .object({
     kind: z.enum(['character', 'location', 'prop']),

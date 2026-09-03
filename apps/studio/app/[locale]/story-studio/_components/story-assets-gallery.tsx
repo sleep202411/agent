@@ -8,7 +8,6 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import {
-  getStoryProductionState,
   listStoryAssetSpecs,
   storyProductionKeys,
   type StoryAssetSpec,
@@ -25,12 +24,7 @@ import {
   StoryProductionGenerationControls,
   StoryProductionPageHeader,
 } from "./story-production-page-header";
-import { storyAssetsStageHasStaleContent } from "./story-production-stage-guidance";
-import {
-  StoryStageEmptyState,
-  StoryStageLoadingState,
-  StoryStageNotice,
-} from "./story-stage-empty-state";
+import { StoryStageEmptyState, StoryStageLoadingState } from "./story-stage-empty-state";
 
 const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
 
@@ -54,13 +48,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
     enabled: Boolean(activeChapterId),
     retry: false,
   });
-  const productionQuery = useQuery({
-    queryKey: storyProductionKeys.state(projectId, activeChapterId),
-    queryFn: ({ signal }) => getStoryProductionState(projectId, activeChapterId as string, signal),
-    enabled: Boolean(activeChapterId),
-    retry: false,
-  });
-
   const setTab = (tab: StoryAssetSpecKind) => {
     const next = new URLSearchParams(searchParams.toString());
     next.set("kind", tab);
@@ -69,26 +56,14 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
 
   const assets = (assetsQuery.data ?? []).filter((asset) => asset.kind === active);
   const assetsWithoutMedia = assets.filter(isAvailableForBatchGeneration);
-  const loading = assetsQuery.isPending || (Boolean(activeChapterId) && productionQuery.isPending);
-  const error = assetsQuery.error ?? productionQuery.error;
-  const staleContent = Boolean(
-    productionQuery.data &&
-    assetsQuery.data &&
-    storyAssetsStageHasStaleContent(productionQuery.data, assetsQuery.data.length)
-  );
+  const loading = assetsQuery.isPending;
+  const error = assetsQuery.error;
   const canEdit = Boolean(workbenchQuery.data?.project.capabilities.includes("story.edit"));
   // Asset Specs are creator-owned chapter resources. Plot/plan state only
   // governs what FizzAgent may derive automatically; it must never lock the
   // manual media workbench.
   const generationAllowed = canEdit;
   const mediaReplacementAllowed = Boolean(canEdit && workbenchQuery.workspaceId);
-  const resolvableStaleCount = (assetsQuery.data ?? []).filter(
-    (asset) =>
-      asset.status === "stale" &&
-      asset.conflict !== null &&
-      asset.pendingSourceFingerprint === asset.conflict.pendingSourceFingerprint
-  ).length;
-  const staleNeedsAgent = (productionQuery.data?.assets.staleCount ?? 0) > resolvableStaleCount;
   return (
     <main aria-busy={loading} className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -109,9 +84,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 aria-label={t("filterLabel")}
               >
                 {TABS.map((tab) => {
-                  const staleCount = (assetsQuery.data ?? []).filter(
-                    (asset) => asset.kind === tab && asset.status === "stale"
-                  ).length;
                   return (
                     <button
                       key={tab}
@@ -126,11 +98,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                       )}
                     >
                       {t(`tabs.${tab}`)}
-                      {staleCount > 0 ? (
-                        <span className="ml-1 rounded-md bg-amber-200/12 px-1.5 py-0.5 text-[10px] tabular-nums text-amber-100/88">
-                          {staleCount}
-                        </span>
-                      ) : null}
                     </button>
                   );
                 })}
@@ -176,7 +143,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 className="mt-5"
                 onClick={() => {
                   void assetsQuery.refetch();
-                  void productionQuery.refetch();
                 }}
               >
                 <IconRefresh />
@@ -187,19 +153,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
 
           {!loading && !error && activeChapterId ? (
             <>
-              {staleContent ? (
-                <div className="mt-4">
-                  <StoryStageNotice
-                    title={t("stage.stale.title", {
-                      count: productionQuery.data?.assets.staleCount ?? 0,
-                    })}
-                    description={t("stage.stale.description")}
-                    actionLabel={staleNeedsAgent ? t("continueWithAgent") : undefined}
-                    prompt={staleNeedsAgent ? t("prompts.assets") : undefined}
-                  />
-                </div>
-              ) : null}
-
               {assets.length > 0 ? (
                 <div
                   className={cn(

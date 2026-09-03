@@ -153,7 +153,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     ).resolves.toBe(1);
   });
 
-  it('invalidates legacy downstream rows with DB-valid stale fingerprints', async () => {
+  it('keeps downstream production rows current after upstream changes', async () => {
     const fixture = await createFixture(prisma, fixtureWorkspaceIds);
     const nodeId = 'scene.opening';
     const draft = InteractiveStoryDraftContentSchema.parse({
@@ -220,7 +220,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         },
       ],
     };
-    await withLegacyAssetSourceGuardDisabled(prisma, (tx) =>
+    await prisma.$transaction((tx) =>
       fixture.productionPlans.applyApprovedProductionPlanInTransaction(tx, {
         storyProjectId: fixture.projectId,
         storyChapterId: fixture.chapterId,
@@ -231,22 +231,6 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       }),
     );
 
-    await expect(
-      prisma.$transaction((tx) =>
-        fixture.productionPlans.invalidateDownstreamAfterUpstreamApprovalInTransaction(
-          tx,
-          {
-            storyProjectId: fixture.projectId,
-            storyChapterId: fixture.chapterId,
-            actorUserId: fixture.user.userId,
-            sourceFingerprint: canonicalJsonHash({ upstream: 'new-script' }),
-            upstreamStage: 'script',
-            upstreamRunId: randomUUID(),
-          },
-        ),
-      ),
-    ).resolves.toBeUndefined();
-
     const [asset, sequence] = await Promise.all([
       prisma.storyAssetSpec.findFirstOrThrow({
         where: { storyChapterId: fixture.chapterId },
@@ -255,16 +239,8 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         where: { storyChapterId: fixture.chapterId },
       }),
     ]);
-    expect(asset).toMatchObject({
-      status: 'stale',
-      pendingPlanSnapshotId: null,
-    });
-    expect(asset.pendingSourceFingerprint).toMatch(/^[a-f0-9]{64}$/);
-    expect(sequence).toMatchObject({
-      status: 'stale',
-      pendingPlanSnapshotId: null,
-    });
-    expect(sequence.pendingSourceFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(asset.status).toBe('current');
+    expect(sequence.status).toBe('current');
   });
 
   it('never treats an empty Asset marker as current before Plot approval', async () => {
@@ -439,7 +415,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
           data: { nodeIds: [nodeId, secondNodeId], entryNodeId: nodeId },
         }),
       ]);
-      await withLegacyAssetSourceGuardDisabled(prisma, (tx) =>
+      await prisma.$transaction((tx) =>
         fixture.productionPlans.applyApprovedProductionPlanInTransaction(tx, {
           storyProjectId: fixture.projectId,
           storyChapterId: fixture.chapterId,
@@ -571,7 +547,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     }
   });
 
-  it('approves Script only, preserves independent Plot lineage, and safely stales downstream rows', async () => {
+  it('approves Script without invalidating independently edited downstream rows', async () => {
     const fixture = await createFixture(prisma, fixtureWorkspaceIds);
     const screenplay: StoryScreenplay = {
       schemaVersion: STORY_SCREENPLAY_SCHEMA_VERSION,
@@ -654,7 +630,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         },
       ],
     };
-    await withLegacyAssetSourceGuardDisabled(prisma, (tx) =>
+    await prisma.$transaction((tx) =>
       fixture.productionPlans.applyApprovedProductionPlanInTransaction(tx, {
         storyProjectId: fixture.projectId,
         storyChapterId: fixture.chapterId,
@@ -731,11 +707,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       sourceScriptHash: null,
     });
     expect(productionState.script.status).toBe('current');
-    expect(productionState.plotTree.status).toBe('stale');
-    expect(asset.status).toBe('stale');
-    expect(asset.pendingSourceFingerprint).toMatch(/^[a-f0-9]{64}$/);
-    expect(sequence.status).toBe('stale');
-    expect(sequence.pendingSourceFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(productionState.plotTree.status).toBe('current');
+    expect(asset.status).toBe('current');
+    expect(sequence.status).toBe('current');
   });
 
   it('reports stale_base instead of landing operations when a human write advances the head during drafting', async () => {
@@ -1041,7 +1015,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         ),
       ).resolves.toMatchObject({
         plotTree: { status: 'current' },
-        assets: { status: 'missing', currentCount: 0, staleCount: 0 },
+        assets: { status: 'missing', currentCount: 0 },
         storyboard: { status: 'missing' },
         ready: false,
       });
@@ -1089,7 +1063,6 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         assets: {
           status: 'current',
           currentCount: expectedAssetCount,
-          staleCount: 0,
         },
         storyboard: { status: 'missing' },
       });
@@ -1190,12 +1163,10 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         assets: {
           status: 'current',
           currentCount: expectedAssetCount,
-          staleCount: 0,
         },
         storyboard: {
           status: 'current',
           sequenceCount: 1,
-          staleCount: 0,
           missingPlotNodeIds: [],
         },
         ready: true,
@@ -2972,30 +2943,6 @@ function assertDedicatedLocalPostgres(rawUrl: string): void {
 function jsonStructuredClone<T>(value: T): T {
   const parsed = JSON.parse(JSON.stringify(value)) as unknown;
   return parsed as T;
-}
-
-/**
- * A few migration-compatibility cases intentionally reconstruct rows that
- * predate the Script-backed Asset source guard. Disable that one trigger only
- * inside the same transaction: PostgreSQL rolls the DDL back with the fixture
- * if setup fails, and production code never receives a legacy fallback.
- */
-async function withLegacyAssetSourceGuardDisabled<T>(
-  prisma: ReturnType<typeof buildPrisma>,
-  work: (tx: Prisma.TransactionClient) => Promise<T>,
-): Promise<T> {
-  return prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      'ALTER TABLE "story_asset_specs" DISABLE TRIGGER "story_asset_spec_source_guard_trigger"',
-    );
-    try {
-      return await work(tx);
-    } finally {
-      await tx.$executeRawUnsafe(
-        'ALTER TABLE "story_asset_specs" ENABLE TRIGGER "story_asset_spec_source_guard_trigger"',
-      );
-    }
-  });
 }
 
 async function assertStoryAgentMigrationPresent(

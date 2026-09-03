@@ -54,7 +54,7 @@ export function StoryClipDetailDialog({
   chapterId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** False while the aggregate Storyboard stage is stale; inspection stays available. */
+  /** False when the owning surface is read-only; inspection stays available. */
   editable?: boolean;
 }) {
   const t = useTranslations("storyStudio.assetsPage.detailDialog");

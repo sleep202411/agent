@@ -52,7 +52,6 @@ import {
 import { useStoryCandidateAssets } from "./project-canvas/use-story-candidate-assets";
 import { StoryPromptComposer, useStoryAssetMentions } from "./story-prompt-composer";
 import { StoryAssetGenerationToolbar } from "./story-asset-generation-toolbar";
-import { StoryProductionConflictPanel } from "./story-production-conflict-panel";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
 /**
@@ -306,11 +305,6 @@ export function StoryAssetSpecCard({
               )}
             </StoryAssetGenerationToolbar>
           </div>
-
-          <StoryProductionConflictPanel
-            scope={{ projectId, chapterId }}
-            target={{ kind: "asset_spec", item: asset }}
-          />
         </div>
 
         <MediaVersionStrip

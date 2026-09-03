@@ -2759,33 +2759,6 @@
     "scriptDoc": {
       "placeholder": "寫下你的劇本——流水線會從這裡讀取原文…"
     },
-    "productionConflict": {
-      "ariaLabel": "製作方案衝突",
-      "title": "你的編輯與最新批准方案存在衝突",
-      "description": "請先查看待套用方案，再決定本章是保留目前製作內容，還是採用最新編譯版本。",
-      "metadataUnavailable": "伺服器尚未傳回衝突摘要。請重新整理本章後再選擇解決方式。",
-      "latestRemovesItem": "最新方案將移除此項目",
-      "assetRemovalSummary": "採用最新方案會封存{name}；如果引用條件允許，保留目前內容會將其儲存為本章覆寫項。",
-      "sequenceRemovalSummary": "由於對應的情節節點已不存在，採用最新方案會封存{name}及其片段。",
-      "latestAsset": "最新資產規格 · {name} · {kind}",
-      "latestPrompt": "圖片提示詞：{prompt}",
-      "latestSequence": "最新序列 · {name}",
-      "latestSequenceSummary": "{duration} 毫秒 · {clips} 個片段 · {cues} 個決策提示點",
-      "keepCurrent": "保留目前內容",
-      "useLatestPlan": "採用最新方案",
-      "removedSequenceCannotKeep": "此情節節點已被移除，因此目前序列不能保留為覆寫項。",
-      "resolved": "製作衝突已解決。",
-      "resolveError": "無法解決製作衝突。",
-      "confirmKeepTitle": "保留目前製作內容？",
-      "confirmLatestTitle": "採用最新批准方案？",
-      "confirmKeepDescription": "目前編輯會成為本章的明確覆寫項；後續方案更新會與這個保留版本比較。",
-      "confirmLatestDescription": "最新編譯的製作指令會取代存在衝突的可編輯欄位；已有的相容媒體仍可繼續使用。",
-      "confirmRemoveAssetDescription": "最新方案會移除此資產規格。只有在沒有有效分鏡引用需要它時，系統才會將其封存。",
-      "confirmRemoveSequenceDescription": "最新方案已移除此情節節點；該序列及其製作片段將被封存。",
-      "cancel": "取消",
-      "confirmKeep": "保留目前內容",
-      "confirmLatest": "採用最新方案"
-    },
     "productionGeneration": {
       "controlsAria": "為{name}生成媒體",
       "requestError": "無法開始生成媒體。",
@@ -2830,30 +2803,6 @@
         "character": "新增角色",
         "location": "新增場景",
         "prop": "新增道具"
-      },
-      "continueWithAgent": "在 FizzAgent 中繼續",
-      "stage": {
-        "plotRequired": {
-          "title": "AI 資產規劃正在等待情節樹",
-          "description": "FizzAgent 需要基於已批准的敘事拓撲提取可重用資產；你仍可在此手動新增和管理資產規格。"
-        },
-        "assetsRequired": {
-          "title": "AI 資產規劃已就緒",
-          "description": "你可以讓 FizzAgent 整理可重用的角色、場景和道具，也可以繼續手動管理資產規格。系統不會自動生成媒體。"
-        },
-        "stale": {
-          "title": "{count} 項資產規格需要處理",
-          "description": "現有內容仍可繼續檢視和編輯。請在下方處理過期項目；目前狀態的資產規格仍可正常生成媒體。"
-        },
-        "noAssets": {
-          "title": "本章不需要可重用的資產規格",
-          "description": "無需建立可重用的角色、場景或道具，可直接繼續規劃分鏡。"
-        }
-      },
-      "prompts": {
-        "plot": "請根據已批准的劇本準備本章情節樹，進入資產規格前先交給我審閱和批准。不要生成媒體。",
-        "assets": "請根據已批准的情節樹及其劇本解讀準備本章資產規格，進入分鏡前先交給我審閱和批准。不要生成媒體。",
-        "storyboard": "繼續為本章準備分鏡方案，儲存前先交給我審閱和批准。不要生成媒體。"
       },
       "count": "{count} 項資產規格",
       "loadError": "無法載入資產規格。",
@@ -2935,7 +2884,7 @@
         "videoPrompt": "影片提示詞",
         "delete": "刪除",
         "deleteTitle": "刪除{name}？",
-        "deleteDescription": "該資產規格會從本章移除，已有媒體歷史仍會保留。如分鏡片段仍在使用它，需要先解除引用。",
+        "deleteDescription": "該資產規格及其分鏡引用會從本章移除，已有媒體歷史仍會保留。",
         "deleteCancel": "取消",
         "deleteConfirm": "刪除",
         "deleted": "資產規格已刪除。",
@@ -3038,11 +2987,6 @@
       "clipCount": "{count} 個片段",
       "noClips": "此序列沒有片段。",
       "generationHint": "開啟此頁面不會生成媒體，也不會消耗點數。準備好後，可在已儲存的片段上選取「生成」。",
-      "status": {
-        "current": "目前版本",
-        "stale": "需要覆核",
-        "archived": "已封存"
-      },
       "seconds": "{value} 秒",
       "options": "選項",
       "addNode": "新增分鏡節點",
@@ -3138,7 +3082,6 @@
         "stepAria": "{step}：{status}",
         "status": {
           "current": "目前版本",
-          "stale": "需要覆核",
           "missing": "尚未就緒",
           "unknown": "狀態不可用"
         }

@@ -6,7 +6,6 @@ import { useTranslations } from "next-intl";
 import type { StoryStoryboardSequence } from "@/lib/story-production-api";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/i18n/navigation";
-import { StoryProductionConflictPanel } from "./story-production-conflict-panel";
 import { StoryClipDetailDialog } from "./story-clip-detail-dialog";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
 
@@ -161,11 +160,6 @@ export function StoryStoryboardSequenceSection({
         <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/60">
           {t("plotNode", { index: index + 1 })}
         </span>
-        {sequence.status !== "current" ? (
-          <span className="rounded-md bg-amber-300/12 px-2 py-0.5 text-[10px] font-semibold text-amber-100/85">
-            {t(`status.${sequence.status}`)}
-          </span>
-        ) : null}
       </div>
       <div className="mt-1 flex items-center justify-between gap-3">
         <div className="min-w-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -190,11 +184,6 @@ export function StoryStoryboardSequenceSection({
           {sequence.description}
         </p>
       ) : null}
-
-      <StoryProductionConflictPanel
-        scope={scope}
-        target={{ kind: "storyboard_sequence", item: sequence }}
-      />
 
       {sequence.clips.length === 0 ? (
         <p className="mt-4 text-sm text-white/64">{t("noClips")}</p>

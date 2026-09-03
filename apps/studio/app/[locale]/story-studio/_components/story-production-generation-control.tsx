@@ -104,11 +104,7 @@ export function StoryProductionGenerationControl({
   /** Asset output rows may submit another paid run while earlier runs remain active. */
   allowConcurrent?: boolean;
   onPendingPreviewCountChange?: (count: number) => void;
-  /**
-   * Stage-level fence. Stale aggregate stages may still render previews,
-   * details, and conflict resolution, but they must not expose a new paid
-   * generation or retry action until the whole stage is current again.
-   */
+  /** The owning surface can disable paid actions while it lacks an editable target. */
   allowGeneration?: boolean;
 }) {
   const t = useTranslations("storyStudio.productionGeneration");

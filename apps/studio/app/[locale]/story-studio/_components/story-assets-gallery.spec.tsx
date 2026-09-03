@@ -14,25 +14,8 @@ const queryState = vi.hoisted(() => ({
     id: string;
     version: number;
     kind: "character" | "location" | "prop";
-    status: "current" | "stale";
-    conflict: null;
-    pendingSourceFingerprint: null;
+    status: "current";
   }>,
-  production: {
-    projectId: "project-1",
-    chapterId: "chapter-1",
-    profile: { status: "current" },
-    script: { status: "current", documentId: "document-1", sequence: 1 },
-    plotTree: { status: "current", nodeCount: 1 },
-    assets: { status: "current", currentCount: 1, staleCount: 0 },
-    storyboard: {
-      status: "current",
-      sequenceCount: 0,
-      staleCount: 0,
-      missingPlotNodeIds: [],
-    },
-    ready: true,
-  },
 }));
 
 const navigationState = vi.hoisted(() => ({ kind: "character" }));
@@ -57,7 +40,7 @@ vi.mock("@tanstack/react-query", () => ({
                 capabilities: ["story.edit"],
               },
             }
-          : queryState.production,
+          : undefined,
     isPending: false,
     error: null,
     refetch: vi.fn(),
@@ -104,8 +87,6 @@ describe("StoryAssetsGallery empty states", () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     queryState.assets = [];
     navigationState.kind = "character";
-    queryState.production.plotTree = { status: "current", nodeCount: 1 };
-    queryState.production.assets = { status: "current", currentCount: 1, staleCount: 0 };
     useStoryProjectUiStore.setState({ activeChapterId: "chapter-1" });
     container = document.createElement("div");
     document.body.append(container);
@@ -124,8 +105,6 @@ describe("StoryAssetsGallery empty states", () => {
         version: 1,
         kind: "location",
         status: "current",
-        conflict: null,
-        pendingSourceFingerprint: null,
       },
     ];
 
@@ -137,8 +116,6 @@ describe("StoryAssetsGallery empty states", () => {
   });
 
   it("keeps manual asset creation available when the approved plan has no Asset Specs", async () => {
-    queryState.production.assets.currentCount = 0;
-
     await renderGallery();
 
     expect(container.textContent).toContain("categoryEmpty.character");
@@ -155,9 +132,6 @@ describe("StoryAssetsGallery empty states", () => {
   });
 
   it("keeps manual asset controls available before Plot approval", async () => {
-    queryState.production.plotTree.status = "missing";
-    queryState.production.assets = { status: "missing", currentCount: 0, staleCount: 0 };
-
     await renderGallery();
 
     expect(container.textContent).toContain("addByKind.character");
@@ -179,14 +153,12 @@ describe("StoryAssetsGallery empty states", () => {
     expect(messages.batch.allGeneratedTooltip).toBeTruthy();
   });
 
-  it("batches available current-tab assets that still need media, including stale specs", async () => {
+  it("batches available current-tab assets that still need media", async () => {
     queryState.assets = [
       ...makeAssets("character", 3, 1, 1),
       ...makeAssets("location", 4),
       ...makeAssets("prop", 3),
     ];
-    queryState.assets.at(-1)!.status = "stale";
-
     await renderGallery();
     expect(batchCount()).toBe("1");
 
@@ -234,8 +206,6 @@ function makeAssets(
     version: 1,
     kind,
     status: "current" as const,
-    conflict: null,
-    pendingSourceFingerprint: null,
     selectedMediaVersion: index < generatedCount ? {} : null,
     latestGeneration:
       index >= generatedCount && index < generatedCount + inFlightCount

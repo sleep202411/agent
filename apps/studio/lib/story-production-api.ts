@@ -1,19 +1,13 @@
-import type {
-  PutStoryStoryboardTimelineInput,
-  StoryAssetSpecPlanItem,
-  StoryStoryboardSequencePlanItem,
-} from "@repo/shared";
+import type { PutStoryStoryboardTimelineInput } from "@repo/shared";
 import { api } from "@/lib/api";
 
-export type StoryProductionStatus = "missing" | "current" | "stale";
-export type StoryProductionSpecStatus = "current" | "stale" | "archived";
+export type StoryProductionStatus = "missing" | "current";
+export type StoryProductionSpecStatus = "current" | "archived";
 export type StoryAssetSpecKind = "character" | "location" | "prop";
 
 export type StoryStoryboardClipKind = "image" | "video";
 export type StoryStoryboardBindingMode = "follow_selected" | "pinned";
-export type StoryProductionPlanDisposition = "planned" | "user_override";
 export type StoryAssetGenerationPurpose = "primary" | "turnaround";
-export type StoryProductionConflictResolution = "keep_current" | "use_latest_plan";
 export type StoryAiJobStatus =
   | "created"
   | "in_queue"
@@ -116,9 +110,6 @@ export interface StoryAssetSpec {
   generationConfig: unknown;
   sourceFingerprint: string;
   status: StoryProductionSpecStatus;
-  planDisposition: StoryProductionPlanDisposition;
-  pendingSourceFingerprint: string | null;
-  conflict: StoryProductionConflict<StoryAssetSpecPlanItem> | null;
   version: number;
   selectedMediaVersionId: string | null;
   selectedMediaVersion: StoryCreativeMediaVersion | null;
@@ -142,12 +133,10 @@ export interface StoryProductionState {
   assets: {
     status: StoryProductionStatus;
     currentCount: number;
-    staleCount: number;
   };
   storyboard: {
     status: StoryProductionStatus;
     sequenceCount: number;
-    staleCount: number;
     missingPlotNodeIds: string[];
   };
   ready: boolean;
@@ -219,45 +208,11 @@ export interface StoryStoryboardSequence {
   durationMs: number;
   sourceFingerprint: string;
   status: StoryProductionSpecStatus;
-  planDisposition: StoryProductionPlanDisposition;
-  pendingSourceFingerprint: string | null;
-  conflict: StoryProductionConflict<StoryStoryboardSequencePlanItem> | null;
   version: number;
   userModifiedAt: string | null;
   clips: StoryStoryboardClip[];
   cues: StoryStoryboardCue[];
   updatedAt: string;
-}
-
-export interface StoryProductionConflict<TPendingItem> {
-  pendingSourceFingerprint: string;
-  pendingPlanFingerprint: string;
-  removed: boolean;
-  pendingItem: TPendingItem | null;
-}
-
-export interface ResolveStoryProductionConflictInput {
-  expectedVersion: number;
-  expectedPendingSourceFingerprint: string;
-  resolution: StoryProductionConflictResolution;
-}
-
-export interface StoryAssetSpecConflictResolutionResult {
-  targetKind: "asset_spec";
-  targetId: string;
-  resolution: StoryProductionConflictResolution;
-  outcome: "kept_current" | "applied_latest" | "archived";
-  item: StoryAssetSpec;
-  productionState: StoryProductionState;
-}
-
-export interface StoryStoryboardSequenceConflictResolutionResult {
-  targetKind: "storyboard_sequence";
-  targetId: string;
-  resolution: StoryProductionConflictResolution;
-  outcome: "kept_current" | "applied_latest" | "archived";
-  item: StoryStoryboardSequence;
-  productionState: StoryProductionState;
 }
 
 export interface CreateStoryAssetGenerationInput {
@@ -839,44 +794,6 @@ export async function putStoryStoryboardTimeline(
   return value;
 }
 
-export async function resolveStoryAssetSpecConflict(
-  projectId: string,
-  chapterId: string,
-  assetSpecId: string,
-  idempotencyKey: string,
-  input: ResolveStoryProductionConflictInput
-): Promise<StoryAssetSpecConflictResolutionResult> {
-  const value = await api.post<StoryAssetSpecConflictResolutionResult>(
-    chapterPath(
-      projectId,
-      chapterId,
-      `asset-specs/${encodeURIComponent(assetSpecId)}/conflict-resolution`
-    ),
-    projectMutationConfig(idempotencyKey, input)
-  );
-  assertConflictResolutionScope(value, "asset_spec", assetSpecId, projectId, chapterId);
-  return value;
-}
-
-export async function resolveStoryStoryboardSequenceConflict(
-  projectId: string,
-  chapterId: string,
-  sequenceId: string,
-  idempotencyKey: string,
-  input: ResolveStoryProductionConflictInput
-): Promise<StoryStoryboardSequenceConflictResolutionResult> {
-  const value = await api.post<StoryStoryboardSequenceConflictResolutionResult>(
-    chapterPath(
-      projectId,
-      chapterId,
-      `storyboard/sequences/${encodeURIComponent(sequenceId)}/conflict-resolution`
-    ),
-    projectMutationConfig(idempotencyKey, input)
-  );
-  assertConflictResolutionScope(value, "storyboard_sequence", sequenceId, projectId, chapterId);
-  return value;
-}
-
 export function createStoryProductionIdempotencyKey(operation: string): string {
   return `${operation}:${crypto.randomUUID()}`;
 }
@@ -991,20 +908,6 @@ function assertClipGenerationScope(
   ) {
     throw new Error("Story generation API returned data outside the requested storyboard scope.");
   }
-}
-
-function assertConflictResolutionScope(
-  value: StoryAssetSpecConflictResolutionResult | StoryStoryboardSequenceConflictResolutionResult,
-  targetKind: "asset_spec" | "storyboard_sequence",
-  targetId: string,
-  projectId: string,
-  chapterId: string
-): void {
-  if (value.targetKind !== targetKind || value.targetId !== targetId) {
-    throw new Error("Story conflict resolution returned data outside the requested target scope.");
-  }
-  assertChapterScope(value.item, projectId, chapterId);
-  assertChapterScope(value.productionState, projectId, chapterId);
 }
 
 function assertGenerationCommandUrl(actual: string, expected: string): void {

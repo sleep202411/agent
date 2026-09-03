@@ -2759,33 +2759,6 @@
     "scriptDoc": {
       "placeholder": "Write your script — the pipeline reads it from here…"
     },
-    "productionConflict": {
-      "ariaLabel": "Production plan conflict",
-      "title": "Your edits conflict with the latest approved plan",
-      "description": "Review the pending plan before deciding whether this chapter keeps your current production work or adopts the latest compiled version.",
-      "metadataUnavailable": "The conflict summary has not arrived from the server yet. Refresh this chapter before choosing a resolution.",
-      "latestRemovesItem": "The latest plan removes this item",
-      "assetRemovalSummary": "Use latest plan will archive {name}. Keep current preserves it as a chapter override when references allow.",
-      "sequenceRemovalSummary": "Use latest plan will archive {name} and its clips because its Plot node no longer exists.",
-      "latestAsset": "Latest Asset Spec · {name} · {kind}",
-      "latestPrompt": "Image prompt: {prompt}",
-      "latestSequence": "Latest sequence · {name}",
-      "latestSequenceSummary": "{duration} ms · {clips} clips · {cues} decision cues",
-      "keepCurrent": "Keep current",
-      "useLatestPlan": "Use latest plan",
-      "removedSequenceCannotKeep": "This Plot node was removed, so the current sequence cannot remain as an override.",
-      "resolved": "Production conflict resolved.",
-      "resolveError": "The production conflict could not be resolved.",
-      "confirmKeepTitle": "Keep the current production work?",
-      "confirmLatestTitle": "Use the latest approved plan?",
-      "confirmKeepDescription": "Your current edits become an explicit chapter override. Future plan updates will compare against this preserved version.",
-      "confirmLatestDescription": "The latest compiled production instructions replace the conflicting editable fields. Existing compatible media remains available.",
-      "confirmRemoveAssetDescription": "The latest plan removes this Asset Spec. It will be archived only when no active Storyboard reference still requires it.",
-      "confirmRemoveSequenceDescription": "The latest plan removes this Plot node. This sequence and its production clips will be archived.",
-      "cancel": "Cancel",
-      "confirmKeep": "Keep current",
-      "confirmLatest": "Use latest plan"
-    },
     "productionGeneration": {
       "controlsAria": "Media generation for {name}",
       "requestError": "Media generation could not be started.",
@@ -2830,30 +2803,6 @@
         "character": "Add Character",
         "location": "Add Scene",
         "prop": "Add Prop"
-      },
-      "continueWithAgent": "Continue in FizzAgent",
-      "stage": {
-        "plotRequired": {
-          "title": "AI asset planning is waiting for the Plot Tree",
-          "description": "FizzAgent needs an approved narrative topology before extracting reusable assets. You can still add and manage Asset Specs manually."
-        },
-        "assetsRequired": {
-          "title": "AI asset planning is ready",
-          "description": "Ask FizzAgent to derive reusable characters, scenes, and props, or continue managing Asset Specs manually. No media is generated automatically."
-        },
-        "stale": {
-          "title": "{count, plural, one {# Asset Spec needs attention} other {# Asset Specs need attention}}",
-          "description": "Existing work remains visible for review. Resolve the stale items below; current Asset Specs remain editable and generatable."
-        },
-        "noAssets": {
-          "title": "No reusable Asset Specs are needed",
-          "description": "This approved chapter can continue to Storyboard without creating reusable characters, scenes, or props."
-        }
-      },
-      "prompts": {
-        "plot": "Prepare the Plot Tree for this chapter from the approved Script. Let me review and approve it before Asset Specs. Do not generate media.",
-        "assets": "Prepare Asset Specs for this chapter from the approved Plot Tree and Script interpretation. Let me review and approve them before Storyboard. Do not generate media.",
-        "storyboard": "Continue this chapter to Storyboard. Prepare the storyboard plan for my review and approval. Do not generate media."
       },
       "count": "{count, plural, one {# Asset Spec} other {# Asset Specs}}",
       "loadError": "Asset Specs could not be loaded.",
@@ -2935,7 +2884,7 @@
         "videoPrompt": "Video Prompt",
         "delete": "Delete",
         "deleteTitle": "Delete {name}?",
-        "deleteDescription": "This removes the Asset Spec from the chapter. Existing media history is preserved. An Asset Spec still used by Storyboard clips must be unlinked first.",
+        "deleteDescription": "This removes the Asset Spec and its Storyboard references from the chapter. Existing media history is preserved.",
         "deleteCancel": "Cancel",
         "deleteConfirm": "Delete",
         "deleted": "Asset Spec deleted.",
@@ -3038,11 +2987,6 @@
       "clipCount": "{count, plural, one {# clip} other {# clips}}",
       "noClips": "This sequence has no clips.",
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
-      "status": {
-        "current": "Current",
-        "stale": "Needs review",
-        "archived": "Archived"
-      },
       "seconds": "{value}s",
       "options": "Options",
       "addNode": "Add storyboard node",
@@ -3138,7 +3082,6 @@
         "stepAria": "{step}: {status}",
         "status": {
           "current": "current",
-          "stale": "needs review",
           "missing": "not ready",
           "unknown": "status unavailable"
         }

@@ -85,12 +85,12 @@ describe("StoryProductionGenerationControl", () => {
     expect(apiMocks.retryAsset).not.toHaveBeenCalled();
   });
 
-  it("allows a stale target to generate from its persisted version", async () => {
+  it("generates from the target's persisted version", async () => {
     const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
     apiMocks.createAsset.mockResolvedValue(accepted);
     apiMocks.getAsset.mockResolvedValue(accepted);
 
-    await renderControl(assetTarget(null, "stale"));
+    await renderControl(assetTarget(null));
     await act(async () => button("generate")?.click());
 
     await vi.waitFor(() => expect(apiMocks.createAsset).toHaveBeenCalledTimes(1));
@@ -529,7 +529,7 @@ function mediaVersion(id: string, previewUrl: string): StoryCreativeMediaVersion
 
 function assetTarget(
   latestGeneration: StoryLatestGeneration | null,
-  status: "current" | "stale" | "archived" = "current"
+  status: "current" | "archived" = "current"
 ) {
   return {
     kind: "asset_spec" as const,

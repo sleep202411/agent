@@ -55,11 +55,10 @@ const EMPTY_STORY_PRODUCTION_STATE = {
     sequence: null,
   },
   plotTree: { status: 'missing' as const, nodeCount: 0 },
-  assets: { status: 'missing' as const, currentCount: 0, staleCount: 0 },
+  assets: { status: 'missing' as const, currentCount: 0 },
   storyboard: {
     status: 'missing' as const,
     sequenceCount: 0,
-    staleCount: 0,
     missingPlotNodeIds: [],
   },
   ready: false,

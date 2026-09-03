@@ -1,9 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest assertions intentionally inspect mocked Prisma methods by reference. */
-import {
-  StoryProductionPlanDisposition,
-  StoryProductionSpecStatus,
-  type Prisma,
-} from '@prisma/client';
+import { StoryProductionSpecStatus, type Prisma } from '@prisma/client';
 import { reconcileStoryTimelinesWithDraft } from './story-timeline-reconcile';
 
 describe('reconcileStoryTimelinesWithDraft', () => {
@@ -47,7 +43,6 @@ describe('reconcileStoryTimelinesWithDraft', () => {
         stableKey: 'clip:one',
         suggestedDurationMs: 0,
         durationMs: 0,
-        planDisposition: StoryProductionPlanDisposition.user_override,
         createdByUserId: 'user-1',
       }),
     });
@@ -78,8 +73,6 @@ describe('reconcileStoryTimelinesWithDraft', () => {
       where: { id: 'sequence-1' },
       data: {
         status: StoryProductionSpecStatus.current,
-        pendingSourceFingerprint: null,
-        pendingPlanSnapshotId: null,
       },
     });
     expect(tx.storyStoryboardSequence.create).not.toHaveBeenCalled();
@@ -106,8 +99,6 @@ describe('reconcileStoryTimelinesWithDraft', () => {
       data: {
         storyChapterId: 'chapter-1',
         status: StoryProductionSpecStatus.current,
-        pendingSourceFingerprint: null,
-        pendingPlanSnapshotId: null,
       },
     });
     expect(tx.storyStoryboardSequence.create).not.toHaveBeenCalled();

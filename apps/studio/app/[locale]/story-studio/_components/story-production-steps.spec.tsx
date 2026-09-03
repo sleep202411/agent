@@ -20,7 +20,7 @@ vi.mock("@tanstack/react-query", () => ({
     isPending: false,
     data: {
       script: { status: "current" },
-      plotTree: { status: "stale" },
+      plotTree: { status: "missing" },
       assets: { status: "missing" },
       storyboard: { status: "current" },
       ready: false,

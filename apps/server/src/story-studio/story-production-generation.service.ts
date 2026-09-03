@@ -2635,11 +2635,7 @@ function characterTurnaroundPrompt(
 }
 
 function clipTarget(row: ClipTargetRow): StoryGenerationTarget {
-  const targetStatus =
-    row.status === StoryProductionSpecStatus.current &&
-    row.sequence.status !== StoryProductionSpecStatus.current
-      ? StoryProductionSpecStatus.stale
-      : row.status;
+  const targetStatus = row.status;
   const references = row.assetBindings.map((binding) => {
     const mediaVersion =
       binding.mode === StoryStoryboardBindingMode.pinned

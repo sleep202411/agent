@@ -1,5 +1,6 @@
 import { StoryScreenplaySchema } from '@repo/shared/story-agent';
 import {
+  normalizeStoryboardAssetMentions,
   StoryAssetPlanSchema,
   StoryStoryboardSequencePlanItemSchema,
 } from '@repo/shared/story-production';
@@ -82,7 +83,7 @@ describe('StoryAuthoringPipelineService', () => {
     );
   });
 
-  it('rejects missing per-scene Asset mentions inside the storyboard baton so that baton can retry', async () => {
+  it('treats sourceNodeIds as hints and keeps a sequence without asset mentions', async () => {
     const assetPlan = StoryAssetPlanSchema.parse({
       assetSpecs: [
         {
@@ -113,20 +114,10 @@ describe('StoryAuthoringPipelineService', () => {
       ],
       cues: [],
     });
-    const repaired = StoryStoryboardSequencePlanItemSchema.parse({
-      ...missingMention,
-      clips: [
-        {
-          ...missingMention.clips[0],
-          videoPrompt:
-            'A courier enters @location.reverse-town beneath rising rain.',
-        },
-      ],
-    });
     let batonIssues: string[] = [];
     mockedRunStoryAuthoringStage.mockImplementation((_model, call) => {
       batonIssues = call.validate?.(missingMention as never) ?? [];
-      return Promise.resolve(repaired as never);
+      return Promise.resolve(missingMention as never);
     });
 
     const result = await new StoryAuthoringPipelineService().planStoryboard({
@@ -136,9 +127,57 @@ describe('StoryAuthoringPipelineService', () => {
       signal: new AbortController().signal,
     });
 
-    expect(batonIssues).toContain(
-      'Storyboard sequence for Plot node "opening" must @mention Asset Spec "location.reverse-town" because that Asset Spec declares this node in sourceNodeIds.',
-    );
-    expect(result.storyboardSequences).toEqual([repaired]);
+    expect(batonIssues).toEqual([]);
+    expect(result.storyboardSequences).toEqual([missingMention]);
+  });
+
+  it('repairs unambiguous model aliases and removes unknown @ identity', () => {
+    const sequence = StoryStoryboardSequencePlanItemSchema.parse({
+      plotNodeId: 'opening',
+      title: '进入逆流镇',
+      description: '信使进入城镇。',
+      durationMs: 2_000,
+      clips: [
+        {
+          stableKey: 'shot.opening.main',
+          kind: 'video',
+          title: '信使抵达',
+          description: '信使走进街道。',
+          startMs: 0,
+          durationMs: 2_000,
+          videoPrompt:
+            '@character_LinYu enters @location.reverse-town beside @invented_extra.',
+        },
+      ],
+      cues: [],
+    });
+    const assets = StoryAssetPlanSchema.parse({
+      assetSpecs: [
+        {
+          stableKey: 'LinYu',
+          kind: 'character',
+          name: '林雨',
+          description: '信使。',
+          imagePrompt: 'Character reference.',
+          sourceCharacterId: 'LinYu',
+          sourceNodeIds: ['opening'],
+        },
+        {
+          stableKey: 'location.reverse-town',
+          kind: 'location',
+          name: '逆流镇',
+          description: '雨水倒流的城镇街道。',
+          imagePrompt: 'Location reference.',
+          sourceNodeIds: [],
+        },
+      ],
+    }).assetSpecs;
+
+    expect(
+      normalizeStoryboardAssetMentions(sequence, assets).clips[0],
+    ).toMatchObject({
+      videoPrompt:
+        '@LinYu enters @location.reverse-town beside invented_extra.',
+    });
   });
 });

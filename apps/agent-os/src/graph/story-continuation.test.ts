@@ -162,9 +162,9 @@ describe("durable Story production continuation", () => {
     const threadId = "story-continuation-multi-stage";
     const observed: string[] = [];
     const production = {
-      assets: "missing" as "missing" | "current" | "stale",
-      plot: "missing" as "missing" | "current" | "stale",
-      storyboard: "missing" as "missing" | "current" | "stale",
+      assets: "missing" as "missing" | "current",
+      plot: "missing" as "missing" | "current",
+      storyboard: "missing" as "missing" | "current",
     };
     const domain: DomainPort = {
       async execute(toolId) {
@@ -480,9 +480,9 @@ function generationBatch(
 }
 
 function storyReadResult(input: {
-  assets: "missing" | "current" | "stale";
-  plot: "missing" | "current" | "stale";
-  storyboard: "missing" | "current" | "stale";
+  assets: "missing" | "current";
+  plot: "missing" | "current";
+  storyboard: "missing" | "current";
 }) {
   return {
     chapterId: CHAPTER_ID,
@@ -504,12 +504,10 @@ function storyReadResult(input: {
       assets: {
         status: input.assets,
         currentCount: input.assets === "current" ? 3 : 0,
-        staleCount: input.assets === "stale" ? 3 : 0,
       },
       storyboard: {
         status: input.storyboard,
         sequenceCount: input.storyboard === "current" ? 2 : 0,
-        staleCount: input.storyboard === "stale" ? 2 : 0,
         missingPlotNodeIds: [],
       },
       ready:

@@ -21,7 +21,6 @@ import {
   PatchStoryStoryboardSequenceSchema,
   PutStoryStoryboardTimelineSchema,
   PutStoryStoryboardBindingSchema,
-  ResolveStoryProductionConflictSchema,
   StoryAssetSpecParamsSchema,
   StoryProductionChapterParamsSchema,
   StoryStoryboardBindingParamsSchema,
@@ -36,7 +35,6 @@ import {
   type PatchStoryStoryboardSequenceInput,
   type PutStoryStoryboardTimelineInput,
   type PutStoryStoryboardBindingInput,
-  type ResolveStoryProductionConflictInput,
   type StoryAssetSpecParams,
   type StoryProductionChapterParams,
   type StoryStoryboardBindingParams,
@@ -150,29 +148,6 @@ export class StoryProductionPlanController {
     };
   }
 
-  @Post('asset-specs/:assetSpecId/conflict-resolution')
-  async resolveAssetSpecConflict(
-    @CurrentUser() user: AuthUser,
-    @Headers('idempotency-key')
-    idempotencyHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryAssetSpecParamsSchema))
-    params: StoryAssetSpecParams,
-    @Body(new ZodValidationPipe(ResolveStoryProductionConflictSchema))
-    body: ResolveStoryProductionConflictInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.resolveAssetSpecConflict(
-        user,
-        params.projectId,
-        params.chapterId,
-        params.assetSpecId,
-        requiredIdempotencyKey(idempotencyHeader),
-        body,
-      ),
-    };
-  }
-
   @Get('storyboard')
   async getStoryboard(
     @CurrentUser() user: AuthUser,
@@ -202,29 +177,6 @@ export class StoryProductionPlanController {
     return {
       code: 200,
       data: await this.production.patchSequence(
-        user,
-        params.projectId,
-        params.chapterId,
-        params.sequenceId,
-        requiredIdempotencyKey(idempotencyHeader),
-        body,
-      ),
-    };
-  }
-
-  @Post('storyboard/sequences/:sequenceId/conflict-resolution')
-  async resolveStoryboardSequenceConflict(
-    @CurrentUser() user: AuthUser,
-    @Headers('idempotency-key')
-    idempotencyHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryStoryboardSequenceParamsSchema))
-    params: StoryStoryboardSequenceParams,
-    @Body(new ZodValidationPipe(ResolveStoryProductionConflictSchema))
-    body: ResolveStoryProductionConflictInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.resolveStoryboardSequenceConflict(
         user,
         params.projectId,
         params.chapterId,

@@ -528,9 +528,6 @@ function asset(id: string, name: string, previewUrl: string): StoryAssetSpec {
     generationConfig: {},
     sourceFingerprint: `source-${id}`,
     status: "current",
-    planDisposition: "planned",
-    pendingSourceFingerprint: null,
-    conflict: null,
     version: 1,
     selectedMediaVersionId: `media-${id}`,
     selectedMediaVersion: {

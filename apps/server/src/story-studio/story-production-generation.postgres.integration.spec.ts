@@ -459,28 +459,25 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     ]);
     expect(asset).toMatchObject({
       status: 'current',
-      pendingSourceFingerprint: null,
       userModifiedAt: null,
       selectedMediaVersionId: generatedAsset.selectedMediaVersionId,
     });
     expect(sequence).toMatchObject({
       status: 'current',
-      pendingSourceFingerprint: null,
     });
     expect(clip).toMatchObject({
       status: 'current',
-      pendingSourceFingerprint: null,
       userModifiedAt: null,
       selectedMediaVersionId: generatedClip.selectedMediaVersionId,
     });
     expect(productionState).toMatchObject({
-      assets: { status: 'current', staleCount: 0 },
-      storyboard: { status: 'current', staleCount: 0 },
+      assets: { status: 'current' },
+      storyboard: { status: 'current' },
       ready: true,
     });
   });
 
-  it('allows a clip to generate when its parent Storyboard sequence is stale', async () => {
+  it('allows a clip to generate without an upstream freshness gate', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
     const reference = await createCompletedAssetGeneration(
       prisma,
@@ -493,14 +490,6 @@ describePostgres('Story production generation PostgreSQL integration', () => {
       id: reference.job.id,
       sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
     } as AiJob);
-    await prisma.storyStoryboardSequence.update({
-      where: { id: fixture.sequenceId },
-      data: {
-        status: StoryProductionSpecStatus.stale,
-        pendingSourceFingerprint: 'f'.repeat(64),
-        version: { increment: 1 },
-      },
-    });
     await expect(
       service.createStoryboardClipGeneration(
         { userId: fixture.userId } as never,
@@ -568,8 +557,8 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     expect(asset.status).toBe(StoryProductionSpecStatus.current);
     expect(sequence.status).toBe(StoryProductionSpecStatus.current);
     expect(productionState).toMatchObject({
-      assets: { status: 'stale' },
-      storyboard: { status: 'stale' },
+      assets: { status: 'current' },
+      storyboard: { status: 'current' },
       ready: false,
     });
 
@@ -612,15 +601,8 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     expect(aiGeneration.submitJob).toHaveBeenCalledTimes(2);
   });
 
-  it('allows a stale Asset to generate from its persisted snapshot', async () => {
+  it('allows an editable Asset to generate from its persisted snapshot', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
-    await prisma.storyAssetSpec.update({
-      where: { id: fixture.assetSpecId },
-      data: {
-        status: StoryProductionSpecStatus.stale,
-        pendingSourceFingerprint: 'f'.repeat(64),
-      },
-    });
     const aiGeneration = acceptingGenerationGateway(prisma, fixture);
     const service = materializationService(prisma, fixture, true, aiGeneration);
 
@@ -850,7 +832,7 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     expect(materialized.materializedAt).toBeInstanceOf(Date);
   });
 
-  it('materializes but never selects a completed clip output after its parent sequence is invalidated and restored', async () => {
+  it('materializes but never selects a completed clip output after its parent sequence changes', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
     const service = materializationService(prisma, fixture);
     const assetGeneration = await createCompletedAssetGeneration(
@@ -870,16 +852,14 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     await prisma.storyStoryboardSequence.update({
       where: { id: fixture.sequenceId },
       data: {
-        status: StoryProductionSpecStatus.stale,
-        pendingSourceFingerprint: 'f'.repeat(64),
+        description: 'A concurrent creator edit.',
         version: { increment: 1 },
       },
     });
     await prisma.storyStoryboardSequence.update({
       where: { id: fixture.sequenceId },
       data: {
-        status: StoryProductionSpecStatus.current,
-        pendingSourceFingerprint: null,
+        description: 'A second concurrent creator edit.',
         version: { increment: 1 },
       },
     });
