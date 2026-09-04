@@ -8,13 +8,18 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import IconAlertTriangle from "@tabler/icons-react-native/icons/IconAlertTriangle";
+import IconMessageCircle from "@tabler/icons-react-native/icons/IconMessageCircle";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
 import {
+  fillMessageTemplate,
+  storyAssetSpecConflictIsResolvable,
   storyProductionApi,
   type StoryAssetSpec,
+  type StoryAssetSpecConflictResolutionResult,
   type StoryAssetSpecKind,
   type StoryProductionState,
 } from "@/features/agent/api/story-production-api";
@@ -32,7 +37,7 @@ import { useTranslations, type MessageKey } from "@/i18n";
 const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
 
 function replaceCount(template: string, count: number): string {
-  return template.replace(/\{count\}/g, String(count));
+  return fillMessageTemplate(template, { count });
 }
 
 /** Browse-only assets gallery — mirrors H5 `StoryAssetsGallery` (no generation). */
@@ -92,10 +97,26 @@ export default function AgentAssetsScreen() {
   const staleContent = Boolean(
     production && storyAssetsStageHasStaleContent(production, assets.length)
   );
+  const resolvableStaleCount = assets.filter(storyAssetSpecConflictIsResolvable).length;
+  const staleNeedsAgent = (production?.assets.staleCount ?? 0) > resolvableStaleCount;
   const topPad = STORY_HEADER_CONTENT_GAP;
   const busy = chapterLoading || loading;
   const displayError = chapterError ?? error;
   const showGallery = !busy && !displayError && (guidance === null || staleContent);
+
+  const applyConflictResult = (result: StoryAssetSpecConflictResolutionResult) => {
+    setProduction(result.productionState);
+    setAssets((current) => {
+      if (result.item.status === "archived") {
+        return current.filter((asset) => asset.id !== result.item.id);
+      }
+      return current.map((asset) => (asset.id === result.item.id ? result.item : asset));
+    });
+    setDetailAsset((current) => {
+      if (!current || current.id !== result.item.id) return current;
+      return result.item.status === "archived" ? null : result.item;
+    });
+  };
 
   const continueWithAgent = (promptKey: MessageKey) => {
     router.push({
@@ -189,18 +210,20 @@ export default function AgentAssetsScreen() {
         ) : null}
 
         {!busy && !displayError && chapterId && staleContent ? (
-          <StageBlock
+          <StageNotice
             title={replaceCount(
               t("agent.assets.stage.stale.title"),
               production?.assets.staleCount ?? 0
             )}
             description={t("agent.assets.stage.stale.description")}
-            actionLabel={t("agent.assets.continueWithAgent")}
-            onAction={() => continueWithAgent("agent.assets.prompts.assets")}
+            actionLabel={staleNeedsAgent ? t("agent.assets.continueWithAgent") : undefined}
+            onAction={
+              staleNeedsAgent ? () => continueWithAgent("agent.assets.prompts.assets") : undefined
+            }
           />
         ) : null}
 
-        {!busy && !displayError && guidance === "plotRequired" ? (
+        {!busy && !displayError && !staleContent && guidance === "plotRequired" ? (
           <StageBlock
             title={t("agent.assets.stage.plotRequired.title")}
             description={t("agent.assets.stage.plotRequired.description")}
@@ -209,7 +232,7 @@ export default function AgentAssetsScreen() {
           />
         ) : null}
 
-        {!busy && !displayError && guidance === "assetsRequired" ? (
+        {!busy && !displayError && !staleContent && guidance === "assetsRequired" ? (
           <StageBlock
             title={t("agent.assets.stage.assetsRequired.title")}
             description={t("agent.assets.stage.assetsRequired.description")}
@@ -218,7 +241,7 @@ export default function AgentAssetsScreen() {
           />
         ) : null}
 
-        {!busy && !displayError && guidance === "noAssets" ? (
+        {!busy && !displayError && !staleContent && guidance === "noAssets" ? (
           <StageBlock
             title={t("agent.assets.stage.noAssets.title")}
             description={t("agent.assets.stage.noAssets.description")}
@@ -242,10 +265,17 @@ export default function AgentAssetsScreen() {
           />
         ) : null}
 
-        {showGallery && filtered.length > 0 ? (
+        {showGallery && filtered.length > 0 && chapterId ? (
           <View style={styles.list}>
             {filtered.map((asset) => (
-              <StoryAssetSpecCard key={asset.id} asset={asset} onPressDetails={setDetailAsset} />
+              <StoryAssetSpecCard
+                key={asset.id}
+                asset={asset}
+                projectId={projectId}
+                chapterId={chapterId}
+                onPressDetails={setDetailAsset}
+                onConflictResolved={applyConflictResult}
+              />
             ))}
           </View>
         ) : null}
@@ -257,6 +287,38 @@ export default function AgentAssetsScreen() {
         onClose={() => setDetailAsset(null)}
       />
     </ThemedView>
+  );
+}
+
+function StageNotice({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <View style={styles.notice}>
+      <View style={styles.noticeCopy}>
+        <IconAlertTriangle size={16} color="#E8B931" strokeWidth={1.8} />
+        <View style={styles.noticeText}>
+          <ThemedText style={styles.noticeTitle}>{title}</ThemedText>
+          <ThemedText style={styles.noticeDescription}>{description}</ThemedText>
+        </View>
+      </View>
+      {actionLabel && onAction ? (
+        <Pressable accessibilityRole="button" onPress={onAction}>
+          <View style={styles.noticeAction}>
+            <IconMessageCircle size={16} color="#FFFFFF" strokeWidth={1.8} />
+            <ThemedText type="smallBold">{actionLabel}</ThemedText>
+          </View>
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -391,5 +453,43 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: Spacing.four,
+  },
+  notice: {
+    borderColor: "rgba(255,255,255,0.08)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.three,
+    paddingVertical: Spacing.three,
+  },
+  noticeCopy: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+  },
+  noticeText: {
+    flex: 1,
+    gap: 4,
+    minWidth: 0,
+  },
+  noticeTitle: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  noticeDescription: {
+    color: "rgba(255,255,255,0.64)",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  noticeAction: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 6,
+    height: 40,
+    justifyContent: "center",
+    paddingHorizontal: Spacing.four,
   },
 });

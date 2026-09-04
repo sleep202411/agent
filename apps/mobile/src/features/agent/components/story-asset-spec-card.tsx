@@ -3,7 +3,11 @@ import { Pressable, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
-import type { StoryAssetSpec } from "@/features/agent/api/story-production-api";
+import type {
+  StoryAssetSpec,
+  StoryAssetSpecConflictResolutionResult,
+} from "@/features/agent/api/story-production-api";
+import { StoryProductionConflictPanel } from "@/features/agent/components/story-production-conflict-panel";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
@@ -27,10 +31,16 @@ function mediaUrl(asset: StoryAssetSpec): string | undefined {
 /** Browse-only asset card — H5 `StoryAssetSpecCard` media-first layout. */
 export function StoryAssetSpecCard({
   asset,
+  projectId,
+  chapterId,
   onPressDetails,
+  onConflictResolved,
 }: {
   asset: StoryAssetSpec;
+  projectId: string;
+  chapterId: string;
   onPressDetails?: (asset: StoryAssetSpec) => void;
+  onConflictResolved?: (result: StoryAssetSpecConflictResolutionResult) => void;
 }) {
   const t = useTranslations();
   const theme = useTheme();
@@ -73,6 +83,9 @@ export function StoryAssetSpecCard({
           </View>
         ) : null}
       </View>
+      {stale ? (
+        <ThemedText style={styles.blockedHint}>{t("agent.assets.targetNotCurrent")}</ThemedText>
+      ) : null}
       <View style={styles.copy}>
         <ThemedText type="smallBold" numberOfLines={1} style={styles.name}>
           {asset.name}
@@ -83,6 +96,12 @@ export function StoryAssetSpecCard({
           </ThemedText>
         ) : null}
       </View>
+      <StoryProductionConflictPanel
+        projectId={projectId}
+        chapterId={chapterId}
+        asset={asset}
+        onResolved={(result) => onConflictResolved?.(result)}
+      />
     </View>
   );
 }
@@ -143,6 +162,12 @@ const styles = StyleSheet.create({
     color: "rgba(253, 230, 138, 0.92)",
     fontSize: 10,
     fontWeight: "600",
+  },
+  blockedHint: {
+    color: "rgba(253, 230, 138, 0.82)",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 8,
   },
   copy: {
     gap: 4,

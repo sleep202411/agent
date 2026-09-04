@@ -26,6 +26,22 @@ export type StoryCreativeMediaVersion = {
   mimeType: string | null;
 };
 
+export type StoryAssetSpecPlanItem = {
+  kind: StoryAssetSpecKind;
+  name: string;
+  description: string;
+  imagePrompt: string;
+};
+
+export type StoryProductionConflict<TPendingItem> = {
+  pendingSourceFingerprint: string;
+  pendingPlanFingerprint: string;
+  removed: boolean;
+  pendingItem: TPendingItem | null;
+};
+
+export type StoryProductionConflictResolution = "keep_current" | "use_latest_plan";
+
 export type StoryAssetSpec = {
   id: string;
   projectId: string;
@@ -36,8 +52,20 @@ export type StoryAssetSpec = {
   description: string | null;
   imagePrompt?: string | null;
   status: StoryProductionSpecStatus;
+  version: number;
+  pendingSourceFingerprint: string | null;
+  conflict: StoryProductionConflict<StoryAssetSpecPlanItem> | null;
   selectedMediaVersion: StoryCreativeMediaVersion | null;
   mediaVersions: StoryCreativeMediaVersion[];
+};
+
+export type StoryAssetSpecConflictResolutionResult = {
+  targetKind: "asset_spec";
+  targetId: string;
+  resolution: StoryProductionConflictResolution;
+  outcome: "kept_current" | "applied_latest" | "archived";
+  item: StoryAssetSpec;
+  productionState: StoryProductionState;
 };
 
 export type StoryStoryboardClipKind = "image" | "video";
@@ -193,6 +221,31 @@ export const storyProductionApi = {
     });
   },
 
+  resolveAssetSpecConflict(
+    projectId: string,
+    chapterId: string,
+    assetSpecId: string,
+    input: {
+      expectedVersion: number;
+      expectedPendingSourceFingerprint: string;
+      resolution: StoryProductionConflictResolution;
+    }
+  ) {
+    return api.post<StoryAssetSpecConflictResolutionResult>(
+      chapterPath(
+        projectId,
+        chapterId,
+        `asset-specs/${encodeURIComponent(assetSpecId)}/conflict-resolution`
+      ),
+      {
+        ...AURORA,
+        data: input,
+        headers: { "Idempotency-Key": createStoryProductionIdempotencyKey() },
+        timeout: 30_000,
+      }
+    );
+  },
+
   ensureScriptDocument(projectId: string, chapterId: string, signal?: AbortSignal) {
     return api.post<{ document: StoryDocumentRef }>(
       chapterPath(projectId, chapterId, "documents/script/ensure"),
@@ -305,4 +358,22 @@ export function fillMessageTemplate(
   return template.replace(/\{(\w+)\}/g, (_, key: string) =>
     vars[key] === undefined ? `{${key}}` : String(vars[key])
   );
+}
+
+export function storyAssetSpecConflictIsResolvable(asset: StoryAssetSpec): boolean {
+  return (
+    asset.status === "stale" &&
+    asset.conflict != null &&
+    asset.pendingSourceFingerprint != null &&
+    typeof asset.version === "number" &&
+    asset.pendingSourceFingerprint === asset.conflict.pendingSourceFingerprint
+  );
+}
+
+function createStoryProductionIdempotencyKey(): string {
+  const uuid =
+    typeof globalThis.crypto?.randomUUID === "function"
+      ? globalThis.crypto.randomUUID()
+      : `story-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `story-conflict-resolution:${uuid}`;
 }
