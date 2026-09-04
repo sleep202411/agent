@@ -24,6 +24,11 @@ describe("agent capability registry", () => {
   it("mounts the Story capability set only for Story projects", () => {
     expect(listModeDefinitions("story").map((definition) => definition.mode)).toEqual(["story"]);
     expect(requireModeDefinition("story", "story").toolIds).toContain("story.addBranch");
+    expect(requireModeDefinition("story", "story").toolIds).toContain("story.storyboard.read");
+    expect(requireModeDefinition("story", "story").toolIds).toContain(
+      "story.storyboard.putTimeline"
+    );
+    expect(requireModeDefinition("story", "story").toolIds).toContain("story.storyboard.patchClip");
     expect(requireModeDefinition("story", "story").toolIds).toContain("request_user_input");
     expect(requireModeDefinition("story", "story").toolIds).toContain(
       "story.confirmCreativeProfile"

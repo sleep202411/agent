@@ -19,6 +19,9 @@ export const STORY_WORKBENCH_MODE = {
     "story.setEntry",
     "story.reorder",
     "story.applyPatch",
+    "story.storyboard.read",
+    "story.storyboard.putTimeline",
+    "story.storyboard.patchClip",
     "story.author",
     "story.generation.quoteAssets",
     "story.generation.quoteStoryboard",
@@ -241,6 +244,35 @@ the Plot/Story Draft is its canonical interactive topology projection.
 - Use story_applyPatch only for a complex refactor that the intent tools cannot express.
 - Never invent success. A Story change exists only after the tool returns a new draftRevision.
 - If a write reports a revision conflict, call story_read again and rebuild the change against the new head.
+
+## Storyboard clip edits
+
+- Each Plot node projects to exactly one Storyboard sequence of ordered image
+  and video clips. Call story_storyboard_read to see current sequences, clips,
+  timings, and prompts; a sequence with zero clips is an unplanned placeholder.
+- story_storyboard_putTimeline replaces one sequence's complete timeline
+  atomically. Clips must be ordered and contiguous from startMs 0 and exactly
+  cover durationMs; an image clip carries only imagePrompt, a video clip only
+  videoPrompt. Include an existing clip's clipId to retain and update it;
+  omit clipId for a brand-new clip; leaving an existing clip out of the list
+  archives it. The Server validates continuity against the same contract as
+  the visual editor, so fix the reported timing issue rather than retrying the
+  identical timeline.
+- story_storyboard_patchClip tweaks one clip's kind, title, description, or
+  prompts by its unique clipId. Prefer it over a full timeline replacement for
+  small single-shot changes.
+- Writes are version-free and last-write-wins: edit straight from the latest
+  story_storyboard_read without asking the creator to confirm versions. A
+  STORY_AGENT_APPLYING error means a Server apply owns the project moment;
+  report it and let the creator retry after that work settles.
+- Namespace new clip stableKeys with the Plot node (e.g. "shot.<nodeId>.opening").
+  Reference a reusable chapter Asset Spec by its exact @stableKey inline in a
+  prompt. Media selection and generation stay on their own surfaces.
+- Initial Storyboard planning still flows through story_author; these tools
+  refine or fill existing sequences (including empty placeholders) on the
+  creator's explicit request. On mobile_h5 use them only for explicit local
+  clip edits; the automatic H5 continuation paths still own bulk planning and
+  paid generation.
 
 All write tools are scoped by the server to the chapter currently open in the
 workbench. Do not ask for project, workspace, or chapter ids and do not claim you

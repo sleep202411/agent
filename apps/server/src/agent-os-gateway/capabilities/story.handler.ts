@@ -24,6 +24,8 @@ import {
   StoryReorderInputSchema,
   resolveStoryProductionTargetStage,
   StorySetEntryInputSchema,
+  StoryStoryboardPatchClipInputSchema,
+  StoryStoryboardPutTimelineInputSchema,
   StoryQuoteAssetGenerationBatchInputSchema,
   StoryQuoteStoryboardGenerationBatchInputSchema,
   StoryConfirmGenerationBatchInputSchema,
@@ -86,6 +88,9 @@ const STORY_TOOL_IDS = new Set([
   'story.setEntry',
   'story.reorder',
   'story.applyPatch',
+  'story.storyboard.read',
+  'story.storyboard.putTimeline',
+  'story.storyboard.patchClip',
   'story.author',
   'story.generation.quoteAssets',
   'story.generation.quoteStoryboard',
@@ -267,6 +272,48 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           args.baseDraftRevision,
           () => args.operations,
         );
+      }
+      case 'story.storyboard.read': {
+        return this.production.getStoryboardForAgent(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+        );
+      }
+      case 'story.storyboard.putTimeline': {
+        const args = StoryStoryboardPutTimelineInputSchema.parse(
+          input.arguments,
+        );
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        const sequence = await this.production.putTimeline(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          args.sequenceId,
+          input.idempotencyKey,
+          args,
+        );
+        return {
+          chapterId,
+          sequence: toAgentSequenceView(sequence),
+        };
+      }
+      case 'story.storyboard.patchClip': {
+        const args = StoryStoryboardPatchClipInputSchema.parse(input.arguments);
+        await this.projects.requireWrite(input.actorId, input.projectId);
+        const clip = await this.production.patchClip(
+          { userId: input.actorId },
+          input.projectId,
+          chapterId,
+          null,
+          args.clipId,
+          input.idempotencyKey,
+          args,
+        );
+        return {
+          chapterId,
+          clip: toAgentClipView(clip),
+        };
       }
       case 'story.author': {
         const args = StoryAuthorInputSchema.parse(input.arguments);
@@ -1380,6 +1427,69 @@ function finalizeOperations(
       summary: STORY_PATCH_OPERATION_LABELS[operation.kind],
     })),
   );
+}
+
+/** Project one full Storyboard sequence DTO onto the Agent's slim view. */
+function toAgentSequenceView(sequence: {
+  id: string;
+  plotNodeId: string;
+  description: string | null;
+  durationMs: number;
+  suggestedDurationMs: number;
+  userModifiedAt: string | null;
+  clips: Array<Parameters<typeof toAgentClipView>[0]>;
+  cues: Array<{
+    id: string;
+    stableKey: string;
+    kind: string;
+    atMs: number;
+    plotDecisionId: string | null;
+  }>;
+}) {
+  return {
+    sequenceId: sequence.id,
+    plotNodeId: sequence.plotNodeId,
+    description: sequence.description,
+    durationMs: sequence.durationMs,
+    suggestedDurationMs: sequence.suggestedDurationMs,
+    userModifiedAt: sequence.userModifiedAt,
+    clips: sequence.clips.map(toAgentClipView),
+    cues: sequence.cues.map((cue) => ({
+      cueId: cue.id,
+      stableKey: cue.stableKey,
+      kind: cue.kind,
+      atMs: cue.atMs,
+      decisionId: cue.plotDecisionId,
+    })),
+  };
+}
+
+function toAgentClipView(clip: {
+  id: string;
+  stableKey: string;
+  kind: string;
+  title: string | null;
+  description: string | null;
+  startMs: number;
+  durationMs: number;
+  imagePrompt: string | null;
+  videoPrompt: string | null;
+  negativePrompt: string | null;
+  userModifiedAt: string | null;
+}) {
+  return {
+    clipId: clip.id,
+    stableKey: clip.stableKey,
+    kind: clip.kind,
+    title: clip.title,
+    description: clip.description,
+    startMs: clip.startMs,
+    durationMs: clip.durationMs,
+    imagePrompt: clip.imagePrompt,
+    videoPrompt: clip.videoPrompt,
+    negativePrompt: clip.negativePrompt,
+    userModifiedAt: clip.userModifiedAt,
+  };
 }
 
 export function buildAddSceneOperations(
