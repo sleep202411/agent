@@ -107,12 +107,23 @@ export const CreateStoryAssetGenerationSchema = z
   .object({
     ...StoryGenerationSubmissionFields,
     outputKind: z.enum(['image', 'video']).default('image'),
+    purpose: z.enum(['primary', 'turnaround']).default('primary'),
   })
   .strict()
-  .superRefine(requireCompleteModelSelection);
-export type CreateStoryAssetGenerationInput = z.infer<
+  .superRefine((value, context) => {
+    requireCompleteModelSelection(value, context);
+    if (value.purpose === 'turnaround' && value.outputKind !== 'image') {
+      context.addIssue({
+        code: 'custom',
+        path: ['outputKind'],
+        message: 'Character turnaround generation only supports image output.',
+      });
+    }
+  });
+export type CreateStoryAssetGenerationInput = z.input<
   typeof CreateStoryAssetGenerationSchema
 >;
+export type StoryAssetGenerationPurpose = 'primary' | 'turnaround';
 
 export const CreateStoryStoryboardClipGenerationSchema = z
   .object(StoryGenerationSubmissionFields)

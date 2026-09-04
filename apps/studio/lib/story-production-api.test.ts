@@ -26,8 +26,6 @@ import {
   retryStoryAssetGenerationMaterialization,
   retryStoryStoryboardClipGeneration,
   retryStoryStoryboardClipGenerationMaterialization,
-  resolveStoryAssetSpecConflict,
-  resolveStoryStoryboardSequenceConflict,
 } from "./story-production-api";
 
 describe("Story production API", () => {
@@ -40,11 +38,10 @@ describe("Story production API", () => {
       profile: { status: "current" },
       script: { status: "current", documentId: "doc-1", sequence: 2 },
       plotTree: { status: "current", nodeCount: 1 },
-      assets: { status: "current", currentCount: 1, staleCount: 0 },
+      assets: { status: "current", currentCount: 1 },
       storyboard: {
         status: "current",
         sequenceCount: 1,
-        staleCount: 0,
         missingPlotNodeIds: [],
       },
       ready: true,
@@ -317,89 +314,6 @@ describe("Story production API", () => {
       )
     ).rejects.toThrow("outside the requested storyboard scope");
   });
-
-  it("resolves stale targets with both CAS fingerprints and chapter-scoped results", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({
-      targetKind: "asset_spec",
-      targetId: "asset-1",
-      resolution: "keep_current",
-      outcome: "kept_current",
-      item: assetSpec(),
-      productionState: productionState(),
-    });
-    vi.mocked(api.post).mockResolvedValueOnce({
-      targetKind: "storyboard_sequence",
-      targetId: "sequence-1",
-      resolution: "use_latest_plan",
-      outcome: "applied_latest",
-      item: sequence(),
-      productionState: productionState(),
-    });
-
-    const fingerprint = "a".repeat(64);
-    await resolveStoryAssetSpecConflict(
-      "project-1",
-      "chapter-1",
-      "asset-1",
-      "asset-conflict:key-1",
-      {
-        expectedVersion: 4,
-        expectedPendingSourceFingerprint: fingerprint,
-        resolution: "keep_current",
-      }
-    );
-    await resolveStoryStoryboardSequenceConflict(
-      "project-1",
-      "chapter-1",
-      "sequence-1",
-      "sequence-conflict:key-1",
-      {
-        expectedVersion: 5,
-        expectedPendingSourceFingerprint: fingerprint,
-        resolution: "use_latest_plan",
-      }
-    );
-
-    expect(api.post).toHaveBeenNthCalledWith(
-      1,
-      "/aurora/story-projects/project-1/chapters/chapter-1/asset-specs/asset-1/conflict-resolution",
-      {
-        data: {
-          expectedVersion: 4,
-          expectedPendingSourceFingerprint: fingerprint,
-          resolution: "keep_current",
-        },
-        requestScope: "project",
-        headers: { "Idempotency-Key": "asset-conflict:key-1" },
-      }
-    );
-    expect(api.post).toHaveBeenNthCalledWith(
-      2,
-      "/aurora/story-projects/project-1/chapters/chapter-1/storyboard/sequences/sequence-1/conflict-resolution",
-      expect.objectContaining({
-        data: expect.objectContaining({ resolution: "use_latest_plan" }),
-      })
-    );
-  });
-
-  it("rejects a conflict resolution result that leaks another chapter", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({
-      targetKind: "asset_spec",
-      targetId: "asset-1",
-      resolution: "keep_current",
-      outcome: "kept_current",
-      item: { ...assetSpec(), chapterId: "chapter-2" },
-      productionState: productionState(),
-    });
-
-    await expect(
-      resolveStoryAssetSpecConflict("project-1", "chapter-1", "asset-1", "conflict:key-1", {
-        expectedVersion: 1,
-        expectedPendingSourceFingerprint: "b".repeat(64),
-        resolution: "keep_current",
-      })
-    ).rejects.toThrow("outside the requested chapter scope");
-  });
 });
 
 function sequence() {
@@ -415,62 +329,11 @@ function sequence() {
     durationMs: 3_000,
     sourceFingerprint: "source-sequence-1",
     status: "current" as const,
-    planDisposition: "planned" as const,
-    pendingSourceFingerprint: null,
-    conflict: null,
     version: 1,
     userModifiedAt: null,
     clips: [],
     cues: [],
     updatedAt: "2026-08-21T00:00:00.000Z",
-  };
-}
-
-function assetSpec() {
-  return {
-    id: "asset-1",
-    projectId: "project-1",
-    chapterId: "chapter-1",
-    stableKey: "hero",
-    kind: "character" as const,
-    sourceCharacterId: "hero",
-    sourceNodeIds: ["plot-1"],
-    name: "Hero",
-    description: "Lead character",
-    imagePrompt: "Red flight suit",
-    videoPrompt: null,
-    negativePrompt: null,
-    generationConfig: {},
-    sourceFingerprint: "source-asset-1",
-    status: "current" as const,
-    planDisposition: "user_override" as const,
-    pendingSourceFingerprint: null,
-    conflict: null,
-    version: 5,
-    selectedMediaVersionId: null,
-    selectedMediaVersion: null,
-    mediaVersions: [],
-    latestGeneration: null,
-    userModifiedAt: null,
-    updatedAt: "2026-08-21T00:00:00.000Z",
-  };
-}
-
-function productionState() {
-  return {
-    projectId: "project-1",
-    chapterId: "chapter-1",
-    profile: { status: "current" as const },
-    script: { status: "current" as const, documentId: "script-1", sequence: 1 },
-    plotTree: { status: "current" as const, nodeCount: 1 },
-    assets: { status: "current" as const, currentCount: 1, staleCount: 0 },
-    storyboard: {
-      status: "current" as const,
-      sequenceCount: 1,
-      staleCount: 0,
-      missingPlotNodeIds: [],
-    },
-    ready: true,
   };
 }
 

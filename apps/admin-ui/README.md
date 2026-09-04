@@ -14,13 +14,14 @@ npm run dev -w admin-ui
 生产环境必须显式配置两套 Admin API，避免国际站和中国站数据混在一起：
 
 ```bash
-ADMIN_GLOBAL_API_BASE_URL=https://api.fizzdragon.com/admin
-ADMIN_CN_API_BASE_URL=https://fizzdragon.fizzspace.cn/admin
+ADMIN_GLOBAL_API_BASE_URL=https://fizzdragon.com/aurora/admin
+ADMIN_CN_API_BASE_URL=https://fizzdragon.fizzspace.cn/aurora/admin
 TEXT_GAME_API_BASE_URL=https://java.fizzdragon.com/studio
 JAVA_ADMIN_API_TOKEN=<Java api.admin.api-token>
 ```
 
 兼容单站本地开发时也可以只设置 `ADMIN_API_BASE_URL=http://localhost:4399/admin`。
+连线上 Nest 时请用主站 `fizzdragon.com/aurora/admin`（`api.fizzdragon.com` 常会超时返回 522）。
 
 `TEXT_GAME_API_BASE_URL` 指向当前站点的 Java Studio 服务；资讯、文游和影游共用的
 `JAVA_ADMIN_API_TOKEN` 必须与 Java 的 `api.admin.api-token` 一致。文游和影游读取

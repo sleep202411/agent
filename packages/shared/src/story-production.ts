@@ -44,8 +44,8 @@ export const StoryAssetSpecPlanItemSchema = z
     negativePrompt: z.string().trim().min(1).max(4_000).optional(),
     /** Canonical Story Bible character id when this is a character spec. */
     sourceCharacterId: StoryProductionStableKeySchema.optional(),
-    /** Plot node ids that justify this spec and its chapter-local lifetime. */
-    sourceNodeIds: z.array(StoryProductionStableKeySchema).min(1).max(200),
+    /** Plot node relevance hints. Manual chapter assets may begin unattached. */
+    sourceNodeIds: z.array(StoryProductionStableKeySchema).max(200),
   })
   .strict()
   .superRefine((asset, context) => {
@@ -164,6 +164,53 @@ export const StoryStoryboardSequencePlanItemSchema = z
   })
   .strict();
 export type StoryStoryboardSequencePlanItem = z.infer<typeof StoryStoryboardSequencePlanItemSchema>;
+
+/**
+ * Resolve model-friendly Asset aliases without turning prompt syntax into an
+ * authoring gate. Exact keys stay intact, unambiguous kind-prefixed aliases
+ * become canonical keys, and unknown mentions become ordinary prompt text.
+ */
+export function normalizeStoryboardAssetMentions(
+  sequence: StoryStoryboardSequencePlanItem,
+  assets: readonly StoryAssetSpecPlanItem[]
+): StoryStoryboardSequencePlanItem {
+  const exactKeys = new Set(assets.map((asset) => asset.stableKey));
+  const normalizedKeys = new Map<string, string | null>();
+  for (const asset of assets) {
+    const normalized = normalizeAssetReferenceKey(asset.stableKey);
+    const previous = normalizedKeys.get(normalized);
+    normalizedKeys.set(
+      normalized,
+      previous === undefined || previous === asset.stableKey ? asset.stableKey : null
+    );
+  }
+
+  const normalizePrompt = (prompt: string): string =>
+    prompt.replace(STORY_ASSET_MENTION_PATTERN, (_match, key: string) => {
+      if (exactKeys.has(key)) return `@${key}`;
+      const canonical = normalizedKeys.get(normalizeAssetReferenceKey(key));
+      return canonical ? `@${canonical}` : key;
+    });
+
+  return StoryStoryboardSequencePlanItemSchema.parse({
+    ...sequence,
+    clips: sequence.clips.map((clip) =>
+      clip.kind === "image"
+        ? { ...clip, imagePrompt: normalizePrompt(clip.imagePrompt) }
+        : { ...clip, videoPrompt: normalizePrompt(clip.videoPrompt) }
+    ),
+  });
+}
+
+function normalizeAssetReferenceKey(value: string): string {
+  let normalized = value.toLowerCase();
+  for (;;) {
+    const next = normalized.replace(/^(?:asset|character|location|scene|prop)[._:-]+/, "");
+    if (next === normalized) break;
+    normalized = next;
+  }
+  return normalized.replace(/[^a-z0-9]/g, "");
+}
 
 const StoryStoryboardTimelineClipInputBaseSchema = z
   .object({

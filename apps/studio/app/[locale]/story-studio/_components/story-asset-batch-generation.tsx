@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   cancelStoryGenerationBatch,
   confirmStoryGenerationBatch,
@@ -176,20 +177,39 @@ export function StoryAssetBatchGeneration({
     quoteMutation.mutate();
   };
   const insufficientPoints = quote ? quoteCannotBeAfforded(quote) : false;
+  const tooltip =
+    assets.length === 0
+      ? t("allGeneratedTooltip")
+      : t("tooltip", {
+          model: defaults.model?.name ?? "…",
+          count: assets.length,
+        });
 
   return (
     <>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {activeBatch ? <BatchProgress batch={activeBatch} /> : null}
-        <Button
-          type="button"
-          size="sm"
-          onClick={openQuote}
-          disabled={assets.length === 0 || Boolean(activeBatch) || defaults.loading}
-        >
-          <IconBolt />
-          {assets.length === 0 ? t("allGenerated") : t("generate")}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              className="inline-flex shrink-0"
+              tabIndex={assets.length === 0 ? 0 : undefined}
+              aria-label={assets.length === 0 ? tooltip : undefined}
+            >
+              <Button
+                type="button"
+                onClick={openQuote}
+                disabled={assets.length === 0 || Boolean(activeBatch) || defaults.loading}
+              >
+                <IconBolt />
+                {assets.length === 0 ? t("allGenerated") : t("generate")}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={8} className="max-w-72 leading-5">
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
         {activeBatch?.canCancel && CANCELLABLE_STATUSES.has(activeBatch.status) ? (
           <Button
             type="button"

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -12,26 +13,28 @@ import {
 import { CurrentUser, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
+  ArchiveStoryAssetSpecSchema,
+  CreateStoryAssetSpecSchema,
   PatchStoryAssetSpecSchema,
   PatchStoryStoryboardClipSchema,
   PatchStoryStoryboardCueSchema,
   PatchStoryStoryboardSequenceSchema,
   PutStoryStoryboardTimelineSchema,
   PutStoryStoryboardBindingSchema,
-  ResolveStoryProductionConflictSchema,
   StoryAssetSpecParamsSchema,
   StoryProductionChapterParamsSchema,
   StoryStoryboardBindingParamsSchema,
   StoryStoryboardClipParamsSchema,
   StoryStoryboardCueParamsSchema,
   StoryStoryboardSequenceParamsSchema,
+  type ArchiveStoryAssetSpecInput,
+  type CreateStoryAssetSpecInput,
   type PatchStoryAssetSpecInput,
   type PatchStoryStoryboardClipInput,
   type PatchStoryStoryboardCueInput,
   type PatchStoryStoryboardSequenceInput,
   type PutStoryStoryboardTimelineInput,
   type PutStoryStoryboardBindingInput,
-  type ResolveStoryProductionConflictInput,
   type StoryAssetSpecParams,
   type StoryProductionChapterParams,
   type StoryStoryboardBindingParams,
@@ -77,6 +80,28 @@ export class StoryProductionPlanController {
     };
   }
 
+  @Post('asset-specs')
+  async createAssetSpec(
+    @CurrentUser() user: AuthUser,
+    @Headers('idempotency-key')
+    idempotencyHeader: string | string[] | undefined,
+    @Param(new ZodValidationPipe(StoryProductionChapterParamsSchema))
+    params: StoryProductionChapterParams,
+    @Body(new ZodValidationPipe(CreateStoryAssetSpecSchema))
+    body: CreateStoryAssetSpecInput,
+  ) {
+    return {
+      code: 201,
+      data: await this.production.createAssetSpec(
+        user,
+        params.projectId,
+        params.chapterId,
+        requiredIdempotencyKey(idempotencyHeader),
+        body,
+      ),
+    };
+  }
+
   @Patch('asset-specs/:assetSpecId')
   async patchAssetSpec(
     @CurrentUser() user: AuthUser,
@@ -100,19 +125,19 @@ export class StoryProductionPlanController {
     };
   }
 
-  @Post('asset-specs/:assetSpecId/conflict-resolution')
-  async resolveAssetSpecConflict(
+  @Delete('asset-specs/:assetSpecId')
+  async archiveAssetSpec(
     @CurrentUser() user: AuthUser,
     @Headers('idempotency-key')
     idempotencyHeader: string | string[] | undefined,
     @Param(new ZodValidationPipe(StoryAssetSpecParamsSchema))
     params: StoryAssetSpecParams,
-    @Body(new ZodValidationPipe(ResolveStoryProductionConflictSchema))
-    body: ResolveStoryProductionConflictInput,
+    @Body(new ZodValidationPipe(ArchiveStoryAssetSpecSchema))
+    body: ArchiveStoryAssetSpecInput,
   ) {
     return {
       code: 200,
-      data: await this.production.resolveAssetSpecConflict(
+      data: await this.production.archiveAssetSpec(
         user,
         params.projectId,
         params.chapterId,
@@ -152,29 +177,6 @@ export class StoryProductionPlanController {
     return {
       code: 200,
       data: await this.production.patchSequence(
-        user,
-        params.projectId,
-        params.chapterId,
-        params.sequenceId,
-        requiredIdempotencyKey(idempotencyHeader),
-        body,
-      ),
-    };
-  }
-
-  @Post('storyboard/sequences/:sequenceId/conflict-resolution')
-  async resolveStoryboardSequenceConflict(
-    @CurrentUser() user: AuthUser,
-    @Headers('idempotency-key')
-    idempotencyHeader: string | string[] | undefined,
-    @Param(new ZodValidationPipe(StoryStoryboardSequenceParamsSchema))
-    params: StoryStoryboardSequenceParams,
-    @Body(new ZodValidationPipe(ResolveStoryProductionConflictSchema))
-    body: ResolveStoryProductionConflictInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.production.resolveStoryboardSequenceConflict(
         user,
         params.projectId,
         params.chapterId,

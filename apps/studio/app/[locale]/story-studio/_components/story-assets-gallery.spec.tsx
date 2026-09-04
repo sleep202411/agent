@@ -14,25 +14,8 @@ const queryState = vi.hoisted(() => ({
     id: string;
     version: number;
     kind: "character" | "location" | "prop";
-    status: "current" | "stale";
-    conflict: null;
-    pendingSourceFingerprint: null;
+    status: "current";
   }>,
-  production: {
-    projectId: "project-1",
-    chapterId: "chapter-1",
-    profile: { status: "current" },
-    script: { status: "current", documentId: "document-1", sequence: 1 },
-    plotTree: { status: "current", nodeCount: 1 },
-    assets: { status: "current", currentCount: 1, staleCount: 0 },
-    storyboard: {
-      status: "current",
-      sequenceCount: 0,
-      staleCount: 0,
-      missingPlotNodeIds: [],
-    },
-    ready: true,
-  },
 }));
 
 const navigationState = vi.hoisted(() => ({ kind: "character" }));
@@ -57,7 +40,7 @@ vi.mock("@tanstack/react-query", () => ({
                 capabilities: ["story.edit"],
               },
             }
-          : queryState.production,
+          : undefined,
     isPending: false,
     error: null,
     refetch: vi.fn(),
@@ -71,11 +54,13 @@ vi.mock("@/i18n/navigation", () => ({
 
 vi.mock("./story-production-page-header", () => ({
   StoryProductionPageHeader: () => null,
-  StoryProductionGenerationControls: () => null,
+  StoryProductionGenerationControls: () => <span data-testid="generation-controls" />,
 }));
 
 vi.mock("./story-asset-spec-card", () => ({
-  StoryAssetSpecCard: ({ asset }: { asset: { kind: string } }) => <div>{asset.kind}</div>,
+  StoryAssetSpecCard: ({ asset }: { asset: { kind: string } }) => (
+    <div data-testid={`asset-${asset.kind}`}>{asset.kind}</div>
+  ),
 }));
 
 vi.mock("./story-asset-batch-generation", () => ({
@@ -102,7 +87,6 @@ describe("StoryAssetsGallery empty states", () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     queryState.assets = [];
     navigationState.kind = "character";
-    queryState.production.assets = { status: "current", currentCount: 1, staleCount: 0 };
     useStoryProjectUiStore.setState({ activeChapterId: "chapter-1" });
     container = document.createElement("div");
     document.body.append(container);
@@ -121,8 +105,6 @@ describe("StoryAssetsGallery empty states", () => {
         version: 1,
         kind: "location",
         status: "current",
-        conflict: null,
-        pendingSourceFingerprint: null,
       },
     ];
 
@@ -133,13 +115,28 @@ describe("StoryAssetsGallery empty states", () => {
     expect(container.textContent).not.toContain("stage.noAssets.title");
   });
 
-  it("keeps the chapter-level empty state when the chapter has no Asset Specs", async () => {
-    queryState.production.assets.currentCount = 0;
-
+  it("keeps manual asset creation available when the approved plan has no Asset Specs", async () => {
     await renderGallery();
 
-    expect(container.textContent).toContain("stage.noAssets.title");
-    expect(container.textContent).not.toContain("categoryEmpty.character");
+    expect(container.textContent).toContain("categoryEmpty.character");
+    expect(container.textContent).toContain("addByKind.character");
+    expect(container.textContent).not.toContain("stage.noAssets.title");
+  });
+
+  it("keeps one category label and moves creation plus generation controls into the tab toolbar", async () => {
+    await renderGallery();
+
+    expect(container.textContent?.match(/tabs\.character/g)).toHaveLength(1);
+    expect(container.textContent).toContain("addByKind.character");
+    expect(container.querySelector('[data-testid="generation-controls"]')).not.toBeNull();
+  });
+
+  it("keeps manual asset controls available before Plot approval", async () => {
+    await renderGallery();
+
+    expect(container.textContent).toContain("addByKind.character");
+    expect(container.textContent).toContain("tabs.character");
+    expect(container.textContent).toContain("categoryEmpty.character");
   });
 
   it.each([
@@ -151,15 +148,17 @@ describe("StoryAssetsGallery empty states", () => {
     expect(messages.categoryEmpty.location).toBeTruthy();
     expect(messages.categoryEmpty.prop).toBeTruthy();
     expect(messages.categoryEmptyHint).toBeTruthy();
+    expect(messages.batch.generate).toBeTruthy();
+    expect(messages.batch.tooltip).toBeTruthy();
+    expect(messages.batch.allGeneratedTooltip).toBeTruthy();
   });
 
-  it("batches only current-tab assets that still need media", async () => {
+  it("batches available current-tab assets that still need media", async () => {
     queryState.assets = [
       ...makeAssets("character", 3, 1, 1),
       ...makeAssets("location", 4),
       ...makeAssets("prop", 3),
     ];
-
     await renderGallery();
     expect(batchCount()).toBe("1");
 
@@ -171,6 +170,19 @@ describe("StoryAssetsGallery empty states", () => {
     await renderGallery();
     expect(batchCount()).toBe("3");
   });
+
+  it.each(["location", "prop"] as const)(
+    "uses the shared two-column single-image grid for %s assets",
+    async (kind) => {
+      navigationState.kind = kind;
+      queryState.assets = makeAssets(kind, 1);
+
+      await renderGallery();
+
+      const card = container.querySelector(`[data-testid="asset-${kind}"]`);
+      expect(card?.parentElement?.className).toContain("lg:grid-cols-2");
+    }
+  );
 
   async function renderGallery() {
     await act(async () => {
@@ -194,8 +206,6 @@ function makeAssets(
     version: 1,
     kind,
     status: "current" as const,
-    conflict: null,
-    pendingSourceFingerprint: null,
     selectedMediaVersion: index < generatedCount ? {} : null,
     latestGeneration:
       index >= generatedCount && index < generatedCount + inFlightCount

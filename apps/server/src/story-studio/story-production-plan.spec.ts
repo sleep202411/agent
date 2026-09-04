@@ -16,6 +16,8 @@ import { validateProductionPlanAgainstScreenplay } from './story-authoring-pipel
 import { canonicalJsonHash } from './canonical-json';
 import { InteractiveStoryDraftContentSchema } from './dto';
 import {
+  ArchiveStoryAssetSpecSchema,
+  CreateStoryAssetSpecSchema,
   PatchStoryAssetSpecSchema,
   PatchStoryStoryboardClipSchema,
   PutStoryStoryboardTimelineSchema,
@@ -26,7 +28,6 @@ import {
   storyboardCueTimeAfterTimelineResize,
   storyboardClipSemanticPatch,
   storyAssetSemanticPatch,
-  storyAssetPlanFingerprint,
   StoryProductionPlanService,
 } from './story-production-plan.service';
 import { readStoryScriptHead } from './story-script-stage';
@@ -188,11 +189,11 @@ describe('validateProductionPlanAgainstScreenplay', () => {
     expect(
       validateProductionPlanAgainstScreenplay(value, screenplay()),
     ).toContain(
-      `Storyboard clip "${clip.stableKey}" uses Asset Spec "asset.unknown" without chapter-node lineage to "${value.storyboardSequences[0].plotNodeId}".`,
+      `Storyboard clip "${clip.stableKey}" references unknown Asset Spec "asset.unknown".`,
     );
   });
 
-  it('rejects a scene that omits an Asset Spec whose source lineage says the scene needs it', () => {
+  it('allows a scene to omit an Asset Spec that is only a planning hint', () => {
     const value = plan();
     const sequence = value.storyboardSequences[0];
     const clip = sequence.clips[0];
@@ -202,14 +203,12 @@ describe('validateProductionPlanAgainstScreenplay', () => {
       clip.imagePrompt = 'A cinematic rendering of the choice at the gate.';
     }
 
-    const issues = validateProductionPlanAgainstScreenplay(value, screenplay());
-    expect(issues).toContain(
-      'Storyboard sequence for Plot node "scene.gate" must @mention Asset Spec "asset.character.courier" because that Asset Spec declares this node in sourceNodeIds.',
-    );
-    expect(issues.some((issue) => issue.includes('is orphaned'))).toBe(false);
+    expect(
+      validateProductionPlanAgainstScreenplay(value, screenplay()),
+    ).toEqual([]);
   });
 
-  it('rejects cross-node asset lineage and missing canonical character specs', () => {
+  it('still rejects a missing canonical character source', () => {
     const value = plan();
     value.assetSpecs[0].sourceNodeIds = ['scene.wait', 'scene.run'];
     value.assetSpecs[0].sourceCharacterId = 'character.unknown';
@@ -217,9 +216,6 @@ describe('validateProductionPlanAgainstScreenplay', () => {
     expect(issues.some((issue) => issue.includes('unknown character'))).toBe(
       true,
     );
-    expect(
-      issues.some((issue) => issue.includes('without chapter-node lineage')),
-    ).toBe(true);
   });
 });
 
@@ -289,7 +285,7 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     ).rejects.toThrow(/Plot tree and Storyboard are not one-to-one/);
   });
 
-  it('keeps Plot non-current after Script approval even when the graph happens to match', async () => {
+  it('reports an existing Plot as current without tying it to Script approval lineage', async () => {
     const source = screenplay();
     const draft = chapterDraft(source);
     const scriptDocumentId = '0197f4a2-0800-7000-8000-000000000051';
@@ -360,7 +356,7 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     );
 
     expect(state.script.status).toBe('current');
-    expect(state.plotTree).toEqual({ status: 'stale', nodeCount: 3 });
+    expect(state.plotTree).toEqual({ status: 'current', nodeCount: 3 });
   });
 
   it('treats a pinned approved empty Asset plan as current for the exact Plot source', async () => {
@@ -442,7 +438,7 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     ).resolves.toEqual(assetPlan);
   });
 
-  it('marks Assets and Storyboard stale when current rows lack an approved Asset marker', async () => {
+  it('reports existing Assets and Storyboard as current without requiring an Asset marker', async () => {
     const source = screenplay();
     const draft = chapterDraft(source);
     const scriptDocumentId = '0197f4a2-0800-7000-8000-000000000071';
@@ -505,7 +501,6 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
           {
             stableKey: 'asset.character.courier',
             status: StoryProductionSpecStatus.current,
-            planDisposition: 'planned',
           },
         ]),
       },
@@ -547,14 +542,13 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     );
 
     expect(state.plotTree.status).toBe('current');
-    expect(state.assets.status).toBe('stale');
+    expect(state.assets.status).toBe('current');
     expect(state.storyboard).toMatchObject({
-      status: 'stale',
+      status: 'current',
       sequenceCount: source.scenes.length,
-      staleCount: 0,
       missingPlotNodeIds: [],
     });
-    expect(state.ready).toBe(false);
+    expect(state.ready).toBe(true);
 
     chapterRow.approvedAssetPlanSnapshotId =
       '0197f4a2-0800-7000-8000-000000000073';
@@ -564,13 +558,12 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
         'project-1',
         'chapter-1',
       );
-    expect(unexpectedPlannedState.assets.status).toBe('stale');
+    expect(unexpectedPlannedState.assets.status).toBe('current');
 
     tx.storyAssetSpec.findMany.mockResolvedValue([
       {
         stableKey: 'asset.character.courier',
         status: StoryProductionSpecStatus.current,
-        planDisposition: 'user_override',
       },
     ]);
     const keptOverrideState = await service.getProductionStateInTransaction(
@@ -598,13 +591,12 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     ).toThrow(/Missing: scene\.run/);
   });
 
-  it('rejects a Storyboard @Asset binding outside the Asset Plot-node lineage', () => {
+  it('treats Asset source-node ids as hints rather than binding gates', () => {
     const source = screenplay();
     const value = plan();
     value.assetSpecs[0].sourceNodeIds = ['scene.wait', 'scene.run'];
 
-    let error: unknown;
-    try {
+    expect(() =>
       service.validateApprovedStoryboardPlan({
         storyboardPlan: {
           storyboardSequences: value.storyboardSequences,
@@ -612,14 +604,8 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
         assetPlan: { assetSpecs: value.assetSpecs },
         draft: chapterDraft(source),
         chapterNodeIds: source.scenes.map((scene) => scene.nodeId),
-      });
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error).toBeInstanceOf(BadRequestException);
-    expect((error as BadRequestException).getResponse()).toMatchObject({
-      code: 'STORY_PRODUCTION_ASSET_LINEAGE_INVALID',
-    });
+      }),
+    ).not.toThrow();
   });
 
   it('rejects incomplete coverage before the reconcile transaction can write any spec', async () => {
@@ -674,7 +660,7 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     expect(sequenceUpdate).not.toHaveBeenCalled();
   });
 
-  it('applies Assets alone and invalidates, but never generates, Storyboard rows', async () => {
+  it('applies Assets without invalidating or generating Storyboard rows', async () => {
     const source = screenplay();
     const currentAsset = plan().assetSpecs[0];
     const currentAssetRow = {
@@ -784,82 +770,130 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
       assetSpecsUpdated: 1,
       sequencesCreated: 0,
       sequencesUpdated: 0,
-      sequencesMarkedStale: 2,
     });
-    expect(sequenceUpdateMany).toHaveBeenCalledTimes(1);
+    expect(sequenceUpdateMany).not.toHaveBeenCalled();
     expect(sequenceCreate).not.toHaveBeenCalled();
     expect(sequenceUpdate).not.toHaveBeenCalled();
   });
 
-  it('invalidates both Assets and Storyboard when an approved Plot changes', async () => {
-    type StaleUpdate = {
-      data: {
-        status: StoryProductionSpecStatus;
-        pendingPlanSnapshotId: string | null;
-      };
+  it('leaves creator-edited Asset fields and versions untouched during replanning', async () => {
+    const planned = plan().assetSpecs[0];
+    const now = new Date('2026-09-03T12:00:00.000Z');
+    const current = {
+      id: 'asset-row-1',
+      stableKey: planned.stableKey,
+      sourceFingerprint: 'creator-owned-source',
+      sourceNodeIds: ['scene.wait'],
+      imagePrompt: 'The prompt the creator chose.',
+      status: StoryProductionSpecStatus.current,
+      userModifiedAt: new Date('2026-09-03T11:00:00.000Z'),
+      version: 7,
     };
-    let assetCall: StaleUpdate | undefined;
-    let storyboardCall: StaleUpdate | undefined;
-    const assetUpdateMany = jest.fn((input: StaleUpdate) => {
-      assetCall = input;
-      return Promise.resolve({ count: 2 });
-    });
-    const storyboardUpdateMany = jest.fn((input: StaleUpdate) => {
-      storyboardCall = input;
-      return Promise.resolve({ count: 3 });
-    });
-    const tx = {
-      storyChapter: {
-        findFirst: jest.fn().mockResolvedValue({
-          approvedAssetPlanSnapshotId: null,
-        }),
-      },
-      storyAssetSpec: { updateMany: assetUpdateMany },
-      storyStoryboardSequence: { updateMany: storyboardUpdateMany },
+    const update = jest.fn();
+    const reconcile = service as unknown as {
+      reconcileAssetSpecs(
+        tx: unknown,
+        input: unknown,
+        assetPlan: unknown,
+        plannedAt: Date,
+        result: unknown,
+      ): Promise<unknown>;
     };
 
-    await service.invalidateDownstreamAfterUpstreamApprovalInTransaction(
-      tx as never,
+    await reconcile.reconcileAssetSpecs(
+      {
+        storyAssetSpec: {
+          findMany: jest.fn().mockResolvedValue([current]),
+          update,
+        },
+      },
       {
         storyProjectId: 'project-1',
         storyChapterId: 'chapter-1',
         actorUserId: 'user-1',
-        sourceFingerprint: 'd'.repeat(64),
-        upstreamStage: 'plot',
-        upstreamRunId: 'run-plot-2',
+        sourceFingerprint: 'a'.repeat(64),
       },
+      { assetSpecs: [planned] },
+      now,
+      { assetSpecsCreated: 0, assetSpecsUpdated: 0 },
     );
 
-    expect(assetCall?.data.status).toBe(StoryProductionSpecStatus.stale);
-    expect(assetCall?.data.pendingPlanSnapshotId).toBeNull();
-    expect(storyboardCall?.data.status).toBe(StoryProductionSpecStatus.stale);
-    expect(storyboardCall?.data.pendingPlanSnapshotId).toBeNull();
+    expect(update).not.toHaveBeenCalled();
   });
 
-  it('rejects a Storyboard proposal when its immutable Asset source is no longer current', async () => {
+  it('leaves a creator-edited Storyboard subtree untouched during replanning', async () => {
+    const planned = plan().storyboardSequences[0];
+    const now = new Date('2026-09-03T12:00:00.000Z');
+    const current = {
+      id: 'sequence-row-1',
+      plotNodeId: planned.plotNodeId,
+      sourceFingerprint: 'creator-owned-source',
+      status: StoryProductionSpecStatus.current,
+      userModifiedAt: new Date('2026-09-03T11:00:00.000Z'),
+      version: 9,
+      clips: [],
+      cues: [],
+    };
+    const update = jest.fn();
+    const reconcile = service as unknown as {
+      reconcileStoryboard(
+        tx: unknown,
+        input: unknown,
+        storyboardPlan: unknown,
+        assetByKey: Map<string, never>,
+        plannedAt: Date,
+        result: unknown,
+      ): Promise<void>;
+    };
+
+    await reconcile.reconcileStoryboard(
+      {
+        storyStoryboardSequence: {
+          findMany: jest.fn().mockResolvedValue([current]),
+          update,
+        },
+      },
+      {
+        storyProjectId: 'project-1',
+        storyChapterId: 'chapter-1',
+        actorUserId: 'user-1',
+        sourceFingerprint: 'a'.repeat(64),
+      },
+      { storyboardSequences: [planned] },
+      new Map<string, never>(),
+      now,
+      { sequencesCreated: 0, sequencesUpdated: 0 },
+    );
+
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('applies a Storyboard proposal against live Assets without alias or deletion gates', async () => {
     const source = screenplay();
-    const combined = plan();
-    const currentAsset = combined.assetSpecs[0];
-    const changedAssetPlan = {
-      assetSpecs: [
-        { ...currentAsset, imagePrompt: 'A changed current reference.' },
-      ],
+    const value = plan();
+    const storyboardPlan = {
+      storyboardSequences: value.storyboardSequences.map((sequence) => ({
+        ...sequence,
+        clips: sequence.clips.map((clip) =>
+          clip.kind === 'video'
+            ? {
+                ...clip,
+                videoPrompt: `${clip.videoPrompt.replace('@asset.character.courier', '@character.courier')} @asset.deleted`,
+              }
+            : clip,
+        ),
+      })),
     };
-    const currentAssetRow = {
-      id: 'asset-row-1',
-      stableKey: currentAsset.stableKey,
-      kind: currentAsset.kind,
-      sourceCharacterId: currentAsset.sourceCharacterId,
-      sourceNodeIds: currentAsset.sourceNodeIds,
-      name: currentAsset.name,
-      description: currentAsset.description,
-      imagePrompt: changedAssetPlan.assetSpecs[0].imagePrompt,
-      videoPrompt: null,
-      negativePrompt: null,
-      status: 'current',
-    };
-    const snapshotUpsert = jest.fn();
-    const sequenceCreate = jest.fn();
+    const liveAssetPlan = { assetSpecs: value.assetSpecs };
+    const reconcileStoryboard = jest.fn().mockResolvedValue(undefined);
+    (
+      service as unknown as {
+        reconcileStoryboard: typeof reconcileStoryboard;
+      }
+    ).reconcileStoryboard = reconcileStoryboard;
+    jest
+      .spyOn(service, 'readCurrentAssetPlanInTransaction')
+      .mockResolvedValueOnce(liveAssetPlan);
     const tx = {
       storyChapter: {
         findFirst: jest.fn().mockResolvedValue({
@@ -871,35 +905,50 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
           content: chapterDraft(source),
         }),
       },
-      storyProductionPlanSnapshot: { upsert: snapshotUpsert },
       storyAssetSpec: {
-        findMany: jest.fn().mockResolvedValue([currentAssetRow]),
+        findMany: jest.fn().mockResolvedValue([
+          {
+            id: 'asset-row-1',
+            stableKey: 'asset.character.courier',
+            status: StoryProductionSpecStatus.current,
+          },
+        ]),
       },
-      storyStoryboardSequence: { create: sequenceCreate },
     };
 
-    expect(storyAssetPlanFingerprint(changedAssetPlan)).not.toBe(
-      storyAssetPlanFingerprint({ assetSpecs: combined.assetSpecs }),
-    );
-    jest
-      .spyOn(service, 'readCurrentAssetPlanInTransaction')
-      .mockResolvedValueOnce(changedAssetPlan);
-    await expect(
-      service.applyApprovedStoryboardPlanInTransaction(tx as never, {
-        storyProjectId: 'project-1',
-        storyChapterId: 'chapter-1',
-        actorUserId: 'user-1',
-        sourceFingerprint: 'c'.repeat(64),
-        assetPlan: { assetSpecs: combined.assetSpecs },
-        storyboardPlan: {
-          storyboardSequences: combined.storyboardSequences,
-        },
-      }),
-    ).rejects.toMatchObject({
-      response: { code: 'STORY_PRODUCTION_ASSET_PLAN_STALE' },
+    await service.applyApprovedStoryboardPlanInTransaction(tx as never, {
+      storyProjectId: 'project-1',
+      storyChapterId: 'chapter-1',
+      actorUserId: 'user-1',
+      sourceFingerprint: 'a'.repeat(64),
+      storyboardPlan,
     });
-    expect(snapshotUpsert).not.toHaveBeenCalled();
-    expect(sequenceCreate).not.toHaveBeenCalled();
+
+    const reconcileCalls = reconcileStoryboard.mock.calls as unknown as Array<
+      [
+        unknown,
+        unknown,
+        {
+          storyboardSequences: Array<{
+            clips: Array<{ videoPrompt?: string }>;
+          }>;
+        },
+      ]
+    >;
+    const appliedPlan = reconcileCalls[0]?.[2] as {
+      storyboardSequences: Array<{
+        clips: Array<{ videoPrompt?: string }>;
+      }>;
+    };
+    expect(appliedPlan.storyboardSequences[0]?.clips[0]?.videoPrompt).toContain(
+      '@asset.character.courier',
+    );
+    expect(appliedPlan.storyboardSequences[0]?.clips[0]?.videoPrompt).toContain(
+      'asset.deleted',
+    );
+    expect(
+      appliedPlan.storyboardSequences[0]?.clips[0]?.videoPrompt,
+    ).not.toContain('@asset.deleted');
   });
 });
 
@@ -1061,9 +1110,41 @@ describe('PatchStoryAssetSpecSchema', () => {
       PatchStoryAssetSpecSchema.safeParse({
         expectedVersion: 2,
         sourceMediaAssetId,
+        sourceMediaPurpose: 'turnaround',
+      }).success,
+    ).toBe(true);
+    expect(
+      PatchStoryAssetSpecSchema.safeParse({
+        expectedVersion: 2,
+        sourceMediaPurpose: 'turnaround',
+      }).success,
+    ).toBe(false);
+    expect(
+      PatchStoryAssetSpecSchema.safeParse({
+        expectedVersion: 2,
+        sourceMediaAssetId,
         selectedMediaVersionId: '0198f744-32a0-7000-8000-000000000004',
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('Manual Story Asset Spec schemas', () => {
+  it('requires complete create data and a version-fenced archive', () => {
+    expect(
+      CreateStoryAssetSpecSchema.safeParse({
+        kind: 'prop',
+        name: 'Sealed letter',
+        imagePrompt: 'A wax-sealed letter on dark wood.',
+      }).success,
+    ).toBe(true);
+    expect(
+      CreateStoryAssetSpecSchema.safeParse({ kind: 'prop', name: 'Letter' })
+        .success,
+    ).toBe(false);
+    expect(
+      ArchiveStoryAssetSpecSchema.safeParse({ expectedVersion: 2 }).success,
+    ).toBe(true);
   });
 });
 

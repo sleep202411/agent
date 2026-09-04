@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { resolveStoryProductionTargetStage } from "./story-definitions.js";
 
-function productionState(status: "missing" | "current" | "stale") {
+function productionState(status: "missing" | "current") {
   return {
     script: {
       status,

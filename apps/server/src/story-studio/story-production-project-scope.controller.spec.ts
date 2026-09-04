@@ -10,16 +10,25 @@ const SEQUENCE_ID = '0197f4a2-0800-7000-8000-000000000005';
 const CLIP_ID = '0197f4a2-0800-7000-8000-000000000006';
 
 describe('Story production API project scope', () => {
-  it('lists and edits Asset Specs without accepting Workspace identity', async () => {
+  it('manages Asset Specs without accepting Workspace identity', async () => {
     const list = [{ id: ASSET_ID }];
+    const created = { id: ASSET_ID, version: 0 };
     const patched = { id: ASSET_ID, version: 3 };
+    const archived = { id: ASSET_ID, version: 4, status: 'archived' };
     const production = {
       listAssetSpecs: jest.fn().mockResolvedValue(list),
+      createAssetSpec: jest.fn().mockResolvedValue(created),
       patchAssetSpec: jest.fn().mockResolvedValue(patched),
+      archiveAssetSpec: jest.fn().mockResolvedValue(archived),
     };
     const controller = new StoryProductionPlanController(production as never);
     const chapter = { projectId: PROJECT_ID, chapterId: CHAPTER_ID };
     const target = { ...chapter, assetSpecId: ASSET_ID };
+    const create = {
+      kind: 'location' as const,
+      name: 'City Gate',
+      imagePrompt: 'A rain-soaked city gate at night.',
+    };
     const patch = { expectedVersion: 2, imagePrompt: 'A stable portrait.' };
 
     await expect(
@@ -29,8 +38,21 @@ describe('Story production API project scope', () => {
       data: list,
     });
     await expect(
+      controller.createAssetSpec(
+        USER as never,
+        'create-key-1',
+        chapter,
+        create,
+      ),
+    ).resolves.toEqual({ code: 201, data: created });
+    await expect(
       controller.patchAssetSpec(USER as never, 'patch-key-1', target, patch),
     ).resolves.toEqual({ code: 200, data: patched });
+    await expect(
+      controller.archiveAssetSpec(USER as never, 'archive-key-1', target, {
+        expectedVersion: 3,
+      }),
+    ).resolves.toEqual({ code: 200, data: archived });
     expect(production.listAssetSpecs).toHaveBeenCalledWith(
       USER,
       PROJECT_ID,
@@ -43,6 +65,21 @@ describe('Story production API project scope', () => {
       ASSET_ID,
       'patch-key-1',
       patch,
+    );
+    expect(production.createAssetSpec).toHaveBeenCalledWith(
+      USER,
+      PROJECT_ID,
+      CHAPTER_ID,
+      'create-key-1',
+      create,
+    );
+    expect(production.archiveAssetSpec).toHaveBeenCalledWith(
+      USER,
+      PROJECT_ID,
+      CHAPTER_ID,
+      ASSET_ID,
+      'archive-key-1',
+      { expectedVersion: 3 },
     );
   });
 

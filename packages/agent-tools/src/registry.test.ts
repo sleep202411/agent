@@ -252,11 +252,10 @@ describe("agent-tools registry", () => {
         profile: { status: "current" },
         script: { status: "missing", documentId: null, sequence: null },
         plotTree: { status: "missing", nodeCount: 0 },
-        assets: { status: "missing", currentCount: 0, staleCount: 0 },
+        assets: { status: "missing", currentCount: 0 },
         storyboard: {
           status: "missing",
           sequenceCount: 0,
-          staleCount: 0,
           missingPlotNodeIds: [],
         },
         ready: false,
@@ -292,7 +291,7 @@ describe("agent-tools registry", () => {
         ...output,
         productionState: {
           ...output.productionState,
-          script: { status: "stale", documentId: null, sequence: null },
+          script: { status: "current", documentId: null, sequence: null },
         },
       })
     ).toThrow(/requires its canonical document id and sequence/);
