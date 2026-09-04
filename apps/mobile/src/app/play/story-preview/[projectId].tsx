@@ -21,9 +21,9 @@ import {
 import {
   ExperiencePlayer,
   ExperienceStartShell,
+  localize,
   type ExperiencePlayerCopy,
 } from "@/features/experience-player";
-import { localize } from "@/features/experience-player/localize";
 import { usePlayScreenOrientation } from "@/hooks/use-screen-orientation";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
@@ -46,9 +46,13 @@ export default function StoryPreviewScreen() {
   const params = useLocalSearchParams<{
     projectId?: string | string[];
     chapter?: string | string[];
+    title?: string | string[];
+    coverUrl?: string | string[];
   }>();
   const projectId = firstParam(params.projectId)?.trim() ?? "";
   const chapterId = firstParam(params.chapter)?.trim() || undefined;
+  const previewTitle = firstParam(params.title)?.trim() || "";
+  const previewCoverUrl = firstParam(params.coverUrl)?.trim() || "";
 
   const [preview, setPreview] = useState<StoryWorkingPreview>();
   const [loading, setLoading] = useState(true);
@@ -121,7 +125,9 @@ export default function StoryPreviewScreen() {
 
   const runtimeTitle = parsedRuntime
     ? localize(parsedRuntime.metadata.title, locale, parsedRuntime.localization.defaultLocale)
-    : t("play.playtest.pageTitle");
+    : "";
+  const bootTitle = runtimeTitle || previewTitle || t("play.playtest.pageTitle");
+  const bootCover = preview?.coverUrl || previewCoverUrl || undefined;
   const sourceLabel = preview
     ? fillMessageTemplate(t("play.playtest.draftRevision"), { revision: preview.draftRevision })
     : "";
@@ -158,6 +164,7 @@ export default function StoryPreviewScreen() {
           headerBackButtonMenuEnabled: false,
           gestureEnabled: false,
           fullScreenGestureEnabled: false,
+          orientation: "landscape",
           headerRight: refreshReady ? headerRight : undefined,
         }}
       />
@@ -187,10 +194,16 @@ export default function StoryPreviewScreen() {
           {sourceLabel ? (
             <View
               pointerEvents="none"
-              style={[styles.sourceChip, { top: insets.top + 8, left: Math.max(insets.left, 52) }]}
+              style={[
+                styles.sourceChip,
+                {
+                  top: insets.top + 8,
+                  left: Math.max(insets.left, Spacing.two) + 44 + Spacing.two,
+                },
+              ]}
             >
               <ThemedText type="code" style={styles.sourceTitle} numberOfLines={1}>
-                {runtimeTitle}
+                {bootTitle}
               </ThemedText>
               <ThemedText type="code" style={styles.sourceMeta} numberOfLines={1}>
                 {sourceLabel}
@@ -210,8 +223,9 @@ export default function StoryPreviewScreen() {
         <View style={styles.body}>
           <ExperienceStartShell
             eyebrow={copy.interactiveFilm}
-            title={t("play.playtest.pageTitle")}
+            title={bootTitle}
             summary={null}
+            coverUri={bootCover}
             ctaLabel={t("common.retry")}
             onPressCta={retry}
           />
@@ -231,9 +245,9 @@ export default function StoryPreviewScreen() {
         <View style={styles.body}>
           <ExperienceStartShell
             eyebrow={copy.interactiveFilm}
-            title={t("play.playtest.pageTitle")}
+            title={bootTitle}
             summary={null}
-            coverUri={preview?.coverUrl}
+            coverUri={bootCover}
             ctaLabel={copy.start}
             ctaDisabled
             ctaBusy={loading}

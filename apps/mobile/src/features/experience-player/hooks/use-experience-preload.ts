@@ -9,8 +9,8 @@ import {
   ensureMediaCached,
   maintainExperienceMediaCache,
   pinExperienceMediaSources,
-} from "./experience-media-cache";
-import { EXPERIENCE_PLAY_ORIENTATION, orderVideoUrisFromScene } from "./experience-media";
+} from "../lib/experience-media-cache";
+import { EXPERIENCE_PLAY_ORIENTATION, orderVideoUrisFromScene } from "../lib/experience-media";
 
 /** Nobody is watching anything but the progress bar — use the whole pipe. */
 const GATE_CONCURRENCY = 4;

@@ -26,6 +26,9 @@ export interface ExperienceRuntimeOptions {
  * player can actually execute.
  */
 const EXPERIENCE_NATIVE_HOST_CAPABILITIES = new Set([
+  "input.tap",
+  "input.swipe",
+  "renderer.content-transform",
   // This host paints stills (ExperienceStillSegment), so it can play a
   // sequence that holds an image. A host without that branch must not declare
   // this — the whole point is that it is refused by name instead of showing an

@@ -49,5 +49,6 @@ export type AgentMessage = {
   text?: string;
   cards?: AgentPipelineCard[];
   artifacts?: StoryTranscriptArtifact[];
+  attachmentNames?: string[];
   createdAt: string;
 };

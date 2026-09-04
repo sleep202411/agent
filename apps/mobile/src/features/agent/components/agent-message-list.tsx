@@ -79,6 +79,35 @@ function AgentMessageBlock({
           ) : (
             <AgentOsMarkdown>{assistantText}</AgentOsMarkdown>
           )}
+          {isUser && message.attachmentNames?.length ? (
+            <View style={styles.attachmentNames}>
+              {message.attachmentNames.map((name) => (
+                <ThemedText
+                  key={name}
+                  type="code"
+                  themeColor="textSecondary"
+                  style={styles.fileChip}
+                >
+                  {name}
+                </ThemedText>
+              ))}
+            </View>
+          ) : null}
+        </View>
+      ) : isUser && message.attachmentNames?.length ? (
+        <View
+          style={[
+            styles.bubble,
+            { backgroundColor: theme.backgroundSelected, alignSelf: "flex-end" },
+          ]}
+        >
+          <View style={styles.attachmentNames}>
+            {message.attachmentNames.map((name) => (
+              <ThemedText key={name} type="code" themeColor="textSecondary" style={styles.fileChip}>
+                {name}
+              </ThemedText>
+            ))}
+          </View>
         </View>
       ) : null}
 
@@ -172,6 +201,20 @@ const styles = StyleSheet.create({
   bubbleText: {
     fontSize: 15,
     lineHeight: 22,
+  },
+  attachmentNames: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  fileChip: {
+    backgroundColor: "rgba(0,0,0,0.25)",
+    borderRadius: 6,
+    fontSize: 10,
+    overflow: "hidden",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   cards: {
     gap: Spacing.two,

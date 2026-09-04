@@ -7,32 +7,22 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { useRouter } from "expo-router";
-import IconAlertTriangle from "@tabler/icons-react-native/icons/IconAlertTriangle";
-import IconMessageCircle from "@tabler/icons-react-native/icons/IconMessageCircle";
 
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Spacing } from "@/constants/theme";
 import {
   fillMessageTemplate,
-  storyAssetSpecConflictIsResolvable,
   storyProductionApi,
   type StoryAssetSpec,
-  type StoryAssetSpecConflictResolutionResult,
   type StoryAssetSpecKind,
-  type StoryProductionState,
 } from "@/features/agent/api/story-production-api";
 import { StoryAssetSpecCard } from "@/features/agent/components/story-asset-spec-card";
 import { StoryAssetSpecDetailSheet } from "@/features/agent/components/story-asset-spec-detail-sheet";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
-import {
-  storyAssetsStageGuidance,
-  storyAssetsStageHasStaleContent,
-} from "@/features/agent/lib/story-assets-stage-guidance";
 import { STORY_HEADER_CONTENT_GAP } from "@/features/agent/lib/story-tab-bar";
 import { useTheme } from "@/hooks/use-theme";
-import { useTranslations, type MessageKey } from "@/i18n";
+import { useTranslations } from "@/i18n";
 
 const TABS: StoryAssetSpecKind[] = ["character", "location", "prop"];
 
@@ -40,11 +30,13 @@ function replaceCount(template: string, count: number): string {
   return fillMessageTemplate(template, { count });
 }
 
-/** Browse-only assets gallery — mirrors H5 `StoryAssetsGallery` (no generation). */
+/**
+ * Browse-only assets gallery — H5 `StoryAssetsGallery` without edit/generate.
+ * Plot/plan state does not lock this surface.
+ */
 export default function AgentAssetsScreen() {
   const t = useTranslations();
   const theme = useTheme();
-  const router = useRouter();
   const {
     projectId,
     chapterId,
@@ -56,7 +48,6 @@ export default function AgentAssetsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [assets, setAssets] = useState<StoryAssetSpec[]>([]);
-  const [production, setProduction] = useState<StoryProductionState | null>(null);
   const [detailAsset, setDetailAsset] = useState<StoryAssetSpec | null>(null);
 
   const loadAssets = useCallback(
@@ -66,15 +57,9 @@ export default function AgentAssetsScreen() {
       else setLoading(true);
       setError(undefined);
       try {
-        const [rows, state] = await Promise.all([
-          storyProductionApi.listAssetSpecs(projectId, chapterId),
-          storyProductionApi.getProductionState(projectId, chapterId),
-        ]);
-        setAssets(rows);
-        setProduction(state);
+        setAssets(await storyProductionApi.listAssetSpecs(projectId, chapterId));
       } catch (err) {
         setAssets([]);
-        setProduction(null);
         setError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
@@ -93,37 +78,10 @@ export default function AgentAssetsScreen() {
     () => assets.filter((asset) => asset.kind === activeTab),
     [activeTab, assets]
   );
-  const guidance = production ? storyAssetsStageGuidance(production, assets.length) : null;
-  const staleContent = Boolean(
-    production && storyAssetsStageHasStaleContent(production, assets.length)
-  );
-  const resolvableStaleCount = assets.filter(storyAssetSpecConflictIsResolvable).length;
-  const staleNeedsAgent = (production?.assets.staleCount ?? 0) > resolvableStaleCount;
   const topPad = STORY_HEADER_CONTENT_GAP;
   const busy = chapterLoading || loading;
   const displayError = chapterError ?? error;
-  const showGallery = !busy && !displayError && (guidance === null || staleContent);
-
-  const applyConflictResult = (result: StoryAssetSpecConflictResolutionResult) => {
-    setProduction(result.productionState);
-    setAssets((current) => {
-      if (result.item.status === "archived") {
-        return current.filter((asset) => asset.id !== result.item.id);
-      }
-      return current.map((asset) => (asset.id === result.item.id ? result.item : asset));
-    });
-    setDetailAsset((current) => {
-      if (!current || current.id !== result.item.id) return current;
-      return result.item.status === "archived" ? null : result.item;
-    });
-  };
-
-  const continueWithAgent = (promptKey: MessageKey) => {
-    router.push({
-      pathname: "/agent/[projectId]",
-      params: { projectId, prefill: t(promptKey) },
-    });
-  };
+  const showGallery = !busy && !displayError;
 
   return (
     <ThemedView style={styles.screen}>
@@ -163,9 +121,6 @@ export default function AgentAssetsScreen() {
           <View style={styles.tabs}>
             {TABS.map((tab) => {
               const selected = activeTab === tab;
-              const staleCount = assets.filter(
-                (asset) => asset.kind === tab && asset.status === "stale"
-              ).length;
               return (
                 <Pressable
                   key={tab}
@@ -177,13 +132,6 @@ export default function AgentAssetsScreen() {
                     <ThemedText style={[styles.tabLabel, selected && styles.tabLabelSelected]}>
                       {t(`agent.assets.tabs.${tab}`)}
                     </ThemedText>
-                    {staleCount > 0 ? (
-                      <View style={styles.staleCount}>
-                        <ThemedText type="code" style={styles.staleCountLabel}>
-                          {staleCount}
-                        </ThemedText>
-                      </View>
-                    ) : null}
                   </View>
                 </Pressable>
               );
@@ -209,55 +157,6 @@ export default function AgentAssetsScreen() {
           />
         ) : null}
 
-        {!busy && !displayError && chapterId && staleContent ? (
-          <StageNotice
-            title={replaceCount(
-              t("agent.assets.stage.stale.title"),
-              production?.assets.staleCount ?? 0
-            )}
-            description={t("agent.assets.stage.stale.description")}
-            actionLabel={staleNeedsAgent ? t("agent.assets.continueWithAgent") : undefined}
-            onAction={
-              staleNeedsAgent ? () => continueWithAgent("agent.assets.prompts.assets") : undefined
-            }
-          />
-        ) : null}
-
-        {!busy && !displayError && !staleContent && guidance === "plotRequired" ? (
-          <StageBlock
-            title={t("agent.assets.stage.plotRequired.title")}
-            description={t("agent.assets.stage.plotRequired.description")}
-            actionLabel={t("agent.assets.continueWithAgent")}
-            onAction={() => continueWithAgent("agent.assets.prompts.plot")}
-          />
-        ) : null}
-
-        {!busy && !displayError && !staleContent && guidance === "assetsRequired" ? (
-          <StageBlock
-            title={t("agent.assets.stage.assetsRequired.title")}
-            description={t("agent.assets.stage.assetsRequired.description")}
-            actionLabel={t("agent.assets.continueWithAgent")}
-            onAction={() => continueWithAgent("agent.assets.prompts.assets")}
-          />
-        ) : null}
-
-        {!busy && !displayError && !staleContent && guidance === "noAssets" ? (
-          <StageBlock
-            title={t("agent.assets.stage.noAssets.title")}
-            description={t("agent.assets.stage.noAssets.description")}
-            actionLabel={
-              production?.storyboard.status !== "current"
-                ? t("agent.assets.continueWithAgent")
-                : undefined
-            }
-            onAction={
-              production?.storyboard.status !== "current"
-                ? () => continueWithAgent("agent.assets.prompts.storyboard")
-                : undefined
-            }
-          />
-        ) : null}
-
         {showGallery && filtered.length === 0 ? (
           <StageBlock
             title={t(`agent.assets.empty.${activeTab}`)}
@@ -265,17 +164,10 @@ export default function AgentAssetsScreen() {
           />
         ) : null}
 
-        {showGallery && filtered.length > 0 && chapterId ? (
+        {showGallery && filtered.length > 0 ? (
           <View style={styles.list}>
             {filtered.map((asset) => (
-              <StoryAssetSpecCard
-                key={asset.id}
-                asset={asset}
-                projectId={projectId}
-                chapterId={chapterId}
-                onPressDetails={setDetailAsset}
-                onConflictResolved={applyConflictResult}
-              />
+              <StoryAssetSpecCard key={asset.id} asset={asset} onPressDetails={setDetailAsset} />
             ))}
           </View>
         ) : null}
@@ -287,38 +179,6 @@ export default function AgentAssetsScreen() {
         onClose={() => setDetailAsset(null)}
       />
     </ThemedView>
-  );
-}
-
-function StageNotice({
-  title,
-  description,
-  actionLabel,
-  onAction,
-}: {
-  title: string;
-  description: string;
-  actionLabel?: string;
-  onAction?: () => void;
-}) {
-  return (
-    <View style={styles.notice}>
-      <View style={styles.noticeCopy}>
-        <IconAlertTriangle size={16} color="#E8B931" strokeWidth={1.8} />
-        <View style={styles.noticeText}>
-          <ThemedText style={styles.noticeTitle}>{title}</ThemedText>
-          <ThemedText style={styles.noticeDescription}>{description}</ThemedText>
-        </View>
-      </View>
-      {actionLabel && onAction ? (
-        <Pressable accessibilityRole="button" onPress={onAction}>
-          <View style={styles.noticeAction}>
-            <IconMessageCircle size={16} color="#FFFFFF" strokeWidth={1.8} />
-            <ThemedText type="smallBold">{actionLabel}</ThemedText>
-          </View>
-        </Pressable>
-      ) : null}
-    </View>
   );
 }
 
@@ -346,13 +206,11 @@ function StageBlock({
         <Pressable
           accessibilityRole="button"
           onPress={onAction}
-          style={({ pressed }) => [
-            styles.stageAction,
-            { backgroundColor: theme.backgroundSelected },
-            pressed && styles.pressed,
-          ]}
+          style={({ pressed }) => pressed && styles.pressed}
         >
-          <ThemedText type="smallBold">{actionLabel}</ThemedText>
+          <View style={[styles.stageAction, { backgroundColor: theme.backgroundSelected }]}>
+            <ThemedText type="smallBold">{actionLabel}</ThemedText>
+          </View>
         </Pressable>
       ) : null}
     </View>
@@ -414,17 +272,6 @@ const styles = StyleSheet.create({
   tabLabelSelected: {
     color: "#FFFFFF",
   },
-  staleCount: {
-    borderRadius: 6,
-    backgroundColor: "rgba(251, 191, 36, 0.12)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  staleCountLabel: {
-    color: "rgba(253, 230, 138, 0.88)",
-    fontSize: 10,
-    fontWeight: "600",
-  },
   pressed: {
     opacity: 0.8,
   },
@@ -452,44 +299,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   list: {
-    gap: Spacing.four,
-  },
-  notice: {
-    borderColor: "rgba(255,255,255,0.08)",
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderTopWidth: StyleSheet.hairlineWidth,
     gap: Spacing.three,
-    paddingVertical: Spacing.three,
-  },
-  noticeCopy: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: 12,
-  },
-  noticeText: {
-    flex: 1,
-    gap: 4,
-    minWidth: 0,
-  },
-  noticeTitle: {
-    color: "rgba(255,255,255,0.9)",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  noticeDescription: {
-    color: "rgba(255,255,255,0.64)",
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  noticeAction: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 12,
-    flexDirection: "row",
-    gap: 6,
-    height: 40,
-    justifyContent: "center",
-    paddingHorizontal: Spacing.four,
   },
 });

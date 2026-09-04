@@ -3,11 +3,7 @@ import { Pressable, StyleSheet, View } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
-import type {
-  StoryAssetSpec,
-  StoryAssetSpecConflictResolutionResult,
-} from "@/features/agent/api/story-production-api";
-import { StoryProductionConflictPanel } from "@/features/agent/components/story-production-conflict-panel";
+import type { StoryAssetSpec } from "@/features/agent/api/story-production-api";
 import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
@@ -28,25 +24,18 @@ function mediaUrl(asset: StoryAssetSpec): string | undefined {
   );
 }
 
-/** Browse-only asset card — H5 `StoryAssetSpecCard` media-first layout. */
+/** Browse-only asset card — H5 `StoryAssetSpecCard` media without edit/generate. */
 export function StoryAssetSpecCard({
   asset,
-  projectId,
-  chapterId,
   onPressDetails,
-  onConflictResolved,
 }: {
   asset: StoryAssetSpec;
-  projectId: string;
-  chapterId: string;
   onPressDetails?: (asset: StoryAssetSpec) => void;
-  onConflictResolved?: (result: StoryAssetSpecConflictResolutionResult) => void;
 }) {
   const t = useTranslations();
   const theme = useTheme();
   const uri = mediaUrl(asset);
   const aspectRatio = MEDIA_ASPECT[asset.kind];
-  const stale = asset.status === "stale";
 
   return (
     <View style={styles.card}>
@@ -60,13 +49,6 @@ export function StoryAssetSpecCard({
             </ThemedText>
           </View>
         )}
-        {stale ? (
-          <View style={styles.staleBadge}>
-            <ThemedText type="code" style={styles.staleBadgeLabel}>
-              {t("agent.assets.status.stale")}
-            </ThemedText>
-          </View>
-        ) : null}
         {onPressDetails ? (
           <View style={[styles.overlay, !uri && styles.overlayCentered]} pointerEvents="box-none">
             <Pressable
@@ -83,9 +65,6 @@ export function StoryAssetSpecCard({
           </View>
         ) : null}
       </View>
-      {stale ? (
-        <ThemedText style={styles.blockedHint}>{t("agent.assets.targetNotCurrent")}</ThemedText>
-      ) : null}
       <View style={styles.copy}>
         <ThemedText type="smallBold" numberOfLines={1} style={styles.name}>
           {asset.name}
@@ -96,12 +75,6 @@ export function StoryAssetSpecCard({
           </ThemedText>
         ) : null}
       </View>
-      <StoryProductionConflictPanel
-        projectId={projectId}
-        chapterId={chapterId}
-        asset={asset}
-        onResolved={(result) => onConflictResolved?.(result)}
-      />
     </View>
   );
 }
@@ -109,7 +82,9 @@ export function StoryAssetSpecCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: "rgba(255,255,255,0.045)",
+    borderColor: "rgba(255,255,255,0.09)",
     borderRadius: 16,
+    borderWidth: 1,
     minWidth: 0,
     padding: Spacing.three,
   },
@@ -148,26 +123,6 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.72)",
     fontSize: 11,
     fontWeight: "500",
-  },
-  staleBadge: {
-    backgroundColor: "rgba(251, 191, 36, 0.16)",
-    borderRadius: 6,
-    left: Spacing.two,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 3,
-    position: "absolute",
-    top: Spacing.two,
-  },
-  staleBadgeLabel: {
-    color: "rgba(253, 230, 138, 0.92)",
-    fontSize: 10,
-    fontWeight: "600",
-  },
-  blockedHint: {
-    color: "rgba(253, 230, 138, 0.82)",
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 8,
   },
   copy: {
     gap: 4,

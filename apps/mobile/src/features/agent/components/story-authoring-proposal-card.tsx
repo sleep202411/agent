@@ -16,6 +16,7 @@ import { Spacing } from "@/constants/theme";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 
 import { fillMessageTemplate } from "../api/story-production-api";
+import { useThreadScrollHydrateLock } from "../hooks/use-agent-thread-scroll";
 import { useStoryAgentRunById } from "../hooks/use-story-authoring-run";
 import {
   storyProposalAssetKindCounts,
@@ -92,6 +93,7 @@ export function StoryAuthoringProposalCard({
   const t = useTranslations();
   const locale = useLocale();
   const run = useStoryAgentRunById(projectId, storyAgentRunId);
+  useThreadScrollHydrateLock(!run);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [plotOpen, setPlotOpen] = useState(false);
   const [storyboardOpen, setStoryboardOpen] = useState(false);

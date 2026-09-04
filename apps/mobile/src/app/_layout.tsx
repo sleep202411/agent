@@ -8,7 +8,6 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import "@/global.css";
 import { AuthProvider } from "@/auth";
 import { initLocale } from "@/i18n";
-import { lockAppPortrait } from "@/hooks/use-screen-orientation";
 import { PlayOrientationExitCover } from "@/components/play-orientation-exit-cover";
 import { checkForUpdate } from "@/lib/update-check";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
@@ -36,9 +35,6 @@ export default function RootLayout() {
   useEffect(() => {
     void initLocale();
     void checkForUpdate();
-    void lockAppPortrait().catch((error: unknown) => {
-      console.warn("[orientation] initial portrait lock failed", error);
-    });
   }, []);
 
   return (
@@ -49,7 +45,12 @@ export default function RootLayout() {
           <AuthProvider>
             <AnimatedSplashOverlay />
             <MobileAppFrame>
-              <Stack screenOptions={{ headerShown: false }}>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  orientation: "portrait_up",
+                }}
+              >
                 <Stack.Screen name="(tabs)" />
                 <Stack.Screen name="agent/index" options={detailHeader} />
                 <Stack.Screen name="agent/[projectId]" options={{ headerShown: false }} />
@@ -67,6 +68,7 @@ export default function RootLayout() {
                   name="play/interactive-film/[gameId]"
                   options={{
                     ...detailHeader,
+                    orientation: "landscape",
                     animation: "fade",
                     headerBackButtonMenuEnabled: false,
                     gestureEnabled: false,
@@ -77,6 +79,7 @@ export default function RootLayout() {
                   name="play/story-preview/[projectId]"
                   options={{
                     ...detailHeader,
+                    orientation: "landscape",
                     animation: "fade",
                     headerBackButtonMenuEnabled: false,
                     gestureEnabled: false,

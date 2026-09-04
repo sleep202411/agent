@@ -9,7 +9,6 @@ import { useTheme } from "@/hooks/use-theme";
 import { useTranslations } from "@/i18n";
 
 function statusLabelKey(status: StoryAssetSpec["status"]) {
-  if (status === "stale") return "agent.assets.status.stale" as const;
   if (status === "archived") return "agent.assets.status.archived" as const;
   return "agent.assets.status.current" as const;
 }

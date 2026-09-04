@@ -1,5 +1,7 @@
+import IconAlertTriangle from "@tabler/icons-react-native/icons/IconAlertTriangle";
 import IconBolt from "@tabler/icons-react-native/icons/IconBolt";
 import IconCheck from "@tabler/icons-react-native/icons/IconCheck";
+import IconCloudOff from "@tabler/icons-react-native/icons/IconCloudOff";
 import IconCloudUpload from "@tabler/icons-react-native/icons/IconCloudUpload";
 import IconLoader2 from "@tabler/icons-react-native/icons/IconLoader2";
 import { useCallback, useEffect, useState } from "react";
@@ -8,17 +10,21 @@ import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } 
 import { appEnv } from "@/config";
 import {
   getInteractiveFilmPublication,
+  offlineInteractiveFilm,
   prepareInteractiveFilmRelease,
   submitInteractiveFilmRelease,
   type InteractiveFilmPublication,
   type InteractiveFilmPublicationStatus,
 } from "@/features/agent/api/interactive-film-publication-api";
+import { fillMessageTemplate } from "@/features/agent/api/story-production-api";
 import {
   storyProjectsApi,
   type StoryBillingBalance,
 } from "@/features/agent/api/studio-projects-api";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
-import { useLocale, useTranslations } from "@/i18n";
+import { useLocale, useTranslations, type MessageKey } from "@/i18n";
+
+const PUBLICATION_POLL_MS = 30_000;
 
 function formatPoints(value: string | undefined): string {
   if (!value || !/^\d+$/.test(value)) return "—";
@@ -47,6 +53,19 @@ function statusLabelKey(
     case "draft":
       return "agent.publish.status.draft";
   }
+}
+
+function submitActionKey(
+  status: InteractiveFilmPublicationStatus | null,
+  submitting: boolean,
+  rejectReason: string | null
+): MessageKey {
+  if (submitting) return "agent.publish.actionPending";
+  if (status === "reviewing") return "agent.publish.actionReviewing";
+  if (status === "published") return "agent.publish.actionPublished";
+  if (rejectReason) return "agent.publish.actionResubmit";
+  if (status === "offline") return "agent.publish.actionUpdate";
+  return "agent.publish.action";
 }
 
 /** Compute credits chip — shared by chat and script/assets headers. */
@@ -100,7 +119,7 @@ export function StoryCreditsButton({ projectId }: { projectId: string }) {
   );
 }
 
-/** Project header actions: publication badge + submit + compute credits. */
+/** Project header actions: publication badge + submit + take offline + credits. */
 export function StoryProjectHeaderActions({ projectId }: { projectId: string }) {
   const t = useTranslations();
   const {
@@ -114,12 +133,16 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
   const [publicationLoading, setPublicationLoading] = useState(true);
   const [publicationFailed, setPublicationFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [offlining, setOfflining] = useState(false);
 
   const canRelease = capabilities.includes("story.release");
   const canEdit = capabilities.includes("story.edit");
   const canBuild = capabilities.includes("story.build");
   const status = publication?.status ?? null;
+  const rejectReason = publication?.rejectReason ?? null;
   const canSubmitStatus = status === null || status === "draft" || status === "offline";
+  const canOffline = canRelease && (status === "reviewing" || status === "published");
+  const busy = submitting || offlining;
   const hasSnapshot =
     typeof draftRevision === "number" &&
     typeof videoSnapshotHash === "string" &&
@@ -133,10 +156,10 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     !publicationFailed &&
     canSubmitStatus &&
     hasSnapshot &&
-    !submitting;
+    !busy;
 
   const refreshHeaderData = useCallback(
-    async (signal?: AbortSignal) => {
+    async (signal?: AbortSignal, opts?: { silent?: boolean }) => {
       if (!canRelease) {
         setPublication(null);
         setPublicationFailed(false);
@@ -144,18 +167,22 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
         return;
       }
 
-      setPublicationLoading(true);
-      setPublicationFailed(false);
+      if (!opts?.silent) {
+        setPublicationLoading(true);
+        setPublicationFailed(false);
+      }
       try {
         const nextPublication = await getInteractiveFilmPublication(projectId, signal);
         if (signal?.aborted) return;
         setPublication(nextPublication);
+        setPublicationFailed(false);
       } catch {
         if (signal?.aborted) return;
+        if (opts?.silent) return;
         setPublication(null);
         setPublicationFailed(true);
       } finally {
-        if (!signal?.aborted) setPublicationLoading(false);
+        if (!signal?.aborted && !opts?.silent) setPublicationLoading(false);
       }
     },
     [canRelease, projectId]
@@ -167,7 +194,13 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     void refreshHeaderData(controller.signal).catch(() => {
       if (!controller.signal.aborted) setPublicationLoading(false);
     });
-    return () => controller.abort();
+    const timer = setInterval(() => {
+      void refreshHeaderData(controller.signal, { silent: true });
+    }, PUBLICATION_POLL_MS);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
   }, [refreshHeaderData, workbenchLoading]);
 
   const disabledReason =
@@ -221,6 +254,43 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     ]);
   };
 
+  const onOfflinePress = () => {
+    if (!canOffline || busy) return;
+    Alert.alert(t("agent.publish.offline.title"), t("agent.publish.offline.description"), [
+      { text: t("agent.publish.cancel"), style: "cancel" },
+      {
+        text: t("agent.publish.offline.confirm"),
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            setOfflining(true);
+            try {
+              const next = await offlineInteractiveFilm(projectId);
+              setPublication(next);
+              Alert.alert(t("agent.publish.offline.action"), t("agent.publish.offline.success"));
+            } catch (error) {
+              const message =
+                error instanceof Error && error.message.trim()
+                  ? error.message
+                  : t("agent.publish.offline.failed");
+              Alert.alert(t("agent.publish.offline.action"), message);
+            } finally {
+              setOfflining(false);
+            }
+          })();
+        },
+      },
+    ]);
+  };
+
+  const onRejectionPress = () => {
+    if (!rejectReason) return;
+    Alert.alert(
+      t(statusLabelKey(status)),
+      fillMessageTemplate(t("agent.publish.rejectionReason"), { reason: rejectReason })
+    );
+  };
+
   const PublishIcon =
     submitting || status === "reviewing"
       ? IconLoader2
@@ -228,20 +298,41 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
         ? IconCheck
         : IconCloudUpload;
 
+  const badge = (
+    <View style={styles.badge}>
+      {rejectReason ? (
+        <IconAlertTriangle color="rgba(239,68,68,0.92)" size={14} strokeWidth={1.8} />
+      ) : null}
+      <Text style={styles.badgeText} numberOfLines={1}>
+        {t(statusLabelKey(status))}
+      </Text>
+    </View>
+  );
+
   return (
     <View style={styles.row}>
       {canRelease ? (
         <View style={styles.publishGroup}>
           {!publicationLoading && !publicationFailed ? (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText} numberOfLines={1}>
-                {t(statusLabelKey(status))}
-              </Text>
-            </View>
+            rejectReason ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={fillMessageTemplate(t("agent.publish.rejectionReason"), {
+                  reason: rejectReason,
+                })}
+                hitSlop={6}
+                onPress={onRejectionPress}
+                style={({ pressed }) => pressed && styles.pressed}
+              >
+                {badge}
+              </Pressable>
+            ) : (
+              badge
+            )
           ) : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={t("agent.publish.action")}
+            accessibilityLabel={t(submitActionKey(status, submitting, rejectReason))}
             hitSlop={8}
             onPress={onPublishPress}
             style={({ pressed }) => [styles.iconButton, pressed && styles.pressed]}
@@ -252,6 +343,22 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
               <PublishIcon color="rgba(255,255,255,0.68)" size={18} strokeWidth={1.8} />
             )}
           </Pressable>
+          {canOffline ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("agent.publish.offline.action")}
+              accessibilityState={{ disabled: busy }}
+              hitSlop={8}
+              onPress={onOfflinePress}
+              style={({ pressed }) => [styles.iconButton, pressed && !busy && styles.pressed]}
+            >
+              {offlining ? (
+                <ActivityIndicator color="rgba(248,113,113,0.92)" size="small" />
+              ) : (
+                <IconCloudOff color="rgba(248,113,113,0.86)" size={18} strokeWidth={1.8} />
+              )}
+            </Pressable>
+          ) : null}
         </View>
       ) : null}
       <StoryCreditsButton projectId={projectId} />
@@ -274,11 +381,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   badge: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderRadius: 8,
+    flexDirection: "row",
+    gap: 4,
     height: 28,
     justifyContent: "center",
     paddingHorizontal: 8,
-    borderRadius: 8,
-    backgroundColor: "rgba(255,255,255,0.055)",
   },
   badgeText: {
     fontSize: 10,

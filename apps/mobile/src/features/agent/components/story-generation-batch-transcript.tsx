@@ -16,7 +16,8 @@ import { useLayoutEffect, useMemo, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
-import { navigateToStoryPreview } from "@/features/experience-player/play-game-href";
+import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
+import { navigateToStoryPreview } from "@/features/experience-player";
 import { useTranslations, type MessageKey } from "@/i18n";
 
 import {
@@ -32,6 +33,7 @@ import {
   type StoryGenerationBatchItem,
   type StoryStoryboardSequence,
 } from "../api/story-production-api";
+import { useThreadScrollHydrateLock } from "../hooks/use-agent-thread-scroll";
 import { useStoryGenerationBatch } from "../hooks/use-story-generation-batch";
 import type { StoryGenerationBatchArtifact } from "../types";
 
@@ -154,6 +156,7 @@ export function StoryGenerationBatchTranscript({
     reference.storyChapterId,
     reference.generationBatchId
   );
+  useThreadScrollHydrateLock(live.loading && !live.batch);
 
   if (live.loading && !live.batch) {
     return (
@@ -211,6 +214,7 @@ function BatchBody({
 }) {
   const t = useTranslations();
   const router = useRouter();
+  const { projectTitle } = useStoryChapterContext();
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const ordered = useMemo(
     () => [...batch.items].sort((left, right) => left.ordinal - right.ordinal),
@@ -332,7 +336,10 @@ function BatchBody({
           accessibilityRole="button"
           accessibilityLabel={t("agent.generation.mobileStoryboard.play")}
           onPress={() =>
-            navigateToStoryPreview(router, batch.projectId, { chapterId: batch.chapterId })
+            navigateToStoryPreview(router, batch.projectId, {
+              chapterId: batch.chapterId,
+              title: projectTitle,
+            })
           }
         >
           <View style={styles.playChrome}>

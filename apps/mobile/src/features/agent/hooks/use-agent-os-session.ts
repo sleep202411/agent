@@ -18,6 +18,7 @@ import {
   type AgentOsPendingUserInputQuestion,
   type AgentOsRunResponse,
   type AgentOsRunStatus,
+  type AgentOsPermissionMode,
 } from "../api/agent-os-api";
 import {
   conversationRunsToMessages,
@@ -37,6 +38,15 @@ const POLL_MS_ACTIVE = 400;
 const POLL_MS_IDLE = 1_500;
 const POLL_MAX_MS = 10 * 60_000;
 const POLL_FAIL_LIMIT = 8;
+
+export type AgentOsSendExtras = {
+  attachmentIds?: string[];
+  attachmentNames?: string[];
+  skillIds?: string[];
+  projectSkillInstallationIds?: string[];
+  disabledDefaultSkillInstallationIds?: string[];
+  permissionMode?: AgentOsPermissionMode;
+};
 
 export type UseAgentOsSessionOptions = {
   projectId: string;
@@ -74,13 +84,14 @@ function mergeRunMessages(
   previous: AgentMessage[],
   runId: string,
   events: AgentOsEvent[],
-  prompt?: { text: string; at: string } | null,
+  prompt?: { text: string; at: string; attachmentNames?: string[] } | null,
   hitl?: { text: string; at: string; decision: "approve" | "reject" } | null
 ): AgentMessage[] {
   const rebuilt = eventsToMessages(events, {
     runId,
     userText: prompt?.text,
     userAt: prompt?.at,
+    userAttachmentNames: prompt?.attachmentNames,
     hitlText: hitl?.text,
     hitlAt: hitl?.at,
     hitlDecision: hitl?.decision,
@@ -138,7 +149,11 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
   const modelProfileIdRef = useRef<string | null>(null);
   const lastSequenceRef = useRef(0);
   const eventsBufRef = useRef<AgentOsEvent[]>([]);
-  const userPromptRef = useRef<{ text: string; at: string } | null>(null);
+  const userPromptRef = useRef<{
+    text: string;
+    at: string;
+    attachmentNames?: string[];
+  } | null>(null);
   const hitlReplyRef = useRef<{
     text: string;
     at: string;
@@ -322,9 +337,11 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
   );
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, extras?: AgentOsSendExtras) => {
       const trimmed = text.trim();
-      if (!trimmed) return;
+      const attachmentIds = extras?.attachmentIds?.filter((id) => id.trim()) ?? [];
+      const attachmentNames = extras?.attachmentNames?.filter((name) => name.trim()) ?? [];
+      if (!trimmed && attachmentIds.length === 0) return;
       if (!configured) {
         setSession((prev) => ({
           ...prev,
@@ -347,13 +364,23 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         const turnId = newClientUuid();
         const messageId = newClientUuid();
         const at = new Date().toISOString();
-        userPromptRef.current = { text: trimmed, at };
+        userPromptRef.current = {
+          text: trimmed,
+          at,
+          attachmentNames: attachmentNames.length > 0 ? attachmentNames : undefined,
+        };
         eventsBufRef.current = [];
         lastSequenceRef.current = 0;
         setRunEvents([]);
         setMessages((prev) => [
           ...prev,
-          { id: `user:${messageId}`, role: "user", text: trimmed, createdAt: at },
+          {
+            id: `user:${messageId}`,
+            role: "user",
+            text: trimmed,
+            attachmentNames: attachmentNames.length > 0 ? attachmentNames : undefined,
+            createdAt: at,
+          },
         ]);
 
         const run = await agentOsApi.startRun({
@@ -366,7 +393,11 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
           modelProfileId,
           workbenchMode,
           workbenchContext: { chapterId, experience: AGENT_OS_MOBILE_EXPERIENCE },
-          permissionMode: "smart",
+          permissionMode: extras?.permissionMode ?? "smart",
+          attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+          skillIds: extras?.skillIds,
+          projectSkillInstallationIds: extras?.projectSkillInstallationIds,
+          disabledDefaultSkillInstallationIds: extras?.disabledDefaultSkillInstallationIds,
         });
 
         const live = liveFromPage(run, run.events ?? []);
@@ -387,7 +418,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
               prev.filter((message) => message.id !== `user:${messageId}`),
               run.runId,
               eventsBufRef.current,
-              { text: trimmed, at }
+              { text: trimmed, at, attachmentNames: userPromptRef.current?.attachmentNames }
             )
           );
         }

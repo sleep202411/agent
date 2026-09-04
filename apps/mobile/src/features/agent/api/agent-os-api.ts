@@ -8,6 +8,8 @@
  * Transport: poll `GET .../runs/:runId/events`. Ably token is optional only.
  */
 
+import { Platform } from "react-native";
+
 import { api } from "@/lib/api-client";
 
 export type AgentOsRunStatus =
@@ -173,6 +175,37 @@ export interface AgentOsModelPreferencesUpdate {
   imageModelId: string | null;
   videoModelId: string | null;
 }
+
+export interface AgentOsAttachmentSummary {
+  id: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: "ready" | "failed";
+  sectionCount: number;
+  errorMessage?: string | null;
+  createdAt: string;
+}
+
+export interface AgentOsSkillMeta {
+  id: string;
+  name: string;
+  description: string;
+  source: string;
+  alwaysOn: boolean;
+  userInvocable: boolean;
+  removable: boolean;
+  projectKinds: Array<"platform" | "story">;
+  workbenchModes: string[];
+  priority: number;
+}
+
+export type AgentOsLocalFile = {
+  uri: string;
+  name: string;
+  mimeType?: string | null;
+  size?: number | null;
+};
 
 export function normalizePendingExternal(raw: unknown): AgentOsPendingExternal | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
@@ -357,5 +390,36 @@ export const agentOsApi = {
       signal,
       timeout: 15_000,
     });
+  },
+
+  listSkills(projectId: string, workbenchMode: string, signal?: AbortSignal) {
+    return api.get<{
+      skills: AgentOsSkillMeta[];
+      invocable: AgentOsSkillMeta[];
+      projectKind: "platform" | "story";
+      workbenchMode: string;
+    }>(`${AGENT_OS}/skills`, {
+      ...AURORA,
+      params: { projectId, workbenchMode },
+      signal,
+      timeout: 20_000,
+    });
+  },
+
+  async uploadAttachment(projectId: string, file: AgentOsLocalFile, signal?: AbortSignal) {
+    const form = new FormData();
+    const mime = file.mimeType?.trim() || "application/octet-stream";
+    if (Platform.OS === "web") {
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+      form.append("file", blob, file.name);
+    } else {
+      form.append("file", { uri: file.uri, name: file.name, type: mime } as unknown as Blob);
+    }
+    return api.postFormData<AgentOsAttachmentSummary>(
+      `${AGENT_OS}/projects/${encodeURIComponent(projectId)}/attachments`,
+      form,
+      { ...AURORA, signal, timeout: 60_000 }
+    );
   },
 };

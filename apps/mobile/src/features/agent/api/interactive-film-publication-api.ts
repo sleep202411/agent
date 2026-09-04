@@ -112,3 +112,18 @@ export async function submitInteractiveFilmRelease(
   if (!publication) throw new Error("Java did not return the submitted interactive film.");
   return publication;
 }
+
+export async function offlineInteractiveFilm(
+  projectId: string,
+  signal?: AbortSignal
+): Promise<InteractiveFilmPublication> {
+  await api.post(`/api/user/interactive-film/${encodeURIComponent(projectId)}/status`, {
+    ...STUDIO,
+    data: { action: "offline" },
+    signal,
+    timeout: 60_000,
+  });
+  const publication = await getInteractiveFilmPublication(projectId, signal);
+  if (!publication) throw new Error("Java did not return the offline interactive film.");
+  return publication;
+}

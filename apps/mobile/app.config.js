@@ -288,6 +288,7 @@ module.exports = ({ config }) => {
       ],
       "expo-video",
       "expo-audio",
+      "expo-document-picker",
       "expo-web-browser",
       [
         "expo-media-library",

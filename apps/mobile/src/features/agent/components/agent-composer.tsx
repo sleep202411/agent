@@ -1,5 +1,6 @@
 import IconArrowUp from "@tabler/icons-react-native/icons/IconArrowUp";
 import IconPlayerStopFilled from "@tabler/icons-react-native/icons/IconPlayerStopFilled";
+import type { ReactNode } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
@@ -23,11 +24,19 @@ type AgentComposerProps = {
   onStop?: () => void;
   stopAccessibilityLabel?: string;
   sendDisabled?: boolean;
+  /** Allow sending with empty text (an attachment carries the content). */
+  canSendWithoutText?: boolean;
   modelProfileId?: string;
   modelOptions?: readonly AgentOsModelProfile[];
   onOpenModelSettings?: () => void;
   modelMenuLabel?: string;
   modelMenuDisabled?: boolean;
+  /** Skills / file chips above the textarea (H5 CopilotComposer attachmentBar). */
+  attachmentBar?: ReactNode;
+  /** Bottom toolbar, leading side (paperclip). */
+  leadingAction?: ReactNode;
+  /** Bottom toolbar, immediately left of send (permission). */
+  beforeSend?: ReactNode;
   /** Links to KeyboardGestureArea for interactive keyboard dismiss. */
   nativeID?: string;
 };
@@ -42,15 +51,19 @@ export function AgentComposer({
   onStop,
   stopAccessibilityLabel,
   sendDisabled = false,
+  canSendWithoutText = false,
   modelProfileId,
   modelOptions,
   onOpenModelSettings,
   modelMenuLabel,
   modelMenuDisabled = false,
+  attachmentBar,
+  leadingAction,
+  beforeSend,
   nativeID,
 }: AgentComposerProps) {
   const colors = useTheme();
-  const canSend = value.trim().length > 0 && !sendDisabled && !busy;
+  const canSend = (value.trim().length > 0 || canSendWithoutText) && !sendDisabled && !busy;
   const showModelMenu = Boolean(onOpenModelSettings && modelMenuLabel);
   const selectedModelLabel =
     modelOptions?.find((option) => option.id === modelProfileId)?.label ?? modelMenuLabel;
@@ -66,6 +79,8 @@ export function AgentComposer({
           },
         ]}
       >
+        {attachmentBar}
+
         <TextInput
           nativeID={nativeID}
           value={value}
@@ -79,6 +94,9 @@ export function AgentComposer({
           blurOnSubmit={false}
         />
         <View style={styles.toolbar}>
+          {leadingAction}
+          <View style={styles.toolbarSpacer} />
+          {beforeSend}
           {showModelMenu ? (
             <View style={styles.modelSlot}>
               <AgentModelMenu
@@ -88,7 +106,6 @@ export function AgentComposer({
               />
             </View>
           ) : null}
-          <View style={styles.toolbarSpacer} />
           {busy && onStop ? (
             <Pressable
               accessibilityRole="button"
@@ -160,16 +177,16 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
     maxHeight: 132,
-    minHeight: 44,
+    minHeight: 56,
     paddingHorizontal: 0,
-    paddingTop: 0,
+    paddingTop: Spacing.one,
     paddingBottom: Spacing.one,
     textAlignVertical: "top",
   },
   toolbar: {
     alignItems: "center",
     flexDirection: "row",
-    gap: Spacing.two,
+    gap: 4,
     minHeight: 36,
     paddingTop: 0,
   },
@@ -178,7 +195,7 @@ const styles = StyleSheet.create({
   },
   modelSlot: {
     flexShrink: 1,
-    maxWidth: "72%",
+    maxWidth: 196,
     minWidth: 0,
   },
   sendThread: {

@@ -252,15 +252,26 @@ function isArtifactStatus(value: unknown): value is StoryProposalArtifactStatus 
 
 /**
  * Fold Agent OS journal events into the Dreem-style message list used by
- * mobile thread UI. Streaming deltas coalesce into one assistant bubble per
- * open stream. Story proposal artifacts stay on the Assistant turn (H5).
+ * mobile thread UI. One user submission owns one Assistant bubble (H5 turn):
+ * later MessageCompleted segments append in place, and domain artifacts stay
+ * on that same bubble so markdown (tables included) paints before the card.
  */
+function attachmentNamesFromEvent(event: AgentOsEvent): string[] {
+  if (!Array.isArray(event.data.attachments)) return [];
+  return event.data.attachments.flatMap((attachment) => {
+    if (!attachment || typeof attachment !== "object" || Array.isArray(attachment)) return [];
+    const filename = (attachment as Record<string, unknown>).filename;
+    return typeof filename === "string" && filename.trim() ? [filename.trim()] : [];
+  });
+}
+
 export function eventsToMessages(
   events: AgentOsEvent[],
   opts?: {
     runId?: string;
     userText?: string;
     userAt?: string;
+    userAttachmentNames?: string[];
     hitlText?: string;
     hitlAt?: string;
     hitlDecision?: "approve" | "reject";
@@ -305,8 +316,8 @@ export function eventsToMessages(
   const flushAssistant = (kind: string, sequence: number, timestamp: string) => {
     const text = streamText.trim();
     if (!text) return;
-    if (lastAssistant && !lastAssistant.text) {
-      lastAssistant.text = text;
+    if (lastAssistant) {
+      lastAssistant.text = lastAssistant.text ? `${lastAssistant.text.trim()}\n\n${text}` : text;
       lastAssistant.id = `asst:${opts?.runId ?? "run"}:${sequence}`;
     } else {
       lastAssistant = {
@@ -325,8 +336,10 @@ export function eventsToMessages(
   for (const event of sorted) {
     if (event.type === "UserMessage") {
       flushAssistant("before_user", event.sequence, event.timestamp);
+      lastAssistant = null;
       const text = typeof event.data.text === "string" ? event.data.text.trim() : "";
-      if (text) {
+      const names = attachmentNamesFromEvent(event);
+      if (text || names.length > 0) {
         const messageId =
           typeof event.data.messageId === "string" && event.data.messageId.trim()
             ? event.data.messageId.trim()
@@ -335,6 +348,7 @@ export function eventsToMessages(
           id: `user:${opts?.runId ?? "run"}:${messageId}`,
           role: "user",
           text,
+          attachmentNames: names.length > 0 ? names : undefined,
           createdAt: event.timestamp,
         });
       }
@@ -502,12 +516,13 @@ export function eventsToMessages(
   }
 
   const hasUserMessage = sorted.some((event) => event.type === "UserMessage");
-  if (!hasUserMessage && opts?.userText?.trim()) {
+  if (!hasUserMessage && (opts?.userText?.trim() || (opts?.userAttachmentNames?.length ?? 0) > 0)) {
     out.unshift({
       id: `user:${opts?.runId ?? "local"}`,
       role: "user",
-      text: opts.userText.trim(),
-      createdAt: opts.userAt ?? new Date().toISOString(),
+      text: opts?.userText?.trim() || "",
+      attachmentNames: opts?.userAttachmentNames,
+      createdAt: opts?.userAt ?? new Date().toISOString(),
     });
   }
 

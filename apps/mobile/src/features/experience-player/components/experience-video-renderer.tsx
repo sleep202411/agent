@@ -12,8 +12,7 @@ import {
 
 import { useGatedScreenActive } from "@/hooks/use-app-active";
 
-import type { ExperiencePlayerCopy } from "./experience-player-copy";
-import { resolvePlaybackUri } from "./experience-media-cache";
+import { resolvePlaybackUri } from "../lib/experience-media-cache";
 import {
   invalidatePlayableMediaUrl,
   isStillVideoVariant,
@@ -21,7 +20,8 @@ import {
   sequenceTimelineOffsetMs,
   stillClipDurationMs,
   EXPERIENCE_PLAY_ORIENTATION,
-} from "./experience-media";
+} from "../lib/experience-media";
+import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
 
 type CoreVideoTerminalMode =
   | { kind: "held" }
@@ -95,6 +95,13 @@ function EmptyVideoSequencePlaceholder({ label }: { label: string }) {
   );
 }
 
+export type ExperienceMediaPlaybackHandle = {
+  readonly playbackIdentity: string;
+  play(): Promise<void>;
+  pause(): void;
+  seek(seconds: number): void;
+};
+
 export function ExperienceVideoRenderer({
   manifest,
   renderer,
@@ -102,6 +109,7 @@ export function ExperienceVideoRenderer({
   onTimelineTimeMs,
   onCompleted,
   onRuntimeError,
+  onPlaybackHandle,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -109,6 +117,7 @@ export function ExperienceVideoRenderer({
   onTimelineTimeMs: (timeMs: number) => void;
   onCompleted: () => void;
   onRuntimeError: (message: string) => void;
+  onPlaybackHandle?: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
   const config = ExperienceCoreVideoRendererConfigSchema.parse(renderer.config);
   const [playbackState, setPlaybackState] = useState<CoreVideoPlaybackState>(() =>
@@ -121,7 +130,6 @@ export function ExperienceVideoRenderer({
     setPlaybackState(initialCoreVideoPlaybackState(renderer.instanceId));
   }
   const { sequenceIndex, terminalMode } = playbackState;
-  const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const completedRendererIdRef = useRef<string | null>(null);
   const missingAssetRef = useRef<string | null>(null);
   /** Resume playback when the screen is presentable again if we paused for it. */
@@ -218,13 +226,6 @@ export function ExperienceVideoRenderer({
   useEffect(() => {
     completedRendererIdRef.current = null;
     missingAssetRef.current = null;
-    if (completionTimerRef.current !== null) {
-      clearTimeout(completionTimerRef.current);
-      completionTimerRef.current = null;
-    }
-    return () => {
-      if (completionTimerRef.current !== null) clearTimeout(completionTimerRef.current);
-    };
   }, [renderer.instanceId]);
 
   useEffect(() => {
@@ -253,7 +254,7 @@ export function ExperienceVideoRenderer({
   });
 
   const handleEnd = useEffectEvent(() => {
-    if (!clip || terminalMode?.kind === "loop") return;
+    if (!clip || terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
     const behavior = clip.endBehavior;
     if (behavior.behavior === "advance") {
       advanceSequence();
@@ -265,9 +266,6 @@ export function ExperienceVideoRenderer({
         sequenceIndex,
         terminalMode: { kind: "held" },
       });
-      if (behavior.durationMs !== undefined) {
-        completionTimerRef.current = setTimeout(() => advanceSequence(), behavior.durationMs);
-      }
       return;
     }
     if (behavior.behavior === "loop") {
@@ -290,8 +288,31 @@ export function ExperienceVideoRenderer({
     });
   });
 
+  // Video hold duration lives in an effect so a remount (React Strict Mode,
+  // scene identity churn) reschedules it. Stills own the same beat on their
+  // own clock — a parent timeout here was cleared on remount while the still
+  // stayed on screen, which froze shots like 凝视车票.
+  const videoHoldMs =
+    !isStill && terminalMode?.kind === "held" && clip?.endBehavior.behavior === "hold-last-frame"
+      ? clip.endBehavior.durationMs
+      : undefined;
+  useEffect(() => {
+    if (videoHoldMs === undefined) return;
+    const timer = setTimeout(() => advanceSequence(), videoHoldMs);
+    return () => clearTimeout(timer);
+  }, [sequenceIndex, videoHoldMs]);
+
   const reportTimeline = useEffectEvent((currentTime: number) => {
     onTimelineTimeMs(timelineOffsetMs + Math.round(currentTime * 1_000));
+    if (isStill || terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
+    const totalSeconds =
+      Number.isFinite(player.duration) && player.duration > 0
+        ? player.duration
+        : durationMs
+          ? durationMs / 1_000
+          : 0;
+    // iOS expo-video sometimes never emits `playToEnd` on a finished clip.
+    if (totalSeconds > 0 && currentTime >= totalSeconds - 0.08) handleEnd();
   });
 
   /**
@@ -375,6 +396,44 @@ export function ExperienceVideoRenderer({
   ]);
 
   useEffect(() => {
+    if (!onPlaybackHandle) return;
+    if (isStill || !config.autoplay || terminalMode?.kind === "held") {
+      onPlaybackHandle(renderer.instanceId, null);
+      return () => onPlaybackHandle(renderer.instanceId, null);
+    }
+    const handle: ExperienceMediaPlaybackHandle = {
+      playbackIdentity,
+      play: async () => {
+        if (!presentingRef.current) {
+          resumeWhenPresentingRef.current = true;
+          return;
+        }
+        player.play();
+      },
+      pause: () => {
+        try {
+          player.pause();
+        } catch {
+          // Player already released.
+        }
+      },
+      seek: (seconds) => {
+        player.currentTime = Math.max(0, seconds);
+      },
+    };
+    onPlaybackHandle(renderer.instanceId, handle);
+    return () => onPlaybackHandle(renderer.instanceId, null);
+  }, [
+    config.autoplay,
+    isStill,
+    onPlaybackHandle,
+    playbackIdentity,
+    player,
+    renderer.instanceId,
+    terminalMode?.kind,
+  ]);
+
+  useEffect(() => {
     const endSubscription = player.addListener("playToEnd", () => handleEnd());
     const timeSubscription = player.addListener("timeUpdate", ({ currentTime }) => {
       reportTimeline(currentTime);
@@ -404,19 +463,27 @@ export function ExperienceVideoRenderer({
       durationMs={stillClipDurationMs(clip)}
       timelineOffsetMs={timelineOffsetMs}
       playbackIdentity={playbackIdentity}
-      shouldPlay={shouldAutoplay}
       presenting={presenting}
       onDisplayed={handleEnd}
+      onHoldComplete={advanceSequence}
       onTimelineTimeMs={onTimelineTimeMs}
       onLoadError={() => onRuntimeError(copy.mediaError(assetId))}
     />
   ) : (
-    <VideoView
-      style={StyleSheet.absoluteFill}
-      player={player}
-      contentFit={contentFit}
-      nativeControls={false}
-    />
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <VideoView
+        style={StyleSheet.absoluteFill}
+        player={player}
+        contentFit={contentFit}
+        nativeControls={false}
+        // iOS 16+ Live Text / Visual Look Up. Default is on, so a ticket close-up
+        // (or any readable frame) draws scan + gear chrome and can pause the clip.
+        // H5 <video> has none of that — keep the cinematic stage equally clean.
+        allowsVideoFrameAnalysis={false}
+        showsTimecodes={false}
+        fullscreenOptions={{ enable: false }}
+      />
+    </View>
   );
 
   if (config.fit === "native") {
@@ -441,12 +508,11 @@ export function ExperienceVideoRenderer({
 
 /**
  * A storyboard still on the sequence timeline. A still has no element that
- * plays itself, so it is governed like footage: it declares itself displayed
- * only when the scene is presenting and the sequence asked it to play — never
- * on image load, which would run the hold clock before the viewer has started
- * — and from then on reports elapsed time so time-anchored interactions stay
- * live. Screen time is the clip's `hold-last-frame` duration, still owned by
- * the sequence above.
+ * plays itself, so it is governed like footage: it starts its hold clock once
+ * the scene is presenting (stills only mount after Start), reports elapsed
+ * time so time-anchored interactions stay live, and advances the sequence
+ * when that clock runs out — the same beat H5 owns on the still, not on a
+ * parent timeout that remounts can drop.
  */
 function ExperienceStillSegment({
   uri,
@@ -454,9 +520,9 @@ function ExperienceStillSegment({
   durationMs,
   timelineOffsetMs,
   playbackIdentity,
-  shouldPlay,
   presenting,
   onDisplayed,
+  onHoldComplete,
   onTimelineTimeMs,
   onLoadError,
 }: {
@@ -465,19 +531,22 @@ function ExperienceStillSegment({
   durationMs: number;
   timelineOffsetMs: number;
   playbackIdentity: string;
-  shouldPlay: boolean;
   presenting: boolean;
   onDisplayed: () => void;
+  onHoldComplete: () => void;
   onTimelineTimeMs: (timeMs: number) => void;
   onLoadError: () => void;
 }) {
   const displayedRef = useRef(false);
+  const holdCompletedRef = useRef(false);
   const elapsedMsRef = useRef(0);
   const runningSinceRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [playableUri, setPlayableUri] = useState<string | null>(null);
   const onDisplayedRef = useRef(onDisplayed);
   onDisplayedRef.current = onDisplayed;
+  const onHoldCompleteRef = useRef(onHoldComplete);
+  onHoldCompleteRef.current = onHoldComplete;
   const onTimelineTimeMsRef = useRef(onTimelineTimeMs);
   onTimelineTimeMsRef.current = onTimelineTimeMs;
   const onLoadErrorRef = useRef(onLoadError);
@@ -493,21 +562,28 @@ function ExperienceStillSegment({
     elapsedMsRef.current +
     (runningSinceRef.current === null ? 0 : performance.now() - runningSinceRef.current);
 
+  const finishHold = () => {
+    if (holdCompletedRef.current) return;
+    holdCompletedRef.current = true;
+    elapsedMsRef.current = durationMs;
+    runningSinceRef.current = null;
+    stopTicking();
+    onTimelineTimeMsRef.current(timelineOffsetMs + durationMs);
+    onHoldCompleteRef.current();
+  };
+
   const startTicking = () => {
-    if (tickRef.current !== null) return;
+    if (tickRef.current !== null || holdCompletedRef.current) return;
     tickRef.current = setInterval(() => {
       const now = Math.min(elapsed(), durationMs);
       onTimelineTimeMsRef.current(timelineOffsetMs + now);
-      if (now >= durationMs) {
-        elapsedMsRef.current = durationMs;
-        runningSinceRef.current = null;
-        stopTicking();
-      }
+      if (now >= durationMs) finishHold();
     }, STILL_CLOCK_TICK_MS);
   };
 
   useEffect(() => {
     displayedRef.current = false;
+    holdCompletedRef.current = false;
     elapsedMsRef.current = 0;
     runningSinceRef.current = null;
     setPlayableUri(null);
@@ -525,17 +601,20 @@ function ExperienceStillSegment({
     };
   }, [playbackIdentity, uri]);
 
+  // Stills only mount after Start, so do not wait on sequence autoplay: entering
+  // hold-last-frame flips that flag off, and a remount would then show the image
+  // forever without ever running the hold clock.
   useEffect(() => {
-    if (!shouldPlay || !presenting || !playableUri || displayedRef.current) return;
+    if (!presenting || !playableUri || displayedRef.current) return;
     displayedRef.current = true;
     runningSinceRef.current = performance.now();
     onTimelineTimeMsRef.current(timelineOffsetMs);
     startTicking();
     onDisplayedRef.current();
-  }, [playableUri, presenting, shouldPlay, timelineOffsetMs]);
+  }, [playableUri, presenting, timelineOffsetMs]);
 
   useEffect(() => {
-    if (!displayedRef.current) return;
+    if (!displayedRef.current || holdCompletedRef.current) return;
     if (!presenting) {
       if (runningSinceRef.current === null) return;
       elapsedMsRef.current = elapsed();
@@ -543,7 +622,11 @@ function ExperienceStillSegment({
       stopTicking();
       return;
     }
-    if (runningSinceRef.current !== null || elapsedMsRef.current >= durationMs) return;
+    if (elapsed() >= durationMs) {
+      finishHold();
+      return;
+    }
+    if (runningSinceRef.current !== null) return;
     runningSinceRef.current = performance.now();
     startTicking();
   }, [durationMs, presenting]);
@@ -551,12 +634,14 @@ function ExperienceStillSegment({
   if (!playableUri) return null;
 
   return (
-    <Image
-      source={{ uri: playableUri }}
-      style={StyleSheet.absoluteFill}
-      contentFit={fit === "contain" ? "contain" : "cover"}
-      onError={() => onLoadErrorRef.current()}
-    />
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Image
+        source={{ uri: playableUri }}
+        style={StyleSheet.absoluteFill}
+        contentFit={fit === "contain" ? "contain" : "cover"}
+        onError={() => onLoadErrorRef.current()}
+      />
+    </View>
   );
 }
 

@@ -216,6 +216,7 @@ export default function PlayGameScreen() {
           headerBackButtonMenuEnabled: false,
           gestureEnabled: false,
           fullScreenGestureEnabled: false,
+          orientation: "landscape",
           // Explicit undefined, not an omitted key: options merge, so a missing
           // `headerRight` would leave the previous one mounted.
           headerRight: shareReady ? headerRight : undefined,
