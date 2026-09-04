@@ -346,7 +346,13 @@ export class StoryProductionPlanService {
           storyChapterId: chapterId,
           status: { not: StoryProductionSpecStatus.archived },
         },
-        select: { plotNodeId: true, status: true },
+        select: {
+          plotNodeId: true,
+          clips: {
+            where: { status: { not: StoryProductionSpecStatus.archived } },
+            select: { id: true },
+          },
+        },
       }),
       readStoryScriptHead(tx, projectId, chapterId),
       this.readApprovedAssetPlanMarkerInTransaction(tx, projectId, chapterId),
@@ -359,9 +365,15 @@ export class StoryProductionPlanService {
     const sequenceByPlotNode = new Map(
       sequenceRows.map((sequence) => [sequence.plotNodeId, sequence]),
     );
-    const missingPlotNodeIds = plotNodeIds.filter(
-      (nodeId) => !sequenceByPlotNode.has(nodeId),
-    );
+    // Saving a Plot draft pre-creates one empty identity sequence per node
+    // (reconcileStoryTimelinesWithDraft); those shells carry no clips. A
+    // sequence counts as planned only once it holds at least one live clip —
+    // otherwise the storyboard stage would report itself complete while no
+    // clip spec was ever authored.
+    const missingPlotNodeIds = plotNodeIds.filter((nodeId) => {
+      const sequence = sequenceByPlotNode.get(nodeId);
+      return sequence === undefined || sequence.clips.length === 0;
+    });
     const assetCurrent = assetRows.length;
     const scriptStatus: StoryProductionStageStatus = scriptHead.hasContent
       ? 'current'

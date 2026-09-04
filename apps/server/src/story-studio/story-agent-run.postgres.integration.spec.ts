@@ -243,7 +243,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     expect(sequence.status).toBe('current');
   });
 
-  it('never treats an empty Asset marker as current before Plot approval', async () => {
+  it('reads an approved empty Asset plan as the durable current plan without Plot lineage', async () => {
     const fixture = await createFixture(prisma, fixtureWorkspaceIds);
     const script = await prisma.$transaction((tx) =>
       ensureStoryScriptDocumentInTransaction(tx, {
@@ -280,6 +280,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       }),
     );
 
+    // The chapter-pinned snapshot marker is the durable stage signal: an
+    // intentionally empty approved plan stays readable so the Storyboard
+    // stage can proceed with zero assets, before any Plot is approved.
     await expect(
       prisma.$transaction((tx) =>
         fixture.productionPlans.readCurrentAssetPlanInTransaction(
@@ -288,7 +291,7 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
           fixture.chapterId,
         ),
       ),
-    ).resolves.toBeNull();
+    ).resolves.toEqual({ assetSpecs: [] });
     const chapter = await prisma.storyChapter.findUniqueOrThrow({
       where: { id: fixture.chapterId },
       select: { approvedAssetPlanSnapshotId: true },
@@ -1077,7 +1080,17 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         prisma.storyStoryboardSequence.count({
           where: { storyChapterId: fixture.chapterId },
         }),
-      ).resolves.toBe(0);
+      ).resolves.toBe(1);
+      // The Plot apply pre-created city-gate's identity sequence as an empty
+      // shell (reconcileStoryTimelinesWithDraft). It carries no clips, so the
+      // Storyboard stage below must still be admitted to plan real content.
+      const identityShell =
+        await prisma.storyStoryboardSequence.findFirstOrThrow({
+          where: { storyChapterId: fixture.chapterId },
+          include: { clips: true },
+        });
+      expect(identityShell.plotNodeId).toBe('city-gate');
+      expect(identityShell.clips).toHaveLength(0);
 
       const storyboard = await fileStage('storyboard');
       expect(storyboard.job.targetStage).toBe('storyboard');

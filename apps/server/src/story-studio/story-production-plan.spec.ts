@@ -508,7 +508,7 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
         findMany: jest.fn().mockResolvedValue(
           source.scenes.map((scene) => ({
             plotNodeId: scene.nodeId,
-            status: StoryProductionSpecStatus.current,
+            clips: [{ id: `clip-${scene.nodeId}` }],
           })),
         ),
       },
@@ -573,6 +573,134 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     );
     expect(keptOverrideState.assets.status).toBe('current');
     expect(keptOverrideState.storyboard.status).toBe('current');
+  });
+
+  it('treats clipless identity sequences as unplanned Storyboard, not current', async () => {
+    const source = screenplay();
+    const draft = chapterDraft(source);
+    const scriptDocumentId = '0197f4a2-0800-7000-8000-000000000081';
+    const scriptVersionId = '0197f4a2-0800-7000-8000-000000000082';
+    const ydoc = new Y.Doc();
+    const paragraph = new Y.XmlElement('paragraph');
+    paragraph.insert(0, [new Y.XmlText('EXT. CITY GATE - NIGHT')]);
+    ydoc.getXmlFragment('content').insert(0, [paragraph]);
+    const crdtState = Buffer.from(Y.encodeStateAsUpdate(ydoc));
+    ydoc.destroy();
+    const scriptReads = {
+      studioDocument: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: scriptDocumentId,
+          currentSequence: 1,
+          currentVersionId: scriptVersionId,
+          crdtState,
+        }),
+      },
+      studioDocumentOperation: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+    };
+    const scriptHead = await readStoryScriptHead(
+      scriptReads as never,
+      'project-1',
+      'chapter-1',
+    );
+    const chapterRow = {
+      id: 'chapter-1',
+      nodeIds: source.scenes.map((scene) => scene.nodeId),
+      entryNodeId: source.entrySceneId,
+      sourceScriptDocumentId: scriptDocumentId,
+      sourceScriptVersionId: scriptVersionId,
+      sourceScriptSequence: 1,
+      sourceScriptHash: scriptHead.hash,
+      approvedAssetPlanSnapshotId: null as string | null,
+    };
+    const emptyAssetPlan = { assetSpecs: [] };
+    const sourceFingerprint = canonicalJsonHash(
+      InteractiveStoryDraftContentSchema.parse(draft),
+    );
+    // Every Plot node has its reconcile-pre-created identity sequence, but
+    // none of them has ever been planned: zero live clips each.
+    const sequenceRows = source.scenes.map((scene) => ({
+      plotNodeId: scene.nodeId,
+      clips: [] as Array<{ id: string }>,
+    }));
+    const tx = {
+      ...scriptReads,
+      storyProject: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          creativeProfileConfirmedAt: new Date('2026-08-25T12:00:00.000Z'),
+        }),
+      },
+      storyChapter: {
+        findFirstOrThrow: jest.fn().mockResolvedValue(chapterRow),
+        findFirst: jest.fn().mockResolvedValue(chapterRow),
+      },
+      storyDraft: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ content: draft }),
+      },
+      storyAssetSpec: {
+        findMany: jest.fn().mockResolvedValue([
+          {
+            stableKey: 'asset.character.courier',
+            status: StoryProductionSpecStatus.current,
+          },
+        ]),
+      },
+      storyStoryboardSequence: {
+        findMany: jest.fn().mockResolvedValue(sequenceRows),
+      },
+      storyProductionPlanSnapshot: {
+        findFirst: jest.fn().mockResolvedValue({
+          sourceFingerprint,
+          planFingerprint: canonicalJsonHash({
+            sourceFingerprint,
+            productionPlan: emptyAssetPlan,
+          }),
+          productionPlan: emptyAssetPlan,
+        }),
+      },
+      studioDocumentVersion: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: scriptVersionId,
+          documentId: scriptDocumentId,
+          sequence: 1,
+          snapshot: {
+            screenplay: source,
+            document: buildStoryScreenplayDocument(source),
+          },
+        }),
+      },
+    };
+
+    const state = await service.getProductionStateInTransaction(
+      tx as never,
+      'project-1',
+      'chapter-1',
+    );
+
+    expect(state.plotTree.status).toBe('current');
+    expect(state.assets.status).toBe('current');
+    expect(state.storyboard).toMatchObject({
+      status: 'missing',
+      sequenceCount: source.scenes.length,
+      missingPlotNodeIds: source.scenes.map((scene) => scene.nodeId),
+    });
+    expect(state.ready).toBe(false);
+
+    // Once one sequence holds a live clip, only the still-empty shells stay
+    // missing — per-sequence granularity, not all-or-nothing.
+    sequenceRows[0].clips.push({ id: 'clip-scene.gate-main' });
+    const partiallyPlannedState = await service.getProductionStateInTransaction(
+      tx as never,
+      'project-1',
+      'chapter-1',
+    );
+    expect(partiallyPlannedState.storyboard).toMatchObject({
+      status: 'missing',
+      sequenceCount: source.scenes.length,
+      missingPlotNodeIds: ['scene.wait', 'scene.run'],
+    });
+    expect(partiallyPlannedState.ready).toBe(false);
   });
 
   it('rejects a plan that omits any chapter Plot node', () => {
