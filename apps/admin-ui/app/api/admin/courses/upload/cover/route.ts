@@ -20,10 +20,7 @@ export async function POST(request: NextRequest) {
         : new File([blob], "cover.jpg", { type: blob.type || "image/jpeg" });
     const path = await uploadAdminCourseCover(named);
     return Response.json({ path, data: path });
-  } catch (error) {
-    return Response.json(
-      { error: error instanceof Error ? error.message : "上传封面失败。" },
-      { status: 502 }
-    );
+  } catch {
+    return Response.json({ error: "文件上传失败" }, { status: 502 });
   }
 }

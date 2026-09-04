@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -11,6 +11,7 @@ import {
   IconCloudOff,
   IconCloudUpload,
   IconDeviceFloppy,
+  IconGripVertical,
   IconLoader2,
   IconPhoto,
   IconPlus,
@@ -80,7 +81,7 @@ async function uploadFile(
   } | null;
   const path = body?.path?.trim() || (typeof body?.data === "string" ? body.data.trim() : "");
   if (!response.ok || !path) {
-    throw new Error(body?.error || body?.msg || `上传失败：${response.status}`);
+    throw new Error("文件上传失败");
   }
   return path;
 }
@@ -106,8 +107,12 @@ export function CourseEditor({
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  /** Inline upload tip — not the top ErrorBanner (that stays for save/load). */
+  const [uploadError, setUploadError] = useState<{ key: string; message: string } | null>(null);
   const [error, setError] = useState<string | null>(loadError);
   const [notice, setNotice] = useState<string | null>(null);
+  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const localized = course?.localized ?? emptyLocalizedCourse();
   const currentLocale = localized[locale];
@@ -149,12 +154,15 @@ export function CourseEditor({
   async function handleCoverUpload(file: File | null) {
     if (!file) return;
     setUploading("cover");
-    setError(null);
+    setUploadError(null);
     try {
       const path = await uploadFile("/api/admin/courses/upload/cover", file);
       patchLocale({ coverUrl: path });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传封面失败。");
+      setUploadError({
+        key: "cover",
+        message: err instanceof Error ? err.message : "文件上传失败",
+      });
     } finally {
       setUploading(null);
     }
@@ -162,8 +170,9 @@ export function CourseEditor({
 
   async function handleVideoFileUpload(index: number, file: File | null) {
     if (!file) return;
-    setUploading(`video-${index}`);
-    setError(null);
+    const key = `video-${index}`;
+    setUploading(key);
+    setUploadError(null);
     try {
       const path = await uploadFile("/api/admin/courses/upload/video", file);
       setCourse((current) => {
@@ -174,7 +183,10 @@ export function CourseEditor({
         return { ...current, videos };
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传视频失败。");
+      setUploadError({
+        key,
+        message: err instanceof Error ? err.message : "文件上传失败",
+      });
     } finally {
       setUploading(null);
     }
@@ -182,8 +194,9 @@ export function CourseEditor({
 
   async function handleVideoCoverUpload(index: number, file: File | null) {
     if (!file) return;
-    setUploading(`video-cover-${index}`);
-    setError(null);
+    const key = `video-cover-${index}`;
+    setUploading(key);
+    setUploadError(null);
     try {
       const path = await uploadFile("/api/admin/courses/upload/cover", file);
       setCourse((current) => {
@@ -194,7 +207,10 @@ export function CourseEditor({
         return { ...current, videos };
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "上传视频封面失败。");
+      setUploadError({
+        key,
+        message: err instanceof Error ? err.message : "文件上传失败",
+      });
     } finally {
       setUploading(null);
     }
@@ -277,6 +293,48 @@ export function CourseEditor({
       next.splice(target, 0, item);
       return { ...current, videos: reindexVideos(next) };
     });
+  }
+
+  function reorderVideo(from: number, to: number) {
+    if (from === to || from < 0 || to < 0) return;
+    setCourse((current) => {
+      if (!current) return current;
+      if (from >= current.videos.length || to >= current.videos.length) return current;
+      const next = [...current.videos];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return { ...current, videos: reindexVideos(next) };
+    });
+  }
+
+  function handleVideoDragStart(index: number, event: DragEvent<HTMLButtonElement>) {
+    setDraggingIndex(index);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+    // Improve drag ghost readability in some browsers.
+    event.dataTransfer.setData("application/x-course-video-index", String(index));
+  }
+
+  function handleVideoDragOver(index: number, event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dragOverIndex !== index) setDragOverIndex(index);
+  }
+
+  function handleVideoDrop(index: number, event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const raw =
+      event.dataTransfer.getData("application/x-course-video-index") ||
+      event.dataTransfer.getData("text/plain");
+    const from = Number(raw);
+    if (Number.isFinite(from)) reorderVideo(from, index);
+    setDraggingIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleVideoDragEnd() {
+    setDraggingIndex(null);
+    setDragOverIndex(null);
   }
 
   return (
@@ -373,30 +431,40 @@ export function CourseEditor({
               label="封面"
               help="上传后写入当前语言 coverUrl（相对 path 会自动拼 banner 桶域名预览）。"
             >
-              <div className="flex min-w-0 items-center gap-2">
-                <TextInput
-                  value={currentLocale.coverUrl}
-                  onChange={(event) => patchLocale({ coverUrl: event.target.value })}
-                  placeholder="封面 URL / OSS path"
-                />
-                <label className="inline-flex shrink-0">
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/gif,image/webp"
-                    className="hidden"
-                    onChange={(event) => void handleCoverUpload(event.target.files?.[0] ?? null)}
+              <div className="space-y-1.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <TextInput
+                    value={currentLocale.coverUrl}
+                    onChange={(event) => patchLocale({ coverUrl: event.target.value })}
+                    placeholder="封面 URL / OSS path"
                   />
-                  <Button type="button" variant="outline" asChild disabled={uploading === "cover"}>
-                    <span>
-                      {uploading === "cover" ? (
-                        <IconLoader2 className="size-4 animate-spin" />
-                      ) : (
-                        <IconUpload className="size-4" />
-                      )}
-                      上传
-                    </span>
-                  </Button>
-                </label>
+                  <label className="inline-flex shrink-0">
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      className="hidden"
+                      onChange={(event) => void handleCoverUpload(event.target.files?.[0] ?? null)}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      asChild
+                      disabled={uploading === "cover"}
+                    >
+                      <span>
+                        {uploading === "cover" ? (
+                          <IconLoader2 className="size-4 animate-spin" />
+                        ) : (
+                          <IconUpload className="size-4" />
+                        )}
+                        上传
+                      </span>
+                    </Button>
+                  </label>
+                </div>
+                {uploadError?.key === "cover" ? (
+                  <p className="text-[12px] text-red-600">{uploadError.message}</p>
+                ) : null}
               </div>
             </FormLabel>
             <Field label="课程描述">
@@ -422,7 +490,7 @@ export function CourseEditor({
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900">视频列表</p>
               <p className="mt-0.5 text-[12px] text-slate-500">
-                片源与视频封面各语言共用；标题按语言填写。排序用上下移动。
+                片源与视频封面各语言共用；标题按语言填写。拖动手柄可排序，也可使用上下按钮。
               </p>
             </div>
           </div>
@@ -448,11 +516,33 @@ export function CourseEditor({
           <div className="space-y-4">
             {course.videos.map((video, index) => (
               <div
-                key={video.id ?? `new-${index}`}
-                className="space-y-3 rounded-lg border border-indigo-100 bg-white p-3"
+                key={video.clientKey}
+                onDragOver={(event) => handleVideoDragOver(index, event)}
+                onDrop={(event) => handleVideoDrop(index, event)}
+                className={cn(
+                  "space-y-3 rounded-lg border border-indigo-100 bg-white p-3 transition-shadow",
+                  draggingIndex === index && "opacity-60",
+                  dragOverIndex === index &&
+                    draggingIndex != null &&
+                    draggingIndex !== index &&
+                    "border-indigo-400 ring-2 ring-indigo-200"
+                )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-slate-800">视频 {index + 1}</p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(event) => handleVideoDragStart(index, event)}
+                      onDragEnd={handleVideoDragEnd}
+                      aria-label={`拖动排序视频 ${index + 1}`}
+                      title="拖动排序"
+                      className="inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 active:cursor-grabbing"
+                    >
+                      <IconGripVertical className="size-4" />
+                    </button>
+                    <p className="text-sm font-semibold text-slate-800">视频 {index + 1}</p>
+                  </div>
                   <div className="flex gap-1.5">
                     <Button
                       type="button"
@@ -485,90 +575,102 @@ export function CourseEditor({
 
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
                   <div className="min-w-0 flex-1 space-y-3">
-                    <FormLabel label="视频文件 (videoKey)">
-                      <div className="flex gap-2">
-                        <TextInput
-                          value={video.videoKey}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            setCourse((current) => {
-                              if (!current) return current;
-                              const videos = current.videos.map((item, i) =>
-                                i === index ? { ...item, videoKey: value } : item
-                              );
-                              return { ...current, videos };
-                            });
-                          }}
-                          placeholder="course/....mp4"
-                        />
-                        <label className="inline-flex shrink-0">
-                          <input
-                            type="file"
-                            accept="video/*"
-                            className="hidden"
-                            onChange={(event) =>
-                              void handleVideoFileUpload(index, event.target.files?.[0] ?? null)
-                            }
+                    <FormLabel label="视频文件">
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <TextInput
+                            value={video.videoKey}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setCourse((current) => {
+                                if (!current) return current;
+                                const videos = current.videos.map((item, i) =>
+                                  i === index ? { ...item, videoKey: value } : item
+                                );
+                                return { ...current, videos };
+                              });
+                            }}
+                            placeholder="course/....mp4"
                           />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            asChild
-                            disabled={uploading === `video-${index}`}
-                          >
-                            <span>
-                              {uploading === `video-${index}` ? (
-                                <IconLoader2 className="size-4 animate-spin" />
-                              ) : (
-                                <IconUpload className="size-4" />
-                              )}
-                              上传
-                            </span>
-                          </Button>
-                        </label>
+                          <label className="inline-flex shrink-0">
+                            <input
+                              type="file"
+                              accept="video/*"
+                              className="hidden"
+                              onChange={(event) => {
+                                const selected = event.target.files?.[0] ?? null;
+                                event.target.value = "";
+                                void handleVideoFileUpload(index, selected);
+                              }}
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              asChild
+                              disabled={uploading === `video-${index}`}
+                            >
+                              <span>
+                                {uploading === `video-${index}` ? (
+                                  <IconLoader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <IconUpload className="size-4" />
+                                )}
+                                上传
+                              </span>
+                            </Button>
+                          </label>
+                        </div>
+                        {uploadError?.key === `video-${index}` ? (
+                          <p className="text-[12px] text-red-600">{uploadError.message}</p>
+                        ) : null}
                       </div>
                     </FormLabel>
-                    <FormLabel label="视频封面 (共用)">
-                      <div className="flex gap-2">
-                        <TextInput
-                          value={video.coverUrl}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            setCourse((current) => {
-                              if (!current) return current;
-                              const videos = current.videos.map((item, i) =>
-                                i === index ? { ...item, coverUrl: value } : item
-                              );
-                              return { ...current, videos };
-                            });
-                          }}
-                          placeholder="可选"
-                        />
-                        <label className="inline-flex shrink-0">
-                          <input
-                            type="file"
-                            accept="image/jpeg,image/png,image/gif,image/webp"
-                            className="hidden"
-                            onChange={(event) =>
-                              void handleVideoCoverUpload(index, event.target.files?.[0] ?? null)
-                            }
+                    <FormLabel label="视频封面">
+                      <div className="space-y-1.5">
+                        <div className="flex gap-2">
+                          <TextInput
+                            value={video.coverUrl}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setCourse((current) => {
+                                if (!current) return current;
+                                const videos = current.videos.map((item, i) =>
+                                  i === index ? { ...item, coverUrl: value } : item
+                                );
+                                return { ...current, videos };
+                              });
+                            }}
+                            placeholder="可选"
                           />
-                          <Button
-                            type="button"
-                            variant="outline"
-                            asChild
-                            disabled={uploading === `video-cover-${index}`}
-                          >
-                            <span>
-                              {uploading === `video-cover-${index}` ? (
-                                <IconLoader2 className="size-4 animate-spin" />
-                              ) : (
-                                <IconUpload className="size-4" />
-                              )}
-                              上传
-                            </span>
-                          </Button>
-                        </label>
+                          <label className="inline-flex shrink-0">
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp"
+                              className="hidden"
+                              onChange={(event) =>
+                                void handleVideoCoverUpload(index, event.target.files?.[0] ?? null)
+                              }
+                            />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              asChild
+                              disabled={uploading === `video-cover-${index}`}
+                            >
+                              <span>
+                                {uploading === `video-cover-${index}` ? (
+                                  <IconLoader2 className="size-4 animate-spin" />
+                                ) : (
+                                  <IconUpload className="size-4" />
+                                )}
+                                上传
+                              </span>
+                            </Button>
+                          </label>
+                        </div>
+                        {uploadError?.key === `video-cover-${index}` ? (
+                          <p className="text-[12px] text-red-600">{uploadError.message}</p>
+                        ) : null}
                       </div>
                     </FormLabel>
                   </div>

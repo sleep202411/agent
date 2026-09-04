@@ -29,6 +29,11 @@ export interface CourseVideoLocaleContent {
 export interface CourseVideo {
   /** Present after load; omitted on save (Java rebuilds rows). */
   id?: string;
+  /**
+   * Client-only stable key for drag reorder / React keys.
+   * Never sent to Java.
+   */
+  clientKey: string;
   videoKey: string;
   coverUrl: string;
   sortOrder: number;
@@ -82,6 +87,7 @@ export function emptyVideoLocalized(): Record<CourseLocaleCode, CourseVideoLocal
 
 export function emptyCourseVideo(sortOrder = 1): CourseVideo {
   return {
+    clientKey: `new-${crypto.randomUUID()}`,
     videoKey: "",
     coverUrl: "",
     sortOrder,
