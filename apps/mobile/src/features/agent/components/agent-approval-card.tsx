@@ -14,6 +14,7 @@ import { Colors, Spacing } from "@/constants/theme";
 import { useTranslations } from "@/i18n";
 
 import type { AgentOsPendingApproval } from "../api/agent-os-api";
+import { fillMessageTemplate } from "../api/story-production-api";
 import {
   safeApprovalJson,
   summarizeApprovalPayload,
@@ -37,15 +38,18 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
 
   const payloadLabels: ApprovalPayloadLabels = useMemo(
     () => ({
-      creates: (count) => t("agent.approvalCreates").replace("{count}", String(count)),
-      updates: (count) => t("agent.approvalUpdates").replace("{count}", String(count)),
-      deletes: (count) => t("agent.approvalDeletes").replace("{count}", String(count)),
-      andMore: (count) => t("agent.approvalAndMore").replace("{count}", String(count)),
+      creates: (count) => fillMessageTemplate(t("agent.approvalCreates"), { count }),
+      updates: (count) => fillMessageTemplate(t("agent.approvalUpdates"), { count }),
+      deletes: (count) => fillMessageTemplate(t("agent.approvalDeletes"), { count }),
+      andMore: (count) => fillMessageTemplate(t("agent.approvalAndMore"), { count }),
       untitled: t("agent.approvalUntitled"),
       storyBible: t("agent.approvalStoryBible"),
       storyEntry: t("agent.approvalStoryEntry"),
       sceneOrder: t("agent.approvalSceneOrder"),
       storyScene: t("agent.approvalStoryScene"),
+      generationBatch: t("agent.approvalGenerationBatch"),
+      generationBatchSummary: (count, points) =>
+        fillMessageTemplate(t("agent.approvalGenerationBatchSummary"), { count, points }),
     }),
     [t]
   );
@@ -56,6 +60,7 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
   );
 
   const hasRows = summary.creates.length + summary.updates.length + summary.deletes.length > 0;
+  const hasSummary = hasRows || Boolean(summary.decision);
   const fallbackTitle = approval.title?.trim();
   const fallbackDescription = approval.description?.trim();
 
@@ -69,6 +74,15 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
         />
         <Text style={styles.headerTitle}>{t("agent.approvalRequired")}</Text>
       </View>
+
+      {summary.decision ? (
+        <View style={styles.decision}>
+          <Text style={styles.decisionTitle}>{summary.decision.title}</Text>
+          {summary.decision.note ? (
+            <Text style={styles.decisionNote}>{summary.decision.note}</Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {hasRows ? (
         <View style={styles.payload}>
@@ -108,8 +122,10 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
         </View>
       ) : null}
 
-      {!hasRows && fallbackTitle ? <Text style={styles.fallbackTitle}>{fallbackTitle}</Text> : null}
-      {!hasRows && fallbackDescription ? (
+      {!hasSummary && fallbackTitle ? (
+        <Text style={styles.fallbackTitle}>{fallbackTitle}</Text>
+      ) : null}
+      {!hasSummary && fallbackDescription ? (
         <Text style={styles.fallbackBody}>{fallbackDescription}</Text>
       ) : null}
 
@@ -119,7 +135,7 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
         </ScrollView>
       ) : null}
 
-      {hasRows ? (
+      {hasSummary ? (
         <Pressable
           accessibilityRole="button"
           onPress={() => setShowDetails((v) => !v)}
@@ -131,38 +147,38 @@ export function AgentApprovalCard({ approval, busy, onResolve }: AgentApprovalCa
         </Pressable>
       ) : null}
 
-      {showDetails && hasRows ? (
+      {showDetails && hasSummary ? (
         <ScrollView style={styles.rawBox} nestedScrollEnabled>
           <Text style={styles.rawText}>{safeApprovalJson(approval.arguments)}</Text>
         </ScrollView>
       ) : null}
 
       <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={() => onResolve("approve")}
-          style={({ pressed }) => [
-            styles.approveBtn,
-            pressed && !busy && styles.pressed,
-            busy && styles.disabled,
-          ]}
-        >
-          {busy ? <ActivityIndicator color="#FFFFFF" size="small" style={styles.spinner} /> : null}
-          <Text style={styles.approveText}>{t("agent.approve")}</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={() => onResolve("reject")}
-          style={({ pressed }) => [
-            styles.rejectBtn,
-            pressed && !busy && styles.pressed,
-            busy && styles.disabled,
-          ]}
-        >
-          <Text style={styles.rejectText}>{t("agent.reject")}</Text>
-        </Pressable>
+        <View style={styles.actionHit}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("agent.approve")}
+            disabled={busy}
+            onPress={() => onResolve("approve")}
+          >
+            <View style={[styles.approveChrome, busy && styles.disabled]}>
+              {busy ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
+              <Text style={styles.approveText}>{t("agent.approve")}</Text>
+            </View>
+          </Pressable>
+        </View>
+        <View style={styles.actionHit}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("agent.reject")}
+            disabled={busy}
+            onPress={() => onResolve("reject")}
+          >
+            <View style={[styles.rejectChrome, busy && styles.disabled]}>
+              <Text style={styles.rejectText}>{t("agent.reject")}</Text>
+            </View>
+          </Pressable>
+        </View>
       </View>
     </View>
   );
@@ -202,12 +218,14 @@ function RowList({
 
 const styles = StyleSheet.create({
   card: {
+    alignSelf: "stretch",
     backgroundColor: "rgba(255,255,255,0.045)",
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.08)",
     gap: Spacing.two,
     padding: Spacing.three,
+    width: "100%",
   },
   headerRow: {
     flexDirection: "row",
@@ -219,6 +237,23 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: "600",
+  },
+  decision: {
+    backgroundColor: "rgba(255,255,255,0.055)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  decisionTitle: {
+    color: "rgba(255,255,255,0.8)",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  decisionNote: {
+    color: "rgba(255,255,255,0.55)",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 2,
   },
   payload: {
     gap: Spacing.one,
@@ -287,39 +322,39 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: Spacing.two,
     marginTop: Spacing.one,
+    width: "100%",
   },
-  approveBtn: {
+  actionHit: {
+    flex: 1,
+    minWidth: 0,
+  },
+  approveChrome: {
     alignItems: "center",
     backgroundColor: theme.brand,
-    borderRadius: 8,
-    flex: 1,
+    borderRadius: 12,
     flexDirection: "row",
+    gap: 6,
     height: 36,
     justifyContent: "center",
+    width: "100%",
   },
   approveText: {
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "600",
   },
-  rejectBtn: {
+  rejectChrome: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.08)",
-    borderRadius: 8,
-    flex: 1,
+    borderRadius: 12,
     height: 36,
     justifyContent: "center",
+    width: "100%",
   },
   rejectText: {
     color: theme.text,
     fontSize: 12,
     fontWeight: "600",
-  },
-  spinner: {
-    marginRight: Spacing.two,
-  },
-  pressed: {
-    opacity: 0.85,
   },
   disabled: {
     opacity: 0.6,

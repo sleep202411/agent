@@ -42,6 +42,7 @@ export type StoryAgentRunDto = {
       logline?: string;
       synopsis?: string;
       storyLanguage?: string;
+      entrySceneId?: string;
       scenes?: unknown[];
       characters?: unknown[];
     };

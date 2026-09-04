@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import type { VideoContentFit } from "expo-video";
 
@@ -15,8 +16,10 @@ import type { ExperiencePlayerCopy } from "./experience-player-copy";
 import { resolvePlaybackUri } from "./experience-media-cache";
 import {
   invalidatePlayableMediaUrl,
+  isStillVideoVariant,
   resolveVideoMedia,
   sequenceTimelineOffsetMs,
+  stillClipDurationMs,
   EXPERIENCE_PLAY_ORIENTATION,
 } from "./experience-media";
 
@@ -36,6 +39,8 @@ function initialCoreVideoPlaybackState(rendererInstanceId: string): CoreVideoPla
 }
 
 const EMPTY_SEQUENCE_HOLD_MS = 6_000;
+/** How often a still reports elapsed time, matching a video's timeupdate rate. */
+const STILL_CLOCK_TICK_MS = 250;
 
 /**
  * Imperative expo-video control lives outside the component so React Compiler
@@ -146,6 +151,7 @@ export function ExperienceVideoRenderer({
   const sourceUri = media?.variant.uri ?? null;
   const contentFit: VideoContentFit =
     config.fit === "contain" || config.fit === "native" ? "contain" : "cover";
+  const isStill = isStillVideoVariant(media?.variant.mediaType);
   const isLooping = terminalMode?.kind === "loop";
   const clipStartTime = terminalMode?.kind === "loop" ? terminalMode.clipStartTime : undefined;
   const shouldAutoplay = config.autoplay && terminalMode?.kind !== "held";
@@ -165,6 +171,16 @@ export function ExperienceVideoRenderer({
   }, [presenting]);
 
   useEffect(() => {
+    if (isStill) {
+      if (player.playing) {
+        try {
+          player.pause();
+        } catch {
+          // Player already released.
+        }
+      }
+      return;
+    }
     if (!presenting) {
       if (player.playing) {
         resumeWhenPresentingRef.current = true;
@@ -175,7 +191,7 @@ export function ExperienceVideoRenderer({
     if (!resumeWhenPresentingRef.current) return;
     resumeWhenPresentingRef.current = false;
     player.play();
-  }, [player, presenting]);
+  }, [isStill, player, presenting]);
 
   /**
    * Silence the player before it is released. `useVideoPlayer` releases on
@@ -306,7 +322,16 @@ export function ExperienceVideoRenderer({
   }, [sequenceLength]);
 
   useEffect(() => {
-    if (!sourceUri) return;
+    if (!sourceUri || isStill) {
+      if (isStill && player.playing) {
+        try {
+          player.pause();
+        } catch {
+          // Player already released.
+        }
+      }
+      return;
+    }
     const abort = new AbortController();
     resumeWhenPresentingRef.current = false;
     playableUriRef.current = null;
@@ -341,6 +366,7 @@ export function ExperienceVideoRenderer({
     clipStartTime,
     copy,
     isLooping,
+    isStill,
     playbackIdentity,
     player,
     reloadEpoch,
@@ -371,6 +397,28 @@ export function ExperienceVideoRenderer({
 
   if (!clip || !assetId || !media || !sourceUri) return null;
 
+  const visual = isStill ? (
+    <ExperienceStillSegment
+      uri={sourceUri}
+      fit={contentFit}
+      durationMs={stillClipDurationMs(clip)}
+      timelineOffsetMs={timelineOffsetMs}
+      playbackIdentity={playbackIdentity}
+      shouldPlay={shouldAutoplay}
+      presenting={presenting}
+      onDisplayed={handleEnd}
+      onTimelineTimeMs={onTimelineTimeMs}
+      onLoadError={() => onRuntimeError(copy.mediaError(assetId))}
+    />
+  ) : (
+    <VideoView
+      style={StyleSheet.absoluteFill}
+      player={player}
+      contentFit={contentFit}
+      nativeControls={false}
+    />
+  );
+
   if (config.fit === "native") {
     return (
       <View style={styles.nativeStage}>
@@ -382,23 +430,132 @@ export function ExperienceVideoRenderer({
               : null,
           ]}
         >
-          <VideoView
-            style={StyleSheet.absoluteFill}
-            player={player}
-            contentFit="contain"
-            nativeControls={false}
-          />
+          {visual}
         </View>
       </View>
     );
   }
 
+  return visual;
+}
+
+/**
+ * A storyboard still on the sequence timeline. A still has no element that
+ * plays itself, so it is governed like footage: it declares itself displayed
+ * only when the scene is presenting and the sequence asked it to play — never
+ * on image load, which would run the hold clock before the viewer has started
+ * — and from then on reports elapsed time so time-anchored interactions stay
+ * live. Screen time is the clip's `hold-last-frame` duration, still owned by
+ * the sequence above.
+ */
+function ExperienceStillSegment({
+  uri,
+  fit,
+  durationMs,
+  timelineOffsetMs,
+  playbackIdentity,
+  shouldPlay,
+  presenting,
+  onDisplayed,
+  onTimelineTimeMs,
+  onLoadError,
+}: {
+  uri: string;
+  fit: VideoContentFit;
+  durationMs: number;
+  timelineOffsetMs: number;
+  playbackIdentity: string;
+  shouldPlay: boolean;
+  presenting: boolean;
+  onDisplayed: () => void;
+  onTimelineTimeMs: (timeMs: number) => void;
+  onLoadError: () => void;
+}) {
+  const displayedRef = useRef(false);
+  const elapsedMsRef = useRef(0);
+  const runningSinceRef = useRef<number | null>(null);
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [playableUri, setPlayableUri] = useState<string | null>(null);
+  const onDisplayedRef = useRef(onDisplayed);
+  onDisplayedRef.current = onDisplayed;
+  const onTimelineTimeMsRef = useRef(onTimelineTimeMs);
+  onTimelineTimeMsRef.current = onTimelineTimeMs;
+  const onLoadErrorRef = useRef(onLoadError);
+  onLoadErrorRef.current = onLoadError;
+
+  const stopTicking = () => {
+    if (tickRef.current === null) return;
+    clearInterval(tickRef.current);
+    tickRef.current = null;
+  };
+
+  const elapsed = () =>
+    elapsedMsRef.current +
+    (runningSinceRef.current === null ? 0 : performance.now() - runningSinceRef.current);
+
+  const startTicking = () => {
+    if (tickRef.current !== null) return;
+    tickRef.current = setInterval(() => {
+      const now = Math.min(elapsed(), durationMs);
+      onTimelineTimeMsRef.current(timelineOffsetMs + now);
+      if (now >= durationMs) {
+        elapsedMsRef.current = durationMs;
+        runningSinceRef.current = null;
+        stopTicking();
+      }
+    }, STILL_CLOCK_TICK_MS);
+  };
+
+  useEffect(() => {
+    displayedRef.current = false;
+    elapsedMsRef.current = 0;
+    runningSinceRef.current = null;
+    setPlayableUri(null);
+    const abort = new AbortController();
+    void resolvePlaybackUri(uri, abort.signal)
+      .then((resolved) => {
+        if (!abort.signal.aborted) setPlayableUri(resolved);
+      })
+      .catch(() => {
+        if (!abort.signal.aborted) onLoadErrorRef.current();
+      });
+    return () => {
+      abort.abort();
+      stopTicking();
+    };
+  }, [playbackIdentity, uri]);
+
+  useEffect(() => {
+    if (!shouldPlay || !presenting || !playableUri || displayedRef.current) return;
+    displayedRef.current = true;
+    runningSinceRef.current = performance.now();
+    onTimelineTimeMsRef.current(timelineOffsetMs);
+    startTicking();
+    onDisplayedRef.current();
+  }, [playableUri, presenting, shouldPlay, timelineOffsetMs]);
+
+  useEffect(() => {
+    if (!displayedRef.current) return;
+    if (!presenting) {
+      if (runningSinceRef.current === null) return;
+      elapsedMsRef.current = elapsed();
+      runningSinceRef.current = null;
+      stopTicking();
+      return;
+    }
+    if (runningSinceRef.current !== null || elapsedMsRef.current >= durationMs) return;
+    runningSinceRef.current = performance.now();
+    startTicking();
+  }, [durationMs, presenting]);
+
+  if (!playableUri) return null;
+
   return (
-    <VideoView
+    <Image
+      source={{ uri: playableUri }}
       style={StyleSheet.absoluteFill}
-      player={player}
-      contentFit={contentFit}
-      nativeControls={false}
+      contentFit={fit === "contain" ? "contain" : "cover"}
+      onError={() => onLoadErrorRef.current()}
     />
   );
 }

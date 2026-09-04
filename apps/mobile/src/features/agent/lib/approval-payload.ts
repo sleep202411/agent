@@ -13,6 +13,8 @@ export type ApprovalPayloadLabels = {
   storyEntry: string;
   sceneOrder: string;
   storyScene: string;
+  generationBatch: string;
+  generationBatchSummary: (count: number, points: number) => string;
 };
 
 type Row = { key: string; title: string; note?: string };
@@ -21,6 +23,7 @@ export type ApprovalSummary = {
   creates: Row[];
   updates: Row[];
   deletes: Row[];
+  decision?: Row;
   recognized: boolean;
 };
 
@@ -225,6 +228,29 @@ export function summarizeApprovalPayload(
         };
       }),
       deletes: [],
+      recognized: true,
+    };
+  }
+
+  if (toolId === "story.generation.confirmBatch") {
+    const count =
+      typeof payload.expectedItemCount === "number" && Number.isInteger(payload.expectedItemCount)
+        ? payload.expectedItemCount
+        : 0;
+    const points =
+      typeof payload.expectedTotalPoints === "number" &&
+      Number.isInteger(payload.expectedTotalPoints)
+        ? payload.expectedTotalPoints
+        : 0;
+    return {
+      creates: [],
+      updates: [],
+      deletes: [],
+      decision: {
+        key: str(payload.batchId) || toolId,
+        title: labels.generationBatch,
+        note: labels.generationBatchSummary(count, points),
+      },
       recognized: true,
     };
   }

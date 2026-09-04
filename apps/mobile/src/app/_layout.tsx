@@ -73,6 +73,16 @@ export default function RootLayout() {
                     fullScreenGestureEnabled: false,
                   }}
                 />
+                <Stack.Screen
+                  name="play/story-preview/[projectId]"
+                  options={{
+                    ...detailHeader,
+                    animation: "fade",
+                    headerBackButtonMenuEnabled: false,
+                    gestureEnabled: false,
+                    fullScreenGestureEnabled: false,
+                  }}
+                />
                 <Stack.Screen name="ip/[id]" options={detailHeader} />
                 <Stack.Screen name="crew/[id]" options={detailHeader} />
                 <Stack.Screen name="creator/[id]" options={detailHeader} />

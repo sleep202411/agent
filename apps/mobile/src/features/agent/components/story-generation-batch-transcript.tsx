@@ -1,17 +1,22 @@
 import IconAlertTriangle from "@tabler/icons-react-native/icons/IconAlertTriangle";
 import IconBan from "@tabler/icons-react-native/icons/IconBan";
 import IconBox from "@tabler/icons-react-native/icons/IconBox";
+import IconChevronDown from "@tabler/icons-react-native/icons/IconChevronDown";
 import IconLoader2 from "@tabler/icons-react-native/icons/IconLoader2";
 import IconMapPin from "@tabler/icons-react-native/icons/IconMapPin";
 import IconMovie from "@tabler/icons-react-native/icons/IconMovie";
+import IconPlayerPlay from "@tabler/icons-react-native/icons/IconPlayerPlay";
 import IconRefresh from "@tabler/icons-react-native/icons/IconRefresh";
 import IconUser from "@tabler/icons-react-native/icons/IconUser";
 import IconWallet from "@tabler/icons-react-native/icons/IconWallet";
 import { Image } from "expo-image";
-import { useMemo, useState, type ComponentType } from "react";
+import { useRouter } from "expo-router";
+import { useVideoPlayer, VideoView } from "expo-video";
+import { useLayoutEffect, useMemo, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
+import { navigateToStoryPreview } from "@/features/experience-player/play-game-href";
 import { useTranslations, type MessageKey } from "@/i18n";
 
 import {
@@ -63,6 +68,65 @@ const KIND_ICONS = {
 
 function mediaUrl(media: StoryCreativeMediaVersion | null | undefined): string | undefined {
   return media?.previewUrl?.trim() || media?.thumbnailUrl?.trim() || undefined;
+}
+
+function isVideoMedia(media: StoryCreativeMediaVersion | null | undefined): boolean {
+  if (!media) return false;
+  return media.mediaKind === "video" || (media.mimeType?.startsWith("video/") ?? false);
+}
+
+/** H5 `GeneratedStoryboardMedia` / `GeneratedMedia` — image still, video plays. */
+function StoryGeneratedMedia({
+  media,
+  label,
+}: {
+  media: StoryCreativeMediaVersion;
+  label: string;
+}) {
+  const videoUrl = isVideoMedia(media) ? media.previewUrl?.trim() : undefined;
+  if (videoUrl) {
+    return (
+      <InlineClipVideo
+        url={videoUrl}
+        poster={media.thumbnailUrl?.trim() || undefined}
+        label={label}
+      />
+    );
+  }
+  const uri = mediaUrl(media);
+  if (!uri) return null;
+  return <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" />;
+}
+
+function InlineClipVideo({ url, poster, label }: { url: string; poster?: string; label: string }) {
+  const player = useVideoPlayer(url, (instance) => {
+    instance.staysActiveInBackground = false;
+    instance.muted = true;
+  });
+  useLayoutEffect(() => {
+    return () => {
+      try {
+        player.pause();
+      } catch {
+        // Player already released.
+      }
+    };
+  }, [player]);
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      {poster ? (
+        <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} contentFit="cover" />
+      ) : null}
+      <VideoView
+        accessibilityLabel={label}
+        contentFit="cover"
+        nativeControls
+        player={player}
+        style={StyleSheet.absoluteFill}
+      />
+    </View>
+  );
 }
 
 function mediaAspect(
@@ -146,6 +210,7 @@ function BatchBody({
   onResume: () => Promise<void>;
 }) {
   const t = useTranslations();
+  const router = useRouter();
   const assetById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets]);
   const ordered = useMemo(
     () => [...batch.items].sort((left, right) => left.ordinal - right.ordinal),
@@ -218,30 +283,38 @@ function BatchBody({
             <Text style={styles.recoveryBody}>{t("agent.credits.insufficientBody")}</Text>
           ) : null}
           <View style={styles.recoveryActions}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={mutating}
-              onPress={() => void onResume()}
-            >
-              <View style={[styles.continueChrome, mutating && styles.disabled]}>
-                {mutating ? (
-                  <IconLoader2 size={14} color="#FFFFFF" strokeWidth={1.8} />
-                ) : (
-                  <IconRefresh size={14} color="#FFFFFF" strokeWidth={1.8} />
-                )}
-                <Text style={styles.continueText}>{t("agent.generation.recovery.continue")}</Text>
-              </View>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={mutating}
-              onPress={() => void onCancel()}
-            >
-              <View style={[styles.stopChrome, mutating && styles.disabled]}>
-                <IconBan size={14} color="rgba(255,255,255,0.82)" strokeWidth={1.8} />
-                <Text style={styles.stopText}>{t("agent.generation.recovery.stop")}</Text>
-              </View>
-            </Pressable>
+            <View style={styles.recoveryHit}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={mutating}
+                onPress={() => void onResume()}
+              >
+                <View style={[styles.continueChrome, mutating && styles.disabled]}>
+                  {mutating ? (
+                    <IconLoader2 size={14} color="#FFFFFF" strokeWidth={1.8} />
+                  ) : (
+                    <IconRefresh size={14} color="#FFFFFF" strokeWidth={1.8} />
+                  )}
+                  <Text style={styles.continueText} numberOfLines={1}>
+                    {t("agent.generation.recovery.continue")}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+            <View style={styles.recoveryHit}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={mutating}
+                onPress={() => void onCancel()}
+              >
+                <View style={[styles.stopChrome, mutating && styles.disabled]}>
+                  <IconBan size={14} color="rgba(255,255,255,0.82)" strokeWidth={1.8} />
+                  <Text style={styles.stopText} numberOfLines={1}>
+                    {t("agent.generation.recovery.stop")}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
           </View>
         </View>
       ) : null}
@@ -252,6 +325,21 @@ function BatchBody({
             ? t("agent.generation.recovery.resumeError")
             : actionError}
         </Text>
+      ) : null}
+
+      {targetKind === "storyboard_clip" && batch.status === "completed" ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("agent.generation.mobileStoryboard.play")}
+          onPress={() =>
+            navigateToStoryPreview(router, batch.projectId, { chapterId: batch.chapterId })
+          }
+        >
+          <View style={styles.playChrome}>
+            <IconPlayerPlay size={16} color="#FFFFFF" strokeWidth={1.8} />
+            <Text style={styles.playText}>{t("agent.generation.mobileStoryboard.play")}</Text>
+          </View>
+        </Pressable>
       ) : null}
     </View>
   );
@@ -277,6 +365,7 @@ function AssetCard({
   onCancel: () => Promise<void>;
 }) {
   const t = useTranslations();
+  const [expanded, setExpanded] = useState(true);
   const [errorOpen, setErrorOpen] = useState(false);
   const media = item.status === "completed" ? asset?.selectedMediaVersion : null;
   const uri = mediaUrl(media);
@@ -291,67 +380,78 @@ function AssetCard({
 
   return (
     <View style={styles.card} accessibilityLabel={`${title}: ${label}`}>
-      <View style={styles.cardHeader}>
-        <KindIcon size={20} color="rgba(255,255,255,0.58)" strokeWidth={1.7} />
-        <Text style={styles.cardTitle} numberOfLines={1}>
-          {title}
-        </Text>
-      </View>
-      <View style={[styles.media, { aspectRatio: mediaAspect(media, 1) }]}>
-        {uri ? <Image source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
-        {!uri && active ? (
-          <View style={styles.mediaState}>
-            <ActivityIndicator color="rgba(255,255,255,0.72)" />
-            <Text style={styles.muted}>{t("agent.generation.mobileCard.generating")}</Text>
-            {canCancel ? (
-              <Pressable
-                accessibilityRole="button"
-                disabled={mutating}
-                onPress={() => void onCancel()}
-              >
-                <View style={[styles.quietChrome, mutating && styles.disabled]}>
-                  <IconBan size={14} color="rgba(255,255,255,0.82)" strokeWidth={1.8} />
-                  <Text style={styles.quietText}>{t("agent.generation.cancel")}</Text>
-                </View>
-              </Pressable>
-            ) : null}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={() => setExpanded((open) => !open)}
+      >
+        <View style={styles.cardHeader}>
+          <KindIcon size={20} color="rgba(255,255,255,0.58)" strokeWidth={1.7} />
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <View style={expanded ? styles.chevron : styles.chevronCollapsed}>
+            <IconChevronDown size={16} color="rgba(255,255,255,0.45)" strokeWidth={1.8} />
           </View>
-        ) : null}
-        {!uri && blocked && item.status === "awaiting_confirmation" ? (
-          <View style={styles.mediaState}>
-            <IconWallet size={24} color="rgba(255,255,255,0.68)" strokeWidth={1.7} />
-            <Text style={styles.stateTitle}>{t("agent.generation.mobileCard.paused")}</Text>
-            <Text style={styles.muted}>{t("agent.generation.mobileCard.pausedHint")}</Text>
-          </View>
-        ) : null}
-        {!uri && item.status === "failed" ? (
-          <View style={styles.mediaState}>
-            <IconAlertTriangle size={24} color="rgba(254,202,202,0.82)" strokeWidth={1.7} />
-            <Text style={styles.failTitle}>{t("agent.generation.mobileCard.failed")}</Text>
-            <Text style={styles.muted}>
-              {t(
-                failureStopped
-                  ? "agent.generation.mobileCard.failedStoppedHint"
-                  : "agent.generation.mobileCard.failedRetainedHint"
-              )}
-            </Text>
-            {failureDetail ? (
-              <Pressable accessibilityRole="button" onPress={() => setErrorOpen((open) => !open)}>
-                <Text style={styles.link}>{t("agent.generation.mobileCard.viewError")}</Text>
-              </Pressable>
-            ) : null}
-            {errorOpen && failureDetail ? (
-              <Text style={styles.errorDetail}>{failureDetail}</Text>
-            ) : null}
-          </View>
-        ) : null}
-        {!uri && item.status === "cancelled" ? (
-          <View style={styles.mediaState}>
-            <IconBan size={24} color="rgba(255,255,255,0.55)" strokeWidth={1.7} />
-            <Text style={styles.muted}>{t("agent.generation.mobileCard.cancelled")}</Text>
-          </View>
-        ) : null}
-      </View>
+        </View>
+      </Pressable>
+      {expanded ? (
+        <View style={[styles.media, { aspectRatio: mediaAspect(media, 1) }]}>
+          {media ? <StoryGeneratedMedia media={media} label={title} /> : null}
+          {!uri && active ? (
+            <View style={styles.mediaState}>
+              <ActivityIndicator color="rgba(255,255,255,0.72)" />
+              <Text style={styles.muted}>{t("agent.generation.mobileCard.generating")}</Text>
+              {canCancel ? (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={mutating}
+                  onPress={() => void onCancel()}
+                >
+                  <View style={[styles.quietChrome, mutating && styles.disabled]}>
+                    <IconBan size={14} color="rgba(255,255,255,0.82)" strokeWidth={1.8} />
+                    <Text style={styles.quietText}>{t("agent.generation.cancel")}</Text>
+                  </View>
+                </Pressable>
+              ) : null}
+            </View>
+          ) : null}
+          {!uri && blocked && item.status === "awaiting_confirmation" ? (
+            <View style={styles.mediaState}>
+              <IconWallet size={24} color="rgba(255,255,255,0.68)" strokeWidth={1.7} />
+              <Text style={styles.stateTitle}>{t("agent.generation.mobileCard.paused")}</Text>
+              <Text style={styles.muted}>{t("agent.generation.mobileCard.pausedHint")}</Text>
+            </View>
+          ) : null}
+          {!uri && item.status === "failed" ? (
+            <View style={styles.mediaState}>
+              <IconAlertTriangle size={24} color="rgba(254,202,202,0.82)" strokeWidth={1.7} />
+              <Text style={styles.failTitle}>{t("agent.generation.mobileCard.failed")}</Text>
+              <Text style={styles.muted}>
+                {t(
+                  failureStopped
+                    ? "agent.generation.mobileCard.failedStoppedHint"
+                    : "agent.generation.mobileCard.failedRetainedHint"
+                )}
+              </Text>
+              {failureDetail ? (
+                <Pressable accessibilityRole="button" onPress={() => setErrorOpen((open) => !open)}>
+                  <Text style={styles.link}>{t("agent.generation.mobileCard.viewError")}</Text>
+                </Pressable>
+              ) : null}
+              {errorOpen && failureDetail ? (
+                <Text style={styles.errorDetail}>{failureDetail}</Text>
+              ) : null}
+            </View>
+          ) : null}
+          {!uri && item.status === "cancelled" ? (
+            <View style={styles.mediaState}>
+              <IconBan size={24} color="rgba(255,255,255,0.55)" strokeWidth={1.7} />
+              <Text style={styles.muted}>{t("agent.generation.mobileCard.cancelled")}</Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -429,13 +529,7 @@ function StoryboardStream({
                       {title}
                     </Text>
                     <View style={styles.clipMedia}>
-                      {uri ? (
-                        <Image
-                          source={{ uri }}
-                          style={StyleSheet.absoluteFill}
-                          contentFit="cover"
-                        />
-                      ) : null}
+                      {media ? <StoryGeneratedMedia media={media} label={title} /> : null}
                       {!uri && active ? (
                         <View style={styles.mediaState}>
                           <ActivityIndicator color="rgba(255,255,255,0.72)" />
@@ -545,6 +639,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
   },
+  chevron: {
+    transform: [{ rotate: "0deg" }],
+  },
+  chevronCollapsed: {
+    transform: [{ rotate: "180deg" }],
+  },
   media: {
     backgroundColor: "rgba(255,255,255,0.045)",
     borderRadius: 12,
@@ -621,8 +721,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   recoveryActions: {
+    flexDirection: "row",
     gap: Spacing.two,
     marginTop: 4,
+    width: "100%",
+  },
+  recoveryHit: {
+    flex: 1,
+    minWidth: 0,
   },
   continueChrome: {
     alignItems: "center",
@@ -632,8 +738,23 @@ const styles = StyleSheet.create({
     gap: 6,
     height: 40,
     justifyContent: "center",
+    width: "100%",
   },
   continueText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  playChrome: {
+    alignItems: "center",
+    backgroundColor: BRAND_RED,
+    borderRadius: 12,
+    flexDirection: "row",
+    gap: 6,
+    height: 40,
+    justifyContent: "center",
+  },
+  playText: {
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "600",
@@ -646,6 +767,7 @@ const styles = StyleSheet.create({
     gap: 6,
     height: 40,
     justifyContent: "center",
+    width: "100%",
   },
   stopText: {
     color: "rgba(255,255,255,0.82)",

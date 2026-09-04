@@ -7,25 +7,27 @@ import IconLayoutGrid from "@tabler/icons-react-native/icons/IconLayoutGrid";
 import IconLoader2 from "@tabler/icons-react-native/icons/IconLoader2";
 import IconMovie from "@tabler/icons-react-native/icons/IconMovie";
 import IconRotateClockwise from "@tabler/icons-react-native/icons/IconRotateClockwise";
+import IconRoute from "@tabler/icons-react-native/icons/IconRoute";
 import IconX from "@tabler/icons-react-native/icons/IconX";
 import { useMemo, useState, type ComponentType } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Spacing } from "@/constants/theme";
-import { useTranslations, type MessageKey } from "@/i18n";
+import { useLocale, useTranslations, type MessageKey } from "@/i18n";
 
 import { fillMessageTemplate } from "../api/story-production-api";
 import { useStoryAgentRunById } from "../hooks/use-story-authoring-run";
 import {
   storyProposalAssetKindCounts,
-  storyProposalPlotMetrics,
   storyProposalStageFromSchema,
   storyProposalStoryboardMetrics,
   storyProposalStoryboardSequences,
   type StoryProposalStage,
 } from "../lib/story-authoring-activity";
+import { buildStoryPlotPreviewModel } from "../lib/story-plot-preview-model";
 import { storyScreenplayDocumentBlocks } from "../lib/story-screenplay-document";
 import type { StoryProposalArtifactStatus } from "../types";
+import { StoryPlotReviewSheet } from "./story-plot-review-sheet";
 import { StoryScreenplayReviewSheet } from "./story-screenplay-review-sheet";
 import { StoryStoryboardReviewSheet } from "./story-storyboard-review-sheet";
 
@@ -88,11 +90,16 @@ export function StoryAuthoringProposalCard({
   status: StoryProposalArtifactStatus;
 }) {
   const t = useTranslations();
+  const locale = useLocale();
   const run = useStoryAgentRunById(projectId, storyAgentRunId);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [plotOpen, setPlotOpen] = useState(false);
   const [storyboardOpen, setStoryboardOpen] = useState(false);
   const stage = storyProposalStageFromSchema(run?.proposal.schemaVersion ?? "");
-  const title = run?.proposal.screenplay?.title?.trim() || run?.proposal.title?.trim() || "";
+  const title =
+    stage === "plot"
+      ? run?.proposal.title?.trim() || run?.proposal.screenplay?.title?.trim() || ""
+      : run?.proposal.screenplay?.title?.trim() || run?.proposal.title?.trim() || "";
   const summary = run?.proposal.summary?.trim() || "";
   const scenes = Array.isArray(run?.proposal.screenplay?.scenes)
     ? run.proposal.screenplay.scenes
@@ -102,8 +109,19 @@ export function StoryAuthoringProposalCard({
     : [];
   const showScriptMetrics = stage === "script" && (scenes.length > 0 || characters.length > 0);
   const choices = countScreenplayChoices(scenes);
-  const plotMetrics =
-    stage === "plot" ? storyProposalPlotMetrics(run?.proposal ?? { schemaVersion: "" }) : null;
+  const plotModel = useMemo(
+    () =>
+      run && stage === "plot"
+        ? buildStoryPlotPreviewModel(
+            run.proposal,
+            locale,
+            t("agent.proposal.card.plotScene"),
+            t("agent.proposal.card.plotDecision")
+          )
+        : null,
+    [locale, run, stage, t]
+  );
+  const plotMetrics = plotModel?.metrics ?? null;
   const assetCounts =
     stage === "assets"
       ? storyProposalAssetKindCounts(run?.proposal ?? { schemaVersion: "" })
@@ -177,7 +195,10 @@ export function StoryAuthoringProposalCard({
       ) : null}
 
       {bodyCopy ? (
-        <Text style={styles.summary} numberOfLines={stage === "assets" ? 4 : 3}>
+        <Text
+          style={styles.summary}
+          numberOfLines={stage === "assets" ? 4 : stage === "plot" ? 2 : 3}
+        >
           {bodyCopy}
         </Text>
       ) : null}
@@ -254,6 +275,33 @@ export function StoryAuthoringProposalCard({
           <View style={styles.metricRule} />
           <Metric value={plotMetrics.endings} label={t("agent.proposal.metrics.endings")} />
         </View>
+      ) : null}
+
+      {plotModel?.entryTitle ? (
+        <View style={styles.entryRow}>
+          <IconRoute size={14} color="rgba(255,255,255,0.58)" strokeWidth={1.7} />
+          <Text style={styles.entryLabel}>{t("agent.proposal.card.plotEntry")}</Text>
+          <Text style={styles.entryTitle} numberOfLines={1}>
+            {plotModel.entryTitle}
+          </Text>
+        </View>
+      ) : null}
+
+      {stage === "plot" && plotModel ? (
+        <>
+          <Pressable accessibilityRole="button" onPress={() => setPlotOpen(true)}>
+            <View style={styles.reviewChrome}>
+              <Text style={styles.reviewText}>{t("agent.proposal.card.reviewPlot")}</Text>
+              <IconChevronRight size={16} color="rgba(255,255,255,0.58)" strokeWidth={1.8} />
+            </View>
+          </Pressable>
+          <StoryPlotReviewSheet
+            visible={plotOpen}
+            title={title}
+            model={plotModel}
+            onClose={() => setPlotOpen(false)}
+          />
+        </>
       ) : null}
 
       {stage === "script" ? (
@@ -408,6 +456,24 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 12,
     fontWeight: "500",
+  },
+  entryRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 8,
+    minWidth: 0,
+  },
+  entryLabel: {
+    color: "rgba(255,255,255,0.58)",
+    flexShrink: 0,
+    fontSize: 12,
+  },
+  entryTitle: {
+    color: "rgba(255,255,255,0.78)",
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "500",
+    minWidth: 0,
   },
   viewAllChrome: {
     alignItems: "center",

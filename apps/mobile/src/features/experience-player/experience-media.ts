@@ -193,6 +193,26 @@ export function resolveVideoMedia(
   };
 }
 
+/** Stills are video-kind assets with an image MIME — the compiler emits them that way. */
+export function isStillVideoVariant(mediaType: string | undefined): boolean {
+  return Boolean(mediaType?.toLowerCase().startsWith("image/"));
+}
+
+const EMPTY_SEQUENCE_HOLD_MS = 6_000;
+
+/**
+ * A still's screen time. The sequence expresses it as the clip's held
+ * duration, which the compiler always emits for a still; the fallback only
+ * covers a hand-authored manifest that held a frame indefinitely.
+ */
+export function stillClipDurationMs(clip: {
+  endBehavior: { behavior: string; durationMs?: number };
+}): number {
+  return clip.endBehavior.behavior === "hold-last-frame" && clip.endBehavior.durationMs
+    ? clip.endBehavior.durationMs
+    : EMPTY_SEQUENCE_HOLD_MS;
+}
+
 export function sequenceTimelineOffsetMs(
   assets: readonly ExperienceRuntimeAsset[],
   config: ExperienceCoreVideoRendererConfig,
@@ -201,6 +221,12 @@ export function sequenceTimelineOffsetMs(
 ): number {
   return config.sequence.slice(0, sequenceIndex).reduce((total, clip) => {
     const media = resolveVideoMedia(assets, clip.assetId, orientation);
+    // A still carries no media duration — its screen time is the held
+    // duration on the clip. Reading only the variant would under-count it and
+    // shift every later clip's interaction window earlier.
+    if (media && isStillVideoVariant(media.variant.mediaType)) {
+      return total + stillClipDurationMs(clip);
+    }
     return total + (media?.variant.durationMs ?? 0);
   }, 0);
 }
@@ -263,7 +289,11 @@ function sceneVideoUris(
   const uris: string[] = [];
   const pushAsset = (assetId: string) => {
     const media = resolveVideoMedia(assets, assetId, orientation);
-    if (media) uris.push(media.variant.uri);
+    // The on-device clip cache is mp4-only. Stills paint through expo-image
+    // and must not be stored (or probed) as footage.
+    if (media && !isStillVideoVariant(media.variant.mediaType)) {
+      uris.push(media.variant.uri);
+    }
   };
   for (const renderer of scene.renderers) {
     if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) continue;

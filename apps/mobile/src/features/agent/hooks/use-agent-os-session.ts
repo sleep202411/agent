@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ApiRequestError } from "@/lib/api-client";
-import { getLocale } from "@/i18n";
+import { getLocale, t } from "@/i18n";
 
 import {
   AGENT_OS_MOBILE_EXPERIENCE,
@@ -429,7 +429,8 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         return;
       }
       const transcriptText =
-        responseText?.trim() || (decision === "approve" ? "Approved" : "Rejected");
+        responseText?.trim() ||
+        (decision === "approve" ? t("agent.approved") : t("agent.rejected"));
       const at = new Date().toISOString();
       hitlReplyRef.current = { text: transcriptText, at, decision };
       rebuildMessages(runId);
