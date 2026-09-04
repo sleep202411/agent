@@ -615,6 +615,52 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     }
   );
 
+  const storyStoryboardClipInput = z.discriminatedUnion("kind", [
+    z.object({
+      clipId: z.string().uuid().optional(),
+      stableKey: z.string().trim().min(1).max(120),
+      title: z.string().trim().min(1).max(160),
+      description: z.string().trim().max(4_000).nullable().optional(),
+      startMs: z.number().int().min(0).max(3_600_000),
+      durationMs: z.number().int().min(250).max(3_600_000),
+      negativePrompt: z.string().trim().min(1).max(4_000).nullable().optional(),
+      kind: z.literal("image"),
+      imagePrompt: z.string().trim().min(1).max(12_000),
+    }),
+    z.object({
+      clipId: z.string().uuid().optional(),
+      stableKey: z.string().trim().min(1).max(120),
+      title: z.string().trim().min(1).max(160),
+      description: z.string().trim().max(4_000).nullable().optional(),
+      startMs: z.number().int().min(0).max(3_600_000),
+      durationMs: z.number().int().min(250).max(3_600_000),
+      negativePrompt: z.string().trim().min(1).max(4_000).nullable().optional(),
+      kind: z.literal("video"),
+      videoPrompt: z.string().trim().min(1).max(12_000),
+    }),
+  ]);
+  const storyStoryboardRead = bindStoryTool("story.storyboard.read", z.object({}));
+  const storyStoryboardPutTimeline = bindStoryTool(
+    "story.storyboard.putTimeline",
+    z.object({
+      sequenceId: z.string().uuid(),
+      durationMs: z.number().int().min(0).max(3_600_000),
+      clips: z.array(storyStoryboardClipInput).max(1_000),
+    })
+  );
+  const storyStoryboardPatchClip = bindStoryTool(
+    "story.storyboard.patchClip",
+    z.object({
+      clipId: z.string().uuid(),
+      kind: z.enum(["image", "video"]).optional(),
+      title: z.string().trim().min(1).max(160).optional(),
+      description: z.string().trim().max(4_000).nullable().optional(),
+      imagePrompt: z.string().trim().min(1).max(12_000).nullable().optional(),
+      videoPrompt: z.string().trim().min(1).max(12_000).nullable().optional(),
+      negativePrompt: z.string().trim().min(1).max(4_000).nullable().optional(),
+    })
+  );
+
   const byRegistryId = {
     request_user_input: requestUserInput,
     "script.store": storeScript,
@@ -638,6 +684,9 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
     "story.setEntry": storySetEntry,
     "story.reorder": storyReorder,
     "story.applyPatch": storyApplyPatch,
+    "story.storyboard.read": storyStoryboardRead,
+    "story.storyboard.putTimeline": storyStoryboardPutTimeline,
+    "story.storyboard.patchClip": storyStoryboardPatchClip,
     "story.author": storyAuthor,
     "story.generation.quoteAssets": storyQuoteAssetGenerationBatch,
     "story.generation.quoteStoryboard": storyQuoteStoryboardGenerationBatch,

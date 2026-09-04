@@ -52,9 +52,10 @@ import type {
   PatchStoryStoryboardClipInput,
   PatchStoryStoryboardCueInput,
   PatchStoryStoryboardSequenceInput,
-  PutStoryStoryboardTimelineInput,
   PutStoryStoryboardBindingInput,
+  PutStoryStoryboardTimelineInput,
 } from './story-production-plan.schema';
+import { PutStoryStoryboardTimelineSchema } from './story-production-plan.schema';
 
 const PUBLIC_MEDIA_ASSET_INCLUDE = Prisma.validator<Prisma.MediaAssetInclude>()(
   {
@@ -128,8 +129,132 @@ const STORYBOARD_INCLUDE =
     },
   });
 
+/** Agent-facing slim projection: no media versions, generations, bindings. */
+const STORYBOARD_AGENT_INCLUDE =
+  Prisma.validator<Prisma.StoryStoryboardSequenceInclude>()({
+    clips: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+    },
+    cues: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
+      orderBy: [{ atMs: 'asc' }, { id: 'asc' }],
+    },
+  });
+
 const STORYBOARD_TIMELINE_MIN_CLIP_DURATION_MS = 250;
 const STORYBOARD_TIMELINE_MAX_DURATION_MS = 3_600_000;
+
+// ── Version-free Agent storyboard commands ─────────────────────────────────
+//
+// The Agent tool contract deliberately omits CAS version tokens: clip ids are
+// globally unique and writes are last-write-wins. The write fence serializes
+// writers, so resolving against the current rows inside the mutation
+// transaction is the honest head.
+
+export type AgentStoryboardTimelineClipInput =
+  | {
+      clipId?: string;
+      stableKey: string;
+      title: string;
+      description: string | null;
+      startMs: number;
+      durationMs: number;
+      negativePrompt?: string | null;
+      kind: 'image';
+      imagePrompt: string;
+    }
+  | {
+      clipId?: string;
+      stableKey: string;
+      title: string;
+      description: string | null;
+      startMs: number;
+      durationMs: number;
+      negativePrompt?: string | null;
+      kind: 'video';
+      videoPrompt: string;
+    };
+
+export interface AgentStoryboardTimelineInput {
+  durationMs: number;
+  clips: AgentStoryboardTimelineClipInput[];
+}
+
+export interface AgentStoryboardClipPatchInput {
+  kind?: 'image' | 'video';
+  title?: string;
+  description?: string | null;
+  imagePrompt?: string | null;
+  videoPrompt?: string | null;
+  negativePrompt?: string | null;
+}
+
+function isAgentStoryboardTimelineInput(
+  input: PutStoryStoryboardTimelineInput | AgentStoryboardTimelineInput,
+): input is AgentStoryboardTimelineInput {
+  return !('expectedVersion' in input);
+}
+
+function isAgentStoryboardClipPatchInput(
+  input: PatchStoryStoryboardClipInput | AgentStoryboardClipPatchInput,
+): input is AgentStoryboardClipPatchInput {
+  return !('expectedVersion' in input);
+}
+
+/**
+ * Map a version-free Agent timeline command onto the shared editor contract,
+ * resolving every CAS token from the current rows. Continuity and prompt
+ * shape are re-validated through {@link PutStoryStoryboardTimelineSchema} so
+ * manual, Agent, and pipeline writes share one validation source.
+ */
+export function resolveAgentStoryboardTimelineInput(
+  sequenceVersion: number,
+  allClips: Array<{
+    id: string;
+    version: number;
+    status: StoryProductionSpecStatus;
+  }>,
+  input: AgentStoryboardTimelineInput,
+): PutStoryStoryboardTimelineInput {
+  const activeById = new Map(
+    allClips
+      .filter((clip) => clip.status !== StoryProductionSpecStatus.archived)
+      .map((clip) => [clip.id, clip] as const),
+  );
+  const mapped = {
+    expectedVersion: sequenceVersion,
+    durationMs: input.durationMs,
+    clips: input.clips.map((clip) => {
+      const base = {
+        kind: clip.kind,
+        stableKey: clip.stableKey,
+        title: clip.title,
+        description: clip.description ?? null,
+        startMs: clip.startMs,
+        durationMs: clip.durationMs,
+        negativePrompt: clip.negativePrompt ?? null,
+        ...(clip.kind === 'image'
+          ? { imagePrompt: clip.imagePrompt, videoPrompt: null }
+          : { imagePrompt: null, videoPrompt: clip.videoPrompt }),
+      };
+      if (!clip.clipId) return { ...base, expectedVersion: 0 };
+      const existing = activeById.get(clip.clipId);
+      if (!existing) {
+        throw productionNotFound('Storyboard clip', clip.clipId);
+      }
+      return { ...base, id: clip.clipId, expectedVersion: existing.version };
+    }),
+  };
+  const parsed = PutStoryStoryboardTimelineSchema.safeParse(mapped);
+  if (!parsed.success) {
+    throw new BadRequestException({
+      code: 'STORYBOARD_TIMELINE_INVALID',
+      message: parsed.error.issues.map((issue) => issue.message).join(' '),
+    });
+  }
+  return parsed.data;
+}
 
 interface StoryCandidateMedia {
   id: string;
@@ -556,6 +681,102 @@ export class StoryProductionPlanService {
     });
   }
 
+  /**
+   * Slim, version-free Storyboard projection for the Agent tools: identities,
+   * timings, and prompts only — no media versions, generations, or asset
+   * bindings. Reuses getStoryboard's Plot↔Storyboard 1:1 identity guard so a
+   * repair-required chapter still fails loud.
+   */
+  async getStoryboardForAgent(
+    user: AuthUser,
+    projectId: string,
+    chapterId: string,
+  ) {
+    await this.requireScope(user, projectId, chapterId, 'story.read');
+    const [chapter, draft, rows] = await Promise.all([
+      this.prisma.storyChapter.findFirstOrThrow({
+        where: {
+          id: chapterId,
+          storyProjectId: projectId,
+          archivedAt: null,
+        },
+        select: { nodeIds: true },
+      }),
+      this.prisma.storyDraft.findUniqueOrThrow({
+        where: { storyProjectId: projectId },
+        select: { content: true },
+      }),
+      this.prisma.storyStoryboardSequence.findMany({
+        where: {
+          storyProjectId: projectId,
+          storyChapterId: chapterId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+        include: STORYBOARD_AGENT_INCLUDE,
+      }),
+    ]);
+    const content = InteractiveStoryDraftContentSchema.parse(draft.content);
+    const ownedNodeIds = new Set(jsonStringArray(chapter.nodeIds));
+    const ownedPlotNodes = content.graph.nodes
+      .filter((node) => node.kind === 'clip')
+      .filter((node) => ownedNodeIds.has(node.nodeId));
+    const sequenceByNode = new Map(
+      rows.map((row) => [row.plotNodeId, row] as const),
+    );
+    const missingPlotNodeIds = ownedPlotNodes
+      .filter((node) => !sequenceByNode.has(node.nodeId))
+      .map((node) => node.nodeId);
+    if (missingPlotNodeIds.length > 0) {
+      throw new ConflictException({
+        code: 'STORYBOARD_NODE_IDENTITY_CONFLICT',
+        message:
+          'The Plot tree and Storyboard are not one-to-one. Run the Storyboard identity repair before reading this chapter.',
+        missingPlotNodeIds,
+      });
+    }
+    return {
+      chapterId,
+      sequences: ownedPlotNodes.map((node) => {
+        const row = sequenceByNode.get(node.nodeId);
+        // Guarded above; kept local so a future query refactor cannot
+        // silently reintroduce a graph-only scene.
+        if (!row) {
+          throw new InternalServerErrorException(
+            'Storyboard identity invariant failed.',
+          );
+        }
+        return {
+          sequenceId: row.id,
+          plotNodeId: row.plotNodeId,
+          description: row.description,
+          durationMs: row.durationMs,
+          suggestedDurationMs: row.suggestedDurationMs,
+          userModifiedAt: row.userModifiedAt?.toISOString() ?? null,
+          clips: row.clips.map((clip) => ({
+            clipId: clip.id,
+            stableKey: clip.stableKey,
+            kind: clip.kind,
+            title: clip.title,
+            description: clip.description,
+            startMs: clip.startMs,
+            durationMs: clip.durationMs,
+            imagePrompt: clip.imagePrompt,
+            videoPrompt: clip.videoPrompt,
+            negativePrompt: clip.negativePrompt,
+            userModifiedAt: clip.userModifiedAt?.toISOString() ?? null,
+          })),
+          cues: row.cues.map((cue) => ({
+            cueId: cue.id,
+            stableKey: cue.stableKey,
+            kind: cue.kind,
+            atMs: cue.atMs,
+            decisionId: cue.plotDecisionId,
+          })),
+        };
+      }),
+    };
+  }
+
   async patchAssetSpec(
     user: AuthUser,
     projectId: string,
@@ -797,8 +1018,9 @@ export class StoryProductionPlanService {
     chapterId: string,
     sequenceId: string,
     idempotencyKey: string,
-    input: PutStoryStoryboardTimelineInput,
+    input: PutStoryStoryboardTimelineInput | AgentStoryboardTimelineInput,
   ) {
+    const agentInput = isAgentStoryboardTimelineInput(input);
     return this.mutateWithReceipt({
       user,
       projectId,
@@ -806,6 +1028,7 @@ export class StoryProductionPlanService {
       idempotencyKey,
       operation: 'storyboard-timeline.put',
       request: { sequenceId, input },
+      mutationFence: agentInput ? 'agent_os' : 'human',
       mutate: async (tx, now) => {
         const sequence = await tx.storyStoryboardSequence.findFirst({
           where: {
@@ -817,9 +1040,6 @@ export class StoryProductionPlanService {
         });
         if (!sequence) {
           throw productionNotFound('Storyboard sequence', sequenceId);
-        }
-        if (sequence.version !== input.expectedVersion) {
-          throw productionCasConflict('Storyboard sequence');
         }
 
         const [allClips, cues] = await Promise.all([
@@ -841,14 +1061,29 @@ export class StoryProductionPlanService {
             select: { id: true, atMs: true, version: true },
           }),
         ]);
+        // Agent commands are version-free: resolve them against the current
+        // rows inside this mutation transaction (last-write-wins; the write
+        // fence serializes writers) and re-validate continuity through the
+        // shared editor contract.
+        const effective: PutStoryStoryboardTimelineInput =
+          isAgentStoryboardTimelineInput(input)
+            ? resolveAgentStoryboardTimelineInput(
+                sequence.version,
+                allClips,
+                input,
+              )
+            : input;
+        if (sequence.version !== effective.expectedVersion) {
+          throw productionCasConflict('Storyboard sequence');
+        }
         if (
           cues.some(
             (cue) =>
               storyboardCueTimeAfterTimelineResize(
                 cue.atMs,
                 sequence.durationMs,
-                input.durationMs,
-              ) > input.durationMs,
+                effective.durationMs,
+              ) > effective.durationMs,
           )
         ) {
           throw new BadRequestException({
@@ -868,7 +1103,7 @@ export class StoryProductionPlanService {
         const retainedIds = new Set<string>();
         const importedMedia = new Map<string, StoryCandidateMedia>();
 
-        for (const clipInput of input.clips) {
+        for (const clipInput of effective.clips) {
           if (!clipInput.id) {
             if (everyStableKey.has(clipInput.stableKey)) {
               throw new ConflictException({
@@ -913,7 +1148,7 @@ export class StoryProductionPlanService {
         // the write loop.
         if (allClips.length > 0) {
           const maximumRank = Math.max(...allClips.map((clip) => clip.rank));
-          const offset = Math.max(maximumRank, input.clips.length - 1) + 1;
+          const offset = Math.max(maximumRank, effective.clips.length - 1) + 1;
           if (maximumRank + offset > 2_147_483_647) {
             throw new InternalServerErrorException({
               code: 'STORYBOARD_TIMELINE_RANK_EXHAUSTED',
@@ -926,7 +1161,7 @@ export class StoryProductionPlanService {
           });
         }
 
-        for (const [rank, clipInput] of input.clips.entries()) {
+        for (const [rank, clipInput] of effective.clips.entries()) {
           assertClipPromptShape(
             clipInput.kind,
             clipInput.imagePrompt,
@@ -1025,7 +1260,7 @@ export class StoryProductionPlanService {
         }
 
         const omitted = activeClips.filter((clip) => !retainedIds.has(clip.id));
-        let archivedRank = input.clips.length;
+        let archivedRank = effective.clips.length;
         for (const clip of omitted) {
           await tx.storyStoryboardClipAssetBinding.updateMany({
             where: { storyboardClipId: clip.id },
@@ -1092,9 +1327,9 @@ export class StoryProductionPlanService {
         }
 
         const updatedSequence = await tx.storyStoryboardSequence.updateMany({
-          where: { id: sequence.id, version: input.expectedVersion },
+          where: { id: sequence.id, version: effective.expectedVersion },
           data: {
-            durationMs: input.durationMs,
+            durationMs: effective.durationMs,
             userModifiedAt: now,
             userModifiedByUserId: user.userId,
             version: { increment: 1 },
@@ -1245,11 +1480,13 @@ export class StoryProductionPlanService {
     user: AuthUser,
     projectId: string,
     chapterId: string,
-    sequenceId: string,
+    /** Null for Agent tool calls, which address the clip by its unique id. */
+    sequenceId: string | null,
     clipId: string,
     idempotencyKey: string,
-    input: PatchStoryStoryboardClipInput,
+    input: PatchStoryStoryboardClipInput | AgentStoryboardClipPatchInput,
   ) {
+    const agentInput = isAgentStoryboardClipPatchInput(input);
     return this.mutateWithReceipt({
       user,
       projectId,
@@ -1257,21 +1494,28 @@ export class StoryProductionPlanService {
       idempotencyKey,
       operation: 'storyboard-clip.patch',
       request: { sequenceId, clipId, input },
+      mutationFence: agentInput ? 'agent_os' : 'human',
       mutate: async (tx, now) => {
         const clip = await tx.storyStoryboardClip.findFirst({
           where: {
             id: clipId,
-            sequenceId,
+            ...(sequenceId ? { sequenceId } : {}),
             storyProjectId: projectId,
             storyChapterId: chapterId,
           },
         });
         if (!clip) throw productionNotFound('Storyboard clip', clipId);
-        const nextKind = input.kind ?? clip.kind;
-        if (input.selectedMediaVersionId) {
+        // Version-free Agent commands resolve against the current row inside
+        // this mutation transaction: last-write-wins by design.
+        const effective: PatchStoryStoryboardClipInput =
+          isAgentStoryboardClipPatchInput(input)
+            ? { ...input, expectedVersion: clip.version }
+            : input;
+        const nextKind = effective.kind ?? clip.kind;
+        if (effective.selectedMediaVersionId) {
           await requireClipMediaVersion(
             tx,
-            input.selectedMediaVersionId,
+            effective.selectedMediaVersionId,
             clip.id,
             projectId,
             chapterId,
@@ -1280,11 +1524,11 @@ export class StoryProductionPlanService {
         }
         let importedMediaVersionId: string | null = null;
         let timelineResize: StoryboardTimelineResizeContext | null = null;
-        if (input.sourceMediaAssetId) {
+        if (effective.sourceMediaAssetId) {
           const source = await requireStoryboardCandidateMedia(
             tx,
             projectId,
-            input.sourceMediaAssetId,
+            effective.sourceMediaAssetId,
             nextKind,
           );
           if (nextKind === 'video') {
@@ -1303,7 +1547,7 @@ export class StoryProductionPlanService {
               await this.prepareStoryboardTimelineResizeInTransaction(tx, {
                 projectId,
                 chapterId,
-                sequenceId,
+                sequenceId: clip.sequenceId,
                 clipId: clip.id,
                 durationMs: source.durationMs,
               });
@@ -1333,32 +1577,32 @@ export class StoryProductionPlanService {
           importedMediaVersionId = imported.id;
         }
         const nextImagePrompt =
-          input.imagePrompt === undefined
+          effective.imagePrompt === undefined
             ? clip.imagePrompt
-            : input.imagePrompt;
+            : effective.imagePrompt;
         const nextVideoPrompt =
-          input.videoPrompt === undefined
+          effective.videoPrompt === undefined
             ? clip.videoPrompt
-            : input.videoPrompt;
+            : effective.videoPrompt;
         assertClipPromptShape(nextKind, nextImagePrompt, nextVideoPrompt);
-        const semanticModified = storyboardClipSemanticPatch(input);
+        const semanticModified = storyboardClipSemanticPatch(effective);
         const resizedClip = timelineResize?.clips.find(
           (candidate) => candidate.id === clip.id,
         );
         const updated = await tx.storyStoryboardClip.updateMany({
-          where: { id: clip.id, version: input.expectedVersion },
+          where: { id: clip.id, version: effective.expectedVersion },
           data: {
-            ...defined(input, 'kind'),
-            ...defined(input, 'title'),
-            ...defined(input, 'description'),
-            ...defined(input, 'imagePrompt'),
-            ...defined(input, 'videoPrompt'),
-            ...defined(input, 'negativePrompt'),
+            ...defined(effective, 'kind'),
+            ...defined(effective, 'title'),
+            ...defined(effective, 'description'),
+            ...defined(effective, 'imagePrompt'),
+            ...defined(effective, 'videoPrompt'),
+            ...defined(effective, 'negativePrompt'),
             ...(resizedClip ? { durationMs: resizedClip.durationMs } : {}),
             ...(importedMediaVersionId
               ? { selectedMediaVersionId: importedMediaVersionId }
-              : input.selectedMediaVersionId !== undefined
-                ? { selectedMediaVersionId: input.selectedMediaVersionId }
+              : effective.selectedMediaVersionId !== undefined
+                ? { selectedMediaVersionId: effective.selectedMediaVersionId }
                 : nextKind !== clip.kind
                   ? { selectedMediaVersionId: null }
                   : {}),
@@ -1374,14 +1618,14 @@ export class StoryProductionPlanService {
         if (updated.count !== 1) throw productionCasConflict('Storyboard clip');
         if (timelineResize) {
           await this.applyStoryboardTimelineResizeInTransaction(tx, {
-            sequenceId,
+            sequenceId: clip.sequenceId,
             clipId: clip.id,
             resize: timelineResize,
           });
         }
         const sequence = toStoryboardSequenceDto(
           await tx.storyStoryboardSequence.findUniqueOrThrow({
-            where: { id: sequenceId },
+            where: { id: clip.sequenceId },
             include: STORYBOARD_INCLUDE,
           }),
         );
@@ -2523,6 +2767,12 @@ export class StoryProductionPlanService {
     idempotencyKey: string;
     operation: string;
     request: unknown;
+    /**
+     * Agent OS tool calls serialize against the Agent mutation fence so they
+     * order with story-authoring apply like every other agent write; the
+     * default human fence keeps the editor's STORY_AGENT_APPLYING semantics.
+     */
+    mutationFence?: 'human' | 'agent_os';
     mutate: (tx: Prisma.TransactionClient, now: Date) => Promise<T>;
   }): Promise<T> {
     await this.requireScope(
@@ -2539,7 +2789,11 @@ export class StoryProductionPlanService {
       request: input.request,
     });
     return this.prisma.$transaction(async (tx) => {
-      await this.writeGuard.assertHumanWriteAllowed(tx, input.projectId);
+      if (input.mutationFence === 'agent_os') {
+        await this.writeGuard.acquireAgentOsMutationFence(tx, input.projectId);
+      } else {
+        await this.writeGuard.assertHumanWriteAllowed(tx, input.projectId);
+      }
       await this.permissions.requireProjectInTransaction(
         tx,
         input.user.userId,

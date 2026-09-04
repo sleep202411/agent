@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { MediaAssetKind, StoryProductionSpecStatus } from '@prisma/client';
 import * as Y from 'yjs';
 import {
@@ -24,6 +24,7 @@ import {
 } from './story-production-plan.schema';
 import {
   assertStoryboardClipMediaKind,
+  resolveAgentStoryboardTimelineInput,
   resizeStoryboardTimelineClip,
   storyboardCueTimeAfterTimelineResize,
   storyboardClipSemanticPatch,
@@ -283,6 +284,223 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
         'chapter-1',
       ),
     ).rejects.toThrow(/Plot tree and Storyboard are not one-to-one/);
+  });
+
+  it('projects a slim version-free Storyboard view for the Agent tools', async () => {
+    const source = screenplay();
+    const gate = source.scenes[0];
+    const prisma = {
+      storyChapter: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'chapter-1' }),
+        findFirstOrThrow: jest.fn().mockResolvedValue({
+          nodeIds: source.scenes.map((scene) => scene.nodeId),
+        }),
+      },
+      storyDraft: {
+        findUniqueOrThrow: jest.fn().mockResolvedValue({
+          content: chapterDraft(source),
+        }),
+      },
+      storyStoryboardSequence: {
+        findMany: jest.fn().mockResolvedValue(
+          source.scenes.map((scene) => ({
+            id: `sequence-${scene.nodeId}`,
+            plotNodeId: scene.nodeId,
+            description: `Footage of ${scene.nodeId}.`,
+            suggestedDurationMs: 10_000,
+            durationMs: 10_000,
+            userModifiedAt: null,
+            clips:
+              scene.nodeId === gate.nodeId
+                ? [
+                    {
+                      id: 'clip-gate-main',
+                      stableKey: 'shot.scene.gate.main',
+                      kind: 'video',
+                      title: 'Gate',
+                      description: null,
+                      startMs: 0,
+                      durationMs: 10_000,
+                      imagePrompt: null,
+                      videoPrompt: 'A cinematic rendering of the gate.',
+                      negativePrompt: null,
+                      userModifiedAt: null,
+                    },
+                  ]
+                : [],
+            cues:
+              scene.nodeId === gate.nodeId
+                ? [
+                    {
+                      id: 'cue-gate-route',
+                      stableKey: 'cue.scene.gate.route',
+                      kind: 'decision',
+                      atMs: 10_000,
+                      plotDecisionId: 'decision.route',
+                    },
+                  ]
+                : [],
+          })),
+        ),
+      },
+    };
+    const service = new StoryProductionPlanService(
+      prisma as never,
+      { requireProject: jest.fn().mockResolvedValue(undefined) } as never,
+      null as never,
+    );
+
+    const view = await service.getStoryboardForAgent(
+      { userId: 'creator-1' } as never,
+      'project-1',
+      'chapter-1',
+    );
+
+    expect(view.chapterId).toBe('chapter-1');
+    expect(view.sequences).toHaveLength(source.scenes.length);
+    const gateView = view.sequences[0];
+    expect(gateView).toEqual({
+      sequenceId: 'sequence-scene.gate',
+      plotNodeId: 'scene.gate',
+      description: 'Footage of scene.gate.',
+      durationMs: 10_000,
+      suggestedDurationMs: 10_000,
+      userModifiedAt: null,
+      clips: [
+        {
+          clipId: 'clip-gate-main',
+          stableKey: 'shot.scene.gate.main',
+          kind: 'video',
+          title: 'Gate',
+          description: null,
+          startMs: 0,
+          durationMs: 10_000,
+          imagePrompt: null,
+          videoPrompt: 'A cinematic rendering of the gate.',
+          negativePrompt: null,
+          userModifiedAt: null,
+        },
+      ],
+      cues: [
+        {
+          cueId: 'cue-gate-route',
+          stableKey: 'cue.scene.gate.route',
+          kind: 'decision',
+          atMs: 10_000,
+          decisionId: 'decision.route',
+        },
+      ],
+    });
+    // Unplanned placeholders stay visible with zero clips.
+    expect(view.sequences[1]?.clips).toEqual([]);
+  });
+
+  describe('resolveAgentStoryboardTimelineInput', () => {
+    const liveClip = {
+      id: '0197f4a2-0800-7000-8000-0000000000e1',
+      version: 7,
+      status: StoryProductionSpecStatus.current,
+    };
+    const archivedClip = {
+      id: '0197f4a2-0800-7000-8000-0000000000e2',
+      version: 2,
+      status: StoryProductionSpecStatus.archived,
+    };
+
+    it('resolves CAS tokens from the current rows: retained clips keep their version, new clips start at zero', () => {
+      const resolved = resolveAgentStoryboardTimelineInput(
+        4,
+        [liveClip, archivedClip],
+        {
+          durationMs: 6_000,
+          clips: [
+            {
+              clipId: '0197f4a2-0800-7000-8000-0000000000e1',
+              stableKey: 'shot.scene.gate.main',
+              title: 'Gate',
+              description: null,
+              startMs: 0,
+              durationMs: 2_000,
+              kind: 'image',
+              imagePrompt: 'A sealed gate in rain.',
+            },
+            {
+              stableKey: 'shot.scene.gate.approach',
+              title: 'Approach',
+              description: null,
+              startMs: 2_000,
+              durationMs: 4_000,
+              kind: 'video',
+              videoPrompt: 'The courier crosses the square.',
+            },
+          ],
+        },
+      );
+
+      expect(resolved.expectedVersion).toBe(4);
+      expect(resolved.clips[0]).toMatchObject({
+        id: '0197f4a2-0800-7000-8000-0000000000e1',
+        expectedVersion: 7,
+      });
+      expect(resolved.clips[1]).toMatchObject({ expectedVersion: 0 });
+    });
+
+    it('rejects a clipId that is unknown or archived', () => {
+      const base = {
+        durationMs: 2_000,
+        clips: [
+          {
+            clipId: '0197f4a2-0800-7000-8000-0000000000e1',
+            stableKey: 'shot.scene.gate.main',
+            title: 'Gate',
+            description: null,
+            startMs: 0,
+            durationMs: 2_000,
+            kind: 'image' as const,
+            imagePrompt: 'A sealed gate in rain.',
+          },
+        ],
+      };
+      expect(() => resolveAgentStoryboardTimelineInput(1, [], base)).toThrow(
+        NotFoundException,
+      );
+      expect(() =>
+        resolveAgentStoryboardTimelineInput(1, [archivedClip], {
+          ...base,
+          clips: [
+            {
+              ...base.clips[0],
+              clipId: archivedClip.id,
+            },
+          ],
+        }),
+      ).toThrow(NotFoundException);
+    });
+
+    it('re-validates continuity through the shared editor contract', () => {
+      try {
+        resolveAgentStoryboardTimelineInput(1, [], {
+          durationMs: 3_000,
+          clips: [
+            {
+              stableKey: 'shot.scene.gate.main',
+              title: 'Gate',
+              description: null,
+              startMs: 500,
+              durationMs: 2_500,
+              kind: 'image',
+              imagePrompt: 'A sealed gate in rain.',
+            },
+          ],
+        });
+        throw new Error('expected STORYBOARD_TIMELINE_INVALID');
+      } catch (error) {
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({
+          code: 'STORYBOARD_TIMELINE_INVALID',
+        });
+      }
+    });
   });
 
   it('reports an existing Plot as current without tying it to Script approval lineage', async () => {

@@ -238,6 +238,100 @@ describe("agent-tools registry", () => {
     ).toThrow();
   });
 
+  it("validates version-free Storyboard timeline and clip editing inputs", () => {
+    expect(
+      parseToolInput("story.storyboard.putTimeline", {
+        sequenceId: "0197f4a2-0800-7000-8000-0000000000a1",
+        durationMs: 6_000,
+        clips: [
+          {
+            clipId: "0197f4a2-0800-7000-8000-0000000000a2",
+            stableKey: "shot.scene.gate.opening",
+            title: "Opening frame",
+            description: "The gate in rain.",
+            startMs: 0,
+            durationMs: 1_500,
+            kind: "image",
+            imagePrompt: "A sealed gate in rain lit by @asset.prop.lantern.",
+          },
+          {
+            stableKey: "shot.scene.gate.approach",
+            title: "Approach",
+            description: null,
+            startMs: 1_500,
+            durationMs: 4_500,
+            kind: "video",
+            videoPrompt: "The courier crosses the flooded square.",
+          },
+        ],
+      })
+    ).toMatchObject({
+      sequenceId: "0197f4a2-0800-7000-8000-0000000000a1",
+      durationMs: 6_000,
+      clips: [
+        { kind: "image", imagePrompt: expect.any(String) },
+        { kind: "video", videoPrompt: expect.any(String) },
+      ],
+    });
+    // Kind-correct prompts are a shape rule even before server validation.
+    expect(() =>
+      parseToolInput("story.storyboard.putTimeline", {
+        sequenceId: "0197f4a2-0800-7000-8000-0000000000a1",
+        durationMs: 1_500,
+        clips: [
+          {
+            stableKey: "shot.scene.gate.opening",
+            title: "Opening frame",
+            description: null,
+            startMs: 0,
+            durationMs: 1_500,
+            kind: "video",
+            imagePrompt: "An image prompt cannot drive a video clip.",
+          },
+        ],
+      })
+    ).toThrow();
+    expect(() =>
+      parseToolInput("story.storyboard.putTimeline", {
+        sequenceId: "0197f4a2-0800-7000-8000-0000000000a1",
+        durationMs: 1_000,
+        clips: [
+          {
+            stableKey: "shot.scene.gate.opening",
+            title: "Too short",
+            description: null,
+            startMs: 0,
+            durationMs: 100,
+            kind: "image",
+            imagePrompt: "A held frame.",
+          },
+        ],
+      })
+    ).toThrow();
+
+    expect(
+      parseToolInput("story.storyboard.patchClip", {
+        clipId: "0197f4a2-0800-7000-8000-0000000000a2",
+        imagePrompt: "A sealed gate in heavier rain.",
+        negativePrompt: null,
+      })
+    ).toMatchObject({ clipId: "0197f4a2-0800-7000-8000-0000000000a2" });
+    // A patch with only the address is a no-op and rejected.
+    expect(() =>
+      parseToolInput("story.storyboard.patchClip", {
+        clipId: "0197f4a2-0800-7000-8000-0000000000a2",
+      })
+    ).toThrow();
+
+    expect(() => parseToolInput("story.storyboard.read", {})).not.toThrow();
+  });
+
+  it("marks the Storyboard editing tools with the intended risk levels", () => {
+    expect(riskForTool("story.storyboard.read")).toBe("read");
+    expect(riskForTool("story.storyboard.putTimeline")).toBe("sensitive");
+    expect(riskForTool("story.storyboard.patchClip")).toBe("sensitive");
+  });
+
   it("requires story.read to project durable lifecycle and canonical production readiness", () => {
     const output = {
       chapterId: "00000000-0000-4000-8000-000000000001",
