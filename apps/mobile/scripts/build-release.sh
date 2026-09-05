@@ -11,8 +11,9 @@
 # where variant ∈ {global, global-transsion, cn-ios, cn-huawei, cn-xiaomi}.
 #
 # Signing secrets + material paths come from a GITIGNORED env file
-# (apps/mobile/.env.release.local — see .env.release.example). No secret lives
-# in the repo. Android release signing is injected by the
+# (apps/mobile/env.release.local — see env.release.example). Named without the
+# leading `.env` so Expo Metro does not treat it as a dotenv module. No secret
+# lives in the repo. Android release signing is injected by the
 # `withAndroidReleaseSigning` config plugin during prebuild (so the keystore is
 # wired via FIZZDRAGON_UPLOAD_* gradle props, passed below per region).
 #
@@ -28,9 +29,9 @@ MOBILE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$MOBILE_DIR"
 
 # ── load signing/material config (gitignored) ──
-ENV_FILE="$MOBILE_DIR/.env.release.local"
+ENV_FILE="${FD_RELEASE_ENV:-$MOBILE_DIR/env.release.local}"
 [ -f "$ENV_FILE" ] || {
-  echo "FATAL: $ENV_FILE not found. Copy .env.release.example and fill it in." >&2
+  echo "FATAL: $ENV_FILE not found. Copy env.release.example to env.release.local and fill it in." >&2
   exit 1
 }
 set -a; # shellcheck disable=SC1090

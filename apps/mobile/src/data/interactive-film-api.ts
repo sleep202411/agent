@@ -257,13 +257,20 @@ function parseGameList(data: unknown): ExperienceGameListResponse {
 }
 
 function sanitizeGameSummary(entry: Record<string, unknown>): Record<string, unknown> {
-  const next = { ...entry };
-  const cover = next.coverUrl;
-  if (typeof cover !== "string" || !/^https?:\/\/\S+$/i.test(cover.trim())) {
-    delete next.coverUrl;
+  // Schema is `.strict()` — only forward keys the player catalogue contract
+  // accepts. Java DTOs carry extras (status, offlineAt, creatorId, …).
+  const next: Record<string, unknown> = {
+    gameId: entry.gameId,
+    title: entry.title,
+    currentVersion: entry.currentVersion,
+    updatedAt: entry.updatedAt,
+  };
+  const cover = entry.coverUrl;
+  if (typeof cover === "string" && /^https?:\/\/\S+$/i.test(cover.trim())) {
+    next.coverUrl = cover;
   }
-  if (typeof next.subtitle !== "string" || next.subtitle.trim() === "") {
-    delete next.subtitle;
+  if (typeof entry.subtitle === "string" && entry.subtitle.trim() !== "") {
+    next.subtitle = entry.subtitle;
   }
   return next;
 }

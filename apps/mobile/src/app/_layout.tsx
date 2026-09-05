@@ -3,11 +3,11 @@ import { DarkTheme, Stack, ThemeProvider } from "expo-router";
 import { useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 
 import "@/global.css";
 import { AuthProvider } from "@/auth";
 import { initLocale } from "@/i18n";
-import { lockAppPortrait } from "@/hooks/use-screen-orientation";
 import { PlayOrientationExitCover } from "@/components/play-orientation-exit-cover";
 import { checkForUpdate } from "@/lib/update-check";
 import { AnimatedSplashOverlay } from "@/components/animated-icon";
@@ -35,50 +35,68 @@ export default function RootLayout() {
   useEffect(() => {
     void initLocale();
     void checkForUpdate();
-    void lockAppPortrait().catch((error: unknown) => {
-      console.warn("[orientation] initial portrait lock failed", error);
-    });
   }, []);
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <ThemeProvider value={DarkTheme}>
-        <StatusBar style="light" />
-        <AuthProvider>
-          <AnimatedSplashOverlay />
-          <MobileAppFrame>
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(tabs)" />
-              {/* Login / register / reset — a full-page route the gate pushes
-                  (or replaces) onto the stack; always skippable. */}
-              <Stack.Screen name="(auth)" />
-              <Stack.Screen name="settings" />
-              <Stack.Screen name="account-security" />
-              <Stack.Screen name="bind-invite" />
-              <Stack.Screen name="referrals" />
-              <Stack.Screen name="delete-account" />
-              <Stack.Screen name="ips" options={detailHeader} />
-              <Stack.Screen name="games" options={detailHeader} />
-              <Stack.Screen
-                name="play/interactive-film/[gameId]"
-                options={{
-                  ...detailHeader,
-                  animation: "fade",
-                  headerBackButtonMenuEnabled: false,
-                  gestureEnabled: false,
-                  fullScreenGestureEnabled: false,
+      <KeyboardProvider>
+        <ThemeProvider value={DarkTheme}>
+          <StatusBar style="light" />
+          <AuthProvider>
+            <AnimatedSplashOverlay />
+            <MobileAppFrame>
+              <Stack
+                screenOptions={{
+                  headerShown: false,
+                  orientation: "portrait_up",
                 }}
-              />
-              <Stack.Screen name="ip/[id]" options={detailHeader} />
-              <Stack.Screen name="crew/[id]" options={detailHeader} />
-              <Stack.Screen name="creator/[id]" options={detailHeader} />
-              <Stack.Screen name="service/[id]" options={detailHeader} />
-            </Stack>
-          </MobileAppFrame>
-          <ConsentGate />
-          <PlayOrientationExitCover />
-        </AuthProvider>
-      </ThemeProvider>
+              >
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen name="agent/index" options={detailHeader} />
+                <Stack.Screen name="agent/[projectId]" options={{ headerShown: false }} />
+                {/* Login / register / reset — a full-page route the gate pushes
+                  (or replaces) onto the stack; always skippable. */}
+                <Stack.Screen name="(auth)" />
+                <Stack.Screen name="settings" />
+                <Stack.Screen name="account-security" />
+                <Stack.Screen name="bind-invite" />
+                <Stack.Screen name="referrals" />
+                <Stack.Screen name="delete-account" />
+                <Stack.Screen name="ips" options={detailHeader} />
+                <Stack.Screen name="games" options={detailHeader} />
+                <Stack.Screen
+                  name="play/interactive-film/[gameId]"
+                  options={{
+                    ...detailHeader,
+                    orientation: "landscape",
+                    animation: "fade",
+                    headerBackButtonMenuEnabled: false,
+                    gestureEnabled: false,
+                    fullScreenGestureEnabled: false,
+                  }}
+                />
+                <Stack.Screen
+                  name="play/story-preview/[projectId]"
+                  options={{
+                    ...detailHeader,
+                    orientation: "landscape",
+                    animation: "fade",
+                    headerBackButtonMenuEnabled: false,
+                    gestureEnabled: false,
+                    fullScreenGestureEnabled: false,
+                  }}
+                />
+                <Stack.Screen name="ip/[id]" options={detailHeader} />
+                <Stack.Screen name="crew/[id]" options={detailHeader} />
+                <Stack.Screen name="creator/[id]" options={detailHeader} />
+                <Stack.Screen name="service/[id]" options={detailHeader} />
+              </Stack>
+            </MobileAppFrame>
+            <ConsentGate />
+            <PlayOrientationExitCover />
+          </AuthProvider>
+        </ThemeProvider>
+      </KeyboardProvider>
     </GestureHandlerRootView>
   );
 }

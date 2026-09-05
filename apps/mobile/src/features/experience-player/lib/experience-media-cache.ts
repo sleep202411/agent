@@ -1,6 +1,6 @@
 import { File } from "expo-file-system";
 
-import { subscribeAppActive } from "@/hooks/use-app-active";
+import { subscribeAppActive } from "@/hooks/app-active";
 
 import { createDiskCachePool, deleteQuietly } from "./experience-disk-cache";
 import { absolutizeExperienceMediaUri, resolvePlayableMediaUrl } from "./experience-media";

@@ -1,44 +1,9 @@
 import { useIsFocused } from "expo-router";
 import { createContext, useContext, useEffect, useEffectEvent, useSyncExternalStore } from "react";
-import { AppState } from "react-native";
-import type { NativeEventSubscription } from "react-native";
 
-/**
- * One native AppState subscription for the whole app, fanned out to listeners.
- *
- * Playback surfaces need several independent reactions to foreground/background
- * (video pause, scene clock, audio session), and a per-consumer
- * `AppState.addEventListener` means N bridge subscriptions plus duplicate work
- * for the `inactive` → `background` pair iOS emits on every backgrounding.
- * Listeners here only see real transitions of "is the app active".
- */
-let subscription: NativeEventSubscription | null = null;
-let lastActive = AppState.currentState === "active";
-const listeners = new Set<(active: boolean) => void>();
+import { isAppActive, subscribeAppActive } from "./app-active";
 
-/** Read-through — correct even before the first listener attaches. */
-export function isAppActive(): boolean {
-  return AppState.currentState === "active";
-}
-
-export function subscribeAppActive(listener: (active: boolean) => void): () => void {
-  listeners.add(listener);
-  if (!subscription) {
-    lastActive = isAppActive();
-    subscription = AppState.addEventListener("change", (nextState) => {
-      const active = nextState === "active";
-      if (active === lastActive) return;
-      lastActive = active;
-      listeners.forEach((entry) => entry(active));
-    });
-  }
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size > 0) return;
-    subscription?.remove();
-    subscription = null;
-  };
-}
+export { isAppActive, subscribeAppActive } from "./app-active";
 
 /** Runs `onChange` on every foreground/background transition while mounted. */
 export function useAppActiveChange(onChange: (active: boolean) => void): void {

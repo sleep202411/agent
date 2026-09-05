@@ -11,7 +11,7 @@ import type { ExperienceGameChapter } from "@repo/shared/experience-runtime";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 
-import { chapterDisplayTitle } from "./experience-session";
+import { chapterDisplayTitle } from "../lib/experience-session";
 
 type ExperienceChapterPickerProps = {
   visible: boolean;
