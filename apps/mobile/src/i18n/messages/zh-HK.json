@@ -515,6 +515,7 @@
   "agent.composer.removeAttachment": "移除附件",
   "agent.composer.attachmentFailed": "無法處理 {name}",
   "agent.composer.attachmentFailedGeneric": "上傳失敗",
+  "agent.composer.attachmentUnsupportedType": "僅支援 .txt 和 .md 檔案，已略過 {name}。",
   "agent.composer.attachmentTooMany": "每則訊息最多可新增 {count} 個檔案",
   "agent.composer.attachmentTooLarge": "{name} 超過 {size} MB",
   "agent.composer.attachmentEmpty": "{name} 是空檔案",

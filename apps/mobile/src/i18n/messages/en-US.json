@@ -515,6 +515,7 @@
   "agent.composer.removeAttachment": "Remove attachment",
   "agent.composer.attachmentFailed": "Could not process {name}",
   "agent.composer.attachmentFailedGeneric": "Upload failed",
+  "agent.composer.attachmentUnsupportedType": "Only .txt and .md files can be attached. {name} was skipped.",
   "agent.composer.attachmentTooMany": "You can attach up to {count} files per message",
   "agent.composer.attachmentTooLarge": "{name} is larger than {size} MB",
   "agent.composer.attachmentEmpty": "{name} is empty",

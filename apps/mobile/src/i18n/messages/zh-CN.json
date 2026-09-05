@@ -515,6 +515,7 @@
   "agent.composer.removeAttachment": "移除附件",
   "agent.composer.attachmentFailed": "无法处理 {name}",
   "agent.composer.attachmentFailedGeneric": "上传失败",
+  "agent.composer.attachmentUnsupportedType": "仅支持 .txt 和 .md 文件，已跳过 {name}。",
   "agent.composer.attachmentTooMany": "每条消息最多可添加 {count} 个文件",
   "agent.composer.attachmentTooLarge": "{name} 超过 {size} MB",
   "agent.composer.attachmentEmpty": "{name} 是空文件",

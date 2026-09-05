@@ -101,7 +101,7 @@ export default function StoryProjectLayout() {
   }
 
   return (
-    <StoryChapterProvider projectId={projectId}>
+    <StoryChapterProvider key={projectId} projectId={projectId}>
       <StoryProjectTabs projectId={projectId} />
     </StoryChapterProvider>
   );

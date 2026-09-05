@@ -79,12 +79,13 @@ export default function AgentHubScreen() {
   );
 
   const openThread = useCallback(
-    (projectId: string) => {
+    (projectId: string, title?: string) => {
       requireAuth({
         onAuthenticated: () => {
           const q = new URLSearchParams({
             mode: AGENT_OS_STORY_WORKBENCH_MODE,
           });
+          if (title?.trim()) q.set("title", title.trim());
           router.push(toHref(`/agent/${projectId}?${q.toString()}`));
         },
       });
@@ -110,6 +111,8 @@ export default function AgentHubScreen() {
             mode: AGENT_OS_STORY_WORKBENCH_MODE,
           });
           if (isAgentOsId(chapterId)) q.set("chapterId", chapterId);
+          const createdTitle = project.title?.trim() || values.title.trim();
+          if (createdTitle) q.set("title", createdTitle);
           router.push(toHref(`/agent/${project.id}?${q.toString()}`));
         } catch (err) {
           Alert.alert(
@@ -222,7 +225,7 @@ export default function AgentHubScreen() {
                       <View key={project.id} style={styles.cardCell}>
                         <StoryProjectCard
                           project={project}
-                          onPress={() => openThread(project.id)}
+                          onPress={() => openThread(project.id, project.title)}
                         />
                       </View>
                     );

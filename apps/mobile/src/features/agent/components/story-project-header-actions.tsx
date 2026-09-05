@@ -4,27 +4,19 @@ import IconCheck from "@tabler/icons-react-native/icons/IconCheck";
 import IconCloudOff from "@tabler/icons-react-native/icons/IconCloudOff";
 import IconCloudUpload from "@tabler/icons-react-native/icons/IconCloudUpload";
 import IconLoader2 from "@tabler/icons-react-native/icons/IconLoader2";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { appEnv } from "@/config";
 import {
-  getInteractiveFilmPublication,
   offlineInteractiveFilm,
   prepareInteractiveFilmRelease,
   submitInteractiveFilmRelease,
-  type InteractiveFilmPublication,
   type InteractiveFilmPublicationStatus,
 } from "@/features/agent/api/interactive-film-publication-api";
 import { fillMessageTemplate } from "@/features/agent/api/story-production-api";
-import {
-  storyProjectsApi,
-  type StoryBillingBalance,
-} from "@/features/agent/api/studio-projects-api";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
 import { useLocale, useTranslations, type MessageKey } from "@/i18n";
-
-const PUBLICATION_POLL_MS = 30_000;
 
 function formatPoints(value: string | undefined): string {
   if (!value || !/^\d+$/.test(value)) return "—";
@@ -69,24 +61,11 @@ function submitActionKey(
 }
 
 /** Compute credits chip — shared by chat and script/assets headers. */
-export function StoryCreditsButton({ projectId }: { projectId: string }) {
+export function StoryCreditsButton() {
   const t = useTranslations();
   const locale = useLocale();
+  const { billingBalance } = useStoryChapterContext();
   const billingUrl = `${appEnv.api.studioBaseUrl.replace(/\/+$/, "")}/${locale}/settings/billing`;
-  const [balance, setBalance] = useState<StoryBillingBalance | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void storyProjectsApi
-      .getBillingBalance(projectId, controller.signal)
-      .then((next) => {
-        if (!controller.signal.aborted) setBalance(next);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setBalance(null);
-      });
-    return () => controller.abort();
-  }, [projectId]);
 
   return (
     <Pressable
@@ -112,7 +91,7 @@ export function StoryCreditsButton({ projectId }: { projectId: string }) {
       <View style={styles.creditsChrome}>
         <IconBolt color="rgba(255,255,255,0.82)" size={16} strokeWidth={1.8} />
         <Text style={styles.creditsText} numberOfLines={1}>
-          {formatPoints(balance?.availablePoints)}
+          {formatPoints(billingBalance?.availablePoints)}
         </Text>
       </View>
     </Pressable>
@@ -127,11 +106,12 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     draftRevision,
     videoSnapshotHash,
     loading: workbenchLoading,
+    publication,
+    publicationLoading,
+    publicationFailed,
+    setPublication,
   } = useStoryChapterContext();
 
-  const [publication, setPublication] = useState<InteractiveFilmPublication | null>(null);
-  const [publicationLoading, setPublicationLoading] = useState(true);
-  const [publicationFailed, setPublicationFailed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [offlining, setOfflining] = useState(false);
 
@@ -157,51 +137,6 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
     canSubmitStatus &&
     hasSnapshot &&
     !busy;
-
-  const refreshHeaderData = useCallback(
-    async (signal?: AbortSignal, opts?: { silent?: boolean }) => {
-      if (!canRelease) {
-        setPublication(null);
-        setPublicationFailed(false);
-        setPublicationLoading(false);
-        return;
-      }
-
-      if (!opts?.silent) {
-        setPublicationLoading(true);
-        setPublicationFailed(false);
-      }
-      try {
-        const nextPublication = await getInteractiveFilmPublication(projectId, signal);
-        if (signal?.aborted) return;
-        setPublication(nextPublication);
-        setPublicationFailed(false);
-      } catch {
-        if (signal?.aborted) return;
-        if (opts?.silent) return;
-        setPublication(null);
-        setPublicationFailed(true);
-      } finally {
-        if (!signal?.aborted && !opts?.silent) setPublicationLoading(false);
-      }
-    },
-    [canRelease, projectId]
-  );
-
-  useEffect(() => {
-    if (workbenchLoading) return;
-    const controller = new AbortController();
-    void refreshHeaderData(controller.signal).catch(() => {
-      if (!controller.signal.aborted) setPublicationLoading(false);
-    });
-    const timer = setInterval(() => {
-      void refreshHeaderData(controller.signal, { silent: true });
-    }, PUBLICATION_POLL_MS);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [refreshHeaderData, workbenchLoading]);
 
   const disabledReason =
     workbenchLoading || publicationLoading
@@ -361,7 +296,7 @@ export function StoryProjectHeaderActions({ projectId }: { projectId: string }) 
           ) : null}
         </View>
       ) : null}
-      <StoryCreditsButton projectId={projectId} />
+      <StoryCreditsButton />
     </View>
   );
 }

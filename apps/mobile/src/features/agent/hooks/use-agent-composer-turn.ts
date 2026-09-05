@@ -21,8 +21,16 @@ import type { AgentOsSendExtras } from "./use-agent-os-session";
 const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_ATTACHMENTS_PER_TURN = 20;
 const UPLOAD_CONCURRENCY = 3;
+/** Composer attachments are plain text only. The iOS picker type list is a
+ * hint, not a lock — reject anything else after pick. */
+const ATTACHMENT_PICKER_TYPES = ["text/plain", "text/markdown", "text/x-markdown"];
+const ATTACHMENT_ALLOWED_EXT = /\.(txt|md)$/i;
 /** SecureStore rejects `:`; H5 localStorage uses `fizz:agent-os:permissionMode`. */
 const PERM_STORAGE_KEY = "fizz.agent-os.permissionMode";
+
+function isAllowedComposerAttachment(name: string): boolean {
+  return ATTACHMENT_ALLOWED_EXT.test(name.trim());
+}
 
 export type ProjectSkillComposerEntry = {
   installation: ProjectSkillInstallation;
@@ -207,12 +215,7 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
     const picked = await DocumentPicker.getDocumentAsync({
       copyToCacheDirectory: true,
       multiple: true,
-      type: [
-        "text/*",
-        "application/json",
-        "application/xml",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      ],
+      type: ATTACHMENT_PICKER_TYPES,
     });
     if (picked.canceled || !picked.assets?.length) return;
     if (picked.assets.length > remaining) {
@@ -226,6 +229,13 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
     const accepted = picked.assets.slice(0, remaining).flatMap((asset) => {
       const name = asset.name?.trim() || "attachment";
       const size = asset.size ?? 0;
+      if (!isAllowedComposerAttachment(name)) {
+        Alert.alert(
+          t("agent.composer.attachFile"),
+          fillMessageTemplate(t("agent.composer.attachmentUnsupportedType"), { name })
+        );
+        return [];
+      }
       if (size === 0) {
         Alert.alert(
           t("agent.composer.attachFile"),

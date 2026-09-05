@@ -1,6 +1,6 @@
 import IconArrowUp from "@tabler/icons-react-native/icons/IconArrowUp";
 import IconPlayerStopFilled from "@tabler/icons-react-native/icons/IconPlayerStopFilled";
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Pressable, StyleSheet, TextInput, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
@@ -12,6 +12,8 @@ import { AgentModelMenu } from "./agent-model-menu";
 const theme = Colors.dark;
 /** Same #E52227 as 开始创作 / home +. */
 const BRAND_RED = theme.brand;
+const INPUT_MIN_HEIGHT = 56;
+const INPUT_MAX_HEIGHT = 132;
 
 type AgentComposerProps = {
   value: string;
@@ -67,6 +69,14 @@ export function AgentComposer({
   const showModelMenu = Boolean(onOpenModelSettings && modelMenuLabel);
   const selectedModelLabel =
     modelOptions?.find((option) => option.id === modelProfileId)?.label ?? modelMenuLabel;
+  const [inputEpoch, setInputEpoch] = useState(0);
+  const wasEmptyRef = useRef(value.length === 0);
+
+  useEffect(() => {
+    const empty = value.length === 0;
+    if (empty && !wasEmptyRef.current) setInputEpoch((epoch) => epoch + 1);
+    wasEmptyRef.current = empty;
+  }, [value]);
 
   return (
     <View style={styles.boxThreadShadow}>
@@ -82,6 +92,7 @@ export function AgentComposer({
         {attachmentBar}
 
         <TextInput
+          key={inputEpoch}
           nativeID={nativeID}
           value={value}
           onChangeText={onChangeText}
@@ -176,8 +187,8 @@ const styles = StyleSheet.create({
   inputThread: {
     fontSize: 15,
     lineHeight: 22,
-    maxHeight: 132,
-    minHeight: 56,
+    minHeight: INPUT_MIN_HEIGHT,
+    maxHeight: INPUT_MAX_HEIGHT,
     paddingHorizontal: 0,
     paddingTop: Spacing.one,
     paddingBottom: Spacing.one,

@@ -9,8 +9,20 @@ import {
   type ReactNode,
 } from "react";
 
+import {
+  getInteractiveFilmPublication,
+  type InteractiveFilmPublication,
+} from "@/features/agent/api/interactive-film-publication-api";
 import { isAgentOsId } from "@/features/agent/lib/ids";
-import { storyProjectsApi, type StoryCapability } from "@/features/agent/api/studio-projects-api";
+import {
+  storyProjectsApi,
+  type StoryBillingBalance,
+  type StoryCapability,
+} from "@/features/agent/api/studio-projects-api";
+import { isAppActive, subscribeAppActive } from "@/hooks/app-active";
+
+/** Header remote reads — same cadence as H5 credits / publication badges. */
+const REMOTE_POLL_MS = 30_000;
 
 type StoryChapterContextValue = {
   projectId: string;
@@ -19,12 +31,22 @@ type StoryChapterContextValue = {
   capabilities: StoryCapability[];
   draftRevision: number | null;
   videoSnapshotHash: string | null;
+  billingBalance: StoryBillingBalance | null;
+  publication: InteractiveFilmPublication | null;
+  publicationLoading: boolean;
+  publicationFailed: boolean;
   loading: boolean;
   error: string | undefined;
   refresh: () => void;
+  setPublication: (next: InteractiveFilmPublication | null) => void;
 };
 
 const StoryChapterContext = createContext<StoryChapterContextValue | null>(null);
+
+function firstParam(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0]?.trim() ?? "";
+  return value?.trim() ?? "";
+}
 
 export function StoryChapterProvider({
   projectId,
@@ -33,15 +55,23 @@ export function StoryChapterProvider({
   projectId: string;
   children: ReactNode;
 }) {
-  const { chapterId: chapterIdParam } = useLocalSearchParams<{ chapterId?: string }>();
-  const chapterIdFromQuery = chapterIdParam?.trim() ?? "";
+  const { chapterId: chapterIdParam, title: titleParam } = useLocalSearchParams<{
+    chapterId?: string | string[];
+    title?: string | string[];
+  }>();
+  const chapterIdFromQuery = firstParam(chapterIdParam);
+  const previewTitle = firstParam(titleParam);
   const [chapterId, setChapterId] = useState(
     isAgentOsId(chapterIdFromQuery) ? chapterIdFromQuery : ""
   );
-  const [projectTitle, setProjectTitle] = useState("");
+  const [projectTitle, setProjectTitle] = useState(previewTitle);
   const [capabilities, setCapabilities] = useState<StoryCapability[]>([]);
   const [draftRevision, setDraftRevision] = useState<number | null>(null);
   const [videoSnapshotHash, setVideoSnapshotHash] = useState<string | null>(null);
+  const [billingBalance, setBillingBalance] = useState<StoryBillingBalance | null>(null);
+  const [publication, setPublication] = useState<InteractiveFilmPublication | null>(null);
+  const [publicationLoading, setPublicationLoading] = useState(true);
+  const [publicationFailed, setPublicationFailed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | undefined>();
   const [refreshKey, setRefreshKey] = useState(0);
@@ -71,7 +101,7 @@ export function StoryChapterProvider({
           throw new Error("Story project has no chapter for Agent OS story mode");
         }
         setChapterId(resolvedChapter);
-        setProjectTitle(workbench.project?.title?.trim() ?? "");
+        setProjectTitle(workbench.project?.title?.trim() || previewTitle);
         setCapabilities(workbench.project?.capabilities ?? []);
         setDraftRevision(
           typeof workbench.draft?.revision === "number" ? workbench.draft.revision : null
@@ -80,7 +110,7 @@ export function StoryChapterProvider({
       } catch (err) {
         if (cancelled) return;
         setChapterId("");
-        setProjectTitle("");
+        if (!previewTitle) setProjectTitle("");
         setCapabilities([]);
         setDraftRevision(null);
         setVideoSnapshotHash(null);
@@ -93,7 +123,81 @@ export function StoryChapterProvider({
     return () => {
       cancelled = true;
     };
-  }, [chapterIdFromQuery, projectId, refreshKey]);
+  }, [chapterIdFromQuery, previewTitle, projectId, refreshKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    const load = async () => {
+      try {
+        const next = await storyProjectsApi.getBillingBalance(projectId, controller.signal);
+        if (cancelled || controller.signal.aborted) return;
+        setBillingBalance(next);
+      } catch {
+        // Keep the last known balance — a blip must not flash "—" while generating.
+      }
+    };
+
+    void load();
+    const timer = setInterval(() => {
+      if (!isAppActive()) return;
+      void load();
+    }, REMOTE_POLL_MS);
+    const unsubscribe = subscribeAppActive((active) => {
+      if (active) void load();
+    });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+      unsubscribe();
+    };
+  }, [projectId, refreshKey]);
+
+  const canRelease = capabilities.includes("story.release");
+
+  useEffect(() => {
+    if (canRelease || loading) return;
+    setPublication(null);
+    setPublicationFailed(false);
+    setPublicationLoading(false);
+  }, [canRelease, loading]);
+
+  useEffect(() => {
+    if (!canRelease) return;
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const load = async (silent: boolean) => {
+      if (!silent) setPublicationLoading(true);
+      try {
+        const next = await getInteractiveFilmPublication(projectId, controller.signal);
+        if (cancelled || controller.signal.aborted) return;
+        setPublication(next);
+        setPublicationFailed(false);
+      } catch {
+        if (cancelled || controller.signal.aborted) return;
+        if (silent) return;
+        setPublication(null);
+        setPublicationFailed(true);
+      } finally {
+        if (!cancelled && !controller.signal.aborted && !silent) setPublicationLoading(false);
+      }
+    };
+
+    void load(false);
+    const timer = setInterval(() => {
+      if (!isAppActive()) return;
+      void load(true);
+    }, REMOTE_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [canRelease, projectId]);
 
   const value = useMemo(
     () => ({
@@ -103,11 +207,17 @@ export function StoryChapterProvider({
       capabilities,
       draftRevision,
       videoSnapshotHash,
+      billingBalance,
+      publication,
+      publicationLoading,
+      publicationFailed,
       loading,
       error,
       refresh,
+      setPublication,
     }),
     [
+      billingBalance,
       capabilities,
       chapterId,
       draftRevision,
@@ -115,6 +225,9 @@ export function StoryChapterProvider({
       loading,
       projectId,
       projectTitle,
+      publication,
+      publicationFailed,
+      publicationLoading,
       refresh,
       videoSnapshotHash,
     ]

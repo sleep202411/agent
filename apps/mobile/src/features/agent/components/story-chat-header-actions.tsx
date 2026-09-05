@@ -92,7 +92,7 @@ export function StoryChatHeaderActions({
           <IconPencilPlus color="rgba(255,255,255,0.68)" size={18} strokeWidth={1.8} />
         </View>
       </Pressable>
-      <StoryCreditsButton projectId={projectId} />
+      <StoryCreditsButton />
 
       <Modal
         visible={detailsOpen}
