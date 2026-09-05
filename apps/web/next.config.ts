@@ -50,6 +50,16 @@ const nextConfig: NextConfig = {
         destination: "/art-studio/projects/:id/:rest*",
         permanent: true,
       },
+      {
+        source: "/courses-v2",
+        destination: "/courses",
+        permanent: true,
+      },
+      {
+        source: "/courses-v2/:id",
+        destination: "/courses/:id",
+        permanent: true,
+      },
     ];
   },
   async rewrites() {

@@ -124,11 +124,227 @@ describe('StoryAgentCapabilityHandler', () => {
     expect(handler.supports('story.addBranch')).toBe(true);
     expect(handler.supports('story.putInteraction')).toBe(true);
     expect(handler.supports('story.removeInteraction')).toBe(true);
+    expect(handler.supports('story.storyboard.read')).toBe(true);
+    expect(handler.supports('story.storyboard.putTimeline')).toBe(true);
+    expect(handler.supports('story.storyboard.patchClip')).toBe(true);
     expect(handler.supports('story.generation.quoteAssets')).toBe(true);
     expect(handler.supports('story.generation.quoteStoryboard')).toBe(true);
     expect(handler.supports('story.generation.confirmBatch')).toBe(true);
     expect(handler.supports('characters.upsert')).toBe(false);
     expect(handler.supports('canvas.applyPatch')).toBe(false);
+  });
+
+  function storyboardExecuteInput(
+    toolId: string,
+    args: unknown,
+  ): Parameters<StoryAgentCapabilityHandler['execute']>[0] {
+    return {
+      toolId,
+      runId: '0197f4a2-0800-7000-8000-0000000000c1',
+      conversationId: '0197f4a2-0800-7000-8000-0000000000c2',
+      turnId: '0197f4a2-0800-7000-8000-0000000000c3',
+      toolCallId: '0197f4a2-0800-7000-8000-0000000000c4',
+      actorId: 'creator-1',
+      projectId: '0197f4a2-0800-7000-8000-0000000000c5',
+      skillResolutionId: '0197f4a2-0800-7000-8000-0000000000c6',
+      skillVersionIds: [],
+      workbenchContext: {
+        chapterId: '0197f4a2-0800-7000-8000-0000000000c7',
+      },
+      idempotencyKey: 'project-1:run-1:call-1:v1',
+      arguments: args,
+    };
+  }
+
+  const SEQUENCE_DTO = {
+    id: '0197f4a2-0800-7000-8000-0000000000d1',
+    projectId: '0197f4a2-0800-7000-8000-0000000000c5',
+    chapterId: '0197f4a2-0800-7000-8000-0000000000c7',
+    plotNodeId: 'scene.gate',
+    stableKey: 'scene.gate',
+    title: null,
+    description: 'The courier reaches the gate.',
+    suggestedDurationMs: 8_000,
+    durationMs: 8_000,
+    sourceFingerprint: 'a'.repeat(64),
+    status: 'current',
+    version: 3,
+    userModifiedAt: '2026-09-05T12:00:00.000Z',
+    clips: [
+      {
+        id: '0197f4a2-0800-7000-8000-0000000000d2',
+        stableKey: 'shot.scene.gate.opening',
+        title: 'Opening frame',
+        rank: 0,
+        kind: 'image',
+        track: 'visual',
+        startMs: 0,
+        durationMs: 2_000,
+        description: 'A sealed gate in rain.',
+        imagePrompt: 'A sealed gate in rain.',
+        videoPrompt: null,
+        negativePrompt: null,
+        userModifiedAt: null,
+      },
+    ],
+    cues: [
+      {
+        id: '0197f4a2-0800-7000-8000-0000000000d3',
+        stableKey: 'cue.scene.gate.route',
+        kind: 'decision',
+        plotDecisionId: 'decision.route',
+        atMs: 8_000,
+      },
+    ],
+  };
+
+  function scopedStoryboardHandler(
+    production: Record<string, jest.Mock>,
+    requireWrite = jest.fn().mockResolvedValue(undefined),
+  ) {
+    return new StoryAgentCapabilityHandler(
+      {} as never,
+      {} as never,
+      { requireWrite } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      production as never,
+      {} as never,
+    );
+  }
+
+  it('serves the slim agent Storyboard projection', async () => {
+    const getStoryboardForAgent = jest.fn().mockResolvedValue({
+      chapterId: '0197f4a2-0800-7000-8000-0000000000c7',
+      sequences: [],
+    });
+    const scoped = scopedStoryboardHandler({ getStoryboardForAgent });
+
+    await scoped.execute(storyboardExecuteInput('story.storyboard.read', {}));
+
+    expect(getStoryboardForAgent).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '0197f4a2-0800-7000-8000-0000000000c5',
+      '0197f4a2-0800-7000-8000-0000000000c7',
+    );
+  });
+
+  it('puts a version-free Agent timeline through the production service', async () => {
+    const putTimeline = jest.fn().mockResolvedValue(SEQUENCE_DTO);
+    const requireWrite = jest.fn().mockResolvedValue(undefined);
+    const scoped = scopedStoryboardHandler({ putTimeline }, requireWrite);
+
+    const result = await scoped.execute(
+      storyboardExecuteInput('story.storyboard.putTimeline', {
+        sequenceId: '0197f4a2-0800-7000-8000-0000000000d1',
+        durationMs: 2_000,
+        clips: [
+          {
+            stableKey: 'shot.scene.gate.opening',
+            title: 'Opening frame',
+            description: 'A sealed gate in rain.',
+            startMs: 0,
+            durationMs: 2_000,
+            kind: 'image',
+            imagePrompt: 'A sealed gate in rain.',
+          },
+        ],
+      }),
+    );
+
+    expect(requireWrite).toHaveBeenCalledWith(
+      'creator-1',
+      '0197f4a2-0800-7000-8000-0000000000c5',
+    );
+    expect(putTimeline).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '0197f4a2-0800-7000-8000-0000000000c5',
+      '0197f4a2-0800-7000-8000-0000000000c7',
+      '0197f4a2-0800-7000-8000-0000000000d1',
+      'project-1:run-1:call-1:v1',
+      expect.objectContaining({
+        durationMs: 2_000,
+        clips: [expect.any(Object)],
+      }),
+    );
+    expect(result).toEqual({
+      chapterId: '0197f4a2-0800-7000-8000-0000000000c7',
+      sequence: {
+        sequenceId: '0197f4a2-0800-7000-8000-0000000000d1',
+        plotNodeId: 'scene.gate',
+        description: 'The courier reaches the gate.',
+        durationMs: 8_000,
+        suggestedDurationMs: 8_000,
+        userModifiedAt: '2026-09-05T12:00:00.000Z',
+        clips: [
+          {
+            clipId: '0197f4a2-0800-7000-8000-0000000000d2',
+            stableKey: 'shot.scene.gate.opening',
+            kind: 'image',
+            title: 'Opening frame',
+            description: 'A sealed gate in rain.',
+            startMs: 0,
+            durationMs: 2_000,
+            imagePrompt: 'A sealed gate in rain.',
+            videoPrompt: null,
+            negativePrompt: null,
+            userModifiedAt: null,
+          },
+        ],
+        cues: [
+          {
+            cueId: '0197f4a2-0800-7000-8000-0000000000d3',
+            stableKey: 'cue.scene.gate.route',
+            kind: 'decision',
+            atMs: 8_000,
+            decisionId: 'decision.route',
+          },
+        ],
+      },
+    });
+  });
+
+  it('patches one clip by its unique id without a sequence address', async () => {
+    const patchClip = jest.fn().mockResolvedValue(SEQUENCE_DTO.clips[0]);
+    const requireWrite = jest.fn().mockResolvedValue(undefined);
+    const scoped = scopedStoryboardHandler({ patchClip }, requireWrite);
+
+    const result = await scoped.execute(
+      storyboardExecuteInput('story.storyboard.patchClip', {
+        clipId: '0197f4a2-0800-7000-8000-0000000000d2',
+        imagePrompt: 'A sealed gate in heavier rain.',
+      }),
+    );
+
+    expect(patchClip).toHaveBeenCalledWith(
+      { userId: 'creator-1' },
+      '0197f4a2-0800-7000-8000-0000000000c5',
+      '0197f4a2-0800-7000-8000-0000000000c7',
+      null,
+      '0197f4a2-0800-7000-8000-0000000000d2',
+      'project-1:run-1:call-1:v1',
+      expect.objectContaining({
+        clipId: '0197f4a2-0800-7000-8000-0000000000d2',
+        imagePrompt: 'A sealed gate in heavier rain.',
+      }),
+    );
+    expect(result).toEqual({
+      chapterId: '0197f4a2-0800-7000-8000-0000000000c7',
+      clip: {
+        clipId: '0197f4a2-0800-7000-8000-0000000000d2',
+        stableKey: 'shot.scene.gate.opening',
+        kind: 'image',
+        title: 'Opening frame',
+        description: 'A sealed gate in rain.',
+        startMs: 0,
+        durationMs: 2_000,
+        imagePrompt: 'A sealed gate in rain.',
+        videoPrompt: null,
+        negativePrompt: null,
+        userModifiedAt: null,
+      },
+    });
   });
 
   it('rejects paid batch confirmation when the approved count or points no longer match', async () => {

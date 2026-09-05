@@ -113,9 +113,13 @@ async function uploadCourseFile(
     url?: unknown;
   } | null;
   if (!response.ok || !payload) {
-    throw new Error(payload?.msg ?? `上传失败：${response.status}`);
+    throw new Error("文件上传失败");
   }
-  return extractUploadPath(payload);
+  try {
+    return extractUploadPath(payload);
+  } catch {
+    throw new Error("文件上传失败");
+  }
 }
 
 interface JavaCourseLocale {
@@ -215,8 +219,10 @@ function toVideoLocale(java?: JavaVideoLocale | null): CourseVideoLocaleContent 
 
 function toVideo(java: JavaCourseVideo): CourseVideo {
   const localized = java.localized ?? {};
+  const id = java.id != null ? String(java.id) : undefined;
   return {
-    id: java.id != null ? String(java.id) : undefined,
+    id,
+    clientKey: id ?? `new-${crypto.randomUUID()}`,
     videoKey: java.videoKey ?? "",
     coverUrl: java.coverUrl ?? "",
     sortOrder: java.sortOrder ?? 0,

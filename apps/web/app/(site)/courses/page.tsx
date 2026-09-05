@@ -1,15 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { IconAlertCircle, IconSparkles } from "@tabler/icons-react";
-import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 import { PlazaHero } from "@/components/layout/plaza-hero";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useCourseList, useCourseProgressMap, useFilteredCourses } from "@/src/hooks/use-courses";
-import { isCourseApiError } from "@/src/services/courses";
-import { CourseList } from "./_components/CourseList";
+import { usePublicCourseList } from "@/src/hooks/use-courses-public";
+import { PublicCourseList } from "./_components/PublicCourseList";
 import { SearchFilter } from "./_components/SearchFilter";
 
 interface PageFilters {
@@ -19,47 +17,21 @@ interface PageFilters {
 }
 
 /**
- * 渲染课程首页并管理筛选状态、视图状态和课程列表数据。
+ * Courses plaza — public catalog from Java `/project/courses`.
+ * Category / price filters stay visual-only for now (all free).
  */
 export default function CoursesPage() {
   const t = useTranslations("courses");
-  const { isLoading, error, outerCourses, groupedCourses } = useCourseList();
   const [filters, setFilters] = useState<PageFilters>({
     searchQuery: "",
     selectedCategory: null,
     selectedPriceRange: null,
   });
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const { isLoading, error, courses, filteredCourses } = usePublicCourseList(filters.searchQuery);
 
-  const courseFilters = useMemo(
-    () => ({
-      searchQuery: filters.searchQuery,
-      category: filters.selectedCategory,
-      priceRange: filters.selectedPriceRange,
-    }),
-    [filters]
-  );
-
-  const filteredCourses = useFilteredCourses(outerCourses, courseFilters);
-  const progressMap = useCourseProgressMap(groupedCourses);
-  const courseListLoginError = isCourseApiError(error, 302, "Not logged in!");
-
-  useEffect(() => {
-    if (courseListLoginError) {
-      toast.error(t("loginRequiredDescription"), {
-        id: "course-list-not-logged-in",
-      });
-    }
-  }, [courseListLoginError, t]);
-
-  /**
-   * 合并搜索、类别、价格等筛选条件更新。
-   */
   function handleFiltersChange(updates: Partial<PageFilters>) {
-    setFilters((previousFilters) => ({
-      ...previousFilters,
-      ...updates,
-    }));
+    setFilters((previous) => ({ ...previous, ...updates }));
   }
 
   return (
@@ -69,7 +41,7 @@ export default function CoursesPage() {
         title={{ plain: t("heroTitle"), accent: t("heroTitleAccent") }}
         subtitle={t("heroDescription")}
         stats={{
-          items: [{ value: outerCourses.length, label: t("courseCountSuffix") }],
+          items: [{ value: courses.length, label: t("courseCountSuffix") }],
           cap: t("courseCountCap"),
           dotted: true,
         }}
@@ -93,15 +65,7 @@ export default function CoursesPage() {
               </div>
             ) : null}
 
-            {courseListLoginError ? (
-              <Alert variant="destructive" className="border-[#3a2230] bg-[#111119]">
-                <IconAlertCircle />
-                <AlertTitle>{t("loginRequiredTitle")}</AlertTitle>
-                <AlertDescription>{t("loginRequiredDescription")}</AlertDescription>
-              </Alert>
-            ) : null}
-
-            {error && !courseListLoginError ? (
+            {error ? (
               <Alert variant="destructive" className="border-[#3a2230] bg-[#111119]">
                 <IconAlertCircle />
                 <AlertTitle>{t("loadFailedTitle")}</AlertTitle>
@@ -110,7 +74,7 @@ export default function CoursesPage() {
             ) : null}
 
             {!isLoading && !error ? (
-              <CourseList courses={filteredCourses} progressMap={progressMap} viewMode={viewMode} />
+              <PublicCourseList courses={filteredCourses} viewMode={viewMode} />
             ) : null}
           </div>
         </div>

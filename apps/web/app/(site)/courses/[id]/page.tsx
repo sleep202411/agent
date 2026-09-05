@@ -7,35 +7,29 @@ import { toast } from "sonner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useCourseDetail } from "@/src/hooks/use-courses";
+import { usePublicCourseDetail } from "@/src/hooks/use-courses-public";
 import { isCourseApiError } from "@/src/services/courses";
-import { CourseDetailPanel } from "../_components/CourseDetailPanel";
 import { CourseVideoPlayer } from "../_components/CourseVideoPlayer";
+import { PublicCourseDetailPanel } from "../_components/PublicCourseDetailPanel";
 
 /**
- * 渲染课程详情页，并组合视频播放区和系列课程列表。
+ * Course detail — playlist + signed play URL from `/project/courses`.
  */
 export default function CourseDetailPage() {
   const t = useTranslations("courses");
   const params = useParams<{ id: string }>();
-  const { isLoading, error, videoLinkError, detail, setCurrentEpisode, stableProgressKey } =
-    useCourseDetail(params.id);
-  const currentCourseId = detail.currentId;
+  const { isLoading, error, playError, detail, currentTitle, stableProgressKey, setCurrentVideo } =
+    usePublicCourseDetail(params.id);
 
   useEffect(() => {
-    // Check for 403 permission error (both HTTP-level and business code level)
-    if (isCourseApiError(videoLinkError, 403)) {
+    if (isCourseApiError(playError, 403)) {
       toast.error("暂无权限，您可以联系 business@fizzdragon.com 为您开通权限", {
-        id: `course-video-no-permission-${currentCourseId}`,
+        id: `course-video-no-permission-${detail?.currentVideoId}`,
       });
     }
-  }, [currentCourseId, videoLinkError]);
+  }, [detail?.currentVideoId, playError]);
 
   return (
-    // Mobile (<lg): natural page height so the playlist can scroll with
-    // the whole page — sticky video pins the player at the top while
-    // the user browses episodes. Desktop (lg+): locked to viewport with
-    // independent scroll regions per pane.
     <main className="bg-[#08080d] text-white lg:h-[calc(100vh-4rem)] lg:overflow-hidden">
       {isLoading ? (
         <div className="flex min-h-[60vh] items-center justify-center lg:h-full lg:min-h-0">
@@ -43,7 +37,7 @@ export default function CourseDetailPage() {
         </div>
       ) : null}
 
-      {error ? (
+      {error || (!isLoading && !detail) ? (
         <div className="flex min-h-[60vh] items-center justify-center px-5 lg:h-full lg:min-h-0">
           <Alert variant="destructive" className="max-w-xl border-[#3a2230] bg-[#111119]">
             <IconAlertCircle />
@@ -53,16 +47,17 @@ export default function CourseDetailPage() {
         </div>
       ) : null}
 
-      {!isLoading && !error ? (
-        <div className="lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_400px]">
+      {!isLoading && detail ? (
+        <div className="lg:grid lg:h-full lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_480px] xl:grid-cols-[minmax(0,1fr)_520px]">
           <CourseVideoPlayer
-            key={detail.currentId}
-            courseId={detail.currentId}
-            title={detail.detail.title}
-            videoUrl={detail.detail.vedioLink}
+            key={detail.currentVideoId ?? detail.courseId}
+            courseId={detail.currentVideoId ?? detail.courseId}
+            title={currentTitle || detail.title}
+            videoUrl={isCourseApiError(playError, 403) ? "" : detail.videoUrl}
+            posterUrl={detail.currentPosterUrl || undefined}
             stableProgressKey={stableProgressKey}
           />
-          <CourseDetailPanel courseDetail={detail} onEpisodeSelect={setCurrentEpisode} />
+          <PublicCourseDetailPanel detail={detail} onVideoSelect={setCurrentVideo} />
         </div>
       ) : null}
     </main>

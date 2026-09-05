@@ -413,6 +413,133 @@ const StoryMutationOutputSchema = z
   })
   .strict();
 
+// ── Storyboard sequence/clip editing ────────────────────────────────────────
+//
+// Storyboard rows live outside the Story draft: each Plot node projects to one
+// sequence whose ordered clips and decision cues are addressed by globally
+// unique ids. The agent contract is deliberately friction-free: no CAS version
+// tokens, no read-before-write dance. Writes are last-write-wins — the Server
+// resolves row versions inside the mutation transaction, and the shared
+// timeline continuity rules are validated server-side as the single source.
+
+export const StoryStoryboardClipViewSchema = z
+  .object({
+    clipId: z.string().uuid(),
+    stableKey: z.string().min(1),
+    kind: z.enum(["image", "video"]),
+    title: z.string().nullable(),
+    description: z.string().nullable(),
+    startMs: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+    imagePrompt: z.string().nullable(),
+    videoPrompt: z.string().nullable(),
+    negativePrompt: z.string().nullable(),
+    userModifiedAt: z.string().datetime().nullable(),
+  })
+  .strict();
+export type StoryStoryboardClipView = z.infer<typeof StoryStoryboardClipViewSchema>;
+
+export const StoryStoryboardCueViewSchema = z
+  .object({
+    cueId: z.string().uuid(),
+    stableKey: z.string().min(1),
+    kind: z.string().min(1),
+    atMs: z.number().int().nonnegative(),
+    decisionId: z.string().min(1).nullable(),
+  })
+  .strict();
+export type StoryStoryboardCueView = z.infer<typeof StoryStoryboardCueViewSchema>;
+
+export const StoryStoryboardSequenceViewSchema = z
+  .object({
+    sequenceId: z.string().uuid(),
+    plotNodeId: StoryAgentStableIdSchema,
+    description: z.string().nullable(),
+    durationMs: z.number().int().nonnegative(),
+    suggestedDurationMs: z.number().int().nonnegative(),
+    userModifiedAt: z.string().datetime().nullable(),
+    clips: z.array(StoryStoryboardClipViewSchema),
+    cues: z.array(StoryStoryboardCueViewSchema),
+  })
+  .strict();
+export type StoryStoryboardSequenceView = z.infer<typeof StoryStoryboardSequenceViewSchema>;
+
+export const StoryStoryboardReadInputSchema = z.object({}).strict();
+
+export const StoryStoryboardReadOutputSchema = z
+  .object({
+    chapterId: z.string().uuid(),
+    sequences: z.array(StoryStoryboardSequenceViewSchema),
+  })
+  .strict();
+
+const StoryAgentTimelineClipInputBaseSchema = z.object({
+  /** Omit for a brand-new clip; include to retain and update an existing clip. */
+  clipId: z.string().uuid().optional(),
+  stableKey: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(160),
+  description: z.string().trim().max(4_000).nullable(),
+  startMs: z.number().int().min(0).max(3_600_000),
+  durationMs: z.number().int().min(250).max(3_600_000),
+  negativePrompt: z.string().trim().min(1).max(4_000).nullable().optional(),
+});
+
+export const StoryAgentTimelineClipInputSchema = z.discriminatedUnion("kind", [
+  StoryAgentTimelineClipInputBaseSchema.extend({
+    kind: z.literal("image"),
+    imagePrompt: z.string().trim().min(1).max(12_000),
+  }),
+  StoryAgentTimelineClipInputBaseSchema.extend({
+    kind: z.literal("video"),
+    videoPrompt: z.string().trim().min(1).max(12_000),
+  }),
+]);
+
+/**
+ * Full-timeline replacement for one sequence. Shape-only validation here; the
+ * continuity rules (clips contiguous from 0 exactly covering durationMs) are
+ * enforced once, server-side, against the same contract the visual editor
+ * uses.
+ */
+export const StoryStoryboardPutTimelineInputSchema = z
+  .object({
+    sequenceId: z.string().uuid(),
+    durationMs: z.number().int().min(0).max(3_600_000),
+    clips: z.array(StoryAgentTimelineClipInputSchema).max(1_000),
+  })
+  .strict();
+
+export const StoryStoryboardPutTimelineOutputSchema = z
+  .object({
+    chapterId: z.string().uuid(),
+    sequence: StoryStoryboardSequenceViewSchema,
+  })
+  .strict();
+
+/** Single-clip semantic patch addressed by the globally unique clip id. */
+export const StoryStoryboardPatchClipInputSchema = z
+  .object({
+    clipId: z.string().uuid(),
+    kind: z.enum(["image", "video"]).optional(),
+    title: z.string().trim().min(1).max(160).optional(),
+    description: z.string().trim().max(4_000).nullable().optional(),
+    imagePrompt: z.string().trim().min(1).max(12_000).nullable().optional(),
+    videoPrompt: z.string().trim().min(1).max(12_000).nullable().optional(),
+    negativePrompt: z.string().trim().min(1).max(4_000).nullable().optional(),
+  })
+  .strict()
+  .refine(
+    (value) => Object.keys(value).some((key) => key !== "clipId"),
+    "At least one Storyboard clip field must be updated."
+  );
+
+export const StoryStoryboardPatchClipOutputSchema = z
+  .object({
+    chapterId: z.string().uuid(),
+    clip: StoryStoryboardClipViewSchema,
+  })
+  .strict();
+
 /**
  * Hand an explicit Story production request to the Server-side canonical
  * planner. Unlike the fine-grained Plot mutation tools, this command never
@@ -725,6 +852,33 @@ export const STORY_AGENT_OS_TOOLS = [
     risk: "critical",
     inputSchema: StoryApplyPatchInputSchema,
     outputSchema: StoryMutationOutputSchema,
+  },
+  {
+    id: "story.storyboard.read",
+    description:
+      "Read the active chapter's Storyboard timelines: one sequence per Plot node with its ordered clips (prompts, timings, kinds) and decision cues, each addressed by a globally unique id. Sequences with zero clips are unplanned placeholders. Call before describing or editing shot content.",
+    kind: "query",
+    risk: "read",
+    inputSchema: StoryStoryboardReadInputSchema,
+    outputSchema: StoryStoryboardReadOutputSchema,
+  },
+  {
+    id: "story.storyboard.putTimeline",
+    description:
+      "Atomically replace one sequence's complete visual timeline. Clips must be ordered and contiguous from startMs 0 and exactly cover durationMs; an image clip carries only imagePrompt, a video clip only videoPrompt. Include a clip's clipId to retain and update it; omit clipId to create a new clip; existing clips left out of the list are archived. Continuity is validated server-side against the same contract as the visual editor.",
+    kind: "command",
+    risk: "sensitive",
+    inputSchema: StoryStoryboardPutTimelineInputSchema,
+    outputSchema: StoryStoryboardPutTimelineOutputSchema,
+  },
+  {
+    id: "story.storyboard.patchClip",
+    description:
+      "Patch one clip's semantic fields (kind, title, description, imagePrompt, videoPrompt, negativePrompt) addressed by its globally unique clipId. Prefer this over putTimeline for small single-shot tweaks; a kind change must leave the prompt fields consistent with the new kind.",
+    kind: "command",
+    risk: "sensitive",
+    inputSchema: StoryStoryboardPatchClipInputSchema,
+    outputSchema: StoryStoryboardPatchClipOutputSchema,
   },
   {
     id: "story.author",

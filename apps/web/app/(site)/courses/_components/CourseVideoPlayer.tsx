@@ -19,6 +19,8 @@ interface CourseVideoPlayerProps {
   courseId: number;
   title: string;
   videoUrl: string;
+  /** Optional poster shown before playback / while buffering. */
+  posterUrl?: string;
   stableProgressKey?: string;
 }
 
@@ -43,6 +45,7 @@ export function CourseVideoPlayer({
   courseId,
   title,
   videoUrl,
+  posterUrl,
   stableProgressKey,
 }: CourseVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -165,6 +168,7 @@ export function CourseVideoPlayer({
           ref={videoRef}
           key={videoUrl}
           src={videoUrl}
+          poster={posterUrl || undefined}
           className="aspect-video w-full bg-black object-contain lg:aspect-auto lg:min-h-0 lg:flex-1"
           preload="metadata"
           onClick={togglePlay}
@@ -174,7 +178,18 @@ export function CourseVideoPlayer({
           onTimeUpdate={handleTimeUpdate}
         />
       ) : (
-        <div className="flex aspect-video w-full flex-col items-center justify-center gap-4 px-6 text-center lg:aspect-auto lg:min-h-0 lg:flex-1">
+        <div
+          className="relative flex aspect-video w-full flex-col items-center justify-center gap-4 overflow-hidden px-6 text-center lg:aspect-auto lg:min-h-0 lg:flex-1"
+          style={
+            posterUrl
+              ? {
+                  backgroundImage: `linear-gradient(rgba(8,8,13,0.72), rgba(8,8,13,0.82)), url(${posterUrl})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }
+              : undefined
+          }
+        >
           <button
             type="button"
             className="flex size-16 items-center justify-center rounded-full bg-[#f0444c] text-black"

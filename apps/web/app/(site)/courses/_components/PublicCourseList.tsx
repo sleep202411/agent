@@ -4,19 +4,16 @@ import { IconSearchOff } from "@tabler/icons-react";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "@/src/i18n/i18n";
-import type { CourseProgressMap, OuterCourse } from "@/src/hooks/use-courses";
-import { CourseCard } from "./CourseCard";
+import type { PublicCourseCardModel } from "@/src/hooks/use-courses-public";
+import { readPublicCourseProgress } from "@/src/hooks/use-courses-public";
+import { PublicCourseCard } from "./PublicCourseCard";
 
-export interface CourseListProps {
-  courses: OuterCourse[];
-  progressMap: CourseProgressMap;
+export interface PublicCourseListProps {
+  courses: PublicCourseCardModel[];
   viewMode: "grid" | "list";
 }
 
-/**
- * 渲染筛选后的课程列表，并根据视图模式切换网格或列表布局。
- */
-export function CourseList({ courses, progressMap, viewMode }: CourseListProps) {
+export function PublicCourseList({ courses, viewMode }: PublicCourseListProps) {
   const t = useTranslations("courses");
 
   if (courses.length === 0) {
@@ -36,15 +33,15 @@ export function CourseList({ courses, progressMap, viewMode }: CourseListProps) 
     <section
       className={cn(
         viewMode === "grid"
-          ? "grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4"
+          ? "grid grid-cols-1 items-stretch gap-5 md:grid-cols-2 xl:grid-cols-4"
           : "flex flex-col gap-3.5"
       )}
     >
       {courses.map((course) => (
-        <CourseCard
-          key={`${course.outerType}-${course.type}`}
+        <PublicCourseCard
+          key={course.id}
           course={course}
-          progress={progressMap[course.index] ?? 0}
+          progress={readPublicCourseProgress(course.id)}
           variant={viewMode}
         />
       ))}

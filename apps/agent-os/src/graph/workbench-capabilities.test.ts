@@ -109,11 +109,60 @@ describe("skill mounts (system workbench skills)", () => {
 
     expect(names).toContain("story_read");
     expect(names).toContain("story_author");
+    expect(names).toContain("story_storyboard_read");
+    expect(names).toContain("story_storyboard_putTimeline");
+    expect(names).toContain("story_storyboard_patchClip");
     expect(names).not.toContain("request_user_input");
     expect(names).not.toContain("story_confirmCreativeProfile");
     expect(mount.instructions).toContain("Mandatory mobile H5 Story state machine");
     expect(mount.instructions).toContain("call story_author immediately");
     expect(mount.instructions).toContain("The Server atomically applies the H5 product defaults");
+  });
+
+  it("exposes version-free Storyboard clip editing tools on desktop and mobile H5", () => {
+    for (const experience of [undefined, "mobile_h5"] as const) {
+      const mount = resolveAgentOsSkillMount({
+        projectKind: "story",
+        workbenchMode: "story",
+        ...(experience ? { workbenchContext: { experience } } : {}),
+      });
+      const tools = buildLangChainTools(runtime, mount.toolIds);
+      const timeline = tools.find((candidate) => candidate.name === "story_storyboard_putTimeline");
+      expect(timeline).toBeDefined();
+      // No CAS token anywhere in the model-facing contract.
+      expect(
+        timeline?.schema.safeParse({
+          sequenceId: "0197f4a2-0800-7000-8000-0000000000b1",
+          durationMs: 2_500,
+          clips: [
+            {
+              stableKey: "shot.scene.gate.hold",
+              title: "Held gate frame",
+              description: null,
+              startMs: 0,
+              durationMs: 2_500,
+              kind: "image",
+              imagePrompt: "A sealed gate in rain.",
+            },
+          ],
+        }).success
+      ).toBe(true);
+      expect(
+        timeline?.schema.safeParse({
+          sequenceId: "0197f4a2-0800-7000-8000-0000000000b1",
+          durationMs: 2_500,
+          clips: [{ kind: "video", videoPrompt: "x" }],
+        }).success
+      ).toBe(false);
+      const patch = tools.find((candidate) => candidate.name === "story_storyboard_patchClip");
+      expect(patch).toBeDefined();
+      expect(
+        patch?.schema.safeParse({
+          clipId: "0197f4a2-0800-7000-8000-0000000000b2",
+          imagePrompt: "A sealed gate in heavier rain.",
+        }).success
+      ).toBe(true);
+    }
   });
 
   it("binds every curated Story visual-style Skill as a creative-profile value", () => {
