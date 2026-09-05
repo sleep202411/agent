@@ -95,3 +95,82 @@ describe('BytePlus Seedance 2.5 provider accounting', () => {
     });
   });
 });
+
+describe('BytePlus video task failure mapping', () => {
+  async function pollFailedTask(task: Record<string, unknown>) {
+    const { adapter } = adapterWith(task);
+    const start = await adapter.startGeneration(
+      'seedance-2-5',
+      { prompt: 'Extend Video 1 with a storm rolling in.' },
+      { jobId: 'job-failure' } as never,
+    );
+    if (start.kind !== 'pending') throw new Error('Expected pending task');
+    const poll = await adapter.pollStatus(start.providerJobId);
+    if (poll.kind !== 'failed') throw new Error('Expected failed task');
+    return poll.error;
+  }
+
+  it('maps TaskTypeConstraint to a terminal validation error with the upstream rule verbatim', async () => {
+    const error = await pollFailedTask({
+      status: 'failed',
+      error: {
+        code: 'InvalidParameter.TaskTypeConstraint',
+        message:
+          'Video editing tasks require ratio=adaptive and duration=-1; got ratio=16:9.',
+      },
+    });
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.retryable).toBe(false);
+    expect(error.userMessage).toBe(
+      'Video editing tasks require ratio=adaptive and duration=-1; got ratio=16:9.',
+    );
+  });
+
+  it('maps TaskTypeMismatch to a terminal validation error with actionable guidance appended', async () => {
+    const error = await pollFailedTask({
+      status: 'failed',
+      error: {
+        code: 'InvalidParameter.TaskTypeMismatch',
+        message: 'The task was judged as reference-to-video, not edit.',
+      },
+    });
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.retryable).toBe(false);
+    expect(error.userMessage).toContain(
+      'The task was judged as reference-to-video, not edit.',
+    );
+    expect(error.userMessage).toContain('switch the task type to Auto');
+  });
+
+  it('detects the task-type codes from the message alone when the code field is absent', async () => {
+    const error = await pollFailedTask({
+      status: 'failed',
+      error: {
+        message: 'InvalidParameter.TaskTypeMismatch: prompt intent mismatch',
+      },
+    });
+    expect(error.code).toBe('VALIDATION_ERROR');
+    expect(error.retryable).toBe(false);
+  });
+
+  it('surfaces stable copy for cancelled tasks instead of the raw task JSON', async () => {
+    const error = await pollFailedTask({ status: 'cancelled' });
+    expect(error.code).toBe('CANCELLED_BY_USER');
+    expect(error.retryable).toBe(false);
+    expect(error.userMessage).toBe('This generation was cancelled.');
+  });
+
+  it('marks expired tasks as a retryable provider timeout', async () => {
+    const error = await pollFailedTask({ status: 'expired' });
+    expect(error.code).toBe('PROVIDER_TIMEOUT');
+    expect(error.retryable).toBe(true);
+    expect(error.userMessage).not.toMatch(/^\{/);
+  });
+
+  it('falls back to generic copy when a failed task has no error payload', async () => {
+    const error = await pollFailedTask({ status: 'failed' });
+    expect(error.code).toBe('UNKNOWN');
+    expect(error.retryable).toBe(true);
+    expect(error.userMessage).toBe('Generation failed. Please try again.');
+  });
+});
