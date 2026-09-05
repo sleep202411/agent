@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: fe6082440d65f9ba59000e048b7bc83f5e13c2d4
+    tag: 0a7541d656f931a0c1f0f80c055b6b0e4578a5d5
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: fe6082440d65f9ba59000e048b7bc83f5e13c2d4
+    tag: 0a7541d656f931a0c1f0f80c055b6b0e4578a5d5
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
