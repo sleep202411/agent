@@ -35,6 +35,7 @@ import {
 } from "@/data/interactive-film-api";
 import type { Genre, IpSummary } from "@/data/types";
 import { navigateToPlay } from "@/features/experience-player";
+import { useAgentHeaderAction } from "@/hooks/use-agent-header-action";
 import { useTheme } from "@/hooks/use-theme";
 import { getLocale, useTranslations } from "@/i18n";
 import { toHref } from "@/lib/navigation";
@@ -83,6 +84,7 @@ export default function IpDiscoveryScreen() {
   const t = useTranslations();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const agentAction = useAgentHeaderAction();
   const { width } = useWindowDimensions();
   const featuredWidth = Math.min(width, MaxContentWidth) - Spacing.four * 2;
   const cardWidth = Math.floor((featuredWidth - Spacing.three) / 2);
@@ -239,7 +241,7 @@ export default function IpDiscoveryScreen() {
 
   const header = (
     <View style={styles.headerStack}>
-      <ScreenHeader title={t("home.title")} />
+      <ScreenHeader title={t("home.title")} action={agentAction} />
 
       {featured.length ? (
         <View>
@@ -335,7 +337,7 @@ export default function IpDiscoveryScreen() {
             { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
           ]}
         >
-          <ScreenHeader title={t("home.title")} />
+          <ScreenHeader title={t("home.title")} action={agentAction} />
           <DiscoverySkeleton width={featuredWidth} />
         </View>
       </View>
@@ -351,7 +353,7 @@ export default function IpDiscoveryScreen() {
             { paddingTop: topInset, paddingHorizontal: Math.max(insets.left, Spacing.four) },
           ]}
         >
-          <ScreenHeader title={t("home.title")} />
+          <ScreenHeader title={t("home.title")} action={agentAction} />
           <EmptyState
             title={t("home.errorTitle")}
             detail={error}

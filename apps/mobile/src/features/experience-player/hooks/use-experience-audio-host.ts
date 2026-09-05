@@ -8,7 +8,7 @@ import type {
   ExperienceRuntimeManifest,
 } from "@repo/shared/experience-runtime";
 
-import { ensureAudioCached, maintainExperienceAudioCache } from "./experience-audio-cache";
+import { ensureAudioCached, maintainExperienceAudioCache } from "../lib/experience-audio-cache";
 
 type AudioEffect = Extract<ExperienceRuntimeEffect, { kind: `audio.${string}` }>;
 

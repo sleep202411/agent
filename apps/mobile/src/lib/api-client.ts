@@ -18,6 +18,8 @@ export type ApiService = "auto" | "content" | "studio" | "aurora";
 export interface ApiRequestConfig extends Omit<RequestInit, "body" | "headers"> {
   data?: unknown;
   form?: Record<string, string | number | boolean | undefined>;
+  /** Multipart body. Do not set Content-Type — fetch adds the boundary. */
+  formData?: FormData;
   headers?: Record<string, string | undefined>;
   params?: Record<string, string | number | boolean | undefined>;
   raw?: boolean;
@@ -165,6 +167,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
   const {
     data,
     form,
+    formData,
     headers: customHeaders,
     params,
     raw,
@@ -173,11 +176,15 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     ...rest
   } = config;
 
-  if (data !== undefined && form !== undefined) {
-    throw new Error("ApiRequestConfig: pass either `data` or `form`, not both.");
+  const bodyKinds = [data !== undefined, form !== undefined, formData !== undefined].filter(
+    Boolean
+  );
+  if (bodyKinds.length > 1) {
+    throw new Error("ApiRequestConfig: pass only one of `data`, `form`, or `formData`.");
   }
 
   const isForm = form !== undefined;
+  const isMultipart = formData !== undefined;
   const token = tokenProvider?.();
   // Read at request time — the user can switch language while the app runs,
   // and the backends localize responses off these headers.
@@ -209,6 +216,8 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   if (isForm) {
     init.body = stringifyForm(form);
+  } else if (isMultipart) {
+    init.body = formData;
   } else if (data !== undefined) {
     init.body = JSON.stringify(data);
   }
@@ -294,4 +303,6 @@ export const api = {
     form: NonNullable<ApiRequestConfig["form"]>,
     config?: ApiRequestConfig
   ) => request<T>("POST", path, { ...config, form }),
+  postFormData: <T>(path: string, formData: FormData, config?: ApiRequestConfig) =>
+    request<T>("POST", path, { ...config, formData }),
 };

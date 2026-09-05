@@ -36,3 +36,28 @@ export function navigateToPlay(
 ): void {
   router.push(playGameHref(game, options));
 }
+
+type StoryPreviewNavOptions = {
+  chapterId?: string;
+  /** List/workspace title so the start shell can paint before working-preview. */
+  title?: string;
+  coverUrl?: string;
+};
+
+/** H5 `/story-studio/projects/:id/playtest?chapter=` — private working-preview. */
+export function playStoryPreviewHref(projectId: string, options?: StoryPreviewNavOptions): Href {
+  const params = new URLSearchParams();
+  if (options?.chapterId?.trim()) params.set("chapter", options.chapterId.trim());
+  if (options?.title?.trim()) params.set("title", options.title.trim());
+  if (options?.coverUrl?.trim()) params.set("coverUrl", options.coverUrl.trim());
+  const query = params.toString();
+  return toHref(`/play/story-preview/${projectId}${query ? `?${query}` : ""}`);
+}
+
+export function navigateToStoryPreview(
+  router: PlayRouter,
+  projectId: string,
+  options?: StoryPreviewNavOptions
+): void {
+  router.push(playStoryPreviewHref(projectId, options));
+}

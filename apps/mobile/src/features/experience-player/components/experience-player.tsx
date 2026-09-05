@@ -8,6 +8,7 @@ import {
   isExperienceRendererVisible,
   type ExperienceEventQueueResult,
   type ExperienceRuntimeController,
+  type ExperienceRuntimeEvent,
   type ExperienceRuntimeState,
   type ExperienceTimelineCursor,
 } from "@repo/experience-engine";
@@ -22,6 +23,7 @@ import {
   type ExperienceImageAsset,
   type ExperienceRendererInstance,
   type ExperienceRuntimeManifest,
+  type ExperienceScene,
   type ExperienceThemeConfig,
 } from "@repo/shared/experience-runtime";
 
@@ -30,17 +32,22 @@ import { resolveExperienceAssetUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
 import { ScreenActiveGateContext, useScreenActive } from "@/hooks/use-app-active";
 
-import type { ExperiencePlayerCopy } from "./experience-player-copy";
-import { EXPERIENCE_START_ACCENT, ExperienceStartShell } from "./experience-start-shell";
+import { useExperienceAudioHost } from "../hooks/use-experience-audio-host";
+import { useExperiencePreload } from "../hooks/use-experience-preload";
+import { EXPERIENCE_PLAY_ORIENTATION } from "../lib/experience-media";
+import type { ExperiencePlayerCopy } from "../lib/experience-player-copy";
+import { createExperienceRuntime } from "../lib/experience-runtime-host";
 import {
   loadExperienceTheme as defaultLoadExperienceTheme,
   type ExperienceThemeLoader,
-} from "./experience-theme-loader";
-import { createExperienceRuntime } from "./experience-runtime-host";
-import { ExperienceVideoRenderer } from "./experience-video-renderer";
-import { localize, resolvePlaybackLocale } from "./localize";
-import { useExperienceAudioHost } from "./use-experience-audio-host";
-import { useExperiencePreload } from "./use-experience-preload";
+} from "../lib/experience-theme-loader";
+import { localize, resolvePlaybackLocale } from "../lib/localize";
+import { ExperienceSpatialLayer } from "./experience-spatial-layer";
+import { EXPERIENCE_START_ACCENT, ExperienceStartShell } from "./experience-start-shell";
+import {
+  ExperienceVideoRenderer,
+  type ExperienceMediaPlaybackHandle,
+} from "./experience-video-renderer";
 const START_ACCENT = EXPERIENCE_START_ACCENT;
 export interface ExperiencePlayerProps {
   runtime: ExperienceRuntimeManifest;
@@ -163,10 +170,12 @@ function ActiveExperienceRuntimePlayer({
   const [runtimeState, setRuntimeState] = useState(() => controller.state());
   const [openRendererIds, setOpenRendererIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sceneEpoch, setSceneEpoch] = useState(0);
+  const [sceneTimeMs, setSceneTimeMs] = useState(0);
   const [theme, setTheme] = useState<ExperienceThemeConfig | null>(null);
   const [started, setStarted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [timelineHoldGate, setTimelineHoldGate] = useState(false);
   const preload = useExperiencePreload(manifest);
   const playbackLocale = resolvePlaybackLocale(manifest, locale);
   const {
@@ -177,6 +186,9 @@ function ActiveExperienceRuntimePlayer({
   const timelineCursorRef = useRef<ExperienceTimelineCursor>(
     createExperienceTimelineCursor(runtimeState.currentSceneId)
   );
+  const parkedGestureEventsRef = useRef<ExperienceRuntimeEvent[]>([]);
+  const playbackHandlesRef = useRef(new Map<string, ExperienceMediaPlaybackHandle>());
+  const playbackEnabledRef = useRef(false);
   const defaultLocale = manifest.localization.defaultLocale;
   const title = localize(manifest.metadata.title, locale, defaultLocale);
   const accent = themeColor(theme, "color.accent", START_ACCENT);
@@ -201,15 +213,36 @@ function ActiveExperienceRuntimePlayer({
     (result: ExperienceEventQueueResult) => {
       setRuntimeState(result.state);
       applyAudioEffects(result.effects);
-      let sceneChangeCount = 0;
+      result.effects.forEach((effect) => {
+        if (effect.kind !== "renderer.command") return;
+        const handle = playbackHandlesRef.current.get(effect.instanceId);
+        if (!handle) return;
+        if (effect.commandType === "play") {
+          void handle.play().catch((error: unknown) => setRuntimeError(runtimeErrorMessage(error)));
+          return;
+        }
+        if (effect.commandType === "pause") {
+          handle.pause();
+          return;
+        }
+        if (effect.commandType === "seek") {
+          const timeMs = effect.payload.timeMs;
+          if (typeof timeMs === "number") handle.seek(timeMs / 1_000);
+        }
+      });
       let latestSceneId: string | null = null;
+      const sceneChangeEffects = result.effects.filter(
+        (effect): effect is Extract<typeof effect, { kind: "scene.changed" }> => {
+          if (effect.kind !== "scene.changed") return false;
+          latestSceneId = effect.toSceneId;
+          return true;
+        }
+      );
       setOpenRendererIds((current) => {
         let next = new Set(current);
         result.effects.forEach((effect) => {
           if (effect.kind === "scene.changed") {
             next = new Set();
-            sceneChangeCount += 1;
-            latestSceneId = effect.toSceneId;
           }
           if (effect.kind === "renderer.command" && effect.commandType === "open") {
             next.add(effect.instanceId);
@@ -217,8 +250,11 @@ function ActiveExperienceRuntimePlayer({
         });
         return next;
       });
-      if (sceneChangeCount > 0) {
-        setSceneEpoch((value) => value + sceneChangeCount);
+      if (sceneChangeEffects.length > 0) {
+        setSceneEpoch((value) => value + sceneChangeEffects.length);
+        setSceneTimeMs(0);
+        setTimelineHoldGate(false);
+        parkedGestureEventsRef.current = [];
         timelineCursorRef.current = createExperienceTimelineCursor(
           latestSceneId ?? result.state.currentSceneId
         );
@@ -264,13 +300,51 @@ function ActiveExperienceRuntimePlayer({
   );
 
   const advanceTimeline = useCallback(
-    (positionMs: number) => {
+    (rendererInstanceId: string | null, positionMs: number) => {
       const currentState = controller.state();
       const activeNode = findGraphNode(manifest, currentState.currentSceneId);
       if (!activeNode || activeNode.kind !== "scene") return;
+      if (!timelineReportDrivesScene(activeNode.clock, rendererInstanceId)) return;
+      setSceneTimeMs(positionMs);
       const advanced = advanceExperienceTimeline(activeNode, timelineCursorRef.current, positionMs);
       timelineCursorRef.current = advanced.cursor;
       if (advanced.events.length > 0) run(() => controller.dispatch(advanced.events));
+      flushParkedGestureEvents(positionMs);
+    },
+    // flushParkedGestureEvents is declared below; both close over controller/manifest/run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [controller, manifest, run]
+  );
+
+  const flushParkedGestureEvents = useCallback(
+    (positionMs: number) => {
+      if (parkedGestureEventsRef.current.length === 0) return;
+      const due = parkedGestureEventsRef.current.filter(
+        (event) => positionMs >= parkedEventBranchAtMs(manifest, event)
+      );
+      if (due.length === 0) return;
+      parkedGestureEventsRef.current = parkedGestureEventsRef.current.filter(
+        (event) => !due.includes(event)
+      );
+      run(() => controller.dispatch(due));
+    },
+    [controller, manifest, run]
+  );
+
+  const emitRuntimeEvents = useCallback(
+    (events: readonly ExperienceRuntimeEvent[]) => {
+      const parked = events.filter(
+        (event) =>
+          event.type.startsWith("gesture.") &&
+          timelineCursorRef.current.positionMs < parkedEventBranchAtMs(manifest, event) - 1e-6
+      );
+      if (parked.length === 0) {
+        run(() => controller.dispatch(events));
+        return;
+      }
+      const immediate = events.filter((event) => !parked.includes(event));
+      parkedGestureEventsRef.current.push(...parked);
+      if (immediate.length > 0) run(() => controller.dispatch(immediate));
     },
     [controller, manifest, run]
   );
@@ -321,14 +395,14 @@ function ActiveExperienceRuntimePlayer({
       frame = null;
       if (pausedAt !== null) return;
       const elapsed = Math.min(performance.now() - startedAt - pausedTotal, clockDurationMs);
-      advanceTimeline(elapsed);
+      advanceTimeline(null, elapsed);
       if (elapsed < clockDurationMs) {
         frame = requestAnimationFrame(tick);
         return;
       }
       if (ended) return;
       ended = true;
-      run(() => controller.dispatch([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]));
+      emitRuntimeEvents([{ type: "scene.clock-ended", sourceId: clockScene.sceneId }]);
     };
 
     clockGateRef.current = (active) => {
@@ -357,6 +431,7 @@ function ActiveExperienceRuntimePlayer({
     clockDurationMs,
     clockScene,
     controller,
+    emitRuntimeEvents,
     endingId,
     run,
     sceneEpoch,
@@ -392,6 +467,7 @@ function ActiveExperienceRuntimePlayer({
           await suspendAudio();
           return;
         }
+        playbackEnabledRef.current = true;
         setStarted(true);
       } catch (error) {
         await suspendAudio();
@@ -401,6 +477,31 @@ function ActiveExperienceRuntimePlayer({
       }
     })();
   };
+
+  useEffect(() => {
+    if (!started) return;
+    if (timelineHoldGate) {
+      playbackHandlesRef.current.forEach((handle) => handle.pause());
+      return;
+    }
+    if (!playbackEnabledRef.current) return;
+    playbackHandlesRef.current.forEach((handle) => {
+      void handle.play().catch(() => undefined);
+    });
+  }, [started, timelineHoldGate]);
+
+  const registerPlaybackHandle = useCallback(
+    (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
+      if (!handle) {
+        playbackHandlesRef.current.delete(instanceId);
+        return;
+      }
+      playbackHandlesRef.current.set(instanceId, handle);
+      if (!playbackEnabledRef.current || timelineHoldGate) return;
+      void handle.play().catch(() => undefined);
+    },
+    [timelineHoldGate]
+  );
 
   if (runtimeError) {
     return (
@@ -474,7 +575,9 @@ function ActiveExperienceRuntimePlayer({
 
   return (
     // Renderers own the media players, so the host pause reaches them by context
-    // rather than through every layer of renderer props.
+    // rather than through every layer of renderer props. Timeline-control hold
+    // pauses via playback handles, not this gate — otherwise the still clock
+    // and video presenting effect would fight the hold.
     <ScreenActiveGateContext.Provider value={active}>
       <View style={styles.stage}>
         {visibleRenderers.map((renderer) => (
@@ -493,10 +596,25 @@ function ActiveExperienceRuntimePlayer({
               accent={accent}
               onOutcome={emitOutcome}
               onRuntimeError={setRuntimeError}
-              onTimelineTimeMs={advanceTimeline}
+              onTimelineTimeMs={(positionMs) => advanceTimeline(renderer.instanceId, positionMs)}
+              onPlaybackHandle={registerPlaybackHandle}
             />
           </View>
         ))}
+        {scene && started && !endingId ? (
+          <ExperienceSpatialLayer
+            key={scene.sceneId}
+            manifest={manifest}
+            scene={scene}
+            runtimeState={runtimeState}
+            sceneTimeMs={sceneTimeMs}
+            locale={playbackLocale}
+            orientation={EXPERIENCE_PLAY_ORIENTATION}
+            onEvents={emitRuntimeEvents}
+            onRuntimeError={setRuntimeError}
+            onTimelineHoldGateChange={setTimelineHoldGate}
+          />
+        ) : null}
       </View>
     </ScreenActiveGateContext.Provider>
   );
@@ -513,6 +631,7 @@ function RendererPanel({
   onOutcome,
   onRuntimeError,
   onTimelineTimeMs,
+  onPlaybackHandle,
 }: {
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
@@ -528,6 +647,7 @@ function RendererPanel({
   ) => void;
   onRuntimeError: (message: string) => void;
   onTimelineTimeMs: (timeMs: number) => void;
+  onPlaybackHandle: (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => void;
 }) {
   const defaultLocale = manifest.localization.defaultLocale;
 
@@ -540,6 +660,7 @@ function RendererPanel({
         onTimelineTimeMs={onTimelineTimeMs}
         onCompleted={() => onOutcome(renderer.instanceId, "media-ended", {})}
         onRuntimeError={onRuntimeError}
+        onPlaybackHandle={onPlaybackHandle}
       />
     );
   }
@@ -649,6 +770,40 @@ function findGraphNode(
   sceneId: string
 ): ExperienceGraphNode | undefined {
   return manifest.graph.nodes.find((node) => node.sceneId === sceneId);
+}
+
+/**
+ * A media time report may only drive a scene whose clock that renderer owns.
+ * Renderer clocks name their video instance; host-owned reports (the fixed
+ * rAF clock) pass null and are always accepted. The guard exists for the
+ * dying-video race: after a scene change the outgoing element can still fire
+ * one last timeupdate carrying the old scene's final position.
+ */
+function timelineReportDrivesScene(
+  clock: ExperienceScene["clock"],
+  rendererInstanceId: string | null
+): boolean {
+  if (clock.kind !== "renderer") return true;
+  return clock.rendererInstanceId === rendererInstanceId;
+}
+
+/**
+ * Resolves when a gesture outcome event may actually route. The safe branch
+ * frame defaults to the interaction window end, so interactions authored
+ * before `branchAtMs` existed keep cutting exactly where they used to.
+ */
+function parkedEventBranchAtMs(
+  manifest: ExperienceRuntimeManifest,
+  event: ExperienceRuntimeEvent
+): number {
+  if (!event.sourceId) return 0;
+  const gesture = manifest.graph.nodes
+    .filter(
+      (node): node is Extract<ExperienceGraphNode, { kind: "scene" }> => node.kind === "scene"
+    )
+    .flatMap((node) => node.gestures)
+    .find((candidate) => candidate.gestureId === event.sourceId);
+  return gesture?.branchAtMs ?? gesture?.activeWindow?.endMs ?? 0;
 }
 
 /** Match web: cover from runtime assets; landscape variant preferred for cinematic. */
@@ -770,6 +925,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    zIndex: 100,
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.seven,
     paddingBottom: Spacing.five,

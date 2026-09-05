@@ -34,7 +34,6 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
-import { usePortraitOnFocus } from "@/hooks/use-screen-orientation";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { invalidateBrowse } from "@/data/browse-refresh";
 import {
@@ -172,10 +171,6 @@ export default function IpDetailScreen() {
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
-
-  // Returning from landscape play leaves this screen mounted under a window that
-  // may still be sideways — assert portrait on focus before any Alert can fire.
-  usePortraitOnFocus();
 
   useEffect(() => {
     let alive = true;

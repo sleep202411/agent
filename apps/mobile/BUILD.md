@@ -34,8 +34,9 @@ Output → `$FD_OUT_DIR` (default `~/Desktop/FizzDragon-builds/`), named
 1. **Toolchain:** Xcode (+ CocoaPods), Android SDK (`~/Library/Android/sdk`), Node.
 2. **Signing materials** — live OUTSIDE the repo in `app/signing/` (never
    git-tracked). Paths + passwords are documented in `app/signing/README.md`.
-3. **`apps/mobile/.env.release.local`** — copy `.env.release.example` and fill in
-   the keystore paths/passwords + iOS teams (gitignored).
+3. **`apps/mobile/env.release.local`** — copy `env.release.example` and fill in
+   the keystore paths/passwords + iOS teams (gitignored; not named `.env*` so
+   Expo Metro does not bundle it).
 4. **iOS CN** uses Xcode-managed automatic signing — sign into Xcode with the
    Boiling Stars account (`505421473@qq.com`); if Apple shows a pending Program
    License Agreement, the **account holder** must accept it (developer.apple.com)
