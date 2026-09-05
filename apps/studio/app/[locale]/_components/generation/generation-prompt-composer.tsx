@@ -20,11 +20,20 @@ import { useTranslations } from "next-intl";
 import type { MentionItem, SkillMarketItem } from "@/lib/prompt-mentions";
 import { cn } from "@/lib/utils";
 import {
+  enumOptions,
   type FizzAiCatalog,
   type FizzAiModel,
   type ModelSettings,
 } from "@/lib/canvas-authoring/generation-api";
-import { useModeLabel } from "@/lib/canvas-authoring/use-labels";
+import {
+  isOmniTaskModeValue,
+  lockedSettingFields,
+  menuValueForMode,
+  modeMenuValues,
+  OMNI_TASK_TYPE_FIELD,
+  splitOmniTaskModeValue,
+} from "@/lib/canvas-authoring/omni-task-modes";
+import { useComposerModeLabel } from "@/lib/canvas-authoring/use-labels";
 import { useDismiss } from "@/lib/use-dismiss";
 import { ComposerQuickSettings } from "@/components/canvas/authoring/composer-quick-settings";
 import { ModeMenu } from "@/components/canvas/authoring/mode-menu";
@@ -152,7 +161,6 @@ export function GenerationPromptComposer({
 }) {
   const t = useTranslations("canvasOps");
   const tg = useTranslations("generation");
-  const ml = useModeLabel();
   useDismiss(panel !== null, () => onPanelChange(null));
   const modeTriggerRef = useRef<HTMLButtonElement>(null);
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
@@ -167,6 +175,17 @@ export function GenerationPromptComposer({
   const modeControlVisible = modePickerEnabled && modes.length > 1 && Boolean(onSelectMode);
   const settingsControlVisible = settingsEnabled && Boolean(onSettingsChange);
   const hasAdvancedSettings = settingsControlVisible && hasRenderableModelSettings(model, true);
+  // Seedance 2.5 task types (omni_reference_task_type) surface as extra
+  // mode-menu entries right after Omni Reference. Composite values are
+  // UI-only; selection maps back to mode + settings in selectMode.
+  const omniTaskTypes =
+    settingsControlVisible && model ? enumOptions(model, OMNI_TASK_TYPE_FIELD) : null;
+  const omniTaskValue =
+    typeof settings.omniReferenceTaskType === "string" ? settings.omniReferenceTaskType : "auto";
+  const cl = useComposerModeLabel();
+  const menuModes = modeControlVisible ? modeMenuValues(modes, omniTaskTypes) : modes;
+  const menuValue = menuValueForMode(mode, omniTaskValue);
+  const lockedFields = lockedSettingFields(omniTaskValue);
   const busy = submitting;
   const actionDisabled = busy ? !onCancel : !canSubmit;
   const actionLabel = busy
@@ -176,6 +195,26 @@ export function GenerationPromptComposer({
     : submitLabel;
   const skillPickerVisible =
     skillMarketOptions !== undefined || Boolean(mentions?.some((item) => item.kind === "skill"));
+
+  /** Mode-menu selection, including the UI-only omni sub-intent entries:
+   *  `multimodal_to_video::edit` maps to mode + task type (+ parameter locks)
+   *  in one change. Any non-composite selection (including plain Omni
+   *  Reference) resets the task type to auto. */
+  const selectMode = (value: string) => {
+    const taskType = isOmniTaskModeValue(value) ? splitOmniTaskModeValue(value).taskType : "auto";
+    const nextMode = isOmniTaskModeValue(value) ? splitOmniTaskModeValue(value).mode : value;
+    if (settingsControlVisible) {
+      const next: ModelSettings = { ...settings, omniReferenceTaskType: taskType };
+      // Editing keeps the source video's ratio and duration; extension keeps
+      // its ratio (ModelArk locks, mirrored by the catalog x-rules).
+      if (taskType === "edit" || taskType === "extend") {
+        next.aspectRatio = "auto";
+        if (taskType === "edit") next.duration = "auto";
+      }
+      onSettingsChange?.(next);
+    }
+    onSelectMode?.(nextMode);
+  };
 
   const closePanelAndRestoreFocus = (
     closingPanel: Exclude<GenerationPromptComposerPanel, null>
@@ -443,17 +482,21 @@ export function GenerationPromptComposer({
                   onClick={() => onPanelChange(panel === "mode" ? null : "mode")}
                   aria-haspopup="menu"
                   aria-expanded={panel === "mode"}
-                  className="flex h-10 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
+                  className="flex h-10 items-center gap-1 whitespace-nowrap rounded-xl bg-white/[0.08] px-3 text-sm font-medium transition-colors hover:bg-white/[0.12]"
                 >
-                  {ml(mode ?? "")}
-                  <IconChevronDown className="size-3.5 text-muted-foreground" stroke={1.8} />
+                  {cl(menuValue ?? "")}
+                  <IconChevronDown
+                    className="size-3.5 shrink-0 text-muted-foreground"
+                    stroke={1.8}
+                  />
                 </button>
                 {panel === "mode" ? (
                   <ModeMenu
-                    modes={modes}
-                    value={mode}
-                    onSelect={(nextMode) => onSelectMode?.(nextMode)}
+                    modes={menuModes}
+                    value={menuValue}
+                    onSelect={selectMode}
                     onClose={() => closePanelAndRestoreFocus("mode")}
+                    labelFor={cl}
                   />
                 ) : null}
               </div>
@@ -465,6 +508,7 @@ export function GenerationPromptComposer({
                 settings={settings}
                 onChange={(next) => onSettingsChange?.(next)}
                 onOpenChange={onQuickSettingsOpenChange}
+                lockedFields={lockedFields}
               />
             ) : null}
 
@@ -489,6 +533,7 @@ export function GenerationPromptComposer({
                     settings={settings}
                     onChange={(next) => onSettingsChange?.(next)}
                     hideQuickFields
+                    lockedFields={lockedFields}
                   />
                 ) : null}
               </div>

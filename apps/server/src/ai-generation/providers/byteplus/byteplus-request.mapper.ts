@@ -123,6 +123,21 @@ export function mapBytePlusVideoProviderRequest(
     const duration = Number(input.duration ?? input.durationSeconds);
     if (Number.isInteger(duration) && duration > 0) body.duration = duration;
   }
+  // Seedance 2.5 task-type guidance (doc 1520757): pre-guides the model's
+  // omni-reference classification so edit/extend locks validate synchronously
+  // at ModelArk. 'auto' (or no references) is the upstream default — omitted
+  // to keep the wire identical to pre-parameter requests.
+  const omniTaskType =
+    typeof input.omniReferenceTaskType === 'string'
+      ? input.omniReferenceTaskType
+      : '';
+  const hasReferenceParts =
+    referenceImages.length > 0 ||
+    referenceVideos.length > 0 ||
+    referenceAudios.length > 0;
+  if (omniTaskType && omniTaskType !== 'auto' && hasReferenceParts) {
+    body.omni_reference_task_type = omniTaskType;
+  }
   // Native synced audio: upstream default is TRUE, so an explicit user
   // opt-out must be sent as generate_audio:false (omission ≠ off).
   if (typeof input.generateAudio === 'boolean') {

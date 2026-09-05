@@ -374,6 +374,7 @@ export function ModelSettings({
   settings,
   onChange,
   hideQuickFields = false,
+  lockedFields,
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
@@ -381,15 +382,23 @@ export function ModelSettings({
   /** Drop fields surfaced as composer quick-setting chips, so this panel only
    *  shows the long tail (avoids duplicating size/resolution/quality/outputs). */
   hideQuickFields?: boolean;
+  /** Fields taken over by the active omni task type (edit/extend locks) —
+   *  hidden here too; the composer forces their value to auto. */
+  lockedFields?: ReadonlySet<string>;
 }) {
   const t = useTranslations("canvasControls");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const fields = useMemo(() => schemaFields(model), [model]);
-  const sizeField = hideQuickFields ? undefined : fields.find(isSizeField);
+  const sizeField =
+    hideQuickFields || lockedFields?.has("aspectRatio") ? undefined : fields.find(isSizeField);
   // `hidden`-control fields are data-only (driven by a bespoke editor, e.g.
   // expand's canvas geometry) — never rendered in the generic settings panel.
   const rest = fields.filter(
-    (f) => !isSizeField(f) && f.control !== "hidden" && !(hideQuickFields && isQuickSettingField(f))
+    (f) =>
+      !isSizeField(f) &&
+      f.control !== "hidden" &&
+      !(hideQuickFields && isQuickSettingField(f)) &&
+      !lockedFields?.has(f.name)
   );
   const basicFields = rest.filter((f) => f.group !== "advanced");
   const advancedFields = rest.filter((f) => f.group === "advanced");

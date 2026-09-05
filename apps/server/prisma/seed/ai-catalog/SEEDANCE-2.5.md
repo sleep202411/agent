@@ -41,18 +41,22 @@ rather than advertising formats its hardened image probe cannot yet decode.
 
 ## Output parameters
 
-- resolution: `480p | 720p`
+- resolution: `480p | 720p | 1080p` (1080p is 10-bit H.265/HEVC — ModelArk
+  warns some players cannot decode it; 4k does not exist on 2.5)
 - ratio: `auto` (wire omission → `adaptive`) or `21:9 | 16:9 | 4:3 | 1:1 |
 3:4 | 9:16`
 - duration: `auto` (wire `-1`) or `4..30`
 - output: `mp4 | mov`
 - synchronized audio: enabled by default
 
-Frame-guided tasks require adaptive ratio. ModelArk classifies edit/extend
-intent asynchronously: edit requires adaptive ratio + duration `-1`; extension
-requires adaptive ratio + duration `4..30` or `-1`. The adapter preserves
-`InvalidParameter.TaskTypeConstraint` messages so the creator can correct the
-request.
+Frame-guided tasks require adaptive ratio. The `omni_reference_task_type`
+guidance parameter (doc 1520757) pre-guides the model's classification:
+`edit` requires ≥1 reference video (4–30 s), adaptive ratio, duration `-1`;
+`extend` requires ≥1 reference video and adaptive ratio. The catalog ships
+the parameter with x-rules that fail the submit loud, and the composer
+surfaces edit/extend as mode-menu entries with the locked settings hidden.
+The adapter preserves `InvalidParameter.TaskType*` messages so the creator
+can correct the request.
 
 ## Cost accounting
 

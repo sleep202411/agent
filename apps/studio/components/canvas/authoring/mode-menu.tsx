@@ -4,19 +4,24 @@ import { IconCheck } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useModeLabel } from "@/lib/canvas-authoring/use-labels";
 
-/** Compact dropdown for the card's generation mode, opened from the mode pill. */
+/** Compact dropdown for the card's generation mode, opened from the mode pill.
+ *  `labelFor` overrides the label resolver so sibling selectors (e.g. the
+ *  omni-reference task-type pill) reuse the exact same menu chrome. */
 export function ModeMenu({
   modes,
   value,
   onSelect,
   onClose,
+  labelFor,
 }: {
   modes: string[];
   value: string | undefined;
   onSelect: (mode: string) => void;
   onClose: () => void;
+  labelFor?: (value: string) => string;
 }) {
   const ml = useModeLabel();
+  const label = labelFor ?? ml;
   return (
     <div
       role="menu"
@@ -37,7 +42,7 @@ export function ModeMenu({
             mode === value ? "text-foreground" : "text-muted-foreground"
           )}
         >
-          {ml(mode)}
+          {label(mode)}
           {mode === value && <IconCheck className="size-4" stroke={2} />}
         </button>
       ))}
