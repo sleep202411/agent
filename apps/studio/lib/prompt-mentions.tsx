@@ -52,6 +52,42 @@ export function mentionLabel(kind: PromptMentionKind, indexWithinKind: number): 
 }
 
 /**
+ * Skills render as a fixed quick-pick row; the full list opens from the
+ * menu's "show all" footer / skill dialog.
+ */
+export const SKILL_MENTION_ROW_CAP = 8;
+
+/**
+ * Candidates for the inline `@` / `/` dropdown. Reference candidates are
+ * exactly the attached references — never capped here: the model's
+ * referenceInputs policy already bounds what can be attached (Seedance 2.5
+ * allows 30 images / 50 files), and any UI-side cap would silently diverge
+ * from it. Skills cap at SKILL_MENTION_ROW_CAP instead.
+ */
+export function mentionCandidates(
+  mentions: readonly MentionItem[],
+  trigger: "reference" | "skill",
+  query: string
+): MentionItem[] {
+  const normalized = query.toLowerCase();
+  return mentions.filter(
+    (item) =>
+      (trigger === "skill" ? item.kind === "skill" : item.kind !== "skill") &&
+      (!normalized ||
+        item.label.toLowerCase().includes(normalized) ||
+        item.name?.toLowerCase().includes(normalized))
+  );
+}
+
+/**
+ * Rows the dropdown renders and arrow-keys through. References scroll
+ * through every candidate; skills cycle their fixed quick-pick row.
+ */
+export function mentionVisibleCount(trigger: "reference" | "skill", total: number): number {
+  return trigger === "skill" ? Math.min(total, SKILL_MENTION_ROW_CAP) : total;
+}
+
+/**
  * Detect an active trigger query immediately left of the caret. Returns the
  * trigger offset and the typed query, or null when the caret isn't in a mention.
  * Users often type Chinese prompts without spaces around references, so the
@@ -677,10 +713,19 @@ export function MentionMenu({
   style?: CSSProperties;
 }) {
   const t = useTranslations("generation");
-  const visibleOptions = emptyKind === "skill" ? options.slice(0, 8) : options;
+  const listRef = useRef<HTMLDivElement | null>(null);
+  // Reference lists can scroll past the fold (the model policy allows up to
+  // 50 attached files) — keep the keyboard-highlighted row in view.
+  useEffect(() => {
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-mention-row="${active}"]`)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
+  const visibleOptions = emptyKind === "skill" ? options.slice(0, SKILL_MENTION_ROW_CAP) : options;
   const resolvedTotalCount = Math.max(totalCount, options.length);
   return (
     <div
+      ref={listRef}
       data-popover-zone
       style={style}
       className={cn(
@@ -699,6 +744,7 @@ export function MentionMenu({
             <button
               key={item.id}
               type="button"
+              data-mention-row={index}
               // Mousedown so the pick wins over the textarea blur.
               onMouseDown={(event) => {
                 event.preventDefault();

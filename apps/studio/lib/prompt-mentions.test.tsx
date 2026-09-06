@@ -10,7 +10,10 @@ import {
   insertMentionText,
   MentionChip,
   MentionMenu,
+  mentionCandidates,
+  mentionVisibleCount,
   SkillMentionDialog,
+  type MentionItem,
 } from "./prompt-mentions";
 
 vi.mock("next-intl", () => ({
@@ -175,6 +178,28 @@ describe("MentionChip", () => {
     expect(onShowAll).toHaveBeenCalledOnce();
   });
 
+  it("renders every attached reference — the menu scrolls instead of truncating", async () => {
+    await act(async () => {
+      root.render(
+        <MentionMenu
+          active={12}
+          onPick={vi.fn()}
+          options={Array.from({ length: 13 }, (_, index) => ({
+            id: `image-${index + 1}`,
+            kind: "image" as const,
+            label: `Image${index + 1}`,
+          }))}
+        />
+      );
+    });
+
+    // Regression: a UI-side cap once hid Image11+ even though the model
+    // policy (Seedance 2.5 referenceInputs) allows 30 images / 50 files.
+    expect(container.querySelectorAll("[data-mention-row]")).toHaveLength(13);
+    expect(container.textContent).toContain("Image13");
+    expect(container.textContent).not.toContain("showAllSkills");
+  });
+
   it("separates installed Skills from the real market and routes uninstalled items", async () => {
     const onOpenMarket = vi.fn();
     const onPick = vi.fn();
@@ -258,5 +283,43 @@ describe("MentionChip", () => {
     await act(async () => installedMarketSkill?.click());
     expect(onOpenMarket).toHaveBeenLastCalledWith("market-2");
     expect(onPick).not.toHaveBeenCalled();
+  });
+});
+
+describe("mentionCandidates", () => {
+  const imageReferences = (count: number): MentionItem[] =>
+    Array.from({ length: count }, (_, index) => ({
+      id: `image-${index + 1}`,
+      kind: "image" as const,
+      label: `Image${index + 1}`,
+    }));
+
+  it("lists every attached reference — bounded by the model policy, never a UI cap", () => {
+    expect(mentionCandidates(imageReferences(13), "reference", "")).toHaveLength(13);
+    expect(mentionCandidates(imageReferences(30), "reference", "")).toHaveLength(30);
+  });
+
+  it("keeps later references reachable by filtering on the typed query", () => {
+    expect(mentionCandidates(imageReferences(30), "reference", "13").map((i) => i.label)).toEqual([
+      "Image13",
+    ]);
+  });
+
+  it("routes the skill trigger to skills only", () => {
+    const mentions: MentionItem[] = [
+      ...imageReferences(3),
+      { id: "skill-1", kind: "skill", label: "CinematicLighting" },
+    ];
+    expect(mentionCandidates(mentions, "reference", "")).toHaveLength(3);
+    expect(mentionCandidates(mentions, "skill", "")).toHaveLength(1);
+  });
+});
+
+describe("mentionVisibleCount", () => {
+  it("scrolls through every reference while skills keep their fixed quick-pick row", () => {
+    expect(mentionVisibleCount("reference", 13)).toBe(13);
+    expect(mentionVisibleCount("reference", 50)).toBe(50);
+    expect(mentionVisibleCount("skill", 13)).toBe(8);
+    expect(mentionVisibleCount("skill", 3)).toBe(3);
   });
 });
