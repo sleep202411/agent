@@ -7515,6 +7515,9 @@
     }
   },
   "messages": {
+    "centerTitle": "消息中心",
+    "chatTab": "聊天",
+    "notificationTab": "通知",
     "inboxTitle": "消息",
     "indexPickAConversation": "从左侧选择一条会话开始阅读。",
     "inboxEmpty": "还没有会话。剧组群聊、咨询和订单都会出现在这里。",

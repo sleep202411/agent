@@ -359,6 +359,7 @@
       "subtitle": "为分镜设计人声、配乐和音效。"
     },
     "projects": {
+      "workspaceUnavailable": "此工作空间已无法访问，请切换到其他工作空间。",
       "metaTitle": "项目 · FizzStudio",
       "title": "项目",
       "subtitle": "将你的生成内容整理成项目。",

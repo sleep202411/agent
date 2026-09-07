@@ -11,8 +11,10 @@
  * already gates these; CurrentUser pulls the userId.
  */
 import {
+  BadRequestException,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -20,6 +22,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import {
+  NOTIFICATION_FILTERS,
+  type NotificationFilter,
+} from '@repo/shared/notifications';
 import { CurrentUser } from '../auth';
 import type { AuthUser } from '../auth';
 import { NotificationService } from './notification.service';
@@ -32,16 +38,27 @@ export class NotificationController {
   constructor(private readonly svc: NotificationService) {}
 
   @Get()
+  @Header('Cache-Control', 'no-store')
   async list(
     @CurrentUser() user: AuthUser,
     @Query('limit') limitRaw?: string,
     @Query('cursor') cursor?: string,
+    @Query('filter') filterRaw?: string,
   ) {
     const limit = clampLimit(limitRaw);
-    return this.svc.list(user.userId, { limit, cursor });
+    const filter = filterRaw ?? 'all';
+    if (!NOTIFICATION_FILTERS.includes(filter as NotificationFilter)) {
+      throw new BadRequestException('Invalid notification filter');
+    }
+    return this.svc.list(user.userId, {
+      limit,
+      cursor,
+      filter: filter as NotificationFilter,
+    });
   }
 
   @Get('unread-count')
+  @Header('Cache-Control', 'no-store')
   async unreadCount(@CurrentUser() user: AuthUser) {
     const count = await this.svc.unreadCount(user.userId);
     return { count };

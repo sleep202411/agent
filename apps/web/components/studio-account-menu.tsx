@@ -175,7 +175,7 @@ export function StudioAccountMenu({
   }, [historyOpen, open, refreshRecords]);
 
   const profileHref = localizePath("/profile", locale);
-  const notificationsHref = localizePath("/notifications", locale);
+  const notificationsHref = localizePath("/messages?tab=notifications", locale);
   const assetsHref = localizePath("/fizzstudio", locale);
 
   const copyUserId = async () => {

@@ -99,11 +99,11 @@ export function InboxList({ activeId }: InboxListProps) {
   const displays = useUserDisplays(counterpartyIds);
 
   return (
-    <aside className="flex h-full flex-col">
-      <header className="space-y-2 px-3 pb-3 pt-4">
-        <h1 className="px-1 font-heading text-base font-semibold text-foreground">
+    <aside className="flex h-full min-h-0 flex-col">
+      <header className="shrink-0 space-y-2 px-3 pb-3 pt-4">
+        <h2 className="px-1 font-heading text-base font-semibold text-foreground">
           {t("inboxTitle")}
-        </h1>
+        </h2>
         {/* Four filters in a 320px rail: let them scroll rather than
             wrap into a second row that shoves the list down. */}
         <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-secondary p-1 md:w-fit">
@@ -128,7 +128,7 @@ export function InboxList({ activeId }: InboxListProps) {
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-2 pb-4">
         {inbox.isError ? (
           <div
             role="alert"
@@ -205,7 +205,7 @@ export function InboxList({ activeId }: InboxListProps) {
                     )}
                     <div className="min-w-0 flex-1 space-y-0.5">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="line-clamp-1 text-sm font-medium text-foreground">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                           {name}
                         </span>
                         <ContextChip type={c.contextType} />
@@ -288,7 +288,7 @@ function ContextChip({ type }: { type: ConversationContextType }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
+        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider",
         type === "order" ? "bg-primary/15 text-primary" : "bg-secondary text-muted-foreground"
       )}
     >

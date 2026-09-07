@@ -32,6 +32,8 @@
  *   tighten that later if/when studio fully extracts to its own app.
  */
 
+import { isStudioNotificationPath } from "@repo/shared/notifications";
+import { studioOrigin } from "@/src/lib/studio-origin";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { isProtectedPath, SESSION_COOKIE_NAME } from "@/src/lib/auth/protected-paths";
@@ -56,16 +58,7 @@ function isStudioHost(request: NextRequest): boolean {
   return host != null && STUDIO_HOSTS.has(host);
 }
 
-/**
- * Origin of the standalone FizzStudio app (apps/studio), from
- * `NEXT_PUBLIC_STUDIO_HOST`. Empty on local dev and anywhere the
- * subdomain isn't wired up, which is what keeps `/art-studio` reachable
- * there — the tree still builds and serves, it just stops being the
- * public entrance once a real studio host exists.
- */
-const STUDIO_ORIGIN = process.env.NEXT_PUBLIC_STUDIO_HOST
-  ? `https://${process.env.NEXT_PUBLIC_STUDIO_HOST}`
-  : "";
+const STUDIO_ORIGIN = studioOrigin(process.env.NEXT_PUBLIC_STUDIO_HOST);
 
 /**
  * The in-web studio (`app/(studio)/art-studio`) predates the standalone
@@ -154,11 +147,18 @@ export function proxy(request: NextRequest) {
   }
 
   // The in-web studio's /art-studio/* surface has moved to its own app; send
-  // those paths there. 307 rather than 308: the apex tree still exists and
-  // still serves wherever STUDIO_ORIGIN is unset, so this must not be cached
-  // as permanent by anyone who visits prod and then runs locally.
-  if (STUDIO_ORIGIN && studioRedirect(rewrittenPathname)) {
+  // those paths there without caching the deployment-specific destination.
+  if (studioRedirect(rewrittenPathname)) {
     return NextResponse.redirect(`${STUDIO_ORIGIN}/${matchedLocale}`, 307);
+  }
+
+  // Stored notifications and copied links may still point at the main site.
+  // Preserve the actual Studio destination, locale and query parameters.
+  if (isStudioNotificationPath(rewrittenPathname)) {
+    return NextResponse.redirect(
+      `${STUDIO_ORIGIN}/${matchedLocale}${rewrittenPathname}${search}`,
+      307
+    );
   }
 
   // Legacy /projects/<id> deep links (created before project workspaces moved

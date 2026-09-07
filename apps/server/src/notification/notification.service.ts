@@ -19,9 +19,10 @@
  * Same event fired twice → at most one notification row + one outbox
  * row + at most one user-facing toast.
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import type { NotificationDTO, NotificationMeta } from '@repo/shared';
+import type { NotificationFilter } from '@repo/shared/notifications';
 import { newShortId } from '../common/id';
 import { PrismaService } from '../infra/db/db.module';
 
@@ -39,14 +40,15 @@ interface SendArgs {
 
 @Injectable()
 export class NotificationService {
-  private readonly logger = new Logger(NotificationService.name);
-
   constructor(private readonly prisma: PrismaService) {}
 
   async send(
     args: SendArgs,
     db: TxClient = this.prisma,
   ): Promise<NotificationDTO> {
+    if (db === this.prisma) {
+      return this.prisma.$transaction((tx) => this.send(args, tx));
+    }
     // 1. Insert once by (userId, idempotencyKey). `createMany` gives a
     //    deterministic `count` so we know whether this request owns the
     //    outbox enqueue. A duplicate retry fetches and returns the row
@@ -88,10 +90,24 @@ export class NotificationService {
     return dto;
   }
 
-  async list(userId: string, opts: { limit: number; cursor?: string }) {
+  async list(
+    userId: string,
+    opts: { limit: number; cursor?: string; filter?: NotificationFilter },
+  ) {
+    const sharing = ['workspace.', 'project.', 'story-project.'].map(
+      (prefix) => ({
+        type: { startsWith: prefix },
+      }),
+    );
+    const where: Prisma.NotificationWhereInput = { userId };
+    if (opts.filter === 'unread') where.readAt = null;
+    if (opts.filter === 'crew') where.type = { startsWith: 'crew.' };
+    if (opts.filter === 'sharing') where.OR = sharing;
+    if (opts.filter === 'system')
+      where.NOT = [{ type: { startsWith: 'crew.' } }, ...sharing];
     const rows = await this.prisma.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
+      where,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: opts.limit + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
     });
@@ -110,12 +126,13 @@ export class NotificationService {
   }
 
   async markRead(userId: string, id: string): Promise<NotificationDTO | null> {
-    const updated = await this.prisma.notification.updateMany({
+    await this.prisma.notification.updateMany({
       where: { id, userId, readAt: null },
       data: { readAt: new Date() },
     });
-    if (updated.count === 0) return null;
-    const row = await this.prisma.notification.findUnique({ where: { id } });
+    const row = await this.prisma.notification.findFirst({
+      where: { id, userId },
+    });
     return row ? toDTO(row) : null;
   }
 

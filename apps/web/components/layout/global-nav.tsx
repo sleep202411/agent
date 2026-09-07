@@ -739,7 +739,7 @@ function MobileInboxLine() {
   return (
     <>
       <IconMessageCircle className="size-4" />
-      <span className="flex-1">{t("inboxTitle")}</span>
+      <span className="flex-1">{t("centerTitle")}</span>
       {unread > 0 ? (
         <span className="inline-flex h-5 min-w-[20px] items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold tabular-nums text-primary-foreground">
           {unread > 99 ? "99+" : unread}

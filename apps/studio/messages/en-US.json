@@ -359,6 +359,7 @@
       "subtitle": "Design voice, music, and sound cues for your scenes."
     },
     "projects": {
+      "workspaceUnavailable": "This workspace is no longer available to you. Choose another workspace to continue.",
       "metaTitle": "Projects · FizzStudio",
       "title": "Projects",
       "subtitle": "Organize your generations into projects.",

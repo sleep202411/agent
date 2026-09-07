@@ -11,7 +11,7 @@
  * for same-origin calls. No bearer header.
  */
 
-import type { NotificationDTO } from "@repo/shared/notifications";
+import type { NotificationDTO, NotificationFilter } from "@repo/shared/notifications";
 
 const BASE = "/aurora/notifications";
 
@@ -23,6 +23,7 @@ export interface ListResult {
 async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
   const res = await fetch(input, {
     credentials: "include",
+    cache: "no-store",
     ...init,
     headers: {
       "Content-Type": "application/json",
@@ -32,11 +33,12 @@ async function jsonFetch<T>(input: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     // Surface enough detail for the UI to show a meaningful message
     // without parsing every error shape — body is best-effort JSON.
-    let body: unknown;
+    const text = await res.text();
+    let body: unknown = text;
     try {
-      body = await res.json();
+      body = JSON.parse(text);
     } catch {
-      body = await res.text().catch(() => null);
+      // Proxies may return text rather than the Nest error envelope.
     }
     throw new NotificationApiError(res.status, body);
   }
@@ -48,17 +50,22 @@ export class NotificationApiError extends Error {
     public readonly status: number,
     public readonly body: unknown
   ) {
-    super(`Notification API error ${status}`);
+    const detail = body && typeof body === "object" && "message" in body ? body.message : body;
+    const message = Array.isArray(detail) ? detail.join("; ") : detail;
+    super(
+      typeof message === "string" && message.trim() ? message : `Notification API error ${status}`
+    );
     this.name = "NotificationApiError";
   }
 }
 
 export function listNotifications(
-  opts: { limit?: number; cursor?: string } = {}
+  opts: { limit?: number; cursor?: string; filter?: NotificationFilter } = {}
 ): Promise<ListResult> {
   const qs = new URLSearchParams();
   if (opts.limit) qs.set("limit", String(opts.limit));
   if (opts.cursor) qs.set("cursor", opts.cursor);
+  if (opts.filter) qs.set("filter", opts.filter);
   const path = qs.toString() ? `${BASE}?${qs.toString()}` : BASE;
   return jsonFetch<ListResult>(path);
 }
@@ -70,6 +77,7 @@ export function fetchUnreadCount(): Promise<{ count: number }> {
 export function markNotificationRead(id: string): Promise<NotificationDTO> {
   return jsonFetch<NotificationDTO>(`${BASE}/${encodeURIComponent(id)}/read`, {
     method: "POST",
+    keepalive: true,
   });
 }
 

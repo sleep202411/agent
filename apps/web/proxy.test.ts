@@ -46,3 +46,23 @@ describe("web proxy — studio routing (STUDIO_ORIGIN set, apex host)", () => {
     expect(res.headers.get("location")).toBe("https://studio.fizzdragon.com/zh-HK");
   });
 });
+
+describe("copied notification links", () => {
+  it("keeps the legacy code-based invitation on the web app", () => {
+    const res = proxy(request("/zh-CN/invite?code=legacy-code&projectId=legacy-1"));
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-rewrite")).toContain(
+      "/invite?code=legacy-code&projectId=legacy-1"
+    );
+  });
+  it.each([
+    "/story-studio/projects/story-1/canvas?chapter=ch-1",
+    "/project/p-1",
+    "/canvas?ws=team-1",
+    "/invite/token-1",
+  ])("preserves %s on the Studio host", (path) => {
+    const res = proxy(request(`/zh-CN${path}`));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe(`https://studio.fizzdragon.com/zh-CN${path}`);
+  });
+});

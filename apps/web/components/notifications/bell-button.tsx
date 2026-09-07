@@ -5,7 +5,7 @@
  *
  * Render only for logged-in users (the parent nav already gates on
  * useCurrentUser). The dropdown shows up to 10 most-recent items;
- * "See all" navigates to the full inbox at /notifications.
+ * "See all" navigates to the full inbox in the message center.
  *
  * Click on an item marks it read and (if a deeplink is present)
  * navigates. Unread items get a left-edge dot indicator.
@@ -73,7 +73,8 @@ export function BellButton({ variant = "header" }: BellButtonProps) {
     const href = notificationHref(n, locale);
     if (href) {
       setOpen(false);
-      router.push(href);
+      if (href.startsWith("/")) router.push(href);
+      else window.location.assign(href);
     }
   };
 
@@ -161,7 +162,7 @@ export function BellButton({ variant = "header" }: BellButtonProps) {
             type="button"
             onClick={() => {
               setOpen(false);
-              router.push(localizePath("/notifications", locale));
+              router.push(localizePath("/messages?tab=notifications", locale));
             }}
             className="block w-full rounded-md py-1.5 text-center text-xs font-medium text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground"
           >

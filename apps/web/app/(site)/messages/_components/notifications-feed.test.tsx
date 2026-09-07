@@ -18,6 +18,7 @@ import type { NotificationDTO } from "@repo/shared/notifications";
 
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const i18n = vi.hoisted(() => ({ locale: "en-US" }));
+const dataHooks = vi.hoisted(() => ({ feed: vi.fn(), read: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push }),
@@ -50,20 +51,23 @@ vi.mock("@/src/lib/notifications", async () => {
   return {
     notificationHref,
     notificationContent,
-    useNotificationFeed: () => ({
-      data: { pages: [{ items: [ITEM] }] },
-      isLoading: false,
-      hasNextPage: false,
-      isFetchingNextPage: false,
-      fetchNextPage: vi.fn(),
-    }),
+    useNotificationFeed: (size: number, filter: string) => {
+      dataHooks.feed(size, filter);
+      return {
+        data: { pages: [{ items: [ITEM] }] },
+        isLoading: false,
+        hasNextPage: false,
+        isFetchingNextPage: false,
+        fetchNextPage: vi.fn(),
+      };
+    },
     useUnreadCount: () => ({ data: 1 }),
-    useMarkRead: () => ({ mutate: vi.fn() }),
+    useMarkRead: () => ({ mutate: dataHooks.read }),
     useMarkAllRead: () => ({ mutate: vi.fn(), isPending: false }),
   };
 });
 
-const { default: NotificationsPage } = await import("./page");
+const { NotificationsFeed } = await import("./notifications-feed");
 
 let container: HTMLDivElement;
 let root: Root;
@@ -78,6 +82,8 @@ function rowButton(): HTMLButtonElement {
 
 beforeEach(() => {
   nav.push.mockClear();
+  dataHooks.read.mockClear();
+  dataHooks.feed.mockClear();
   i18n.locale = "en-US";
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -93,7 +99,7 @@ describe("notification inbox", () => {
   it.each(["en-US", "zh-CN", "zh-HK"])("pushes the deeplink under /%s", (locale) => {
     i18n.locale = locale;
 
-    act(() => root.render(<NotificationsPage />));
+    act(() => root.render(<NotificationsFeed />));
     act(() => {
       rowButton().click();
     });
@@ -103,4 +109,20 @@ describe("notification inbox", () => {
     expect(pushed.split("/")[1]).toBe(locale);
     expect(pushed).toBe(`/${locale}${DEEPLINK}`);
   });
+});
+
+it("selecting a filter requests that category from the server", () => {
+  act(() => root.render(<NotificationsFeed />));
+  const filter = [...container.querySelectorAll("button")].find(
+    (b) => b.textContent === "filters.sharing"
+  )!;
+  act(() => filter.click());
+  expect(dataHooks.feed).toHaveBeenLastCalledWith(30, "sharing");
+  expect(filter.getAttribute("aria-pressed")).toBe("true");
+});
+
+it("opening an unread notification marks its own id as read", () => {
+  act(() => root.render(<NotificationsFeed />));
+  act(() => rowButton().click());
+  expect(dataHooks.read).toHaveBeenCalledWith(ITEM.id);
 });

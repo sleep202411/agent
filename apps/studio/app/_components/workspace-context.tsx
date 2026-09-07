@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import { setApiWorkspaceId } from "@/lib/api";
 import {
   createTeamWorkspace,
@@ -88,6 +89,7 @@ export function useBillingWorkspace(): WorkspaceRef | null {
 }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
+  const requestedId = useSearchParams().get("ws");
   const queryClient = useQueryClient();
   const { user, loading: authLoading } = useAuth();
   const userKey = user?.id == null ? "anonymous" : String(user.id);
@@ -119,12 +121,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const activeWorkspace = useMemo(() => {
     if (workspaces.length === 0) return null;
+    // An explicit notification target must never silently open another team.
+    if (requestedId) return workspaces.find((w) => w.id === requestedId) ?? null;
     return (
       workspaces.find((w) => w.id === activeId) ??
       workspaces.find((w) => w.type === "personal") ??
       workspaces[0]
     );
-  }, [workspaces, activeId]);
+  }, [workspaces, activeId, requestedId]);
 
   // Scope every /aurora request (reads + AI-generation spend) to the active
   // workspace, so compute_point spend and the displayed balance stay in lockstep.
@@ -139,7 +143,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("ws") && url.searchParams.get("ws") !== id) {
+      url.searchParams.set("ws", id);
+      window.history.replaceState(null, "", url);
+    }
   }, []);
+
+  useEffect(() => {
+    if (requestedId && activeWorkspace?.id === requestedId) {
+      // URL navigation is an external selection change; persist it for subsequent pages.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveWorkspaceId(requestedId);
+    }
+  }, [requestedId, activeWorkspace?.id, setActiveWorkspaceId]);
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });

@@ -29,17 +29,8 @@ export const env = {
   DEFAULT_COVER_URL: `${process.env.NEXT_PUBLIC_STATIC_BASE_URL ?? "https://static.fizzspace.cn"}/static/bg/default_bg.png`,
   SITE_REGION: process.env.NEXT_PUBLIC_SITE_REGION ?? "global",
   PARENT_ORIGIN: process.env.NEXT_PUBLIC_PARENT_ORIGIN ?? "",
-  /**
-   * Dedicated host for FizzStudio (e.g. `studio.fizzdragon.com`). When
-   * set, the "进入 FizzStudio" nav button routes to
-   * `https://${STUDIO_HOST}/{locale}` instead of the apex
-   * `/{locale}/art-studio` path. Empty (default) → keep on apex.
-   *
-   * ⚠ Cookie caveat: only enable when the satoken cookie is set with
-   * `Domain=.fizzdragon.com` (cross-subdomain) — otherwise users who
-   * are logged in on the apex will hit the studio host as anonymous.
-   */
-  STUDIO_HOST: process.env.NEXT_PUBLIC_STUDIO_HOST ?? "",
+  /** Dedicated Studio host. Required for project and notification links. */
+  STUDIO_HOST: required("NEXT_PUBLIC_STUDIO_HOST", process.env.NEXT_PUBLIC_STUDIO_HOST),
   /**
    * AppLovin AXON web-pixel event key. Optional — when set (and the build is
    * not CN), the ad-conversion pixel loads. See `src/lib/axon.ts`. AppLovin has

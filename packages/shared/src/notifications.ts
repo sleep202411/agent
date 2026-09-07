@@ -58,6 +58,34 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 /** Category prefix — used by inbox filter tabs ("All / Unread / Crew / Sharing / System"). */
 export type NotificationCategory = "crew" | "sharing" | "system";
 
+export const NOTIFICATION_FILTERS = ["all", "unread", "crew", "sharing", "system"] as const;
+export type NotificationFilter = (typeof NOTIFICATION_FILTERS)[number];
+
+/** `/projects` and the legacy `/invite?code=...` remain web routes. */
+export function isStudioNotificationPath(pathname: string): boolean {
+  return (
+    /^\/invite\/[^/]+\/?$/.test(pathname) ||
+    ["/story-studio", "/canvas", "/project"].some(
+      (root) => pathname === root || pathname.startsWith(`${root}/`)
+    )
+  );
+}
+
+/** Resolve stored links independently of the app displaying the notification. */
+export function notificationTarget(notification: NotificationDTO): {
+  surface: "web" | "studio";
+  path: string;
+} | null {
+  const link = notification.meta?.deeplink;
+  // Notification links are product-relative UI paths, never external URLs or scripts.
+  if (typeof link !== "string" || !link.startsWith("/") || /^\/\/|[\\\\\u0000-\u0020]/.test(link)) {
+    return null;
+  }
+  const path = link.replace(/^\/(en-US|zh-CN|zh-HK)(?=\/|[?#]|$)/, "") || "/";
+  const pathname = path.split(/[?#]/, 1)[0]!;
+  return { surface: isStudioNotificationPath(pathname) ? "studio" : "web", path };
+}
+
 export function notificationCategory(type: string): NotificationCategory {
   if (type.startsWith("crew.")) return "crew";
   if (

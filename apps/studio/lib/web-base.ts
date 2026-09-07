@@ -9,7 +9,7 @@ import type { SiteRegion } from "@/app/_components/region-provider";
  * uses to decide .cn vs global. Callers read it via `useSiteRegion()`.
  */
 const WEB_BASE_BY_REGION: Record<SiteRegion, string> = {
-  cn: "https://fizzstudio.fizzspace.cn",
+  cn: "https://fizzdragon.fizzspace.cn",
   global: "https://fizzdragon.com",
 };
 

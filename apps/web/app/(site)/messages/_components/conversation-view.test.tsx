@@ -247,9 +247,11 @@ function thread(
   overrides: Partial<ConversationDTO> = {},
   roles: ConversationParticipantRole[] = ["member", "member", "member"]
 ): ConversationDTO {
+  const contextType = overrides.contextType ?? "crew";
   return {
     id: "conv_1",
-    contextType: "crew",
+    contextType,
+    crewChannel: contextType === "crew" ? "team" : null,
     contextId: "crew_1",
     participants: roles.map((role, i) => participant(String(7 + i), role)),
     lastMessage: null,

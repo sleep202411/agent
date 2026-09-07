@@ -18,11 +18,11 @@ export default function ConversationPage() {
   const id = params?.id ?? "";
 
   return (
-    <div className="grid h-[calc(100dvh-64px)] grid-cols-1 bg-background text-foreground lg:grid-cols-[320px_1fr]">
-      <div className="hidden border-r border-border lg:block">
+    <div className="grid h-full min-h-0 grid-cols-1 grid-rows-1 bg-background text-foreground lg:grid-cols-[320px_1fr]">
+      <div className="hidden min-h-0 min-w-0 border-r border-border lg:block">
         <InboxList activeId={id} />
       </div>
-      <div className="min-w-0">
+      <div className="min-h-0 min-w-0">
         {id ? (
           <ConversationView conversationId={id} />
         ) : (

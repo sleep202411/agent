@@ -7515,6 +7515,9 @@
     }
   },
   "messages": {
+    "centerTitle": "訊息中心",
+    "chatTab": "聊天",
+    "notificationTab": "通知",
     "inboxTitle": "訊息",
     "indexPickAConversation": "從左側選擇一條會話開始閱讀。",
     "inboxEmpty": "還沒有會話。劇組群聊、諮詢和訂單都會出現在這裡。",

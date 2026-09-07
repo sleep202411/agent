@@ -32,6 +32,7 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
+import { markNotificationRead } from "@/src/lib/notifications/api";
 import { notificationContent, notificationHref, notificationKeys } from "@/src/lib/notifications";
 import { openConversationRealtime, type ConversationRealtimeClient } from "./ably-client";
 import {
@@ -207,11 +208,20 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         const href = notificationHref(notification, locale);
         const content = notificationContent(notification, locale, notificationT);
         toast(content.title, {
+          id: `notification:${notification.id}`,
           description: content.body,
           action: href
             ? {
                 label: notificationT("view"),
-                onClick: () => router.push(href),
+                onClick: () => {
+                  if (!notification.readAt) {
+                    void markNotificationRead(notification.id)
+                      .then(() => qc.invalidateQueries({ queryKey: notificationKeys.all }))
+                      .catch((error: Error) => toast.error(error.message));
+                  }
+                  if (href.startsWith("/")) router.push(href);
+                  else window.location.assign(href);
+                },
               }
             : undefined,
         });

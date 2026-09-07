@@ -14,6 +14,8 @@
  */
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { NotificationFilter } from "@repo/shared/notifications";
+import { toast } from "sonner";
 import {
   fetchUnreadCount,
   listNotifications,
@@ -52,12 +54,13 @@ export function useRecentNotifications(limit = 10) {
 }
 
 /** Full inbox feed — infinite scroll via cursor. */
-export function useNotificationFeed(pageSize = 30) {
+export function useNotificationFeed(pageSize = 30, filter: NotificationFilter = "all") {
   return useInfiniteQuery({
-    queryKey: [...notificationKeys.feed, pageSize] as const,
-    queryFn: ({ pageParam }) => listNotifications({ limit: pageSize, cursor: pageParam }),
+    queryKey: [...notificationKeys.feed, pageSize, filter] as const,
+    queryFn: ({ pageParam }) => listNotifications({ limit: pageSize, cursor: pageParam, filter }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
+    refetchInterval: UNREAD_COUNT_POLL_MS,
   });
 }
 
@@ -65,6 +68,7 @@ export function useMarkRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => markNotificationRead(id),
+    onError: (error) => toast.error(error.message),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: notificationKeys.all });
     },
@@ -75,6 +79,7 @@ export function useMarkAllRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => markAllNotificationsRead(),
+    onError: (error) => toast.error(error.message),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: notificationKeys.all });
     },

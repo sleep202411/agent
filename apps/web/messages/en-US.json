@@ -7515,6 +7515,9 @@
     }
   },
   "messages": {
+    "centerTitle": "Message center",
+    "chatTab": "Chats",
+    "notificationTab": "Notifications",
     "inboxTitle": "Messages",
     "indexPickAConversation": "Pick a conversation from the left to start reading.",
     "inboxEmpty": "No conversations yet. Crew chats, inquiries and orders show up here.",

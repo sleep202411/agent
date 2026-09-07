@@ -399,7 +399,7 @@ export function ConversationView({ conversationId, surface = "inbox" }: Conversa
           aria-relevant="additions text"
           onScroll={(event) => updateBottomState(isTimelineAtBottom(event.currentTarget))}
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto px-4 py-5",
+            "min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-4 py-5",
             conversation.contextType === "crew" ? "space-y-0" : "space-y-3"
           )}
         >
