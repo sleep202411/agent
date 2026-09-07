@@ -3,13 +3,12 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
-  IconArrowLeft,
-  IconCircleFilled,
   IconChevronDown,
   IconDeviceTv,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconRefresh,
+  IconVideo,
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -18,6 +17,7 @@ import { cn } from "@/lib/utils";
 import type { TvItem } from "../_hooks/types";
 
 interface TvIpListProps {
+  embedded: boolean;
   items: TvItem[];
   selectedId: string | null;
   isLoading: boolean;
@@ -31,6 +31,7 @@ interface TvIpListProps {
 }
 
 export function TvIpList({
+  embedded,
   items,
   selectedId,
   isLoading,
@@ -82,22 +83,28 @@ export function TvIpList({
             collapsed ? "md:justify-center" : "md:justify-between"
           )}
         >
-          <Link
-            href={localizePath("/ips", locale)}
-            className={cn(
-              "min-w-0 rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white",
-              detailsClass
-            )}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt="FizzDragon"
-              width={439}
-              height={78}
-              className="h-auto w-[142px]"
-            />
-          </Link>
+          {embedded ? (
+            <span className={cn("text-sm font-semibold text-white", detailsClass)}>
+              {t("listTitle")}
+            </span>
+          ) : (
+            <Link
+              href={localizePath("/ips", locale)}
+              className={cn(
+                "min-w-0 rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white",
+                detailsClass
+              )}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/logo.png"
+                alt="FizzDragon"
+                width={439}
+                height={78}
+                className="h-auto w-[142px]"
+              />
+            </Link>
+          )}
           <button
             type="button"
             aria-label={collapsed ? t("expandList") : t("collapseList")}
@@ -130,6 +137,7 @@ export function TvIpList({
 
         <nav
           id="tv-ip-list"
+          data-lenis-prevent
           aria-label={t("listTitle")}
           className={cn(
             "min-h-0 flex-1 space-y-0.5 overflow-y-auto overscroll-contain py-3 [scrollbar-width:thin]",
@@ -165,7 +173,9 @@ export function TvIpList({
           )}
           {items.map((item) => {
             const active = item.id === selectedId;
-            const detail = item.subtitle || item.ownerName;
+            const label = [item.title, item.genre, item.trailer && t("hasVideo")]
+              .filter(Boolean)
+              .join(", ");
             return (
               <button
                 key={item.id}
@@ -175,8 +185,8 @@ export function TvIpList({
                   setMobileOpen(false);
                 }}
                 aria-current={active ? "true" : undefined}
-                aria-label={`${item.title}, ${detail}`}
-                title={`${item.title} · ${detail}`}
+                aria-label={label}
+                title={label}
                 className={cn(
                   "flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white",
                   active ? "bg-[#242424] text-white" : "text-white/85 hover:bg-white/5"
@@ -187,15 +197,18 @@ export function TvIpList({
                   <span className="block truncate text-[15px] font-medium leading-5">
                     {item.title}
                   </span>
-                  <span className="mt-0.5 flex items-center gap-1.5 text-xs leading-[14px] text-white/45">
-                    <IconCircleFilled
-                      aria-hidden
-                      className={cn(
-                        "size-1.5 shrink-0",
-                        active ? "text-[#E52227]" : "text-white/30"
-                      )}
-                    />
-                    <span className="truncate">{detail}</span>
+                  <span className="mt-0.5 flex min-h-3.5 items-center gap-1.5 text-xs leading-[14px] text-white/45">
+                    {item.trailer && (
+                      <span
+                        role="img"
+                        aria-label={t("hasVideo")}
+                        title={t("hasVideo")}
+                        className="shrink-0"
+                      >
+                        <IconVideo aria-hidden className="size-3.5" />
+                      </span>
+                    )}
+                    {item.genre && <span className="truncate">{item.genre}</span>}
                   </span>
                 </span>
               </button>
@@ -214,18 +227,6 @@ export function TvIpList({
             </button>
           )}
         </nav>
-
-        <footer className="shrink-0 border-t border-white/[0.06] p-3">
-          <Link
-            href={localizePath("/ips", locale)}
-            title={t("backToPlaza")}
-            aria-label={t("backToPlaza")}
-            className="flex min-h-10 items-center justify-center gap-2 rounded-md bg-white/5 px-2 text-sm font-medium text-white/70 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-          >
-            <IconArrowLeft className="size-4 shrink-0" />
-            <span className={detailsClass}>{t("backToPlaza")}</span>
-          </Link>
-        </footer>
       </div>
     </aside>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconPhotoOff, IconRefresh } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
 import type { TvItem } from "../_hooks/types";
@@ -13,8 +13,26 @@ export function TvStage({ item }: TvStageProps) {
   const t = useTranslations("tv");
   const [failedCover, setFailedCover] = useState<string | null>(null);
   const [failedVideo, setFailedVideo] = useState<string | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
   const coverAvailable = Boolean(item.cover) && failedCover !== item.cover;
   const videoAvailable = Boolean(item.trailer) && failedVideo !== item.trailer;
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) video.pause();
+    });
+    const onVisibilityChange = () => {
+      if (document.hidden) video.pause();
+    };
+    observer.observe(video);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [videoAvailable]);
 
   // Trailer-less items park on their cover — the viewer switches manually.
   return (
@@ -32,6 +50,7 @@ export function TvStage({ item }: TvStageProps) {
 
       {videoAvailable && (
         <video
+          ref={videoRef}
           key={item.id}
           src={item.trailer}
           poster={coverAvailable ? item.cover : undefined}

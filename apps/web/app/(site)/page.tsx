@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
-import { Hero } from "./_components/hero";
+import { TvApp } from "@/app/tv/_components/tv-app";
 import { MadeWithFizz } from "./_components/made-with-fizz";
 import { PartnersMarquee } from "./_components/partners-marquee";
 import { StyleGallery } from "./_components/style-gallery";
@@ -95,10 +95,13 @@ export default function HomePage() {
 
   return (
     <SmoothScroll>
-      {/* Cancel the (site) layout's pt-16 so the cinematic hero stays
-          full-bleed under the translucent nav. */}
-      <div className="-mt-16">
-        <Hero />
+      <div className="pt-8">
+        <section
+          aria-label="FizzDragon TV"
+          className="h-[calc(100dvh-6rem)] min-h-[400px] overflow-hidden bg-black"
+        >
+          <TvApp embedded />
+        </section>
 
         {/* Partner / media logo wall — social-proof strip placed
             immediately under the hero ("trusted by" pattern) so it's the
@@ -301,9 +304,6 @@ export default function HomePage() {
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
               className="mt-10 flex flex-wrap items-center justify-center gap-3"
             >
-              {/* Final CTA mirrors hero: primary "故事开启" → /ips,
-                  secondary "加入创作" → /crews. /art-studio dropped
-                  from the marketing surface entirely. */}
               <Button size="lg" asChild>
                 <Link href={localizePath("/ips", locale)}>
                   {t("finalCta.primaryCta")}

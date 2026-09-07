@@ -6,6 +6,7 @@ export interface TvItem {
   id: string;
   title: string;
   subtitle: string;
+  genre: string;
   description: string;
   cover: string;
   trailer: string;

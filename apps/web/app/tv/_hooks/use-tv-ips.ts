@@ -40,7 +40,8 @@ function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>): TvIt
   return {
     id: ip.id,
     title: ip.title || t("untitled"),
-    subtitle: ip.subtitle || ip.genres[0] || "",
+    subtitle: ip.subtitle || "",
+    genre: ip.genres[0]?.trim() || "",
     description: ip.summary || ip.description || "",
     cover,
     trailer,

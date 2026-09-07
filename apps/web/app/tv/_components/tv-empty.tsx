@@ -13,12 +13,12 @@ export function TvLoadingState() {
   );
 }
 
-export function TvEmptyState({ hasItems }: { hasItems: boolean }) {
+export function TvEmptyState() {
   const t = useTranslations("tv");
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center">
       <IconDeviceTv className="size-12 text-white/30" />
-      <p className="text-sm text-white/70">{hasItems ? t("selectIp") : t("noIps")}</p>
+      <p className="text-sm text-white/70">{t("noIps")}</p>
     </div>
   );
 }

@@ -6501,14 +6501,6 @@
     "tagline": "A liquidity market that powers efficient trade and growth for creative content worldwide."
   },
   "home": {
-    "hero": {
-      "statusPill": "Seedance 2.5 · now available",
-      "headlineLine1": "The universe's most exciting",
-      "headlineLine2": "AI story series",
-      "subtitle": "Bringing together world-class creators from every corner of the globe to fuse history, literature, comics, philosophy, heroes, and legends into heart-driven global hits—beyond templates, unstoppable staying power.",
-      "primaryCta": "Start watching",
-      "secondaryCta": "Start creating"
-    },
     "madeWithFizz": {
       "eyebrow": "Made with FizzDragon",
       "title": "Stories already in production.",
@@ -9379,15 +9371,14 @@
     "loading": "Loading…",
     "loadFailed": "Could not load IPs.",
     "retry": "Retry",
-    "backToPlaza": "Browse IP Plaza",
     "playerTitle": "TV player",
     "previewUnavailable": "No preview is available for this IP.",
     "videoUnavailable": "This video could not be loaded.",
-    "listTitle": "IP list",
-    "collapseList": "Collapse IP list",
-    "expandList": "Expand IP list",
+    "listTitle": "Channels",
+    "collapseList": "Collapse channels",
+    "expandList": "Expand channels",
     "noIps": "No IPs available.",
-    "selectIp": "Select an IP to watch its preview.",
-    "loadMore": "Load more"
+    "loadMore": "Load more",
+    "hasVideo": "Video available"
   }
 }

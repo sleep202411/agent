@@ -6501,14 +6501,6 @@
     "tagline": "一個為全球創意內容提供高效交易與賦能的流動性市場。"
   },
   "home": {
-    "hero": {
-      "statusPill": "Seedance 2.5 · 現已上線",
-      "headlineLine1": "全宇宙超精彩的",
-      "headlineLine2": "AI故事劇集",
-      "subtitle": "集結全球各路創作高手，融匯歷史、文學、漫畫、哲學、英雄與傳說，打造風靡全球的走心爆款——超越模版，後勁極大。",
-      "primaryCta": "開始觀看",
-      "secondaryCta": "開始創作"
-    },
     "madeWithFizz": {
       "eyebrow": "用 FizzDragon 製作",
       "title": "正在製作中的故事。",
@@ -9379,15 +9371,14 @@
     "loading": "載入中…",
     "loadFailed": "IP 列表載入失敗",
     "retry": "重試",
-    "backToPlaza": "返回 IP 廣場",
     "playerTitle": "TV 播放器",
     "previewUnavailable": "此 IP 暫無可用的預覽素材。",
     "videoUnavailable": "影片載入失敗。",
-    "listTitle": "IP 列表",
-    "collapseList": "收起 IP 列表",
-    "expandList": "展開 IP 列表",
+    "listTitle": "頻道列表",
+    "collapseList": "收起頻道列表",
+    "expandList": "展開頻道列表",
     "noIps": "暫無 IP 作品",
-    "selectIp": "選擇一個 IP，開始觀看預覽",
-    "loadMore": "載入更多"
+    "loadMore": "載入更多",
+    "hasVideo": "有影片"
   }
 }

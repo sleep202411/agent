@@ -16,7 +16,10 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
   const locale = useLocale() as Locale;
 
   return (
-    <div className="flex max-h-[40%] shrink-0 flex-wrap items-center gap-x-8 gap-y-4 overflow-y-auto bg-black px-5 pb-6 pt-4 sm:px-8">
+    <div
+      data-lenis-prevent
+      className="flex max-h-[40%] shrink-0 flex-wrap items-center gap-x-8 gap-y-4 overflow-y-auto bg-black px-5 pb-6 pt-4 sm:px-8"
+    >
       <div className="min-w-0 flex-[1_1_20rem] space-y-2">
         <h1 className="text-xl font-semibold leading-tight text-white sm:text-2xl">{item.title}</h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">

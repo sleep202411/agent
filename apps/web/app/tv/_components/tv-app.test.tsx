@@ -71,6 +71,14 @@ describe("TV IP list", () => {
 
   beforeEach(() => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      }
+    );
     harness.get.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
     harness.routerPush.mockClear();
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -84,12 +92,13 @@ describe("TV IP list", () => {
     queryClient.clear();
     container.remove();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
-  async function render() {
+  async function render(embedded = false) {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TvApp />
+          <TvApp embedded={embedded} />
         </QueryClientProvider>
       );
     });
@@ -104,7 +113,7 @@ describe("TV IP list", () => {
   }
   function clickIp(title: string) {
     const button = container.querySelector<HTMLButtonElement>(
-      `nav button[aria-label^="${title},"]`
+      `nav button[aria-label="${title}"], nav button[aria-label^="${title},"]`
     );
     expect(button).not.toBeNull();
     act(() => button!.click());
@@ -112,19 +121,64 @@ describe("TV IP list", () => {
   const selected = () =>
     container.querySelector('nav button[aria-current="true"]')?.getAttribute("aria-label");
 
-  it("loads the IP list directly and selects titles only on click", async () => {
+  it("opens the first channel and allows manual selection", async () => {
     await render();
     await waitForText("Second IP");
     expect(harness.get).toHaveBeenCalledWith("/aurora/ip-commerce/ips", {
       params: { locale: "en-US", cursor: undefined, limit: 20 },
     });
     expect(container.querySelectorAll("nav button")).toHaveLength(2);
-    expect(container.querySelector("video")).toBeNull();
+    expect(selected()).toContain("First IP");
+    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-1.mp4");
     clickIp("Second IP");
     expect(selected()).toContain("Second IP");
     expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-2.mp4");
     clickIp("First IP");
     expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-1.mp4");
+  });
+
+  it("shows genres consistently and marks only playable channels with a video icon", async () => {
+    harness.get.mockResolvedValue({
+      items: [
+        { ...ips[0], subtitle: "A marketing tagline", copyrightOwner: "First creator" },
+        { ...ips[1], genres: [], subtitle: "Another tagline", trailerAsset: null },
+      ],
+      nextCursor: null,
+    });
+    await render();
+    await waitForText("Second IP");
+    const list = container.querySelector("nav")!;
+    expect(list.textContent).toContain("Sci-Fi");
+    expect(list.textContent).not.toContain("tv.uncategorized");
+    expect(list.querySelector('button[aria-label="Second IP"]')?.textContent).toBe("Second IP");
+    expect(list.textContent).not.toContain("tagline");
+    expect(list.textContent).not.toContain("creator");
+    expect(list.querySelectorAll('[role="img"][aria-label="tv.hasVideo"]')).toHaveLength(1);
+    clickIp("Second IP");
+    expect(container.querySelector("video")).toBeNull();
+    expect(container.querySelector("section img")?.getAttribute("src")).toContain("ip-2.jpg");
+  });
+
+  it("keeps the initial channel when refreshed results change order", async () => {
+    await render();
+    await waitForText("First IP");
+    await act(async () => {
+      queryClient.setQueryData(["tv", "ips", "en-US"], {
+        pages: [{ items: [...ips].reverse(), nextCursor: null }],
+        pageParams: [undefined],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(selected()).toContain("First IP");
+  });
+
+  it("embeds the same player without the standalone exit control or duplicated logo", async () => {
+    await render(true);
+    await waitForText("First IP");
+    expect(selected()).toContain("First IP");
+    expect(container.querySelector('[aria-label="tv.exit"]')).toBeNull();
+    expect(container.querySelector('img[alt="FizzDragon"]')).toBeNull();
+    expect(container.querySelector("nav[data-lenis-prevent]")).not.toBeNull();
   });
 
   it("does not switch IPs after playback ends, scrolling, keys, or elapsed time", async () => {
