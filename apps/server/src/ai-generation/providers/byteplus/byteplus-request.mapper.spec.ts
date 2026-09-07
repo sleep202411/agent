@@ -207,6 +207,33 @@ describe('mapBytePlusVideoProviderRequest wire contract (ModelArk doc 1520757)',
     expect(body.output_format).toBe('mov');
   });
 
+  it('forwards an explicit omni-reference task type beside the reference media', () => {
+    const edit = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      prompt: 'replace the character in Video 1 with Image 1',
+      omniReferenceTaskType: 'edit',
+      referenceVideos: [{ url: 'https://cdn.example.com/source.mp4' }],
+      referenceImages: [{ url: 'https://cdn.example.com/face.png' }],
+    });
+    expect(edit.omni_reference_task_type).toBe('edit');
+  });
+
+  it("omits omni_reference_task_type for 'auto' or reference-less requests", () => {
+    const auto = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      prompt: 'a cinematic aerial shot of the reference city',
+      omniReferenceTaskType: 'auto',
+      referenceImages: [{ url: 'https://cdn.example.com/city.png' }],
+    });
+    expect(auto).not.toHaveProperty('omni_reference_task_type');
+
+    // A task type left over after switching modes must never reach the wire —
+    // ModelArk rejects edit/extend without reference videos synchronously.
+    const orphaned = mapBytePlusVideoProviderRequest(runtimeConfig(), {
+      prompt: 'a quiet harbor at dawn',
+      omniReferenceTaskType: 'edit',
+    });
+    expect(orphaned).not.toHaveProperty('omni_reference_task_type');
+  });
+
   it('asks for the generated last frame only when opted in (shot chaining)', () => {
     const off = mapBytePlusVideoProviderRequest(runtimeConfig(), {
       prompt: 'a quiet harbor at dawn',

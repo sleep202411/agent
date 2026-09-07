@@ -82,7 +82,12 @@ export function mapBytePlusHttpError(
   return bytePlusError(
     'VALIDATION_ERROR',
     `BytePlus ModelArk HTTP ${status}: ${raw.slice(0, 500)}`,
-    'The generation request was rejected. Please check the inputs.',
+    // Upstream rejections (InvalidParameter.* — e.g. Seedance 2.5 task-type
+    // pre-flight constraints) state the actionable rule in `error.message`.
+    // Surface it verbatim per the cross-app error contract; the generic copy
+    // only applies when the body carries nothing parseable.
+    parsed?.message ??
+      'The generation request was rejected. Please check the inputs.',
     raw,
   );
 }

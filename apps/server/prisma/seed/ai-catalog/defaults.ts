@@ -1181,20 +1181,24 @@ const SEEDANCE_2_5_DURATION_OPTIONS = [
 /**
  * Dreamina Seedance 2.5 (2026-06-28) — official BytePlus ModelArk contract.
  * Editing and extension are prompt-intent subtypes of multimodal reference,
- * not separate API modes. Their stricter `adaptive` / duration constraints are
- * classified asynchronously by ModelArk and surfaced verbatim on failure.
+ * not separate API modes. Declaring `omniReferenceTaskTypes` wires the
+ * `omni_reference_task_type` guidance parameter (doc 1520757): the composer
+ * gets a sub-mode selector, and edit/extend parameter locks are validated
+ * pre-submit instead of failing asynchronously after task creation.
  */
 export const SEEDANCE_2_5_PARAMETER_POLICY = {
   parameterMode: 'provider_union',
   providerFamily: 'seedance',
   defaultResolution: '720p',
-  resolutionOptions: ['480p', '720p'],
+  resolutionOptions: ['480p', '720p', '1080p'],
   defaultDurationSeconds: '5',
   durationOptions: SEEDANCE_2_5_DURATION_OPTIONS,
   defaultAspectRatio: 'auto',
   supportedAspectRatios: SEEDANCE_2_0_ASPECT_RATIOS,
   defaultOutputFormat: 'mp4',
   outputFormatOptions: ['mp4', 'mov'],
+  defaultOmniReferenceTaskType: 'auto',
+  omniReferenceTaskTypes: ['auto', 'reference', 'edit', 'extend'],
   generateAudio: { enabled: true, default: true },
   startFrame: { enabled: true },
   endFrame: { enabled: true },
@@ -1488,14 +1492,18 @@ export const SEEDANCE_2_0_PRODUCT_PRICING: AiProductPricingPolicy = {
 // charging the correct meter for reference-video jobs.
 export const SEEDANCE_2_5_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'per_second_matrix',
-  version: 'seedance-2-5-points-v1-2026-08-10',
+  version: 'seedance-2-5-points-v2-2026-09-05',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
   maxOutputCount: 1,
   defaultResolution: '720p',
-  pointsPerSecond: { '480p': 18, '720p': 38 },
-  referenceVideoPointsPerSecond: { '480p': 11, '720p': 23 },
+  // v2 2026-09-05: 1080p tier added. BytePlus 1080p costs ≈$0.41/s (promo,
+  // ends 2026-09-17; list ≈$0.57/s) vs 720p $0.121-0.139/s — priced at the
+  // same design margin as the 720p tier (128 ≈ 38 × 3.4×). Note: 1080p
+  // output is 10-bit H.265/HEVC (doc 1520757 playback-compat warning).
+  pointsPerSecond: { '480p': 18, '720p': 38, '1080p': 128 },
+  referenceVideoPointsPerSecond: { '480p': 11, '720p': 23, '1080p': 78 },
   minSeconds: 4,
   maxSeconds: 30,
   defaultSeconds: 5,

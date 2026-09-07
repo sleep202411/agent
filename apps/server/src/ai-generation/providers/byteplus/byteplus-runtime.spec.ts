@@ -10,6 +10,8 @@ const seedance25Policy = {
   supportedAspectRatios: ['auto', '16:9', '9:16'],
   defaultOutputFormat: 'mp4',
   outputFormatOptions: ['mp4', 'mov'],
+  defaultOmniReferenceTaskType: 'auto',
+  omniReferenceTaskTypes: ['auto', 'reference', 'edit', 'extend'],
   generateAudio: { enabled: true, default: true },
   referenceInputs: {
     enabled: true,
@@ -100,5 +102,67 @@ describe('Seedance 2.5 BytePlus runtime contract', () => {
     });
     expect(ruleIds).toContain('seedance-prompt-or-media');
     expect(ruleIds).not.toContain('seedance-audio-needs-visual');
+  });
+
+  it('exposes the omni-reference task type with pre-submit locks', () => {
+    const { inputSchema } = seedance25Runtime();
+
+    expect(inputSchema.properties.omniReferenceTaskType).toMatchObject({
+      type: 'string',
+      default: 'auto',
+      enum: ['auto', 'reference', 'edit', 'extend'],
+    });
+    // Hidden from generic settings panels — the composer renders it as a
+    // mode-adjacent sub-mode pill instead.
+    expect(
+      inputSchema.properties.omniReferenceTaskType?.['x-ui'],
+    ).toMatchObject({ control: 'hidden' });
+
+    const rules = inputSchema['x-rules'] ?? [];
+    const ids = rules.map((rule) => rule.id);
+    expect(ids).toContain('seedance-edit-requires-reference-video');
+    expect(ids).toContain('seedance-extend-requires-reference-video');
+    expect(ids).toContain('seedance-edit-extend-ratio-adaptive');
+    expect(ids).toContain('seedance-edit-duration-auto');
+  });
+
+  it('never grows the task-type field when the policy does not declare it', () => {
+    const runtime = createBytePlusVideoRuntimeConfig({
+      provider: 'byteplus-modelark',
+      endpointId: 'dreamina-seedance-2-0-260128',
+      name: 'Seedance 2.0',
+      description: 'Seedance 2.0 test runtime',
+      generationModes: [
+        'text_to_video',
+        'image_to_video',
+        'first_last_frame_to_video',
+        'multimodal_to_video',
+      ],
+      enabled: true,
+      requiredPlan: null,
+      queueName: 'ai-video-generation',
+      globalConcurrency: 10,
+      perUserRunning: 3,
+      perUserQueued: 10,
+      billingPolicy: {} as AiBillingPolicy,
+      // Same shape as the 2.5 policy minus the omniReferenceTaskTypes keys —
+      // the 2.0 series has no omni_reference_task_type parameter (doc 1520757).
+      parameterPolicy: (() => {
+        const {
+          defaultOmniReferenceTaskType,
+          omniReferenceTaskTypes,
+          ...rest
+        } = seedance25Policy;
+        void defaultOmniReferenceTaskType;
+        void omniReferenceTaskTypes;
+        return rest;
+      })(),
+    });
+
+    expect(
+      runtime.inputSchema.properties.omniReferenceTaskType,
+    ).toBeUndefined();
+    const ids = (runtime.inputSchema['x-rules'] ?? []).map((rule) => rule.id);
+    expect(ids).not.toContain('seedance-edit-requires-reference-video');
   });
 });

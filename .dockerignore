@@ -28,6 +28,8 @@ apps/mobile
 # every tmp dir in the repo is generated junk.
 tmp
 **/tmp
+# Generated TV fixtures belong only to local development.
+**/public/_dev
 .git
 .github
 .claude

@@ -36,7 +36,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "node scripts/ensure-local-database.mjs prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:studio": "node scripts/ensure-local-database.mjs prisma studio"
+    "db:studio": "node scripts/ensure-local-database.mjs prisma studio",
+    "seed:tv-local": "tsx scripts/seed-tv-local.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed/seed.ts"

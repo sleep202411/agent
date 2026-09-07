@@ -41,6 +41,7 @@ export function ComposerQuickSettings({
   placement = "above",
   align = "left",
   appearance = "pill",
+  lockedFields,
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
@@ -53,6 +54,9 @@ export function ComposerQuickSettings({
   align?: "left" | "right";
   /** Asset workbench rows use Onsolo-style unboxed values instead of a pill. */
   appearance?: "pill" | "plain";
+  /** Fields taken over by the active omni task type (edit/extend locks) —
+   *  their chips hide entirely; the value is forced to auto by the composer. */
+  lockedFields?: ReadonlySet<string>;
 }) {
   const t = useTranslations("canvasControls");
   const [open, setOpen] = useState(false);
@@ -73,7 +77,9 @@ export function ComposerQuickSettings({
   const nonSizeQuick = fields.filter((f) => !isSizeField(f) && isQuickSettingField(f));
   const quick = (
     appearance === "plain" ? [sizeField, ...nonSizeQuick] : [...nonSizeQuick, sizeField]
-  ).filter((f): f is SchemaFieldDescriptor => Boolean(f));
+  )
+    .filter((f): f is SchemaFieldDescriptor => Boolean(f))
+    .filter((f) => !lockedFields?.has(f.name));
   const effectiveOpen = open && Boolean(model) && quick.length > 0;
 
   useEffect(() => {

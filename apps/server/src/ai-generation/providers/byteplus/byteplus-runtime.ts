@@ -481,6 +481,10 @@ function videoInputSchemaFor(
     parameterPolicy,
     'outputFormatOptions',
   );
+  const omniTaskTypes = stringArrayFromPolicy(
+    parameterPolicy,
+    'omniReferenceTaskTypes',
+  );
 
   const properties: AiInputSchema['properties'] = {
     prompt: {
@@ -610,6 +614,29 @@ function videoInputSchemaFor(
             maxTotalFiles,
           } as Record<string, unknown>),
         } as AiInputSchema['properties'][string]['x-ui'],
+      };
+    }
+    // Seedance 2.5 `omni_reference_task_type` guidance parameter (doc
+    // 1520757): pre-guides the model's task classification so edit/extend
+    // parameter locks are validated at submit instead of failing
+    // asynchronously. Declared via policy (`omniReferenceTaskTypes`), so
+    // 2.0-series schemas never grow the field. Rendered by the composer as a
+    // sub-mode pill in omni-reference mode only — hidden from the generic
+    // settings panels, which are not mode-aware.
+    if (omniTaskTypes.length > 0) {
+      properties.omniReferenceTaskType = {
+        type: 'string',
+        title: 'Task type',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultOmniReferenceTaskType') ??
+          omniTaskTypes[0],
+        enum: omniTaskTypes,
+        'x-ui': {
+          control: 'hidden',
+          group: 'settings',
+          order: 25,
+          importance: 'secondary',
+        },
       };
     }
   }
@@ -767,6 +794,81 @@ function videoInputSchemaFor(
         message:
           'Start/end frames cannot be combined with reference media — use one or the other.',
       },
+      // Seedance 2.5 omni-reference task-type locks (doc 1520757). Deliberately
+      // no "clear when reference-less" rule: silently dropping an explicit
+      // edit/extend selection would lose user intent — a task type without
+      // its reference video fails loud instead (composer resets the type on
+      // mode switch, so only stale persisted inputs ever see that path).
+      // edit/extend ratio + edit duration locks fail loud pre-submit;
+      // ModelArk's own synchronous validation is the backstop.
+      ...(multimodal && omniTaskTypes.length > 0
+        ? [
+            {
+              id: 'seedance-edit-requires-reference-video',
+              when: {
+                field: 'omniReferenceTaskType',
+                operator: 'equals' as const,
+                value: 'edit',
+              },
+              fields: ['referenceVideos'],
+              effect: 'require' as const,
+              message: 'Video editing requires at least one reference video.',
+            },
+            {
+              id: 'seedance-extend-requires-reference-video',
+              when: {
+                field: 'omniReferenceTaskType',
+                operator: 'equals' as const,
+                value: 'extend',
+              },
+              fields: ['referenceVideos'],
+              effect: 'require' as const,
+              message: 'Video extension requires at least one reference video.',
+            },
+            {
+              id: 'seedance-edit-extend-ratio-adaptive',
+              when: {
+                all: [
+                  {
+                    field: 'omniReferenceTaskType',
+                    operator: 'in' as const,
+                    values: ['edit', 'extend'],
+                  },
+                  {
+                    field: 'aspectRatio',
+                    operator: 'notEquals' as const,
+                    value: 'auto',
+                  },
+                ],
+              },
+              fields: ['aspectRatio'],
+              effect: 'forbid' as const,
+              message:
+                'Editing and extension keep the source video\u2019s aspect ratio — set aspect ratio to Auto.',
+            },
+            {
+              id: 'seedance-edit-duration-auto',
+              when: {
+                all: [
+                  {
+                    field: 'omniReferenceTaskType',
+                    operator: 'equals' as const,
+                    value: 'edit',
+                  },
+                  {
+                    field: 'duration',
+                    operator: 'notEquals' as const,
+                    value: 'auto',
+                  },
+                ],
+              },
+              fields: ['duration'],
+              effect: 'forbid' as const,
+              message:
+                'Video editing keeps the source video\u2019s duration — set duration to Auto.',
+            },
+          ]
+        : []),
       ...(referenceInputs?.audioRequiresVisual
         ? [
             {

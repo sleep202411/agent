@@ -11,6 +11,11 @@ vi.mock("next-intl", () => ({
 
 vi.mock("@/lib/canvas-authoring/use-labels", () => ({
   useModeLabel: () => (mode: string) => mode,
+  useOmniTaskTypeLabel: () => (value: string) => value,
+  useComposerModeLabel:
+    () =>
+    (mode: string): string =>
+      mode.split("::").pop() ?? mode,
 }));
 
 vi.mock("@/lib/use-dismiss", () => ({

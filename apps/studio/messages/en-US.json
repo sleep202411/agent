@@ -4034,5 +4034,11 @@
     "approvalUntitled": "Untitled",
     "pollLost": "Lost contact with the server, so this turn is no longer being followed. It may still be running — send again or reopen the panel to check.",
     "pollTimeout": "Stopped following this turn after 10 minutes. It may still be running — reopen the panel to check."
+  },
+  "omniTaskTypes": {
+    "auto": "Auto",
+    "reference": "Reference",
+    "edit": "Edit Video",
+    "extend": "Extend Video"
   }
 }

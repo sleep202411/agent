@@ -674,24 +674,68 @@ function positiveUsageNumber(value: unknown): number | null {
     : null;
 }
 
+/** Appended to TaskTypeMismatch verdicts: the raw code alone doesn't tell the
+ *  creator what to change, and re-submitting unchanged will fail again — the
+ *  prompt and the selected task type must agree (or fall back to Auto). */
+const TASK_TYPE_MISMATCH_GUIDANCE =
+  'The model classified this task differently from the selected task type. ' +
+  'Align the prompt with the selected type (edit: add / remove / replace; ' +
+  'extend: extend / continue), or switch the task type to Auto.';
+
 function videoErrorFromTask(
   runtime: BytePlusImageRuntimeConfig,
   body: BytePlusVideoTaskResponse,
 ): AiJobError {
-  const detail = body.error?.message ?? JSON.stringify(body).slice(0, 500);
+  const status = body.status;
+  // Cancelled / expired terminal states carry no actionable `error` payload —
+  // surface stable copy instead of dumping the raw task JSON at the creator.
+  if (status === 'cancelled' || status === 'canceled') {
+    return {
+      code: 'CANCELLED_BY_USER',
+      message: `BytePlus ModelArk video task cancelled for ${runtime.endpointId}`,
+      userMessage: 'This generation was cancelled.',
+      raw: body,
+      retryable: false,
+      createdAt: new Date().toISOString(),
+    };
+  }
+  if (status === 'expired') {
+    return {
+      code: 'PROVIDER_TIMEOUT',
+      message: `BytePlus ModelArk video task expired for ${runtime.endpointId}`,
+      userMessage:
+        'The generation provider timed out before the video completed. Please try again.',
+      raw: body,
+      retryable: true,
+      createdAt: new Date().toISOString(),
+    };
+  }
+
   const providerCode = body.error?.code ?? '';
-  const taskTypeConstraint =
+  const detail = body.error?.message ?? '';
+  // Seedance 2.5 omni-reference classifier verdicts. Both are terminal input
+  // mismatches, never auto-requeued: Constraint = parameters incompatible with
+  // the judged task type; Mismatch = judged type differs from the explicitly
+  // selected one. ModelArk's Constraint message already states the actionable
+  // rule (for example, editing requires adaptive ratio and duration=-1) — keep
+  // it verbatim so creators can correct the request instead of retrying blind.
+  const isTaskTypeConstraint =
     providerCode === 'InvalidParameter.TaskTypeConstraint' ||
     /TaskTypeConstraint/i.test(detail);
+  const isTaskTypeMismatch =
+    providerCode === 'InvalidParameter.TaskTypeMismatch' ||
+    /TaskTypeMismatch/i.test(detail);
   return {
-    code: taskTypeConstraint ? 'VALIDATION_ERROR' : 'UNKNOWN',
+    code:
+      isTaskTypeConstraint || isTaskTypeMismatch
+        ? 'VALIDATION_ERROR'
+        : 'UNKNOWN',
     message: `BytePlus ModelArk video task failed for ${runtime.endpointId}: ${detail}`,
-    // ModelArk's async task classifier returns the actionable constraint here
-    // (for example, editing requires adaptive ratio and duration=-1). Preserve
-    // it verbatim so creators can correct the request instead of retrying blind.
-    userMessage: detail,
+    userMessage: isTaskTypeMismatch
+      ? `${detail} — ${TASK_TYPE_MISMATCH_GUIDANCE}`
+      : detail || 'Generation failed. Please try again.',
     raw: body,
-    retryable: !taskTypeConstraint,
+    retryable: !isTaskTypeConstraint && !isTaskTypeMismatch,
     createdAt: new Date().toISOString(),
   };
 }
