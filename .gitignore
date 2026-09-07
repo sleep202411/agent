@@ -103,5 +103,8 @@ apps/server/outputs/
 # Local registry authentication tokens
 /.npmrc
 
+# Reproducible local TV fixture media (npm run seed:tv-local -w server).
+/apps/web/public/_dev/tv/
+
 # ZCode client local state
 .zcode/

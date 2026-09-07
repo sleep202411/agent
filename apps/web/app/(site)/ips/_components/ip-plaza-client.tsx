@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   IconBolt,
   IconDeviceTv,
@@ -11,6 +12,7 @@ import {
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
+import { localizePath } from "@/src/i18n/locale-url";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -29,7 +31,6 @@ import {
 import { REGIONS, regionLabel, regionUi } from "@/src/lib/regions";
 import { IPCinematicHero } from "./ip-cinematic-hero";
 import { IPPlazaCard } from "./ip-plaza-card";
-import { TVStream } from "./tv-stream";
 import type { PlazaProject } from "./plaza-types";
 
 const PAGE_SIZE = 20;
@@ -37,6 +38,7 @@ const PAGE_SIZE = 20;
 export function IpPlazaClient() {
   const t = useTranslations("ip");
   const commonT = useTranslations("common");
+  const tvT = useTranslations("tv");
   const locale = useLocale() as Locale;
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -44,7 +46,6 @@ export function IpPlazaClient() {
   const [selectedTagCode, setSelectedTagCode] = useState("");
   const [selectedRegion, setSelectedRegion] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
-  const [tvOpen, setTvOpen] = useState(false);
 
   useEffect(() => {
     const handle = window.setTimeout(() => setDebouncedSearch(search), 300);
@@ -324,15 +325,13 @@ export function IpPlazaClient() {
       {/* Floating action cluster — pinned bottom-right, stacked. The hero frees
           this corner by moving its thumbnail switcher to the left rail. */}
       <div className="fixed bottom-6 right-6 z-40 flex flex-col items-stretch gap-2.5">
-        <Button
-          variant="outline"
-          onClick={() => setTvOpen(true)}
-          disabled={projects.length === 0}
-          className="h-11 justify-center gap-2 rounded-2xl border-white/20 bg-black/55 px-5 text-sm font-semibold text-white shadow-lg shadow-black/40 backdrop-blur-md hover:border-white/40 hover:bg-black/70 hover:text-white"
+        <Link
+          href={localizePath("/tv", locale)}
+          className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/20 bg-black/55 px-5 text-sm font-semibold text-white shadow-lg shadow-black/40 backdrop-blur-md transition-colors hover:border-white/40 hover:bg-black/70"
         >
           <IconDeviceTv className="size-4" />
-          {t("tvMode")}
-        </Button>
+          {tvT("openTv")}
+        </Link>
         <Button
           onClick={() => setCreateOpen(true)}
           className="h-11 justify-center gap-2 rounded-2xl px-5 text-sm font-semibold shadow-lg shadow-black/40"
@@ -343,16 +342,6 @@ export function IpPlazaClient() {
       </div>
 
       <NewIpCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
-
-      {tvOpen && (
-        <TVStream
-          ips={projects}
-          onClose={() => setTvOpen(false)}
-          onLoadMore={fetchNextPage}
-          hasNextPage={hasNextPage}
-          isFetchingMore={isFetchingNextPage}
-        />
-      )}
     </div>
   );
 }
