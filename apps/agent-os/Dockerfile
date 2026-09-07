@@ -49,23 +49,19 @@ COPY --from=builder /app/packages/model-router/dist ./packages/model-router/dist
 COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
 COPY --from=builder /app/apps/agent-os/dist ./apps/agent-os/dist
 
-# A workspace dependency added later without a COPY line above would otherwise
-# only surface as MODULE_NOT_FOUND when the container boots in production. Fail
-# the image build instead.
-RUN node -e "\
-const {readFileSync,existsSync}=require('node:fs');\
-const pkg=JSON.parse(readFileSync('apps/agent-os/package.json','utf8'));\
-const missing=Object.keys(pkg.dependencies||{})\
-  .filter((name)=>name.startsWith('@repo/'))\
-  .map((name)=>'packages/'+name.slice('@repo/'.length))\
-  .filter((dir)=>!existsSync(dir+'/dist/index.js'));\
-if(missing.length){\
-  console.error('Missing built dist for workspace deps: '+missing.join(', '));\
-  process.exit(1);\
-}\
-console.log('workspace dist check: ok');"
 
 USER agentos
+
+# Validate package metadata, entry points and transitive imports as the same
+# unprivileged user that runs the service. A root-only file-existence check
+# misses unreadable package.json files and broken workspace links.
+RUN node --input-type=module -e "\
+import {readFileSync} from 'node:fs';\
+const pkg=JSON.parse(readFileSync('apps/agent-os/package.json','utf8'));\
+const names=Object.keys(pkg.dependencies||{}).filter(name=>name.startsWith('@repo/'));\
+await Promise.all(names.map(name=>import(name)));\
+console.log('workspace runtime imports: ok');"
+
 WORKDIR /app/apps/agent-os
 
 EXPOSE 4301

@@ -54,21 +54,6 @@ COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capab
 COPY --from=builder /app/packages/agent-tools/dist ./packages/agent-tools/dist
 COPY --from=builder /app/packages/agent-protocol/dist ./packages/agent-protocol/dist
 
-# A workspace dependency added later without a COPY line above would otherwise
-# only surface as MODULE_NOT_FOUND when the container boots in production —
-# which is exactly how @repo/agent-skills got missed. Fail the image build.
-RUN node -e "\
-const {readFileSync,existsSync}=require('node:fs');\
-const pkg=JSON.parse(readFileSync('apps/server/package.json','utf8'));\
-const missing=Object.keys(pkg.dependencies||{})\
-  .filter((name)=>name.startsWith('@repo/'))\
-  .map((name)=>'packages/'+name.slice('@repo/'.length))\
-  .filter((dir)=>!existsSync(dir+'/dist/index.js'));\
-if(missing.length){\
-  console.error('Missing built dist for workspace deps: '+missing.join(', '));\
-  process.exit(1);\
-}\
-console.log('workspace dist check: ok');"
 
 # Copy Prisma's generated client. `npm ci --ignore-scripts` above skipped
 # the @prisma/client postinstall (which is what materializes .prisma/client/),
@@ -113,6 +98,16 @@ RUN chown -R nestjs:nodejs \
     /app/apps/server/prisma.config.ts
 
 USER nestjs
+
+# Validate package metadata, entry points and transitive imports as the same
+# unprivileged user that runs the service. A root-only file-existence check
+# misses unreadable package.json files and broken workspace links.
+RUN node --input-type=module -e "\
+import {readFileSync} from 'node:fs';\
+const pkg=JSON.parse(readFileSync('apps/server/package.json','utf8'));\
+const names=Object.keys(pkg.dependencies||{}).filter(name=>name.startsWith('@repo/'));\
+await Promise.all(names.map(name=>import(name)));\
+console.log('workspace runtime imports: ok');"
 
 WORKDIR /app/apps/server
 
