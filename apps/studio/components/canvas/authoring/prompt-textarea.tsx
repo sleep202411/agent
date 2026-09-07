@@ -39,6 +39,9 @@ import {
   MentionChip,
   MentionMenu,
   SkillMentionDialog,
+  SKILL_MENTION_ROW_CAP,
+  mentionCandidates,
+  mentionVisibleCount,
   type MentionItem,
   type SkillMarketItem,
 } from "@/lib/prompt-mentions";
@@ -517,15 +520,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
         },
         items: ({ query }) => {
           if (kind === "reference" && storage.referencePicker?.enabled) return [];
-          const normalized = query.toLowerCase();
-          const filtered = storage.mentions.filter(
-            (item) =>
-              (kind === "skill" ? item.kind === "skill" : item.kind !== "skill") &&
-              (!normalized ||
-                item.label.toLowerCase().includes(normalized) ||
-                item.name?.toLowerCase().includes(normalized))
-          );
-          return kind === "skill" ? filtered : filtered.slice(0, 10);
+          return mentionCandidates(storage.mentions, kind, query);
         },
         command: ({ editor, props: item, range }) => {
           if (!editor.view.composing) mentionInsertion(editor, range, item);
@@ -555,7 +550,7 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
                 return;
               }
               suggestion = props;
-              const visibleCount = Math.min(props.items.length, kind === "skill" ? 8 : 10);
+              const visibleCount = mentionVisibleCount(kind, props.items.length);
               active = Math.max(0, Math.min(active, visibleCount - 1));
               publish();
             },
@@ -565,11 +560,11 @@ const PromptMentionNode = Node.create<PromptMentionNodeOptions, PromptMentionNod
               if (!suggestion) return false;
               if (
                 (event.key === "ArrowDown" || event.key === "ArrowUp") &&
-                Math.min(suggestion.items.length, kind === "skill" ? 8 : 10)
+                mentionVisibleCount(kind, suggestion.items.length)
               ) {
                 event.preventDefault();
                 const delta = event.key === "ArrowDown" ? 1 : -1;
-                const visibleCount = Math.min(suggestion.items.length, kind === "skill" ? 8 : 10);
+                const visibleCount = mentionVisibleCount(kind, suggestion.items.length);
                 active = (active + delta + visibleCount) % visibleCount;
                 publish();
                 return true;
@@ -640,8 +635,9 @@ function PromptMentionMenuPortal({
   const viewportGap = 8;
   const menuWidth = state.kind === "skill" ? 288 : 256;
   const itemHeight = state.kind === "skill" ? 52 : 44;
-  const visibleCount = Math.min(state.suggestion.items.length, state.kind === "skill" ? 8 : 10);
-  const footerHeight = state.kind === "skill" && state.suggestion.items.length > 8 ? 40 : 0;
+  const visibleCount = mentionVisibleCount(state.kind, state.suggestion.items.length);
+  const footerHeight =
+    state.kind === "skill" && state.suggestion.items.length > SKILL_MENTION_ROW_CAP ? 40 : 0;
   const estimatedHeight = Math.min(
     512,
     Math.max(42, visibleCount * itemHeight + footerHeight + 12)
@@ -671,8 +667,8 @@ function PromptMentionMenuPortal({
     <MentionMenu
       options={
         state.kind === "skill"
-          ? state.suggestion.items.slice(0, 8)
-          : state.suggestion.items.slice(0, 10)
+          ? state.suggestion.items.slice(0, SKILL_MENTION_ROW_CAP)
+          : state.suggestion.items
       }
       active={state.active}
       emptyKind={state.kind}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { IconSearchOff } from "@tabler/icons-react";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,18 @@ export interface PublicCourseListProps {
 
 export function PublicCourseList({ courses, viewMode }: PublicCourseListProps) {
   const t = useTranslations("courses");
+  const [progressTick, setProgressTick] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setProgressTick((value) => value + 1);
+    bump();
+    window.addEventListener("focus", bump);
+    document.addEventListener("visibilitychange", bump);
+    return () => {
+      window.removeEventListener("focus", bump);
+      document.removeEventListener("visibilitychange", bump);
+    };
+  }, []);
 
   if (courses.length === 0) {
     return (
@@ -41,7 +54,10 @@ export function PublicCourseList({ courses, viewMode }: PublicCourseListProps) {
         <PublicCourseCard
           key={course.id}
           course={course}
-          progress={readPublicCourseProgress(course.id)}
+          // progressTick forces a re-read after returning from a detail page.
+          progress={
+            progressTick >= 0 ? readPublicCourseProgress(course.id, course.episodeCount) : 0
+          }
           variant={viewMode}
         />
       ))}
