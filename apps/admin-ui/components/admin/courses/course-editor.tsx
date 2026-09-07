@@ -172,6 +172,22 @@ function reindexVideos(videos: CourseVideo[]): CourseVideo[] {
   return videos.map((video, index) => ({ ...video, sortOrder: index + 1, sectionId: null }));
 }
 
+type UploadSlot = {
+  percent: number | null;
+};
+
+function courseCoverUploadKey() {
+  return "cover";
+}
+
+function videoFileUploadKey(clientKey: string) {
+  return `video-file:${clientKey}`;
+}
+
+function videoCoverUploadKey(clientKey: string) {
+  return `video-cover:${clientKey}`;
+}
+
 export function CourseEditor({
   course: initial,
   loadError,
@@ -188,10 +204,9 @@ export function CourseEditor({
   const [locale, setLocale] = useState<CourseLocaleCode>(COURSE_PRIMARY_LOCALE);
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
-  const [uploading, setUploading] = useState<string | null>(null);
-  const [videoUploadPercent, setVideoUploadPercent] = useState<number | null>(null);
-  /** Inline upload tip — not the top ErrorBanner (that stays for save/load). */
-  const [uploadError, setUploadError] = useState<{ key: string; message: string } | null>(null);
+  /** Per-slot in-flight uploads — covers and videos can run in parallel. */
+  const [uploads, setUploads] = useState<Record<string, UploadSlot>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(loadError);
   const [notice, setNotice] = useState<string | null>(null);
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
@@ -201,6 +216,36 @@ export function CourseEditor({
   const currentLocale = localized[locale];
 
   const titlePreview = useMemo(() => (course ? courseDisplayTitle(course) : "课程编辑"), [course]);
+
+  function beginUpload(key: string, withPercent: boolean) {
+    setUploads((current) => ({ ...current, [key]: { percent: withPercent ? 0 : null } }));
+    setUploadErrors((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function setUploadPercent(key: string, percent: number) {
+    setUploads((current) => {
+      if (!current[key]) return current;
+      return { ...current, [key]: { percent } };
+    });
+  }
+
+  function endUpload(key: string) {
+    setUploads((current) => {
+      if (!(key in current)) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }
+
+  function failUpload(key: string, message: string) {
+    setUploadErrors((current) => ({ ...current, [key]: message }));
+  }
 
   if (!course) {
     return (
@@ -236,68 +281,55 @@ export function CourseEditor({
 
   async function handleCoverUpload(file: File | null) {
     if (!file) return;
-    setUploading("cover");
-    setUploadError(null);
+    const key = courseCoverUploadKey();
+    beginUpload(key, false);
     try {
       const path = await uploadCoverFile(file);
       patchLocale({ coverUrl: path });
     } catch (err) {
-      setUploadError({
-        key: "cover",
-        message: err instanceof Error ? err.message : "文件上传失败",
-      });
+      failUpload(key, err instanceof Error ? err.message : "文件上传失败");
     } finally {
-      setUploading(null);
+      endUpload(key);
     }
   }
 
-  async function handleVideoFileUpload(index: number, file: File | null) {
+  async function handleVideoFileUpload(clientKey: string, file: File | null) {
     if (!file) return;
-    const key = `video-${index}`;
-    setUploading(key);
-    setVideoUploadPercent(0);
-    setUploadError(null);
+    const key = videoFileUploadKey(clientKey);
+    beginUpload(key, true);
     try {
-      const path = await uploadCourseVideoDirect(file, setVideoUploadPercent);
+      const path = await uploadCourseVideoDirect(file, (percent) => setUploadPercent(key, percent));
       setCourse((current) => {
         if (!current) return current;
-        const videos = current.videos.map((video, i) =>
-          i === index ? { ...video, videoKey: path } : video
+        const videos = current.videos.map((video) =>
+          video.clientKey === clientKey ? { ...video, videoKey: path } : video
         );
         return { ...current, videos };
       });
     } catch (err) {
-      setUploadError({
-        key,
-        message: err instanceof Error ? err.message : "文件上传失败",
-      });
+      failUpload(key, err instanceof Error ? err.message : "文件上传失败");
     } finally {
-      setUploading(null);
-      setVideoUploadPercent(null);
+      endUpload(key);
     }
   }
 
-  async function handleVideoCoverUpload(index: number, file: File | null) {
+  async function handleVideoCoverUpload(clientKey: string, file: File | null) {
     if (!file) return;
-    const key = `video-cover-${index}`;
-    setUploading(key);
-    setUploadError(null);
+    const key = videoCoverUploadKey(clientKey);
+    beginUpload(key, false);
     try {
       const path = await uploadCoverFile(file);
       setCourse((current) => {
         if (!current) return current;
-        const videos = current.videos.map((video, i) =>
-          i === index ? { ...video, coverUrl: path } : video
+        const videos = current.videos.map((video) =>
+          video.clientKey === clientKey ? { ...video, coverUrl: path } : video
         );
         return { ...current, videos };
       });
     } catch (err) {
-      setUploadError({
-        key,
-        message: err instanceof Error ? err.message : "文件上传失败",
-      });
+      failUpload(key, err instanceof Error ? err.message : "文件上传失败");
     } finally {
-      setUploading(null);
+      endUpload(key);
     }
   }
 
@@ -528,16 +560,20 @@ export function CourseEditor({
                       type="file"
                       accept="image/jpeg,image/png,image/gif,image/webp"
                       className="hidden"
-                      onChange={(event) => void handleCoverUpload(event.target.files?.[0] ?? null)}
+                      onChange={(event) => {
+                        const selected = event.target.files?.[0] ?? null;
+                        event.target.value = "";
+                        void handleCoverUpload(selected);
+                      }}
                     />
                     <Button
                       type="button"
                       variant="outline"
                       asChild
-                      disabled={uploading === "cover"}
+                      disabled={Boolean(uploads[courseCoverUploadKey()])}
                     >
                       <span>
-                        {uploading === "cover" ? (
+                        {uploads[courseCoverUploadKey()] ? (
                           <IconLoader2 className="size-4 animate-spin" />
                         ) : (
                           <IconUpload className="size-4" />
@@ -547,8 +583,8 @@ export function CourseEditor({
                     </Button>
                   </label>
                 </div>
-                {uploadError?.key === "cover" ? (
-                  <p className="text-[12px] text-red-600">{uploadError.message}</p>
+                {uploadErrors[courseCoverUploadKey()] ? (
+                  <p className="text-[12px] text-red-600">{uploadErrors[courseCoverUploadKey()]}</p>
                 ) : null}
               </div>
             </FormLabel>
@@ -599,208 +635,216 @@ export function CourseEditor({
           </p>
         ) : (
           <div className="space-y-4">
-            {course.videos.map((video, index) => (
-              <div
-                key={video.clientKey}
-                onDragOver={(event) => handleVideoDragOver(index, event)}
-                onDrop={(event) => handleVideoDrop(index, event)}
-                className={cn(
-                  "space-y-3 rounded-lg border border-indigo-100 bg-white p-3 transition-shadow",
-                  draggingIndex === index && "opacity-60",
-                  dragOverIndex === index &&
-                    draggingIndex != null &&
-                    draggingIndex !== index &&
-                    "border-indigo-400 ring-2 ring-indigo-200"
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(event) => handleVideoDragStart(index, event)}
-                      onDragEnd={handleVideoDragEnd}
-                      aria-label={`拖动排序视频 ${index + 1}`}
-                      title="拖动排序"
-                      className="inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 active:cursor-grabbing"
-                    >
-                      <IconGripVertical className="size-4" />
-                    </button>
-                    <p className="text-sm font-semibold text-slate-800">视频 {index + 1}</p>
+            {course.videos.map((video, index) => {
+              const fileKey = videoFileUploadKey(video.clientKey);
+              const coverKey = videoCoverUploadKey(video.clientKey);
+              const fileUpload = uploads[fileKey];
+              const coverUpload = uploads[coverKey];
+              return (
+                <div
+                  key={video.clientKey}
+                  onDragOver={(event) => handleVideoDragOver(index, event)}
+                  onDrop={(event) => handleVideoDrop(index, event)}
+                  className={cn(
+                    "space-y-3 rounded-lg border border-indigo-100 bg-white p-3 transition-shadow",
+                    draggingIndex === index && "opacity-60",
+                    dragOverIndex === index &&
+                      draggingIndex != null &&
+                      draggingIndex !== index &&
+                      "border-indigo-400 ring-2 ring-indigo-200"
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <button
+                        type="button"
+                        draggable
+                        onDragStart={(event) => handleVideoDragStart(index, event)}
+                        onDragEnd={handleVideoDragEnd}
+                        aria-label={`拖动排序视频 ${index + 1}`}
+                        title="拖动排序"
+                        className="inline-flex size-8 shrink-0 cursor-grab items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800 active:cursor-grabbing"
+                      >
+                        <IconGripVertical className="size-4" />
+                      </button>
+                      <p className="text-sm font-semibold text-slate-800">视频 {index + 1}</p>
+                    </div>
+                    <div className="flex gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={index === 0}
+                        onClick={() => moveVideo(index, -1)}
+                      >
+                        <IconArrowUp className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={index === course.videos.length - 1}
+                        onClick={() => moveVideo(index, 1)}
+                      >
+                        <IconArrowDown className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setVideos(course.videos.filter((_, i) => i !== index))}
+                      >
+                        <IconTrash className="size-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="flex gap-1.5">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={index === 0}
-                      onClick={() => moveVideo(index, -1)}
-                    >
-                      <IconArrowUp className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      disabled={index === course.videos.length - 1}
-                      onClick={() => moveVideo(index, 1)}
-                    >
-                      <IconArrowDown className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setVideos(course.videos.filter((_, i) => i !== index))}
-                    >
-                      <IconTrash className="size-4" />
-                    </Button>
-                  </div>
-                </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <FormLabel label="视频文件">
-                      <div className="space-y-1.5">
-                        <div className="flex gap-2">
-                          <TextInput
-                            value={video.videoKey}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setCourse((current) => {
-                                if (!current) return current;
-                                const videos = current.videos.map((item, i) =>
-                                  i === index ? { ...item, videoKey: value } : item
-                                );
-                                return { ...current, videos };
-                              });
-                            }}
-                            placeholder="course/....mp4"
-                          />
-                          <label className="inline-flex shrink-0">
-                            <input
-                              type="file"
-                              accept="video/*"
-                              className="hidden"
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                    <div className="min-w-0 flex-1 space-y-3">
+                      <FormLabel label="视频文件">
+                        <div className="space-y-1.5">
+                          <div className="flex gap-2">
+                            <TextInput
+                              value={video.videoKey}
                               onChange={(event) => {
-                                const selected = event.target.files?.[0] ?? null;
-                                event.target.value = "";
-                                void handleVideoFileUpload(index, selected);
+                                const value = event.target.value;
+                                setCourse((current) => {
+                                  if (!current) return current;
+                                  const videos = current.videos.map((item, i) =>
+                                    i === index ? { ...item, videoKey: value } : item
+                                  );
+                                  return { ...current, videos };
+                                });
                               }}
+                              placeholder="course/....mp4"
                             />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              asChild
-                              disabled={uploading === `video-${index}`}
-                            >
-                              <span>
-                                {uploading === `video-${index}` ? (
-                                  <IconLoader2 className="size-4 animate-spin" />
-                                ) : (
-                                  <IconUpload className="size-4" />
-                                )}
-                                {uploading === `video-${index}` && videoUploadPercent != null
-                                  ? `${videoUploadPercent}%`
-                                  : "上传"}
-                              </span>
-                            </Button>
-                          </label>
-                        </div>
-                        {uploading === `video-${index}` && videoUploadPercent != null ? (
-                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className="h-full rounded-full bg-slate-800 transition-[width] duration-150"
-                              style={{ width: `${videoUploadPercent}%` }}
-                            />
+                            <label className="inline-flex shrink-0">
+                              <input
+                                type="file"
+                                accept="video/*"
+                                className="hidden"
+                                onChange={(event) => {
+                                  const selected = event.target.files?.[0] ?? null;
+                                  event.target.value = "";
+                                  void handleVideoFileUpload(video.clientKey, selected);
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                asChild
+                                disabled={Boolean(fileUpload)}
+                              >
+                                <span>
+                                  {fileUpload ? (
+                                    <IconLoader2 className="size-4 animate-spin" />
+                                  ) : (
+                                    <IconUpload className="size-4" />
+                                  )}
+                                  {fileUpload && fileUpload.percent != null
+                                    ? `${fileUpload.percent}%`
+                                    : "上传"}
+                                </span>
+                              </Button>
+                            </label>
                           </div>
-                        ) : null}
-                        {uploadError?.key === `video-${index}` ? (
-                          <p className="text-[12px] text-red-600">{uploadError.message}</p>
-                        ) : null}
-                      </div>
-                    </FormLabel>
-                    <FormLabel label="视频封面">
-                      <div className="space-y-1.5">
-                        <div className="flex gap-2">
-                          <TextInput
-                            value={video.coverUrl}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setCourse((current) => {
-                                if (!current) return current;
-                                const videos = current.videos.map((item, i) =>
-                                  i === index ? { ...item, coverUrl: value } : item
-                                );
-                                return { ...current, videos };
-                              });
-                            }}
-                            placeholder="可选"
-                          />
-                          <label className="inline-flex shrink-0">
-                            <input
-                              type="file"
-                              accept="image/jpeg,image/png,image/gif,image/webp"
-                              className="hidden"
-                              onChange={(event) =>
-                                void handleVideoCoverUpload(index, event.target.files?.[0] ?? null)
-                              }
-                            />
-                            <Button
-                              type="button"
-                              variant="outline"
-                              asChild
-                              disabled={uploading === `video-cover-${index}`}
-                            >
-                              <span>
-                                {uploading === `video-cover-${index}` ? (
-                                  <IconLoader2 className="size-4 animate-spin" />
-                                ) : (
-                                  <IconUpload className="size-4" />
-                                )}
-                                上传
-                              </span>
-                            </Button>
-                          </label>
+                          {fileUpload && fileUpload.percent != null ? (
+                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                              <div
+                                className="h-full rounded-full bg-slate-800 transition-[width] duration-150"
+                                style={{ width: `${fileUpload.percent}%` }}
+                              />
+                            </div>
+                          ) : null}
+                          {uploadErrors[fileKey] ? (
+                            <p className="text-[12px] text-red-600">{uploadErrors[fileKey]}</p>
+                          ) : null}
                         </div>
-                        {uploadError?.key === `video-cover-${index}` ? (
-                          <p className="text-[12px] text-red-600">{uploadError.message}</p>
-                        ) : null}
-                      </div>
-                    </FormLabel>
+                      </FormLabel>
+                      <FormLabel label="视频封面">
+                        <div className="space-y-1.5">
+                          <div className="flex gap-2">
+                            <TextInput
+                              value={video.coverUrl}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setCourse((current) => {
+                                  if (!current) return current;
+                                  const videos = current.videos.map((item, i) =>
+                                    i === index ? { ...item, coverUrl: value } : item
+                                  );
+                                  return { ...current, videos };
+                                });
+                              }}
+                              placeholder="可选"
+                            />
+                            <label className="inline-flex shrink-0">
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/gif,image/webp"
+                                className="hidden"
+                                onChange={(event) => {
+                                  const selected = event.target.files?.[0] ?? null;
+                                  event.target.value = "";
+                                  void handleVideoCoverUpload(video.clientKey, selected);
+                                }}
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                asChild
+                                disabled={Boolean(coverUpload)}
+                              >
+                                <span>
+                                  {coverUpload ? (
+                                    <IconLoader2 className="size-4 animate-spin" />
+                                  ) : (
+                                    <IconUpload className="size-4" />
+                                  )}
+                                  上传
+                                </span>
+                              </Button>
+                            </label>
+                          </div>
+                          {uploadErrors[coverKey] ? (
+                            <p className="text-[12px] text-red-600">{uploadErrors[coverKey]}</p>
+                          ) : null}
+                        </div>
+                      </FormLabel>
+                    </div>
+                    <CoverThumb url={video.coverUrl} label="封面" className="max-w-[160px]" />
                   </div>
-                  <CoverThumb url={video.coverUrl} label="封面" className="max-w-[160px]" />
-                </div>
 
-                <div className="grid gap-3 md:grid-cols-3">
-                  {COURSE_LOCALES.map((item) => (
-                    <FormLabel key={item.code} label={`标题 · ${item.short}`}>
-                      <TextInput
-                        value={video.localized[item.code].title}
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          setCourse((current) => {
-                            if (!current) return current;
-                            const videos = current.videos.map((entry, i) => {
-                              if (i !== index) return entry;
-                              return {
-                                ...entry,
-                                localized: {
-                                  ...entry.localized,
-                                  [item.code]: { title: value },
-                                },
-                              };
+                  <div className="grid gap-3 md:grid-cols-3">
+                    {COURSE_LOCALES.map((item) => (
+                      <FormLabel key={item.code} label={`标题 · ${item.short}`}>
+                        <TextInput
+                          value={video.localized[item.code].title}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setCourse((current) => {
+                              if (!current) return current;
+                              const videos = current.videos.map((entry, i) => {
+                                if (i !== index) return entry;
+                                return {
+                                  ...entry,
+                                  localized: {
+                                    ...entry.localized,
+                                    [item.code]: { title: value },
+                                  },
+                                };
+                              });
+                              return { ...current, videos };
                             });
-                            return { ...current, videos };
-                          });
-                        }}
-                        placeholder={`${item.label} 标题`}
-                      />
-                    </FormLabel>
-                  ))}
+                          }}
+                          placeholder={`${item.label} 标题`}
+                        />
+                      </FormLabel>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
