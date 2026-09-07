@@ -218,6 +218,7 @@ server:
   extraSecretRefs: []
   env:
     NEXT_PUBLIC_SITE_REGION: cn
+    REFERRAL_INVITE_BASE_URL: https://fizzdragon.fizzspace.cn
     # Legacy Java stores project covers as relative keys in the CN `shotive`
     # bucket. This explicit override prevents the CN cell from ever inheriting
     # the .com Singapore bucket when resolving those keys.

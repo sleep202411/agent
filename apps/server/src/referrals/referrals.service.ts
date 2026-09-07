@@ -32,6 +32,7 @@ import { JavaUserLookupService } from '../integrations/java/user-lookup.service'
 import { WalletLedgerService, WorkspacesService } from '../workspaces';
 import { decodeUserId, encodeUserId } from '@repo/shared';
 import type { RowDataPacket } from 'mysql2';
+import { resolveReferralInviteBaseUrl } from './referrals.config';
 import type {
   CreateReferralMilestoneInput,
   ReferralDashboardDTO,
@@ -68,11 +69,9 @@ const EMPTY_DASHBOARD: ReferralDashboardDTO = {
 @Injectable()
 export class ReferralsService {
   private readonly logger = new Logger(ReferralsService.name);
-  /** Invite-link base — the apps/web origin. The shared link lands on /register
-   *  with the code prefilled (recommendationCode). .com default; CN overrides. */
-  private readonly inviteBase = (
-    process.env.REFERRAL_INVITE_BASE_URL ?? 'https://fizzdragon.com'
-  ).replace(/\/+$/, '');
+  // Validate at service construction so a missing origin fails startup,
+  // before an invitation can be sent to the wrong site's account system.
+  private readonly inviteBase = resolveReferralInviteBaseUrl(process.env);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -214,10 +213,9 @@ export class ReferralsService {
     return {
       programAvailable: true,
       inviteCode: code,
-      inviteUrl:
-        code && this.inviteBase
-          ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
-          : null,
+      inviteUrl: code
+        ? `${this.inviteBase}/register?recommendationCode=${encodeURIComponent(code)}`
+        : null,
       currency: defaultCurrency(),
       totals: computeTotals(cashByStatus, referralCount),
       inviteeBenefit: {

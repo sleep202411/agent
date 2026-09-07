@@ -122,7 +122,7 @@ export function ReferralDashboardPage() {
   );
 
   const copyInvite = useCallback(async () => {
-    const text = dashboard?.inviteUrl ?? dashboard?.inviteCode;
+    const text = dashboard?.inviteUrl;
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -239,7 +239,7 @@ export function ReferralDashboardPage() {
               <button
                 type="button"
                 onClick={() => void copyInvite()}
-                disabled={!dashboard.inviteCode}
+                disabled={!dashboard.inviteUrl}
                 className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-muted text-sm font-semibold text-foreground transition hover:bg-white/15 disabled:opacity-40"
               >
                 <IconCopy className="size-4" />

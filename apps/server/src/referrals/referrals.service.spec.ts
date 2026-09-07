@@ -13,6 +13,15 @@ import { REWARD_ITEM_KINDS } from './dto';
 const REFERRER = 'user-referrer';
 const REFEREE = 'user-referee';
 
+beforeEach(() => {
+  jest.replaceProperty(process, 'env', {
+    ...process.env,
+    REFERRAL_INVITE_BASE_URL: 'https://referrals.test.invalid',
+  });
+});
+
+afterEach(() => jest.restoreAllMocks());
+
 function programRow(over: Record<string, unknown> = {}) {
   return {
     id: 'prog-1',
@@ -173,8 +182,53 @@ function makeService() {
     workspaces as never,
     javaUsers as never,
   );
-  return { service, prisma, tx, legacy, entitlements, walletLedger };
+  return { service, prisma, tx, legacy, entitlements, walletLedger, javaUsers };
 }
+
+describe('invitation links', () => {
+  it.each([
+    'https://fizzdragon.com',
+    'https://fizzdragon.fizzspace.cn',
+    'http://localhost:9527',
+  ])(
+    'returns a registration link on the configured origin %s',
+    async (origin) => {
+      process.env.REFERRAL_INVITE_BASE_URL = `${origin}/`;
+      const { service, prisma, javaUsers } = makeService();
+      prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+      javaUsers.findRecommendationCode.mockResolvedValue('CODE/&? 9');
+
+      const dashboard = await service.getDashboard(REFERRER, 'test-cookie');
+
+      expect(dashboard.inviteCode).toBe('CODE/&? 9');
+      expect(dashboard.inviteUrl).toBe(
+        `${origin}/register?recommendationCode=CODE%2F%26%3F%209`,
+      );
+      expect(javaUsers.findRecommendationCode).toHaveBeenCalledWith(
+        'test-cookie',
+      );
+    },
+  );
+
+  it('fails service startup when the origin is missing, including on CN', () => {
+    delete process.env.REFERRAL_INVITE_BASE_URL;
+    process.env.NEXT_PUBLIC_SITE_REGION = 'cn';
+
+    expect(makeService).toThrow(
+      'Missing required env var: REFERRAL_INVITE_BASE_URL',
+    );
+  });
+
+  it('does not invent an invitation when Java has no code', async () => {
+    const { service, prisma } = makeService();
+    prisma.referralProgram.findUnique.mockResolvedValue(programRow());
+
+    const dashboard = await service.getDashboard(REFERRER, 'test-cookie');
+
+    expect(dashboard.inviteCode).toBeNull();
+    expect(dashboard.inviteUrl).toBeNull();
+  });
+});
 
 type CommissionOrder = {
   id: string;
@@ -307,7 +361,9 @@ describe('accrueCommissionForOrder', () => {
     } as CommissionOrder);
 
     expect(prisma.referralReward.create).toHaveBeenCalledTimes(1);
-    const { data } = prisma.referralReward.create.mock.calls[0][0];
+    const { data } = firstCallArg<{ data: Prisma.ReferralRewardCreateInput }>(
+      prisma.referralReward.create,
+    );
     expect(data.currency).toBe('CNY');
     expect(data.amountMinor).toBe(299n);
     expect(data.subtitle).toContain('¥9.99');
@@ -1107,7 +1163,7 @@ describe('countReferralRegistrations', () => {
     const { service, legacy } = makeService();
     legacy.queryOne.mockResolvedValue({ n: 7 });
     await expect(call(service, 'CODE9')).resolves.toBe(7);
-    const sql = legacy.queryOne.mock.calls[0][0] as string;
+    const sql = firstCallArg<string>(legacy.queryOne);
     expect(sql).toContain('recommendation_code_source = ?');
     expect(sql).not.toContain('phone');
   });
