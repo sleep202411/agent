@@ -13,13 +13,15 @@ render="$(helm template fizzdragon "$CHART" -n fizzdragon -f "$CHART/values.yaml
   --set-string "web.image.tag=$REVISION" \
   --set-string "studio.image.tag=$REVISION" \
   --set-string "adminUi.image.tag=$REVISION" \
-  --set-string "server.image.tag=$REVISION")"
+  --set-string "server.image.tag=$REVISION" \
+  --set-string "agentOs.image.tag=$REVISION")"
 
 grep -q 'name: AGENT_OS_ENABLED' <<<"$render" || fail "server must receive AGENT_OS_ENABLED"
-grep -A 1 'name: AGENT_OS_ENABLED' <<<"$render" | grep -q 'value: "false"' || fail "Agent OS must be off on CN"
-grep -q 'name: fizzdragon-agent-os-server-secrets' <<<"$render" && fail "disabled Agent OS must not require its Secret"
-grep -q 'name: fizzdragon-agent-os$' <<<"$render" && fail "disabled Agent OS must not render a workload"
-ok "Agent OS is fully disabled, including its server Secret dependency"
+grep -A 1 'name: AGENT_OS_ENABLED' <<<"$render" | grep -q 'value: "true"' || fail "Agent OS must be enabled on CN"
+grep -q 'name: fizzdragon-agent-os-server-secrets' <<<"$render" || fail "Agent OS server Secret dependency is missing"
+grep -q 'name: fizzdragon-agent-os$' <<<"$render" || fail "Agent OS workload is missing"
+grep -q 'value: "https://dashscope.aliyuncs.com/compatible-mode/v1"' <<<"$render" || fail "Agent OS must use the mainland model endpoint"
+ok "Agent OS is enabled with its scoped Secret and mainland model endpoint"
 
 grep -q 'name: fizzdragon-temporal$' <<<"$render" && fail "Temporal must not render before CN infrastructure exists"
 ok "Temporal is absent from CN"
