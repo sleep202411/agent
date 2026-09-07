@@ -31,6 +31,8 @@ export DOCKER_BUILDKIT=1
 # npmmirror via Dockerfile NPM_REGISTRY build-arg — never a context-root .npmrc
 # (breaks turbo prune lockfile emission).
 NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
+# Keep system-package downloads in region as well as npm dependencies.
+APK_MIRROR="${APK_MIRROR:-mirrors.aliyun.com}"
 
 set -a; source apps/web/.env.production.cn; set +a
 SERVER_URL=http://fizzdragon-server:3001
@@ -64,7 +66,7 @@ for service in $SERVICES; do
   esac
 done
 
-want server && build server apps/server/Dockerfile
+want server && build server apps/server/Dockerfile --build-arg "APK_MIRROR=$APK_MIRROR"
 want agent && build agent apps/agent/Dockerfile
 want agent-os && build agent-os apps/agent-os/Dockerfile
 want admin-ui && build admin-ui apps/admin-ui/Dockerfile --build-arg NEXT_PUBLIC_ADMIN_UI_BASE_PATH=/

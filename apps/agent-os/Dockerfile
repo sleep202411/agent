@@ -49,7 +49,6 @@ COPY --from=builder /app/packages/model-router/dist ./packages/model-router/dist
 COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
 COPY --from=builder /app/apps/agent-os/dist ./apps/agent-os/dist
 
-
 USER agentos
 
 # Validate package metadata, entry points and transitive imports as the same

@@ -34,7 +34,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3001
 
-RUN apk add --no-cache ffmpeg && \
+ARG APK_MIRROR=dl-cdn.alpinelinux.org
+RUN sed -i "s/dl-cdn.alpinelinux.org/${APK_MIRROR}/g" /etc/apk/repositories && \
+    apk add --no-cache ffmpeg && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nestjs
 
@@ -53,7 +55,6 @@ COPY --from=builder /app/packages/agent-skills/dist ./packages/agent-skills/dist
 COPY --from=builder /app/packages/agent-capabilities/dist ./packages/agent-capabilities/dist
 COPY --from=builder /app/packages/agent-tools/dist ./packages/agent-tools/dist
 COPY --from=builder /app/packages/agent-protocol/dist ./packages/agent-protocol/dist
-
 
 # Copy Prisma's generated client. `npm ci --ignore-scripts` above skipped
 # the @prisma/client postinstall (which is what materializes .prisma/client/),
