@@ -209,7 +209,7 @@ export function CanvasVideo({
       {(playback.failed || source.error) && (
         <VideoPlaybackFallback
           compact
-          className="nodrag nopan"
+          className="nodrag nopan nokey"
           onRetry={thumbnail ? undefined : () => void retry()}
           errorCode={playback.errorCode}
           message={source.error?.message}
