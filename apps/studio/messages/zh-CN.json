@@ -1401,7 +1401,9 @@
       },
       "preview": "放大查看",
       "download": "下载",
-      "rename": "重命名"
+      "rename": "重命名",
+      "preparingPreview": "正在准备预览",
+      "previewUnavailable": "预览暂不可用"
     },
     "reference": {
       "alt": "参考",

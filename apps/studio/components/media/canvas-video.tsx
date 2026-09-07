@@ -1,23 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState, type MouseEventHandler } from "react";
-import { IconPlayerPlay } from "@tabler/icons-react";
+import { IconLoader2, IconPhotoOff, IconPlayerPlay } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
 import { cn } from "@/lib/utils";
 import { useCanvasDocumentId } from "@/components/canvas/authoring/canvas-document-context";
-import { acquireVideoPoster } from "./video-poster";
+import { useVideoPoster } from "./use-video-poster";
 import { useMediaPlaybackSource } from "./use-media-playback-source";
 
 let playingVideo: { element: HTMLVideoElement; stop: () => void } | null = null;
 
-/** First frames are images; only an explicit/hover preview owns a live player. */
+/** Posters outlive playback; only an explicit preview owns a live player. */
 export function CanvasVideo({
   src,
   assetId,
   documentId,
   thumbnail = false,
-  hoverPlay = false,
   autoPlay = false,
   muted = !autoPlay,
   className,
@@ -28,7 +27,6 @@ export function CanvasVideo({
   assetId?: string;
   documentId?: string | null;
   thumbnail?: boolean;
-  hoverPlay?: boolean;
   autoPlay?: boolean;
   muted?: boolean;
   className?: string;
@@ -41,58 +39,43 @@ export function CanvasVideo({
   const [visible, setVisible] = useState(autoPlay);
   const [active, setActive] = useState(autoPlay);
   const [shouldPlay, setShouldPlay] = useState(true);
-  const [poster, setPoster] = useState<{ src: string; url: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [posterFailure, setPosterFailure] = useState<string | null>(null);
-  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [failedPoster, setFailedPoster] = useState<string | null>(null);
   const position = useRef(0);
   const ratioCallback = useRef(onLoadedRatio);
   useEffect(() => {
     ratioCallback.current = onLoadedRatio;
   }, [onLoadedRatio]);
   const inheritedDocumentId = useCanvasDocumentId();
-  const source = useMediaPlaybackSource(src, visible, assetId, documentId ?? inheritedDocumentId);
+  const poster = useVideoPoster(src, assetId, documentId ?? inheritedDocumentId, visible);
+  const posterUrl = poster.data?.status === "ready" ? poster.data.url : undefined;
+  const posterFailed = posterUrl
+    ? failedPoster === posterUrl
+    : poster.isError || poster.data?.status === "failed";
+  const source = useMediaPlaybackSource(
+    src,
+    visible && active,
+    assetId,
+    documentId ?? inheritedDocumentId
+  );
   const playback = useVideoPlaybackError(source.src);
 
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
       setVisible(entry.isIntersecting);
       if (!entry.isIntersecting) {
-        clearTimeout(hoverTimer.current);
         setActive(false);
       }
     });
     if (container.current) observer.observe(container.current);
     return () => {
       observer.disconnect();
-      clearTimeout(hoverTimer.current);
     };
   }, []);
 
   useEffect(() => {
-    if (!visible || !source.src || active) return;
-    let cancelled = false;
-    const request = acquireVideoPoster(source.src);
-    request.promise
-      .then((image) => {
-        if (cancelled) return;
-        setPoster({ src, url: image.url });
-        setPosterFailure(null);
-        ratioCallback.current?.(`${image.width} / ${image.height}`);
-      })
-      .catch(() => {
-        if (!cancelled) setPosterFailure(src);
-      });
-    return () => {
-      cancelled = true;
-      request.release();
-    };
-  }, [visible, source.src, src, attempt, active]);
-
-  useEffect(() => {
     const hide = () => {
       if (document.hidden) {
-        clearTimeout(hoverTimer.current);
         setActive(false);
       }
     };
@@ -108,6 +91,7 @@ export function CanvasVideo({
     const element = video.current;
     return () => {
       if (!element) return;
+      if (element.readyState >= 1) position.current = element.currentTime;
       if (playingVideo?.element === element) playingVideo = null;
       element.pause();
       element.removeAttribute("src");
@@ -117,7 +101,8 @@ export function CanvasVideo({
 
   const retry = async () => {
     playback.reset();
-    setPosterFailure(null);
+    setFailedPoster(null);
+    void poster.refetch();
     await source.refresh();
     setAttempt((value) => value + 1);
     setShouldPlay(true);
@@ -131,45 +116,50 @@ export function CanvasVideo({
       data-media-error-code={playback.failed ? playback.errorCode : undefined}
       className={cn("relative overflow-hidden bg-black/20", className)}
       onDoubleClick={onDoubleClick}
-      onMouseEnter={() => {
-        if (hoverPlay && !thumbnail)
-          hoverTimer.current = setTimeout(() => {
-            setShouldPlay(true);
-            setActive(true);
-          }, 260);
-      }}
-      onMouseLeave={() => {
-        clearTimeout(hoverTimer.current);
-        if (hoverPlay) setActive(false);
-      }}
     >
-      {poster?.src === src ? (
+      {posterUrl && !posterFailed ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={poster.url}
+          src={posterUrl}
           alt=""
           draggable={false}
-          className="absolute inset-0 size-full object-contain"
+          onError={() => setFailedPoster(posterUrl)}
+          className="pointer-events-none absolute inset-0 size-full object-contain"
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (image.naturalWidth && image.naturalHeight)
+              ratioCallback.current?.(`${image.naturalWidth} / ${image.naturalHeight}`);
+          }}
         />
       ) : (
-        <span className="absolute inset-0 grid place-items-center text-white/40">
-          <IconPlayerPlay className="size-6" />
+        <span className="pointer-events-none absolute inset-0 flex items-end justify-start p-3 text-white/40">
+          {posterFailed ? (
+            <IconPhotoOff aria-label={t("media.previewUnavailable")} className="size-4" />
+          ) : (
+            <IconLoader2 aria-label={t("media.preparingPreview")} className="size-4 animate-spin" />
+          )}
         </span>
       )}
       {!thumbnail && !active && (
         <button
           type="button"
           aria-label={t("media.preview")}
-          className="nodrag absolute inset-0 grid place-items-center text-white/85"
+          className="nodrag nopan absolute top-1/2 left-1/2 z-10 grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white/85 focus-visible:outline-2 focus-visible:outline-white"
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
+            if (posterFailed) {
+              setFailedPoster(null);
+              void poster.refetch();
+            }
             setShouldPlay(true);
             setActive(true);
           }}
         >
-          <span className="grid size-9 place-items-center rounded-full bg-black/45">
-            <IconPlayerPlay className="size-5" />
-          </span>
+          <IconPlayerPlay className="size-5" />
         </button>
       )}
       {visible && active && source.src && (
@@ -177,18 +167,24 @@ export function CanvasVideo({
           key={`${source.src}:${attempt}`}
           ref={video}
           src={source.src}
+          poster={posterFailed ? undefined : posterUrl}
           autoPlay={shouldPlay}
           controls
           muted={muted}
           playsInline
-          loop={hoverPlay}
           preload="metadata"
           draggable={false}
-          className="nodrag nowheel absolute inset-0 size-full object-contain"
+          className="nodrag nopan nowheel absolute inset-0 size-full object-contain"
+          onPointerDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
           onError={playback.onError}
           onCanPlay={playback.onCanPlay}
           onTimeUpdate={(event) => {
-            position.current = event.currentTarget.currentTime;
+            if (event.currentTarget === video.current && event.currentTarget.readyState >= 1)
+              position.current = event.currentTarget.currentTime;
           }}
           onLoadedMetadata={(event) => {
             const media = event.currentTarget;
@@ -210,9 +206,10 @@ export function CanvasVideo({
           }}
         />
       )}
-      {(playback.failed || source.error || (thumbnail && posterFailure === src)) && (
+      {(playback.failed || source.error) && (
         <VideoPlaybackFallback
           compact
+          className="nodrag nopan"
           onRetry={thumbnail ? undefined : () => void retry()}
           errorCode={playback.errorCode}
           message={source.error?.message}

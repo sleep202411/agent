@@ -6,6 +6,7 @@ import {
   MediaStorageProvider,
   Prisma,
 } from '@prisma/client';
+import { ensureVideoPosterJob } from './media-video-poster';
 
 const ORIGINAL_VARIANT_KEY = 'original';
 /** Playback variant key for the ABR-HLS rendition (the `resolveVariant(asset,
@@ -73,6 +74,10 @@ export async function ensureOriginalMediaPlacement(
     },
     select: { id: true },
   });
+
+  if (input.contentType.startsWith('video/')) {
+    await ensureVideoPosterJob(client, input.assetId);
+  }
 
   const existingPlacement = await client.mediaObjectPlacement.findFirst({
     where: {

@@ -1401,7 +1401,9 @@
       },
       "preview": "Preview",
       "download": "Download",
-      "rename": "Rename"
+      "rename": "Rename",
+      "preparingPreview": "Preparing preview",
+      "previewUnavailable": "Preview unavailable"
     },
     "reference": {
       "alt": "Reference",

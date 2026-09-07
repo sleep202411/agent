@@ -26,6 +26,7 @@ import { MediaUploadService } from './media-upload.service';
 import { PlayableVideoProbeService } from './playable-video-probe.service';
 import { PlayableAudioProbeService } from './playable-audio-probe.service';
 import { UploadedImageProbeService } from './uploaded-image-probe.service';
+import { VideoPosterService } from './video-poster.service';
 
 /**
  * Media domain — direct-to-storage upload URL issuance.
@@ -75,6 +76,7 @@ import { UploadedImageProbeService } from './uploaded-image-probe.service';
     MediaModerationAdminService,
     MediaProcessingService,
     MediaProcessingWorkerService,
+    VideoPosterService,
     CdnPurgeProvider,
     CdnPurgeWorkerService,
     MediaTakedownWorkerService,

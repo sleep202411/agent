@@ -969,7 +969,6 @@ function GenerationCard({
               <AudioPreview src={generation.outputs[0].url} title={displayTitle} />
             ) : generation.outputs[0].type === "video" ? (
               <CanvasVideo
-                hoverPlay
                 src={generation.outputs[0].url}
                 assetId={generation.outputs[0].assetId}
                 onLoadedRatio={setLoadedRatio}

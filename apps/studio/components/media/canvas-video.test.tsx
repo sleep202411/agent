@@ -44,16 +44,22 @@ afterEach(async () => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
-async function render(count = 1, hoverPlay = false) {
+async function render(count = 1) {
   await act(async () =>
     root.render(
       <QueryClientProvider client={client}>
         {Array.from({ length: count }, (_, index) => (
-          <CanvasVideo key={index} src={`https://cdn.test/${index}.mp4`} hoverPlay={hoverPlay} />
+          <CanvasVideo key={index} src={`https://cdn.test/${index}.mp4`} />
         ))}
       </QueryClientProvider>
     )
   );
+}
+async function settle() {
+  await act(async () => {
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(1);
+    else await new Promise((resolve) => setTimeout(resolve, 1));
+  });
 }
 async function visibility(index: number, visible: boolean) {
   await act(async () =>
@@ -62,8 +68,91 @@ async function visibility(index: number, visible: boolean) {
       {} as IntersectionObserver
     )
   );
+  await settle();
 }
 describe("canvas video resource lifetime", () => {
+  it("keeps playback available when a poster image fails and retries it on play", async () => {
+    await render();
+    await visibility(0, true);
+    await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.querySelector("button")).not.toBeNull();
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    await settle();
+    expect(container.querySelector("video")).not.toBeNull();
+    expect(container.querySelector("img")).not.toBeNull();
+  });
+  it("finishes the poster even when playback starts first and retains it after leaving", async () => {
+    let resolvePoster!: (poster: { url: string; width: number; height: number }) => void;
+    vi.mocked(acquireVideoPoster).mockReturnValue({
+      promise: new Promise((resolve) => {
+        resolvePoster = resolve;
+      }),
+      release,
+    });
+    await render();
+    await visibility(0, true);
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    expect(release).not.toHaveBeenCalled();
+    await act(async () =>
+      resolvePoster({ url: "data:image/jpeg;base64,late", width: 1280, height: 720 })
+    );
+    await settle();
+    await act(async () =>
+      container.firstElementChild!.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }))
+    );
+    expect(container.querySelector("video")).not.toBeNull();
+    await visibility(0, false);
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("late");
+    await visibility(0, true);
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("late");
+    expect(container.querySelector("video")).toBeNull();
+  });
+  it("keeps playback controls separate from node selection and Composer", async () => {
+    const select = vi.fn();
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <div onPointerDown={select} onMouseDown={select} onClick={select}>
+            <CanvasVideo src="https://cdn.test/0.mp4" />
+          </div>
+        </QueryClientProvider>
+      )
+    );
+    await visibility(0, true);
+    const button = container.querySelector("button")!;
+    await act(async () => {
+      button.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+      button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      button.click();
+    });
+    const media = container.querySelector("video")!;
+    await act(async () => {
+      media.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+      media.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      media.click();
+    });
+    expect(select).not.toHaveBeenCalled();
+    await visibility(0, false);
+    await visibility(0, true);
+    await act(async () => (container.firstElementChild!.firstElementChild as HTMLElement).click());
+    expect(select).toHaveBeenCalledTimes(1);
+  });
+  it("restores progress after releasing a player outside the viewport", async () => {
+    await render();
+    await visibility(0, true);
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    const first = container.querySelector("video")!;
+    Object.defineProperty(first, "readyState", { value: 2 });
+    first.currentTime = 4.5;
+    await visibility(0, false);
+    await visibility(0, true);
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    const second = container.querySelector("video")!;
+    Object.defineProperty(second, "duration", { value: 8 });
+    await act(async () => second.dispatchEvent(new Event("loadedmetadata")));
+    expect(second.currentTime).toBe(4.5);
+  });
   it("keeps thumbnail failures passive inside asset selection buttons", async () => {
     vi.mocked(acquireVideoPoster).mockImplementation(() => ({
       promise: Promise.reject(new Error("Preview unavailable")),
@@ -79,7 +168,9 @@ describe("canvas video resource lifetime", () => {
       )
     );
     await visibility(0, true);
-    expect(container.textContent).toContain("previewUnsupported");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
     expect(container.querySelectorAll("button")).toHaveLength(1);
   });
   it("releases the previous player even when it was already paused", async () => {
@@ -97,9 +188,9 @@ describe("canvas video resource lifetime", () => {
     expect(container.querySelector("video")).toBe(current);
     expect(previous.hasAttribute("src")).toBe(false);
   });
-  it("cancels a pending hover preview when the tile leaves the viewport", async () => {
+  it("does not start playback when the pointer hovers over a tile", async () => {
     vi.useFakeTimers();
-    await render(1, true);
+    await render(1);
     await visibility(0, true);
     await act(async () =>
       container.firstElementChild!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))
@@ -144,7 +235,7 @@ describe("canvas video resource lifetime", () => {
     await visibility(0, false);
     expect(container.querySelector("video")).toBeNull();
     expect(video.getAttribute("src")).toBeNull();
-    expect(release).toHaveBeenCalled();
+    expect(container.querySelector("img")).not.toBeNull();
   });
   it("clears a transient error after playback becomes available without refreshing the page", async () => {
     await render();

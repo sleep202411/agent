@@ -12,6 +12,37 @@ import {
 } from './media-asset-placement';
 
 describe('ensureOriginalMediaPlacement', () => {
+  it('queues a poster for a confirmed video even when its original placement already exists', async () => {
+    const tx = {
+      mediaAssetVariant: {
+        upsert: jest.fn().mockResolvedValue({ id: 'original' }),
+      },
+      mediaObjectPlacement: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'placement' }),
+        update: jest.fn().mockResolvedValue({ id: 'placement' }),
+      },
+      mediaProcessingJob: {
+        upsert: jest.fn().mockResolvedValue({ id: 'job' }),
+      },
+    };
+    const input = {
+      assetId: 'video',
+      storageProvider: MediaStorageProvider.aliyun_oss,
+      bucket: 'media',
+      region: 'cn-hangzhou',
+      objectKey: 'video.mp4',
+      contentType: 'video/mp4',
+    };
+    await ensureOriginalMediaPlacement(tx as never, input);
+    await ensureOriginalMediaPlacement(tx as never, input);
+    expect(tx.mediaProcessingJob.upsert).toHaveBeenCalledTimes(2);
+    expect(tx.mediaProcessingJob.upsert).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        where: { idempotencyKey: 'video-poster:video' },
+        update: {},
+      }),
+    );
+  });
   it('upserts an original variant and creates the primary placement', async () => {
     type UpsertArg = {
       where: { assetId_variantKey: { assetId: string; variantKey: string } };

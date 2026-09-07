@@ -112,7 +112,11 @@ describe('MediaProcessingWorkerService', () => {
   ) {
     const asset = opts.asset ?? mediaAsset();
     const imm = opts.imm ?? immMock();
+    const posters = {
+      generate: jest.fn().mockResolvedValue({ variantId: 'poster-1' }),
+    };
     const tx = {
+      mediaProcessingJob: { upsert: jest.fn().mockResolvedValue({}) },
       mediaAssetVariant: {
         upsert: jest.fn().mockResolvedValue({
           id: '01900000-0000-7000-8000-000000000012',
@@ -145,13 +149,54 @@ describe('MediaProcessingWorkerService', () => {
       ),
     };
     return {
-      service: new MediaProcessingWorkerService(prisma as never, imm as never),
+      service: new MediaProcessingWorkerService(
+        prisma as never,
+        imm as never,
+        posters as never,
+      ),
       prisma,
       tx,
       imm,
+      posters,
       row,
     };
   }
+
+  it('completes a poster job only after its image is stored', async () => {
+    const { service, prisma, posters, row } = setup(
+      processingJob({ jobType: 'poster' }),
+    );
+    await service.drainOnce();
+    expect(posters.generate).toHaveBeenCalledWith(row.assetId);
+    expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'completed',
+          output: { variantId: 'poster-1' },
+        }),
+      }),
+    );
+  });
+
+  it('retries a transient poster failure through the existing queue', async () => {
+    const { service, prisma, posters } = setup(
+      processingJob({ jobType: 'poster', maxAttempts: 4 }),
+    );
+    posters.generate.mockRejectedValue(
+      new Error('Storage temporarily unavailable'),
+    );
+    await service.drainOnce();
+    expect(prisma.mediaProcessingJob.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'failed',
+          attempt: 1,
+          nextAttemptAt: expect.any(Date),
+          errorMessage: 'Storage temporarily unavailable',
+        }),
+      }),
+    );
+  });
 
   it('backfills the original variant and placement', async () => {
     const { service, prisma, tx, row } = setup();

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Header, Param, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { CurrentUser, Public } from '../auth';
 import type { AuthUser } from '../auth';
@@ -9,12 +9,26 @@ import {
   type MediaAssetAccessParamsDto,
   type MediaAssetAccessQueryDto,
   type MediaAssetAccessResponseDto,
+  type MediaVideoPosterResponseDto,
 } from './dto';
 import { MediaAccessService } from './media-access.service';
 
 @Controller('media/assets')
 export class MediaAccessController {
   constructor(private readonly svc: MediaAccessService) {}
+
+  @Public()
+  @Get(':assetId/poster')
+  @Header('Cache-Control', 'private, no-store')
+  async videoPoster(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param(new ZodValidationPipe(MediaAssetAccessParamsSchema))
+    params: MediaAssetAccessParamsDto,
+    @Query(new ZodValidationPipe(MediaAssetAccessQuerySchema))
+    query: MediaAssetAccessQueryDto,
+  ): Promise<MediaVideoPosterResponseDto> {
+    return this.svc.issueVideoPosterUrl(user?.userId, params.assetId, query);
+  }
 
   @Public()
   @Get(':assetId/access')

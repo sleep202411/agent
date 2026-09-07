@@ -22,8 +22,9 @@ import {
   syncStreamOutputPlacements,
 } from '../infra/storage/media-asset-placement';
 import { ImmTranscodeService } from '../infra/storage/imm-transcode.service';
+import { VideoPosterService } from './video-poster.service';
 
-const DEFAULT_INTERVAL_MS = 30_000;
+const DEFAULT_INTERVAL_MS = 5_000;
 const DEFAULT_BATCH_SIZE = 10;
 const LOCK_TTL_MS = 10 * 60_000;
 const BACKOFFS_MS = [
@@ -55,6 +56,7 @@ export class MediaProcessingWorkerService
   constructor(
     private readonly prisma: PrismaService,
     private readonly imm: ImmTranscodeService,
+    private readonly posters: VideoPosterService,
   ) {}
 
   onApplicationBootstrap(): void {
@@ -156,8 +158,10 @@ export class MediaProcessingWorkerService
         case MediaProcessingJobType.hls_stream:
           await this.processHlsStream(row);
           return;
-        case MediaProcessingJobType.thumbnail:
         case MediaProcessingJobType.poster:
+          await this.complete(row, await this.posters.generate(row.assetId));
+          return;
+        case MediaProcessingJobType.thumbnail:
         case MediaProcessingJobType.transcode:
         case MediaProcessingJobType.waveform:
         case MediaProcessingJobType.metadata_probe:

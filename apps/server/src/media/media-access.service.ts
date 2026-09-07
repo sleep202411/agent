@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   GoneException,
   Injectable,
@@ -25,12 +26,17 @@ import { WorkspacePermissionService } from '../workspaces';
 import { CrewAssetAccessService } from '../crews/assets/asset-access.service';
 import { StudioDocumentAccessService } from '../documents/studio-document-access.service';
 import {
+  ensureVideoPosterJob,
+  VIDEO_POSTER_VARIANT_KEY,
+} from '../infra/storage/media-video-poster';
+import {
   isPeerViewable,
   requireModerationApproval,
 } from './media-moderation-policy';
 import type {
   MediaAssetAccessQueryDto,
   MediaAssetAccessResponseDto,
+  MediaVideoPosterResponseDto,
 } from './dto';
 
 const USER_READ_URL_TTL_SECONDS = positiveInt(
@@ -117,6 +123,55 @@ export class MediaAccessService {
       cacheControl: USER_READ_CACHE_CONTROL,
       expiresInSeconds: USER_READ_URL_TTL_SECONDS,
     });
+  }
+
+  async issueVideoPosterUrl(
+    userId: string | null | undefined,
+    assetId: string,
+    query: MediaAssetAccessQueryDto,
+  ): Promise<MediaVideoPosterResponseDto> {
+    let asset = await this.loadAsset(assetId);
+    await this.requireUseAccess(userId, asset, {
+      documentId: query.documentId,
+    });
+    if (asset.kind !== 'video')
+      throw new BadRequestException('A video asset is required.');
+    const hasPoster = (candidate: MediaAccessAsset) =>
+      candidate.variants.some(
+        (variant) =>
+          variant.variantKey === VIDEO_POSTER_VARIANT_KEY &&
+          variant.status === 'ready' &&
+          variant.placements.some(
+            (placement) =>
+              placement.role === 'primary' &&
+              placement.status === 'active' &&
+              !placement.deletedAt,
+          ),
+      );
+    // Existing videos use the same durable job as new uploads. Polling must
+    // not restart it, including a job that finishes during this read.
+    const job = hasPoster(asset)
+      ? null
+      : await ensureVideoPosterJob(this.prisma, assetId);
+    if (job?.status === 'completed') asset = await this.loadAsset(assetId);
+    if (hasPoster(asset)) {
+      const access = await this.issueStorageUrl(
+        asset,
+        { variantKey: VIDEO_POSTER_VARIANT_KEY },
+        {
+          allowInactivePlacements: false,
+          cacheControl: USER_READ_CACHE_CONTROL,
+          expiresInSeconds: USER_READ_URL_TTL_SECONDS,
+        },
+      );
+      return { status: 'ready', url: access.url, expiresAt: access.expiresAt };
+    }
+    return job?.status === 'dead' || job?.status === 'completed'
+      ? {
+          status: 'failed',
+          message: job.errorMessage ?? 'Video preview is unavailable.',
+        }
+      : { status: 'pending' };
   }
 
   /**

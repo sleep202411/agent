@@ -1401,7 +1401,9 @@
       },
       "preview": "放大檢視",
       "download": "下載",
-      "rename": "重新命名"
+      "rename": "重新命名",
+      "preparingPreview": "正在準備預覽",
+      "previewUnavailable": "預覽暫不可用"
     },
     "reference": {
       "alt": "參考",

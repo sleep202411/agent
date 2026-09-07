@@ -165,3 +165,8 @@ export interface MediaAssetAccessResponseDto {
   url: string;
   expiresAt: string | null;
 }
+
+export type MediaVideoPosterResponseDto =
+  | { status: 'ready'; url: string; expiresAt: string | null }
+  | { status: 'pending' }
+  | { status: 'failed'; message: string };
