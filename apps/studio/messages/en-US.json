@@ -470,8 +470,6 @@
     "noProjectsDescription": "Projects keep related generations together. Create one to organize your work.",
     "projectsComingSoon": "Projects · Coming soon",
     "newProject": "New project",
-    "projectCreated": "Project created",
-    "createProjectFailed": "Couldn't create project",
     "projectRenamed": "Project renamed",
     "renameFailed": "Couldn't rename project",
     "deleteFailed": "Couldn't delete project"
@@ -879,7 +877,8 @@
       "tooltip": "Compute credits",
       "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}",
       "manage": "Manage compute credits",
-      "teamTag": "Team"
+      "teamTag": "Team",
+      "recharge": "Add credits"
     },
     "header": {
       "fizzDragonHomeAriaLabel": "FizzDragon home"
@@ -900,12 +899,19 @@
       "downloadDesktop": "Download desktop app",
       "help": "Help",
       "newBadge": "New",
-      "appDownloadUnavailable": "No mobile app download is available for this platform yet.",
       "studioNavigation": "Studio navigation",
       "main": "Main",
       "collapseSidebar": "Collapse sidebar",
       "expandSidebar": "Expand sidebar",
-      "comingSoonLabel": "{label} · Coming soon"
+      "comingSoonLabel": "{label} · Coming soon",
+      "appDownloadTitle": "FizzDragon App",
+      "appScanToDownload": "Scan to download the app",
+      "appQrAlt": "FizzDragon download QR code: {platform}",
+      "appDownloadAndroid": "Download for Android",
+      "appDownloadIos": "App Store",
+      "appDownloadGooglePlay": "Google Play",
+      "appQrLoading": "Loading QR code…",
+      "appQrUnavailable": "Use the download button below"
     },
     "notifications": {
       "view": "View"
@@ -1132,7 +1138,9 @@
       "estimated": "Estimated credits",
       "cta": "Continue to checkout",
       "viewBilling": "View billing",
-      "billingAdminOnly": "This team uses a shared workspace balance. Ask an owner, admin, or billing member to recharge compute credits."
+      "billingAdminOnly": "This team uses a shared workspace balance. Ask an owner, admin, or billing member to recharge compute credits.",
+      "rechargeTitle": "Add compute credits",
+      "rechargeBody": "Top up your balance to generate images and videos."
     },
     "faq": {
       "heading": "Your questions,<br></br>answered",

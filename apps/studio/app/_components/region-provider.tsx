@@ -8,7 +8,7 @@ const CountryContext = createContext("US");
 // The deployment cell (NOT the user's country / currency / UI language). Read from
 // runtime pod env by the server layout — studio bakes no NEXT_PUBLIC_*, so client
 // code cannot read it directly; it must flow through this provider.
-const SiteRegionContext = createContext<SiteRegion>("global");
+const SiteRegionContext = createContext<SiteRegion | null>(null);
 
 export function RegionProvider({
   country,
@@ -31,7 +31,9 @@ export function useCountry() {
 }
 
 export function useSiteRegion() {
-  return useContext(SiteRegionContext);
+  const region = useContext(SiteRegionContext);
+  if (!region) throw new Error("useSiteRegion must be used inside RegionProvider.");
+  return region;
 }
 
 /** True on the .cn deployment — the signal for CN-only commerce behaviour. */

@@ -2,11 +2,10 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { IconDotsVertical, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconDotsVertical, IconPencil, IconTrash } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
 import { SectionHeading } from "@/components/ui/section-heading";
-import { TileCard } from "@/components/ui/tile-card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -27,7 +26,6 @@ import {
 import { useAuth } from "@/app/_components/auth-provider";
 import { ProjectCard } from "@/components/project-card";
 import {
-  createLegacyProject,
   deleteLegacyProject,
   listMyLegacyProjects,
   renameLegacyProject,
@@ -37,10 +35,10 @@ import { getWebBaseUrl } from "@/lib/web-base";
 import { useSiteRegion } from "@/app/_components/region-provider";
 
 /**
- * "My history projects" — the user's legacy art-studio projects. A "New project"
- * tile leads; each card's ⋮ menu renames or deletes via the Java world/project
+ * "My history projects" — the user's legacy art-studio projects.
+ * Each card's ⋮ menu renames or deletes via the Java world/project
  * APIs (same calls apps/web uses). Cards link out to the project workspace in
- * apps/web. Hidden when signed out.
+ * apps/web. Hidden when signed out or there are no history projects.
  */
 export function ProjectsList() {
   const t = useTranslations("studioModes");
@@ -51,51 +49,25 @@ export function ProjectsList() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const queryKey = ["legacy-projects", "my", user?.id ?? "anon"];
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey,
     queryFn: listMyLegacyProjects,
     enabled: !!user,
     staleTime: 30_000,
   });
 
-  const [creating, setCreating] = useState(false);
-  const [createName, setCreateName] = useState("");
   const [renaming, setRenaming] = useState<LegacyProject | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleting, setDeleting] = useState<LegacyProject | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (!user) return null;
+  if (!user || !data?.length) return null;
 
-  const items = data ?? [];
+  const items = data;
   const ownerName = user.nickName?.trim() || user.email || user.phone || "Me";
   // Legacy projects live in apps/web; the domain follows the deployment cell.
   const webBase = getWebBaseUrl(siteRegion);
   const refresh = () => queryClient.invalidateQueries({ queryKey });
-
-  const submitCreate = async () => {
-    const name = createName.trim();
-    if (!name || busy) return;
-    setBusy(true);
-    // Open the tab synchronously inside the click gesture so the popup blocker
-    // doesn't kill it, then point it at the new project once the id comes back.
-    const win = window.open("", "_blank");
-    try {
-      const { worldId, projectId } = await createLegacyProject(name);
-      await refresh();
-      setCreating(false);
-      setCreateName("");
-      const url = `${webBase}/${locale}/projects/${projectId}?worldId=${encodeURIComponent(worldId)}`;
-      if (win) win.location.href = url;
-      else window.open(url, "_blank");
-      toast.success(tp("projectCreated"));
-    } catch {
-      win?.close();
-      toast.error(tp("createProjectFailed"));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const submitRename = async () => {
     const name = renameValue.trim();
@@ -136,88 +108,44 @@ export function ProjectsList() {
         subtitle={t("projects.historySubtitle")}
       />
       <div className="mt-6 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-5">
-        <button
-          type="button"
-          onClick={() => {
-            setCreateName("");
-            setCreating(true);
-          }}
-          className="group block text-left outline-none"
-        >
-          <TileCard
-            title={tp("newProject")}
-            media={
-              <span className="grid size-12 place-items-center rounded-full bg-[#E52227] text-white shadow-lg shadow-[#E52227]/25 transition group-hover:brightness-110">
-                <IconPlus className="size-6" stroke={2} />
-              </span>
+        {items.map((project) => (
+          <ProjectCard
+            key={project.id}
+            name={project.name}
+            ownerName={ownerName}
+            metaLabel={formatDate(project.updatedAt)}
+            cover={project.cover}
+            href={`${webBase}/${locale}/projects/${project.id}`}
+            menu={
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label={tp("projectActions")}
+                  onClick={(event) => event.preventDefault()}
+                  className="grid size-8 shrink-0 place-items-center rounded-full text-white/90 transition outline-none hover:bg-white/[0.08]"
+                >
+                  <IconDotsVertical className="size-4" stroke={1.8} />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(event) => event.preventDefault()}>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setRenameValue(project.name);
+                      setRenaming(project);
+                    }}
+                  >
+                    <IconPencil className="size-4" stroke={1.8} />
+                    {tp("rename")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(project)}>
+                    <IconTrash className="size-4" stroke={1.8} />
+                    {tc("delete")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             }
           />
-        </button>
-
-        {isLoading
-          ? null
-          : items.map((project) => (
-              <ProjectCard
-                key={project.id}
-                name={project.name}
-                ownerName={ownerName}
-                metaLabel={formatDate(project.updatedAt)}
-                cover={project.cover}
-                href={`${webBase}/${locale}/projects/${project.id}`}
-                menu={
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      aria-label={tp("projectActions")}
-                      onClick={(event) => event.preventDefault()}
-                      className="grid size-8 shrink-0 place-items-center rounded-full text-white/90 transition outline-none hover:bg-white/[0.08]"
-                    >
-                      <IconDotsVertical className="size-4" stroke={1.8} />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" onClick={(event) => event.preventDefault()}>
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          setRenameValue(project.name);
-                          setRenaming(project);
-                        }}
-                      >
-                        <IconPencil className="size-4" stroke={1.8} />
-                        {tp("rename")}
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(project)}>
-                        <IconTrash className="size-4" stroke={1.8} />
-                        {tc("delete")}
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                }
-              />
-            ))}
+        ))}
       </div>
-
-      <Dialog open={creating} onOpenChange={(open) => !open && setCreating(false)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{tp("newProject")}</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={createName}
-            autoFocus
-            onChange={(event) => setCreateName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void submitCreate();
-            }}
-          />
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreating(false)}>
-              {tc("cancel")}
-            </Button>
-            <Button onClick={() => void submitCreate()} disabled={busy || !createName.trim()}>
-              {tc("create")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={renaming !== null} onOpenChange={(open) => !open && setRenaming(null)}>
         <DialogContent className="sm:max-w-sm">

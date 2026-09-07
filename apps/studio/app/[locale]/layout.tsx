@@ -74,8 +74,7 @@ export default async function LocaleLayout({
           {/* RegionProvider must wrap Providers: AuthProvider (inside Providers)
               renders the global LoginDialog, and its buildWebHref() links read
               useSiteRegion(). Nested the other way the dialog sits ABOVE this
-              provider and falls back to the "global" context default — sending
-              the dialog's legal links to .com on the .cn cell. */}
+              provider and cannot resolve the deployment's site. */}
           <RegionProvider country={country} siteRegion={siteRegion}>
             <Providers>
               {/* SettingsOverlay (hash modal) and RouteAuthGuard sit beside {children},
@@ -101,9 +100,12 @@ export default async function LocaleLayout({
 // dynamic — it reads headers) and handed to the client via RegionProvider. Uses the
 // non-public `SITE_REGION`: Next.js compile-time-inlines every `NEXT_PUBLIC_*` (even
 // server-side), and the studio image bakes none, so only a runtime var works. `cn`
-// on the .cn deployment; `global` everywhere else.
+// on the .cn deployment; `global` or `com` on the international deployment.
 function detectSiteRegion(): SiteRegion {
-  const raw = process.env.SITE_REGION ?? process.env.NEXT_PUBLIC_SITE_REGION ?? "global";
+  const raw = process.env.SITE_REGION ?? process.env.NEXT_PUBLIC_SITE_REGION;
+  if (raw !== "cn" && raw !== "global" && raw !== "com") {
+    throw new Error("Studio site region must be explicitly set to cn, global, or com.");
+  }
   return raw === "cn" ? "cn" : "global";
 }
 

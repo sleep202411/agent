@@ -33,18 +33,8 @@ export async function listMyLegacyProjects(): Promise<LegacyProject[]> {
 // ── Write operations ──────────────────────────────────────────────────────
 // These hit the Java art-studio APIs directly (proxied via `/api/*` → Java
 // studio), exactly as apps/web does. A "project" is a `worldproduct` living
-// under a `world`; quick-create makes both in one shot, and deleting the last
+// under a `world`, and deleting the last
 // product in a world cascade-deletes the world.
-
-/** Create a new project (world + first product). Returns the new ids. */
-export async function createLegacyProject(
-  name: string
-): Promise<{ worldId: string; projectId: string }> {
-  return api.post<{ worldId: string; projectId: string }>(
-    "/api/user/world/create/quick/worldproduct",
-    { data: { name: name.trim() } }
-  );
-}
 
 /** Fields the worldproduct update round-trips (parity with apps/web's editor). */
 interface LegacyProjectDetail {

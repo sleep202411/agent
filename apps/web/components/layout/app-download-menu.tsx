@@ -2,48 +2,16 @@
 
 import { useEffect, useRef, useState, type Ref } from "react";
 import { IconBrandApple, IconBrandGooglePlay, IconDownload } from "@tabler/icons-react";
+import { APP_DOWNLOADS_BY_SITE } from "@repo/shared";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useTranslations } from "@/src/i18n/i18n";
-
-type AppDownload = {
-  platform: "android" | "ios";
-  labelKey: "appDownloadAndroid" | "appDownloadIos" | "appDownloadGooglePlay";
-  href: string;
-  download?: string;
-};
 
 const siteRegion = process.env.NEXT_PUBLIC_SITE_REGION;
 if (siteRegion !== "cn" && siteRegion !== "global" && siteRegion !== "com") {
   throw new Error("NEXT_PUBLIC_SITE_REGION must be set to cn, global, or com for App downloads");
 }
 
-export const APP_DOWNLOADS: readonly AppDownload[] =
-  siteRegion === "cn"
-    ? [
-        {
-          platform: "android",
-          labelKey: "appDownloadAndroid",
-          href: "https://media.fizzspace.cn/releases/android/fizzdragon-cn-2.2.0-80-0254c347.apk",
-          download: "FizzDragon-2.2.0-cn.apk",
-        },
-        {
-          platform: "ios",
-          labelKey: "appDownloadIos",
-          href: "https://apps.apple.com/cn/app/fizzdragon/id6761763480",
-        },
-      ]
-    : [
-        {
-          platform: "android",
-          labelKey: "appDownloadGooglePlay",
-          href: "https://play.google.com/store/apps/details?id=com.fizzdragon",
-        },
-        {
-          platform: "ios",
-          labelKey: "appDownloadIos",
-          href: "https://apps.apple.com/sg/app/fizzdragon/id6763720048",
-        },
-      ];
+export const APP_DOWNLOADS = APP_DOWNLOADS_BY_SITE[siteRegion === "cn" ? "cn" : "global"];
 
 export function AppDownloadMenu({
   className,

@@ -23,6 +23,7 @@ export * from "./avatar.js";
 export * from "./billing.js";
 export * from "./user-id-codec.js";
 export * from "./regions.js";
+export * from "./app-downloads.js";
 export * from "./interactive-film-runtime.js";
 export * from "./experience-runtime.js";
 export * from "./story-directing-skills.js";

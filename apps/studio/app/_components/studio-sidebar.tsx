@@ -8,7 +8,6 @@ import {
   IconBrandDiscord,
   IconDeviceGamepad2,
   IconDeviceDesktopDown,
-  IconDeviceMobileDown,
   IconHelpCircle,
   IconHome,
   IconLayoutGrid,
@@ -28,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { useSiteRegion } from "@/app/_components/region-provider";
 import { GlassRim } from "@/components/ui/glass-rim";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AppDownloadMenu } from "./app-download-menu";
 import { useStudioSidebar } from "./studio-sidebar-context";
 
 gsap.registerPlugin(useGSAP);
@@ -337,35 +337,6 @@ export function StudioSidebar() {
     onClick: () => openSettings("account"),
   };
 
-  const utilityItems: SidebarUtilityItem[] = [
-    {
-      label: t("nav.settings"),
-      icon: IconSettings,
-      active: isSidebarItemActive(pathname, settingsItem.href),
-      onClick: () => openSettings("account"),
-    },
-    {
-      label: t("nav.discord"),
-      icon: IconBrandDiscord,
-      disabled: true,
-    },
-    {
-      label: t("nav.downloadApp"),
-      icon: IconDeviceMobileDown,
-      disabled: true,
-    },
-    {
-      label: t("nav.downloadDesktop"),
-      icon: IconDeviceDesktopDown,
-      disabled: true,
-    },
-    {
-      label: t("nav.help"),
-      icon: IconHelpCircle,
-      disabled: true,
-    },
-  ];
-
   return (
     <>
       {narrowSidebarOpen ? (
@@ -380,7 +351,7 @@ export function StudioSidebar() {
 
       <aside
         aria-label={t("nav.studioNavigation")}
-        className="fixed inset-y-0 left-0 z-50 flex flex-col border-r border-white/[0.08] bg-[#0f0f0f] transition-[width] duration-200 ease-out"
+        className="fixed top-0 left-0 z-50 flex h-dvh flex-col border-r border-white/[0.08] bg-[#0f0f0f] transition-[width] duration-200 ease-out"
         style={{ width }}
       >
         <div
@@ -457,9 +428,28 @@ export function StudioSidebar() {
               collapsed ? "flex flex-col items-center gap-1" : "grid grid-cols-5 gap-1"
             )}
           >
-            {utilityItems.map((item) => (
-              <SidebarUtilityButton key={item.label} item={item} />
-            ))}
+            <SidebarUtilityButton
+              item={{
+                label: t("nav.settings"),
+                icon: IconSettings,
+                active: isSidebarItemActive(pathname, settingsItem.href),
+                onClick: () => openSettings("account"),
+              }}
+            />
+            <SidebarUtilityButton
+              item={{ label: t("nav.discord"), icon: IconBrandDiscord, disabled: true }}
+            />
+            <AppDownloadMenu />
+            <SidebarUtilityButton
+              item={{
+                label: t("nav.downloadDesktop"),
+                icon: IconDeviceDesktopDown,
+                disabled: true,
+              }}
+            />
+            <SidebarUtilityButton
+              item={{ label: t("nav.help"), icon: IconHelpCircle, disabled: true }}
+            />
           </div>
         </div>
       </aside>

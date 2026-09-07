@@ -470,8 +470,6 @@
     "noProjectsDescription": "項目可將相關生成內容歸納在一起。建立一個來整理你的作品。",
     "projectsComingSoon": "項目 · 敬請期待",
     "newProject": "新增項目",
-    "projectCreated": "項目已建立",
-    "createProjectFailed": "建立項目失敗",
     "projectRenamed": "已重新命名",
     "renameFailed": "重新命名失敗",
     "deleteFailed": "刪除失敗"
@@ -879,7 +877,8 @@
       "tooltip": "算力積分",
       "tooltipDetailed": "算力積分 · 可用 {available} · 凍結 {held} · 總計 {total}",
       "manage": "管理算力積分",
-      "teamTag": "團隊"
+      "teamTag": "團隊",
+      "recharge": "積分儲值"
     },
     "header": {
       "fizzDragonHomeAriaLabel": "FizzDragon 首頁"
@@ -900,12 +899,19 @@
       "downloadDesktop": "下載桌面版",
       "help": "幫助",
       "newBadge": "New",
-      "appDownloadUnavailable": "目前平台暫時沒有可用的流動版安裝檔。",
       "studioNavigation": "工作室導覽",
       "main": "主導覽",
       "collapseSidebar": "收起側邊欄",
       "expandSidebar": "展開側邊欄",
-      "comingSoonLabel": "{label} · 即將推出"
+      "comingSoonLabel": "{label} · 即將推出",
+      "appDownloadTitle": "FizzDragon App",
+      "appScanToDownload": "手機掃碼，下載 App",
+      "appQrAlt": "FizzDragon 下載二維碼：{platform}",
+      "appDownloadAndroid": "下載 Android 版",
+      "appDownloadIos": "App Store",
+      "appDownloadGooglePlay": "Google Play",
+      "appQrLoading": "正在載入二維碼…",
+      "appQrUnavailable": "請點擊下方按鈕下載"
     },
     "notifications": {
       "view": "查看"
@@ -1132,7 +1138,9 @@
       "estimated": "預計到賬",
       "cta": "繼續付款",
       "viewBilling": "查看帳單",
-      "billingAdminOnly": "此團隊使用共享工作空間結餘。請聯絡所有者、管理員或帳單管理員增值算力積分。"
+      "billingAdminOnly": "此團隊使用共享工作空間結餘。請聯絡所有者、管理員或帳單管理員增值算力積分。",
+      "rechargeTitle": "儲值算力積分",
+      "rechargeBody": "補充算力積分，用於生成圖片和影片。"
     },
     "faq": {
       "heading": "你的疑問，<br></br>這裡解答",

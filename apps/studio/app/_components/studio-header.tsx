@@ -1,6 +1,6 @@
 "use client";
 
-import { IconCrown } from "@tabler/icons-react";
+import { IconBolt, IconCrown } from "@tabler/icons-react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { AccountMenu } from "./account-menu";
@@ -8,24 +8,42 @@ import { SubscriptionDialog } from "./subscription-dialog";
 import { useAuth } from "./auth-provider";
 import { formatEntitlementPlanName, useMyEntitlement } from "./entitlement-context";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { ComputeRechargeDialog } from "./compute-recharge-dialog";
+import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 
 /**
  * The one product header shared by landing and app surfaces. Layouts own only
  * positioning (overlay vs normal flow); the product chrome never forks again.
  */
 export function StudioHeader() {
-  const { user, loading, signIn } = useAuth();
+  const { user, loading, signIn, requireAuth } = useAuth();
   const entitlement = useMyEntitlement();
+  const billingWorkspace = useProjectPayerWorkspace();
   const [pricingOpen, setPricingOpen] = useState(false);
+  const [rechargeOpen, setRechargeOpen] = useState(false);
   const ta = useTranslations("auth");
+  const tc = useTranslations("shell.credits");
 
   return (
-    <header className="relative z-40 flex h-16 items-center justify-end gap-4 overflow-visible px-6 text-[14px]">
-      <div className="flex items-center gap-2">
+    <header className="relative z-40 flex h-16 items-center justify-end gap-4 overflow-visible px-3 text-[14px] sm:px-6">
+      <div className="flex min-w-0 max-w-full items-center gap-2">
+        {!loading && (
+          <button
+            type="button"
+            aria-label={tc("recharge")}
+            title={tc("recharge")}
+            disabled={Boolean(user) && !billingWorkspace}
+            onClick={() => requireAuth(() => setRechargeOpen(true))}
+            className="flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] bg-white/[0.08] px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white transition hover:bg-white/[0.12] focus-visible:ring-2 focus-visible:ring-white/35 disabled:opacity-50"
+          >
+            <IconBolt className="size-4" stroke={1.8} aria-hidden />
+            <span className="hidden sm:inline">{tc("recharge")}</span>
+          </button>
+        )}
         {loading ? (
           <>
-            <div className="h-8 w-28 animate-pulse rounded-[12px] bg-white/[0.06]" />
-            <div className="h-9 w-56 animate-pulse rounded-[14px] bg-white/[0.06]" />
+            <div className="h-8 w-16 animate-pulse rounded-[12px] bg-white/[0.06] sm:w-28" />
+            <div className="h-9 w-16 animate-pulse rounded-[14px] bg-white/[0.06] sm:w-56" />
             <div className="size-8 animate-pulse rounded-full bg-white/[0.06]" />
           </>
         ) : user ? (
@@ -39,7 +57,9 @@ export function StudioHeader() {
                 onClick={() => setPricingOpen(true)}
               />
             )}
-            <WorkspaceSwitcher />
+            <div className="min-w-0 max-w-56 flex-1">
+              <WorkspaceSwitcher />
+            </div>
             <AccountMenu
               fallback="initial"
               triggerClassName="size-8 bg-[#744717] text-white hover:bg-[#86531C] data-[state=open]:bg-[#86531C] [&_span]:text-[13px]"
@@ -60,6 +80,9 @@ export function StudioHeader() {
       </div>
 
       <SubscriptionDialog open={pricingOpen} onOpenChange={setPricingOpen} />
+      {rechargeOpen && user && billingWorkspace && (
+        <ComputeRechargeDialog open onOpenChange={setRechargeOpen} />
+      )}
     </header>
   );
 }
@@ -84,6 +107,8 @@ function MembershipButton({
   return (
     <button
       type="button"
+      aria-label={label}
+      title={label}
       onClick={onClick}
       className={
         isPaid || unavailable
@@ -92,7 +117,7 @@ function MembershipButton({
       }
     >
       <IconCrown className="size-4 text-white" stroke={2} />
-      {label}
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }

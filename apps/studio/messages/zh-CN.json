@@ -470,8 +470,6 @@
     "noProjectsDescription": "项目可将相关生成内容归集在一起。创建一个来整理你的作品。",
     "projectsComingSoon": "项目 · 敬请期待",
     "newProject": "新建项目",
-    "projectCreated": "项目已创建",
-    "createProjectFailed": "创建项目失败",
     "projectRenamed": "已重命名",
     "renameFailed": "重命名失败",
     "deleteFailed": "删除失败"
@@ -879,7 +877,8 @@
       "tooltip": "算力积分",
       "tooltipDetailed": "算力积分 · 可用 {available} · 冻结 {held} · 总计 {total}",
       "manage": "管理算力积分",
-      "teamTag": "团队"
+      "teamTag": "团队",
+      "recharge": "积分充值"
     },
     "header": {
       "fizzDragonHomeAriaLabel": "FizzDragon 首页"
@@ -900,12 +899,19 @@
       "downloadDesktop": "下载桌面版",
       "help": "帮助",
       "newBadge": "New",
-      "appDownloadUnavailable": "当前平台暂时没有可用的移动端安装包。",
       "studioNavigation": "工作室导航",
       "main": "主导航",
       "collapseSidebar": "收起侧边栏",
       "expandSidebar": "展开侧边栏",
-      "comingSoonLabel": "{label} · 即将推出"
+      "comingSoonLabel": "{label} · 即将推出",
+      "appDownloadTitle": "FizzDragon App",
+      "appScanToDownload": "手机扫码，下载 App",
+      "appQrAlt": "FizzDragon 下载二维码：{platform}",
+      "appDownloadAndroid": "下载安卓版",
+      "appDownloadIos": "App Store",
+      "appDownloadGooglePlay": "Google Play",
+      "appQrLoading": "正在加载二维码…",
+      "appQrUnavailable": "请点击下方按钮下载"
     },
     "notifications": {
       "view": "查看"
@@ -1132,7 +1138,9 @@
       "estimated": "预计到账",
       "cta": "继续支付",
       "viewBilling": "查看账单",
-      "billingAdminOnly": "该团队使用共享工作空间余额。请联系所有者、管理员或账单管理员充值算力积分。"
+      "billingAdminOnly": "该团队使用共享工作空间余额。请联系所有者、管理员或账单管理员充值算力积分。",
+      "rechargeTitle": "充值算力积分",
+      "rechargeBody": "补充算力积分，用于生成图片和视频。"
     },
     "faq": {
       "heading": "你的疑问，<br></br>这里解答",

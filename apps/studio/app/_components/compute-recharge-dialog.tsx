@@ -141,7 +141,7 @@ export function ComputeRechargeDialog({
     onError: (error) => toast.error(errMsg(error, ts("couldntStartRecharge"))),
   });
 
-  const quickAmounts = isCn ? [10, 50, 100, 500] : [10, 50, 100, 500];
+  const quickAmounts = [10, 50, 100, 500];
   const missing = useMemo(() => {
     if (required == null || effectiveAvailable == null) return null;
     return Math.max(0, Math.ceil(required) - Number(effectiveAvailable));
@@ -151,9 +151,9 @@ export function ComputeRechargeDialog({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[90] bg-black/82 backdrop-blur-sm" />
-      <div className="fixed inset-0 z-[91] flex items-center justify-center px-4 py-6">
-        <div className="relative w-full max-w-[560px] overflow-hidden rounded-3xl bg-[oklch(0.19_0_0)] text-white shadow-[0_36px_110px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.16)]">
+      <div className="fixed top-0 left-0 z-[90] h-dvh w-screen bg-black/82 backdrop-blur-sm" />
+      <div className="fixed top-0 left-0 z-[91] flex h-dvh w-screen items-center justify-center px-4 py-6">
+        <div className="relative max-h-[calc(100dvh-3rem)] w-full max-w-[560px] overflow-y-auto rounded-3xl bg-[oklch(0.19_0_0)] text-white shadow-[0_36px_110px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.16)]">
           <GlassRim className="opacity-70" />
           <button
             type="button"
@@ -169,13 +169,17 @@ export function ComputeRechargeDialog({
               <div className="min-w-0 pr-8 sm:pr-0">
                 <div className="mb-3 inline-flex h-8 items-center gap-1.5 rounded-full bg-white/[0.08] px-3 text-xs font-medium text-white/75">
                   <IconBolt className="size-3.5" stroke={1.8} />
-                  {t("eyebrow")}
+                  {required != null ? t("eyebrow") : ts("computeCredits")}
                 </div>
                 <h2 className="max-w-[360px] text-2xl leading-tight font-semibold tracking-normal text-white sm:text-3xl">
-                  {t("title")}
+                  {t(required != null ? "title" : "rechargeTitle")}
                 </h2>
                 <p className="mt-2 max-w-[390px] text-sm leading-6 text-white/58">
-                  {modelName ? t("bodyWithModel", { model: modelName }) : t("body")}
+                  {required == null
+                    ? t("rechargeBody")
+                    : modelName
+                      ? t("bodyWithModel", { model: modelName })
+                      : t("body")}
                 </p>
               </div>
 
@@ -201,16 +205,14 @@ export function ComputeRechargeDialog({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className={cn("grid gap-2", required != null && "grid-cols-3")}>
               <Metric label={t("available")} value={effectiveAvailable?.toLocaleString() ?? "—"} />
-              <Metric
-                label={t("required")}
-                value={required != null ? Math.ceil(required).toLocaleString() : "—"}
-              />
-              <Metric
-                label={t("missing")}
-                value={missing != null ? missing.toLocaleString() : "—"}
-              />
+              {required != null && (
+                <>
+                  <Metric label={t("required")} value={Math.ceil(required).toLocaleString()} />
+                  <Metric label={t("missing")} value={missing?.toLocaleString() ?? "—"} />
+                </>
+              )}
             </div>
 
             {canRecharge ? (

@@ -127,7 +127,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         <DropdownMenuTrigger
           aria-label={collapsed ? t("switchTeams") : undefined}
           className={cn(
-            "relative flex items-center rounded-[14px] bg-white/[0.09] backdrop-blur-xl backdrop-saturate-150 outline-none transition-[background-color,box-shadow] hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-white/35 data-[state=open]:bg-white/[0.14]",
+            "relative flex min-w-0 items-center rounded-[14px] bg-white/[0.09] backdrop-blur-xl backdrop-saturate-150 outline-none transition-[background-color,box-shadow] hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-white/35 data-[state=open]:bg-white/[0.14]",
             collapsed
               ? "size-10 justify-center"
               : "h-10 w-full gap-2 py-1.5 pr-3 pl-1.5 shadow-[0_10px_30px_rgb(0_0_0/0.18)]"
