@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 368dd8a88bba36991dc7b2734155aca8ec242226
+    tag: 768f716e58e3c88ff2721382de6fec0dd4c42da8
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
