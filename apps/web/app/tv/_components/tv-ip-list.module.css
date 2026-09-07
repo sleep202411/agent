@@ -1,0 +1,60 @@
+.equalizer {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 18px;
+  height: 18px;
+  color: rgb(255 255 255 / 35%);
+}
+
+.equalizer > span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleY(0.25);
+  animation: equalize 900ms ease-in-out infinite alternate;
+  animation-play-state: paused;
+}
+
+.equalizer > span:nth-child(2) {
+  animation-delay: -450ms;
+}
+
+.equalizer > span:nth-child(3) {
+  animation-delay: -700ms;
+}
+
+.equalizer > span:nth-child(4) {
+  animation-delay: -200ms;
+}
+
+.equalizer[data-playing="true"] {
+  color: var(--primary);
+}
+
+.equalizer[data-playing="true"] > span {
+  animation-play-state: running;
+}
+
+@keyframes equalize {
+  0% {
+    transform: scaleY(0.25);
+  }
+  45% {
+    transform: scaleY(0.65);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .equalizer > span {
+    animation: none;
+  }
+
+  .equalizer > span:nth-child(2n) {
+    transform: scaleY(0.75);
+  }
+}

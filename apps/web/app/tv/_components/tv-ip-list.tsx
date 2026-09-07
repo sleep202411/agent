@@ -15,11 +15,13 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
 import type { TvItem } from "../_hooks/types";
+import styles from "./tv-ip-list.module.css";
 
 interface TvIpListProps {
   embedded: boolean;
   items: TvItem[];
   selectedId: string | null;
+  isPlaying: boolean;
   isLoading: boolean;
   isError: boolean;
   errorMessage?: string;
@@ -34,6 +36,7 @@ export function TvIpList({
   embedded,
   items,
   selectedId,
+  isPlaying,
   isLoading,
   isError,
   errorMessage,
@@ -67,12 +70,12 @@ export function TvIpList({
           type="button"
           aria-label={t("collapseList")}
           onClick={() => setMobileOpen(false)}
-          className="fixed inset-y-0 left-[280px] right-0 bg-black/60 md:hidden"
+          className="absolute inset-y-0 left-[280px] w-screen bg-black/60 md:hidden"
         />
       )}
       <div
         className={cn(
-          "relative flex h-full flex-col border-r border-white/[0.06] bg-[#191919]",
+          "relative flex h-full flex-col border-r border-white/[0.06] bg-[#0c0e13]",
           mobileOpen ? "w-[280px] md:w-full" : "w-full"
         )}
       >
@@ -189,7 +192,7 @@ export function TvIpList({
                 title={label}
                 className={cn(
                   "flex min-h-[52px] w-full items-center justify-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-white",
-                  active ? "bg-[#242424] text-white" : "text-white/85 hover:bg-white/5"
+                  active ? "bg-white/[0.07] text-white" : "text-white/85 hover:bg-white/5"
                 )}
               >
                 <IpThumbnail key={item.cover} item={item} />
@@ -211,6 +214,21 @@ export function TvIpList({
                     {item.genre && <span className="truncate">{item.genre}</span>}
                   </span>
                 </span>
+                {active && item.trailer && (
+                  <span
+                    role="img"
+                    aria-label={isPlaying ? t("nowPlaying") : t("notPlaying")}
+                    title={isPlaying ? t("nowPlaying") : t("notPlaying")}
+                    className={cn("shrink-0", detailsClass)}
+                  >
+                    <span aria-hidden="true" className={styles.equalizer} data-playing={isPlaying}>
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                  </span>
+                )}
               </button>
             );
           })}

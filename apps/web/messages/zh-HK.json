@@ -9379,6 +9379,8 @@
     "expandList": "展開頻道列表",
     "noIps": "暫無 IP 作品",
     "loadMore": "載入更多",
-    "hasVideo": "有影片"
+    "hasVideo": "有影片",
+    "nowPlaying": "正在播放",
+    "notPlaying": "未播放"
   }
 }

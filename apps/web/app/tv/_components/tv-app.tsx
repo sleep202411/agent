@@ -27,34 +27,44 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
     isFetchingNextPage,
   } = useTvIps();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const item = items.find((entry) => entry.id === selectedId) ?? items[0];
   // Remember the initial channel so a catalog refresh cannot change it.
-  if (item && item.id !== selectedId) setSelectedId(item.id);
+  if (item && item.id !== selectedId) {
+    setSelectedId(item.id);
+    setIsPlaying(false);
+  }
   const errorMessage = error instanceof Error ? error.message : undefined;
 
   return (
-    <div className="flex size-full overflow-hidden bg-black">
+    <div className="flex size-full overflow-hidden bg-[#0c0e13] px-3 sm:px-6">
       <TvIpList
         embedded={embedded}
         items={items}
         selectedId={selectedId}
+        isPlaying={isPlaying}
         isLoading={isLoading}
         isError={isError}
         errorMessage={errorMessage}
         onRetry={() => void refetch()}
-        onSelect={setSelectedId}
+        onSelect={(id) => {
+          if (id !== selectedId) {
+            setSelectedId(id);
+            setIsPlaying(false);
+          }
+        }}
         hasMore={hasNextPage}
         isLoadingMore={isFetchingNextPage}
         onLoadMore={() => void fetchNextPage()}
       />
       <section
         aria-label={t("playerTitle")}
-        className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-black"
+        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
       >
         {item ? (
           <>
             <div className="relative min-h-0 flex-1">
-              <TvStage key={item.id} item={item} />
+              <TvStage key={item.id} item={item} onPlaybackChange={setIsPlaying} />
             </div>
             <TvInfoBar item={item} />
           </>

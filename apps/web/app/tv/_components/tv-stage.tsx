@@ -7,9 +7,10 @@ import type { TvItem } from "../_hooks/types";
 
 interface TvStageProps {
   item: TvItem;
+  onPlaybackChange: (playing: boolean) => void;
 }
 
-export function TvStage({ item }: TvStageProps) {
+export function TvStage({ item, onPlaybackChange }: TvStageProps) {
   const t = useTranslations("tv");
   const [failedCover, setFailedCover] = useState<string | null>(null);
   const [failedVideo, setFailedVideo] = useState<string | null>(null);
@@ -36,7 +37,7 @@ export function TvStage({ item }: TvStageProps) {
 
   // Trailer-less items park on their cover — the viewer switches manually.
   return (
-    <div className="absolute inset-0 overflow-hidden bg-black">
+    <div className="absolute inset-0 overflow-hidden">
       {coverAvailable && !videoAvailable && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -59,8 +60,16 @@ export function TvStage({ item }: TvStageProps) {
           muted
           playsInline
           preload="metadata"
-          onError={() => setFailedVideo(item.trailer)}
-          className="relative size-full bg-black object-contain"
+          onPlaying={() => onPlaybackChange(true)}
+          onPause={() => onPlaybackChange(false)}
+          onWaiting={() => onPlaybackChange(false)}
+          onEnded={() => onPlaybackChange(false)}
+          onEmptied={() => onPlaybackChange(false)}
+          onError={() => {
+            onPlaybackChange(false);
+            setFailedVideo(item.trailer);
+          }}
+          className="relative size-full object-contain"
         />
       )}
 

@@ -30,7 +30,7 @@ export default function TvPage() {
   // the plaza. The root layout already supplies the dark canvas, React
   // Query provider, and toasts.
   return (
-    <main className="relative h-[100dvh] overflow-hidden bg-black text-white">
+    <main className="relative h-[100dvh] overflow-hidden text-white">
       <TvApp />
     </main>
   );

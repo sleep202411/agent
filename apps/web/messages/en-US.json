@@ -9379,6 +9379,8 @@
     "expandList": "Expand channels",
     "noIps": "No IPs available.",
     "loadMore": "Load more",
-    "hasVideo": "Video available"
+    "hasVideo": "Video available",
+    "nowPlaying": "Now playing",
+    "notPlaying": "Not playing"
   }
 }
