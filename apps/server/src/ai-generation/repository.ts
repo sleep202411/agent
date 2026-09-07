@@ -50,6 +50,9 @@ import type {
 import type { ProviderAsyncOperationContext } from './provider-adapter';
 
 export interface AiJobListOptions {
+  ids?: string[];
+  idempotencyKey?: string;
+  documentBlockId?: string;
   userId: string;
   workspaceId?: string;
   projectId?: string;
@@ -989,6 +992,13 @@ export class AiGenerationRepository {
     const rows = await this.prisma.aiJob.findMany({
       where: {
         ...(options.includeCollaboratorJobs ? {} : { userId: options.userId }),
+        ...(options.ids ? { id: { in: options.ids } } : {}),
+        ...(options.idempotencyKey
+          ? { idempotencyKey: options.idempotencyKey }
+          : {}),
+        ...(options.documentBlockId
+          ? { documentBlockId: options.documentBlockId }
+          : {}),
         deletedAt: null,
         ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
         ...(options.projectId ? { projectId: options.projectId } : {}),

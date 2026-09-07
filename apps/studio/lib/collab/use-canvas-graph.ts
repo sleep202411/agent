@@ -57,16 +57,16 @@ import {
  *   • in-flight drag — smooth locally; only the final position is committed
  *   • measured dimensions — each client measures its own DOM
  *
- * All doc mutations run under LOCAL_ORIGIN so (a) the provider streams them to
- * the server and (b) the UndoManager tracks only this client's edits. Remote
- * updates arrive with a different origin, re-deriving state without being
- * re-sent or captured as undo steps.
+ * User edits run under LOCAL_ORIGIN and generation snapshots under
+ * GENERATION_ORIGIN. Both stream to the server; only edits enter undo history.
+ * Remote updates re-derive state without being re-sent or captured as undo steps.
  *
  * Unchanged nodes/edges keep a stable object reference across re-derives, so a
  * remote edit to one node never re-renders the whole graph.
  */
 
 const LOCAL_ORIGIN = Symbol("fizz-local-canvas-edit");
+const GENERATION_ORIGIN = Symbol("fizz-canvas-generation");
 const EDGE_TYPE = "gradient";
 
 export interface CanvasGraph extends CanvasGraphStore {
@@ -591,18 +591,17 @@ export function useCanvasGraph(
       patch: Record<string, unknown> | ((node: CanvasNodeShape) => Record<string, unknown>)
     ) => {
       if (!doc) return;
-      doc.transact(() => {
-        let resolved: Record<string, unknown>;
-        if (typeof patch === "function") {
-          const yn = nodesMap(doc).get(id);
-          const cur = yn instanceof Y.Map ? readNode(yn) : null;
-          if (!cur) return;
-          resolved = patch(cur);
-        } else {
-          resolved = patch;
-        }
-        yPatchNodeData(doc, id, resolved);
-      }, LOCAL_ORIGIN);
+      const yn = nodesMap(doc).get(id);
+      const current = yn instanceof Y.Map ? readNode(yn) : null;
+      if (!current) return;
+      const resolved = typeof patch === "function" ? patch(current) : patch;
+      const keys = Object.keys(resolved);
+      if (keys.length === 0) return;
+      // Server job snapshots and submission receipts must survive undoing an
+      // edit. They still stream to the server/peers through the same provider.
+      const origin =
+        keys.length === 1 && keys[0] === "generation" ? GENERATION_ORIGIN : LOCAL_ORIGIN;
+      doc.transact(() => yPatchNodeData(doc, id, resolved), origin);
     },
     [doc]
   );

@@ -207,6 +207,7 @@ export interface FizzAiStyleBinding {
 }
 
 export interface FizzAiJobView {
+  idempotencyKey?: string;
   id: string;
   request_id?: string;
   type: FizzAiJobType;
@@ -296,6 +297,7 @@ export interface FizzAiSubmitJobInput {
  */
 export type FizzAiGenerationStatus =
   | "submitting"
+  | "uncertain"
   | "queued"
   | "generating"
   | "done"
@@ -317,6 +319,10 @@ export function isTerminalGenerationStatus(status: FizzAiGenerationStatus): bool
 
 /** A generation card's live job state — the canvas-local projection of a job. */
 export interface GenerationState {
+  /** Durable receipt; removed from the card once the server acknowledges it. */
+  submission?: FizzAiSubmitJobInput;
+  submissionKey?: string;
+  submissionOwnerId?: string;
   jobId?: string;
   status: FizzAiGenerationStatus;
   progress?: number;
@@ -1612,13 +1618,31 @@ export async function listFizzAiJobs(input: {
   limit?: number;
   sourceSurface?: string;
   type?: FizzAiJobType;
+  ids?: string[];
+  projectId?: string;
+  storyProjectId?: string;
+  documentId?: string;
+  documentBlockId?: string;
+  idempotencyKey?: string;
 }): Promise<FizzAiJobListResponse> {
   const params = new URLSearchParams();
   if (input.limit) params.set("limit", String(input.limit));
   if (input.sourceSurface) params.set("sourceSurface", input.sourceSurface);
   if (input.type) params.set("type", input.type);
+  if (input.ids) params.set("ids", input.ids.join(","));
+  for (const key of [
+    "projectId",
+    "storyProjectId",
+    "documentId",
+    "documentBlockId",
+    "idempotencyKey",
+  ] as const) {
+    if (input[key]) params.set(key, input[key]);
+  }
   const query = params.toString();
   return api.get<FizzAiJobListResponse>(`/aurora/ai/jobs${query ? `?${query}` : ""}`, {
+    requestScope:
+      input.documentId || input.projectId || input.storyProjectId ? "project" : "workspace",
     timeout: 15_000,
   });
 }

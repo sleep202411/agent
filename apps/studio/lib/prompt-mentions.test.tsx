@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -23,9 +24,20 @@ vi.mock("next-intl", () => ({
 describe("MentionChip", () => {
   let container: HTMLDivElement;
   let root: Root;
+  let client: QueryClient;
 
   beforeEach(() => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      }
+    );
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -33,6 +45,9 @@ describe("MentionChip", () => {
 
   afterEach(async () => {
     await act(async () => root.unmount());
+    client.clear();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     container.remove();
   });
 
@@ -88,19 +103,21 @@ describe("MentionChip", () => {
 
     await act(async () => {
       root.render(
-        <ReferenceMediaHoverPreview
-          item={{
-            kind: "video",
-            label: "Video1",
-            name: "Reference clip",
-            previewUrl: "/reference.mp4",
-            durationSeconds: 5,
-            bytes: 2_097_152,
-            width: 1920,
-            height: 1080,
-          }}
-          style={{ left: 20, top: 20 }}
-        />
+        <QueryClientProvider client={client}>
+          <ReferenceMediaHoverPreview
+            item={{
+              kind: "video",
+              label: "Video1",
+              name: "Reference clip",
+              previewUrl: "/reference.mp4",
+              durationSeconds: 5,
+              bytes: 2_097_152,
+              width: 1920,
+              height: 1080,
+            }}
+            style={{ left: 20, top: 20 }}
+          />
+        </QueryClientProvider>
       );
     });
 

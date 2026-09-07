@@ -1,5 +1,6 @@
 "use client";
 
+import { CanvasVideo } from "@/components/media/canvas-video";
 import { memo, useMemo } from "react";
 import { useTranslations } from "next-intl";
 import { type Node, type NodeProps } from "@xyflow/react";
@@ -89,12 +90,11 @@ function ShotNodeComponent({ id, data, selected }: NodeProps<ShotNodeType>) {
         <div className="relative flex aspect-video items-center justify-center bg-white/[0.04]">
           {picture ? (
             picture.kind === "video" ? (
-              <video
+              <CanvasVideo
                 src={picture.url}
-                muted
-                playsInline
-                preload="metadata"
-                className="size-full object-cover"
+                assetId={picture.assetId}
+                thumbnail
+                className="size-full"
               />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element

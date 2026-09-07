@@ -1,5 +1,7 @@
 "use client";
 
+import { CanvasVideo } from "@/components/media/canvas-video";
+
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
@@ -303,12 +305,11 @@ export function AssetSelectDialog({
                         className="size-full object-cover"
                       />
                     ) : asset.kind === "video" && asset.url ? (
-                      <video
+                      <CanvasVideo
                         src={asset.url}
-                        muted
-                        playsInline
-                        preload="metadata"
-                        className="size-full object-cover"
+                        assetId={asset.mediaAssetId}
+                        thumbnail
+                        className="size-full"
                       />
                     ) : (
                       <span className="flex size-full items-center justify-center text-muted-foreground">

@@ -12,6 +12,7 @@ import {
 import { useTranslations } from "next-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { useAuth } from "@/app/_components/auth-provider";
 import { ComputeRechargeDialog } from "@/app/_components/compute-recharge-dialog";
 import type { CanvasAsset } from "@/lib/canvas-core/types";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
@@ -40,6 +41,7 @@ import {
   generationStateFromJob,
   generationStatusFromRaw,
   getFizzAiJob,
+  listFizzAiJobs,
   isTerminalGenerationStatus,
   mediaSnapshotsForMode,
   normalizeModelSettings,
@@ -51,9 +53,16 @@ import {
   type FizzAiCatalog,
   type FizzAiJobView,
   type FizzAiSourceSurface,
+  type FizzAiSubmitJobInput,
   type GenerationState,
   type ValidationIssue,
 } from "./generation-api";
+import {
+  acceptsSubmissionResponse,
+  isUncertainSubmission,
+  matchesCanvasJob,
+  needsJobRecovery,
+} from "./canvas-job-recovery";
 import { probeMediaDurationSeconds } from "./probe-media-duration";
 import {
   compatibleProjectSkillInstallations,
@@ -71,6 +80,7 @@ import type {
 
 /** Reconcile cadence while a card is running — slower when realtime is healthy. */
 const DISCONNECTED_FALLBACK_INTERVAL_MS = 5_000;
+const CONNECTED_RECONCILE_INTERVAL_MS = 15_000;
 
 /** Minimal shape this orchestrator reads off a generation node's data. */
 type GenNodeData = {
@@ -347,6 +357,8 @@ export function CanvasGenerationProvider({
   } = useCanvasGraphContext();
   const queryClient = useQueryClient();
   const { data: wallet } = useComputeWalletBalance();
+  const { user } = useAuth();
+  const userId = user?.id != null ? String(user.id) : undefined;
   const [rechargePrompt, setRechargePrompt] = useState<RechargePromptState | null>(null);
   const [preflightByNode, setPreflightByNode] = useState<Record<string, ValidationIssue[]>>({});
   useEffect(() => {
@@ -371,8 +383,8 @@ export function CanvasGenerationProvider({
   );
 
   const [realtimeConnected, setRealtimeConnected] = useState(false);
-  const reconcileSeq = useRef(0);
-  const staleUrlSweepDone = useRef(false);
+  const reconciling = useRef(false);
+  const submittingNodes = useRef(new Set<string>());
 
   /**
    * Apply one job update to the card whose `generation.jobId` matches. Shared by
@@ -389,7 +401,7 @@ export function CanvasGenerationProvider({
       // Find the node this job belongs to (sync read) so we can decide whether
       // to convert it to a panorama node + drop its now-dangling input wire.
       const match = getNodes().find(
-        (n) => isGenerationNodeType(n.type) && (n.data as GenNodeData).generation?.jobId === job.id
+        (n) => isGenerationNodeType(n.type) && matchesCanvasJob(n, job)
       );
       const matchData = match?.data as GenNodeData | undefined;
 
@@ -426,7 +438,10 @@ export function CanvasGenerationProvider({
             data: { src, mediaAssetId: out?.assetId, label: matchData?.prompt },
           });
         } else {
-          const nextGeneration = generationStateFromJob(job);
+          const nextGeneration = {
+            ...generationStateFromJob(job),
+            submissionKey: matchData?.generation?.submissionKey ?? job.idempotencyKey,
+          };
           // No-op update (a reconnect/focus reconcile re-fetching a state we
           // already hold): apply nothing. Writing the identical object into
           // the CRDT would broadcast to peers, force a graph re-derive, and —
@@ -528,53 +543,99 @@ export function CanvasGenerationProvider({
    * Mirrors the studio feed's reconcile.
    */
   const reconcile = useCallback(async () => {
-    const seq = ++reconcileSeq.current;
-    const ids = [
-      ...new Set(
-        getNodes()
-          .filter((n) => isGenerationNodeType(n.type))
-          .map((n) => (n.data as GenNodeData).generation)
-          .filter((g): g is GenerationState => !!g?.jobId && !isTerminalGenerationStatus(g.status))
-          .map((g) => g.jobId as string)
-      ),
-    ];
-    if (ids.length === 0) return;
-    const results = await Promise.allSettled(ids.map((id) => getFizzAiJob(id)));
-    if (seq !== reconcileSeq.current) return; // a newer reconcile superseded this one
-    for (const result of results) {
-      if (result.status === "fulfilled") applyJobUpdate(result.value);
+    if (reconciling.current || document.visibilityState === "hidden") return;
+    reconciling.current = true;
+    const scope = {
+      projectId: generationProjectId,
+      storyProjectId: generationStoryProjectId,
+      documentId: generationDocumentId,
+      sourceSurface,
+    };
+    const readJobs = (filter: Parameters<typeof listFizzAiJobs>[0]) =>
+      queryClient.fetchQuery({
+        queryKey: ["canvas-jobs", scope, filter],
+        queryFn: () => listFizzAiJobs({ ...scope, ...filter }),
+        staleTime: 0,
+        retry: false,
+      });
+    try {
+      const active = getNodes().filter(
+        (node) =>
+          isGenerationNodeType(node.type) && needsJobRecovery((node.data as GenNodeData).generation)
+      );
+      const ids = [
+        ...new Set(
+          active.flatMap((node) => {
+            const id = (node.data as GenNodeData).generation?.jobId;
+            return id ? [id] : [];
+          })
+        ),
+      ];
+      // One bounded batch per 100 jobs, including completed jobs. A healthy
+      // socket is only a latency optimisation, never the source of truth.
+      for (let offset = 0; offset < ids.length; offset += 100) {
+        const { jobs } = await readJobs({ ids: ids.slice(offset, offset + 100), limit: 100 });
+        jobs.forEach(applyJobUpdate);
+      }
+      for (const node of active) {
+        const generation = (node.data as GenNodeData).generation!;
+        if (generation.jobId || submittingNodes.current.has(node.id)) continue;
+        const { jobs } = await readJobs({
+          documentBlockId: node.id,
+          idempotencyKey: generation.submissionKey,
+          limit: 1,
+        });
+        const job = jobs.find((candidate) => matchesCanvasJob(node, candidate));
+        if (job) applyJobUpdate(job);
+        else if (generation.status === "submitting" || generation.status === "uncertain") {
+          // No acknowledged job: keep the exact receipt for a safe retry.
+          // Old cards without a receipt can be retried after this lookup.
+          patchNodeData(node.id, (current) => {
+            const state = (current.data as GenNodeData).generation;
+            if (!state || state.jobId || state.submissionKey !== generation.submissionKey)
+              return {};
+            return {
+              generation: {
+                ...state,
+                status: state.submission ? "uncertain" : "failed",
+                error: t("submissionUnconfirmed"),
+              },
+            };
+          });
+        }
+      }
+    } catch (error) {
+      // Cached jobs stay visible. A disconnected request must not strand an
+      // unacknowledged card behind a spinner without a retry action.
+      for (const node of getNodes()) {
+        const state = (node.data as GenNodeData).generation;
+        if (
+          state?.status === "submitting" &&
+          !state.jobId &&
+          !submittingNodes.current.has(node.id)
+        ) {
+          patch(node.id, {
+            ...state,
+            status: "uncertain",
+            error: normalizeFizzAiError(error, t("submissionUnconfirmed")),
+          });
+        }
+      }
+    } finally {
+      reconciling.current = false;
     }
-  }, [getNodes, applyJobUpdate]);
-
-  // One-time migration of legacy cards whose persisted output URL is a relative
-  // /content access path (captured before outputs carried a direct CDN URL). On
-  // the first connect we re-fetch those finished jobs once and re-apply them, so
-  // the server's now-resolved CDN URL replaces the redirect — then it's persisted
-  // in the doc and never swept again. Not a poll: guarded to run once, and only
-  // fires when such a stale card actually exists.
-  const sweepStaleUrls = useCallback(async () => {
-    if (staleUrlSweepDone.current) return;
-    const ids = [
-      ...new Set(
-        getNodes()
-          .filter((n) => isGenerationNodeType(n.type))
-          .map((n) => (n.data as GenNodeData).generation)
-          .filter(
-            (g): g is GenerationState =>
-              !!g?.jobId &&
-              isTerminalGenerationStatus(g.status) &&
-              (g.outputs ?? []).some((o) => typeof o.url === "string" && o.url.startsWith("/"))
-          )
-          .map((g) => g.jobId as string)
-      ),
-    ];
-    if (ids.length === 0) return;
-    staleUrlSweepDone.current = true;
-    const results = await Promise.allSettled(ids.map((id) => getFizzAiJob(id)));
-    for (const result of results) {
-      if (result.status === "fulfilled") applyJobUpdate(result.value);
-    }
-  }, [getNodes, applyJobUpdate]);
+  }, [
+    getNodes,
+    applyJobUpdate,
+    generationProjectId,
+    generationStoryProjectId,
+    generationDocumentId,
+    sourceSurface,
+    queryClient,
+    patchNodeData,
+    patch,
+    t,
+  ]);
 
   // Realtime: route job updates back to their card by jobId; reconcile on
   // (re)connect so a reconnect after sleep/disconnect back-fills missed updates.
@@ -590,7 +651,6 @@ export function CanvasGenerationProvider({
       onConnected: () => {
         setRealtimeConnected(true);
         void reconcile();
-        void sweepStaleUrls();
       },
       onDisconnected: () => setRealtimeConnected(false),
       onEvent: (event) => {
@@ -681,7 +741,6 @@ export function CanvasGenerationProvider({
   }, [
     applyJobUpdate,
     reconcile,
-    sweepStaleUrls,
     getNodes,
     getEdges,
     patchNodeData,
@@ -692,29 +751,30 @@ export function CanvasGenerationProvider({
     workspaceId,
   ]);
 
-  // Non-terminal job ids in the document, reactive to doc hydration + node edits.
-  const activeJobIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const node of nodes) {
-      if (!isGenerationNodeType(node.type)) continue;
-      const generation = (node.data as GenNodeData).generation;
-      if (generation?.jobId && !isTerminalGenerationStatus(generation.status)) {
-        ids.push(generation.jobId);
-      }
-    }
-    return ids.sort().join(",");
-  }, [nodes]);
+  const activeJobIds = useMemo(
+    () =>
+      nodes
+        .filter(
+          (node) =>
+            isGenerationNodeType(node.type) &&
+            needsJobRecovery((node.data as GenNodeData).generation)
+        )
+        .map((node) => {
+          const state = (node.data as GenNodeData).generation!;
+          return `${node.id}:${state.jobId ?? state.submissionKey ?? "unacknowledged"}`;
+        })
+        .sort()
+        .join(","),
+    [nodes]
+  );
 
-  // Reconcile the instant an active card appears (e.g. after the doc hydrates
-  // from IndexedDB on load). While the realtime channel is live the socket
-  // delivers job updates — and reconcile-on-(re)connect + tab-refocus cover any
-  // gap — so we do NOT poll when connected. Only when the channel is down do we
-  // fall back to interval polling.
   useEffect(() => {
     if (!activeJobIds) return;
     void reconcile();
-    if (realtimeConnected) return;
-    const timer = window.setInterval(() => void reconcile(), DISCONNECTED_FALLBACK_INTERVAL_MS);
+    const timer = window.setInterval(
+      () => void reconcile(),
+      realtimeConnected ? CONNECTED_RECONCILE_INTERVAL_MS : DISCONNECTED_FALLBACK_INTERVAL_MS
+    );
     return () => window.clearInterval(timer);
   }, [activeJobIds, realtimeConnected, reconcile]);
 
@@ -727,206 +787,263 @@ export function CanvasGenerationProvider({
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [reconcile]);
 
-  const submit = useCallback(
-    async (nodeId: string) => {
-      if (!canGenerate || !projectSkillsReady) {
-        if (effectiveDisabledReason) toast.error(effectiveDisabledReason);
-        return;
-      }
-      // Read source-of-truth from the doc (synchronous) so a card created/edited
-      // earlier in the same turn is found even before React Flow's store catches up.
-      const node = getNode(nodeId);
-      if (!node) return;
-      const data = node.data as GenNodeData;
-      const model = catalog?.models.find((m) => m.id === data.modelId);
-      if (!model) {
-        toast.error(t("chooseModelFirst"));
-        return;
-      }
-      // Only block when the model's schema REQUIRES a prompt. Pure transforms
-      // (upscale) declare none; ops with an optional prompt (expand) must still
-      // run prompt-less.
-      if (promptRequired(model) && !data.prompt?.trim()) {
-        toast.error(t("writePromptFirst"));
-        return;
-      }
-      const estimatedCost = generationCost(model, data);
-      if (estimatedCost != null && wallet && wallet.available < BigInt(Math.ceil(estimatedCost))) {
-        setRechargePrompt({
-          available: wallet.available,
-          modelName: model.name,
-          required: estimatedCost,
-        });
-        return;
-      }
-
-      // Only the ACTIVE mode's reference fields are submitted — leftover slots
-      // from a prior mode must not ride along or Seedance rejects the combo.
-      const mode = data.mode ?? defaultMode(model);
-
-      // Backfill missing video/audio durations (wired refs without metadata).
-      // Persist onto the card so re-submit and server payload stay consistent.
-      let references = data.references;
-      const durationPatches: Array<{
-        field: string;
-        id: string;
-        durationSeconds: number;
-      }> = [];
-      for (const field of referenceFieldsForMode(model, mode)) {
-        if (field.kind !== "video" && field.kind !== "audio") continue;
-        for (const row of references?.[field.field] ?? []) {
-          if (typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)) {
-            continue;
-          }
-          if (!row.url || row.uploading) continue;
-          const probed = await probeMediaDurationSeconds(row.url, field.kind);
-          if (probed != null) {
-            durationPatches.push({
-              field: field.field,
-              id: row.id,
-              durationSeconds: probed,
-            });
-          }
-        }
-      }
-      if (durationPatches.length > 0) {
-        // Merge by ref id only — never replace the whole references map with a
-        // snapshot taken before probe await (user/collaborator may have edited).
-        patchNodeData(nodeId, (node) => {
-          const live = (node.data as GenNodeData).references ?? {};
-          const next: NonNullable<GenNodeData["references"]> = { ...live };
-          for (const patch of durationPatches) {
-            const list = next[patch.field];
-            if (!list?.length) continue;
-            next[patch.field] = list.map((row) =>
-              row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
-            );
-          }
-          return { references: next };
-        });
-        const latest = getNode(nodeId);
-        references =
-          latest && (latest.data as GenNodeData).references
-            ? (latest.data as GenNodeData).references
-            : references;
-        // Also fold patches into the local submit snapshot when live read fails.
-        if (references) {
-          const merged: NonNullable<GenNodeData["references"]> = { ...references };
-          for (const patch of durationPatches) {
-            merged[patch.field] = (merged[patch.field] ?? []).map((row) =>
-              row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
-            );
-          }
-          references = merged;
-        }
-      }
-
-      const referenceInput = buildReferenceInputForMode(model, mode, references);
-      const referenceBindings = buildPromptReferenceBindingsForMode(model, mode, references);
-      const skillScope = generationSkillScope(model.type);
-      const compatibleSkills = compatibleProjectSkillInstallations(projectSkills.data, skillScope);
-      const skillSelection = sanitizeProjectSkillSelection(data.skillSelection, compatibleSkills);
-      const labelForSkill = (installation: ProjectSkillInstallation) =>
-        installation.translationKey
-          ? ts(`items.${installation.translationKey}.name`)
-          : (installation.name ?? installation.slug ?? ts("title"));
-      const effectiveSkills = resolveEffectiveProjectSkills({
-        projectSkills: projectSkills.data,
-        scope: skillScope,
-        sourceSurface,
-        selection: skillSelection,
-        labelFor: labelForSkill,
-        promptLength: (data.prompt ?? "").length,
-      });
-      const promptWithSkills = composePromptWithProjectSkills(data.prompt ?? "", effectiveSkills);
-      const requestSkillSelection: ProjectSkillSelection = {
-        ...(skillSelection?.includeInstallationIds?.length
-          ? { includeInstallationIds: skillSelection.includeInstallationIds }
-          : {}),
-        ...(skillSelection?.excludeInstallationIds?.length
-          ? { excludeInstallationIds: skillSelection.excludeInstallationIds }
-          : {}),
-      };
-
-      const input = compactFizzAiInput(
-        filterFizzAiInput(model, {
-          ...(data.settings ?? {}),
-          ...referenceInput,
-          prompt: data.prompt,
-        })
-      );
-
-      // Catalog-driven preflight (same kernel as server). No model-specific ifs.
-      const media = mediaSnapshotsForMode(model, mode, references);
-      const preflight = validateModelGenerationInput(model, input, media);
-      if (generationInputHasBlockingIssues(preflight)) {
-        // Primary surface is ValidationAlertDialog on the card (not toast).
-        setPreflightByNode((prev) => ({ ...prev, [nodeId]: preflight }));
-        return;
-      }
-      setPreflightByNode((prev) => {
-        if (!(nodeId in prev)) return prev;
-        const next = { ...prev };
-        delete next[nodeId];
-        return next;
-      });
-
-      patch(nodeId, {
-        ...(data.generation ?? { status: "submitting" }),
+  const sendSubmission = useCallback(
+    async (nodeId: string, input: FizzAiSubmitJobInput, previous?: GenerationState) => {
+      const receipt: GenerationState = {
         status: "submitting",
-        error: undefined,
-      });
+        submissionKey: input.idempotencyKey,
+        submission: input,
+        submissionOwnerId: userId,
+      };
+      patch(nodeId, receipt);
       try {
-        const response = await submitFizzAiJob({
-          // The job binds to its server-backed project (canvas id === project
-          // id) and to its card via the block id. The server resolves the
-          // workspace from the project, which is required for billing the
-          // project's workspace wallet.
-          context: {
-            ...(generationProjectId ? { projectId: generationProjectId } : {}),
-            ...(generationStoryProjectId ? { storyProjectId: generationStoryProjectId } : {}),
-            ...(generationDocumentId ? { documentId: generationDocumentId } : {}),
-            documentBlockId: nodeId,
-            sourceSurface,
-          },
-          idempotencyKey: generationIdempotencyKey("canvas"),
-          input,
-          promptDocument: buildPromptDocument(promptWithSkills, [
-            ...referenceBindings,
-            ...effectiveSkills.map((skill) => ({
-              refId: skill.installation.id,
-              label: skill.mention.label,
-              nodeType: "skill_ref" as const,
-            })),
-          ]),
-          referenceBindings: referenceBindings.length ? referenceBindings : undefined,
-          skillSelection:
-            Object.keys(requestSkillSelection).length > 0 ? requestSkillSelection : undefined,
-          modelId: model.id,
-          schemaVersion: model.schemaVersion,
+        const response = await submitFizzAiJob(input);
+        patchNodeData(nodeId, (node) => {
+          const current = (node.data as GenNodeData).generation;
+          if (!acceptsSubmissionResponse(current, input.idempotencyKey) || current?.jobId)
+            return {};
+          const status = generationStatusFromRaw(response.status);
+          return {
+            generation: {
+              submissionKey: input.idempotencyKey,
+              jobId: response.request_id,
+              // The receipt has no outputs/error detail. Keep reconciling a
+              // completed replay until the full job has actually been loaded.
+              status: isTerminalGenerationStatus(status) ? "generating" : status,
+              progress: response.progress ?? undefined,
+              queuePosition: response.queue_position ?? undefined,
+              etaSeconds: response.estimated_total_seconds ?? undefined,
+            },
+          };
         });
-        patch(nodeId, {
-          jobId: response.request_id,
-          status: generationStatusFromRaw(response.status),
-          progress: response.progress ?? undefined,
-          queuePosition: response.queue_position ?? undefined,
-          etaSeconds: response.estimated_total_seconds ?? undefined,
-        });
+        // A replay may already be completed; hydrate its outputs as well.
+        const job = await getFizzAiJob(response.request_id).catch(() => null);
+        if (job) applyJobUpdate(job);
         void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
       } catch (error) {
+        const current = getNode(nodeId)?.data.generation as GenerationState | undefined;
+        if (!acceptsSubmissionResponse(current, input.idempotencyKey) || current?.jobId) return;
         const insufficient = insufficientComputePointDetails(error);
         if (insufficient) {
-          patchNodeData(nodeId, { generation: data.generation });
+          patchNodeData(nodeId, { generation: previous });
           setRechargePrompt({
             available: insufficient.available ?? wallet?.available ?? null,
-            modelName: model.name,
-            required: insufficient.required ?? estimatedCost,
+            modelName: catalog?.models.find((model) => model.id === input.modelId)?.name,
+            required: insufficient.required ?? null,
           });
           return;
         }
-        const message = normalizeFizzAiError(error, t("generationFailed"));
-        patch(nodeId, { status: "failed", error: message });
+        const message = normalizeFizzAiError(error, t("submissionUnconfirmed"));
+        patch(
+          nodeId,
+          isUncertainSubmission(error)
+            ? { ...receipt, status: "uncertain", error: message }
+            : { status: "failed", error: message }
+        );
         toast.error(message);
+      }
+    },
+    [patch, patchNodeData, getNode, applyJobUpdate, queryClient, wallet, catalog, t, userId]
+  );
+
+  const submit = useCallback(
+    async (nodeId: string) => {
+      if (submittingNodes.current.has(nodeId)) return;
+      submittingNodes.current.add(nodeId);
+      try {
+        if (!canGenerate || !projectSkillsReady) {
+          if (effectiveDisabledReason) toast.error(effectiveDisabledReason);
+          return;
+        }
+        // Read source-of-truth from the doc (synchronous) so a card created/edited
+        // earlier in the same turn is found even before React Flow's store catches up.
+        const node = getNode(nodeId);
+        if (!node) return;
+        const data = node.data as GenNodeData;
+        if (data.generation?.submission && data.generation.status === "uncertain") {
+          if (data.generation.submissionOwnerId !== userId) {
+            void reconcile();
+            toast.error(t("submissionOtherUser"));
+            return;
+          }
+          await sendSubmission(nodeId, data.generation.submission);
+          return;
+        }
+        if (needsJobRecovery(data.generation)) return;
+        const model = catalog?.models.find((m) => m.id === data.modelId);
+        if (!model) {
+          toast.error(t("chooseModelFirst"));
+          return;
+        }
+        // Only block when the model's schema REQUIRES a prompt. Pure transforms
+        // (upscale) declare none; ops with an optional prompt (expand) must still
+        // run prompt-less.
+        if (promptRequired(model) && !data.prompt?.trim()) {
+          toast.error(t("writePromptFirst"));
+          return;
+        }
+        const estimatedCost = generationCost(model, data);
+        if (
+          estimatedCost != null &&
+          wallet &&
+          wallet.available < BigInt(Math.ceil(estimatedCost))
+        ) {
+          setRechargePrompt({
+            available: wallet.available,
+            modelName: model.name,
+            required: estimatedCost,
+          });
+          return;
+        }
+
+        // Only the ACTIVE mode's reference fields are submitted — leftover slots
+        // from a prior mode must not ride along or Seedance rejects the combo.
+        const mode = data.mode ?? defaultMode(model);
+
+        // Backfill missing video/audio durations (wired refs without metadata).
+        // Persist onto the card so re-submit and server payload stay consistent.
+        let references = data.references;
+        const durationPatches: Array<{
+          field: string;
+          id: string;
+          durationSeconds: number;
+        }> = [];
+        for (const field of referenceFieldsForMode(model, mode)) {
+          if (field.kind !== "video" && field.kind !== "audio") continue;
+          for (const row of references?.[field.field] ?? []) {
+            if (typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)) {
+              continue;
+            }
+            if (!row.url || row.uploading) continue;
+            const probed = await probeMediaDurationSeconds(row.url, field.kind);
+            if (probed != null) {
+              durationPatches.push({
+                field: field.field,
+                id: row.id,
+                durationSeconds: probed,
+              });
+            }
+          }
+        }
+        if (durationPatches.length > 0) {
+          // Merge by ref id only — never replace the whole references map with a
+          // snapshot taken before probe await (user/collaborator may have edited).
+          patchNodeData(nodeId, (node) => {
+            const live = (node.data as GenNodeData).references ?? {};
+            const next: NonNullable<GenNodeData["references"]> = { ...live };
+            for (const patch of durationPatches) {
+              const list = next[patch.field];
+              if (!list?.length) continue;
+              next[patch.field] = list.map((row) =>
+                row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
+              );
+            }
+            return { references: next };
+          });
+          const latest = getNode(nodeId);
+          references =
+            latest && (latest.data as GenNodeData).references
+              ? (latest.data as GenNodeData).references
+              : references;
+          // Also fold patches into the local submit snapshot when live read fails.
+          if (references) {
+            const merged: NonNullable<GenNodeData["references"]> = { ...references };
+            for (const patch of durationPatches) {
+              merged[patch.field] = (merged[patch.field] ?? []).map((row) =>
+                row.id === patch.id ? { ...row, durationSeconds: patch.durationSeconds } : row
+              );
+            }
+            references = merged;
+          }
+        }
+
+        const referenceInput = buildReferenceInputForMode(model, mode, references);
+        const referenceBindings = buildPromptReferenceBindingsForMode(model, mode, references);
+        const skillScope = generationSkillScope(model.type);
+        const compatibleSkills = compatibleProjectSkillInstallations(
+          projectSkills.data,
+          skillScope
+        );
+        const skillSelection = sanitizeProjectSkillSelection(data.skillSelection, compatibleSkills);
+        const labelForSkill = (installation: ProjectSkillInstallation) =>
+          installation.translationKey
+            ? ts(`items.${installation.translationKey}.name`)
+            : (installation.name ?? installation.slug ?? ts("title"));
+        const effectiveSkills = resolveEffectiveProjectSkills({
+          projectSkills: projectSkills.data,
+          scope: skillScope,
+          sourceSurface,
+          selection: skillSelection,
+          labelFor: labelForSkill,
+          promptLength: (data.prompt ?? "").length,
+        });
+        const promptWithSkills = composePromptWithProjectSkills(data.prompt ?? "", effectiveSkills);
+        const requestSkillSelection: ProjectSkillSelection = {
+          ...(skillSelection?.includeInstallationIds?.length
+            ? { includeInstallationIds: skillSelection.includeInstallationIds }
+            : {}),
+          ...(skillSelection?.excludeInstallationIds?.length
+            ? { excludeInstallationIds: skillSelection.excludeInstallationIds }
+            : {}),
+        };
+
+        const input = compactFizzAiInput(
+          filterFizzAiInput(model, {
+            ...(data.settings ?? {}),
+            ...referenceInput,
+            prompt: data.prompt,
+          })
+        );
+
+        // Catalog-driven preflight (same kernel as server). No model-specific ifs.
+        const media = mediaSnapshotsForMode(model, mode, references);
+        const preflight = validateModelGenerationInput(model, input, media);
+        if (generationInputHasBlockingIssues(preflight)) {
+          // Primary surface is ValidationAlertDialog on the card (not toast).
+          setPreflightByNode((prev) => ({ ...prev, [nodeId]: preflight }));
+          return;
+        }
+        setPreflightByNode((prev) => {
+          if (!(nodeId in prev)) return prev;
+          const next = { ...prev };
+          delete next[nodeId];
+          return next;
+        });
+
+        await sendSubmission(
+          nodeId,
+          {
+            // The job binds to its server-backed project (canvas id === project
+            // id) and to its card via the block id. The server resolves the
+            // workspace from the project, which is required for billing the
+            // project's workspace wallet.
+            context: {
+              ...(generationProjectId ? { projectId: generationProjectId } : {}),
+              ...(generationStoryProjectId ? { storyProjectId: generationStoryProjectId } : {}),
+              ...(generationDocumentId ? { documentId: generationDocumentId } : {}),
+              documentBlockId: nodeId,
+              sourceSurface,
+            },
+            idempotencyKey: generationIdempotencyKey("canvas"),
+            input,
+            promptDocument: buildPromptDocument(promptWithSkills, [
+              ...referenceBindings,
+              ...effectiveSkills.map((skill) => ({
+                refId: skill.installation.id,
+                label: skill.mention.label,
+                nodeType: "skill_ref" as const,
+              })),
+            ]),
+            referenceBindings: referenceBindings.length ? referenceBindings : undefined,
+            skillSelection:
+              Object.keys(requestSkillSelection).length > 0 ? requestSkillSelection : undefined,
+            modelId: model.id,
+            schemaVersion: model.schemaVersion,
+          },
+          data.generation
+        );
+      } finally {
+        submittingNodes.current.delete(nodeId);
       }
     },
     [
@@ -938,12 +1055,13 @@ export function CanvasGenerationProvider({
       generationDocumentId,
       sourceSurface,
       canGenerate,
+      sendSubmission,
+      userId,
+      reconcile,
       projectSkills.data,
       projectSkillsReady,
       effectiveDisabledReason,
-      patch,
       patchNodeData,
-      queryClient,
       t,
       ts,
     ]
@@ -955,15 +1073,13 @@ export function CanvasGenerationProvider({
       if (!node) return;
       const generation = (node.data as GenNodeData).generation;
       if (!generation?.jobId) return;
-      // Optimistically drop out of the busy state; the realtime update confirms.
-      patch(nodeId, { ...generation, status: "cancelled" });
       try {
-        await cancelFizzAiJob(generation.jobId);
-      } catch {
-        // Best-effort — the job may already be terminal server-side.
+        applyJobUpdate(await cancelFizzAiJob(generation.jobId));
+      } catch (error) {
+        toast.error(normalizeFizzAiError(error, t("generationFailed")));
       }
     },
-    [getNode, patch]
+    [getNode, applyJobUpdate, t]
   );
 
   const preflightIssues = useCallback(

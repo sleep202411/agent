@@ -253,6 +253,7 @@
     }
   },
   "generation": {
+    "previewLoadFailed": "视频加载失败，请检查网络后重试。",
     "time": {
       "justNow": "刚刚",
       "minutesAgo": "{minutes} 分钟前",
@@ -1454,6 +1455,8 @@
     }
   },
   "canvasOps": {
+    "submissionOtherUser": "正在查询状态。请由原提交人重试这次请求。",
+    "submissionUnconfirmed": "暂时无法确认提交结果。重试会恢复同一次请求。",
     "modalityImage": "图像",
     "modalityVideo": "视频",
     "modalityAudio": "音频",

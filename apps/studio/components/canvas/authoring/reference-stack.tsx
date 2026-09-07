@@ -11,6 +11,7 @@ import {
   IconX,
   type Icon,
 } from "@tabler/icons-react";
+import { CanvasVideo } from "@/components/media/canvas-video";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import type {
   FizzAiReferenceFieldConstraints,
@@ -96,7 +97,12 @@ function ReferenceTile({
             className="size-full object-cover"
           />
         ) : refItem.kind === "video" ? (
-          <video src={refItem.url} muted playsInline className="size-full object-cover" />
+          <CanvasVideo
+            src={refItem.url}
+            assetId={refItem.assetId}
+            thumbnail
+            className="size-full"
+          />
         ) : (
           <div className="flex size-full min-w-0 flex-col items-center justify-center gap-1 bg-violet-500/20 px-2 text-center transition-colors group-hover:bg-violet-500/30">
             <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-violet-200/10 text-violet-100">

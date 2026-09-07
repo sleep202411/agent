@@ -253,6 +253,7 @@
     }
   },
   "generation": {
+    "previewLoadFailed": "Could not load this video. Check your connection and retry.",
     "time": {
       "justNow": "Just now",
       "minutesAgo": "{minutes}m ago",
@@ -1454,6 +1455,8 @@
     }
   },
   "canvasOps": {
+    "submissionOtherUser": "Checking status. Only the person who submitted this request can retry it.",
+    "submissionUnconfirmed": "Could not confirm submission. Retry to recover the same request.",
     "modalityImage": "Image",
     "modalityVideo": "Video",
     "modalityAudio": "Audio",

@@ -1,5 +1,7 @@
 "use client";
 
+import { CanvasVideo } from "@/components/media/canvas-video";
+
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslations } from "next-intl";
@@ -374,13 +376,12 @@ export function ReferenceMediaHoverPreview({
       >
         <div className="flex min-h-32 items-center justify-center bg-black/35">
           {item.kind === "video" ? (
-            <video
+            <CanvasVideo
               src={item.previewUrl}
-              muted
-              playsInline
-              loop
+              assetId={item.assetId}
               autoPlay
-              className="block max-h-[260px] w-full object-contain"
+              muted
+              className="h-40 w-full"
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
@@ -432,7 +433,12 @@ export function MentionChip({
         ) : mention.kind === "audio" ? (
           <IconMusic className="size-2 text-white/78" stroke={2} />
         ) : mention.kind === "video" ? (
-          <video src={mention.previewUrl} muted playsInline className="size-full object-cover" />
+          <CanvasVideo
+            src={mention.previewUrl ?? ""}
+            assetId={mention.assetId}
+            thumbnail
+            className="size-full"
+          />
         ) : mention.previewUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={mention.previewUrl} alt="" className="size-full object-cover" />
@@ -685,7 +691,14 @@ function MentionMenuThumbnail({ active, item }: { active: boolean; item: Mention
     );
   }
   if (item.kind === "video") {
-    return <video src={item.previewUrl} muted playsInline className="size-full object-cover" />;
+    return (
+      <CanvasVideo
+        src={item.previewUrl ?? ""}
+        assetId={item.assetId}
+        thumbnail
+        className="size-full"
+      />
+    );
   }
   return (
     // eslint-disable-next-line @next/next/no-img-element

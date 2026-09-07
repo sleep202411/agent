@@ -4,12 +4,13 @@ import { useEffect, useState } from "react";
 import { useTranslations } from "next-intl";
 import { createPortal } from "react-dom";
 import { IconDownload, IconMinus, IconPlus, IconRefresh, IconX } from "@tabler/icons-react";
-import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
+import { CanvasVideo } from "@/components/media/canvas-video";
 import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 import { downloadCanvasMedia } from "./download-media";
 
 export function CanvasMediaViewer({
   alt,
+  assetId,
   downloadName,
   onClose,
   src,
@@ -17,6 +18,7 @@ export function CanvasMediaViewer({
   type,
 }: {
   alt: string;
+  assetId?: string;
   downloadName?: string;
   onClose: () => void;
   src: string;
@@ -26,9 +28,6 @@ export function CanvasMediaViewer({
   const tc = useTranslations("common");
   const tg = useTranslations("generation");
   const [scale, setScale] = useState(1);
-  const { failed: videoFailed, onError: onVideoError } = useVideoPlaybackError(
-    type === "video" ? src : undefined
-  );
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -120,15 +119,7 @@ export function CanvasMediaViewer({
       <div className="min-h-0 flex-1 overflow-auto px-5 pb-5">
         {type === "video" ? (
           <div className="relative flex size-full items-center justify-center">
-            <video
-              src={src}
-              controls
-              autoPlay
-              playsInline
-              onError={onVideoError}
-              className="max-h-full max-w-full rounded-xl"
-            />
-            {videoFailed && <VideoPlaybackFallback onDownload={() => void download()} />}
+            <CanvasVideo src={src} assetId={assetId} autoPlay className="size-full rounded-xl" />
           </div>
         ) : type === "audio" ? (
           <div className="flex size-full items-center justify-center">

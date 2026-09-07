@@ -1,40 +1,80 @@
 "use client";
 
-import { useCallback, useState, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { useTranslations } from "next-intl";
-import { IconDownload, IconVideoOff } from "@tabler/icons-react";
+import { IconDownload, IconRefresh, IconVideoOff } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Detects that a <video> failed to play back (e.g. 4K 10-bit H.265 output the
- * browser has no decoder for — Firefox, software-decode Chrome). The reliable
- * signal is the element's `error` MediaError via onError; `canPlayType` is
- * advisory only (returns "" even for playable streams), so we never gate the
- * playback attempt on it. Resets whenever `src` changes.
+ * Tracks real MediaErrors, retries transient network failures twice, and clears
+ * the failure when playback recovers. Never gates playback on canPlayType:
+ * that advisory check can reject streams the browser can actually play.
  */
 export function useVideoPlaybackError(src: string | undefined): {
   failed: boolean;
+  errorCode: number | undefined;
   onError: (event: SyntheticEvent<HTMLVideoElement>) => void;
+  onCanPlay: () => void;
+  reset: () => void;
 } {
   // Failure is stamped with the src it happened for and derived by comparison,
   // so a src change resets the state automatically (no effect needed).
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<number>();
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const attempts = useRef(0);
+  const failedVideo = useRef<HTMLVideoElement | null>(null);
+
+  const reset = useCallback(() => {
+    clearTimeout(timer.current);
+    setFailedSrc(null);
+    setErrorCode(undefined);
+  }, []);
+
+  useEffect(() => {
+    attempts.current = 0;
+    return () => {
+      clearTimeout(timer.current);
+      failedVideo.current?.removeEventListener("canplay", reset);
+    };
+  }, [src, reset]);
 
   const onError = useCallback(
     (event: SyntheticEvent<HTMLVideoElement>) => {
       // Only a real MediaError counts — React also forwards error events fired
       // when a source is detached (no `error` object), which is not a failure.
-      if (event.currentTarget.error) setFailedSrc(src ?? "");
+      const video = event.currentTarget;
+      if (!video.error) return;
+      const code = video.error.code;
+      failedVideo.current?.removeEventListener("canplay", reset);
+      failedVideo.current = video;
+      video.addEventListener("canplay", reset, { once: true });
+      setErrorCode(code);
+      setFailedSrc(src ?? "");
+      // A stalled network is recoverable. Never loop on a codec/format error.
+      if (code === 2 && attempts.current < 2) {
+        const delay = 500 * 2 ** attempts.current++;
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => {
+          if (video.isConnected) video.load();
+        }, delay);
+      }
     },
-    [src]
+    [src, reset]
   );
 
-  return { failed: failedSrc != null && failedSrc === src, onError };
+  return {
+    failed: failedSrc != null && failedSrc === src,
+    errorCode,
+    onError,
+    onCanPlay: reset,
+    reset,
+  };
 }
 
 /**
- * Overlay shown over a <video> whose stream the browser cannot decode — the
- * file itself is fine and downloadable. Mount it only when
+ * Recoverable playback failure. Only explicit codec errors claim that the
+ * browser cannot decode the file. Mount it only when
  * `useVideoPlaybackError` reports failure, inside the video's `relative`
  * container.
  *
@@ -50,14 +90,34 @@ export function VideoPlaybackFallback({
   downloadUrl,
   downloadName,
   className,
+  onRetry,
+  errorCode,
+  message,
 }: {
   compact?: boolean;
   onDownload?: () => void;
   downloadUrl?: string;
   downloadName?: string;
   className?: string;
+  onRetry?: () => void;
+  errorCode?: number;
+  message?: string;
 }) {
   const t = useTranslations("generation");
+  const tc = useTranslations("common");
+  const retryAction = onRetry ? (
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onRetry();
+      }}
+      className="pointer-events-auto flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1 text-xs text-white/85"
+    >
+      <IconRefresh className="size-3.5" />
+      {tc("retry")}
+    </button>
+  ) : null;
 
   if (compact) {
     return (
@@ -69,8 +129,9 @@ export function VideoPlaybackFallback({
       >
         <IconVideoOff className="size-5 text-white/55" stroke={1.6} />
         <span className="px-3 text-center text-[11px] leading-4 text-white/65">
-          {t("previewUnsupported")}
+          {message || t("previewUnsupported")}
         </span>
+        {retryAction}
       </div>
     );
   }
@@ -104,7 +165,10 @@ export function VideoPlaybackFallback({
     >
       <div className="flex max-w-sm flex-col items-center gap-3 rounded-2xl bg-white/[0.06] px-6 py-5 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-xl">
         <IconVideoOff className="size-7 text-white/50" stroke={1.5} />
-        <p className="text-sm leading-relaxed text-white/70">{t("previewUnsupportedHint")}</p>
+        <p className="text-sm leading-relaxed text-white/70">
+          {message || t(errorCode === 3 ? "previewUnsupportedHint" : "previewLoadFailed")}
+        </p>
+        {retryAction}
         {downloadAction}
       </div>
     </div>

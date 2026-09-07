@@ -16,7 +16,7 @@ import {
 import { IconAudioWaveform } from "@/components/icons/icon-audio-waveform";
 import { cn } from "@/lib/utils";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
-import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
+import { CanvasVideo } from "@/components/media/canvas-video";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { downloadCanvasMedia } from "./download-media";
 import { CanvasNodeToolbar, ToolbarButton } from "./node-toolbar";
@@ -52,7 +52,6 @@ function MediaAssetNodeComponent({
   const src = upload?.objectUrl ?? withCanvasDocumentContext(data.src, documentId);
   const uploading = upload?.status === "uploading";
   const failed = upload?.status === "failed";
-  const { failed: videoFailed, onError: onVideoError } = useVideoPlaybackError(src);
   const { patchNodeData, renameAssetsByMediaAssetId } = useCanvasGraphContext();
   const title = data.label ?? t(`media.${kind}.title`);
   const nodeType = kind === "video" ? "videoAsset" : "audioAsset";
@@ -123,24 +122,17 @@ function MediaAssetNodeComponent({
         </CanvasNodeToolbar>
 
         {kind === "video" ? (
-          <>
-            <video
-              src={src}
-              controls
-              muted
-              playsInline
-              draggable={false}
-              preload="metadata"
-              onError={onVideoError}
-              onDoubleClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                setViewerOpen(true);
-              }}
-              className="nodrag nowheel block aspect-video w-full rounded-xl object-cover select-none"
-            />
-            {videoFailed && <VideoPlaybackFallback compact className="rounded-xl" />}
-          </>
+          <CanvasVideo
+            src={src}
+            assetId={data.mediaAssetId}
+            documentId={documentId}
+            onDoubleClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setViewerOpen(true);
+            }}
+            className="nodrag nowheel block aspect-video w-full rounded-xl select-none"
+          />
         ) : (
           <div
             className="flex w-full flex-col justify-center gap-3 rounded-xl bg-card px-4"
@@ -197,6 +189,7 @@ function MediaAssetNodeComponent({
         <CanvasMediaViewer
           type="video"
           src={src}
+          assetId={data.mediaAssetId}
           title={title}
           alt={title}
           downloadName={title}

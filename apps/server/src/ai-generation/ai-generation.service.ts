@@ -583,12 +583,31 @@ export class AiGenerationService {
     workspaceHeaderId?: string,
   ) {
     const limit = query.limit ? Number(query.limit) : 50;
+    if (query.ids !== undefined && typeof query.ids !== 'string') {
+      throw new BadRequestException('Expected comma-separated job IDs.');
+    }
+    const ids = query.ids?.split(',').filter(Boolean);
+    if (
+      ids &&
+      (ids.length > 100 ||
+        ids.some(
+          (id) =>
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              id,
+            ),
+        ))
+    ) {
+      throw new BadRequestException('Expected at most 100 job IDs.');
+    }
     const scope = await this.resolveListScope(user, query, workspaceHeaderId);
     const sourceSurface = query.sourceSurface
       ? this.normalizeSourceSurface(query.sourceSurface)
       : undefined;
     const jobs = await this.store.listForUser({
       userId: user.userId,
+      ids,
+      idempotencyKey: query.idempotencyKey,
+      documentBlockId: query.documentBlockId,
       workspaceId: scope.workspaceId,
       projectId: scope.projectId,
       storyProjectId: scope.storyProjectId,
@@ -1289,6 +1308,7 @@ export class AiGenerationService {
     const base = {
       id: job.id,
       request_id: job.id,
+      idempotencyKey: job.idempotencyKey,
       type: job.type,
       workspaceId: job.workspaceId ?? null,
       projectId: job.projectId ?? null,

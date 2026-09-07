@@ -253,6 +253,7 @@
     }
   },
   "generation": {
+    "previewLoadFailed": "影片載入失敗，請檢查網絡後重試。",
     "time": {
       "justNow": "剛剛",
       "minutesAgo": "{minutes} 分鐘前",
@@ -1454,6 +1455,8 @@
     }
   },
   "canvasOps": {
+    "submissionOtherUser": "正在查詢狀態。請由原提交人重試這次請求。",
+    "submissionUnconfirmed": "暫時無法確認提交結果。重試會恢復同一次請求。",
     "modalityImage": "圖像",
     "modalityVideo": "影片",
     "modalityAudio": "音訊",

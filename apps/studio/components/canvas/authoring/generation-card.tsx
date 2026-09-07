@@ -25,7 +25,7 @@ import {
 import { toast } from "sonner";
 import { ReactCompareSlider } from "react-compare-slider";
 import { cn } from "@/lib/utils";
-import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
+import { CanvasVideo } from "@/components/media/canvas-video";
 import type { CanvasEdgeShape, CanvasNodeShape } from "@/lib/canvas-core/types";
 import { canvasNodeGeometry } from "@/lib/canvas-core/node-geometry";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
@@ -297,48 +297,6 @@ function AudioPreview({ src, title }: { src: string; title: string }) {
         className="nodrag nowheel h-9 w-full [color-scheme:dark]"
       />
     </div>
-  );
-}
-
-/**
- * Result-area video preview: plays on hover, pauses on leave. Muted so the
- * hover-triggered play() isn't blocked by the autoplay policy; native controls
- * stay for scrub / fullscreen / unmute.
- */
-function HoverPreviewVideo({
-  src,
-  className,
-  onLoadedRatio,
-}: {
-  src: string;
-  className?: string;
-  /** Reports the video's intrinsic aspect (e.g. "1080 / 1920") once known, so
-   *  the card can hug the clip's real shape instead of a default well. */
-  onLoadedRatio?: (ratio: string) => void;
-}) {
-  const ref = useRef<HTMLVideoElement>(null);
-  const { failed, onError } = useVideoPlaybackError(src);
-  return (
-    <>
-      <video
-        ref={ref}
-        src={src}
-        loop
-        muted
-        playsInline
-        controls
-        draggable={false}
-        onError={onError}
-        onLoadedMetadata={() => {
-          const v = ref.current;
-          if (v?.videoWidth && v.videoHeight) onLoadedRatio?.(`${v.videoWidth} / ${v.videoHeight}`);
-        }}
-        onMouseEnter={() => void ref.current?.play().catch(() => {})}
-        onMouseLeave={() => ref.current?.pause()}
-        className={cn("nodrag select-none", className)}
-      />
-      {failed && <VideoPlaybackFallback compact />}
-    </>
   );
 }
 
@@ -942,6 +900,7 @@ function GenerationCard({
         <CanvasMediaViewer
           type={output.type}
           src={output.url}
+          assetId={output.assetId}
           title={displayTitle}
           alt={data.prompt ?? t("result")}
           downloadName={`${displayTitle}.${outputExtension(output.type)}`}
@@ -1009,8 +968,10 @@ function GenerationCard({
             generation.outputs[0].type === "audio" ? (
               <AudioPreview src={generation.outputs[0].url} title={displayTitle} />
             ) : generation.outputs[0].type === "video" ? (
-              <HoverPreviewVideo
+              <CanvasVideo
+                hoverPlay
                 src={generation.outputs[0].url}
+                assetId={generation.outputs[0].assetId}
                 onLoadedRatio={setLoadedRatio}
                 className="size-full object-contain"
               />
@@ -1078,7 +1039,7 @@ function GenerationCard({
                       : t("statusGenerating")}
               </p>
             </>
-          ) : generation?.status === "failed" ? (
+          ) : generation?.status === "failed" || generation?.status === "uncertain" ? (
             <>
               <IconAlertTriangle className="size-7 text-destructive" stroke={1.6} />
               <p className="max-w-full px-5 text-center text-sm leading-relaxed text-white/55 [overflow-wrap:anywhere]">

@@ -1,5 +1,6 @@
 "use client";
 
+import { CanvasVideo } from "@/components/media/canvas-video";
 import { useState } from "react";
 import type { MediaAssetReadinessResult } from "@repo/shared";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
@@ -54,13 +55,11 @@ export function AssetThumb({
             <IconPhotoOff className="size-6" stroke={1.4} />
           </div>
         ) : asset.kind === "video" ? (
-          <video
+          <CanvasVideo
             src={asset.url}
-            muted
-            playsInline
-            draggable={false}
-            onError={() => setPreviewFailed(true)}
-            className="pointer-events-none size-full object-cover"
+            assetId={asset.mediaAssetId}
+            thumbnail
+            className="pointer-events-none size-full"
           />
         ) : asset.kind === "audio" ? (
           <div className="pointer-events-none flex size-full items-center justify-center">

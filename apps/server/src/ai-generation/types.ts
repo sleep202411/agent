@@ -482,6 +482,9 @@ export interface AiSubmitJobBody {
 }
 
 export interface AiJobListQuery {
+  ids?: string;
+  idempotencyKey?: string;
+  documentBlockId?: string;
   scope?: string;
   workspaceId?: string;
   projectId?: string;
