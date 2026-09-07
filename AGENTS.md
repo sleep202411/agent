@@ -8,8 +8,8 @@ each `apps/*` and `packages/*` ships its own deep guide.
 
 Three-app monorepo behind one product (FizzDragon — AI animation /
 storyboard / IP co-creation platform). The user-facing brand is
-**FizzDragon** in English copy; **气泡龙** is the Chinese transliteration
-for zh-CN / zh-HK locales only.
+**FizzDragon** in every language, including zh-CN / zh-HK. Do not translate
+or transliterate the brand name.
 
 ```
 ┌──────────────────────────────────────────────────────────┐

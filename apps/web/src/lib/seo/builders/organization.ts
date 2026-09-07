@@ -30,7 +30,7 @@ export function buildOrganization(): WithContext<Organization> {
     "@type": "Organization",
     "@id": ORGANIZATION_ID,
     name: "FizzDragon",
-    alternateName: ["气泡龙", "FizzDragon Pte Ltd"],
+    alternateName: ["FizzDragon Pte Ltd"],
     url: CANONICAL_HOST,
     logo: `${CANONICAL_HOST}/logo.png`,
     description:

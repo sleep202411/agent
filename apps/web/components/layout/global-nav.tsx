@@ -22,12 +22,14 @@ import { useTranslations, useLocale, setLanguage } from "@/src/i18n/i18n";
 import { setCurrentLocale, localizePath, stripLocalePrefix } from "@/src/i18n/locale-url";
 import { LOCALE_OPTIONS, type Locale } from "@/src/i18n/config";
 import { getStudioHref } from "@/src/lib/region/cell";
+import { AppDownloadMenu, APP_DOWNLOADS } from "./app-download-menu";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBook2,
   IconCheck,
   IconChevronRight,
   IconCopy,
+  IconDownload,
   IconLanguage,
   IconLogout,
   IconMessageCircle,
@@ -94,7 +96,7 @@ export function GlobalNav() {
 
   const headerRef = useRef<HTMLElement | null>(null);
   const navListRef = useRef<HTMLUListElement | null>(null);
-  const navLinkRefs = useRef<Array<HTMLAnchorElement | null>>([]);
+  const navLinkRefs = useRef<Array<HTMLElement | null>>([]);
 
   const [mobileDrawer, setMobileDrawer] = useState(() => ({
     pathname,
@@ -265,6 +267,20 @@ export function GlobalNav() {
                 </li>
               );
             })}
+            <li
+              className={navCx("fd-secret-nav-item")}
+              onMouseEnter={() => setHoveredNavIndex(navItems.length)}
+              onMouseLeave={() => setHoveredNavIndex(null)}
+              onFocus={() => setHoveredNavIndex(navItems.length)}
+              onBlur={() => setHoveredNavIndex(null)}
+            >
+              <AppDownloadMenu
+                triggerRef={(node) => {
+                  navLinkRefs.current[navItems.length] = node;
+                }}
+                className={navCx("fd-secret-nav-link")}
+              />
+            </li>
             <span
               className={navCx("fd-secret-nav-marker", navMarker.visible && "is-visible")}
               style={{ "--fd-secret-marker-x": `${navMarker.x}px` } as CSSProperties}
@@ -388,6 +404,22 @@ export function GlobalNav() {
                     </Link>
                   );
                 })}
+                {APP_DOWNLOADS.map((item) => (
+                  <a
+                    key={item.platform}
+                    href={item.href}
+                    download={item.download}
+                    target={item.download ? undefined : "_blank"}
+                    rel={item.download ? undefined : "noopener noreferrer"}
+                    onClick={closeMobile}
+                    className={navCx("fd-secret-mobile-row")}
+                  >
+                    <span>{t(item.labelKey)}</span>
+                    <span className={navCx("fd-secret-mobile-row-icon")} aria-hidden>
+                      <IconDownload className="size-4" />
+                    </span>
+                  </a>
+                ))}
                 <a
                   href={USER_GUIDE_URL}
                   target="_blank"

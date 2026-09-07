@@ -290,7 +290,16 @@
     "copyAccountId": "Copy public ID",
     "recharge": "Top Up",
     "membership": "Membership",
-    "theme": "Theme"
+    "theme": "Theme",
+    "app": "App",
+    "appDownloadTitle": "FizzDragon App",
+    "appScanToDownload": "Scan to download the app",
+    "appQrAlt": "FizzDragon download QR code: {platform}",
+    "appDownloadAndroid": "Download for Android",
+    "appDownloadIos": "App Store",
+    "appDownloadGooglePlay": "Google Play",
+    "appQrLoading": "Loading QR code…",
+    "appQrUnavailable": "Use the download button below"
   },
   "auth": {
     "close": "Close",

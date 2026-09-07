@@ -26,8 +26,8 @@ language likewise stays inside `apps/studio`.
 
 ## Shared Brand
 
-- Product name in English copy: `FizzDragon`.
-- Chinese transliteration for zh-CN / zh-HK locales only: `气泡龙`.
+- Product name in every language, including zh-CN / zh-HK: `FizzDragon`.
+- Do not translate or transliterate the brand name.
 - Primary brand accent: `#E52227`.
 - Supporting signal colors: capability yellow `#FFD84D` and interaction blue
   `#4D8DFF`. They communicate meaning on neutral chrome; they are not surface

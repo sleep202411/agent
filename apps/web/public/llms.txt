@@ -43,6 +43,6 @@ any path. Mainland China users are served from the .cn mirror.
 ## Brand
 
 - Legal name: FizzDragon Pte Ltd
-- Brand: FizzDragon (Chinese: 气泡龙)
+- Brand: FizzDragon (all languages)
 - Studio product: FizzStudio
 - Contact: business@fizzdragon.com
