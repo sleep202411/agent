@@ -5,6 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocale } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import {
+  readLatestStoredEpisodeProgress,
+  readStoredEpisodeProgress,
+} from "@/src/hooks/use-courses";
+import {
   getPublicCourse,
   getPublicCoursePlayUrl,
   listPublicCourses,
@@ -68,6 +72,16 @@ function filterBySearch(courses: PublicCourseCardModel[], searchQuery: string) {
 
 const PROGRESS_PREFIX = "public-course-progress-v1:";
 const EPISODE_PREFIX = "public-course-episode-v1:";
+const EPISODE_PROGRESS_PREFIX = "course_video_progress_";
+
+export function publicCourseVideoStableKey(courseId: number, videoId: number): string {
+  return `public-course-${courseId}-video-${videoId}`;
+}
+
+function clampPercent(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.min(100, Math.max(0, Math.round(value)));
+}
 
 function readStoredVideoId(courseId: number): number | null {
   if (typeof window === "undefined") return null;
@@ -90,16 +104,82 @@ function writeStoredVideoId(courseId: number, videoId: number) {
   }
 }
 
-export function readPublicCourseProgress(courseId: number): number {
-  if (typeof window === "undefined") return 0;
+function writePublicCourseProgress(courseId: number, percent: number) {
+  if (typeof window === "undefined") return;
   try {
-    const raw = window.localStorage.getItem(`${PROGRESS_PREFIX}${courseId}`);
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return 0;
-    return Math.min(100, Math.max(0, value));
+    window.localStorage.setItem(`${PROGRESS_PREFIX}${courseId}`, String(clampPercent(percent)));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Average per-lesson watch ratio across the course playlist.
+ * Player stores each lesson under `course_video_progress_{id|stableKey}`.
+ */
+export function recomputePublicCourseProgress(courseId: number, videoIds: number[]): number {
+  if (typeof window === "undefined" || videoIds.length === 0) return 0;
+
+  let watched = 0;
+  for (const videoId of videoIds) {
+    const progress = readLatestStoredEpisodeProgress(
+      videoId,
+      publicCourseVideoStableKey(courseId, videoId)
+    );
+    if (!progress || progress.duration <= 0) continue;
+    watched += Math.min(progress.currentTime / progress.duration, 1);
+  }
+
+  const percent = clampPercent((watched / videoIds.length) * 100);
+  writePublicCourseProgress(courseId, percent);
+  return percent;
+}
+
+/** Recover list % from episode keys when the aggregate key was never written. */
+function derivePublicCourseProgressFromEpisodes(
+  courseId: number,
+  episodeCount?: number | null
+): number {
+  if (typeof window === "undefined") return 0;
+
+  const prefix = `${EPISODE_PROGRESS_PREFIX}public-course-${courseId}-video-`;
+  let watched = 0;
+  let tracked = 0;
+  try {
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (!key?.startsWith(prefix)) continue;
+      const storageId = key.slice(EPISODE_PROGRESS_PREFIX.length);
+      const progress = readStoredEpisodeProgress(storageId);
+      if (!progress || progress.duration <= 0) continue;
+      watched += Math.min(progress.currentTime / progress.duration, 1);
+      tracked += 1;
+    }
   } catch {
     return 0;
   }
+
+  if (tracked === 0) return 0;
+  const denom = typeof episodeCount === "number" && episodeCount > 0 ? episodeCount : tracked;
+  return clampPercent((watched / denom) * 100);
+}
+
+/**
+ * List-card progress. Prefers the aggregate written during playback; falls back
+ * to scanning per-lesson keys (same store the player writes).
+ */
+export function readPublicCourseProgress(courseId: number, episodeCount?: number | null): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(`${PROGRESS_PREFIX}${courseId}`);
+    if (raw != null && raw !== "") {
+      const value = Number(raw);
+      if (Number.isFinite(value) && value > 0) return clampPercent(value);
+    }
+  } catch {
+    /* fall through */
+  }
+  return derivePublicCourseProgressFromEpisodes(courseId, episodeCount);
 }
 
 export function usePublicCourseList(searchQuery = "") {
@@ -190,9 +270,10 @@ export function usePublicCourseDetail(courseIdParam: string | undefined) {
     playError: playQuery.error,
     detail: detailView,
     currentTitle: currentVideo?.title ?? course?.title ?? "",
+    seriesVideoIds: videos.map((video) => video.id),
     stableProgressKey:
       validId != null && currentVideo != null
-        ? `public-course-${validId}-video-${currentVideo.id}`
+        ? publicCourseVideoStableKey(validId, currentVideo.id)
         : "",
     setCurrentVideo,
   };

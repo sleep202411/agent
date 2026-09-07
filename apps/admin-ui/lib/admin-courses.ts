@@ -356,8 +356,51 @@ export async function uploadAdminCourseCover(file: File): Promise<string> {
   return uploadCourseFile("/upload/cover", file);
 }
 
+/** Multipart fallback — prefer {@link requestAdminCourseVideoUploadUrl} + browser PUT. */
 export async function uploadAdminCourseVideo(file: File): Promise<string> {
   return uploadCourseFile("/upload/video", file);
+}
+
+export interface AdminCourseVideoUploadUrl {
+  uploadUrl: string;
+  method: string;
+  headers: Record<string, string>;
+  path: string;
+}
+
+/**
+ * Presigned PUT for browser-direct OSS upload (avoids Cloudflare body limits).
+ * Client must echo `headers` on the PUT and persist `path` as videoKey.
+ */
+export async function requestAdminCourseVideoUploadUrl(input: {
+  fileName: string;
+  contentType: string;
+}): Promise<AdminCourseVideoUploadUrl> {
+  const data = await coursesData<{
+    uploadUrl?: string;
+    method?: string;
+    headers?: Record<string, string>;
+    path?: string;
+  }>(
+    await coursesFetch("/upload/video-url", {
+      method: "POST",
+      body: JSON.stringify({
+        fileName: input.fileName,
+        contentType: input.contentType,
+      }),
+    })
+  );
+  const uploadUrl = data?.uploadUrl?.trim();
+  const path = data?.path?.trim();
+  if (!uploadUrl || !path) {
+    throw new Error("文件上传失败");
+  }
+  return {
+    uploadUrl,
+    method: data.method?.trim() || "PUT",
+    headers: data.headers ?? {},
+    path,
+  };
 }
 
 export function emptyDraftCourse(id = ""): Course {

@@ -28,18 +28,21 @@
 
 ## 接口一览
 
-| #   | 操作        | 方法   | 路径                              | 说明                                              |
-| --- | ----------- | ------ | --------------------------------- | ------------------------------------------------- |
-| 1   | 列表        | GET    | `/api/admin/courses`              | 分页 / 搜索 / 发布状态                            |
-| 2   | 详情        | GET    | `/api/admin/courses/{id}`         | 含 videos、instructors                            |
-| 3   | 创建草稿    | POST   | `/api/admin/courses`              | `published=0`，返回 `id`                          |
-| 4   | 保存内容    | PUT    | `/api/admin/courses/{id}`         | **不改**发布状态；locales / videos / 讲师全量替换 |
-| 5   | 发布 / 下架 | PATCH  | `/api/admin/courses/{id}/publish` | `{ "published": true\|false }`                    |
-| 6   | 删除        | DELETE | `/api/admin/courses/{id}`         | **真删除**（非下架）                              |
-| 7   | 上传封面    | POST   | `/api/admin/courses/upload/cover` | `multipart file` → OSS path                       |
-| 8   | 上传视频    | POST   | `/api/admin/courses/upload/video` | `multipart file` → OSS path（作 `videoKey`）      |
+| #   | 操作             | 方法   | 路径                                  | 说明                                              |
+| --- | ---------------- | ------ | ------------------------------------- | ------------------------------------------------- |
+| 1   | 列表             | GET    | `/api/admin/courses`                  | 分页 / 搜索 / 发布状态                            |
+| 2   | 详情             | GET    | `/api/admin/courses/{id}`             | 含 videos、instructors                            |
+| 3   | 创建草稿         | POST   | `/api/admin/courses`                  | `published=0`，返回 `id`                          |
+| 4   | 保存内容         | PUT    | `/api/admin/courses/{id}`             | **不改**发布状态；locales / videos / 讲师全量替换 |
+| 5   | 发布 / 下架      | PATCH  | `/api/admin/courses/{id}/publish`     | `{ "published": true\|false }`                    |
+| 6   | 删除             | DELETE | `/api/admin/courses/{id}`             | **真删除**（非下架）                              |
+| 7   | 上传封面         | POST   | `/api/admin/courses/upload/cover`     | `multipart file` → OSS path                       |
+| 8   | 上传视频（兜底） | POST   | `/api/admin/courses/upload/video`     | `multipart file` → OSS path（作 `videoKey`）      |
+| 9   | 视频直传预签名   | POST   | `/api/admin/courses/upload/video-url` | JSON → 公网 PUT URL + `path`（推荐）              |
 
-推荐流程：`创建草稿` → `上传封面/视频` → `保存内容` → `发布`。
+推荐流程：`创建草稿` → `上传封面` + **浏览器直传视频** → `保存内容` → `发布`。
+
+大文件请走接口 9（浏览器 PUT 到 OSS），避免 Cloudflare 对 multipart 的 body 限制。接口 8 仅作兜底。
 
 ---
 
@@ -238,7 +241,7 @@ Body 可空。
 
 ---
 
-## 8. 上传视频
+## 8. 上传视频（multipart 兜底）
 
 `POST /api/admin/courses/upload/video`  
 `multipart` 字段 `file`。
@@ -247,7 +250,44 @@ Body 可空。
 { "code": 200, "msg": "success", "data": "course/....mp4" }
 ```
 
-返回值作为保存时的 `videos[].videoKey`。
+返回值作为保存时的 `videos[].videoKey`。管理端默认改走下方直传；本接口保留兼容。
+
+---
+
+## 9. 视频直传预签名（推荐）
+
+`POST /api/admin/courses/upload/video-url`  
+`Content-Type: application/json`
+
+```json
+{ "fileName": "lesson.mp4", "contentType": "video/mp4" }
+```
+
+```json
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "uploadUrl": "https://....aliyuncs.com/....?Signature=...",
+    "method": "PUT",
+    "headers": {
+      "Content-Type": "video/mp4",
+      "Cache-Control": "max-age=..."
+    },
+    "path": "course/1710000000000_lesson.mp4"
+  }
+}
+```
+
+客户端流程：
+
+1. 调本接口拿到 `uploadUrl` / `headers` / `path`（小 JSON，可过 Cloudflare）
+2. 浏览器对 `uploadUrl` 发 `PUT`，**原样带上** `headers`（`Content-Type` 参与签名，必须一致）
+3. PUT 成功后把 `path` 写入 `videos[].videoKey`，再保存课程
+
+签发用公网 OSS endpoint（`oss.endpoint_upload_public`），禁止 `*-internal*`。
+
+视频桶 CORS 需允许管理端 Origin 的 `PUT` / `OPTIONS`（你们桶上已有 `*` + PUT 即可）。
 
 ---
 

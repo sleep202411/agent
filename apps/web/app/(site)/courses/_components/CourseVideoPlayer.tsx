@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type SyntheticEvent } from "react";
+import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import {
   IconArrowsMaximize,
   IconDots,
@@ -14,9 +14,13 @@ import {
   readLatestStoredEpisodeProgress,
   writeStoredEpisodeProgress,
 } from "@/src/hooks/use-courses";
+import { recomputePublicCourseProgress } from "@/src/hooks/use-courses-public";
 
 interface CourseVideoPlayerProps {
   courseId: number;
+  /** Course (series) id — used to refresh list-card aggregate progress. */
+  seriesCourseId?: number;
+  seriesVideoIds?: number[];
   title: string;
   videoUrl: string;
   /** Optional poster shown before playback / while buffering. */
@@ -43,6 +47,8 @@ function formatTime(seconds: number) {
  */
 export function CourseVideoPlayer({
   courseId,
+  seriesCourseId,
+  seriesVideoIds,
   title,
   videoUrl,
   posterUrl,
@@ -50,6 +56,29 @@ export function CourseVideoPlayer({
 }: CourseVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLElement>(null);
+  const lastSeriesProgressWriteRef = useRef(0);
+
+  function flushSeriesProgress() {
+    if (
+      seriesCourseId == null ||
+      seriesCourseId <= 0 ||
+      !seriesVideoIds ||
+      seriesVideoIds.length === 0
+    ) {
+      return;
+    }
+    lastSeriesProgressWriteRef.current = Date.now();
+    recomputePublicCourseProgress(seriesCourseId, seriesVideoIds);
+  }
+
+  useEffect(() => {
+    return () => {
+      flushSeriesProgress();
+    };
+    // Intentionally flush latest series progress when leaving the lesson.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount only
+  }, []);
+
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -95,11 +124,28 @@ export function CourseVideoPlayer({
         },
         stableProgressKey
       );
+
+      if (
+        seriesCourseId != null &&
+        seriesCourseId > 0 &&
+        seriesVideoIds &&
+        seriesVideoIds.length > 0
+      ) {
+        const now = Date.now();
+        if (now - lastSeriesProgressWriteRef.current >= 1500) {
+          flushSeriesProgress();
+        }
+      }
     }
   }
 
   function handlePlay() {
     setPlaying(true);
+  }
+
+  function handlePause() {
+    setPlaying(false);
+    flushSeriesProgress();
   }
 
   /**
@@ -173,7 +219,7 @@ export function CourseVideoPlayer({
           preload="metadata"
           onClick={togglePlay}
           onPlay={handlePlay}
-          onPause={() => setPlaying(false)}
+          onPause={handlePause}
           onLoadedMetadata={handleLoadedMetadata}
           onTimeUpdate={handleTimeUpdate}
         />

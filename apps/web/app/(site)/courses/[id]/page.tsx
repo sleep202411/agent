@@ -18,8 +18,16 @@ import { PublicCourseDetailPanel } from "../_components/PublicCourseDetailPanel"
 export default function CourseDetailPage() {
   const t = useTranslations("courses");
   const params = useParams<{ id: string }>();
-  const { isLoading, error, playError, detail, currentTitle, stableProgressKey, setCurrentVideo } =
-    usePublicCourseDetail(params.id);
+  const {
+    isLoading,
+    error,
+    playError,
+    detail,
+    currentTitle,
+    seriesVideoIds,
+    stableProgressKey,
+    setCurrentVideo,
+  } = usePublicCourseDetail(params.id);
 
   useEffect(() => {
     if (isCourseApiError(playError, 403)) {
@@ -52,6 +60,8 @@ export default function CourseDetailPage() {
           <CourseVideoPlayer
             key={detail.currentVideoId ?? detail.courseId}
             courseId={detail.currentVideoId ?? detail.courseId}
+            seriesCourseId={detail.courseId}
+            seriesVideoIds={seriesVideoIds}
             title={currentTitle || detail.title}
             videoUrl={isCourseApiError(playError, 403) ? "" : detail.videoUrl}
             posterUrl={detail.currentPosterUrl || undefined}

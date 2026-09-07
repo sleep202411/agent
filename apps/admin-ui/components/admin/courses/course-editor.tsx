@@ -66,13 +66,10 @@ function CoverThumb({
   );
 }
 
-async function uploadFile(
-  endpoint: "/api/admin/courses/upload/cover" | "/api/admin/courses/upload/video",
-  file: File
-): Promise<string> {
+async function uploadCoverFile(file: File): Promise<string> {
   const form = new FormData();
   form.set("file", file);
-  const response = await fetch(endpoint, { method: "POST", body: form });
+  const response = await fetch("/api/admin/courses/upload/cover", { method: "POST", body: form });
   const body = (await response.json().catch(() => null)) as {
     path?: string;
     data?: string;
@@ -83,6 +80,91 @@ async function uploadFile(
   if (!response.ok || !path) {
     throw new Error("文件上传失败");
   }
+  return path;
+}
+
+function extractOssErrorMessage(bodyText: string, status: number): string {
+  const code = bodyText.match(/<Code>([^<]+)<\/Code>/i)?.[1];
+  const message = bodyText.match(/<Message>([^<]+)<\/Message>/i)?.[1];
+  if (code && message) return `${code}: ${message}`;
+  if (message) return message;
+  return `HTTP ${status}`;
+}
+
+function putCourseVideoToOss(
+  uploadUrl: string,
+  method: string,
+  headers: Record<string, string>,
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method || "PUT", uploadUrl, true);
+    const merged: Record<string, string> = {
+      "Content-Type": file.type || "application/octet-stream",
+      ...headers,
+    };
+    for (const [key, value] of Object.entries(merged)) {
+      xhr.setRequestHeader(key, value);
+    }
+    if (onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          onProgress(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+        return;
+      }
+      const bodyText = xhr.responseText || "";
+      reject(
+        new Error(
+          bodyText
+            ? `文件上传失败：${extractOssErrorMessage(bodyText, xhr.status)}`
+            : "文件上传失败"
+        )
+      );
+    };
+    xhr.onerror = () => {
+      reject(new Error("文件上传失败"));
+    };
+    xhr.onabort = () => reject(new DOMException("Upload aborted", "AbortError"));
+    xhr.send(file);
+  });
+}
+
+async function uploadCourseVideoDirect(
+  file: File,
+  onProgress?: (percent: number) => void
+): Promise<string> {
+  const urlRes = await fetch("/api/admin/courses/upload/video-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      fileName: file.name || "video.mp4",
+      contentType: file.type || "application/octet-stream",
+    }),
+  });
+  const urlBody = (await urlRes.json().catch(() => null)) as {
+    code?: number;
+    msg?: string;
+    error?: string;
+    data?: {
+      uploadUrl?: string;
+      method?: string;
+      headers?: Record<string, string>;
+      path?: string;
+    };
+  } | null;
+  if (!urlRes.ok || urlBody?.code !== 200 || !urlBody.data?.uploadUrl || !urlBody.data.path) {
+    throw new Error("文件上传失败");
+  }
+  const { uploadUrl, method, headers, path } = urlBody.data;
+  await putCourseVideoToOss(uploadUrl, method || "PUT", headers ?? {}, file, onProgress);
   return path;
 }
 
@@ -107,6 +189,7 @@ export function CourseEditor({
   const [saving, setSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [videoUploadPercent, setVideoUploadPercent] = useState<number | null>(null);
   /** Inline upload tip — not the top ErrorBanner (that stays for save/load). */
   const [uploadError, setUploadError] = useState<{ key: string; message: string } | null>(null);
   const [error, setError] = useState<string | null>(loadError);
@@ -156,7 +239,7 @@ export function CourseEditor({
     setUploading("cover");
     setUploadError(null);
     try {
-      const path = await uploadFile("/api/admin/courses/upload/cover", file);
+      const path = await uploadCoverFile(file);
       patchLocale({ coverUrl: path });
     } catch (err) {
       setUploadError({
@@ -172,9 +255,10 @@ export function CourseEditor({
     if (!file) return;
     const key = `video-${index}`;
     setUploading(key);
+    setVideoUploadPercent(0);
     setUploadError(null);
     try {
-      const path = await uploadFile("/api/admin/courses/upload/video", file);
+      const path = await uploadCourseVideoDirect(file, setVideoUploadPercent);
       setCourse((current) => {
         if (!current) return current;
         const videos = current.videos.map((video, i) =>
@@ -189,6 +273,7 @@ export function CourseEditor({
       });
     } finally {
       setUploading(null);
+      setVideoUploadPercent(null);
     }
   }
 
@@ -198,7 +283,7 @@ export function CourseEditor({
     setUploading(key);
     setUploadError(null);
     try {
-      const path = await uploadFile("/api/admin/courses/upload/cover", file);
+      const path = await uploadCoverFile(file);
       setCourse((current) => {
         if (!current) return current;
         const videos = current.videos.map((video, i) =>
@@ -615,11 +700,21 @@ export function CourseEditor({
                                 ) : (
                                   <IconUpload className="size-4" />
                                 )}
-                                上传
+                                {uploading === `video-${index}` && videoUploadPercent != null
+                                  ? `${videoUploadPercent}%`
+                                  : "上传"}
                               </span>
                             </Button>
                           </label>
                         </div>
+                        {uploading === `video-${index}` && videoUploadPercent != null ? (
+                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-slate-800 transition-[width] duration-150"
+                              style={{ width: `${videoUploadPercent}%` }}
+                            />
+                          </div>
+                        ) : null}
                         {uploadError?.key === `video-${index}` ? (
                           <p className="text-[12px] text-red-600">{uploadError.message}</p>
                         ) : null}
