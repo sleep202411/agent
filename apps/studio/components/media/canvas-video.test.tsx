@@ -71,6 +71,79 @@ async function visibility(index: number, visible: boolean) {
   await settle();
 }
 describe("canvas video resource lifetime", () => {
+  it("retains the decoded frame when switching players even if the poster failed", async () => {
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage,
+    } as unknown as CanvasRenderingContext2D);
+    await render(2);
+    await visibility(0, true);
+    await visibility(1, true);
+    await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    const first = container.querySelector("video")!;
+    Object.defineProperties(first, {
+      readyState: { value: 2 },
+      videoWidth: { value: 1920 },
+      videoHeight: { value: 1080 },
+    });
+    first.currentTime = 4.5;
+    await act(async () => {
+      first.dispatchEvent(new Event("loadeddata"));
+      first.dispatchEvent(new Event("play"));
+    });
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    const second = container.querySelectorAll("video")[1];
+    await act(async () => second.dispatchEvent(new Event("play")));
+    expect(container.querySelectorAll("video")).toHaveLength(1);
+    expect(first.hasAttribute("src")).toBe(false);
+    const frame = container.querySelector("canvas")!;
+    expect(frame.hidden).toBe(false);
+    expect([frame.width, frame.height]).toEqual([480, 270]);
+    expect(drawImage).toHaveBeenCalledWith(first, 0, 0, 480, 270);
+    await visibility(0, false);
+    await visibility(0, true);
+    expect(container.querySelector("canvas")).toBe(frame);
+    expect(frame.hidden).toBe(false);
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    const resumed = container.querySelector("video")!;
+    Object.defineProperty(resumed, "duration", { value: 8 });
+    await act(async () => resumed.dispatchEvent(new Event("loadedmetadata")));
+    expect(resumed.currentTime).toBe(4.5);
+  });
+
+  it("discards the retained frame when a node's video source changes, including switching back", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D);
+    const renderSource = async (src: string) => {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <CanvasVideo src={src} />
+          </QueryClientProvider>
+        )
+      );
+    };
+    await renderSource("https://cdn.test/first.mp4");
+    await visibility(0, true);
+    await act(async () => container.querySelector<HTMLButtonElement>("button")!.click());
+    const first = container.querySelector("video")!;
+    Object.defineProperties(first, {
+      readyState: { value: 2 },
+      videoWidth: { value: 1280 },
+      videoHeight: { value: 720 },
+    });
+    await act(async () => first.dispatchEvent(new Event("loadeddata")));
+    expect(container.querySelector("canvas")!.hidden).toBe(false);
+    for (const src of ["https://cdn.test/second.mp4", "https://cdn.test/first.mp4"]) {
+      await renderSource(src);
+      const frame = container.querySelector("canvas")!;
+      expect(frame.hidden).toBe(true);
+      expect([frame.width, frame.height]).toEqual([1, 1]);
+    }
+  });
+
   it("keeps playback available when a poster image fails and retries it on play", async () => {
     await render();
     await visibility(0, true);

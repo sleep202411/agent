@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type MouseEventHandler } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEventHandler } from "react";
 import { IconLoader2, IconPhotoOff, IconPlayerPlay } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { useVideoPlaybackError, VideoPlaybackFallback } from "@/components/video-playback-fallback";
@@ -36,6 +36,10 @@ export function CanvasVideo({
   const t = useTranslations("canvasNodes");
   const container = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
+  const stillFrame = useRef<HTMLCanvasElement>(null);
+  const [frame, setFrame] = useState({ src, ready: false });
+  if (frame.src !== src) setFrame({ src, ready: false });
+  const hasFrame = frame.src === src && frame.ready;
   const [visible, setVisible] = useState(autoPlay);
   const [active, setActive] = useState(autoPlay);
   const [shouldPlay, setShouldPlay] = useState(true);
@@ -59,6 +63,37 @@ export function CanvasVideo({
     documentId ?? inheritedDocumentId
   );
   const playback = useVideoPlaybackError(source.src);
+
+  const captureFrame = useCallback(
+    (element: HTMLVideoElement, canvas = stillFrame.current) => {
+      if (
+        !canvas ||
+        canvas !== stillFrame.current ||
+        element.readyState < 2 ||
+        !element.videoWidth ||
+        !element.videoHeight
+      )
+        return;
+      try {
+        const context = canvas.getContext("2d");
+        if (!context) return;
+        const scale = Math.min(1, 480 / element.videoWidth, 480 / element.videoHeight);
+        const width = Math.max(1, Math.round(element.videoWidth * scale));
+        const height = Math.max(1, Math.round(element.videoHeight * scale));
+        if (canvas.width !== width) canvas.width = width;
+        if (canvas.height !== height) canvas.height = height;
+        // Keep pixels for display only. Exporting a cross-origin frame would
+        // require CORS and could break videos that already play correctly.
+        context.drawImage(element, 0, 0, width, height);
+        setFrame((current) =>
+          current.src === src && current.ready ? current : { src, ready: true }
+        );
+      } catch {
+        // A decoder may have released its frame; retain the existing preview.
+      }
+    },
+    [src]
+  );
 
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => {
@@ -89,15 +124,17 @@ export function CanvasVideo({
 
   useEffect(() => {
     const element = video.current;
+    const canvas = stillFrame.current;
     return () => {
       if (!element) return;
+      captureFrame(element, canvas);
       if (element.readyState >= 1) position.current = element.currentTime;
       if (playingVideo?.element === element) playingVideo = null;
       element.pause();
       element.removeAttribute("src");
       element.load();
     };
-  }, [visible, active, source.src, attempt]);
+  }, [visible, active, source.src, attempt, captureFrame]);
 
   const retry = async () => {
     playback.reset();
@@ -117,29 +154,42 @@ export function CanvasVideo({
       className={cn("relative overflow-hidden bg-black/20", className)}
       onDoubleClick={onDoubleClick}
     >
-      {posterUrl && !posterFailed ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={posterUrl}
-          alt=""
-          draggable={false}
-          onError={() => setFailedPoster(posterUrl)}
-          className="pointer-events-none absolute inset-0 size-full object-contain"
-          onLoad={(event) => {
-            const image = event.currentTarget;
-            if (image.naturalWidth && image.naturalHeight)
-              ratioCallback.current?.(`${image.naturalWidth} / ${image.naturalHeight}`);
-          }}
-        />
-      ) : (
-        <span className="pointer-events-none absolute inset-0 flex items-end justify-start p-3 text-white/40">
-          {posterFailed ? (
-            <IconPhotoOff aria-label={t("media.previewUnavailable")} className="size-4" />
-          ) : (
-            <IconLoader2 aria-label={t("media.preparingPreview")} className="size-4 animate-spin" />
-          )}
-        </span>
-      )}
+      <canvas
+        key={src}
+        ref={stillFrame}
+        width={1}
+        height={1}
+        aria-hidden="true"
+        hidden={!hasFrame}
+        className="pointer-events-none absolute inset-0 size-full object-contain"
+      />
+      {!hasFrame &&
+        (posterUrl && !posterFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={posterUrl}
+            alt=""
+            draggable={false}
+            onError={() => setFailedPoster(posterUrl)}
+            className="pointer-events-none absolute inset-0 size-full object-contain"
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (image.naturalWidth && image.naturalHeight)
+                ratioCallback.current?.(`${image.naturalWidth} / ${image.naturalHeight}`);
+            }}
+          />
+        ) : (
+          <span className="pointer-events-none absolute inset-0 flex items-end justify-start p-3 text-white/40">
+            {posterFailed ? (
+              <IconPhotoOff aria-label={t("media.previewUnavailable")} className="size-4" />
+            ) : (
+              <IconLoader2
+                aria-label={t("media.preparingPreview")}
+                className="size-4 animate-spin"
+              />
+            )}
+          </span>
+        ))}
       {!thumbnail && !active && (
         <button
           type="button"
@@ -167,7 +217,7 @@ export function CanvasVideo({
           key={`${source.src}:${attempt}`}
           ref={video}
           src={source.src}
-          poster={posterFailed ? undefined : posterUrl}
+          poster={hasFrame || posterFailed ? undefined : posterUrl}
           autoPlay={shouldPlay}
           controls
           muted={muted}
@@ -182,6 +232,7 @@ export function CanvasVideo({
           onKeyDown={(event) => event.stopPropagation()}
           onError={playback.onError}
           onCanPlay={playback.onCanPlay}
+          onLoadedData={(event) => captureFrame(event.currentTarget)}
           onTimeUpdate={(event) => {
             if (event.currentTarget === video.current && event.currentTarget.readyState >= 1)
               position.current = event.currentTarget.currentTime;
@@ -197,12 +248,22 @@ export function CanvasVideo({
             setShouldPlay(true);
             const previous = playingVideo;
             if (previous?.element === event.currentTarget) return;
-            playingVideo = { element: event.currentTarget, stop: () => setActive(false) };
+            const element = event.currentTarget;
+            playingVideo = {
+              element,
+              stop: () => {
+                captureFrame(element);
+                setActive(false);
+              },
+            };
             previous?.element.pause();
             previous?.stop();
           }}
           onPause={(event) => {
-            if (event.currentTarget === video.current) setShouldPlay(false);
+            if (event.currentTarget === video.current) {
+              captureFrame(event.currentTarget);
+              setShouldPlay(false);
+            }
           }}
         />
       )}
