@@ -21,7 +21,6 @@ import {
   assignAdminSuperRole,
   ensureAdminAuthCatalog,
 } from './admin-auth.bootstrap';
-import { ADMIN_PERMISSION_KEYS, ADMIN_ROLE_KEYS } from './admin-auth.constants';
 import {
   buildTotpUri,
   decryptTotpSecret,
@@ -103,28 +102,10 @@ const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const MAX_EMAIL_FAILURES = 5;
 const MAX_IP_FAILURES = 20;
 const LOCKOUT_MS = 15 * 60 * 1000;
-const LOCAL_DATABASE_HOSTS = new Set([
-  'localhost',
-  '127.0.0.1',
-  '::1',
-  '[::1]',
-]);
-const LOCAL_DEV_ADMIN_ID = '00000000-0000-4000-8000-000000000001';
-const LOCAL_DEV_ADMIN_SESSION_ID = '00000000-0000-4000-8000-000000000002';
-
-function jsonObjectMetadata(
-  metadata: Prisma.InputJsonValue | undefined,
-): Prisma.InputJsonObject {
-  if (metadata && typeof metadata === 'object' && !Array.isArray(metadata)) {
-    return metadata as Prisma.InputJsonObject;
-  }
-  return metadata === undefined ? {} : { value: metadata };
-}
 
 @Injectable()
 export class AdminAuthService implements OnModuleInit {
   private readonly logger = new Logger(AdminAuthService.name);
-  private devAuthBypassLogged = false;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -372,8 +353,6 @@ export class AdminAuthService implements OnModuleInit {
     context?: AdminRequestContext,
   ): Promise<AdminActor> {
     if (!sessionToken) {
-      const devActor = this.localDevAuthBypassActor(context);
-      if (devActor) return devActor;
       throw new UnauthorizedException({
         code: 'ADMIN_AUTH_REQUIRED',
         msg: '请先登录后台管理系统。',
@@ -412,33 +391,6 @@ export class AdminAuthService implements OnModuleInit {
     });
 
     return this.toActor(session.user, session.id);
-  }
-
-  private localDevAuthBypassActor(
-    context?: AdminRequestContext,
-  ): AdminActor | null {
-    if (!isLocalDevAuthBypassEnabled()) return null;
-    if (!this.devAuthBypassLogged) {
-      this.logger.warn(
-        `Admin dev auth bypass enabled for local development only. ip=${context?.ipAddress ?? 'unknown'}`,
-      );
-      this.devAuthBypassLogged = true;
-    }
-    return {
-      id: LOCAL_DEV_ADMIN_ID,
-      email:
-        process.env.ADMIN_DEV_AUTH_EMAIL?.trim() ||
-        'local-dev-admin@fizzdragon.test',
-      displayName: process.env.ADMIN_DEV_AUTH_NAME?.trim() || 'Local Dev Admin',
-      avatarUrl: null,
-      status: AdminUserStatus.active,
-      siteScope: AdminSiteScope.all,
-      sessionId: LOCAL_DEV_ADMIN_SESSION_ID,
-      roleKeys: [ADMIN_ROLE_KEYS.SuperAdmin],
-      requireMfa: false,
-      mfaEnabledAt: null,
-      permissions: Object.values(ADMIN_PERMISSION_KEYS),
-    };
   }
 
   async logout(actor: AdminActor, context: AdminRequestContext): Promise<void> {
@@ -611,21 +563,12 @@ export class AdminAuthService implements OnModuleInit {
   }
 
   async writeAudit(input: AuditInput): Promise<void> {
-    const isLocalDevActor = input.actor?.id === LOCAL_DEV_ADMIN_ID;
-    const metadata =
-      isLocalDevActor && input.actor
-        ? ({
-            ...jsonObjectMetadata(input.metadata),
-            devAuthBypass: true,
-            devActorId: input.actor.id,
-            devSessionId: input.actor.sessionId,
-          } satisfies Prisma.InputJsonObject)
-        : (input.metadata ?? {});
+    const metadata = input.metadata ?? {};
 
     await this.prisma.adminAuditLog.create({
       data: {
-        actorUserId: isLocalDevActor ? undefined : input.actor?.id,
-        actorSessionId: isLocalDevActor ? undefined : input.actor?.sessionId,
+        actorUserId: input.actor?.id,
+        actorSessionId: input.actor?.sessionId,
         siteScope: (input.actor?.siteScope ??
           AdminSiteScope.all) as AdminSiteScope,
         action: input.action,
@@ -900,26 +843,6 @@ export class AdminAuthService implements OnModuleInit {
 
 function generateSessionToken(): string {
   return `fdadm_${randomBytes(32).toString('base64url')}`;
-}
-
-function isLocalDevAuthBypassEnabled(): boolean {
-  if (process.env.NODE_ENV === 'production') return false;
-  if (process.env.ADMIN_DEV_AUTH_BYPASS === 'false') return false;
-  if (!isLocalDatabaseUrl(process.env.DATABASE_URL)) return false;
-  return true;
-}
-
-function isLocalDatabaseUrl(value: string | undefined): boolean {
-  if (!value) return false;
-  try {
-    const parsed = new URL(value);
-    return (
-      ['postgres:', 'postgresql:'].includes(parsed.protocol) &&
-      LOCAL_DATABASE_HOSTS.has(parsed.hostname)
-    );
-  } catch {
-    return false;
-  }
 }
 
 function generateMfaChallengeToken(): string {

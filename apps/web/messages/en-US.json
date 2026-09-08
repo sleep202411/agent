@@ -1842,6 +1842,16 @@
     }
   },
   "crew": {
+    "creationRequirements": {
+      "title": "Crew Creation Requirements",
+      "eligibility": "Only users who hold a FizzDragon Certified AI Producer credential can create Crews and lead platform creators in collaboratively completing projects.",
+      "instructions": "If you have completed the FizzDragon AI Producer training programme, or have applied for the upcoming training session, please email your training certificate or registration confirmation to the following address for qualification review and record keeping:",
+      "subjectInstruction": "Please use the following email subject line:",
+      "dismiss": "Dismiss",
+      "subject": "AI Producer Qualification Review – [Your Name / Organisation]",
+      "checking": "Checking producer qualification…",
+      "retry": "Retry"
+    },
     "plaza": "Crew Hall",
     "allCrewsTitle": "All Crews",
     "allCrewsCount": "{count} crews",
@@ -5244,6 +5254,12 @@
     }
   },
   "crewTasks": {
+    "deletion": {
+      "label": "Delete task",
+      "description": "Delete this task? Child tasks will move to its parent. This task will stop blocking other tasks. Financial records will be retained.",
+      "success": "Task deleted",
+      "cancel": "Cancel"
+    },
     "title": "Production tasks",
     "count": "{count} tasks",
     "newTask": "New task",
@@ -5322,8 +5338,8 @@
     "due": "Due date",
     "updated": "Updated",
     "none": "None",
-    "compensation": "Reward points",
-    "noCompensation": "No reward points have been assigned.",
+    "compensation": "Reward amount",
+    "noCompensation": "No reward amounts have been assigned.",
     "createTitle": "Create production task",
     "createDescription": "Define the brief, budget, assignees, and compensation. Each task gets an independent editable canvas.",
     "titlePlaceholder": "What needs to be created?",
@@ -5368,7 +5384,7 @@
     "revisionProgress": "{used} of {limit} used",
     "revisionUnlimitedProgress": "{used} used · unlimited",
     "revisionUsedHint": "{used} revision rounds already used; the limit cannot be lower.",
-    "reward": "Reward points per assignee",
+    "reward": "Reward amount per assignee",
     "pointsUnit": "points",
     "chooseAssignees": "Assignees",
     "cancel": "Cancel",
@@ -5545,31 +5561,31 @@
   },
   "crewIncome": {
     "workspaceLabel": "{crew} · Finance",
-    "title": "Points and payouts",
-    "description": "Confirm crew compensation as points first, then settle selected points through auditable cash payouts.",
+    "title": "Amounts and payouts",
+    "description": "Record compensation and payouts in the site currency. Historical balances retain their original units.",
     "pointsUnit": "pts",
     "pointsValueTooltip": "Fixed value: {points} = {amount}. 100 points always equal {benchmark}.",
     "viewLabel": "Finance views",
     "views": {
-      "points": "Points ledger",
+      "points": "Amounts ledger",
       "payouts": "Cash payouts"
     },
     "metrics": {
-      "confirmedPoints": "Confirmed points",
+      "confirmedPoints": "Confirmed amounts",
       "pendingPoints": "Pending approval",
       "monthPoints": "Confirmed this month",
       "availablePoints": "Available for payout",
       "reservedPoints": "Reserved in payouts",
-      "paidPoints": "Paid points"
+      "paidPoints": "Paid amounts"
     },
     "points": {
-      "history": "Points ledger",
+      "history": "Amounts ledger",
       "historyDescription": "Immutable compensation entries from tasks and finance adjustments.",
-      "emptyTitle": "No points recorded yet",
-      "emptyDescription": "Approved task rewards appear automatically. Finance can also add a manual point entry."
+      "emptyTitle": "No amounts recorded yet",
+      "emptyDescription": "Approved task rewards appear automatically. Finance can also add a manual amount entry."
     },
     "scopes": {
-      "mine": "My points",
+      "mine": "My amounts",
       "crew": "Crew ledger"
     },
     "filters": {
@@ -5581,8 +5597,8 @@
       "paid": "Paid",
       "voided": "Voided"
     },
-    "loading": "Loading points ledger…",
-    "loadFailed": "Points ledger could not be loaded.",
+    "loading": "Loading amounts ledger…",
+    "loadFailed": "Amounts ledger could not be loaded.",
     "retry": "Retry",
     "loadMore": "Load more",
     "status": {
@@ -5594,46 +5610,46 @@
     "sources": {
       "task_reward": "Task reward",
       "contract_compensation": "Contract compensation",
-      "milestone_bonus": "Milestone points",
-      "revenue_share": "Revenue-share points",
-      "discretionary_bonus": "Bonus points",
-      "adjustment": "Point adjustment"
+      "milestone_bonus": "Milestone amounts",
+      "revenue_share": "Revenue-share amounts",
+      "discretionary_bonus": "Bonus amounts",
+      "adjustment": "Amount adjustment"
     },
     "create": {
-      "action": "Add points",
-      "title": "Add member points",
-      "description": "Create a pending point entry. A finance approver must confirm it before it becomes available for payout.",
+      "action": "Add amounts",
+      "title": "Add member amounts",
+      "description": "Create a pending amount entry. A finance approver must confirm it before it becomes available for payout.",
       "member": "Member",
       "memberPlaceholder": "Select a member",
-      "source": "Point source",
+      "source": "Amount source",
       "titleLabel": "Title",
-      "titlePlaceholder": "What are these points for?",
-      "points": "Points",
+      "titlePlaceholder": "What are these amounts for?",
+      "points": "Amount",
       "note": "Note",
       "notePlaceholder": "Add contract, milestone or accounting context…",
-      "pendingNotice": "This entry remains pending until finance confirms it. No cash value is assigned at this stage.",
-      "submit": "Create point entry"
+      "pendingNotice": "This amount remains pending until finance confirms it.",
+      "submit": "Create amount entry"
     },
     "decision": {
-      "rejectTitle": "Reject point entry",
-      "rejectDescription": "The pending entry remains in the audit ledger and does not add any points.",
-      "reverseTitle": "Reverse confirmed points",
-      "reverseDescription": "This removes the confirmed points. Entries reserved by or included in a payout cannot be reversed.",
+      "rejectTitle": "Reject amount entry",
+      "rejectDescription": "The pending entry remains in the audit ledger and does not add any amounts.",
+      "reverseTitle": "Reverse confirmed amounts",
+      "reverseDescription": "This removes the confirmed amounts. Entries reserved by or included in a payout cannot be reversed.",
       "reasonPlaceholder": "Reason for this decision…"
     },
     "actions": {
       "approve": "Approve and post",
       "reject": "Reject",
       "reverse": "Reverse",
-      "viewDetails": "View point details",
+      "viewDetails": "View amount details",
       "cancel": "Cancel",
       "confirmReject": "Reject entry",
-      "confirmReverse": "Reverse points"
+      "confirmReverse": "Reverse amounts"
     },
     "detail": {
-      "title": "Point details",
-      "description": "Source, decisions and immutable audit history for this point entry.",
-      "source": "Point source",
+      "title": "Amount details",
+      "description": "Source, decisions and immutable audit history for this amount entry.",
+      "source": "Amount source",
       "note": "Note",
       "recorded": "Recorded",
       "createdBy": "Created by",
@@ -5647,26 +5663,26 @@
       "loadFailed": "Audit trail could not be loaded.",
       "close": "Close",
       "events": {
-        "created": "Point entry created",
-        "posted": "Points confirmed",
-        "rejected": "Point entry rejected",
-        "reversed": "Confirmed points reversed",
-        "unknown": "Point record updated"
+        "created": "Amount entry created",
+        "posted": "Amounts confirmed",
+        "rejected": "Amount entry rejected",
+        "reversed": "Confirmed amounts reversed",
+        "unknown": "Amount record updated"
       }
     },
     "messages": {
-      "created": "Point entry created",
-      "createFailed": "Point entry could not be created.",
-      "approved": "Points confirmed",
-      "rejected": "Point entry rejected",
-      "reversed": "Points reversed",
-      "actionFailed": "Point action failed."
+      "created": "Amount entry created",
+      "createFailed": "Amount entry could not be created.",
+      "approved": "Amounts confirmed",
+      "rejected": "Amount entry rejected",
+      "reversed": "Amounts reversed",
+      "actionFailed": "Amount action failed."
     },
     "payout": {
       "history": "Payout records",
-      "historyDescription": "Every payout reserves confirmed points and keeps its own cash snapshot and audit trail.",
+      "historyDescription": "Every payout reserves confirmed amounts and keeps its own cash snapshot and audit trail.",
       "emptyTitle": "No payouts yet",
-      "emptyDescription": "Finance can create a payout from a member's available confirmed points.",
+      "emptyDescription": "Finance can create a payout from a member's available confirmed amounts.",
       "record": "Crew payout",
       "status": {
         "pending": "Pending",
@@ -5680,14 +5696,14 @@
       "create": {
         "action": "Create payout",
         "title": "Create cash payout",
-        "description": "Reserve confirmed points and snapshot the exact cash amount finance will issue.",
+        "description": "Reserve confirmed amounts and snapshot the exact cash amount finance will issue.",
         "member": "Member",
-        "points": "Points to settle",
+        "points": "Amounts to settle",
         "gross": "Gross amount",
         "withholding": "Withholding",
         "net": "Net payout",
         "note": "Finance note",
-        "notice": "Creating a payout reserves the selected points. Cash is only considered paid after finance records the payment method and reference.",
+        "notice": "Creating a payout reserves the selected amounts. Cash is only considered paid after finance records the payment method and reference.",
         "submit": "Create payout"
       },
       "dialog": {
@@ -5697,12 +5713,12 @@
         "reason": "Reason",
         "pay": {
           "title": "Record completed payment",
-          "description": "Confirm that {amount} for {points} was actually paid.",
+          "description": "Confirm that {amount} for {amounts} was actually paid.",
           "submit": "Mark paid"
         },
         "void": {
           "title": "Void payout",
-          "description": "Void the {amount} payout for {points} and release its reserved points.",
+          "description": "Void the {amount} payout for {amounts} and release its reserved amounts.",
           "submit": "Void payout"
         }
       },
@@ -5715,12 +5731,12 @@
       },
       "detail": {
         "title": "Payout details",
-        "description": "Point allocations, cash snapshot and immutable payment history.",
+        "description": "Amount allocations, cash snapshot and immutable payment history.",
         "gross": "Gross amount",
         "withholding": "Withholding",
         "reference": "Payment reference",
         "voidReason": "Void reason",
-        "allocations": "Point allocations",
+        "allocations": "Amount allocations",
         "events": {
           "created": "Payout created",
           "paid": "Payment completed",
@@ -5731,11 +5747,13 @@
       "messages": {
         "created": "Payout created",
         "pay": "Payment recorded",
-        "void": "Payout voided and points released",
+        "void": "Payout voided and amounts released",
         "actionFailed": "Payout action failed."
       }
     },
-    "optional": "Optional"
+    "optional": "Optional",
+    "ledgerCurrency": "Ledger currency",
+    "historicalBalances": "Historical points (original units)"
   },
   "crewWorkbench": {
     "globalNavigation": "Crew workspace navigation",
@@ -9246,15 +9264,15 @@
       "earning": {
         "posted": {
           "title": "Points confirmed: {title}",
-          "body": "{points} was added to your crew points ledger."
+          "body": "{points} was added to your Crew finance ledger."
         },
         "rejected": {
           "title": "Points rejected: {title}",
-          "body": "{points} was not added to your crew points ledger."
+          "body": "{points} was not added to your Crew finance ledger."
         },
         "reversed": {
           "title": "Points reversed: {title}",
-          "body": "{points} was removed from your crew points ledger."
+          "body": "{points} was removed from your Crew finance ledger."
         }
       },
       "payout": {
@@ -9268,7 +9286,7 @@
         },
         "voided": {
           "title": "Payout voided",
-          "body": "The {amount} payout for {points} was voided; the points are available again."
+          "body": "The {amount} payout for {points} was voided; the reserved amount is available again."
         }
       }
     }

@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { getTranslations } from "next-intl/server";
 import type { SiteRegion } from "@/app/_components/region-provider";
 import { getWebBaseUrl } from "@/lib/web-base";
@@ -28,12 +27,10 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function StoryStudioPage({ params }: { params: Promise<{ locale: string }> }) {
-  const [{ locale }, requestHeaders] = await Promise.all([params, headers()]);
+  const { locale } = await params;
   const rawRegion = process.env.SITE_REGION ?? process.env.NEXT_PUBLIC_SITE_REGION ?? "global";
   const siteRegion: SiteRegion = rawRegion === "cn" ? "cn" : "global";
-  const host = requestHeaders.get("host") ?? "";
-  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
-  const playerBase = isLocal ? "http://localhost:9527" : getWebBaseUrl(siteRegion);
+  const playerBase = getWebBaseUrl(siteRegion);
   const playerHref = `${playerBase}/${locale}${JINLING_PLAYER_PATH}`;
 
   return (

@@ -675,9 +675,7 @@ export class EntitlementService {
   }
 
   private defaultPlanForRuntime(): EntitlementPlanKey {
-    // Must be a plan key with a real plan row, or auth-disabled local runs
-    // silently resolve free benefits and nothing looks wrong.
-    return process.env.AUTH_DISABLED === 'true' ? 'pro' : 'free';
+    return 'free';
   }
 
   /**

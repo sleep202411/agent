@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -81,8 +82,38 @@ export class CrewsService {
     private readonly collaboration: CrewCollaborationService,
   ) {}
 
+  async creationEligibility(userId: string) {
+    const certificate = await this.prisma.userCertificate.findFirst({
+      where: {
+        userId,
+        credentialType: 'fizzdragon_certified_ai_producer',
+        revokedAt: null,
+        issuedAt: { lte: new Date() },
+      },
+      select: { id: true },
+    });
+    return { eligible: certificate !== null };
+  }
+
   async create(creatorUserId: string, input: CreateCrewInput) {
     const crew = await this.prisma.$transaction(async (tx) => {
+      // Hold the qualification row until commit. Revocation/deletion/update
+      // must serialize with creation, including calls that bypass HTTP.
+      const certificates = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM user_certificates
+        WHERE user_id = ${creatorUserId}
+          AND credential_type = 'fizzdragon_certified_ai_producer'
+          AND revoked_at IS NULL AND issued_at <= CURRENT_TIMESTAMP
+        ORDER BY id LIMIT 1 FOR SHARE
+      `;
+      if (certificates.length === 0) {
+        throw new ForbiddenException({
+          code: 'CREW_PRODUCER_CERTIFICATION_REQUIRED',
+          message:
+            'FizzDragon Certified AI Producer qualification is required to create a Crew.',
+        });
+      }
+
       const productionPlan = createDefaultProductionPlan(
         input.productionTemplateLocale,
       );

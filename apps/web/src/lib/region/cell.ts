@@ -17,9 +17,7 @@
  * users, Stripe-vs-local-payment for US users) are handled per-request
  * via the Country layer (see `country.ts`), not via additional cells.
  *
- * "global" is the local-dev fallback when no env var is set. Treat it
- * as the most permissive cell — all features enabled — so dev can
- * exercise code paths that gate to either real cell.
+ * "global" is an explicit international deployment alias; missing configuration fails.
  */
 
 export const CELLS = ["com", "cn", "global"] as const;
@@ -28,7 +26,8 @@ export type Cell = (typeof CELLS)[number];
 export const CURRENT_CELL: Cell = (() => {
   const raw = process.env.NEXT_PUBLIC_SITE_REGION;
   if (raw === "com" || raw === "cn") return raw;
-  return "global";
+  if (raw === "global") return "global";
+  throw new Error("NEXT_PUBLIC_SITE_REGION must be cn, com or global");
 })();
 
 // ─── Currency policy ─────────────────────────────────────

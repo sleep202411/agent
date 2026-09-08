@@ -37,7 +37,9 @@ export function adminSiteByKey(key: AdminSiteKey): AdminSiteOption {
 // ever called server-side. If the resolved option ever needs client access,
 // pass the AdminSiteOption down as a prop (as the login page already does).
 export function currentAdminSite(): AdminSiteOption {
-  const key: AdminSiteKey = process.env.ADMIN_SITE === "cn" ? "cn" : "global";
+  if (process.env.ADMIN_SITE !== "cn" && process.env.ADMIN_SITE !== "global")
+    throw new Error("ADMIN_SITE must be cn or global");
+  const key: AdminSiteKey = process.env.ADMIN_SITE;
   const site = adminSiteByKey(key);
   if (!isLocalAdminApiBase()) return site;
   return {
@@ -50,11 +52,9 @@ export function currentAdminSite(): AdminSiteOption {
 
 function isLocalAdminApiBase(): boolean {
   if (process.env.NODE_ENV === "production") return false;
-  const base =
-    process.env.ADMIN_API_BASE_URL ??
-    process.env.ADMIN_GLOBAL_API_BASE_URL ??
-    "http://localhost:4399/admin";
+  const base = process.env.ADMIN_API_BASE_URL ?? process.env.ADMIN_GLOBAL_API_BASE_URL;
   try {
+    if (!base) return false;
     const parsed = new URL(base);
     return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(parsed.hostname);
   } catch {

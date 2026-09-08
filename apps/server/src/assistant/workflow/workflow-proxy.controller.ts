@@ -1,3 +1,4 @@
+import { requiredEnv } from '../../common/required-env';
 /**
  * Proxies workflow + drafts REST traffic from the frontend to the Mastra
  * agent server. Upstream routes live in apps/agent's Mastra `apiRoutes`;
@@ -39,10 +40,7 @@ export class WorkflowProxyController {
   private readonly logger = new Logger(WorkflowProxyController.name);
 
   private get mastraUrl(): string {
-    return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
-      /\/$/,
-      '',
-    );
+    return requiredEnv('MASTRA_URL').replace(/\/$/, '');
   }
 
   private buildHeaders(
@@ -61,10 +59,10 @@ export class WorkflowProxyController {
     return headers;
   }
 
-  private async buildContext(
+  private buildContext(
     user: AuthUser,
     workspaceContext?: Record<string, unknown>,
-  ): Promise<ContextHeader> {
+  ): ContextHeader {
     return {
       userId: user.userId,
       projectId: requiredScalarString(workspaceContext?.projectId),
@@ -137,7 +135,7 @@ export class WorkflowProxyController {
       );
     }
     const worldId = scalarString(body.worldId);
-    const context = await this.buildContext(user, { projectId, worldId });
+    const context = this.buildContext(user, { projectId, worldId });
     return this.forward('/workflow/start', {
       method: 'POST',
       headers: this.buildHeaders(req, context, true),
@@ -160,7 +158,7 @@ export class WorkflowProxyController {
     const projectId = requiredScalarString(body.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = await this.buildContext(user, { projectId });
+    const context = this.buildContext(user, { projectId });
     const payload = {
       approved: Boolean(body.approved ?? false),
       feedback: body.feedback,
@@ -183,7 +181,7 @@ export class WorkflowProxyController {
     const projectId = requiredScalarString(body.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = await this.buildContext(user, { projectId });
+    const context = this.buildContext(user, { projectId });
     return this.forward(`/workflow/${encodeURIComponent(runId)}/cancel`, {
       method: 'POST',
       headers: this.buildHeaders(req, context, true),
@@ -209,7 +207,7 @@ export class WorkflowProxyController {
     const runIds = Array.isArray(body?.runIds)
       ? body.runIds.filter((r): r is string => typeof r === 'string')
       : [];
-    const context = await this.buildContext(
+    const context = this.buildContext(
       user,
       projectId ? { projectId } : undefined,
     );
@@ -236,7 +234,7 @@ export class WorkflowProxyController {
     const projectId = requiredScalarString(body?.projectId);
     if (!projectId)
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
-    const context = await this.buildContext(user, { projectId });
+    const context = this.buildContext(user, { projectId });
     try {
       return await this.forward(
         `/workflow/${encodeURIComponent(runId)}/heartbeat`,
@@ -284,7 +282,7 @@ export class WorkflowProxyController {
         'projectId query param required',
         HttpStatus.BAD_REQUEST,
       );
-    const context = await this.buildContext(user, { projectId });
+    const context = this.buildContext(user, { projectId });
     return this.forward(`/workflow/${encodeURIComponent(runId)}/cancel`, {
       method: 'POST',
       headers: this.buildHeaders(req, context, true),

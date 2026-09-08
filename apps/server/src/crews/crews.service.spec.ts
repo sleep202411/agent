@@ -75,6 +75,7 @@ function build(
   };
 
   const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([{ id: 'approved-producer' }]),
     crew: {
       create: jest.fn((args: { data: Record<string, unknown> }) => {
         void args;
@@ -449,5 +450,28 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
       true,
       t.tx,
     );
+  });
+});
+
+describe('Certified producer enforcement', () => {
+  it('denies creation before any Crew write when no current credential is locked', async () => {
+    const t = build();
+    t.tx.$queryRaw.mockResolvedValueOnce([]);
+    await expect(
+      t.service.create(FOUNDER, CREATE_INPUT as never),
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_PRODUCER_CERTIFICATION_REQUIRED' },
+    });
+    expect(t.tx.crew.create).not.toHaveBeenCalled();
+  });
+  it('does not grant access when credential storage fails', async () => {
+    const t = build();
+    t.tx.$queryRaw.mockRejectedValueOnce(
+      new Error('credential store unavailable'),
+    );
+    await expect(
+      t.service.create(FOUNDER, CREATE_INPUT as never),
+    ).rejects.toThrow('credential store unavailable');
+    expect(t.tx.crew.create).not.toHaveBeenCalled();
   });
 });

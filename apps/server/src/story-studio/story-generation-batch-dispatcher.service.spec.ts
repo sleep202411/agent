@@ -204,7 +204,7 @@ describe('Story generation batch fair dispatcher', () => {
         expectedVersion: 2,
         modelId: 'video-1',
         schemaVersion: 'v2',
-        options: { aspectRatio: '16:9' },
+        options: { aspectRatio: '16:9', duration: 6 },
       }),
       { pricingVersion: 'price-v2', points: 90 },
       { type: 'workspace', id: 'actor-personal-workspace' },

@@ -1,3 +1,4 @@
+import { requiredEnv } from '../../common/required-env';
 /**
  * Database module — wires a single PrismaClient shared across the app.
  *
@@ -29,9 +30,7 @@ import { PrismaClient } from '@prisma/client';
 const TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
 
 function buildPrisma(): PrismaClient {
-  const connectionString =
-    process.env.DATABASE_URL ??
-    'postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon';
+  const connectionString = requiredEnv('DATABASE_URL');
   const adapter = new PrismaPg({
     connectionString,
     max: 10,
@@ -63,9 +62,7 @@ export class PrismaService
 }
 
 function buildPrismaCtorArgs(): ConstructorParameters<typeof PrismaClient>[0] {
-  const connectionString =
-    process.env.DATABASE_URL ??
-    'postgres://fizzdragon:fizzdragon@localhost:5433/fizzdragon';
+  const connectionString = requiredEnv('DATABASE_URL');
   const adapter = new PrismaPg({
     connectionString,
     max: 10,

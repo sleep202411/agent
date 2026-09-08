@@ -1,4 +1,9 @@
 import {
+  crewCurrency,
+  assertNewCrewCurrency,
+  formatLedgerAmount,
+} from './ledger-currency';
+import {
   BadRequestException,
   ConflictException,
   Injectable,
@@ -65,6 +70,7 @@ export class CrewPayoutsService {
       await this.authorization.requireMembership(crewId, userId);
     }
     const scopeWhere = {
+      currency: query.currency ?? crewCurrency(),
       crewId,
       ...(query.scope === 'mine' ? { userId } : {}),
     } satisfies Prisma.CrewPayoutWhereInput;
@@ -101,7 +107,12 @@ export class CrewPayoutsService {
         _count: { _all: true },
         _sum: { pointsAmount: true, netAmountMinor: true },
       }),
-      this.availability(crewId, userId, query.scope),
+      this.availability(
+        crewId,
+        userId,
+        query.scope,
+        query.currency ?? crewCurrency(),
+      ),
     ]);
     const items = rows.slice(0, query.limit);
     return {
@@ -149,6 +160,7 @@ export class CrewPayoutsService {
 
   async create(crewId: string, userId: string, input: CreateCrewPayoutInput) {
     await this.authorization.require(crewId, userId, 'finance.payouts.create');
+    if (input.currency !== 'POINTS') assertNewCrewCurrency(input.currency);
     const member = await this.prisma.crewMember.findFirst({
       where: {
         id: input.crewMemberId,
@@ -183,6 +195,7 @@ export class CrewPayoutsService {
         where: {
           crewId,
           userId: member.userId,
+          currency: input.currency,
           status: CrewEarningStatus.posted,
         },
         orderBy: [{ postedAt: 'asc' }, { id: 'asc' }],
@@ -229,6 +242,7 @@ export class CrewPayoutsService {
           crewMemberId: member.id,
           userId: member.userId,
           pointsAmount: requestedPoints,
+          currency: input.currency,
           withholdingAmountMinor: withholding,
           netAmountMinor: net,
           note: input.note || null,
@@ -346,8 +360,9 @@ export class CrewPayoutsService {
     crewId: string,
     userId: string,
     scope: 'mine' | 'crew',
+    currency: string,
   ) {
-    const userWhere = scope === 'mine' ? { userId } : {};
+    const userWhere = { currency, ...(scope === 'mine' ? { userId } : {}) };
     const [confirmed, reserved, paid] = await Promise.all([
       this.prisma.crewEarningEntry.aggregate({
         where: { crewId, ...userWhere, status: CrewEarningStatus.posted },
@@ -423,15 +438,17 @@ export class CrewPayoutsService {
         userId: payout.userId,
         type: `crew.payout.${outcome}`,
         title: `Crew payout ${outcome}`,
-        body: `${payout.pointsAmount.toLocaleString('en-US')} points · ${formatMinor(
+        body: `${formatLedgerAmount(payout.pointsAmount, payout.currency)} · ${formatMinor(
           payout.netAmountMinor,
+          payout.currency,
         )}`,
         meta: {
           crewId: payout.crewId,
           payoutId: payout.id,
           pointsAmount: payout.pointsAmount.toString(),
           netAmountMinor: payout.netAmountMinor.toString(),
-          currency: 'USD',
+          ledgerCurrency: payout.currency,
+          currency: payout.currency === 'POINTS' ? 'USD' : payout.currency,
           status: payout.status,
           deeplink: `/crews/${payout.crewId}/workspace?tab=income`,
         },
@@ -490,6 +507,7 @@ function payoutSnapshot(payout: CrewPayout) {
   return {
     id: payout.id,
     status: payout.status,
+    currency: payout.currency,
     pointsAmount: payout.pointsAmount.toString(),
     withholdingAmountMinor: payout.withholdingAmountMinor.toString(),
     netAmountMinor: payout.netAmountMinor.toString(),
@@ -507,6 +525,7 @@ function payoutDto(payout: PayoutWithRelations) {
     crewId: payout.crewId,
     crewMemberId: payout.crewMemberId,
     userId: payout.userId,
+    currency: payout.currency,
     pointsAmount: payout.pointsAmount.toString(),
     withholdingAmountMinor: payout.withholdingAmountMinor.toString(),
     netAmountMinor: payout.netAmountMinor.toString(),
@@ -536,8 +555,8 @@ function payoutDto(payout: PayoutWithRelations) {
   };
 }
 
-function formatMinor(amount: bigint) {
+function formatMinor(amount: bigint, currency = 'USD') {
   const major = amount / 100n;
   const minor = (amount % 100n).toString().padStart(2, '0');
-  return `USD ${major.toLocaleString('en-US')}.${minor}`;
+  return `${currency === 'POINTS' ? 'USD' : currency} ${major.toLocaleString('en-US')}.${minor}`;
 }

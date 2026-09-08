@@ -2,6 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { CREW_CURRENCY, type CrewLedgerCurrency } from "@/src/lib/crew-money";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -15,18 +16,24 @@ import type {
 export function useCrewPayouts(
   crewId: string,
   input: {
+    currency?: CrewLedgerCurrency;
     scope: "mine" | "crew";
     status?: CrewPayoutStatus;
   },
   enabled = true
 ) {
   const result = useInfiniteQuery({
-    queryKey: [...crewKeys.payouts(crewId, input.scope), input.status ?? "all"],
+    queryKey: [
+      ...crewKeys.payouts(crewId, input.scope),
+      input.status ?? "all",
+      input.currency ?? CREW_CURRENCY,
+    ],
     enabled: enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewPayoutPageDTO>(`/crews/${encodeURIComponent(crewId)}/payouts`, {
         query: {
+          currency: input.currency,
           scope: input.scope,
           status: input.status,
           cursor: pageParam,
@@ -55,6 +62,7 @@ export function useCreateCrewPayout(crewId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: {
+      currency: CrewLedgerCurrency;
       crewMemberId: string;
       pointsAmount: string;
       withholdingAmountMinor?: string;

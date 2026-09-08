@@ -668,7 +668,17 @@ export function LinearTaskWorkspace({
           <IconLoader2 className="size-5 animate-spin" />
         </div>
       ) : null}
-      {taskQuery.data ? (
+      {taskQuery.isError && selectedTaskId ? (
+        <div className="absolute inset-0 z-40 grid place-content-center gap-4 bg-[#090a0c] p-6">
+          <p role="alert">
+            {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
+          </p>
+          <button type="button" onClick={() => selectTask(null)}>
+            {t("issues")}
+          </button>
+        </div>
+      ) : null}
+      {taskQuery.data && !taskQuery.isError ? (
         <div className="absolute inset-0 z-40 bg-[#090a0c]">
           <TaskIssueDetail
             key={taskQuery.data.id}

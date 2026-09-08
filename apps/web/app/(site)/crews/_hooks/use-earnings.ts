@@ -9,6 +9,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 
+import { CREW_CURRENCY, type CrewLedgerCurrency } from "@/src/lib/crew-money";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -31,6 +32,7 @@ export function useCrewEarningDetail(earningId: string | null) {
 export function useCrewEarnings(
   crewId: string,
   input: {
+    currency?: CrewLedgerCurrency;
     scope: "mine" | "crew";
     status?: CrewEarningStatus;
     sourceType?: CrewEarningSourceType;
@@ -42,12 +44,14 @@ export function useCrewEarnings(
       ...crewKeys.earnings(crewId, input.scope),
       input.status ?? "all",
       input.sourceType ?? "all",
+      input.currency ?? CREW_CURRENCY,
     ],
     enabled: enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewEarningPageDTO>(`/crews/${encodeURIComponent(crewId)}/earnings`, {
         query: {
+          currency: input.currency,
           scope: input.scope,
           status: input.status,
           sourceType: input.sourceType,
@@ -77,7 +81,7 @@ export function useCreateCrewEarning(crewId: string) {
       idempotencyKey: string;
     }) =>
       crewApi.post<CrewEarningEntryDTO>(`/crews/${encodeURIComponent(crewId)}/earnings`, {
-        body: input,
+        body: { ...input, currency: CREW_CURRENCY },
       }),
     onSuccess: () => invalidateEarnings(queryClient, crewId),
   });

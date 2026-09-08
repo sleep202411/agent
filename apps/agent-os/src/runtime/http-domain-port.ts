@@ -213,12 +213,12 @@ export function resolveWorkerDomainMode(): WorkerDomainMode {
   const token = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
   if (domainUrl && token && token.length >= 16) return "http";
 
-  if (process.env.AGENT_OS_DOMAIN?.trim() === "memory") return "memory";
+  if (process.env.NODE_ENV === "test" && process.env.AGENT_OS_DOMAIN?.trim() === "memory")
+    return "memory";
 
   throw new Error(
     "Agent OS domain is not configured: set AGENT_OS_DOMAIN_URL and " +
-      "AGENT_OS_INTERNAL_TOKEN (16+ chars) to write to the platform, or set " +
-      "AGENT_OS_DOMAIN=memory to run against the throwaway in-memory store."
+      "AGENT_OS_INTERNAL_TOKEN (16+ chars) to write to the platform."
   );
 }
 

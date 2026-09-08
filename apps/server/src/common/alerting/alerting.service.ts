@@ -19,12 +19,10 @@ const MAX_CARD_CHARS = 14_000;
 const MAX_DETAIL_CHARS = 7_000;
 const MAX_STRING_CHARS = 700;
 const MAX_STACK_LINES = 12;
-const LOCAL_DEDUPE_MAX_KEYS = 1_000;
 
 @Injectable()
 export class AlertingService {
   private readonly logger = new Logger(AlertingService.name);
-  private readonly localDedupe = new Map<string, number>();
 
   constructor(@Optional() @Inject(REDIS) private readonly redis?: Redis) {}
 
@@ -105,34 +103,9 @@ export class AlertingService {
     ttlSeconds: number,
   ): Promise<boolean> {
     const key = `server-alert:dedupe:${fingerprint}`;
-    if (this.redis) {
-      try {
-        const result = await this.redis.set(key, '1', 'EX', ttlSeconds, 'NX');
-        return result === 'OK';
-      } catch (err) {
-        this.logger.warn(
-          `Redis alert dedupe failed, using local fallback: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
-    }
-
-    const now = Date.now();
-    const expiresAt = this.localDedupe.get(key);
-    if (expiresAt && expiresAt > now) return false;
-    this.localDedupe.set(key, now + ttlSeconds * 1000);
-    this.pruneLocalDedupe(now);
-    return true;
-  }
-
-  private pruneLocalDedupe(now: number): void {
-    if (this.localDedupe.size <= LOCAL_DEDUPE_MAX_KEYS) return;
-    for (const [key, expiresAt] of this.localDedupe.entries()) {
-      if (expiresAt <= now || this.localDedupe.size > LOCAL_DEDUPE_MAX_KEYS) {
-        this.localDedupe.delete(key);
-      }
-    }
+    if (!this.redis) throw new Error('Alert deduplication requires Redis');
+    const result = await this.redis.set(key, '1', 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
   }
 
   private buildFeishuPayload(

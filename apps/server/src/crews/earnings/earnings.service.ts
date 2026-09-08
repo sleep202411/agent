@@ -1,4 +1,9 @@
 import {
+  crewCurrency,
+  assertNewCrewCurrency,
+  formatLedgerAmount,
+} from './ledger-currency';
+import {
   BadRequestException,
   ConflictException,
   Injectable,
@@ -40,6 +45,7 @@ export interface PostTaskRewardInput {
   crewMemberId: string;
   userId: string;
   pointsAmount: bigint;
+  currency: string;
   approvedByUserId: string;
 }
 
@@ -58,6 +64,7 @@ export class CrewEarningsService {
       await this.authorization.requireMembership(crewId, userId);
     }
     const scopeWhere = {
+      currency: query.currency ?? crewCurrency(),
       crewId,
       ...(query.scope === 'mine' ? { userId } : {}),
     } satisfies Prisma.CrewEarningEntryWhereInput;
@@ -144,6 +151,7 @@ export class CrewEarningsService {
 
   async create(crewId: string, userId: string, input: CreateCrewEarningInput) {
     await this.authorization.require(crewId, userId, 'finance.earnings.create');
+    assertNewCrewCurrency(input.currency);
     const member = await this.prisma.crewMember.findFirst({
       where: {
         id: input.crewMemberId,
@@ -187,6 +195,7 @@ export class CrewEarningsService {
           title: input.title,
           description: input.description || null,
           pointsAmount: amount,
+          currency: input.currency,
           status: CrewEarningStatus.pending,
           idempotencyKey,
           createdByUserId: userId,
@@ -377,6 +386,7 @@ export class CrewEarningsService {
         taskId: input.taskId,
         title: `TASK-${input.taskNumber} ${input.taskTitle}`,
         pointsAmount: input.pointsAmount,
+        currency: input.currency,
         status: CrewEarningStatus.posted,
         idempotencyKey,
         createdByUserId: input.approvedByUserId,
@@ -434,12 +444,13 @@ export class CrewEarningsService {
         userId: earning.userId,
         type: `crew.earning.${outcome}`,
         title: `Crew points ${outcome}: ${earning.title}`,
-        body: `${earning.pointsAmount.toLocaleString('en-US')} points · ${outcome}`,
+        body: `${formatLedgerAmount(earning.pointsAmount, earning.currency)} · ${outcome}`,
         meta: {
           crewId: earning.crewId,
           earningId: earning.id,
           earningTitle: earning.title,
           sourceType: earning.sourceType,
+          currency: earning.currency,
           pointsAmount: earning.pointsAmount.toString(),
           deeplink: `/crews/${earning.crewId}/workspace?tab=income`,
         },
@@ -481,6 +492,7 @@ function earningSnapshot(earning: CrewEarningEntry) {
     id: earning.id,
     status: earning.status,
     sourceType: earning.sourceType,
+    currency: earning.currency,
     pointsAmount: earning.pointsAmount.toString(),
     version: earning.version,
     rejectionReason: earning.rejectionReason,
@@ -499,6 +511,7 @@ function earningDto(earning: EarningWithRelations) {
     agreement: earning.agreement,
     title: earning.title,
     description: earning.description,
+    currency: earning.currency,
     pointsAmount: earning.pointsAmount.toString(),
     status: earning.status,
     createdByUserId: earning.createdByUserId,

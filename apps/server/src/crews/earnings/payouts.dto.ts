@@ -13,6 +13,7 @@ const nonNegativeMinorUnits = z
     },
   );
 export const ListCrewPayoutsQuerySchema = z.object({
+  currency: z.enum(['POINTS', 'CNY', 'USD']).optional(),
   scope: z.enum(['mine', 'crew']).default('mine'),
   status: z.nativeEnum(CrewPayoutStatus).optional(),
   cursor: z.string().uuid().optional(),
@@ -22,6 +23,7 @@ export type ListCrewPayoutsQuery = z.infer<typeof ListCrewPayoutsQuerySchema>;
 
 export const CreateCrewPayoutSchema = z.object({
   crewMemberId: z.string().trim().min(1),
+  currency: z.enum(['POINTS', 'CNY', 'USD']),
   pointsAmount: positivePointAmount,
   withholdingAmountMinor: nonNegativeMinorUnits.default('0'),
   note: z.string().trim().max(10_000).optional(),

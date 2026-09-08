@@ -1,3 +1,4 @@
+import { requiredEnv } from '../../common/required-env';
 /**
  * Redis module — single ioredis client shared across modules that
  * need it (idempotency, rate limiting, future BullMQ).
@@ -25,7 +26,7 @@ class RedisLifecycle implements OnApplicationShutdown {
     {
       provide: REDIS,
       useFactory: () => {
-        const url = process.env.REDIS_URL ?? 'redis://localhost:6380';
+        const url = requiredEnv('REDIS_URL');
         // `lazyConnect: false` — we want the connection eagerly so
         // /ready can probe it; default `enableOfflineQueue: true`
         // buffers commands if we lose Redis temporarily.
