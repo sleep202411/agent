@@ -23,6 +23,7 @@ import type {
   WorkspaceTabId,
 } from "@/app/(site)/crews/[id]/workspace/_lib/workspace-tabs";
 import { CrewSwitcherRail } from "@/app/(site)/crews/_components/crew-switcher-rail";
+import { CrewWorkbenchHeader } from "./crew-workbench-header";
 
 const RAIL_ICONS: Record<WorkspaceTabId, typeof IconHome> = {
   overview: IconHome,
@@ -141,7 +142,19 @@ export function CrewWorkbenchShell({
         ) : null}
       </aside>
 
-      <section className="min-h-0 min-w-0 overflow-hidden bg-[#07080a]">{children}</section>
+      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-tl-xl border-l border-white/[0.055] bg-[#07080a]">
+        <CrewWorkbenchHeader
+          crewId={crewId}
+          crewName={crewName}
+          pageTitle={
+            activeTab === "chat"
+              ? tc(activeChatChannel === "team" ? "teamChannel" : "communityChannel")
+              : t(tabs.find((tab) => tab.id === activeTab)!.labelKey)
+          }
+          showProductionActions={showTeamChat}
+        />
+        <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+      </section>
     </div>
   );
 }

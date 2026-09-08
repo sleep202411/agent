@@ -4460,7 +4460,6 @@
     "inviteLinkStateExhausted": "已達上限"
   },
   "crewAssets": {
-    "linkCanvas": "連結畫布",
     "title": "劇組資產中心",
     "allFiles": "全部檔案",
     "recent": "最近使用",
@@ -5016,8 +5015,6 @@
       "dateInput": "日期或時間段",
       "dateInputPlaceholder": "例如 2027-05、2027-Q4 或 2027-05-20",
       "labels": "標籤",
-      "studioProject": "Studio 項目",
-      "linkStudioProject": "關聯 Studio 項目",
       "searchStudioProjects": "搜尋工作區和項目…",
       "loadingStudioProjects": "正在載入項目…",
       "noStudioProjects": "沒有符合的項目。",
@@ -5752,6 +5749,8 @@
     "optional": "可選"
   },
   "crewWorkbench": {
+    "header": "劇組工具列",
+    "linkCanvas": "連結畫布",
     "globalNavigation": "劇組工作台導覽",
     "crewSwitcherNavigation": "切換劇組",
     "allCrews": "全部劇組",

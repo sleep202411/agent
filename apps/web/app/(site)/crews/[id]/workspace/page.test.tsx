@@ -125,6 +125,18 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useUpdateCrewListing: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+vi.mock("@/app/(site)/crews/_hooks/use-production", () => ({
+  useCrewProductionOverview: () => ({
+    data: { studioProject: null, capabilities: { manage: true } },
+  }),
+  useCrewStudioProjectOptions: () => ({
+    data: { workspaces: [] },
+    isLoading: false,
+    isError: false,
+  }),
+  useLinkCrewStudioProject: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 vi.mock("@/app/(site)/crews/_hooks/use-crew-permissions", () => ({
   useCrewPermissions: () => state.viewer,
 }));
@@ -329,6 +341,29 @@ afterEach(() => {
 });
 
 describe("crew workspace tabs", () => {
+  it("keeps one crew header and canvas action mounted while switching surfaces", () => {
+    render();
+    const header = document.querySelector('header[aria-label="Crew header"]');
+    expect(header).not.toBeNull();
+
+    for (const label of [
+      "Tasks",
+      "Income",
+      "Asset Center",
+      "Members",
+      "Positions",
+      "Basic Info",
+      "Team chat",
+    ]) {
+      click(tabButton(label));
+      reload();
+      expect(document.querySelectorAll('header[aria-label="Crew header"]')).toHaveLength(1);
+      expect(document.querySelector('header[aria-label="Crew header"]')).toBe(header);
+      expect(header?.textContent).toContain(label);
+      expect(document.querySelectorAll('button[aria-label="Link Canvas"]')).toHaveLength(1);
+    }
+  });
+
   it("opens a bare workspace URL on the group chat, rewriting nothing", () => {
     render();
     expect(pane()).toBe("chat");

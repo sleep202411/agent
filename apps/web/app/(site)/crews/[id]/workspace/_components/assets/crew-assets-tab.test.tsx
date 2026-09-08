@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CrewAssetsTab } from "./crew-assets-tab";
+import { CrewWorkbenchHeader } from "../workbench/crew-workbench-header";
 import { CrewTransfersProvider } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -226,6 +227,12 @@ async function render(initialAssetId?: string) {
     root!.render(
       <QueryClientProvider client={queryClient}>
         <CrewTransfersProvider crewId="crew_1">
+          <CrewWorkbenchHeader
+            crewId="crew_1"
+            crewName="Night Shift"
+            pageTitle="Assets"
+            showProductionActions
+          />
           <CrewAssetsTab crewId="crew_1" initialAssetId={initialAssetId} />
         </CrewTransfersProvider>
       </QueryClientProvider>
@@ -438,10 +445,13 @@ describe("crew asset center", () => {
 });
 
 describe("Link Canvas", () => {
-  it("places the shared picker immediately before New folder and saves the association", async () => {
+  it("links a canvas from the shared header and updates the linked project", async () => {
     await render();
     const trigger = byText("button", "Link Canvas");
-    expect(trigger.nextElementSibling?.textContent?.trim()).toBe("New folder");
+    const header = document.querySelector('header[aria-label="Crew header"]');
+    expect(header?.contains(trigger)).toBe(true);
+    expect(header?.contains(byText("button", "New folder"))).toBe(false);
+    expect(document.querySelectorAll('button[aria-label="Link Canvas"]')).toHaveLength(1);
     await click(trigger);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 30));
@@ -450,7 +460,8 @@ describe("Link Canvas", () => {
     expect(requests).toContainEqual(
       expect.objectContaining({ method: "PATCH", body: { projectId: "project-1" } })
     );
-    expect(document.querySelector("[cmdk-dialog]")).toBeNull();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(trigger.textContent).toBe("Film Canvas");
   });
   it("keeps the action disabled without Overview management permission", async () => {
     canLink = false;

@@ -5,14 +5,12 @@ import {
   IconAdjustmentsHorizontal,
   IconBell,
   IconCheck,
-  IconCube,
   IconDots,
   IconFilter,
   IconFlag3,
   IconLayoutKanban,
   IconLayoutDashboard,
   IconLayoutSidebarRight,
-  IconLink,
   IconList,
   IconLoader2,
   IconPlus,
@@ -288,78 +286,8 @@ export function LinearTaskWorkspace({
   }
 
   return (
-    <div className="relative flex h-dvh min-h-0 flex-col overflow-hidden rounded-tl-xl border-l border-white/[0.055] bg-[#090a0c] text-[#e8e9ec]">
+    <div className="relative flex h-full min-h-0 flex-col overflow-hidden bg-[#090a0c] text-[#e8e9ec]">
       <header className="shrink-0 border-b border-white/[0.065] bg-[#0b0c0f]">
-        <div className="flex h-10 items-center gap-2 px-3">
-          <span className="grid size-7 shrink-0 place-items-center rounded-md bg-[#e52227]/10 text-[#ef4444]">
-            <IconCube className="size-4" stroke={1.8} />
-          </span>
-          <h1 className="min-w-0 truncate text-[13px] font-semibold text-[#e8e9ec]">{crewName}</h1>
-          <button
-            type="button"
-            onClick={() => setFavorite((value) => !value)}
-            className={cn(
-              "grid size-7 shrink-0 place-items-center rounded-md transition-colors hover:bg-white/[0.05]",
-              favorite ? "text-[#f0b33b]" : "text-[#717782] hover:text-[#c9cdd3]"
-            )}
-            aria-label={favorite ? t("removeFavorite") : t("addFavorite")}
-          >
-            <IconStar className="size-4" fill={favorite ? "currentColor" : "none"} />
-          </button>
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="grid size-7 shrink-0 place-items-center rounded-md text-[#717782] transition-colors hover:bg-white/[0.05] hover:text-[#c9cdd3]"
-                aria-label={t("projectMenu")}
-              >
-                <IconDots className="size-4" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="start"
-              className="w-44 rounded-lg border border-white/[0.1] bg-[#15161a] p-1 shadow-[0_20px_60px_rgba(0,0,0,.55)]"
-            >
-              {isOwner ? (
-                <button
-                  type="button"
-                  onClick={() => setProjectSettingsOpen(true)}
-                  className="flex h-8 w-full items-center rounded-md px-2.5 text-left text-[11px] text-[#b9bec7] hover:bg-white/[0.06]"
-                >
-                  {t("projectSettings")}
-                </button>
-              ) : null}
-              {!isOwner ? (
-                <p className="px-2.5 py-2 text-[10px] text-[#676e79]">{t("noProjectActions")}</p>
-              ) : null}
-            </PopoverContent>
-          </Popover>
-          <div className="ml-auto flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                void navigator.clipboard
-                  .writeText(window.location.href)
-                  .then(() => toast.success(t("projectLinkCopied")))
-                  .catch((error: unknown) =>
-                    toast.error(error instanceof Error ? error.message : t("projectLinkCopyFailed"))
-                  );
-              }}
-              className="grid size-8 place-items-center rounded-md text-[#777e89] transition-colors hover:bg-white/[0.05] hover:text-[#d4d7dc]"
-              aria-label={t("copyProjectLink")}
-            >
-              <IconLink className="size-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => openSection("activity")}
-              className="grid size-8 place-items-center rounded-md text-[#777e89] transition-colors hover:bg-white/[0.05] hover:text-[#d4d7dc]"
-              aria-label={t("openActivity")}
-            >
-              <IconBell className="size-4" />
-            </button>
-          </div>
-        </div>
         <nav
           className="flex h-10 items-center gap-1.5 overflow-x-auto border-t border-white/[0.045] px-3"
           aria-label={t("projectViews")}
@@ -402,24 +330,73 @@ export function LinearTaskWorkspace({
               <IconPlus className="size-4" />
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setProjectPanelOpen((value) => !value)}
-            className={cn(
-              "ml-auto grid size-8 shrink-0 place-items-center rounded-full border transition-colors",
-              projectPanelOpen
-                ? "border-white/[0.13] bg-white/[0.08] text-[#e2e5e9]"
-                : "border-white/[0.07] text-[#6f7681] hover:border-white/[0.12] hover:bg-white/[0.04] hover:text-[#c9cdd3]"
-            )}
-            aria-label={projectPanelOpen ? t("closeProjectPanel") : t("openProjectPanel")}
-          >
-            <IconLayoutSidebarRight className="size-3.5" />
-          </button>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setFavorite((value) => !value)}
+              className={cn(
+                "grid size-7 shrink-0 place-items-center rounded-md transition-colors hover:bg-white/[0.05]",
+                favorite ? "text-[#f0b33b]" : "text-[#717782] hover:text-[#c9cdd3]"
+              )}
+              aria-label={favorite ? t("removeFavorite") : t("addFavorite")}
+            >
+              <IconStar className="size-4" fill={favorite ? "currentColor" : "none"} />
+            </button>
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="grid size-7 shrink-0 place-items-center rounded-md text-[#717782] transition-colors hover:bg-white/[0.05] hover:text-[#c9cdd3]"
+                  aria-label={t("projectMenu")}
+                >
+                  <IconDots className="size-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="w-44 rounded-lg border border-white/[0.1] bg-[#15161a] p-1 shadow-[0_20px_60px_rgba(0,0,0,.55)]"
+              >
+                {isOwner ? (
+                  <button
+                    type="button"
+                    onClick={() => setProjectSettingsOpen(true)}
+                    className="flex h-8 w-full items-center rounded-md px-2.5 text-left text-[11px] text-[#b9bec7] hover:bg-white/[0.06]"
+                  >
+                    {t("projectSettings")}
+                  </button>
+                ) : null}
+                {!isOwner ? (
+                  <p className="px-2.5 py-2 text-[10px] text-[#676e79]">{t("noProjectActions")}</p>
+                ) : null}
+              </PopoverContent>
+            </Popover>
+            <button
+              type="button"
+              onClick={() => openSection("activity")}
+              className="grid size-8 place-items-center rounded-md text-[#777e89] transition-colors hover:bg-white/[0.05] hover:text-[#d4d7dc]"
+              aria-label={t("openActivity")}
+            >
+              <IconBell className="size-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setProjectPanelOpen((value) => !value)}
+              className={cn(
+                "grid size-8 shrink-0 place-items-center rounded-full border transition-colors",
+                projectPanelOpen
+                  ? "border-white/[0.13] bg-white/[0.08] text-[#e2e5e9]"
+                  : "border-white/[0.07] text-[#6f7681] hover:border-white/[0.12] hover:bg-white/[0.04] hover:text-[#c9cdd3]"
+              )}
+              aria-label={projectPanelOpen ? t("closeProjectPanel") : t("openProjectPanel")}
+            >
+              <IconLayoutSidebarRight className="size-3.5" />
+            </button>
+          </div>
         </nav>
       </header>
 
       {projectPanelOpen ? (
-        <aside className="absolute bottom-0 right-0 top-20 z-30 w-64 border-l border-white/[0.075] bg-[#0d0e11] p-5 shadow-[-20px_0_50px_rgba(0,0,0,.28)]">
+        <aside className="absolute bottom-0 right-0 top-10 z-30 w-64 border-l border-white/[0.075] bg-[#0d0e11] p-5 shadow-[-20px_0_50px_rgba(0,0,0,.28)]">
           <div className="flex items-center justify-between">
             <h2 className="text-[12px] font-semibold text-[#d9dce1]">{t("properties")}</h2>
             <button

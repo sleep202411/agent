@@ -4460,7 +4460,6 @@
     "inviteLinkStateExhausted": "Limit reached"
   },
   "crewAssets": {
-    "linkCanvas": "Link Canvas",
     "title": "Crew Asset Center",
     "allFiles": "All files",
     "recent": "Recent",
@@ -5016,8 +5015,6 @@
       "dateInput": "Date or time period",
       "dateInputPlaceholder": "Try 2027-05, 2027-Q4, or 2027-05-20",
       "labels": "Labels",
-      "studioProject": "Studio project",
-      "linkStudioProject": "Link Studio project",
       "searchStudioProjects": "Search workspaces and projects…",
       "loadingStudioProjects": "Loading projects…",
       "noStudioProjects": "No matching projects.",
@@ -5752,6 +5749,8 @@
     "optional": "Optional"
   },
   "crewWorkbench": {
+    "header": "Crew header",
+    "linkCanvas": "Link Canvas",
     "globalNavigation": "Crew workspace navigation",
     "crewSwitcherNavigation": "Crew switcher",
     "allCrews": "All crews",

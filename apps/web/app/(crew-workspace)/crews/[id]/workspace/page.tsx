@@ -331,7 +331,6 @@ export default function CrewWorkspacePage() {
   }
 
   const isChat = activeTab === "chat";
-  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.labelKey ?? "tabOverview";
 
   return (
     <CrewTransfersProvider crewId={id}>
@@ -360,12 +359,7 @@ export default function CrewWorkspacePage() {
             onSelectedAssetChange={handleSelectedAssetChange}
           />
         ) : (
-          <StandardWorkspaceSurface
-            title={t(activeTabLabel)}
-            description={crewDetail.description}
-            isChat={isChat}
-            isTaskWorkspace={activeTab === "tasks"}
-          >
+          <StandardWorkspaceSurface isChat={isChat} isTaskWorkspace={activeTab === "tasks"}>
             {activeTab === "chat" ? (
               <CrewChatTab crewId={id} channel={requestedCommunityChannel ? "community" : "team"} />
             ) : null}
@@ -493,7 +487,6 @@ const COMMUNITY_WORKSPACE_TABS = [
  * and basic crew information. Internal team navigation is never mounted.
  */
 function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
-  const t = useTranslations("workspace");
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -525,12 +518,7 @@ function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
         onSelectTab={selectTab}
         showTeamChat={false}
       >
-        <StandardWorkspaceSurface
-          title={t(activeTab === "chat" ? "tabChat" : "tabOverview")}
-          description={crew.tagline || crew.description}
-          isChat={activeTab === "chat"}
-          isTaskWorkspace={false}
-        >
+        <StandardWorkspaceSurface isChat={activeTab === "chat"} isTaskWorkspace={false}>
           {activeTab === "chat" ? <CrewChatTab crewId={crew.id} channel="community" /> : null}
           {activeTab === "overview" ? <CommunityCrewBasicInfo crew={crew} /> : null}
         </StandardWorkspaceSurface>
@@ -561,38 +549,24 @@ function CommunityCrewBasicInfo({ crew }: { crew: CrewDTO }) {
 }
 
 function StandardWorkspaceSurface({
-  title,
-  description,
   isChat,
   isTaskWorkspace,
   children,
 }: {
-  title: string;
-  description?: string | null;
   isChat: boolean;
   isTaskWorkspace: boolean;
   children: ReactNode;
 }) {
   if (isChat || isTaskWorkspace) {
     return (
-      <div className="h-dvh min-h-0 overflow-hidden bg-[#090a0c]">
+      <div className="h-full min-h-0 overflow-hidden bg-[#090a0c]">
         <div className="h-full min-h-0 w-full">{children}</div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col bg-[#090a0c]">
-      <header className="flex h-[58px] shrink-0 items-center border-b border-white/[0.075] px-5">
-        <div className="min-w-0">
-          <h1 className="truncate text-[13px] font-semibold tracking-[-0.01em] text-[#eceef2]">
-            {title}
-          </h1>
-          {description ? (
-            <p className="mt-0.5 max-w-xl truncate text-[10px] text-[#686e78]">{description}</p>
-          ) : null}
-        </div>
-      </header>
+    <div className="flex h-full min-h-0 flex-col bg-[#090a0c]">
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="mx-auto w-full max-w-[1480px]">{children}</div>
       </div>
