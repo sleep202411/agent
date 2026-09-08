@@ -122,7 +122,7 @@ export function CrewAssetsTab({
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [assetAction, setAssetAction] = useState<AssetAction | null>(null);
-  const [assetActionTargetId, setAssetActionTargetId] = useState("");
+  const [assetActionTargetIds, setAssetActionTargetIds] = useState<string[]>([]);
   const [actionName, setActionName] = useState("");
   const [destinationId, setDestinationId] = useState<string>("");
   const [confirmPermanentDeleteOpen, setConfirmPermanentDeleteOpen] = useState(false);
@@ -209,16 +209,22 @@ export function CrewAssetsTab({
 
   const selectedAsset = sourceItems.find((item) => item.id === selectedAssetId) ?? undefined;
   const checkedAssetId = checkedIds.size === 1 ? [...checkedIds][0] : undefined;
+  /** Single-target actions (rename). Cleared when multi-checked. */
   const actionableAsset =
     checkedIds.size > 1
       ? undefined
       : sourceItems.find((item) => item.id === (checkedAssetId ?? selectedAssetId));
-  const assetActionTarget =
-    sourceItems.find((item) => item.id === assetActionTargetId) ?? undefined;
+  const assetActionTargets = sourceItems.filter((item) => assetActionTargetIds.includes(item.id));
   const checkedAssets = sourceItems.filter((item) => checkedIds.has(item.id));
-  const canOrganize =
+  const movableChecked = checkedAssets.filter((item) =>
+    hasAssetPermission(item.effectivePermission, "edit")
+  );
+  const canOrganizeSingle =
     capabilities?.organize === true &&
     Boolean(actionableAsset && hasAssetPermission(actionableAsset.effectivePermission, "edit"));
+  const canMoveChecked =
+    capabilities?.organize === true && activeSource !== "trash" && movableChecked.length > 0;
+  const canShowMove = canOrganizeSingle || canMoveChecked;
   const canTrash =
     capabilities?.trash === true &&
     checkedAssets.length > 0 &&
@@ -374,39 +380,59 @@ export function CrewAssetsTab({
     });
   };
 
-  const openAssetAction = (action: AssetAction) => {
-    if (!actionableAsset) return;
-    setAssetActionTargetId(actionableAsset.id);
-    setAssetAction(action);
-    setActionName(actionableAsset.name);
-    setDestinationId(actionableAsset.parentId ?? "");
+  const openAssetAction = (action: AssetAction, targetIds?: string[]) => {
+    if (action === "rename") {
+      if (!actionableAsset) return;
+      setAssetActionTargetIds([actionableAsset.id]);
+      setAssetAction("rename");
+      setActionName(actionableAsset.name);
+      setDestinationId(actionableAsset.parentId ?? "");
+      return;
+    }
+
+    const ids =
+      targetIds && targetIds.length > 0 ? targetIds : actionableAsset ? [actionableAsset.id] : [];
+    if (ids.length === 0) return;
+    const primary = sourceItems.find((item) => item.id === ids[0]);
+    setAssetActionTargetIds(ids);
+    setAssetAction("move");
+    setActionName(primary?.name ?? "");
+    setDestinationId(primary?.parentId ?? "");
   };
 
   const submitAssetAction = async () => {
-    if (!assetActionTarget || !assetAction) return;
+    if (!assetAction || assetActionTargets.length === 0) return;
     try {
       if (assetAction === "rename") {
+        const target = assetActionTargets[0];
+        if (!target) return;
         const name = actionName.trim();
         if (!name) return;
         await updateAsset.mutateAsync({
-          nodeId: assetActionTarget.id,
-          expectedUpdatedAt: assetActionTarget.updatedAt,
+          nodeId: target.id,
+          expectedUpdatedAt: target.updatedAt,
           name,
         });
+        toast.success(t("renamed"));
       } else {
-        await updateAsset.mutateAsync({
-          nodeId: assetActionTarget.id,
-          expectedUpdatedAt: assetActionTarget.updatedAt,
-          parentId: destinationId || null,
-        });
+        const parentId = destinationId || null;
+        await Promise.all(
+          assetActionTargets.map((target) =>
+            updateAsset.mutateAsync({
+              nodeId: target.id,
+              expectedUpdatedAt: target.updatedAt,
+              parentId,
+            })
+          )
+        );
+        toast.success(t("moved", { count: assetActionTargets.length }));
       }
       setAssetAction(null);
-      setAssetActionTargetId("");
+      setAssetActionTargetIds([]);
       setCheckedIds(new Set());
       setSelectedAssetId("");
       setInspectorOpen(false);
       onSelectedAssetChange?.(null);
-      toast.success(assetAction === "rename" ? t("renamed") : t("moved"));
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
     }
@@ -562,20 +588,29 @@ export function CrewAssetsTab({
                     ["size", t("sortSize")],
                   ]}
                 />
-                {actionableAsset && activeSource !== "trash" && canOrganize ? (
+                {activeSource !== "trash" && canShowMove ? (
                   <>
+                    {canOrganizeSingle ? (
+                      <button
+                        type="button"
+                        onClick={() => openAssetAction("rename")}
+                        className="grid size-8 place-items-center rounded-lg border border-border/70 text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
+                        aria-label={t("rename")}
+                        title={t("rename")}
+                      >
+                        <IconEdit className="size-3.5" />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      onClick={() => openAssetAction("rename")}
-                      className="grid size-8 place-items-center rounded-lg border border-border/70 text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
-                      aria-label={t("rename")}
-                      title={t("rename")}
-                    >
-                      <IconEdit className="size-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openAssetAction("move")}
+                      onClick={() =>
+                        openAssetAction(
+                          "move",
+                          movableChecked.length > 0
+                            ? movableChecked.map((item) => item.id)
+                            : undefined
+                        )
+                      }
                       className="grid size-8 place-items-center rounded-lg border border-border/70 text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
                       aria-label={t("move")}
                       title={t("move")}
@@ -631,6 +666,18 @@ export function CrewAssetsTab({
                   label={t("download")}
                   onClick={downloadChecked}
                 />
+                {canMoveChecked ? (
+                  <BulkAction
+                    icon={<IconArrowsMove />}
+                    label={t("move")}
+                    onClick={() =>
+                      openAssetAction(
+                        "move",
+                        movableChecked.map((item) => item.id)
+                      )
+                    }
+                  />
+                ) : null}
                 {activeSource === "trash" && canRestore ? (
                   <BulkAction
                     icon={<IconRefresh />}
@@ -761,7 +808,7 @@ export function CrewAssetsTab({
       </section>
       <AssetActionDialog
         action={assetAction}
-        asset={assetActionTarget}
+        assets={assetActionTargets}
         name={actionName}
         destinationId={destinationId}
         folders={(folderQuery.data ?? []).filter((folder) =>
@@ -773,7 +820,7 @@ export function CrewAssetsTab({
         onDestinationChange={setDestinationId}
         onClose={() => {
           setAssetAction(null);
-          setAssetActionTargetId("");
+          setAssetActionTargetIds([]);
         }}
         onSubmit={() => void submitAssetAction()}
       />
@@ -1692,7 +1739,7 @@ function InfoPanel({ asset, t }: { asset: CrewAssetPreviewItem; t: Translation }
 
 function AssetActionDialog({
   action,
-  asset,
+  assets,
   name,
   destinationId,
   folders,
@@ -1704,7 +1751,7 @@ function AssetActionDialog({
   onSubmit,
 }: {
   action: AssetAction | null;
-  asset?: CrewAssetPreviewItem;
+  assets: CrewAssetPreviewItem[];
   name: string;
   destinationId: string;
   folders: CrewAssetFolderDTO[];
@@ -1715,9 +1762,14 @@ function AssetActionDialog({
   onClose: () => void;
   onSubmit: () => void;
 }) {
+  const moveCount = assets.length;
+  const excludedFolderIds = useMemo(
+    () => assets.filter((asset) => asset.kind === "folder").map((asset) => asset.id),
+    [assets]
+  );
   const options = useMemo(
-    () => buildFolderOptions(folders, asset?.kind === "folder" ? asset.id : undefined),
-    [asset, folders]
+    () => buildFolderOptions(folders, excludedFolderIds),
+    [excludedFolderIds, folders]
   );
   return (
     <Dialog open={action !== null} onOpenChange={(open) => !open && onClose()}>
@@ -1729,9 +1781,15 @@ function AssetActionDialog({
           }}
         >
           <DialogHeader>
-            <DialogTitle>{action === "move" ? t("moveTitle") : t("renameTitle")}</DialogTitle>
+            <DialogTitle>
+              {action === "move"
+                ? t("moveTitle", { count: Math.max(moveCount, 1) })
+                : t("renameTitle")}
+            </DialogTitle>
             <DialogDescription>
-              {action === "move" ? t("moveDescription") : t("renameDescription")}
+              {action === "move"
+                ? t("moveDescription", { count: Math.max(moveCount, 1) })
+                : t("renameDescription")}
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
@@ -1828,11 +1886,10 @@ function ToolbarSelect({
 
 function buildFolderOptions(
   folders: CrewAssetFolderDTO[],
-  excludedFolderId?: string
+  excludedFolderIds: string[] = []
 ): Array<{ id: string; label: string }> {
-  const blocked = new Set<string>();
-  if (excludedFolderId) {
-    blocked.add(excludedFolderId);
+  const blocked = new Set<string>(excludedFolderIds);
+  if (blocked.size > 0) {
     let changed = true;
     while (changed) {
       changed = false;
