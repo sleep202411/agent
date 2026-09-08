@@ -35,6 +35,11 @@ import {
 } from '@nestjs/common';
 import {
   CopyObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  ListPartsCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -57,6 +62,9 @@ import {
   type CreateUploadUrlInput,
   type CreateUploadUrlResult,
   type HeadObjectResult,
+  type MultipartUploadRef,
+  type StoredUploadPart,
+  type UploadPartUrl,
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
@@ -209,6 +217,105 @@ export class S3CompatibleStorageService extends OutputStorageService {
       bucket: this.bucket,
       region: this.region,
     };
+  }
+
+  async beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef> {
+    const result = await this.requireClient().send(
+      new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: storageKey,
+        ContentType: contentType,
+        CacheControl: IMMUTABLE_STORAGE_CACHE_CONTROL,
+      }),
+    );
+    if (!result.UploadId)
+      throw new Error('Storage did not return an upload ID');
+    return {
+      storageKey,
+      uploadId: result.UploadId,
+      bucket: this.bucket,
+      region: this.region,
+    };
+  }
+
+  async listUploadParts(ref: MultipartUploadRef): Promise<StoredUploadPart[]> {
+    const parts: StoredUploadPart[] = [];
+    let marker: string | undefined;
+    do {
+      const result = await this.requireClient().send(
+        new ListPartsCommand({
+          Bucket: ref.bucket,
+          Key: ref.storageKey,
+          UploadId: ref.uploadId,
+          PartNumberMarker: marker,
+          MaxParts: 1000,
+        }),
+      );
+      for (const part of result.Parts ?? []) {
+        if (!part.PartNumber || !part.ETag || part.Size == null)
+          throw new Error('Invalid stored upload part');
+        parts.push({
+          number: part.PartNumber,
+          etag: part.ETag,
+          sizeBytes: part.Size,
+        });
+      }
+      marker = result.IsTruncated ? result.NextPartNumberMarker : undefined;
+      if (result.IsTruncated && !marker)
+        throw new Error('Missing storage pagination marker');
+    } while (marker);
+    return parts;
+  }
+
+  async signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl> {
+    const url = await getSignedUrl(
+      this.requireClient(),
+      new UploadPartCommand({
+        Bucket: ref.bucket,
+        Key: ref.storageKey,
+        UploadId: ref.uploadId,
+        PartNumber: number,
+      }),
+      { expiresIn: 900 },
+    );
+    return { url, headers: {} };
+  }
+
+  async completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+  ): Promise<void> {
+    await this.requireClient().send(
+      new CompleteMultipartUploadCommand({
+        Bucket: ref.bucket,
+        Key: ref.storageKey,
+        UploadId: ref.uploadId,
+        MultipartUpload: {
+          Parts: parts.map((p) => ({ PartNumber: p.number, ETag: p.etag })),
+        },
+      }),
+    );
+  }
+
+  async abortMultipartUpload(ref: MultipartUploadRef): Promise<void> {
+    try {
+      await this.requireClient().send(
+        new AbortMultipartUploadCommand({
+          Bucket: ref.bucket,
+          Key: ref.storageKey,
+          UploadId: ref.uploadId,
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'NoSuchUpload'))
+        throw error;
+    }
   }
 
   async createUploadUrl(

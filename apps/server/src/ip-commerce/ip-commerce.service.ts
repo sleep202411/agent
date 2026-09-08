@@ -1,3 +1,4 @@
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import {
   BadRequestException,
   ConflictException,
@@ -2337,9 +2338,9 @@ export class IpCommerceService {
    *
    * The bytes are uploaded direct-to-storage by the client via the stateless
    * SAS pipeline (`/aurora/media/upload-url` → PUT → `/aurora/media/confirm`),
-   * which is what mints the active MediaAsset. This endpoint does NOT proxy
-   * the file — it only references an asset the caller just confirmed (so 2GB
-   * episode videos never hit the nginx body limit). The public return shape
+   * or the episode multipart pipeline, which mints the active MediaAsset.
+   * This endpoint only references that confirmed asset; even 35 GB episode
+   * videos never pass through the nginx request body. The public return shape
    * `{ asset, ipAsset }` is preserved so the episode-create flow that consumes
    * `asset.id` as videoAssetId/coverAssetId is unchanged.
    */
@@ -2380,7 +2381,10 @@ export class IpCommerceService {
     }
     // Defence-in-depth: the SAS pipeline already caps per-kind size, but
     // re-assert against the IP per-kind cap on the HEAD-verified size.
-    const limit = IP_MEDIA_UPLOAD_LIMITS[kind];
+    const limit =
+      kind === MediaAssetKind.video && query.purpose === 'episode_media'
+        ? EPISODE_SOURCE_MAX_BYTES
+        : IP_MEDIA_UPLOAD_LIMITS[kind];
     if (mediaAsset.sizeBytes !== null && mediaAsset.sizeBytes > BigInt(limit)) {
       throw new BadRequestException({
         code: 'IP_MEDIA_FILE_TOO_LARGE',

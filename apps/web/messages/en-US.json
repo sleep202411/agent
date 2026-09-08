@@ -640,6 +640,18 @@
     "epVideoUrlPlaceholder": "Or paste a video URL",
     "epDropzoneIdle": "Drop video here or click to browse",
     "epVideoDropzoneTitle": "Drop or click",
+    "epUploadInvalidSize": "Select a non-empty video up to 35 GB.",
+    "epUploadInvalidType": "Select an MP4, WebM or MOV video.",
+    "epUploadInvalidSession": "The upload session is invalid. Remove the video and select it again.",
+    "epUploadFileChanged": "This file differs from the original upload. Select the original file to resume.",
+    "epUploadUnverifiedFile": "Cannot verify the original video. Remove it and select the file again.",
+    "epUploadNetworkError": "Video upload connection failed. Check your network and retry.",
+    "epUploadTimeout": "Video upload timed out. Retry to continue.",
+    "epSourceDropzoneHint": "MP4 / WebM / MOV up to 35 GB",
+    "epSourceTooLarge": "Video exceeds 35 GB",
+    "epUploadFinalizing": "Finishing upload…",
+    "epRemoveVideo": "Remove video",
+    "epSourceVideoHelp": "Episode source video, up to 35 GB. Select the same file to resume an interrupted upload. Save the episode once the upload finishes.",
     "epDropzoneHint": "MP4 / WebM up to 2 GB",
     "epCoverLabel": "Cover",
     "epCoverDropzoneTitle": "Drop or click",
@@ -9395,6 +9407,7 @@
     "loadMore": "Load more",
     "hasVideo": "Video available",
     "nowPlaying": "Now playing",
-    "notPlaying": "Not playing"
+    "notPlaying": "Not playing",
+    "loadingChannel": "Loading next channel…"
   }
 }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, StrictMode } from "react";
+import videojs from "video.js";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -69,13 +70,24 @@ describe("TV IP list", () => {
   let queryClient: QueryClient;
   const ips = [makeIp("ip-1", "First IP"), makeIp("ip-2", "Second IP")];
 
+  let observerCallback: IntersectionObserverCallback;
+
   beforeEach(() => {
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     vi.stubGlobal(
       "IntersectionObserver",
       class {
-        observe() {}
+        constructor(callback: IntersectionObserverCallback) {
+          observerCallback = callback;
+        }
+        observe(target: Element) {
+          observerCallback(
+            [{ isIntersecting: true, target } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver
+          );
+        }
         disconnect() {}
       }
     );
@@ -98,7 +110,9 @@ describe("TV IP list", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TvApp embedded={embedded} />
+          <StrictMode>
+            <TvApp embedded={embedded} />
+          </StrictMode>
         </QueryClientProvider>
       );
     });
@@ -118,6 +132,15 @@ describe("TV IP list", () => {
     expect(button).not.toBeNull();
     act(() => button!.click());
   }
+  const player = () => videojs.getPlayer(container.querySelector(".video-js")!.id)!;
+  async function waitForSource(id: string) {
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(player().currentSrc()).toContain(`${id}.mp4`);
+    });
+  }
   const selected = () =>
     container.querySelector('nav button[aria-current="true"]')?.getAttribute("aria-label");
 
@@ -129,12 +152,12 @@ describe("TV IP list", () => {
     });
     expect(container.querySelectorAll("nav button")).toHaveLength(2);
     expect(selected()).toContain("First IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-1.mp4");
+    await waitForSource("ip-1");
     clickIp("Second IP");
     expect(selected()).toContain("Second IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-2.mp4");
+    await waitForSource("ip-2");
     clickIp("First IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-1.mp4");
+    await waitForSource("ip-1");
   });
 
   it("shows genres consistently and marks only playable channels with a video icon", async () => {
@@ -155,7 +178,8 @@ describe("TV IP list", () => {
     expect(list.textContent).not.toContain("creator");
     expect(list.querySelectorAll('[role="img"][aria-label="tv.hasVideo"]')).toHaveLength(1);
     clickIp("Second IP");
-    expect(container.querySelector("video")).toBeNull();
+    expect(player().currentSrc()).toBe("");
+    expect(player().paused()).toBe(true);
     expect(container.querySelector("section img")?.getAttribute("src")).toContain("ip-2.jpg");
   });
 
@@ -181,13 +205,12 @@ describe("TV IP list", () => {
     expect(container.querySelector("nav[data-lenis-prevent]")).not.toBeNull();
   });
 
-  it("does not switch IPs after playback ends, scrolling, keys, or elapsed time", async () => {
+  it("does not switch IPs from scrolling, unrelated keys, or elapsed time", async () => {
     await render();
     await waitForText("First IP");
     clickIp("First IP");
     vi.useFakeTimers();
     act(() => {
-      container.querySelector("video")!.dispatchEvent(new Event("ended", { bubbles: true }));
       container
         .querySelector("section")!
         .dispatchEvent(new WheelEvent("wheel", { deltaY: 500, bubbles: true }));
@@ -232,35 +255,185 @@ describe("TV IP list", () => {
     await render();
     await waitForText("First IP");
     clickIp("First IP");
-    act(() => {
-      container.querySelector("video")!.dispatchEvent(new Event("error"));
-    });
-    act(() => container.querySelector("section img")!.dispatchEvent(new Event("error")));
-    expect(container.querySelector("section img")).toBeNull();
-    expect(container.textContent).toContain("tv.videoUnavailable");
+    await waitForSource("ip-1");
+    vi.spyOn(videojs.log, "error").mockImplementation(() => {});
+    act(() => player().error("CDN request failed"));
+    act(() => container.querySelector("section img.size-full")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("section img.size-full")).toBeNull();
+    expect(container.textContent).toContain("CDN request failed");
     expect(selected()).toContain("First IP");
     clickIp("Second IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-2.mp4");
-    expect(container.textContent).not.toContain("tv.videoUnavailable");
+    await waitForSource("ip-2");
+    expect(container.textContent).not.toContain("CDN request failed");
   });
 
-  it("keeps native mute and pause state across a catalog refresh", async () => {
+  it("keeps the custom player, mute and pause state across a catalog refresh", async () => {
     await render();
     await waitForText("First IP");
     clickIp("First IP");
+    await waitForSource("ip-1");
     const video = container.querySelector("video")!;
-    expect(video.controls).toBe(true);
+    const instance = player();
+    expect(video.controls).toBe(false);
+    expect(container.querySelectorAll(".vjs-control-bar button")).toHaveLength(2);
+    expect(container.querySelector(".vjs-play-control")).not.toBeNull();
+    expect(container.querySelector(".vjs-volume-panel")).not.toBeNull();
+    expect(container.querySelector(".vjs-progress-control, .vjs-fullscreen-control")).toBeNull();
     act(() => {
-      video.muted = false;
-      video.dispatchEvent(new Event("volumechange"));
+      player().muted(false);
+      player().volume(0.4);
+      player().pause();
     });
     await act(async () => {
       await queryClient.invalidateQueries({ queryKey: ["tv", "ips", "en-US"] });
     });
     expect(container.querySelector("video")).toBe(video);
-    expect(video.muted).toBe(false);
-    expect(video.paused).toBe(true);
-    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(player()).toBe(instance);
+    expect(player().muted()).toBe(false);
+    expect(player().volume()).toBeCloseTo(0.4);
+    expect(player().paused()).toBe(true);
+  });
+
+  it("advances to the next playable channel on ended and stops at the catalog end", async () => {
+    harness.get.mockResolvedValue({
+      items: [ips[0], { ...ips[1], trailerAsset: null }, makeIp("ip-3", "Third IP")],
+      nextCursor: null,
+    });
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-3");
+    expect(selected()).toContain("Third IP");
+    expect(player()).toBe(instance);
+    act(() => player().trigger("ended"));
+    expect(selected()).toContain("Third IP");
+    clickIp("First IP");
+    await waitForSource("ip-1");
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-3");
+  });
+
+  it("loads through cover-only pages when advancing beyond the current page", async () => {
+    harness.get
+      .mockReset()
+      .mockResolvedValueOnce({ items: [ips[0]], nextCursor: "page-2" })
+      .mockResolvedValueOnce({ items: [{ ...ips[1], trailerAsset: null }], nextCursor: "page-3" })
+      .mockResolvedValueOnce({ items: [makeIp("ip-3", "Third IP")], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-3");
+    expect(selected()).toContain("Third IP");
+    expect(harness.get).toHaveBeenCalledTimes(3);
+    expect(container.textContent).not.toContain("tv.loadingChannel");
+  });
+
+  it("does not let a late next-page response override a manual selection", async () => {
+    let resolvePage!: (value: unknown) => void;
+    harness.get
+      .mockReset()
+      .mockResolvedValueOnce({ items: ips, nextCursor: "page-2" })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePage = resolve;
+          })
+      );
+    await render();
+    await waitForSource("ip-1");
+    clickIp("Second IP");
+    await waitForSource("ip-2");
+    act(() => player().trigger("ended"));
+    expect(container.textContent).toContain("tv.loadingChannel");
+    clickIp("First IP");
+    await act(async () => {
+      resolvePage({ items: [makeIp("ip-3", "Third IP")], nextCursor: null });
+    });
+    await waitForText("Third IP");
+    expect(selected()).toContain("First IP");
+    await waitForSource("ip-1");
+  });
+
+  it("surfaces a next-page failure and lets the viewer retry without losing the channel", async () => {
+    harness.get
+      .mockReset()
+      .mockResolvedValueOnce({ items: [ips[0]], nextCursor: "page-2" })
+      .mockRejectedValueOnce(new Error("Catalog page unavailable"))
+      .mockResolvedValueOnce({ items: [ips[1]], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("ended"));
+    await waitForText("Catalog page unavailable");
+    expect(selected()).toContain("First IP");
+    act(() => container.querySelector<HTMLButtonElement>('section [role="alert"] button')!.click());
+    await waitForSource("ip-2");
+    expect(container.textContent).not.toContain("Catalog page unavailable");
+  });
+
+  it("preserves volume and mute through a cover-only channel", async () => {
+    harness.get.mockResolvedValue({
+      items: [ips[0], { ...ips[1], trailerAsset: null }, makeIp("ip-3", "Third IP")],
+      nextCursor: null,
+    });
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    act(() => {
+      player().muted(false);
+      player().volume(0.3);
+    });
+    clickIp("Second IP");
+    expect(player().currentSrc()).toBe("");
+    clickIp("Third IP");
+    await waitForSource("ip-3");
+    expect(player()).toBe(instance);
+    expect(player().muted()).toBe(false);
+    expect(player().volume()).toBeCloseTo(0.3);
+  });
+
+  it("reflects playback state and pauses offscreen without advancing", async () => {
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("playing"));
+    expect(container.querySelector('nav [aria-label="tv.nowPlaying"]')).not.toBeNull();
+    act(() => player().trigger("waiting"));
+    expect(container.querySelector('nav [aria-label="tv.nowPlaying"]')).toBeNull();
+    const pause = vi.spyOn(player(), "pause");
+    act(() =>
+      observerCallback(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+    );
+    expect(pause).toHaveBeenCalled();
+    act(() => player().trigger("ended"));
+    expect(selected()).toContain("First IP");
+    act(() =>
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+    );
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-2");
+  });
+
+  it("retries a failed source on the same player", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    const setSource = vi.spyOn(instance, "src");
+    vi.spyOn(videojs.log, "error").mockImplementation(() => {});
+    act(() => player().error("Preview temporarily unavailable"));
+    expect(container.textContent).toContain("Preview temporarily unavailable");
+    act(() =>
+      container.querySelector<HTMLButtonElement>('section [role="status"] button')!.click()
+    );
+    await waitForSource("ip-1");
+    expect(player()).toBe(instance);
+    expect(setSource).toHaveBeenCalledWith({ src: "https://cdn.test/ip-1.mp4", type: "video/mp4" });
+    expect(container.textContent).not.toContain("Preview temporarily unavailable");
   });
 
   it("shows an empty list without inventing an aggregate channel", async () => {

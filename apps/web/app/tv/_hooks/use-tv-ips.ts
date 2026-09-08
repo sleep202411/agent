@@ -27,7 +27,15 @@ export function useTvIps() {
     () => query.data?.pages.flatMap((page) => page.items).map((ip) => toTvItem(ip, t)) ?? [],
     [query.data, t]
   );
-  return { ...query, items };
+  async function fetchNextChannels() {
+    const result = await query.fetchNextPage({ cancelRefetch: false });
+    if (result.isError) throw result.error;
+    return {
+      items: result.data?.pages.flatMap((page) => page.items).map((ip) => toTvItem(ip, t)) ?? [],
+      hasMore: result.hasNextPage,
+    };
+  }
+  return { ...query, items, fetchNextChannels };
 }
 
 /** Trailer-first fallback chain, mirroring the plaza card mapping. */

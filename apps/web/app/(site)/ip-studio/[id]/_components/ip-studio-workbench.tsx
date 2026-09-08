@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { EPISODE_SOURCE_MAX_BYTES } from "@repo/shared";
+import {
+  cancelEpisodeUpload,
+  episodeUploadErrorKey,
+  type EpisodeUploadStage,
+} from "../../_lib/episode-upload";
 import type { DragEvent, ReactNode } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -598,16 +604,15 @@ function EpisodeManager({
         ) : null}
       </div>
 
-      <CreateEpisodeDialog
+      <EpisodeUpsertDialog
         key={`create:${createDialogOpen}:${nextEpisodeNo}:${ip.version}`}
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
         ip={ip}
-        nextEpisodeNo={nextEpisodeNo}
         t={t}
       />
       {editingEpisode ? (
-        <EpisodeEditDialog
+        <EpisodeUpsertDialog
           key={`edit:${editingEpisode.id}:${ip.version}`}
           open={Boolean(editingEpisode)}
           onOpenChange={(open) => {
@@ -635,68 +640,17 @@ type EpisodeDialogDraft = {
   isFreePreview: boolean;
 };
 
-function CreateEpisodeDialog({
-  open,
-  onOpenChange,
-  ip,
-  nextEpisodeNo,
-  t,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  ip: IpCreatorIp;
-  nextEpisodeNo: number;
-  t: Translate;
-}) {
-  return (
-    <EpisodeUpsertDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      ip={ip}
-      nextEpisodeNo={nextEpisodeNo}
-      t={t}
-    />
-  );
-}
-
-function EpisodeEditDialog({
-  open,
-  onOpenChange,
-  ip,
-  episode,
-  t,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  ip: IpCreatorIp;
-  episode: StudioEpisode;
-  t: Translate;
-}) {
-  return (
-    <EpisodeUpsertDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      ip={ip}
-      episode={episode}
-      nextEpisodeNo={episode.episodeNo}
-      t={t}
-    />
-  );
-}
-
 function EpisodeUpsertDialog({
   open,
   onOpenChange,
   ip,
   episode,
-  nextEpisodeNo,
   t,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ip: IpCreatorIp;
   episode?: StudioEpisode;
-  nextEpisodeNo: number;
   t: Translate;
 }) {
   const oldT = useTranslations("ipEdit");
@@ -711,6 +665,9 @@ function EpisodeUpsertDialog({
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [videoProgress, setVideoProgress] = useState(0);
+  const [videoStage, setVideoStage] = useState<EpisodeUploadStage>("uploading");
+  const videoFileRef = useRef<File | null>(null);
+  const videoAbortRef = useRef<AbortController | null>(null);
   const [coverProgress, setCoverProgress] = useState(0);
   const [videoDragOver, setVideoDragOver] = useState(false);
   const [coverDragOver, setCoverDragOver] = useState(false);
@@ -726,6 +683,7 @@ function EpisodeUpsertDialog({
 
   useEffect(() => {
     return () => {
+      videoAbortRef.current?.abort();
       if (mediaObjectUrlRef.current) URL.revokeObjectURL(mediaObjectUrlRef.current);
       if (coverObjectUrlRef.current) URL.revokeObjectURL(coverObjectUrlRef.current);
     };
@@ -747,6 +705,7 @@ function EpisodeUpsertDialog({
   const probeAndApply = async (src: string) => {
     setProbing(true);
     const meta = await probeVideo(src);
+    if (mediaObjectUrlRef.current !== src) return;
     setProbing(false);
     if (!meta) {
       toast.warning(oldT("epProbeFailed"));
@@ -756,21 +715,28 @@ function EpisodeUpsertDialog({
   };
 
   const handleVideoFile = async (file: File) => {
-    if (!file.type.startsWith("video/")) {
+    if (!["video/mp4", "video/webm", "video/quicktime"].includes(file.type)) {
       toast.error(oldT("epFileNotVideo"));
       return;
     }
-    if (file.size > 2 * 1024 * 1024 * 1024) {
-      toast.error(oldT("epFileTooLarge"));
+    if (file.size > EPISODE_SOURCE_MAX_BYTES) {
+      toast.error(oldT("epSourceTooLarge"));
       return;
     }
-    resetObjectUrl("media");
-    const localUrl = URL.createObjectURL(file);
-    mediaObjectUrlRef.current = localUrl;
+    videoAbortRef.current?.abort();
+    const controller = new AbortController();
+    videoAbortRef.current = controller;
+    if (videoFileRef.current !== file) {
+      resetObjectUrl("media");
+      const localUrl = URL.createObjectURL(file);
+      mediaObjectUrlRef.current = localUrl;
+      videoFileRef.current = file;
+      updateDraft({ mediaUrl: localUrl, mediaAssetId: null, durationSeconds: "" });
+      void probeAndApply(localUrl);
+    }
     setVideoError(null);
-    updateDraft({ mediaUrl: localUrl, mediaAssetId: null });
-    void probeAndApply(localUrl);
     setVideoProgress(0);
+    setVideoStage("uploading");
     setUploadingVideo(true);
     try {
       const { asset } = await uploadMedia.mutateAsync({
@@ -778,19 +744,42 @@ function EpisodeUpsertDialog({
         file,
         kind: "video",
         purpose: "episode_media",
-        onProgress: setVideoProgress,
+        signal: controller.signal,
+        onProgress: (percent) => {
+          if (!controller.signal.aborted) setVideoProgress(percent);
+        },
+        onStage: (stage) => {
+          if (!controller.signal.aborted) setVideoStage(stage);
+        },
       });
+      if (controller.signal.aborted) return;
       updateDraft({ mediaAssetId: asset.id });
       toast.success(commonT("uploadSuccess"));
     } catch (err) {
-      const message = errorMessage(err) || commonT("uploadFailed");
-      resetObjectUrl("media");
-      updateDraft({ mediaUrl: "", mediaAssetId: null, durationSeconds: "" });
+      if (controller.signal.aborted) return;
+      const localKey = episodeUploadErrorKey(err);
+      const message = localKey ? oldT(localKey) : errorMessage(err) || commonT("uploadFailed");
       setVideoError(message);
       toast.error(message);
     } finally {
-      setUploadingVideo(false);
+      if (videoAbortRef.current === controller) setUploadingVideo(false);
     }
+  };
+
+  const removeVideo = () => {
+    videoAbortRef.current?.abort();
+    videoAbortRef.current = null;
+    const file = videoFileRef.current;
+    videoFileRef.current = null;
+    setUploadingVideo(false);
+    setProbing(false);
+    setVideoError(null);
+    resetObjectUrl("media");
+    updateDraft({ mediaUrl: "", mediaAssetId: null, durationSeconds: "" });
+    if (file)
+      void cancelEpisodeUpload(file, ip.id).catch((err) =>
+        toast.error(errorMessage(err) || commonT("uploadFailed"))
+      );
   };
 
   const handleCoverFile = async (file: File) => {
@@ -869,8 +858,7 @@ function EpisodeUpsertDialog({
           ipId: ip.id,
           title: draft.title.trim(),
           summary: draft.summary.trim() || undefined,
-          // episodeNo is assigned server-side (append-only); nextEpisodeNo is a
-          // UI hint only and is intentionally not sent.
+          // Episode order is assigned server-side when appending.
           durationSeconds: draft.durationSeconds.trim()
             ? Number(draft.durationSeconds.trim())
             : undefined,
@@ -958,18 +946,16 @@ function EpisodeUpsertDialog({
                     <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-1.5 bg-black/55 text-white">
                       <IconLoader2 className="size-5 animate-spin" />
                       <span className="text-[11px] font-medium">
-                        {commonT("uploading")}
-                        {videoProgress > 0 ? ` ${videoProgress}%` : ""}
+                        {videoStage === "confirming"
+                          ? oldT("epUploadFinalizing")
+                          : `${commonT("uploading")} ${videoProgress}%`}
                       </span>
                     </div>
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => {
-                      resetObjectUrl("media");
-                      updateDraft({ mediaUrl: "", mediaAssetId: null, durationSeconds: "" });
-                    }}
-                    disabled={uploadingVideo}
+                    onClick={removeVideo}
+                    aria-label={oldT("epRemoveVideo")}
                     className="absolute right-1.5 top-1.5 z-30 inline-flex size-6 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <IconX className="size-3.5" />
@@ -1016,7 +1002,7 @@ function EpisodeUpsertDialog({
                         {oldT("epVideoDropzoneTitle")}
                       </span>
                       <span className="text-[10px] text-muted-foreground/70">
-                        {oldT("epDropzoneHint")}
+                        {oldT("epSourceDropzoneHint")}
                       </span>
                     </>
                   )}
@@ -1034,9 +1020,24 @@ function EpisodeUpsertDialog({
                 }}
               />
               {videoError ? (
-                <p className="text-[11px] text-destructive">{videoError}</p>
+                <div className="space-y-1.5" role="alert">
+                  <p className="text-[11px] text-destructive">{videoError}</p>
+                  {!uploadingVideo ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (videoFileRef.current) void handleVideoFile(videoFileRef.current);
+                      }}
+                    >
+                      <IconRefresh className="size-3.5" />
+                      {commonT("retry")}
+                    </Button>
+                  ) : null}
+                </div>
               ) : (
-                <FieldDescription>{oldT("epVideoHelp")}</FieldDescription>
+                <FieldDescription>{oldT("epSourceVideoHelp")}</FieldDescription>
               )}
             </Field>
 

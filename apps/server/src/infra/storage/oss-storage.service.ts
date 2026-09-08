@@ -37,6 +37,9 @@ import {
   type CreateUploadUrlInput,
   type CreateUploadUrlResult,
   type HeadObjectResult,
+  type MultipartUploadRef,
+  type StoredUploadPart,
+  type UploadPartUrl,
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
@@ -199,6 +202,109 @@ export class AliyunOssStorageService extends OutputStorageService {
       bucket: this.bucket,
       region: this.region,
     };
+  }
+
+  async beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef> {
+    const result = await this.clientForBucket(this.bucket).initMultipartUpload(
+      storageKey,
+      {
+        mime: contentType,
+        headers: { 'Cache-Control': IMMUTABLE_STORAGE_CACHE_CONTROL },
+      },
+    );
+    if (!result.uploadId)
+      throw new Error('Storage did not return an upload ID');
+    return {
+      storageKey,
+      uploadId: result.uploadId,
+      bucket: this.bucket,
+      region: this.region,
+    };
+  }
+
+  async listUploadParts(ref: MultipartUploadRef): Promise<StoredUploadPart[]> {
+    const parts: StoredUploadPart[] = [];
+    let marker = 0;
+    for (;;) {
+      const result = await this.clientForBucket(
+        ref.bucket,
+        ref.region,
+      ).listParts(ref.storageKey, ref.uploadId, {
+        'max-parts': 1000,
+        'part-number-marker': marker,
+        'encoding-type': 'url',
+      });
+      // ali-oss returns raw XML values (including a single object instead of an
+      // array for one part); its declaration incorrectly calls Size `size`.
+      const entries: unknown[] = Array.isArray(result.parts)
+        ? result.parts
+        : [result.parts];
+      for (const entry of entries) {
+        const p = entry as {
+          PartNumber?: unknown;
+          ETag?: unknown;
+          Size?: unknown;
+        };
+        const number = Number(p.PartNumber);
+        const sizeBytes = Number(p.Size);
+        if (
+          !Number.isInteger(number) ||
+          number < 1 ||
+          !Number.isSafeInteger(sizeBytes) ||
+          sizeBytes < 1 ||
+          typeof p.ETag !== 'string'
+        ) {
+          throw new Error('Invalid stored upload part');
+        }
+        parts.push({ number, sizeBytes, etag: p.ETag });
+      }
+      if (String(result.isTruncated) !== 'true') return parts;
+      const next = Number(result.nextPartNumberMarker);
+      if (!Number.isInteger(next) || next <= marker)
+        throw new Error('Invalid storage pagination marker');
+      marker = next;
+    }
+  }
+
+  async signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl> {
+    const url = await this.browserSigner(ref.bucket, ref.region).signatureUrlV4(
+      'PUT',
+      900,
+      {
+        queries: { uploadId: ref.uploadId, partNumber: String(number) },
+      },
+      ref.storageKey,
+    );
+    return { url, headers: {} };
+  }
+
+  async completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+  ): Promise<void> {
+    await this.clientForBucket(ref.bucket, ref.region).completeMultipartUpload(
+      ref.storageKey,
+      ref.uploadId,
+      parts.map((p) => ({ number: p.number, etag: p.etag })),
+    );
+  }
+
+  async abortMultipartUpload(ref: MultipartUploadRef): Promise<void> {
+    try {
+      await this.clientForBucket(ref.bucket, ref.region).abortMultipartUpload(
+        ref.storageKey,
+        ref.uploadId,
+      );
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'NoSuchUploadError'))
+        throw error;
+    }
   }
 
   async createUploadUrl(

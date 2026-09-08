@@ -1,5 +1,9 @@
 import { api } from "@/src/lib/api";
 import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
+import {
+  uploadEpisodeVideo,
+  type EpisodeUploadStage,
+} from "@/app/(site)/ip-studio/_lib/episode-upload";
 
 export type IpTargetType = "ip" | "episode";
 export type IpCommerceAccess =
@@ -649,6 +653,7 @@ export interface UploadIpMediaInput {
   onProgress?: (percent: number) => void;
   /** Abort the in-flight direct-to-storage upload. */
   signal?: AbortSignal;
+  onStage?: (stage: EpisodeUploadStage) => void;
 }
 
 export interface DeleteIpAssetInput {
@@ -941,11 +946,20 @@ function mapToUploadKind(input: UploadIpMediaInput): string {
  * coverAssetId`).
  */
 export async function uploadIpCommerceMedia(input: UploadIpMediaInput) {
-  const { mediaAssetId } = await uploadFileViaSignedUrl(input.file, {
-    kind: mapToUploadKind(input),
-    onProgress: input.onProgress,
-    signal: input.signal,
-  });
+  const { mediaAssetId } =
+    input.purpose === "episode_media" && input.kind === "video"
+      ? await uploadEpisodeVideo(input.file, {
+          scopeKey: input.ipId,
+          signal: input.signal ?? new AbortController().signal,
+          onProgress: input.onProgress,
+          onStage: input.onStage,
+        })
+      : await uploadFileViaSignedUrl(input.file, {
+          kind: mapToUploadKind(input),
+          onProgress: input.onProgress,
+          signal: input.signal,
+        });
+  input.signal?.throwIfAborted();
 
   const params = new URLSearchParams({
     kind: input.kind,

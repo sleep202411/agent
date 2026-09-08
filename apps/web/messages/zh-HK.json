@@ -640,6 +640,18 @@
     "epVideoUrlPlaceholder": "或貼上影片連結",
     "epDropzoneIdle": "拖入影片或點擊選擇",
     "epVideoDropzoneTitle": "拖拽或點擊上傳",
+    "epUploadInvalidSize": "請選擇非空且不超過 35 GB 的影片。",
+    "epUploadInvalidType": "請選擇 MP4、WebM 或 MOV 影片。",
+    "epUploadInvalidSession": "上傳記錄無效，請移除影片後重新選擇。",
+    "epUploadFileChanged": "此檔案與原上傳檔案不同，請選擇原檔案繼續上傳。",
+    "epUploadUnverifiedFile": "無法驗證原影片，請移除後重新選擇檔案。",
+    "epUploadNetworkError": "影片上傳連線失敗，請檢查網絡後重試。",
+    "epUploadTimeout": "影片上傳逾時，請重試以繼續上傳。",
+    "epSourceDropzoneHint": "MP4 / WebM / MOV，最大 35 GB",
+    "epSourceTooLarge": "影片大小超過 35 GB",
+    "epUploadFinalizing": "正在完成上傳…",
+    "epRemoveVideo": "移除影片",
+    "epSourceVideoHelp": "劇集來源影片，最大 35 GB。上傳中斷後，重新選擇同一檔案即可繼續。上傳完成後儲存到劇集。",
     "epDropzoneHint": "MP4 / WebM，最大 2 GB",
     "epCoverLabel": "封面",
     "epCoverDropzoneTitle": "拖拽或點擊上傳",
@@ -9395,6 +9407,7 @@
     "loadMore": "載入更多",
     "hasVideo": "有影片",
     "nowPlaying": "正在播放",
-    "notPlaying": "未播放"
+    "notPlaying": "未播放",
+    "loadingChannel": "正在載入下一頻道…"
   }
 }

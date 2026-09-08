@@ -13,7 +13,7 @@
  * - When the wait queue is full we shed load with 503 backpressure rather than
  *   melting the node; already-probed assets and pure text jobs are unaffected.
  * - Duration probe never spools the object onto local disk — episode videos
- *   are allowed up to EPISODE_VIDEO_MAX_BYTES (2 GiB); a full download would
+ *   are allowed up to EPISODE_SOURCE_MAX_BYTES (35 GiB); a full download would
  *   exhaust tmp under concurrent confirms.
  */
 import {
@@ -26,7 +26,7 @@ import { MediaAssetKind, MediaStorageProvider } from '@prisma/client';
 import { execFile } from 'node:child_process';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
-import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 
 /** Signed URL must outlive remote seeks on large MP4s (moov-at-end). */
 const SIGNED_READ_TTL_SECONDS = 30 * 60;
@@ -35,9 +35,9 @@ const FFPROBE_TIMEOUT_MS = 5 * 60 * 1000;
 const FFPROBE_MAX_OUTPUT_BYTES = 256 * 1024;
 /**
  * Hard ceiling — must cover the largest video/audio upload contract
- * (`episode_video`). Larger objects are rejected before ffprobe runs.
+ * (`episode_source_video`). Larger objects are rejected before ffprobe runs.
  */
-const MAX_PROBE_BYTES = EPISODE_VIDEO_MAX_BYTES;
+const MAX_PROBE_BYTES = EPISODE_SOURCE_MAX_BYTES;
 
 /**
  * Simultaneous ffprobe operations per Node process.

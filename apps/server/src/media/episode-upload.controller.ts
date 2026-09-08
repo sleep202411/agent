@@ -1,0 +1,82 @@
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  Post,
+} from '@nestjs/common';
+import { z } from 'zod';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
+import { CurrentUser, type AuthUser } from '../auth';
+import { ZodValidationPipe } from '../common/zod.pipe';
+import {
+  EpisodeUploadService,
+  type StartEpisodeUpload,
+} from './episode-upload.service';
+
+const StartSchema = z.object({
+  id: z.string().uuid(),
+  fileName: z.string().trim().min(1).max(256),
+  contentType: z.enum(['video/mp4', 'video/quicktime', 'video/webm']),
+  sizeBytes: z.number().int().positive().max(EPISODE_SOURCE_MAX_BYTES),
+});
+const IdSchema = z.string().uuid();
+
+@Controller('media/episode-uploads')
+export class EpisodeUploadController {
+  constructor(private readonly uploads: EpisodeUploadService) {}
+
+  @Post()
+  @HttpCode(200)
+  start(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspace: string | undefined,
+    @Body(new ZodValidationPipe(StartSchema)) input: StartEpisodeUpload,
+  ) {
+    return this.uploads.start(user.userId, input, workspace);
+  }
+
+  @Get(':id')
+  status(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspace: string | undefined,
+    @Param('id', new ZodValidationPipe(IdSchema)) id: string,
+  ) {
+    return this.uploads.status(user.userId, id, workspace);
+  }
+
+  @Post(':id/parts/:number')
+  @HttpCode(200)
+  part(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspace: string | undefined,
+    @Param('id', new ZodValidationPipe(IdSchema)) id: string,
+    @Param('number', new ZodValidationPipe(z.coerce.number().int().positive()))
+    number: number,
+  ) {
+    return this.uploads.signPart(user.userId, id, number, workspace);
+  }
+
+  @Post(':id/complete')
+  @HttpCode(200)
+  complete(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspace: string | undefined,
+    @Param('id', new ZodValidationPipe(IdSchema)) id: string,
+  ) {
+    return this.uploads.complete(user.userId, id, workspace);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspace: string | undefined,
+    @Param('id', new ZodValidationPipe(IdSchema)) id: string,
+  ) {
+    return this.uploads.cancel(user.userId, id, workspace);
+  }
+}

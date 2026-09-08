@@ -7509,6 +7509,37 @@ enum MediaAssetUsageRole {
   other
 }
 
+/// Resumable episode uploads. Storage owns the part list; no per-part DB rows.
+model EpisodeUpload {
+  id          String               @id @db.Uuid
+  userId      String               @map("user_id") @db.VarChar(64)
+  workspaceId String?              @map("workspace_id") @db.Uuid
+  fileName    String               @map("file_name") @db.VarChar(256)
+  contentType String               @map("content_type") @db.VarChar(128)
+  sizeBytes   BigInt               @map("size_bytes")
+  partSize    Int                  @map("part_size")
+  provider    MediaStorageProvider
+  storageKey  String               @unique @map("storage_key") @db.VarChar(1024)
+  uploadId    String?              @map("upload_id") @db.VarChar(1024)
+  bucket      String?              @db.VarChar(128)
+  region      String?              @db.VarChar(64)
+  status      EpisodeUploadStatus  @default(initializing)
+  leaseUntil  DateTime?            @map("lease_until") @db.Timestamptz(6)
+  expiresAt   DateTime             @map("expires_at") @db.Timestamptz(6)
+  createdAt   DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("episode_uploads")
+}
+
+enum EpisodeUploadStatus {
+  initializing
+  uploading
+  uploaded
+  completed
+  aborted
+}
+
 model MediaAsset {
   id                 String                     @id @default(uuid(7)) @db.Uuid
   kind               MediaAssetKind

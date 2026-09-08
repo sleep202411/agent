@@ -25,6 +25,7 @@ import { z } from 'zod';
 
 export const UploadKindSchema = z.enum([
   'episode_video',
+  'episode_source_video',
   'episode_cover',
   'ip_banner',
   'news_cover',

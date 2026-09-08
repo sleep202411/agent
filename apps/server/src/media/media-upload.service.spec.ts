@@ -8,6 +8,7 @@ import {
   WorkspaceMemberRole,
 } from '@prisma/client';
 import { crewAssetStorageProviderForCell } from '../infra/storage/crew-asset-storage-policy';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import { MediaUploadService } from './media-upload.service';
 
 const USER_ID = 'user-1';
@@ -97,12 +98,16 @@ function serviceFixture() {
     mediaAssetVariant: {
       upsert: jest.fn().mockResolvedValue({ id: VARIANT_ID }),
     },
+    mediaProcessingJob: {
+      upsert: jest.fn().mockResolvedValue({ id: 'poster-job-1' }),
+    },
     mediaObjectPlacement: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'placement-1' }),
     },
   };
   const prisma = {
+    episodeUpload: { findUnique: jest.fn().mockResolvedValue(null) },
     mediaAsset: { findFirst: jest.fn().mockResolvedValue(null) },
     crew: {
       findFirst: jest.fn().mockResolvedValue({ id: 'crew-1' }),
@@ -132,6 +137,14 @@ function serviceFixture() {
   };
   const r2Storage = {
     ...storage,
+    headStoredObject: jest.fn().mockResolvedValue({
+      exists: true,
+      provider: 's3_compatible',
+      bucket: 'media',
+      region: 'auto',
+      contentType: 'video/mp4',
+      sizeBytes: 1024,
+    }),
     createUploadUrl: jest.fn(({ storageKey }: { storageKey: string }) =>
       Promise.resolve({
         url: 'https://r2.example.com/signed',
@@ -180,6 +193,37 @@ function serviceFixture() {
 }
 
 describe('MediaUploadService workspace-scoped generic uploads', () => {
+  it('allows 35 GiB only for episode sources and rejects one byte over', async () => {
+    const { service } = serviceFixture();
+    const source = {
+      kind: 'episode_source_video' as const,
+      contentType: 'video/mp4',
+      fileName: 'episode.mp4',
+      sizeBytes: EPISODE_SOURCE_MAX_BYTES,
+    };
+    await expect(service.prepareUpload(USER_ID, source)).resolves.toMatchObject(
+      {
+        policy: { maxBytes: EPISODE_SOURCE_MAX_BYTES },
+      },
+    );
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        sizeBytes: EPISODE_SOURCE_MAX_BYTES + 1,
+      }),
+    ).rejects.toThrow();
+    await expect(service.createUploadUrl(USER_ID, source)).rejects.toThrow(
+      'Episode source videos require multipart upload',
+    );
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        kind: 'episode_video',
+        sizeBytes: 2 * 1024 ** 3 + 1,
+      }),
+    ).rejects.toThrow();
+  });
+
   it('pins crew storage to R2 globally and Alibaba OSS in the CN cell', () => {
     expect(crewAssetStorageProviderForCell('global')).toBe(
       MediaStorageProvider.s3_compatible,
@@ -484,6 +528,55 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     expect(fixture.tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(fixture.createAsset).not.toHaveBeenCalled();
     expect(fixture.tx.mediaAssetVariant.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a video committed by another confirmation without image validation', async () => {
+    const fixture = serviceFixture();
+    const { storageKey } = await fixture.service.prepareUpload(USER_ID, {
+      kind: 'episode_source_video',
+      contentType: 'video/mp4',
+      fileName: 'episode.mp4',
+      sizeBytes: 1024,
+    });
+    fixture.prisma.episodeUpload.findUnique.mockResolvedValue({
+      userId: USER_ID,
+      workspaceId: null,
+      status: 'uploaded',
+      storageKey,
+      provider: MediaStorageProvider.s3_compatible,
+      bucket: 'media',
+      region: 'auto',
+      sizeBytes: 1024n,
+      contentType: 'video/mp4',
+    });
+    // The first lookup misses; another request commits before this transaction.
+    fixture.tx.mediaAsset.findFirst.mockResolvedValue({
+      id: ASSET_ID,
+      storageProvider: MediaStorageProvider.s3_compatible,
+      bucket: 'media',
+      region: 'auto',
+      objectKey: storageKey,
+      externalUrl: null,
+      contentType: 'video/mp4',
+      sizeBytes: 1024n,
+      width: null,
+      height: null,
+      durationSeconds: 8.5,
+      checksumSha256: null,
+      workspaceId: null,
+      status: MediaAssetStatus.ready,
+    });
+
+    await expect(
+      fixture.service.confirmUpload(USER_ID, {
+        kind: 'episode_source_video',
+        contentType: 'video/mp4',
+        storageKey,
+      }),
+    ).resolves.toMatchObject({ mediaAssetId: ASSET_ID, storageKey });
+    expect(fixture.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(fixture.createAsset).not.toHaveBeenCalled();
+    expect(fixture.uploadedImages.probe).not.toHaveBeenCalled();
   });
 
   it('enforces the byte cap from storage HEAD before promotion', async () => {

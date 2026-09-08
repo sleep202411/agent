@@ -62,6 +62,25 @@ export interface OutputStorageResult {
  */
 export type StorageProviderId = 'azure_blob' | 'aliyun_oss' | 's3_compatible';
 
+/** Provider-owned multipart state. Never accept this identity from a browser. */
+export interface MultipartUploadRef {
+  storageKey: string;
+  uploadId: string;
+  bucket: string;
+  region: string | null;
+}
+
+export interface StoredUploadPart {
+  number: number;
+  sizeBytes: number;
+  etag: string;
+}
+
+export interface UploadPartUrl {
+  url: string;
+  headers: Record<string, string>;
+}
+
 export const IMMUTABLE_STORAGE_CACHE_CONTROL =
   'public, max-age=31536000, immutable';
 
@@ -313,6 +332,23 @@ export interface RestrictObjectResult {
 }
 
 export abstract class OutputStorageService {
+  abstract beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef>;
+  abstract listUploadParts(
+    ref: MultipartUploadRef,
+  ): Promise<StoredUploadPart[]>;
+  abstract signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl>;
+  abstract completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+    contentType: string,
+  ): Promise<void>;
+  abstract abortMultipartUpload(ref: MultipartUploadRef): Promise<void>;
   /** Stable provider identity for diagnostics and provider-aware orchestration. */
   abstract readonly providerId: StorageProviderId;
   abstract upload(input: OutputStorageUpload): Promise<OutputStorageResult>;

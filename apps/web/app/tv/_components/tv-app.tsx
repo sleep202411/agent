@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -24,10 +24,14 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
     refetch,
     hasNextPage,
     fetchNextPage,
+    fetchNextChannels,
     isFetchingNextPage,
   } = useTvIps();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
+  const [nextError, setNextError] = useState<string | null>(null);
+  const navigationVersion = useRef(0);
   const item = items.find((entry) => entry.id === selectedId) ?? items[0];
   // Remember the initial channel so a catalog refresh cannot change it.
   if (item && item.id !== selectedId) {
@@ -35,6 +39,56 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
     setIsPlaying(false);
   }
   const errorMessage = error instanceof Error ? error.message : undefined;
+  const index = items.findIndex((entry) => entry.id === item?.id);
+  const hasNext = hasNextPage || items.slice(index + 1).some((entry) => entry.trailer);
+
+  useEffect(
+    () => () => {
+      navigationVersion.current += 1;
+    },
+    []
+  );
+
+  function selectChannel(id: string) {
+    navigationVersion.current += 1;
+    setAdvancing(false);
+    setNextError(null);
+    if (id !== selectedId) {
+      setSelectedId(id);
+      setIsPlaying(false);
+    }
+  }
+
+  async function nextChannel() {
+    if (!item || advancing) return;
+    const version = ++navigationVersion.current;
+    let channels = items;
+    let hasMore = hasNextPage;
+    setNextError(null);
+    setAdvancing(true);
+    try {
+      // Continue through catalog pages; cover-only IPs remain manually selectable.
+      while (version === navigationVersion.current) {
+        const currentIndex = channels.findIndex((entry) => entry.id === item.id);
+        if (currentIndex < 0) return;
+        const next = channels.slice(currentIndex + 1).find((entry) => entry.trailer);
+        if (next) {
+          selectChannel(next.id);
+          return;
+        }
+        if (!hasMore) return;
+        const result = await fetchNextChannels();
+        channels = result.items;
+        hasMore = result.hasMore;
+      }
+    } catch (error) {
+      if (version === navigationVersion.current) {
+        setNextError(error instanceof Error ? error.message : t("loadFailed"));
+      }
+    } finally {
+      if (version === navigationVersion.current) setAdvancing(false);
+    }
+  }
 
   return (
     <div className="flex w-full flex-col overflow-hidden bg-[#0c0e13] px-3 md:h-full md:flex-row md:px-6">
@@ -47,12 +101,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
         isError={isError}
         errorMessage={errorMessage}
         onRetry={() => void refetch()}
-        onSelect={(id) => {
-          if (id !== selectedId) {
-            setSelectedId(id);
-            setIsPlaying(false);
-          }
-        }}
+        onSelect={selectChannel}
         hasMore={hasNextPage}
         isLoadingMore={isFetchingNextPage}
         onLoadMore={() => void fetchNextPage()}
@@ -63,7 +112,19 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
       >
         <div className="relative aspect-video shrink-0 md:aspect-auto md:min-h-0 md:flex-1">
           {item ? (
-            <TvStage key={item.id} item={item} onPlaybackChange={setIsPlaying} />
+            <TvStage
+              item={item}
+              onPlaybackChange={(playing) => {
+                setIsPlaying(playing);
+                if (playing) {
+                  navigationVersion.current += 1;
+                  setAdvancing(false);
+                }
+              }}
+              onNext={hasNext ? () => void nextChannel() : undefined}
+              advancing={advancing}
+              navigationError={nextError}
+            />
           ) : isLoading ? (
             <TvLoadingState />
           ) : isError ? (

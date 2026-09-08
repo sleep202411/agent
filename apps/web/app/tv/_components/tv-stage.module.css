@@ -1,0 +1,54 @@
+.stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.stage :global(.video-js) {
+  width: 100%;
+  height: 100%;
+  background: #0c0e13;
+  font-family: inherit;
+}
+
+.stage :global(.vjs-tech) {
+  object-fit: contain;
+}
+
+.stage[data-has-video="false"] :global(.vjs-control-bar),
+.stage[data-has-video="false"] :global(.vjs-big-play-button) {
+  display: none;
+}
+.stage :global(.vjs-poster) {
+  background-color: #0c0e13;
+}
+
+.stage :global(.vjs-control-bar) {
+  height: 52px;
+  padding: 0 8px;
+  align-items: center;
+  background: linear-gradient(transparent, rgb(0 0 0 / 85%));
+}
+
+.stage :global(.vjs-control) {
+  height: 44px;
+}
+.stage :global(.vjs-button) {
+  width: 44px;
+}
+.stage :global(.vjs-button > .vjs-icon-placeholder::before) {
+  line-height: 44px;
+}
+.stage :global(.vjs-big-play-button) {
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 50%;
+  background: rgb(0 0 0 / 55%);
+  line-height: 62px;
+}
+.stage :global(button:focus-visible) {
+  outline: 2px solid white;
+  outline-offset: -3px;
+}

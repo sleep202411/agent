@@ -16,6 +16,7 @@
  * AZURE_WEB_PUBSUB_CONNECTION_STRING). When we move to managed
  * identity end-to-end, swap here in one place.
  */
+import { randomUUID } from 'node:crypto';
 import {
   Injectable,
   Logger,
@@ -38,6 +39,9 @@ import {
   type CreateUploadUrlInput,
   type CreateUploadUrlResult,
   type HeadObjectResult,
+  type MultipartUploadRef,
+  type StoredUploadPart,
+  type UploadPartUrl,
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
@@ -159,6 +163,98 @@ export class AzureBlobStorageService extends OutputStorageService {
       bucket: this.containerName,
       region: this.region,
     };
+  }
+
+  async beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef> {
+    if (!this.client)
+      throw new ServiceUnavailableException(
+        'azure_blob storage is not configured',
+      );
+    // An empty blob makes the uncommitted block list queryable before part one.
+    await this.client
+      .getBlockBlobClient(storageKey)
+      .uploadData(Buffer.alloc(0), {
+        blobHTTPHeaders: { blobContentType: contentType },
+      });
+    return {
+      storageKey,
+      uploadId: randomUUID(),
+      bucket: this.containerName,
+      region: this.region,
+    };
+  }
+
+  private uploadBlockId(ref: MultipartUploadRef, number: number): string {
+    return Buffer.from(
+      `${ref.uploadId}:${String(number).padStart(6, '0')}`,
+    ).toString('base64');
+  }
+
+  async listUploadParts(ref: MultipartUploadRef): Promise<StoredUploadPart[]> {
+    const result = await this.containerClient(ref.bucket)
+      .getBlockBlobClient(ref.storageKey)
+      .getBlockList('uncommitted');
+    return (result.uncommittedBlocks ?? []).map((block) => {
+      const raw = Buffer.from(block.name, 'base64').toString();
+      const number = Number(raw.slice(ref.uploadId.length + 1));
+      if (
+        !raw.startsWith(`${ref.uploadId}:`) ||
+        !Number.isInteger(number) ||
+        number < 1
+      )
+        throw new Error('Invalid stored upload block');
+      return { number, sizeBytes: block.size, etag: block.name };
+    });
+  }
+
+  async signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl> {
+    const block = this.containerClient(ref.bucket).getBlockBlobClient(
+      ref.storageKey,
+    );
+    const url = new URL(
+      await block.generateSasUrl({
+        permissions: BlobSASPermissions.parse('w'),
+        expiresOn: new Date(Date.now() + 900_000),
+        startsOn: new Date(Date.now() - SAS_CLOCK_SKEW_MS),
+      }),
+    );
+    url.searchParams.set('comp', 'block');
+    url.searchParams.set('blockid', this.uploadBlockId(ref, number));
+    return { url: url.toString(), headers: {} };
+  }
+
+  async completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+    contentType: string,
+  ): Promise<void> {
+    await this.containerClient(ref.bucket)
+      .getBlockBlobClient(ref.storageKey)
+      .commitBlockList(
+        parts.map((p) => this.uploadBlockId(ref, p.number)),
+        {
+          blobHTTPHeaders: {
+            blobContentType: contentType,
+            blobCacheControl: IMMUTABLE_STORAGE_CACHE_CONTROL,
+          },
+        },
+      );
+  }
+
+  async abortMultipartUpload(ref: MultipartUploadRef): Promise<void> {
+    // Azure has no AbortMultipartUpload. Committing an empty list discards all
+    // uncommitted blocks, then delete removes the temporary empty object.
+    const block = this.containerClient(ref.bucket).getBlockBlobClient(
+      ref.storageKey,
+    );
+    await block.commitBlockList([]);
+    await block.deleteIfExists();
   }
 
   async createUploadUrl(

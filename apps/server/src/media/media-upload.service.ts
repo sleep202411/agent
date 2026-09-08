@@ -70,6 +70,7 @@ import {
   StorageObjectNotFoundError,
   StorageObjectSizeMismatchError,
   type HeadObjectResult,
+  type StorageObjectRef,
 } from '../infra/storage/storage.types';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
@@ -80,6 +81,7 @@ import type {
   CreateUploadUrlResponseDto,
 } from './dto';
 import type { UploadKind } from './dto';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
 import { WorkspacePermissionService } from '../workspaces';
 import {
@@ -117,6 +119,7 @@ const MiB = 1024 * 1024;
 
 const UPLOAD_KIND_LABEL = {
   episode_video: 'Episode video',
+  episode_source_video: 'Episode source video',
   episode_cover: 'Episode cover image',
   ip_banner: 'IP banner',
   news_cover: 'News cover image',
@@ -213,6 +216,13 @@ const REFERENCE_AUDIO_CONTENT_TYPES: Record<string, string> = {
 };
 
 const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
+  episode_source_video: {
+    contentTypes: VIDEO_CONTENT_TYPES,
+    maxBytes: EPISODE_SOURCE_MAX_BYTES,
+    assetKind: MediaAssetKind.video,
+    ttlSeconds: 900,
+    keySegment: 'episode-source-video',
+  },
   episode_video: {
     contentTypes: VIDEO_CONTENT_TYPES,
     maxBytes: EPISODE_VIDEO_MAX_BYTES,
@@ -370,20 +380,12 @@ export class MediaUploadService {
     }
   }
 
-  /**
-   * Issue a signed upload URL. Generic kinds are stateless and return their
-   * permanent key. Story clips delegate to the durable staging-session flow
-   * and return a staging key that is never made ready directly.
-   *
-   * Calling twice is harmless: each call mints a distinct uuid'd key. Generic
-   * abandoned keys never become DB rows; Story abandoned sessions are expired
-   * and reclaimed by their worker.
-   */
-  async createUploadUrl(
+  /** Validate scope, type and size before allocating a storage key. */
+  async prepareUpload(
     userId: string,
     input: CreateUploadUrlInputDto,
     workspaceId?: string,
-  ): Promise<CreateUploadUrlResponseDto> {
+  ) {
     const uploadScope = await this.requireUploadScope(
       userId,
       input.kind,
@@ -421,6 +423,29 @@ export class MediaUploadService {
       ext,
     );
 
+    return {
+      storage,
+      storageKey,
+      policy,
+      workspaceId: uploadScope.workspaceId,
+    };
+  }
+
+  async createUploadUrl(
+    userId: string,
+    input: CreateUploadUrlInputDto,
+    workspaceId?: string,
+  ): Promise<CreateUploadUrlResponseDto> {
+    if (input.kind === 'episode_source_video') {
+      throw new BadRequestException(
+        'Episode source videos require multipart upload',
+      );
+    }
+    const { storage, storageKey, policy } = await this.prepareUpload(
+      userId,
+      input,
+      workspaceId,
+    );
     // 4. Mint the signed URL. No DB write, so no transaction — if the
     //    provider is down this throws ServiceUnavailable and nothing was
     //    persisted (there's nothing to roll back).
@@ -495,7 +520,46 @@ export class MediaUploadService {
       workspaceId,
     );
     const policy = UPLOAD_KIND_POLICY[input.kind];
-    const storage = this.storageForUpload(input.kind);
+    let storage = this.storageForUpload(input.kind);
+    let sourceLocation: StorageObjectRef | undefined;
+    if (input.kind === 'episode_source_video') {
+      const session = await this.prisma.episodeUpload.findUnique({
+        where: { storageKey: input.storageKey },
+      });
+      if (
+        !session ||
+        session.userId !== userId ||
+        session.workspaceId !== uploadScope.workspaceId ||
+        !['uploaded', 'completed'].includes(session.status) ||
+        !session.bucket
+      ) {
+        throw new BadRequestException('Episode upload has not been completed');
+      }
+      const pinned = this.storageRegistry.forProvider(session.provider);
+      if (!pinned)
+        throw new ServiceUnavailableException(
+          'Episode upload storage is unavailable',
+        );
+      storage = pinned;
+      sourceLocation = {
+        storageKey: session.storageKey,
+        bucket: session.bucket,
+        region: session.region,
+      };
+      const head = await storage.headStoredObject(sourceLocation);
+      if (
+        !head.exists ||
+        head.sizeBytes !== Number(session.sizeBytes) ||
+        head.contentType !== session.contentType
+      ) {
+        throw new BadRequestException(
+          'Uploaded video size or content type does not match the upload session',
+        );
+      }
+    }
+    const serializeConfirmation =
+      Boolean(policy.verifiedImageFinalKeySegment) ||
+      input.kind === 'episode_source_video';
     const storageKey = input.storageKey;
 
     // 1. Ownership: the key MUST sit under this user's scope for this kind.
@@ -607,6 +671,7 @@ export class MediaUploadService {
           storageKey,
           input.contentType,
           storage,
+          sourceLocation,
         );
     const confirmedAssetKind =
       input.kind === 'crew_asset_file'
@@ -636,7 +701,7 @@ export class MediaUploadService {
     //    (storage truth), never the client. createdByUserId + status power
     //    the future quota query and lifecycle.
     const { asset, variantId } = await this.prisma.$transaction(async (tx) => {
-      if (policy.verifiedImageFinalKeySegment) {
+      if (serializeConfirmation) {
         // `media_assets.object_key` is indexed but intentionally not globally
         // unique across all import paths. Serialize this exact final identity,
         // then re-read under the lock so two confirm requests converge onto one
@@ -647,7 +712,7 @@ export class MediaUploadService {
           )
         `;
       }
-      const converged = policy.verifiedImageFinalKeySegment
+      const converged = serializeConfirmation
         ? await tx.mediaAsset.findFirst({
             where: { objectKey: persistedStorageKey, deletedAt: null },
             select: {
@@ -675,7 +740,8 @@ export class MediaUploadService {
           message: 'the existing media asset belongs to a different scope',
         });
       }
-      if (converged) assertReadyVerifiedImageLedger(converged);
+      if (converged && policy.verifiedImageFinalKeySegment)
+        assertReadyVerifiedImageLedger(converged);
       const created =
         converged ??
         (await tx.mediaAsset.create({
@@ -783,18 +849,22 @@ export class MediaUploadService {
     storageKey: string,
     requestedContentType: string,
     storage: OutputStorageService = this.storage,
+    sourceLocation?: StorageObjectRef,
   ): Promise<ConfirmedUploadTruth> {
-    const head = await this.headUploadObject(userId, storageKey, storage);
+    const head = sourceLocation
+      ? await storage.headStoredObject(sourceLocation)
+      : await this.headUploadObject(userId, storageKey, storage);
     if (!head.exists) throw mediaObjectNotFound();
 
     // Generic objects retain their signed permanent key. Their cache metadata
     // is provider bookkeeping, not validation, and remains best-effort.
     try {
-      await storage.setCacheControl(
-        storageKey,
-        IMMUTABLE_STORAGE_CACHE_CONTROL,
-        head.contentType ?? requestedContentType,
-      );
+      if (!sourceLocation)
+        await storage.setCacheControl(
+          storageKey,
+          IMMUTABLE_STORAGE_CACHE_CONTROL,
+          head.contentType ?? requestedContentType,
+        );
     } catch (err) {
       this.logger.warn(
         `confirmUpload setCacheControl failed key=${storageKey}: ${
