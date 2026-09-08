@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
+
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import Link from "next/link";
 import {
@@ -1574,7 +1576,9 @@ function PlanningEditor({
       <span className="block">
         {task.startAt ? new Date(task.startAt).toLocaleDateString() : t("none")}
         <span className="mx-1.5 text-[#62646b]">→</span>
-        {task.dueAt ? new Date(task.dueAt).toLocaleDateString() : t("none")}
+        <span className={cn(isCrewTaskOverdue(task) && "text-red-300")}>
+          {task.dueAt ? new Date(task.dueAt).toLocaleDateString() : t("none")}
+        </span>
       </span>
       <span className="block text-[10px] text-[#777980]">
         {t("estimate")}: {task.estimatePoints ?? t("none")}

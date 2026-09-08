@@ -59,7 +59,7 @@ export function defaultCrewTaskView(
   return {
     crewId,
     name: 'issues',
-    layout: 'list',
+    layout: 'board',
     groupBy: 'status',
     filters: {},
     sorts: [{ field: 'rank', direction: 'asc' }],

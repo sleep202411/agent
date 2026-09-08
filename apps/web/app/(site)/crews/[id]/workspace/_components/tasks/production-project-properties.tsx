@@ -193,14 +193,16 @@ export function ProductionProjectProperties({
   );
 }
 
-function StudioProjectPicker({
+export function StudioProjectPicker({
   crewId,
   value,
   disabled,
+  label,
 }: {
   crewId: string;
   value: CrewProductionOverviewDTO["studioProject"];
   disabled: boolean;
+  label?: string;
 }) {
   const t = useTranslations("crewProduction");
   const [open, setOpen] = useState(false);
@@ -220,15 +222,17 @@ function StudioProjectPicker({
       <PopoverTrigger asChild>
         <ProductionPropertyButton
           disabled={disabled || linkProject.isPending}
-          aria-label={t("properties.linkStudioProject")}
+          aria-label={label ?? t("properties.linkStudioProject")}
         >
           {linkProject.isPending ? (
             <IconLoader2 className="size-3.5 animate-spin" />
           ) : (
             <IconBox className="size-3.5 text-[#8f949d]" />
           )}
-          <span>{value?.name ?? t("properties.linkStudioProject")}</span>
-          {value ? <span className="text-[#666c75]">· {value.workspace.name}</span> : null}
+          <span>{label ?? value?.name ?? t("properties.linkStudioProject")}</span>
+          {value && !label ? (
+            <span className="text-[#666c75]">· {value.workspace.name}</span>
+          ) : null}
         </ProductionPropertyButton>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[420px] p-0">

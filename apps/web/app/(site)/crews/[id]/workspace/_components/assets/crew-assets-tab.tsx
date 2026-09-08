@@ -1,5 +1,8 @@
 "use client";
 
+import { StudioProjectPicker } from "../tasks/production-project-properties";
+import { useCrewProductionOverview } from "@/app/(site)/crews/_hooks/use-production";
+
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
@@ -129,6 +132,7 @@ export function CrewAssetsTab({
 
   const activeFolderId = folderPath.at(-1)?.id ?? null;
   const contextQuery = useCrewAssetContext(crewId);
+  const productionQuery = useCrewProductionOverview(crewId);
   const initialAsset = useCrewAssetLocation(crewId, initialAssetId, Boolean(initialAssetId));
   const activeFolder = useCrewAssetLocation(
     crewId,
@@ -495,6 +499,12 @@ export function CrewAssetsTab({
                 )}
                 {activeSource !== "trash" ? (
                   <div className="flex items-center gap-2">
+                    <StudioProjectPicker
+                      crewId={crewId}
+                      value={productionQuery.data?.studioProject ?? null}
+                      disabled={!productionQuery.data?.capabilities.manage}
+                      label={t("linkCanvas")}
+                    />
                     {canCreateFolder ? (
                       <button
                         type="button"

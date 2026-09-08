@@ -4450,6 +4450,7 @@
     "inviteLinkStateExhausted": "已達上限"
   },
   "crewAssets": {
+    "linkCanvas": "連結畫布",
     "title": "劇組資產中心",
     "allFiles": "全部檔案",
     "recent": "最近使用",
