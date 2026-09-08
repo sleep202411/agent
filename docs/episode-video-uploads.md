@@ -82,12 +82,26 @@ duration probe and test-object cleanup.
 
 R2 documents a default seven-day incomplete multipart expiry
 ([upload documentation](https://developers.cloudflare.com/r2/objects/upload-objects/)).
-The application credentials cannot read bucket lifecycle settings. CN OSS had
-no lifecycle rule at this check; add a seven-day incomplete-upload rule for the
-`media/cn/episode-source-video/` prefix before enabling the new frontend there.
+The application credentials cannot read R2 bucket lifecycle settings. CN OSS now
+has a verified seven-day incomplete-upload rule for the
+`media/cn/episode-source-video/` prefix. It aborts unfinished multipart uploads;
+it does not expire completed video objects.
 
-The R2 production provider also passed an actual 37,580,963,840-byte transfer:
+Both R2 and CN OSS passed an actual 37,580,963,840-byte transfer each:
 2,240 parts, paginated part listing, completed size/type, HTTP 206 byte comparison,
 and a two-second MP4 duration probe. It used a generated MP4 with a valid padded
 free atom, streamed from the deployment pod; this measures storage correctness,
-not an end user's residential-network upload speed. The object was deleted.
+not an end user's residential-network upload speed. Both objects were deleted.
+
+The release was deployed to `.com` first, then CN, with server before web in
+each region. All five pending release migrations completed in both databases;
+CN migration used verified manual RDS backup `3152474656`. Image revisions are
+`a586582dc4a7b4f6c26fe2598fcf1cdbf8f34e48` on `.com` and
+`9c1c182220bb10e6c52e520606e1daa4e4477550` on CN; the intervening commits only
+change `.com` deployment image pins. Readiness, homepage, published TV channel
+API and unauthenticated upload rejection checks passed after rollout.
+
+Production browser acceptance remains unverified in this run: the dedicated
+browser inspection timed out. The browser upload/save/reload/play acceptance
+above ran locally; the full-size provider tests ran from deployment pods.
+These results do not claim a full 35 GiB upload through an end user's browser.
