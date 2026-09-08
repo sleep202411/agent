@@ -5,7 +5,7 @@
 // /admin/legacy-points/ledger,不经 Prisma。加/扣分动作在「用户列表」的弹窗里,
 // 这里只读。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IconSearch } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,34 +55,56 @@ export function LegacyLedgerPanel() {
   const [page, setPage] = useState(1);
 
   const [result, setResult] = useState<LegacyLedgerResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async (query: string, type: string, pageNum: number) => {
+  const requestSequence = useRef(0);
+  const queryKey = `${activeQuery}:${recordType}:${page}`;
+  const [previousQueryKey, setPreviousQueryKey] = useState(queryKey);
+  if (previousQueryKey !== queryKey) {
+    setPreviousQueryKey(queryKey);
     setLoading(true);
     setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: String(pageNum),
-        pageSize: String(PAGE_SIZE),
+  }
+
+  const fetchRows = useCallback((query: string, type: string, pageNum: number) => {
+    const ticket = ++requestSequence.current;
+    const params = new URLSearchParams({
+      page: String(pageNum),
+      pageSize: String(PAGE_SIZE),
+    });
+    if (query) params.set("query", query);
+    if (type) params.set("recordType", type);
+    return requestEnvelope<LegacyLedgerResult>(
+      `/api/admin/legacy-points/ledger?${params.toString()}`
+    )
+      .then((data) => {
+        if (ticket !== requestSequence.current) return;
+        setError(null);
+        setResult(data);
+      })
+      .catch((err: unknown) => {
+        if (ticket !== requestSequence.current) return;
+        setError(toErrorMessage(err));
+        setResult(null);
+      })
+      .finally(() => {
+        if (ticket === requestSequence.current) setLoading(false);
       });
-      if (query) params.set("query", query);
-      if (type) params.set("recordType", type);
-      const data = await requestEnvelope<LegacyLedgerResult>(
-        `/api/admin/legacy-points/ledger?${params.toString()}`
-      );
-      setResult(data);
-    } catch (err) {
-      setError(toErrorMessage(err));
-      setResult(null);
-    } finally {
-      setLoading(false);
-    }
   }, []);
 
+  const load = (...args: Parameters<typeof fetchRows>) => {
+    setLoading(true);
+    setError(null);
+    return fetchRows(...args);
+  };
+
   useEffect(() => {
-    void load(activeQuery, recordType, page);
-  }, [load, activeQuery, recordType, page]);
+    void fetchRows(activeQuery, recordType, page);
+    return () => {
+      requestSequence.current += 1;
+    };
+  }, [fetchRows, activeQuery, recordType, page]);
 
   function runSearch() {
     setPage(1);

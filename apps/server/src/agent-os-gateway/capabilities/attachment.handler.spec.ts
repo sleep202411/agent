@@ -107,7 +107,7 @@ describe('AttachmentAgentCapabilityHandler', () => {
       expect.objectContaining({ mimetype: 'text/plain' }),
       expect.objectContaining({
         sectionSize: 2_000,
-        transaction: expect.anything(),
+        transaction: expect.anything() as unknown,
       }),
     );
   });

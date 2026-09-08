@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+export const CredentialTypeSchema = z.enum([
+  'general',
+  'fizzdragon_certified_ai_producer',
+]);
+
 const CERT_NO_RE = /^FD-[A-Z0-9]{2,12}-[0-9]{4}-[A-Z0-9]{6}$/;
 
 export const VerifyCertificateQuerySchema = z.object({
@@ -89,6 +94,7 @@ export type AdminCertificateParams = z.infer<
 
 export const CreateAdminCertificateSchema = z
   .object({
+    credentialType: CredentialTypeSchema.optional(),
     userId: z.string().trim().min(1).max(64),
     title: z.string().trim().min(1).max(128),
     issuer: z.string().trim().min(1).max(128).default('FizzDragon'),
@@ -114,6 +120,7 @@ export type CreateAdminCertificateInput = z.infer<
 
 export const UpdateAdminCertificateSchema = z
   .object({
+    credentialType: CredentialTypeSchema.optional(),
     title: z.string().trim().min(1).max(128).optional(),
     issuer: z.string().trim().min(1).max(128).optional(),
     imageAssetId: z.string().uuid().optional(),
@@ -137,6 +144,7 @@ export type RevokeAdminCertificateInput = z.infer<
 >;
 
 export interface AdminCertificateDTO {
+  credentialType: string;
   id: string;
   userId: string;
   certNo: string;

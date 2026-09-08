@@ -464,9 +464,10 @@ export type ListCrewAgreementsQuery = z.infer<
 
 const TaskAssigneeSchema = z.object({
   userId: z.string().trim().min(1).max(64),
-  /// Crew-local compensation points. Task approval posts them to the immutable
-  /// earning ledger; a later finance payout snapshots the real-cash quote.
-  rewardPoints: z
+  /// Integer minor units for CNY/USD.
+  /// Task approval copies the amount and currency unchanged to the immutable ledger.
+  currency: z.enum(['CNY', 'USD']),
+  rewardAmountMinor: z
     .number()
     .int()
     .min(1)

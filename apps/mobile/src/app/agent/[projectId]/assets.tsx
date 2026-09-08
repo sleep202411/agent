@@ -44,34 +44,49 @@ export default function AgentAssetsScreen() {
     error: chapterError,
   } = useStoryChapterContext();
   const [activeTab, setActiveTab] = useState<StoryAssetSpecKind>("character");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [assets, setAssets] = useState<StoryAssetSpec[]>([]);
   const [detailAsset, setDetailAsset] = useState<StoryAssetSpec | null>(null);
 
+  const resourceKey = `${projectId}:${chapterId}`;
+  const [previousResourceKey, setPreviousResourceKey] = useState(resourceKey);
+  if (previousResourceKey !== resourceKey) {
+    setPreviousResourceKey(resourceKey);
+    setLoading(true);
+    setError(undefined);
+  }
+
   const loadAssets = useCallback(
-    async (opts?: { refresh?: boolean }) => {
+    (signal?: AbortSignal) => {
       if (!chapterId) return;
-      if (opts?.refresh) setRefreshing(true);
-      else setLoading(true);
-      setError(undefined);
-      try {
-        setAssets(await storyProductionApi.listAssetSpecs(projectId, chapterId));
-      } catch (err) {
-        setAssets([]);
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
+      return storyProductionApi
+        .listAssetSpecs(projectId, chapterId, signal)
+        .then((result) => {
+          if (signal?.aborted) return;
+          setAssets(result);
+          setError(undefined);
+        })
+        .catch((err: unknown) => {
+          if (signal?.aborted) return;
+          setAssets([]);
+          setError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (signal?.aborted) return;
+          setLoading(false);
+          setRefreshing(false);
+        });
     },
     [chapterId, projectId]
   );
 
   useEffect(() => {
     if (!chapterId || chapterLoading) return;
-    void loadAssets();
+    const controller = new AbortController();
+    void loadAssets(controller.signal);
+    return () => controller.abort();
   }, [chapterId, chapterLoading, loadAssets]);
 
   const filtered = useMemo(
@@ -91,7 +106,10 @@ export default function AgentAssetsScreen() {
           chapterId ? (
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => void loadAssets({ refresh: true })}
+              onRefresh={() => {
+                setRefreshing(true);
+                void loadAssets();
+              }}
               tintColor={theme.brand}
             />
           ) : undefined

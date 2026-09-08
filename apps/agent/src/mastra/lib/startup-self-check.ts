@@ -127,8 +127,12 @@ function check(): Check[] {
   }
 
   // ─── Redis ───────────────────────────────────────────────────────────
-  const redisUrl = process.env.REDIS_URL?.trim() || "redis://localhost:6379";
-  out.push({ kind: "info", label: "redis", value: redisUrl });
+  const redisUrl = process.env.REDIS_URL?.trim();
+  out.push(
+    redisUrl
+      ? { kind: "info", label: "redis", value: redisUrl }
+      : { kind: "warn", label: "redis", detail: "REDIS_URL is required" }
+  );
 
   // ─── Worker concurrency ──────────────────────────────────────────────
   const workerConc = process.env.WORKER_CONCURRENCY?.trim() || "4 (default)";

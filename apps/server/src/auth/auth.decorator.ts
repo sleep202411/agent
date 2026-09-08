@@ -45,7 +45,7 @@ export const SkipEndUserAuth = () => SetMetadata(SKIP_END_USER_AUTH_KEY, true);
  * used when proxying requests to Java services that need the
  * viewer's satoken (e.g. UsersController → Java /user/query/user).
  *
- * Returns "" when no cookie was sent (AUTH_DISABLED dev mode).
+ * Returns "" when no cookie was sent.
  *
  * Usage:
  *   @Get('lookup')

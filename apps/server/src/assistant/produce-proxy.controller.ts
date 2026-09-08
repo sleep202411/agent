@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 /**
  * Proxies /aurora/produce/* to Mastra's produce-mode routes.
  *
@@ -44,10 +45,7 @@ export class ProduceProxyController {
   ) {}
 
   private get mastraUrl(): string {
-    return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
-      /\/$/,
-      '',
-    );
+    return requiredEnv('MASTRA_URL').replace(/\/$/, '');
   }
 
   private buildHeaders(
@@ -69,10 +67,7 @@ export class ProduceProxyController {
     return headers;
   }
 
-  private async buildContext(
-    user: AuthUser,
-    body: JsonBody,
-  ): Promise<ContextHeader> {
+  private buildContext(user: AuthUser, body: JsonBody): ContextHeader {
     const seed =
       body.seed && typeof body.seed === 'object'
         ? (body.seed as Record<string, unknown>)
@@ -168,7 +163,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, body);
+    const context = this.buildContext(user, body);
     return this.forward('/produce/script-draft/sync', req, context, body);
   }
 
@@ -182,7 +177,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, body);
+    const context = this.buildContext(user, body);
     return this.forward('/produce/script-draft/commit', req, context, body);
   }
 
@@ -196,7 +191,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, body);
+    const context = this.buildContext(user, body);
     return this.forward('/produce/script-draft/committed', req, context, body);
   }
 
@@ -215,7 +210,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, body);
+    const context = this.buildContext(user, body);
     return this.forward('/produce/step1/generate', req, context, body);
   }
 
@@ -229,7 +224,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, body);
+    const context = this.buildContext(user, body);
     return this.forward('/produce/step1/commit', req, context, body);
   }
 
@@ -244,7 +239,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, body);
+    const context = this.buildContext(user, body);
     return this.forward('/produce/step2/generate', req, context, body);
   }
 
@@ -258,7 +253,7 @@ export class ProduceProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, body);
+    const context = this.buildContext(user, body);
     return this.forward('/produce/step2/commit', req, context, body);
   }
 
@@ -347,7 +342,7 @@ export class ProduceProxyController {
       createdAt: Date.now(),
     };
 
-    const context = await this.buildContext(user, { projectId, worldId });
+    const context = this.buildContext(user, { projectId, worldId });
     const forwardBody = { projectId, worldId, seed: seedPayload };
     return this.forward('/produce/step1/generate', req, context, forwardBody);
   }

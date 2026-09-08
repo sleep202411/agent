@@ -90,11 +90,17 @@ export function useAgentComposerTurn(projectId: string, workbenchMode: string, d
     };
   }, [projectId, workbenchMode]);
 
+  const skillsKey = `${projectId}:${skillsTick}`;
+  const [previousSkillsKey, setPreviousSkillsKey] = useState(skillsKey);
+  if (previousSkillsKey !== skillsKey) {
+    setPreviousSkillsKey(skillsKey);
+    setProjectSkillsLoading(Boolean(projectId));
+    setProjectSkillsError(false);
+  }
+
   useEffect(() => {
     if (!projectId) return;
     let cancelled = false;
-    setProjectSkillsLoading(true);
-    setProjectSkillsError(false);
     void listProjectSkillInstallations("story", projectId)
       .then((payload) => {
         if (cancelled) return;

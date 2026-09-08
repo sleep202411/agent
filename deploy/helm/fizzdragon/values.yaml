@@ -425,6 +425,7 @@ server:
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
     # Required public web origin for invitation links (CN overrides explicitly).
+    NEXT_PUBLIC_SITE_REGION: global
     REFERRAL_INVITE_BASE_URL: https://fizzdragon.com
     # Required region-owned base for relative legacy Java project cover keys.
     # Never default this in code: an omitted value must fail the server at boot

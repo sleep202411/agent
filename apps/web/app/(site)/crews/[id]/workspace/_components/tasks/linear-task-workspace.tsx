@@ -102,7 +102,7 @@ export function LinearTaskWorkspace({
   const deleteView = useDeleteCrewTaskView(crewId);
   const createWorkflowState = useCreateCrewTaskWorkflowState(crewId);
   const updateWorkflowState = useUpdateCrewTaskWorkflowState(crewId);
-  const [section, setSection] = useState<PrimarySection>("overview");
+  const [section, setSection] = useState<PrimarySection>("issues");
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(deeplinkTaskId ?? null);
   const [query, setQuery] = useState("");
@@ -365,6 +365,11 @@ export function LinearTaskWorkspace({
           aria-label={t("projectViews")}
         >
           <ProjectTab
+            active={section === "issues" && activeView.id === project.views[0]?.id}
+            label={t("issues")}
+            onClick={() => openSection("issues", project.views[0]?.id)}
+          />
+          <ProjectTab
             active={section === "overview"}
             icon={<IconLayoutDashboard />}
             label={t("overview")}
@@ -374,11 +379,6 @@ export function LinearTaskWorkspace({
             active={section === "activity"}
             label={t("activity")}
             onClick={() => openSection("activity")}
-          />
-          <ProjectTab
-            active={section === "issues" && activeView.id === project.views[0]?.id}
-            label={t("issues")}
-            onClick={() => openSection("issues", project.views[0]?.id)}
           />
           {project.views.slice(1).map((view) => (
             <ProjectTab
@@ -668,7 +668,17 @@ export function LinearTaskWorkspace({
           <IconLoader2 className="size-5 animate-spin" />
         </div>
       ) : null}
-      {taskQuery.data ? (
+      {taskQuery.isError && selectedTaskId ? (
+        <div className="absolute inset-0 z-40 grid place-content-center gap-4 bg-[#090a0c] p-6">
+          <p role="alert">
+            {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
+          </p>
+          <button type="button" onClick={() => selectTask(null)}>
+            {t("issues")}
+          </button>
+        </div>
+      ) : null}
+      {taskQuery.data && !taskQuery.isError ? (
         <div className="absolute inset-0 z-40 bg-[#090a0c]">
           <TaskIssueDetail
             key={taskQuery.data.id}

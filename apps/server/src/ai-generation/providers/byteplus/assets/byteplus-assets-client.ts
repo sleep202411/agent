@@ -84,7 +84,8 @@ export class BytePlusAssetsApiError extends Error {
 export function redactAssetRecord(
   record: BytePlusAssetRecord,
 ): Record<string, unknown> {
-  const { URL: _url, ...safe } = record;
+  const safe = { ...record };
+  delete safe.URL;
   return safe;
 }
 
@@ -329,7 +330,7 @@ export class BytePlusAssetsClient {
       Result?: T;
     };
     try {
-      parsed = text ? JSON.parse(text) : {};
+      parsed = text ? (JSON.parse(text) as typeof parsed) : {};
     } catch {
       throw new BytePlusAssetsApiError(
         action,

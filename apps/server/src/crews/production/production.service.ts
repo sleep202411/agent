@@ -53,7 +53,7 @@ const EPISODE_INCLUDE = {
       { createdAt: 'desc' as const },
     ],
   },
-  _count: { select: { tasks: true } },
+  _count: { select: { tasks: { where: { deletedAt: null } } } },
 } satisfies Prisma.CrewEpisodeInclude;
 
 type EpisodeRow = Prisma.CrewEpisodeGetPayload<{
@@ -876,7 +876,11 @@ export class CrewProductionService {
   async deleteEpisode(episodeId: string, userId: string) {
     const episode = await this.prisma.crewEpisode.findUnique({
       where: { id: episodeId },
-      include: { _count: { select: { tasks: true, deliveries: true } } },
+      include: {
+        _count: {
+          select: { tasks: true, deliveries: true },
+        },
+      },
     });
     if (!episode) throw new NotFoundException('Episode not found.');
     await this.authorization.require(
@@ -1024,6 +1028,7 @@ export class CrewProductionService {
       if (input.decision === 'approve') {
         const incomplete = await tx.crewTask.count({
           where: {
+            deletedAt: null,
             episodeId: delivery.episodeId,
             workflowState: {
               semantic: {
@@ -1110,7 +1115,7 @@ export class CrewProductionService {
         orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       }),
       this.prisma.crewTask.findMany({
-        where: { crewId, episodeId: { not: null } },
+        where: { deletedAt: null, crewId, episodeId: { not: null } },
         select: {
           episodeId: true,
           workflowState: { select: { semantic: true } },
@@ -1147,7 +1152,7 @@ export class CrewProductionService {
     });
     if (!episode) throw new NotFoundException('Episode not found.');
     const rows = await this.prisma.crewTask.findMany({
-      where: { episodeId },
+      where: { deletedAt: null, episodeId },
       select: { workflowState: { select: { semantic: true } } },
     });
     const counts = { total: 0, completed: 0, pendingReview: 0 };

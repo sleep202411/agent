@@ -18,12 +18,11 @@
  *   npm --workspace server exec -- tsx scripts/ip-cn-migration.ts pull [--limit N] [--status 5]
  *   npm --workspace server exec -- tsx scripts/ip-cn-migration.ts push [--limit N] [--write]
  */
-import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, IpContributorRole } from '@prisma/client';
 import mysql from 'mysql2/promise';
 import { config as loadDotenv } from 'dotenv';
 
@@ -134,10 +133,15 @@ function toPublicUrl(raw: unknown): string | null {
 
 const clamp = (s: string, n: number) => (s.length > n ? s.slice(0, n) : s);
 const str = (v: unknown) =>
-  v === null || v === undefined ? '' : String(v).trim();
+  typeof v === 'string' ||
+  typeof v === 'number' ||
+  typeof v === 'bigint' ||
+  typeof v === 'boolean'
+    ? String(v).trim()
+    : '';
 const asDate = (v: unknown): Date | undefined => {
   if (!v) return undefined;
-  const d = v instanceof Date ? v : new Date(String(v));
+  const d = v instanceof Date ? v : new Date(str(v));
   return Number.isNaN(d.getTime()) ? undefined : d;
 };
 
@@ -213,7 +217,7 @@ async function pull(opts: {
     connectTimeout: 20000,
   });
   const q = async (sql: string, p?: unknown[]) =>
-    (await conn.query(sql, p))[0] as any[];
+    (await conn.query(sql, p))[0] as SourceRow[];
 
   const types: Record<string, string> = {};
   for (const r of await q('SELECT id, video_type FROM video_type'))
@@ -249,12 +253,12 @@ async function pull(opts: {
   );
 
   // batch children
-  const epByIp = new Map<string, any[]>();
+  const epByIp = new Map<string, SourceRow[]>();
   for (const v of await q('SELECT * FROM video_list')) {
     const k = String(v.project_id);
     (epByIp.get(k) ?? epByIp.set(k, []).get(k)!).push(v);
   }
-  const memByIp = new Map<string, any[]>();
+  const memByIp = new Map<string, SourceRow[]>();
   for (const m of await q('SELECT * FROM client_project_ip_member')) {
     const k = String(m.project_id);
     (memByIp.get(k) ?? memByIp.set(k, []).get(k)!).push(m);
@@ -352,8 +356,9 @@ async function pull(opts: {
 function parseDuration(meta: unknown): number | null {
   if (!meta) return null;
   try {
-    const m = typeof meta === 'string' ? JSON.parse(meta) : meta;
-    const d = Number(m?.duration);
+    const m: unknown = typeof meta === 'string' ? JSON.parse(meta) : meta;
+    if (!m || typeof m !== 'object' || !('duration' in m)) return null;
+    const d = Number(m.duration);
     // ip_episodes has a duration_positive CHECK; 0/negative → null.
     return Number.isFinite(d) && d > 0 ? Math.round(d) : null;
   } catch {
@@ -430,7 +435,9 @@ async function push(opts: {
     return;
   }
 
-  const { buildPrisma } = await import('../src/infra/db/db.module');
+  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+    buildPrisma: () => PrismaClient;
+  };
   const prisma: PrismaClient = buildPrisma();
   try {
     const loc = await prisma.supportedLocale.findUnique({
@@ -618,7 +625,7 @@ async function upsertIp(prisma: PrismaClient, s: CnSnapshot, ip: CnIp) {
       where: { id: cid },
       update: {
         displayName: clamp(c.displayName, 120),
-        role: c.role as any,
+        role: c.role as IpContributorRole,
         customRole: c.customRole ? clamp(c.customRole, 80) : null,
         displayOrder: order,
         removedAt: null,
@@ -628,7 +635,7 @@ async function upsertIp(prisma: PrismaClient, s: CnSnapshot, ip: CnIp) {
         ipId,
         userId: c.userId,
         displayName: clamp(c.displayName, 120),
-        role: c.role as any,
+        role: c.role as IpContributorRole,
         customRole: c.customRole ? clamp(c.customRole, 80) : null,
         displayOrder: order,
         metadata: c.avatar ? { legacyAvatar: c.avatar } : {},
@@ -761,7 +768,9 @@ function parseArgs(argv: string[]) {
   return o;
 }
 async function checkPg() {
-  const { buildPrisma } = await import('../src/infra/db/db.module');
+  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+    buildPrisma: () => PrismaClient;
+  };
   const prisma: PrismaClient = buildPrisma();
   try {
     const [ips, locs, eps, contribs, media, zh] = await Promise.all([
@@ -785,7 +794,9 @@ async function checkPg() {
 // Clears import-owned rows so a re-run starts clean. Safe only because the
 // ip-commerce target was verified EMPTY before the first write.
 async function reset() {
-  const { buildPrisma } = await import('../src/infra/db/db.module');
+  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+    buildPrisma: () => PrismaClient;
+  };
   const prisma: PrismaClient = buildPrisma();
   try {
     const ip = await prisma.ip.deleteMany({}); // cascades localizations/episodes/contributors/assignments
@@ -805,7 +816,9 @@ async function reset() {
 // Counts rows matching the live public-feed filter (PUBLIC_IP_STATUSES +
 // listingVisibility=public + a published localization) — should equal 69.
 async function verify() {
-  const { buildPrisma } = await import('../src/infra/db/db.module');
+  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+    buildPrisma: () => PrismaClient;
+  };
   const prisma: PrismaClient = buildPrisma();
   try {
     const byStatus = await prisma.ip.groupBy({ by: ['status'], _count: true });
@@ -816,7 +829,7 @@ async function verify() {
     const publicCount = await prisma.ip.count({
       where: {
         deletedAt: null,
-        status: { in: ['scheduled', 'published'] as any },
+        status: { in: ['scheduled', 'published'] },
         listingVisibility: 'public',
         localizations: { some: { archivedAt: null, status: 'published' } },
       },
@@ -843,3 +856,34 @@ main().catch((e) => {
   console.error(e instanceof Error ? e.stack : e);
   process.exitCode = 1;
 });
+
+/** Columns consumed from the source MySQL catalogue tables. */
+interface SourceRow {
+  id: string | number;
+  project_id: string | number;
+  owner_id: string | number | null;
+  user_id: string | number | null;
+  video_type: string;
+  role_name: string;
+  name: string | null;
+  nick_name: string | null;
+  avatar: string | null;
+  tag: unknown;
+  video_number: number | null;
+  title: string | null;
+  introduction: string | null;
+  video_banner: string | null;
+  video_link: string | null;
+  videoMeta: unknown;
+  review: number | null;
+  sort: number | null;
+  create_time: Date | string | null;
+  role: number | null;
+  remark: string | null;
+  type_id: number | null;
+  description: string | null;
+  background: string | null;
+  contact: string | null;
+  project_status: number | null;
+  banner_link: string | null;
+}

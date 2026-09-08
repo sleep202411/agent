@@ -210,7 +210,7 @@ function transformValue(value: unknown, transform = 'identity'): unknown {
   // First url of a (possibly single-element) reference array → a single
   // `image_url` string, for models that take one reference image (hunyuan).
   if (transform === 'mediaFirstUrl') {
-    const first = Array.isArray(value) ? value[0] : value;
+    const first: unknown = Array.isArray(value) ? value[0] : value;
     if (typeof first === 'string') return first.trim() ? first : undefined;
     if (first && typeof first === 'object' && 'url' in first) {
       const url = (first as { url?: unknown }).url;

@@ -99,10 +99,11 @@ export default function AgentChatScreen() {
   const pendingInput = live.session.pendingUserInput;
   const pendingApproval = live.session.pendingApproval;
 
-  useEffect(() => {
-    if (!prefillDraft) return;
-    setDraft(prefillDraft);
-  }, [prefillDraft]);
+  const [previousPrefill, setPreviousPrefill] = useState(prefillDraft);
+  if (previousPrefill !== prefillDraft) {
+    setPreviousPrefill(prefillDraft);
+    if (prefillDraft) setDraft(prefillDraft);
+  }
 
   useEffect(() => {
     if (!projectOk || !isAuthenticated) return;

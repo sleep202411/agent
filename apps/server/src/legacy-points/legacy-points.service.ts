@@ -140,13 +140,13 @@ export class LegacyPointsService {
       where = `WHERE ${clauses.join(' OR ')}`;
     }
 
-    const countRow = await this.mysql.queryOne<RowDataPacket>(
+    const countRow = await this.mysql.queryOne<LegacyPointsRow>(
       `SELECT COUNT(*) AS total FROM client_user ${where}`,
       whereParams,
     );
     const total = Number(countRow?.total ?? 0);
 
-    const rows = await this.mysql.query<RowDataPacket>(
+    const rows = await this.mysql.query<LegacyPointsRow>(
       `SELECT id, phone, email, nick_name, score_balance,
               account_status, create_time
          FROM client_user ${where}
@@ -189,7 +189,7 @@ export class LegacyPointsService {
     );
     if (numeric.length === 0) return [];
     const placeholders = numeric.map(() => '?').join(',');
-    const rows = await this.mysql.query<RowDataPacket>(
+    const rows = await this.mysql.query<LegacyPointsRow>(
       `SELECT id, phone, email, nick_name, score_balance
          FROM client_user
         WHERE id IN (${placeholders})`,
@@ -205,7 +205,7 @@ export class LegacyPointsService {
 
   /** Resolve a phone/email to a legacy user, or null if not found. */
   async findUser(identifier: string): Promise<LegacyUser | null> {
-    const row = await this.mysql.queryOne<RowDataPacket>(
+    const row = await this.mysql.queryOne<LegacyPointsRow>(
       `SELECT id, phone, email, nick_name, score_balance
          FROM client_user
         WHERE phone = ? OR email = ?
@@ -230,7 +230,7 @@ export class LegacyPointsService {
     const { identifier, score, operatorId, note } = input;
 
     return this.mysql.transaction(async (conn) => {
-      const [rows] = await conn.query<RowDataPacket[]>(
+      const [rows] = await conn.query<LegacyPointsRow[]>(
         `SELECT id, score_balance
            FROM client_user
           WHERE phone = ? OR email = ?
@@ -296,7 +296,7 @@ export class LegacyPointsService {
     identifier: string,
     limit: number,
   ): Promise<LegacyPointRecord[]> {
-    const rows = await this.mysql.query<RowDataPacket>(
+    const rows = await this.mysql.query<LegacyPointsRow>(
       `SELECT r.id, r.record_type, r.integral_change, r.current_balance,
               r.remark, r.model_code, r.create_time
          FROM integral_record r
@@ -359,7 +359,7 @@ export class LegacyPointsService {
     }
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
 
-    const countRow = await this.mysql.queryOne<RowDataPacket>(
+    const countRow = await this.mysql.queryOne<LegacyPointsRow>(
       `SELECT COUNT(*) AS total
          FROM integral_record r
          JOIN client_user u ON u.id = r.user_id
@@ -368,7 +368,7 @@ export class LegacyPointsService {
     );
     const total = Number(countRow?.total ?? 0);
 
-    const rows = await this.mysql.query<RowDataPacket>(
+    const rows = await this.mysql.query<LegacyPointsRow>(
       `SELECT r.id, r.user_id, u.phone, u.email, u.nick_name,
               r.record_type, r.integral_change, r.current_balance,
               r.remark, r.model_code, r.create_time
@@ -402,7 +402,7 @@ export class LegacyPointsService {
     };
   }
 
-  private mapUser(row: RowDataPacket): LegacyUser {
+  private mapUser(row: LegacyPointsRow): LegacyUser {
     return {
       // Raw id — findUser feeds the grant dialogs, which pass this straight back
       // as idFormat=raw. The public-facing encode happens per-endpoint instead.
@@ -413,4 +413,13 @@ export class LegacyPointsService {
       scoreBalance: Number(row.score_balance ?? 0),
     };
   }
+}
+
+/** String columns returned by the legacy ledger/user queries. */
+interface LegacyPointsRow extends RowDataPacket {
+  phone: string | null;
+  email: string | null;
+  nick_name: string | null;
+  remark: string | null;
+  model_code: string | null;
 }

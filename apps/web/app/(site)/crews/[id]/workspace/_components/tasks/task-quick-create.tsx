@@ -1,5 +1,7 @@
 "use client";
 
+import { CREW_CURRENCY } from "@/src/lib/crew-money";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
@@ -207,7 +209,7 @@ export function TaskQuickCreate({
         parentId: parentId ?? draft?.parentId ?? null,
         blockedByTaskIds: draft?.blockedByTaskIds ?? [],
         labelIds,
-        assignees: assigneeUserId ? [{ userId: assigneeUserId }] : [],
+        assignees: assigneeUserId ? [{ userId: assigneeUserId, currency: CREW_CURRENCY }] : [],
       });
       toast.success(t("created"));
       onCreated?.(task);

@@ -153,14 +153,14 @@ describe('AiGenerationRepository claim-vs-cancel barrier', () => {
 
     expect(result).toMatchObject({
       kind: 'not_queued',
-      job: expect.objectContaining({ status: 'cancelled' }),
+      job: expect.objectContaining({ status: 'cancelled' }) as unknown,
     });
     expect(tx.aiJob.updateMany).toHaveBeenCalledWith({
       where: { id: queuedRow.id, status: 'in_queue' },
       data: expect.objectContaining({
         status: 'in_progress',
         version: { increment: 1 },
-      }),
+      }) as unknown,
     });
     // No unconditional write may run against the row.
     expect(tx.aiJob.update).not.toHaveBeenCalled();
@@ -178,14 +178,16 @@ describe('AiGenerationBillingWalletService duplicate terminal release', () => {
     // constraint (unhandled P2002).
     const events: string[] = [];
     const winnerTransaction = { id: 'wallet-txn-winner' };
-    const findUnique = jest.fn(() => {
-      events.push('idempotency-check');
-      // First check runs before the winner commits; the re-check under the
-      // account lock observes the winner's committed release.
-      return Promise.resolve(
-        findUnique.mock.calls.length > 1 ? winnerTransaction : null,
-      );
-    });
+    const findUnique: jest.Mock<Promise<{ id: string } | null>, []> = jest.fn(
+      () => {
+        events.push('idempotency-check');
+        // First check runs before the winner commits; the re-check under the
+        // account lock observes the winner's committed release.
+        return Promise.resolve(
+          findUnique.mock.calls.length > 1 ? winnerTransaction : null,
+        );
+      },
+    );
     const tx = {
       $executeRaw: jest.fn(() => {
         events.push('account-lock');

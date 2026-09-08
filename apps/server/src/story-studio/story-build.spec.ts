@@ -415,9 +415,9 @@ describe('compileStoryBuild', () => {
                 projectId: PROJECT_ID,
                 worldId: WORLD_ID,
                 maxExperienceSeconds: 90,
-              }),
+              }) as unknown,
             }),
-          ]),
+          ]) as unknown,
         }),
       ]),
     );

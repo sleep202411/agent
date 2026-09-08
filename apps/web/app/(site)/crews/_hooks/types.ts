@@ -274,10 +274,11 @@ export interface CrewTaskProjectDTO {
 }
 
 export interface CrewTaskAssigneeDTO {
+  currency: "CNY" | "USD";
   id: string;
   userId: string;
   crewMemberId: string;
-  rewardPoints: number | null;
+  rewardAmountMinor: number | null;
   assignedAt: string;
 }
 
@@ -312,6 +313,7 @@ export type CrewEarningSourceType =
   | "adjustment";
 
 export interface CrewEarningEntryDTO {
+  currency: "CNY" | "USD";
   id: string;
   crewId: string;
   crewMemberId: string;
@@ -321,7 +323,7 @@ export interface CrewEarningEntryDTO {
   agreement: { id: string; status: string } | null;
   title: string;
   description: string | null;
-  pointsAmount: string;
+  amountMinor: string;
   status: CrewEarningStatus;
   createdByUserId: string;
   approvedByUserId: string | null;
@@ -354,12 +356,12 @@ export interface CrewEarningPageDTO {
   items: CrewEarningEntryDTO[];
   nextCursor: string | null;
   summary: {
-    byStatus: Record<CrewEarningStatus, { count: number; pointsAmount: string }>;
-    postedThisMonthPoints: string;
+    byStatus: Record<CrewEarningStatus, { count: number; amountMinor: string }>;
+    postedThisMonthAmountMinor: string;
     postedBySource: Array<{
       sourceType: CrewEarningSourceType;
       count: number;
-      pointsAmount: string;
+      amountMinor: string;
     }>;
   };
 }
@@ -368,11 +370,12 @@ export type CrewPayoutStatus = "pending" | "paid" | "voided";
 export type CrewPayoutMethod = "bank_transfer" | "alipay" | "wechat_pay" | "paypal" | "other";
 
 export interface CrewPayoutDTO {
+  currency: "CNY" | "USD";
   id: string;
   crewId: string;
   crewMemberId: string;
   userId: string;
-  pointsAmount: string;
+  amountMinor: string;
   withholdingAmountMinor: string;
   netAmountMinor: string;
   status: CrewPayoutStatus;
@@ -391,12 +394,12 @@ export interface CrewPayoutDTO {
   updatedAt: string;
   allocations: Array<{
     id: string;
-    pointsAmount: string;
+    amountMinor: string;
     earning: {
       id: string;
       title: string;
       sourceType: CrewEarningSourceType;
-      pointsAmount: string;
+      amountMinor: string;
       postedAt: string | null;
       task: { id: string; number: number; title: string } | null;
     };
@@ -420,14 +423,14 @@ export interface CrewPayoutPageDTO {
   items: CrewPayoutDTO[];
   nextCursor: string | null;
   summary: {
-    confirmedPoints: string;
-    availablePoints: string;
-    reservedPoints: string;
-    paidPoints: string;
+    confirmedAmountMinor: string;
+    availableAmountMinor: string;
+    reservedAmountMinor: string;
+    paidAmountMinor: string;
     byStatus: Array<{
       status: CrewPayoutStatus;
       count: number;
-      pointsAmount: string;
+      amountMinor: string;
       netAmountMinor: string;
     }>;
   };
@@ -637,7 +640,8 @@ export interface CreateCrewTaskInput {
   labelIds?: string[];
   assignees: Array<{
     userId: string;
-    rewardPoints?: number | null;
+    currency: "CNY" | "USD";
+    rewardAmountMinor?: number | null;
   }>;
 }
 

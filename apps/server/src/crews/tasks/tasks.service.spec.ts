@@ -116,7 +116,8 @@ function task(overrides: Record<string, unknown> = {}) {
         taskId: TASK_ID,
         crewMemberId: 'crew-member-1',
         userId: ASSIGNEE_ID,
-        rewardPoints: 120000n,
+        currency: 'USD',
+        rewardAmountMinor: 120000n as bigint | null,
         assignedAt: new Date('2026-07-29T09:00:00.000Z'),
       },
     ],
@@ -174,6 +175,16 @@ function build() {
   });
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    crewMember: {
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ id: 'crew-member-1', userId: ASSIGNEE_ID }]),
+    },
+    crewTaskAssignee: {
+      deleteMany: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
+    },
     crewTaskSubmission: {
       update: jest.fn().mockResolvedValue({}),
     },
@@ -365,6 +376,36 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it.each([
+    [null, 'USD', 1000, 'USD'],
+    [1000n, 'CNY', 1000, 'USD'],
+    [1000n, 'CNY', 1200, 'CNY'],
+  ] as const)(
+    'saves reward and currency together (%s %s → %s %s)',
+    async (before, previousCurrency, amount, currency) => {
+      const t = build();
+      const current = task();
+      current.assignees[0] = {
+        ...current.assignees[0],
+        rewardAmountMinor: before,
+        currency: previousCurrency,
+      };
+      t.prisma.crewTask.findUnique.mockResolvedValue(current);
+      t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+      t.tx.crewTask.update.mockResolvedValue(current);
+      await t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        assignees: [
+          { userId: ASSIGNEE_ID, rewardAmountMinor: amount, currency },
+        ],
+      });
+      expect(t.tx.crewTaskAssignee.update).toHaveBeenCalledWith({
+        where: { id: 'assignee-1' },
+        data: { rewardAmountMinor: BigInt(amount), currency },
+      });
+    },
+  );
+
   it('updates a production cycle only from the expected revision', async () => {
     const t = build();
     const cycle = {
@@ -835,6 +876,7 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTask.count).toHaveBeenCalledWith({
       where: {
         crewId: CREW_ID,
+        deletedAt: null,
         id: { notIn: [TASK_ID, beforeId] },
         workflowStateId: WORKFLOW_STATE_IDS.in_progress,
         rank: { gte: new Prisma.Decimal(2048) },
@@ -850,7 +892,7 @@ describe('CrewTasksService', () => {
         rank: Prisma.Decimal;
       };
     };
-    expect(updateInput.where).toEqual({ id: TASK_ID });
+    expect(updateInput.where).toEqual({ id: TASK_ID, deletedAt: null });
     expect(updateInput.data).toMatchObject({
       workflowStateId: WORKFLOW_STATE_IDS.in_progress,
       cycleId: current.cycleId,
@@ -1015,13 +1057,14 @@ describe('CrewTasksService', () => {
       'tasks.review',
     );
     expect(t.earnings.postTaskRewardTx).toHaveBeenCalledWith(t.tx, {
+      currency: 'USD',
       crewId: CREW_ID,
       taskId: TASK_ID,
       taskNumber: 10,
       taskTitle: 'Finish SC.010 storyboard',
       crewMemberId: 'crew-member-1',
       userId: ASSIGNEE_ID,
-      pointsAmount: 120000n,
+      amountMinor: 120000n,
       approvedByUserId: OWNER_ID,
     });
     const operationCreateCalls = t.tx.studioDocumentOperation.create.mock

@@ -1,5 +1,3 @@
-import type { QuotaLimits } from '../quota/quota.types';
-
 export const ENTITLEMENT_POLICY_VERSION = '2026-08-10' as const;
 
 /**

@@ -76,29 +76,55 @@ export function GrantPointsDialog({
   // for the audit trail.
   const canSubmit = Boolean(user) && scoreValid && Boolean(note.trim()) && !submitting;
 
-  // Reset every time the dialog opens; auto-look-up when prefilled. When it
-  // closes, clear so re-opening for a different user never shows stale data.
-  useEffect(() => {
-    if (!open) {
-      setIdentifier("");
-      setScore("");
-      setNote("");
-      setUser(null);
-      setLookupDone(false);
-      setError(null);
-      setResult(null);
-      return;
-    }
-    const prefilled = initialIdentifier?.trim() ?? "";
-    setIdentifier(prefilled);
+  const resetKey = `${open}:${initialIdentifier ?? ""}`;
+  const [previousResetKey, setPreviousResetKey] = useState<string | null>(null);
+  if (resetKey !== previousResetKey) {
+    setPreviousResetKey(resetKey);
+    setIdentifier(open ? (initialIdentifier?.trim() ?? "") : "");
     setScore("");
     setNote("");
     setUser(null);
     setLookupDone(false);
     setError(null);
     setResult(null);
-    if (prefilled) void lookup(prefilled);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setBalance(null);
+    setLooking(Boolean(open && initialIdentifier?.trim()));
+  }
+
+  useEffect(() => {
+    if (!open || !initialIdentifier?.trim()) return;
+    let cancelled = false;
+    const id = initialIdentifier.trim();
+    void requestEnvelope<LegacyUser | null>(
+      `/api/admin/legacy-points/users/${encodeURIComponent(id)}`
+    )
+      .then(async (next) => {
+        if (cancelled) return;
+        setUser(next);
+        setLookupDone(true);
+        if (next) {
+          try {
+            const balance = await requestEnvelope<{ availableBalance: string }>(
+              `/api/admin/billing/wallets/user-credits?userId=${encodeURIComponent(next.userId)}&idFormat=raw`
+            );
+            if (!cancelled) setBalance(balance?.availableBalance ?? null);
+          } catch {
+            if (!cancelled) setBalance(null);
+          }
+        }
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) {
+          setError(toErrorMessage(err));
+          setLookupDone(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLooking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [open, initialIdentifier]);
 
   async function lookup(idArg?: string) {

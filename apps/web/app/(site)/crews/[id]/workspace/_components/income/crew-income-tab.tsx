@@ -1,6 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import {
+  CREW_CURRENCY,
+  formatCrewMoney,
+  parseCrewMoney,
+  formatCrewMoneyInput,
+  type CrewLedgerCurrency,
+} from "@/src/lib/crew-money";
 import Link from "next/link";
 import {
   IconArrowBackUp,
@@ -24,7 +31,6 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { CREW_POINTS_PER_USD } from "@repo/shared";
 
 import {
   useApproveCrewEarning,
@@ -66,12 +72,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 
-type View = "points" | "payouts";
+type View = "earnings" | "payouts";
 type Scope = "mine" | "crew";
 type EarningFilter = "all" | CrewEarningStatus;
 type PayoutFilter = "all" | CrewPayoutStatus;
@@ -91,7 +96,6 @@ const PAYOUT_METHODS: CrewPayoutMethod[] = [
   "paypal",
   "other",
 ];
-const MAX_SIGNED_BIGINT = 9_223_372_036_854_775_807n;
 
 export function CrewIncomeTab({
   crewId,
@@ -116,7 +120,7 @@ export function CrewIncomeTab({
 }) {
   const t = useTranslations("crewIncome");
   const locale = useLocale();
-  const [view, setView] = useState<View>("points");
+  const [view, setView] = useState<View>("earnings");
   const [scope, setScope] = useState<Scope>("mine");
   const effectiveScope = canViewCrewLedger ? scope : "mine";
   const [earningFilter, setEarningFilter] = useState<EarningFilter>("all");
@@ -137,14 +141,16 @@ export function CrewIncomeTab({
   const earnings = useCrewEarnings(
     crewId,
     {
+      currency: CREW_CURRENCY,
       scope: effectiveScope,
       status: earningFilter === "all" ? undefined : earningFilter,
     },
-    view === "points"
+    view === "earnings"
   );
   const payouts = useCrewPayouts(
     crewId,
     {
+      currency: CREW_CURRENCY,
       scope: effectiveScope,
       status: payoutFilter === "all" ? undefined : payoutFilter,
     },
@@ -181,7 +187,7 @@ export function CrewIncomeTab({
                 </Segment>
               </Segmented>
             ) : null}
-            {view === "points" && canCreateEarning ? (
+            {view === "earnings" && canCreateEarning ? (
               <Button size="sm" icon={<IconPlus />} onClick={() => setCreateEarningOpen(true)}>
                 {t("create.action")}
               </Button>
@@ -194,8 +200,8 @@ export function CrewIncomeTab({
           </div>
         </div>
         <nav className="mt-5 flex gap-5" aria-label={t("viewLabel")}>
-          <ViewTab active={view === "points"} onClick={() => setView("points")}>
-            <IconCoins /> {t("views.points")}
+          <ViewTab active={view === "earnings"} onClick={() => setView("earnings")}>
+            <IconCoins /> {t("views.earnings")}
           </ViewTab>
           <ViewTab active={view === "payouts"} onClick={() => setView("payouts")}>
             <IconCash /> {t("views.payouts")}
@@ -203,8 +209,8 @@ export function CrewIncomeTab({
         </nav>
       </header>
 
-      {view === "points" ? (
-        <PointsLedger
+      {view === "earnings" ? (
+        <EarningsLedger
           crewId={crewId}
           query={earnings}
           scope={effectiveScope}
@@ -271,7 +277,7 @@ export function CrewIncomeTab({
   );
 }
 
-function PointsLedger({
+function EarningsLedger({
   crewId,
   query,
   scope,
@@ -311,33 +317,47 @@ function PointsLedger({
     <section className="pt-5">
       <div className="grid border-y border-white/[0.065] sm:grid-cols-3">
         <Metric
-          label={t("metrics.confirmedPoints")}
+          label={t("metrics.confirmedAmount")}
           value={
-            <PointAmount value={summary?.byStatus.posted.pointsAmount ?? "0"} locale={locale} />
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={summary?.byStatus.posted.amountMinor ?? "0"}
+              locale={locale}
+            />
           }
         />
         <Metric
-          label={t("metrics.pendingPoints")}
+          label={t("metrics.pendingAmount")}
           value={
-            <PointAmount value={summary?.byStatus.pending.pointsAmount ?? "0"} locale={locale} />
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={summary?.byStatus.pending.amountMinor ?? "0"}
+              locale={locale}
+            />
           }
         />
         <Metric
-          label={t("metrics.monthPoints")}
-          value={<PointAmount value={summary?.postedThisMonthPoints ?? "0"} locale={locale} />}
+          label={t("metrics.monthAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={summary?.postedThisMonthAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
       </div>
       <LedgerHeader
-        title={t("points.history")}
-        description={t("points.historyDescription")}
+        title={t("earnings.history")}
+        description={t("earnings.historyDescription")}
         values={["all", "pending", "posted", "rejected", "reversed"]}
         value={filter}
         onChange={(value) => setFilter(value as EarningFilter)}
       />
       <ResultState
         query={query}
-        emptyTitle={t("points.emptyTitle")}
-        emptyDescription={t("points.emptyDescription")}
+        emptyTitle={t("earnings.emptyTitle")}
+        emptyDescription={t("earnings.emptyDescription")}
       >
         <div className="divide-y divide-white/[0.055] border-t border-white/[0.055]">
           {query.data.map((earning) => (
@@ -379,8 +399,9 @@ function PointsLedger({
                 {formatDate(earning.createdAt, locale)}
               </time>
               <div className="flex items-center justify-between gap-2 md:justify-end">
-                <PointAmount
-                  value={earning.pointsAmount}
+                <MoneyAmount
+                  currency={earning.currency}
+                  value={earning.amountMinor}
                   locale={locale}
                   className="font-mono text-[11px] font-semibold text-[#e8e9ec]"
                 />
@@ -458,16 +479,34 @@ function PayoutLedger({
     <section className="pt-5">
       <div className="grid border-y border-white/[0.065] sm:grid-cols-3">
         <Metric
-          label={t("metrics.availablePoints")}
-          value={<PointAmount value={query.summary?.availablePoints ?? "0"} locale={locale} />}
+          label={t("metrics.availableAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={query.summary?.availableAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
         <Metric
-          label={t("metrics.reservedPoints")}
-          value={<PointAmount value={query.summary?.reservedPoints ?? "0"} locale={locale} />}
+          label={t("metrics.reservedAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={query.summary?.reservedAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
         <Metric
-          label={t("metrics.paidPoints")}
-          value={<PointAmount value={query.summary?.paidPoints ?? "0"} locale={locale} />}
+          label={t("metrics.paidAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={query.summary?.paidAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
       </div>
       <LedgerHeader
@@ -502,14 +541,18 @@ function PayoutLedger({
                     {scope === "crew" ? displayNameOf(payout.userId, displays) : t("payout.record")}
                   </p>
                   <p className="mt-1 text-[9px] text-[#676d77]">
-                    <PointAmount value={payout.pointsAmount} locale={locale} /> ·{" "}
-                    {formatDate(payout.createdAt, locale)}
+                    <MoneyAmount
+                      currency={payout.currency}
+                      value={payout.amountMinor}
+                      locale={locale}
+                    />{" "}
+                    · {formatDate(payout.createdAt, locale)}
                   </p>
                 </div>
               </div>
               <PayoutStatusBadge status={payout.status} />
               <span className="font-mono text-[11px] font-semibold text-[#e8e9ec]">
-                {formatUsd(payout.netAmountMinor, locale)}
+                {formatCrewMoney(payout.netAmountMinor, locale, payout.currency)}
               </span>
               <div className="flex items-center justify-end gap-1">
                 <button
@@ -564,27 +607,28 @@ function CreateEarningDialog({
   const [memberId, setMemberId] = useState("");
   const [sourceType, setSourceType] = useState<ManualSource>("milestone_bonus");
   const [title, setTitle] = useState("");
-  const [points, setPoints] = useState("");
+  const [amountInput, setAmountInput] = useState("");
   const [description, setDescription] = useState("");
-  const parsedPoints = parsePoints(points);
+  const amountMinor = parseCrewMoney(amountInput);
+  const parsedAmount = amountMinor && BigInt(amountMinor) > 0n ? amountMinor : null;
   const close = (value: boolean) => {
     if (!value) {
       setMemberId("");
       setTitle("");
-      setPoints("");
+      setAmountInput("");
       setDescription("");
     }
     onOpenChange(value);
   };
   const submit = async () => {
-    if (!memberId || !title.trim() || !parsedPoints) return;
+    if (!memberId || !title.trim() || !parsedAmount) return;
     try {
       await create.mutateAsync({
         crewMemberId: memberId,
         sourceType,
         title: title.trim(),
         description: description.trim() || undefined,
-        pointsAmount: parsedPoints,
+        amountMinor: parsedAmount,
         idempotencyKey: crypto.randomUUID(),
       });
       toast.success(t("messages.created"));
@@ -633,13 +677,13 @@ function CreateEarningDialog({
               maxLength={180}
             />
           </Field>
-          <Field label={t("create.points")}>
+          <Field label={`${t("create.amount")} (${CREW_CURRENCY})`}>
             <Input
-              value={points}
-              onChange={(event) => setPoints(event.target.value)}
-              inputMode="numeric"
+              value={amountInput}
+              onChange={(event) => setAmountInput(event.target.value)}
+              inputMode="decimal"
               placeholder="0"
-              aria-invalid={Boolean(points) && !parsedPoints}
+              aria-invalid={Boolean(amountInput) && !parsedAmount}
             />
           </Field>
           <Field label={t("create.note")} optional>
@@ -658,7 +702,7 @@ function CreateEarningDialog({
           </Button>
           <Button
             loading={create.isPending}
-            disabled={!memberId || !title.trim() || !parsedPoints}
+            disabled={!memberId || !title.trim() || !parsedAmount}
             onClick={() => void submit()}
           >
             {t("create.submit")}
@@ -687,34 +731,36 @@ function CreatePayoutDialog({
   const t = useTranslations("crewIncome");
   const create = useCreateCrewPayout(crewId);
   const [memberId, setMemberId] = useState("");
-  const [points, setPoints] = useState("");
+  const [amountInput, setAmountInput] = useState("");
   const [withholding, setWithholding] = useState("0");
   const [note, setNote] = useState("");
-  const parsedPoints = parsePoints(points);
-  const grossMinor = parsedPoints;
-  const withholdingMinor = parseMoney(withholding, 2);
+  const amountMinor = parseCrewMoney(amountInput);
+  const parsedAmount = amountMinor && BigInt(amountMinor) > 0n ? amountMinor : null;
+  const grossMinor = parsedAmount;
+  const withholdingMinor = parseCrewMoney(withholding);
   const netMinor =
     grossMinor != null && withholdingMinor != null
       ? BigInt(grossMinor) - BigInt(withholdingMinor)
       : null;
   const valid = Boolean(
-    memberId && parsedPoints && withholdingMinor != null && netMinor && netMinor > 0n
+    memberId && parsedAmount && withholdingMinor != null && netMinor && netMinor > 0n
   );
   const close = (nextOpen: boolean) => {
     if (!nextOpen) {
       setMemberId("");
-      setPoints("");
+      setAmountInput("");
       setWithholding("0");
       setNote("");
     }
     onOpenChange(nextOpen);
   };
   const submit = async () => {
-    if (!valid || !parsedPoints || withholdingMinor == null) return;
+    if (!valid || !parsedAmount || withholdingMinor == null) return;
     try {
       await create.mutateAsync({
         crewMemberId: memberId,
-        pointsAmount: parsedPoints,
+        amountMinor: parsedAmount,
+        currency: CREW_CURRENCY,
         withholdingAmountMinor: withholdingMinor,
         note: note.trim() || undefined,
         idempotencyKey: crypto.randomUUID(),
@@ -740,17 +786,17 @@ function CreatePayoutDialog({
             displays={displays}
             label={t("payout.create.member")}
           />
-          <Field label={t("payout.create.points")}>
+          <Field label={`${t("payout.create.amount")} (${CREW_CURRENCY})`}>
             <Input
-              value={points}
-              onChange={(event) => setPoints(event.target.value)}
-              inputMode="numeric"
+              value={amountInput}
+              onChange={(event) => setAmountInput(event.target.value)}
+              inputMode="decimal"
               placeholder="0"
             />
           </Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label={t("payout.create.gross")}>
-              <Input value={grossMinor ? formatUsdInput(grossMinor) : ""} readOnly />
+              <Input value={grossMinor ? formatCrewMoneyInput(grossMinor) : ""} readOnly />
             </Field>
             <Field label={t("payout.create.withholding")}>
               <Input
@@ -763,7 +809,9 @@ function CreatePayoutDialog({
           <div className="flex items-center justify-between border-y border-white/[0.07] py-3">
             <span className="text-[11px] text-[#878d97]">{t("payout.create.net")}</span>
             <strong className="font-mono text-[15px] text-[#f0f1f3]">
-              {netMinor && netMinor > 0n ? formatUsd(netMinor.toString(), locale) : "—"}
+              {netMinor && netMinor > 0n
+                ? formatCrewMoney(netMinor.toString(), locale, CREW_CURRENCY)
+                : "—"}
             </strong>
           </div>
           <Field label={t("payout.create.note")} optional>
@@ -912,8 +960,16 @@ function PayoutActionDialog({
           <DialogDescription>
             {value
               ? t(`payout.dialog.${value.kind}.description`, {
-                  points: formatPointsText(value.payout.pointsAmount, locale, t("pointsUnit")),
-                  amount: formatUsd(value.payout.netAmountMinor, locale),
+                  grossAmount: formatCrewMoney(
+                    value.payout.amountMinor,
+                    locale,
+                    value.payout.currency
+                  ),
+                  amount: formatCrewMoney(
+                    value.payout.netAmountMinor,
+                    locale,
+                    value.payout.currency
+                  ),
                 })
               : ""}
           </DialogDescription>
@@ -990,7 +1046,9 @@ function EarningDetailDialog({
       {record ? (
         <>
           <DetailHero
-            value={<PointAmount value={record.pointsAmount} locale={locale} />}
+            value={
+              <MoneyAmount currency={record.currency} value={record.amountMinor} locale={locale} />
+            }
             status={<StatusBadge status={record.status} />}
           />
           <DetailFacts
@@ -1042,14 +1100,22 @@ function PayoutDetailDialog({
       {record ? (
         <>
           <DetailHero
-            value={formatUsd(record.netAmountMinor, locale)}
-            subtitle={<PointAmount value={record.pointsAmount} locale={locale} />}
+            value={formatCrewMoney(record.netAmountMinor, locale, record.currency)}
+            subtitle={
+              <MoneyAmount currency={record.currency} value={record.amountMinor} locale={locale} />
+            }
             status={<PayoutStatusBadge status={record.status} />}
           />
           <DetailFacts
             facts={[
-              [t("payout.detail.gross"), formatUsd(record.pointsAmount, locale)],
-              [t("payout.detail.withholding"), formatUsd(record.withholdingAmountMinor, locale)],
+              [
+                t("payout.detail.gross"),
+                formatCrewMoney(record.amountMinor, locale, record.currency),
+              ],
+              [
+                t("payout.detail.withholding"),
+                formatCrewMoney(record.withholdingAmountMinor, locale, record.currency),
+              ],
               [t("detail.recorded"), formatDateTime(record.createdAt, locale)],
               ...(record.paymentReference
                 ? [[t("payout.detail.reference"), record.paymentReference]]
@@ -1068,8 +1134,9 @@ function PayoutDetailDialog({
                   className="flex items-center justify-between gap-3 py-2 text-[10px]"
                 >
                   <span className="truncate text-[#bfc3ca]">{allocation.earning.title}</span>
-                  <PointAmount
-                    value={allocation.pointsAmount}
+                  <MoneyAmount
+                    currency={record.currency}
+                    value={allocation.amountMinor}
                     locale={locale}
                     className="font-mono text-[#e4e6e9]"
                   />
@@ -1444,80 +1511,18 @@ function SourceIcon({ source }: { source: CrewEarningSourceType }) {
   return <Icon className="size-3 shrink-0" />;
 }
 
-function parsePoints(value: string) {
-  const normalized = value.trim();
-  if (!/^[1-9]\d*$/.test(normalized)) return null;
-  const points = BigInt(normalized);
-  return points <= MAX_SIGNED_BIGINT ? points.toString() : null;
-}
-function parseMoney(value: string, decimals: number) {
-  const normalized = value.trim();
-  const pattern = decimals === 0 ? /^(?:0|[1-9]\d*)$/ : /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
-  if (!pattern.test(normalized)) return null;
-  const [whole, fraction = ""] = normalized.split(".");
-  const scale = 10n ** BigInt(decimals);
-  const minor = BigInt(whole) * scale + BigInt(fraction.padEnd(decimals, "0") || "0");
-  return minor <= MAX_SIGNED_BIGINT ? minor.toString() : null;
-}
-function PointAmount({
+function MoneyAmount({
   value,
+  currency,
   locale,
   className,
 }: {
   value: string;
+  currency: CrewLedgerCurrency;
   locale: string;
   className?: string;
 }) {
-  const t = useTranslations("crewIncome");
-  const display = formatPointsText(value, locale, t("pointsUnit"));
-  const referenceValue = formatPointReferenceValue(value, locale);
-  const referenceBenchmark = formatPointReferenceValue(String(CREW_POINTS_PER_USD), locale);
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
-          className={cn(
-            "cursor-help decoration-white/35 underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/35",
-            className
-          )}
-        >
-          {display}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-72 leading-5">
-        {t("pointsValueTooltip", {
-          points: display,
-          amount: referenceValue,
-          benchmark: referenceBenchmark,
-        })}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-function formatPointsText(value: string, locale: string, unit: string) {
-  return `${BigInt(value).toLocaleString(locale)} ${unit}`;
-}
-function formatPointReferenceValue(value: string, locale: string) {
-  return formatUsd(value, locale);
-}
-function formatUsd(value: string, locale: string) {
-  const amount = BigInt(value);
-  const divisor = 100n;
-  const major = amount / divisor;
-  const fraction = amount < 0n ? -(amount % divisor) : amount % divisor;
-  if (amount <= BigInt(Number.MAX_SAFE_INTEGER) && amount >= BigInt(Number.MIN_SAFE_INTEGER))
-    return new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(
-      Number(amount) / Number(divisor)
-    );
-  return `USD ${major.toLocaleString(locale)}.${fraction.toString().padStart(2, "0")}`;
-}
-function formatUsdInput(value: string) {
-  const amount = BigInt(value);
-  const divisor = 100n;
-  const major = amount / divisor;
-  const fraction = (amount % divisor).toString().padStart(2, "0");
-  return `${major.toString()}.${fraction}`;
+  return <span className={className}>{formatCrewMoney(value, locale, currency)}</span>;
 }
 function formatDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, {

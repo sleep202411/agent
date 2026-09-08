@@ -56,6 +56,7 @@ type Draft = {
   userId: string;
   title: string;
   issuer: string;
+  credentialType: string;
   certNo: string; // optional full number; "" → server auto-generates
   issuedAt: string; // datetime-local; "" → server defaults to now (create)
   imageAssetId: string;
@@ -66,6 +67,7 @@ const EMPTY_DRAFT: Draft = {
   userId: "",
   title: "",
   issuer: "FizzDragon",
+  credentialType: "general",
   certNo: "",
   issuedAt: "",
   imageAssetId: "",
@@ -148,6 +150,7 @@ export function CertificatesPanel({
       userId: row.userId,
       title: row.title,
       issuer: row.issuer,
+      credentialType: row.credentialType,
       certNo: "",
       issuedAt: isoToLocalInput(row.issuedAt),
       imageAssetId: row.imageAssetId,
@@ -179,6 +182,7 @@ export function CertificatesPanel({
           userId: draft.userId.trim(),
           title: draft.title.trim(),
           issuer: draft.issuer.trim() || "FizzDragon",
+          credentialType: draft.credentialType,
           ...(draft.certNo.trim() ? { certNo: draft.certNo.trim().toUpperCase() } : {}),
           imageAssetId: draft.imageAssetId,
           ...(draft.issuedAt ? { issuedAt: localInputToIso(draft.issuedAt) } : {}),
@@ -192,6 +196,7 @@ export function CertificatesPanel({
         const payload = {
           title: draft.title.trim(),
           issuer: draft.issuer.trim() || "FizzDragon",
+          credentialType: draft.credentialType,
           imageAssetId: draft.imageAssetId,
           ...(draft.issuedAt ? { issuedAt: localInputToIso(draft.issuedAt) } : {}),
         };
@@ -520,6 +525,27 @@ export function CertificatesPanel({
                   onChange={(event) => setDraft((d) => ({ ...d, title: event.target.value }))}
                   placeholder="例如 AIGC 内容创作认证"
                 />
+              )}
+            </FormField>
+
+            <FormField
+              label="Credential qualification"
+              hint="Select Certified AI Producer only after reviewing the submitted qualification. Training certificates alone do not grant Crew creation access."
+            >
+              {(id) => (
+                <select
+                  id={id}
+                  className="w-full rounded-md border px-3 py-2 text-sm"
+                  value={draft.credentialType}
+                  onChange={(event) =>
+                    setDraft((d) => ({ ...d, credentialType: event.target.value }))
+                  }
+                >
+                  <option value="general">General / training certificate</option>
+                  <option value="fizzdragon_certified_ai_producer">
+                    FizzDragon Certified AI Producer
+                  </option>
+                </select>
               )}
             </FormField>
 

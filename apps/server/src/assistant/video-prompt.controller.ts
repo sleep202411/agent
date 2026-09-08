@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 /**
  * Thin passthrough from the frontend to Mastra's video-prompt routes.
  * Reachable at `/aurora/video-prompt/{expand,translate}` thanks to the
@@ -30,10 +31,7 @@ export class VideoPromptController {
   private readonly logger = new Logger(VideoPromptController.name);
 
   private get mastraUrl(): string {
-    return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
-      /\/$/,
-      '',
-    );
+    return requiredEnv('MASTRA_URL').replace(/\/$/, '');
   }
 
   @Post('expand')

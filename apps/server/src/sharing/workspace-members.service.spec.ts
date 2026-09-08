@@ -174,9 +174,9 @@ describe('WorkspaceMembersService.remove', () => {
             action: 'role_changed',
             member: expect.objectContaining({
               role: WorkspaceMemberRole.viewer,
-            }),
-          }),
-        }),
+            }) as unknown,
+          }) as unknown,
+        }) as unknown,
       }),
     );
     expect(t.realtime.revokeWorkspaceAccess).toHaveBeenCalledWith(

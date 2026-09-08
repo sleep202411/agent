@@ -5299,6 +5299,8 @@ model CrewInviteLinkRedemption {
 model CrewTask {
   id                  String           @id @default(uuid(7)) @db.Uuid
   crewId              String           @map("crew_id")
+  deletedAt           DateTime?        @map("deleted_at") @db.Timestamptz(6)
+  deletedByUserId     String?          @map("deleted_by_user_id") @db.VarChar(64)
   parentId            String?          @map("parent_id") @db.Uuid
   /// Stable human-facing sequence within a crew (for example TASK-42).
   number              Int
@@ -5726,14 +5728,15 @@ model CrewTaskTimelineAsset {
 }
 
 model CrewTaskAssignee {
+  /// Required CNY/USD currency; amounts are integer minor units.
+  currency String @db.VarChar(3)
   id           String   @id @default(uuid(7)) @db.Uuid
   crewId       String   @map("crew_id")
   taskId       String   @map("task_id") @db.Uuid
   crewMemberId String   @map("crew_member_id")
   userId       String   @map("user_id") @db.VarChar(64)
-  /// Canonical crew-local compensation points. One point is permanently one
-  /// USD cent; this field is not a configurable quote or exchange rate.
-  rewardPoints BigInt?  @map("reward_points")
+  /// Compensation in the stated currency, in cents/fen.
+  rewardAmountMinor BigInt?  @map("reward_amount_minor")
   assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
 
   task       CrewTask   @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Cascade)
@@ -5784,12 +5787,11 @@ model CrewTaskSubmissionAsset {
   @@map("crew_task_submission_assets")
 }
 
-/// Immutable crew contribution-point source of truth. These points measure
-/// compensation earned inside one crew; they are neither compute points nor
-/// community-wallet points. Their cash value is fixed by product invariant:
-/// one point is one USD cent. CrewPayout records only withholding and
-/// offline-payment evidence.
+/// Immutable Crew compensation ledger, separate from compute and wallet credits.
+/// CNY/USD amounts are integer minor units. CrewPayout records settlement evidence.
 model CrewEarningEntry {
+  /// Required CNY/USD currency; amounts are integer minor units.
+  currency String @db.VarChar(3)
   id               String                @id @default(uuid(7)) @db.Uuid
   crewId           String                @map("crew_id")
   crewMemberId     String                @map("crew_member_id")
@@ -5799,7 +5801,7 @@ model CrewEarningEntry {
   agreementId      String?               @map("agreement_id") @db.Uuid
   title            String                @db.VarChar(180)
   description      String?               @db.Text
-  pointsAmount     BigInt                @map("points_amount")
+  amountMinor     BigInt                @map("amount_minor")
   status           CrewEarningStatus     @default(pending)
   idempotencyKey   String                @unique(map: "crew_earning_entries_idempotency_unique") @map("idempotency_key") @db.VarChar(160)
   createdByUserId  String                @map("created_by_user_id") @db.VarChar(64)
@@ -5832,16 +5834,17 @@ model CrewEarningEntry {
   @@map("crew_earning_entries")
 }
 
-/// One real-money disbursement for one crew member. One contribution point is
-/// permanently one USD cent (100 points = USD 1), so currency and gross cash
-/// are deliberately not stored as configurable fields. Finance may record
-/// statutory withholding; paid allocations remain the anti-double-pay boundary.
+/// One disbursement in a single ledger currency for one Crew member.
+/// Finance may record statutory withholding; paid allocations remain the
+/// anti-double-pay boundary.
 model CrewPayout {
+  /// Required CNY/USD currency; amounts are integer minor units.
+  currency String @db.VarChar(3)
   id                     String            @id @default(uuid(7)) @db.Uuid
   crewId                 String            @map("crew_id")
   crewMemberId           String            @map("crew_member_id")
   userId                 String            @map("user_id") @db.VarChar(64)
-  pointsAmount           BigInt            @map("points_amount")
+  amountMinor           BigInt            @map("amount_minor")
   withholdingAmountMinor BigInt            @default(0) @map("withholding_amount_minor")
   netAmountMinor         BigInt            @map("net_amount_minor")
   status                 CrewPayoutStatus  @default(pending)
@@ -5880,7 +5883,7 @@ model CrewPayoutAllocation {
   crewId       String   @map("crew_id")
   payoutId     String   @map("payout_id") @db.Uuid
   earningId    String   @map("earning_id") @db.Uuid
-  pointsAmount BigInt   @map("points_amount")
+  amountMinor BigInt   @map("amount_minor")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   crew    Crew             @relation(fields: [crewId], references: [id], onDelete: Restrict)
@@ -7828,6 +7831,8 @@ model UserCertificate {
   /// URL-safe uppercase A-Z/0-9 and must not encode user id / DB id /
   /// name / level.
   certNo        String     @unique @map("cert_no") @db.VarChar(32)
+  /// Explicit admin-reviewed qualification; generic and training certificates confer no Crew access.
+  credentialType String @default("general") @map("credential_type") @db.VarChar(64)
   title         String     @db.VarChar(128)
   issuer        String     @default("FizzDragon") @db.VarChar(128)
   /// Final certificate image asset. UserCertificate owns the business

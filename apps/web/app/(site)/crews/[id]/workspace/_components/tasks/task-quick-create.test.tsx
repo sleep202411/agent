@@ -236,7 +236,7 @@ describe("TaskQuickCreate", () => {
       expect.objectContaining({
         title: "Finish the first-act storyboard",
         priority: "high",
-        assignees: [{ userId: "member-1" }],
+        assignees: [{ userId: "member-1", currency: "USD" }],
       })
     );
   });

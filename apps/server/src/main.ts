@@ -6,7 +6,9 @@ import { Logger } from '@nestjs/common';
 // returns BigInt for columns like `MediaAsset.sizeBytes`). Serializers should
 // convert explicitly, but any leak otherwise crashes the request with a 500.
 // Emit BigInt as a string — matches the existing `.toString()` convention.
-(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function () {
+(BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function (
+  this: bigint,
+) {
   return this.toString();
 };
 import { NestFactory } from '@nestjs/core';

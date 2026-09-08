@@ -3471,7 +3471,7 @@ export class BillingService {
     }
     const { order, promotionReservation } = txResult;
 
-    if (order.amountMinor === 0n || devSkipPaymentEnabled()) {
+    if (order.amountMinor === 0n) {
       await this.prisma.$transaction((tx) =>
         this.markOrderPaidAndFulfill(tx, order, new Date(), null, null, {
           internalPromotionCheckout: true,
@@ -3779,28 +3779,6 @@ export class BillingService {
         country,
         sdkEnv,
       );
-    }
-
-    // Dev-only: fulfill internally so the recharge → credit loop works without a
-    // live payment provider. Disabled in production (fails closed).
-    if (devSkipPaymentEnabled()) {
-      await this.prisma.$transaction((tx) =>
-        this.markOrderPaidAndFulfill(tx, order, new Date(), null, null, {
-          devSkipPayment: true,
-        }),
-      );
-      const fulfilledOrder = await this.prisma.billingOrder.findUniqueOrThrow({
-        where: { id: order.id },
-        include: {
-          paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 },
-        },
-      });
-      return {
-        order: this.orderDto(fulfilledOrder),
-        paymentIntent: null,
-        shopperCountry: country,
-        env: sdkEnv,
-      };
     }
 
     const failOrder = async (err: unknown, fallback: string) => {
@@ -8925,20 +8903,6 @@ function isUniqueConstraintViolation(error: unknown): boolean {
   );
 }
 
-/**
- * Dev-only escape hatch: when set (and NOT in production), a top-up / recharge
- * order is fulfilled INTERNALLY instead of going to the payment provider — so the
- * full recharge → credit → balance loop is exercisable locally without Airwallex.
- * Fails CLOSED in production: NODE_ENV==='production' disables it regardless of the
- * flag, so it can never skip a real charge in prod.
- */
-function devSkipPaymentEnabled(): boolean {
-  return (
-    process.env.NODE_ENV !== 'production' &&
-    /^(true|1|yes)$/i.test(process.env.BILLING_DEV_SKIP_PAYMENT ?? '')
-  );
-}
-
 // The browser Airwallex SDK env must match the server's API base (demo <-> demo,
 // prod <-> prod) or the client_secret won't validate at redirect. Derive it from
 // the same env var the provider uses so the two can never diverge.
@@ -9069,13 +9033,5 @@ function allowedReturnOrigins(): Set<string> {
   origins.add('https://fizzdragon.com');
   origins.add('https://studio.fizzdragon.com');
   origins.add('https://fizzdragon.fizzspace.cn');
-  if (process.env.NODE_ENV !== 'production') {
-    origins.add('http://localhost:9527');
-    origins.add('http://127.0.0.1:9527');
-    origins.add('http://localhost:3000');
-    origins.add('http://127.0.0.1:3000');
-    origins.add('http://localhost:9540');
-    origins.add('http://127.0.0.1:9540');
-  }
   return origins;
 }

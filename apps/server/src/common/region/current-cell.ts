@@ -7,7 +7,7 @@
  * has no special meaning beyond being the agreed cell-discriminator
  * variable name.
  *
- * Falls back to "global" for local dev / tests where the env is unset.
+ * An explicit cell is required in every runtime.
  */
 
 import type { Cell } from './region.types';
@@ -15,5 +15,6 @@ import type { Cell } from './region.types';
 export const CURRENT_CELL: Cell = (() => {
   const raw = process.env.NEXT_PUBLIC_SITE_REGION ?? process.env.SITE_REGION;
   if (raw === 'com' || raw === 'cn') return raw;
-  return 'global';
+  if (raw === 'global') return 'global';
+  throw new Error('NEXT_PUBLIC_SITE_REGION must be cn, com or global');
 })();

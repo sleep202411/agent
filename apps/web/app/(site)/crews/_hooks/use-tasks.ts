@@ -556,6 +556,25 @@ export function useUpdateCrewTask(crewId: string) {
   });
 }
 
+export function useDeleteCrewTask(crewId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ taskId, expectedVersion }: { taskId: string; expectedVersion: number }) =>
+      crewApi.delete<void>(`/crew-tasks/${encodeURIComponent(taskId)}`, {
+        body: { expectedVersion },
+      }),
+    onSuccess: () => {
+      // Reparented children and unblocked tasks can have open detail queries too.
+      qc.invalidateQueries({ queryKey: ["crew", "task"] });
+      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+    },
+  });
+}
+
 export function useCreateCrewTaskComment(crewId: string, taskId: string) {
   const qc = useQueryClient();
   return useMutation({

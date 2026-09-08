@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { createHash, createHmac } from 'crypto';
 import type { Redis } from 'ioredis';
 import { REDIS } from '../../infra/redis/redis.module';
@@ -20,13 +20,14 @@ const MAX_DETAIL_CHARS = 7_000;
 const MAX_STRING_CHARS = 700;
 const MAX_STACK_LINES = 12;
 const LOCAL_DEDUPE_MAX_KEYS = 1_000;
+const REDIS_DEDUPE_TIMEOUT_MS = 1_000;
 
 @Injectable()
 export class AlertingService {
   private readonly logger = new Logger(AlertingService.name);
   private readonly localDedupe = new Map<string, number>();
 
-  constructor(@Optional() @Inject(REDIS) private readonly redis?: Redis) {}
+  constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
   notify(event: AlertEvent): void {
     void this.dispatch(event).catch((err) => {
@@ -105,33 +106,41 @@ export class AlertingService {
     ttlSeconds: number,
   ): Promise<boolean> {
     const key = `server-alert:dedupe:${fingerprint}`;
-    if (this.redis) {
-      try {
-        const result = await this.redis.set(key, '1', 'EX', ttlSeconds, 'NX');
-        return result === 'OK';
-      } catch (err) {
-        this.logger.warn(
-          `Redis alert dedupe failed, using local fallback: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
-      }
+    // Alert delivery must survive a Redis outage without flooding this process.
+    const now = Date.now();
+    if ((this.localDedupe.get(key) ?? 0) > now) return false;
+    this.localDedupe.delete(key);
+    this.localDedupe.set(key, now + ttlSeconds * 1_000);
+    if (this.localDedupe.size > LOCAL_DEDUPE_MAX_KEYS) {
+      const oldestKey = this.localDedupe.keys().next().value as
+        | string
+        | undefined;
+      if (oldestKey !== undefined) this.localDedupe.delete(oldestKey);
     }
 
-    const now = Date.now();
-    const expiresAt = this.localDedupe.get(key);
-    if (expiresAt && expiresAt > now) return false;
-    this.localDedupe.set(key, now + ttlSeconds * 1000);
-    this.pruneLocalDedupe(now);
-    return true;
-  }
-
-  private pruneLocalDedupe(now: number): void {
-    if (this.localDedupe.size <= LOCAL_DEDUPE_MAX_KEYS) return;
-    for (const [key, expiresAt] of this.localDedupe.entries()) {
-      if (expiresAt <= now || this.localDedupe.size > LOCAL_DEDUPE_MAX_KEYS) {
-        this.localDedupe.delete(key);
-      }
+    // The shared Redis client queues offline commands indefinitely.
+    if (this.redis.status !== 'ready') return true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        this.redis.set(key, '1', 'EX', ttlSeconds, 'NX'),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error('Redis alert deduplication timed out')),
+            REDIS_DEDUPE_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      return result === 'OK';
+    } catch (error) {
+      this.logger.warn(
+        `Redis alert deduplication unavailable; using process deduplication: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return true;
+    } finally {
+      clearTimeout(timer);
     }
   }
 

@@ -47,7 +47,8 @@ describe('AgentOsInternalController journal boundary', () => {
       { upsertSnapshot: jest.fn() } as never,
     );
     const body = journalBody();
-    const { lastSequence: _removed, ...withoutTail } = body;
+    const withoutTail: Partial<typeof body> = { ...body };
+    delete withoutTail.lastSequence;
 
     await expect(
       controller.putJournal(RUN_ID, TOKEN, withoutTail),
