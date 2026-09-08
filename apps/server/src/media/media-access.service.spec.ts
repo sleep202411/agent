@@ -134,7 +134,9 @@ describe('MediaAccessService', () => {
         variantKey: 'original',
       }),
     ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'MEDIA_ASSET_ACCESS_DENIED' }),
+      response: expect.objectContaining({
+        code: 'MEDIA_ASSET_ACCESS_DENIED',
+      }) as unknown,
     });
     expect(crewAssetAccess.requireNodePermission).toHaveBeenCalledWith(
       'crew-1',

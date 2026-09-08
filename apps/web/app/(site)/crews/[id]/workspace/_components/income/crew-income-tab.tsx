@@ -1,6 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { createContext, useContext, useState } from "react";
+import { CREW_CURRENCY, formatCrewMoney, type CrewLedgerCurrency } from "@/src/lib/crew-money";
+const LedgerCurrencyContext = createContext<CrewLedgerCurrency>(CREW_CURRENCY);
+
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import Link from "next/link";
 import {
   IconArrowBackUp,
@@ -116,6 +120,7 @@ export function CrewIncomeTab({
 }) {
   const t = useTranslations("crewIncome");
   const locale = useLocale();
+  const [currency, setCurrency] = useState<CrewLedgerCurrency>(CREW_CURRENCY);
   const [view, setView] = useState<View>("points");
   const [scope, setScope] = useState<Scope>("mine");
   const effectiveScope = canViewCrewLedger ? scope : "mine";
@@ -137,6 +142,7 @@ export function CrewIncomeTab({
   const earnings = useCrewEarnings(
     crewId,
     {
+      currency,
       scope: effectiveScope,
       status: earningFilter === "all" ? undefined : earningFilter,
     },
@@ -145,6 +151,7 @@ export function CrewIncomeTab({
   const payouts = useCrewPayouts(
     crewId,
     {
+      currency,
       scope: effectiveScope,
       status: payoutFilter === "all" ? undefined : payoutFilter,
     },
@@ -157,117 +164,128 @@ export function CrewIncomeTab({
   ]);
 
   return (
-    <div className="mx-auto w-full max-w-[1180px] pb-10">
-      <header className="border-b border-white/[0.07] px-1 pb-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2 text-[11px] text-[#858b95]">
-              <IconCoins className="size-4" stroke={1.7} />
-              <span>{t("workspaceLabel", { crew: crewName })}</span>
+    <LedgerCurrencyContext.Provider value={currency}>
+      <div className="mx-auto w-full max-w-[1180px] pb-10">
+        <NativeSelect
+          aria-label={t("ledgerCurrency")}
+          value={currency}
+          onChange={(value) => setCurrency(value as CrewLedgerCurrency)}
+          className="mb-4 rounded-md bg-background px-3 py-2 text-sm"
+        >
+          <NativeSelectOption value={CREW_CURRENCY}>{CREW_CURRENCY}</NativeSelectOption>
+          <NativeSelectOption value="POINTS">{t("historicalBalances")}</NativeSelectOption>
+        </NativeSelect>
+        <header className="border-b border-white/[0.07] px-1 pb-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <div className="flex items-center gap-2 text-[11px] text-[#858b95]">
+                <IconCoins className="size-4" stroke={1.7} />
+                <span>{t("workspaceLabel", { crew: crewName })}</span>
+              </div>
+              <h2 className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-[#f1f2f4]">
+                {t("title")}
+              </h2>
+              <p className="mt-1 text-[11px] leading-5 text-[#737983]">{t("description")}</p>
             </div>
-            <h2 className="mt-2 text-[20px] font-semibold tracking-[-0.03em] text-[#f1f2f4]">
-              {t("title")}
-            </h2>
-            <p className="mt-1 text-[11px] leading-5 text-[#737983]">{t("description")}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {canViewCrewLedger ? (
+                <Segmented>
+                  <Segment active={effectiveScope === "mine"} onClick={() => setScope("mine")}>
+                    <IconUser /> {t("scopes.mine")}
+                  </Segment>
+                  <Segment active={effectiveScope === "crew"} onClick={() => setScope("crew")}>
+                    <IconUsers /> {t("scopes.crew")}
+                  </Segment>
+                </Segmented>
+              ) : null}
+              {view === "points" && canCreateEarning && currency !== "POINTS" ? (
+                <Button size="sm" icon={<IconPlus />} onClick={() => setCreateEarningOpen(true)}>
+                  {t("create.action")}
+                </Button>
+              ) : null}
+              {view === "payouts" && canCreatePayout ? (
+                <Button size="sm" icon={<IconPlus />} onClick={() => setCreatePayoutOpen(true)}>
+                  {t("payout.create.action")}
+                </Button>
+              ) : null}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {canViewCrewLedger ? (
-              <Segmented>
-                <Segment active={effectiveScope === "mine"} onClick={() => setScope("mine")}>
-                  <IconUser /> {t("scopes.mine")}
-                </Segment>
-                <Segment active={effectiveScope === "crew"} onClick={() => setScope("crew")}>
-                  <IconUsers /> {t("scopes.crew")}
-                </Segment>
-              </Segmented>
-            ) : null}
-            {view === "points" && canCreateEarning ? (
-              <Button size="sm" icon={<IconPlus />} onClick={() => setCreateEarningOpen(true)}>
-                {t("create.action")}
-              </Button>
-            ) : null}
-            {view === "payouts" && canCreatePayout ? (
-              <Button size="sm" icon={<IconPlus />} onClick={() => setCreatePayoutOpen(true)}>
-                {t("payout.create.action")}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-        <nav className="mt-5 flex gap-5" aria-label={t("viewLabel")}>
-          <ViewTab active={view === "points"} onClick={() => setView("points")}>
-            <IconCoins /> {t("views.points")}
-          </ViewTab>
-          <ViewTab active={view === "payouts"} onClick={() => setView("payouts")}>
-            <IconCash /> {t("views.payouts")}
-          </ViewTab>
-        </nav>
-      </header>
+          <nav className="mt-5 flex gap-5" aria-label={t("viewLabel")}>
+            <ViewTab active={view === "points"} onClick={() => setView("points")}>
+              <IconCoins /> {t("views.points")}
+            </ViewTab>
+            <ViewTab active={view === "payouts"} onClick={() => setView("payouts")}>
+              <IconCash /> {t("views.payouts")}
+            </ViewTab>
+          </nav>
+        </header>
 
-      {view === "points" ? (
-        <PointsLedger
+        {view === "points" ? (
+          <PointsLedger
+            crewId={crewId}
+            query={earnings}
+            scope={effectiveScope}
+            filter={earningFilter}
+            setFilter={setEarningFilter}
+            locale={locale}
+            displays={displays}
+            canApprove={canApproveEarning}
+            canReverse={canReverseEarning}
+            onDetails={setEarningDetail}
+            onDecision={(kind, earning) => setEarningDecision({ kind, earning })}
+          />
+        ) : (
+          <PayoutLedger
+            query={payouts}
+            scope={effectiveScope}
+            filter={payoutFilter}
+            setFilter={setPayoutFilter}
+            locale={locale}
+            displays={displays}
+            canManage={canManagePayout}
+            onDetails={setPayoutDetail}
+            onAction={(kind, payout) => setPayoutAction({ kind, payout })}
+          />
+        )}
+
+        <CreateEarningDialog
+          open={createEarningOpen}
+          onOpenChange={setCreateEarningOpen}
           crewId={crewId}
-          query={earnings}
-          scope={effectiveScope}
-          filter={earningFilter}
-          setFilter={setEarningFilter}
-          locale={locale}
+          members={members}
           displays={displays}
-          canApprove={canApproveEarning}
-          canReverse={canReverseEarning}
-          onDetails={setEarningDetail}
-          onDecision={(kind, earning) => setEarningDecision({ kind, earning })}
         />
-      ) : (
-        <PayoutLedger
-          query={payouts}
-          scope={effectiveScope}
-          filter={payoutFilter}
-          setFilter={setPayoutFilter}
-          locale={locale}
+        <CreatePayoutDialog
+          open={createPayoutOpen}
+          onOpenChange={setCreatePayoutOpen}
+          crewId={crewId}
+          members={members}
           displays={displays}
-          canManage={canManagePayout}
-          onDetails={setPayoutDetail}
-          onAction={(kind, payout) => setPayoutAction({ kind, payout })}
+          locale={locale}
         />
-      )}
-
-      <CreateEarningDialog
-        open={createEarningOpen}
-        onOpenChange={setCreateEarningOpen}
-        crewId={crewId}
-        members={members}
-        displays={displays}
-      />
-      <CreatePayoutDialog
-        open={createPayoutOpen}
-        onOpenChange={setCreatePayoutOpen}
-        crewId={crewId}
-        members={members}
-        displays={displays}
-        locale={locale}
-      />
-      <EarningDecisionDialog
-        value={earningDecision}
-        onOpenChange={(open) => !open && setEarningDecision(null)}
-        crewId={crewId}
-      />
-      <PayoutActionDialog
-        value={payoutAction}
-        onOpenChange={(open) => !open && setPayoutAction(null)}
-        crewId={crewId}
-        locale={locale}
-      />
-      <EarningDetailDialog
-        earning={earningDetail}
-        onOpenChange={(open) => !open && setEarningDetail(null)}
-        locale={locale}
-      />
-      <PayoutDetailDialog
-        payout={payoutDetail}
-        onOpenChange={(open) => !open && setPayoutDetail(null)}
-        locale={locale}
-      />
-    </div>
+        <EarningDecisionDialog
+          value={earningDecision}
+          onOpenChange={(open) => !open && setEarningDecision(null)}
+          crewId={crewId}
+        />
+        <PayoutActionDialog
+          value={payoutAction}
+          onOpenChange={(open) => !open && setPayoutAction(null)}
+          crewId={crewId}
+          locale={locale}
+        />
+        <EarningDetailDialog
+          earning={earningDetail}
+          onOpenChange={(open) => !open && setEarningDetail(null)}
+          locale={locale}
+        />
+        <PayoutDetailDialog
+          payout={payoutDetail}
+          onOpenChange={(open) => !open && setPayoutDetail(null)}
+          locale={locale}
+        />
+      </div>
+    </LedgerCurrencyContext.Provider>
   );
 }
 
@@ -380,6 +398,7 @@ function PointsLedger({
               </time>
               <div className="flex items-center justify-between gap-2 md:justify-end">
                 <PointAmount
+                  currency={earning.currency}
                   value={earning.pointsAmount}
                   locale={locale}
                   className="font-mono text-[11px] font-semibold text-[#e8e9ec]"
@@ -502,14 +521,18 @@ function PayoutLedger({
                     {scope === "crew" ? displayNameOf(payout.userId, displays) : t("payout.record")}
                   </p>
                   <p className="mt-1 text-[9px] text-[#676d77]">
-                    <PointAmount value={payout.pointsAmount} locale={locale} /> ·{" "}
-                    {formatDate(payout.createdAt, locale)}
+                    <PointAmount
+                      currency={payout.currency}
+                      value={payout.pointsAmount}
+                      locale={locale}
+                    />{" "}
+                    · {formatDate(payout.createdAt, locale)}
                   </p>
                 </div>
               </div>
               <PayoutStatusBadge status={payout.status} />
               <span className="font-mono text-[11px] font-semibold text-[#e8e9ec]">
-                {formatUsd(payout.netAmountMinor, locale)}
+                {formatUsd(payout.netAmountMinor, locale, payout.currency)}
               </span>
               <div className="flex items-center justify-end gap-1">
                 <button
@@ -566,7 +589,8 @@ function CreateEarningDialog({
   const [title, setTitle] = useState("");
   const [points, setPoints] = useState("");
   const [description, setDescription] = useState("");
-  const parsedPoints = parsePoints(points);
+  const amountMinor = parseMoney(points, 2);
+  const parsedPoints = amountMinor && BigInt(amountMinor) > 0n ? amountMinor : null;
   const close = (value: boolean) => {
     if (!value) {
       setMemberId("");
@@ -633,11 +657,11 @@ function CreateEarningDialog({
               maxLength={180}
             />
           </Field>
-          <Field label={t("create.points")}>
+          <Field label={`${t("create.points")} (${CREW_CURRENCY})`}>
             <Input
               value={points}
               onChange={(event) => setPoints(event.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
               placeholder="0"
               aria-invalid={Boolean(points) && !parsedPoints}
             />
@@ -685,12 +709,14 @@ function CreatePayoutDialog({
   locale: string;
 }) {
   const t = useTranslations("crewIncome");
+  const currency = useContext(LedgerCurrencyContext);
   const create = useCreateCrewPayout(crewId);
   const [memberId, setMemberId] = useState("");
   const [points, setPoints] = useState("");
   const [withholding, setWithholding] = useState("0");
   const [note, setNote] = useState("");
-  const parsedPoints = parsePoints(points);
+  const amountMinor = parseMoney(points, currency === "POINTS" ? 0 : 2);
+  const parsedPoints = amountMinor && BigInt(amountMinor) > 0n ? amountMinor : null;
   const grossMinor = parsedPoints;
   const withholdingMinor = parseMoney(withholding, 2);
   const netMinor =
@@ -715,6 +741,7 @@ function CreatePayoutDialog({
       await create.mutateAsync({
         crewMemberId: memberId,
         pointsAmount: parsedPoints,
+        currency,
         withholdingAmountMinor: withholdingMinor,
         note: note.trim() || undefined,
         idempotencyKey: crypto.randomUUID(),
@@ -740,11 +767,11 @@ function CreatePayoutDialog({
             displays={displays}
             label={t("payout.create.member")}
           />
-          <Field label={t("payout.create.points")}>
+          <Field label={`${t("payout.create.points")} (${currency})`}>
             <Input
               value={points}
               onChange={(event) => setPoints(event.target.value)}
-              inputMode="numeric"
+              inputMode="decimal"
               placeholder="0"
             />
           </Field>
@@ -763,7 +790,7 @@ function CreatePayoutDialog({
           <div className="flex items-center justify-between border-y border-white/[0.07] py-3">
             <span className="text-[11px] text-[#878d97]">{t("payout.create.net")}</span>
             <strong className="font-mono text-[15px] text-[#f0f1f3]">
-              {netMinor && netMinor > 0n ? formatUsd(netMinor.toString(), locale) : "—"}
+              {netMinor && netMinor > 0n ? formatUsd(netMinor.toString(), locale, currency) : "—"}
             </strong>
           </div>
           <Field label={t("payout.create.note")} optional>
@@ -912,8 +939,11 @@ function PayoutActionDialog({
           <DialogDescription>
             {value
               ? t(`payout.dialog.${value.kind}.description`, {
-                  points: formatPointsText(value.payout.pointsAmount, locale, t("pointsUnit")),
-                  amount: formatUsd(value.payout.netAmountMinor, locale),
+                  points:
+                    value.payout.currency === "POINTS"
+                      ? formatPointsText(value.payout.pointsAmount, locale, t("pointsUnit"))
+                      : formatCrewMoney(value.payout.pointsAmount, locale, value.payout.currency),
+                  amount: formatUsd(value.payout.netAmountMinor, locale, value.payout.currency),
                 })
               : ""}
           </DialogDescription>
@@ -990,7 +1020,9 @@ function EarningDetailDialog({
       {record ? (
         <>
           <DetailHero
-            value={<PointAmount value={record.pointsAmount} locale={locale} />}
+            value={
+              <PointAmount currency={record.currency} value={record.pointsAmount} locale={locale} />
+            }
             status={<StatusBadge status={record.status} />}
           />
           <DetailFacts
@@ -1042,14 +1074,19 @@ function PayoutDetailDialog({
       {record ? (
         <>
           <DetailHero
-            value={formatUsd(record.netAmountMinor, locale)}
-            subtitle={<PointAmount value={record.pointsAmount} locale={locale} />}
+            value={formatUsd(record.netAmountMinor, locale, record.currency)}
+            subtitle={
+              <PointAmount currency={record.currency} value={record.pointsAmount} locale={locale} />
+            }
             status={<PayoutStatusBadge status={record.status} />}
           />
           <DetailFacts
             facts={[
-              [t("payout.detail.gross"), formatUsd(record.pointsAmount, locale)],
-              [t("payout.detail.withholding"), formatUsd(record.withholdingAmountMinor, locale)],
+              [t("payout.detail.gross"), formatUsd(record.pointsAmount, locale, record.currency)],
+              [
+                t("payout.detail.withholding"),
+                formatUsd(record.withholdingAmountMinor, locale, record.currency),
+              ],
               [t("detail.recorded"), formatDateTime(record.createdAt, locale)],
               ...(record.paymentReference
                 ? [[t("payout.detail.reference"), record.paymentReference]]
@@ -1444,12 +1481,6 @@ function SourceIcon({ source }: { source: CrewEarningSourceType }) {
   return <Icon className="size-3 shrink-0" />;
 }
 
-function parsePoints(value: string) {
-  const normalized = value.trim();
-  if (!/^[1-9]\d*$/.test(normalized)) return null;
-  const points = BigInt(normalized);
-  return points <= MAX_SIGNED_BIGINT ? points.toString() : null;
-}
 function parseMoney(value: string, decimals: number) {
   const normalized = value.trim();
   const pattern = decimals === 0 ? /^(?:0|[1-9]\d*)$/ : /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
@@ -1460,16 +1491,22 @@ function parseMoney(value: string, decimals: number) {
   return minor <= MAX_SIGNED_BIGINT ? minor.toString() : null;
 }
 function PointAmount({
+  currency: recordCurrency,
   value,
   locale,
   className,
 }: {
   value: string;
+  currency?: CrewLedgerCurrency;
   locale: string;
   className?: string;
 }) {
   const t = useTranslations("crewIncome");
+  const ledgerCurrency = useContext(LedgerCurrencyContext);
+  const currency = recordCurrency ?? ledgerCurrency;
   const display = formatPointsText(value, locale, t("pointsUnit"));
+  if (currency !== "POINTS")
+    return <span className={className}>{formatCrewMoney(value, locale, currency)}</span>;
   const referenceValue = formatPointReferenceValue(value, locale);
   const referenceBenchmark = formatPointReferenceValue(String(CREW_POINTS_PER_USD), locale);
   return (
@@ -1499,18 +1536,10 @@ function formatPointsText(value: string, locale: string, unit: string) {
   return `${BigInt(value).toLocaleString(locale)} ${unit}`;
 }
 function formatPointReferenceValue(value: string, locale: string) {
-  return formatUsd(value, locale);
+  return formatUsd(value, locale, "USD");
 }
-function formatUsd(value: string, locale: string) {
-  const amount = BigInt(value);
-  const divisor = 100n;
-  const major = amount / divisor;
-  const fraction = amount < 0n ? -(amount % divisor) : amount % divisor;
-  if (amount <= BigInt(Number.MAX_SAFE_INTEGER) && amount >= BigInt(Number.MIN_SAFE_INTEGER))
-    return new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(
-      Number(amount) / Number(divisor)
-    );
-  return `USD ${major.toLocaleString(locale)}.${fraction.toString().padStart(2, "0")}`;
+function formatUsd(value: string, locale: string, currency: CrewLedgerCurrency = CREW_CURRENCY) {
+  return formatCrewMoney(value, locale, currency === "POINTS" ? "USD" : currency);
 }
 function formatUsdInput(value: string) {
   const amount = BigInt(value);

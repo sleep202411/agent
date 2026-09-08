@@ -400,7 +400,7 @@ describe('CharacterGenerationService real_person expansion', () => {
     ).rejects.toMatchObject({
       response: {
         code: 'CHARACTER_ASSET_NOT_READY',
-        message: expect.stringContaining('face_mismatch'),
+        message: expect.stringContaining('face_mismatch') as unknown,
       },
     });
   });

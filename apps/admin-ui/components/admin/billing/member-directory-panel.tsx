@@ -4,7 +4,7 @@
 // 分页展示资料 + 余额 + 状态。头部和每行的「加积分」打开弹窗(头部空标识符、
 // 行内预填该用户)。数据经 LegacyMysql 桥(/admin/legacy-points/users),不经 Prisma。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconSearch,
   IconCoins,
@@ -58,7 +58,7 @@ export function MemberDirectoryPanel() {
   const [page, setPage] = useState(1);
 
   const [result, setResult] = useState<MemberSearchResult | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [grantOpen, setGrantOpen] = useState(false);
@@ -75,30 +75,52 @@ export function MemberDirectoryPanel() {
     user: ClientUserTarget;
   } | null>(null);
 
-  const load = useCallback(async (query: string, pageNum: number) => {
+  const requestSequence = useRef(0);
+  const queryKey = `${activeQuery}:${page}`;
+  const [previousQueryKey, setPreviousQueryKey] = useState(queryKey);
+  if (previousQueryKey !== queryKey) {
+    setPreviousQueryKey(queryKey);
     setLoading(true);
     setError(null);
-    try {
-      const params = new URLSearchParams({
-        page: String(pageNum),
-        pageSize: String(PAGE_SIZE),
+  }
+
+  const fetchRows = useCallback((query: string, pageNum: number) => {
+    const ticket = ++requestSequence.current;
+    const params = new URLSearchParams({
+      page: String(pageNum),
+      pageSize: String(PAGE_SIZE),
+    });
+    if (query) params.set("query", query);
+    return requestEnvelope<MemberSearchResult>(
+      `/api/admin/legacy-points/users?${params.toString()}`
+    )
+      .then((data) => {
+        if (ticket !== requestSequence.current) return;
+        setError(null);
+        setResult(data);
+      })
+      .catch((err: unknown) => {
+        if (ticket !== requestSequence.current) return;
+        setError(toErrorMessage(err));
+        setResult(null);
+      })
+      .finally(() => {
+        if (ticket === requestSequence.current) setLoading(false);
       });
-      if (query) params.set("query", query);
-      const data = await requestEnvelope<MemberSearchResult>(
-        `/api/admin/legacy-points/users?${params.toString()}`
-      );
-      setResult(data);
-    } catch (err) {
-      setError(toErrorMessage(err));
-      setResult(null);
-    } finally {
-      setLoading(false);
-    }
   }, []);
 
+  const load = (...args: Parameters<typeof fetchRows>) => {
+    setLoading(true);
+    setError(null);
+    return fetchRows(...args);
+  };
+
   useEffect(() => {
-    void load(activeQuery, page);
-  }, [load, activeQuery, page]);
+    void fetchRows(activeQuery, page);
+    return () => {
+      requestSequence.current += 1;
+    };
+  }, [fetchRows, activeQuery, page]);
 
   function runSearch() {
     setPage(1);

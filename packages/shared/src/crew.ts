@@ -220,7 +220,7 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
 export const ZERO_DECIMAL_CURRENCIES = new Set<CurrencyCode>(["JPY"]);
 
 /**
- * Crew contribution points have a permanent accounting value:
+ * Historical Crew contribution points retain their original accounting value:
  * 100 points = USD 1, therefore one point is exactly one USD cent.
  * This is a domain invariant, not deployment configuration.
  */

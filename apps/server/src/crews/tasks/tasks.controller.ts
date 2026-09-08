@@ -14,6 +14,7 @@ import { CurrentUser } from '../../auth';
 import type { AuthUser } from '../../auth';
 import { parseIdParam } from '../../common/params';
 import { ZodValidationPipe } from '../../common/zod.pipe';
+import { z } from 'zod';
 import {
   CreateCrewTaskSchema,
   type CreateCrewTaskInput,
@@ -381,6 +382,25 @@ export class CrewTasksController {
     body: UpdateCrewTaskInput,
   ) {
     return this.tasks.update(parseIdParam(taskId, 'taskId'), user.userId, body);
+  }
+
+  @Delete('crew-tasks/:taskId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteTask(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(
+      new ZodValidationPipe(
+        z.strictObject({ expectedVersion: z.int().positive() }),
+      ),
+    )
+    body: { expectedVersion: number },
+  ) {
+    return this.tasks.delete(
+      parseIdParam(taskId, 'taskId'),
+      user.userId,
+      body.expectedVersion,
+    );
   }
 
   @Post('crew-tasks/:taskId/reorder')

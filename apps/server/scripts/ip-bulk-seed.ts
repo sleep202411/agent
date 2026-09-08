@@ -625,7 +625,7 @@ async function bench(opts: { n?: number; concurrency?: number }) {
   console.log(
     `fal bench — n=${n} concurrency=${concurrency} ${FAL_ENDPOINT} ${POSTER_W}x${POSTER_H} ${POSTER_QUALITY}/${POSTER_FORMAT}`,
   );
-  const samples: Sample[] = new Array(n);
+  const samples: Sample[] = new Array<Sample>(n);
   const urls: string[] = [];
   const t0 = Date.now();
   await runPool([...Array(n).keys()], concurrency, async (k, i) => {

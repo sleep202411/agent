@@ -1511,6 +1511,7 @@ describe('clientKey dedupe', () => {
         where: {
           crewId: CREW_ID,
           id: { in: ['01910d50-4c88-7c78-92d4-16892c06a011'] },
+          deletedAt: null,
         },
       }),
     );

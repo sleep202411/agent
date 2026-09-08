@@ -299,23 +299,6 @@ function ActiveExperienceRuntimePlayer({
     [controller, run]
   );
 
-  const advanceTimeline = useCallback(
-    (rendererInstanceId: string | null, positionMs: number) => {
-      const currentState = controller.state();
-      const activeNode = findGraphNode(manifest, currentState.currentSceneId);
-      if (!activeNode || activeNode.kind !== "scene") return;
-      if (!timelineReportDrivesScene(activeNode.clock, rendererInstanceId)) return;
-      setSceneTimeMs(positionMs);
-      const advanced = advanceExperienceTimeline(activeNode, timelineCursorRef.current, positionMs);
-      timelineCursorRef.current = advanced.cursor;
-      if (advanced.events.length > 0) run(() => controller.dispatch(advanced.events));
-      flushParkedGestureEvents(positionMs);
-    },
-    // flushParkedGestureEvents is declared below; both close over controller/manifest/run.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [controller, manifest, run]
-  );
-
   const flushParkedGestureEvents = useCallback(
     (positionMs: number) => {
       if (parkedGestureEventsRef.current.length === 0) return;
@@ -329,6 +312,21 @@ function ActiveExperienceRuntimePlayer({
       run(() => controller.dispatch(due));
     },
     [controller, manifest, run]
+  );
+
+  const advanceTimeline = useCallback(
+    (rendererInstanceId: string | null, positionMs: number) => {
+      const currentState = controller.state();
+      const activeNode = findGraphNode(manifest, currentState.currentSceneId);
+      if (!activeNode || activeNode.kind !== "scene") return;
+      if (!timelineReportDrivesScene(activeNode.clock, rendererInstanceId)) return;
+      setSceneTimeMs(positionMs);
+      const advanced = advanceExperienceTimeline(activeNode, timelineCursorRef.current, positionMs);
+      timelineCursorRef.current = advanced.cursor;
+      if (advanced.events.length > 0) run(() => controller.dispatch(advanced.events));
+      flushParkedGestureEvents(positionMs);
+    },
+    [controller, manifest, run, flushParkedGestureEvents]
   );
 
   const emitRuntimeEvents = useCallback(

@@ -1,3 +1,4 @@
+import { requiredEnv } from '../../common/required-env';
 /**
  * EntityEventsGateway — WS broker for per-user entity-change events.
  *
@@ -75,7 +76,7 @@ export class EntityEventsGateway
   constructor(private readonly authService: AuthService) {}
 
   afterInit() {
-    const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
+    const url = requiredEnv('REDIS_URL');
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
     void this.redisSubscriber.psubscribe(
@@ -222,13 +223,6 @@ export class EntityEventsGateway
   }
 
   private async authenticateFromCookie(cookie: string | undefined) {
-    if (process.env.AUTH_DISABLED === 'true') {
-      return {
-        userId: 'dev',
-        userName: 'dev',
-        nickName: 'Developer',
-      };
-    }
     if (!cookie) return null;
     try {
       return await this.authService.validateToken(cookie);

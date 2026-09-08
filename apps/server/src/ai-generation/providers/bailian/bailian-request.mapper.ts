@@ -34,7 +34,7 @@ export function mapBailianProviderRequest(
     const existing = target[binding.parameter];
     target[binding.parameter] =
       Array.isArray(existing) && Array.isArray(mapped)
-        ? [...existing, ...mapped]
+        ? [...(existing as unknown[]), ...(mapped as unknown[])]
         : mapped;
   }
 

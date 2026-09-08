@@ -16,6 +16,7 @@ vi.mock("@/src/i18n/i18n", async () => {
     Record<string, string>
   >;
   return {
+    useLocale: () => "en-US",
     useTranslations: (namespace: string) => (key: string, vars?: Record<string, string | number>) =>
       Object.entries(vars ?? {}).reduce<string>(
         (copy, [name, value]) => copy.replaceAll(`{${name}}`, String(value)),
@@ -99,6 +100,9 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
   });
 }
 
+let canLink = true;
+let linkFails = false;
+
 function installFetch() {
   vi.stubGlobal(
     "fetch",
@@ -110,6 +114,34 @@ function installFetch() {
         method,
         body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       });
+      if (method === "GET" && url.endsWith("/production-overview")) {
+        return jsonResponse({ studioProject: null, capabilities: { manage: canLink } });
+      }
+      if (method === "GET" && url.endsWith("/studio-project-options")) {
+        return jsonResponse({
+          workspaces: [
+            {
+              id: "ws-1",
+              name: "Studio",
+              type: "team",
+              projects: [
+                { id: "project-1", name: "Film Canvas", selectable: true, selected: false },
+              ],
+            },
+          ],
+        });
+      }
+      if (method === "PATCH" && url.endsWith("/studio-project")) {
+        return linkFails
+          ? jsonResponse({ message: "Project access changed" }, { status: 403 })
+          : jsonResponse({
+              studioProject: {
+                id: "project-1",
+                name: "Film Canvas",
+                workspace: { id: "ws-1", name: "Studio" },
+              },
+            });
+      }
       if (method === "GET" && url.includes("/users/by-ids")) {
         return jsonResponse({
           users: [{ userId: "user-1", nickname: "Lin Mo" }],
@@ -133,6 +165,9 @@ function installFetch() {
             deleteForever: true,
           },
         });
+      }
+      if (method === "GET" && url.endsWith("/assets/nodes/folder-1")) {
+        return jsonResponse({ node: ROOT_ITEMS[0], path: [] });
       }
       if (method === "GET" && url.endsWith("/assets/nodes/file-1")) {
         return jsonResponse({
@@ -219,6 +254,17 @@ beforeEach(() => {
   document.body.innerHTML = "";
   requests = [];
   storageAvailable = true;
+  canLink = true;
+  linkFails = false;
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  );
   installFetch();
 });
 
@@ -388,5 +434,40 @@ describe("crew asset center", () => {
     expect(
       requests.some((request) => request.method === "DELETE" && request.url.endsWith("/permanent"))
     ).toBe(false);
+  });
+});
+
+describe("Link Canvas", () => {
+  it("places the shared picker immediately before New folder and saves the association", async () => {
+    await render();
+    const trigger = byText("button", "Link Canvas");
+    expect(trigger.nextElementSibling?.textContent?.trim()).toBe("New folder");
+    await click(trigger);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    await click(byText("span", "Film Canvas"));
+    expect(requests).toContainEqual(
+      expect.objectContaining({ method: "PATCH", body: { projectId: "project-1" } })
+    );
+    expect(document.querySelector("[cmdk-dialog]")).toBeNull();
+  });
+  it("keeps the action disabled without Overview management permission", async () => {
+    canLink = false;
+    await render();
+    expect((byText("button", "Link Canvas") as HTMLButtonElement).disabled).toBe(true);
+    expect(requests.some((r) => r.url.endsWith("/studio-project-options"))).toBe(false);
+  });
+  it("keeps the picker open and reports a rejected link", async () => {
+    linkFails = true;
+    await render();
+    await click(byText("button", "Link Canvas"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    await click(byText("span", "Film Canvas"));
+    const { toast } = await import("sonner");
+    expect(toast.error).toHaveBeenCalledWith("Project access changed");
+    expect(byText("span", "Film Canvas")).toBeTruthy();
   });
 });

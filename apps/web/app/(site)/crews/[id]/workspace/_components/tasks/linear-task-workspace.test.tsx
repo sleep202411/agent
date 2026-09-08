@@ -1,0 +1,138 @@
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import en from "@/messages/en-US.json";
+import cn from "@/messages/zh-CN.json";
+import hk from "@/messages/zh-HK.json";
+import { LinearTaskWorkspace } from "./linear-task-workspace";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+const state = vi.hoisted(() => ({ locale: "en-US", layout: "board" }));
+vi.mock("@/src/i18n/i18n", () => ({
+  useTranslations: () => (key: string) => {
+    const messages = state.locale === "zh-CN" ? cn : state.locale === "zh-HK" ? hk : en;
+    return String(
+      key
+        .split(".")
+        .reduce<unknown>(
+          (value: unknown, part): unknown =>
+            value && typeof value === "object"
+              ? (value as Record<string, unknown>)[part]
+              : undefined,
+          messages.crewTaskProject
+        ) ?? key
+    );
+  },
+}));
+vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
+  const mutation = () => ({ mutateAsync: vi.fn(), isPending: false });
+  return {
+    useCreateCrewTaskView: mutation,
+    useCreateCrewTaskWorkflowState: mutation,
+    useDeleteCrewTaskView: mutation,
+    useReorderCrewTask: mutation,
+    useUpdateCrewTask: mutation,
+    useUpdateCrewTaskView: mutation,
+    useUpdateCrewTaskWorkflowState: mutation,
+    useCrewProductionOverview: () => ({
+      data: {
+        project: { startDate: null },
+        page: { createdAt: "2026-09-08" },
+        capabilities: { manage: false },
+      },
+    }),
+    useCrewProductionActivity: () => ({ data: { pages: [] } }),
+    useCrewTask: () => ({}),
+    useCrewTaskSummary: () => ({ data: {} }),
+    useCrewTaskProject: () => ({
+      data: {
+        cycles: [],
+        fields: [],
+        labels: [],
+        workflowStates: [],
+        views: [
+          {
+            id: "default",
+            name: "issues",
+            layout: state.layout,
+            filters: {},
+            sorts: [],
+            visibleFields: [],
+            groupBy: "status",
+            completedMode: "all",
+            showSubIssues: true,
+            showEmptyGroups: false,
+          },
+        ],
+      },
+    }),
+    useCrewTaskView: () => ({ data: [], workflowCounts: {} }),
+  };
+});
+vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ useUserDisplays: () => ({}) }));
+vi.mock("./task-project-views", () => ({
+  TaskProjectView: ({ view }: { view: { layout: string } }) => <div data-layout={view.layout} />,
+}));
+vi.mock("./production-overview", () => ({ ProductionOverview: () => <div data-overview /> }));
+vi.mock("./production-project-update", () => ({
+  ProductionActivityComposer: () => null,
+  ProductionActivityEntry: () => null,
+}));
+vi.mock("./task-issue-detail", () => ({ TaskIssueDetail: () => null }));
+vi.mock("./task-project-settings", () => ({ ProjectSettingsDialog: () => null }));
+vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
+vi.mock("./task-dialogs", () => ({ SubmitTaskDialog: () => null }));
+let root: ReturnType<typeof createRoot>;
+afterEach(() => {
+  if (root) act(() => root.unmount());
+  document.body.innerHTML = "";
+});
+async function render() {
+  const el = document.createElement("div");
+  document.body.append(el);
+  root = createRoot(el);
+  await act(async () =>
+    root.render(
+      <LinearTaskWorkspace
+        crewId="crew"
+        crewName="Test12"
+        crewSummary=""
+        crewLogo=""
+        crewVersion={1}
+        canEditCrewInfo={false}
+        members={[]}
+        isOwner={false}
+      />
+    )
+  );
+}
+describe("Crew task navigation", () => {
+  it.each(["en-US", "zh-CN", "zh-HK"])(
+    "opens Tasks and preserves tab destinations in %s",
+    async (locale) => {
+      state.locale = locale;
+      state.layout = "board";
+      await render();
+      const m = (locale === "zh-CN" ? cn : locale === "zh-HK" ? hk : en).crewTaskProject;
+      const tabs = [...document.querySelectorAll("nav button")];
+      expect(tabs.slice(0, 3).map((el) => el.textContent)).toEqual([
+        m.issues,
+        m.overview,
+        m.activity,
+      ]);
+      expect(document.querySelector('[data-layout="board"]')).not.toBeNull();
+      await act(async () => (tabs[1] as HTMLElement).click());
+      expect(document.querySelector("[data-overview]")).not.toBeNull();
+      await act(async () => (tabs[2] as HTMLElement).click());
+      expect(document.querySelector("[data-overview]")).toBeNull();
+      expect(document.querySelector("[data-layout]")).toBeNull();
+      await act(async () => (tabs[0] as HTMLElement).click());
+      expect(document.querySelector('[data-layout="board"]')).not.toBeNull();
+    }
+  );
+  it("honors an existing saved List preference", async () => {
+    state.layout = "list";
+    await render();
+    expect(document.querySelector('[data-layout="list"]')).not.toBeNull();
+  });
+});

@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 /**
  * BullMQ queue + worker wiring for AI generation.
  *
@@ -39,7 +40,7 @@ export interface AiQueueJobData {
  * shouldn't be auto-reconnected mid-block.
  */
 export function createAiRedisConnection(): Redis {
-  const url = process.env.REDIS_URL ?? 'redis://localhost:6380';
+  const url = requiredEnv('REDIS_URL');
   return new IORedis(url, { maxRetriesPerRequest: null });
 }
 

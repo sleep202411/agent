@@ -6,6 +6,7 @@ export interface AdminCertificateRow {
   certNo: string;
   title: string;
   issuer: string;
+  credentialType: string;
   imageAssetId: string;
   imageUrl: string | null;
   issuedAt: string;

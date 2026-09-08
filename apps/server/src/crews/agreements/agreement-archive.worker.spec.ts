@@ -150,15 +150,15 @@ describe('CrewAgreementArchiveWorker', () => {
       where: expect.objectContaining({
         status: CrewAgreementArchiveJobStatus.processing,
         lockedAt: LOCKED_AT,
-      }),
+      }) as unknown,
       data: expect.objectContaining({
         status: CrewAgreementArchiveJobStatus.pending,
         attempt: 1,
         lockedAt: null,
         lockedBy: null,
         lastError: 'BoldSign temporarily unavailable',
-        nextAttemptAt: expect.any(Date),
-      }),
+        nextAttemptAt: expect.any(Date) as unknown,
+      }) as unknown,
     });
     expect(t.storage.upload).not.toHaveBeenCalled();
   });

@@ -75,7 +75,7 @@ describe('requireRealPersonCreateAllowed (design §2.1a-c gates)', () => {
       expect.objectContaining({
         response: expect.objectContaining({
           code: 'REAL_PERSON_NOT_AVAILABLE',
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -90,7 +90,7 @@ describe('requireRealPersonCreateAllowed (design §2.1a-c gates)', () => {
       expect.objectContaining({
         response: expect.objectContaining({
           code: 'CN_REAL_PERSON_UNAVAILABLE',
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -105,7 +105,9 @@ describe('requireRealPersonCreateAllowed (design §2.1a-c gates)', () => {
       }),
     ).toThrow(
       expect.objectContaining({
-        response: expect.objectContaining({ code: 'ACR_ENROLLMENT_PAUSED' }),
+        response: expect.objectContaining({
+          code: 'ACR_ENROLLMENT_PAUSED',
+        }) as unknown,
       }),
     );
   });
@@ -119,7 +121,9 @@ describe('requireRealPersonCreateAllowed (design §2.1a-c gates)', () => {
         makeService().requireRealPersonCreateAllowed({ consent, context: {} }),
       ).toThrow(
         expect.objectContaining({
-          response: expect.objectContaining({ code: 'CONSENT_REQUIRED' }),
+          response: expect.objectContaining({
+            code: 'CONSENT_REQUIRED',
+          }) as unknown,
         }),
       );
     }

@@ -24,7 +24,7 @@ const write = (
   AgentOsCanvasShotsService.prototype as unknown as {
     writeShotNodes: WriteShotNodes;
   }
-).writeShotNodes.bind({} as AgentOsCanvasShotsService);
+).writeShotNodes.bind({} as AgentOsCanvasShotsService) as WriteShotNodes;
 
 function newDoc(): Y.Doc {
   const doc = new Y.Doc({ gc: true });

@@ -210,7 +210,7 @@ describe('CopilotDocumentService', () => {
       response: expect.objectContaining({
         code: 'COPILOT_DOCUMENT_LIMIT_REACHED',
         maximum: COPILOT_DOCUMENT_MAX_PER_CONVERSATION,
-      }),
+      }) as unknown,
     });
   });
 
@@ -263,7 +263,9 @@ describe('CopilotDocumentService', () => {
     await expect(
       service.requireOwnedRefs(USER_ID, CONVERSATION_ID, [refFor()]),
     ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'COPILOT_DOCUMENT_NOT_FOUND' }),
+      response: expect.objectContaining({
+        code: 'COPILOT_DOCUMENT_NOT_FOUND',
+      }) as unknown,
     });
   });
 
@@ -289,7 +291,9 @@ describe('CopilotDocumentService', () => {
         '019f7243-20c1-7054-a6fa-0a33da6efe99',
       ]),
     ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'COPILOT_DOCUMENT_NOT_FOUND' }),
+      response: expect.objectContaining({
+        code: 'COPILOT_DOCUMENT_NOT_FOUND',
+      }) as unknown,
     });
   });
 });

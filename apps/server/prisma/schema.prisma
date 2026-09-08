@@ -5299,6 +5299,8 @@ model CrewInviteLinkRedemption {
 model CrewTask {
   id                  String           @id @default(uuid(7)) @db.Uuid
   crewId              String           @map("crew_id")
+  deletedAt           DateTime?        @map("deleted_at") @db.Timestamptz(6)
+  deletedByUserId     String?          @map("deleted_by_user_id") @db.VarChar(64)
   parentId            String?          @map("parent_id") @db.Uuid
   /// Stable human-facing sequence within a crew (for example TASK-42).
   number              Int
@@ -5726,6 +5728,8 @@ model CrewTaskTimelineAsset {
 }
 
 model CrewTaskAssignee {
+  /// POINTS preserves historical balances; CNY/USD amounts are integer minor units.
+  currency String @default("POINTS") @db.VarChar(6)
   id           String   @id @default(uuid(7)) @db.Uuid
   crewId       String   @map("crew_id")
   taskId       String   @map("task_id") @db.Uuid
@@ -5784,12 +5788,12 @@ model CrewTaskSubmissionAsset {
   @@map("crew_task_submission_assets")
 }
 
-/// Immutable crew contribution-point source of truth. These points measure
-/// compensation earned inside one crew; they are neither compute points nor
-/// community-wallet points. Their cash value is fixed by product invariant:
-/// one point is one USD cent. CrewPayout records only withholding and
-/// offline-payment evidence.
+/// Immutable Crew compensation ledger, separate from compute and wallet credits.
+/// CNY/USD records store integer minor units; historical POINTS retain their
+/// original value of one USD cent each. CrewPayout records settlement evidence.
 model CrewEarningEntry {
+  /// POINTS preserves historical balances; CNY/USD amounts are integer minor units.
+  currency String @default("POINTS") @db.VarChar(6)
   id               String                @id @default(uuid(7)) @db.Uuid
   crewId           String                @map("crew_id")
   crewMemberId     String                @map("crew_member_id")
@@ -5832,11 +5836,13 @@ model CrewEarningEntry {
   @@map("crew_earning_entries")
 }
 
-/// One real-money disbursement for one crew member. One contribution point is
-/// permanently one USD cent (100 points = USD 1), so currency and gross cash
-/// are deliberately not stored as configurable fields. Finance may record
-/// statutory withholding; paid allocations remain the anti-double-pay boundary.
+/// One disbursement in a single ledger currency for one Crew member.
+/// Historical POINTS settle at their original rate of 100 points = USD 1.
+/// Finance may record statutory withholding; paid allocations remain the
+/// anti-double-pay boundary.
 model CrewPayout {
+  /// POINTS preserves historical balances; CNY/USD amounts are integer minor units.
+  currency String @default("POINTS") @db.VarChar(6)
   id                     String            @id @default(uuid(7)) @db.Uuid
   crewId                 String            @map("crew_id")
   crewMemberId           String            @map("crew_member_id")
@@ -7828,6 +7834,8 @@ model UserCertificate {
   /// URL-safe uppercase A-Z/0-9 and must not encode user id / DB id /
   /// name / level.
   certNo        String     @unique @map("cert_no") @db.VarChar(32)
+  /// Explicit admin-reviewed qualification; generic and training certificates confer no Crew access.
+  credentialType String @default("general") @map("credential_type") @db.VarChar(64)
   title         String     @db.VarChar(128)
   issuer        String     @default("FizzDragon") @db.VarChar(128)
   /// Final certificate image asset. UserCertificate owns the business

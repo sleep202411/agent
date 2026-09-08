@@ -208,6 +208,7 @@ describe('CrewEarningsService', () => {
 
     await expect(
       t.service.create(CREW_ID, ACTOR_ID, {
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         sourceType: CrewEarningSourceType.contract_compensation,
         title: 'August contract compensation',
@@ -368,6 +369,7 @@ describe('CrewEarningsService', () => {
         taskTitle: 'Approve storyboard',
         crewMemberId: MEMBER_ID,
         userId: MEMBER_USER_ID,
+        currency: 'USD',
         pointsAmount: 5000n,
         approvedByUserId: ACTOR_ID,
       }),
@@ -377,6 +379,7 @@ describe('CrewEarningsService', () => {
       data: {
         sourceType: CrewEarningSourceType.task_reward,
         status: CrewEarningStatus.posted,
+        currency: 'USD',
         pointsAmount: 5000n,
       },
     });

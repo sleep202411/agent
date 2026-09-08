@@ -122,6 +122,7 @@ describe('Crew payout schemas', () => {
     });
     expect(
       CreateCrewPayoutSchema.safeParse({
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         pointsAmount: '800',
         withholdingAmountMinor: '200',
@@ -130,6 +131,7 @@ describe('Crew payout schemas', () => {
     ).toBe(true);
     expect(
       CreateCrewPayoutSchema.safeParse({
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         pointsAmount: '0',
         idempotencyKey: 'short',
@@ -160,6 +162,7 @@ describe('CrewPayoutsService', () => {
 
     await expect(
       t.service.create(CREW_ID, ACTOR_ID, {
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         pointsAmount: '800',
         withholdingAmountMinor: '200',
@@ -213,6 +216,7 @@ describe('CrewPayoutsService', () => {
 
     await expect(
       t.service.create(CREW_ID, ACTOR_ID, {
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         pointsAmount: '100',
         withholdingAmountMinor: '0',

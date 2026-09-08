@@ -109,17 +109,25 @@ export function useAgentThreadScroll(resetKey?: string) {
   }, [reveal]);
 
   const scheduleRevealRef = useRef(() => {});
-  scheduleRevealRef.current = () => {
-    if (revealedRef.current) return;
-    if (!sawThreadLayoutRef.current) return;
-    if (pendingHydrateRef.current > 0) return;
-    clearSettle();
-    settleTimerRef.current = setTimeout(() => {
-      settleTimerRef.current = null;
-      if (pendingHydrateRef.current > 0 || revealedRef.current) return;
-      reveal();
-    }, SETTLE_MS);
-  };
+  useLayoutEffect(() => {
+    scheduleRevealRef.current = () => {
+      if (revealedRef.current) return;
+      if (!sawThreadLayoutRef.current) return;
+      if (pendingHydrateRef.current > 0) return;
+      clearSettle();
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        if (pendingHydrateRef.current > 0 || revealedRef.current) return;
+        reveal();
+      }, SETTLE_MS);
+    };
+  });
+
+  const [previousResetKey, setPreviousResetKey] = useState(resetKey);
+  if (previousResetKey !== resetKey) {
+    setPreviousResetKey(resetKey);
+    setRevealed(false);
+  }
 
   const hydrateLock = useMemo<HydrateLock>(
     () => ({
@@ -140,7 +148,6 @@ export function useAgentThreadScroll(resetKey?: string) {
     revealedRef.current = false;
     sawThreadLayoutRef.current = false;
     contentHeightRef.current = 0;
-    setRevealed(false);
     clearSettle();
     clearMax();
     return () => {

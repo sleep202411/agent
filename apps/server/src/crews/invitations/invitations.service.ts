@@ -7,7 +7,6 @@ import {
 } from '@nestjs/common';
 import {
   CrewInvitationStatus,
-  CrewMembershipStatus,
   Prisma,
   type CrewInvitation,
   type Message,
@@ -22,7 +21,6 @@ import type {
   CreateCrewInvitationInput,
   ListCrewInvitationsQuery,
 } from '../dto';
-import { newCrewDomainId } from '../id';
 import { CrewAgreementsService } from '../agreements/agreements.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { joinCrewInTransaction } from './join-crew';

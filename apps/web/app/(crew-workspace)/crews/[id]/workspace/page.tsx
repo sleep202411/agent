@@ -44,7 +44,6 @@ import {
   type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
-import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 import { useCrewPermissions } from "@/app/(site)/crews/_hooks/use-crew-permissions";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
 import { CommunityInviteDialog } from "@/app/(site)/crews/_components/community-invite-dialog";
@@ -177,11 +176,6 @@ export default function CrewWorkspacePage() {
   const { data: crewDetail, isLoading: detailLoading } = detailQuery;
   const { data: members = [], isLoading: membersLoading } = membersQuery;
   const { data: positions = [] } = useCrewPositions(id);
-  // Permission gating goes through useCrewPermissions so DevIdentitySwitcher
-  // works in dev (without it the workspace gates on the real Java
-  // satoken user id, which doesn't match the server-side AUTH_DISABLED
-  // fallback user 'dev' that owns rows created locally). Production
-  // users still resolve from `useUserInfo` inside the hook.
   const viewer = useCrewPermissions(id);
   // 群聊 is members-only (doc §7). The roster decides that, so the tab
   // set is not knowable until `useCrewMembers` resolves — the page
@@ -341,8 +335,6 @@ export default function CrewWorkspacePage() {
 
   return (
     <CrewTransfersProvider crewId={id}>
-      <DevIdentitySwitcher />
-
       <CrewWorkbenchShell
         activeChatChannel={requestedCommunityChannel ? "community" : "team"}
         activeTab={activeTab}
@@ -520,7 +512,6 @@ function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
 
   return (
     <>
-      <DevIdentitySwitcher />
       <CrewWorkbenchShell
         activeChatChannel="community"
         activeTab={activeTab}
@@ -625,7 +616,6 @@ function WorkspaceState({
       className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-background px-6 py-16"
       aria-labelledby="workspace-state-title"
     >
-      <DevIdentitySwitcher />
       <div className="flex max-w-md flex-col items-center text-center">
         <div
           className="mb-5 grid size-12 place-items-center rounded-full bg-muted"
