@@ -24,7 +24,7 @@ function outbox(attempt = 0) {
     dispatchedAt: null,
     deadAt: null,
     lockedAt: LOCKED_AT,
-    lockedBy: expect.any(String),
+    lockedBy: expect.any(String) as unknown,
     createdAt: LOCKED_AT,
   };
 }
@@ -68,7 +68,7 @@ describe('NotificationDispatcherService', () => {
         data: expect.objectContaining({
           id: 'notification-1',
           type: 'crew.task.assigned',
-        }),
+        }) as unknown,
       },
       'notification:notification-1',
     );
@@ -78,13 +78,13 @@ describe('NotificationDispatcherService', () => {
         lockedAt: LOCKED_AT,
         dispatchedAt: null,
         deadAt: null,
-      }),
+      }) as unknown,
       data: expect.objectContaining({
-        dispatchedAt: expect.any(Date),
+        dispatchedAt: expect.any(Date) as unknown,
         lockedAt: null,
         lockedBy: null,
         lastError: null,
-      }),
+      }) as unknown,
     });
   });
 
@@ -97,15 +97,17 @@ describe('NotificationDispatcherService', () => {
     await service.drainOnce();
 
     expect(prisma.notificationOutbox.updateMany).toHaveBeenCalledWith({
-      where: expect.objectContaining({ id: 'notification-outbox-1' }),
+      where: expect.objectContaining({
+        id: 'notification-outbox-1',
+      }) as unknown,
       data: expect.objectContaining({
         attempt: 1,
         lastError: 'Ably unavailable',
-        nextAttemptAt: expect.any(Date),
+        nextAttemptAt: expect.any(Date) as unknown,
         deadAt: null,
         lockedAt: null,
         lockedBy: null,
-      }),
+      }) as unknown,
     });
   });
 
@@ -118,13 +120,15 @@ describe('NotificationDispatcherService', () => {
     await service.drainOnce();
 
     expect(prisma.notificationOutbox.updateMany).toHaveBeenCalledWith({
-      where: expect.objectContaining({ id: 'notification-outbox-1' }),
+      where: expect.objectContaining({
+        id: 'notification-outbox-1',
+      }) as unknown,
       data: expect.objectContaining({
         attempt: 12,
         lastError: 'permanent rejection',
         nextAttemptAt: null,
-        deadAt: expect.any(Date),
-      }),
+        deadAt: expect.any(Date) as unknown,
+      }) as unknown,
     });
   });
 

@@ -7,14 +7,14 @@ import type { AiJob } from './types';
 describe('AiGenerationCompletionObserverRegistry', () => {
   it('notifies every registered observer and isolates projection failures', async () => {
     const registry = new AiGenerationCompletionObserverRegistry();
-    const failed: AiGenerationCompletionObserver = {
+    const failed = {
       onAiGenerationCompleted: jest
         .fn()
         .mockRejectedValue(new Error('projection unavailable')),
-    };
-    const succeeded: AiGenerationCompletionObserver = {
+    } satisfies AiGenerationCompletionObserver;
+    const succeeded = {
       onAiGenerationCompleted: jest.fn().mockResolvedValue(undefined),
-    };
+    } satisfies AiGenerationCompletionObserver;
     registry.register(failed);
     registry.register(succeeded);
     const job = { id: '11111111-1111-7111-9111-111111111111' } as AiJob;
@@ -27,9 +27,9 @@ describe('AiGenerationCompletionObserverRegistry', () => {
 
   it('supports unregistering an observer during module shutdown', async () => {
     const registry = new AiGenerationCompletionObserverRegistry();
-    const observer: AiGenerationCompletionObserver = {
+    const observer = {
       onAiGenerationCompleted: jest.fn().mockResolvedValue(undefined),
-    };
+    } satisfies AiGenerationCompletionObserver;
     const unregister = registry.register(observer);
     unregister();
 

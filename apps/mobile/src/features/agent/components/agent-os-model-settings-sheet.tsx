@@ -53,7 +53,11 @@ function applyPreferenceValues(next: AgentOsModelPreferences) {
 }
 
 /** H5 `AgentOsModelSettingsDialog` — project defaults for chat / image / video. */
-export function AgentOsModelSettingsSheet({
+export function AgentOsModelSettingsSheet(props: AgentOsModelSettingsSheetProps) {
+  return props.visible ? <ModelSettingsForm key={props.projectId} {...props} /> : null;
+}
+
+function ModelSettingsForm({
   projectId,
   chatModels,
   initialPreferences = null,
@@ -82,9 +86,7 @@ export function AgentOsModelSettingsSheet({
   const [imageValue, setImageValue] = useState(() => initialPreferences?.imageModelId ?? AUTOMATIC);
   const [videoValue, setVideoValue] = useState(() => initialPreferences?.videoModelId ?? AUTOMATIC);
   const [picking, setPicking] = useState<FieldKey | null>(null);
-  const initialPreferencesRef = useRef(initialPreferences);
-  const fieldsHydratedRef = useRef(false);
-  initialPreferencesRef.current = initialPreferences;
+  const fieldsHydratedRef = useRef(Boolean(initialPreferences));
 
   const hydrateFields = (next: AgentOsModelPreferences) => {
     const values = applyPreferenceValues(next);
@@ -95,26 +97,8 @@ export function AgentOsModelSettingsSheet({
   };
 
   useEffect(() => {
-    if (!visible) {
-      fieldsHydratedRef.current = false;
-      setPicking(null);
-      setError(null);
-      setSaving(false);
-      return;
-    }
-
-    const seeded = initialPreferencesRef.current;
-    if (seeded) {
-      setPreferences(seeded);
-      hydrateFields(seeded);
-    }
-
+    const seeded = initialPreferences;
     const cached = getCachedGenerationCatalog();
-    if (cached) {
-      setImageModels(cached.image);
-      setVideoModels(cached.video);
-    }
-
     let cancelled = false;
 
     if (!seeded) {
@@ -149,13 +133,19 @@ export function AgentOsModelSettingsSheet({
     return () => {
       cancelled = true;
     };
-  }, [projectId, t, visible]);
+  }, [initialPreferences, projectId, t]);
 
-  useEffect(() => {
-    if (!visible || !initialPreferences) return;
-    setPreferences((prev) => prev ?? initialPreferences);
-    if (!fieldsHydratedRef.current) hydrateFields(initialPreferences);
-  }, [initialPreferences, visible]);
+  const [previousInitialPreferences, setPreviousInitialPreferences] = useState(initialPreferences);
+  if (previousInitialPreferences !== initialPreferences) {
+    setPreviousInitialPreferences(initialPreferences);
+    if (!preferences && initialPreferences) {
+      setPreferences(initialPreferences);
+      const values = applyPreferenceValues(initialPreferences);
+      setChatValue(values.chat);
+      setImageValue(values.image);
+      setVideoValue(values.video);
+    }
+  }
 
   const fields = useMemo(
     () => ({

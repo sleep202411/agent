@@ -223,7 +223,7 @@ async function main() {
   let translated = 0;
   let skipped = 0;
   for (const ip of ips) {
-    const src = ip.localizations.find((l: any) => l.locale === source);
+    const src = ip.localizations.find((l) => l.locale === source);
     if (!src) continue;
     const fields: Fields = {
       title: src.title,
@@ -232,7 +232,7 @@ async function main() {
       description: src.description ?? null,
     };
     for (const to of targets) {
-      if (ip.localizations.some((l: any) => l.locale === to)) {
+      if (ip.localizations.some((l) => l.locale === to)) {
         skipped++;
         continue; // already has a localization (human or machine) — don't clobber
       }

@@ -166,6 +166,9 @@ function installFetch() {
           },
         });
       }
+      if (method === "GET" && url.endsWith("/assets/nodes/folder-1")) {
+        return jsonResponse({ node: ROOT_ITEMS[0], path: [] });
+      }
       if (method === "GET" && url.endsWith("/assets/nodes/file-1")) {
         return jsonResponse({
           node: ROOT_ITEMS[1],

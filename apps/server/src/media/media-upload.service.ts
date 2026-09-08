@@ -80,11 +80,7 @@ import type {
   CreateUploadUrlResponseDto,
 } from './dto';
 import type { UploadKind } from './dto';
-import {
-  EPISODE_VIDEO_MAX_BYTES,
-  STORY_CLIP_VIDEO_CONTENT_TYPE,
-  STORY_CLIP_VIDEO_MAX_BYTES,
-} from './media-upload.policy';
+import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
 import { WorkspacePermissionService } from '../workspaces';
 import {
   UploadedImageProbeService,
@@ -163,10 +159,6 @@ const VIDEO_CONTENT_TYPES: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/quicktime': 'mov',
   'video/webm': 'webm',
-};
-
-const STORY_VIDEO_CONTENT_TYPES: Record<string, string> = {
-  [STORY_CLIP_VIDEO_CONTENT_TYPE]: 'mp4',
 };
 
 const CREW_ASSET_CONTENT_TYPES: Record<string, string> = {

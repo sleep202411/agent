@@ -4,7 +4,7 @@
 // 后审:岗位照常上线,管理员事后处置。下架的岗位从招募广场/剧组页全部隐藏。
 // 数据经 Nest /admin/crew-positions(AdminAuthGuard + crew.manage + 审计)。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IconSearch, IconShieldOff, IconShieldCheck } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -54,34 +54,56 @@ export function CrewPositionModerationPanel() {
 
   const [items, setItems] = useState<AdminPosition[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [takedownTarget, setTakedownTarget] = useState<AdminPosition | null>(null);
   const [reason, setReason] = useState("");
   const [acting, setActing] = useState(false);
 
-  const load = useCallback(async (query: string, status: string, cursor: string | null) => {
+  const requestSequence = useRef(0);
+  const queryKey = `${activeQuery}:${statusFilter}`;
+  const [previousQueryKey, setPreviousQueryKey] = useState(queryKey);
+  if (previousQueryKey !== queryKey) {
+    setPreviousQueryKey(queryKey);
     setLoading(true);
     setError(null);
-    try {
-      const params = new URLSearchParams({ limit: "30" });
-      if (query) params.set("q", query);
-      if (status) params.set("moderationStatus", status);
-      if (cursor) params.set("cursor", cursor);
-      const data = await requestEnvelope<PositionListResult>(`/api/admin/crew-positions?${params}`);
-      setItems((prev) => (cursor ? [...prev, ...data.items] : data.items));
-      setNextCursor(data.nextCursor);
-    } catch (err) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
+  }
+
+  const fetchRows = useCallback((query: string, status: string, cursor: string | null) => {
+    const ticket = ++requestSequence.current;
+    const params = new URLSearchParams({ limit: "30" });
+    if (query) params.set("q", query);
+    if (status) params.set("moderationStatus", status);
+    if (cursor) params.set("cursor", cursor);
+    return requestEnvelope<PositionListResult>(`/api/admin/crew-positions?${params}`)
+      .then((data) => {
+        if (ticket !== requestSequence.current) return;
+        setError(null);
+        setItems((prev) => (cursor ? [...prev, ...data.items] : data.items));
+        setNextCursor(data.nextCursor);
+      })
+      .catch((err: unknown) => {
+        if (ticket !== requestSequence.current) return;
+        setError(toErrorMessage(err));
+      })
+      .finally(() => {
+        if (ticket === requestSequence.current) setLoading(false);
+      });
   }, []);
 
+  const load = (...args: Parameters<typeof fetchRows>) => {
+    setLoading(true);
+    setError(null);
+    return fetchRows(...args);
+  };
+
   useEffect(() => {
-    void load(activeQuery, statusFilter, null);
-  }, [load, activeQuery, statusFilter]);
+    void fetchRows(activeQuery, statusFilter, null);
+    return () => {
+      requestSequence.current += 1;
+    };
+  }, [fetchRows, activeQuery, statusFilter]);
 
   const runSearch = () => setActiveQuery(queryInput.trim());
 

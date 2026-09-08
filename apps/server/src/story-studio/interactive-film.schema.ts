@@ -382,7 +382,7 @@ function migrateLegacyStoryInteractionActions(value: unknown): unknown {
   if (!Array.isArray(nodes)) return value;
 
   let changed = false;
-  const migratedNodes = nodes.map((node) => {
+  const migratedNodes = nodes.map((node: unknown) => {
     if (node === null || typeof node !== 'object' || Array.isArray(node)) {
       return node;
     }
@@ -390,7 +390,7 @@ function migrateLegacyStoryInteractionActions(value: unknown): unknown {
     if (record.kind !== 'clip' || !Array.isArray(record.interactions)) {
       return node;
     }
-    const interactions = record.interactions.map((interaction) => {
+    const interactions = record.interactions.map((interaction: unknown) => {
       if (
         interaction === null ||
         typeof interaction !== 'object' ||
@@ -615,11 +615,7 @@ export function createPlayableInteractiveStoryDraftContentSchema(
     (value) =>
       normalizeInteractiveFilmRuntimeDraft(value, normalizedDefaultLocale),
     InteractiveStoryDraftContentSchema.superRefine((draft, context) => {
-      validateInteractiveStoryGameplayReadiness(
-        draft,
-        context,
-        normalizedDefaultLocale,
-      );
+      validateInteractiveStoryGameplayReadiness(draft, context);
     }),
   );
 }
@@ -643,11 +639,7 @@ export function createLockableInteractiveStoryDraftContentSchema(
     (value) =>
       normalizeInteractiveFilmRuntimeDraft(value, normalizedDefaultLocale),
     InteractiveStoryDraftContentSchema.superRefine((draft, context) => {
-      validateInteractiveStoryGameplayReadiness(
-        draft,
-        context,
-        normalizedDefaultLocale,
-      );
+      validateInteractiveStoryGameplayReadiness(draft, context);
     }),
   );
 }
@@ -658,7 +650,6 @@ export const LockableInteractiveStoryDraftContentSchema =
 function validateInteractiveStoryGameplayReadiness(
   draft: InteractiveStoryDraftContent,
   context: z.RefinementCtx,
-  _defaultLocale?: string,
 ): void {
   const requireLocalizedText = (
     value: Record<string, string>,

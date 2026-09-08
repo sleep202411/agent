@@ -19,6 +19,11 @@ export function TextAdventureStreamBody({
   generatingLabel: string;
 }) {
   const [shown, setShown] = useState(streaming ? "" : content);
+  const [previousStreaming, setPreviousStreaming] = useState(streaming);
+  if (previousStreaming !== streaming) {
+    setPreviousStreaming(streaming);
+    if (streaming) setShown("");
+  }
   const shownRef = useRef(shown);
   const targetRef = useRef(content);
 
@@ -27,14 +32,9 @@ export function TextAdventureStreamBody({
   }, [content]);
 
   useEffect(() => {
-    if (!streaming) {
-      shownRef.current = content;
-      setShown(content);
-      return;
-    }
+    if (!streaming) return;
 
     shownRef.current = "";
-    setShown("");
 
     let raf = 0;
     const tick = () => {
@@ -59,8 +59,7 @@ export function TextAdventureStreamBody({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-    // Only restart the loop when streaming toggles; content is read via targetRef.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- content snap handled above when !streaming
+    // Only restart when streaming toggles; content is read via targetRef.
   }, [streaming]);
 
   if (streaming) {

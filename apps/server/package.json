@@ -157,6 +157,7 @@
     "roots": [
       "<rootDir>",
       "<rootDir>/../prisma/seed"
-    ]
+    ],
+    "maxWorkers": 2
   }
 }

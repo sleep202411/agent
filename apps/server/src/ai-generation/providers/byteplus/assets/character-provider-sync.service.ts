@@ -444,7 +444,7 @@ export class CharacterProviderSyncService
 
   private async poll(row: MirrorRow): Promise<void> {
     if (!row.externalAssetId) return;
-    let record;
+    let record: Awaited<ReturnType<BytePlusAssetsClient['getAsset']>>;
     try {
       record = await this.client.getAsset(row.externalAssetId);
     } catch (err) {
@@ -640,7 +640,6 @@ export class CharacterProviderSyncService
       processingDeadline?: Date;
     },
   ): Promise<void> {
-    const character = row.assetGroup.character;
     const updatedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
       // Guarded transition: only advance a row that is STILL pending/processing.

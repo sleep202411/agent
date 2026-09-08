@@ -76,14 +76,20 @@ export function StoryChapterProvider({
   const [error, setError] = useState<string | undefined>();
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const workbenchKey = `${projectId}:${chapterIdFromQuery}:${previewTitle}:${refreshKey}`;
+  const [previousWorkbenchKey, setPreviousWorkbenchKey] = useState(workbenchKey);
+  if (previousWorkbenchKey !== workbenchKey) {
+    setPreviousWorkbenchKey(workbenchKey);
+    setLoading(true);
+    setError(undefined);
+  }
+
   const refresh = useCallback(() => {
     setRefreshKey((value) => value + 1);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(undefined);
 
     void (async () => {
       try {
@@ -158,13 +164,6 @@ export function StoryChapterProvider({
   const canRelease = capabilities.includes("story.release");
 
   useEffect(() => {
-    if (canRelease || loading) return;
-    setPublication(null);
-    setPublicationFailed(false);
-    setPublicationLoading(false);
-  }, [canRelease, loading]);
-
-  useEffect(() => {
     if (!canRelease) return;
 
     let cancelled = false;
@@ -208,9 +207,9 @@ export function StoryChapterProvider({
       draftRevision,
       videoSnapshotHash,
       billingBalance,
-      publication,
-      publicationLoading,
-      publicationFailed,
+      publication: canRelease ? publication : null,
+      publicationLoading: loading || (canRelease && publicationLoading),
+      publicationFailed: canRelease && publicationFailed,
       loading,
       error,
       refresh,
@@ -218,6 +217,7 @@ export function StoryChapterProvider({
     }),
     [
       billingBalance,
+      canRelease,
       capabilities,
       chapterId,
       draftRevision,

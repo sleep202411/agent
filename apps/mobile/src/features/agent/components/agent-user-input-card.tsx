@@ -1,5 +1,5 @@
 import { SymbolView } from "expo-symbols";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
@@ -27,10 +27,12 @@ export function AgentUserInputCard({ request, busy, onSubmit }: AgentUserInputCa
   const isLast = step === questions.length - 1;
   const selected = question ? answers[question.id] : undefined;
 
-  useEffect(() => {
+  const [requestId, setRequestId] = useState(request.requestId);
+  if (requestId !== request.requestId) {
+    setRequestId(request.requestId);
     setStep(0);
     setAnswers({});
-  }, [request.requestId]);
+  }
 
   if (!question) return null;
 

@@ -54,7 +54,7 @@ suite('Native PostgreSQL producer qualification lifecycle', () => {
       data: {
         kind: 'image',
         storageProvider: 'external_url',
-        externalUrl: 'https://test.invalid/certificate.png',
+        externalUrl: `https://test.invalid/certificates/${userId}.png`,
       },
     });
     const certificate = await certificates.createAdmin({

@@ -119,7 +119,7 @@ describe('CrewAgreementSendWorker', () => {
           providerDocumentId: 'document-1',
           providerStatus: 'Processing',
           status: CrewAgreementStatus.sending,
-        }),
+        }) as unknown,
       }),
     );
     expect(t.notifications.send).not.toHaveBeenCalled();
@@ -140,7 +140,7 @@ describe('CrewAgreementSendWorker', () => {
         data: expect.objectContaining({
           providerDocumentId: 'document-1',
           status: CrewAgreementStatus.sent,
-        }),
+        }) as unknown,
       }),
     );
     expect(t.notifications.send).toHaveBeenCalledWith(
@@ -171,7 +171,7 @@ describe('CrewAgreementSendWorker', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           status: CrewAgreementSendJobStatus.completed,
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -190,7 +190,7 @@ describe('CrewAgreementSendWorker', () => {
           status: CrewAgreementSendJobStatus.failed,
           attempt: 10,
           lastError: 'BoldSign unavailable',
-        }),
+        }) as unknown,
       }),
     );
     expect(t.prisma.crewAgreement.updateMany).toHaveBeenCalledWith(
@@ -198,11 +198,11 @@ describe('CrewAgreementSendWorker', () => {
         where: expect.objectContaining({
           id: AGREEMENT_ID,
           providerDocumentId: null,
-        }),
+        }) as unknown,
         data: expect.objectContaining({
           status: CrewAgreementStatus.failed,
           providerStatus: 'DispatchFailed',
-        }),
+        }) as unknown,
       }),
     );
   });
