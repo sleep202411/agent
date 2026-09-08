@@ -260,7 +260,8 @@ suite('Task deletion on isolated PostgreSQL', () => {
         taskId: task.id,
         sourceType: 'task_reward',
         title: 'Earned reward',
-        pointsAmount: 100n,
+        currency: 'USD',
+        amountMinor: 100n,
         status: 'posted',
         postedAt: new Date(),
         approvedByUserId: 'owner',
@@ -274,7 +275,8 @@ suite('Task deletion on isolated PostgreSQL', () => {
           crewId,
           crewMemberId: member.id,
           userId: 'owner',
-          pointsAmount: 100n,
+          amountMinor: 100n,
+          currency: 'USD',
           netAmountMinor: 90n,
           withholdingAmountMinor: 10n,
           createdByUserId: 'owner',
@@ -286,7 +288,7 @@ suite('Task deletion on isolated PostgreSQL', () => {
           crewId,
           payoutId: payout.id,
           earningId: earning.id,
-          pointsAmount: 100n,
+          amountMinor: 100n,
         },
       });
       return { payout, allocation };

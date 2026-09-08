@@ -5562,23 +5562,21 @@
   "crewIncome": {
     "workspaceLabel": "{crew} · Finance",
     "title": "Amounts and payouts",
-    "description": "Record compensation and payouts in the site currency. Historical balances retain their original units.",
-    "pointsUnit": "pts",
-    "pointsValueTooltip": "Fixed value: {points} = {amount}. 100 points always equal {benchmark}.",
+    "description": "Track compensation and payouts in CNY or USD.",
     "viewLabel": "Finance views",
     "views": {
-      "points": "Amounts ledger",
+      "earnings": "Amounts ledger",
       "payouts": "Cash payouts"
     },
     "metrics": {
-      "confirmedPoints": "Confirmed amounts",
-      "pendingPoints": "Pending approval",
-      "monthPoints": "Confirmed this month",
-      "availablePoints": "Available for payout",
-      "reservedPoints": "Reserved in payouts",
-      "paidPoints": "Paid amounts"
+      "confirmedAmount": "Confirmed amounts",
+      "pendingAmount": "Pending approval",
+      "monthAmount": "Confirmed this month",
+      "availableAmount": "Available for payout",
+      "reservedAmount": "Reserved in payouts",
+      "paidAmount": "Paid amounts"
     },
-    "points": {
+    "earnings": {
       "history": "Amounts ledger",
       "historyDescription": "Immutable compensation entries from tasks and finance adjustments.",
       "emptyTitle": "No amounts recorded yet",
@@ -5624,7 +5622,7 @@
       "source": "Amount source",
       "titleLabel": "Title",
       "titlePlaceholder": "What are these amounts for?",
-      "points": "Amount",
+      "amount": "Amount",
       "note": "Note",
       "notePlaceholder": "Add contract, milestone or accounting context…",
       "pendingNotice": "This amount remains pending until finance confirms it.",
@@ -5698,7 +5696,7 @@
         "title": "Create cash payout",
         "description": "Reserve confirmed amounts and snapshot the exact cash amount finance will issue.",
         "member": "Member",
-        "points": "Amounts to settle",
+        "amount": "Amounts to settle",
         "gross": "Gross amount",
         "withholding": "Withholding",
         "net": "Net payout",
@@ -5752,8 +5750,7 @@
       }
     },
     "optional": "Optional",
-    "ledgerCurrency": "Ledger currency",
-    "historicalBalances": "Historical points (original units)"
+    "ledgerCurrency": "Ledger currency"
   },
   "crewWorkbench": {
     "globalNavigation": "Crew workspace navigation",
@@ -9263,30 +9260,30 @@
       },
       "earning": {
         "posted": {
-          "title": "Points confirmed: {title}",
-          "body": "{points} was added to your Crew finance ledger."
+          "title": "Earning confirmed: {title}",
+          "body": "{amount} was added to your Crew finance ledger."
         },
         "rejected": {
-          "title": "Points rejected: {title}",
-          "body": "{points} was not added to your Crew finance ledger."
+          "title": "Earning rejected: {title}",
+          "body": "{amount} was not added to your Crew finance ledger."
         },
         "reversed": {
-          "title": "Points reversed: {title}",
-          "body": "{points} was removed from your Crew finance ledger."
+          "title": "Earning reversed: {title}",
+          "body": "{amount} was removed from your Crew finance ledger."
         }
       },
       "payout": {
         "scheduled": {
           "title": "Payout scheduled",
-          "body": "{points} will be settled as {amount}."
+          "body": "{grossAmount} will be settled as {amount}."
         },
         "paid": {
           "title": "Payout completed",
-          "body": "{amount} for {points} has been paid."
+          "body": "{amount} for {grossAmount} has been paid."
         },
         "voided": {
           "title": "Payout voided",
-          "body": "The {amount} payout for {points} was voided; the reserved amount is available again."
+          "body": "The {amount} payout for {grossAmount} was voided; the reserved amount is available again."
         }
       }
     }

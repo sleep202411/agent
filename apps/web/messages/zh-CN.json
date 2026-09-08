@@ -5562,23 +5562,21 @@
   "crewIncome": {
     "workspaceLabel": "{crew} · 财务",
     "title": "金额与资金发放",
-    "description": "以站点币种记录报酬及付款。历史余额保留原单位。",
-    "pointsUnit": "积分",
-    "pointsValueTooltip": "{points} 固定等于 {amount}。100 积分始终等于 {benchmark}。",
+    "description": "记录剧组报酬与发放情况，按人民币或美元分别记账。",
     "viewLabel": "财务视图",
     "views": {
-      "points": "金额账本",
+      "earnings": "金额账本",
       "payouts": "资金发放"
     },
     "metrics": {
-      "confirmedPoints": "已确认金额",
-      "pendingPoints": "待审核金额",
-      "monthPoints": "本月确认",
-      "availablePoints": "可发放金额",
-      "reservedPoints": "发放中占用",
-      "paidPoints": "已发放金额"
+      "confirmedAmount": "已确认金额",
+      "pendingAmount": "待审核金额",
+      "monthAmount": "本月确认",
+      "availableAmount": "可发放金额",
+      "reservedAmount": "发放中占用",
+      "paidAmount": "已发放金额"
     },
-    "points": {
+    "earnings": {
       "history": "金额账本",
       "historyDescription": "记录任务奖励和财务调整的不可变金额明细。",
       "emptyTitle": "暂无金额记录",
@@ -5624,7 +5622,7 @@
       "source": "金额来源",
       "titleLabel": "标题",
       "titlePlaceholder": "为什么发放这笔金额？",
-      "points": "金额",
+      "amount": "金额",
       "note": "备注",
       "notePlaceholder": "补充合同、里程碑或账务背景…",
       "pendingNotice": "此金额将在财务确认前保持待审核状态。",
@@ -5698,7 +5696,7 @@
         "title": "创建资金发放单",
         "description": "锁定已确认金额，并固化财务实际要发放的金额。",
         "member": "成员",
-        "points": "结算金额",
+        "amount": "结算金额",
         "gross": "应发金额",
         "withholding": "代扣金额",
         "net": "实发金额",
@@ -5713,12 +5711,12 @@
         "reason": "原因",
         "pay": {
           "title": "记录已完成付款",
-          "description": "确认 {points} 对应的 {amount} 已真实发出。",
+          "description": "确认 {grossAmount} 对应的 {amount} 已真实发出。",
           "submit": "标记已发放"
         },
         "void": {
           "title": "作废发放单",
-          "description": "作废 {points} 对应的 {amount}，并释放占用金额。",
+          "description": "作废 {grossAmount} 对应的 {amount}，并释放占用金额。",
           "submit": "确认作废"
         }
       },
@@ -5752,8 +5750,7 @@
       }
     },
     "optional": "可选",
-    "ledgerCurrency": "账本币种",
-    "historicalBalances": "历史积分（原单位）"
+    "ledgerCurrency": "账本币种"
   },
   "crewWorkbench": {
     "globalNavigation": "剧组工作台导航",
@@ -9263,30 +9260,30 @@
       },
       "earning": {
         "posted": {
-          "title": "积分已确认：{title}",
-          "body": "{points} 已计入你的剧组资金账本。"
+          "title": "收益已确认：{title}",
+          "body": "{amount} 已计入你的剧组资金账本。"
         },
         "rejected": {
-          "title": "积分记录已驳回：{title}",
-          "body": "{points} 未计入你的剧组资金账本。"
+          "title": "收益记录已驳回：{title}",
+          "body": "{amount} 未计入你的剧组资金账本。"
         },
         "reversed": {
-          "title": "积分已冲回：{title}",
-          "body": "{points} 已从你的剧组资金账本扣回。"
+          "title": "收益已冲回：{title}",
+          "body": "{amount} 已从你的剧组资金账本扣回。"
         }
       },
       "payout": {
         "scheduled": {
           "title": "发放单已创建",
-          "body": "{points} 将按 {amount} 发放。"
+          "body": "{grossAmount} 将按 {amount} 发放。"
         },
         "paid": {
           "title": "资金已发放",
-          "body": "{points} 对应的 {amount} 已完成发放。"
+          "body": "{grossAmount} 对应的 {amount} 已完成发放。"
         },
         "voided": {
           "title": "发放单已作废",
-          "body": "{points} 对应的 {amount} 已作废，积分已重新可用。"
+          "body": "{grossAmount} 对应的 {amount} 已作废，金额已重新可用。"
         }
       }
     }

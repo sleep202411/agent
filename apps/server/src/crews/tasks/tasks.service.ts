@@ -1,7 +1,4 @@
-import {
-  crewCurrency,
-  assertNewCrewCurrency,
-} from '../earnings/ledger-currency';
+import { assertNewCrewCurrency } from '../earnings/ledger-currency';
 import {
   BadRequestException,
   ConflictException,
@@ -1746,6 +1743,9 @@ export class CrewTasksService {
         });
       }
 
+      for (const assignee of input.assignees) {
+        assertNewCrewCurrency(assignee.currency);
+      }
       const created = await tx.crewTask.create({
         data: {
           crewId,
@@ -1774,12 +1774,11 @@ export class CrewTasksService {
               crewId,
               crewMemberId: memberByUser.get(assignee.userId)!.id,
               userId: assignee.userId,
-              currency: crewCurrency(),
-              rewardPoints:
-                assignee.rewardPoints == null
+              currency: assignee.currency,
+              rewardAmountMinor:
+                assignee.rewardAmountMinor == null
                   ? null
-                  : (assertNewCrewCurrency(assignee.currency),
-                    BigInt(assignee.rewardPoints)),
+                  : BigInt(assignee.rewardAmountMinor),
             })),
           },
           dependenciesAsBlocked: {
@@ -2004,25 +2003,22 @@ export class CrewTasksService {
             (candidate) => candidate.userId === assignee.userId,
           );
           if (
-            assignee.rewardPoints != null &&
-            (!existing ||
-              existing.rewardPoints !== BigInt(assignee.rewardPoints))
+            !existing ||
+            existing.rewardAmountMinor == null ||
+            existing.currency !== assignee.currency
           ) {
             assertNewCrewCurrency(assignee.currency);
           }
-          const rewardPoints =
-            assignee.rewardPoints == null
+          const rewardAmountMinor =
+            assignee.rewardAmountMinor == null
               ? null
-              : BigInt(assignee.rewardPoints);
+              : BigInt(assignee.rewardAmountMinor);
           if (existing) {
             await tx.crewTaskAssignee.update({
               where: { id: existing.id },
               data: {
-                rewardPoints,
-                currency:
-                  existing && existing.rewardPoints === rewardPoints
-                    ? existing.currency
-                    : crewCurrency(),
+                rewardAmountMinor,
+                currency: assignee.currency,
               },
             });
           } else {
@@ -2032,8 +2028,8 @@ export class CrewTasksService {
                 taskId,
                 crewMemberId: memberByUser.get(assignee.userId)!.id,
                 userId: assignee.userId,
-                currency: crewCurrency(),
-                rewardPoints,
+                currency: assignee.currency,
+                rewardAmountMinor,
               },
             });
           }
@@ -2969,7 +2965,8 @@ export class CrewTasksService {
       if (approved) {
         for (const assignee of locked.assignees.filter(
           (candidate) =>
-            candidate.rewardPoints != null && candidate.rewardPoints > 0n,
+            candidate.rewardAmountMinor != null &&
+            candidate.rewardAmountMinor > 0n,
         )) {
           await this.earnings.postTaskRewardTx(tx, {
             crewId: locked.crewId,
@@ -2978,7 +2975,7 @@ export class CrewTasksService {
             taskTitle: locked.title,
             crewMemberId: assignee.crewMemberId,
             userId: assignee.userId,
-            pointsAmount: assignee.rewardPoints!,
+            amountMinor: assignee.rewardAmountMinor!,
             currency: assignee.currency,
             approvedByUserId: userId,
           });
@@ -4167,8 +4164,10 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
       userId: assignee.userId,
       crewMemberId: assignee.crewMemberId,
       currency: assignee.currency,
-      rewardPoints:
-        assignee.rewardPoints == null ? null : Number(assignee.rewardPoints),
+      rewardAmountMinor:
+        assignee.rewardAmountMinor == null
+          ? null
+          : Number(assignee.rewardAmountMinor),
       assignedAt: assignee.assignedAt.toISOString(),
     })),
   };

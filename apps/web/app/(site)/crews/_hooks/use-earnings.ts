@@ -32,7 +32,7 @@ export function useCrewEarningDetail(earningId: string | null) {
 export function useCrewEarnings(
   crewId: string,
   input: {
-    currency?: CrewLedgerCurrency;
+    currency: CrewLedgerCurrency;
     scope: "mine" | "crew";
     status?: CrewEarningStatus;
     sourceType?: CrewEarningSourceType;
@@ -44,7 +44,7 @@ export function useCrewEarnings(
       ...crewKeys.earnings(crewId, input.scope),
       input.status ?? "all",
       input.sourceType ?? "all",
-      input.currency ?? CREW_CURRENCY,
+      input.currency,
     ],
     enabled: enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
@@ -77,7 +77,7 @@ export function useCreateCrewEarning(crewId: string) {
       agreementId?: string;
       title: string;
       description?: string;
-      pointsAmount: string;
+      amountMinor: string;
       idempotencyKey: string;
     }) =>
       crewApi.post<CrewEarningEntryDTO>(`/crews/${encodeURIComponent(crewId)}/earnings`, {
@@ -201,20 +201,18 @@ function optimisticSummary(
   now: string
 ): CrewEarningPageDTO["summary"] | undefined {
   if (!summary) return undefined;
-  const amount = BigInt(earning.pointsAmount);
+  const amount = BigInt(earning.amountMinor);
   const byStatus = Object.fromEntries(
     Object.entries(summary.byStatus).map(([status, value]) => [status, { ...value }])
   ) as CrewEarningPageDTO["summary"]["byStatus"];
   byStatus[earning.status].count -= 1;
-  byStatus[earning.status].pointsAmount = (
-    BigInt(byStatus[earning.status].pointsAmount) - amount
+  byStatus[earning.status].amountMinor = (
+    BigInt(byStatus[earning.status].amountMinor) - amount
   ).toString();
   byStatus[nextStatus].count += 1;
-  byStatus[nextStatus].pointsAmount = (
-    BigInt(byStatus[nextStatus].pointsAmount) + amount
-  ).toString();
+  byStatus[nextStatus].amountMinor = (BigInt(byStatus[nextStatus].amountMinor) + amount).toString();
 
-  let postedThisMonth = BigInt(summary.postedThisMonthPoints);
+  let postedThisMonth = BigInt(summary.postedThisMonthAmountMinor);
   if (earning.status === "pending" && nextStatus === "posted") {
     postedThisMonth += amount;
   } else if (
@@ -233,20 +231,20 @@ function optimisticSummary(
       const group = postedBySource[sourceIndex];
       if (group) {
         group.count += 1;
-        group.pointsAmount = (BigInt(group.pointsAmount) + amount).toString();
+        group.amountMinor = (BigInt(group.amountMinor) + amount).toString();
       }
     } else {
       postedBySource.push({
         sourceType: earning.sourceType,
         count: 1,
-        pointsAmount: amount.toString(),
+        amountMinor: amount.toString(),
       });
     }
   } else if (earning.status === "posted" && nextStatus === "reversed" && sourceIndex >= 0) {
     const group = postedBySource[sourceIndex];
     if (group) {
       group.count -= 1;
-      group.pointsAmount = (BigInt(group.pointsAmount) - amount).toString();
+      group.amountMinor = (BigInt(group.amountMinor) - amount).toString();
       if (group.count === 0) postedBySource.splice(sourceIndex, 1);
     }
   }
@@ -254,7 +252,7 @@ function optimisticSummary(
   return {
     ...summary,
     byStatus,
-    postedThisMonthPoints: postedThisMonth.toString(),
+    postedThisMonthAmountMinor: postedThisMonth.toString(),
     postedBySource,
   };
 }

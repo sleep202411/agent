@@ -1,10 +1,10 @@
 import { CrewEarningSourceType, CrewEarningStatus } from '@prisma/client';
 import { z } from 'zod';
 
-// Point amounts cross the JSON boundary as decimal strings so the API never
+// Minor-unit amounts cross the JSON boundary as decimal strings so the API never
 // truncates a valid bigint through JavaScript's Number representation.
 const MAX_SIGNED_BIGINT = 9_223_372_036_854_775_807n;
-export const positivePointAmount = z
+export const positiveAmountMinor = z
   .string()
   .regex(/^[1-9]\d*$/)
   .refine(
@@ -15,7 +15,7 @@ export const positivePointAmount = z
   );
 
 export const ListCrewEarningsQuerySchema = z.object({
-  currency: z.enum(['POINTS', 'CNY', 'USD']).optional(),
+  currency: z.enum(['CNY', 'USD']),
   scope: z.enum(['mine', 'crew']).default('mine'),
   status: z.nativeEnum(CrewEarningStatus).optional(),
   sourceType: z.nativeEnum(CrewEarningSourceType).optional(),
@@ -37,7 +37,7 @@ export const CreateCrewEarningSchema = z
     title: z.string().trim().min(1).max(180),
     description: z.string().trim().max(10_000).optional(),
     currency: z.enum(['CNY', 'USD']),
-    pointsAmount: positivePointAmount,
+    amountMinor: positiveAmountMinor,
     idempotencyKey: z.string().trim().min(8).max(80),
   })
   .superRefine((input, context) => {

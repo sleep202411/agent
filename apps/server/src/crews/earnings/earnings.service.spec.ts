@@ -17,6 +17,7 @@ function earning(
 ): Record<string, unknown> {
   const now = new Date('2026-08-02T10:00:00.000Z');
   return {
+    currency: 'USD',
     id: EARNING_ID,
     crewId: CREW_ID,
     crewMemberId: MEMBER_ID,
@@ -26,7 +27,7 @@ function earning(
     agreementId: null,
     title: 'August contract compensation',
     description: null,
-    pointsAmount: 125000n,
+    amountMinor: 125000n,
     status: CrewEarningStatus.pending,
     idempotencyKey: 'manual-key',
     createdByUserId: ACTOR_ID,
@@ -77,7 +78,7 @@ function build() {
       findMany: jest.fn().mockResolvedValue([]),
       groupBy: jest.fn().mockResolvedValue([]),
       aggregate: jest.fn().mockResolvedValue({
-        _sum: { pointsAmount: 0n },
+        _sum: { amountMinor: 0n },
       }),
     },
     crewMember: {
@@ -113,7 +114,8 @@ function build() {
 
 describe('Crew earnings schemas', () => {
   it('bounds list pages and forbids manually-created task rewards', () => {
-    expect(ListCrewEarningsQuerySchema.parse({})).toEqual({
+    expect(ListCrewEarningsQuerySchema.parse({ currency: 'USD' })).toEqual({
+      currency: 'USD',
       scope: 'mine',
       limit: 50,
     });
@@ -122,28 +124,31 @@ describe('Crew earnings schemas', () => {
     );
     expect(
       CreateCrewEarningSchema.safeParse({
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         sourceType: 'task_reward',
         title: 'Forged task reward',
-        pointsAmount: '100',
+        amountMinor: '100',
         idempotencyKey: 'client-key-1',
       }).success,
     ).toBe(false);
     expect(
       CreateCrewEarningSchema.safeParse({
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         sourceType: 'contract_compensation',
         title: 'Unsafe numeric amount',
-        pointsAmount: Number.MAX_SAFE_INTEGER + 1,
+        amountMinor: Number.MAX_SAFE_INTEGER + 1,
         idempotencyKey: 'client-key-2',
       }).success,
     ).toBe(false);
     expect(
       CreateCrewEarningSchema.safeParse({
+        currency: 'USD',
         crewMemberId: MEMBER_ID,
         sourceType: 'contract_compensation',
         title: 'Out-of-range bigint amount',
-        pointsAmount: '9223372036854775808',
+        amountMinor: '9223372036854775808',
         idempotencyKey: 'client-key-3',
       }).success,
     ).toBe(false);
@@ -198,7 +203,7 @@ describe('CrewEarningsService', () => {
     );
   });
 
-  it('creates a pending manual point entry without touching the cash ledger', async () => {
+  it('creates a pending manual earning without recording a payout', async () => {
     const t = build();
     const created = earning({
       idempotencyKey: `crew-earning-manual:${CREW_ID}:${ACTOR_ID}:client-key-1`,
@@ -212,12 +217,12 @@ describe('CrewEarningsService', () => {
         crewMemberId: MEMBER_ID,
         sourceType: CrewEarningSourceType.contract_compensation,
         title: 'August contract compensation',
-        pointsAmount: '125000',
+        amountMinor: '125000',
         idempotencyKey: 'client-key-1',
       }),
     ).resolves.toMatchObject({
       status: CrewEarningStatus.pending,
-      pointsAmount: '125000',
+      amountMinor: '125000',
     });
 
     expect(t.authorization.require).toHaveBeenCalledWith(
@@ -230,7 +235,7 @@ describe('CrewEarningsService', () => {
     });
   });
 
-  it('approves points atomically without coupling the point ledger to cash payouts', async () => {
+  it('approves earnings atomically without recording a payout', async () => {
     const t = build();
     const posted = earning({
       status: CrewEarningStatus.posted,
@@ -297,7 +302,7 @@ describe('CrewEarningsService', () => {
     });
   });
 
-  it('reverses unallocated posted points with an audit reason', async () => {
+  it('reverses unallocated posted earnings with an audit reason', async () => {
     const t = build();
     const posted = earning({
       status: CrewEarningStatus.posted,
@@ -328,7 +333,7 @@ describe('CrewEarningsService', () => {
     });
   });
 
-  it('does not reverse points reserved by an active or completed payout', async () => {
+  it('does not reverse earnings reserved by an active or completed payout', async () => {
     const t = build();
     const posted = earning({ status: CrewEarningStatus.posted, version: 2 });
     t.prisma.crewEarningEntry.findUnique.mockResolvedValue(posted);
@@ -370,7 +375,7 @@ describe('CrewEarningsService', () => {
         crewMemberId: MEMBER_ID,
         userId: MEMBER_USER_ID,
         currency: 'USD',
-        pointsAmount: 5000n,
+        amountMinor: 5000n,
         approvedByUserId: ACTOR_ID,
       }),
     ).resolves.toMatchObject({ status: CrewEarningStatus.posted });
@@ -380,7 +385,7 @@ describe('CrewEarningsService', () => {
         sourceType: CrewEarningSourceType.task_reward,
         status: CrewEarningStatus.posted,
         currency: 'USD',
-        pointsAmount: 5000n,
+        amountMinor: 5000n,
       },
     });
   });

@@ -1,8 +1,4 @@
-import {
-  crewCurrency,
-  assertNewCrewCurrency,
-  formatLedgerAmount,
-} from './ledger-currency';
+import { assertNewCrewCurrency, formatLedgerAmount } from './ledger-currency';
 import {
   BadRequestException,
   ConflictException,
@@ -44,7 +40,7 @@ export interface PostTaskRewardInput {
   taskTitle: string;
   crewMemberId: string;
   userId: string;
-  pointsAmount: bigint;
+  amountMinor: bigint;
   currency: string;
   approvedByUserId: string;
 }
@@ -64,7 +60,7 @@ export class CrewEarningsService {
       await this.authorization.requireMembership(crewId, userId);
     }
     const scopeWhere = {
-      currency: query.currency ?? crewCurrency(),
+      currency: query.currency,
       crewId,
       ...(query.scope === 'mine' ? { userId } : {}),
     } satisfies Prisma.CrewEarningEntryWhereInput;
@@ -103,13 +99,13 @@ export class CrewEarningsService {
         by: ['status'],
         where: scopeWhere,
         _count: { _all: true },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
       this.prisma.crewEarningEntry.groupBy({
         by: ['sourceType'],
         where: { ...scopeWhere, status: CrewEarningStatus.posted },
         _count: { _all: true },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
       this.prisma.crewEarningEntry.aggregate({
         where: {
@@ -117,20 +113,20 @@ export class CrewEarningsService {
           status: CrewEarningStatus.posted,
           postedAt: { gte: monthStart },
         },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
     ]);
     const items = rows.slice(0, query.limit);
     const byStatus = Object.fromEntries(
       Object.values(CrewEarningStatus).map((status) => [
         status,
-        { count: 0, pointsAmount: '0' },
+        { count: 0, amountMinor: '0' },
       ]),
-    ) as Record<CrewEarningStatus, { count: number; pointsAmount: string }>;
+    ) as Record<CrewEarningStatus, { count: number; amountMinor: string }>;
     for (const group of statusGroups) {
       byStatus[group.status] = {
         count: group._count._all,
-        pointsAmount: (group._sum.pointsAmount ?? 0n).toString(),
+        amountMinor: (group._sum.amountMinor ?? 0n).toString(),
       };
     }
 
@@ -139,11 +135,13 @@ export class CrewEarningsService {
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
       summary: {
         byStatus,
-        postedThisMonthPoints: (monthPosted._sum.pointsAmount ?? 0n).toString(),
+        postedThisMonthAmountMinor: (
+          monthPosted._sum.amountMinor ?? 0n
+        ).toString(),
         postedBySource: sourceGroups.map((group) => ({
           sourceType: group.sourceType,
           count: group._count._all,
-          pointsAmount: (group._sum.pointsAmount ?? 0n).toString(),
+          amountMinor: (group._sum.amountMinor ?? 0n).toString(),
         })),
       },
     };
@@ -177,7 +175,7 @@ export class CrewEarningsService {
         });
       }
     }
-    const amount = BigInt(input.pointsAmount);
+    const amount = BigInt(input.amountMinor);
     const idempotencyKey = `crew-earning-manual:${crewId}:${userId}:${input.idempotencyKey}`;
     const created = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.crewEarningEntry.findUnique({
@@ -194,7 +192,7 @@ export class CrewEarningsService {
           agreementId: input.agreementId,
           title: input.title,
           description: input.description || null,
-          pointsAmount: amount,
+          amountMinor: amount,
           currency: input.currency,
           status: CrewEarningStatus.pending,
           idempotencyKey,
@@ -385,7 +383,7 @@ export class CrewEarningsService {
         sourceType: CrewEarningSourceType.task_reward,
         taskId: input.taskId,
         title: `TASK-${input.taskNumber} ${input.taskTitle}`,
-        pointsAmount: input.pointsAmount,
+        amountMinor: input.amountMinor,
         currency: input.currency,
         status: CrewEarningStatus.posted,
         idempotencyKey,
@@ -443,15 +441,15 @@ export class CrewEarningsService {
       {
         userId: earning.userId,
         type: `crew.earning.${outcome}`,
-        title: `Crew points ${outcome}: ${earning.title}`,
-        body: `${formatLedgerAmount(earning.pointsAmount, earning.currency)} · ${outcome}`,
+        title: `Crew earning ${outcome}: ${earning.title}`,
+        body: `${formatLedgerAmount(earning.amountMinor, earning.currency)} · ${outcome}`,
         meta: {
           crewId: earning.crewId,
           earningId: earning.id,
           earningTitle: earning.title,
           sourceType: earning.sourceType,
           currency: earning.currency,
-          pointsAmount: earning.pointsAmount.toString(),
+          amountMinor: earning.amountMinor.toString(),
           deeplink: `/crews/${earning.crewId}/workspace?tab=income`,
         },
         idempotencyKey: `crew.earning.${outcome}:${earning.id}`,
@@ -493,7 +491,7 @@ function earningSnapshot(earning: CrewEarningEntry) {
     status: earning.status,
     sourceType: earning.sourceType,
     currency: earning.currency,
-    pointsAmount: earning.pointsAmount.toString(),
+    amountMinor: earning.amountMinor.toString(),
     version: earning.version,
     rejectionReason: earning.rejectionReason,
     reversalReason: earning.reversalReason,
@@ -512,7 +510,7 @@ function earningDto(earning: EarningWithRelations) {
     title: earning.title,
     description: earning.description,
     currency: earning.currency,
-    pointsAmount: earning.pointsAmount.toString(),
+    amountMinor: earning.amountMinor.toString(),
     status: earning.status,
     createdByUserId: earning.createdByUserId,
     approvedByUserId: earning.approvedByUserId,

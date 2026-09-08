@@ -1,8 +1,4 @@
-import {
-  crewCurrency,
-  assertNewCrewCurrency,
-  formatLedgerAmount,
-} from './ledger-currency';
+import { formatLedgerAmount } from './ledger-currency';
 import {
   BadRequestException,
   ConflictException,
@@ -42,7 +38,7 @@ const payoutInclude = {
           id: true,
           title: true,
           sourceType: true,
-          pointsAmount: true,
+          amountMinor: true,
           postedAt: true,
           task: { select: { id: true, number: true, title: true } },
         },
@@ -70,7 +66,7 @@ export class CrewPayoutsService {
       await this.authorization.requireMembership(crewId, userId);
     }
     const scopeWhere = {
-      currency: query.currency ?? crewCurrency(),
+      currency: query.currency,
       crewId,
       ...(query.scope === 'mine' ? { userId } : {}),
     } satisfies Prisma.CrewPayoutWhereInput;
@@ -105,14 +101,9 @@ export class CrewPayoutsService {
         by: ['status'],
         where: scopeWhere,
         _count: { _all: true },
-        _sum: { pointsAmount: true, netAmountMinor: true },
+        _sum: { amountMinor: true, netAmountMinor: true },
       }),
-      this.availability(
-        crewId,
-        userId,
-        query.scope,
-        query.currency ?? crewCurrency(),
-      ),
+      this.availability(crewId, userId, query.scope, query.currency),
     ]);
     const items = rows.slice(0, query.limit);
     return {
@@ -123,7 +114,7 @@ export class CrewPayoutsService {
         byStatus: statusGroups.map((group) => ({
           status: group.status,
           count: group._count._all,
-          pointsAmount: (group._sum.pointsAmount ?? 0n).toString(),
+          amountMinor: (group._sum.amountMinor ?? 0n).toString(),
           netAmountMinor: (group._sum.netAmountMinor ?? 0n).toString(),
         })),
       },
@@ -160,7 +151,6 @@ export class CrewPayoutsService {
 
   async create(crewId: string, userId: string, input: CreateCrewPayoutInput) {
     await this.authorization.require(crewId, userId, 'finance.payouts.create');
-    if (input.currency !== 'POINTS') assertNewCrewCurrency(input.currency);
     const member = await this.prisma.crewMember.findFirst({
       where: {
         id: input.crewMemberId,
@@ -171,9 +161,9 @@ export class CrewPayoutsService {
     });
     if (!member) throw new NotFoundException('Active crew member not found.');
 
-    const requestedPoints = BigInt(input.pointsAmount);
+    const requestedAmountMinor = BigInt(input.amountMinor);
     const withholding = BigInt(input.withholdingAmountMinor);
-    const net = requestedPoints - withholding;
+    const net = requestedAmountMinor - withholding;
     if (net <= 0n || net > MAX_SIGNED_BIGINT) {
       throw new BadRequestException({
         code: 'CREW_PAYOUT_NET_INVALID',
@@ -204,35 +194,34 @@ export class CrewPayoutsService {
             where: {
               payout: { status: { in: [...ACTIVE_ALLOCATION_STATUSES] } },
             },
-            select: { pointsAmount: true },
+            select: { amountMinor: true },
           },
         },
       });
 
-      let remaining = requestedPoints;
-      const allocations: Array<{ earningId: string; pointsAmount: bigint }> =
-        [];
+      let remaining = requestedAmountMinor;
+      const allocations: Array<{ earningId: string; amountMinor: bigint }> = [];
       let available = 0n;
       for (const earning of earnings) {
         const allocated = earning.payoutAllocations.reduce(
-          (sum, allocation) => sum + allocation.pointsAmount,
+          (sum, allocation) => sum + allocation.amountMinor,
           0n,
         );
-        const earningAvailable = earning.pointsAmount - allocated;
+        const earningAvailable = earning.amountMinor - allocated;
         if (earningAvailable <= 0n) continue;
         available += earningAvailable;
         if (remaining <= 0n) continue;
         const take =
           earningAvailable < remaining ? earningAvailable : remaining;
-        allocations.push({ earningId: earning.id, pointsAmount: take });
+        allocations.push({ earningId: earning.id, amountMinor: take });
         remaining -= take;
       }
       if (remaining > 0n) {
         throw new ConflictException({
-          code: 'CREW_PAYOUT_POINTS_UNAVAILABLE',
-          message: `Only ${available.toString()} unallocated points are available for this member.`,
-          availablePoints: available.toString(),
-          requestedPoints: requestedPoints.toString(),
+          code: 'CREW_PAYOUT_AMOUNT_UNAVAILABLE',
+          message: `Only ${formatLedgerAmount(available, input.currency)} is available for this member.`,
+          availableAmountMinor: available.toString(),
+          requestedAmountMinor: requestedAmountMinor.toString(),
         });
       }
 
@@ -241,7 +230,7 @@ export class CrewPayoutsService {
           crewId,
           crewMemberId: member.id,
           userId: member.userId,
-          pointsAmount: requestedPoints,
+          amountMinor: requestedAmountMinor,
           currency: input.currency,
           withholdingAmountMinor: withholding,
           netAmountMinor: net,
@@ -256,7 +245,7 @@ export class CrewPayoutsService {
           crewId,
           payoutId: created.id,
           earningId: allocation.earningId,
-          pointsAmount: allocation.pointsAmount,
+          amountMinor: allocation.amountMinor,
         })),
       });
       const complete = await tx.crewPayout.findUniqueOrThrow({
@@ -366,7 +355,7 @@ export class CrewPayoutsService {
     const [confirmed, reserved, paid] = await Promise.all([
       this.prisma.crewEarningEntry.aggregate({
         where: { crewId, ...userWhere, status: CrewEarningStatus.posted },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
       this.prisma.crewPayoutAllocation.aggregate({
         where: {
@@ -376,27 +365,27 @@ export class CrewPayoutsService {
             status: CrewPayoutStatus.pending,
           },
         },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
       this.prisma.crewPayoutAllocation.aggregate({
         where: {
           payout: { crewId, ...userWhere, status: CrewPayoutStatus.paid },
         },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
     ]);
-    const confirmedPoints = confirmed._sum.pointsAmount ?? 0n;
-    const reservedPoints = reserved._sum.pointsAmount ?? 0n;
-    const paidPoints = paid._sum.pointsAmount ?? 0n;
+    const confirmedAmountMinor = confirmed._sum.amountMinor ?? 0n;
+    const reservedAmountMinor = reserved._sum.amountMinor ?? 0n;
+    const paidAmountMinor = paid._sum.amountMinor ?? 0n;
     return {
-      confirmedPoints: confirmedPoints.toString(),
-      availablePoints: (
-        confirmedPoints -
-        reservedPoints -
-        paidPoints
+      confirmedAmountMinor: confirmedAmountMinor.toString(),
+      availableAmountMinor: (
+        confirmedAmountMinor -
+        reservedAmountMinor -
+        paidAmountMinor
       ).toString(),
-      reservedPoints: reservedPoints.toString(),
-      paidPoints: paidPoints.toString(),
+      reservedAmountMinor: reservedAmountMinor.toString(),
+      paidAmountMinor: paidAmountMinor.toString(),
     };
   }
 
@@ -438,17 +427,16 @@ export class CrewPayoutsService {
         userId: payout.userId,
         type: `crew.payout.${outcome}`,
         title: `Crew payout ${outcome}`,
-        body: `${formatLedgerAmount(payout.pointsAmount, payout.currency)} · ${formatMinor(
+        body: `${formatLedgerAmount(payout.amountMinor, payout.currency)} · ${formatLedgerAmount(
           payout.netAmountMinor,
           payout.currency,
         )}`,
         meta: {
           crewId: payout.crewId,
           payoutId: payout.id,
-          pointsAmount: payout.pointsAmount.toString(),
+          amountMinor: payout.amountMinor.toString(),
           netAmountMinor: payout.netAmountMinor.toString(),
-          ledgerCurrency: payout.currency,
-          currency: payout.currency === 'POINTS' ? 'USD' : payout.currency,
+          currency: payout.currency,
           status: payout.status,
           deeplink: `/crews/${payout.crewId}/workspace?tab=income`,
         },
@@ -508,7 +496,7 @@ function payoutSnapshot(payout: CrewPayout) {
     id: payout.id,
     status: payout.status,
     currency: payout.currency,
-    pointsAmount: payout.pointsAmount.toString(),
+    amountMinor: payout.amountMinor.toString(),
     withholdingAmountMinor: payout.withholdingAmountMinor.toString(),
     netAmountMinor: payout.netAmountMinor.toString(),
     paymentMethod: payout.paymentMethod,
@@ -526,7 +514,7 @@ function payoutDto(payout: PayoutWithRelations) {
     crewMemberId: payout.crewMemberId,
     userId: payout.userId,
     currency: payout.currency,
-    pointsAmount: payout.pointsAmount.toString(),
+    amountMinor: payout.amountMinor.toString(),
     withholdingAmountMinor: payout.withholdingAmountMinor.toString(),
     netAmountMinor: payout.netAmountMinor.toString(),
     status: payout.status,
@@ -545,18 +533,12 @@ function payoutDto(payout: PayoutWithRelations) {
     updatedAt: payout.updatedAt.toISOString(),
     allocations: payout.allocations.map((allocation) => ({
       id: allocation.id,
-      pointsAmount: allocation.pointsAmount.toString(),
+      amountMinor: allocation.amountMinor.toString(),
       earning: {
         ...allocation.earning,
-        pointsAmount: allocation.earning.pointsAmount.toString(),
+        amountMinor: allocation.earning.amountMinor.toString(),
         postedAt: allocation.earning.postedAt?.toISOString() ?? null,
       },
     })),
   };
-}
-
-function formatMinor(amount: bigint, currency = 'USD') {
-  const major = amount / 100n;
-  const minor = (amount % 100n).toString().padStart(2, '0');
-  return `${currency === 'POINTS' ? 'USD' : currency} ${major.toLocaleString('en-US')}.${minor}`;
 }

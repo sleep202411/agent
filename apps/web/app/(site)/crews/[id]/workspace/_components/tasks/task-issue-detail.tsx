@@ -1,6 +1,12 @@
 "use client";
 
-import { CREW_CURRENCY, formatCrewMoney, type CrewLedgerCurrency } from "@/src/lib/crew-money";
+import {
+  CREW_CURRENCY,
+  formatCrewMoney,
+  parseCrewMoney,
+  formatCrewMoneyInput,
+  type CrewLedgerCurrency,
+} from "@/src/lib/crew-money";
 import { DeleteTaskButton } from "./delete-task-button";
 
 import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
@@ -670,7 +676,7 @@ export function TaskIssueDetail({
               />
             </RailRow>
             <RailRow icon={<IconAt className="size-4" />} align="start">
-              {task.assignees.every((assignee) => assignee.rewardPoints == null) ? (
+              {task.assignees.every((assignee) => assignee.rewardAmountMinor == null) ? (
                 <span className="text-[#777980]">{t("noCompensation")}</span>
               ) : (
                 <div className="w-full space-y-2">
@@ -680,11 +686,7 @@ export function TaskIssueDetail({
                         {displayNameOf(assignee.userId, displays)}
                       </span>
                       <span className="font-mono text-[#c9cacf]">
-                        {formatPoints(
-                          assignee.rewardPoints ?? 0,
-                          assignee.currency,
-                          t("pointsUnit")
-                        )}
+                        {formatReward(assignee.rewardAmountMinor ?? 0, assignee.currency)}
                       </span>
                     </div>
                   ))}
@@ -1370,15 +1372,15 @@ function AssigneesEditor({
   const [draft, setDraft] = useState(() =>
     task.assignees.map((assignee) => ({
       userId: assignee.userId,
-      currency: assignee.currency,
-      rewardPoints:
-        assignee.rewardPoints == null
+      currency: assignee.rewardAmountMinor == null ? CREW_CURRENCY : assignee.currency,
+      rewardAmountMinor:
+        assignee.rewardAmountMinor == null
           ? ""
-          : String(assignee.rewardPoints / (assignee.currency === "POINTS" ? 1 : 100)),
+          : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
     }))
   );
   const invalidReward = draft.some(
-    (item) => item.rewardPoints !== "" && parseReward(item.rewardPoints, item.currency) == null
+    (item) => item.rewardAmountMinor !== "" && parseReward(item.rewardAmountMinor) == null
   );
 
   const summary = (
@@ -1392,9 +1394,9 @@ function AssigneesEditor({
             <span className="min-w-0 flex-1 truncate">
               {displayNameOf(assignee.userId, displays)}
             </span>
-            {assignee.rewardPoints != null ? (
+            {assignee.rewardAmountMinor != null ? (
               <span className="font-mono text-[9px] text-[#777d87]">
-                {formatPoints(assignee.rewardPoints, assignee.currency, t("pointsUnit"))}
+                {formatReward(assignee.rewardAmountMinor, assignee.currency)}
               </span>
             ) : null}
           </div>
@@ -1409,7 +1411,7 @@ function AssigneesEditor({
     setDraft((current) =>
       current.some((item) => item.userId === userId)
         ? current.filter((item) => item.userId !== userId)
-        : [...current, { userId, rewardPoints: "", currency: CREW_CURRENCY }]
+        : [...current, { userId, rewardAmountMinor: "", currency: CREW_CURRENCY }]
     );
   };
 
@@ -1417,7 +1419,7 @@ function AssigneesEditor({
     const assignees = draft.map((item) => ({
       userId: item.userId,
       currency: item.currency,
-      rewardPoints: parseReward(item.rewardPoints, item.currency),
+      rewardAmountMinor: parseReward(item.rewardAmountMinor),
     }));
     if (await onSave({ assignees })) setOpen(false);
   };
@@ -1455,13 +1457,13 @@ function AssigneesEditor({
                   min={0.01}
                   max={100_000_000}
                   step={0.01}
-                  disabled={!selected || selected.currency === "POINTS"}
-                  value={selected?.rewardPoints ?? ""}
+                  disabled={!selected}
+                  value={selected?.rewardAmountMinor ?? ""}
                   onChange={(event) =>
                     setDraft((current) =>
                       current.map((item) =>
                         item.userId === member.userId
-                          ? { ...item, rewardPoints: event.target.value }
+                          ? { ...item, rewardAmountMinor: event.target.value }
                           : item
                       )
                     )
@@ -2307,18 +2309,13 @@ function formatRelative(value: string, t: ReturnType<typeof useTranslations>) {
   return date.toLocaleDateString();
 }
 
-function formatPoints(points: number, currency: CrewLedgerCurrency, historicalUnit: string) {
-  return currency === "POINTS"
-    ? `${points.toLocaleString()} ${historicalUnit}`
-    : formatCrewMoney(String(points), "en-US", currency);
+function formatReward(amountMinor: number, currency: CrewLedgerCurrency) {
+  return formatCrewMoney(String(amountMinor), "en-US", currency);
 }
-function parseReward(value: string, currency: CrewLedgerCurrency): number | null {
-  if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(value)) return null;
-  const [whole, fraction = ""] = value.split(".");
-  const minor =
-    currency === "POINTS"
-      ? BigInt(whole!)
-      : BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, "0"));
+function parseReward(value: string): number | null {
+  const parsed = parseCrewMoney(value);
+  if (parsed == null) return null;
+  const minor = BigInt(parsed);
   return minor > 0n && minor <= 10_000_000_000n ? Number(minor) : null;
 }
 

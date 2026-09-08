@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { formatCrewMoney } from "./crew-money";
+import { formatCrewMoney, parseCrewMoney, formatCrewMoneyInput } from "./crew-money";
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
@@ -24,5 +24,19 @@ it.each([
   vi.resetModules();
   expect((await import("./crew-money")).CREW_CURRENCY).toBe(currency);
 });
-it("keeps historical points unconverted", () =>
-  expect(formatCrewMoney("125", "en-US", "POINTS")).toBe("125"));
+
+it.each([
+  ["0", "0"],
+  ["0.01", "1"],
+  ["10.29", "1029"],
+  ["92233720368547758.07", "9223372036854775807"],
+])("parses %s exactly and round-trips to display units", (value, amount) => {
+  expect(parseCrewMoney(value)).toBe(amount);
+  expect(parseCrewMoney(formatCrewMoneyInput(amount))).toBe(amount);
+});
+it.each(["", "-1", "1.001", "1e2", "1,000", "NaN", "01", "92233720368547758.08"])(
+  "rejects an invalid or overflowing monetary input: %s",
+  (input) => {
+    expect(parseCrewMoney(input)).toBeNull();
+  }
+);

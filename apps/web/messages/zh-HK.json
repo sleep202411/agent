@@ -5562,23 +5562,21 @@
   "crewIncome": {
     "workspaceLabel": "{crew} · 財務",
     "title": "金額與資金發放",
-    "description": "以站點幣種記錄報酬及付款。歷史餘額保留原單位。",
-    "pointsUnit": "積分",
-    "pointsValueTooltip": "{points} 固定等於 {amount}。100 積分始終等於 {benchmark}。",
+    "description": "記錄劇組報酬與發放情況，按人民幣或美元分別記帳。",
     "viewLabel": "財務視圖",
     "views": {
-      "points": "金額帳本",
+      "earnings": "金額帳本",
       "payouts": "資金發放"
     },
     "metrics": {
-      "confirmedPoints": "已確認金額",
-      "pendingPoints": "待審核金額",
-      "monthPoints": "本月確認",
-      "availablePoints": "可發放金額",
-      "reservedPoints": "發放中佔用",
-      "paidPoints": "已發放金額"
+      "confirmedAmount": "已確認金額",
+      "pendingAmount": "待審核金額",
+      "monthAmount": "本月確認",
+      "availableAmount": "可發放金額",
+      "reservedAmount": "發放中佔用",
+      "paidAmount": "已發放金額"
     },
-    "points": {
+    "earnings": {
       "history": "金額帳本",
       "historyDescription": "記錄任務獎勵和財務調整的不可變金額明細。",
       "emptyTitle": "暫無金額記錄",
@@ -5624,7 +5622,7 @@
       "source": "金額來源",
       "titleLabel": "標題",
       "titlePlaceholder": "為甚麼發放這筆金額？",
-      "points": "金額",
+      "amount": "金額",
       "note": "備註",
       "notePlaceholder": "補充合約、里程碑或帳務背景…",
       "pendingNotice": "此金額將在財務確認前保持待審核狀態。",
@@ -5698,7 +5696,7 @@
         "title": "建立資金發放單",
         "description": "鎖定已確認金額，並固化財務實際要發放的金額。",
         "member": "成員",
-        "points": "結算金額",
+        "amount": "結算金額",
         "gross": "應發金額",
         "withholding": "代扣金額",
         "net": "實發金額",
@@ -5713,12 +5711,12 @@
         "reason": "原因",
         "pay": {
           "title": "記錄已完成付款",
-          "description": "確認 {points} 對應的 {amount} 已真實發出。",
+          "description": "確認 {grossAmount} 對應的 {amount} 已真實發出。",
           "submit": "標記已發放"
         },
         "void": {
           "title": "作廢發放單",
-          "description": "作廢 {points} 對應的 {amount}，並釋放佔用金額。",
+          "description": "作廢 {grossAmount} 對應的 {amount}，並釋放佔用金額。",
           "submit": "確認作廢"
         }
       },
@@ -5752,8 +5750,7 @@
       }
     },
     "optional": "可選",
-    "ledgerCurrency": "賬本幣種",
-    "historicalBalances": "歷史積分（原單位）"
+    "ledgerCurrency": "賬本幣種"
   },
   "crewWorkbench": {
     "globalNavigation": "劇組工作台導覽",
@@ -9263,30 +9260,30 @@
       },
       "earning": {
         "posted": {
-          "title": "積分已確認：{title}",
-          "body": "{points} 已計入你的劇組積分帳本。"
+          "title": "收益已確認：{title}",
+          "body": "{amount} 已計入你的劇組收益帳本。"
         },
         "rejected": {
-          "title": "積分記錄已駁回：{title}",
-          "body": "{points} 未計入你的劇組積分帳本。"
+          "title": "收益記錄已駁回：{title}",
+          "body": "{amount} 未計入你的劇組收益帳本。"
         },
         "reversed": {
-          "title": "積分已沖回：{title}",
-          "body": "{points} 已從你的劇組積分帳本扣回。"
+          "title": "收益已沖回：{title}",
+          "body": "{amount} 已從你的劇組收益帳本扣回。"
         }
       },
       "payout": {
         "scheduled": {
           "title": "發放單已建立",
-          "body": "{points} 將按 {amount} 發放。"
+          "body": "{grossAmount} 將按 {amount} 發放。"
         },
         "paid": {
           "title": "資金已發放",
-          "body": "{points} 對應的 {amount} 已完成發放。"
+          "body": "{grossAmount} 對應的 {amount} 已完成發放。"
         },
         "voided": {
           "title": "發放單已作廢",
-          "body": "{points} 對應的 {amount} 已作廢，積分已重新可用。"
+          "body": "{grossAmount} 對應的 {amount} 已作廢，金額已重新可用。"
         }
       }
     }
