@@ -98,7 +98,7 @@ export default function HomePage() {
       <div className="pt-8">
         <section
           aria-label="FizzDragon TV"
-          className="h-[calc(100dvh-6rem)] min-h-[400px] overflow-hidden"
+          className="overflow-hidden md:h-[calc(100dvh-6rem)] md:min-h-[400px]"
         >
           <TvApp embedded />
         </section>

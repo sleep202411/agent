@@ -37,7 +37,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const errorMessage = error instanceof Error ? error.message : undefined;
 
   return (
-    <div className="flex size-full overflow-hidden bg-[#0c0e13] px-3 sm:px-6">
+    <div className="flex w-full flex-col overflow-hidden bg-[#0c0e13] px-3 md:h-full md:flex-row md:px-6">
       <TvIpList
         embedded={embedded}
         items={items}
@@ -59,22 +59,20 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
       />
       <section
         aria-label={t("playerTitle")}
-        className="relative flex min-w-0 flex-1 flex-col overflow-hidden"
+        className="relative flex min-w-0 flex-col overflow-hidden md:flex-1"
       >
-        {item ? (
-          <>
-            <div className="relative min-h-0 flex-1">
-              <TvStage key={item.id} item={item} onPlaybackChange={setIsPlaying} />
-            </div>
-            <TvInfoBar item={item} />
-          </>
-        ) : isLoading ? (
-          <TvLoadingState />
-        ) : isError ? (
-          <TvErrorState message={errorMessage} onRetry={() => void refetch()} />
-        ) : (
-          <TvEmptyState />
-        )}
+        <div className="relative aspect-video shrink-0 md:aspect-auto md:min-h-0 md:flex-1">
+          {item ? (
+            <TvStage key={item.id} item={item} onPlaybackChange={setIsPlaying} />
+          ) : isLoading ? (
+            <TvLoadingState />
+          ) : isError ? (
+            <TvErrorState message={errorMessage} onRetry={() => void refetch()} />
+          ) : (
+            <TvEmptyState />
+          )}
+        </div>
+        {item && <TvInfoBar item={item} />}
 
         {!embedded && (
           <div className="absolute right-4 top-4 z-20 flex items-center gap-2 sm:right-6">
