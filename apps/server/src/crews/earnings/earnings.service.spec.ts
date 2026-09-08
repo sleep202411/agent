@@ -258,7 +258,7 @@ describe('CrewEarningsService', () => {
     );
   });
 
-  it('rejects a pending point entry without touching cash payouts', async () => {
+  it('rejects a pending earning without touching cash payouts', async () => {
     const t = build();
     const rejected = earning({
       status: CrewEarningStatus.rejected,

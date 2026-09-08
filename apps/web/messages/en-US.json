@@ -5562,7 +5562,7 @@
   "crewIncome": {
     "workspaceLabel": "{crew} · Finance",
     "title": "Amounts and payouts",
-    "description": "Track compensation and payouts in CNY or USD.",
+    "description": "Track crew compensation and payouts.",
     "viewLabel": "Finance views",
     "views": {
       "earnings": "Amounts ledger",
@@ -5711,12 +5711,12 @@
         "reason": "Reason",
         "pay": {
           "title": "Record completed payment",
-          "description": "Confirm that {amount} for {amounts} was actually paid.",
+          "description": "Confirm that the net payout of {amount} (gross {grossAmount}) was actually paid.",
           "submit": "Mark paid"
         },
         "void": {
           "title": "Void payout",
-          "description": "Void the {amount} payout for {amounts} and release its reserved amounts.",
+          "description": "Void the net payout of {amount} (gross {grossAmount}) and release the reserved amount.",
           "submit": "Void payout"
         }
       },
@@ -5749,8 +5749,7 @@
         "actionFailed": "Payout action failed."
       }
     },
-    "optional": "Optional",
-    "ledgerCurrency": "Ledger currency"
+    "optional": "Optional"
   },
   "crewWorkbench": {
     "globalNavigation": "Crew workspace navigation",

@@ -116,7 +116,7 @@ function build() {
 }
 
 describe('Crew payout schemas', () => {
-  it('accepts fixed-ratio point payouts and rejects invalid point inputs', () => {
+  it('accepts minor-unit payouts and rejects invalid payment inputs', () => {
     expect(ListCrewPayoutsQuerySchema.parse({ currency: 'USD' })).toEqual({
       currency: 'USD',
       scope: 'mine',

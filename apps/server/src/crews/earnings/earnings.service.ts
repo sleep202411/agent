@@ -79,7 +79,7 @@ export class CrewEarningsService {
         throw new BadRequestException({
           code: 'CREW_EARNING_CURSOR_INVALID',
           message:
-            'The point-entry cursor is invalid for the current filters. Restart from the first page.',
+            'The earning cursor is invalid for the current filters. Restart from the first page.',
         });
       }
     }
@@ -343,7 +343,7 @@ export class CrewEarningsService {
         throw new ConflictException({
           code: 'CREW_EARNING_ALREADY_ALLOCATED',
           message:
-            'This point entry is reserved by or included in a payout and cannot be reversed.',
+            'This earning is reserved by or included in a payout and cannot be reversed.',
         });
       }
       const updated = await tx.crewEarningEntry.update({
@@ -409,7 +409,7 @@ export class CrewEarningsService {
       where: { id },
       include: earningInclude,
     });
-    if (!earning) throw new NotFoundException('Crew point entry not found.');
+    if (!earning) throw new NotFoundException('Crew earning not found.');
     return earning;
   }
 
@@ -469,7 +469,7 @@ function requireVersion(earning: CrewEarningEntry, expectedVersion: number) {
   if (earning.version !== expectedVersion) {
     throw new ConflictException({
       code: 'CREW_EARNING_VERSION_CONFLICT',
-      message: 'The point entry changed. Refresh and try again.',
+      message: 'The earning changed. Refresh and try again.',
       expectedVersion,
       currentVersion: earning.version,
     });

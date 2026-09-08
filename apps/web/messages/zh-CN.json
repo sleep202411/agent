@@ -5562,7 +5562,7 @@
   "crewIncome": {
     "workspaceLabel": "{crew} · 财务",
     "title": "金额与资金发放",
-    "description": "记录剧组报酬与发放情况，按人民币或美元分别记账。",
+    "description": "记录剧组报酬与发放情况。",
     "viewLabel": "财务视图",
     "views": {
       "earnings": "金额账本",
@@ -5749,8 +5749,7 @@
         "actionFailed": "发放操作失败。"
       }
     },
-    "optional": "可选",
-    "ledgerCurrency": "账本币种"
+    "optional": "可选"
   },
   "crewWorkbench": {
     "globalNavigation": "剧组工作台导航",

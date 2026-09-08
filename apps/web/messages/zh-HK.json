@@ -5562,7 +5562,7 @@
   "crewIncome": {
     "workspaceLabel": "{crew} · 財務",
     "title": "金額與資金發放",
-    "description": "記錄劇組報酬與發放情況，按人民幣或美元分別記帳。",
+    "description": "記錄劇組報酬與發放情況。",
     "viewLabel": "財務視圖",
     "views": {
       "earnings": "金額帳本",
@@ -5749,8 +5749,7 @@
         "actionFailed": "發放操作失敗。"
       }
     },
-    "optional": "可選",
-    "ledgerCurrency": "賬本幣種"
+    "optional": "可選"
   },
   "crewWorkbench": {
     "globalNavigation": "劇組工作台導覽",
