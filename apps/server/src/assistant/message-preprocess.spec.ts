@@ -17,12 +17,12 @@ jest.mock('ioredis', () => {
     on() {
       return this;
     }
-    async get(key: string) {
-      return mockRedisStore.get(key) ?? null;
+    get(key: string) {
+      return Promise.resolve(mockRedisStore.get(key) ?? null);
     }
-    async set(key: string, value: string) {
+    set(key: string, value: string) {
       mockRedisStore.set(key, value);
-      return 'OK';
+      return Promise.resolve('OK');
     }
   };
 });

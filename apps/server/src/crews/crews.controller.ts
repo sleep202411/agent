@@ -17,6 +17,7 @@ import {
   Delete,
   ForbiddenException,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -50,6 +51,12 @@ export class CrewsController {
     private readonly svc: CrewsService,
     private readonly authService: AuthService,
   ) {}
+
+  @Get('creation-eligibility')
+  @Header('Cache-Control', 'no-store')
+  creationEligibility(@CurrentUser() user: AuthUser) {
+    return this.svc.creationEligibility(user.userId);
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -202,7 +209,7 @@ export class CrewsController {
   }
 
   private async assertCreateAllowed(cookie: string) {
-    if (CURRENT_CELL !== 'cn' || process.env.AUTH_DISABLED === 'true') return;
+    if (CURRENT_CELL !== 'cn') return;
 
     const needsKyc = await this.authService.needsRealNameVerification(cookie);
     if (needsKyc === false) return;

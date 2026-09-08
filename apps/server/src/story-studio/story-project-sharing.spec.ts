@@ -21,8 +21,12 @@ function tx(overrides: {
     removedAt: Date | null;
   } | null;
 }) {
-  const workspaceMemberCreate = jest.fn().mockResolvedValue({ id: 'wm-new' });
-  const workspaceMemberUpdate = jest.fn().mockResolvedValue({ id: 'wm-old' });
+  const workspaceMemberCreate = jest
+    .fn<Promise<{ id: string }>, [{ data: Record<string, unknown> }]>()
+    .mockResolvedValue({ id: 'wm-new' });
+  const workspaceMemberUpdate = jest
+    .fn<Promise<{ id: string }>, [{ data: Record<string, unknown> }]>()
+    .mockResolvedValue({ id: 'wm-old' });
   const workspaceMemberCount = jest.fn().mockResolvedValue(1);
   return {
     calls: {

@@ -1842,6 +1842,16 @@
     }
   },
   "crew": {
+    "creationRequirements": {
+      "title": "剧组创建要求",
+      "eligibility": "只有持有 FizzDragon 认证 AI 制作人资格凭证的用户才能创建剧组，并带领平台创作者协作完成项目。",
+      "instructions": "如果您已完成 FizzDragon AI 制作人培训课程，或已报名参加即将开办的培训课程，请将您的培训证书或报名确认文件发送至以下电子邮箱，以便进行资格审核和备案：",
+      "subjectInstruction": "请使用以下邮件主题：",
+      "dismiss": "关闭",
+      "subject": "AI Producer Qualification Review – [Your Name / Organisation]",
+      "checking": "正在核验制片人资质…",
+      "retry": "重试"
+    },
     "plaza": "剧组大厅",
     "allCrewsTitle": "全部剧组",
     "allCrewsCount": "共 {count} 个剧组",
@@ -4450,6 +4460,7 @@
     "inviteLinkStateExhausted": "已达上限"
   },
   "crewAssets": {
+    "linkCanvas": "关联画布",
     "title": "剧组资产中心",
     "allFiles": "全部文件",
     "recent": "最近使用",
@@ -5243,6 +5254,12 @@
     }
   },
   "crewTasks": {
+    "deletion": {
+      "label": "删除任务",
+      "description": "删除此任务？子任务将移至其父任务下，此任务将不再阻塞其他任务。财务记录将保留。",
+      "success": "任务已删除",
+      "cancel": "取消"
+    },
     "title": "制作任务",
     "count": "共 {count} 个任务",
     "newTask": "新建任务",
@@ -5321,8 +5338,8 @@
     "due": "截止日期",
     "updated": "最后更新",
     "none": "未设置",
-    "compensation": "任务报酬积分",
-    "noCompensation": "没有设置任务报酬积分。",
+    "compensation": "奖励金额",
+    "noCompensation": "尚未分配奖励金额。",
     "createTitle": "新建制作任务",
     "createDescription": "设置任务要求、预算、执行人和报酬；每个任务都会创建独立且可持续编辑的任务画布。",
     "titlePlaceholder": "需要完成什么？",
@@ -5367,7 +5384,7 @@
     "revisionProgress": "已用 {used} / {limit} 次",
     "revisionUnlimitedProgress": "已用 {used} 次 · 不限",
     "revisionUsedHint": "已使用 {used} 次返修，上限不能低于该数值。",
-    "reward": "每位执行人的报酬积分",
+    "reward": "每位负责人的奖励金额",
     "pointsUnit": "积分",
     "chooseAssignees": "选择执行人",
     "cancel": "取消",
@@ -5544,31 +5561,31 @@
   },
   "crewIncome": {
     "workspaceLabel": "{crew} · 财务",
-    "title": "积分与资金发放",
-    "description": "先将剧组报酬确认为积分，再通过可审计的发放单结算所选积分对应的真实资金。",
+    "title": "金额与资金发放",
+    "description": "以站点币种记录报酬及付款。历史余额保留原单位。",
     "pointsUnit": "积分",
     "pointsValueTooltip": "{points} 固定等于 {amount}。100 积分始终等于 {benchmark}。",
     "viewLabel": "财务视图",
     "views": {
-      "points": "积分账本",
+      "points": "金额账本",
       "payouts": "资金发放"
     },
     "metrics": {
-      "confirmedPoints": "已确认积分",
-      "pendingPoints": "待审核积分",
+      "confirmedPoints": "已确认金额",
+      "pendingPoints": "待审核金额",
       "monthPoints": "本月确认",
-      "availablePoints": "可发放积分",
+      "availablePoints": "可发放金额",
       "reservedPoints": "发放中占用",
-      "paidPoints": "已发放积分"
+      "paidPoints": "已发放金额"
     },
     "points": {
-      "history": "积分账本",
-      "historyDescription": "记录任务奖励和财务调整的不可变积分明细。",
-      "emptyTitle": "暂无积分记录",
-      "emptyDescription": "任务通过后会自动产生积分，财务也可以手动新增积分记录。"
+      "history": "金额账本",
+      "historyDescription": "记录任务奖励和财务调整的不可变金额明细。",
+      "emptyTitle": "暂无金额记录",
+      "emptyDescription": "任务通过后会自动产生金额，财务也可以手动新增金额记录。"
     },
     "scopes": {
-      "mine": "我的积分",
+      "mine": "我的金额",
       "crew": "剧组账本"
     },
     "filters": {
@@ -5580,8 +5597,8 @@
       "paid": "已发放",
       "voided": "已作废"
     },
-    "loading": "正在加载积分账本…",
-    "loadFailed": "无法加载积分账本。",
+    "loading": "正在加载金额账本…",
+    "loadFailed": "无法加载金额账本。",
     "retry": "重试",
     "loadMore": "加载更多",
     "status": {
@@ -5592,47 +5609,47 @@
     },
     "sources": {
       "task_reward": "任务奖励",
-      "contract_compensation": "合同约定积分",
-      "milestone_bonus": "里程碑积分",
-      "revenue_share": "分成约定积分",
-      "discretionary_bonus": "奖励积分",
-      "adjustment": "积分调整"
+      "contract_compensation": "合同约定金额",
+      "milestone_bonus": "里程碑金额",
+      "revenue_share": "分成约定金额",
+      "discretionary_bonus": "奖励金额",
+      "adjustment": "金额调整"
     },
     "create": {
-      "action": "添加积分",
-      "title": "添加成员积分",
-      "description": "创建一笔待审批积分。财务确认后才会进入成员可发放积分。",
+      "action": "添加金额",
+      "title": "添加成员金额",
+      "description": "创建一笔待审批金额。财务确认后才会进入成员可发放金额。",
       "member": "成员",
       "memberPlaceholder": "选择成员",
-      "source": "积分来源",
+      "source": "金额来源",
       "titleLabel": "标题",
-      "titlePlaceholder": "为什么发放这笔积分？",
-      "points": "积分",
+      "titlePlaceholder": "为什么发放这笔金额？",
+      "points": "金额",
       "note": "备注",
       "notePlaceholder": "补充合同、里程碑或账务背景…",
-      "pendingNotice": "此阶段只确认积分，不赋予现金金额；记录需经财务审核后生效。",
-      "submit": "创建积分记录"
+      "pendingNotice": "此金额将在财务确认前保持待审核状态。",
+      "submit": "创建金额记录"
     },
     "decision": {
-      "rejectTitle": "驳回积分记录",
-      "rejectDescription": "记录会保留在审计账本中，但不会增加成员积分。",
-      "reverseTitle": "冲回已确认积分",
-      "reverseDescription": "系统会扣回已确认积分；已被发放单占用或已经发放的积分不能冲回。",
+      "rejectTitle": "驳回金额记录",
+      "rejectDescription": "记录会保留在审计账本中，但不会增加成员金额。",
+      "reverseTitle": "冲回已确认金额",
+      "reverseDescription": "系统会扣回已确认金额；已被发放单占用或已经发放的金额不能冲回。",
       "reasonPlaceholder": "填写本次决定的原因…"
     },
     "actions": {
       "approve": "审批入账",
       "reject": "驳回",
       "reverse": "冲回",
-      "viewDetails": "查看积分详情",
+      "viewDetails": "查看金额详情",
       "cancel": "取消",
       "confirmReject": "确认驳回",
       "confirmReverse": "确认冲回"
     },
     "detail": {
-      "title": "积分详情",
-      "description": "查看这笔积分的来源、决策和不可篡改的审计历史。",
-      "source": "积分来源",
+      "title": "金额详情",
+      "description": "查看这笔金额的来源、决策和不可篡改的审计历史。",
+      "source": "金额来源",
       "note": "备注",
       "recorded": "记录时间",
       "createdBy": "创建人",
@@ -5646,26 +5663,26 @@
       "loadFailed": "无法加载审计轨迹。",
       "close": "关闭",
       "events": {
-        "created": "创建积分记录",
-        "posted": "积分已确认",
-        "rejected": "积分记录已驳回",
-        "reversed": "已确认积分被冲回",
-        "unknown": "积分记录已更新"
+        "created": "创建金额记录",
+        "posted": "金额已确认",
+        "rejected": "金额记录已驳回",
+        "reversed": "已确认金额被冲回",
+        "unknown": "金额记录已更新"
       }
     },
     "messages": {
-      "created": "积分记录已创建",
-      "createFailed": "积分记录创建失败。",
-      "approved": "积分已确认",
-      "rejected": "积分记录已驳回",
-      "reversed": "积分已冲回",
-      "actionFailed": "积分操作失败。"
+      "created": "金额记录已创建",
+      "createFailed": "金额记录创建失败。",
+      "approved": "金额已确认",
+      "rejected": "金额记录已驳回",
+      "reversed": "金额已冲回",
+      "actionFailed": "金额操作失败。"
     },
     "payout": {
       "history": "资金发放记录",
-      "historyDescription": "每张发放单都会锁定已确认积分，并保存独立的金额快照与审计轨迹。",
+      "historyDescription": "每张发放单都会锁定已确认金额，并保存独立的金额快照与审计轨迹。",
       "emptyTitle": "暂无发放记录",
-      "emptyDescription": "财务可以使用成员的可发放积分创建资金发放单。",
+      "emptyDescription": "财务可以使用成员的可发放金额创建资金发放单。",
       "record": "剧组资金发放",
       "status": {
         "pending": "待处理",
@@ -5679,14 +5696,14 @@
       "create": {
         "action": "创建发放单",
         "title": "创建资金发放单",
-        "description": "锁定已确认积分，并固化财务实际要发放的金额。",
+        "description": "锁定已确认金额，并固化财务实际要发放的金额。",
         "member": "成员",
-        "points": "结算积分",
+        "points": "结算金额",
         "gross": "应发金额",
         "withholding": "代扣金额",
         "net": "实发金额",
         "note": "财务备注",
-        "notice": "创建发放单后会锁定所选积分；只有记录付款方式和流水号后，资金才视为已发放。",
+        "notice": "创建发放单后会锁定所选金额；只有记录付款方式和流水号后，资金才视为已发放。",
         "submit": "创建发放单"
       },
       "dialog": {
@@ -5701,7 +5718,7 @@
         },
         "void": {
           "title": "作废发放单",
-          "description": "作废 {points} 对应的 {amount}，并释放占用积分。",
+          "description": "作废 {points} 对应的 {amount}，并释放占用金额。",
           "submit": "确认作废"
         }
       },
@@ -5714,12 +5731,12 @@
       },
       "detail": {
         "title": "发放详情",
-        "description": "积分分配、金额快照与不可变付款历史。",
+        "description": "金额分配、金额快照与不可变付款历史。",
         "gross": "应发金额",
         "withholding": "代扣金额",
         "reference": "付款流水号",
         "voidReason": "作废原因",
-        "allocations": "积分来源分配",
+        "allocations": "金额来源分配",
         "events": {
           "created": "发放单已创建",
           "paid": "付款已完成",
@@ -5730,11 +5747,13 @@
       "messages": {
         "created": "发放单已创建",
         "pay": "付款记录已完成",
-        "void": "发放单已作废，积分已释放",
+        "void": "发放单已作废，金额已释放",
         "actionFailed": "发放操作失败。"
       }
     },
-    "optional": "可选"
+    "optional": "可选",
+    "ledgerCurrency": "账本币种",
+    "historicalBalances": "历史积分（原单位）"
   },
   "crewWorkbench": {
     "globalNavigation": "剧组工作台导航",
@@ -9245,15 +9264,15 @@
       "earning": {
         "posted": {
           "title": "积分已确认：{title}",
-          "body": "{points} 已计入你的剧组积分账本。"
+          "body": "{points} 已计入你的剧组资金账本。"
         },
         "rejected": {
           "title": "积分记录已驳回：{title}",
-          "body": "{points} 未计入你的剧组积分账本。"
+          "body": "{points} 未计入你的剧组资金账本。"
         },
         "reversed": {
           "title": "积分已冲回：{title}",
-          "body": "{points} 已从你的剧组积分账本扣回。"
+          "body": "{points} 已从你的剧组资金账本扣回。"
         }
       },
       "payout": {

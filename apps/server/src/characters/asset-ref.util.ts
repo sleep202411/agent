@@ -44,14 +44,15 @@ export function redactProviderAssetRefs(
     const value = input[field];
     if (!Array.isArray(value)) continue;
     let rewrote = false;
-    const next = value.map((entry) => {
+    const next = value.map((entry: unknown) => {
       if (
         isRecord(entry) &&
         typeof entry.url === 'string' &&
         entry.url.toLowerCase().startsWith(PROVIDER_ASSET_URL_SCHEME)
       ) {
         rewrote = true;
-        const { url: _url, ...rest } = entry;
+        const rest = { ...entry };
+        delete rest.url;
         return rest;
       }
       return entry;

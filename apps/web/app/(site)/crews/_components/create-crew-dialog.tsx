@@ -19,7 +19,8 @@
  * showcaseWorks are edited in the workspace 基本信息 tab (Phase B).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconLoader2, IconPhoto } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -34,6 +35,8 @@ import {
   DialogContent,
   DialogFooter,
   DialogHero,
+  DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,7 +44,13 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { uploadBanner } from "@/src/services/user";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
-import { CrewApiError, useCreateCrew, useUpdateCrew } from "@/app/(site)/crews/_hooks/use-crew";
+import {
+  crewApi,
+  CrewApiError,
+  useCreateCrew,
+  useUpdateCrew,
+} from "@/app/(site)/crews/_hooks/use-crew";
+import { CrewEligibilityNotice } from "./crew-eligibility-notice";
 
 // Hero image — same static CDN we use for `<CreateIPDialog>`. Replace
 // when product gives a crew-specific illustration.
@@ -68,20 +77,59 @@ interface CreateCrewDialogProps {
   initial?: CrewFormInitial | null;
 }
 
-export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDialogProps) {
+export function CreateCrewDialog(props: CreateCrewDialogProps) {
+  const t = useTranslations("crew.creationRequirements");
+  const eligibility = useQuery({
+    queryKey: ["crew-creation-eligibility"],
+    queryFn: () => crewApi.get<{ eligible: boolean }>("/crews/creation-eligibility"),
+    enabled: props.open && !props.initial,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  if (!props.open) return null;
+  if (props.initial) return <CrewFormDialog key={props.initial.id} {...props} />;
+  if (eligibility.isPending || eligibility.isFetching || eligibility.isError) {
+    return (
+      <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+        <DialogContent>
+          <DialogTitle>{t("title")}</DialogTitle>
+          <DialogDescription>
+            {eligibility.isError ? eligibility.error.message : t("checking")}
+          </DialogDescription>
+          {eligibility.isError && (
+            <Button onClick={() => void eligibility.refetch()}>{t("retry")}</Button>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  if (eligibility.data?.eligible !== true)
+    return <CrewEligibilityNotice open={props.open} onOpenChange={props.onOpenChange} />;
+  return <CrewFormDialog {...props} onCertificationRequired={() => void eligibility.refetch()} />;
+}
+
+function CrewFormDialog({
+  open,
+  onOpenChange,
+  initial,
+  onCertificationRequired,
+}: CreateCrewDialogProps & { onCertificationRequired?: () => void }) {
   const t = useTranslations("crew");
   const tc = useTranslations("common");
   const router = useRouter();
   const locale = useLocale() as Locale;
 
   const isEdit = !!initial;
+  const [requirementsOpen, setRequirementsOpen] = useState(false);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
   // Backend persists a relative OSS key in `logo`; we keep both the
   // raw key (sent on submit) and rely on env.BANNER_BASE_URL to render
   // the local preview.
-  const [logoPath, setLogoPath] = useState("");
+  const [logoPath, setLogoPath] = useState(initial?.logo ?? "");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -90,23 +138,6 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
   // Kept named `creating` in body so the existing JSX still reads
   // naturally — in edit mode this just means "update in flight".
   const creating = create.isPending || update.isPending;
-
-  // Reset / prefill on open. Edit mode hydrates from `initial`; close
-  // clears so a previous failed attempt doesn't leak into the next open.
-  useEffect(() => {
-    if (!open) {
-      setName("");
-      setDescription("");
-      setLogoPath("");
-      setUploadingLogo(false);
-      return;
-    }
-    if (initial) {
-      setName(initial.name ?? "");
-      setDescription(initial.description ?? "");
-      setLogoPath(initial.logo ?? "");
-    }
-  }, [open, initial]);
 
   // ─── Logo upload (image) ──────────────────────────
   const handleLogoFile = async (file: File) => {
@@ -185,6 +216,14 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
           router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
         },
         onError: (err) => {
+          if (
+            err instanceof CrewApiError &&
+            err.status === 403 &&
+            (err.body as { code?: string } | null)?.code === "CREW_PRODUCER_CERTIFICATION_REQUIRED"
+          ) {
+            onCertificationRequired?.();
+            return;
+          }
           posthog.captureException(err);
           reportError(err, "createFailed");
         },
@@ -203,6 +242,21 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
         />
 
         <DialogBody>
+          {!isEdit && (
+            <>
+              <button
+                type="button"
+                className="mb-4 text-sm underline underline-offset-4 focus-visible:outline focus-visible:outline-2"
+                onClick={() => setRequirementsOpen(true)}
+              >
+                {t("creationRequirements.title")}
+              </button>
+              <CrewEligibilityNotice
+                open={open && requirementsOpen}
+                onOpenChange={setRequirementsOpen}
+              />
+            </>
+          )}
           <FieldGroup>
             {/* Logo first, centered, no label — it IS the identity
                 anchor of the form. Avatar-style picker matches the

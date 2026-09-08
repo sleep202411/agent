@@ -15,6 +15,7 @@ export const positivePointAmount = z
   );
 
 export const ListCrewEarningsQuerySchema = z.object({
+  currency: z.enum(['POINTS', 'CNY', 'USD']).optional(),
   scope: z.enum(['mine', 'crew']).default('mine'),
   status: z.nativeEnum(CrewEarningStatus).optional(),
   sourceType: z.nativeEnum(CrewEarningSourceType).optional(),
@@ -35,6 +36,7 @@ export const CreateCrewEarningSchema = z
     agreementId: z.string().uuid().optional(),
     title: z.string().trim().min(1).max(180),
     description: z.string().trim().max(10_000).optional(),
+    currency: z.enum(['CNY', 'USD']),
     pointsAmount: positivePointAmount,
     idempotencyKey: z.string().trim().min(8).max(80),
   })

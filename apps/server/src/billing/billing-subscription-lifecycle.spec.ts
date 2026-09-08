@@ -30,12 +30,13 @@ const apply = (
     providerEvent,
     eventType,
     payload,
-  );
+  ) as ReturnType<typeof apply>;
 
 function makeTx(sub: Record<string, unknown> | null) {
-  const update = jest
-    .fn()
-    .mockImplementation(({ data }) => ({ ...sub, ...data }));
+  const update = jest.fn(({ data }: { data: Record<string, unknown> }) => ({
+    ...sub,
+    ...data,
+  }));
   return {
     tx: {
       billingSubscription: {

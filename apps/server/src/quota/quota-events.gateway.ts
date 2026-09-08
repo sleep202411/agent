@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 /**
  * QuotaEventsGateway — per-user WS push for quota changes.
  *
@@ -61,7 +62,7 @@ export class QuotaEventsGateway
   constructor(private readonly authService: AuthService) {}
 
   afterInit() {
-    const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
+    const url = requiredEnv('REDIS_URL');
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
     void this.redisSubscriber.psubscribe(QUOTA_CHANNEL_PATTERN, (err) => {
@@ -177,13 +178,6 @@ export class QuotaEventsGateway
   }
 
   private async authenticateFromCookie(cookie: string | undefined) {
-    if (process.env.AUTH_DISABLED === 'true') {
-      return {
-        userId: 'dev',
-        userName: 'dev',
-        nickName: 'Developer',
-      };
-    }
     if (!cookie) return null;
     try {
       return await this.authService.validateToken(cookie);

@@ -1,4 +1,8 @@
 import {
+  crewCurrency,
+  assertNewCrewCurrency,
+} from '../earnings/ledger-currency';
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -85,6 +89,7 @@ const taskInclude = {
   workflowState: true,
   parent: { select: taskReferenceSelect },
   children: {
+    where: { deletedAt: null },
     select: taskReferenceSelect,
     orderBy: [{ rank: 'asc' as const }, { id: 'asc' as const }],
   },
@@ -112,10 +117,12 @@ const taskInclude = {
     orderBy: { versionNumber: 'desc' as const },
   },
   dependenciesAsBlocked: {
+    where: { blockingTask: { deletedAt: null } },
     include: { blockingTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
   dependenciesAsBlocker: {
+    where: { blockedTask: { deletedAt: null } },
     include: { blockedTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
@@ -127,6 +134,7 @@ const taskCardInclude = {
   workflowState: true,
   parent: { select: taskReferenceSelect },
   children: {
+    where: { deletedAt: null },
     select: taskReferenceSelect,
     orderBy: [{ rank: 'asc' as const }, { id: 'asc' as const }],
   },
@@ -137,10 +145,12 @@ const taskCardInclude = {
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
   dependenciesAsBlocked: {
+    where: { blockingTask: { deletedAt: null } },
     include: { blockingTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
   dependenciesAsBlocker: {
+    where: { blockedTask: { deletedAt: null } },
     include: { blockedTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
@@ -226,7 +236,9 @@ export class CrewTasksService {
       }),
       this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
-        include: { _count: { select: { tasks: true } } },
+        include: {
+          _count: { select: { tasks: { where: { deletedAt: null } } } },
+        },
         orderBy: [
           { archived: 'asc' },
           { position: 'asc' },
@@ -241,6 +253,141 @@ export class CrewTasksService {
       fields: fields.map(taskFieldDto),
       workflowStates: workflowStates.map(taskWorkflowStateDto),
     };
+  }
+
+  private async requireActiveTaskTx(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+  ): Promise<TaskRow> {
+    try {
+      return await tx.crewTask.findUniqueOrThrow({
+        where: { id: taskId, deletedAt: null },
+        include: taskInclude,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('Task not found.');
+      }
+      throw error;
+    }
+  }
+
+  private async lockTaskWrites(tx: Prisma.TransactionClient, crewId: string) {
+    // Always acquired before operation-specific locks, including review/reward posting.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+  }
+
+  async delete(
+    taskId: string,
+    userId: string,
+    expectedVersion: number,
+  ): Promise<void> {
+    const current = await this.requireTask(taskId);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
+    const affected = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
+      await this.authorization.require(
+        current.crewId,
+        userId,
+        'tasks.manage',
+        tx,
+      );
+      const task = await tx.crewTask.findUnique({
+        where: { id: taskId, deletedAt: null },
+      });
+      if (!task) throw new NotFoundException('Task not found.');
+      if (task.version !== expectedVersion) {
+        throw new ConflictException({
+          code: 'CREW_TASK_VERSION_CONFLICT',
+          message: 'This task changed. Refresh before deleting it.',
+        });
+      }
+      let parentId: string | null = null;
+      let cursor = task.parentId;
+      const visited = new Set([taskId]);
+      while (cursor) {
+        if (visited.has(cursor))
+          throw new ConflictException('Task hierarchy contains a cycle.');
+        visited.add(cursor);
+        const parent = await tx.crewTask.findFirst({
+          where: { id: cursor, crewId: task.crewId },
+        });
+        if (!parent)
+          throw new ConflictException(
+            'Task hierarchy contains a missing parent.',
+          );
+        if (!parent.deletedAt && parentId === null) parentId = parent.id;
+        cursor = parent.parentId;
+      }
+      const children = await tx.crewTask.findMany({
+        where: { crewId: task.crewId, parentId: taskId, deletedAt: null },
+        select: { id: true },
+      });
+      for (const child of children) {
+        await this.assertTaskStructure(tx, task.crewId, child.id, parentId, []);
+        await tx.crewTask.update({
+          where: { id: child.id },
+          data: { parentId, version: { increment: 1 } },
+        });
+        await this.writeActivity(tx, child.id, 'task.reparented', userId, {
+          previousParentId: taskId,
+          parentId,
+          reason: 'parent_deleted',
+        });
+      }
+      // Edges are retained as evidence; active relation queries exclude deleted endpoints.
+      const edges = await tx.crewTaskDependency.findMany({
+        where: {
+          crewId: task.crewId,
+          OR: [{ blockingTaskId: taskId }, { blockedTaskId: taskId }],
+        },
+      });
+      const affectedIds = [
+        ...new Set(
+          edges.flatMap((edge) => [edge.blockedTaskId, edge.blockingTaskId]),
+        ),
+      ].filter((id) => id !== taskId);
+      if (affectedIds.length)
+        await tx.crewTask.updateMany({
+          where: { id: { in: affectedIds }, deletedAt: null },
+          data: { version: { increment: 1 } },
+        });
+      await tx.crewTask.update({
+        where: { id: taskId, version: expectedVersion, deletedAt: null },
+        data: {
+          deletedAt: new Date(),
+          deletedByUserId: userId,
+          version: { increment: 1 },
+        },
+      });
+      await this.writeActivity(tx, taskId, 'task.deleted', userId, {
+        previousParentId: task.parentId,
+        childIds: children.map((child) => child.id),
+        newParentId: parentId,
+        affectedDependencyTaskIds: affectedIds,
+      });
+      return [
+        ...new Set([
+          taskId,
+          ...children.map((child) => child.id),
+          ...affectedIds,
+          ...(parentId ? [parentId] : []),
+        ]),
+      ];
+    });
+    await Promise.all(
+      affected.map((id) =>
+        this.conversations.broadcastCrewTaskChange(
+          current.crewId,
+          id,
+          'updated',
+          userId,
+        ),
+      ),
+    );
   }
 
   async createView(
@@ -360,6 +507,7 @@ export class CrewTasksService {
     await this.authorization.require(crewId, userId, 'tasks.manage');
     await this.ensureDefaultWorkflowStates(crewId, userId);
     const state = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${crewId}`})::bigint)
       `;
@@ -449,6 +597,7 @@ export class CrewTasksService {
       throw new NotFoundException('Task workflow column not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
     const state = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${current.crewId}`})::bigint)
       `;
@@ -492,7 +641,7 @@ export class CrewTasksService {
           });
         }
         const taskCount = await tx.crewTask.count({
-          where: { workflowStateId: stateId },
+          where: { deletedAt: null, workflowStateId: stateId },
         });
         if (taskCount > 0) {
           if (!input.replacementStateId) {
@@ -528,7 +677,7 @@ export class CrewTasksService {
             });
           }
           await tx.crewTask.updateMany({
-            where: { workflowStateId: stateId },
+            where: { deletedAt: null, workflowStateId: stateId },
             data: {
               workflowStateId: replacement.id,
               version: { increment: 1 },
@@ -596,6 +745,7 @@ export class CrewTasksService {
   ) {
     await this.authorization.require(crewId, userId, 'tasks.manage');
     const states = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${crewId}`})::bigint)
       `;
@@ -655,6 +805,7 @@ export class CrewTasksService {
       throw new NotFoundException('Task workflow column not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
     await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${current.crewId}`})::bigint)
       `;
@@ -710,6 +861,7 @@ export class CrewTasksService {
   ) {
     await this.authorization.require(crewId, userId, 'tasks.manage');
     const cycle = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${crewId}`})::bigint)
       `;
@@ -750,6 +902,7 @@ export class CrewTasksService {
     if (!current) throw new NotFoundException('Task cycle not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
     const cycle = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${current.crewId}`})::bigint)
       `;
@@ -817,6 +970,7 @@ export class CrewTasksService {
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
 
     await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${current.crewId}`})::bigint)
       `;
@@ -1084,11 +1238,12 @@ export class CrewTasksService {
       throw new BadRequestException({ message: 'Task ids must be unique.' });
     }
     await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-batch:${crewId}`})::bigint)
       `;
       const count = await tx.crewTask.count({
-        where: { crewId, id: { in: taskIds } },
+        where: { deletedAt: null, crewId, id: { in: taskIds } },
       });
       if (count !== taskIds.length) {
         throw new BadRequestException({
@@ -1100,7 +1255,7 @@ export class CrewTasksService {
         ...(input.removeLabelIds ?? []),
       ]);
       await tx.crewTask.updateMany({
-        where: { crewId, id: { in: taskIds } },
+        where: { deletedAt: null, crewId, id: { in: taskIds } },
         data: {
           priority: input.priority,
           cycleId: input.cycleId,
@@ -1125,7 +1280,7 @@ export class CrewTasksService {
       }
     });
     const tasks = await this.prisma.crewTask.findMany({
-      where: { crewId, id: { in: taskIds } },
+      where: { deletedAt: null, crewId, id: { in: taskIds } },
       include: taskInclude,
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
     });
@@ -1156,11 +1311,12 @@ export class CrewTasksService {
       });
     }
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-rank:${current.crewId}`})::bigint)
       `;
       const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
+        where: { deletedAt: null, id: taskId },
         include: taskCardInclude,
       });
       if (locked.version !== input.expectedVersion) {
@@ -1199,7 +1355,11 @@ export class CrewTasksService {
       );
       const anchorRows = anchors.length
         ? await tx.crewTask.findMany({
-            where: { crewId: locked.crewId, id: { in: anchors } },
+            where: {
+              deletedAt: null,
+              crewId: locked.crewId,
+              id: { in: anchors },
+            },
             select: {
               id: true,
               rank: true,
@@ -1248,6 +1408,7 @@ export class CrewTasksService {
       }
       const occupiedDestination = await tx.crewTask.count({
         where: {
+          deletedAt: null,
           crewId: locked.crewId,
           id: { notIn: [taskId, ...anchors] },
           workflowStateId: targetWorkflowState.id,
@@ -1277,7 +1438,7 @@ export class CrewTasksService {
         rank = new Prisma.Decimal(1024);
       }
       return tx.crewTask.update({
-        where: { id: taskId },
+        where: { deletedAt: null, id: taskId },
         data: {
           rank,
           workflowStateId: targetWorkflowState.id,
@@ -1357,6 +1518,7 @@ export class CrewTasksService {
     const normalized = query.query?.trim();
     const rows = await this.prisma.crewTask.findMany({
       where: {
+        deletedAt: null,
         crewId,
         ...(query.excludeTaskId ? { id: { not: query.excludeTaskId } } : {}),
         ...(query.activeOnly
@@ -1409,10 +1571,14 @@ export class CrewTasksService {
     const [statusGroups, myActive] = await Promise.all([
       this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
-        select: { semantic: true, _count: { select: { tasks: true } } },
+        select: {
+          semantic: true,
+          _count: { select: { tasks: { where: { deletedAt: null } } } },
+        },
       }),
       this.prisma.crewTask.count({
         where: {
+          deletedAt: null,
           crewId,
           workflowState: {
             semantic: {
@@ -1513,6 +1679,7 @@ export class CrewTasksService {
     }
 
     const task = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-create:${crewId}`})::bigint)
       `;
@@ -1607,10 +1774,12 @@ export class CrewTasksService {
               crewId,
               crewMemberId: memberByUser.get(assignee.userId)!.id,
               userId: assignee.userId,
+              currency: crewCurrency(),
               rewardPoints:
                 assignee.rewardPoints == null
                   ? null
-                  : BigInt(assignee.rewardPoints),
+                  : (assertNewCrewCurrency(assignee.currency),
+                    BigInt(assignee.rewardPoints)),
             })),
           },
           dependenciesAsBlocked: {
@@ -1689,13 +1858,11 @@ export class CrewTasksService {
     }
 
     const task = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-update:${taskId}`})::bigint)
       `;
-      const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
-        include: taskInclude,
-      });
+      const locked = await this.requireActiveTaskTx(tx, taskId);
       if (locked.version !== input.expectedVersion) {
         throw new ConflictException({
           code: 'CREW_TASK_VERSION_CONFLICT',
@@ -1836,6 +2003,13 @@ export class CrewTasksService {
           const existing = locked.assignees.find(
             (candidate) => candidate.userId === assignee.userId,
           );
+          if (
+            assignee.rewardPoints != null &&
+            (!existing ||
+              existing.rewardPoints !== BigInt(assignee.rewardPoints))
+          ) {
+            assertNewCrewCurrency(assignee.currency);
+          }
           const rewardPoints =
             assignee.rewardPoints == null
               ? null
@@ -1845,6 +2019,10 @@ export class CrewTasksService {
               where: { id: existing.id },
               data: {
                 rewardPoints,
+                currency:
+                  existing && existing.rewardPoints === rewardPoints
+                    ? existing.currency
+                    : crewCurrency(),
               },
             });
           } else {
@@ -1854,6 +2032,7 @@ export class CrewTasksService {
                 taskId,
                 crewMemberId: memberByUser.get(assignee.userId)!.id,
                 userId: assignee.userId,
+                currency: crewCurrency(),
                 rewardPoints,
               },
             });
@@ -2054,7 +2233,7 @@ export class CrewTasksService {
       }
 
       const updated = await tx.crewTask.update({
-        where: { id: taskId },
+        where: { deletedAt: null, id: taskId },
         data: {
           title: input.title,
           description: input.description,
@@ -2251,6 +2430,10 @@ export class CrewTasksService {
     const task = await this.requireTask(taskId);
     await this.authorization.require(task.crewId, userId, 'tasks.comment');
     const created = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, task.crewId);
+      await tx.crewTask.findUniqueOrThrow({
+        where: { id: task.id, deletedAt: null },
+      });
       await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(
           hashtextextended(
@@ -2404,7 +2587,12 @@ export class CrewTasksService {
       where: { id: commentId },
       include: { task: true },
     });
-    if (!current || current.kind !== 'comment' || current.deletedAt) {
+    if (
+      !current ||
+      current.task.deletedAt ||
+      current.kind !== 'comment' ||
+      current.deletedAt
+    ) {
       throw new NotFoundException('Task comment not found.');
     }
     const context = await this.authorization.require(
@@ -2422,6 +2610,10 @@ export class CrewTasksService {
       });
     }
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.task.crewId);
+      await tx.crewTask.findUniqueOrThrow({
+        where: { id: current.taskId, deletedAt: null },
+      });
       await tx.$executeRaw(
         Prisma.sql`SELECT pg_advisory_xact_lock(
           hashtextextended(${`crew-task-comment-edit:${commentId}`}, 0)
@@ -2499,7 +2691,12 @@ export class CrewTasksService {
       where: { id: commentId },
       include: { task: true },
     });
-    if (!current || current.kind !== 'comment' || current.deletedAt) {
+    if (
+      !current ||
+      current.task.deletedAt ||
+      current.kind !== 'comment' ||
+      current.deletedAt
+    ) {
       throw new NotFoundException('Task comment not found.');
     }
     const context = await this.authorization.require(
@@ -2516,17 +2713,23 @@ export class CrewTasksService {
           'Only the author or a crew administrator can delete this comment.',
       });
     }
-    await this.prisma.crewTaskTimelineItem.update({
-      where: { id: commentId },
-      data: {
-        body: null,
-        mentions: [],
-        payload: {
-          deletedByUserId: userId,
+    await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.task.crewId);
+      await tx.crewTask.findUniqueOrThrow({
+        where: { id: current.taskId, deletedAt: null },
+      });
+      await tx.crewTaskTimelineItem.update({
+        where: { id: commentId },
+        data: {
+          body: null,
+          mentions: [],
+          payload: {
+            deletedByUserId: userId,
+          },
+          deletedAt: new Date(),
+          version: { increment: 1 },
         },
-        deletedAt: new Date(),
-        version: { increment: 1 },
-      },
+      });
     });
     await this.conversations.broadcastCrewTaskChange(
       current.task.crewId,
@@ -2557,13 +2760,11 @@ export class CrewTasksService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, task.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-submit:${taskId}`})::bigint)
       `;
-      const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
-        include: taskInclude,
-      });
+      const locked = await this.requireActiveTaskTx(tx, taskId);
       if (!ACCEPTING_TASK_STATUSES.has(locked.workflowState.semantic)) {
         throw new ConflictException({
           message: 'This task is not accepting submissions.',
@@ -2668,7 +2869,7 @@ export class CrewTasksService {
         userId,
       );
       const result = await tx.crewTask.update({
-        where: { id: taskId },
+        where: { deletedAt: null, id: taskId },
         data: {
           workflowStateId: reviewState.id,
           submittedAt: new Date(),
@@ -2716,13 +2917,11 @@ export class CrewTasksService {
     await this.authorization.require(current.crewId, userId, 'tasks.review');
 
     const task = await this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-review:${taskId}`})::bigint)
       `;
-      const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
-        include: taskInclude,
-      });
+      const locked = await this.requireActiveTaskTx(tx, taskId);
       if (locked.workflowState.semantic !== CrewTaskStatus.submitted) {
         throw new ConflictException({
           message: 'Only a submitted task can be reviewed.',
@@ -2780,6 +2979,7 @@ export class CrewTasksService {
             crewMemberId: assignee.crewMemberId,
             userId: assignee.userId,
             pointsAmount: assignee.rewardPoints!,
+            currency: assignee.currency,
             approvedByUserId: userId,
           });
         }
@@ -2794,7 +2994,7 @@ export class CrewTasksService {
         userId,
       );
       const updated = await tx.crewTask.update({
-        where: { id: taskId },
+        where: { deletedAt: null, id: taskId },
         data: approved
           ? {
               workflowStateId: targetWorkflowState.id,
@@ -3474,7 +3674,11 @@ export class CrewTasksService {
     const references = [...uniqueBlockers, ...(parentId ? [parentId] : [])];
     if (references.length > 0) {
       const count = await tx.crewTask.count({
-        where: { crewId, id: { in: [...new Set(references)] } },
+        where: {
+          deletedAt: null,
+          crewId,
+          id: { in: [...new Set(references)] },
+        },
       });
       if (count !== new Set(references).size) {
         throw new BadRequestException({
@@ -3502,7 +3706,7 @@ export class CrewTasksService {
         visited.add(cursor);
         const row: { parentId: string | null } | null =
           await tx.crewTask.findFirst({
-            where: { id: cursor, crewId },
+            where: { deletedAt: null, id: cursor, crewId },
             select: { parentId: true },
           });
         cursor = row?.parentId ?? null;
@@ -3514,6 +3718,8 @@ export class CrewTasksService {
         where: {
           crewId,
           blockedTaskId: { not: taskId },
+          blockedTask: { deletedAt: null },
+          blockingTask: { deletedAt: null },
         },
         select: { blockingTaskId: true, blockedTaskId: true },
       });
@@ -3712,10 +3918,10 @@ export class CrewTasksService {
 
   private async requireTask(taskId: string): Promise<TaskRow> {
     const task = await this.prisma.crewTask.findUnique({
-      where: { id: taskId },
+      where: { deletedAt: null, id: taskId },
       include: taskInclude,
     });
-    if (!task) throw new NotFoundException('Task not found.');
+    if (!task || task.deletedAt) throw new NotFoundException('Task not found.');
     return task;
   }
 
@@ -3740,7 +3946,7 @@ function taskViewWhere(
   query: ListCrewTasksQuery,
 ): Prisma.CrewTaskWhereInput {
   const filters = CrewTaskViewFiltersSchema.parse(rawFilters);
-  const clauses: Prisma.CrewTaskWhereInput[] = [];
+  const clauses: Prisma.CrewTaskWhereInput[] = [{ deletedAt: null }];
   if (completedMode === 'hidden') {
     clauses.push({
       workflowState: {
@@ -3960,6 +4166,7 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
       id: assignee.id,
       userId: assignee.userId,
       crewMemberId: assignee.crewMemberId,
+      currency: assignee.currency,
       rewardPoints:
         assignee.rewardPoints == null ? null : Number(assignee.rewardPoints),
       assignedAt: assignee.assignedAt.toISOString(),

@@ -23,49 +23,61 @@ function makeService(
 ) {
   const prisma = {
     characterCastingInvite: {
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
-        id: 'invite-1',
-        createdAt: new Date(),
-        respondedAt: null,
-        ...data,
-      })),
-      findMany: jest.fn(async () => []),
-      findUnique: jest.fn(async () =>
-        opts.invite === undefined
-          ? {
-              id: 'invite-1',
-              projectId: 'proj-a',
-              inviteeUserId: null,
-              inviteeContact: 'liz@example.com',
-              status: 'pending',
-              expiresAt: new Date(Date.now() + 60_000),
-            }
-          : opts.invite,
+      create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({
+          id: 'invite-1',
+          createdAt: new Date(),
+          respondedAt: null,
+          ...data,
+        }),
       ),
-      update: jest.fn(async () => ({})),
-      updateMany: jest.fn(async () => ({ count: 1 })),
+      findMany: jest.fn(() => Promise.resolve([])),
+      findUnique: jest.fn(() =>
+        Promise.resolve(
+          opts.invite === undefined
+            ? {
+                id: 'invite-1',
+                projectId: 'proj-a',
+                inviteeUserId: null,
+                inviteeContact: 'liz@example.com',
+                status: 'pending',
+                expiresAt: new Date(Date.now() + 60_000),
+              }
+            : opts.invite,
+        ),
+      ),
+      update: jest.fn(() => Promise.resolve({})),
+      updateMany: jest.fn(() => Promise.resolve({ count: 1 })),
     },
     platformProject: {
-      findFirst: jest.fn(async () =>
-        opts.project === undefined
-          ? { id: 'proj-a', name: 'Project A' }
-          : opts.project,
+      findFirst: jest.fn(() =>
+        Promise.resolve(
+          opts.project === undefined
+            ? { id: 'proj-a', name: 'Project A' }
+            : opts.project,
+        ),
       ),
-      findUnique: jest.fn(async () => ({ id: 'proj-a', name: 'Project A' })),
+      findUnique: jest.fn(() =>
+        Promise.resolve({ id: 'proj-a', name: 'Project A' }),
+      ),
     },
     projectMember: {
-      findFirst: jest.fn(async () => (opts.isEditor ? { id: 'pm-1' } : null)),
+      findFirst: jest.fn(() =>
+        Promise.resolve(opts.isEditor ? { id: 'pm-1' } : null),
+      ),
     },
     studioCharacter: {
-      findFirst: jest.fn(async () =>
-        opts.actorCharacter === undefined
-          ? {
-              id: 'char-liz',
-              kind: 'real_person',
-              status: 'active',
-              subjectUserId: 'liz',
-            }
-          : opts.actorCharacter,
+      findFirst: jest.fn(() =>
+        Promise.resolve(
+          opts.actorCharacter === undefined
+            ? {
+                id: 'char-liz',
+                kind: 'real_person',
+                status: 'active',
+                subjectUserId: 'liz',
+              }
+            : opts.actorCharacter,
+        ),
       ),
     },
   };
@@ -76,7 +88,7 @@ function makeService(
     },
   };
   const grants = {
-    grantViaAcceptedInvite: jest.fn(async () => ({ id: 'grant-1' })),
+    grantViaAcceptedInvite: jest.fn(() => Promise.resolve({ id: 'grant-1' })),
   };
   const service = new CharacterCastingService(
     prisma as never,
@@ -121,11 +133,11 @@ describe('CharacterCastingService.acceptInvite', () => {
     // BEFORE the grant is minted (single-use barrier).
     expect(prisma.characterCastingInvite.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ status: 'pending' }),
+        where: expect.objectContaining({ status: 'pending' }) as unknown,
         data: expect.objectContaining({
           status: 'accepted',
           inviteeUserId: 'liz',
-        }),
+        }) as unknown,
       }),
     );
   });

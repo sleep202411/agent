@@ -60,7 +60,7 @@ export class CrewTaskDraftService {
         select: { userId: true },
       }),
       this.prisma.crewTask.findMany({
-        where: { crewId, cancelledAt: null },
+        where: { deletedAt: null, crewId, cancelledAt: null },
         orderBy: [{ updatedAt: 'desc' }, { number: 'desc' }],
         take: MAX_TASK_CONTEXT,
         select: { id: true, number: true, title: true },

@@ -30,7 +30,7 @@ function outbox(attempt = 0) {
     nextAttemptAt: null,
     lastError: null,
     lockedAt: NOW,
-    lockedBy: expect.any(String),
+    lockedBy: expect.any(String) as unknown,
     deadAt: null,
     createdAt: NOW,
     message: message(),
@@ -77,13 +77,13 @@ describe('ConversationRealtimeOutboxService', () => {
         id: '01910d50-4c88-7c78-92d4-16892c06a001',
         dispatchedAt: null,
         deadAt: null,
-      }),
+      }) as unknown,
       data: expect.objectContaining({
-        dispatchedAt: expect.any(Date),
+        dispatchedAt: expect.any(Date) as unknown,
         lockedAt: null,
         lockedBy: null,
         lastError: null,
-      }),
+      }) as unknown,
     });
   });
 
@@ -98,15 +98,15 @@ describe('ConversationRealtimeOutboxService', () => {
     expect(prisma.conversationRealtimeOutbox.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
         id: '01910d50-4c88-7c78-92d4-16892c06a001',
-      }),
+      }) as unknown,
       data: expect.objectContaining({
         attempt: 1,
         lastError: 'Ably unavailable',
-        nextAttemptAt: expect.any(Date),
+        nextAttemptAt: expect.any(Date) as unknown,
         deadAt: null,
         lockedAt: null,
         lockedBy: null,
-      }),
+      }) as unknown,
     });
   });
 
@@ -121,13 +121,13 @@ describe('ConversationRealtimeOutboxService', () => {
     expect(prisma.conversationRealtimeOutbox.updateMany).toHaveBeenCalledWith({
       where: expect.objectContaining({
         id: '01910d50-4c88-7c78-92d4-16892c06a001',
-      }),
+      }) as unknown,
       data: expect.objectContaining({
         attempt: 12,
         lastError: 'permanent rejection',
         nextAttemptAt: null,
-        deadAt: expect.any(Date),
-      }),
+        deadAt: expect.any(Date) as unknown,
+      }) as unknown,
     });
   });
 

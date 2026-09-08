@@ -157,7 +157,11 @@ export function notificationContent(
     case "crew.earning.rejected":
     case "crew.earning.reversed": {
       const earningTitle = metaString(item, "earningTitle");
-      const points = formatPoints(metaString(item, "pointsAmount"), locale);
+      const unit = metaString(item, "ledgerCurrency") ?? metaString(item, "currency");
+      const points =
+        unit === "CNY" || unit === "USD"
+          ? formatMinorCurrency(metaString(item, "pointsAmount"), unit, locale)
+          : formatPoints(metaString(item, "pointsAmount"), locale);
       if (!earningTitle || !points) return fallback;
       const outcome = item.type.slice("crew.earning.".length) as "posted" | "rejected" | "reversed";
       return {
@@ -168,7 +172,11 @@ export function notificationContent(
     case "crew.payout.scheduled":
     case "crew.payout.paid":
     case "crew.payout.voided": {
-      const points = formatPoints(metaString(item, "pointsAmount"), locale);
+      const unit = metaString(item, "ledgerCurrency");
+      const points =
+        unit === "CNY" || unit === "USD"
+          ? formatMinorCurrency(metaString(item, "pointsAmount"), unit, locale)
+          : formatPoints(metaString(item, "pointsAmount"), locale);
       const amount = formatMinorCurrency(
         metaString(item, "netAmountMinor"),
         metaString(item, "currency"),

@@ -26,6 +26,9 @@ export function createAgentOsGraph(input: {
   skillMountSnapshot?: ProjectSkillResolutionSnapshot;
   checkpointer?: BaseCheckpointSaver;
 }) {
+  if (!input.checkpointer && process.env.NODE_ENV !== "test") {
+    throw new Error("An explicit persistent checkpointer is required");
+  }
   const mount = resolveAgentOsSkillMount({
     ...input,
     workbenchContext: input.runtime.workbenchContext,

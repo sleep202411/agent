@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -235,13 +235,13 @@ export function ExperienceVideoRenderer({
     onRuntimeError(copy.mediaError(assetId));
   }, [assetId, copy, media, onRuntimeError, renderer.instanceId]);
 
-  const completeRenderer = useEffectEvent(() => {
+  const completeRenderer = useCallback(() => {
     if (completedRendererIdRef.current === renderer.instanceId) return;
     completedRendererIdRef.current = renderer.instanceId;
     onCompleted();
-  });
+  }, [onCompleted, renderer.instanceId]);
 
-  const advanceSequence = useEffectEvent(() => {
+  const advanceSequence = useCallback(() => {
     if (sequenceIndex + 1 < sequenceLength) {
       setPlaybackState({
         rendererInstanceId: renderer.instanceId,
@@ -251,9 +251,9 @@ export function ExperienceVideoRenderer({
       return;
     }
     completeRenderer();
-  });
+  }, [completeRenderer, renderer.instanceId, sequenceIndex, sequenceLength, setPlaybackState]);
 
-  const handleEnd = useEffectEvent(() => {
+  const handleEnd = useCallback(() => {
     if (!clip || terminalMode?.kind === "loop" || terminalMode?.kind === "held") return;
     const behavior = clip.endBehavior;
     if (behavior.behavior === "advance") {
@@ -286,7 +286,15 @@ export function ExperienceVideoRenderer({
         clipStartTime: Math.max(0, durationSeconds - behavior.tailSeconds),
       },
     });
-  });
+  }, [
+    advanceSequence,
+    clip,
+    durationMs,
+    renderer.instanceId,
+    sequenceIndex,
+    terminalMode?.kind,
+    setPlaybackState,
+  ]);
 
   // Video hold duration lives in an effect so a remount (React Strict Mode,
   // scene identity churn) reschedules it. Stills own the same beat on their
@@ -296,9 +304,10 @@ export function ExperienceVideoRenderer({
     !isStill && terminalMode?.kind === "held" && clip?.endBehavior.behavior === "hold-last-frame"
       ? clip.endBehavior.durationMs
       : undefined;
+  const advanceAfterHold = useEffectEvent(() => advanceSequence());
   useEffect(() => {
     if (videoHoldMs === undefined) return;
-    const timer = setTimeout(() => advanceSequence(), videoHoldMs);
+    const timer = setTimeout(() => advanceAfterHold(), videoHoldMs);
     return () => clearTimeout(timer);
   }, [sequenceIndex, videoHoldMs]);
 
@@ -433,8 +442,9 @@ export function ExperienceVideoRenderer({
     terminalMode?.kind,
   ]);
 
+  const handleNativeEnd = useEffectEvent(() => handleEnd());
   useEffect(() => {
-    const endSubscription = player.addListener("playToEnd", () => handleEnd());
+    const endSubscription = player.addListener("playToEnd", () => handleNativeEnd());
     const timeSubscription = player.addListener("timeUpdate", ({ currentTime }) => {
       reportTimeline(currentTime);
     });
@@ -543,14 +553,28 @@ function ExperienceStillSegment({
   const runningSinceRef = useRef<number | null>(null);
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [playableUri, setPlayableUri] = useState<string | null>(null);
+  const mediaKey = `${playbackIdentity}:${uri}`;
+  const [previousMediaKey, setPreviousMediaKey] = useState(mediaKey);
+  if (previousMediaKey !== mediaKey) {
+    setPreviousMediaKey(mediaKey);
+    setPlayableUri(null);
+  }
   const onDisplayedRef = useRef(onDisplayed);
-  onDisplayedRef.current = onDisplayed;
+  useLayoutEffect(() => {
+    onDisplayedRef.current = onDisplayed;
+  }, [onDisplayed]);
   const onHoldCompleteRef = useRef(onHoldComplete);
-  onHoldCompleteRef.current = onHoldComplete;
+  useLayoutEffect(() => {
+    onHoldCompleteRef.current = onHoldComplete;
+  }, [onHoldComplete]);
   const onTimelineTimeMsRef = useRef(onTimelineTimeMs);
-  onTimelineTimeMsRef.current = onTimelineTimeMs;
+  useLayoutEffect(() => {
+    onTimelineTimeMsRef.current = onTimelineTimeMs;
+  }, [onTimelineTimeMs]);
   const onLoadErrorRef = useRef(onLoadError);
-  onLoadErrorRef.current = onLoadError;
+  useLayoutEffect(() => {
+    onLoadErrorRef.current = onLoadError;
+  }, [onLoadError]);
 
   const stopTicking = () => {
     if (tickRef.current === null) return;
@@ -586,7 +610,7 @@ function ExperienceStillSegment({
     holdCompletedRef.current = false;
     elapsedMsRef.current = 0;
     runningSinceRef.current = null;
-    setPlayableUri(null);
+
     const abort = new AbortController();
     void resolvePlaybackUri(uri, abort.signal)
       .then((resolved) => {

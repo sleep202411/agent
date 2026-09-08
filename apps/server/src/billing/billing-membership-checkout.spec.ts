@@ -133,7 +133,7 @@ describe('current entitlement subscription binding', () => {
           subjectType: BillingSubjectType.workspace,
           subjectId: 'workspace-1',
           planKey: 'team',
-        }),
+        }) as unknown,
       }),
     );
   });

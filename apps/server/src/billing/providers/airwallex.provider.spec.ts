@@ -59,7 +59,7 @@ describe('AirwallexProvider.createHostedCheckout', () => {
   }
 
   function createCallBody(
-    requestSpy: jest.SpyInstance,
+    requestSpy: jest.SpyInstance<Promise<unknown>, unknown[]>,
   ): Record<string, unknown> {
     const call = requestSpy.mock.calls.find(
       ([path]) => path === '/api/v1/billing_checkouts/create',

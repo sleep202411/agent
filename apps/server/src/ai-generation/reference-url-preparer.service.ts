@@ -94,7 +94,9 @@ function rewriteValue(
   rewrite: (reference: Record<string, unknown>) => Record<string, unknown>,
 ): unknown {
   if (Array.isArray(value)) {
-    return value.map((item) => (isRecord(item) ? rewrite(item) : item));
+    return value.map((item: unknown) =>
+      isRecord(item) ? rewrite(item) : item,
+    );
   }
   return isRecord(value) ? rewrite(value) : value;
 }

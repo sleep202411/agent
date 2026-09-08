@@ -1,3 +1,4 @@
+import { requiredEnv } from '../../common/required-env';
 /**
  * RealtimeGateway — the self-hosted WS plane for asset/entity pushes
  * (`/ws/realtime`), the region-portable counterpart to Azure Web PubSub.
@@ -87,7 +88,7 @@ export class RealtimeGateway
     }
     this.active = true;
 
-    const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
+    const url = requiredEnv('REDIS_URL');
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
     void this.redisSubscriber.psubscribe(
       REALTIME_GROUP_CHANNEL_PATTERN,

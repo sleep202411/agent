@@ -835,6 +835,7 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTask.count).toHaveBeenCalledWith({
       where: {
         crewId: CREW_ID,
+        deletedAt: null,
         id: { notIn: [TASK_ID, beforeId] },
         workflowStateId: WORKFLOW_STATE_IDS.in_progress,
         rank: { gte: new Prisma.Decimal(2048) },
@@ -850,7 +851,7 @@ describe('CrewTasksService', () => {
         rank: Prisma.Decimal;
       };
     };
-    expect(updateInput.where).toEqual({ id: TASK_ID });
+    expect(updateInput.where).toEqual({ id: TASK_ID, deletedAt: null });
     expect(updateInput.data).toMatchObject({
       workflowStateId: WORKFLOW_STATE_IDS.in_progress,
       cycleId: current.cycleId,

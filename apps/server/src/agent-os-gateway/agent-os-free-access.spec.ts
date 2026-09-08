@@ -7,7 +7,7 @@ describe('Agent OS free-access contract', () => {
     const previousToken = process.env.AGENT_OS_INTERNAL_TOKEN;
     const previousWorkerUrl = process.env.AGENT_OS_WORKER_URL;
     process.env.AGENT_OS_INTERNAL_TOKEN = 'agent-os-free-access-spec-secret';
-    delete process.env.AGENT_OS_WORKER_URL;
+    process.env.AGENT_OS_WORKER_URL = 'http://worker.test.invalid';
 
     try {
       expect(new AgentOsGatewayConfigService().value).toMatchObject({

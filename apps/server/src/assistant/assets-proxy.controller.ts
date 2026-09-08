@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 /**
  * Proxies the frontend's /aurora/assets/* traffic through to Mastra's
  * corresponding /assets/* routes. Injects x-storyos-context so Mastra's
@@ -42,10 +43,7 @@ export class AssetsProxyController {
   private readonly logger = new Logger(AssetsProxyController.name);
 
   private get mastraUrl(): string {
-    return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
-      /\/$/,
-      '',
-    );
+    return requiredEnv('MASTRA_URL').replace(/\/$/, '');
   }
 
   private buildHeaders(
@@ -64,10 +62,10 @@ export class AssetsProxyController {
     return headers;
   }
 
-  private async buildContext(
+  private buildContext(
     user: AuthUser,
     workspaceContext: { projectId: string; worldId?: string },
-  ): Promise<ContextHeader> {
+  ): ContextHeader {
     return {
       userId: user.userId,
       projectId: workspaceContext.projectId,
@@ -119,7 +117,7 @@ export class AssetsProxyController {
     if (!projectId) {
       throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, { projectId });
+    const context = this.buildContext(user, { projectId });
     return this.forward('/assets/image-status', {
       method: 'GET',
       headers: this.buildHeaders(req, context, false),
@@ -156,7 +154,7 @@ export class AssetsProxyController {
     if (!body.prompt || !String(body.prompt).trim()) {
       throw new HttpException('prompt required', HttpStatus.BAD_REQUEST);
     }
-    const context = await this.buildContext(user, {
+    const context = this.buildContext(user, {
       projectId,
       worldId: body.worldId ? String(body.worldId) : undefined,
     });

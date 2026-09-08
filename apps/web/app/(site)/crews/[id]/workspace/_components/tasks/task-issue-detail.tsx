@@ -1,5 +1,10 @@
 "use client";
 
+import { CREW_CURRENCY, formatCrewMoney, type CrewLedgerCurrency } from "@/src/lib/crew-money";
+import { DeleteTaskButton } from "./delete-task-button";
+
+import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
+
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import Link from "next/link";
 import {
@@ -207,6 +212,7 @@ export function TaskIssueDetail({
           <span className="truncate text-[#b8bac0]">{task.title}</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {isOwner && <DeleteTaskButton task={task} onDeleted={onClose} />}
           {isOwner && !["submitted", "approved", "cancelled"].includes(task.status) ? (
             <Popover open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
               <PopoverTrigger asChild>
@@ -674,7 +680,11 @@ export function TaskIssueDetail({
                         {displayNameOf(assignee.userId, displays)}
                       </span>
                       <span className="font-mono text-[#c9cacf]">
-                        {formatPoints(assignee.rewardPoints ?? 0)}
+                        {formatPoints(
+                          assignee.rewardPoints ?? 0,
+                          assignee.currency,
+                          t("pointsUnit")
+                        )}
                       </span>
                     </div>
                   ))}
@@ -1360,11 +1370,15 @@ function AssigneesEditor({
   const [draft, setDraft] = useState(() =>
     task.assignees.map((assignee) => ({
       userId: assignee.userId,
-      rewardPoints: assignee.rewardPoints == null ? "" : String(assignee.rewardPoints),
+      currency: assignee.currency,
+      rewardPoints:
+        assignee.rewardPoints == null
+          ? ""
+          : String(assignee.rewardPoints / (assignee.currency === "POINTS" ? 1 : 100)),
     }))
   );
   const invalidReward = draft.some(
-    (item) => !isNullableIntegerInputValid(item.rewardPoints, 1, 10_000_000_000)
+    (item) => item.rewardPoints !== "" && parseReward(item.rewardPoints, item.currency) == null
   );
 
   const summary = (
@@ -1380,7 +1394,7 @@ function AssigneesEditor({
             </span>
             {assignee.rewardPoints != null ? (
               <span className="font-mono text-[9px] text-[#777d87]">
-                {formatPoints(assignee.rewardPoints)}
+                {formatPoints(assignee.rewardPoints, assignee.currency, t("pointsUnit"))}
               </span>
             ) : null}
           </div>
@@ -1395,14 +1409,15 @@ function AssigneesEditor({
     setDraft((current) =>
       current.some((item) => item.userId === userId)
         ? current.filter((item) => item.userId !== userId)
-        : [...current, { userId, rewardPoints: "" }]
+        : [...current, { userId, rewardPoints: "", currency: CREW_CURRENCY }]
     );
   };
 
   const save = async () => {
     const assignees = draft.map((item) => ({
       userId: item.userId,
-      rewardPoints: parseNullableInteger(item.rewardPoints, 1, 10_000_000_000),
+      currency: item.currency,
+      rewardPoints: parseReward(item.rewardPoints, item.currency),
     }));
     if (await onSave({ assignees })) setOpen(false);
   };
@@ -1437,10 +1452,10 @@ function AssigneesEditor({
                 </span>
                 <Input
                   type="number"
-                  min={1}
-                  max={10_000_000_000}
-                  step={1}
-                  disabled={!selected}
+                  min={0.01}
+                  max={100_000_000}
+                  step={0.01}
+                  disabled={!selected || selected.currency === "POINTS"}
                   value={selected?.rewardPoints ?? ""}
                   onChange={(event) =>
                     setDraft((current) =>
@@ -1451,7 +1466,8 @@ function AssigneesEditor({
                       )
                     )
                   }
-                  placeholder={t("reward")}
+                  aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
+                  placeholder={selected?.currency ?? CREW_CURRENCY}
                   className="h-7 text-[10px]"
                 />
               </div>
@@ -1574,7 +1590,9 @@ function PlanningEditor({
       <span className="block">
         {task.startAt ? new Date(task.startAt).toLocaleDateString() : t("none")}
         <span className="mx-1.5 text-[#62646b]">→</span>
-        {task.dueAt ? new Date(task.dueAt).toLocaleDateString() : t("none")}
+        <span className={cn(isCrewTaskOverdue(task) && "text-red-300")}>
+          {task.dueAt ? new Date(task.dueAt).toLocaleDateString() : t("none")}
+        </span>
       </span>
       <span className="block text-[10px] text-[#777980]">
         {t("estimate")}: {task.estimatePoints ?? t("none")}
@@ -2289,8 +2307,19 @@ function formatRelative(value: string, t: ReturnType<typeof useTranslations>) {
   return date.toLocaleDateString();
 }
 
-function formatPoints(points: number) {
-  return new Intl.NumberFormat().format(points);
+function formatPoints(points: number, currency: CrewLedgerCurrency, historicalUnit: string) {
+  return currency === "POINTS"
+    ? `${points.toLocaleString()} ${historicalUnit}`
+    : formatCrewMoney(String(points), "en-US", currency);
+}
+function parseReward(value: string, currency: CrewLedgerCurrency): number | null {
+  if (!/^(0|[1-9]\d*)(\.\d{1,2})?$/.test(value)) return null;
+  const [whole, fraction = ""] = value.split(".");
+  const minor =
+    currency === "POINTS"
+      ? BigInt(whole!)
+      : BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, "0"));
+  return minor > 0n && minor <= 10_000_000_000n ? Number(minor) : null;
 }
 
 function formatBytes(bytes: number) {

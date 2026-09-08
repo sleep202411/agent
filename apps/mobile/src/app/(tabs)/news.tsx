@@ -59,7 +59,9 @@ export default function NewsScreen() {
   // Guards onEndReached from firing a second page fetch before the first resolves.
   const loadingMoreRef = useRef(false);
 
-  activeTagIdRef.current = activeTagId;
+  useEffect(() => {
+    activeTagIdRef.current = activeTagId;
+  }, [activeTagId]);
 
   const loadFirstPage = useCallback(async () => {
     const seq = ++requestSeqRef.current;

@@ -1,5 +1,7 @@
 "use client";
 
+import { isCrewTaskOverdue as isOverdue } from "@/app/(site)/crews/_lib/task-dates";
+
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   IconAntennaBars1,
@@ -754,15 +756,6 @@ function workflowStateLabel(
     : state.systemKey
       ? t(`status.${state.systemKey}`)
       : state.name;
-}
-
-function isOverdue(task: CrewTaskListItemDTO) {
-  return Boolean(
-    task.dueAt &&
-    new Date(task.dueAt).getTime() < Date.now() &&
-    task.status !== "approved" &&
-    task.status !== "cancelled"
-  );
 }
 
 function shortDate(value: string, locale?: string) {

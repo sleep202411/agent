@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 /**
  * DocumentsGateway — realtime collaboration channel for StudioDocument.
  *
@@ -150,7 +151,7 @@ export class DocumentsGateway
   ) {}
 
   afterInit() {
-    const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
+    const url = requiredEnv('REDIS_URL');
     this.redisPublisher = new Redis(url, { maxRetriesPerRequest: null });
     this.redisSubscriber = new Redis(url, { maxRetriesPerRequest: null });
 
@@ -712,27 +713,6 @@ export class DocumentsGateway
   }
 
   private async authenticateFromCookie(cookie: string | undefined) {
-    if (process.env.AUTH_DISABLED === 'true') {
-      // Mirror the HTTP auth guard (auth.guard.ts): honor a real session
-      // cookie when present so the WS user matches the HTTP user (and thus
-      // the documents they own); only fall back to the dev user when there
-      // is no/invalid cookie. Without this, HTTP authenticates as the real
-      // logged-in user but the WS is always `dev`, so every document the
-      // real user owns is Forbidden on connect (canvas stuck "Offline").
-      if (cookie) {
-        try {
-          const user = await this.authService.validateToken(cookie);
-          if (user) return user;
-        } catch {
-          /* fall through to the dev user */
-        }
-      }
-      return {
-        userId: 'dev',
-        userName: 'dev',
-        nickName: 'Developer',
-      };
-    }
     if (!cookie) return null;
     try {
       return await this.authService.validateToken(cookie);

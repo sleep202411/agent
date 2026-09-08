@@ -274,6 +274,7 @@ export interface CrewTaskProjectDTO {
 }
 
 export interface CrewTaskAssigneeDTO {
+  currency: "POINTS" | "CNY" | "USD";
   id: string;
   userId: string;
   crewMemberId: string;
@@ -312,6 +313,7 @@ export type CrewEarningSourceType =
   | "adjustment";
 
 export interface CrewEarningEntryDTO {
+  currency: "POINTS" | "CNY" | "USD";
   id: string;
   crewId: string;
   crewMemberId: string;
@@ -368,6 +370,7 @@ export type CrewPayoutStatus = "pending" | "paid" | "voided";
 export type CrewPayoutMethod = "bank_transfer" | "alipay" | "wechat_pay" | "paypal" | "other";
 
 export interface CrewPayoutDTO {
+  currency: "POINTS" | "CNY" | "USD";
   id: string;
   crewId: string;
   crewMemberId: string;
@@ -637,6 +640,7 @@ export interface CreateCrewTaskInput {
   labelIds?: string[];
   assignees: Array<{
     userId: string;
+    currency?: "POINTS" | "CNY" | "USD";
     rewardPoints?: number | null;
   }>;
 }

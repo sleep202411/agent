@@ -482,10 +482,12 @@ function PressHoldControl({
     onGateStateChange?.(timelineGate);
   }, [onGateStateChange, timelineControl, timelineGate]);
 
+  const timelineCompleted = timelineControl && timelinePressed && timelineProgress >= 1;
+  if (timelineCompleted && !timelineResolved) setTimelineResolved(true);
+  const timelineCompletionSent = useRef(false);
   useEffect(() => {
-    if (!timelineControl || !timelinePressed || timelineResolved) return;
-    if (timelineProgress < 1) return;
-    setTimelineResolved(true);
+    if (!timelineCompleted || timelineCompletionSent.current) return;
+    timelineCompletionSent.current = true;
     onEvents([
       {
         type: "gesture.completed",
@@ -501,6 +503,7 @@ function PressHoldControl({
     timelinePressed,
     timelineProgress,
     timelineResolved,
+    timelineCompleted,
   ]);
 
   useEffect(() => {

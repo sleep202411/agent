@@ -231,6 +231,7 @@ export class CertificatesService {
             certNo: input.certNo,
             title: input.title,
             issuer: input.issuer,
+            credentialType: input.credentialType ?? 'general',
             imageAssetId: input.imageAssetId,
             issuedAt,
           },
@@ -260,6 +261,7 @@ export class CertificatesService {
             certNo,
             title: input.title,
             issuer: input.issuer,
+            credentialType: input.credentialType ?? 'general',
             imageAssetId: input.imageAssetId,
             issuedAt,
           },
@@ -292,6 +294,9 @@ export class CertificatesService {
     const cert = await this.prisma.userCertificate.update({
       where: { id },
       data: {
+        ...(input.credentialType !== undefined
+          ? { credentialType: input.credentialType }
+          : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.issuer !== undefined ? { issuer: input.issuer } : {}),
         ...(input.imageAssetId !== undefined
@@ -463,6 +468,7 @@ export class CertificatesService {
 
   private adminCertificateDto(cert: CertificateWithAsset): AdminCertificateDTO {
     return {
+      credentialType: cert.credentialType,
       id: cert.id,
       // Encoded public id out; the row stores the raw id.
       userId: encodeUserId(cert.userId),
