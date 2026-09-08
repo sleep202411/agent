@@ -48,6 +48,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Generate database client
+        run: npm run db:generate -w server
+
       - name: Apply product database migrations
         run: npm run db:deploy -w server
 
