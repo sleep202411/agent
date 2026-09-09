@@ -44,6 +44,7 @@ import { localizePath } from "@/src/i18n/locale-url";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { ApiRequestError } from "@/src/lib/api";
 import { axonViewItem } from "@/src/lib/axon";
+import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { recordMemberView } from "@/src/lib/ip-commerce/api";
 import type {
   IpCommerceAsset,
@@ -72,11 +73,12 @@ import {
 } from "@/src/lib/ip-commerce/hooks";
 
 interface IpPublicDetailProps {
-  ipId: string;
+  ipReference: string;
 }
 
 interface DetailIp {
   id: string;
+  roomNumber: string;
   title: string;
   subtitle: string | null;
   summary: string;
@@ -109,17 +111,16 @@ type Translate = ReturnType<typeof useTranslations>;
 // Sentinel "episode id" for the IP trailer pseudo-item in the playlist.
 const TRAILER_ID = "__trailer__";
 
-export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
+export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const t = useTranslations("newIpDetail");
   const tPay = useTranslations("payment");
   const statusT = useTranslations("newIpWorkbench");
   const { user, isLoading: userLoading } = useCurrentUser();
-  const publicQuery = useIpCommerceIp(ipId, { locale });
-  const creatorQuery = useMyIpCommerceIp(publicQuery.isError && user ? ipId : null, {
-    locale,
-  });
+  const publicQuery = useIpCommerceIp(ipReference, { locale });
+  const previewReference = publicQuery.isError && user ? ipReference : null;
+  const creatorQuery = useMyIpCommerceIp(previewReference, { locale });
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [rechargeOpen, setRechargeOpen] = useState(false);
@@ -190,7 +191,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   if (
     publicQuery.isLoading ||
     (publicQuery.isError && userLoading) ||
-    (publicQuery.isError && user && creatorQuery.isLoading)
+    (previewReference && creatorQuery.isLoading)
   ) {
     return <LoadingState t={t} />;
   }
@@ -255,7 +256,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const storyText = detailIp.description?.trim() || detailIp.summary || t("emptySummary");
   const tagItems = Array.from(new Set(detailIp.genres.map((item) => item.trim()).filter(Boolean)));
   const loginHref = localizePath(
-    `/login?redirect=${encodeURIComponent(localizePath(`/ips/${detailIp.id}`, locale))}`,
+    `/login?redirect=${encodeURIComponent(localizePath(ipRoomPath(detailIp.roomNumber), locale))}`,
     locale
   );
   const collectionTarget = selectedEpisode
@@ -469,6 +470,10 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
 
               <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
+                  <span className="select-text tabular-nums">
+                    {t("roomNumber", { number: detailIp.roomNumber })}
+                  </span>
+                  <span className="text-muted-foreground/50">·</span>
                   {detailIp.genres.slice(0, 2).map((genre) => (
                     <span key={genre}>{genre}</span>
                   ))}
@@ -489,7 +494,10 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  <ActionButton onClick={() => void shareCurrentPage(t)} icon={IconShare3}>
+                  <ActionButton
+                    onClick={() => void shareIp(ipRoomPath(detailIp.roomNumber), locale, t)}
+                    icon={IconShare3}
+                  >
                     {t("actions.share")}
                   </ActionButton>
                   <ActionButton
@@ -600,7 +608,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
               unlockAction={
                 detailIp.previewMode ? null : (
                   <PurchaseUnlockAction
-                    ipId={detailIp.id}
+                    roomNumber={detailIp.roomNumber}
                     selectedEpisode={null}
                     access={playlistUnlockAccess}
                     price={playlistUnlockPrice}
@@ -675,6 +683,7 @@ function normalizePublicIp(ip: IpCommerceIp): DetailIp {
 function normalizeCreatorIp(ip: IpCreatorIp, ownerId: string | null): DetailIp {
   return {
     id: ip.id,
+    roomNumber: ip.roomNumber,
     title: ip.title,
     subtitle: null,
     summary: ip.summary,
@@ -1348,7 +1357,7 @@ function PurchasePanel({
         </span>
       ) : (
         <PurchaseUnlockAction
-          ipId={ip.id}
+          roomNumber={ip.roomNumber}
           selectedEpisode={selectedEpisode}
           access={access}
           price={price}
@@ -1371,7 +1380,7 @@ function PurchasePanel({
 
 /** Unlock / top-up / login CTA shared by the player bar and playlist header. */
 function PurchaseUnlockAction({
-  ipId,
+  roomNumber,
   selectedEpisode,
   access,
   price,
@@ -1387,7 +1396,7 @@ function PurchaseUnlockAction({
   onMemberFreeUnlock,
   onSubscribeMembership,
 }: {
-  ipId: string;
+  roomNumber: string;
   selectedEpisode: IpCommerceEpisode | null;
   access: IpCommerceAccess;
   price: IpCommercePriceRule | null;
@@ -1414,7 +1423,7 @@ function PurchaseUnlockAction({
       ? priceAmount - walletAmount
       : null;
   const loginHref = localizePath(
-    `/login?redirect=${encodeURIComponent(localizePath(`/ips/${ipId}`, locale))}`,
+    `/login?redirect=${encodeURIComponent(localizePath(ipRoomPath(roomNumber), locale))}`,
     locale
   );
 
@@ -1776,8 +1785,8 @@ function isAccessPending(access: IpCommerceAccess | undefined) {
   );
 }
 
-async function shareCurrentPage(t: Translate) {
-  const url = window.location.href;
+async function shareIp(path: string, locale: Locale, t: Translate) {
+  const url = `${window.location.origin}${localizePath(path, locale)}`;
   try {
     if (navigator.share) {
       await navigator.share({ url });

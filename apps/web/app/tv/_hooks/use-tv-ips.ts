@@ -47,6 +47,7 @@ function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>): TvIt
     getAssetUrl(ip.episodes.find((episode) => episode.mediaAsset)?.mediaAsset);
   return {
     id: ip.id,
+    roomNumber: ip.roomNumber,
     title: ip.title || t("untitled"),
     subtitle: ip.subtitle || "",
     genre: ip.genres[0]?.trim() || "",

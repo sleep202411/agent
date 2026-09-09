@@ -33,6 +33,7 @@ function makeIp(id: string, title: string): IpCommerceIp {
   });
   return {
     id,
+    roomNumber: `10000${id.split("-").at(-1)}`,
     slug: null,
     status: "published",
     listingVisibility: "public",

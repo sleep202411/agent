@@ -416,7 +416,7 @@
     "heroTitle1": "Invest in Great IPs",
     "heroTitle2": "Make Stories Real",
     "heroDesc": "Discover original IPs at various stages — subscribe as an investor or pre-order to support production.",
-    "searchPlaceholder": "Search IP name, tags, type...",
+    "searchPlaceholder": "Search IP name, room number, tags, type...",
     "ipsFundraising": "IPs fundraising",
     "ipsPresale": "IPs in pre-order",
     "newThisWeek": "New this week",
@@ -1667,6 +1667,7 @@
     }
   },
   "newIpDetail": {
+    "roomNumber": "Room {number}",
     "loading": "Loading IP detail...",
     "back": "Back to IP plaza",
     "previewBadge": "Public-page preview visible only to you",

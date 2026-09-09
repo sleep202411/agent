@@ -4,6 +4,7 @@
  */
 export interface TvItem {
   id: string;
+  roomNumber: string;
   title: string;
   subtitle: string;
   genre: string;

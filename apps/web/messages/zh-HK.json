@@ -416,7 +416,7 @@
     "heroTitle1": "投資優質 IP",
     "heroTitle2": "讓好故事成為現實",
     "heroDesc": "發現處於各階段的原創 IP —— 以投資人身份認購，或以觀眾身份預購支持製作。",
-    "searchPlaceholder": "搜尋 IP 名稱、標籤、類型...",
+    "searchPlaceholder": "搜尋 IP 名稱、房間號、標籤、類型…",
     "ipsFundraising": "個 IP 正在融資",
     "ipsPresale": "個 IP 開放預售",
     "newThisWeek": "本週新增",
@@ -1667,6 +1667,7 @@
     }
   },
   "newIpDetail": {
+    "roomNumber": "房間號 {number}",
     "loading": "正在載入 IP 詳情...",
     "back": "返回 IP 廣場",
     "previewBadge": "僅本人可見的公開頁預覽",

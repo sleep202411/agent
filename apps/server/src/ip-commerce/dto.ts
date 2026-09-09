@@ -670,6 +670,12 @@ export const IpParamsSchema = z.object({
 });
 export type IpParams = z.infer<typeof IpParamsSchema>;
 
+// Detail reads accept a room number; mutations still require the internal UUID.
+export const IpReferenceParamsSchema = z.object({
+  ipId: z.union([z.uuid(), z.string().regex(/^[1-9][0-9]{0,18}$/)]),
+});
+export type IpReferenceParams = z.infer<typeof IpReferenceParamsSchema>;
+
 // Creator id is a Java user id (numeric string), NOT a uuid.
 export const CreatorIpsParamsSchema = z.object({
   creatorId: z.string().trim().min(1).max(64),

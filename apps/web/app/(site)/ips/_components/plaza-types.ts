@@ -1,5 +1,6 @@
 export interface PlazaProject {
   id: string;
+  roomNumber: string;
   name: string;
   subtitle: string;
   description: string;

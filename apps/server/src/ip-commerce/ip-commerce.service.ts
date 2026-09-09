@@ -1124,12 +1124,12 @@ export class IpCommerceService {
 
   async getCreatorIp(
     user: AuthUser,
-    ipId: string,
+    ipReference: string,
     query: { locale?: string } = {},
   ) {
     const ip = await this.prisma.ip.findFirst({
       where: {
-        id: ipId,
+        ...ipIdentityWhere(ipReference),
         deletedAt: null,
         ...this.ipEditAccessWhere(user),
       },
@@ -4072,14 +4072,14 @@ export class IpCommerceService {
   }
 
   async getPublicIp(
-    ipId: string,
+    ipReference: string,
     user?: AuthUser,
     query: { locale?: string } = {},
   ) {
     const viewerBlockWhere = await this.viewerBlockWhere(user);
     const ip = await this.prisma.ip.findFirst({
       where: {
-        id: ipId,
+        ...ipIdentityWhere(ipReference),
         deletedAt: null,
         status: { in: PUBLIC_IP_STATUSES },
         listingVisibility: { in: ['public', 'unlisted'] },
@@ -4106,7 +4106,7 @@ export class IpCommerceService {
       ? await this.prisma.ipContentEntitlement.findMany({
           where: {
             userId: user.userId,
-            ipId,
+            ipId: ip.id,
             status: IpEntitlementStatus.active,
             ...currentOrPendingEntitlementWhere(now),
           },
@@ -6338,6 +6338,12 @@ async function creditWithdrawableCommunityPointTx(
   });
 }
 
+function ipIdentityWhere(reference: string): Prisma.IpWhereInput {
+  return /^\d+$/.test(reference)
+    ? { roomNumber: reference }
+    : { id: reference };
+}
+
 function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
   const search = query.q?.trim();
   return {
@@ -6350,6 +6356,7 @@ function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
     ...(search
       ? {
           OR: [
+            { roomNumber: search },
             {
               localizations: {
                 some: {
@@ -6625,7 +6632,8 @@ function publicIpRankBaseFilterSql(
         const pattern = likeContainsPattern(searchNeedle);
         return Prisma.sql`
         AND (
-          COALESCE(ip.copyright_owner, '') ILIKE ${pattern} ESCAPE '\\'
+          ip.room_number = ${searchNeedle}
+          OR COALESCE(ip.copyright_owner, '') ILIKE ${pattern} ESCAPE '\\'
           OR EXISTS (
             SELECT 1
             FROM ip_localizations search_localization
@@ -7385,6 +7393,7 @@ function ipReferenceDto(
   ip:
     | {
         id: string;
+        roomNumber: string;
         sourceLocale: string;
         status: IpPublicationStatus;
         listingVisibility: IpListingVisibility;
@@ -7398,6 +7407,7 @@ function ipReferenceDto(
   const copy = selectIpLocalization(ip, requestedLocale, false);
   return {
     id: ip.id,
+    roomNumber: ip.roomNumber,
     title: copy.value?.title ?? ip.id,
     status: ip.status,
     listingVisibility: ip.listingVisibility,
@@ -7448,6 +7458,7 @@ function adminIpSummaryDto(
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
+    roomNumber: title.roomNumber,
     slug: copy.value?.slug ?? null,
     title: copy.value?.title ?? title.id,
     subtitle: copy.value?.subtitle ?? null,
@@ -7507,6 +7518,7 @@ function creatorIpSummaryDto(
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
+    roomNumber: title.roomNumber,
     title: copy.value?.title ?? title.id,
     summary: copy.value?.summary ?? '',
     description: copy.value?.description ?? null,
@@ -7733,6 +7745,7 @@ function adminReviewDto(
     submittedAt: Date;
     ip: {
       id: string;
+      roomNumber: string;
       sourceLocale: string;
       status: IpPublicationStatus;
       listingVisibility: IpListingVisibility;
@@ -7781,6 +7794,7 @@ function adminReportDto(
     resolvedAt: Date | null;
     ip?: {
       id: string;
+      roomNumber: string;
       sourceLocale: string;
       status: IpPublicationStatus;
       listingVisibility: IpListingVisibility;
@@ -8216,6 +8230,7 @@ function ipDto(
   const publicEngagement = publicIpEngagementDto(engagement);
   return {
     id: title.id,
+    roomNumber: title.roomNumber,
     slug: copy.value?.slug ?? null,
     status: title.status,
     listingVisibility: title.listingVisibility,

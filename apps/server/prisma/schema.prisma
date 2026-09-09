@@ -3579,6 +3579,8 @@ enum MemberPoolBatchStatus {
 
 model Ip {
   id                     String              @id @default(uuid(7)) @db.Uuid
+  /// Stable public room number, allocated by PostgreSQL for every IP.
+  roomNumber             String              @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
   status                 IpPublicationStatus @default(draft)
   listingVisibility      IpListingVisibility @default(private) @map("listing_visibility")
   ageRating              IpAgeRating         @default(general) @map("age_rating")

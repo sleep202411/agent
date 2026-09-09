@@ -14,5 +14,5 @@ export default async function IPDetailPage(props: { params: Promise<{ id: string
     const locale = ((await headers()).get("x-locale") ?? defaultLocale) as Locale;
     permanentRedirect(localizePath(`/ips/${computeIpUuid(id)}`, locale));
   }
-  return <IpPublicDetail ipId={id} />;
+  return <IpPublicDetail ipReference={id} />;
 }

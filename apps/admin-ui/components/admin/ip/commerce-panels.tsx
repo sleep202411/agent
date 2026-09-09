@@ -617,7 +617,7 @@ export function IpEntitlementsPanel({
               <datalist id="admin-ip-id-list">
                 {ipList.items.map((ip) => (
                   <option key={ip.id} value={ip.id}>
-                    {ip.title}
+                    {ip.roomNumber} · {ip.title}
                   </option>
                 ))}
               </datalist>

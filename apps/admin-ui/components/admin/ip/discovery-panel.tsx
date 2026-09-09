@@ -66,6 +66,7 @@ type LocaleCopy = {
 
 type IpOption = {
   id: string;
+  roomNumber: string;
   title: string;
   status: string;
 };
@@ -75,6 +76,7 @@ type RecommendationItem = {
   placementKey: PlacementKey;
   ipId: string;
   ipTitle: string;
+  ipRoomNumber: string;
   sortOrder: number;
   status: RecommendationStatus;
   startsAt: string;
@@ -117,6 +119,7 @@ const EMPTY_DRAFT: RecommendationDraft = {
   placementKey: "ip_plaza_hero",
   ipId: "",
   ipTitle: "",
+  ipRoomNumber: "",
   sortOrder: 1,
   status: "draft",
   startsAt: "",
@@ -168,7 +171,7 @@ export function IpDiscoveryPanel({
       .filter((item) => placementFilter === "all" || item.placementKey === placementFilter)
       .filter((item) =>
         needle
-          ? `${item.ipTitle} ${item.ipId} ${placementLabel(item.placementKey)}`
+          ? `${item.ipTitle} ${item.ipRoomNumber} ${item.ipId} ${placementLabel(item.placementKey)}`
               .toLowerCase()
               .includes(needle)
           : true
@@ -357,7 +360,9 @@ export function IpDiscoveryPanel({
                       <p className="max-w-[220px] truncate font-medium text-slate-950">
                         {item.ipTitle}
                       </p>
-                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">{item.ipId}</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                        Room {item.ipRoomNumber}
+                      </p>
                     </TableCell>
                     <TableCell>
                       <StatusPill tone={statusTone(displayStatus)}>
@@ -538,7 +543,14 @@ function RecommendationDrawer({
                   <IpCombobox
                     ipId={draft.ipId}
                     ipTitle={draft.ipTitle}
-                    onChange={(option) => patchDraft({ ipId: option.id, ipTitle: option.title })}
+                    ipRoomNumber={draft.ipRoomNumber}
+                    onChange={(option) =>
+                      patchDraft({
+                        ipId: option.id,
+                        ipTitle: option.title,
+                        ipRoomNumber: option.roomNumber,
+                      })
+                    }
                   />
                 </Field>
                 <Field label="排序" tooltip="同一位置内的展示顺序,数字越小越靠前。">
@@ -849,10 +861,12 @@ function AssetUploadField({
 function IpCombobox({
   ipId,
   ipTitle,
+  ipRoomNumber,
   onChange,
 }: {
   ipId: string;
   ipTitle: string;
+  ipRoomNumber: string;
   onChange: (option: IpOption) => void;
 }) {
   const [options, setOptions] = useState<IpOption[]>([]);
@@ -867,7 +881,12 @@ function IpCombobox({
         .then((data) => {
           if (cancelled) return;
           setOptions(
-            data.items.map((row) => ({ id: row.id, title: row.title, status: row.status }))
+            data.items.map((row) => ({
+              id: row.id,
+              roomNumber: row.roomNumber,
+              title: row.title,
+              status: row.status,
+            }))
           );
         })
         .catch(() => {
@@ -882,7 +901,9 @@ function IpCombobox({
 
   const selectedIp =
     options.find((option) => option.id === ipId) ??
-    (ipId ? { id: ipId, title: ipTitle || ipId, status: "当前值" } : null);
+    (ipId
+      ? { id: ipId, roomNumber: ipRoomNumber, title: ipTitle || ipId, status: "当前值" }
+      : null);
   const items =
     selectedIp && !options.some((option) => option.id === selectedIp.id)
       ? [selectedIp, ...options]
@@ -897,12 +918,12 @@ function IpCombobox({
           if (option) onChange(option);
         }}
         onInputValueChange={(value: string) => setSearch(value)}
-        itemToStringLabel={(option) => `${option.id} · ${option.title}`}
+        itemToStringLabel={(option) => `${option.roomNumber} · ${option.title}`}
         itemToStringValue={(option) => option.id}
         isItemEqualToValue={(item, value) => item.id === value.id}
         autoHighlight
       >
-        <ComboboxInput placeholder="搜索 IP ID / 标题" />
+        <ComboboxInput placeholder="Search room number or title" />
         <ComboboxContent>
           <ComboboxEmpty>未找到 IP</ComboboxEmpty>
           <ComboboxList>
@@ -910,7 +931,7 @@ function IpCombobox({
               <ComboboxItem key={option.id} value={option}>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-slate-950">{option.title}</p>
-                  <p className="font-mono text-[11px] text-slate-500">{option.id}</p>
+                  <p className="font-mono text-[11px] text-slate-500">Room {option.roomNumber}</p>
                 </div>
                 <span className="shrink-0 rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-500">
                   {option.status}
@@ -1226,6 +1247,7 @@ function toDraft(item: RecommendationItem): RecommendationDraft {
     placementKey: item.placementKey,
     ipId: item.ipId,
     ipTitle: item.ipTitle,
+    ipRoomNumber: item.ipRoomNumber,
     sortOrder: item.sortOrder,
     status: item.status,
     startsAt: item.startsAt,
@@ -1270,6 +1292,7 @@ function rowToItem(row: IpDiscoveryRecommendationRow): RecommendationItem {
     placementKey: row.placementKey,
     ipId: row.ipId,
     ipTitle: row.ip?.title ?? row.ipId,
+    ipRoomNumber: row.ip?.roomNumber ?? "",
     sortOrder: row.sortOrder,
     status: row.status,
     startsAt: datetimeLocalValue(row.startsAt),

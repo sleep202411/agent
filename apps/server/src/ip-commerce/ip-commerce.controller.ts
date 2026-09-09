@@ -40,6 +40,8 @@ import {
   TagIpsParamsSchema,
   type TagIpsParams,
   IpParamsSchema,
+  IpReferenceParamsSchema,
+  type IpReferenceParams,
   ListCreatorIpAssetsQuerySchema,
   ListCreatorIpsQuerySchema,
   ListIpTaxonomyTermsQuerySchema,
@@ -129,8 +131,8 @@ export class IpCommerceController {
   @Get('me/ips/:ipId')
   async getMyIp(
     @CurrentUser() user: AuthUser,
-    @Param(new ZodValidationPipe(IpParamsSchema))
-    params: IpParams,
+    @Param(new ZodValidationPipe(IpReferenceParamsSchema))
+    params: IpReferenceParams,
     @Query(new ZodValidationPipe(IpLocaleQuerySchema))
     query: IpLocaleQuery,
   ) {
@@ -616,8 +618,8 @@ export class IpCommerceController {
   @Get('ips/:ipId')
   async getIp(
     @CurrentUser() user: AuthUser | undefined,
-    @Param(new ZodValidationPipe(IpParamsSchema))
-    params: IpParams,
+    @Param(new ZodValidationPipe(IpReferenceParamsSchema))
+    params: IpReferenceParams,
     @Query(new ZodValidationPipe(IpLocaleQuerySchema))
     query: IpLocaleQuery,
   ) {

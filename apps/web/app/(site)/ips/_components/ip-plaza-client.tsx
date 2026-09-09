@@ -90,11 +90,17 @@ export function IpPlazaClient() {
   // and of the category filter, with no fallback to listings. They stay empty
   // until operations configure them.
   const heroProjects = useMemo<PlazaProject[]>(
-    () => (heroData?.items ?? []).map((item) => discoveryToPlazaProject(item, t)),
+    () =>
+      (heroData?.items ?? [])
+        .map((item) => discoveryToPlazaProject(item, t))
+        .filter((project) => project !== null),
     [heroData?.items, t]
   );
   const forYouProjects = useMemo<PlazaProject[]>(
-    () => (forYouData?.items ?? []).map((item) => discoveryToPlazaProject(item, t)),
+    () =>
+      (forYouData?.items ?? [])
+        .map((item) => discoveryToPlazaProject(item, t))
+        .filter((project) => project !== null),
     [forYouData?.items, t]
   );
   // Operator-pinned list entries (`ip_plaza_list_pinned`): native IP cards that
@@ -102,7 +108,10 @@ export function IpPlazaClient() {
   // narrows by genre/tag/region or searches, they asked for something specific
   // and the pins step aside. Server already sorts by the admin's sortOrder.
   const pinnedProjects = useMemo<PlazaProject[]>(
-    () => (pinnedData?.items ?? []).map((item) => discoveryToPlazaProject(item, t)),
+    () =>
+      (pinnedData?.items ?? [])
+        .map((item) => discoveryToPlazaProject(item, t))
+        .filter((project) => project !== null),
     [pinnedData?.items, t]
   );
 
@@ -357,6 +366,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
 
   return {
     id: ip.id,
+    roomNumber: ip.roomNumber,
     name: ip.title || t("detailUntitled"),
     subtitle: ip.subtitle || primaryGenre,
     description: ip.summary || ip.description || "",
@@ -379,29 +389,19 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
 function discoveryToPlazaProject(
   item: IpCommerceDiscoveryItem,
   t: ReturnType<typeof useTranslations>
-): PlazaProject {
+): PlazaProject | null {
   // Native IP card is the base (cover, episode count, genres); curated placement
   // copy/media overlay it where present. Hero placements carry their own media +
   // localized copy; for-you placements carry none, so they render as plain cards.
   const base = item.ipCard ? toPlazaProject(item.ipCard, t) : null;
+  if (!base) return null;
   return {
-    id: item.ipId,
-    name: item.title || base?.name || item.ip?.title || t("detailUntitled"),
-    subtitle: base?.subtitle ?? "",
-    description: item.description || base?.description || "",
-    cover: getAssetUrl(item.image) || base?.cover || "",
-    trailer: getAssetUrl(item.trailer) || base?.trailer || "",
-    ownerId: base?.ownerId ?? "",
-    ownerName: base?.ownerName ?? "",
-    ownerAvatar: "",
-    genres: base?.genres ?? [],
-    tags: base?.tags ?? [],
-    episodes: base?.episodes ?? 0,
-    viewCount: base?.viewCount ?? 0,
-    likeCount: base?.likeCount ?? 0,
-    collectionCount: base?.collectionCount ?? 0,
-    eyebrow: item.eyebrow || base?.eyebrow || t("featured"),
-    region: base?.region ?? "",
+    ...base,
+    name: item.title || base.name,
+    description: item.description || base.description,
+    cover: getAssetUrl(item.image) || base.cover,
+    trailer: getAssetUrl(item.trailer) || base.trailer,
+    eyebrow: item.eyebrow || base.eyebrow,
   };
 }
 

@@ -9,6 +9,7 @@ import {
   IconSparkles,
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { regionLabel } from "@/src/lib/regions";
@@ -25,7 +26,7 @@ export function IPPlazaCard({ project }: { project: PlazaProject }) {
 
   return (
     <Link
-      href={localizePath(`/ips/${project.id}`, locale)}
+      href={localizePath(ipRoomPath(project.roomNumber), locale)}
       className="group flex h-full flex-col overflow-hidden rounded-2xl hover:bg-muted/90 transition-all hover:shadow-lg hover:shadow-black/20"
     >
       <div className="relative aspect-video w-full overflow-hidden bg-secondary">

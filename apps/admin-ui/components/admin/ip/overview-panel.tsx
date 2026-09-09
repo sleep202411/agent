@@ -56,6 +56,16 @@ export function IpOverviewPanel({
         },
       },
       {
+        accessorKey: "roomNumber",
+        header: "Room number",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="select-text font-mono text-xs tabular-nums text-slate-600">
+            {row.original.roomNumber}
+          </span>
+        ),
+      },
+      {
         accessorKey: "status",
         header: "状态",
         cell: ({ row }) => {

@@ -62,6 +62,7 @@ export type IpLibraryAssetRow = {
 
 export type IpRow = {
   id: string;
+  roomNumber: string;
   slug: string | null;
   title: string;
   subtitle: string | null;
@@ -154,6 +155,7 @@ export type ReviewQueueRow = {
   submittedAt: string;
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status: string;
     listingVisibility: string;
@@ -181,6 +183,7 @@ export type ReportRow = {
   createdAt: string;
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status: string;
     listingVisibility: string;
@@ -259,6 +262,7 @@ export type IpEntitlementRow = {
   revokedAt: string | null;
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status: string;
     listingVisibility: string;
@@ -394,6 +398,7 @@ export type IpDiscoveryRecommendationRow = {
   ipId: string;
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status: string;
     listingVisibility: string;
@@ -452,6 +457,7 @@ export type IpRevenueContributor = {
 export type IpRevenueConfigData = {
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status?: string;
     listingVisibility?: string;
@@ -479,6 +485,7 @@ export type AdminRevenueEntryRow = {
   id: string;
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status?: string;
     listingVisibility?: string;

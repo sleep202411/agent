@@ -34,7 +34,7 @@ describe('IP plaza ranking', () => {
     db = await PGlite.create();
     await db.exec(`
       CREATE TABLE ips (
-        id uuid PRIMARY KEY, published_at timestamptz(6), created_at timestamptz(6) NOT NULL,
+        id uuid PRIMARY KEY, room_number varchar(19), published_at timestamptz(6), created_at timestamptz(6) NOT NULL,
         deleted_at timestamptz, status text DEFAULT 'published',
         listing_visibility text DEFAULT 'public', region text DEFAULT 'GLOBAL',
         created_by_id text DEFAULT 'creator', copyright_owner text
@@ -102,6 +102,34 @@ describe('IP plaza ranking', () => {
       );
     }
   }
+
+  it('finds an exact room number without leaking hidden IPs or changing title search', async () => {
+    await addIp(1);
+    await addIp(2);
+    await db.exec(
+      "UPDATE ips SET room_number = '100001' WHERE id = '" + id(1) + "'",
+    );
+    await db.exec(
+      "UPDATE ips SET room_number = '1000010' WHERE id = '" + id(2) + "'",
+    );
+    expect((await page({ q: ' 100001 ' })).pageIds).toEqual([id(1)]);
+    expect((await page({ q: '10000' })).pageIds).toEqual([]);
+    expect((await page({ q: 'IP 2' })).pageIds).toEqual([id(2)]);
+    blocks.mockResolvedValue([{ targetType: 'ip', targetId: id(1) }]);
+    expect((await page({ q: '100001' }, true)).pageIds).toEqual([]);
+    await db.exec(
+      "UPDATE ips SET listing_visibility = 'unlisted' WHERE id = '" +
+        id(1) +
+        "'",
+    );
+    expect((await page({ q: '100001' })).pageIds).toEqual([]);
+    await db.exec(
+      "UPDATE ips SET listing_visibility = 'public', status = 'draft' WHERE id = '" +
+        id(1) +
+        "'",
+    );
+    expect((await page({ q: '100001' })).pageIds).toEqual([]);
+  });
 
   it('lets a fresh zero-engagement IP outrank a month-old IP with 100 views', async () => {
     await addIp(1);

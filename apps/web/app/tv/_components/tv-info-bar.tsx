@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { IconPlayerPlay, IconUser } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import type { TvItem } from "../_hooks/types";
@@ -41,7 +42,7 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
         )}
       </div>
       <Link
-        href={localizePath(`/ips/${item.id}`, locale)}
+        href={localizePath(ipRoomPath(item.roomNumber), locale)}
         className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-white/90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
       >
         <IconPlayerPlay className="size-4" />

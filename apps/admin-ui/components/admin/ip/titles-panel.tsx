@@ -216,6 +216,16 @@ export function IpTitlesPanel({
         },
       },
       {
+        accessorKey: "roomNumber",
+        header: "Room number",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="select-text font-mono text-xs tabular-nums text-slate-600">
+            {row.original.roomNumber}
+          </span>
+        ),
+      },
+      {
         accessorKey: "status",
         header: "状态",
         cell: ({ row }) => {
@@ -362,7 +372,7 @@ export function IpTitlesPanel({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 className="h-9 w-full pl-9"
-                placeholder="搜索标题、slug、简介"
+                placeholder="Search title, room number, slug or summary"
               />
             </label>
             <Select
@@ -620,7 +630,7 @@ function IpDetailDrawer({
             </SheetTitle>
             {ip ? (
               <p className="mt-1 text-[12px] text-slate-500">
-                {ip.id} · v{ip.version}
+                Room {ip.roomNumber} · {ip.id} · v{ip.version}
               </p>
             ) : null}
           </div>

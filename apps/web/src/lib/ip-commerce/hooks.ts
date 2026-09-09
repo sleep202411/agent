@@ -1,6 +1,12 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type Query,
+} from "@tanstack/react-query";
 import {
   blockIpContent,
   createIpCommerceContributor,
@@ -309,13 +315,21 @@ function patchIpEngagement(
   };
 }
 
+function publicIpQueryFilter(ipId: string) {
+  return {
+    queryKey: ["ip-commerce", "ips"],
+    predicate: (query: Query) => {
+      const data = query.state.data as { ip?: { id: string } } | undefined;
+      return query.queryKey[2] === ipId || data?.ip?.id === ipId;
+    },
+  };
+}
+
 function usePatchIpEngagementCache() {
   const qc = useQueryClient();
   return (ipId: string, engagement: IpEngagementMutationResult["engagement"]) => {
-    qc.setQueriesData<{ ip: IpCommerceIp }>(
-      { queryKey: ["ip-commerce", "ips", ipId] },
-      (current) =>
-        current?.ip ? { ...current, ip: patchIpEngagement(current.ip, engagement) } : current
+    qc.setQueriesData<{ ip: IpCommerceIp }>(publicIpQueryFilter(ipId), (current) =>
+      current?.ip ? { ...current, ip: patchIpEngagement(current.ip, engagement) } : current
     );
   };
 }
@@ -339,7 +353,7 @@ export function useToggleIpEngagementLike() {
       input.viewerHasLiked ? unlikeIpContent(input.ipId) : likeIpContent(input.ipId),
     onSuccess: async (result, input) => {
       patchCache(input.ipId, result.engagement);
-      await qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] });
+      await qc.invalidateQueries(publicIpQueryFilter(input.ipId));
     },
   });
 }
@@ -542,7 +556,7 @@ function invalidateIpAclCaches(qc: ReturnType<typeof useQueryClient>, ipId: stri
     qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot }),
     qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", ipId] }),
     qc.invalidateQueries({ queryKey: ["ip-commerce", "ip-access", ipId] }),
-    qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", ipId] }),
+    qc.invalidateQueries(publicIpQueryFilter(ipId)),
   ]);
 }
 
@@ -700,7 +714,7 @@ export function useSaveIpCommerceCollection() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ipCommerceKeys.collectionRoot }),
-        qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),
+        qc.invalidateQueries(publicIpQueryFilter(input.ipId)),
       ]);
     },
   });
@@ -713,7 +727,7 @@ export function useRemoveIpCommerceCollection() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ipCommerceKeys.collectionRoot }),
-        qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),
+        qc.invalidateQueries(publicIpQueryFilter(input.ipId)),
       ]);
     },
   });
@@ -734,7 +748,7 @@ export function usePurchaseIpContent() {
         qc.invalidateQueries({ queryKey: ipCommerceKeys.creatorRevenueRoot }),
         // Public detail carries the (now entitlement-gated) episode media URLs —
         // refetch so just-unlocked content becomes playable without a reload.
-        qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),
+        qc.invalidateQueries(publicIpQueryFilter(input.ipId)),
       ]);
     },
   });

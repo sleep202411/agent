@@ -129,6 +129,7 @@ export interface IpEngagementMutationResult {
 
 export interface IpCommerceIp {
   id: string;
+  roomNumber: string;
   slug: string | null;
   status: string;
   listingVisibility: string;
@@ -187,6 +188,7 @@ export interface IpCommerceIp {
 
 export interface IpCreatorIp {
   id: string;
+  roomNumber: string;
   title: string;
   summary: string;
   description: string | null;
@@ -749,6 +751,7 @@ export interface IpCommerceDiscoveryItem {
   ipId: string;
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status: string;
     listingVisibility: string;
@@ -1099,10 +1102,13 @@ export async function searchIpCommerceUsers(query: string): Promise<IpUserSearch
   return Array.isArray(res.users) ? res.users : [];
 }
 
-export function getIpCommerceIp(ipId: string, params?: { locale?: string }) {
-  return api.get<{ ip: IpCommerceIp }>(`/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}`, {
-    params,
-  });
+export function getIpCommerceIp(ipReference: string, params?: { locale?: string }) {
+  return api.get<{ ip: IpCommerceIp }>(
+    `/aurora/ip-commerce/ips/${encodeURIComponent(ipReference)}`,
+    {
+      params,
+    }
+  );
 }
 
 export function getIpAccess(ipId: string, params?: { episodeIds?: string[]; locale?: string }) {
