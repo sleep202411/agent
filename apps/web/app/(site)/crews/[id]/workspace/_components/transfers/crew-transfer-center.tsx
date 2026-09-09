@@ -177,6 +177,7 @@ export function CrewTransfersProvider({
           setExpanded(true);
         }
       } finally {
+        void queryClient.invalidateQueries({ queryKey: crewKeys.assetContext(crewId) });
         controllersRef.current.delete(jobId);
         queueMicrotask(() => pumpRef.current());
       }
