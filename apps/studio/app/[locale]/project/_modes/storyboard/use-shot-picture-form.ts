@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
@@ -82,7 +82,9 @@ export function useShotPictureForm(
 
   const mode = bound?.mode ?? draft.mode ?? canvasDefaultMode(model);
   const prompt = bound?.prompt ?? draft.prompt ?? "";
-  promptRef.current = prompt;
+  useLayoutEffect(() => {
+    promptRef.current = prompt;
+  }, [prompt]);
   const settings = (bound?.settings ??
     draft.settings ??
     defaultSettingsForModel(model)) as ModelSettings;
