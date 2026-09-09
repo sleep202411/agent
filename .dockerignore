@@ -45,7 +45,12 @@ tmp
 **/*.tar
 *.tar.gz
 **/*.tar.gz
+# Exclude docs/READMEs from the upload context, but keep:
+# - Agent Skill catalog sources (`check:catalog` during server/agent-os build)
+# - Studio's downloadable Skill template under `public/` (copied into the image)
 *.md
+!packages/agent-skills/catalog/**/*.md
+!apps/studio/public/**/*.md
 # package.json is needed for npm install in the build — keep it.
 !package.json
 !**/package.json
