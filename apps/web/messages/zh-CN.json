@@ -308,6 +308,8 @@
     "identifierTitle": "登录或注册",
     "identifierSubtitle": "输入手机号或邮箱，我们会给你发送验证码。",
     "identifierLabel": "手机号或邮箱",
+    "callingCode": "区号",
+    "callingCodeIdentifierPlaceholder": "邮箱或手机号码",
     "identifierPlaceholder": "邮箱或手机号",
     "continue": "继续",
     "usePasswordInstead": "使用密码登录",

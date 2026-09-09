@@ -308,6 +308,8 @@
     "identifierTitle": "登入或註冊",
     "identifierSubtitle": "輸入手機號或電郵，我們會給你發送驗證碼。",
     "identifierLabel": "手機號或電郵",
+    "callingCode": "區號",
+    "callingCodeIdentifierPlaceholder": "電郵或手機號碼",
     "identifierPlaceholder": "電郵或手機號",
     "continue": "繼續",
     "usePasswordInstead": "使用密碼登入",
