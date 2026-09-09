@@ -139,7 +139,8 @@ export const ListIpsQuerySchema = z.object({
   // description/slug, copyright owner, and genre/tag labels (or codes).
   q: z.string().trim().min(1).max(120).optional(),
   locale: LocaleQuerySchema,
-  cursor: z.string().uuid().optional(),
+  // Opaque ranking boundary returned as nextCursor, not an IP ID.
+  cursor: z.string().min(1).max(512).optional(),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 export type ListIpsQuery = z.infer<typeof ListIpsQuerySchema>;

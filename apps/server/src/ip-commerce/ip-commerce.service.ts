@@ -63,6 +63,11 @@ import {
   computeRevenueSplit,
 } from './revenue-split';
 import { formatSettlementPeriod } from './member-pool';
+import {
+  encodePublicIpRankCursor,
+  publicIpRankQuery,
+  type PublicIpRankRow,
+} from './ip-plaza-ranking';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import {
@@ -135,12 +140,6 @@ const DEFAULT_IP_LOCALE = 'zh-CN';
 const PUBLIC_LOCALIZATION_STATUSES: IpLocalizationStatus[] = [
   IpLocalizationStatus.published,
 ];
-const IP_LIST_RANK_WEIGHTS = {
-  view: 1,
-  like: 5,
-  collection: 8,
-} as const;
-const IP_LIST_NULL_PUBLISHED_AT = new Date(0);
 
 // (a)-policy: content (localization / episode) created or edited on a
 // publicly-live IP (status `published`) goes live immediately instead of being
@@ -305,17 +304,6 @@ export interface IpEngagementStats {
   agentLikeCount: number;
   viewerHasLiked: boolean;
 }
-
-type PublicIpRankRow = {
-  id: string;
-};
-
-type PublicIpRankCursor = {
-  id: string;
-  rankScore: bigint;
-  sortPublishedAt: Date;
-  createdAt: Date;
-};
 
 type ViewerBlockLists = {
   blockedIpIds: string[];
@@ -3825,63 +3813,25 @@ export class IpCommerceService {
   }
 
   private async rankedPublicIpIds(query: ListIpsQuery, user?: AuthUser) {
-    const [viewerBlocks, cursor] = await Promise.all([
-      this.viewerBlockLists(user),
-      this.publicIpRankCursor(query.cursor),
-    ]);
-    const rows = await this.prisma.$queryRaw<PublicIpRankRow[]>(Prisma.sql`
-      SELECT ip.id::text AS id
-      FROM ips ip
-      LEFT JOIN ip_engagement_aggregates engagement ON engagement.ip_id = ip.id
-      LEFT JOIN (
-        SELECT ip_id, COUNT(*)::bigint AS collection_count
-        FROM ip_collection_items
-        WHERE target_type::text = 'ip'
-          AND status::text = 'active'
-          AND removed_at IS NULL
-        GROUP BY ip_id
-      ) collections ON collections.ip_id = ip.id
-      WHERE ${publicIpRankBaseFilterSql(query, viewerBlocks)}
-      ${publicIpRankSeekSql(cursor)}
-      ORDER BY
-        ${publicIpRankScoreSql()} DESC,
-        COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) DESC,
-        ip.created_at DESC,
-        ip.id DESC
-      LIMIT ${query.limit + 1}
-    `);
-    const ids = rows.map((row) => row.id);
-    const pageIds = ids.slice(0, query.limit);
+    const viewerBlocks = await this.viewerBlockLists(user);
+    const rows = await this.prisma.$queryRaw<PublicIpRankRow[]>(
+      publicIpRankQuery(
+        publicIpRankBaseFilterSql(query, viewerBlocks),
+        query.limit,
+        query.cursor,
+      ),
+    );
+    const page = rows.slice(0, query.limit);
+    const last = page.at(-1);
     return {
-      pageIds,
-      nextCursor: ids.length > query.limit ? (pageIds.at(-1) ?? null) : null,
+      pageIds: page.map((row) => row.id),
+      // Preserve the boundary as it was shown. Re-reading the last IP would
+      // move it when its engagement changes, or restart pagination if deleted.
+      nextCursor:
+        rows.length > query.limit && last
+          ? encodePublicIpRankCursor(last)
+          : null,
     };
-  }
-
-  private async publicIpRankCursor(
-    cursor: string | undefined,
-  ): Promise<PublicIpRankCursor | null> {
-    if (!cursor) return null;
-    const rows = await this.prisma.$queryRaw<PublicIpRankCursor[]>(Prisma.sql`
-      SELECT
-        ip.id::text AS id,
-        ${publicIpRankScoreSql()} AS "rankScore",
-        COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) AS "sortPublishedAt",
-        ip.created_at AS "createdAt"
-      FROM ips ip
-      LEFT JOIN ip_engagement_aggregates engagement ON engagement.ip_id = ip.id
-      LEFT JOIN (
-        SELECT ip_id, COUNT(*)::bigint AS collection_count
-        FROM ip_collection_items
-        WHERE target_type::text = 'ip'
-          AND status::text = 'active'
-          AND removed_at IS NULL
-        GROUP BY ip_id
-      ) collections ON collections.ip_id = ip.id
-      WHERE ip.id = ${cursor}::uuid
-      LIMIT 1
-    `);
-    return rows[0] ?? null;
   }
 
   /**
@@ -6725,40 +6675,6 @@ function publicIpRankBaseFilterSql(
 /** Escape `\`, `%`, `_` so user input is treated as a literal ILIKE substring. */
 function likeContainsPattern(raw: string): string {
   return `%${raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
-}
-
-function publicIpRankSeekSql(cursor: PublicIpRankCursor | null): Prisma.Sql {
-  if (!cursor) return Prisma.empty;
-  return Prisma.sql`
-    AND (
-      ${publicIpRankScoreSql()} < ${cursor.rankScore}::bigint
-      OR (
-        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
-        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) < ${cursor.sortPublishedAt}
-      )
-      OR (
-        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
-        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) = ${cursor.sortPublishedAt}
-        AND ip.created_at < ${cursor.createdAt}
-      )
-      OR (
-        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
-        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) = ${cursor.sortPublishedAt}
-        AND ip.created_at = ${cursor.createdAt}
-        AND ip.id::text < ${cursor.id}
-      )
-    )
-  `;
-}
-
-function publicIpRankScoreSql(): Prisma.Sql {
-  return Prisma.sql`
-    (
-      COALESCE(engagement.total_view_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.view}::bigint
-      + COALESCE(engagement.total_like_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.like}::bigint
-      + COALESCE(collections.collection_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.collection}::bigint
-    )::bigint
-  `;
 }
 
 function ipTaxonomyFilterWhere(
