@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 6be14ad987d3d9c08b049bd4174c5d16cfb4303c
+    tag: dc4fd6f6aa2fec8fd071a52617f87ea54b9569e3
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: af29866a487298b1435c974cb34ddc238cd773d0
+    tag: dc4fd6f6aa2fec8fd071a52617f87ea54b9569e3
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
