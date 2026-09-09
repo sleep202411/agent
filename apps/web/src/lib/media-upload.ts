@@ -8,11 +8,11 @@
  * straight to the storage provider (Azure Blob intl / Alibaba OSS cn)
  * with a short-lived signed write URL the server mints on demand.
  *
- * Three steps, stateless + confirm:
- *   1. `POST /aurora/media/upload-url` — STATELESS. The server decides
- *      the permanent object key and returns a signed write URL. No
- *      MediaAsset row is created, so an abandoned / cancelled / re-picked
- *      upload leaves ZERO server-side residue.
+ * Three steps, signed upload + confirm:
+ *   1. `POST /aurora/media/upload-url` — the server decides
+ *      the object key and returns a signed write URL. Crew uploads reserve
+ *      capacity until confirmation, cancellation or expiry and use staging
+ *      keys; other generic uploads retain their permanent-key flow.
  *   2. PUT the bytes straight to `uploadUrl` (echoing the server's
  *      `method` + `headers` verbatim — Azure needs `x-ms-blob-type`).
  *      Uses XMLHttpRequest because `fetch` has no upload-progress events.
@@ -135,7 +135,7 @@ export interface UploadFileResult {
   url: string;
 }
 
-// ─── Step 1: request a signed write URL (stateless) ──
+// ─── Step 1: request a signed write URL ──
 
 async function requestSignedUrl(
   body: {
@@ -269,6 +269,8 @@ function extractStorageErrorMessage(xml: string, status: number): string {
 
 // ─── Step 3: confirm the landed upload (mints the MediaAsset) ──
 
+class CrewUploadReservationExpiredError extends Error {}
+
 async function confirmUpload(
   storageKey: string,
   kind: string,
@@ -297,6 +299,8 @@ async function confirmUpload(
 
   if (!res.ok) {
     const message = json.message || json.msg;
+    if (json.code === "CREW_UPLOAD_RESERVATION_EXPIRED")
+      throw new CrewUploadReservationExpiredError(message);
     throw new Error(message ? message : `confirmUpload failed: HTTP ${res.status}`);
   }
   if (!json.mediaAssetId || !json.url) {
@@ -338,40 +342,67 @@ export async function uploadFileViaSignedUrl(
     resume.contentType === contentType &&
     (resume.scope?.crewId ?? null) === (opts.scope?.crewId ?? null);
 
-  let storageKey: string;
-  if (canResume && resume) {
-    storageKey = resume.storageKey;
-    opts.onProgress?.(100);
-  } else {
-    opts.onStage?.("signing");
-    const info = await requestSignedUrl(
-      {
+  let storageKey: string | undefined;
+  try {
+    if (canResume && resume) {
+      storageKey = resume.storageKey;
+      opts.onProgress?.(100);
+    } else {
+      opts.onStage?.("signing");
+      const info = await requestSignedUrl(
+        {
+          kind: opts.kind,
+          contentType,
+          fileName: file.name,
+          sizeBytes: file.size,
+          scope: opts.scope,
+        },
+        opts.signal
+      );
+      storageKey = info.storageKey;
+      opts.onStage?.("uploading");
+      await putBytesToStorage(info, file, { onProgress: opts.onProgress, signal: opts.signal });
+      storageKey = info.storageKey;
+      opts.onCheckpoint?.({
+        storageKey,
         kind: opts.kind,
         contentType,
-        fileName: file.name,
-        sizeBytes: file.size,
         scope: opts.scope,
-      },
+      });
+    }
+
+    opts.onStage?.("confirming");
+    const confirmed = await confirmUpload(
+      storageKey,
+      opts.kind,
+      contentType,
+      opts.scope,
       opts.signal
     );
-    opts.onStage?.("uploading");
-    await putBytesToStorage(info, file, { onProgress: opts.onProgress, signal: opts.signal });
-    storageKey = info.storageKey;
-    opts.onCheckpoint?.({
-      storageKey,
-      kind: opts.kind,
-      contentType,
-      scope: opts.scope,
-    });
+    return { mediaAssetId: confirmed.mediaAssetId, storageKey, url: confirmed.url };
+  } catch (error) {
+    if (opts.kind === "crew_asset_file" && storageKey) {
+      // Use a separate signal: the upload's signal may already be aborted.
+      try {
+        await fetch("/aurora/media/cancel-upload", {
+          method: "POST",
+          credentials: "include",
+          headers: jsonHeaders(),
+          body: JSON.stringify({ storageKey, kind: opts.kind, contentType, scope: opts.scope }),
+          signal: AbortSignal.timeout(10000),
+        });
+      } catch {
+        /* Expiring server reservations recover response loss/offline clients. */
+      }
+    }
+    if (
+      canResume &&
+      opts.kind === "crew_asset_file" &&
+      error instanceof CrewUploadReservationExpiredError &&
+      !opts.signal?.aborted
+    ) {
+      return uploadFileViaSignedUrl(file, { ...opts, resumeFrom: undefined });
+    }
+    throw error;
   }
-
-  opts.onStage?.("confirming");
-  const confirmed = await confirmUpload(
-    storageKey,
-    opts.kind,
-    contentType,
-    opts.scope,
-    opts.signal
-  );
-  return { mediaAssetId: confirmed.mediaAssetId, storageKey, url: confirmed.url };
 }

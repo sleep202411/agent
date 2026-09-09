@@ -10,6 +10,7 @@ describe('CrewAssetUploadCleanupWorker', () => {
     };
     const prisma = { mediaAsset };
     const assets = {
+      cleanupUploadReservations: jest.fn().mockResolvedValue(undefined),
       reclaimExpiredPendingUpload: jest.fn().mockResolvedValue(true),
     };
     const worker = new CrewAssetUploadCleanupWorker(
@@ -56,11 +57,15 @@ describe('CrewAssetUploadCleanupWorker', () => {
     const mediaAsset = { findMany: jest.fn().mockReturnValue(pending) };
     const worker = new CrewAssetUploadCleanupWorker(
       { mediaAsset } as never,
-      { reclaimExpiredPendingUpload: jest.fn() } as never,
+      {
+        cleanupUploadReservations: jest.fn().mockResolvedValue(undefined),
+        reclaimExpiredPendingUpload: jest.fn(),
+      } as never,
     );
 
     const first = worker.drainOnce();
     const second = worker.drainOnce();
+    await Promise.resolve();
     expect(mediaAsset.findMany).toHaveBeenCalledTimes(1);
     resolvePending([]);
     await Promise.all([first, second]);

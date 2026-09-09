@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toast } from "sonner";
 import { CrewAssetsTab } from "./crew-assets-tab";
 import { CrewWorkbenchHeader } from "../workbench/crew-workbench-header";
 import { CrewTransfersProvider } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
@@ -103,6 +104,8 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 
 let canLink = true;
 let linkFails = false;
+let bulkMove = false;
+let movedSecond = false;
 
 function installFetch() {
   vi.stubGlobal(
@@ -153,6 +156,13 @@ function installFetch() {
           cell: "global",
           provider: "s3_compatible",
           storageAvailable,
+          storageUsage: {
+            usedBytes: 2e9,
+            totalBytes: 100e9,
+            remainingBytes: 97e9,
+            reservedBytes: 1e9,
+            unknownSizeCount: 0,
+          },
           maxUploadBytes: 5 * 1024 * 1024 * 1024,
           accessModel: "hierarchical_acl",
           role: "admin",
@@ -191,10 +201,29 @@ function installFetch() {
       if (method === "GET" && url.endsWith("/members")) {
         return jsonResponse([]);
       }
+      if (method === "PATCH" && url.includes("/assets/")) {
+        if (url.endsWith("/file-1"))
+          return jsonResponse({ message: "Name already exists" }, { status: 409 });
+        movedSecond = true;
+        return jsonResponse({
+          ...ROOT_ITEMS[1],
+          id: "file-2",
+          name: "second.png",
+          parentId: "folder-1",
+        });
+      }
+      if (method === "GET" && url.endsWith("/assets/folders")) return jsonResponse([ROOT_ITEMS[0]]);
       if (method === "GET" && url.includes("/assets")) {
         const inFolder = url.includes("parentId=folder-1");
         return jsonResponse({
-          items: inFolder ? [] : ROOT_ITEMS,
+          items: inFolder
+            ? []
+            : [
+                ...ROOT_ITEMS,
+                ...(bulkMove && !movedSecond
+                  ? [{ ...ROOT_ITEMS[1], id: "file-2", name: "second.png" }]
+                  : []),
+              ],
           parentId: inFolder ? "folder-1" : null,
           source: "all",
         });
@@ -276,6 +305,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  bulkMove = false;
+  movedSecond = false;
+  vi.clearAllMocks();
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -284,6 +316,35 @@ afterEach(() => {
 });
 
 describe("crew asset center", () => {
+  it("shows used, total, remaining and reserved storage", async () => {
+    await render();
+    expect(document.body.textContent).toContain("2.00 GB used of 100.00 GB");
+    expect(document.body.textContent).toContain("97.00 GB available");
+    expect(document.body.textContent).toContain("1.00 GB reserved for uploads");
+  });
+  it("waits for every bulk move and lists failed files while reporting successes", async () => {
+    bulkMove = true;
+    await render();
+    await click(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!
+    );
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select second.png"]')!);
+    await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+    const form = document.querySelector('[data-slot="dialog-content"] form')!;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(2);
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "concept.png: Name already exists"
+    );
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("1"));
+    expect(
+      requests.filter((r) => r.method === "GET" && r.url.includes("/assets?")).length
+    ).toBeGreaterThan(1);
+  });
+
   it("loads real asset data and opens a file in the right preview region", async () => {
     await render();
 

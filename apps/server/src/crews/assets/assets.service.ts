@@ -1,8 +1,10 @@
+import { crewStorageUsage, lockCrewStorage } from './storage-quota';
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -88,6 +90,7 @@ type AssetNode = Prisma.CrewAssetNodeGetPayload<{
 
 @Injectable()
 export class CrewAssetsService {
+  private readonly logger = new Logger(CrewAssetsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly workspacePermissions: WorkspacePermissionService,
@@ -153,6 +156,51 @@ export class CrewAssetsService {
     return this.list(crew.id, userId, query);
   }
 
+  async cleanupUploadReservations() {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ storage_key: string; crew_id: string }>
+    >`
+      SELECT storage_key, crew_id FROM crew_upload_reservations WHERE expires_at < now() AND cleaned_at IS NULL ORDER BY expires_at LIMIT 50`;
+    const storage = this.storageRegistry.forProvider(
+      crewAssetStorageProviderForCell(CURRENT_CELL),
+    );
+    if (!storage) return;
+    for (const row of rows) {
+      try {
+        await this.prisma.$transaction(
+          async (tx) => {
+            await lockCrewStorage(tx, row.crew_id);
+            const finalKey = row.storage_key.replace(
+              '/crew-asset-file/',
+              '/crew-asset-final/',
+            );
+            const asset = await tx.mediaAsset.findFirst({
+              where: { objectKey: finalKey, deletedAt: null },
+              select: { id: true },
+            });
+            for (const key of asset
+              ? [row.storage_key]
+              : [row.storage_key, finalKey]) {
+              const head = await storage.headObject(key);
+              if (head.exists)
+                await storage.deleteObject({
+                  storageKey: key,
+                  bucket: head.bucket!,
+                  region: head.region,
+                });
+            }
+            await tx.$executeRaw`UPDATE crew_upload_reservations SET cleaned_at=now(), state=CASE WHEN state='pending' THEN 'cancelled' ELSE state END WHERE storage_key=${row.storage_key}`;
+          },
+          { timeout: 30000 },
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Crew reservation cleanup failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+
   async context(crewId: string, userId: string) {
     const context = await this.authorization.require(
       crewId,
@@ -174,6 +222,7 @@ export class CrewAssetsService {
       provider,
       storageAvailable,
       maxUploadBytes: CREW_ASSET_MAX_BYTES,
+      storageUsage: await crewStorageUsage(this.prisma, crewId),
       accessModel: 'hierarchical_acl' as const,
       isOwner: context.isOwner,
       policyKeys: context.policyKeys,

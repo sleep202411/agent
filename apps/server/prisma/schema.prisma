@@ -4808,62 +4808,64 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
-  id                  String               @id
-  name                String               @db.VarChar(128)
-  description         String               @db.Text
+  storageLimitBytes   BigInt                  @default(100000000000) @map("storage_limit_bytes")
+  uploadReservations  CrewUploadReservation[]
+  id                  String                  @id
+  name                String                  @db.VarChar(128)
+  description         String                  @db.Text
   /// Square logo (UI crops to circle). The durable brand asset —
   /// shows up in plaza cards, member chips, notifications, nav.
   /// Visitor-page hero visual comes from `showcaseWorks[0]`; the
   /// logo enlarges into a gradient empty-state when no showcase is
   /// set yet (no separate `cover` asset — by design).
-  logo                String               @map("logo") @db.VarChar(512)
+  logo                String                  @map("logo") @db.VarChar(512)
   /// Optional one-line hook shown under crew name in hero. ≤140
   /// chars. Owner-curated.
-  tagline             String?              @db.VarChar(140)
+  tagline             String?                 @db.VarChar(140)
   /// Predefined genre tags from CREW_GENRES in @repo/shared/crew.
   /// E.g. ["animation", "shortform", "documentary"]. Max 5.
-  genres              String[]             @default([])
+  genres              String[]                @default([])
   /// Predefined style tags from CREW_STYLES in @repo/shared/crew.
   /// E.g. ["2d", "3d", "live_action", "ai_assisted"]. Max 5.
-  styles              String[]             @default([])
+  styles              String[]                @default([])
   /// External social channels. Shape:
   ///   [{ platform: "bilibili"|"weibo"|..., url: "https://..." }]
   /// Validated server-side against SOCIAL_PLATFORMS. Max 10 entries.
-  socialLinks         Json?                @map("social_links") @db.JsonB
+  socialLinks         Json?                   @map("social_links") @db.JsonB
   /// Curated work showcase. Shape:
   ///   [{ thumbnailUrl, title, externalUrl?, viewCount? }]
   /// First entry is featured as the visitor-page hero background.
   /// Max 10 entries.
-  showcaseWorks       Json?                @map("showcase_works") @db.JsonB
+  showcaseWorks       Json?                   @map("showcase_works") @db.JsonB
   /// Immutable creator identity for audit only. Current ownership lives in
   /// CrewOwnership and is never inferred from this field.
-  createdByUserId     String               @map("created_by_user_id")
+  createdByUserId     String                  @map("created_by_user_id")
   /// User-controlled discovery state. New crews start unlisted; only
   /// listed crews appear in the public Crew Hall.
-  listingStatus       CrewListingStatus    @default(unlisted) @map("listing_status")
+  listingStatus       CrewListingStatus       @default(unlisted) @map("listing_status")
   /// First/most recent time the owner made the crew visible in the hall.
-  listedAt            DateTime?            @map("listed_at") @db.Timestamptz(6)
+  listedAt            DateTime?               @map("listed_at") @db.Timestamptz(6)
   /// Admin moderation state (post-hoc). `taken_down` hides the crew from every
   /// public surface. Stamped by the acting admin for the audit trail.
-  moderationStatus    CrewModerationStatus @default(ok) @map("moderation_status")
-  moderatedAt         DateTime?            @map("moderated_at") @db.Timestamptz(6)
-  moderatedByAdminId  String?              @map("moderated_by_admin_id") @db.Uuid
-  moderationReason    String?              @map("moderation_reason") @db.VarChar(500)
+  moderationStatus    CrewModerationStatus    @default(ok) @map("moderation_status")
+  moderatedAt         DateTime?               @map("moderated_at") @db.Timestamptz(6)
+  moderatedByAdminId  String?                 @map("moderated_by_admin_id") @db.Uuid
+  moderationReason    String?                 @map("moderation_reason") @db.VarChar(500)
   /// Team collaboration home. A crew owns exactly one team workspace and
   /// one main production project; task projects branch from this context.
-  workspaceId         String?              @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
-  productionProjectId String?              @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
+  workspaceId         String?                 @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
+  productionProjectId String?                 @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
   /// User-selected FizzStudio project that consumes this crew's asset library.
   /// This is intentionally separate from productionProjectId: linking an
   /// existing Studio project must never mutate the crew's task/canvas trunk.
-  studioProjectId     String?              @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
+  studioProjectId     String?                 @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// crewsService.update(id, patch, expectedVersion).
-  version             Int                  @default(0)
-  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt           DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  version             Int                     @default(0)
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt           DateTime?               @map("deleted_at") @db.Timestamptz(6)
 
   positions           CrewPosition[]
   members             CrewMember[]
@@ -9907,4 +9909,19 @@ model CopilotUserStreamState {
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("copilot_user_stream_states")
+}
+
+model CrewUploadReservation {
+  cleanedAt  DateTime? @map("cleaned_at") @db.Timestamptz
+  storageKey String    @id @map("storage_key")
+  crewId     String    @map("crew_id")
+  userId     String    @map("user_id") @db.VarChar(64)
+  sizeBytes  BigInt    @map("size_bytes")
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz
+  state      String    @default("pending")
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  crew       Crew      @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  @@index([crewId, state, expiresAt], map: "crew_upload_reservations_capacity_idx")
+  @@map("crew_upload_reservations")
 }

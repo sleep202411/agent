@@ -35,7 +35,7 @@ function serviceFixture() {
         headers: { 'Content-Type': 'image/png' },
         storageKey,
         provider: 'azure_blob' as const,
-        expiresAt: '2026-07-17T13:00:00.000Z',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
       }),
     ),
     headObject: jest.fn((key: string) =>
@@ -91,6 +91,15 @@ function serviceFixture() {
   );
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([
+      {
+        total: 100000000000n,
+        used: 0n,
+        reserved: 1024n,
+        unknown: 0n,
+        size_bytes: 1024n,
+      },
+    ]),
     mediaAsset: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: createAsset,
@@ -107,6 +116,7 @@ function serviceFixture() {
     },
   };
   const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([{ size_bytes: 1024n }]),
     episodeUpload: { findUnique: jest.fn().mockResolvedValue(null) },
     mediaAsset: { findFirst: jest.fn().mockResolvedValue(null) },
     crew: {
@@ -137,6 +147,23 @@ function serviceFixture() {
   };
   const r2Storage = {
     ...storage,
+    promoteObject: jest.fn(
+      ({
+        destination,
+        expectedSizeBytes,
+        contentType,
+      }: {
+        destination: { storageKey: string; bucket: string; region: string };
+        expectedSizeBytes: number;
+        contentType: string;
+      }) =>
+        Promise.resolve({
+          ...destination,
+          provider: 's3_compatible' as const,
+          sizeBytes: expectedSizeBytes,
+          contentType,
+        }),
+    ),
     headStoredObject: jest.fn().mockResolvedValue({
       exists: true,
       provider: 's3_compatible',
@@ -152,7 +179,7 @@ function serviceFixture() {
         headers: { 'Content-Type': 'image/png' },
         storageKey,
         provider: 's3_compatible' as const,
-        expiresAt: '2026-07-17T13:00:00.000Z',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
       }),
     ),
   };
@@ -236,6 +263,48 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     );
   });
 
+  it('rejects Crew quota admission without returning a signed URL or creating an asset', async () => {
+    const f = serviceFixture();
+    f.tx.$queryRaw.mockResolvedValue([
+      { total: 100n, used: 100n, reserved: 0n, unknown: 0n, size_bytes: 0n },
+    ]);
+    await expect(
+      f.service.createUploadUrl(USER_ID, {
+        kind: 'crew_asset_file',
+        contentType: 'image/png',
+        fileName: 'a.png',
+        sizeBytes: 1,
+        scope: { crewId: 'crew-1' },
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_STORAGE_QUOTA_EXCEEDED' },
+    });
+    expect(f.createAsset).not.toHaveBeenCalled();
+  });
+  it('rejects cancelled Crew confirmation before copying or creating an asset', async () => {
+    const f = serviceFixture();
+    const { storageKey } = await f.service.prepareUpload(USER_ID, {
+      kind: 'crew_asset_file',
+      contentType: 'image/png',
+      fileName: 'a.png',
+      sizeBytes: 1,
+      scope: { crewId: 'crew-1' },
+    });
+    f.prisma.$queryRaw.mockResolvedValue([]);
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'crew_asset_file',
+        contentType: 'image/png',
+        storageKey,
+        scope: { crewId: 'crew-1' },
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_UPLOAD_RESERVATION_EXPIRED' },
+    });
+    expect(f.r2Storage.promoteObject).not.toHaveBeenCalled();
+    expect(f.createAsset).not.toHaveBeenCalled();
+  });
+
   it('routes global crew asset uploads to Cloudflare R2 with a crew-bound key', async () => {
     const fixture = serviceFixture();
 
@@ -290,6 +359,7 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           kind: MediaAssetKind.image,
+          objectKey: expect.stringContaining('/crew-asset-final/'),
           metadata: {
             uploadKind: 'crew_asset_file',
             crewId: 'crew-1',

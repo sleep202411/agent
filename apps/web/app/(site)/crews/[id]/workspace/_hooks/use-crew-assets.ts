@@ -68,6 +68,13 @@ export interface CrewAssetContextDTO {
   provider: "s3_compatible" | "aliyun_oss";
   storageAvailable: boolean;
   maxUploadBytes: number;
+  storageUsage: {
+    usedBytes: number;
+    totalBytes: number;
+    remainingBytes: number;
+    reservedBytes: number;
+    unknownSizeCount: number;
+  };
   accessModel: "hierarchical_acl";
   role: "admin" | "finance" | "member";
   capabilities: {
@@ -89,6 +96,7 @@ export function useCrewAssetContext(crewId: string, enabled = true) {
       crewApi.get<CrewAssetContextDTO>(`/crews/${encodeURIComponent(crewId)}/assets/context`),
     retry: false,
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -221,7 +229,7 @@ function useAssetMutation<TInput, TOutput>(
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn,
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: crewKeys.assets(crewId) });
     },
   });
