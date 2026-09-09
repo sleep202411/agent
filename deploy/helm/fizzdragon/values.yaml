@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: a586582dc4a7b4f6c26fe2598fcf1cdbf8f34e48
+    tag: 6be14ad987d3d9c08b049bd4174c5d16cfb4303c
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
