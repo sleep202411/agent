@@ -1,7 +1,8 @@
 import { ConflictException } from '@nestjs/common';
-import { IpAccessMode } from '@prisma/client';
+import { IpAccessMode, IpPublicationStatus } from '@prisma/client';
 import {
   assertIpPurchaserAllowed,
+  episodeStatusForIpPublication,
   isEntitlementActiveForAccess,
   resolveEpisodeAccessState,
   resolveIpAccessState,
@@ -35,6 +36,39 @@ describe('IP commerce purchase guards', () => {
         hasEditAccess: true,
       }),
     ).toThrow(ConflictException);
+  });
+});
+
+describe('episodeStatusForIpPublication', () => {
+  it('promotes draft episodes when the IP is published or scheduled', () => {
+    expect(episodeStatusForIpPublication(IpPublicationStatus.published)).toBe(
+      IpPublicationStatus.published,
+    );
+    expect(episodeStatusForIpPublication(IpPublicationStatus.scheduled)).toBe(
+      IpPublicationStatus.scheduled,
+    );
+    expect(episodeStatusForIpPublication(IpPublicationStatus.approved)).toBe(
+      IpPublicationStatus.approved,
+    );
+  });
+
+  it('does not promote episodes for non-live admin publication states', () => {
+    expect(episodeStatusForIpPublication(IpPublicationStatus.draft)).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.submitted),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.in_review),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.changes_requested),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.hidden),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.suspended),
+    ).toBeNull();
   });
 });
 

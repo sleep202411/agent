@@ -199,16 +199,16 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
     return <NotFoundState locale={locale} t={t} />;
   }
 
+  const statusLabel = statusT(`status.${detailIp.status}`);
+  const visibilityLabel = statusT(`visibility.${detailIp.listingVisibility}`);
+  const ipCoverUrl = getAssetUrl(detailIp.coverAsset);
+  const ipTrailerUrl = getAssetUrl(detailIp.trailerAsset);
   const isTrailerSelected = selectedEpisodeId === TRAILER_ID;
   const selectedEpisode = isTrailerSelected
     ? null
     : (detailIp.episodes.find((episode) => episode.id === selectedEpisodeId) ??
       detailIp.episodes[0] ??
       null);
-  const statusLabel = statusT(`status.${detailIp.status}`);
-  const visibilityLabel = statusT(`visibility.${detailIp.listingVisibility}`);
-  const ipCoverUrl = getAssetUrl(detailIp.coverAsset);
-  const ipTrailerUrl = getAssetUrl(detailIp.trailerAsset);
   const episodeCoverUrl = getAssetUrl(selectedEpisode?.coverAsset);
   const episodeMediaUrl = getAssetUrl(selectedEpisode?.mediaAsset);
 
@@ -220,6 +220,12 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
   const activePrice = activeAccess?.price ?? selectedEpisode?.price ?? detailIp.price;
   const activeAccessCode: IpCommerceAccess =
     activeAccess?.access ?? (detailIp.previewMode || !activePrice ? "owned" : "locked");
+  // Playlist header unlock is always the IP package CTA (matches「整包权益」),
+  // not the currently selected free trailer / free-preview chip.
+  const ipAccessEntry = accessQuery.data?.ip;
+  const playlistUnlockPrice = ipAccessEntry?.price ?? detailIp.price ?? null;
+  const playlistUnlockAccess: IpCommerceAccess =
+    ipAccessEntry?.access ?? (detailIp.previewMode || !playlistUnlockPrice ? "owned" : "locked");
   // Active members already get member pricing — don't upsell them the membership.
   const viewerIsMember = accessQuery.data?.member ?? false;
   const pendingUnlockAt = getPendingUnlockAt(
@@ -341,6 +347,66 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
     }
   }
 
+  async function handleMemberFreeUnlock() {
+    const ip = detailIp;
+    if (purchase.isPending || !user || !ip) return;
+    try {
+      await purchase.mutateAsync({
+        ipId: ip.id,
+        targetType: "ip",
+        idempotencyKey: crypto.randomUUID(),
+      });
+      toast.success(t("commerce.purchaseSuccess"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      toast.error(msg || t("commerce.purchaseFailed"));
+    }
+  }
+
+  async function handlePurchase() {
+    const ip = detailIp;
+    if (!ip || !activePrice || purchase.isPending || !user) return;
+    const purchaseTarget = resolvePurchaseTarget(activePrice, selectedEpisode);
+    try {
+      await purchase.mutateAsync({
+        ipId: ip.id,
+        targetType: purchaseTarget.targetType,
+        episodeId: purchaseTarget.episodeId,
+        priceRuleId: activePrice.id,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      toast.success(t("commerce.purchaseSuccess"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (err instanceof ApiRequestError && err.code === "INSUFFICIENT_COMMUNITY_POINTS") {
+        setRechargeOpen(true);
+      }
+      toast.error(msg || t("commerce.purchaseFailed"));
+    }
+  }
+
+  async function handlePlaylistPurchase() {
+    const ip = detailIp;
+    if (!ip || !playlistUnlockPrice || purchase.isPending || !user) return;
+    const purchaseTarget = resolvePurchaseTarget(playlistUnlockPrice, null);
+    try {
+      await purchase.mutateAsync({
+        ipId: ip.id,
+        targetType: purchaseTarget.targetType,
+        episodeId: purchaseTarget.episodeId,
+        priceRuleId: playlistUnlockPrice.id,
+        idempotencyKey: crypto.randomUUID(),
+      });
+      toast.success(t("commerce.purchaseSuccess"));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      if (err instanceof ApiRequestError && err.code === "INSUFFICIENT_COMMUNITY_POINTS") {
+        setRechargeOpen(true);
+      }
+      toast.error(msg || t("commerce.purchaseFailed"));
+    }
+  }
+
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-background text-foreground">
       <main className="mx-auto w-full max-w-[1840px] px-4 pb-8 pt-3 sm:px-5">
@@ -381,17 +447,25 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
             />
 
             <section className="mt-4">
-              {selectedEpisode ? (
-                <div className="mb-2 text-sm font-semibold text-primary">
-                  {t("episodes.number", {
-                    number:
-                      detailIp.episodes.findIndex((item) => item.id === selectedEpisode.id) + 1,
-                  })}
-                </div>
-              ) : null}
               <h1 className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">
-                {mediaTitle}
+                {detailIp.title}
               </h1>
+              {isTrailerSelected ? (
+                <p className="mt-1.5 text-sm font-semibold text-primary">{t("episodes.trailer")}</p>
+              ) : selectedEpisode ? (
+                <p className="mt-1.5 text-sm leading-snug text-muted-foreground">
+                  <span className="font-semibold text-primary">
+                    {t("episodes.number", {
+                      number:
+                        detailIp.episodes.findIndex((item) => item.id === selectedEpisode.id) + 1,
+                    })}
+                  </span>
+                  <span className="mx-1.5 text-muted-foreground/50">·</span>
+                  <span className="font-medium text-foreground/85">{selectedEpisode.title}</span>
+                </p>
+              ) : detailIp.subtitle ? (
+                <p className="mt-1.5 text-sm text-muted-foreground">{detailIp.subtitle}</p>
+              ) : null}
 
               <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted-foreground">
@@ -468,45 +542,8 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
                 pendingUnlockAt={pendingUnlockAt}
                 onRecharge={() => setRechargeOpen(true)}
                 onSubscribeMembership={() => setMembershipOpen(true)}
-                onMemberFreeUnlock={async () => {
-                  if (purchase.isPending || !user) return;
-                  try {
-                    // Member-free: a zero-cost unlock of the whole IP (no priceRuleId);
-                    // the server grants a member_free_grant entitlement.
-                    await purchase.mutateAsync({
-                      ipId: detailIp.id,
-                      targetType: "ip",
-                      idempotencyKey: crypto.randomUUID(),
-                    });
-                    toast.success(t("commerce.purchaseSuccess"));
-                  } catch (err) {
-                    const msg = err instanceof Error ? err.message : "";
-                    toast.error(msg || t("commerce.purchaseFailed"));
-                  }
-                }}
-                onPurchase={async () => {
-                  if (!activePrice || purchase.isPending || !user) return;
-                  const purchaseTarget = resolvePurchaseTarget(activePrice, selectedEpisode);
-                  try {
-                    await purchase.mutateAsync({
-                      ipId: detailIp.id,
-                      targetType: purchaseTarget.targetType,
-                      episodeId: purchaseTarget.episodeId,
-                      priceRuleId: activePrice.id,
-                      idempotencyKey: crypto.randomUUID(),
-                    });
-                    toast.success(t("commerce.purchaseSuccess"));
-                  } catch (err) {
-                    const msg = err instanceof Error ? err.message : "";
-                    if (
-                      err instanceof ApiRequestError &&
-                      err.code === "INSUFFICIENT_COMMUNITY_POINTS"
-                    ) {
-                      setRechargeOpen(true);
-                    }
-                    toast.error(msg || t("commerce.purchaseFailed"));
-                  }
-                }}
+                onMemberFreeUnlock={handleMemberFreeUnlock}
+                onPurchase={handlePurchase}
               />
 
               {!viewerIsMember && activeAccessCode === "locked" && (
@@ -551,6 +588,7 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
           <aside className="min-w-0 space-y-5 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto xl:pr-1">
             <CreatorTeamCard ip={detailIp} bannerUrl={ipCoverUrl} t={t} />
             <EpisodePlaylist
+              ipTitle={detailIp.title}
               episodes={detailIp.episodes}
               activeEpisodeId={isTrailerSelected ? TRAILER_ID : (selectedEpisode?.id ?? null)}
               accessItems={accessQuery.data?.episodes ?? []}
@@ -559,6 +597,27 @@ export function IpPublicDetail({ ipId }: IpPublicDetailProps) {
               locale={locale}
               t={t}
               onSelectEpisode={setSelectedEpisodeId}
+              unlockAction={
+                detailIp.previewMode ? null : (
+                  <PurchaseUnlockAction
+                    ipId={detailIp.id}
+                    selectedEpisode={null}
+                    access={playlistUnlockAccess}
+                    price={playlistUnlockPrice}
+                    accessLoading={accessQuery.isLoading}
+                    walletBalance={walletQuery.balance}
+                    walletLoading={walletQuery.isLoading}
+                    authenticated={Boolean(user)}
+                    locale={locale}
+                    t={t}
+                    purchasePending={purchase.isPending}
+                    onRecharge={() => setRechargeOpen(true)}
+                    onSubscribeMembership={() => setMembershipOpen(true)}
+                    onMemberFreeUnlock={handleMemberFreeUnlock}
+                    onPurchase={handlePlaylistPurchase}
+                  />
+                )
+              }
             />
             <AccessSummary
               ip={detailIp}
@@ -931,6 +990,7 @@ function ContributorsDialog({
 }
 
 function EpisodePlaylist({
+  ipTitle,
   episodes,
   activeEpisodeId,
   accessItems,
@@ -939,7 +999,9 @@ function EpisodePlaylist({
   locale,
   t,
   onSelectEpisode,
+  unlockAction,
 }: {
+  ipTitle: string;
   episodes: IpCommerceEpisode[];
   activeEpisodeId: string | null;
   accessItems: Array<{ id: string; access: IpCommerceAccess; price: IpCommercePriceRule | null }>;
@@ -948,14 +1010,27 @@ function EpisodePlaylist({
   locale: Locale;
   t: Translate;
   onSelectEpisode: (episodeId: string) => void;
+  /** Same unlock CTA as the player purchase bar — shown beside the playlist title. */
+  unlockAction?: ReactNode;
 }) {
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-foreground">{t("episodes.playlist")}</h2>
-        <span className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
-          {t("episodes.count", { count: episodes.length })}
-        </span>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-foreground" title={ipTitle}>
+            {ipTitle}
+          </p>
+          <h2 className="mt-0.5 text-xs font-medium text-muted-foreground">
+            {t("episodes.playlist")}
+          </h2>
+        </div>
+        {unlockAction ? (
+          <div className="shrink-0">{unlockAction}</div>
+        ) : (
+          <span className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground">
+            {t("episodes.count", { count: episodes.length })}
+          </span>
+        )}
       </div>
       {episodes.length > 0 || hasTrailer ? (
         <div className="space-y-1.5">
@@ -1234,10 +1309,6 @@ function PurchasePanel({
       : walletLoading
         ? t("commerce.walletChecking")
         : t("commerce.walletLine", { balance: balanceLabel });
-  const loginHref = localizePath(
-    `/login?redirect=${encodeURIComponent(localizePath(`/ips/${ip.id}`, locale))}`,
-    locale
-  );
 
   return (
     <div className="mt-3 flex flex-col gap-3 rounded-lg bg-secondary/80 p-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1275,43 +1346,128 @@ function PurchasePanel({
         <span className="inline-flex h-9 items-center justify-center rounded-full bg-primary/10 px-4 text-sm font-semibold text-primary">
           {t("commerce.pendingUnlockShort")}
         </span>
-      ) : !authenticated ? (
-        <Button asChild size="sm">
-          <Link href={loginHref}>{t("commerce.loginToUnlock")}</Link>
-        </Button>
-      ) : missingAmount !== null ? (
-        <Button type="button" size="sm" onClick={onRecharge}>
-          <IconWallet className="size-4" />
-          {t("commerce.topUpToUnlock")}
-        </Button>
-      ) : access === "member_free" ? (
-        <Button
-          type="button"
-          size="sm"
-          disabled={accessLoading || purchasePending}
-          onClick={() => void onMemberFreeUnlock()}
-        >
-          {purchasePending ? t("commerce.purchasing") : t("commerce.memberFreeWatch")}
-        </Button>
-      ) : access === "member_locked" ? (
-        <Button type="button" size="sm" onClick={onSubscribeMembership}>
-          {t("commerce.memberJoinToWatch")}
-        </Button>
-      ) : price ? (
-        <Button
-          type="button"
-          size="sm"
-          disabled={accessLoading || walletLoading || purchasePending}
-          onClick={() => void onPurchase()}
-        >
-          {purchasePending ? t("commerce.purchasing") : t("commerce.purchase")}
-        </Button>
       ) : (
-        <span className="inline-flex h-9 items-center justify-center rounded-full bg-muted px-4 text-sm font-semibold text-muted-foreground">
-          {t("commerce.notForSale")}
-        </span>
+        <PurchaseUnlockAction
+          ipId={ip.id}
+          selectedEpisode={selectedEpisode}
+          access={access}
+          price={price}
+          accessLoading={accessLoading}
+          walletBalance={walletBalance}
+          walletLoading={walletLoading}
+          authenticated={authenticated}
+          locale={locale}
+          t={t}
+          purchasePending={purchasePending}
+          onRecharge={onRecharge}
+          onPurchase={onPurchase}
+          onMemberFreeUnlock={onMemberFreeUnlock}
+          onSubscribeMembership={onSubscribeMembership}
+        />
       )}
     </div>
+  );
+}
+
+/** Unlock / top-up / login CTA shared by the player bar and playlist header. */
+function PurchaseUnlockAction({
+  ipId,
+  selectedEpisode,
+  access,
+  price,
+  accessLoading,
+  walletBalance,
+  walletLoading,
+  authenticated,
+  locale,
+  t,
+  purchasePending,
+  onRecharge,
+  onPurchase,
+  onMemberFreeUnlock,
+  onSubscribeMembership,
+}: {
+  ipId: string;
+  selectedEpisode: IpCommerceEpisode | null;
+  access: IpCommerceAccess;
+  price: IpCommercePriceRule | null;
+  accessLoading: boolean;
+  walletBalance: string;
+  walletLoading: boolean;
+  authenticated: boolean;
+  locale: Locale;
+  t: Translate;
+  purchasePending: boolean;
+  onRecharge: () => void;
+  onPurchase: () => Promise<void>;
+  onMemberFreeUnlock: () => Promise<void>;
+  onSubscribeMembership: () => void;
+}) {
+  const granted = selectedEpisode?.isFreePreview || isAccessGranted(access);
+  const pendingUnlock = isAccessPending(access);
+  if (granted || pendingUnlock) return null;
+
+  const priceAmount = price ? parseIntegerAmount(price.amount) : null;
+  const walletAmount = parseIntegerAmount(walletBalance);
+  const missingAmount =
+    !walletLoading && priceAmount !== null && walletAmount !== null && walletAmount < priceAmount
+      ? priceAmount - walletAmount
+      : null;
+  const loginHref = localizePath(
+    `/login?redirect=${encodeURIComponent(localizePath(`/ips/${ipId}`, locale))}`,
+    locale
+  );
+
+  if (!authenticated) {
+    return (
+      <Button asChild size="sm">
+        <Link href={loginHref}>{t("commerce.loginToUnlock")}</Link>
+      </Button>
+    );
+  }
+  if (missingAmount !== null) {
+    return (
+      <Button type="button" size="sm" onClick={onRecharge}>
+        <IconWallet className="size-4" />
+        {t("commerce.topUpToUnlock")}
+      </Button>
+    );
+  }
+  if (access === "member_free") {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        disabled={accessLoading || purchasePending}
+        onClick={() => void onMemberFreeUnlock()}
+      >
+        {purchasePending ? t("commerce.purchasing") : t("commerce.memberFreeWatch")}
+      </Button>
+    );
+  }
+  if (access === "member_locked") {
+    return (
+      <Button type="button" size="sm" onClick={onSubscribeMembership}>
+        {t("commerce.memberJoinToWatch")}
+      </Button>
+    );
+  }
+  if (price) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        disabled={accessLoading || walletLoading || purchasePending}
+        onClick={() => void onPurchase()}
+      >
+        {purchasePending ? t("commerce.purchasing") : t("commerce.purchase")}
+      </Button>
+    );
+  }
+  return (
+    <span className="inline-flex h-9 items-center justify-center rounded-full bg-muted px-4 text-sm font-semibold text-muted-foreground">
+      {t("commerce.notForSale")}
+    </span>
   );
 }
 

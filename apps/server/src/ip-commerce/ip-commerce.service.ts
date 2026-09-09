@@ -3462,6 +3462,14 @@ export class IpCommerceService {
       }
 
       await syncIpLocalizationStatusForPublication(tx, ip.id, nextStatus);
+      // Episodes created while the IP was still draft stay `draft` until this
+      // handoff — creators cannot publish them themselves. Mirror IP
+      // localization sync so the first (pre-review) episode goes live with the IP.
+      await syncIpEpisodeStatusForPublication(tx, ip.id, nextStatus, {
+        now,
+        scheduledAt:
+          nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+      });
       await settleIpReviewSubmissionsForPublication(tx, {
         ipId: ip.id,
         reviewerId: user.userId,
@@ -7855,6 +7863,83 @@ async function syncIpLocalizationStatusForPublication(
       status: localizationStatus,
     },
   });
+}
+
+/** In-flight episode statuses that should follow the IP when admin publishes.
+ *  Intentionally excludes `hidden` / `suspended` / `archived` (operator or
+ *  creator chose to keep them off) and already-live `published` / `scheduled`. */
+const EPISODE_STATUSES_PROMOTED_ON_IP_PUBLICATION: IpPublicationStatus[] = [
+  IpPublicationStatus.draft,
+  IpPublicationStatus.submitted,
+  IpPublicationStatus.in_review,
+  IpPublicationStatus.changes_requested,
+  IpPublicationStatus.approved,
+];
+
+export function episodeStatusForIpPublication(
+  ipStatus: IpPublicationStatus,
+): IpPublicationStatus | null {
+  if (ipStatus === IpPublicationStatus.published) {
+    return IpPublicationStatus.published;
+  }
+  if (ipStatus === IpPublicationStatus.scheduled) {
+    return IpPublicationStatus.scheduled;
+  }
+  if (ipStatus === IpPublicationStatus.approved) {
+    return IpPublicationStatus.approved;
+  }
+  return null;
+}
+
+async function syncIpEpisodeStatusForPublication(
+  tx: Prisma.TransactionClient,
+  ipId: string,
+  status: IpPublicationStatus,
+  opts: { now: Date; scheduledAt: Date | null },
+) {
+  const nextEpisodeStatus = episodeStatusForIpPublication(status);
+  if (!nextEpisodeStatus) return;
+
+  const localizationStatus =
+    nextEpisodeStatus === IpPublicationStatus.published ||
+    nextEpisodeStatus === IpPublicationStatus.scheduled
+      ? IpLocalizationStatus.published
+      : IpLocalizationStatus.approved;
+
+  const episodes = await tx.ipEpisode.findMany({
+    where: {
+      ipId,
+      deletedAt: null,
+      status: { in: EPISODE_STATUSES_PROMOTED_ON_IP_PUBLICATION },
+    },
+    select: { id: true, publishedAt: true },
+  });
+  if (episodes.length === 0) return;
+
+  const episodeIds = episodes.map((episode) => episode.id);
+  await tx.ipEpisodeLocalization.updateMany({
+    where: {
+      episodeId: { in: episodeIds },
+      archivedAt: null,
+    },
+    data: { status: localizationStatus },
+  });
+
+  for (const episode of episodes) {
+    await tx.ipEpisode.update({
+      where: { id: episode.id },
+      data: {
+        status: nextEpisodeStatus,
+        ...(nextEpisodeStatus === IpPublicationStatus.published
+          ? { publishedAt: episode.publishedAt ?? opts.now }
+          : {}),
+        ...(nextEpisodeStatus === IpPublicationStatus.scheduled
+          ? { scheduledAt: opts.scheduledAt }
+          : {}),
+        version: { increment: 1 },
+      },
+    });
+  }
 }
 
 async function settleIpReviewSubmissionsForPublication(

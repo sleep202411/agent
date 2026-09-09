@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 import { useGeneration } from "@/lib/canvas-authoring/use-canvas-generation";
@@ -57,14 +57,20 @@ export function useShotPictureForm(
   const catalog = projectCatalog.data;
   const { submit, cancel, canSubmit, disabledReason } = useGeneration();
 
-  // The card feeding this slot, if the picture came from a generation at all
-  // (an uploaded or hand-picked one has no form to edit).
-  const picture = row.pictures.find((candidate) => candidate.kind === slot);
+  // Prefer the 定稿 frame when present — same picture the drawer shows — so
+  // regenerating edits that card instead of an older sibling in the slot.
+  const slotPictures = row.pictures.filter((candidate) => candidate.kind === slot);
+  const picture =
+    slotPictures.find((candidate) => candidate.edgeId === row.preferredFrameEdgeId) ??
+    slotPictures[0];
   const nodeId = picture?.generationModality ? picture.sourceNodeId : null;
   const node = nodeId ? nodes.find((candidate) => candidate.id === nodeId) : undefined;
   const bound = node?.data as GenerationNodeData | undefined;
 
   const [draft, setDraft] = useState<ShotPictureSeed>({});
+  // Generate can run in the same turn as a TipTap blur commit; keep a live
+  // prompt so we never seed/submit from a stale render closure.
+  const promptRef = useRef("");
 
   const fallbackModel = useMemo(() => canvasDefaultModel(catalog, slot), [catalog, slot]);
   const model = useMemo(() => {
@@ -76,6 +82,7 @@ export function useShotPictureForm(
 
   const mode = bound?.mode ?? draft.mode ?? canvasDefaultMode(model);
   const prompt = bound?.prompt ?? draft.prompt ?? "";
+  promptRef.current = prompt;
   const settings = (bound?.settings ??
     draft.settings ??
     defaultSettingsForModel(model)) as ModelSettings;
@@ -86,6 +93,7 @@ export function useShotPictureForm(
   /** One write path: the card if it exists, the draft until it does. */
   const write = useCallback(
     (patch: ShotPictureSeed) => {
+      if (typeof patch.prompt === "string") promptRef.current = patch.prompt;
       if (nodeId) patchNodeData(nodeId, patch as Record<string, unknown>);
       else setDraft((current) => ({ ...current, ...patch }));
     },
@@ -123,15 +131,35 @@ export function useShotPictureForm(
   );
 
   const generate = useCallback(() => {
+    const livePrompt = promptRef.current;
+    const seed: ShotPictureSeed = {
+      prompt: livePrompt,
+      modelId: model?.id,
+      mode,
+      settings,
+    };
     if (nodeId) {
+      // Re-assert the form onto the card before preflight — React `nodes` can
+      // lag a commit behind TipTap's onCommit / Yjs write.
+      patchNodeData(nodeId, {
+        prompt: livePrompt,
+        ...(model
+          ? {
+              modelId: model.id,
+              modelName: model.name,
+              mode,
+              settings,
+            }
+          : {}),
+      });
       submit(nodeId);
       return;
     }
     // First run for this slot: the draft becomes a real card, wired into the
     // shot, and that card is what runs.
-    const created = createSource(row.id, slot, { prompt, modelId: model?.id, mode, settings });
+    const created = createSource(row.id, slot, seed);
     if (created) submit(created);
-  }, [createSource, mode, model?.id, nodeId, prompt, row.id, settings, slot, submit]);
+  }, [createSource, mode, model, nodeId, patchNodeData, row.id, settings, slot, submit]);
 
   const doCancel = useCallback(() => {
     if (nodeId) cancel(nodeId);

@@ -65,7 +65,10 @@ export function WorkbenchPanelContent({
 
   const drawerActions = useMemo<ShotPictureDrawerActions>(
     () => ({
-      onGenerate: (shotId, modality) => storyboard.createPictureSource(shotId, modality),
+      // Forward the drawer form seed (prompt / model / settings). Dropping it
+      // created blank generation cards and the "Write a prompt first" toast
+      // even when the sidebar prompt field was filled.
+      onGenerate: storyboard.createPictureSource,
       onUpload: storyboard.uploadPictureSource,
       onAttach: storyboard.attachSource,
       onDetach: storyboard.detachPicture,

@@ -795,6 +795,9 @@ export function StoryboardPromptTextarea({
         setFocused(false);
         setMenuState(null);
         if (!instance.view.composing) {
+          // Commit before sync — clicking Generate blurs the editor first; the
+          // parent must see the prompt in the same turn as submit/createSource.
+          emitPrompt(editorPrompt(instance));
           syncEditorDocument(instance, editorPrompt(instance), mentions);
         }
         exitSuggestion(instance.view, REFERENCE_SUGGESTION_KEY);
