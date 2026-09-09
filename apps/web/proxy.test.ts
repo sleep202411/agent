@@ -66,3 +66,22 @@ describe("copied notification links", () => {
     expect(res.headers.get("location")).toBe(`https://studio.fizzdragon.com/zh-CN${path}`);
   });
 });
+
+describe("anonymous room-number links", () => {
+  it.each(["en-US", "zh-CN", "zh-HK"])("opens a room without login in %s", (locale) => {
+    const res = proxy(new NextRequest(`https://fizzdragon.com/${locale}/ip/100001`));
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-rewrite")).toBe("https://fizzdragon.com/ip/100001");
+    expect(res.headers.get("x-middleware-request-x-locale")).toBe(locale);
+  });
+
+  it("lets the detail route reject malformed numbers without opening nested routes", () => {
+    const invalid = proxy(new NextRequest("https://fizzdragon.com/zh-CN/ip/0100001"));
+    expect(invalid.headers.get("location")).toBeNull();
+    expect(invalid.headers.get("x-middleware-rewrite")).toBe("https://fizzdragon.com/ip/0100001");
+
+    const nested = proxy(new NextRequest("https://fizzdragon.com/zh-CN/ip/100001/edit"));
+    expect(nested.status).toBe(307);
+    expect(new URL(nested.headers.get("location")!).pathname).toBe("/zh-CN/login");
+  });
+});
