@@ -1767,19 +1767,26 @@ export class CrewTasksService {
           ),
           createdByUserId: userId,
           labels: {
-            create: input.labelIds.map((labelId) => ({ crewId, labelId })),
+            create: input.labelIds.map(
+              (labelId) =>
+                ({
+                  labelId,
+                }) satisfies Prisma.CrewTaskLabelAssignmentUncheckedCreateWithoutTaskInput,
+            ),
           },
           assignees: {
-            create: input.assignees.map((assignee) => ({
-              crewId,
-              crewMemberId: memberByUser.get(assignee.userId)!.id,
-              userId: assignee.userId,
-              currency: assignee.currency,
-              rewardAmountMinor:
-                assignee.rewardAmountMinor == null
-                  ? null
-                  : BigInt(assignee.rewardAmountMinor),
-            })),
+            create: input.assignees.map(
+              (assignee) =>
+                ({
+                  crewMemberId: memberByUser.get(assignee.userId)!.id,
+                  userId: assignee.userId,
+                  currency: assignee.currency,
+                  rewardAmountMinor:
+                    assignee.rewardAmountMinor == null
+                      ? null
+                      : BigInt(assignee.rewardAmountMinor),
+                }) satisfies Prisma.CrewTaskAssigneeUncheckedCreateWithoutTaskInput,
+            ),
           },
           dependenciesAsBlocked: {
             create: input.blockedByTaskIds.map((blockingTaskId) => ({
@@ -2761,6 +2768,21 @@ export class CrewTasksService {
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-submit:${taskId}`})::bigint)
       `;
       const locked = await this.requireActiveTaskTx(tx, taskId);
+      const currentContext = await this.authorization.requireMembership(
+        locked.crewId,
+        userId,
+        tx,
+      );
+      if (
+        !currentContext.permissions.includes('tasks.submit_assigned') ||
+        (!locked.assignees.some((a) => a.userId === userId) &&
+          !currentContext.permissions.includes('tasks.manage'))
+      ) {
+        throw new ForbiddenException({
+          message: 'Only a current task assignee can submit this task.',
+        });
+      }
+
       if (!ACCEPTING_TASK_STATUSES.has(locked.workflowState.semantic)) {
         throw new ConflictException({
           message: 'This task is not accepting submissions.',

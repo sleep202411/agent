@@ -400,43 +400,50 @@ export class CrewAssetsService {
     return { node: this.toDto(node, userId, permission), path };
   }
 
+  private async lockAssetTree(tx: Prisma.TransactionClient, crewId: string) {
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtext(${`crew:asset-tree:${crewId}`})::bigint)
+    `;
+  }
+
   async createFolder(
     crewId: string,
     userId: string,
     input: CreateCrewAssetFolderInput,
   ) {
-    await this.access.requireContainerPermission(
-      crewId,
-      input.parentId ?? null,
-      userId,
-      CrewAssetPermission.upload,
-    );
-    await this.requireFolder(crewId, input.parentId ?? null);
     try {
-      const node = await this.prisma.crewAssetNode.create({
-        data: {
+      const dto = await this.prisma.$transaction(async (tx) => {
+        await this.lockAssetTree(tx, crewId);
+        await this.access.requireContainerPermission(
           crewId,
-          parentId: input.parentId ?? null,
-          kind: CrewAssetNodeKind.folder,
-          name: input.name,
-          createdByUserId: userId,
-          updatedByUserId: userId,
-        },
-        include: NODE_INCLUDE,
+          input.parentId ?? null,
+          userId,
+          CrewAssetPermission.upload,
+          tx,
+        );
+        await this.requireFolder(crewId, input.parentId ?? null, tx);
+        const node = await tx.crewAssetNode.create({
+          data: {
+            crewId,
+            parentId: input.parentId ?? null,
+            kind: CrewAssetNodeKind.folder,
+            name: input.name,
+            createdByUserId: userId,
+            updatedByUserId: userId,
+          },
+          include: NODE_INCLUDE,
+        });
+        const permission = await this.access.resolveNodePermission(
+          crewId,
+          node.id,
+          userId,
+          tx,
+        );
+        return this.toDto(node, userId, permission ?? CrewAssetPermission.edit);
       });
-      const permission = await this.access.resolveNodePermission(
-        crewId,
-        node.id,
-        userId,
-      );
-      const dto = this.toDto(
-        node,
-        userId,
-        permission ?? CrewAssetPermission.edit,
-      );
       await this.conversations.broadcastCrewAssetChange(
         crewId,
-        node.id,
+        dto.id,
         'created',
         userId,
       );
@@ -454,6 +461,7 @@ export class CrewAssetsService {
     try {
       const result = await this.prisma.$transaction(async (tx) => {
         await lockCrewAssetUploads(tx, [input.mediaAssetId]);
+        await this.lockAssetTree(tx, crewId);
         await this.access.requireContainerPermission(
           crewId,
           input.parentId ?? null,
@@ -678,71 +686,87 @@ export class CrewAssetsService {
     nodeId: string,
     input: UpdateCrewAssetNodeInput,
   ) {
-    const node = await this.requireNode(crewId, nodeId);
-    await this.access.requireNodePermission(
-      crewId,
-      nodeId,
-      userId,
-      CrewAssetPermission.edit,
-    );
-    if (input.parentId === node.id) {
-      throw new BadRequestException('A folder cannot contain itself');
-    }
-    if (input.parentId !== undefined) {
-      await this.requireFolder(crewId, input.parentId);
-      await this.access.requireContainerPermission(
-        crewId,
-        input.parentId,
-        userId,
-        CrewAssetPermission.upload,
-      );
-      if (
-        node.kind === CrewAssetNodeKind.folder &&
-        input.parentId &&
-        (await this.isDescendant(node.id, input.parentId))
-      ) {
-        throw new BadRequestException(
-          'A folder cannot be moved into one of its descendants',
-        );
-      }
-    }
     try {
-      const changed = await this.prisma.crewAssetNode.updateMany({
-        where: {
-          id: node.id,
+      const dto = await this.prisma.$transaction(async (tx) => {
+        // Independent moves must inspect one serialized tree, or A→B and B→A
+        // can both pass the descendant check and strand every descendant.
+        await this.lockAssetTree(tx, crewId);
+        const node = await this.requireNode(
           crewId,
-          updatedAt: new Date(input.expectedUpdatedAt),
-        },
-        data: {
-          ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(input.parentId !== undefined ? { parentId: input.parentId } : {}),
-          updatedByUserId: userId,
-        },
-      });
-      if (changed.count !== 1) {
-        throw new ConflictException({
-          code: 'CREW_ASSET_CONFLICT',
-          message:
-            'This asset changed while you were editing it. Refresh and review the latest version before saving again.',
+          nodeId,
+          CrewAssetNodeStatus.active,
+          tx,
+        );
+        await this.access.requireNodePermission(
+          crewId,
+          nodeId,
+          userId,
+          CrewAssetPermission.edit,
+          tx,
+        );
+        if (input.parentId === node.id) {
+          throw new BadRequestException('A folder cannot contain itself');
+        }
+        if (input.parentId !== undefined) {
+          await this.requireFolder(crewId, input.parentId, tx);
+          await this.access.requireContainerPermission(
+            crewId,
+            input.parentId,
+            userId,
+            CrewAssetPermission.upload,
+            tx,
+          );
+          if (
+            node.kind === CrewAssetNodeKind.folder &&
+            input.parentId &&
+            (await this.isDescendant(node.id, input.parentId, tx))
+          ) {
+            throw new BadRequestException(
+              'A folder cannot be moved into one of its descendants',
+            );
+          }
+        }
+        const changed = await tx.crewAssetNode.updateMany({
+          where: {
+            id: node.id,
+            crewId,
+            status: CrewAssetNodeStatus.active,
+            updatedAt: new Date(input.expectedUpdatedAt),
+          },
+          data: {
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.parentId !== undefined
+              ? { parentId: input.parentId }
+              : {}),
+            updatedByUserId: userId,
+          },
         });
-      }
-      const updated = await this.prisma.crewAssetNode.findUniqueOrThrow({
-        where: { id: node.id },
-        include: NODE_INCLUDE,
+        if (changed.count !== 1) {
+          throw new ConflictException({
+            code: 'CREW_ASSET_CONFLICT',
+            message:
+              'This asset changed while you were editing it. Refresh and review the latest version before saving again.',
+          });
+        }
+        const updated = await tx.crewAssetNode.findUniqueOrThrow({
+          where: { id: node.id },
+          include: NODE_INCLUDE,
+        });
+        const permission = await this.access.resolveNodePermission(
+          crewId,
+          nodeId,
+          userId,
+          tx,
+        );
+        return this.toDto(
+          updated,
+          userId,
+          permission ?? CrewAssetPermission.edit,
+        );
       });
-      const permission = await this.access.resolveNodePermission(
-        crewId,
-        nodeId,
-        userId,
-      );
-      const dto = this.toDto(
-        updated,
-        userId,
-        permission ?? CrewAssetPermission.edit,
-      );
       await this.conversations.broadcastCrewAssetChange(
         crewId,
-        node.id,
+        nodeId,
         'updated',
         userId,
       );
@@ -753,15 +777,22 @@ export class CrewAssetsService {
   }
 
   async trash(crewId: string, userId: string, nodeId: string): Promise<void> {
-    const node = await this.requireNode(crewId, nodeId);
-    await this.access.requireNodePermission(
-      crewId,
-      nodeId,
-      userId,
-      CrewAssetPermission.edit,
-    );
-    const trashedAt = new Date();
     await this.prisma.$transaction(async (tx) => {
+      await this.lockAssetTree(tx, crewId);
+      const node = await this.requireNode(
+        crewId,
+        nodeId,
+        CrewAssetNodeStatus.active,
+        tx,
+      );
+      await this.access.requireNodePermission(
+        crewId,
+        nodeId,
+        userId,
+        CrewAssetPermission.edit,
+        tx,
+      );
+      const trashedAt = new Date();
       const descendantIds =
         node.kind === CrewAssetNodeKind.folder
           ? await this.collectDescendantIds(tx, crewId, node.id)
@@ -793,26 +824,31 @@ export class CrewAssetsService {
     });
     await this.conversations.broadcastCrewAssetChange(
       crewId,
-      node.id,
+      nodeId,
       'trashed',
       userId,
     );
   }
 
   async restore(crewId: string, userId: string, nodeId: string) {
-    const node = await this.requireNode(
-      crewId,
-      nodeId,
-      CrewAssetNodeStatus.trashed,
-    );
-    const permission = await this.access.requireNodePermission(
-      crewId,
-      nodeId,
-      userId,
-      CrewAssetPermission.edit,
-    );
     try {
       const restored = await this.prisma.$transaction(async (tx) => {
+        await this.lockAssetTree(tx, crewId);
+        const node = await this.requireNode(
+          crewId,
+          nodeId,
+          CrewAssetNodeStatus.trashed,
+          tx,
+        );
+        const permission = await this.access.requireNodePermission(
+          crewId,
+          nodeId,
+          userId,
+          CrewAssetPermission.edit,
+          tx,
+        );
+        // Restore ancestors first so an active asset never remains hidden in trash.
+        await this.requireFolder(crewId, node.parentId, tx);
         const descendantIds =
           node.kind === CrewAssetNodeKind.folder
             ? await this.collectDescendantIds(tx, crewId, node.id)
@@ -847,7 +883,7 @@ export class CrewAssetsService {
       });
       await this.conversations.broadcastCrewAssetChange(
         crewId,
-        node.id,
+        nodeId,
         'restored',
         userId,
       );
@@ -1050,8 +1086,9 @@ export class CrewAssetsService {
     crewId: string,
     nodeId: string,
     status: CrewAssetNodeStatus = CrewAssetNodeStatus.active,
+    db: Pick<Prisma.TransactionClient, 'crewAssetNode'> = this.prisma,
   ) {
-    const node = await this.prisma.crewAssetNode.findFirst({
+    const node = await db.crewAssetNode.findFirst({
       where: { id: nodeId, crewId, status },
       select: { id: true, parentId: true, kind: true, trashedAt: true },
     });
@@ -1142,16 +1179,22 @@ export class CrewAssetsService {
   private async isDescendant(
     ancestorId: string,
     possibleDescendantId: string,
+    db: Pick<Prisma.TransactionClient, 'crewAssetNode'> = this.prisma,
   ): Promise<boolean> {
     let cursor: string | null = possibleDescendantId;
     for (let depth = 0; cursor && depth < 128; depth += 1) {
       if (cursor === ancestorId) return true;
       const node: { parentId: string | null } | null =
-        await this.prisma.crewAssetNode.findUnique({
+        await db.crewAssetNode.findUnique({
           where: { id: cursor },
           select: { parentId: true },
         });
       cursor = node?.parentId ?? null;
+    }
+    if (cursor) {
+      throw new BadRequestException(
+        'Asset folder hierarchy is too deep or contains a cycle',
+      );
     }
     return false;
   }
