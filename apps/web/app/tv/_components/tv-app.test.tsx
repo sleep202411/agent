@@ -17,16 +17,16 @@ vi.mock("@/src/i18n/locale-url", () => ({ localizePath: (path: string) => path }
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: harness.routerPush }) }));
 vi.mock("@/src/lib/api", () => ({ api: { get: harness.get } }));
 function makeIp(id: string, title: string): IpCommerceIp {
-  const asset = (url: string) => ({
+  const asset = (url: string, kind: "image" | "video") => ({
     id: `${id}-${url}`,
-    kind: "image",
-    storageProvider: "oss",
+    kind,
+    storageProvider: "external_url",
     bucket: null,
     region: null,
     objectKey: null,
     externalUrl: url,
-    url: null,
-    contentType: "image/jpeg",
+    url,
+    contentType: kind === "video" ? "video/mp4" : "image/jpeg",
     width: 1600,
     height: 900,
     durationSeconds: null,
@@ -55,8 +55,8 @@ function makeIp(id: string, title: string): IpCommerceIp {
     contributors: [],
     rightsSummary: {},
     aiDisclosure: {},
-    coverAsset: asset(`https://cdn.test/${id}.jpg`),
-    trailerAsset: asset(`https://cdn.test/${id}.mp4`),
+    coverAsset: asset(`https://cdn.test/${id}.jpg`, "image"),
+    trailerAsset: asset(`https://cdn.test/${id}.mp4`, "video"),
     publishedAt: null,
     scheduledAt: null,
     price: null,

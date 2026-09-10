@@ -5,6 +5,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { api } from "@/src/lib/api";
 import type { IpCommerceAsset, IpCommerceIp } from "@/src/lib/ip-commerce/api";
+import { ipPreviewVideoUrl } from "@/src/lib/ip-commerce/preview-video";
 import type { TvItem } from "./types";
 
 function listTvIps(params: { locale: string; cursor?: string }) {
@@ -38,13 +39,10 @@ export function useTvIps() {
   return { ...query, items, fetchNextChannels };
 }
 
-/** Trailer-first fallback chain, mirroring the plaza card mapping. */
+/** Use the same public preview as plaza cards. */
 function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>): TvItem {
   const cover = getAssetUrl(ip.coverAsset);
-  const trailer =
-    getAssetUrl(ip.trailerAsset) ||
-    getAssetUrl(ip.episodes.find((episode) => episode.trailerAsset)?.trailerAsset) ||
-    getAssetUrl(ip.episodes.find((episode) => episode.mediaAsset)?.mediaAsset);
+  const trailer = ipPreviewVideoUrl(ip);
   return {
     id: ip.id,
     roomNumber: ip.roomNumber,

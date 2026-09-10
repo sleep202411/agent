@@ -15,8 +15,9 @@ const RankKeySchema = z
     return key >= -9223372036854775808n && key <= 9223372036854775807n;
   });
 const CursorSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(2),
   id: z.string().uuid(),
+  hasVideo: z.boolean(),
   score: RankKeySchema,
   published: RankKeySchema,
   created: RankKeySchema,
@@ -25,7 +26,7 @@ const CursorSchema = z.object({
 export type PublicIpRankRow = Omit<z.infer<typeof CursorSchema>, 'version'>;
 
 export function encodePublicIpRankCursor(row: PublicIpRankRow): string {
-  return Buffer.from(JSON.stringify({ version: 1, ...row })).toString(
+  return Buffer.from(JSON.stringify({ version: 2, ...row })).toString(
     'base64url',
   );
 }
@@ -55,8 +56,8 @@ export function publicIpRankQuery(
   const cursor = cursorValue ? decodeCursor(cursorValue) : null;
   const seek = cursor
     ? Prisma.sql`WHERE ranked.id <> ${cursor.id}::uuid
-        AND (ranked.score, ranked.published, ranked.created, ranked.id) < (
-        ${cursor.score}::bigint, ${cursor.published}::bigint,
+        AND (ranked."hasVideo", ranked.score, ranked.published, ranked.created, ranked.id) < (
+        ${cursor.hasVideo}::boolean, ${cursor.score}::bigint, ${cursor.published}::bigint,
         ${cursor.created}::bigint, ${cursor.id}::uuid
       )`
     : Prisma.empty;
@@ -71,6 +72,44 @@ export function publicIpRankQuery(
     WITH ranked AS (
       SELECT
         ip.id,
+        -- Match the public list's playback access: promotional trailers, free
+        -- episodes and free previews. A private/unfinished video isn't a TV channel.
+        EXISTS (
+          SELECT 1
+          FROM (
+            SELECT ip.trailer_asset_id AS asset_id
+            UNION ALL
+            SELECT episode.trailer_asset_id
+            FROM ip_episodes episode
+            WHERE episode.ip_id = ip.id AND episode.deleted_at IS NULL
+              AND episode.status::text IN ('scheduled', 'published')
+            UNION ALL
+            SELECT episode.media_asset_id
+            FROM ip_episodes episode
+            WHERE episode.ip_id = ip.id AND episode.deleted_at IS NULL
+              AND episode.status::text IN ('scheduled', 'published')
+              AND (
+                episode.is_free_preview
+                OR NOT EXISTS (
+                  SELECT 1 FROM ip_price_rules price
+                  WHERE price.ip_id = ip.id
+                    AND (price.target_type::text = 'ip' OR price.episode_id = episode.id)
+                    AND price.status::text = 'active' AND price.archived_at IS NULL
+                    AND price.currency::text = 'community_point'
+                    AND (price.starts_at IS NULL OR price.starts_at <= CURRENT_TIMESTAMP)
+                    AND (price.ends_at IS NULL OR price.ends_at > CURRENT_TIMESTAMP)
+                )
+              )
+          ) candidate
+          JOIN media_assets video ON video.id = candidate.asset_id
+          WHERE video.kind::text = 'video' AND video.status::text = 'ready'
+            AND video.deleted_at IS NULL AND video.moderation_status::text <> 'blocked'
+            AND (
+              (video.storage_provider::text = 'external_url' AND NULLIF(video.external_url, '') IS NOT NULL)
+              OR (video.storage_provider::text <> 'external_url'
+                AND NULLIF(video.bucket, '') IS NOT NULL AND NULLIF(video.object_key, '') IS NOT NULL)
+            )
+        ) AS "hasVideo",
         ROUND(
           COALESCE(EXTRACT(EPOCH FROM ip.published_at) * 1000000, 0)
           + ${HALF_LIFE_MICROS}::numeric * LN(
@@ -94,10 +133,10 @@ export function publicIpRankQuery(
       ) collections ON collections.ip_id = ip.id
       WHERE ${filter}
     )
-    SELECT ranked.id::text, ranked.score::text, ranked.published::text, ranked.created::text
+    SELECT ranked.id::text, ranked."hasVideo", ranked.score::text, ranked.published::text, ranked.created::text
     FROM ranked
     ${seek}
-    ORDER BY ranked.score DESC, ranked.published DESC, ranked.created DESC, ranked.id DESC
+    ORDER BY ranked."hasVideo" DESC, ranked.score DESC, ranked.published DESC, ranked.created DESC, ranked.id DESC
     LIMIT ${limit + 1}
   `;
 }

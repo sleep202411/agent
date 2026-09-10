@@ -37,7 +37,7 @@ describe('IP plaza ranking', () => {
         id uuid PRIMARY KEY, room_number varchar(19), published_at timestamptz(6), created_at timestamptz(6) NOT NULL,
         deleted_at timestamptz, status text DEFAULT 'published',
         listing_visibility text DEFAULT 'public', region text DEFAULT 'GLOBAL',
-        created_by_id text DEFAULT 'creator', copyright_owner text
+        created_by_id text DEFAULT 'creator', copyright_owner text, trailer_asset_id uuid
       );
       CREATE TABLE ip_engagement_aggregates (
         ip_id uuid PRIMARY KEY, total_view_count bigint, total_like_count bigint
@@ -54,6 +54,19 @@ describe('IP plaza ranking', () => {
       );
       CREATE TABLE ip_taxonomy_assignments (ip_id uuid, term_id uuid);
       CREATE TABLE ip_taxonomy_term_localizations (term_id uuid, label text);
+      CREATE TABLE media_assets (
+        id uuid PRIMARY KEY, kind text DEFAULT 'video', status text DEFAULT 'ready',
+        deleted_at timestamptz, moderation_status text DEFAULT 'unreviewed',
+        storage_provider text DEFAULT 'external_url', external_url text, bucket text, object_key text
+      );
+      CREATE TABLE ip_episodes (
+        id uuid PRIMARY KEY, ip_id uuid, status text DEFAULT 'published', deleted_at timestamptz,
+        trailer_asset_id uuid, media_asset_id uuid, is_free_preview boolean DEFAULT false
+      );
+      CREATE TABLE ip_price_rules (
+        ip_id uuid, episode_id uuid, target_type text DEFAULT 'ip', status text DEFAULT 'active',
+        archived_at timestamptz, currency text DEFAULT 'community_point', starts_at timestamptz, ends_at timestamptz
+      );
     `);
     service = Object.create(IpCommerceService.prototype) as IpCommerceService;
     Object.defineProperty(service, 'prisma', {
@@ -69,7 +82,7 @@ describe('IP plaza ranking', () => {
     blocks.mockResolvedValue([]);
     await db.exec(`TRUNCATE ips, ip_engagement_aggregates, ip_collection_items,
       ip_localizations, ip_taxonomy_terms, ip_taxonomy_assignments,
-      ip_taxonomy_term_localizations;`);
+      ip_taxonomy_term_localizations, media_assets, ip_episodes, ip_price_rules;`);
   });
 
   async function addIp(
@@ -102,6 +115,123 @@ describe('IP plaza ranking', () => {
       );
     }
   }
+
+  async function addVideo(
+    n: number,
+    location: 'ip' | 'trailer' | 'episode' = 'ip',
+  ) {
+    await db.query(
+      'INSERT INTO media_assets(id, external_url) VALUES ($1, $2)',
+      [id(n), `https://media.example.com/${n}.mp4`],
+    );
+    if (location === 'ip') {
+      await db.query('UPDATE ips SET trailer_asset_id = $1 WHERE id = $1', [
+        id(n),
+      ]);
+    } else {
+      await db.query(
+        `INSERT INTO ip_episodes(id, ip_id, trailer_asset_id, media_asset_id)
+         VALUES ($1, $1, $2, $3)`,
+        [
+          id(n),
+          location === 'trailer' ? id(n) : null,
+          location === 'episode' ? id(n) : null,
+        ],
+      );
+    }
+  }
+
+  it('puts trailers and public episode videos before newer, more popular IPs without video', async () => {
+    await addIp(1, { views: 1_000_000 });
+    for (let n = 2; n <= 4; n++) await addIp(n, { ageDays: n });
+    await addVideo(2);
+    await addVideo(3, 'trailer');
+    await addVideo(4, 'episode');
+    expect((await page()).pageIds).toEqual([id(2), id(3), id(4), id(1)]);
+    // Search uses the same ordering, including results beyond the first page.
+    const first = await page({ q: 'IP', limit: 2 });
+    const second = await page({ q: 'IP', limit: 2, cursor: first.nextCursor });
+    expect([...first.pageIds, ...second.pageIds]).toEqual([
+      id(2),
+      id(3),
+      id(4),
+      id(1),
+    ]);
+  });
+
+  it.each([
+    "status = 'pending'",
+    "status = 'failed'",
+    'deleted_at = now()',
+    "moderation_status = 'blocked'",
+    "kind = 'image'",
+    "external_url = ''",
+    "storage_provider = 's3_compatible', external_url = NULL, bucket = 'bucket'",
+  ])('does not boost unavailable video assets: %s', async (change) => {
+    await addIp(1, { ageDays: 30 });
+    await addIp(2);
+    await addVideo(1);
+    await db.exec(`UPDATE media_assets SET ${change}`);
+    expect((await page()).pageIds).toEqual([id(2), id(1)]);
+  });
+
+  it.each(["status = 'draft'", "status = 'archived'", 'deleted_at = now()'])(
+    'does not boost unpublished or removed episodes: %s',
+    async (change) => {
+      await addIp(1, { ageDays: 30 });
+      await addIp(2);
+      await addVideo(1, 'episode');
+      await db.exec(`UPDATE ip_episodes SET ${change}`);
+      expect((await page()).pageIds).toEqual([id(2), id(1)]);
+    },
+  );
+
+  it.each(['ip', 'episode'])(
+    'respects active %s prices, while keeping previews and trailers playable',
+    async (target) => {
+      await addIp(1, { ageDays: 30 });
+      await addIp(2);
+      await addVideo(1, 'episode');
+      await db.query(
+        'INSERT INTO ip_price_rules(ip_id, target_type, episode_id) VALUES ($1, $2, $3)',
+        [id(1), target, target === 'episode' ? id(1) : null],
+      );
+      expect((await page()).pageIds).toEqual([id(2), id(1)]);
+      await db.exec('UPDATE ip_episodes SET is_free_preview = true');
+      expect((await page()).pageIds).toEqual([id(1), id(2)]);
+      await db.exec(
+        'UPDATE ip_episodes SET is_free_preview = false, trailer_asset_id = media_asset_id',
+      );
+      expect((await page()).pageIds).toEqual([id(1), id(2)]);
+    },
+  );
+
+  it.each([
+    "status = 'draft'",
+    'archived_at = now()',
+    "starts_at = now() + interval '1 day'",
+    "ends_at = now() - interval '1 day'",
+  ])(
+    'keeps videos playable when a price is not effective: %s',
+    async (change) => {
+      await addIp(1, { ageDays: 30 });
+      await addIp(2);
+      await addVideo(1, 'episode');
+      await db.query('INSERT INTO ip_price_rules(ip_id) VALUES ($1)', [id(1)]);
+      await db.exec(`UPDATE ip_price_rules SET ${change}`);
+      expect((await page()).pageIds).toEqual([id(1), id(2)]);
+    },
+  );
+
+  it('recognizes uploaded video by its stored object identity without an external URL', async () => {
+    await addIp(1, { ageDays: 30 });
+    await addIp(2);
+    await addVideo(1);
+    await db.exec(
+      "UPDATE media_assets SET storage_provider = 's3_compatible', external_url = NULL, bucket = 'videos', object_key = 'episode.mp4'",
+    );
+    expect((await page()).pageIds).toEqual([id(1), id(2)]);
+  });
 
   it('finds an exact room number without leaking hidden IPs or changing title search', async () => {
     await addIp(1);
@@ -242,7 +372,7 @@ describe('IP plaza ranking', () => {
   });
 
   it.each([1, 7, 20, 50])(
-    'paginates 137 mixed-score IPs without gaps or duplicates (limit %i)',
+    'paginates 137 IPs across video groups without gaps or duplicates (limit %i)',
     async (limit) => {
       await db.exec(`
       INSERT INTO ips(id, published_at, created_at)
@@ -253,6 +383,9 @@ describe('IP plaza ranking', () => {
       INSERT INTO ip_localizations(ip_id, title) SELECT id, 'IP' FROM ips;
       INSERT INTO ip_engagement_aggregates(ip_id, total_view_count, total_like_count)
       SELECT id, (row_number() OVER (ORDER BY id) % 11), 0 FROM ips;
+      INSERT INTO media_assets(id, external_url) SELECT id, 'https://media.example.com/video.mp4'
+      FROM ips WHERE right(id::text, 1)::int % 3 = 0;
+      UPDATE ips SET trailer_asset_id = id WHERE id IN (SELECT id FROM media_assets);
     `);
       const expected = (
         await query(publicIpRankQuery(Prisma.sql`TRUE`, 200))
@@ -285,14 +418,22 @@ describe('IP plaza ranking', () => {
     expect(third.nextCursor).toBeNull();
   });
 
-  it.each(['deleted', 'more-popular', 'less-popular'])(
+  it.each(['deleted', 'more-popular', 'less-popular', 'video-removed'])(
     'keeps the shown boundary when the last IP is %s',
     async (change) => {
       for (let n = 1; n <= 4; n++) await addIp(n, { views: 10 * n });
+      if (change === 'video-removed') {
+        for (let n = 1; n <= 4; n++) await addVideo(n);
+      }
       const first = await page({ limit: 2 });
       expect(first.pageIds).toEqual([id(4), id(3)]);
       if (change === 'deleted') {
         await db.query(`DELETE FROM ips WHERE id = $1`, [id(3)]);
+      } else if (change === 'video-removed') {
+        await db.query(
+          'UPDATE media_assets SET deleted_at = now() WHERE id = $1',
+          [id(3)],
+        );
       } else {
         await db.query(
           `UPDATE ip_engagement_aggregates SET total_view_count = $2 WHERE ip_id = $1`,
@@ -314,14 +455,25 @@ describe('IP plaza ranking', () => {
     id(1),
     'a'.repeat(513),
     Buffer.from('{"version":1}').toString('base64url'),
+    Buffer.from(
+      JSON.stringify({
+        version: 1,
+        id: id(1),
+        score: '0',
+        published: '0',
+        created: '0',
+      }),
+    ).toString('base64url'),
     encodePublicIpRankCursor({
       id: id(1),
+      hasVideo: false,
       score: '9223372036854775808',
       published: '0',
       created: '0',
     }),
     encodePublicIpRankCursor({
       id: id(1),
+      hasVideo: false,
       score: '1.5',
       published: '0',
       created: '0',
