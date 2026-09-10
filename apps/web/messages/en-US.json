@@ -308,6 +308,8 @@
     "identifierTitle": "Sign in or create an account",
     "identifierSubtitle": "Enter your phone or email — we'll send you a code.",
     "identifierLabel": "Phone or email",
+    "callingCode": "Code",
+    "callingCodeIdentifierPlaceholder": "Email or phone number",
     "identifierPlaceholder": "Email or phone",
     "continue": "Continue",
     "usePasswordInstead": "Use password instead",
