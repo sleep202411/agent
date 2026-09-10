@@ -14,6 +14,8 @@ export interface AuthUser {
   email?: string;
   phone?: string;
   headImg?: string;
+  /** Java `user_level.id` values from `/user/query/user/info` `level`. */
+  levelIds?: number[];
 }
 
 /**
