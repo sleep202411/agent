@@ -1585,6 +1585,53 @@ export class StoryProductionPlanService {
             ? clip.videoPrompt
             : effective.videoPrompt;
         assertClipPromptShape(nextKind, nextImagePrompt, nextVideoPrompt);
+        if (
+          nextImagePrompt !== clip.imagePrompt ||
+          nextVideoPrompt !== clip.videoPrompt
+        ) {
+          const promptSpec = {
+            stableKey: clip.stableKey,
+            imagePrompt: nextImagePrompt,
+            videoPrompt: nextVideoPrompt,
+          };
+          const mentionKeys = storyClipAssetMentions(promptSpec);
+          const assets = mentionKeys.length
+            ? await tx.storyAssetSpec.findMany({
+                where: {
+                  storyProjectId: projectId,
+                  storyChapterId: chapterId,
+                  stableKey: { in: mentionKeys },
+                  status: { not: StoryProductionSpecStatus.archived },
+                },
+              })
+            : [];
+          const assetByKey = new Map(
+            assets.map((asset) => [asset.stableKey, asset]),
+          );
+          const missingKey = mentionKeys.find((key) => !assetByKey.has(key));
+          if (missingKey) {
+            throw new BadRequestException({
+              code: 'STORYBOARD_CLIP_ASSET_NOT_FOUND',
+              message: `The referenced Asset @${missingKey} is not available in this chapter.`,
+            });
+          }
+          // The composer saves @stableKey tokens. Keep their derived binding
+          // rows in the same transaction so Generate uses the saved references.
+          await this.reconcileBindings(
+            tx,
+            {
+              storyProjectId: projectId,
+              storyChapterId: chapterId,
+              actorUserId: user.userId,
+              sourceFingerprint: clip.sourceFingerprint,
+            },
+            promptSpec,
+            clip,
+            assetByKey,
+            now,
+            { preserveCompatibleBindings: true },
+          );
+        }
         const semanticModified = storyboardClipSemanticPatch(effective);
         const resizedClip = timelineResize?.clips.find(
           (candidate) => candidate.id === clip.id,
@@ -2600,7 +2647,11 @@ export class StoryProductionPlanService {
   private async reconcileBindings(
     tx: Prisma.TransactionClient,
     input: StoryProductionApplyContext,
-    clipPlan: StoryStoryboardPlan['storyboardSequences'][number]['clips'][number],
+    clipPlan: {
+      stableKey: string;
+      imagePrompt?: string | null;
+      videoPrompt?: string | null;
+    },
     clip: StoryStoryboardClip,
     assetByKey: Map<string, StoryAssetSpec>,
     now: Date,

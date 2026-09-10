@@ -137,6 +137,7 @@ const CLIP_TARGET_INCLUDE =
       },
     },
     assetBindings: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       include: {
         assetSpec: {

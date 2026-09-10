@@ -45,7 +45,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Textarea } from "@/components/ui/textarea";
 import { Link } from "@/i18n/navigation";
 import {
   defaultSettingsForModel,
@@ -94,6 +93,7 @@ import {
   type StoryCandidateAssetUploadState,
 } from "./project-canvas/story-candidate-asset-picker-dialog";
 import { useStoryCandidateAssets } from "./project-canvas/use-story-candidate-assets";
+import { StoryPromptComposer, useStoryAssetMentions } from "./story-prompt-composer";
 import { StoryStageLoadingState } from "./story-stage-empty-state";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
@@ -1019,6 +1019,7 @@ function TimelineClipInspector({
   const t = useTranslations("storyStudio.editorPage");
   const queryClient = useQueryClient();
   const candidateAssets = useStoryCandidateAssets({ projectId, canEdit: canImportMedia });
+  const mentions = useStoryAssetMentions(projectId, chapterId);
   const [title, setTitle] = useState(clip.title);
   const [kind, setKind] = useState<StoryStoryboardClip["kind"]>(clip.kind);
   const [prompt, setPrompt] = useState(
@@ -1241,12 +1242,13 @@ function TimelineClipInspector({
         <InspectorRow label={t("duration")}>{formatSeconds(clip.durationMs, t)}</InspectorRow>
       </div>
       <Field dense required label={t("prompt")} htmlFor={`clip-prompt-${clip.id}`}>
-        <Textarea
+        <StoryPromptComposer
           id={`clip-prompt-${clip.id}`}
           value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
+          onChange={setPrompt}
+          mentions={mentions}
+          required
           disabled={!editable || busy}
-          className="min-h-36 rounded-xl px-3 py-2.5 text-xs leading-5"
         />
       </Field>
       <Field dense required label={t("inspectorForm.model")}>
