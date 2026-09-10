@@ -28,6 +28,7 @@ import {
   IconCircleCheck,
   IconEdit,
   IconLock,
+  IconPlus,
   IconSchool,
   IconShieldCheck,
 } from "@tabler/icons-react";
@@ -43,6 +44,7 @@ import {
 } from "@/app/(site)/creators/_hooks/use-creator";
 import { useCreatorCertificates } from "@/app/(site)/creators/_hooks/use-certificates";
 import type { ExperienceEntry } from "@/app/(site)/profile/_hooks/use-profile-extras";
+import { LevelApplyDialog } from "@/app/(site)/creators/_components/center/dialogs/level-apply-dialog";
 
 interface CreatorLeftRailProps {
   creator: Creator;
@@ -74,6 +76,7 @@ export function CreatorLeftRail({
   const securityT = useTranslations("accountSecurity");
   const { data: experience } = useCreatorExperience(creator.id);
   const { data: certificates = [] } = useCreatorCertificates(creator.id);
+  const [levelApplyOpen, setLevelApplyOpen] = useState(false);
   const joined = formatJoined(creator.joinedAt);
   const topCertificate = certificates[0] ?? null;
 
@@ -92,6 +95,21 @@ export function CreatorLeftRail({
       aria-label={t("cta.editProfile")}
     >
       <IconEdit className="size-3.5" />
+    </Button>
+  ) : null;
+
+  const levelApplyAction = isOwner ? (
+    <Button
+      type="button"
+      variant="soft"
+      color="primary"
+      size="sm"
+      onClick={() => setLevelApplyOpen(true)}
+      aria-label={t("levels.apply.cta")}
+      className="h-6 gap-1 rounded-full px-2.5 text-[11px] font-medium"
+    >
+      <IconPlus className="size-3" stroke={2.25} />
+      {t("levels.apply.cta")}
     </Button>
   ) : null;
 
@@ -115,9 +133,24 @@ export function CreatorLeftRail({
           of imagePath icons, name underneath, full description on
           hover. Empty state encourages owners to earn one and reads
           as "not yet" rather than "broken" for visitors. */}
-      <RailCard title={t("levels.heading")}>
+      <RailCard title={t("levels.heading")} action={levelApplyAction}>
         {levels.length === 0 ? (
-          <EmptyHint body={isOwner ? t("levels.emptyOwner") : t("levels.emptyVisitor")} />
+          <div className="space-y-2.5">
+            <EmptyHint body={isOwner ? t("levels.emptyOwner") : t("levels.emptyVisitor")} />
+            {isOwner ? (
+              <Button
+                type="button"
+                variant="soft"
+                color="primary"
+                size="sm"
+                className="h-7 w-full rounded-lg text-[11px] font-medium"
+                onClick={() => setLevelApplyOpen(true)}
+              >
+                <IconPlus className="size-3.5" />
+                {t("levels.apply.emptyCta")}
+              </Button>
+            ) : null}
+          </div>
         ) : (
           <TooltipProvider delayDuration={150}>
             <ul className="grid grid-cols-3 gap-3">
@@ -128,6 +161,8 @@ export function CreatorLeftRail({
           </TooltipProvider>
         )}
       </RailCard>
+
+      {isOwner ? <LevelApplyDialog open={levelApplyOpen} onOpenChange={setLevelApplyOpen} /> : null}
 
       <RailCard title={t("about.bioHeading")} action={editAction}>
         {bio ? (

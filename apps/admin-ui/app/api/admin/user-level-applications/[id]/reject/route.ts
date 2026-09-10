@@ -1,0 +1,37 @@
+import { rejectAdminUserLevelApplication } from "@/lib/admin-user-level-applications";
+import { getAdminSession } from "@/lib/admin-session";
+
+export const dynamic = "force-dynamic";
+
+type RouteContext = { params: Promise<{ id: string }> };
+
+function parseId(raw: string): number | null {
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+/** Reject pending application. */
+export async function POST(request: Request, context: RouteContext) {
+  const session = await getAdminSession();
+  if (!session) return Response.json({ code: 401, msg: "未登录" }, { status: 401 });
+
+  const { id: rawId } = await context.params;
+  const id = parseId(rawId);
+  if (!id) return Response.json({ code: 400, msg: "id 无效" }, { status: 400 });
+
+  try {
+    const body = (await request.json().catch(() => ({}))) as { adminRemark?: unknown };
+    const adminRemark = typeof body.adminRemark === "string" ? body.adminRemark.trim() : undefined;
+    await rejectAdminUserLevelApplication(id, adminRemark);
+    return Response.json({ code: 200, msg: "success", data: null });
+  } catch (error) {
+    return Response.json(
+      {
+        code: 502,
+        msg: error instanceof Error ? error.message : "驳回申请失败。",
+      },
+      { status: 502 }
+    );
+  }
+}
