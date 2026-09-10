@@ -565,14 +565,15 @@ export function UserLevelApplicationsPanel({
 
             {reviewTarget.status === 0 ? (
               <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-                <FormLabel>审批备注（可选）</FormLabel>
-                <Textarea
-                  className="mt-1.5 min-h-20 border-slate-200 bg-white text-sm"
-                  value={adminRemark}
-                  disabled={Boolean(acting)}
-                  placeholder="通过或驳回时可填写原因，会随审批结果保存"
-                  onChange={(event) => setAdminRemark(event.target.value)}
-                />
+                <FormLabel label="审批备注（可选）">
+                  <Textarea
+                    className="mt-0 min-h-20 border-slate-200 bg-white text-sm"
+                    value={adminRemark}
+                    disabled={Boolean(acting)}
+                    placeholder="通过或驳回时可填写原因，会随审批结果保存"
+                    onChange={(event) => setAdminRemark(event.target.value)}
+                  />
+                </FormLabel>
               </div>
             ) : null}
           </div>
