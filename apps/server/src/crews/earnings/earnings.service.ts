@@ -1,4 +1,5 @@
 import { assertNewCrewCurrency, formatLedgerAmount } from './ledger-currency';
+import { lockMemberPayouts } from './ledger-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -323,6 +324,9 @@ export class CrewEarningsService {
       'finance.earnings.reverse',
     );
     const result = await this.prisma.$transaction(async (tx) => {
+      // Match payout creation's lock before checking for allocations. The
+      // earning lock alone cannot prevent a payout reserving this balance.
+      await lockMemberPayouts(tx, current.crewId, current.userId);
       await lockEarning(tx, earningId);
       const locked = await tx.crewEarningEntry.findUniqueOrThrow({
         where: { id: earningId },

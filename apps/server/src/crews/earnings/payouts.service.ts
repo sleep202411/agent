@@ -1,4 +1,5 @@
 import { formatLedgerAmount } from './ledger-currency';
+import { lockMemberPayouts } from './ledger-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -445,16 +446,6 @@ export class CrewPayoutsService {
       tx,
     );
   }
-}
-
-async function lockMemberPayouts(
-  tx: Prisma.TransactionClient,
-  crewId: string,
-  userId: string,
-) {
-  await tx.$executeRaw`
-    SELECT pg_advisory_xact_lock(hashtext(${`crew:payout-member:${crewId}:${userId}`})::bigint)
-  `;
 }
 
 async function lockPayout(tx: Prisma.TransactionClient, payoutId: string) {

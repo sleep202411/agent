@@ -234,6 +234,50 @@ describe('CrewPayoutsService', () => {
     expect(t.tx.crewPayout.create).not.toHaveBeenCalled();
   });
 
+  it('waits for an in-flight reversal before reading available earnings', async () => {
+    const t = build();
+    let release!: () => void;
+    const reversalInProgress = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    t.tx.$executeRaw.mockImplementation((_sql: unknown, key: string) =>
+      key === `crew:payout-member:${CREW_ID}:${MEMBER_USER_ID}`
+        ? reversalInProgress
+        : Promise.resolve(1),
+    );
+    const creating = t.service.create(CREW_ID, ACTOR_ID, {
+      currency: 'USD',
+      crewMemberId: MEMBER_ID,
+      amountMinor: '100',
+      withholdingAmountMinor: '0',
+      idempotencyKey: 'concurrent-payout',
+    });
+    const rejected = expect(creating).rejects.toMatchObject({
+      response: {
+        code: 'CREW_PAYOUT_AMOUNT_UNAVAILABLE',
+        availableAmountMinor: '0',
+      },
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(t.tx.crewEarningEntry.findMany).not.toHaveBeenCalled();
+    // The reversal commits, so the posted-earnings query no longer returns it.
+    t.tx.crewEarningEntry.findMany.mockResolvedValue([]);
+    release();
+    await rejected;
+    expect(t.tx.crewEarningEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          crewId: CREW_ID,
+          userId: MEMBER_USER_ID,
+          currency: 'USD',
+          status: 'posted',
+        },
+      }),
+    );
+    expect(t.tx.crewPayout.create).not.toHaveBeenCalled();
+    expect(t.notifications.send).not.toHaveBeenCalled();
+  });
+
   it('records offline payment evidence in one pending → paid transition', async () => {
     const t = build();
     const paid = payout({
