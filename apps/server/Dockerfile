@@ -3,7 +3,8 @@ FROM node:24.18.1-alpine AS base
 # ─── Stage 1: Prune monorepo ──────────────────────────────
 FROM base AS pruner
 ARG NPM_REGISTRY=https://registry.npmjs.org
-RUN npm install -g turbo@^2 --registry="$NPM_REGISTRY"
+# Pin turbo: floating ^2 once pulled 2.10.x in ACR and made prune harder to reason about.
+RUN npm install -g turbo@2.9.5 --registry="$NPM_REGISTRY"
 WORKDIR /app
 COPY . .
 RUN turbo prune server --docker
