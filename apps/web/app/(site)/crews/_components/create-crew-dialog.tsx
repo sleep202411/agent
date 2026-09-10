@@ -217,10 +217,11 @@ function CrewFormDialog({
         },
         onError: (err) => {
           if (
-            (err instanceof CrewApiError &&
-              err.status === 403 &&
-              (err.body as { code?: string } | null)?.code === "CREW_LEVEL_REQUIRED") ||
-            (err.body as { code?: string } | null)?.code === "CREW_PRODUCER_CERTIFICATION_REQUIRED"
+            err instanceof CrewApiError &&
+            err.status === 403 &&
+            ((err.body as { code?: string } | null)?.code === "CREW_LEVEL_REQUIRED" ||
+              (err.body as { code?: string } | null)?.code ===
+                "CREW_PRODUCER_CERTIFICATION_REQUIRED")
           ) {
             onCertificationRequired?.();
             return;
