@@ -1857,12 +1857,12 @@
   "crew": {
     "creationRequirements": {
       "title": "Crew Creation Requirements",
-      "eligibility": "Only users who hold a FizzDragon Certified AI Producer credential can create Crews and lead platform creators in collaboratively completing projects.",
-      "instructions": "If you have completed the FizzDragon AI Producer training programme, or have applied for the upcoming training session, please email your training certificate or registration confirmation to the following address for qualification review and record keeping:",
+      "eligibility": "Only users who hold the FizzDragon AI Producer certification can create Crews and lead platform creators in collaboratively completing projects.",
+      "instructions": "If you have completed the FizzDragon AI Producer training programme, or have applied for an upcoming session, please email your certificate or registration confirmation to the following address for certification review and record keeping:",
       "subjectInstruction": "Please use the following email subject line:",
       "dismiss": "Dismiss",
-      "subject": "AI Producer Qualification Review – [Your Name / Organisation]",
-      "checking": "Checking producer qualification…",
+      "subject": "AI Producer Certification Review – [Your Name / Organisation]",
+      "checking": "Checking AI Producer certification…",
       "retry": "Retry"
     },
     "plaza": "Crew Hall",
