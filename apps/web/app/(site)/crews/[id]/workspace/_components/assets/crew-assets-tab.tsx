@@ -123,6 +123,8 @@ export function CrewAssetsTab({
   const [newFolderName, setNewFolderName] = useState("");
   const [assetAction, setAssetAction] = useState<AssetAction | null>(null);
   const [assetActionTargetIds, setAssetActionTargetIds] = useState<string[]>([]);
+  const [assetActionBusy, setAssetActionBusy] = useState(false);
+  const [assetActionErrors, setAssetActionErrors] = useState<string[]>([]);
   const [actionName, setActionName] = useState("");
   const [destinationId, setDestinationId] = useState<string>("");
   const [confirmPermanentDeleteOpen, setConfirmPermanentDeleteOpen] = useState(false);
@@ -395,13 +397,16 @@ export function CrewAssetsTab({
     if (ids.length === 0) return;
     const primary = sourceItems.find((item) => item.id === ids[0]);
     setAssetActionTargetIds(ids);
+    setAssetActionErrors([]);
     setAssetAction("move");
     setActionName(primary?.name ?? "");
     setDestinationId(primary?.parentId ?? "");
   };
 
   const submitAssetAction = async () => {
-    if (!assetAction || assetActionTargets.length === 0) return;
+    if (!assetAction || assetActionTargets.length === 0 || assetActionBusy) return;
+    setAssetActionBusy(true);
+    setAssetActionErrors([]);
     try {
       if (assetAction === "rename") {
         const target = assetActionTargets[0];
@@ -416,7 +421,7 @@ export function CrewAssetsTab({
         toast.success(t("renamed"));
       } else {
         const parentId = destinationId || null;
-        await Promise.all(
+        const results = await Promise.allSettled(
           assetActionTargets.map((target) =>
             updateAsset.mutateAsync({
               nodeId: target.id,
@@ -425,7 +430,31 @@ export function CrewAssetsTab({
             })
           )
         );
-        toast.success(t("moved", { count: assetActionTargets.length }));
+        const failures = results.flatMap((result, index) =>
+          result.status === "rejected"
+            ? [{ target: assetActionTargets[index]!, error: result.reason }]
+            : []
+        );
+        const movedCount = results.length - failures.length;
+        if (movedCount) toast.success(t("moved", { count: movedCount }));
+        if (failures.length) {
+          setAssetActionErrors(
+            failures.map(
+              ({ target, error }) => `${target.name}: ${describeError(error, t("operationFailed"))}`
+            )
+          );
+          toast.error(
+            failures
+              .map(
+                ({ target, error }) =>
+                  `${target.name}: ${describeError(error, t("operationFailed"))}`
+              )
+              .join("\n")
+          );
+          setAssetActionTargetIds(failures.map(({ target }) => target.id));
+          setCheckedIds(new Set(failures.map(({ target }) => target.id)));
+          return;
+        }
       }
       setAssetAction(null);
       setAssetActionTargetIds([]);
@@ -435,6 +464,8 @@ export function CrewAssetsTab({
       onSelectedAssetChange?.(null);
     } catch (error) {
       toast.error(describeError(error, t("operationFailed")));
+    } finally {
+      setAssetActionBusy(false);
     }
   };
 
@@ -475,6 +506,35 @@ export function CrewAssetsTab({
 
           <div className="flex min-h-0 min-w-0 flex-col border-l border-border/60">
             <header className="shrink-0 border-b border-border/60 px-4 py-3">
+              {contextQuery.data?.storageUsage ? (
+                <div
+                  className="mb-3 space-y-1 text-[11px] text-muted-foreground"
+                  aria-live="polite"
+                >
+                  <p>
+                    {t("storageUsed", {
+                      used: (contextQuery.data.storageUsage.usedBytes / 1e9).toFixed(2),
+                      total: (contextQuery.data.storageUsage.totalBytes / 1e9).toFixed(2),
+                    })}
+                  </p>
+                  <p>
+                    {t("storageRemaining", {
+                      remaining: (contextQuery.data.storageUsage.remainingBytes / 1e9).toFixed(2),
+                    })}
+                  </p>
+                  {contextQuery.data.storageUsage.reservedBytes > 0 ? (
+                    <p>
+                      {t("storageReserved", {
+                        reserved: (contextQuery.data.storageUsage.reservedBytes / 1e9).toFixed(2),
+                      })}
+                    </p>
+                  ) : null}
+                  {contextQuery.data.storageUsage.unknownSizeCount > 0 ? (
+                    <p>{t("storageUnverified")}</p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 {activeSource === "all" ? (
                   <div className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
@@ -814,11 +874,14 @@ export function CrewAssetsTab({
         folders={(folderQuery.data ?? []).filter((folder) =>
           hasAssetPermission(folder.effectivePermission, "upload")
         )}
-        pending={updateAsset.isPending}
+        pending={assetActionBusy}
+        errors={assetActionErrors}
         t={t}
         onNameChange={setActionName}
         onDestinationChange={setDestinationId}
         onClose={() => {
+          if (assetActionBusy) return;
+          setAssetActionErrors([]);
           setAssetAction(null);
           setAssetActionTargetIds([]);
         }}
@@ -870,6 +933,13 @@ function AssetSourceRail({
   context?: {
     provider: "s3_compatible" | "aliyun_oss";
     storageAvailable: boolean;
+    storageUsage?: {
+      usedBytes: number;
+      totalBytes: number;
+      remainingBytes: number;
+      reservedBytes: number;
+      unknownSizeCount: number;
+    };
   };
   contextLoading: boolean;
   t: Translation;
@@ -1744,6 +1814,7 @@ function AssetActionDialog({
   destinationId,
   folders,
   pending,
+  errors,
   t,
   onNameChange,
   onDestinationChange,
@@ -1756,6 +1827,7 @@ function AssetActionDialog({
   destinationId: string;
   folders: CrewAssetFolderDTO[];
   pending: boolean;
+  errors: string[];
   t: Translation;
   onNameChange: (value: string) => void;
   onDestinationChange: (value: string) => void;
@@ -1772,7 +1844,7 @@ function AssetActionDialog({
     [excludedFolderIds, folders]
   );
   return (
-    <Dialog open={action !== null} onOpenChange={(open) => !open && onClose()}>
+    <Dialog open={action !== null} onOpenChange={(open) => !open && !pending && onClose()}>
       <DialogContent>
         <form
           onSubmit={(event) => {
@@ -1793,6 +1865,13 @@ function AssetActionDialog({
             </DialogDescription>
           </DialogHeader>
           <DialogBody>
+            {errors.length ? (
+              <ul role="alert" className="mb-3 max-h-40 overflow-auto text-xs text-destructive">
+                {errors.map((error, index) => (
+                  <li key={index}>{error}</li>
+                ))}
+              </ul>
+            ) : null}
             {action === "rename" ? (
               <label className="block">
                 <span className="mb-1.5 block text-[11px] font-medium text-foreground">
@@ -1828,7 +1907,13 @@ function AssetActionDialog({
             )}
           </DialogBody>
           <DialogFooter>
-            <Button type="button" variant="ghost" color="muted" onClick={onClose}>
+            <Button
+              type="button"
+              variant="ghost"
+              color="muted"
+              disabled={pending}
+              onClick={onClose}
+            >
               {t("cancel")}
             </Button>
             <Button
