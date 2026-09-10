@@ -44,11 +44,23 @@ function build(
     ownership: null,
     positions: [],
     policies: [],
+    permissionOverrides: [],
     ...opts.member,
   };
 
   const tx = {
+    crew: {
+      findFirst: jest.fn().mockResolvedValue({ id: CREW_ID, name: CREW_NAME }),
+    },
+    $executeRaw: jest.fn().mockResolvedValue(1),
+    crewMemberPosition: { deleteMany: jest.fn(), createMany: jest.fn() },
+    crewMemberPolicy: { deleteMany: jest.fn(), createMany: jest.fn() },
+    crewMemberPermissionOverride: {
+      deleteMany: jest.fn(),
+      createMany: jest.fn(),
+    },
     crewMember: {
+      findFirst: jest.fn(),
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     crewPosition: {
@@ -71,6 +83,8 @@ function build(
     },
     $transaction: jest.fn((cb: (client: unknown) => unknown) => cb(tx)),
   };
+
+  tx.crewMember.findFirst = prisma.crewMember.findFirst;
 
   const notifications = { send: jest.fn().mockResolvedValue({}) };
   const syncCalls: SyncCall[] = [];

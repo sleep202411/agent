@@ -975,6 +975,27 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTask.update).not.toHaveBeenCalled();
   });
 
+  it('rejects a former assignee after reassignment while their submission waited for the task lock', async () => {
+    const t = build();
+    const original = task({
+      status: CrewTaskStatus.in_progress,
+      submittedAt: null,
+    });
+    t.prisma.crewTask.findUnique.mockResolvedValue(original);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue({
+      ...original,
+      assignees: [],
+    });
+    await expect(
+      t.service.submit(TASK_ID, ASSIGNEE_ID, {
+        note: 'Late submission',
+        assetNodeIds: [],
+      }),
+    ).rejects.toThrow('Only a current task assignee can submit this task.');
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+    expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+  });
+
   it('prevents submission while a blocking task is unresolved', async () => {
     const t = build();
     const blockerId = '01910d50-4c88-7c78-92d4-16892c06a099';

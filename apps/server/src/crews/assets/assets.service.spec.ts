@@ -469,7 +469,7 @@ describe('CrewAssetsService', () => {
     const [createArgs] = t.prisma.crewAssetNode.create.mock
       .calls[0] as unknown as [{ data: { name: string } }];
     expect(createArgs.data.name).toBe('concept (2).png');
-    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(3);
   });
 
   it('reclaims an unclaimed composer upload from storage and the media ledger', async () => {
@@ -598,12 +598,14 @@ describe('CrewAssetsService', () => {
       NODE_ID,
       USER_ID,
       CrewAssetPermission.edit,
+      t.prisma,
     );
     expect(t.access.requireContainerPermission).toHaveBeenCalledWith(
       CREW_ID,
       FOLDER_ID,
       USER_ID,
       CrewAssetPermission.upload,
+      t.prisma,
     );
     expect(t.prisma.crewAssetNode.updateMany).not.toHaveBeenCalled();
   });
@@ -664,6 +666,7 @@ describe('CrewAssetsService', () => {
       where: {
         id: NODE_ID,
         crewId: CREW_ID,
+        status: CrewAssetNodeStatus.active,
         updatedAt: new Date('2026-07-29T09:00:00.000Z'),
       },
       data: {

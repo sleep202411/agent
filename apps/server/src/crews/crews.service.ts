@@ -23,6 +23,7 @@
  * whose participants are subscribers, not crew members.
  */
 import { randomUUID } from 'node:crypto';
+import { releaseRecruitedPositions } from './recruitment-capacity';
 import {
   BadRequestException,
   ConflictException,
@@ -721,9 +722,24 @@ export class CrewsService {
       `;
       const lockedOwner = await tx.crewOwnership.findUnique({
         where: { crewId },
-        include: { member: true },
+        include: {
+          member: {
+            include: { positions: { select: { sourcePositionId: true } } },
+          },
+        },
       });
       if (!lockedOwner) throw new NotFoundException('Crew owner not found');
+      if (
+        opts.actor.type === 'member' &&
+        lockedOwner.member.userId !== opts.actor.userId
+      ) {
+        throw new ForbiddenException(
+          'Crew ownership changed; only the current owner can transfer it.',
+        );
+      }
+      if (lockedOwner.member.userId === target) {
+        throw new ConflictException('Target user is already the crew owner.');
+      }
 
       let targetMember = await tx.crewMember.findFirst({
         where: {
@@ -765,6 +781,13 @@ export class CrewsService {
         targetWasCreated = true;
       }
 
+      if (opts.removeOldOwner) {
+        await releaseRecruitedPositions(
+          tx,
+          crewId,
+          lockedOwner.member.positions.map((p) => p.sourcePositionId),
+        );
+      }
       const conversation = await this.conversations.openCrewConversation(
         crewId,
         tx,

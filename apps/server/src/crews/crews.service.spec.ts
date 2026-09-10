@@ -103,6 +103,7 @@ function build(
         member: {
           id: members[ownerUserId]?.id ?? 'm-founder',
           userId: ownerUserId,
+          positions: [],
         },
       }),
       update: jest.fn().mockResolvedValue({}),
