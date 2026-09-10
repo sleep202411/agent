@@ -24,6 +24,9 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
       <div className="min-w-0 flex-[1_1_20rem] space-y-2">
         <h1 className="text-xl font-semibold leading-tight text-white sm:text-2xl">{item.title}</h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span className="text-xs tabular-nums text-white/50">
+            {t("roomNumber", { number: item.roomNumber })}
+          </span>
           {item.subtitle && <span className="text-white/50">{item.subtitle}</span>}
           <span className="flex items-center gap-1.5">
             <span className="flex size-6 items-center justify-center rounded-full bg-white/10">

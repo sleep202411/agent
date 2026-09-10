@@ -9387,6 +9387,7 @@
     "failed": "加入失败，请重试。"
   },
   "tv": {
+    "roomNumber": "房间号 {number}",
     "metadataTitle": "FizzDragon TV",
     "metadataDescription": "浏览 IP 列表，选择作品观看预览。",
     "openTv": "TV 模式",

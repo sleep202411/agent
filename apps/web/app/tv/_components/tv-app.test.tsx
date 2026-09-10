@@ -10,7 +10,8 @@ import { TvApp } from "./tv-app";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const harness = vi.hoisted(() => ({ get: vi.fn(), routerPush: vi.fn() }));
 vi.mock("@/src/i18n/i18n", () => ({
-  useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+  useTranslations: (ns: string) => (key: string, values?: { number?: string }) =>
+    key === "roomNumber" ? `Room ${values?.number}` : `${ns}.${key}`,
   useLocale: () => "en-US",
 }));
 vi.mock("@/src/i18n/locale-url", () => ({ localizePath: (path: string) => path }));
@@ -174,7 +175,9 @@ describe("TV IP list", () => {
     const list = container.querySelector("nav")!;
     expect(list.textContent).toContain("Sci-Fi");
     expect(list.textContent).not.toContain("tv.uncategorized");
-    expect(list.querySelector('button[aria-label="Second IP"]')?.textContent).toBe("Second IP");
+    expect(list.querySelector('button[aria-label^="Second IP,"]')?.textContent).toBe(
+      "Second IPRoom 100002"
+    );
     expect(list.textContent).not.toContain("tagline");
     expect(list.textContent).not.toContain("creator");
     expect(list.querySelectorAll('[role="img"][aria-label="tv.hasVideo"]')).toHaveLength(1);
@@ -183,6 +186,27 @@ describe("TV IP list", () => {
     expect(player().paused()).toBe(true);
     expect(container.querySelector("section img")?.getAttribute("src")).toContain("ip-2.jpg");
   });
+
+  it.each([false, true])(
+    "shows stable room numbers in the list and selected IP (embedded=%s)",
+    async (embedded) => {
+      const roomNumber = "9223372036854775807";
+      harness.get.mockResolvedValue({
+        items: [{ ...ips[0], roomNumber }, ips[1]],
+        nextCursor: null,
+      });
+      await render(embedded);
+      await waitForText("Second IP");
+      const list = container.querySelector("nav")!;
+      expect(list.textContent).toContain(`Room ${roomNumber}`);
+      expect(list.textContent).toContain("Room 100002");
+      expect(selected()).toContain(`Room ${roomNumber}`);
+      expect(container.querySelector(`a[href="/ip/${roomNumber}"]`)).not.toBeNull();
+      clickIp("Second IP");
+      expect(container.textContent?.match(/Room 100002/g)).toHaveLength(2);
+      expect(container.querySelector('a[href="/ip/100002"]')).not.toBeNull();
+    }
+  );
 
   it("keeps the initial channel when refreshed results change order", async () => {
     await render();

@@ -9387,6 +9387,7 @@
     "failed": "Could not join. Try again."
   },
   "tv": {
+    "roomNumber": "Room {number}",
     "metadataTitle": "FizzDragon TV",
     "metadataDescription": "Browse IPs and select a title to watch its preview.",
     "openTv": "TV Mode",

@@ -143,7 +143,8 @@ export function TvIpList({
           )}
           {items.map((item) => {
             const active = item.id === selectedId;
-            const label = [item.title, item.genre, item.trailer && t("hasVideo")]
+            const roomNumber = t("roomNumber", { number: item.roomNumber });
+            const label = [item.title, roomNumber, item.genre, item.trailer && t("hasVideo")]
               .filter(Boolean)
               .join(", ");
             return (
@@ -163,6 +164,9 @@ export function TvIpList({
                 <span className={cn("block min-w-0 flex-1", detailsClass)}>
                   <span className="block truncate text-sm font-medium leading-5 md:text-[15px]">
                     {item.title}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs tabular-nums text-white/50">
+                    {roomNumber}
                   </span>
                   <span className="mt-0.5 flex min-h-3.5 items-center gap-1.5 text-xs leading-[14px] text-white/45">
                     {item.trailer && (
