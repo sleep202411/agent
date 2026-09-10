@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "build": "npm run check:catalog && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "check-types": "npm run check:catalog && tsc --noEmit -p tsconfig.json",
     "check:catalog": "tsx scripts/generate-catalog.mts --check",
     "dev": "tsc -p tsconfig.json --watch",
