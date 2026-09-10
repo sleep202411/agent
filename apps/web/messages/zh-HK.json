@@ -1859,12 +1859,12 @@
   "crew": {
     "creationRequirements": {
       "title": "劇組建立要求",
-      "eligibility": "只有持有 FizzDragon 認證 AI 製作人資格憑證的用戶才能建立劇組，並帶領平台創作者協作完成項目。",
-      "instructions": "如果您已完成 FizzDragon AI 製作人培訓課程，或已報名參加即將開辦的培訓課程，請將您的培訓證書或報名確認文件發送至以下電郵地址，以便進行資格審核及備案：",
+      "eligibility": "只有持有「AI製片人」認證的用戶才能建立劇組，並帶領平台創作者協作完成項目。",
+      "instructions": "如果您已完成 FizzDragon AI製片人培訓，或已報名參加即將開辦的課程，請將證書或報名確認文件發送至以下電郵地址，以便進行認證審核及備案：",
       "subjectInstruction": "請使用以下電郵主旨：",
       "dismiss": "關閉",
-      "subject": "AI Producer Qualification Review – [Your Name / Organisation]",
-      "checking": "正在核驗製片人資質…",
+      "subject": "AI製片人認證審核 – [姓名 / 機構]",
+      "checking": "正在核驗「AI製片人」認證…",
       "retry": "重試"
     },
     "plaza": "劇組大廳",
