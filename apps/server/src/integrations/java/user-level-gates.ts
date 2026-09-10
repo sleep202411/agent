@@ -3,8 +3,10 @@
  *
  * Keep aligned with deployed MySQL `user_level` rows. Currently:
  *   12 → free watch of all paid IP episodes (no community-point spend)
+ *   13 → create Crew (replaces Nest `fizzdragon_certified_ai_producer`)
  */
 export const FREE_IP_WATCH_LEVEL_ID = 12;
+export const CREW_CREATE_LEVEL_ID = 13;
 
 export function hasUserLevel(
   levelIds: readonly number[] | undefined,
@@ -17,6 +19,12 @@ export function hasFreeIpWatchPass(
   levelIds: readonly number[] | undefined,
 ): boolean {
   return hasUserLevel(levelIds, FREE_IP_WATCH_LEVEL_ID);
+}
+
+export function hasCrewCreatePass(
+  levelIds: readonly number[] | undefined,
+): boolean {
+  return hasUserLevel(levelIds, CREW_CREATE_LEVEL_ID);
 }
 
 /** Parse Java `/user/query/user/info` top-level `level` array into numeric ids. */

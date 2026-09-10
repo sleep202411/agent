@@ -15,6 +15,7 @@ import { CrewsService } from './crews.service';
 const CREW_ID = 'crew-1';
 const CONVERSATION_ID = 'conv-crew-1';
 const FOUNDER = 'u-founder';
+const FOUNDER_USER = { userId: FOUNDER, levelIds: [13] as number[] };
 const SUCCESSOR = 'u-successor';
 const OWNER_ACTOR = {
   actor: { type: 'member' as const, userId: FOUNDER },
@@ -75,7 +76,7 @@ function build(
   };
 
   const tx = {
-    $queryRaw: jest.fn().mockResolvedValue([{ id: 'approved-producer' }]),
+    $queryRaw: jest.fn(),
     crew: {
       create: jest.fn((args: { data: Record<string, unknown> }) => {
         void args;
@@ -213,7 +214,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
   it('creates a localized production template and records its provenance atomically', async () => {
     const t = build();
 
-    await t.service.create(FOUNDER, {
+    await t.service.create(FOUNDER_USER, {
       ...CREATE_INPUT,
       productionTemplateLocale: 'zh-CN',
     } as never);
@@ -282,7 +283,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
   it('opens the crew conversation and joins the founder inside the create tx', async () => {
     const t = build();
 
-    await t.service.create(FOUNDER, CREATE_INPUT as never);
+    await t.service.create(FOUNDER_USER, CREATE_INPUT as never);
 
     expect(t.conversations.openCrewConversation).toHaveBeenCalledWith(
       CREW_ID,
@@ -296,7 +297,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
   it('stays silent — the founder joining their own new empty chat is not an event', async () => {
     const t = build();
 
-    await t.service.create(FOUNDER, CREATE_INPUT as never);
+    await t.service.create(FOUNDER_USER, CREATE_INPUT as never);
 
     expect(t.systemCalls).toEqual([]);
   });
@@ -313,7 +314,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
     );
 
     await expect(
-      t.service.create(FOUNDER, CREATE_INPUT as never),
+      t.service.create(FOUNDER_USER, CREATE_INPUT as never),
     ).rejects.toThrow('redis is on fire');
   });
 });
@@ -454,25 +455,22 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
   });
 });
 
-describe('Certified producer enforcement', () => {
-  it('denies creation before any Crew write when no current credential is locked', async () => {
+describe('Crew create level gate', () => {
+  it('denies creation before any Crew write when level 13 is missing', async () => {
     const t = build();
-    t.tx.$queryRaw.mockResolvedValueOnce([]);
     await expect(
-      t.service.create(FOUNDER, CREATE_INPUT as never),
+      t.service.create(
+        { userId: FOUNDER, levelIds: [] },
+        CREATE_INPUT as never,
+      ),
     ).rejects.toMatchObject({
-      response: { code: 'CREW_PRODUCER_CERTIFICATION_REQUIRED' },
+      response: { code: 'CREW_LEVEL_REQUIRED' },
     });
     expect(t.tx.crew.create).not.toHaveBeenCalled();
   });
-  it('does not grant access when credential storage fails', async () => {
+  it('allows creation when level 13 is present', async () => {
     const t = build();
-    t.tx.$queryRaw.mockRejectedValueOnce(
-      new Error('credential store unavailable'),
-    );
-    await expect(
-      t.service.create(FOUNDER, CREATE_INPUT as never),
-    ).rejects.toThrow('credential store unavailable');
-    expect(t.tx.crew.create).not.toHaveBeenCalled();
+    await t.service.create(FOUNDER_USER, CREATE_INPUT as never);
+    expect(t.tx.crew.create).toHaveBeenCalled();
   });
 });

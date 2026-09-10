@@ -1,5 +1,7 @@
 import {
+  CREW_CREATE_LEVEL_ID,
   FREE_IP_WATCH_LEVEL_ID,
+  hasCrewCreatePass,
   hasFreeIpWatchPass,
   hasUserLevel,
   parseJavaLevelIds,
@@ -28,5 +30,11 @@ describe('user-level-gates', () => {
     expect(hasFreeIpWatchPass([1, FREE_IP_WATCH_LEVEL_ID])).toBe(true);
     expect(hasFreeIpWatchPass([1, 13])).toBe(false);
     expect(hasUserLevel(undefined, FREE_IP_WATCH_LEVEL_ID)).toBe(false);
+  });
+
+  it('detects the crew-create level id', () => {
+    expect(hasCrewCreatePass([CREW_CREATE_LEVEL_ID])).toBe(true);
+    expect(hasCrewCreatePass([12])).toBe(false);
+    expect(hasCrewCreatePass(undefined)).toBe(false);
   });
 });
