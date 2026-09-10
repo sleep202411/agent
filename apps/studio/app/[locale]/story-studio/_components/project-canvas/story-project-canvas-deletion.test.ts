@@ -24,12 +24,15 @@ describe("deleteStoryCanvasElements", () => {
     expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
   });
 
-  it("deleting an inline choice edge removes only that interaction outcome", () => {
+  it("deleting a choice edge preserves the option text and clears only its target", () => {
     const content = choiceDraft();
     const model = buildStoryCanvasModel(content, "en-US");
     const choiceEdge = model.edges.find((edge) => edge.data.kind === "choice")!;
     const result = deleteStoryCanvasElements(content, { nodes: [], edges: [choiceEdge] });
-    expect(result.graph.nodes[0]?.exit).toMatchObject({ kind: "choice", choices: [] });
+    expect(result.graph.nodes[0]?.exit).toMatchObject({
+      kind: "choice",
+      choices: [{ choiceId: "go", label: { "en-US": "Go" }, nextNodeId: null }],
+    });
   });
 
   it("deleting a projected decision removes the scene choice without deleting the scene", () => {
@@ -43,7 +46,7 @@ describe("deleteStoryCanvasElements", () => {
     expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
   });
 
-  it("deleting the scene-to-decision edge removes the same canonical choice", () => {
+  it("deleting the scene-to-decision edge detaches and retains the choice", () => {
     const content = choiceDraft();
     const model = buildStoryCanvasModel(content, "en-US");
     const decisionEdge = model.edges.find((edge) => edge.data.kind === "decision")!;
@@ -51,6 +54,9 @@ describe("deleteStoryCanvasElements", () => {
     const result = deleteStoryCanvasElements(content, { nodes: [], edges: [decisionEdge] });
 
     expect(result.graph.nodes[0]?.exit).toEqual({ kind: "auto", nextNodeId: null });
+    expect(result.graph.nodes.find((node) => node.kind === "decision")?.exit).toEqual(
+      content.graph.nodes[0]!.exit
+    );
   });
 
   it("deleting a hotspot branch keeps the hotspot and changes it to continue locally", () => {

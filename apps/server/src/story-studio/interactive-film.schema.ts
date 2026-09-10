@@ -125,7 +125,7 @@ export const StoryGraphChoiceSchema = z
   .object({
     choiceId: StoryStableIdSchema,
     label: DraftLocalizedTextSchema,
-    nextNodeId: StoryStableIdSchema,
+    nextNodeId: StoryStableIdSchema.nullable(),
   })
   .strict();
 
@@ -297,9 +297,23 @@ const StoryWorldGraphNodeSchema = z
   })
   .strict();
 
+const StoryDecisionGraphNodeSchema = z
+  .object({
+    kind: z.literal('decision'),
+    nodeId: StoryStableIdSchema,
+    // Normalized playback snapshots may bypass an unfinished decision. The
+    // draft write DTO requires choice here so the editor always retains copy.
+    exit: z.discriminatedUnion('kind', [
+      StoryClipAutoExitSchema,
+      StoryChoiceExitSchema,
+    ]),
+  })
+  .strict();
+
 export const StoryGraphNodeSchema = z.discriminatedUnion('kind', [
   StoryClipGraphNodeSchema,
   StoryWorldGraphNodeSchema,
+  StoryDecisionGraphNodeSchema,
 ]);
 
 /** Mutable graph shape. Referential and completeness checks run on lock. */
@@ -514,7 +528,7 @@ function findDecisionDefinitionConflicts(
   const conflicts = new Set<string>();
 
   draft.graph.nodes.forEach((node) => {
-    if (node.kind !== 'clip' || node.exit.kind !== 'choice') return;
+    if (node.exit.kind !== 'choice') return;
     const canonical = decisions.get(node.exit.decisionId);
     if (!canonical) {
       decisions.set(node.exit.decisionId, {
@@ -720,7 +734,7 @@ function validateInteractiveStoryGameplayReadiness(
 
   draft.graph.nodes.forEach((node, nodeIndex) => {
     const exitPath: PropertyKey[] = ['graph', 'nodes', nodeIndex, 'exit'];
-    if (node.kind !== 'clip') {
+    if (node.kind === 'world') {
       if (node.exit.nextNodeId !== null && !nodeIds.has(node.exit.nextNodeId)) {
         context.addIssue({
           code: 'custom',
@@ -757,7 +771,7 @@ function validateInteractiveStoryGameplayReadiness(
       node.exit.choices.forEach((choice, choiceIndex) => {
         const choicePath = [...exitPath, 'choices', choiceIndex];
         requireLocalizedText(choice.label, [...choicePath, 'label']);
-        if (!nodeIds.has(choice.nextNodeId)) {
+        if (choice.nextNodeId === null || !nodeIds.has(choice.nextNodeId)) {
           context.addIssue({
             code: 'custom',
             path: [...choicePath, 'nextNodeId'],
@@ -857,8 +871,8 @@ function normalizeInteractiveFilmRuntimeDraft(
           };
     }
 
-    const connectedChoices = normalizedNode.exit.choices.filter((choice) =>
-      nodeIds.has(choice.nextNodeId),
+    const connectedChoices = normalizedNode.exit.choices.filter(
+      (choice) => choice.nextNodeId !== null && nodeIds.has(choice.nextNodeId),
     );
     const branchIsComplete =
       hasCopy(normalizedNode.exit.prompt) &&
@@ -886,15 +900,13 @@ function normalizeInteractiveFilmRuntimeDraft(
   });
   const usedDecisionIds = new Set(
     normalizedNodes.flatMap((node) =>
-      node.kind === 'clip' && node.exit.kind === 'choice'
-        ? [node.exit.decisionId]
-        : [],
+      node.exit.kind === 'choice' ? [node.exit.decisionId] : [],
     ),
   );
   let generatedDecisionIndex = 1;
   const runtimeNodes = normalizedNodes.map((node) => {
     if (
-      node.kind !== 'clip' ||
+      node.kind === 'world' ||
       node.exit.kind !== 'choice' ||
       !conflictNodeIds.has(node.nodeId)
     ) {

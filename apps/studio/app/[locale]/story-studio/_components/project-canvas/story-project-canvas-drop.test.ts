@@ -2,117 +2,72 @@ import { describe, expect, it } from "vitest";
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import { buildStoryCanvasModel } from "./story-project-canvas-model";
 import {
-  addChoiceOption,
-  convertSceneExitToChoice,
   createClipNode,
+  createDecisionNode,
+  connectChoiceTarget,
+  connectSceneContinuation,
 } from "./story-project-canvas-mutations";
 import {
   createConnectedSceneForBlankDrop,
   resolveBlankDropConnectionPlan,
 } from "./story-project-canvas-drop";
 
-describe("story canvas blank-drop connections", () => {
-  it("creates a clip from a film completion handle", () => {
-    const content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
-    const opening = canvasNode(content, "opening");
-    const result = createConnectedSceneForBlankDrop(content, opening.data, "completion", "en-US")!;
+const draft = (): InteractiveStoryDraftContent => ({
+  storyBible: { logline: "", synopsis: "", characters: [] },
+  graph: { entryNodeId: null, nodes: [] },
+  productionNotes: [],
+});
+function node(content: InteractiveStoryDraftContent, nodeId: string) {
+  return buildStoryCanvasModel(content, "en-US").nodes.find((candidate) => candidate.id === nodeId)!
+    .data;
+}
 
-    expect(graphNode(result.content, "opening").exit).toEqual({
+describe("story canvas blank-drop connections", () => {
+  it("creates a scene from a free film completion output", () => {
+    const content = createClipNode(draft(), { nodeId: "A" }).content;
+    const result = createConnectedSceneForBlankDrop(content, node(content, "A"), "completion")!;
+    expect(result.content.graph.nodes[0]?.exit).toEqual({
       kind: "auto",
       nextNodeId: result.createdNodeId,
     });
   });
 
-  it("supports both inline interaction option handle forms", () => {
-    let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
-    content = createClipNode(content, { nodeId: "old-target", clipKey: "OLD_TARGET" }).content;
-    content = convertSceneExitToChoice(content, "opening", "en-US");
-    content = addChoiceOption(content, "opening", "old-target", "en-US", {
-      choiceId: "stay",
+  it("connects the existing saved option without changing its text, id or other options", () => {
+    const content = createDecisionNode(draft(), "zh-CN", {
+      nodeId: "D",
+      labels: ["左边", "右边"],
     }).content;
-
-    const retargeted = createConnectedSceneForBlankDrop(
+    const result = createConnectedSceneForBlankDrop(
       content,
-      decisionNode(content, "opening").data,
-      "choice:stay",
-      "en-US"
+      node(content, "D"),
+      "choice:option:1"
     )!;
-    expect(graphNode(retargeted.content, "opening").exit).toMatchObject({
-      kind: "choice",
-      choices: [{ choiceId: "stay", nextNodeId: retargeted.createdNodeId }],
+    expect(result.content.graph.nodes[0]?.exit).toMatchObject({
+      choices: [
+        { choiceId: "option:1", label: { "zh-CN": "左边" }, nextNodeId: result.createdNodeId },
+        { choiceId: "option:2", label: { "zh-CN": "右边" }, nextNodeId: null },
+      ],
     });
-
-    const appended = createConnectedSceneForBlankDrop(
-      retargeted.content,
-      decisionNode(retargeted.content, "opening").data,
-      "choice-new:draft-1",
-      "en-US",
-      { newChoiceLabel: "Take the new path" }
-    )!;
-    const appendedOpening = graphNode(appended.content, "opening");
-    expect(appendedOpening.exit.kind === "choice" ? appendedOpening.exit.choices : []).toEqual([
-      expect.objectContaining({ choiceId: "stay", nextNodeId: retargeted.createdNodeId }),
-      expect.objectContaining({
-        choiceId: "choice:2",
-        label: { "en-US": "Take the new path" },
-        nextNodeId: appended.createdNodeId,
-      }),
-    ]);
+    expect(result.content.graph.nodes).toHaveLength(2);
   });
 
-  it("rejects target handles, mismatched handle kinds, and ambiguous terminal exits", () => {
-    let content = createClipNode(draft(), { nodeId: "opening", clipKey: "OPENING" }).content;
+  it("cannot redirect occupied outputs or create orphan scenes", () => {
+    let content = createClipNode(draft(), { nodeId: "A" }).content;
+    content = createClipNode(content, { nodeId: "B" }).content;
+    content = createDecisionNode(content, "en-US", { nodeId: "D" }).content;
+    content = connectSceneContinuation(content, "A", "B");
+    content = connectChoiceTarget(content, "D", "option:1", "B");
+    expect(createConnectedSceneForBlankDrop(content, node(content, "A"), "completion")).toBeNull();
     expect(
-      resolveBlankDropConnectionPlan(canvasNode(content, "opening").data, "route-new")
+      createConnectedSceneForBlankDrop(content, node(content, "D"), "choice:option:1")
     ).toBeNull();
+    expect(content.graph.nodes).toHaveLength(3);
+  });
 
-    content = convertSceneExitToChoice(content, "opening", "en-US");
-    expect(
-      resolveBlankDropConnectionPlan(decisionNode(content, "opening").data, "completion")
-    ).toBeNull();
+  it("rejects target handles and removed temporary-option handles", () => {
+    const content = createDecisionNode(draft(), "en-US", { nodeId: "D" }).content;
+    for (const handle of ["in", "completion", "choice-new:draft-1", "choice:missing", null]) {
+      expect(resolveBlankDropConnectionPlan(node(content, "D"), handle)).toBeNull();
+    }
   });
 });
-
-function canvasNode(content: InteractiveStoryDraftContent, nodeId: string) {
-  const node = buildStoryCanvasModel(content, "en-US").nodes.find(
-    (candidate) => candidate.id === nodeId
-  );
-  if (!node) throw new Error(`Missing canvas node ${nodeId}`);
-  return node;
-}
-
-function decisionNode(content: InteractiveStoryDraftContent, sourceNodeId: string) {
-  const node = buildStoryCanvasModel(content, "en-US").nodes.find(
-    (candidate) =>
-      candidate.data.kind === "decision" && candidate.data.sourceNodeId === sourceNodeId
-  );
-  if (!node) throw new Error(`Missing decision for ${sourceNodeId}`);
-  return {
-    ...node,
-    data: {
-      ...node.data,
-      // The blank-drop domain accepts the canonical source scene shape. The
-      // canvas controller performs this projection-boundary translation too.
-      kind: "clip" as const,
-      nodeId: sourceNodeId,
-    },
-  };
-}
-
-function graphNode(content: InteractiveStoryDraftContent, nodeId: string) {
-  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
-  if (!node) throw new Error(`Missing graph node ${nodeId}`);
-  return node;
-}
-
-function draft(): InteractiveStoryDraftContent {
-  return {
-    storyBible: {
-      logline: "",
-      synopsis: "",
-      characters: [],
-    },
-    graph: { entryNodeId: null, nodes: [] },
-    productionNotes: [],
-  };
-}

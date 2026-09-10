@@ -377,6 +377,7 @@ const SceneNodeSchema = z
   .object({
     nodeId: stableId,
     presentation: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("decision") }).strict(),
       VideoPresentationSchema,
       ImagePresentationSchema,
       WorldPresentationSchema,

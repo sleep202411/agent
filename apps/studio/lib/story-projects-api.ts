@@ -128,7 +128,7 @@ export function storyBillingBalanceQueryKey(projectId: string) {
 export interface StoryGraphChoice {
   choiceId: string;
   label: Record<string, string>;
-  nextNodeId: string;
+  nextNodeId: string | null;
 }
 
 export type StoryInteractionAction =
@@ -202,7 +202,13 @@ export interface StoryWorldGraphNode {
   exit: { kind: "auto"; nextNodeId: string | null };
 }
 
-export type StoryGraphNode = StoryClipGraphNode | StoryWorldGraphNode;
+export interface StoryDecisionGraphNode {
+  kind: "decision";
+  nodeId: string;
+  exit: StoryChoiceExit;
+}
+
+export type StoryGraphNode = StoryClipGraphNode | StoryWorldGraphNode | StoryDecisionGraphNode;
 
 export interface InteractiveStoryDraftContent {
   storyBible: {

@@ -401,6 +401,41 @@ function compileGraphNode(
     });
     return null;
   }
+  if (node.presentation.kind === 'decision') {
+    const renderers: ExperienceRendererInstance[] = [];
+    const eventBindings: ExperienceEventBinding[] = [];
+    if (node.exit.kind === 'choice') {
+      compileChoiceExit(node, '', '', renderers, eventBindings, context, true);
+    } else {
+      eventBindings.push({
+        bindingId: `binding:${node.nodeId}:enter`,
+        on: { type: 'scene.entered' },
+        routes: [
+          {
+            routeId: `route:${node.nodeId}:auto`,
+            actions: node.exit.nextNodeId
+              ? [{ kind: 'scene.goto', sceneId: node.exit.nextNodeId }]
+              : [
+                  {
+                    kind: 'ending.complete',
+                    endingId: STORY_EXPERIENCE_COMPLETION_ID,
+                  },
+                ],
+          },
+        ],
+      });
+    }
+    return {
+      kind: 'scene',
+      sceneId: node.nodeId,
+      clock: { kind: 'none' },
+      renderers,
+      eventBindings,
+      anchors: [],
+      gestures: [],
+      timeline: { cues: [] },
+    };
+  }
   if (node.presentation.kind === 'world') {
     return compileWorldGraphNode(node, context);
   }
@@ -675,6 +710,7 @@ function compileChoiceExit(
   renderers: ExperienceRendererInstance[],
   eventBindings: ExperienceEventBinding[],
   context: NodeCompilationContext,
+  initiallyOpen = false,
 ): void {
   if (node.exit.kind !== 'choice') return;
   context.usedRendererIds.add(EXPERIENCE_CORE_CHOICE_RENDERER_ID);
@@ -690,7 +726,7 @@ function compileChoiceExit(
         choiceId: choice.choiceId,
         label: choice.label,
       })),
-      initiallyOpen: false,
+      initiallyOpen,
     } satisfies ExperienceCoreChoiceRendererConfig,
     bindings: {},
   });
@@ -702,11 +738,15 @@ function compileChoiceExit(
       payload: {},
     },
   ];
-  eventBindings.push(
-    rendererOutcomeBinding(node.nodeId, primaryInstanceId, primaryOutcomeType, [
-      { routeId: `route:${node.nodeId}:choice-open`, actions: openActions },
-    ]),
-  );
+  if (!initiallyOpen)
+    eventBindings.push(
+      rendererOutcomeBinding(
+        node.nodeId,
+        primaryInstanceId,
+        primaryOutcomeType,
+        [{ routeId: `route:${node.nodeId}:choice-open`, actions: openActions }],
+      ),
+    );
   eventBindings.push({
     bindingId: `binding:${node.nodeId}:choice-selected`,
     on: {

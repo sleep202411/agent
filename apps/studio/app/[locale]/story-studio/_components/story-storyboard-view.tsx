@@ -69,10 +69,21 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
     };
     const options = new Map<string, StorySequenceChoiceOptions>();
     for (const node of nodes) {
-      if (node.kind !== "clip" || node.exit.kind !== "choice") continue;
+      if (node.kind !== "clip") continue;
+      const nextNode =
+        node.exit.kind === "auto" && node.exit.nextNodeId
+          ? byId.get(node.exit.nextNodeId)
+          : undefined;
+      const exit =
+        node.exit.kind === "choice"
+          ? node.exit
+          : nextNode?.kind === "decision"
+            ? nextNode.exit
+            : null;
+      if (!exit) continue;
       options.set(node.nodeId, {
-        prompt: localizedText(node.exit.prompt, locale, ""),
-        choices: node.exit.choices.map((choice) => ({
+        prompt: localizedText(exit.prompt, locale, ""),
+        choices: exit.choices.map((choice) => ({
           id: choice.choiceId,
           label: localizedText(choice.label, locale, choice.choiceId),
           target: titleOf(choice.nextNodeId),

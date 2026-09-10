@@ -2244,10 +2244,20 @@ export class StoryProductionPlanService {
           'Storyboard Plot node',
           sequence.plotNodeId,
         );
-      const validDecisionIds =
+      const nextNodeId =
+        node.exit.kind === 'auto' ? node.exit.nextNodeId : null;
+      const nextNode = nextNodeId
+        ? draft.graph.nodes.find((candidate) => candidate.nodeId === nextNodeId)
+        : undefined;
+      const choiceExit =
         node.exit.kind === 'choice'
-          ? new Set([node.exit.decisionId])
-          : new Set<string>();
+          ? node.exit
+          : nextNode?.kind === 'decision' && nextNode.exit.kind === 'choice'
+            ? nextNode.exit
+            : null;
+      const validDecisionIds = new Set(
+        choiceExit ? [choiceExit.decisionId] : [],
+      );
       for (const cue of sequence.cues) {
         if (!validDecisionIds.has(cue.decisionId)) {
           throw new BadRequestException({

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { IconMovie, IconWorld, type Icon } from "@tabler/icons-react";
+import { IconMovie, IconWorld, IconGitBranch, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -24,8 +24,14 @@ interface CreatorItem {
   iconBackground: string;
 }
 
-/** Character cards are read-only projections; only available executable media is authored here. */
+/** Independently authored story nodes. */
 const CREATOR_ITEMS: CreatorItem[] = [
+  {
+    kind: "decision",
+    icon: IconGitBranch,
+    color: "rgba(255,255,255,0.14)",
+    iconBackground: "rgba(255,255,255,0.22)",
+  },
   {
     kind: "clip",
     icon: IconMovie,

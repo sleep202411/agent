@@ -302,8 +302,8 @@ function removeGraphNode(
     if (!node.exit.choices.some((choice) => choice.nextNodeId === nodeId)) {
       return node;
     }
-    const choices = node.exit.choices.filter(
-      (choice) => choice.nextNodeId !== nodeId,
+    const choices = node.exit.choices.map((choice) =>
+      choice.nextNodeId === nodeId ? { ...choice, nextNodeId: null } : choice,
     );
     affectedNodeIds.add(node.nodeId);
     return { ...node, exit: { ...node.exit, choices } };
@@ -360,7 +360,9 @@ function graphNodeTargets(node: StoryGraphNode): string[] {
   if (node.exit.kind === 'auto') {
     return node.exit.nextNodeId ? [node.exit.nextNodeId] : [];
   }
-  return node.exit.choices.map((choice) => choice.nextNodeId);
+  return node.exit.choices.flatMap((choice) =>
+    choice.nextNodeId ? [choice.nextNodeId] : [],
+  );
 }
 
 function removeOrphanedCanvasPositions(

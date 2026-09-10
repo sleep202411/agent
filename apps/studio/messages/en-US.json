@@ -3245,14 +3245,13 @@
         "choiceOption": "Choice: {label}"
       },
       "interactionCard": {
+        "unconnected": "Not connected",
         "promptPlaceholder": "What must the player decide?",
         "defaultOption": "Option {number}",
         "untitledOption": "Untitled option",
         "linkedTarget": "Linked destination",
         "addOption": "Add option",
-        "cancelOption": "Cancel adding option",
         "optionPlaceholder": "Write the player-facing option",
-        "connectOption": "Connect this option",
         "branchOptions": "Branch options",
         "anchorHint": "Each option has its own connection anchor",
         "optionCount": "{count} options"
@@ -3280,6 +3279,8 @@
         }
       },
       "creator": {
+        "decision": "Player choice",
+        "decisionDescription": "A question with options that connect to other nodes.",
         "title": "Add to story graph",
         "description": "Create an element in the interactive story structure.",
         "clip": "Film clip",

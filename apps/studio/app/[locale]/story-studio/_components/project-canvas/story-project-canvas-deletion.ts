@@ -4,6 +4,8 @@ import {
   convertExitToAuto,
   deleteGraphNode,
   disconnectStoryBranch,
+  materializeStoryDecisionNodes,
+  disconnectSceneContinuation,
 } from "./story-project-canvas-mutations";
 
 export function deleteStoryCanvasElements(
@@ -17,7 +19,7 @@ export function deleteStoryCanvasElements(
   }
 ): InteractiveStoryDraftContent {
   const selectedNodes = uniqueById(nodes);
-  // Every canonical graph node (clip or world) is structural story content and
+  // Every canonical graph node is structural story content and
   // is deleted through the same reference-cleaning domain mutation.
   const deletedCanvasNodeIds = new Set(selectedNodes.map((node) => node.id));
   const standaloneEdges = edges.filter(
@@ -26,7 +28,11 @@ export function deleteStoryCanvasElements(
 
   let next = deleteStandaloneEdges(content, standaloneEdges);
   for (const node of selectedNodes) {
-    if (node.data.kind === "decision" && node.data.sourceNodeId) {
+    if (
+      node.data.kind === "decision" &&
+      node.data.sourceNodeId &&
+      !next.graph.nodes.some((candidate) => candidate.nodeId === node.id)
+    ) {
       next = convertExitToAuto(next, node.data.sourceNodeId);
     } else {
       next = deleteGraphNode(next, node.data.nodeId);
@@ -43,7 +49,8 @@ function deleteStandaloneEdges(
 
   return orderedEdges.reduce((next, edge) => {
     if (edge.data.kind === "decision") {
-      return convertExitToAuto(next, edge.data.sourceNodeId);
+      const detached = materializeStoryDecisionNodes(next);
+      return disconnectSceneContinuation(detached, edge.data.sourceNodeId);
     }
     if (edge.data.kind === "continuation") {
       return disconnectStoryBranch(next, {

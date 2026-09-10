@@ -716,7 +716,7 @@ function analyzePaths(
       const successors: string[] = [];
       if (node.exit.kind === 'choice') {
         node.exit.choices.forEach((choice) => {
-          successors.push(choice.nextNodeId);
+          if (choice.nextNodeId) successors.push(choice.nextNodeId);
         });
       } else if (node.exit.nextNodeId) {
         successors.push(node.exit.nextNodeId);
@@ -825,6 +825,16 @@ function compileIntermediateRelease(
       });
       return;
     }
+    if (node.kind === 'decision') {
+      runtimeNodes.push({
+        nodeId: node.nodeId,
+        presentation: { kind: 'decision' },
+        overlays: [],
+        interactions: [],
+        exit: compileExit(node),
+      });
+      return;
+    }
     const timeline = timelineByNodeId.get(node.nodeId);
     // A scene with no footage yet stays in the story with an empty sequence,
     // on both channels. The player stands in for it and finishes on the same
@@ -832,6 +842,16 @@ function compileIntermediateRelease(
     // dropping the scene would leave the scenes that point at it referring to
     // a node the manifest no longer contains.
     const segments = timeline?.segments ?? [];
+    // A choice immediately after footage still opens over that footage. Keep
+    // the standalone scene too, for entry points and other incoming routes.
+    const nextNode =
+      node.exit.kind === 'auto' && node.exit.nextNodeId
+        ? nodes.get(node.exit.nextNodeId)
+        : undefined;
+    const exitOwner =
+      nextNode?.kind === 'decision' && nextNode.exit.kind === 'choice'
+        ? nextNode
+        : node;
     runtimeNodes.push({
       nodeId: node.nodeId,
       presentation: {
@@ -856,13 +876,35 @@ function compileIntermediateRelease(
       },
       overlays: [],
       interactions: node.interactions,
-      exit: compileExit(node),
+      exit: compileExit(exitOwner),
     });
   });
   const locales = collectInteractiveStoryRuntimeLocales(
     input.draft,
     input.defaultLocale,
   );
+  // Inlining a decision over its preceding video can make its standalone
+  // scene unnecessary. Prune only the compiled release, never authored nodes.
+  const runtimeById = new Map(runtimeNodes.map((node) => [node.nodeId, node]));
+  const reachableRuntimeIds = new Set<string>();
+  const pending = [entryNodeId];
+  while (pending.length > 0) {
+    const nodeId = pending.pop();
+    if (!nodeId || reachableRuntimeIds.has(nodeId)) continue;
+    const node = runtimeById.get(nodeId);
+    if (!node) continue;
+    reachableRuntimeIds.add(nodeId);
+    if (node.exit.kind === 'auto') {
+      if (node.exit.nextNodeId) pending.push(node.exit.nextNodeId);
+    } else if (node.exit.kind === 'choice') {
+      pending.push(...node.exit.choices.map((choice) => choice.nextNodeId));
+    }
+    for (const interaction of node.interactions) {
+      for (const action of Object.values(interaction.outcomes)) {
+        if (action?.kind === 'goto') pending.push(action.nodeId);
+      }
+    }
+  }
   return {
     schemaVersion: INTERACTIVE_FILM_RELEASE_SCHEMA_VERSION,
     channel: input.channel,
@@ -873,7 +915,7 @@ function compileIntermediateRelease(
     defaultLocale: input.defaultLocale,
     locales,
     media,
-    nodes: runtimeNodes,
+    nodes: runtimeNodes.filter((node) => reachableRuntimeIds.has(node.nodeId)),
   };
 }
 
@@ -888,11 +930,17 @@ function compileExit(
     kind: 'choice',
     decisionId: exit.decisionId,
     prompt: exit.prompt,
-    choices: exit.choices.map((choice) => ({
-      choiceId: choice.choiceId,
-      label: choice.label,
-      nextNodeId: choice.nextNodeId,
-    })),
+    choices: exit.choices.flatMap((choice) =>
+      choice.nextNodeId
+        ? [
+            {
+              choiceId: choice.choiceId,
+              label: choice.label,
+              nextNodeId: choice.nextNodeId,
+            },
+          ]
+        : [],
+    ),
   };
 }
 
@@ -920,7 +968,9 @@ function nextNodeIds(
 ): string[] {
   const exitTargets =
     node.exit.kind === 'choice'
-      ? node.exit.choices.map((choice) => choice.nextNodeId)
+      ? node.exit.choices.flatMap((choice) =>
+          choice.nextNodeId ? [choice.nextNodeId] : [],
+        )
       : node.exit.nextNodeId
         ? [node.exit.nextNodeId]
         : [];

@@ -35,13 +35,13 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   const nodeNames = useMemo(() => {
     const names = new Map<string, string>();
     for (const node of nodes) {
-      names.set(node.nodeId, nodeTitle(node));
+      names.set(node.nodeId, nodeTitle(node, t("catalogPanel.choice")));
     }
     return names;
-  }, [nodes]);
+  }, [nodes, t]);
 
   const rowHref = (nodeId: string) =>
-    `/story-studio/projects/${projectId}/storyboard?chapter=${encodeURIComponent(
+    `/story-studio/projects/${projectId}/${nodes.find((node) => node.nodeId === nodeId)?.kind === "clip" ? "storyboard" : "canvas"}?chapter=${encodeURIComponent(
       activeChapterId as string
     )}&node=${encodeURIComponent(nodeId)}`;
   let sceneNumber = 0;
@@ -73,10 +73,12 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
                   >
                     {node.kind === "clip" ? (
                       <span className="shrink-0 tabular-nums text-white/70">{rowSceneNumber}.</span>
+                    ) : node.kind === "decision" ? (
+                      <IconGitBranch className="size-3.5 shrink-0 text-white/65" />
                     ) : (
                       <IconWorld className="size-3.5 shrink-0 text-white/65" />
                     )}
-                    <span className="truncate">{nodeTitle(node)}</span>
+                    <span className="truncate">{nodeTitle(node, t("catalogPanel.choice"))}</span>
                     {isEnding ? (
                       <span className="ml-auto shrink-0 rounded bg-red-400/12 px-1.5 py-px text-[9px] font-semibold tracking-wide text-red-300/75">
                         {t("catalogPanel.end")}
@@ -94,12 +96,16 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
                       {node.exit.choices.map((choice) => (
                         <Link
                           key={choice.choiceId}
-                          href={rowHref(choice.nextNodeId)}
+                          href={
+                            choice.nextNodeId ? rowHref(choice.nextNodeId) : rowHref(node.nodeId)
+                          }
                           className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-white transition hover:bg-white/[0.07]"
                         >
                           <span className="truncate">{localized(choice.label, locale)}</span>
                           <span className="shrink-0 text-white/70">
-                            → {nodeNames.get(choice.nextNodeId) ?? choice.nextNodeId}
+                            {choice.nextNodeId
+                              ? `→ ${nodeNames.get(choice.nextNodeId) ?? choice.nextNodeId}`
+                              : t("interactionCard.unconnected")}
                           </span>
                         </Link>
                       ))}
@@ -115,7 +121,8 @@ export function StoryProjectCatalog({ projectId }: { projectId: string }) {
   );
 }
 
-function nodeTitle(node: StoryGraphNode): string {
+function nodeTitle(node: StoryGraphNode, choiceLabel: string): string {
+  if (node.kind === "decision") return choiceLabel;
   if (node.kind === "clip") return node.name?.trim() || node.clipKey;
   return node.name?.trim() || node.worldId || node.nodeId;
 }

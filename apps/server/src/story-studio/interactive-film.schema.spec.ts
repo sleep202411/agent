@@ -1,3 +1,4 @@
+import { PutStoryDraftSchema } from './dto';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   InteractiveStoryDraftContentSchema,
@@ -379,5 +380,46 @@ describe('interactive film draft contract', () => {
     expect(
       InteractiveStoryDraftContentSchema.safeParse(withBranchAt(1_200)).success,
     ).toBe(false);
+  });
+});
+
+describe('editable decision contract', () => {
+  it('accepts disconnected choices but rejects runtime-only auto decisions on draft writes', () => {
+    const content = filmDraft();
+    content.graph.nodes.push({
+      kind: 'decision',
+      nodeId: 'D',
+      exit: { kind: 'choice', decisionId: 'D', prompt: {}, choices: [] },
+    });
+    const request = {
+      expectedRevision: 0,
+      schemaVersion: 'interactive-story-draft-v1',
+      content,
+      sessionId: 'test',
+    };
+    expect(PutStoryDraftSchema.safeParse(request).success).toBe(true);
+    const runtimeOnly = {
+      ...request,
+      content: {
+        ...content,
+        graph: {
+          ...content.graph,
+          nodes: [
+            ...content.graph.nodes.slice(0, -1),
+            {
+              kind: 'decision',
+              nodeId: 'D',
+              exit: { kind: 'auto', nextNodeId: null },
+            },
+          ],
+        },
+      },
+    };
+    expect(PutStoryDraftSchema.safeParse(runtimeOnly).success).toBe(false);
+    expect(
+      createPlayableInteractiveStoryDraftContentSchema('en-US').safeParse(
+        content,
+      ).success,
+    ).toBe(true);
   });
 });

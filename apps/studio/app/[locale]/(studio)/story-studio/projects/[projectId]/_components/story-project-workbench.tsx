@@ -531,15 +531,15 @@ interface AuthoredDecision {
   options: Array<{
     id: string;
     label: Record<string, string>;
-    nextNodeId: string;
+    nextNodeId: string | null;
   }>;
 }
 
 function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecision[] {
   const decisions = new Map<string, AuthoredDecision>();
   for (const node of content.graph.nodes) {
-    if (node.kind !== "clip" || node.exit.kind !== "choice") continue;
-    const sourceLabel = node.name?.trim() || node.clipKey;
+    if (node.kind === "world" || node.exit.kind !== "choice") continue;
+    const sourceLabel = node.kind === "clip" ? node.name?.trim() || node.clipKey : node.nodeId;
     const existing = decisions.get(node.exit.decisionId);
     if (existing) {
       existing.sourceSceneLabels.push(sourceLabel);

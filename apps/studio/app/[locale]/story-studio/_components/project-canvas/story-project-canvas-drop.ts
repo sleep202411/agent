@@ -1,19 +1,18 @@
 import type { InteractiveStoryDraftContent } from "@/lib/story-projects-api";
 import type { StoryCanvasNodeData } from "./story-project-canvas-model";
 import {
-  addChoiceOption,
+  canConnectStoryChoice,
+  canConnectStoryCompletion,
+  choiceIdFromHandle,
+} from "./story-project-canvas-connections";
+import {
   connectSceneContinuation,
   connectChoiceTarget,
   createClipNode,
-  setEntryNode,
 } from "./story-project-canvas-mutations";
 
-type BlankDropSource = Pick<StoryCanvasNodeData, "kind" | "nodeId" | "exitKind">;
-
 export type BlankDropConnectionPlan =
-  | { kind: "entry" }
   | { kind: "scene-continuation"; sourceNodeId: string }
-  | { kind: "new-choice"; sourceNodeId: string }
   | { kind: "existing-choice"; sourceNodeId: string; choiceId: string };
 
 export interface ConnectedSceneDropResult {
@@ -21,70 +20,37 @@ export interface ConnectedSceneDropResult {
   createdNodeId: string;
 }
 
-export interface ConnectedSceneDropOptions {
-  newChoiceLabel?: string;
-}
-
-/**
- * Resolves only blank-canvas drops with one unambiguous compatible node kind.
- * Scene completion drops are resolved here only after the contextual
- * creator has chosen a new scene. Choice creation is handled separately.
- */
+/** Resolve a free output before creating a scene; an occupied output must stay intact. */
 export function resolveBlankDropConnectionPlan(
-  source: BlankDropSource,
+  source: StoryCanvasNodeData,
   sourceHandle: string | null
 ): BlankDropConnectionPlan | null {
-  if (!sourceHandle) return null;
-
-  if (source.kind === "clip" && source.exitKind === "choice") {
-    if (sourceHandle.startsWith("choice-new:")) {
-      return { kind: "new-choice", sourceNodeId: source.nodeId };
-    }
-    const choiceMatch = sourceHandle.match(/^choice:(.+)$/u);
-    return choiceMatch
-      ? {
-          kind: "existing-choice",
-          sourceNodeId: source.nodeId,
-          choiceId: choiceMatch[1]!,
-        }
+  if (source.kind === "decision") {
+    const choiceId = choiceIdFromHandle(sourceHandle);
+    return choiceId &&
+      source.sourceNodeId === source.nodeId &&
+      canConnectStoryChoice(source, sourceHandle)
+      ? { kind: "existing-choice", sourceNodeId: source.nodeId, choiceId }
       : null;
   }
-
-  if (source.kind === "clip") {
-    return source.exitKind === "auto" && sourceHandle === "completion"
-      ? { kind: "scene-continuation", sourceNodeId: source.nodeId }
-      : null;
-  }
-
-  return null;
+  return sourceHandle === "completion" && canConnectStoryCompletion(source)
+    ? { kind: "scene-continuation", sourceNodeId: source.nodeId }
+    : null;
 }
 
-/** Creates a playable scene and connects it to the source in one immutable draft mutation. */
+/** Creates a scene and connects it to the source in one immutable draft mutation. */
 export function createConnectedSceneForBlankDrop(
   content: InteractiveStoryDraftContent,
-  source: BlankDropSource,
-  sourceHandle: string | null,
-  locale: string,
-  options: ConnectedSceneDropOptions = {}
+  source: StoryCanvasNodeData,
+  sourceHandle: string | null
 ): ConnectedSceneDropResult | null {
   const plan = resolveBlankDropConnectionPlan(source, sourceHandle);
   if (!plan) return null;
-
   const created = createClipNode(content);
   const createdNodeId = created.created.nodeId;
-  let next = created.content;
-
-  if (plan.kind === "entry") {
-    next = setEntryNode(next, createdNodeId);
-  } else if (plan.kind === "scene-continuation") {
-    next = connectSceneContinuation(next, plan.sourceNodeId, createdNodeId);
-  } else if (plan.kind === "new-choice") {
-    next = addChoiceOption(next, plan.sourceNodeId, createdNodeId, locale, {
-      label: options.newChoiceLabel,
-    }).content;
-  } else if (plan.kind === "existing-choice") {
-    next = connectChoiceTarget(next, plan.sourceNodeId, plan.choiceId, createdNodeId);
-  }
-
+  const next =
+    plan.kind === "scene-continuation"
+      ? connectSceneContinuation(created.content, plan.sourceNodeId, createdNodeId)
+      : connectChoiceTarget(created.content, plan.sourceNodeId, plan.choiceId, createdNodeId);
   return { content: next, createdNodeId };
 }

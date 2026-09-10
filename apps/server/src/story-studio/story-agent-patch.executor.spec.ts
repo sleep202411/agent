@@ -100,7 +100,7 @@ describe('executeStoryPatch', () => {
     expect(result.draftChanged).toBe(true);
   });
 
-  it('removes references and orphaned canvas positions with a deleted clip', () => {
+  it('disconnects a deleted clip while preserving option text and ids', () => {
     const current = draft();
     current.graph.nodes.push({
       kind: 'clip',
@@ -136,7 +136,11 @@ describe('executeStoryPatch', () => {
     expect(result.draft.graph.nodes).toHaveLength(1);
     expect(result.draft.graph.nodes[0]?.exit).toMatchObject({
       kind: 'choice',
-      choices: [],
+      decisionId: 'gate',
+      prompt: { 'en-US': 'Enter?' },
+      choices: [
+        { choiceId: 'yes', label: { 'en-US': 'Yes' }, nextNodeId: null },
+      ],
     });
     expect(result.layout.nodePositions).not.toHaveProperty('inside');
   });

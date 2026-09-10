@@ -5,7 +5,11 @@ import {
   type StoryBuildSegmentInput,
   type StoryBuildWorldInput,
 } from './story-build-compiler';
-import type { InteractiveStoryDraftContent } from './interactive-film.schema';
+import {
+  InteractiveStoryDraftContentSchema,
+  createPlayableInteractiveStoryDraftContentSchema,
+  type InteractiveStoryDraftContent,
+} from './interactive-film.schema';
 
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000001';
 const BUILD_ID = '0197f4a2-0800-7000-8000-000000000002';
@@ -143,6 +147,88 @@ function input(
 }
 
 describe('compileStoryBuild', () => {
+  it('saves disconnected choices and compiles an independent decision without a video placeholder', () => {
+    const content = draft();
+    const opening = content.graph.nodes[0];
+    const exit = opening.exit;
+    if (exit.kind !== 'choice') throw new Error('Expected choice fixture');
+    opening.exit = { kind: 'auto', nextNodeId: 'decision:routes' };
+    content.graph.nodes.push({
+      kind: 'decision',
+      nodeId: 'decision:routes',
+      exit,
+    });
+    const parsed =
+      createPlayableInteractiveStoryDraftContentSchema('en-US').parse(content);
+    for (const channel of ['preview', 'production'] as const) {
+      const result = compileStoryBuild(input({ draft: parsed, channel }));
+      expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual(
+        [],
+      );
+      expect(result.runtime).not.toBeNull();
+      const openingScene = result.runtime!.graph.nodes.find(
+        (node) => node.kind === 'scene' && node.sceneId === opening.nodeId,
+      );
+      if (openingScene?.kind !== 'scene')
+        throw new Error('Expected video scene');
+      expect(
+        openingScene.renderers.some(
+          (renderer) => renderer.rendererId === 'core.video',
+        ),
+      ).toBe(true);
+      expect(
+        openingScene.renderers.find(
+          (renderer) => renderer.rendererId === 'core.choice',
+        ),
+      ).toMatchObject({
+        config: { initiallyOpen: false },
+      });
+      const standaloneDraft = {
+        ...parsed,
+        graph: { ...parsed.graph, entryNodeId: 'decision:routes' },
+      };
+      const standalone = compileStoryBuild(
+        input({ draft: standaloneDraft, channel }),
+      );
+      expect(
+        standalone.diagnostics.filter((d) => d.severity === 'error'),
+      ).toEqual([]);
+      const decision = standalone.runtime!.graph.nodes.find(
+        (node) => node.kind === 'scene' && node.sceneId === 'decision:routes',
+      );
+      expect(decision).toMatchObject({
+        kind: 'scene',
+        clock: { kind: 'none' },
+        renderers: [
+          { rendererId: 'core.choice', config: { initiallyOpen: true } },
+        ],
+      });
+      if (decision?.kind !== 'scene')
+        throw new Error('Expected decision scene');
+      expect(decision.renderers).toHaveLength(1);
+      expect(
+        decision.eventBindings.flatMap((binding) =>
+          binding.routes.flatMap((route) => route.actions),
+        ),
+      ).toEqual([
+        { kind: 'scene.goto', sceneId: 'left' },
+        { kind: 'scene.goto', sceneId: 'right' },
+      ]);
+    }
+    exit.choices[0].nextNodeId = null;
+    const saved = InteractiveStoryDraftContentSchema.parse(content);
+    expect(
+      saved.graph.nodes.find((node) => node.nodeId === 'decision:routes')?.exit,
+    ).toEqual(exit);
+    expect(
+      createPlayableInteractiveStoryDraftContentSchema('en-US').safeParse(saved)
+        .success,
+    ).toBe(true);
+    expect(
+      saved.graph.nodes.find((node) => node.nodeId === 'decision:routes')?.exit,
+    ).toEqual(exit);
+  });
+
   it('compiles a complete branching film into the cinematic runtime', () => {
     const result = compileStoryBuild(input());
     expect(

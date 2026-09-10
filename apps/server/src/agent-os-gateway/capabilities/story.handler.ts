@@ -1703,7 +1703,9 @@ function targetsOf(node: StoryNode): string[] {
       ? node.exit.nextNodeId
         ? [node.exit.nextNodeId]
         : []
-      : node.exit.choices.map((choice) => choice.nextNodeId);
+      : node.exit.choices.flatMap((choice) =>
+          choice.nextNodeId ? [choice.nextNodeId] : [],
+        );
   const interactionTargets =
     node.kind === 'clip'
       ? node.interactions.flatMap((interaction) =>

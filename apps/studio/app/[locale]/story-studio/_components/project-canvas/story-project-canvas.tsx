@@ -155,8 +155,9 @@ import { useLastDefinedData } from "./use-last-defined-data";
 import {
   addChoiceOption,
   connectSceneContinuation,
+  createDecisionNode,
+  materializeStoryDecisionNodes,
   connectChoiceTarget,
-  convertSceneExitToChoice,
   createClipNode,
   createWorldNode,
   moveChoiceOption,
@@ -167,6 +168,13 @@ import {
   updateChoiceExitPrompt,
   updateChoiceOptionLabel,
 } from "./story-project-canvas-mutations";
+import {
+  canConnectStoryCompletion,
+  choiceIdFromHandle,
+  canConnectStoryChoice,
+  isValidStoryFlowConnection,
+} from "./story-project-canvas-connections";
+import { StoryCanvasTextInput } from "./story-canvas-text-input";
 import { StoryCanvasHistory, type StoryCanvasHistorySnapshot } from "./story-canvas-history";
 import {
   StoryConnectionCreator,
@@ -214,19 +222,10 @@ type PendingCompletionDrop = {
   clientPosition: { x: number; y: number };
   flowPosition: StoryCanvasPosition;
 };
-type PendingChoiceDraft = {
-  sourceNodeId: string;
-  draftId: string;
-  label: string;
-  required: boolean;
-};
 type StoryCanvasChoiceContextValue = {
-  drafts: PendingChoiceDraft[];
   canEditContent: boolean;
   canCreateOption: boolean;
   start: (sourceNodeId: string) => void;
-  updateDraft: (sourceNodeId: string, draftId: string, label: string) => void;
-  cancel: (sourceNodeId: string, draftId: string) => void;
   updatePrompt: (sourceNodeId: string, prompt: string) => void;
   updateChoice: (sourceNodeId: string, choiceId: string, label: string) => void;
   moveChoice: (sourceNodeId: string, choiceId: string, direction: "up" | "down") => void;
@@ -279,7 +278,6 @@ const STORY_PORT_COLORS = {
 const STORY_CANVAS_TIDY_LAYOUT = {
   lanes: [],
 } satisfies CanvasTidyLayoutOptions<StoryCanvasNode>;
-const MIN_PLAYER_CHOICES = 2;
 const MAX_PLAYER_CHOICES = 6;
 
 const StoryCanvasFocusContext = createContext<string | null>(null);
@@ -355,7 +353,6 @@ function StoryProjectCanvasInner({
   const [pendingCompletionDrop, setPendingCompletionDrop] = useState<PendingCompletionDrop | null>(
     null
   );
-  const [pendingChoiceDrafts, setPendingChoiceDrafts] = useState<PendingChoiceDraft[]>([]);
   const [graphError, setGraphError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -373,8 +370,6 @@ function StoryProjectCanvasInner({
   const revisionRef = useRef(0);
   const savedSignatureRef = useRef("");
   const latestContentRef = useRef<InteractiveStoryDraftContent | null>(null);
-  const pendingChoiceDraftsRef = useRef<PendingChoiceDraft[]>([]);
-  const pendingChoiceDraftSequenceRef = useRef(0);
   const conflictRef = useRef<DraftRevisionConflict | null>(null);
   const disposedRef = useRef(false);
   const saveInFlightRef = useRef(false);
@@ -666,14 +661,13 @@ function StoryProjectCanvasInner({
       setInspectorTarget(CLOSED_STORY_CANVAS_INSPECTOR);
       setCreatorMenu(null);
       setPendingCompletionDrop(null);
-      setPendingChoiceDrafts([]);
     }
     hydratedRef.current = true;
     hydratedChapterIdRef.current = workbench.chapter.id;
     revisionRef.current = workbench.draft.revision;
     setDraftRevision(workbench.draft.revision);
     const adoptedContent = applyActiveStoryCanvasCapabilities(
-      migrateLegacyStoryHotspotIds(workbench.draft.content)
+      materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(workbench.draft.content))
     );
     savedSignatureRef.current = canonicalJsonString(workbench.draft.content);
     latestContentRef.current = adoptedContent;
@@ -1126,100 +1120,18 @@ function StoryProjectCanvasInner({
   });
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
-  const choiceDraftRequirements = useMemo(
-    () =>
-      model?.nodes.flatMap((node) =>
-        node.data.kind === "decision" && node.data.sourceNodeId
-          ? [
-              {
-                sourceNodeId: node.data.sourceNodeId,
-                choiceCount: node.data.choices?.length ?? 0,
-              },
-            ]
-          : []
-      ) ?? [],
-    [model]
-  );
-  const materializeChoiceDrafts = (drafts: PendingChoiceDraft[]) =>
-    reconcilePendingChoiceDrafts(drafts, choiceDraftRequirements, (sourceNodeId, index) => ({
-      sourceNodeId,
-      draftId: `required-${index + 1}`,
-      label: t("interactionCard.defaultOption", {
-        number:
-          (choiceDraftRequirements.find((requirement) => requirement.sourceNodeId === sourceNodeId)
-            ?.choiceCount ?? 0) +
-          index +
-          1,
-      }),
-      required: true,
-    }));
-  const activePendingChoiceDrafts = canMutateCanvasLayout
-    ? materializeChoiceDrafts(pendingChoiceDrafts)
-    : [];
-  useLayoutEffect(() => {
-    pendingChoiceDraftsRef.current = activePendingChoiceDrafts;
-  });
-  const startChoiceDraft = (sourceNodeId: string) => {
-    if (!canMutateCanvasLayout) return;
-    setPendingChoiceDrafts((current) => {
-      const materialized = materializeChoiceDrafts(current);
-      const choiceCount =
-        choiceDraftRequirements.find((requirement) => requirement.sourceNodeId === sourceNodeId)
-          ?.choiceCount ?? 0;
-      if (
-        choiceCount + materialized.filter((draft) => draft.sourceNodeId === sourceNodeId).length >=
-        MAX_PLAYER_CHOICES
-      ) {
-        return materialized;
-      }
-      pendingChoiceDraftSequenceRef.current += 1;
-      return [
-        ...materialized,
-        {
-          sourceNodeId,
-          draftId: `draft-${pendingChoiceDraftSequenceRef.current}`,
-          label: t("interactionCard.defaultOption", {
-            number:
-              choiceCount +
-              materialized.filter((draft) => draft.sourceNodeId === sourceNodeId).length +
-              1,
-          }),
-          required: false,
-        },
-      ];
-    });
-  };
-  const updateChoiceDraft = (sourceNodeId: string, draftId: string, label: string) => {
-    setPendingChoiceDrafts((current) =>
-      materializeChoiceDrafts(current).map((draft) =>
-        draft.sourceNodeId === sourceNodeId && draft.draftId === draftId
-          ? { ...draft, label }
-          : draft
-      )
-    );
-  };
-  const cancelChoiceDraft = (sourceNodeId: string, draftId: string) => {
-    setPendingChoiceDrafts((current) =>
-      materializeChoiceDrafts(current).filter(
-        (draft) =>
-          draft.required || draft.sourceNodeId !== sourceNodeId || draft.draftId !== draftId
-      )
-    );
-  };
-  const removePendingChoiceDraft = (sourceNodeId: string, draftId: string) => {
-    setPendingChoiceDrafts((current) =>
-      materializeChoiceDrafts(current).filter(
-        (draft) => draft.sourceNodeId !== sourceNodeId || draft.draftId !== draftId
-      )
-    );
-  };
   const choiceContext: StoryCanvasChoiceContextValue = {
-    drafts: activePendingChoiceDrafts,
     canEditContent: canEdit,
     canCreateOption: canMutateCanvasLayout,
-    start: startChoiceDraft,
-    updateDraft: updateChoiceDraft,
-    cancel: cancelChoiceDraft,
+    start: (sourceNodeId) => {
+      applyGraphMutation((current) => {
+        const source = current.graph.nodes.find((node) => node.nodeId === sourceNodeId);
+        const number = source?.exit.kind === "choice" ? source.exit.choices.length + 1 : 1;
+        return addChoiceOption(current, sourceNodeId, null, authoringLocale, {
+          label: t("interactionCard.defaultOption", { number }),
+        }).content;
+      });
+    },
     updatePrompt: (sourceNodeId, prompt) => {
       applyGraphMutation(
         (current) => updateChoiceExitPrompt(current, sourceNodeId, authoringLocale, prompt),
@@ -1324,6 +1236,22 @@ function StoryProjectCanvasInner({
       hasLocalChanges: hasLocalLayoutChanges,
       hydrated: layoutHydratedRef.current,
     });
+    const storedPosition = (node: StoryCanvasNode) => {
+      const position = layoutProjection.nodePositions[node.id];
+      if (position || node.data.kind !== "decision") return position;
+      const oldSource = workbenchProjection.draft.content.graph.nodes.find(
+        (candidate) =>
+          candidate.kind === "clip" &&
+          candidate.exit.kind === "choice" &&
+          candidate.exit.decisionId === node.data.decisionId
+      );
+      const sourceId =
+        oldSource?.nodeId ??
+        (node.id.startsWith("decision:") ? node.id.slice("decision:".length) : null);
+      return sourceId
+        ? layoutProjection.nodePositions[storyDecisionCanvasNodeId(sourceId)]
+        : undefined;
+    };
     const currentById = new Map(canvasNodesRef.current.map((node) => [node.id, node]));
     const pendingSelection = pendingCanvasSelectionRef.current;
     const selectedNodeIds = reconcileStoryCanvasSelectedIds(
@@ -1347,7 +1275,7 @@ function StoryProjectCanvasInner({
     if (!layoutHydratedRef.current) {
       const initialNodes = model.nodes.map((node) => ({
         ...node,
-        position: layoutProjection.nodePositions[node.id] ?? node.position,
+        position: storedPosition(node) ?? node.position,
         selected: selectedNodeIds.has(node.id),
       }));
       const initialLayout = canvasLayoutPayload(initialNodes);
@@ -1375,8 +1303,8 @@ function StoryProjectCanvasInner({
         position:
           pendingPosition ??
           (shouldAdoptAuthoritativeLayout
-            ? layoutProjection.nodePositions[node.id]
-            : (currentById.get(node.id)?.position ?? layoutProjection.nodePositions[node.id])) ??
+            ? storedPosition(node)
+            : (currentById.get(node.id)?.position ?? storedPosition(node))) ??
           node.position,
       };
     });
@@ -1698,7 +1626,8 @@ function StoryProjectCanvasInner({
   const layeredCanvasNodes = useMemo(
     () =>
       canvasNodes.map((node) => {
-        const zIndex = node.id === focusedNodeId ? 100 : 0;
+        // Keep ports above edge hit areas so an input can receive more connections.
+        const zIndex = node.id === focusedNodeId ? 100 : 3;
         return node.zIndex === zIndex ? node : { ...node, zIndex };
       }),
     [canvasNodes, focusedNodeId]
@@ -1822,7 +1751,7 @@ function StoryProjectCanvasInner({
         }) !== layoutPayloadSignature(nextLayout);
 
       const restoredContent = applyActiveStoryCanvasCapabilities(
-        migrateLegacyStoryHotspotIds(snapshot.content)
+        materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(snapshot.content))
       );
       latestContentRef.current = restoredContent;
       setPendingCompletionDrop(null);
@@ -1885,7 +1814,9 @@ function StoryProjectCanvasInner({
     if (!mutationBarrier.permits("content")) return false;
     const current = latestContentRef.current;
     if (!current) return false;
-    const normalizedNext = applyActiveStoryCanvasCapabilities(migrateLegacyStoryHotspotIds(next));
+    const normalizedNext = applyActiveStoryCanvasCapabilities(
+      materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(next))
+    );
     if (normalizedNext === current) return false;
     const snapshot = readHistorySnapshot(current);
     if (!snapshot) return false;
@@ -1952,7 +1883,14 @@ function StoryProjectCanvasInner({
     if (!content || !mutationBarrier.permits("layout")) return;
     if (kind === "world" && !STORY_WORLD_EXPERIENCE_AVAILABLE) return;
     try {
-      const result = kind === "world" ? createWorldNode(content) : createClipNode(content);
+      const result =
+        kind === "decision"
+          ? createDecisionNode(content, authoringLocale, {
+              labels: [1, 2].map((number) => t("interactionCard.defaultOption", { number })),
+            })
+          : kind === "world"
+            ? createWorldNode(content)
+            : createClipNode(content);
       const nextContent = result.content;
       const createdCanvasNodeId = result.created.nodeId;
 
@@ -2001,56 +1939,37 @@ function StoryProjectCanvasInner({
       !connection.source ||
       !connection.target ||
       !content ||
-      !model
+      !model ||
+      !isValidStoryFlowConnection(connection, model.nodes)
     ) {
       return;
     }
     const source = model.nodes.find((node) => node.id === connection.source);
     const target = model.nodes.find((node) => node.id === connection.target);
-    if (!source || !target || target.data.kind === "decision") {
+    if (!source || !target) {
       return;
     }
     const choiceSourceNodeId =
       source.data.kind === "decision" ? source.data.sourceNodeId : undefined;
-    const choiceDraftId = choiceSourceNodeId
-      ? choiceDraftIdFromHandle(connection.sourceHandle)
-      : null;
-    const existingChoiceId = choiceSourceNodeId
-      ? choiceIdFromHandle(connection.sourceHandle)
-      : null;
-    const createsChoice = choiceDraftId !== null;
-    const pendingDraft = pendingChoiceDraftsRef.current.find(
-      (draft) => draft.sourceNodeId === choiceSourceNodeId && draft.draftId === choiceDraftId
-    );
-    const pendingLabel = createsChoice && pendingDraft ? pendingDraft.label.trim() : "";
-    if (createsChoice && !pendingLabel) return;
-    const committed = applyGraphMutation((current) => {
-      if (choiceSourceNodeId && source.data.kind === "decision") {
-        if (choiceDraftId) {
-          return addChoiceOption(current, choiceSourceNodeId, target.data.nodeId, authoringLocale, {
-            label: pendingLabel,
-          }).content;
-        }
-        if (existingChoiceId) {
-          return connectChoiceTarget(
-            current,
-            choiceSourceNodeId,
-            existingChoiceId,
-            target.data.nodeId
-          );
-        }
+    const choiceId = choiceSourceNodeId ? choiceIdFromHandle(connection.sourceHandle) : null;
+    applyGraphMutation((current) => {
+      if (
+        !isValidStoryFlowConnection(
+          connection,
+          buildStoryCanvasModel(current, authoringLocale).nodes
+        )
+      ) {
         return current;
+      }
+      if (choiceSourceNodeId && choiceId) {
+        return connectChoiceTarget(current, choiceSourceNodeId, choiceId, target.data.nodeId);
       }
       if (source.data.exitKind === "auto" && connection.sourceHandle === "completion") {
         return connectSceneContinuation(current, source.data.nodeId, target.data.nodeId);
       }
-      // No other source handle produces a story-flow connection in a pure
-      // branching tree; leave the draft unchanged.
+      // Only completion and choice handles author story-flow connections.
       return current;
     });
-    if (committed && choiceSourceNodeId && choiceDraftId) {
-      removePendingChoiceDraft(choiceSourceNodeId, choiceDraftId);
-    }
   };
 
   const finishConnectionOnBlankCanvas = (
@@ -2077,15 +1996,14 @@ function StoryProjectCanvasInner({
       source.data.kind === "decision" ? source.data.sourceNodeId : undefined;
     if (source.data.kind !== "clip" && !choiceSourceNodeId) return;
     const sourceHandleId = connectionState.fromHandle.id ?? "";
+    if (
+      source.data.kind === "decision"
+        ? !canConnectStoryChoice(source.data, sourceHandleId)
+        : !canConnectStoryCompletion(source.data)
+    ) {
+      return;
+    }
     const dropPosition = screenToFlowPosition(clientPosition);
-    const choiceDraftId =
-      source.data.kind === "decision" ? choiceDraftIdFromHandle(sourceHandleId) : null;
-    const createsChoice = choiceDraftId !== null;
-    const pendingDraft = pendingChoiceDraftsRef.current.find(
-      (draft) => draft.sourceNodeId === choiceSourceNodeId && draft.draftId === choiceDraftId
-    );
-    const pendingLabel = createsChoice && pendingDraft ? pendingDraft.label.trim() : "";
-    if (createsChoice && !pendingLabel) return;
 
     if (
       source.data.kind === "clip" &&
@@ -2103,15 +2021,7 @@ function StoryProjectCanvasInner({
     }
 
     try {
-      const created = createConnectedSceneForBlankDrop(
-        content,
-        choiceSourceNodeId
-          ? { kind: "clip", nodeId: choiceSourceNodeId, exitKind: "choice" }
-          : source.data,
-        sourceHandleId,
-        authoringLocale,
-        { newChoiceLabel: pendingLabel || undefined }
-      );
+      const created = createConnectedSceneForBlankDrop(content, source.data, sourceHandleId);
       if (!created) return;
 
       pendingNodePositionsRef.current.set(created.createdNodeId, {
@@ -2123,9 +2033,6 @@ function StoryProjectCanvasInner({
       setGraphError(null);
       if (commitContent(created.content)) {
         persistLayoutWithPendingPositions(created.content);
-        if (choiceSourceNodeId && choiceDraftId) {
-          removePendingChoiceDraft(choiceSourceNodeId, choiceDraftId);
-        }
       }
       closeCreatorMenu();
     } catch {
@@ -2139,28 +2046,29 @@ function StoryProjectCanvasInner({
       return;
     }
     const source = model.nodes.find((node) => node.id === pending.sourceCanvasNodeId);
-    if (!source || source.data.kind !== "clip" || source.data.exitKind !== "auto") {
+    if (!source || source.data.kind !== "clip" || !canConnectStoryCompletion(source.data)) {
       setPendingCompletionDrop(null);
       return;
     }
 
     try {
       if (kind === "choice") {
-        const next = convertSceneExitToChoice(content, source.data.nodeId, authoringLocale);
-        const updatedSource = next.graph.nodes.find((node) => node.nodeId === source.data.nodeId);
-        commitContent(next);
-        selectCanvasNodeExclusively(
-          updatedSource?.exit.kind === "choice"
-            ? storyDecisionCanvasNodeId(updatedSource.nodeId)
-            : source.data.nodeId
+        const created = createDecisionNode(content, authoringLocale, {
+          labels: [1, 2].map((number) => t("interactionCard.defaultOption", { number })),
+        });
+        const next = connectSceneContinuation(
+          created.content,
+          source.data.nodeId,
+          created.created.nodeId
         );
+        pendingNodePositionsRef.current.set(created.created.nodeId, pending.flowPosition);
+        if (commitContent(next)) persistLayoutWithPendingPositions(next);
+        selectCanvasNodeExclusively(created.created.nodeId);
       } else {
         const created = createConnectedSceneForBlankDrop(
           content,
           source.data,
-          pending.sourceHandleId,
-          authoringLocale,
-          {}
+          pending.sourceHandleId
         );
         if (!created) return;
         pendingNodePositionsRef.current.set(created.createdNodeId, {
@@ -2177,36 +2085,10 @@ function StoryProjectCanvasInner({
     }
   };
 
-  /**
-   * Realizes an inspector exit intent. Each kind is one mutation except `auto`
-   * with a target: the conversion clears the continuation by design, so the
-   * target has to be re-applied in the same commit or the scene would be left
-   * dead-ended.
-   */
   const isValidStoryConnection = (connection: Connection | Edge): boolean => {
-    if (!mutationBarrier.permits("content")) return false;
-    if (!connection.source || !connection.target) {
-      return false;
-    }
-    const source = model?.nodes.find((node) => node.id === connection.source);
-    const target = model?.nodes.find((node) => node.id === connection.target);
-    if (!source || !target || target.data.kind === "decision") {
-      return false;
-    }
-    if (source.data.kind === "decision" && source.data.sourceNodeId) {
-      return (
-        target.data.nodeId !== source.data.sourceNodeId &&
-        (Boolean(choiceDraftIdFromHandle(connection.sourceHandle)) ||
-          Boolean(choiceIdFromHandle(connection.sourceHandle))) &&
-        connection.targetHandle === "in"
-      );
-    }
-    if (connection.source === connection.target) return false;
-    if (connection.targetHandle !== "in") return false;
     return (
-      source.data.exitKind === "auto" &&
-      !source.data.continuationTargetNodeId &&
-      connection.sourceHandle === "completion"
+      mutationBarrier.permits("content") &&
+      isValidStoryFlowConnection(connection, model?.nodes ?? [])
     );
   };
 
@@ -2239,30 +2121,7 @@ function StoryProjectCanvasInner({
       const deletedNodeIds = new Set(
         [...storyCanvasContentNodeIds(current)].filter((nodeId) => !nextNodeIds.has(nodeId))
       );
-      const removedDecisionSourceNodeIds = new Set([
-        ...nodes
-          .filter((node) => node.data.kind === "decision" && node.data.sourceNodeId)
-          .map((node) => node.data.sourceNodeId!),
-        ...edges
-          .filter((edge) => edge.data.kind === "decision")
-          .map((edge) => edge.data.sourceNodeId),
-      ]);
-      const removedLayoutNodeIds = new Set([
-        ...deletedNodeIds,
-        ...(model?.nodes
-          .filter(
-            (node) =>
-              node.data.kind === "decision" &&
-              Boolean(
-                node.data.sourceNodeId &&
-                (deletedNodeIds.has(node.data.sourceNodeId) ||
-                  removedDecisionSourceNodeIds.has(node.data.sourceNodeId))
-              )
-          )
-          .map((node) => node.id) ?? []),
-        ...nodes.filter((node) => node.data.kind === "decision").map((node) => node.id),
-        ...edges.filter((edge) => edge.data.kind === "decision").map((edge) => edge.target),
-      ]);
+      const removedLayoutNodeIds = deletedNodeIds;
 
       if (removedLayoutNodeIds.size > 0) {
         const remainingPositions = Object.fromEntries(
@@ -2318,7 +2177,7 @@ function StoryProjectCanvasInner({
     setDraftRevision(conflict.current.revision);
     savedSignatureRef.current = canonicalJsonString(conflict.current.content);
     const activeContent = applyActiveStoryCanvasCapabilities(
-      migrateLegacyStoryHotspotIds(conflict.current.content)
+      materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(conflict.current.content))
     );
     latestContentRef.current = activeContent;
     queuedContentRef.current = null;
@@ -2562,7 +2421,21 @@ function StoryProjectCanvasInner({
                     <StoryCanvasFocusContext.Provider value={focusedNodeId}>
                       <StoryCanvasReactFlow
                         nodes={layeredCanvasNodes}
-                        edges={canvasEdges}
+                        edges={canvasEdges.map((edge) =>
+                          edge.selected
+                            ? {
+                                ...edge,
+                                animated: true,
+                                className: "story-flow-edge-selected",
+                                style: {
+                                  ...edge.style,
+                                  opacity: 1,
+                                  stroke: "var(--brand-blue)",
+                                  strokeWidth: 2.5,
+                                },
+                              }
+                            : edge
+                        )}
                         onNodesChange={onCanvasNodesChange}
                         onEdgesChange={(changes) =>
                           onCanvasEdgesChange(changes.filter((change) => change.type === "select"))
@@ -2598,6 +2471,13 @@ function StoryProjectCanvasInner({
                           );
                         }}
                         onNodeClick={(event, node) => {
+                          // Connecting ports must not open an inspector over the destination.
+                          if (
+                            event.target instanceof Element &&
+                            event.target.closest(".react-flow__handle")
+                          ) {
+                            return;
+                          }
                           closeCreatorMenu();
                           const outcome = resolveStoryCanvasNodeClick({
                             nodeId: node.id,
@@ -2931,10 +2811,6 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
   const interactionChoices = data.kind === "decision" ? (data.choices ?? []) : [];
   const interactionChoiceCount = interactionChoices.length;
   const hotspotInteractions = data.kind === "clip" ? (data.interactions ?? []) : [];
-  const choiceDrafts = interactionSourceNodeId
-    ? (choiceContext?.drafts.filter((draft) => draft.sourceNodeId === interactionSourceNodeId) ??
-      [])
-    : [];
   const coverage = useStoryboardNodeCoverage(data.nodeId);
   const currentVideoSource: StudioVideoSource | undefined =
     data.kind === "clip" && coverage?.previewVideoUrl
@@ -2990,7 +2866,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
           id="in"
           type="target"
           position={Position.Left}
-          isConnectable={isConnectable && data.kind !== "decision"}
+          isConnectable={isConnectable}
           color={STORY_PORT_COLORS.flow}
           label={t("ports.input")}
           className="-left-1.75!"
@@ -3003,7 +2879,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
             position={Position.Right}
             color={STORY_PORT_COLORS.flow}
             label={t("ports.completion")}
-            isConnectable={isConnectable && !data.continuationTargetNodeId}
+            isConnectable={isConnectable && canConnectStoryCompletion(data)}
             className="-right-1.75!"
             style={isWorld ? { top: geometry.minHeight / 2 } : undefined}
           />
@@ -3267,18 +3143,15 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                   {t("interactionCard.optionCount", { count: interactionChoiceCount })}
                 </span>
               </header>
-              <textarea
-                rows={1}
+              <StoryCanvasTextInput
+                multiline
                 value={data.summary ?? ""}
                 disabled={!choiceContext?.canEditContent}
                 maxLength={4_000}
                 placeholder={t("interactionCard.promptPlaceholder")}
                 aria-label={t("interactionCard.promptPlaceholder")}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => event.stopPropagation()}
-                onChange={(event) =>
-                  choiceContext?.updatePrompt(interactionSourceNodeId, event.target.value)
+                onValueChange={(value) =>
+                  choiceContext?.updatePrompt(interactionSourceNodeId, value)
                 }
                 className="nodrag nopan nowheel field-sizing-content mx-3 mb-2 block max-h-24 min-h-14 w-[calc(100%-1.5rem)] resize-none overflow-y-auto rounded-xl bg-white/[0.045] px-3 py-2.5 text-[12px] leading-5 font-medium text-white/82 outline-none transition focus:bg-white/[0.065] placeholder:text-white/30 disabled:cursor-default"
               />
@@ -3291,29 +3164,24 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                     <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
                       {String(index + 1).padStart(2, "0")}
                     </span>
-                    <input
+                    <StoryCanvasTextInput
                       value={choice.label}
                       disabled={!choiceContext?.canEditContent}
                       maxLength={4_000}
                       placeholder={t("interactionCard.untitledOption")}
                       aria-label={t("interactionCard.optionPlaceholder")}
-                      onPointerDown={(event) => event.stopPropagation()}
-                      onClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => event.stopPropagation()}
-                      onChange={(event) => {
-                        choiceContext?.updateChoice(
-                          interactionSourceNodeId,
-                          choice.choiceId,
-                          event.target.value
-                        );
-                      }}
+                      onValueChange={(value) =>
+                        choiceContext?.updateChoice(interactionSourceNodeId, choice.choiceId, value)
+                      }
                       className={cn(
                         "nodrag nopan nowheel w-full min-w-0 bg-transparent py-2 text-[12px] font-medium outline-none placeholder:text-white/36 disabled:cursor-default",
                         choice.label.trim() ? "text-white/78" : "text-white/36"
                       )}
                     />
                     <span className="max-w-[118px] truncate rounded-lg bg-white/[0.055] px-2 py-1.5 text-[10px] text-white/42 group-hover/choice:hidden group-focus-within/choice:hidden">
-                      → {choice.targetTitle ?? t("interactionCard.linkedTarget")}
+                      {choice.targetNodeId
+                        ? `→ ${choice.targetTitle ?? t("interactionCard.linkedTarget")}`
+                        : t("interactionCard.unconnected")}
                     </span>
                     {choiceContext?.canEditContent ? (
                       <span className="nodrag nopan hidden items-center gap-0.5 group-hover/choice:flex group-focus-within/choice:flex">
@@ -3375,7 +3243,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                       id={`choice:${choice.choiceId}`}
                       type="source"
                       position={Position.Right}
-                      isConnectable={isConnectable}
+                      isConnectable={isConnectable && choice.targetNodeId === null}
                       emphasized
                       color={STORY_PORT_COLORS.choice}
                       label={t("ports.choiceOption", {
@@ -3386,72 +3254,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                   </div>
                 ))}
               </div>
-              {choiceDrafts.map((draft, index) => (
-                <div
-                  key={draft.draftId}
-                  className="nodrag nopan nowheel relative mx-3 mt-2 grid min-h-14 grid-cols-[32px_minmax(0,1fr)_26px] items-center gap-2 rounded-xl bg-white/[0.055] px-2"
-                >
-                  <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
-                    {String(interactionChoiceCount + index + 1).padStart(2, "0")}
-                  </span>
-                  <input
-                    value={draft.label}
-                    maxLength={4_000}
-                    placeholder={t("interactionCard.optionPlaceholder")}
-                    aria-label={t("interactionCard.optionPlaceholder")}
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={(event) =>
-                      choiceContext?.updateDraft(
-                        interactionSourceNodeId,
-                        draft.draftId,
-                        event.target.value
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      event.stopPropagation();
-                      if (event.key === "Escape" && !draft.required) {
-                        event.preventDefault();
-                        choiceContext?.cancel(interactionSourceNodeId, draft.draftId);
-                      }
-                    }}
-                    className="h-7 w-full min-w-0 bg-transparent px-1 text-xs text-white/82 outline-none placeholder:text-white/28"
-                  />
-                  {!draft.required ? (
-                    <button
-                      type="button"
-                      aria-label={t("interactionCard.cancelOption")}
-                      onPointerDown={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                      }}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        choiceContext?.cancel(interactionSourceNodeId, draft.draftId);
-                      }}
-                      className="grid size-6 shrink-0 place-items-center rounded-lg text-white/32 transition hover:bg-white/[0.08] hover:text-white/72"
-                    >
-                      <IconX className="size-3" />
-                    </button>
-                  ) : (
-                    <span className="size-6" aria-hidden="true" />
-                  )}
-                  {draft.label.trim() ? (
-                    <StoryPortHandle
-                      id={`choice-new:${draft.draftId}`}
-                      type="source"
-                      position={Position.Right}
-                      isConnectable={isConnectable}
-                      emphasized
-                      color={STORY_PORT_COLORS.choice}
-                      label={t("interactionCard.connectOption")}
-                      className="-right-5.25!"
-                    />
-                  ) : null}
-                </div>
-              ))}
-              {interactionChoiceCount + choiceDrafts.length < MAX_PLAYER_CHOICES &&
-              choiceContext?.canCreateOption ? (
+              {interactionChoiceCount < MAX_PLAYER_CHOICES && choiceContext?.canCreateOption ? (
                 <button
                   type="button"
                   className="nodrag nopan flex h-11 w-full items-center gap-2 px-4 text-left text-xs font-semibold text-[#84b7ff]/78 transition hover:bg-white/[0.035] hover:text-[#a9ceff]"
@@ -3763,47 +3566,6 @@ function storyCanvasContentNodeIds(content: InteractiveStoryDraftContent): Set<s
     nodeIds.add(node.nodeId);
   });
   return nodeIds;
-}
-
-function reconcilePendingChoiceDrafts(
-  current: PendingChoiceDraft[],
-  requirements: Array<{ sourceNodeId: string; choiceCount: number }>,
-  createRequiredDraft: (sourceNodeId: string, index: number) => PendingChoiceDraft
-): PendingChoiceDraft[] {
-  const next: PendingChoiceDraft[] = [];
-
-  requirements.forEach(({ sourceNodeId, choiceCount }) => {
-    const capacity = Math.max(0, MAX_PLAYER_CHOICES - choiceCount);
-    const requiredCount = Math.min(capacity, Math.max(0, MIN_PLAYER_CHOICES - choiceCount));
-    const sourceDrafts = current.filter((draft) => draft.sourceNodeId === sourceNodeId);
-
-    while (sourceDrafts.length > capacity) {
-      const emptyIndex = sourceDrafts.findLastIndex((draft) => !draft.label.trim());
-      sourceDrafts.splice(emptyIndex >= 0 ? emptyIndex : sourceDrafts.length - 1, 1);
-    }
-    while (sourceDrafts.length < requiredCount) {
-      sourceDrafts.push(createRequiredDraft(sourceNodeId, sourceDrafts.length));
-    }
-
-    sourceDrafts.forEach((draft, index) => {
-      const required = index < requiredCount;
-      next.push(draft.required === required ? draft : { ...draft, required });
-    });
-  });
-
-  return next.length === current.length && next.every((draft, index) => draft === current[index])
-    ? current
-    : next;
-}
-
-function choiceDraftIdFromHandle(handleId: string | null | undefined): string | null {
-  const match = handleId?.match(/^choice-new:(.+)$/u);
-  return match?.[1] ?? null;
-}
-
-function choiceIdFromHandle(handleId: string | null | undefined): string | null {
-  const match = handleId?.match(/^choice:(.+)$/u);
-  return match?.[1] ?? null;
 }
 
 function isCanvasPaneTarget(target: EventTarget | null): boolean {

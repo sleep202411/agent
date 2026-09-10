@@ -356,6 +356,18 @@ export const PutStoryDraftSchema = z
     sessionId: SessionIdSchema,
   })
   .strict()
+  .superRefine((value, context) => {
+    value.content.graph.nodes.forEach((node, index) => {
+      if (node.kind === 'decision' && node.exit.kind !== 'choice') {
+        context.addIssue({
+          code: 'custom',
+          path: ['content', 'graph', 'nodes', index, 'exit'],
+          message:
+            'An editable decision node must retain its choice definition.',
+        });
+      }
+    });
+  })
   .refine(
     (value) => value.content.graph.nodes.length <= STORY_CHAPTER_NODE_COUNT_MAX,
     {

@@ -3245,14 +3245,13 @@
         "choiceOption": "选择：{label}"
       },
       "interactionCard": {
+        "unconnected": "未连接",
         "promptPlaceholder": "玩家此刻必须决定什么？",
         "defaultOption": "选项 {number}",
         "untitledOption": "未命名选项",
         "linkedTarget": "已连接后续",
         "addOption": "添加选项",
-        "cancelOption": "取消添加选项",
         "optionPlaceholder": "输入玩家看到的选项",
-        "connectOption": "连接这个选项",
         "branchOptions": "分支选项",
         "anchorHint": "每个选项对应一个连接锚点",
         "optionCount": "{count} 个选项"
@@ -3280,6 +3279,8 @@
         }
       },
       "creator": {
+        "decision": "玩家选择",
+        "decisionDescription": "添加问题和选项，连接到其他节点。",
         "title": "添加到故事图",
         "description": "创建互动故事结构中的图元素。",
         "clip": "影像镜头",

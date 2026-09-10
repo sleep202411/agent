@@ -1083,6 +1083,7 @@ export function StoryInteractionEditor({
 }
 
 function storyNodeLabel(node: StoryGraphNode): string {
+  if (node.kind === "decision") return "Player choice";
   return node.name?.trim() || (node.kind === "clip" ? node.clipKey : (node.worldId ?? node.nodeId));
 }
 
