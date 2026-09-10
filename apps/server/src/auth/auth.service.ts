@@ -8,6 +8,7 @@ import {
 } from 'node:http';
 import { get as httpsGet } from 'node:https';
 import { describeUnknown, isRecord, scalarString } from '../common/values';
+import { parseJavaLevelIds } from '../integrations/java/user-level-gates';
 import type { AuthUser } from './auth.types';
 
 type JavaAuthResponse = {
@@ -15,6 +16,8 @@ type JavaAuthResponse = {
   code?: number | string;
   data?: Record<string, unknown>;
   info?: Record<string, unknown>;
+  /** Sibling of `info` — certification level rows for the session user. */
+  level?: unknown;
   msg?: unknown;
   message?: unknown;
 };
@@ -259,6 +262,8 @@ export class AuthService {
         email: scalarString(data.email),
         phone: scalarString(data.phone),
         headImg: scalarString(data.headImg),
+        // `level` is a sibling of `info` on the Java envelope, not nested inside it.
+        levelIds: parseJavaLevelIds(body.level),
       };
 
       if (!user.userId) {
