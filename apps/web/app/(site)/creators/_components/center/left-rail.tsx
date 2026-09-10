@@ -269,8 +269,10 @@ function LevelBadge({ level }: { level: CreatorLevel }) {
           >
             <span
               className={cn(
-                "flex size-12 items-center justify-center overflow-hidden rounded-full",
-                !imageOk && "bg-primary/10 text-primary"
+                "flex size-12 items-center justify-center",
+                imageOk && level.iconUrl
+                  ? "overflow-visible bg-transparent"
+                  : "overflow-hidden rounded-full bg-primary/10 text-primary"
               )}
             >
               {imageOk && level.iconUrl ? (
@@ -278,7 +280,7 @@ function LevelBadge({ level }: { level: CreatorLevel }) {
                 <img
                   src={level.iconUrl}
                   alt={level.name}
-                  className="size-full object-contain"
+                  className="size-11 object-contain"
                   loading="lazy"
                   onError={() => setImageOk(false)}
                 />
