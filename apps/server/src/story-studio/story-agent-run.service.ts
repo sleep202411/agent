@@ -113,7 +113,6 @@ import { compileScreenplayToStoryOperations } from './story-authoring-pipeline.s
 import {
   commitApprovedScreenplay,
   commitDerivedStoryScreenplaySnapshot,
-  readApprovedStoryScreenplaySnapshot,
   readCurrentStoryScreenplaySnapshot,
   readStoryScriptHead,
   readStoryScriptSourceSnapshot,
@@ -198,6 +197,8 @@ export const CreateStoryAgentBriefInputSchema = z
     brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
     /** Conversation-scoped uploaded source document the author drafts from. */
     documentId: z.uuid().optional(),
+    sourceAttachmentId: StoryPatchBriefSchema.shape.sourceAttachmentId,
+    regenerateStage: StoryPatchBriefSchema.shape.regenerateStage,
     idempotencyKey: StoryAgentIdempotencyKeySchema,
     initiatedBySessionId: z.string().trim().min(1).max(64).optional(),
     conversationId: z.string().trim().min(1).max(180).optional(),
@@ -211,6 +212,13 @@ export const CreateStoryAgentBriefInputSchema = z
   })
   .strict()
   .superRefine((input, context) => {
+    if (input.documentId && input.sourceAttachmentId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['sourceAttachmentId'],
+        message: 'Choose one uploaded source document.',
+      });
+    }
     const values = [
       input.sourceAgentRunId,
       input.sourceAgentTurnId,
@@ -256,7 +264,12 @@ export type CreateStoryAgentBriefInput = z.infer<
 export interface StoryAgentProposalAuthorityRequest {
   proposal: Pick<
     CreateStoryAgentBriefInput,
-    'title' | 'summary' | 'brief' | 'documentId'
+    | 'title'
+    | 'summary'
+    | 'brief'
+    | 'documentId'
+    | 'sourceAttachmentId'
+    | 'regenerateStage'
   >;
 }
 
@@ -305,7 +318,15 @@ export interface StoryAgentAuthoringJob {
   scriptSource: StoryScriptSourceSnapshot | null;
   /** Exact currently-approved Asset Specs used only by Storyboard. */
   assetPlan: StoryAssetPlan | null;
-  brief: Pick<StoryPatchBrief, 'title' | 'summary' | 'brief' | 'documentId'>;
+  brief: Pick<
+    StoryPatchBrief,
+    | 'title'
+    | 'summary'
+    | 'brief'
+    | 'documentId'
+    | 'sourceAttachmentId'
+    | 'regenerateStage'
+  >;
   /** Confirmed project truth used by every authoring baton. */
   creativeProfile: {
     frameProfile: string;
@@ -321,7 +342,7 @@ export interface StoryAgentAuthoringJob {
   contextJson: string;
   /**
    * Full extracted text of the uploaded source document the brief references,
-   * loaded server-side by brief.documentId. The author drafts the skeleton
+   * loaded server-side by its attachment or document identity. The author drafts
    * FROM this text — the 8K brief can never carry a whole script.
    */
   document: { id: string; name: string; text: string } | null;
@@ -534,6 +555,12 @@ export class StoryAgentRunService {
                 title: requestedInput.title,
                 summary: requestedInput.summary,
                 brief: requestedInput.brief,
+                ...(requestedInput.regenerateStage
+                  ? { regenerateStage: requestedInput.regenerateStage }
+                  : {}),
+                ...(requestedInput.sourceAttachmentId
+                  ? { sourceAttachmentId: requestedInput.sourceAttachmentId }
+                  : {}),
                 ...(requestedInput.documentId
                   ? { documentId: requestedInput.documentId }
                   : {}),
@@ -544,6 +571,12 @@ export class StoryAgentRunService {
                 title: requestedInput.title,
                 summary: requestedInput.summary,
                 brief: requestedInput.brief,
+                ...(requestedInput.regenerateStage
+                  ? { regenerateStage: requestedInput.regenerateStage }
+                  : {}),
+                ...(requestedInput.sourceAttachmentId
+                  ? { sourceAttachmentId: requestedInput.sourceAttachmentId }
+                  : {}),
                 ...(requestedInput.documentId
                   ? { documentId: requestedInput.documentId }
                   : {}),
@@ -581,6 +614,12 @@ export class StoryAgentRunService {
           summary: input.summary,
           brief: input.brief,
           documentId: input.documentId ?? null,
+          ...(input.sourceAttachmentId
+            ? { sourceAttachmentId: input.sourceAttachmentId }
+            : {}),
+          ...(input.regenerateStage
+            ? { regenerateStage: input.regenerateStage }
+            : {}),
           initiatedBySessionId: input.initiatedBySessionId ?? null,
           conversationId: input.conversationId ?? null,
           sourceAgentRunId: input.sourceAgentRunId ?? null,
@@ -591,10 +630,16 @@ export class StoryAgentRunService {
           sourceContinuationPlan: input.sourceContinuationPlan ?? null,
         });
         canonicalFingerprint = fingerprint;
-        // A source document must be a durable row owned by the initiating
-        // creator inside the very conversation this brief came from. Rejecting
-        // here (a deterministic 422) reaches the chat model as a structured
-        // tool rejection rather than a server fault.
+        // Verify the durable source in its owning project (Agent OS) or
+        // conversation (Copilot) before admitting an authoring job.
+        if (input.sourceAttachmentId) {
+          await readBriefAttachment(
+            tx,
+            input.sourceAttachmentId,
+            workspaceId,
+            projectId,
+          );
+        }
         if (input.documentId) {
           await requireBriefDocumentScope(
             tx,
@@ -714,6 +759,12 @@ export class StoryAgentRunService {
           summary: input.summary,
           brief: input.brief,
           ...(input.documentId ? { documentId: input.documentId } : {}),
+          ...(input.sourceAttachmentId
+            ? { sourceAttachmentId: input.sourceAttachmentId }
+            : {}),
+          ...(input.regenerateStage
+            ? { regenerateStage: input.regenerateStage }
+            : {}),
         });
         const now = writeState.databaseNow;
         const created = await tx.storyAgentRun.create({
@@ -2887,6 +2938,7 @@ export class StoryAgentRunService {
     let scriptSource: StoryScriptSourceSnapshot | null;
     let assetPlan: StoryAssetPlan | null;
     let scriptHead: Awaited<ReturnType<typeof readStoryScriptHead>>;
+    let document: StoryAgentAuthoringJob['document'] = null;
     try {
       const canonical = await this.prisma.$transaction(async (tx) => {
         // Legacy chapters may predate chapter-scoped Script provisioning. Use
@@ -2905,30 +2957,24 @@ export class StoryAgentRunService {
           run.storyProjectId,
           run.storyChapterId,
         );
-        const [productionState, head, current, approved, source] =
-          await Promise.all([
-            this.productionPlans!.getProductionStateInTransaction(
-              tx,
-              run.storyProjectId,
-              run.storyChapterId,
-            ),
-            readStoryScriptHead(tx, run.storyProjectId, run.storyChapterId),
-            readCurrentStoryScreenplaySnapshot(
-              tx,
-              run.storyProjectId,
-              run.storyChapterId,
-            ),
-            readApprovedStoryScreenplaySnapshot(
-              tx,
-              run.storyProjectId,
-              run.storyChapterId,
-            ),
-            readStoryScriptSourceSnapshot(
-              tx,
-              run.storyProjectId,
-              run.storyChapterId,
-            ),
-          ]);
+        const [productionState, head, current, source] = await Promise.all([
+          this.productionPlans!.getProductionStateInTransaction(
+            tx,
+            run.storyProjectId,
+            run.storyChapterId,
+          ),
+          readStoryScriptHead(tx, run.storyProjectId, run.storyChapterId),
+          readCurrentStoryScreenplaySnapshot(
+            tx,
+            run.storyProjectId,
+            run.storyChapterId,
+          ),
+          readStoryScriptSourceSnapshot(
+            tx,
+            run.storyProjectId,
+            run.storyChapterId,
+          ),
+        ]);
         let plannedMode: StoryAgentAuthoringMode;
         let plannedTargetStage: StoryAgentAuthoringTargetStage;
         let plannedScreenplay = current;
@@ -2960,17 +3006,24 @@ export class StoryAgentRunService {
           plannedTargetStage = 'plot';
           plannedScreenplay = null;
           plannedSource = source;
-        } else if (productionState.plotTree.status !== 'current') {
+        } else if (
+          productionState.plotTree.status !== 'current' ||
+          jobBrief.regenerateStage === 'plot'
+        ) {
           plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
           plannedTargetStage = 'plot';
-        } else if (productionState.assets.status !== 'current') {
+        } else if (
+          productionState.assets.status !== 'current' ||
+          jobBrief.regenerateStage === 'assets'
+        ) {
           plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
           plannedTargetStage = 'assets';
-          plannedScreenplay = approved;
-        } else if (productionState.storyboard.status !== 'current') {
+        } else if (
+          productionState.storyboard.status !== 'current' ||
+          jobBrief.regenerateStage === 'storyboard'
+        ) {
           plannedMode = StoryAgentAuthoringMode.downstream_reconcile;
           plannedTargetStage = 'storyboard';
-          plannedScreenplay = approved;
           plannedAssetPlan =
             await this.productionPlans!.readCurrentAssetPlanInTransaction(
               tx,
@@ -2980,7 +3033,6 @@ export class StoryAgentRunService {
         } else if (productionState.ready) {
           plannedMode = StoryAgentAuthoringMode.noop;
           plannedTargetStage = 'noop';
-          plannedScreenplay = approved;
         } else {
           throw canonicalStateCorrupt(
             'STORY_AGENT_PRODUCTION_STATE_INVALID',
@@ -3039,6 +3091,14 @@ export class StoryAgentRunService {
       scriptSource = canonical.scriptSource;
       assetPlan = canonical.assetPlan;
       scriptHead = canonical.scriptHead;
+      if (jobBrief.sourceAttachmentId) {
+        document = await readBriefAttachment(
+          this.prisma,
+          jobBrief.sourceAttachmentId,
+          run.workspaceId,
+          run.storyProjectId,
+        );
+      }
     } catch (error) {
       await this.failAuthoring(runId, workerId, {
         code: errorCode(error, 'STORY_AGENT_CANONICAL_STATE_INVALID'),
@@ -3067,7 +3127,6 @@ export class StoryAgentRunService {
       });
       return { kind: 'failed' };
     }
-    let document: StoryAgentAuthoringJob['document'] = null;
     if (jobBrief.documentId) {
       const row = await this.prisma.copilotDocument.findUnique({
         where: { id: jobBrief.documentId },
@@ -5238,6 +5297,47 @@ function emptyTransition(): ServiceTransition<void> {
 
 function normalizeIdempotencyKey(value: string): string {
   return StoryAgentIdempotencyKeySchema.parse(value);
+}
+
+/** Agent attachments already contain the full extracted text; do not copy it through chat. */
+async function readBriefAttachment(
+  db: Pick<Prisma.TransactionClient, 'agentOsAttachment'>,
+  attachmentId: string,
+  workspaceId: string,
+  storyProjectId: string,
+): Promise<NonNullable<StoryAgentAuthoringJob['document']>> {
+  const attachment = await db.agentOsAttachment.findFirst({
+    where: {
+      id: attachmentId,
+      projectKind: 'story',
+      storyProjectId,
+      workspaceId,
+    },
+    select: {
+      id: true,
+      filename: true,
+      status: true,
+      textContent: true,
+      errorMessage: true,
+    },
+  });
+  if (
+    !attachment ||
+    attachment.status !== 'ready' ||
+    !attachment.textContent?.trim()
+  ) {
+    throw new UnprocessableEntityException({
+      code: 'STORY_AGENT_ATTACHMENT_UNAVAILABLE',
+      message:
+        attachment?.errorMessage ??
+        'The source attachment is not available on this Story project.',
+    });
+  }
+  return {
+    id: attachment.id,
+    name: attachment.filename,
+    text: attachment.textContent,
+  };
 }
 
 /**

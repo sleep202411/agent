@@ -529,6 +529,7 @@ describe('StoryAgentCapabilityHandler', () => {
         summary: 'A final imperial guard chooses whom to save.',
         brief:
           'Create an interactive film set on the final night of Ming rule.',
+        sourceAttachmentId: '33333333-3333-4333-8333-333333333333',
         continueThrough: 'storyboard',
         startedMessage:
           'I have the direction and am shaping the interactive-film proposal now.',
@@ -554,6 +555,7 @@ describe('StoryAgentCapabilityHandler', () => {
       expect.objectContaining({
         idempotencyKey: input.idempotencyKey,
         conversationId: input.conversationId,
+        sourceAttachmentId: input.arguments.sourceAttachmentId,
         sourceAgentRunId: input.runId,
         sourceAgentTurnId: input.turnId,
         sourceAgentToolCallId: input.toolCallId,

@@ -1,4 +1,4 @@
-import { generateObject } from 'ai';
+import { generateObject, NoObjectGeneratedError } from 'ai';
 import { z } from 'zod';
 import {
   runStoryAuthoringStage,
@@ -43,6 +43,41 @@ describe('runStoryAuthoringStage', () => {
         'The "branch" stage exhausted 2 attempts. Last failure: Node "ending" is unreachable once branches are wired.',
       ),
     );
+  });
+
+  it('includes the rejected structured answer and validation cause in the repair request', async () => {
+    const invalid = '{"value":"opening"}';
+    mockedGenerateObject
+      .mockRejectedValueOnce(
+        new NoObjectGeneratedError({
+          message: 'Invalid branch target',
+          cause: new Error('nextNodeId must be ending'),
+          text: invalid,
+          response: {
+            id: 'response-1',
+            timestamp: new Date(),
+            modelId: 'test',
+          },
+          usage: {} as never,
+          finishReason: 'stop',
+        }),
+      )
+      .mockResolvedValueOnce({ object: { value: 'ending' } } as never);
+    await expect(
+      runStoryAuthoringStage({} as never, {
+        stage: 'branch',
+        schema: z.object({ value: z.literal('ending') }),
+        system: 'system',
+        prompt: 'prompt',
+        maxOutputTokens: 1024,
+        timeoutMs: 1000,
+        maxAttempts: 2,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({ value: 'ending' });
+    const secondCall = mockedGenerateObject.mock.calls[1]?.[0];
+    expect(secondCall?.prompt).toContain(invalid);
+    expect(secondCall?.prompt).toContain('nextNodeId must be ending');
   });
 
   it('preserves the final provider or schema error after attempts are exhausted', async () => {

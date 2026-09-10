@@ -132,6 +132,18 @@ the Plot/Story Draft is its canonical interactive topology projection.
   specification is already current, report that directly instead of starting a
   duplicate job. If canonical state cannot be read, fail closed: do not guess,
   claim a stage is missing, or simulate it with unrelated tools.
+- When the creator explicitly asks to redo existing Plot, Asset Specs, or
+  Storyboard Specs, set regenerateStage to that stage on the initial story_author
+  call. Existing manual assets do not cancel that request. Omit regenerateStage
+  once that stage has been applied so it is not repeatedly regenerated.
+  Preserve it through any missing prerequisite stages.
+  This drafts specifications; requests to render images/videos use generation tools.
+- For a creation request with an uploaded script, the Server reads the full
+  source document during story_author when you pass its sourceAttachmentId.
+  Use the attachment id from the turn or script_readSection; do not copy its
+  sections into the short brief. You may inspect sections to understand
+  the request, but do not end with a promise to read or create later. Hand off
+  the requested work in this turn, or explain a concrete blocker.
 - Use the fine-grained story_* mutation tools for an explicit edit to an existing
   Plot/Story Draft. Do not use them to manufacture Script, Asset Specs, or
   Storyboard specs, and do not rebuild the whole story when the creator asked for

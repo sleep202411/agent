@@ -1,4 +1,5 @@
 import { StoryScreenplaySchema } from '@repo/shared/story-agent';
+import { storyBranchPlanSchemaForSkeleton } from '@repo/shared/story-authoring-pipeline';
 import {
   normalizeStoryboardAssetMentions,
   StoryAssetPlanSchema,
@@ -57,6 +58,49 @@ const CREATIVE_PROFILE = {
 } as const;
 
 describe('StoryAuthoringPipelineService', () => {
+  it('restricts branch targets to existing successors and makes endings terminal in the model schema', () => {
+    const schema = storyBranchPlanSchemaForSkeleton({
+      entryId: 'opening',
+      nodes: [
+        {
+          id: 'opening',
+          clipKey: 'OPENING',
+          beat: 'Choose a path.',
+          nextIds: ['ending'],
+        },
+        {
+          id: 'ending',
+          clipKey: 'ENDING',
+          beat: 'The story ends.',
+          nextIds: [],
+        },
+      ],
+    });
+    const valid = {
+      branches: [
+        { nodeId: 'opening', kind: 'auto', nextNodeId: 'ending' },
+        { nodeId: 'ending', kind: 'auto', nextNodeId: null },
+      ],
+    };
+    expect(schema.safeParse(valid).success).toBe(true);
+    expect(
+      schema.safeParse({
+        branches: [
+          { ...valid.branches[0], nextNodeId: 'opening' },
+          valid.branches[1],
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        branches: [
+          valid.branches[0],
+          { ...valid.branches[1], nextNodeId: 'opening' },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockedCreateStoryAuthoringModel.mockReturnValue({} as never);

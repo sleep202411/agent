@@ -113,7 +113,11 @@ follow-up.
     Later explicit runs propose Plot, Asset Specs, and Storyboard in order, each
     pinned to exact upstream fingerprints and each writing only its own artifact.
     A changed head fails stale; a manually edited Script may be read to propose
-    downstream structure but must never be rewritten as a side effect.
+    downstream structure but must never be rewritten as a side effect. Use the
+    exact current Script snapshot even when an old chapter approval pointer is
+    absent. Explicit `regenerateStage` survives prerequisite stages and is
+    consumed once that stage is applied. Standalone character Asset Specs may
+    omit a Story Bible link; supplied links must resolve to a real character.
 24. **Plan conflicts are explicit and recoverable.** Reconciliation persists
     an immutable, chapter-scoped pending plan for creator-edited Asset Specs or
     Storyboard sequences. Only a version-checked keep-current or use-latest
@@ -138,6 +142,10 @@ follow-up.
     fails the model call. The interactive graph retries that model node once,
     preserving completed tool writes; interrupted text is superseded. Output
     limits, policy rejection, and exhausted retries are failures, never success.
+29. **Uploaded source text reaches authoring directly.** `story.author` accepts
+    `sourceAttachmentId` from the turn or `script.readSection`. The Server loads
+    the complete ready attachment from the authorized Story project; the short
+    brief is instructions, not a transport for pasted script sections.
 
 ## Phase 1 acceptance (must automate)
 

@@ -509,6 +509,8 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
           summary: z.string().trim().min(1).max(4_000),
           brief: z.string().trim().min(1).max(8_000),
           continueThrough: z.enum(["script", "plot", "assets", "storyboard"]),
+          sourceAttachmentId: z.string().uuid().optional(),
+          regenerateStage: z.enum(["plot", "assets", "storyboard"]).optional(),
           startedMessage: z.string().trim().min(1).max(2_000),
           completionMessage: z.string().trim().min(1).max(2_000),
         })
@@ -734,6 +736,11 @@ async function executeBound(
     toolId === "story.author" && runtime.storyContinuation && continuationCopy
       ? {
           continueThrough: runtime.storyContinuation.plan.continueThrough,
+          ...(runtime.storyContinuation.plan.regenerateStage &&
+          runtime.storyContinuation.plan.regenerateStage !==
+            runtime.storyContinuation.completedStage
+            ? { regenerateStage: runtime.storyContinuation.plan.regenerateStage }
+            : {}),
           title: runtime.storyContinuation.plan.title,
           summary: runtime.storyContinuation.plan.summary,
           brief: runtime.storyContinuation.plan.brief,

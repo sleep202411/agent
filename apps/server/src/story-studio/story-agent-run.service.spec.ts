@@ -751,6 +751,57 @@ describe('StoryAgentRunService', () => {
     expect(createdRows).toHaveLength(0);
   });
 
+  it.each([true, false])(
+    'validates and persists the selected project attachment (available=%s)',
+    async (available) => {
+      const createdRows: Array<Record<string, unknown>> = [];
+      const attachmentQuery = jest.fn().mockResolvedValue(
+        available
+          ? {
+              id: DOCUMENT_ID,
+              filename: 'script.docx',
+              status: 'ready',
+              textContent: 'The complete script.',
+            }
+          : null,
+      );
+      const tx = {
+        ...proposalTransaction(createdRows),
+        agentOsAttachment: { findFirst: attachmentQuery },
+      };
+      const { service } = serviceWith(tx);
+      const result = service.createAuthoringRun(
+        USER,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        briefInput({ sourceAttachmentId: DOCUMENT_ID }),
+      );
+      if (available) {
+        await expect(result).resolves.toMatchObject({
+          proposal: { sourceAttachmentId: DOCUMENT_ID },
+        });
+        expect(createdRows[0]).toMatchObject({
+          proposal: { sourceAttachmentId: DOCUMENT_ID },
+        });
+      } else {
+        await expect(result).rejects.toThrow(
+          'The source attachment is not available on this Story project.',
+        );
+        expect(createdRows).toHaveLength(0);
+      }
+      expect(attachmentQuery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: DOCUMENT_ID,
+            projectKind: 'story',
+            storyProjectId: PROJECT_ID,
+            workspaceId: WORKSPACE_ID,
+          },
+        }),
+      );
+    },
+  );
+
   it('persists the brief documentId after verifying conversation-scoped ownership', async () => {
     const createdRows: Array<Record<string, unknown>> = [];
     const tx = proposalTransaction(createdRows) as Record<string, unknown> & {
@@ -856,77 +907,108 @@ describe('StoryAgentRunService', () => {
     expect(createdRows).toHaveLength(0);
   });
 
-  it('loads the referenced document text into the authoring job', async () => {
-    const authoringRun = runRow({
-      status: StoryAgentRunStatus.authoring,
-      proposal: { ...briefRecord(), documentId: DOCUMENT_ID },
-      conversationId: BRIEF_CONVERSATION_ID,
-      leaseOwner: WORKER_ID,
-      leaseExpiresAt: new Date(NOW.getTime() + 30_000),
-    });
-    const emptyScriptDocument = {
-      id: '0197f4a2-0800-7000-8000-000000000011',
-      currentSequence: 0,
-      crdtState: Buffer.from([0, 0]),
-    };
-    const tx = {
-      $executeRaw: jest.fn().mockResolvedValue(0),
-      $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
-      storyAgentRun: {
-        findUnique: jest.fn().mockResolvedValue(authoringRun),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      storyProject: {
-        findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
-      },
-      storyChapter: {
-        findFirst: jest.fn().mockResolvedValue({ title: 'Chapter 1' }),
-      },
-      studioDocument: {
-        findFirst: jest.fn().mockResolvedValue(emptyScriptDocument),
-      },
-      copilotDocument: {
-        findUnique: jest.fn().mockResolvedValue({
-          id: DOCUMENT_ID,
-          userId: USER.userId,
-          conversationId: BRIEF_CONVERSATION_ID,
-          name: '剧本.docx',
-          text: 'INT. FOREST GATE - NIGHT\nThe gate creaks open.',
-        }),
-      },
-    };
-    const { service } = serviceWith(tx);
+  it.each(['documentId', 'sourceAttachmentId'] as const)(
+    'loads the full %s text into the authoring job',
+    async (sourceField) => {
+      const authoringRun = runRow({
+        status: StoryAgentRunStatus.authoring,
+        proposal: { ...briefRecord(), [sourceField]: DOCUMENT_ID },
+        conversationId: BRIEF_CONVERSATION_ID,
+        leaseOwner: WORKER_ID,
+        leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+      });
+      const emptyScriptDocument = {
+        id: '0197f4a2-0800-7000-8000-000000000011',
+        currentSequence: 0,
+        crdtState: Buffer.from([0, 0]),
+      };
+      const tx = {
+        $executeRaw: jest.fn().mockResolvedValue(0),
+        $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+        storyAgentRun: {
+          findUnique: jest.fn().mockResolvedValue(authoringRun),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        storyProject: {
+          findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+        },
+        storyChapter: {
+          findFirst: jest.fn().mockResolvedValue({ title: 'Chapter 1' }),
+        },
+        studioDocument: {
+          findFirst: jest.fn().mockResolvedValue(emptyScriptDocument),
+        },
+        agentOsAttachment: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: DOCUMENT_ID,
+            filename: '剧本.docx',
+            status: 'ready',
+            textContent:
+              'Opening section.\n'.repeat(2_000) +
+              'Final section: the gate creaks open.',
+          }),
+        },
+        copilotDocument: {
+          findUnique: jest.fn().mockResolvedValue({
+            id: DOCUMENT_ID,
+            userId: USER.userId,
+            conversationId: BRIEF_CONVERSATION_ID,
+            name: '剧本.docx',
+            text:
+              'Opening section.\n'.repeat(2_000) +
+              'Final section: the gate creaks open.',
+          }),
+        },
+      };
+      const { service } = serviceWith(tx);
 
-    const load = await service.loadAuthoringJob(RUN_ID, WORKER_ID);
+      const load = await service.loadAuthoringJob(RUN_ID, WORKER_ID);
 
-    expect(load.kind).toBe('job');
-    if (load.kind !== 'job') throw new Error('expected job');
-    expect(load.job.document).toEqual({
-      id: DOCUMENT_ID,
-      name: '剧本.docx',
-      text: 'INT. FOREST GATE - NIGHT\nThe gate creaks open.',
-    });
-    expect(load.job.creativeProfile).toEqual({
-      frameProfile: StoryFrameProfile.landscape_16_9,
-      durationPreset: StoryDurationPreset.short_5_15,
-      visualStyle: 'cinematic-realism',
-      visualStyleSkillId: CINEMATIC_REALISM_SKILL.skillId,
-      visualStyleSkillVersionId: CINEMATIC_REALISM_SKILL.versionId,
-      visualStylePrompt: CINEMATIC_REALISM_PROMPT,
-      storyLanguage: 'en-US',
-      confirmedAt: NOW.toISOString(),
-    });
-    expect(tx.copilotDocument.findUnique).toHaveBeenCalledWith({
-      where: { id: DOCUMENT_ID },
-      select: {
-        id: true,
-        userId: true,
-        conversationId: true,
-        name: true,
-        text: true,
-      },
-    });
-  });
+      expect(load.kind).toBe('job');
+      if (load.kind !== 'job') throw new Error('expected job');
+      expect(load.job.document).toEqual({
+        id: DOCUMENT_ID,
+        name: '剧本.docx',
+        text:
+          'Opening section.\n'.repeat(2_000) +
+          'Final section: the gate creaks open.',
+      });
+      expect(load.job.creativeProfile).toEqual({
+        frameProfile: StoryFrameProfile.landscape_16_9,
+        durationPreset: StoryDurationPreset.short_5_15,
+        visualStyle: 'cinematic-realism',
+        visualStyleSkillId: CINEMATIC_REALISM_SKILL.skillId,
+        visualStyleSkillVersionId: CINEMATIC_REALISM_SKILL.versionId,
+        visualStylePrompt: CINEMATIC_REALISM_PROMPT,
+        storyLanguage: 'en-US',
+        confirmedAt: NOW.toISOString(),
+      });
+      if (sourceField === 'sourceAttachmentId') {
+        expect(tx.agentOsAttachment.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              id: DOCUMENT_ID,
+              projectKind: 'story',
+              storyProjectId: PROJECT_ID,
+              workspaceId: WORKSPACE_ID,
+            },
+          }),
+        );
+        expect(tx.copilotDocument.findUnique).not.toHaveBeenCalled();
+        return;
+      }
+      expect(tx.copilotDocument.findUnique).toHaveBeenCalledWith({
+        where: { id: DOCUMENT_ID },
+        select: {
+          id: true,
+          userId: true,
+          conversationId: true,
+          name: true,
+          text: true,
+        },
+      });
+    },
+  );
 
   it.each([
     StoryAgentAuthoringMode.downstream_reconcile,
@@ -1146,9 +1228,9 @@ describe('StoryAgentRunService', () => {
       storyChapter: {
         findFirst: jest.fn().mockResolvedValue({
           title: 'Chapter 1',
-          sourceScriptDocumentId: LEGACY_SCRIPT_DOCUMENT_ID,
-          sourceScriptVersionId: LEGACY_SCRIPT_VERSION_ID,
-          sourceScriptSequence: 1,
+          sourceScriptDocumentId: null,
+          sourceScriptVersionId: null,
+          sourceScriptSequence: null,
         }),
       },
       studioDocument: {
@@ -1199,6 +1281,9 @@ describe('StoryAgentRunService', () => {
     expect(load.kind).toBe('job');
     if (load.kind !== 'job') throw new Error('expected job');
     expect(load.job.targetStage).toBe('storyboard');
+    expect(load.job.screenplaySnapshot?.versionId).toBe(
+      LEGACY_SCRIPT_VERSION_ID,
+    );
     expect(load.job.assetPlan).toEqual({ assetSpecs: [] });
     expect(
       productionPlans.readCurrentAssetPlanInTransaction,
@@ -1212,83 +1297,99 @@ describe('StoryAgentRunService', () => {
     );
   });
 
-  it('selects Assets before Storyboard when Asset specs are missing', async () => {
-    const authoringRun = authoringRunRow();
-    const tx = {
-      $executeRaw: jest.fn().mockResolvedValue(0),
-      $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
-      storyAgentRun: {
-        findUnique: jest.fn().mockResolvedValue(authoringRun),
-        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
-      },
-      storyProject: {
-        findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
-      },
-      storyChapter: {
-        findFirst: jest.fn().mockResolvedValue({
-          title: 'Chapter 1',
-          sourceScriptDocumentId: LEGACY_SCRIPT_DOCUMENT_ID,
-          sourceScriptVersionId: LEGACY_SCRIPT_VERSION_ID,
-          sourceScriptSequence: 1,
-        }),
-      },
-      studioDocument: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: LEGACY_SCRIPT_DOCUMENT_ID,
-          currentSequence: 1,
-          currentVersionId: LEGACY_SCRIPT_VERSION_ID,
-          crdtState: Buffer.from([0, 0]),
-        }),
-      },
-      studioDocumentVersion: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: LEGACY_SCRIPT_VERSION_ID,
+  it.each([false, true])(
+    'selects Assets when missing or explicitly requested again (regenerate=%s)',
+    async (regenerate) => {
+      const authoringRun = authoringRunRow({
+        proposal: {
+          ...briefRecord(),
+          ...(regenerate ? { regenerateStage: 'assets' } : {}),
+        },
+      });
+      const tx = {
+        $executeRaw: jest.fn().mockResolvedValue(0),
+        $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
+        storyAgentRun: {
+          findUnique: jest.fn().mockResolvedValue(authoringRun),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        },
+        storyProject: {
+          findFirst: jest.fn().mockResolvedValue(canonicalProjectRow()),
+        },
+        storyChapter: {
+          findFirst: jest.fn().mockResolvedValue({
+            title: 'Chapter 1',
+            sourceScriptDocumentId: null,
+            sourceScriptVersionId: null,
+            sourceScriptSequence: null,
+          }),
+        },
+        studioDocument: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: LEGACY_SCRIPT_DOCUMENT_ID,
+            currentSequence: 1,
+            currentVersionId: LEGACY_SCRIPT_VERSION_ID,
+            crdtState: Buffer.from([0, 0]),
+          }),
+        },
+        studioDocumentVersion: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: LEGACY_SCRIPT_VERSION_ID,
+            documentId: LEGACY_SCRIPT_DOCUMENT_ID,
+            sequence: 1,
+            snapshot: {
+              screenplay: LEGACY_APPROVED_SCREENPLAY,
+              document: buildStoryScreenplayDocument(
+                LEGACY_APPROVED_SCREENPLAY,
+              ),
+            },
+          }),
+        },
+      };
+      const { service, productionPlans } = serviceWith(tx);
+      productionPlans.getProductionStateInTransaction.mockResolvedValue({
+        projectId: PROJECT_ID,
+        chapterId: CHAPTER_ID,
+        profile: { status: 'current' },
+        script: {
+          status: 'current',
           documentId: LEGACY_SCRIPT_DOCUMENT_ID,
           sequence: 1,
-          snapshot: {
-            screenplay: LEGACY_APPROVED_SCREENPLAY,
-            document: buildStoryScreenplayDocument(LEGACY_APPROVED_SCREENPLAY),
-          },
-        }),
-      },
-    };
-    const { service, productionPlans } = serviceWith(tx);
-    productionPlans.getProductionStateInTransaction.mockResolvedValue({
-      projectId: PROJECT_ID,
-      chapterId: CHAPTER_ID,
-      profile: { status: 'current' },
-      script: {
-        status: 'current',
-        documentId: LEGACY_SCRIPT_DOCUMENT_ID,
-        sequence: 1,
-      },
-      plotTree: { status: 'current', nodeCount: 1 },
-      assets: { status: 'missing', currentCount: 0 },
-      storyboard: {
-        status: 'current',
-        sequenceCount: 1,
-        missingPlotNodeIds: [],
-      },
-      ready: false,
-    });
+        },
+        plotTree: { status: 'current', nodeCount: 1 },
+        assets: {
+          status: regenerate ? 'current' : 'missing',
+          currentCount: regenerate ? 1 : 0,
+        },
+        storyboard: {
+          status: 'current',
+          sequenceCount: 1,
+          missingPlotNodeIds: [],
+        },
+        ready: regenerate,
+      });
 
-    const load = await service.loadAuthoringJob(RUN_ID, WORKER_ID);
+      const load = await service.loadAuthoringJob(RUN_ID, WORKER_ID);
 
-    expect(load.kind).toBe('job');
-    if (load.kind !== 'job') throw new Error('expected job');
-    expect(load.job.targetStage).toBe('assets');
-    expect(load.job.assetPlan).toBeNull();
-    expect(
-      productionPlans.readCurrentAssetPlanInTransaction,
-    ).not.toHaveBeenCalled();
-    expect(tx.storyAgentRun.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          authoringMode: StoryAgentAuthoringMode.downstream_reconcile,
+      expect(load.kind).toBe('job');
+      if (load.kind !== 'job') throw new Error('expected job');
+      expect(load.job.targetStage).toBe('assets');
+      expect(load.job.screenplaySnapshot?.versionId).toBe(
+        LEGACY_SCRIPT_VERSION_ID,
+      );
+      expect(load.job.assetPlan).toBeNull();
+      expect(
+        productionPlans.readCurrentAssetPlanInTransaction,
+      ).not.toHaveBeenCalled();
+      expect(tx.storyAgentRun.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            authoringMode: StoryAgentAuthoringMode.downstream_reconcile,
+          }),
         }),
-      }),
-    );
-  });
+      );
+    },
+  );
 
   it('fails authoring durably when the referenced document is out of scope', async () => {
     const authoringRun = runRow({
@@ -2939,6 +3040,7 @@ function serviceWith(
     storyAgentRun: (tx.storyAgentRun ?? {}) as Record<string, unknown>,
     skillVersion: (tx.skillVersion ?? {}) as Record<string, unknown>,
     copilotDocument: (tx.copilotDocument ?? {}) as Record<string, unknown>,
+    agentOsAttachment: (tx.agentOsAttachment ?? {}) as Record<string, unknown>,
     studioDocument: (tx.studioDocument ?? {
       findFirst: jest.fn().mockResolvedValue(null),
     }) as Record<string, unknown>,

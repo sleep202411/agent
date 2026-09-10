@@ -132,56 +132,6 @@ export async function readStoryScriptSourceSnapshot(
 }
 
 /**
- * Read the exact creator-approved screenplay/document pair pinned by chapter
- * lineage. A missing or malformed version is not a cue to regenerate: callers
- * must classify an existing Script as stale and fail closed.
- */
-export async function readApprovedStoryScreenplaySnapshot(
-  tx: Prisma.TransactionClient,
-  storyProjectId: string,
-  storyChapterId: string,
-): Promise<ApprovedStoryScreenplaySnapshot | null> {
-  const chapter = await tx.storyChapter.findFirst({
-    where: { id: storyChapterId, storyProjectId },
-    select: {
-      sourceScriptDocumentId: true,
-      sourceScriptVersionId: true,
-      sourceScriptSequence: true,
-    },
-  });
-  if (
-    !chapter?.sourceScriptDocumentId ||
-    !chapter.sourceScriptVersionId ||
-    chapter.sourceScriptSequence === null
-  ) {
-    return null;
-  }
-  const version = await tx.studioDocumentVersion.findFirst({
-    where: {
-      id: chapter.sourceScriptVersionId,
-      documentId: chapter.sourceScriptDocumentId,
-      sequence: chapter.sourceScriptSequence,
-    },
-    select: { id: true, documentId: true, sequence: true, snapshot: true },
-  });
-  if (!version || !isJsonRecord(version.snapshot)) return null;
-  const screenplay = StoryScreenplaySchema.safeParse(
-    version.snapshot.screenplay,
-  );
-  const document = StoryScreenplayDocumentSchema.safeParse(
-    version.snapshot.document,
-  );
-  if (!screenplay.success || !document.success) return null;
-  return {
-    documentId: version.documentId,
-    versionId: version.id,
-    sequence: version.sequence,
-    screenplay: screenplay.data,
-    document: document.data,
-  };
-}
-
-/**
  * Read the structured screenplay snapshot attached to the exact current Script
  * head, independently of Plot Tree lineage. Script approval advances this head;
  * Plot approval later binds the chapter's sourceScript* tuple to the same

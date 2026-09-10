@@ -352,6 +352,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             title: args.title,
             summary: args.summary,
             brief: args.brief,
+            ...(args.sourceAttachmentId
+              ? { sourceAttachmentId: args.sourceAttachmentId }
+              : {}),
+            ...(args.regenerateStage
+              ? { regenerateStage: args.regenerateStage }
+              : {}),
             idempotencyKey: input.idempotencyKey,
             conversationId: input.conversationId,
             sourceAgentRunId: input.runId,
@@ -361,6 +367,9 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             sourceCompletionMessage: args.completionMessage,
             sourceContinuationPlan: {
               continueThrough,
+              ...(args.regenerateStage
+                ? { regenerateStage: args.regenerateStage }
+                : {}),
               title: args.title,
               summary: args.summary,
               brief: args.brief,

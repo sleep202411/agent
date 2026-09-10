@@ -2161,8 +2161,8 @@ export class StoryProductionPlanService {
       }
       const sourceCharacterId = asset.sourceCharacterId;
       if (
-        asset.kind === 'character' &&
-        (!sourceCharacterId || !screenplayCharacters.has(sourceCharacterId))
+        sourceCharacterId !== undefined &&
+        !screenplayCharacters.has(sourceCharacterId)
       ) {
         throw new BadRequestException({
           code: 'STORY_PRODUCTION_CHARACTER_INVALID',

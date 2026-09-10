@@ -172,7 +172,13 @@ function createStoryContinuationModel(runtime: ToolRuntimeContext) {
           ],
         });
       }
-      if (!storyProductionNeedsContinuation(productionState, continuation.plan.continueThrough)) {
+      const regenerationPending =
+        continuation.plan.regenerateStage !== undefined &&
+        continuation.plan.regenerateStage !== continuation.completedStage;
+      if (
+        !regenerationPending &&
+        !storyProductionNeedsContinuation(productionState, continuation.plan.continueThrough)
+      ) {
         return new AIMessage(
           storyContinuationCopy(
             continuation.locale,

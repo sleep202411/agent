@@ -616,7 +616,9 @@ describe("agent-tools registry", () => {
     const description = getTool("story.author").description;
     expect(description).toContain("Never call for greetings");
     expect(description).toContain("Call story.read first");
-    expect(description).toContain("reuses every valid chapter stage");
+    expect(description).toContain("reuses every other valid chapter stage");
+    expect(description).toContain("regenerateStage");
+    expect(description).toContain("sourceAttachmentId");
     expect(description).toContain("Only when no valid Script exists");
     expect(description).toContain("selects exactly one next artifact");
     expect(description).toContain("Set continueThrough once");

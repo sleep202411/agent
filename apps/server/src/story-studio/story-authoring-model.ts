@@ -1,5 +1,10 @@
 import { createAlibaba } from '@ai-sdk/alibaba';
-import { generateObject, jsonSchema, type LanguageModel } from 'ai';
+import {
+  generateObject,
+  jsonSchema,
+  NoObjectGeneratedError,
+  type LanguageModel,
+} from 'ai';
 import { z } from 'zod';
 import { alibabaProviderHeaders } from '../common/alibaba-data-inspection';
 
@@ -177,7 +182,7 @@ export async function runStoryAuthoringStage<T>(
       }
       lastFailureDetail = issues.join('; ');
       call.onAttempt?.(attempt, 'error', lastFailureDetail);
-      repairNote = buildRepairNote(issues);
+      repairNote = buildRepairNote(issues, value);
     } catch (error) {
       if (call.signal.aborted) throw error;
       const detail = describeModelError(error);
@@ -189,7 +194,10 @@ export async function runStoryAuthoringStage<T>(
           detail,
         );
       }
-      repairNote = `Your previous answer failed: ${detail}. Return valid JSON that satisfies the schema.`;
+      repairNote =
+        NoObjectGeneratedError.isInstance(error) && error.text
+          ? buildRepairNote([detail], error.text)
+          : `Your previous answer failed: ${detail}. Return valid JSON that satisfies the schema.`;
     }
   }
   throw new StoryAuthoringStageError(
@@ -203,9 +211,10 @@ export async function runStoryAuthoringStage<T>(
   );
 }
 
-function buildRepairNote(issues: string[]): string {
+function buildRepairNote(issues: string[], previousAnswer: unknown): string {
   return [
-    'Your previous answer was structurally valid but broke these rules:',
+    `<previous_answer>\n${typeof previousAnswer === 'string' ? previousAnswer : JSON.stringify(previousAnswer)}\n</previous_answer>`,
+    'Your previous answer failed these checks:',
     ...issues.map((issue) => `- ${issue}`),
     'Return a corrected answer that fixes every listed problem.',
   ].join('\n');

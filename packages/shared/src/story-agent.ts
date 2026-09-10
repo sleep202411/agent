@@ -1051,6 +1051,10 @@ export const StoryPatchBriefSchema = z
      * document text by this id and drafts the skeleton FROM the document.
      */
     documentId: z.uuid().optional(),
+    /** Agent OS attachment containing the full uploaded source text. */
+    sourceAttachmentId: z.uuid().optional(),
+    /** Explicitly re-author this existing downstream stage; omitted for ordinary continuation. */
+    regenerateStage: z.enum(["plot", "assets", "storyboard"]).optional(),
   })
   .strict();
 export type StoryPatchBrief = z.infer<typeof StoryPatchBriefSchema>;

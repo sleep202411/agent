@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import {
   STORY_AUTHORING_STAGE_KEYS,
   StoryBibleDraftSchema,
-  StoryBranchPlanSchema,
+  storyBranchPlanSchemaForSkeleton,
   StorySceneProseNodeSchema,
   StorySkeletonSchema,
   validateStorySkeleton,
@@ -158,7 +158,7 @@ export class StoryAuthoringPipelineService {
     await request.onStage?.('branch');
     const branchPlan = await runStoryAuthoringStage<StoryBranchPlan>(model, {
       stage: 'branch',
-      schema: StoryBranchPlanSchema,
+      schema: storyBranchPlanSchemaForSkeleton(skeleton),
       system: BRANCH_SYSTEM,
       prompt: `${creativeProfile}\n\n${bibleContext(bible)}\n\n${skeletonContext(skeleton)}\n\nProduce the branch plan now.`,
       maxOutputTokens: STAGE_MAX_OUTPUT_TOKENS,
@@ -480,7 +480,7 @@ function validateBranchPlan(
       for (const choice of branch.choices) {
         if (!allowed.has(choice.nextNodeId)) {
           issues.push(
-            `Choice on "${branch.nodeId}" targets "${choice.nextNodeId}", not an allowed successor.`,
+            `Choice on "${branch.nodeId}" targets "${choice.nextNodeId}". Allowed successors: ${[...allowed].join(', ') || '(none: use auto + null)'}.`,
           );
         } else {
           edges.push(choice.nextNodeId);
@@ -539,8 +539,8 @@ function validateAssetPlan(
         );
       }
     }
-    if (asset.kind === 'character') {
-      const sourceCharacterId = asset.sourceCharacterId!;
+    if (asset.sourceCharacterId !== undefined) {
+      const sourceCharacterId = asset.sourceCharacterId;
       if (!characterIds.has(sourceCharacterId)) {
         issues.push(
           `Character asset "${asset.stableKey}" references unknown character "${sourceCharacterId}".`,
