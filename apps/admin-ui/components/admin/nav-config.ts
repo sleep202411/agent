@@ -449,6 +449,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "认证等级",
           icon: IconBadge,
         },
+        {
+          // Java `/api/admin/user-level-applications` — same ungated stance.
+          href: "/members/user-level-applications",
+          label: "等级申请",
+          icon: IconChecklist,
+        },
       ],
     },
   ],
