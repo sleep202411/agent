@@ -353,6 +353,40 @@ describe('CrewEarningsService', () => {
     expect(t.tx.crewEarningEntry.update).not.toHaveBeenCalled();
   });
 
+  it('waits for an in-flight payout before deciding whether an earning can be reversed', async () => {
+    const t = build();
+    const posted = earning({ status: CrewEarningStatus.posted, version: 2 });
+    t.prisma.crewEarningEntry.findUnique.mockResolvedValue(posted);
+    t.tx.crewEarningEntry.findUniqueOrThrow.mockResolvedValue(posted);
+    let release!: () => void;
+    const payoutInProgress = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    t.tx.$executeRaw.mockImplementation((_sql: unknown, key: string) =>
+      key === `crew:payout-member:${CREW_ID}:${MEMBER_USER_ID}`
+        ? payoutInProgress
+        : Promise.resolve(1),
+    );
+
+    const reversal = t.service.reverse(EARNING_ID, ACTOR_ID, {
+      expectedVersion: 2,
+      reason: 'Duplicate entry',
+    });
+    const rejected = expect(reversal).rejects.toMatchObject({
+      response: { code: 'CREW_EARNING_ALREADY_ALLOCATED' },
+    });
+    // Let authorization and transaction setup reach the held member lock.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(t.tx.crewPayoutAllocation.findFirst).not.toHaveBeenCalled();
+    t.tx.crewPayoutAllocation.findFirst.mockResolvedValue({
+      id: 'concurrent-allocation',
+    });
+    release();
+    await rejected;
+    expect(t.tx.crewEarningEntry.update).not.toHaveBeenCalled();
+    expect(t.notifications.send).not.toHaveBeenCalled();
+  });
+
   it('posts task rewards directly without a pending finance decision', async () => {
     const t = build();
     const posted = earning({

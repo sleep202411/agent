@@ -55,7 +55,7 @@ export class CrewsController {
   @Get('creation-eligibility')
   @Header('Cache-Control', 'no-store')
   creationEligibility(@CurrentUser() user: AuthUser) {
-    return this.svc.creationEligibility(user.userId);
+    return this.svc.creationEligibility(user);
   }
 
   @Post()
@@ -66,7 +66,7 @@ export class CrewsController {
     @Body(new ZodValidationPipe(CreateCrewSchema)) body: CreateCrewInput,
   ) {
     await this.assertCreateAllowed(cookie);
-    return this.svc.create(user.userId, body);
+    return this.svc.create(user, body);
   }
 
   @Public()

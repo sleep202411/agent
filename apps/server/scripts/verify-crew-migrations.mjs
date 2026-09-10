@@ -25,6 +25,13 @@ const schema = execFileSync(
 const db = await PGlite.create();
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 try {
+  // Prisma diff emits the room-number default but not its custom sequence.
+  // Bootstrap it from the real migration before loading the generated schema.
+  const roomSequence = migration('20260909150000_ip_room_numbers').match(
+    /CREATE SEQUENCE ip_room_number_seq\b[^;]*;/,
+  );
+  assert.ok(roomSequence, 'IP room-number migration must create its sequence');
+  await db.exec(roomSequence[0]);
   await db.exec(schema);
   // Reconstruct the pre-currency financial columns before applying the real migrations.
   await db.exec(`ALTER TABLE crew_task_assignees RENAME COLUMN reward_amount_minor TO reward_points;

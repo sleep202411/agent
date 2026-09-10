@@ -159,7 +159,11 @@ function useEarningDecision(
             : current
       );
     },
-    onSettled: () => invalidateEarnings(queryClient, crewId),
+    onSettled: (_data, _error, input) =>
+      Promise.all([
+        invalidateEarnings(queryClient, crewId),
+        queryClient.invalidateQueries({ queryKey: crewKeys.earning(input.earningId) }),
+      ]),
   });
 }
 
@@ -283,5 +287,8 @@ function optimisticEarning(
 }
 
 function invalidateEarnings(queryClient: ReturnType<typeof useQueryClient>, crewId: string) {
-  return queryClient.invalidateQueries({ queryKey: ["crew", "earnings", crewId] });
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: ["crew", "earnings", crewId] }),
+    queryClient.invalidateQueries({ queryKey: ["crew", "payouts", crewId] }),
+  ]);
 }

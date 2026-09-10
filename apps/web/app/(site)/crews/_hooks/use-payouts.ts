@@ -105,7 +105,11 @@ function usePayoutTransition(crewId: string, action: "pay" | "void") {
         current && typeof current === "object" ? { ...current, ...payout } : current
       );
     },
-    onSettled: () => invalidatePayouts(queryClient, crewId),
+    onSettled: (_data, _error, input) =>
+      Promise.all([
+        invalidatePayouts(queryClient, crewId),
+        queryClient.invalidateQueries({ queryKey: crewKeys.payout(input.payoutId) }),
+      ]),
   });
 }
 

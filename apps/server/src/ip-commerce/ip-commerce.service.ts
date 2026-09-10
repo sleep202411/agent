@@ -57,6 +57,7 @@ import { createHash, randomUUID } from 'crypto';
 import { decodeUserId, encodeUserId } from '@repo/shared';
 import { regionLabel as sharedRegionLabel } from '@repo/shared/regions';
 import type { AuthUser } from '../auth';
+import { hasFreeIpWatchPass } from '../integrations/java/user-level-gates';
 import {
   applyMemberDiscount,
   clampBps,
@@ -4121,9 +4122,11 @@ export class IpCommerceService {
     const isCreator = !!user && ip.createdById === user.userId;
     const hasEditGrant = await this.hasActiveIpEditGrant(user, ip.id);
     const hasManagementAccess = isCreator || hasEditGrant;
+    const freeWatchPass = hasFreeIpWatchPass(user?.levelIds);
     const mediaAccess = {
       ipOwned:
         hasManagementAccess ||
+        freeWatchPass ||
         activeEntitlements.some(
           (entitlement) =>
             entitlement.targetType === IpTargetType.ip &&
@@ -4213,6 +4216,7 @@ export class IpCommerceService {
     const isCreator = !!user && ip.createdById === user.userId;
     const hasEditGrant = await this.hasActiveIpEditGrant(user, ip.id);
     const hasManagementAccess = isCreator || hasEditGrant;
+    const freeWatchPass = hasFreeIpWatchPass(user?.levelIds);
     const pendingIpEntitlement = entitlements.find(
       (entitlement) =>
         entitlement.targetType === IpTargetType.ip &&
@@ -4266,6 +4270,7 @@ export class IpCommerceService {
 
     const ipAccessState = resolveIpAccessState({
       hasManagementAccess,
+      hasFreeWatchPass: freeWatchPass,
       hasIpEntitlement: Boolean(ipEntitlement),
       hasPendingIpEntitlement: Boolean(pendingIpEntitlement),
       accessMode: ip.accessMode,
@@ -4295,6 +4300,7 @@ export class IpCommerceService {
         const episodePrice = selectActivePrice(episode.priceRules, now);
         const episodeAccessState = resolveEpisodeAccessState({
           hasManagementAccess,
+          hasFreeWatchPass: freeWatchPass,
           hasIpEntitlement: Boolean(ipEntitlement),
           hasEpisodeEntitlement: ownedEpisodeIds.has(episode.id),
           hasPendingIpEntitlement: Boolean(pendingIpEntitlement),
@@ -4633,6 +4639,16 @@ export class IpCommerceService {
 
   async purchaseContent(user: AuthUser, input: CreateIpPurchaseInput) {
     const now = new Date();
+    // Certified free-watch holders (Java user_level id=12) never spend points.
+    // Return an owned-style no-op so a stale client purchase CTA cannot debit.
+    if (hasFreeIpWatchPass(user.levelIds)) {
+      return {
+        alreadyProcessed: false,
+        alreadyOwned: true,
+        order: null,
+        entitlements: [],
+      };
+    }
     const defaultRevenueShareBps =
       await this.getCreatorRevenueShareDefaultBps();
     // Membership status resolved once, before the tx — drives the member discount
@@ -5877,6 +5893,8 @@ export function isEntitlementActiveForAccess(
 
 export function resolveIpAccessState(input: {
   hasManagementAccess: boolean;
+  /** Java certification level free-watch pass (view unlock only). */
+  hasFreeWatchPass?: boolean;
   hasIpEntitlement: boolean;
   hasPendingIpEntitlement: boolean;
   accessMode: IpAccessMode;
@@ -5892,7 +5910,11 @@ export function resolveIpAccessState(input: {
     | 'member_free'
     | 'member_locked';
 } {
-  if (input.hasManagementAccess || input.hasIpEntitlement) {
+  if (
+    input.hasManagementAccess ||
+    input.hasFreeWatchPass ||
+    input.hasIpEntitlement
+  ) {
     return { owned: true, access: 'owned' };
   }
   if (input.hasPendingIpEntitlement) {
@@ -5909,6 +5931,7 @@ export function resolveIpAccessState(input: {
 
 export function resolveEpisodeAccessState(input: {
   hasManagementAccess: boolean;
+  hasFreeWatchPass?: boolean;
   hasIpEntitlement: boolean;
   hasEpisodeEntitlement: boolean;
   hasPendingIpEntitlement: boolean;
@@ -5932,7 +5955,11 @@ export function resolveEpisodeAccessState(input: {
     | 'member_free'
     | 'member_locked';
 } {
-  if (input.hasManagementAccess || input.hasIpEntitlement) {
+  if (
+    input.hasManagementAccess ||
+    input.hasFreeWatchPass ||
+    input.hasIpEntitlement
+  ) {
     return { owned: true, access: 'owned_ip' };
   }
   if (input.hasEpisodeEntitlement) {

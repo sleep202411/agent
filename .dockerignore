@@ -46,9 +46,15 @@ tmp
 *.tar.gz
 **/*.tar.gz
 # Exclude docs/READMEs from the upload context, but keep:
-# - Agent Skill catalog sources (`check:catalog` during server/agent-os build)
+# - Agent Skill catalog sources (SKILL.md under packages/agent-skills/catalog)
 # - Studio's downloadable Skill template under `public/` (copied into the image)
-*.md
+#
+# Use `**/*.md` (not bare `*.md`): az acr build's Windows packer treats bare
+# `*.md` like gitignore (recursive) and has historically dropped catalog
+# SKILL.md even when a negation followed — which empties prune's catalog
+# dirs and fails `@repo/agent-skills` with a false "stale catalog" error.
+# Docker itself only matches bare `*.md` at the context root.
+**/*.md
 !packages/agent-skills/catalog/**/*.md
 !apps/studio/public/**/*.md
 # package.json is needed for npm install in the build — keep it.

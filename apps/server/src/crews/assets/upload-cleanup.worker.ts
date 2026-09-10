@@ -93,6 +93,7 @@ export class CrewAssetUploadCleanupWorker
   }
 
   private async drain(now: Date): Promise<void> {
+    await this.assets.cleanupUploadReservations();
     const createdBefore = new Date(now.getTime() - this.maxAgeMs);
     const candidates = await this.prisma.mediaAsset.findMany({
       where: {

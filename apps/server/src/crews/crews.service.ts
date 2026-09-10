@@ -23,6 +23,7 @@
  * whose participants are subscribers, not crew members.
  */
 import { randomUUID } from 'node:crypto';
+import { releaseRecruitedPositions } from './recruitment-capacity';
 import {
   BadRequestException,
   ConflictException,
@@ -40,6 +41,8 @@ import {
   type Message as PrismaMessage,
 } from '@prisma/client';
 import type { ConversationDTO } from '@repo/shared/conversation';
+import type { AuthUser } from '../auth';
+import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
 import {
   ConversationsService,
   crewCommunityLookupKey,
@@ -82,38 +85,20 @@ export class CrewsService {
     private readonly collaboration: CrewCollaborationService,
   ) {}
 
-  async creationEligibility(userId: string) {
-    const certificate = await this.prisma.userCertificate.findFirst({
-      where: {
-        userId,
-        credentialType: 'fizzdragon_certified_ai_producer',
-        revokedAt: null,
-        issuedAt: { lte: new Date() },
-      },
-      select: { id: true },
-    });
-    return { eligible: certificate !== null };
+  creationEligibility(user: AuthUser) {
+    return { eligible: hasCrewCreatePass(user.levelIds) };
   }
 
-  async create(creatorUserId: string, input: CreateCrewInput) {
+  async create(creator: AuthUser, input: CreateCrewInput) {
+    // Java user_level id=13 is the sole create gate (Nest producer cert dropped).
+    if (!hasCrewCreatePass(creator.levelIds)) {
+      throw new ForbiddenException({
+        code: 'CREW_LEVEL_REQUIRED',
+        message: 'Java certification level 13 is required to create a Crew.',
+      });
+    }
+    const creatorUserId = creator.userId;
     const crew = await this.prisma.$transaction(async (tx) => {
-      // Hold the qualification row until commit. Revocation/deletion/update
-      // must serialize with creation, including calls that bypass HTTP.
-      const certificates = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM user_certificates
-        WHERE user_id = ${creatorUserId}
-          AND credential_type = 'fizzdragon_certified_ai_producer'
-          AND revoked_at IS NULL AND issued_at <= CURRENT_TIMESTAMP
-        ORDER BY id LIMIT 1 FOR SHARE
-      `;
-      if (certificates.length === 0) {
-        throw new ForbiddenException({
-          code: 'CREW_PRODUCER_CERTIFICATION_REQUIRED',
-          message:
-            'FizzDragon Certified AI Producer qualification is required to create a Crew.',
-        });
-      }
-
       const productionPlan = createDefaultProductionPlan(
         input.productionTemplateLocale,
       );
@@ -721,9 +706,24 @@ export class CrewsService {
       `;
       const lockedOwner = await tx.crewOwnership.findUnique({
         where: { crewId },
-        include: { member: true },
+        include: {
+          member: {
+            include: { positions: { select: { sourcePositionId: true } } },
+          },
+        },
       });
       if (!lockedOwner) throw new NotFoundException('Crew owner not found');
+      if (
+        opts.actor.type === 'member' &&
+        lockedOwner.member.userId !== opts.actor.userId
+      ) {
+        throw new ForbiddenException(
+          'Crew ownership changed; only the current owner can transfer it.',
+        );
+      }
+      if (lockedOwner.member.userId === target) {
+        throw new ConflictException('Target user is already the crew owner.');
+      }
 
       let targetMember = await tx.crewMember.findFirst({
         where: {
@@ -765,6 +765,13 @@ export class CrewsService {
         targetWasCreated = true;
       }
 
+      if (opts.removeOldOwner) {
+        await releaseRecruitedPositions(
+          tx,
+          crewId,
+          lockedOwner.member.positions.map((p) => p.sourcePositionId),
+        );
+      }
       const conversation = await this.conversations.openCrewConversation(
         crewId,
         tx,

@@ -37,6 +37,7 @@ import {
   IconUserPlus,
   IconUsersGroup,
   IconUserSearch,
+  IconBadge,
   IconVersions,
   IconWallet,
   IconWriting,
@@ -440,6 +441,19 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           label: "积分流水",
           icon: IconReceipt2,
           permission: "user.read",
+        },
+        {
+          // Java `/api/admin/user-levels` — ungated like news/courses until a
+          // dedicated permission is registered.
+          href: "/members/user-levels",
+          label: "认证等级",
+          icon: IconBadge,
+        },
+        {
+          // Java `/api/admin/user-level-applications` — same ungated stance.
+          href: "/members/user-level-applications",
+          label: "等级申请",
+          icon: IconChecklist,
         },
       ],
     },

@@ -17,6 +17,7 @@ import { CrewCollaborationService } from './collaboration/crew-collaboration.ser
 import { CrewAuthorizationService } from './crew-authorization.service';
 import type { ListCrewMembersQuery, UpdateMemberInput } from './dto';
 import { toMemberDTO } from './mappers';
+import { releaseRecruitedPositions } from './recruitment-capacity';
 
 const MEMBER_VIEW_INCLUDE = {
   ownership: true,
@@ -105,30 +106,38 @@ export class MembersService {
     memberId: string,
     actorUserId: string,
   ): Promise<void> {
-    const actor = await this.authorization.require(
-      crewId,
-      actorUserId,
-      'members.manage',
-    );
-    const [crew, member] = await Promise.all([
-      this.requireCrew(crewId),
-      this.prisma.crewMember.findFirst({
+    const pendingMessages: PrismaMessage[] = [];
+    await this.prisma.$transaction(async (tx) => {
+      // Serialize with ownership transfer and member edits before checking the owner.
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${crewId}`})::bigint)
+      `;
+      const actor = await this.authorization.require(
+        crewId,
+        actorUserId,
+        'members.manage',
+        tx,
+      );
+      const crew = await this.requireCrew(crewId, tx);
+      const member = await tx.crewMember.findFirst({
         where: { id: memberId, crewId, status: CrewMembershipStatus.active },
         include: {
           ownership: true,
           positions: { select: { sourcePositionId: true } },
         },
-      }),
-    ]);
-    if (!member) throw new NotFoundException('Member not found');
-    if (member.ownership) {
-      throw new BadRequestException({
-        message: 'Transfer ownership before removing the crew owner.',
       });
-    }
-
-    const pendingMessages: PrismaMessage[] = [];
-    await this.prisma.$transaction(async (tx) => {
+      if (!member) throw new NotFoundException('Member not found');
+      if (member.ownership) {
+        throw new BadRequestException({
+          message: 'Transfer ownership before removing the crew owner.',
+        });
+      }
+      // Recruitment approvals lock the vacancy before opening the conversation.
+      await releaseRecruitedPositions(
+        tx,
+        crewId,
+        member.positions.map((p) => p.sourcePositionId),
+      );
       const conversation = await this.conversations.openCrewConversation(
         crewId,
         tx,
@@ -180,31 +189,6 @@ export class MembersService {
         ),
       );
 
-      const sourcePositionIds = [
-        ...new Set(
-          member.positions
-            .map((position) => position.sourcePositionId)
-            .filter((id): id is string => id !== null),
-        ),
-      ];
-      for (const positionId of sourcePositionIds) {
-        const position = await tx.crewPosition.findUnique({
-          where: { id: positionId },
-          select: { recruitedCount: true, targetCount: true, status: true },
-        });
-        if (!position) continue;
-        const recruitedCount = Math.max(0, position.recruitedCount - 1);
-        await tx.crewPosition.update({
-          where: { id: positionId },
-          data: {
-            recruitedCount,
-            ...(position.status === 'full' &&
-            recruitedCount < position.targetCount
-              ? { status: 'open' as const }
-              : {}),
-          },
-        });
-      }
       await this.notifications.send(
         {
           userId: member.userId,
@@ -232,42 +216,88 @@ export class MembersService {
     actorUserId: string,
     input: UpdateMemberInput,
   ) {
-    const changesPositions = input.positions !== undefined;
-    const changesAuthorization =
-      input.policyKeys !== undefined || input.permissionOverrides !== undefined;
-    if (changesPositions) {
-      await this.authorization.require(crewId, actorUserId, 'members.manage');
-    }
-    const actor = changesAuthorization
-      ? await this.authorization.require(
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${crewId}`})::bigint)
+      `;
+      const changesPositions = input.positions !== undefined;
+      const changesAuthorization =
+        input.policyKeys !== undefined ||
+        input.permissionOverrides !== undefined;
+      if (changesPositions) {
+        await this.authorization.require(
           crewId,
           actorUserId,
-          'members.permissions.manage',
-        )
-      : await this.authorization.requireMembership(crewId, actorUserId);
+          'members.manage',
+          tx,
+        );
+      }
+      const actor = changesAuthorization
+        ? await this.authorization.require(
+            crewId,
+            actorUserId,
+            'members.permissions.manage',
+            tx,
+          )
+        : await this.authorization.requireMembership(crewId, actorUserId, tx);
 
-    const before = await this.prisma.crewMember.findFirst({
-      where: { id: memberId, crewId, status: CrewMembershipStatus.active },
-      include: {
-        ...MEMBER_VIEW_INCLUDE,
-        permissionOverrides: {
-          orderBy: { permissionKey: 'asc' },
-          select: { permissionKey: true, effect: true },
+      const before = await tx.crewMember.findFirst({
+        where: { id: memberId, crewId, status: CrewMembershipStatus.active },
+        include: {
+          ...MEMBER_VIEW_INCLUDE,
+          permissionOverrides: {
+            orderBy: { permissionKey: 'asc' },
+            select: { permissionKey: true, effect: true },
+          },
         },
-      },
-    });
-    if (!before) throw new NotFoundException('Member not found');
-    if (
-      before.ownership &&
-      (input.policyKeys !== undefined ||
-        input.permissionOverrides !== undefined)
-    ) {
-      throw new BadRequestException({
-        message: 'The owner already has every crew permission.',
       });
-    }
+      if (!before) throw new NotFoundException('Member not found');
+      if (
+        before.ownership &&
+        (input.policyKeys !== undefined ||
+          input.permissionOverrides !== undefined)
+      ) {
+        throw new BadRequestException({
+          message: 'The owner already has every crew permission.',
+        });
+      }
 
-    await this.prisma.$transaction(async (tx) => {
+      if (input.positions !== undefined) {
+        // Keep recruitment provenance when a title is edited or roles are reordered.
+        const remaining = [...before.positions];
+        const positions = input.positions.map((position, index) => {
+          const match = remaining.findIndex(
+            (existing) =>
+              existing.categoryKey === (position.categoryKey ?? null) &&
+              (existing.categoryKey !== null ||
+                existing.title === (position.title ?? null)),
+          );
+          const existing =
+            match >= 0 ? remaining.splice(match, 1)[0] : undefined;
+          return {
+            crewId,
+            memberId,
+            categoryKey: position.categoryKey ?? null,
+            title: position.title ?? null,
+            isPrimary: index === 0,
+            sourcePositionId: existing?.sourcePositionId ?? null,
+          };
+        });
+        const retained = new Set(
+          positions.map((position) => position.sourcePositionId),
+        );
+        await releaseRecruitedPositions(
+          tx,
+          crewId,
+          remaining
+            .map((position) => position.sourcePositionId)
+            .filter((id) => !retained.has(id)),
+        );
+        await tx.crewMemberPosition.deleteMany({ where: { memberId } });
+        if (positions.length > 0) {
+          await tx.crewMemberPosition.createMany({ data: positions });
+        }
+      }
       const changed = await tx.crewMember.updateMany({
         where: {
           id: memberId,
@@ -285,20 +315,6 @@ export class MembersService {
         });
       }
 
-      if (input.positions !== undefined) {
-        await tx.crewMemberPosition.deleteMany({ where: { memberId } });
-        if (input.positions.length > 0) {
-          await tx.crewMemberPosition.createMany({
-            data: input.positions.map((position, index) => ({
-              crewId,
-              memberId,
-              categoryKey: position.categoryKey ?? null,
-              title: position.title ?? null,
-              isPrimary: index === 0,
-            })),
-          });
-        }
-      }
       if (input.policyKeys !== undefined) {
         await tx.crewMemberPolicy.deleteMany({ where: { memberId } });
         if (input.policyKeys.length > 0) {
@@ -368,8 +384,11 @@ export class MembersService {
     return toMemberDTO(updated);
   }
 
-  private async requireCrew(crewId: string) {
-    const crew = await this.prisma.crew.findFirst({
+  private async requireCrew(
+    crewId: string,
+    db: Pick<Prisma.TransactionClient, 'crew'> = this.prisma,
+  ) {
+    const crew = await db.crew.findFirst({
       where: { id: crewId, deletedAt: null },
       select: { id: true, name: true },
     });

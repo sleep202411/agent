@@ -103,6 +103,38 @@ describe('IP commerce management access', () => {
     ).toEqual({ owned: true, access: 'owned_ip' });
   });
 
+  it('treats free-watch certification as owning paid IP content', () => {
+    expect(
+      resolveIpAccessState({
+        hasManagementAccess: false,
+        hasFreeWatchPass: true,
+        hasIpEntitlement: false,
+        hasPendingIpEntitlement: false,
+        accessMode: IpAccessMode.points_priced,
+        isMember: false,
+        hasIpPrice: true,
+      }),
+    ).toEqual({ owned: true, access: 'owned' });
+  });
+
+  it('treats free-watch certification as owning paid episodes', () => {
+    expect(
+      resolveEpisodeAccessState({
+        hasManagementAccess: false,
+        hasFreeWatchPass: true,
+        hasIpEntitlement: false,
+        hasEpisodeEntitlement: false,
+        hasPendingIpEntitlement: false,
+        hasPendingEpisodeEntitlement: false,
+        isFreePreview: false,
+        accessMode: IpAccessMode.points_priced,
+        isMember: false,
+        hasEpisodePrice: true,
+        hasIpPrice: true,
+      }),
+    ).toEqual({ owned: true, access: 'owned_ip' });
+  });
+
   it('keeps a paid episode locked for a non-manager without entitlement', () => {
     expect(
       resolveEpisodeAccessState({
