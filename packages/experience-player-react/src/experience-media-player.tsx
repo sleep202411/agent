@@ -7,21 +7,11 @@ import {
   Poster,
   type MediaPlayerInstance,
   type PlayerSrc,
-  type VideoMimeType,
 } from "@vidstack/react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { classNames } from "./class-names";
 import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
-
-const VIDEO_MIME_TYPES = new Set<VideoMimeType>([
-  "video/mp4",
-  "video/webm",
-  "video/3gp",
-  "video/ogg",
-  "video/avi",
-  "video/mpeg",
-  "video/object",
-]);
+import { EXPERIENCE_VIDEO_LOADERS, normalizeVideoSource } from "./experience-video-source";
 
 export interface ExperienceMediaPlaybackHandle {
   readonly playbackIdentity: string;
@@ -347,6 +337,7 @@ export function ExperienceMediaPlayer({
       data-experience-video-player=""
     >
       <MediaProvider
+        loaders={EXPERIENCE_VIDEO_LOADERS}
         className="absolute inset-0 flex size-full items-center overflow-hidden bg-black"
         mediaProps={{
           className: classNames(
@@ -420,14 +411,6 @@ function ExperienceVideoSurface({ copy }: { copy: ExperiencePlayerVideoCopy }) {
       />
     </>
   );
-}
-
-function normalizeVideoSource(source: { src: string; type?: string | null }): PlayerSrc {
-  const normalizedType = source.type?.split(";", 1)[0]?.trim().toLowerCase();
-  if (normalizedType && VIDEO_MIME_TYPES.has(normalizedType as VideoMimeType)) {
-    return { src: source.src, type: normalizedType as VideoMimeType };
-  }
-  return source.src;
 }
 
 /**
