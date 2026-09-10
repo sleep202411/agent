@@ -37,7 +37,7 @@ export function agentOsCatchUpTargetFromPointer(
     conversationId: pointer.conversationId,
     sequence: pointer.sequence,
     afterSequence: pointer.afterSequence,
-    eventId: pointer.kind === "event_oversized" ? pointer.eventId : undefined,
+    eventId: pointer.kind !== "snapshot_oversized" ? pointer.eventId : undefined,
   };
 }
 

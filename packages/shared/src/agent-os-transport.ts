@@ -65,7 +65,7 @@ interface AgentOsAblyResyncPointerBase {
 }
 
 export interface AgentOsAblyEventResyncPointer extends AgentOsAblyResyncPointerBase {
-  kind: "event_oversized";
+  kind: "event_oversized" | "event_backlog";
   eventId: string;
 }
 

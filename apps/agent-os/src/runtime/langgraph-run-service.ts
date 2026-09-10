@@ -2605,9 +2605,8 @@ export class LangGraphRunService {
               expectedStartExecutionOwnerId,
               expectedContinuationExecutionOwnerId
             );
-            // A provider should emit end before the next model call. Close a
-            // dangling segment defensively so message ids never span calls.
-            completeMessage("stop");
+            // A retried model call supersedes its interrupted visible fragment.
+            completeMessage("superseded");
             continue;
           }
           if (event.event === "on_chat_model_stream") {
@@ -2626,9 +2625,9 @@ export class LangGraphRunService {
             continue;
           }
           if (event.event === "on_chat_model_end") {
-            if (!activeMessage) {
-              const completeText = chunkText(event.data?.output);
-              if (completeText) appendMessageText(completeText);
+            const completeText = chunkText(event.data?.output);
+            if (completeText && (!activeMessage || completeText.startsWith(activeMessage.text))) {
+              appendMessageText(completeText.slice(activeMessage?.text.length ?? 0));
             }
             completeMessage(modelOutputHasToolCalls(event.data?.output) ? "tool_call" : "stop");
             await this.captureLatestStartCheckpoint(

@@ -354,13 +354,23 @@ describe("Agent OS realtime journal resync", () => {
     expect(isAgentOsChannelDiscontinuity({ resumed: false })).toBe(true);
     expect(isAgentOsChannelDiscontinuity({ resumed: true })).toBe(false);
   });
+
+  it("accepts a backlog range and catches up from before its first missing event", () => {
+    const pointer = { ...eventPointer(500), kind: "event_backlog" as const, afterSequence: 20 };
+    expect(isAgentOsAblyResyncPointer(pointer)).toBe(true);
+    expect(agentOsCatchUpTargetFromPointer(pointer)).toMatchObject({
+      sequence: 500,
+      afterSequence: 20,
+    });
+    expect(isAgentOsAblyResyncPointer({ ...pointer, afterSequence: 500 })).toBe(false);
+  });
 });
 
 function event(sequence: number): AgentOsSequencedEvent {
   return { id: `event-${sequence}`, sequence };
 }
 
-function eventPointer(sequence: number): AgentOsAblyResyncPointer {
+function eventPointer(sequence: number): Extract<AgentOsAblyResyncPointer, { eventId: string }> {
   return {
     version: 1,
     kind: "event_oversized",

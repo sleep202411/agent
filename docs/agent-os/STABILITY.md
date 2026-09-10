@@ -100,7 +100,9 @@ follow-up.
     outbox. Studio advances its replay cursor only across contiguous sequence
     numbers and repairs pointer, event, snapshot, and Ably continuity-loss gaps
     over HTTP. Conversation reconciliation precedes per-run repair so a run
-    missed entirely in another tab is still discovered.
+    missed entirely in another tab is still discovered. Publish pacing counts
+    individual BatchSpecs, and partial acknowledgements retire only confirmed
+    messages. Backlogs use one range pointer and the same HTTP replay path.
 23. **Approved stages advance one artifact at a time.** A Script proposal is
     authored against an exact collaborative Script head and persists one
     canonical review document. View all and Script consume those same ordered
@@ -131,6 +133,11 @@ follow-up.
     cross-device replay therefore reconstruct the same content, while only the
     composer decision control is ephemeral. Pre-Artifact Story journals recover
     the same reference deterministically from `story.applyProposal` correlation.
+
+28. **Stream closure is not model completion.** A missing provider finish reason
+    fails the model call. The interactive graph retries that model node once,
+    preserving completed tool writes; interrupted text is superseded. Output
+    limits, policy rejection, and exhausted retries are failures, never success.
 
 ## Phase 1 acceptance (must automate)
 

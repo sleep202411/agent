@@ -286,7 +286,7 @@ describe('AgentOsRealtimeOutboxService', () => {
     expect(fixture.batchPublishPayloads).toHaveLength(batchCount);
   });
 
-  it('records a returned partial batch failure without acknowledging the suffix', async () => {
+  it('acknowledges successful events and retries only failures after a partial batch result', async () => {
     const fixture = createFixture({ oldEventCount: 2 });
     fixture.batchResultOverride = (specs) =>
       specs.map((spec, index) => ({
@@ -301,28 +301,35 @@ describe('AgentOsRealtimeOutboxService', () => {
 
     await fixture.first.publishRun(OLD_RUN_ID);
 
-    expect(fixture.event(OLD_EVENT_ID).realtimePublishedAt).toBeNull();
+    expect(fixture.event(OLD_EVENT_ID).realtimePublishedAt).not.toBeNull();
     expect(fixture.event(OLD_EVENT_2_ID).realtimePublishedAt).toBeNull();
-    expect(fixture.event(OLD_EVENT_ID).realtimePublishLastError).toContain(
-      'batch acknowledgement mismatch',
+    expect(fixture.event(OLD_EVENT_2_ID).realtimePublishLastError).toContain(
+      'batch publish failed',
     );
     expect(fixture.run(OLD_RUN_ID).realtimePublishLeaseId).not.toBeNull();
+    fixture.batchResultOverride = undefined;
+    fixture.advanceDatabaseClock(30_001);
+    await fixture.second.publishRun(OLD_RUN_ID);
+    expect(fixture.event(OLD_EVENT_ID).realtimePublishAttempts).toBe(1);
+    expect(fixture.event(OLD_EVENT_2_ID).realtimePublishedAt).not.toBeNull();
   });
 
-  it('chunks a large event suffix into at most one hundred ordered BatchSpecs', async () => {
+  it('coalesces a large backlog into one durable HTTP catch-up pointer', async () => {
     const fixture = createFixture({ oldEventCount: 101 });
-
     await fixture.first.publishRun(OLD_RUN_ID);
-
-    expect(
-      fixture.batchPublishPayloads.slice(0, 2).map((batch) => batch.length),
-    ).toEqual([100, 1]);
-    expect(batchSpecIds(fixture.batchPublishPayloads[0] ?? [])).toEqual(
-      Array.from({ length: 100 }, (_, index) => oldEventId(index + 1)),
-    );
-    expect(batchSpecIds(fixture.batchPublishPayloads[1] ?? [])).toEqual([
-      oldEventId(101),
-    ]);
+    const firstBatch = fixture.batchPublishPayloads[0] ?? [];
+    expect(firstBatch).toHaveLength(1);
+    expect(firstBatch[0]?.messages[0]).toMatchObject({
+      name: AGENT_OS_ABLY_RESYNC_NAME,
+      data: {
+        kind: 'event_backlog',
+        sequence: 101,
+        afterSequence: 0,
+        eventId: oldEventId(101),
+      },
+    });
+    expect(fixture.event(oldEventId(101)).realtimePublishedAt).not.toBeNull();
+    expect(fixture.run(OLD_RUN_ID).realtimeSnapshotSequence).toBe(101);
   });
 
   it('publishes an oversized UTF-8 event as a stable journal resync pointer without blocking later events', async () => {
