@@ -267,20 +267,6 @@ export function GlobalNav() {
                 </li>
               );
             })}
-            <li
-              className={navCx("fd-secret-nav-item")}
-              onMouseEnter={() => setHoveredNavIndex(navItems.length)}
-              onMouseLeave={() => setHoveredNavIndex(null)}
-              onFocus={() => setHoveredNavIndex(navItems.length)}
-              onBlur={() => setHoveredNavIndex(null)}
-            >
-              <AppDownloadMenu
-                triggerRef={(node) => {
-                  navLinkRefs.current[navItems.length] = node;
-                }}
-                className={navCx("fd-secret-nav-link")}
-              />
-            </li>
             <span
               className={navCx("fd-secret-nav-marker", navMarker.visible && "is-visible")}
               style={{ "--fd-secret-marker-x": `${navMarker.x}px` } as CSSProperties}
@@ -291,6 +277,10 @@ export function GlobalNav() {
       </nav>
 
       <div className={navCx("fd-secret-right-cluster hidden md:flex js-header-cta")}>
+        <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
+          <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+          <AppDownloadMenu className={navCx("fd-secret-glass-content fd-secret-cta")} />
+        </span>
         <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
           <span className={navCx("fd-secret-glass-effect")} aria-hidden />
           <Link

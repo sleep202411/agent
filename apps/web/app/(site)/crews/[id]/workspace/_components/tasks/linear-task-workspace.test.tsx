@@ -42,7 +42,9 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
       },
     }),
     useCrewProductionActivity: () => ({ data: { pages: [] } }),
-    useCrewTask: () => ({}),
+    useCrewTask: (id: string) => ({
+      data: id ? { id, title: "Selected task", assignees: [] } : undefined,
+    }),
     useCrewTaskSummary: () => ({ data: {} }),
     useCrewTaskProject: () => ({
       data: {
@@ -71,14 +73,28 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
 });
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({ useUserDisplays: () => ({}) }));
 vi.mock("./task-project-views", () => ({
-  TaskProjectView: ({ view }: { view: { layout: string } }) => <div data-layout={view.layout} />,
+  TaskProjectView: ({
+    view,
+    onOpenTask,
+  }: {
+    view: { layout: string };
+    onOpenTask: (id: string) => void;
+  }) => (
+    <div data-layout={view.layout}>
+      <button onClick={() => onOpenTask("task-1")}>Open task</button>
+    </div>
+  ),
 }));
 vi.mock("./production-overview", () => ({ ProductionOverview: () => <div data-overview /> }));
 vi.mock("./production-project-update", () => ({
   ProductionActivityComposer: () => null,
   ProductionActivityEntry: () => null,
 }));
-vi.mock("./task-issue-detail", () => ({ TaskIssueDetail: () => null }));
+vi.mock("./task-issue-detail", () => ({
+  TaskIssueDetail: ({ onClose }: { onClose: () => void }) => (
+    <button onClick={onClose}>Close task</button>
+  ),
+}));
 vi.mock("./task-project-settings", () => ({ ProjectSettingsDialog: () => null }));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./task-dialogs", () => ({ SubmitTaskDialog: () => null }));
@@ -136,3 +152,34 @@ describe("Crew task navigation", () => {
     expect(document.querySelector('[data-layout="list"]')).not.toBeNull();
   });
 });
+
+it.each(["list", "board"])(
+  "preserves the %s view, filter and scroll after closing task details",
+  async (layout) => {
+    state.layout = layout;
+    state.locale = "en-US";
+    await render();
+    const list = document.querySelector("main")!;
+    list.scrollTop = 160;
+    const search = document.querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        search,
+        "search term"
+      );
+      search.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => (document.querySelector("[data-layout] button") as HTMLElement).click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(document.querySelector("main")).toBe(list);
+    expect(document.querySelector(`[data-layout="${layout}"]`)).not.toBeNull();
+    const close = [...document.querySelectorAll("button")].find(
+      (el) => el.textContent === "Close task"
+    )!;
+    await act(async () => close.click());
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.querySelector("main")).toBe(list);
+    expect(list.scrollTop).toBe(160);
+    expect(search.value).toBe("search term");
+  }
+);
