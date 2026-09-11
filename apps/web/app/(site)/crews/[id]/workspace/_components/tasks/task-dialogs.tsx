@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconFile, IconGitBranch, IconSend } from "@tabler/icons-react";
 import { toast } from "sonner";
 
@@ -41,8 +41,25 @@ export function SubmitTaskDialog({
     useCrewAssets(crewId, { source: "recent", sort: "modified", kind: "file" }, open).data?.items ??
     [];
 
+  const [context, setContext] = useState({ open, crewId, taskId: task?.id });
+  if (context.open !== open || context.crewId !== crewId || context.taskId !== task?.id) {
+    setContext({ open, crewId, taskId: task?.id });
+    setNote("");
+    setAssetIds([]);
+  }
+  const generation = useRef(0);
+  const pendingGeneration = useRef<number | null>(null);
+  useEffect(() => {
+    generation.current += 1;
+    pendingGeneration.current = null;
+    return () => {
+      generation.current += 1;
+    };
+  }, [open, crewId, task?.id]);
+
   const close = (next: boolean) => {
     if (!next) {
+      generation.current += 1;
       setNote("");
       setAssetIds([]);
     }
@@ -50,14 +67,21 @@ export function SubmitTaskDialog({
   };
 
   const submit = async () => {
-    if (!task) return;
+    if (!open || !task || pendingGeneration.current !== null) return;
+    const requestGeneration = generation.current;
+    pendingGeneration.current = requestGeneration;
     try {
       await submitTask.mutateAsync({ taskId: task.id, note, assetNodeIds: assetIds });
+      if (generation.current !== requestGeneration) return;
       toast.success(t("submitted"));
       onSubmitted(task.id);
       close(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("submitFailed"));
+      if (generation.current === requestGeneration) {
+        toast.error(error instanceof Error ? error.message : t("submitFailed"));
+      }
+    } finally {
+      if (pendingGeneration.current === requestGeneration) pendingGeneration.current = null;
     }
   };
 
