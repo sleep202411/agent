@@ -2,14 +2,16 @@
 
 import { useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { CreateCrewInvitationInput, CrewInvitationDTO, CrewInvitationPageDTO } from "./types";
 
 export function useCrewInvitations(crewId: string, enabled = true, pageSize = 30) {
+  const { user } = useCurrentUser();
   const query = useInfiniteQuery({
-    queryKey: [...crewKeys.invitations(crewId), pageSize] as const,
-    enabled,
+    queryKey: [...crewKeys.invitations(crewId), pageSize, user?.id ?? null] as const,
+    enabled: enabled && Boolean(crewId) && Boolean(user),
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewInvitationPageDTO>(`/crews/${encodeURIComponent(crewId)}/invitations`, {
         query: { limit: pageSize, cursor: pageParam },
@@ -26,9 +28,10 @@ export function useCrewInvitations(crewId: string, enabled = true, pageSize = 30
 }
 
 export function useMyCrewInvitation(invitationId: string) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.invitation(invitationId),
-    enabled: !!invitationId,
+    queryKey: [...crewKeys.invitation(invitationId), user?.id ?? null],
+    enabled: Boolean(invitationId) && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewInvitationDTO>(`/crew-invitations/${encodeURIComponent(invitationId)}`),
     retry: false,
