@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { IconMovie, IconWorld, IconGitBranch, type Icon } from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
 import { FrostedPanel } from "@/components/ui/frosted-panel";
@@ -50,7 +50,13 @@ const CREATOR_ITEMS: CreatorItem[] = [
     : []),
 ];
 
-export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreationKind) => void }) {
+export function StoryNodeDock({
+  onCreate,
+  children,
+}: {
+  onCreate: (kind: StoryNodeCreationKind) => void;
+  children?: ReactNode;
+}) {
   const t = useTranslations("storyStudio.canvas");
 
   return (
@@ -80,6 +86,7 @@ export function StoryNodeDock({ onCreate }: { onCreate: (kind: StoryNodeCreation
           </Tooltip>
         );
       })}
+      {children}
     </FrostedPanel>
   );
 }

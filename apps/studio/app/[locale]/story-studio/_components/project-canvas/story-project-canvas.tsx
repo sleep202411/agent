@@ -203,6 +203,12 @@ import {
   STORY_WORLD_EXPERIENCE_AVAILABLE,
 } from "./story-world-feature-policy";
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
+import { StoryPlotImportDialog } from "./story-plot-import-dialog";
+import {
+  applyStoryPlotImport,
+  type StoryPlotImport,
+  type StoryPlotImportMode,
+} from "./story-plot-import";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type PersistDraftOptions = {
@@ -1933,6 +1939,42 @@ function StoryProjectCanvasInner({
     );
   };
 
+  const importPlot = (plot: StoryPlotImport, mode: StoryPlotImportMode) => {
+    const current = latestContentRef.current;
+    if (!current || !mutationBarrier.permits("content")) {
+      throw new Error(t("plotImport.errors.locked"));
+    }
+    const imported = applyStoryPlotImport(current, plot, authoringLocale, mode);
+    const importedModel = buildStoryCanvasModel(
+      {
+        ...current,
+        graph: { entryNodeId: imported.entryNodeId, nodes: imported.importedNodes },
+      },
+      authoringLocale
+    );
+    // Appended groups sit below existing nodes; replacements use the normal origin.
+    const top = Math.min(...importedModel.nodes.map((node) => node.position.y));
+    const bottom =
+      mode === "append" && canvasNodesRef.current.length
+        ? Math.max(
+            ...canvasNodesRef.current.map(
+              (node) => node.position.y + canvasNodeGeometry(node).estimatedHeight
+            )
+          ) + 160
+        : top;
+    if (!commitContent(imported.content)) throw new Error(t("plotImport.errors.locked"));
+    importedModel.nodes.forEach((node) => {
+      pendingNodePositionsRef.current.set(node.id, {
+        x: node.position.x,
+        y: node.position.y - top + bottom,
+      });
+    });
+    persistLayoutWithPendingPositions(imported.content);
+    hasFittedInitialCanvasRef.current = false;
+    setGraphError(null);
+    toast.success(t(mode === "replace" ? "plotImport.replaced" : "plotImport.added"));
+  };
+
   const connectStoryNodes = (connection: Connection) => {
     if (
       !mutationBarrier.permits("content") ||
@@ -2566,7 +2608,14 @@ function StoryProjectCanvasInner({
               </MediaHoverPreviewProvider>
 
               {canMutateCanvasLayout ? (
-                <StoryNodeDock onCreate={createStoryElementFromDock} />
+                <StoryNodeDock onCreate={createStoryElementFromDock}>
+                  <StoryPlotImportDialog
+                    key={contentChapterId}
+                    disabled={!canEdit}
+                    hasNodes={content.graph.nodes.length > 0}
+                    onImport={importPlot}
+                  />
+                </StoryNodeDock>
               ) : null}
 
               {canMutateCanvasLayout ? (

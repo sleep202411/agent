@@ -3710,6 +3710,45 @@
       "mobileNav": {
         "label": "制作导航",
         "chat": "对话"
+      },
+      "plotImport": {
+        "title": "导入 JSON",
+        "description": "将其他 AI 工具生成的情节 JSON，直接导入为可编辑的情节树。",
+        "download": "下载 AI 模板",
+        "choose": "选择 JSON 文件",
+        "reading": "正在读取文件…",
+        "summary": "{scenes} 个场景 · {decisions} 个选择节点",
+        "limits": "JSON · 最大 2 MB，最多 1,000 个节点",
+        "replaceLabel": "覆盖当前章节情节树",
+        "replaceHint": "替换当前章节的节点和连线，不影响其他章节。整次覆盖可一步撤销。",
+        "replaced": "情节树已覆盖，正在自动保存…",
+        "appendHint": "作为独立的一组节点加入当前章节，保留已有内容；导入后可自行连接到所需位置。整次导入可一步撤销。",
+        "emptyHint": "保留原文、选项顺序和连线，只创建情节骨架，不生成图片或视频。",
+        "cancel": "取消",
+        "confirm": "导入情节树",
+        "added": "情节树已加入，正在自动保存…",
+        "errors": {
+          "json": "JSON 格式有误。请让 AI 输出 JSON 文件，去掉 Markdown 代码围栏、注释和末尾多余的逗号。",
+          "size": "文件过大，请将每个文件控制在 2 MB 以内。",
+          "object": "{path}：应为一个对象。",
+          "field": "{path}：不支持的字段。请遵循下载的模板，避免内容丢失。",
+          "text": "{path}：应为模板长度限制内的文本，必填文本不能为空。",
+          "id": "{path}：ID 需为 1–64 个字符，以英文字母开头，仅使用字母、数字、点、下划线、冒号或连字符。",
+          "version": "{path}：version 必须为 1。",
+          "nodes": "{path}：需要 1–1,000 个节点，更长的故事请按章节拆分。",
+          "type": "{path}：type 必须为 scene 或 decision。",
+          "choices": "{path}：选择节点需要 2–6 个选项。",
+          "duplicate": "{path}：节点 ID 重复，请为每个节点使用唯一 ID。",
+          "target": "{path}：目标必须对应文件中已存在的节点 ID。",
+          "unreachable": "{path}：无法从 entryNodeId 到达此节点，请补充缺失的连线。",
+          "capacity": "当前章节将超过 10,000 个节点，请导入其他章节。",
+          "read": "无法读取文件，请重新选择。",
+          "locked": "情节树暂时无法编辑，请在保存或当前操作结束后重试。",
+          "singleFile": "一次只能拖入一个 JSON 文件。",
+          "fileType": "请选择 .json 格式的文件。"
+        },
+        "dropHint": "点击选择或拖拽 JSON 文件到这里",
+        "drop": "松开以选择文件"
       }
     },
     "workbench": {
