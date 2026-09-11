@@ -124,7 +124,7 @@ export function NotificationsFeed() {
 
       {feed.isLoading ? (
         <FeedSkeleton />
-      ) : feed.isError ? (
+      ) : feed.isError && !feed.isFetchNextPageError ? (
         <div
           role="alert"
           className="flex flex-col items-center gap-3 rounded-2xl bg-destructive/10 px-6 py-12 text-center"
@@ -168,6 +168,11 @@ export function NotificationsFeed() {
             </section>
           ))}
 
+          {feed.isFetchNextPageError && (
+            <p role="alert" className="text-sm text-destructive">
+              {feed.error instanceof Error ? feed.error.message : t("loadErrorFallback")}
+            </p>
+          )}
           {feed.hasNextPage && (
             <div className="flex justify-center pt-2">
               <Button
@@ -177,7 +182,11 @@ export function NotificationsFeed() {
                 disabled={feed.isFetchingNextPage}
                 onClick={() => feed.fetchNextPage()}
               >
-                {feed.isFetchingNextPage ? t("loading") : t("loadMore")}
+                {feed.isFetchingNextPage
+                  ? t("loading")
+                  : feed.isFetchNextPageError
+                    ? t("retry")
+                    : t("loadMore")}
               </Button>
             </div>
           )}

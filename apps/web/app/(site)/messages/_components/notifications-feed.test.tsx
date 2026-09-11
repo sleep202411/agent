@@ -22,7 +22,12 @@ vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
 
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const i18n = vi.hoisted(() => ({ locale: "en-US" }));
-const dataHooks = vi.hoisted(() => ({ feed: vi.fn(), read: vi.fn() }));
+const dataHooks = vi.hoisted(() => ({
+  feed: vi.fn(),
+  read: vi.fn(),
+  next: vi.fn(),
+  nextError: false,
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push }),
@@ -64,9 +69,12 @@ vi.mock("@/src/lib/notifications", async () => {
       return {
         data: { pages: [{ items: [ITEM] }] },
         isLoading: false,
-        hasNextPage: false,
+        isError: dataHooks.nextError,
+        isFetchNextPageError: dataHooks.nextError,
+        error: dataHooks.nextError ? new Error("Page unavailable") : null,
+        hasNextPage: dataHooks.nextError,
         isFetchingNextPage: false,
-        fetchNextPage: vi.fn(),
+        fetchNextPage: dataHooks.next,
       };
     },
     useUnreadCount: () => ({ data: 1 }),
@@ -89,6 +97,8 @@ function rowButton(): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  dataHooks.nextError = false;
+  dataHooks.next.mockClear();
   nav.push.mockClear();
   dataHooks.read.mockClear();
   dataHooks.feed.mockClear();
@@ -161,4 +171,17 @@ it("identifies a comment author while preserving the comment text", () => {
   } finally {
     Object.assign(ITEM, original);
   }
+});
+
+it("keeps loaded notifications visible when pagination fails and retries that page", () => {
+  dataHooks.nextError = true;
+  act(() => root.render(<NotificationsFeed />));
+  expect(rowButton()).toBeDefined();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Page unavailable");
+  const retry = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "retry"
+  );
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(dataHooks.next).toHaveBeenCalledOnce();
 });
