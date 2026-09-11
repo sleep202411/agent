@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import * as hooks from "./use-tasks";
+import type { CrewTaskDTO, CrewTaskPageDTO, CrewTaskWorkflowStateDTO } from "./types";
+import type { InfiniteData } from "@tanstack/react-query";
 import { crewKeys } from "./shared";
 const session = vi.hoisted(() => ({
   account: "alice" as string | null,
@@ -177,3 +179,130 @@ it.each(mutations.map((useHook, i) => [useHook.name || `comment-${i}`, useHook] 
     ).toBe(true);
   }
 );
+
+it.each(["failure", "success"] as const)(
+  "preserves newer task edits and added rows after reorder %s",
+  async (outcome) => {
+    let resolve!: (value: CrewTaskDTO) => void;
+    let reject!: (error: Error) => void;
+    session.api.post.mockReturnValue(
+      new Promise<CrewTaskDTO>((done, fail) => {
+        resolve = done;
+        reject = fail;
+      })
+    );
+    const view = mount(() => hooks.useReorderCrewTask("crew-a"));
+    const destination = { id: "progress", semantic: "in_progress" } as CrewTaskWorkflowStateDTO;
+    const original = {
+      id: "task",
+      crewId: "crew-a",
+      title: "Original",
+      version: 1,
+      workflowStateId: "open",
+      workflowState: { id: "open", semantic: "open" },
+      status: "open",
+      rank: "1024",
+    } as CrewTaskDTO;
+    const detailKey = [...crewKeys.task("task"), "alice"];
+    const listKey = [...crewKeys.taskView("crew-a", { viewId: "view" }), "alice"];
+    const page: InfiniteData<CrewTaskPageDTO> = {
+      pages: [{ items: [original], nextCursor: null, total: 1, workflowCounts: { open: 1 } }],
+      pageParams: [undefined],
+    };
+    client.setQueryData(detailKey, original);
+    client.setQueryData(listKey, page);
+    view.render();
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = view
+        .current()
+        .mutateAsync({
+          taskId: "task",
+          destinationState: destination,
+          input: {
+            expectedVersion: 1,
+            workflowStateId: "progress",
+            beforeTaskId: null,
+            beforeTaskVersion: null,
+            afterTaskId: null,
+            afterTaskVersion: null,
+          },
+        })
+        .catch((error: unknown) => error);
+    });
+    expect(client.getQueryData<CrewTaskDTO>(detailKey)?.status).toBe("in_progress");
+    const newer = { ...original, title: "Collaborator edit", version: 5 };
+    const added = { ...original, id: "new-task", title: "New task" };
+    client.setQueryData(detailKey, newer);
+    client.setQueryData(listKey, {
+      ...page,
+      pages: [{ ...page.pages[0], items: [newer, added], total: 2 }],
+    });
+    await act(async () => {
+      if (outcome === "failure") reject(new Error("Reorder failed"));
+      else resolve({ ...original, version: 2, title: "Earlier confirmed move" });
+      await pending;
+    });
+    expect(client.getQueryData(detailKey)).toEqual(newer);
+    expect(client.getQueryData<InfiniteData<CrewTaskPageDTO>>(listKey)?.pages[0]?.items).toEqual([
+      newer,
+      added,
+    ]);
+    expect(client.getQueryState(detailKey)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(listKey)?.isInvalidated).toBe(true);
+  }
+);
+
+it("rolls back its own unchanged optimistic reorder after failure", async () => {
+  let reject!: (error: Error) => void;
+  session.api.post.mockReturnValue(
+    new Promise((_resolve, fail) => {
+      reject = fail;
+    })
+  );
+  const view = mount(() => hooks.useReorderCrewTask("crew-a"));
+  const destination = { id: "progress", semantic: "in_progress" } as CrewTaskWorkflowStateDTO;
+  const original = {
+    id: "task",
+    crewId: "crew-a",
+    version: 1,
+    status: "open",
+    rank: "1024",
+    workflowStateId: "open",
+    workflowState: { id: "open", semantic: "open" },
+  } as CrewTaskDTO;
+  const detailKey = [...crewKeys.task("task"), "alice"];
+  const listKey = [...crewKeys.taskView("crew-a", { viewId: "view" }), "alice"];
+  const page: InfiniteData<CrewTaskPageDTO> = {
+    pages: [{ items: [original], nextCursor: null, total: 1, workflowCounts: { open: 1 } }],
+    pageParams: [undefined],
+  };
+  client.setQueryData(detailKey, original);
+  client.setQueryData(listKey, page);
+  view.render();
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = view
+      .current()
+      .mutateAsync({
+        taskId: "task",
+        destinationState: destination,
+        input: {
+          expectedVersion: 1,
+          workflowStateId: "progress",
+          beforeTaskId: null,
+          beforeTaskVersion: null,
+          afterTaskId: null,
+          afterTaskVersion: null,
+        },
+      })
+      .catch((error: unknown) => error);
+  });
+  expect(client.getQueryData<CrewTaskDTO>(detailKey)?.status).toBe("in_progress");
+  await act(async () => {
+    reject(new Error("Failed"));
+    await pending;
+  });
+  expect(client.getQueryData(detailKey)).toEqual(original);
+  expect(client.getQueryData(listKey)).toEqual(page);
+});

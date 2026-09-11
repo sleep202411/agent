@@ -526,7 +526,12 @@ export function useReorderCrewTask(crewId: string) {
       ]);
       const previousTaskViews = qc.getQueriesData<InfiniteData<CrewTaskPageDTO>>(taskViewQueries);
       const previousTask = qc.getQueryData<CrewTaskDTO>([...crewKeys.task(taskId), accountUserId]);
+      const optimisticTaskViews = new Map<
+        readonly unknown[],
+        InfiniteData<CrewTaskPageDTO> | undefined
+      >();
       let optimisticTask: CrewTaskListItemDTO | undefined;
+      let optimisticDetail: CrewTaskDTO | undefined;
 
       for (const [queryKey, data] of previousTaskViews) {
         if (!data) continue;
@@ -534,35 +539,57 @@ export function useReorderCrewTask(crewId: string) {
           ...data,
           pages: optimisticallyReorderCrewTaskPages(data.pages, taskId, input, destinationState),
         };
-        qc.setQueryData(queryKey, optimisticData);
+        optimisticTaskViews.set(
+          queryKey,
+          qc.setQueryData<InfiniteData<CrewTaskPageDTO>>(queryKey, optimisticData)
+        );
         optimisticTask ??= optimisticData.pages
           .flatMap((page) => page.items)
           .find((task) => task.id === taskId);
       }
 
       if (optimisticTask && previousTask) {
-        qc.setQueryData<CrewTaskDTO>([...crewKeys.task(taskId), accountUserId], {
+        optimisticDetail = qc.setQueryData<CrewTaskDTO>([...crewKeys.task(taskId), accountUserId], {
           ...previousTask,
           ...optimisticTask,
         });
       }
 
-      return { previousTaskViews, previousTask, accountUserId, crewId, taskViewQueries };
+      return {
+        previousTaskViews,
+        previousTask,
+        optimisticTaskViews,
+        optimisticDetail,
+        accountUserId,
+        crewId,
+        taskViewQueries,
+      };
     },
     onError: (_error, { taskId }, context) => {
       if (!context?.accountUserId) return;
       const { accountUserId } = context;
       for (const [queryKey, data] of context?.previousTaskViews ?? []) {
-        qc.setQueryData(queryKey, data);
+        // Only undo the snapshot this request installed. A refresh or another
+        // edit owns any newer cache value; settlement will reconcile its order.
+        if (qc.getQueryData(queryKey) === context.optimisticTaskViews.get(queryKey)) {
+          qc.setQueryData(queryKey, data);
+        }
       }
-      if (context?.previousTask) {
-        qc.setQueryData([...crewKeys.task(taskId), accountUserId], context.previousTask);
+      const detailKey = [...crewKeys.task(taskId), accountUserId];
+      if (
+        context.previousTask &&
+        context.optimisticDetail &&
+        qc.getQueryData(detailKey) === context.optimisticDetail
+      ) {
+        qc.setQueryData(detailKey, context.previousTask);
       }
     },
     onSuccess: (task, _variables, context) => {
       if (!context?.accountUserId) return;
       const { accountUserId, taskViewQueries } = context;
-      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.setQueryData<CrewTaskDTO>([...crewKeys.task(task.id), accountUserId], (current) =>
+        current && current.version > task.version ? current : task
+      );
       qc.setQueriesData<InfiniteData<CrewTaskPageDTO>>(taskViewQueries, (current) =>
         current ? replaceCrewTaskInPages(current, task) : current
       );
@@ -588,7 +615,9 @@ function replaceCrewTaskInPages(
     ...data,
     pages: data.pages.map((page) => ({
       ...page,
-      items: page.items.map((candidate) => (candidate.id === task.id ? task : candidate)),
+      items: page.items.map((candidate) =>
+        candidate.id === task.id && candidate.version <= task.version ? task : candidate
+      ),
     })),
   };
 }
