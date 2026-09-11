@@ -9,6 +9,7 @@ import {
   type QueryKey,
 } from "@tanstack/react-query";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { CREW_CURRENCY, type CrewLedgerCurrency } from "@/src/lib/crew-money";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
@@ -21,9 +22,10 @@ import type {
 } from "./types";
 
 export function useCrewEarningDetail(earningId: string | null) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.earning(earningId ?? ""),
-    enabled: Boolean(earningId),
+    queryKey: [...crewKeys.earning(earningId ?? ""), user?.id ?? null],
+    enabled: Boolean(earningId) && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewEarningDetailDTO>(`/crew-earnings/${encodeURIComponent(earningId!)}`),
   });
@@ -39,14 +41,16 @@ export function useCrewEarnings(
   },
   enabled = true
 ) {
+  const { user } = useCurrentUser();
   const result = useInfiniteQuery({
     queryKey: [
       ...crewKeys.earnings(crewId, input.scope),
       input.status ?? "all",
       input.sourceType ?? "all",
       input.currency,
+      user?.id ?? null,
     ],
-    enabled: enabled && Boolean(crewId),
+    enabled: enabled && Boolean(crewId) && Boolean(user),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewEarningPageDTO>(`/crews/${encodeURIComponent(crewId)}/earnings`, {
@@ -70,7 +74,9 @@ export function useCrewEarnings(
 
 export function useCreateCrewEarning(crewId: string) {
   const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null }),
     mutationFn: (input: {
       crewMemberId: string;
       sourceType: Exclude<CrewEarningSourceType, "task_reward">;
@@ -83,7 +89,8 @@ export function useCreateCrewEarning(crewId: string) {
       crewApi.post<CrewEarningEntryDTO>(`/crews/${encodeURIComponent(crewId)}/earnings`, {
         body: { ...input, currency: CREW_CURRENCY },
       }),
-    onSuccess: () => invalidateEarnings(queryClient, crewId),
+    onSuccess: (_earning, _input, context) =>
+      invalidateEarnings(queryClient, crewId, context?.accountUserId),
   });
 }
 
@@ -105,6 +112,7 @@ function useEarningDecision(
   optimisticStatus: CrewEarningStatus
 ) {
   const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
     mutationFn: (input: { earningId: string; expectedVersion: number; reason?: string }) =>
       crewApi.post<CrewEarningEntryDTO>(
@@ -112,10 +120,11 @@ function useEarningDecision(
         { body: { expectedVersion: input.expectedVersion, reason: input.reason } }
       ),
     onMutate: async (input) => {
-      const prefix = ["crew", "earnings", crewId] as const;
-      await queryClient.cancelQueries({ queryKey: prefix });
+      const accountUserId = user?.id ?? null;
+      const filter = earningQueries(crewId, accountUserId);
+      await queryClient.cancelQueries(filter);
       const snapshots = queryClient.getQueriesData<InfiniteData<CrewEarningPageDTO>>({
-        queryKey: prefix,
+        ...filter,
       });
       const now = new Date().toISOString();
       for (const [key, current] of snapshots) {
@@ -133,20 +142,22 @@ function useEarningDecision(
           )
         );
       }
-      return { snapshots };
+      return { snapshots, accountUserId };
     },
     onError: (_error, _input, context) => {
       for (const [key, value] of context?.snapshots ?? []) {
         queryClient.setQueryData(key as QueryKey, value);
       }
     },
-    onSuccess: (earning) => {
-      queryClient.setQueryData(crewKeys.earning(earning.id), (current: unknown) =>
-        current && typeof current === "object" ? { ...current, ...earning } : current
+    onSuccess: (earning, _input, context) => {
+      if (!context?.accountUserId) return;
+      queryClient.setQueryData(
+        [...crewKeys.earning(earning.id), context.accountUserId],
+        (current: unknown) =>
+          current && typeof current === "object" ? { ...current, ...earning } : current
       );
-      const prefix = ["crew", "earnings", crewId] as const;
       queryClient.setQueriesData<InfiniteData<CrewEarningPageDTO>>(
-        { queryKey: prefix },
+        earningQueries(crewId, context.accountUserId),
         (current) =>
           current
             ? {
@@ -159,10 +170,13 @@ function useEarningDecision(
             : current
       );
     },
-    onSettled: (_data, _error, input) =>
+    onSettled: (_data, _error, input, context) =>
       Promise.all([
-        invalidateEarnings(queryClient, crewId),
-        queryClient.invalidateQueries({ queryKey: crewKeys.earning(input.earningId) }),
+        invalidateEarnings(queryClient, crewId, context?.accountUserId),
+        queryClient.invalidateQueries({
+          queryKey: [...crewKeys.earning(input.earningId), context?.accountUserId ?? null],
+          exact: true,
+        }),
       ]),
   });
 }
@@ -286,9 +300,24 @@ function optimisticEarning(
   };
 }
 
-function invalidateEarnings(queryClient: ReturnType<typeof useQueryClient>, crewId: string) {
+function earningQueries(crewId: string, accountUserId?: string | null) {
+  return {
+    queryKey: ["crew", "earnings", crewId],
+    predicate: (query: { queryKey: readonly unknown[] }) =>
+      Boolean(accountUserId) && query.queryKey.at(-1) === accountUserId,
+  };
+}
+
+function invalidateEarnings(
+  queryClient: ReturnType<typeof useQueryClient>,
+  crewId: string,
+  accountUserId?: string | null
+) {
   return Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["crew", "earnings", crewId] }),
-    queryClient.invalidateQueries({ queryKey: ["crew", "payouts", crewId] }),
+    queryClient.invalidateQueries(earningQueries(crewId, accountUserId)),
+    queryClient.invalidateQueries({
+      ...earningQueries(crewId, accountUserId),
+      queryKey: ["crew", "payouts", crewId],
+    }),
   ]);
 }

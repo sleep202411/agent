@@ -113,9 +113,9 @@ describe("crew finance cache refresh", () => {
     ["reverse", useReverseCrewEarning],
   ] as const)("refreshes payout balances and the audit trail after %s", async (_action, hook) => {
     const current = mount(() => hook("crew-1"));
-    const detailKey = crewKeys.earning("earning-1");
-    const ownPayouts = [...crewKeys.payouts("crew-1", "mine"), "all", "USD"];
-    const crewPayouts = [...crewKeys.payouts("crew-1", "crew"), "all", "USD"];
+    const detailKey = [...crewKeys.earning("earning-1"), "alice"];
+    const ownPayouts = [...crewKeys.payouts("crew-1", "mine"), "all", "USD", "alice"];
+    const crewPayouts = [...crewKeys.payouts("crew-1", "crew"), "all", "USD", "alice"];
     const otherCrew = crewKeys.payouts("crew-2", "crew");
     for (const key of [detailKey, ownPayouts, crewPayouts, otherCrew]) {
       client.setQueryData(key, { events: [] });
@@ -149,8 +149,8 @@ describe("crew finance cache refresh", () => {
 
   it("refreshes the earning detail and available balance after a conflicting decision", async () => {
     const current = mount(() => useReverseCrewEarning("crew-1"));
-    const detailKey = crewKeys.earning("earning-1");
-    const payoutKey = crewKeys.payouts("crew-1", "mine");
+    const detailKey = [...crewKeys.earning("earning-1"), "alice"];
+    const payoutKey = [...crewKeys.payouts("crew-1", "mine"), "all", "USD", "alice"];
     client.setQueryData(detailKey, { version: 1 });
     client.setQueryData(payoutKey, {});
     vi.mocked(crewApi.post).mockRejectedValue(new Error("Earning already allocated"));
