@@ -97,6 +97,9 @@ let root: Root | null = null;
 let container: HTMLElement | null = null;
 let requests: Array<{ url: string; method: string; body?: unknown }> = [];
 let storageAvailable = true;
+let paginated = false;
+let nextPageFails = false;
+let assetListFails = false;
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -218,6 +221,18 @@ function installFetch() {
       }
       if (method === "GET" && url.endsWith("/assets/folders")) return jsonResponse([ROOT_ITEMS[0]]);
       if (method === "GET" && url.includes("/assets")) {
+        if (assetListFails)
+          return jsonResponse({ message: "Refresh unavailable" }, { status: 503 });
+        if (url.includes("cursor=")) {
+          return nextPageFails
+            ? jsonResponse({ message: "Next page unavailable" }, { status: 503 })
+            : jsonResponse({
+                items: [{ ...ROOT_ITEMS[1], id: "last", name: "last.png" }],
+                nextCursor: null,
+                source: "all",
+                parentId: null,
+              });
+        }
         const inFolder = url.includes("parentId=folder-1");
         return jsonResponse({
           items: inFolder
@@ -230,6 +245,7 @@ function installFetch() {
               ],
           parentId: inFolder ? "folder-1" : null,
           source: "all",
+          nextCursor: paginated ? "file-1" : null,
         });
       }
       if (method === "POST" && url.endsWith("/assets/folders")) {
@@ -274,6 +290,7 @@ async function render(initialAssetId?: string) {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+  return queryClient;
 }
 
 function byText(selector: string, text: string): HTMLElement {
@@ -294,6 +311,9 @@ beforeEach(() => {
   document.body.innerHTML = "";
   requests = [];
   storageAvailable = true;
+  paginated = false;
+  nextPageFails = false;
+  assetListFails = false;
   canLink = true;
   linkFails = false;
   HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -526,7 +546,12 @@ describe("Link Canvas", () => {
       expect.objectContaining({ method: "PATCH", body: { projectId: "project-1" } })
     );
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(trigger.textContent).toBe("Film Canvas");
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(trigger.textContent).toBe("Film Canvas");
+    });
   });
   it("keeps the action disabled without Overview management permission", async () => {
     canLink = false;
@@ -546,4 +571,54 @@ describe("Link Canvas", () => {
     expect(toast.error).toHaveBeenCalledWith("Project access changed");
     expect(byText("span", "Film Canvas")).toBeTruthy();
   });
+});
+
+it("retains assets and pauses scrolling after a next-page failure, then retries that page", async () => {
+  paginated = true;
+  nextPageFails = true;
+  await render();
+  const scroller = container!.querySelector<HTMLElement>(".relative.overflow-auto")!;
+  await act(async () => {
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).toContain("Next page unavailable");
+  const count = requests.filter((request) => request.url.includes("cursor=")).length;
+  await act(async () => {
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(requests.filter((request) => request.url.includes("cursor="))).toHaveLength(count);
+  expect(document.body.textContent).toContain("concept.png");
+  nextPageFails = false;
+  await click(byText("button", "Retry"));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).toContain("last.png");
+  expect(requests.filter((request) => request.url.includes("cursor="))).toHaveLength(count + 1);
+});
+
+it("retains loaded assets after a refresh failure and recovers with refresh retry", async () => {
+  const client = await render();
+  assetListFails = true;
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["crew", "assets", "crew_1", "list"] });
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).toContain("Refresh unavailable");
+  expect(document.body.textContent).toContain("concept.png");
+  assetListFails = false;
+  await click(byText("button", "Retry"));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).not.toContain("Refresh unavailable");
+  expect(document.body.textContent).toContain("concept.png");
 });
