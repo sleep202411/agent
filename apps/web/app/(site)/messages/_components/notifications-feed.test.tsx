@@ -16,6 +16,10 @@ import type { NotificationDTO } from "@repo/shared/notifications";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
+  useUserDisplays: () => new Map([["actor-1", { nickname: "Isaac" }]]),
+}));
+
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const i18n = vi.hoisted(() => ({ locale: "en-US" }));
 const dataHooks = vi.hoisted(() => ({ feed: vi.fn(), read: vi.fn() }));
@@ -29,7 +33,7 @@ vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string, vars?: Record<string, string | number>) =>
     Object.entries(vars ?? {}).reduce(
       (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
-      key
+      key.endsWith("bodyWithActor") ? "Changed by {actor}" : key
     ),
 }));
 
@@ -125,4 +129,15 @@ it("opening an unread notification marks its own id as read", () => {
   act(() => root.render(<NotificationsFeed />));
   act(() => rowButton().click());
   expect(dataHooks.read).toHaveBeenCalledWith(ITEM.id);
+});
+
+it("shows the resolved actor name for a task notification", () => {
+  const original = ITEM.meta;
+  ITEM.meta = { ...original, actorUserId: "actor-1", taskTitle: "Storyboard" };
+  try {
+    act(() => root.render(<NotificationsFeed />));
+    expect(container.textContent).toContain("Changed by Isaac");
+  } finally {
+    ITEM.meta = original;
+  }
 });

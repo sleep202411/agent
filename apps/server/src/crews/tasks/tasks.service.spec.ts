@@ -410,6 +410,32 @@ describe('CrewTasksService', () => {
     },
   );
 
+  it('records the actor in task update notifications', async () => {
+    const t = build();
+    const current = { ...task(), canvasProjectId: null };
+    t.prisma.crewTask.findUnique.mockResolvedValue(current);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+    t.tx.crewTask.update.mockResolvedValue({
+      ...current,
+      title: 'Revised brief',
+      version: 2,
+    });
+    await t.service.update(TASK_ID, OWNER_ID, {
+      expectedVersion: 1,
+      title: 'Revised brief',
+    });
+    expect(t.notifications.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'crew.task.updated',
+        meta: expect.objectContaining({
+          actorUserId: OWNER_ID,
+          taskTitle: 'Revised brief',
+        }),
+      }),
+      t.tx,
+    );
+  });
+
   it('updates a production cycle only from the expected revision', async () => {
     const t = build();
     const cycle = {

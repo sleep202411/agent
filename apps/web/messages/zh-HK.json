@@ -9287,11 +9287,13 @@
       },
       "taskAssigned": {
         "title": "新任務：{task}",
-        "body": "該任務已分配給你。"
+        "body": "該任務已分配給你。",
+        "bodyWithActor": "{actor} 將此任務指派給你。"
       },
       "taskUpdated": {
         "title": "任務已更新：{task}",
-        "body": "任務資料或參與成員已變更。"
+        "body": "任務資料或參與成員已變更。",
+        "bodyWithActor": "{actor} 更新了此任務。"
       },
       "taskCommented": {
         "title": "任務有新留言：{task}",

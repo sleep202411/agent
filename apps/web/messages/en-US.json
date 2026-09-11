@@ -9287,11 +9287,13 @@
       },
       "taskAssigned": {
         "title": "New task: {task}",
-        "body": "You were assigned to this task."
+        "body": "You were assigned to this task.",
+        "bodyWithActor": "{actor} assigned this task to you."
       },
       "taskUpdated": {
         "title": "Task updated: {task}",
-        "body": "Task details or participants changed."
+        "body": "Task details or participants changed.",
+        "bodyWithActor": "{actor} updated this task."
       },
       "taskCommented": {
         "title": "New comment: {task}",

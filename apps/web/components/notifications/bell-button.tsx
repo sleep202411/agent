@@ -1,5 +1,7 @@
 "use client";
 
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+
 /**
  * BellButton — top-nav bell with unread badge and recent-items dropdown.
  *
@@ -185,7 +187,9 @@ function NotificationRow({
 }) {
   const unread = !item.readAt;
   const t = useTranslations("notifications");
-  const content = notificationContent(item, locale, t);
+  const actorId = typeof item.meta?.actorUserId === "string" ? item.meta.actorUserId : "";
+  const actors = useUserDisplays(actorId ? [actorId] : []);
+  const content = notificationContent(item, locale, t, actors.get(actorId)?.nickname);
   return (
     <button
       type="button"
