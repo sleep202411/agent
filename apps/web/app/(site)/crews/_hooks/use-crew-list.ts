@@ -3,6 +3,7 @@
  */
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { CrewDTO } from "./types";
@@ -40,10 +41,11 @@ export function useCrewList(pageSize = 24) {
 
 /** Profile "My Crews" tab — owner + member breakdown in one call. */
 export function useMyCrews(enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.mine,
+    queryKey: [...crewKeys.mine, user?.id ?? null],
     queryFn: () => crewApi.get<MyCrewsResult>("/crews/my"),
-    enabled,
+    enabled: enabled && Boolean(user),
   });
 }
 
