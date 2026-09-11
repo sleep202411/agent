@@ -120,6 +120,7 @@ const MediaAssetReadinessCapabilitySchema = z.enum(
 
 export const MediaAssetReadinessStatusRequestSchema = z.object({
   capability: MediaAssetReadinessCapabilitySchema,
+  documentId: z.string().uuid().optional(),
   assetIds: z.array(z.string().uuid()).max(100),
 });
 export type MediaAssetReadinessStatusRequestDto = z.infer<
@@ -132,6 +133,7 @@ export interface MediaAssetReadinessStatusResponseDto {
 
 export const MediaAssetReadinessCheckRequestSchema = z.object({
   capability: MediaAssetReadinessCapabilitySchema,
+  documentId: z.string().uuid().optional(),
 });
 export type MediaAssetReadinessCheckRequestDto = z.infer<
   typeof MediaAssetReadinessCheckRequestSchema

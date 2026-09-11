@@ -14,6 +14,11 @@
  * endpoints stay implementation details; user-visible controls and pricing are
  * defined at the canonical model layer.
  */
+import {
+  GPT_IMAGE_25_EDIT_SCHEMA,
+  GPT_IMAGE_25_TEXT_SCHEMA,
+  GPT_IMAGE_25_OUTPUT_SCHEMA,
+} from './gpt-image-25.schemas';
 import type { Prisma } from '@prisma/client';
 import type { AiGenerationMode, AiProductPricingPolicy } from '@repo/shared';
 
@@ -26,6 +31,8 @@ import {
   FLUX_2_MAX_PRODUCT_PRICING,
   FLUX_2_PRO_PARAMETER_POLICY,
   FLUX_2_PRO_PRODUCT_PRICING,
+  GPT_IMAGE_25_PARAMETER_POLICY,
+  GPT_IMAGE_25_PRODUCT_PRICING,
   GPT_IMAGE_2_PARAMETER_POLICY,
   GPT_IMAGE_2_PRODUCT_PRICING,
   HUNYUAN_WORLD_PARAMETER_POLICY,
@@ -445,7 +452,7 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
       'OpenAI image generation and editing model for instruction-following, typography, layout, product mockups, and structured visual edits.',
     modes: [T2I, I2I, INPAINT],
     requiredPlan: null,
-    cost: 60,
+    cost: 42,
     parameterPolicy: GPT_IMAGE_2_PARAMETER_POLICY,
     productPricing: GPT_IMAGE_2_PRODUCT_PRICING,
     group: 'recommended',
@@ -461,6 +468,61 @@ export const IMAGE_MODELS: ImageModelSeed[] = [
     ],
     providerAliases: ['fal/openai/gpt-image-2'],
   },
+  ...(['flare', 'sunburst'] as const).map(
+    (variant, index): ImageModelSeed => ({
+      slug: `gpt-image-2.5-${variant}`,
+      displayName: `GPT Image 2.5 ${variant === 'flare' ? 'Flare' : 'Sunburst'}`,
+      family: 'gpt-image',
+      vendor: 'OpenAI',
+      description:
+        variant === 'flare'
+          ? 'Fast image generation and editing with up to 16 reference images.'
+          : 'Precision image generation and editing for detailed compositions with up to 16 reference images.',
+      modes: [T2I, I2I, INPAINT],
+      requiredPlan: null,
+      cost: 84,
+      parameterPolicy: GPT_IMAGE_25_PARAMETER_POLICY,
+      productPricing: GPT_IMAGE_25_PRODUCT_PRICING,
+      group: 'recommended',
+      sortOrder: 11 + index,
+      recommended: true,
+      providers: (['text-to-image', 'edit'] as const).map(
+        (operation, endpointIndex) => ({
+          provider: 'fal-ai',
+          endpointId: `openai/gpt-image-2.5/${variant}/${operation}`,
+          modes: operation === 'edit' ? [I2I, INPAINT] : [T2I],
+          priority: 10 + endpointIndex,
+          weight: 100,
+          providerInputSchema:
+            operation === 'edit'
+              ? GPT_IMAGE_25_EDIT_SCHEMA
+              : GPT_IMAGE_25_TEXT_SCHEMA,
+          providerOutputSchema: GPT_IMAGE_25_OUTPUT_SCHEMA,
+          catalogSnapshot: {
+            model: `openai/gpt-image-2.5/${variant}/${operation}`,
+            // Usage-dependent token cost; do not represent it as a fixed image cost.
+            tokenPricing: {
+              currency: 'USD',
+              unit: 'million_tokens',
+              verifiedAt: '2026-09-11',
+              text: { input: 5, cachedInput: 1.25, output: 10 },
+              image: { input: 8, cachedInput: 2, output: 30 },
+            },
+            docs: [
+              {
+                title: 'fal GPT Image 2.5 API',
+                url: `https://fal.ai/models/openai/gpt-image-2.5/${variant}/${operation}/api`,
+              },
+            ],
+          },
+        }),
+      ),
+      providerAliases: [
+        `fal/openai/gpt-image-2.5/${variant}/text-to-image`,
+        `fal/openai/gpt-image-2.5/${variant}/edit`,
+      ],
+    }),
+  ),
   {
     slug: 'flux-2-pro',
     displayName: 'Flux 2 Pro',

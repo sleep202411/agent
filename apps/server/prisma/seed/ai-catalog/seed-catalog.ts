@@ -404,8 +404,15 @@ export function planSingleModelSeed(slug: string): {
 } {
   const video = VIDEO_MODELS.find((entry) => entry.slug === slug);
   const audio = AUDIO_MODELS.find((entry) => entry.slug === slug);
-  const model = video ?? audio;
-  const cfg = video ? VIDEO_CONFIG : audio ? AUDIO_CONFIG : null;
+  const image = IMAGE_MODELS.find((entry) => entry.slug === slug);
+  const model = video ?? audio ?? image;
+  const cfg = video
+    ? VIDEO_CONFIG
+    : audio
+      ? AUDIO_CONFIG
+      : image
+        ? IMAGE_CONFIG
+        : null;
   if (!model || !cfg) {
     throw new Error(`Unknown catalog slug "${slug}".`);
   }
@@ -444,6 +451,11 @@ export function planSingleModelSeed(slug: string): {
       }),
     })),
   };
+}
+
+/** Scoped image upsert: no global catalog pruning or provider reconciliation. */
+export async function seedSingleImageModel(prisma: PrismaClient, slug: string) {
+  return seedSingleCanonicalModel(prisma, slug, IMAGE_MODELS, IMAGE_CONFIG);
 }
 
 export async function seedSingleAudioModel(

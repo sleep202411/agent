@@ -18,7 +18,7 @@ type FalRequestNormalizer = (
 ) => void;
 
 const NORMALIZERS_BY_FAMILY: Record<string, FalRequestNormalizer> = {
-  'gpt-image': normalizeGptImage2Request,
+  'gpt-image': normalizeGptImageRequest,
   seedream: normalizeSeedreamRequest,
   'qwen-image-2.0': normalizeQwenImageRequest,
   'flux-2': normalizeFluxImageRequest,
@@ -79,7 +79,7 @@ function endpointFamilyFallback(
   return undefined;
 }
 
-function normalizeGptImage2Request(
+function normalizeGptImageRequest(
   config: FalModelRuntimeConfig,
   input: Record<string, unknown>,
   body: Record<string, unknown>,
@@ -252,17 +252,24 @@ function dimensionsFromImageSize(
     width = height * aspect;
   }
 
+  // GPT Image requires at least 655,360 pixels, including 1K widescreen.
+  // Quantize within the area bounds: nearest rounding alone can push a 4K
+  // square above the provider maximum of 8,294,400 pixels.
+  const minPixels = 655_360;
   const pixels = width * height;
-  if (pixels > maxPixels) {
-    const scale = Math.sqrt(maxPixels / pixels);
-    width *= scale;
-    height *= scale;
+  const scale = Math.sqrt(
+    Math.min(maxPixels, Math.max(minPixels, pixels)) / pixels,
+  );
+  width = roundToMultiple(width * scale, 16);
+  height = roundToMultiple(height * scale, 16);
+  while (width * height < minPixels || width * height > maxPixels) {
+    const delta = width * height < minPixels ? 16 : -16;
+    const widthError = Math.abs(Math.log((width + delta) / height / aspect));
+    const heightError = Math.abs(Math.log(width / (height + delta) / aspect));
+    if (widthError < heightError) width += delta;
+    else height += delta;
   }
-
-  return {
-    width: clampFalDimension(roundToMultiple(width, 16)),
-    height: clampFalDimension(roundToMultiple(height, 16)),
-  };
+  return { width, height };
 }
 
 function aspectRatioForImageSize(imageSize: string): number | undefined {
@@ -347,10 +354,6 @@ function explicitAspectRatio(value: string): number | undefined {
 
 function roundToMultiple(value: number, multiple: number): number {
   return Math.max(multiple, Math.round(value / multiple) * multiple);
-}
-
-function clampFalDimension(value: number): number {
-  return Math.min(3840, Math.max(16, value));
 }
 
 function clampSeedreamDimension(value: number): number {
