@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
   IconBell,
@@ -122,10 +122,11 @@ export function LinearTaskWorkspace({
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
 
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setSelectedTaskId(deeplinkTaskId ?? null));
-    return () => cancelAnimationFrame(frame);
-  }, [deeplinkTaskId]);
+  const [previousDeeplinkTaskId, setPreviousDeeplinkTaskId] = useState(deeplinkTaskId);
+  if (previousDeeplinkTaskId !== deeplinkTaskId) {
+    setPreviousDeeplinkTaskId(deeplinkTaskId);
+    setSelectedTaskId(deeplinkTaskId ?? null);
+  }
 
   const selectTask = useCallback(
     (taskId: string | null) => {

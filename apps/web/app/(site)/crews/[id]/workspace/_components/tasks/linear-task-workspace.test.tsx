@@ -102,14 +102,18 @@ let root: ReturnType<typeof createRoot>;
 afterEach(() => {
   if (root) act(() => root.unmount());
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
 });
-async function render() {
-  const el = document.createElement("div");
-  document.body.append(el);
-  root = createRoot(el);
+async function render(deeplinkTaskId?: string | null, reuse = false) {
+  if (!reuse) {
+    const el = document.createElement("div");
+    document.body.append(el);
+    root = createRoot(el);
+  }
   await act(async () =>
     root.render(
       <LinearTaskWorkspace
+        deeplinkTaskId={deeplinkTaskId}
         crewId="crew"
         crewName="Test12"
         crewSummary=""
@@ -183,3 +187,33 @@ it.each(["list", "board"])(
     expect(search.value).toBe("search term");
   }
 );
+
+it("keeps a task opened before the initial animation frame", async () => {
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.set(++nextFrame, callback);
+    return nextFrame;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    frames.delete(id);
+  });
+  await render();
+  await act(async () => (document.querySelector("[data-layout] button") as HTMLElement).click());
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await act(async () => {
+    const pending = Array.from(frames.values());
+    frames.clear();
+    pending.forEach((callback) => callback(0));
+  });
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+it("follows changed deep links in the same workspace", async () => {
+  await render("task-1");
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await render(null, true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await render("task-1", true);
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+});
