@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
   cancelCrewUpload,
@@ -8,7 +8,9 @@ import {
   reserveCrewUpload,
 } from './storage-quota';
 
-const url = process.env.CREW_QUOTA_TEST_DATABASE_URL;
+const url =
+  process.env.CREW_QUOTA_TEST_DATABASE_URL ??
+  process.env.TASK01_TEST_DATABASE_URL;
 (url ? describe : describe.skip)(
   'Crew quota native PostgreSQL transactions',
   () => {
@@ -19,8 +21,10 @@ const url = process.env.CREW_QUOTA_TEST_DATABASE_URL;
       const target = new URL(url!);
       if (
         target.hostname !== '127.0.0.1' ||
-        target.port !== '55441' ||
-        target.pathname !== '/fizzquota'
+        !(
+          (target.port === '55441' && target.pathname === '/fizzquota') ||
+          (target.port === '55439' && target.pathname === '/task01')
+        )
       )
         throw new Error('Only the isolated quota database is allowed');
       db = new PrismaClient({
@@ -106,6 +110,42 @@ const url = process.env.CREW_QUOTA_TEST_DATABASE_URL;
       );
       expect((await crewStorageUsage(db, crewId)).reservedBytes).toBe(0);
     });
+    it('does not credit a reservation that expires between validation and usage', async () => {
+      const key = randomUUID();
+      await reserve(key, 70);
+      await reserve(randomUUID(), 30);
+      await expect(
+        db.$transaction(async (tx) => {
+          let first = true;
+          const query = async (
+            sql: TemplateStringsArray | Prisma.Sql,
+            ...values: unknown[]
+          ) => {
+            const result = await tx.$queryRaw<unknown>(sql, ...values);
+            if (first) {
+              first = false;
+              await tx.$executeRaw`UPDATE crew_upload_reservations SET expires_at=clock_timestamp()-interval '1 second' WHERE storage_key=${key}`;
+            }
+            return result;
+          };
+          await completeCrewUpload(
+            {
+              $executeRaw: (
+                sql: TemplateStringsArray | Prisma.Sql,
+                ...values: unknown[]
+              ) => tx.$executeRaw(sql, ...values),
+              $queryRaw: query as typeof tx.$queryRaw,
+            },
+            crewId,
+            'test-user',
+            key,
+            90,
+          );
+        }),
+      ).rejects.toThrow('Stored file exceeds');
+      expect((await crewStorageUsage(db, crewId)).reservedBytes).toBe(100);
+    });
+
     it('enforces ownership on cancellation and rejects cancelled or expired confirmation', async () => {
       const key = randomUUID();
       await reserve(key, 70);
