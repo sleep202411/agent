@@ -2461,6 +2461,7 @@
   },
   "storyStudio": {
     "authoringRun": {
+      "sourceReviewNotes": "剧本规则与制作备注（{count}）",
       "title": {
         "authoring": "正在起草…",
         "proposed": "剧本已完成",
@@ -2524,6 +2525,7 @@
         }
       },
       "plotCard": {
+        "unresolved": "走向尚未实现",
         "eyebrow": "情节树提案",
         "review": "打开画布预览",
         "dialogDescription": "在只读画布中查看本提案的完整场景拓扑、分支与结局；批准或退回仍在消息流底部的决策区完成。",
@@ -2612,10 +2614,10 @@
           "ready": "分镜已就绪",
           "review": "审阅分镜",
           "eyebrow": "分镜提案",
-          "description": "请审阅序列、镜头、时长和提示词。批准后只保存方案，不生成媒体，也不消耗点数。",
+          "description": "请审阅分镜、镜头、时长和提示词。批准后只保存方案，不生成媒体，也不消耗点数。",
           "approve": "批准分镜",
           "saving": "正在保存分镜…",
-          "savingHint": "正在记录你的批准，本次只保存分镜序列和镜头提示词。"
+          "savingHint": "正在记录你的批准，本次只保存分镜和镜头提示词。"
         },
         "patch": {
           "ready": "故事更新已就绪",
@@ -2640,7 +2642,7 @@
           "characters": "角色",
           "locations": "场景",
           "props": "道具",
-          "sequences": "序列",
+          "sequences": "分镜",
           "clips": "镜头",
           "seconds": "秒"
         },
@@ -2650,7 +2652,7 @@
           "structure": "剧本场景与分支",
           "productionNotes": "制作说明",
           "assetSpecs": "可复用资产规格",
-          "storyboard": "序列与镜头"
+          "storyboard": "分镜与镜头"
         },
         "assetKinds": {
           "character": "角色",
@@ -2673,14 +2675,14 @@
         "noAssetSpecs": "本提案不需要可复用的资产规格。",
         "sequenceMeta": "{count} 个镜头 · {seconds} 秒",
         "storyboardTable": {
-          "sequence": "序列",
+          "sequence": "分镜",
           "shots": "镜头",
           "duration": "时长",
           "seconds": "{value} 秒",
           "viewAll": "查看全部分镜",
-          "more": "还有 {count} 个序列",
-          "dialogTitle": "分镜详情 · {count} 个序列",
-          "dialogDescription": "查看本次提案中的全部序列、镜头、时间、提示词和决策提示点。",
+          "more": "还有 {count} 个分镜",
+          "dialogTitle": "分镜详情 · {count} 个分镜",
+          "dialogDescription": "查看本次提案中的全部分镜、镜头、时间、提示词和决策提示点。",
           "shot": "镜头",
           "type": "类型",
           "timing": "时间",
@@ -3000,8 +3002,9 @@
       }
     },
     "storyboardPage": {
+      "nodeDescription": "描述",
       "pageTitle": "分镜 · 影游工作室",
-      "pageDescription": "编辑本章的情节序列、镜头、提示点和资产绑定。",
+      "pageDescription": "编辑本章的分镜、镜头、提示点和资产绑定。",
       "loading": "正在加载分镜…",
       "emptyChapter": "本章还没有情节节点。",
       "emptyHint": "在情节树中添加场景后，分镜会在这里逐场景展开。",
@@ -3009,7 +3012,7 @@
       "retry": "重试",
       "plotNode": "情节节点 {index}",
       "clipCount": "{count} 个片段",
-      "noClips": "此序列没有片段。",
+      "noClips": "此分镜没有片段。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。准备好后，可在已保存的片段上选择“生成”。",
       "seconds": "{value} 秒",
       "options": "选项",
@@ -3034,7 +3037,7 @@
       "loadError": "无法加载时间轴。",
       "retry": "重试",
       "emptyTitle": "还没有可剪辑的分镜时间轴",
-      "emptyDescription": "请先准备分镜序列，再进入剪辑器。",
+      "emptyDescription": "请先准备分镜，再进入剪辑器。",
       "backToStoryboard": "返回分镜",
       "saved": "已保存",
       "saving": "正在保存…",
@@ -3064,8 +3067,8 @@
       "prompt": "提示词",
       "timeline": "时间轴",
       "timelineZoom": "时间轴缩放",
-      "play": "播放序列",
-      "pause": "暂停序列",
+      "play": "播放分镜",
+      "pause": "暂停分镜",
       "restart": "回到开头",
       "zoomOut": "缩小时间轴",
       "zoomIn": "放大时间轴",
@@ -3675,6 +3678,8 @@
         "moveChoiceDown": "下移选项",
         "delete": "删除节点",
         "nodeName": "名称",
+        "nodeDescription": "描述",
+        "nodeDescriptionPlaceholder": "粘贴剧本中对应的原文段落。",
         "storyboard": {
           "title": "分镜",
           "summary": "{count} 个片段 · {ready} 个已有媒体",
@@ -4085,7 +4090,25 @@
       "continue": "继续",
       "submit": "确认",
       "submitting": "确认中…",
-      "failed": "无法提交这些回答"
+      "failed": "无法提交这些回答",
+      "profile": {
+        "aspect_ratio": {
+          "header": "画面比例",
+          "question": "本项目使用什么画面比例？"
+        },
+        "target_runtime": {
+          "header": "目标时长",
+          "question": "目标体验时长是多少？"
+        },
+        "visual_direction": {
+          "header": "视觉风格",
+          "question": "本项目采用哪种视觉风格？"
+        },
+        "story_language": {
+          "header": "故事语言",
+          "question": "剧本与故事内容使用哪种语言？"
+        }
+      }
     },
     "workerOnline": "Worker 在线",
     "workerOffline": "当前不可用——正在自动重试",

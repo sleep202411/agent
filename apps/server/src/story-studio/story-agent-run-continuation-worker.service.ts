@@ -405,9 +405,20 @@ export class StoryAgentRunContinuationWorkerService
           toolId: 'story.author',
           externalJobId: run.id,
           phase: 'apply',
+          storyArtifact: {
+            storyProjectId: run.storyProjectId,
+            storyChapterId: run.storyChapterId,
+            workspaceId: run.workspaceId,
+            stage: completedStage,
+            schemaVersion: StoryAgentRunProposalSchema.parse(run.proposal)
+              .schemaVersion,
+          },
           ...(result.outcome === 'completed' &&
           continuationPlan.success &&
-          completedStage === 'assets'
+          (completedStage === 'script' ||
+            completedStage === 'plot' ||
+            completedStage === 'assets' ||
+            completedStage === 'storyboard')
             ? {
                 storyContinuation: {
                   locale: storyContinuationLocale(run.project.defaultLocale),

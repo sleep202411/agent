@@ -176,6 +176,7 @@ export class StoryAgentRunWorkerService
 
       let authored: StoryAuthoringPipelineResult | null = null;
       let screenplay: StoryScreenplay | undefined;
+      let document: StoryAuthoringPipelineResult['document'];
       let assetPlan: StoryAssetPlan | undefined;
       let storyboardPlan: StoryStoryboardPlan | undefined;
       try {
@@ -191,21 +192,20 @@ export class StoryAgentRunWorkerService
           case 'plot':
             if (load.job.screenplaySnapshot) {
               screenplay = load.job.screenplaySnapshot.screenplay;
+              document = load.job.screenplaySnapshot.document;
             } else if (load.job.scriptSource) {
-              screenplay = (
-                await this.pipeline.compileScript({
-                  sourceText: load.job.scriptSource.sourceText,
-                  title: load.job.brief.title,
-                  creativeProfile: load.job.creativeProfile,
-                  signal: controller.signal,
-                  onStage: (stage) =>
-                    this.runs.advanceAuthoringStage(
-                      runId,
-                      this.workerId,
-                      stage,
-                    ),
-                })
-              ).screenplay;
+              const compiled = await this.pipeline.compileScript({
+                sourceText: load.job.scriptSource.sourceText,
+                document: load.job.scriptSource.document,
+                title: load.job.brief.title,
+                instructions: load.job.brief.brief,
+                creativeProfile: load.job.creativeProfile,
+                signal: controller.signal,
+                onStage: (stage) =>
+                  this.runs.advanceAuthoringStage(runId, this.workerId, stage),
+              });
+              screenplay = compiled.screenplay;
+              document = compiled.document;
             } else {
               throw new Error(
                 'The canonical Plot route is missing both a structured Script and an exact Script source.',
@@ -268,6 +268,7 @@ export class StoryAgentRunWorkerService
         load.job.targetStage === 'script'
           ? await this.runs.completeAuthoring(runId, this.workerId, {
               screenplay: authored!.screenplay,
+              ...(authored!.document ? { document: authored!.document } : {}),
               authoredAgainst: load.job.snapshot,
             })
           : load.job.targetStage === 'noop'
@@ -279,6 +280,7 @@ export class StoryAgentRunWorkerService
             : await this.runs.completeStageAuthoring(runId, this.workerId, {
                 targetStage: load.job.targetStage,
                 screenplay,
+                ...(document ? { document } : {}),
                 ...(assetPlan ? { assetPlan } : {}),
                 ...(storyboardPlan ? { storyboardPlan } : {}),
                 authoredAgainst: load.job.snapshot,
@@ -335,5 +337,8 @@ function positiveInt(
 }
 
 function errorText(error: unknown): string {
-  return (error instanceof Error ? error.message : String(error)).slice(0, 500);
+  return (error instanceof Error ? error.message : String(error)).slice(
+    0,
+    4_000,
+  );
 }

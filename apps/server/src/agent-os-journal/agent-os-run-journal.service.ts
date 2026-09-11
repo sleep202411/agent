@@ -212,6 +212,15 @@ type ExternalResultInput = {
   phase: 'authoring' | 'apply';
   text: string;
   outcome: 'completed' | 'failed' | 'cancelled';
+  /** Auto-applied stages still leave a durable artifact in the transcript. */
+  storyArtifact?: Pick<
+    StoryProposalReadyInput,
+    | 'storyProjectId'
+    | 'storyChapterId'
+    | 'workspaceId'
+    | 'stage'
+    | 'schemaVersion'
+  >;
   storyContinuation?: {
     locale: 'en-US' | 'zh-CN' | 'zh-HK';
     plan: StoryProductionContinuationPlan;
@@ -2763,6 +2772,30 @@ export class AgentOsRunJournalService {
       ...(input.phase === 'apply' && input.toolId === 'story.applyProposal'
         ? [
             next('artifact-updated', 'ArtifactUpdated', {
+              turnId: input.turnId,
+              artifactId: input.externalJobId,
+              status:
+                input.outcome === 'completed'
+                  ? 'applied'
+                  : input.outcome === 'cancelled'
+                    ? 'cancelled'
+                    : 'failed',
+            }),
+          ]
+        : []),
+      ...(input.phase === 'apply' && input.storyArtifact
+        ? [
+            next('artifact-created', 'ArtifactCreated', {
+              turnId: input.turnId,
+              artifactId: input.externalJobId,
+              artifact: {
+                kind: 'story_stage_proposal',
+                storyAgentRunId: input.externalJobId,
+                ...input.storyArtifact,
+              },
+              status: 'active',
+            }),
+            next('artifact-auto-applied', 'ArtifactUpdated', {
               turnId: input.turnId,
               artifactId: input.externalJobId,
               status:

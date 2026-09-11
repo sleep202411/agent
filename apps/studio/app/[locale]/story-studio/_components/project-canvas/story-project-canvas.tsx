@@ -3025,6 +3025,16 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                   {data.title}
                 </h2>
               ) : null}
+              {data.description?.trim() ? (
+                <div
+                  role="region"
+                  aria-label={`${data.title} · ${t("inspector.nodeDescription")}`}
+                  tabIndex={0}
+                  className="nodrag nopan nowheel mt-2 max-h-40 cursor-text overflow-y-auto overscroll-contain whitespace-pre-wrap wrap-anywhere rounded-sm text-xs leading-5 text-white/70 select-text focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/45"
+                >
+                  {data.description}
+                </div>
+              ) : null}
               {coverage ? (
                 <p className="mt-1.5 text-[10px] leading-4 tabular-nums text-white/42">
                   {t("production.node.clipCoverage", {

@@ -215,6 +215,7 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     expect(runs.completeStageAuthoring).toHaveBeenCalledWith(RUN_ID, workerId, {
       targetStage: 'plot',
       screenplay: APPROVED_SCREENPLAY.screenplay,
+      document: APPROVED_SCREENPLAY.document,
       authoredAgainst: JOB.snapshot,
     });
   });
@@ -227,6 +228,12 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
       hash: 'b'.repeat(64),
       hasContent: true,
       sourceText: '<paragraph>The creator exact Script.</paragraph>',
+      document: {
+        schemaVersion: 'story-screenplay-document-v1' as const,
+        blocks: [
+          { kind: 'paragraph' as const, text: 'The creator exact Script.' },
+        ],
+      },
     };
     const job = {
       ...JOB,
@@ -250,7 +257,9 @@ describe('StoryAgentRunWorkerService authoring orchestration', () => {
     expect(pipeline.planAssets).not.toHaveBeenCalled();
     expect(pipeline.compileScript).toHaveBeenCalledWith({
       sourceText: scriptSource.sourceText,
+      document: scriptSource.document,
       title: JOB.brief.title,
+      instructions: JOB.brief.brief,
       creativeProfile: JOB.creativeProfile,
       signal: expect.any(AbortSignal),
       onStage: expect.any(Function),

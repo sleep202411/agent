@@ -132,6 +132,7 @@ export function StoryStoryboardChoiceCard({ options }: { options: StorySequenceC
 export function StoryStoryboardSequenceSection({
   sequence,
   title,
+  description,
   index,
   projectId,
   chapterId,
@@ -140,6 +141,8 @@ export function StoryStoryboardSequenceSection({
   sequence: StoryStoryboardSequence;
   /** Canonical scene title from StoryDraft, never the sequence cache column. */
   title: string;
+  /** The same node description edited in the Plot Tree, not a generated sequence summary. */
+  description: string;
   index: number;
   projectId: string;
   chapterId: string;
@@ -179,10 +182,13 @@ export function StoryStoryboardSequenceSection({
           </Link>
         </Button>
       </div>
-      {sequence.description ? (
-        <p className="mt-2 line-clamp-2 max-w-3xl text-sm leading-6 text-white/70">
-          {sequence.description}
-        </p>
+      {description.trim() ? (
+        <div className="mt-3 max-w-3xl">
+          <p className="text-xs font-medium text-muted-foreground">{t("nodeDescription")}</p>
+          <p className="mt-1 whitespace-pre-wrap wrap-anywhere text-sm leading-6 text-white/70">
+            {description}
+          </p>
+        </div>
       ) : null}
 
       {sequence.clips.length === 0 ? (

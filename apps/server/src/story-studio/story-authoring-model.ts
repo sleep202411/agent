@@ -15,8 +15,8 @@ import { alibabaProviderHeaders } from '../common/alibaba-data-inspection';
  * content moderation) are handled once here instead of per baton.
  *
  * Required env: ALIBABA_API_KEY. Optional: ALIBABA_BASE_URL,
- * STORY_AGENT_AUTHOR_MODEL (default qwen3-max — a NON-reasoning model; qwen
- * reasoning models reject structured output and must not be defaulted).
+ * STORY_AGENT_AUTHOR_MODEL (default qwen3-max). Structured authoring explicitly
+ * disables thinking so hybrid models use the budget for the required object.
  */
 const DEFAULT_AUTHOR_MODEL = 'qwen3-max';
 
@@ -36,6 +36,27 @@ export function createStoryAuthoringModel(): LanguageModel {
     apiKey,
     ...(baseURL ? { baseURL } : {}),
     headers: alibabaProviderHeaders(),
+    // @ai-sdk/alibaba 1.0.17 omits json_schema.strict. Without it the
+    // provider can treat the schema as guidance instead of a wire contract.
+    fetch: (
+      url: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      if (typeof init?.body !== 'string') return fetch(url, init);
+      const body = JSON.parse(init.body) as {
+        response_format?: {
+          type?: string;
+          json_schema?: Record<string, unknown>;
+        };
+      };
+      if (
+        body.response_format?.type !== 'json_schema' ||
+        !body.response_format.json_schema
+      )
+        return fetch(url, init);
+      body.response_format.json_schema.strict = true;
+      return fetch(url, { ...init, body: JSON.stringify(body) });
+    },
   });
   return provider(storyAuthoringModelId()) as unknown as LanguageModel;
 }
@@ -91,6 +112,15 @@ export function isContentModerationRejection(detail: string): boolean {
 }
 
 export function describeModelError(error: unknown): string {
+  if (NoObjectGeneratedError.isInstance(error)) {
+    // JSON parse errors embed the entire response before their actual cause.
+    // Log the finish reason and trailing diagnostic, not the opening synopsis.
+    const cause =
+      error.cause instanceof Error
+        ? ` Cause: ${error.cause.message.slice(-300)}`
+        : '';
+    return `${error.message} (finishReason=${error.finishReason}; responseChars=${error.text?.length ?? 0}).${cause}`;
+  }
   if (error instanceof Error) {
     const cause =
       error.cause instanceof Error && error.cause.message
@@ -118,6 +148,8 @@ export interface StoryAuthoringStageCall<T> {
   schema: z.ZodType<T>;
   system: string;
   prompt: string;
+  /** Refresh authoritative context after a validated partial repair. */
+  refreshPrompt?: () => string;
   maxOutputTokens: number;
   timeoutMs: number;
   /** Bounded retries against this baton's OWN validation errors. */
@@ -143,10 +175,13 @@ export async function runStoryAuthoringStage<T>(
 ): Promise<T> {
   const providerSchema = jsonSchema<T>(
     dashScopeCompatibleJsonSchema(
-      z.toJSONSchema(call.schema, { io: 'input', target: 'draft-7' }) as Record<
-        string,
-        unknown
-      >,
+      // Share repeated scene shapes. Inlining a complete shape for every
+      // required source boundary exceeds the provider's schema capacity.
+      z.toJSONSchema(call.schema, {
+        io: 'input',
+        target: 'draft-7',
+        reused: 'ref',
+      }) as Record<string, unknown>,
     ) as never,
     {
       validate: (value) => {
@@ -162,27 +197,37 @@ export async function runStoryAuthoringStage<T>(
   let lastFailureDetail: string | null = null;
   for (let attempt = 1; attempt <= call.maxAttempts; attempt += 1) {
     try {
+      const prompt = call.refreshPrompt?.() ?? call.prompt;
       const result = await generateObject({
         model,
         schema: providerSchema,
         system: call.system,
-        prompt: repairNote ? `${call.prompt}\n\n${repairNote}` : call.prompt,
+        prompt: repairNote ? `${prompt}\n\n${repairNote}` : prompt,
         maxRetries: 0,
         maxOutputTokens: call.maxOutputTokens,
+        providerOptions: { alibaba: { enableThinking: false } },
         abortSignal: AbortSignal.any([
           call.signal,
           AbortSignal.timeout(call.timeoutMs),
         ]),
       });
-      const value = result.object;
-      const issues = call.validate?.(value) ?? [];
+      // providerSchema validates and transforms the wire object into T.
+      const value: T = (result as { object: T }).object;
+      const issues: string[] = call.validate?.(value) ?? [];
       if (issues.length === 0) {
         call.onAttempt?.(attempt, 'ok');
         return value;
       }
-      lastFailureDetail = issues.join('; ');
-      call.onAttempt?.(attempt, 'error', lastFailureDetail);
-      repairNote = buildRepairNote(issues, value);
+      const validationDetail = issues.join('; ');
+      lastFailureDetail = validationDetail;
+      call.onAttempt?.(attempt, 'error', validationDetail);
+      repairNote = call.refreshPrompt
+        ? [
+            'The refreshed context above is the authoritative current state. Any previous patch is already incorporated there if accepted; rejected patches are NOT part of it.',
+            'Return a fresh patch against that state using the current response schema. Fix these remaining findings:',
+            ...issues.map((issue) => `- ${issue}`),
+          ].join('\n')
+        : buildRepairNote(issues, value);
     } catch (error) {
       if (call.signal.aborted) throw error;
       const detail = describeModelError(error);
@@ -194,10 +239,12 @@ export async function runStoryAuthoringStage<T>(
           detail,
         );
       }
-      repairNote =
-        NoObjectGeneratedError.isInstance(error) && error.text
-          ? buildRepairNote([detail], error.text)
-          : `Your previous answer failed: ${detail}. Return valid JSON that satisfies the schema.`;
+      // A transport failure produced no new answer to repair. Preserve the
+      // last rejected answer and its concrete validation findings; replacing
+      // them with an EPIPE/timeout message makes the next attempt start over.
+      if (NoObjectGeneratedError.isInstance(error) && error.text) {
+        repairNote = buildRepairNote([detail], error.text);
+      }
     }
   }
   throw new StoryAuthoringStageError(

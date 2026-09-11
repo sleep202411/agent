@@ -370,6 +370,37 @@ describe("agent-tools registry", () => {
       authoringRun: { status: "cancelled" },
       productionState: { script: { status: "missing" }, ready: false },
     });
+    const canonicalNodes = [
+      {
+        kind: "clip",
+        nodeId: "opening",
+        clipKey: "OPENING",
+        exit: { kind: "auto", nextNodeId: "decision:opening" },
+      },
+      {
+        kind: "decision",
+        nodeId: "decision:opening",
+        exit: {
+          kind: "choice",
+          decisionId: "opening_choice",
+          prompt: { "en-US": "Where next?" },
+          choices: [{ choiceId: "explore", label: { "en-US": "Explore" }, nextNodeId: "world" }],
+        },
+      },
+      {
+        kind: "world",
+        nodeId: "world",
+        worldId: null,
+        maxExperienceSeconds: 60,
+        exit: { kind: "auto", nextNodeId: null },
+      },
+    ];
+    expect(
+      parseToolOutput("story.read", {
+        ...output,
+        graph: { entryNodeId: "opening", nodes: canonicalNodes },
+      })
+    ).toMatchObject({ graph: { nodes: canonicalNodes } });
     expect(() => parseToolOutput("story.read", { ...output, authoringRun: undefined })).toThrow();
     expect(() =>
       parseToolOutput("story.read", { ...output, productionState: undefined })
@@ -431,128 +462,67 @@ describe("agent-tools registry", () => {
     ).toThrow();
   });
 
-  it("canonicalizes fixed profile catalogs and rejects reordered creative-profile forms", () => {
-    const questions = [
-      {
-        id: "aspect_ratio",
-        header: "Aspect ratio",
-        question: "Choose a frame",
-        options: [
-          { value: "portrait_9_16", label: "9:16" },
-          { value: "landscape_16_9", label: "16:9" },
-        ],
-      },
-      {
-        id: "target_runtime",
-        header: "Target runtime",
-        question: "Choose a runtime",
-        options: [
-          { value: "short_5_15", label: "5–15 min" },
-          { value: "medium_15_30", label: "15–30 min" },
-          { value: "long_30_60", label: "30–60 min" },
-        ],
-      },
-      {
-        id: "visual_direction",
-        header: "Visual direction",
-        question: "Choose a style",
-        options: [
-          ...STORY_VISUAL_STYLE_SKILL_SLUGS.map((value) => ({
-            value,
-            label: value,
-          })),
-        ],
-      },
-      {
-        id: "story_language",
-        header: "Story language",
-        question: "Choose the authored language",
-        options: [
-          { value: "zh-CN", label: "简体中文" },
-          { value: "zh-HK", label: "繁體中文" },
-          { value: "en-US", label: "English" },
-        ],
-      },
-    ];
-    expect(
-      parseToolInput("request_user_input", {
-        ...QUESTION_TURN_COPY,
-        formId: "story_creative_profile",
-        knownValues: {},
-        questions,
-      })
-    ).toMatchObject({
-      questions: expect.arrayContaining([expect.objectContaining({ id: "story_language" })]),
-    });
-    expect(
-      parseToolInput("request_user_input", {
-        ...QUESTION_TURN_COPY,
-        formId: "story_creative_profile",
-        knownValues: {
-          aspect_ratio: "landscape_16_9",
-          visual_direction: "cinematic-realism",
-        },
-        questions: [questions[1], questions[3]],
-      })
-    ).toMatchObject({
-      questions: [
-        expect.objectContaining({ id: "target_runtime" }),
-        expect.objectContaining({ id: "story_language" }),
-      ],
-    });
-    const abbreviated = parseToolInput("request_user_input", {
+  it("constructs every unknown profile question without model-authored catalogs", () => {
+    const result = parseToolInput("request_user_input", {
       ...QUESTION_TURN_COPY,
       formId: "story_creative_profile",
-      knownValues: {
-        aspect_ratio: "landscape_16_9",
-        target_runtime: "short_5_15",
-        story_language: "zh-CN",
-      },
-      questions: [
-        {
-          ...questions[2],
-          options: [questions[2].options[0], questions[2].options[2]],
-        },
-      ],
-    }) as { questions: Array<{ options: Array<{ value: string; label: string }> }> };
-    expect(abbreviated.questions[0]?.options.map((option) => option.value)).toEqual(
+      knownValues: { story_language: "zh-CN" },
+    }) as { questions: Array<{ id: string; options: Array<{ value: string }> }> };
+    expect(result.questions.map((question) => question.id)).toEqual([
+      "aspect_ratio",
+      "target_runtime",
+      "visual_direction",
+    ]);
+    expect(result.questions[2].options.map((option) => option.value)).toEqual(
       STORY_VISUAL_STYLE_SKILL_SLUGS
     );
-    expect(abbreviated.questions[0]?.options[1]).toEqual({
-      value: "stylized-3d-cinema",
-      label: "stylized-3d-cinema",
-    });
-    expect(() =>
+    // A model that forgets the known language must ask it, never silently default.
+    expect(
       parseToolInput("request_user_input", {
         ...QUESTION_TURN_COPY,
         formId: "story_creative_profile",
-        knownValues: {
-          aspect_ratio: "landscape_16_9",
-          target_runtime: "short_5_15",
-          story_language: "zh-CN",
-        },
-        questions: [
-          {
-            ...questions[2],
-            options: [questions[2].options[0], { value: "invented-style", label: "Invented" }],
-          },
-        ],
       })
-    ).toThrow();
-    expect(() =>
+    ).toHaveProperty(
+      "questions",
+      expect.arrayContaining([expect.objectContaining({ id: "story_language" })])
+    );
+    // The old failure repeated malformed three-question forms; fixed-form
+    // questions now come only from the runtime, even if the model supplies them.
+    expect(
       parseToolInput("request_user_input", {
         ...QUESTION_TURN_COPY,
         formId: "story_creative_profile",
-        knownValues: {},
-        questions: [questions[3], ...questions.slice(0, 3)],
+        questions: [{ id: "aspect_ratio", options: [] }],
       })
-    ).toThrow();
+    ).toHaveProperty(
+      "questions",
+      expect.arrayContaining([expect.objectContaining({ id: "story_language" })])
+    );
+  });
+
+  it("rejects invented profile values and a question when no values are missing", () => {
+    for (const knownValues of [
+      { story_language: "invented" },
+      { unexpected: "en-US" },
+      {
+        aspect_ratio: "landscape_16_9",
+        target_runtime: "short_5_15",
+        visual_direction: "cinematic-realism",
+        story_language: "en-US",
+      },
+    ]) {
+      expect(() =>
+        parseToolInput("request_user_input", {
+          ...QUESTION_TURN_COPY,
+          formId: "story_creative_profile",
+          knownValues,
+        })
+      ).toThrow();
+    }
     expect(() =>
       parseToolInput("request_user_input", {
         ...QUESTION_TURN_COPY,
-        formId: "story_creative_profile",
-        knownValues: { target_runtime: "short_5_15" },
-        questions,
+        knownValues: { story_language: "en-US" },
       })
     ).toThrow();
   });

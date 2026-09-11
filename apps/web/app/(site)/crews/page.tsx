@@ -13,14 +13,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  IconBriefcase,
-  IconEye,
-  IconLoader2,
-  IconMovie,
-  IconPlus,
-  IconUsers,
-} from "@tabler/icons-react";
+import { IconBriefcase, IconEye, IconLoader2, IconPlus, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -38,7 +31,6 @@ import {
 } from "@/app/(site)/crews/_components/crew-switcher-rail";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
-import { PlazaHero } from "@/components/layout/plaza-hero";
 import { useKycAuthStatus } from "@/src/hooks/use-kyc";
 import { useCurrentUser } from "@/src/hooks/use-user";
 
@@ -120,33 +112,6 @@ export default function CrewsPage() {
         showMyCrewsRail && "lg:pl-[60px] min-[1152px]:!pl-[180px]"
       )}
     >
-      <PlazaHero
-        ambient="blue"
-        backgroundImage="https://images.unsplash.com/photo-1485846234645-a62644f84728?auto=format&fit=crop&w=2400&q=80"
-        eyebrow={{ icon: IconMovie, label: tCrew("plaza") }}
-        title={{
-          plain: tCrew("heroTitle1"),
-          accent: tCrew("heroTitle2"),
-        }}
-        subtitle={tCrew("heroDesc")}
-        rightSlot={
-          <Button
-            type="button"
-            size="lg"
-            onClick={() => void requestCreateCrew()}
-            disabled={checkingKyc}
-            className="h-11 gap-2 px-5 text-sm"
-          >
-            {checkingKyc ? (
-              <IconLoader2 className="size-4 animate-spin" />
-            ) : (
-              <IconPlus className="size-4" />
-            )}
-            {tCrew("createStudio")}
-          </Button>
-        }
-      />
-
       <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
       <KycGateDialog
         open={kycGateOpen}
@@ -171,7 +136,7 @@ export default function CrewsPage() {
         <div className="min-w-0">
           {/* Tabs — crews vs positions. URL state via `?view=positions`
               so refreshes / shared links keep the same surface. */}
-          <div className="mb-6 flex items-center gap-2 border-b border-border">
+          <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-border">
             <PlazaTab
               label={tCrew("allCrewsTitle")}
               icon={IconUsers}
@@ -184,6 +149,22 @@ export default function CrewsPage() {
               active={view === "positions"}
               onClick={() => setView("positions")}
             />
+            <div className="ml-auto shrink-0 pb-2">
+              <Button
+                type="button"
+                size="lg"
+                onClick={() => void requestCreateCrew()}
+                disabled={checkingKyc}
+                className="h-11 gap-2 px-5 text-sm"
+              >
+                {checkingKyc ? (
+                  <IconLoader2 className="size-4 animate-spin" />
+                ) : (
+                  <IconPlus className="size-4" />
+                )}
+                {tCrew("createStudio")}
+              </Button>
+            </div>
           </div>
 
           {view === "crews" ? (

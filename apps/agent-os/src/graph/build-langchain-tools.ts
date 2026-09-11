@@ -153,7 +153,15 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
         leadIn: z.string().trim().min(1).max(1_000),
         resumeAcknowledgement: z.string().trim().min(1).max(1_000),
         formId: userInputKey.optional(),
-        knownValues: z.record(userInputKey).optional(),
+        knownValues: z
+          .object({
+            aspect_ratio: z.enum(["portrait_9_16", "landscape_16_9"]).optional(),
+            target_runtime: z.enum(["short_5_15", "medium_15_30", "long_30_60"]).optional(),
+            visual_direction: z.enum(STORY_VISUAL_STYLE_SKILL_SLUGS).optional(),
+            story_language: z.enum(["zh-CN", "zh-HK", "en-US"]).optional(),
+          })
+          .strict()
+          .optional(),
         questions: z
           .array(
             z.object({
@@ -173,7 +181,8 @@ export function buildLangChainTools(runtime: ToolRuntimeContext, toolIds: readon
             })
           )
           .min(1)
-          .max(4),
+          .max(4)
+          .optional(),
       }),
     }
   );

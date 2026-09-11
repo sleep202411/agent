@@ -1,5 +1,7 @@
 import {
   STORY_PATCH_COMPLEXITY_LIMITS,
+  STORY_AUTHORING_COMPLEXITY_LIMITS,
+  assertStoryProposalComplexity,
   assertStoryPatchComplexity,
   StoryPatchOperationsSchema,
   StoryPatchPreflightError,
@@ -48,6 +50,67 @@ describe('Story patch iterative complexity preflight', () => {
     expect(
       capturePreflightError(() => assertStoryPatchComplexity(circular)),
     ).toMatchObject({ code: 'STORY_PATCH_INPUT_NOT_JSON' });
+  });
+
+  it.each([
+    'story-screenplay-proposal-v1',
+    'story-plot-proposal-v1',
+    'story-asset-proposal-v1',
+    'story-storyboard-proposal-v1',
+  ])(
+    'admits a full chapter %s above the localized patch budget',
+    (schemaVersion) => {
+      const proposal = { schemaVersion, text: '章'.repeat(200_000) };
+      expect(
+        assertStoryProposalComplexity(proposal).serializedBytes,
+      ).toBeGreaterThan(STORY_PATCH_COMPLEXITY_LIMITS.serializedBytes);
+      expect(() => assertStoryPatchComplexity(proposal)).toThrow(
+        StoryPatchPreflightError,
+      );
+      expect(() =>
+        assertStoryProposalComplexity({
+          ...proposal,
+          schemaVersion: 'story-patch-v1',
+        }),
+      ).toThrow(StoryPatchPreflightError);
+    },
+  );
+
+  it('keeps full chapter payloads bounded and rejects cycles and hostile depth', () => {
+    const proposal: Record<string, unknown> = {
+      schemaVersion: 'story-storyboard-proposal-v1',
+      text: 'x'.repeat(STORY_AUTHORING_COMPLEXITY_LIMITS.serializedBytes),
+    };
+    expect(
+      capturePreflightError(() => assertStoryProposalComplexity(proposal)),
+    ).toMatchObject({
+      metric: 'serializedBytes',
+      maximum: STORY_AUTHORING_COMPLEXITY_LIMITS.serializedBytes,
+    });
+    delete proposal.text;
+    proposal.self = proposal;
+    expect(
+      capturePreflightError(() => assertStoryProposalComplexity(proposal)),
+    ).toMatchObject({ code: 'STORY_PATCH_INPUT_NOT_JSON' });
+    let deep: Record<string, unknown> = {};
+    for (let i = 0; i < 5_000; i++) deep = { nested: deep };
+    proposal.self = deep;
+    expect(
+      capturePreflightError(() => assertStoryProposalComplexity(proposal)),
+    ).toMatchObject({ metric: 'nestingDepth' });
+    proposal.self = Array.from(
+      { length: STORY_AUTHORING_COMPLEXITY_LIMITS.containers + 1 },
+      () => ({}),
+    );
+    expect(
+      capturePreflightError(() => assertStoryProposalComplexity(proposal)),
+    ).toMatchObject({ metric: 'containers' });
+    proposal.self = Array(
+      STORY_AUTHORING_COMPLEXITY_LIMITS.arrayItems + 1,
+    ).fill(null);
+    expect(
+      capturePreflightError(() => assertStoryProposalComplexity(proposal)),
+    ).toMatchObject({ metric: 'arrayItems' });
   });
 
   it('guards the exported Zod operation-list schema before recursive parsing', () => {

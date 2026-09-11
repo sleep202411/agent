@@ -18,7 +18,6 @@ import {
   IconPlus,
   IconSubtask,
   IconUrgent,
-  IconUserCircle,
 } from "@tabler/icons-react";
 import {
   DndContext,
@@ -199,13 +198,11 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
   const t = useTranslations("crewTaskProject");
   const displayProperties = new Set(props.view.visibleFields);
   const selected = props.selectedIds.has(task.id);
-  const assignee = task.assignees[0];
-  const assigneeDisplay = assignee ? props.displays.get(assignee.userId) : null;
 
   return (
     <div
       className={cn(
-        "group grid h-10 grid-cols-[32px_20px_68px_minmax(260px,1fr)_auto] items-center border-b border-white/[0.05] px-3 transition-colors hover:bg-white/[0.028]",
+        "group grid min-h-10 grid-cols-[32px_20px_68px_minmax(260px,1fr)_auto] items-center border-b border-white/[0.05] px-3 transition-colors hover:bg-white/[0.028]",
         selected && "bg-[#e52227]/[0.045]"
       )}
     >
@@ -252,13 +249,8 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
             {shortDate(task.dueAt)}
           </span>
         ) : null}
-        {displayProperties.has("assignees") && assignee ? (
-          <UserAvatar
-            src={assigneeDisplay?.avatar}
-            seed={assignee.userId}
-            name={displayNameOf(assignee.userId, props.displays)}
-            size={20}
-          />
+        {displayProperties.has("assignees") ? (
+          <TaskAssignees task={task} displays={props.displays} />
         ) : null}
       </div>
     </div>
@@ -522,8 +514,6 @@ function BoardCard({
   });
   const properties = new Set(props.view.visibleFields);
   const state = props.workflowStates.find((item) => item.id === stateId);
-  const assignee = task.assignees[0];
-  const assigneeDisplay = assignee ? props.displays.get(assignee.userId) : null;
 
   return (
     <button
@@ -543,18 +533,6 @@ function BoardCard({
         <span className="ml-1 block text-[12px] leading-[14.5px] font-[450] tracking-[-0.24px] text-[#929299]">
           TASK-{task.number}
         </span>
-        <span className="absolute top-0 right-0 grid size-[18px] place-items-center text-[#85858d]">
-          {properties.has("assignees") && assignee ? (
-            <UserAvatar
-              src={assigneeDisplay?.avatar}
-              seed={assignee.userId}
-              name={displayNameOf(assignee.userId, props.displays)}
-              size={18}
-            />
-          ) : (
-            <IconUserCircle className="size-[18px]" stroke={1.65} aria-hidden="true" />
-          )}
-        </span>
         <span className="mt-[6px] flex h-4 min-w-0 items-center gap-1.5 pl-1 pr-6">
           <StatusMark state={state} className="size-3.5 shrink-0" />
           <span className="block min-w-0 truncate text-[13px] leading-4 font-medium tracking-[-0.13px] text-white">
@@ -562,6 +540,8 @@ function BoardCard({
           </span>
         </span>
       </div>
+
+      {properties.has("assignees") ? <TaskAssignees task={task} displays={props.displays} /> : null}
 
       <div className="mt-[10px] flex h-6 min-w-0 items-center gap-1.5 overflow-hidden">
         {properties.has("priority") ? <CardPriorityProperty priority={task.priority} /> : null}
@@ -761,5 +741,33 @@ function workflowStateLabel(
 function shortDate(value: string, locale?: string) {
   return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
     new Date(value)
+  );
+}
+
+function TaskAssignees({
+  task,
+  displays,
+}: Pick<TaskProjectViewProps, "displays"> & { task: TaskProjectViewProps["tasks"][number] }) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      {task.assignees.map((assignee) => {
+        const name = displayNameOf(assignee.userId, displays);
+        return (
+          <span
+            key={assignee.userId}
+            className="inline-flex min-w-0 items-center gap-1.5"
+            title={name}
+          >
+            <UserAvatar
+              src={displays.get(assignee.userId)?.avatar}
+              seed={assignee.userId}
+              name={name}
+              size={20}
+            />
+            <span className="max-w-32 truncate text-[11px] text-[#a5aab2]">{name}</span>
+          </span>
+        );
+      })}
+    </span>
   );
 }
