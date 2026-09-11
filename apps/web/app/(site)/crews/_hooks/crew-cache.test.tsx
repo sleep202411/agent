@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { crewApi, CrewApiError } from "./api";
 import { crewKeys } from "./shared";
 import {
+  useUpdateCrewTaskView,
   useDeleteCrewTaskLabel,
   useDeleteCrewTaskCycle,
   useDeleteCrewTaskField,
@@ -174,4 +175,24 @@ describe("task metadata cache refresh", () => {
     });
     expect(client.getQueryState(detail)?.isInvalidated).toBe(true);
   });
+});
+
+it("refreshes saved-view results when its filters change without a new view ID", async () => {
+  const current = mount(() => useUpdateCrewTaskView("crew-1"));
+  const view = crewKeys.taskView("crew-1", { viewId: "view-1" });
+  const other = crewKeys.taskView("crew-2", { viewId: "view-2" });
+  client.setQueryData(view, { pages: [{ items: [{ id: "old-result" }] }] });
+  client.setQueryData(other, { pages: [] });
+  vi.mocked(crewApi.patch).mockResolvedValue({ id: "view-1" });
+  await act(async () => {
+    await current().mutateAsync({
+      viewId: "view-1",
+      input: {
+        expectedUpdatedAt: "2026-09-11T00:00:00.000Z",
+        filters: { priorities: ["high"] },
+      },
+    });
+  });
+  expect(client.getQueryState(view)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(other)?.isInvalidated).toBe(false);
 });

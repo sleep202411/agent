@@ -172,7 +172,10 @@ export function useUpdateCrewTaskView(crewId: string) {
       crewApi.patch<CrewTaskViewDTO>(`/crew-task-views/${encodeURIComponent(viewId)}`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+    },
   });
 }
 
