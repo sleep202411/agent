@@ -68,7 +68,15 @@ function storyNodeGeometry(data: Record<string, unknown> | undefined): CanvasNod
     const choiceHeight = Math.max(2, choiceCount) * 52;
     return geometry(PRIMARY_WIDTH, 176 + choiceHeight, 200 + choiceHeight);
   }
-  return geometry(STANDARD_WIDTH, 236 + interactionHeight, 268 + interactionHeight);
+  const descriptionHeight =
+    data?.kind === "clip" && typeof data.description === "string" && data.description.trim()
+      ? 168 // Up to 160px of scrollable text, with an 8px gap below the title.
+      : 0;
+  return geometry(
+    STANDARD_WIDTH,
+    236 + interactionHeight,
+    268 + interactionHeight + descriptionHeight
+  );
 }
 
 function positive(value: number | null | undefined): number | undefined {

@@ -15,6 +15,7 @@ export function AgentOsUserInputCard({
   request,
   busy,
   labels,
+  resolveProfileQuestion,
   resolveProfileOptionLabel,
   onSubmit,
 }: {
@@ -28,6 +29,7 @@ export function AgentOsUserInputCard({
     submitting: string;
   };
   /** Fixed creative-profile enum copy belongs to the client locale catalog. */
+  resolveProfileQuestion?: (questionId: string) => { header: string; question: string } | undefined;
   resolveProfileOptionLabel?: (questionId: string, value: string, fallback: string) => string;
   onSubmit: (answers: Record<string, string>) => void;
 }) {
@@ -53,6 +55,9 @@ export function AgentOsUserInputCard({
   }, [question, request.requestId, selected, step]);
 
   if (!question) return null;
+  const questionCopy =
+    (request.formId === "story_creative_profile" && resolveProfileQuestion?.(question.id)) ||
+    question;
 
   const submit = () => {
     if (!selected || busy) return;
@@ -106,14 +111,14 @@ export function AgentOsUserInputCard({
             <span className="rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[10px] font-semibold text-white/76">
               Q{step + 1}
             </span>
-            <span className="text-sm font-semibold text-white">{question.header}</span>
+            <span className="text-sm font-semibold text-white">{questionCopy.header}</span>
             <span aria-hidden="true" className="text-primary">
               *
             </span>
           </span>
         </legend>
         <p id={`${groupId}-description`} className="mb-3 text-[11px]/relaxed text-white/78">
-          {question.question}
+          {questionCopy.question}
         </p>
 
         <div

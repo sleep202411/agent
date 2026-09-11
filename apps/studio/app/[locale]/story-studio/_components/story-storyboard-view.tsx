@@ -28,6 +28,7 @@ import {
   StoryStoryboardSequenceSection,
   type StorySequenceChoiceOptions,
 } from "./story-storyboard-sequence-section";
+import { StorySourceReviewNotes } from "./story-source-review-notes";
 
 /**
  * Chapter-owned production board. The chapter graph is the board's skeleton —
@@ -226,6 +227,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
         }
       />
       <div className="mt-5 space-y-8">
+        <StorySourceReviewNotes notes={workbenchQuery.data?.draft.content.productionNotes} />
         {sceneNodes.length === 0 ? (
           <div className="rounded-2xl bg-white/[0.045] px-5 py-10 text-center text-white shadow-sm">
             <p className="text-sm font-medium text-white/78">{t("emptyChapter")}</p>
@@ -246,6 +248,7 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
               <StoryStoryboardSequenceSection
                 sequence={sequence}
                 title={node.name?.trim() || node.clipKey}
+                description={node.description ?? ""}
                 index={index}
                 projectId={projectId}
                 chapterId={chapterId}

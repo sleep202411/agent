@@ -2451,6 +2451,7 @@
   },
   "storyStudio": {
     "authoringRun": {
+      "sourceReviewNotes": "Script rules and production notes ({count})",
       "title": {
         "authoring": "Drafting…",
         "proposed": "Screenplay ready",
@@ -2514,6 +2515,7 @@
         }
       },
       "plotCard": {
+        "unresolved": "Route not implemented",
         "eyebrow": "Plot Tree proposal",
         "review": "Open canvas preview",
         "dialogDescription": "Explore the exact scene topology, branches, and endings in a read-only canvas. Approval remains in the conversation decision area.",
@@ -2990,6 +2992,7 @@
       }
     },
     "storyboardPage": {
+      "nodeDescription": "Description",
       "pageTitle": "Storyboard · Interactive Film Studio",
       "pageDescription": "Edit chapter-local Plot sequences, clips, cues, and Asset bindings.",
       "loading": "Loading Storyboard…",
@@ -3665,6 +3668,8 @@
         "moveChoiceDown": "Move option down",
         "delete": "Delete node",
         "nodeName": "Name",
+        "nodeDescription": "Description",
+        "nodeDescriptionPlaceholder": "Paste the corresponding passage from your script.",
         "storyboard": {
           "title": "Storyboard",
           "summary": "{count} clips · {ready} with media",
@@ -4036,7 +4041,25 @@
       "continue": "Continue",
       "submit": "Confirm",
       "submitting": "Confirming…",
-      "failed": "Could not submit these answers"
+      "failed": "Could not submit these answers",
+      "profile": {
+        "aspect_ratio": {
+          "header": "Aspect ratio",
+          "question": "Which frame aspect ratio should the project use?"
+        },
+        "target_runtime": {
+          "header": "Target runtime",
+          "question": "What is the target runtime?"
+        },
+        "visual_direction": {
+          "header": "Visual direction",
+          "question": "Which visual style should the project use?"
+        },
+        "story_language": {
+          "header": "Story language",
+          "question": "Which language should the story use?"
+        }
+      }
     },
     "workerOnline": "Worker online",
     "workerOffline": "Unavailable right now — retrying automatically",

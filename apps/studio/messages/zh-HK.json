@@ -2451,6 +2451,7 @@
   },
   "storyStudio": {
     "authoringRun": {
+      "sourceReviewNotes": "劇本規則與製作備註（{count}）",
       "title": {
         "authoring": "正在起草…",
         "proposed": "劇本已完成",
@@ -2514,6 +2515,7 @@
         }
       },
       "plotCard": {
+        "unresolved": "走向尚未實現",
         "eyebrow": "情節樹提案",
         "review": "開啟畫布預覽",
         "dialogDescription": "在唯讀畫布中查看本提案的完整場景拓撲、分支與結局；批准或退回仍在訊息流底部的決策區完成。",
@@ -2990,6 +2992,7 @@
       }
     },
     "storyboardPage": {
+      "nodeDescription": "描述",
       "pageTitle": "分鏡 · 影遊工作室",
       "pageDescription": "編輯本章的情節序列、鏡頭、提示點和資產綁定。",
       "loading": "正在載入分鏡…",
@@ -3665,6 +3668,8 @@
         "moveChoiceDown": "下移選項",
         "delete": "刪除節點",
         "nodeName": "名稱",
+        "nodeDescription": "描述",
+        "nodeDescriptionPlaceholder": "貼上劇本中對應的原文段落。",
         "storyboard": {
           "title": "分鏡",
           "summary": "{count} 個片段 · {ready} 個已有媒體",
@@ -4036,7 +4041,25 @@
       "continue": "繼續",
       "submit": "確認",
       "submitting": "確認中…",
-      "failed": "無法提交這些回答"
+      "failed": "無法提交這些回答",
+      "profile": {
+        "aspect_ratio": {
+          "header": "畫面比例",
+          "question": "本項目使用甚麼畫面比例？"
+        },
+        "target_runtime": {
+          "header": "目標時長",
+          "question": "目標體驗時長是多少？"
+        },
+        "visual_direction": {
+          "header": "視覺風格",
+          "question": "本項目採用哪種視覺風格？"
+        },
+        "story_language": {
+          "header": "故事語言",
+          "question": "劇本與故事內容使用哪種語言？"
+        }
+      }
     },
     "workerOnline": "Worker 在線",
     "workerOffline": "目前無法使用——正在自動重試",

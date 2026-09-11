@@ -327,4 +327,21 @@ describe("StoryAuthoringProposalDialog exact production review", () => {
       );
     });
   }
+
+  it("shows unsupported rules separately from the unchanged source document", async () => {
+    await render({
+      schemaVersion: "story-screenplay-proposal-v1",
+      title: "原稿",
+      summary: "原文提取",
+      screenplay: { reviewNotes: ["尚未实现：信任值达到条件才能进入结局。"] },
+      document: {
+        schemaVersion: "story-screenplay-document-v1",
+        blocks: [{ kind: "paragraph", text: "原稿正文。" }],
+      },
+    });
+    expect(container.textContent).toContain("原稿正文。");
+    expect(container.querySelector("details")?.textContent).toContain(
+      "尚未实现：信任值达到条件才能进入结局。"
+    );
+  });
 });

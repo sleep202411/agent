@@ -765,6 +765,19 @@ function AgentOsProjectSession({
             submitting: t("userInput.submitting"),
           }}
           resolveProfileOptionLabel={resolveProfileOptionLabel}
+          resolveProfileQuestion={(id) => {
+            if (
+              id !== "aspect_ratio" &&
+              id !== "target_runtime" &&
+              id !== "visual_direction" &&
+              id !== "story_language"
+            )
+              return undefined;
+            return {
+              header: t(`userInput.profile.${id}.header`),
+              question: t(`userInput.profile.${id}.question`),
+            };
+          }}
           onSubmit={(answers) => void onResolveUserInput(inputRequest.requestId, answers)}
         />
       );
