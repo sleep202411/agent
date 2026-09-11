@@ -315,4 +315,20 @@ describe("TaskQuickCreate", () => {
       })
     );
   });
+  it.each(["", "2026-09-25"])("respects the user changing an AI deadline to %s", async (date) => {
+    renderQuickCreate();
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    act(() => fill(input, "Prepare storyboard"));
+    act(() => click(document.querySelector('button[aria-label="More actions"]')!));
+    await act(async () => click(button("Organize with AI")));
+    const dateInput = document.querySelector<HTMLInputElement>('input[type="date"]')!;
+    expect(dateInput.value).toBe("2026-08-07");
+    act(() => fill(dateInput, date));
+    await act(async () => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dueAt: date ? new Date(`${date}T23:59:59`).toISOString() : null,
+      })
+    );
+  });
 });

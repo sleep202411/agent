@@ -207,7 +207,7 @@ export function TaskQuickCreate({
         description: description.trim(),
         workflowStateId: resolvedWorkflowStateId,
         priority,
-        dueAt: dateEndIso(dueDate || draft?.dueDate || null),
+        dueAt: dateEndIso(dueDate || null),
         startAt: dateStartIso(draft?.startDate ?? null),
         estimatePoints: draft?.estimatePoints ?? null,
         computeBudgetPoints: draft?.computeBudgetPoints ?? null,
