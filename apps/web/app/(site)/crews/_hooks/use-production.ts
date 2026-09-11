@@ -3,7 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
-import { crewKeys } from "./shared";
+import { crewKeys, crewAccountQueries } from "./shared";
 import type {
   CreateCrewEpisodeInput,
   CreateCrewProductionResourceInput,
@@ -214,8 +214,12 @@ function useInvalidateProduction() {
       queryClient.invalidateQueries({
         queryKey: [...crewKeys.episodes(context.crewId), context.accountUserId],
       }),
-      queryClient.invalidateQueries({ queryKey: crewKeys.tasks(context.crewId) }),
-      queryClient.invalidateQueries({ queryKey: crewKeys.taskSummary(context.crewId) }),
+      queryClient.invalidateQueries(
+        crewAccountQueries(crewKeys.tasks(context.crewId), context.accountUserId)
+      ),
+      queryClient.invalidateQueries(
+        crewAccountQueries(crewKeys.taskSummary(context.crewId), context.accountUserId)
+      ),
     ]);
   };
 }

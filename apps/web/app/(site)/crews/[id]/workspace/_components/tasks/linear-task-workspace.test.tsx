@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import en from "@/messages/en-US.json";
@@ -7,7 +7,10 @@ import hk from "@/messages/zh-HK.json";
 import { LinearTaskWorkspace } from "./linear-task-workspace";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ locale: "en-US", layout: "board" }));
+const state = vi.hoisted(() => ({ locale: "en-US", layout: "board", account: "alice" }));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: state.account } }),
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string) => {
     const messages = state.locale === "zh-CN" ? cn : state.locale === "zh-HK" ? hk : en;
@@ -91,9 +94,15 @@ vi.mock("./production-project-update", () => ({
   ProductionActivityEntry: () => null,
 }));
 vi.mock("./task-issue-detail", () => ({
-  TaskIssueDetail: ({ onClose }: { onClose: () => void }) => (
-    <button onClick={onClose}>Close task</button>
-  ),
+  TaskIssueDetail: function Detail({ onClose }: { onClose: () => void }) {
+    const [draft, setDraft] = useState("");
+    return (
+      <>
+        <button onClick={onClose}>Close task</button>
+        <button onClick={() => setDraft("Private task draft")}>{draft || "Edit draft"}</button>
+      </>
+    );
+  },
 }));
 vi.mock("./task-project-settings", () => ({ ProjectSettingsDialog: () => null }));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
@@ -103,6 +112,7 @@ afterEach(() => {
   if (root) act(() => root.unmount());
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
+  state.account = "alice";
 });
 async function render(deeplinkTaskId?: string | null, reuse = false) {
   if (!reuse) {
@@ -216,4 +226,17 @@ it("follows changed deep links in the same workspace", async () => {
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   await render("task-1", true);
   expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+it("starts fresh drawer state when another account has the same task cached", async () => {
+  await render("task-1");
+  const edit = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Edit draft"
+  )!;
+  await act(async () => edit.click());
+  expect(document.body.textContent).toContain("Private task draft");
+  state.account = "bob";
+  await render("task-1", true);
+  expect(document.body.textContent).not.toContain("Private task draft");
+  expect(document.body.textContent).toContain("Edit draft");
 });

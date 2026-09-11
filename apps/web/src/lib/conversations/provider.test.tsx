@@ -185,3 +185,70 @@ it.each(["read", "context", "notification", "ready"] as const)(
     }
   }
 );
+
+it.each(["task", "metadata"])(
+  "scopes realtime %s refreshes to the receiving account",
+  async (kind) => {
+    const client = new QueryClient();
+    const root = createRoot(document.createElement("div"));
+    const keys = (account: string, crew = "crew-a") => [
+      ["crew", "task-center", account, "all"],
+      ["crew", "task-project", crew, account],
+      ["crew", "task", `${crew}-parent`, account],
+      ["crew", "task", `${crew}-task`, account],
+      ["crew", "task", `${crew}-task`, "timeline", account],
+      ["crew", "tasks", crew, "view", {}, account],
+      ["crew", "production", crew, "overview", account],
+      ["crew", "production", crew, "episodes", account],
+      ["crew", "earnings", crew, "mine", "all", "USD", account],
+    ];
+    for (const account of ["alice", "bob"])
+      for (const crew of ["crew-a", "crew-b"]) {
+        for (const key of keys(account, crew)) client.setQueryData(key, { crewId: crew });
+      }
+    try {
+      mocks.userId = "alice";
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <ConversationsProvider>content</ConversationsProvider>
+          </QueryClientProvider>
+        )
+      );
+      const handlers = vi.mocked(openConversationRealtime).mock.calls.at(-1)![1];
+      await act(async () => {
+        if (kind === "task")
+          handlers.onCrewTaskChanged?.({
+            crewId: "crew-a",
+            taskId: "crew-a-task",
+            action: "reviewed",
+          } as Parameters<NonNullable<typeof handlers.onCrewTaskChanged>>[0]);
+        else
+          handlers.onCrewTaskProjectChanged?.({
+            crewId: "crew-a",
+            resource: "workflow",
+            resourceId: "state",
+            action: "updated",
+            actorUserId: "collaborator",
+          } as Parameters<NonNullable<typeof handlers.onCrewTaskProjectChanged>>[0]);
+      });
+      expect(client.getQueryState(["crew", "task", "crew-a-parent", "alice"])?.isInvalidated).toBe(
+        true
+      );
+      expect(
+        client.getQueryState(["crew", "tasks", "crew-a", "view", {}, "alice"])?.isInvalidated
+      ).toBe(true);
+      for (const key of [
+        ...keys("bob"),
+        ...keys("alice", "crew-b").filter((key) => key[1] !== "task-center"),
+      ]) {
+        expect(client.getQueryState(key)?.isInvalidated, JSON.stringify(key)).toBe(false);
+      }
+    } finally {
+      act(() => root.unmount());
+      client.clear();
+      mocks.userId = "alice";
+      vi.clearAllMocks();
+    }
+  }
+);

@@ -43,7 +43,6 @@ import {
   IconUserCircle,
   IconX,
 } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -53,7 +52,6 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  crewKeys,
   useCreateCrewTaskComment,
   useDeleteCrewTaskComment,
   useCrewTaskOptions,
@@ -114,7 +112,6 @@ export function TaskIssueDetail({
 }: TaskIssueDetailProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
-  const qc = useQueryClient();
   const review = useReviewCrewTask(task.crewId);
   const updateTask = useUpdateCrewTask(task.crewId);
   const timeline = useCrewTaskTimeline(task.id);
@@ -721,9 +718,6 @@ export function TaskIssueDetail({
           activeView={project.views[0]}
           presetWorkflowStateId={task.workflowStateId}
           parentId={task.id}
-          onCreated={() => {
-            void qc.invalidateQueries({ queryKey: crewKeys.task(task.id) });
-          }}
         />
       ) : null}
     </div>

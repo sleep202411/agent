@@ -39,7 +39,11 @@ import {
   createConversationRecoveryCoordinator,
   conversationKeys,
 } from "@/app/(site)/creators/_hooks/use-conversations";
-import { crewKeys, crewTaskDetailQueries } from "@/app/(site)/crews/_hooks/shared";
+import {
+  crewKeys,
+  crewTaskDetailQueries,
+  crewAccountQueries,
+} from "@/app/(site)/crews/_hooks/shared";
 import { crewConversationKey } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
 
 export function ConversationsProvider({ children }: { children: React.ReactNode }) {
@@ -136,25 +140,25 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         });
       },
       onCrewTaskChanged: (data) => {
-        qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-        qc.invalidateQueries(crewTaskDetailQueries(data.crewId, data.taskId));
-        qc.invalidateQueries({ queryKey: crewKeys.taskSummary(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.taskActivity(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.task(data.taskId) });
-        qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(data.taskId) });
-        qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, uid));
+        qc.invalidateQueries(crewTaskDetailQueries(data.crewId, data.taskId, uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.task(data.taskId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(data.taskId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(data.crewId), uid));
         if (data.action === "reviewed") {
-          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "mine") });
-          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "crew") });
+          qc.invalidateQueries(crewAccountQueries(crewKeys.earnings(data.crewId, "mine"), uid));
+          qc.invalidateQueries(crewAccountQueries(crewKeys.earnings(data.crewId, "crew"), uid));
         }
       },
       onCrewTaskProjectChanged: (data) => {
-        qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-        qc.invalidateQueries(crewTaskDetailQueries(data.crewId));
-        qc.invalidateQueries({ queryKey: crewKeys.taskProject(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, uid));
+        qc.invalidateQueries(crewTaskDetailQueries(data.crewId, undefined, uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(data.crewId), uid));
         if (
           data.resource === "production_document" ||
           data.resource === "production_project" ||
@@ -163,10 +167,10 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
           data.resource === "episode" ||
           data.resource === "delivery"
         ) {
-          qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
-          qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
+          qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(data.crewId), uid));
+          qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(data.crewId), uid));
           if (data.resource === "production_activity") {
-            qc.invalidateQueries({ queryKey: crewKeys.productionActivity(data.crewId) });
+            qc.invalidateQueries(crewAccountQueries(crewKeys.productionActivity(data.crewId), uid));
           }
         }
       },

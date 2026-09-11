@@ -7,6 +7,7 @@ import { DeleteTaskButton } from "./delete-task-button";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "alice" } }) }));
 vi.mock("sonner", () => ({ toast }));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string) =>

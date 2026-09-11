@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
 import { useCreateCrewTask, useUpdateCrewTask, useDeleteCrewTask } from "./use-tasks";
 import { crewKeys } from "./shared";
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "alice" } }) }));
 vi.mock("./api", () => ({
   crewApi: {
     post: vi.fn().mockResolvedValue({ id: "task-a" }),
@@ -18,8 +19,8 @@ it.each(["create", "update", "delete"])(
   async (action) => {
     const client = new QueryClient();
     const keys = [
-      [...crewKeys.taskCenter, "all", "active", ""],
-      [...crewKeys.taskCenter, "mine", "all", "review"],
+      [...crewKeys.taskCenter, "alice", "all", "active", ""],
+      [...crewKeys.taskCenter, "alice", "mine", "all", "review"],
     ];
     for (const key of keys) client.setQueryData(key, { pages: [] });
     client.setQueryData(["unrelated"], "keep");

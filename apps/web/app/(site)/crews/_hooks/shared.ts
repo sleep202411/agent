@@ -52,13 +52,19 @@ export const crewKeys = {
 };
 
 // Task detail keys use task IDs, so select their Crew from the cached DTO.
-export function crewTaskDetailQueries(crewId: string, exceptTaskId?: string): QueryFilters {
+export function crewTaskDetailQueries(
+  crewId: string,
+  exceptTaskId?: string,
+  accountUserId?: string | null
+): QueryFilters {
   return {
     queryKey: ["crew", "task"],
     predicate: (query) => {
       const data = query.state.data;
       return (
-        query.queryKey.length === 3 &&
+        query.queryKey.length === 4 &&
+        Boolean(accountUserId) &&
+        query.queryKey.at(-1) === accountUserId &&
         query.queryKey[2] !== exceptTaskId &&
         typeof data === "object" &&
         data !== null &&
@@ -66,5 +72,19 @@ export function crewTaskDetailQueries(crewId: string, exceptTaskId?: string): Qu
         data.crewId === crewId
       );
     },
+  };
+}
+
+/** Private Crew queries use an account suffix; the cross-Crew centre uses an account prefix. */
+export function crewAccountQueries(
+  queryKey: readonly unknown[],
+  accountUserId: string | null | undefined
+): QueryFilters {
+  return {
+    queryKey,
+    predicate: (query) =>
+      Boolean(accountUserId) &&
+      (query.queryKey[1] === "task-center" ? query.queryKey[2] : query.queryKey.at(-1)) ===
+        accountUserId,
   };
 }

@@ -46,6 +46,7 @@ import {
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { Button } from "@/components/ui/button";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -76,7 +77,13 @@ interface LinearTaskWorkspaceProps {
   onSelectedTaskChange?: (taskId: string | null) => void;
 }
 
-export function LinearTaskWorkspace({
+export function LinearTaskWorkspace(props: LinearTaskWorkspaceProps) {
+  const { user } = useCurrentUser();
+  if (!user?.id) return null;
+  return <LinearTaskSession key={`${user.id}:${props.crewId}`} {...props} />;
+}
+
+function LinearTaskSession({
   crewId,
   crewName,
   crewSummary,

@@ -207,8 +207,8 @@ describe("task metadata cache refresh", () => {
     ["field", useDeleteCrewTaskField],
   ] as const)("refreshes cached task details after deleting a %s", async (_name, hook) => {
     const current = mount(() => hook("crew-1"));
-    const detail = crewKeys.task("task-1");
-    const unrelated = crewKeys.task("task-2");
+    const detail = [...crewKeys.task("task-1"), "alice"];
+    const unrelated = [...crewKeys.task("task-2"), "alice"];
     client.setQueryData(detail, { crewId: "crew-1" });
     client.setQueryData(unrelated, { crewId: "crew-2" });
     vi.mocked(crewApi.delete).mockResolvedValue(undefined);
@@ -220,7 +220,7 @@ describe("task metadata cache refresh", () => {
   });
   it("refreshes task details after replacing an archived workflow state", async () => {
     const current = mount(() => useUpdateCrewTaskWorkflowState("crew-1"));
-    const detail = crewKeys.task("task-1");
+    const detail = [...crewKeys.task("task-1"), "alice"];
     client.setQueryData(detail, { crewId: "crew-1", workflowStateId: "old" });
     vi.mocked(crewApi.patch).mockResolvedValue({});
     await act(async () => {
@@ -239,8 +239,8 @@ describe("task metadata cache refresh", () => {
 
 it("refreshes saved-view results when its filters change without a new view ID", async () => {
   const current = mount(() => useUpdateCrewTaskView("crew-1"));
-  const view = crewKeys.taskView("crew-1", { viewId: "view-1" });
-  const other = crewKeys.taskView("crew-2", { viewId: "view-2" });
+  const view = [...crewKeys.taskView("crew-1", { viewId: "view-1" }), "alice"];
+  const other = [...crewKeys.taskView("crew-2", { viewId: "view-2" }), "alice"];
   client.setQueryData(view, { pages: [{ items: [{ id: "old-result" }] }] });
   client.setQueryData(other, { pages: [] });
   vi.mocked(crewApi.patch).mockResolvedValue({ id: "view-1" });
@@ -259,8 +259,8 @@ it("refreshes saved-view results when its filters change without a new view ID",
 
 it("updates cached task versions and details after a bulk edit without relying on realtime", async () => {
   const current = mount(() => useBatchUpdateCrewTasks("crew-1"));
-  const detail = crewKeys.task("task-1");
-  const other = crewKeys.task("task-2");
+  const detail = [...crewKeys.task("task-1"), "alice"];
+  const other = [...crewKeys.task("task-2"), "alice"];
   const updated = { id: "task-1", crewId: "crew-1", version: 2, priority: "high" };
   client.setQueryData(detail, { ...updated, version: 1, priority: "low" });
   client.setQueryData(other, { id: "task-2", version: 1 });
@@ -281,8 +281,8 @@ it.each(["create", "update", "submit", "review"] as const)(
       submit: useSubmitCrewTask("crew-1"),
       review: useReviewCrewTask("crew-1"),
     }));
-    const parent = crewKeys.task("parent");
-    const other = crewKeys.task("unrelated");
+    const parent = [...crewKeys.task("parent"), "alice"];
+    const other = [...crewKeys.task("unrelated"), "alice"];
     client.setQueryData(parent, { id: "parent", crewId: "crew-1", children: [] });
     client.setQueryData(other, { id: "unrelated", crewId: "crew-2" });
     const updated = { id: "child", crewId: "crew-1", version: 2 };
@@ -309,8 +309,8 @@ it.each(["create", "update", "submit", "review"] as const)(
     });
     expect(client.getQueryState(parent)?.isInvalidated).toBe(true);
     expect(client.getQueryState(other)?.isInvalidated).toBe(false);
-    expect(client.getQueryData(crewKeys.task("child"))).toEqual(updated);
-    expect(client.getQueryState(crewKeys.task("child"))?.isInvalidated).toBe(false);
+    expect(client.getQueryData([...crewKeys.task("child"), "alice"])).toEqual(updated);
+    expect(client.getQueryState([...crewKeys.task("child"), "alice"])?.isInvalidated).toBe(false);
   }
 );
 

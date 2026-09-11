@@ -8,8 +8,9 @@ import {
   type InfiniteData,
   type QueryFilters,
 } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
-import { crewKeys, crewTaskDetailQueries } from "./shared";
+import { crewKeys, crewTaskDetailQueries, crewAccountQueries } from "./shared";
 import {
   optimisticallyReorderCrewTaskPages,
   type ReorderCrewTaskCommand,
@@ -42,9 +43,11 @@ import type {
 } from "./types";
 
 export function useCrewTaskProject(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useQuery({
-    queryKey: crewKeys.taskProject(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.taskProject(crewId), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     queryFn: () =>
       crewApi.get<CrewTaskProjectDTO>(`/crews/${encodeURIComponent(crewId)}/task-project`),
   });
@@ -59,9 +62,11 @@ export function useCrewTaskView(
   },
   enabled = true
 ) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   const result = useInfiniteQuery({
-    queryKey: crewKeys.taskView(crewId, input),
-    enabled: enabled && Boolean(crewId) && Boolean(input.viewId),
+    queryKey: [...crewKeys.taskView(crewId, input), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(crewId) && Boolean(input.viewId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewTaskPageDTO>(`/crews/${encodeURIComponent(crewId)}/tasks`, {
@@ -93,9 +98,11 @@ export function useCrewTaskOptions(
   } = {},
   enabled = true
 ) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   const result = useInfiniteQuery({
-    queryKey: crewKeys.taskOptions(crewId, input),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.taskOptions(crewId, input), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewTaskOptionPageDTO>(`/crews/${encodeURIComponent(crewId)}/task-options`, {
@@ -115,18 +122,22 @@ export function useCrewTaskOptions(
 }
 
 export function useCrewTaskSummary(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useQuery({
-    queryKey: crewKeys.taskSummary(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.taskSummary(crewId), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     queryFn: () =>
       crewApi.get<CrewTaskSummaryDTO>(`/crews/${encodeURIComponent(crewId)}/task-summary`),
   });
 }
 
 export function useCrewTaskActivity(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useInfiniteQuery({
-    queryKey: crewKeys.taskActivity(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.taskActivity(crewId), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewTaskActivityPageDTO>(`/crews/${encodeURIComponent(crewId)}/task-activity`, {
@@ -150,18 +161,26 @@ export interface SaveCrewTaskViewInput {
 
 export function useCreateCrewTaskView(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: SaveCrewTaskViewInput) =>
       crewApi.post<CrewTaskViewDTO>(`/crews/${encodeURIComponent(crewId)}/task-views`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useUpdateCrewTaskView(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       viewId,
       input,
@@ -172,26 +191,36 @@ export function useUpdateCrewTaskView(crewId: string) {
       crewApi.patch<CrewTaskViewDTO>(`/crew-task-views/${encodeURIComponent(viewId)}`, {
         body: input,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
     },
   });
 }
 
 export function useDeleteCrewTaskView(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (viewId: string) =>
       crewApi.delete<void>(`/crew-task-views/${encodeURIComponent(viewId)}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useCreateCrewTaskWorkflowState(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: {
       name: string;
       color: string;
@@ -202,13 +231,19 @@ export function useCreateCrewTaskWorkflowState(crewId: string) {
         `/crews/${encodeURIComponent(crewId)}/task-workflow-states`,
         { body: input }
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useUpdateCrewTaskWorkflowState(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       stateId,
       input,
@@ -226,50 +261,72 @@ export function useUpdateCrewTaskWorkflowState(crewId: string) {
         `/crew-task-workflow-states/${encodeURIComponent(stateId)}`,
         { body: input }
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries(crewTaskDetailQueries(crewId));
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, undefined, accountUserId));
     },
   });
 }
 
 export function useReorderCrewTaskWorkflowStates(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (states: Array<{ id: string; expectedVersion: number }>) =>
       crewApi.post<CrewTaskWorkflowStateDTO[]>(
         `/crews/${encodeURIComponent(crewId)}/task-workflow-states/reorder`,
         { body: { states } }
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useDeleteCrewTaskWorkflowState(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (stateId: string) =>
       crewApi.delete<void>(`/crew-task-workflow-states/${encodeURIComponent(stateId)}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useCreateCrewTaskCycle(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: { name: string; goal: string; startAt: string; endAt: string }) =>
       crewApi.post<CrewTaskCycleDTO>(`/crews/${encodeURIComponent(crewId)}/task-cycles`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useUpdateCrewTaskCycle(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       cycleId,
       input,
@@ -282,43 +339,57 @@ export function useUpdateCrewTaskCycle(crewId: string) {
       crewApi.patch<CrewTaskCycleDTO>(`/crew-task-cycles/${encodeURIComponent(cycleId)}`, {
         body: input,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries(crewTaskDetailQueries(crewId));
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, undefined, accountUserId));
     },
   });
 }
 
 export function useDeleteCrewTaskCycle(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (cycleId: string) =>
       crewApi.delete<void>(`/crew-task-cycles/${encodeURIComponent(cycleId)}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries(crewTaskDetailQueries(crewId));
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, undefined, accountUserId));
     },
   });
 }
 
 export function useCreateCrewTaskLabel(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: { name: string; color: string; description: string }) =>
       crewApi.post<CrewTaskLabelDTO>(`/crews/${encodeURIComponent(crewId)}/task-labels`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useUpdateCrewTaskLabel(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       labelId,
       input,
@@ -331,32 +402,40 @@ export function useUpdateCrewTaskLabel(crewId: string) {
       crewApi.patch<CrewTaskLabelDTO>(`/crew-task-labels/${encodeURIComponent(labelId)}`, {
         body: input,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries(crewTaskDetailQueries(crewId));
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, undefined, accountUserId));
     },
   });
 }
 
 export function useDeleteCrewTaskLabel(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (labelId: string) =>
       crewApi.delete<void>(`/crew-task-labels/${encodeURIComponent(labelId)}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries(crewTaskDetailQueries(crewId));
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, undefined, accountUserId));
     },
   });
 }
 
 export function useCreateCrewTaskField(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: {
       name: string;
       description: string;
@@ -367,13 +446,19 @@ export function useCreateCrewTaskField(crewId: string) {
       crewApi.post<CrewTaskFieldDTO>(`/crews/${encodeURIComponent(crewId)}/task-fields`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useUpdateCrewTaskField(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       fieldId,
       input,
@@ -386,33 +471,43 @@ export function useUpdateCrewTaskField(crewId: string) {
       crewApi.patch<CrewTaskFieldDTO>(`/crew-task-fields/${encodeURIComponent(fieldId)}`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+    },
   });
 }
 
 export function useDeleteCrewTaskField(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (fieldId: string) =>
       crewApi.delete<void>(`/crew-task-fields/${encodeURIComponent(fieldId)}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries(crewTaskDetailQueries(crewId));
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, undefined, accountUserId));
     },
   });
 }
 
 export function useReorderCrewTask(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   const taskViewQueries: QueryFilters = {
     queryKey: crewKeys.tasks(crewId),
-    predicate: (query) => query.queryKey[3] === "view",
+    predicate: (query) => query.queryKey[3] === "view" && query.queryKey.at(-1) === accountUserId,
   };
   return useMutation({
     mutationKey: ["crew-task-reorder", crewId],
-    scope: { id: `crew-task-reorder:${crewId}` },
+    scope: { id: `crew-task-reorder:${crewId}:${accountUserId}` },
     mutationFn: ({
       taskId,
       input,
@@ -427,10 +522,10 @@ export function useReorderCrewTask(crewId: string) {
     onMutate: async ({ taskId, input, destinationState }) => {
       await Promise.all([
         qc.cancelQueries(taskViewQueries),
-        qc.cancelQueries({ queryKey: crewKeys.task(taskId) }),
+        qc.cancelQueries({ queryKey: [...crewKeys.task(taskId), accountUserId] }),
       ]);
       const previousTaskViews = qc.getQueriesData<InfiniteData<CrewTaskPageDTO>>(taskViewQueries);
-      const previousTask = qc.getQueryData<CrewTaskDTO>(crewKeys.task(taskId));
+      const previousTask = qc.getQueryData<CrewTaskDTO>([...crewKeys.task(taskId), accountUserId]);
       let optimisticTask: CrewTaskListItemDTO | undefined;
 
       for (const [queryKey, data] of previousTaskViews) {
@@ -446,34 +541,40 @@ export function useReorderCrewTask(crewId: string) {
       }
 
       if (optimisticTask && previousTask) {
-        qc.setQueryData<CrewTaskDTO>(crewKeys.task(taskId), {
+        qc.setQueryData<CrewTaskDTO>([...crewKeys.task(taskId), accountUserId], {
           ...previousTask,
           ...optimisticTask,
         });
       }
 
-      return { previousTaskViews, previousTask };
+      return { previousTaskViews, previousTask, accountUserId, crewId, taskViewQueries };
     },
     onError: (_error, { taskId }, context) => {
+      if (!context?.accountUserId) return;
+      const { accountUserId } = context;
       for (const [queryKey, data] of context?.previousTaskViews ?? []) {
         qc.setQueryData(queryKey, data);
       }
       if (context?.previousTask) {
-        qc.setQueryData(crewKeys.task(taskId), context.previousTask);
+        qc.setQueryData([...crewKeys.task(taskId), accountUserId], context.previousTask);
       }
     },
-    onSuccess: (task) => {
-      qc.setQueryData(crewKeys.task(task.id), task);
+    onSuccess: (task, _variables, context) => {
+      if (!context?.accountUserId) return;
+      const { accountUserId, taskViewQueries } = context;
+      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
       qc.setQueriesData<InfiniteData<CrewTaskPageDTO>>(taskViewQueries, (current) =>
         current ? replaceCrewTaskInPages(current, task) : current
       );
     },
-    onSettled: (_task, _error, { taskId }) => {
+    onSettled: (_task, _error, { taskId }, context) => {
+      if (!context?.accountUserId) return;
+      const { accountUserId, crewId, taskViewQueries } = context;
       void Promise.all([
         qc.invalidateQueries(taskViewQueries),
-        qc.invalidateQueries({ queryKey: crewKeys.taskCenter }),
-        qc.invalidateQueries({ queryKey: crewKeys.task(taskId) }),
-        qc.invalidateQueries(crewTaskDetailQueries(crewId, taskId)),
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId)),
+        qc.invalidateQueries({ queryKey: [...crewKeys.task(taskId), accountUserId] }),
+        qc.invalidateQueries(crewTaskDetailQueries(crewId, taskId, accountUserId)),
       ]);
     },
   });
@@ -494,7 +595,9 @@ function replaceCrewTaskInPages(
 
 export function useBatchUpdateCrewTasks(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: {
       taskIds: string[];
       priority?: CrewTaskDTO["priority"];
@@ -505,26 +608,32 @@ export function useBatchUpdateCrewTasks(crewId: string) {
       crewApi.patch<CrewTaskDTO[]>(`/crews/${encodeURIComponent(crewId)}/tasks/batch`, {
         body: input,
       }),
-    onSuccess: (tasks) => {
-      for (const task of tasks) qc.setQueryData(crewKeys.task(task.id), task);
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
+    onSuccess: (tasks, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      for (const task of tasks) qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
     },
   });
 }
 
 export function useCrewTask(taskId: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useQuery({
-    queryKey: crewKeys.task(taskId),
-    enabled: enabled && Boolean(taskId),
+    queryKey: [...crewKeys.task(taskId), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(taskId),
     queryFn: () => crewApi.get<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}`),
   });
 }
 
 export function useCrewTaskTimeline(taskId: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useInfiniteQuery({
-    queryKey: crewKeys.taskTimeline(taskId),
-    enabled: enabled && Boolean(taskId),
+    queryKey: [...crewKeys.taskTimeline(taskId), accountUserId],
+    enabled: Boolean(accountUserId) && enabled && Boolean(taskId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewTaskTimelinePageDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/timeline`, {
@@ -536,18 +645,22 @@ export function useCrewTaskTimeline(taskId: string, enabled = true) {
 
 export function useCreateCrewTask(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: (input: CreateCrewTaskInput) =>
       crewApi.post<CrewTaskDTO>(`/crews/${encodeURIComponent(crewId)}/tasks`, { body: input }),
-    onSuccess: (task) => {
-      qc.setQueryData(crewKeys.task(task.id), task);
-      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+    onSuccess: (task, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
     },
   });
 }
@@ -563,84 +676,110 @@ export function useDraftCrewTask(crewId: string) {
 
 export function useUpdateCrewTask(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({ taskId, input }: { taskId: string; input: UpdateCrewTaskInput }) =>
       crewApi.patch<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}`, {
         body: input,
       }),
-    onSuccess: (task) => {
-      qc.setQueryData(crewKeys.task(task.id), task);
-      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+    onSuccess: (task, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
     },
   });
 }
 
 export function useDeleteCrewTask(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({ taskId, expectedVersion }: { taskId: string; expectedVersion: number }) =>
       crewApi.delete<void>(`/crew-tasks/${encodeURIComponent(taskId)}`, {
         body: { expectedVersion },
       }),
-    onSuccess: () => {
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
       // Reparented children and unblocked tasks can have open detail queries too.
-      qc.invalidateQueries({ queryKey: ["crew", "task"] });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, undefined, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
     },
   });
 }
 
 export function useCreateCrewTaskComment(crewId: string, taskId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId, taskId }),
     mutationFn: (input: CreateCrewTaskCommentInput) =>
       crewApi.post<CrewTaskTimelineItemDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/comments`, {
         body: input,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(taskId) });
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId, taskId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(taskId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
     },
   });
 }
 
 export function useUpdateCrewTaskComment(taskId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, taskId }),
     mutationFn: ({ commentId, input }: { commentId: string; input: UpdateCrewTaskCommentInput }) =>
       crewApi.patch<CrewTaskTimelineItemDTO>(
         `/crew-task-comments/${encodeURIComponent(commentId)}`,
         { body: input }
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(taskId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, taskId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(taskId), accountUserId));
+    },
   });
 }
 
 export function useDeleteCrewTaskComment(taskId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, taskId }),
     mutationFn: (commentId: string) =>
       crewApi.delete<void>(`/crew-task-comments/${encodeURIComponent(commentId)}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(taskId) }),
+    onSuccess: (_data, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, taskId } = origin;
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(taskId), accountUserId));
+    },
   });
 }
 
 export function useSubmitCrewTask(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       taskId,
       note,
@@ -653,23 +792,27 @@ export function useSubmitCrewTask(crewId: string) {
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/submissions`, {
         body: { note, assetNodeIds },
       }),
-    onSuccess: (task) => {
-      qc.setQueryData(crewKeys.task(task.id), task);
-      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+    onSuccess: (task, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
     },
   });
 }
 
 export function useReviewCrewTask(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null, crewId }),
     mutationFn: ({
       taskId,
       decision,
@@ -682,18 +825,20 @@ export function useReviewCrewTask(crewId: string) {
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/review`, {
         body: { decision, note },
       }),
-    onSuccess: (task) => {
-      qc.setQueryData(crewKeys.task(task.id), task);
-      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
-      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.earnings(crewId, "mine") });
-      qc.invalidateQueries({ queryKey: crewKeys.earnings(crewId, "crew") });
-      qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.episodes(crewId) });
+    onSuccess: (task, _variables, origin) => {
+      if (!origin?.accountUserId) return;
+      const { accountUserId, crewId } = origin;
+      qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.earnings(crewId, "mine"), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.earnings(crewId, "crew"), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(crewId), accountUserId));
+      qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(crewId), accountUserId));
     },
   });
 }
