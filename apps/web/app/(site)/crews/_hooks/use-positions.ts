@@ -31,11 +31,11 @@ export function useCrewPositions(crewId: string | undefined, pageSize = 50) {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
-  const { fetchNextPage, hasNextPage, isFetching, isFetchNextPageError } = query;
+  const { fetchNextPage, hasNextPage, isFetching, isError } = query;
   useEffect(() => {
-    if (!enabled || !hasNextPage || isFetching || isFetchNextPageError) return;
+    if (!enabled || !hasNextPage || isFetching || isError) return;
     void fetchNextPage();
-  }, [enabled, fetchNextPage, hasNextPage, isFetching, isFetchNextPageError]);
+  }, [enabled, fetchNextPage, hasNextPage, isFetching, isError]);
   const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
   return {
     ...query,

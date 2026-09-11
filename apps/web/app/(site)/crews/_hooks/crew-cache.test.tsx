@@ -76,35 +76,71 @@ describe("crew roster pagination", () => {
   it.each([
     ["members", useCrewMembers],
     ["positions", useCrewPositions],
-  ] as const)("stops automatic %s pagination after failure and supports retry", async (_name, hook) => {
-    vi.mocked(crewApi.get)
-      .mockResolvedValueOnce({ items: [{ id: "member-1" }], nextCursor: "member-1", total: 2 })
-      .mockImplementation(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 15));
-        throw new CrewApiError(403, { message: "Roster access denied" });
+  ] as const)(
+    "stops automatic %s pagination after failure and supports retry",
+    async (_name, hook) => {
+      vi.mocked(crewApi.get)
+        .mockResolvedValueOnce({ items: [{ id: "member-1" }], nextCursor: "member-1", total: 2 })
+        .mockImplementation(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 15));
+          throw new CrewApiError(403, { message: "Roster access denied" });
+        });
+      const current = mount(() => hook("crew-1"));
+      await vi.waitFor(async () => {
+        await settle();
+        expect(current().isFetchNextPageError).toBe(true);
       });
-    const current = mount(() => hook("crew-1"));
-    await vi.waitFor(async () => {
       await settle();
-      expect(current().isFetchNextPageError).toBe(true);
-    });
-    await settle();
+      await settle();
+      expect(crewApi.get).toHaveBeenCalledTimes(2);
+      expect(current().data).toEqual([{ id: "member-1" }]);
+
+      vi.mocked(crewApi.get).mockResolvedValueOnce({
+        items: [{ id: "member-2" }],
+        nextCursor: null,
+        total: 2,
+      });
+      await act(async () => {
+        await current().fetchNextPage();
+      });
+      await settle();
+      expect(current().data).toEqual([{ id: "member-1" }, { id: "member-2" }]);
+      expect(current().hasNextPage).toBe(false);
+    }
+  );
+});
+
+it.each([
+  ["members", useCrewMembers],
+  ["positions", useCrewPositions],
+] as const)("pauses automatic %s pagination after a refresh fails", async (_name, hook) => {
+  vi.mocked(crewApi.get)
+    .mockResolvedValueOnce({ items: [{ id: "first" }], total: 2, nextCursor: "first" })
+    .mockImplementation(() => new Promise(() => {}));
+  const current = mount(() => hook("crew-1"));
+  await vi.waitFor(async () => {
     await settle();
     expect(crewApi.get).toHaveBeenCalledTimes(2);
-    expect(current().data).toEqual([{ id: "member-1" }]);
-
-    vi.mocked(crewApi.get).mockResolvedValueOnce({
-      items: [{ id: "member-2" }],
-      nextCursor: null,
-      total: 2,
-    });
-    await act(async () => {
-      await current().fetchNextPage();
-    });
-    await settle();
-    expect(current().data).toEqual([{ id: "member-1" }, { id: "member-2" }]);
-    expect(current().hasNextPage).toBe(false);
   });
+  vi.mocked(crewApi.get).mockRejectedValue(new CrewApiError(403, { message: "Access denied" }));
+  await act(async () => {
+    await current().refetch();
+  });
+  await settle();
+  await settle();
+  expect(crewApi.get).toHaveBeenCalledTimes(3);
+  expect(current().isRefetchError).toBe(true);
+  expect(current().data).toEqual([{ id: "first" }]);
+  vi.mocked(crewApi.get).mockResolvedValue({
+    items: [{ id: "recovered" }],
+    total: 1,
+    nextCursor: null,
+  });
+  await act(async () => {
+    await current().refetch();
+  });
+  await settle();
+  expect(current().data).toEqual([{ id: "recovered" }]);
 });
 
 describe("crew finance cache refresh", () => {

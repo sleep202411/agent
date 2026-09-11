@@ -37,11 +37,11 @@ export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
     retry: (failureCount, error) =>
       failureCount < 2 && !(error instanceof CrewApiError && error.status < 500),
   });
-  const { fetchNextPage, hasNextPage, isFetching, isFetchNextPageError } = query;
+  const { fetchNextPage, hasNextPage, isFetching, isError } = query;
   useEffect(() => {
-    if (!hasNextPage || isFetching || isFetchNextPageError) return;
+    if (!hasNextPage || isFetching || isError) return;
     void fetchNextPage();
-  }, [fetchNextPage, hasNextPage, isFetching, isFetchNextPageError]);
+  }, [fetchNextPage, hasNextPage, isFetching, isError]);
   const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
   return {
     ...query,
