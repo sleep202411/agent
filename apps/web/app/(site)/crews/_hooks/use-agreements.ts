@@ -48,45 +48,61 @@ export function useCrewAgreements(
   return { ...query, data };
 }
 
-export function useCreateCrewAgreement(crewId: string) {
+function useMutationRefresh(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const context = { crewId, accountUserId: user?.id ?? null };
+  return {
+    onMutate: () => context,
+    onSuccess: (_data: unknown, _variables: unknown, origin: typeof context | undefined) => {
+      if (!origin?.accountUserId) return;
+      return qc.invalidateQueries({
+        queryKey: crewKeys.agreements(origin.crewId),
+        predicate: (query) => query.queryKey.at(-1) === origin.accountUserId,
+      });
+    },
+  };
+}
+
+export function useCreateCrewAgreement(crewId: string) {
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (input: CreateCrewAgreementInput) =>
       crewApi.post<CrewAgreementDTO>(`/crews/${encodeURIComponent(crewId)}/agreements`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.agreements(crewId) }),
   });
 }
 
 export function useSyncCrewAgreement(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (agreementId: string) =>
       crewApi.post<CrewAgreementDTO>(`/crew-agreements/${encodeURIComponent(agreementId)}/sync`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.agreements(crewId) }),
   });
 }
 
 export function useRetryCrewAgreementArchive(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (agreementId: string) =>
       crewApi.post<CrewAgreementDTO>(
         `/crew-agreements/${encodeURIComponent(agreementId)}/archive/retry`
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.agreements(crewId) }),
   });
 }
 
 export function useRetryCrewAgreementSend(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (agreementId: string) =>
       crewApi.post<CrewAgreementDTO>(
         `/crew-agreements/${encodeURIComponent(agreementId)}/send/retry`
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.agreements(crewId) }),
   });
 }
 

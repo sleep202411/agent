@@ -39,30 +39,46 @@ export function useCrewInviteLinks(crewId: string, enabled = true) {
   });
 }
 
+function useMutationRefresh(crewId: string) {
+  const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const context = { crewId, accountUserId: user?.id ?? null };
+  return {
+    onMutate: () => context,
+    onSuccess: (_data: unknown, _variables: unknown, origin: typeof context | undefined) => {
+      if (!origin?.accountUserId) return;
+      return qc.invalidateQueries({
+        queryKey: crewKeys.inviteLinks(origin.crewId),
+        predicate: (query) => query.queryKey.at(-1) === origin.accountUserId,
+      });
+    },
+  };
+}
+
 /**
  * The raw token comes back exactly once, here. Nothing re-reads it, so the
  * caller must surface it immediately — a lost token means minting a new link.
  */
 export function useCreateCrewInviteLink(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (input: CreateCrewInviteLinkInput) =>
       crewApi.post<CrewInviteLinkDTO & { token: string }>(
         `/crews/${encodeURIComponent(crewId)}/invite-links`,
         { body: input }
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.inviteLinks(crewId) }),
   });
 }
 
 export function useRevokeCrewInviteLink(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (linkId: string) =>
       crewApi.delete<void>(
         `/crews/${encodeURIComponent(crewId)}/invite-links/${encodeURIComponent(linkId)}`
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.inviteLinks(crewId) }),
   });
 }
 
