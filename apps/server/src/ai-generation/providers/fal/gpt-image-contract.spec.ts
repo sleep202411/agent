@@ -248,7 +248,7 @@ describe.each(models)('$slug end-to-end catalog contract', (model) => {
 });
 
 describe('GPT Image product pricing', () => {
-  it('discounts all Image 2 rates by 30%, including references, before final integer rounding', () => {
+  it('discounts Image 2 base rates independently while retaining reference charges and final rounding', () => {
     const policy = GPT_IMAGE_2_PRODUCT_PRICING;
     if (policy.mode !== 'parameter_matrix') throw new Error('Expected matrix');
     const oldRates = {
@@ -259,7 +259,7 @@ describe('GPT Image product pricing', () => {
     for (const [resolution, rates] of Object.entries(oldRates)) {
       ['low', 'medium', 'high'].forEach((quality, index) => {
         expect(policy.matrix[resolution][quality]).toBeCloseTo(
-          rates[index] * 0.7,
+          rates[index] * 0.5,
         );
         for (const count of [0, 1, 16]) {
           const quote = estimateProductModelPoints({
@@ -268,9 +268,9 @@ describe('GPT Image product pricing', () => {
             quality,
             referenceImageCount: count,
           });
-          const oldTotal =
-            rates[index] + (count > 0 ? 15 + (count - 1) * 5 : 0);
-          expect(quote.sellPoints).toBe(Math.ceil(oldTotal * 0.7));
+          const total =
+            rates[index] * 0.5 + (count > 0 ? 10.5 + (count - 1) * 3.5 : 0);
+          expect(quote.sellPoints).toBe(Math.ceil(total));
         }
       });
     }
@@ -297,6 +297,13 @@ describe('GPT Image product pricing', () => {
       expect(estimateProductModelPoints({ policy }).sellPoints).toBe(
         model.cost,
       );
+      expect(policy.matrix['1K']).toEqual({
+        low: 14,
+        medium: 42,
+        high: 84,
+        xhigh: 168,
+        max: 336,
+      });
     },
   );
 });

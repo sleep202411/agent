@@ -38,7 +38,11 @@ import {
   type InvitePreviewDTO,
   type ShareInviteDTO,
 } from './mappers';
-import { effectiveInviteStatus, isUniqueViolation } from './util';
+import {
+  effectiveInviteStatus,
+  isUniqueViolation,
+  existingInviteAccess,
+} from './util';
 
 const ROLE_MAP: Record<AssignableRole, ProjectMemberRole> = {
   admin: ProjectMemberRole.admin,
@@ -148,12 +152,27 @@ export class ProjectInvitesService {
 
   async preview(
     invite: NonNullable<Awaited<ReturnType<this['findByHash']>>>,
+    user: AuthUser,
   ): Promise<InvitePreviewDTO> {
     const project = await this.prisma.platformProject.findFirst({
       where: { id: invite.projectId, deletedAt: null },
       select: { name: true },
     });
+    const existingAccess = await existingInviteAccess(async () => {
+      const project = await this.permissions.requireProjectRole(
+        user.userId,
+        invite.projectId,
+        ProjectMemberRole.viewer,
+      );
+      return {
+        scope: 'project' as const,
+        projectId: project.id,
+        workspaceId: project.workspaceId,
+        targetName: project.name,
+      };
+    });
     return {
+      existingAccess,
       scope: 'project',
       targetName: project?.name ?? 'a project',
       role: invite.role,
@@ -165,7 +184,12 @@ export class ProjectInvitesService {
   async accept(
     invite: NonNullable<Awaited<ReturnType<this['findByHash']>>>,
     user: AuthUser,
-  ): Promise<{ scope: 'project'; projectId: string; targetName: string }> {
+  ): Promise<{
+    scope: 'project';
+    projectId: string;
+    workspaceId: string;
+    targetName: string;
+  }> {
     const project = await this.requireProject(invite.projectId);
 
     const current = await this.prisma.projectInvite.findUnique({
@@ -272,6 +296,7 @@ export class ProjectInvitesService {
     return {
       scope: 'project',
       projectId: invite.projectId,
+      workspaceId: project.workspaceId,
       targetName: project.name,
     };
   }

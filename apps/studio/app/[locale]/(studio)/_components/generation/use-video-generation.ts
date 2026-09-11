@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   buildPromptDocument,
+  buildReferenceInputForMode,
+  buildPromptReferenceBindingsForMode,
+  mediaSnapshotsForMode,
+  ReferenceInputError,
+  normalizeFizzAiError,
   compactFizzAiInput,
   defaultMode,
   defaultSettingsForModel,
@@ -13,18 +18,18 @@ import {
   referenceFieldsForMode,
   validateModelGenerationInput,
   type FizzAiModel,
-  type FizzAiReferenceBinding,
   type ModelSettings,
   type ValidationIssue,
 } from "@/lib/canvas-authoring/generation-api";
 import { formatValidationIssue } from "@/lib/canvas-authoring/format-validation-issue";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import { useGenerationFeed } from "./use-generation-feed";
-import { useReferenceUploads, type ReferenceUpload } from "./use-reference-uploads";
+import {
+  generationReferencesFromUploads,
+  useReferenceUploads,
+  type ReferenceUpload,
+} from "./use-reference-uploads";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
-
-/** Single-value frame fields (startFrame/endFrame) vs array reference fields. */
-const SINGLE_FIELDS = new Set(["startFrame", "firstFrame", "endFrame", "lastFrame"]);
 
 /** Default video mode: Omni Reference when the model offers it (web parity). */
 function defaultVideoMode(model: FizzAiModel): string | undefined {
@@ -72,6 +77,7 @@ function modeInputsSatisfied(
 export function useVideoGeneration() {
   const t = useTranslations("studioModes");
   const tv = useTranslations("generation");
+  const tc = useTranslations("canvasOps");
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("video", "fizzstudio-video-studio");
   const { data: wallet } = useComputeWalletBalance();
@@ -169,60 +175,46 @@ export function useVideoGeneration() {
       return { ok: false };
     }
 
-    // Map ready uploads into their schema fields: frames are single values,
-    // reference sets are arrays; filterFizzAiInput drops undeclared fields.
-    const referenceInput: Record<string, unknown> = {};
-    for (const field of referenceFields) {
-      const items = readyUploads.filter((item) => item.field === field.field);
-      if (items.length === 0) continue;
-      const toEntry = (item: ReferenceUpload) => ({
-        url: item.url!,
-        refId: item.id,
-        assetId: item.mediaAssetId,
-        ...(typeof item.durationSeconds === "number"
-          ? { durationSeconds: item.durationSeconds }
-          : {}),
-        ...(typeof item.bytes === "number" ? { bytes: item.bytes } : {}),
+    try {
+      const references = generationReferencesFromUploads(activeUploads);
+      const referenceInput = buildReferenceInputForMode(model, mode, references);
+      const bindings = buildPromptReferenceBindingsForMode(model, mode, references);
+      const media = mediaSnapshotsForMode(model, mode, references);
+      const input = compactFizzAiInput(
+        filterFizzAiInput(model, { ...settings, ...referenceInput, prompt })
+      );
+      // Catalog-driven preflight (same kernel as canvas + server). No model ifs.
+      const preflight = validateModelGenerationInput(model, input, media);
+      if (generationInputHasBlockingIssues(preflight)) {
+        setValidationIssues(preflight);
+        const first = preflight.find((issue) => issue.severity === "error");
+        setSubmitError(first ? formatValidationIssue(tv, first) : t("error.generationFailed"));
+        return { ok: false };
+      }
+      setValidationIssues([]);
+      const result = await feed.submit({
+        prompt,
+        modelId: model.id,
+        schemaVersion: model.schemaVersion,
+        input,
+        promptDocument: buildPromptDocument(prompt, bindings),
+        referenceBindings: bindings.length ? bindings : undefined,
       });
-      referenceInput[field.field] = SINGLE_FIELDS.has(field.field)
-        ? toEntry(items[0])
-        : items.map(toEntry);
-    }
-    const bindings: FizzAiReferenceBinding[] = readyUploads.map((item, order) => ({
-      refId: item.id,
-      kind: item.kind,
-      label: item.label,
-      order,
-      url: item.url,
-      assetId: item.mediaAssetId,
-    }));
-    const input = compactFizzAiInput(
-      filterFizzAiInput(model, { ...settings, ...referenceInput, prompt })
-    );
-    // Catalog-driven preflight (same kernel as canvas + server). No model ifs.
-    const preflight = validateModelGenerationInput(model, input);
-    if (generationInputHasBlockingIssues(preflight)) {
-      setValidationIssues(preflight);
-      const first = preflight.find((issue) => issue.severity === "error");
-      setSubmitError(first ? formatValidationIssue(tv, first) : t("error.generationFailed"));
+      if (!result.ok) {
+        setSubmitError(result.error ?? t("error.generationFailed"));
+        return { ok: false };
+      }
+      return { ok: true };
+    } catch (error) {
+      setSubmitError(
+        error instanceof ReferenceInputError
+          ? tc(error.messageKey)
+          : normalizeFizzAiError(error, t("error.generationFailed"))
+      );
+      return { ok: false };
+    } finally {
       setSubmitting(false);
-      return { ok: false };
     }
-    setValidationIssues([]);
-    const result = await feed.submit({
-      prompt,
-      modelId: model.id,
-      schemaVersion: model.schemaVersion,
-      input,
-      promptDocument: buildPromptDocument(prompt, bindings),
-      referenceBindings: bindings.length ? bindings : undefined,
-    });
-    setSubmitting(false);
-    if (!result.ok) {
-      setSubmitError(result.error ?? t("error.generationFailed"));
-      return { ok: false };
-    }
-    return { ok: true };
   };
 
   // Composer-facing error: a submit error, or the unmet mode-input hint.

@@ -101,7 +101,24 @@ export function toProjectInviteDTO(invite: ProjectInvite): ShareInviteDTO {
  * they're joining, at what role, and whether the link is still usable. Status
  * is the *effective* status (lazy-expired), never the raw column alone.
  */
+export type InviteTargetDTO =
+  | { scope: 'workspace'; workspaceId: string; targetName: string }
+  | {
+      scope: 'project';
+      projectId: string;
+      workspaceId: string;
+      targetName: string;
+    }
+  | {
+      scope: 'story-project';
+      storyProjectId: string;
+      workspaceId: string;
+      targetName: string;
+    };
+
 export interface InvitePreviewDTO {
+  /** Present only when the caller already has current access to this target. */
+  existingAccess: InviteTargetDTO | null;
   scope: ShareScope;
   targetName: string;
   role: string;

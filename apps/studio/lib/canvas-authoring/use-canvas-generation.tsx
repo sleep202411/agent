@@ -28,6 +28,7 @@ import {
 } from "@/app/_components/credits-badge";
 import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import {
+  ReferenceInputError,
   buildReferenceInputForMode,
   buildPromptDocument,
   buildPromptReferenceBindingsForMode,
@@ -1041,6 +1042,12 @@ export function CanvasGenerationProvider({
             schemaVersion: model.schemaVersion,
           },
           data.generation
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof ReferenceInputError
+            ? t(error.messageKey)
+            : normalizeFizzAiError(error, t("generationFailed"))
         );
       } finally {
         submittingNodes.current.delete(nodeId);

@@ -197,6 +197,7 @@ export interface ShareInvite {
 }
 
 export interface InvitePreview {
+  existingAccess: AcceptedInvite | null;
   scope: "workspace" | "project" | "story-project";
   targetName: string;
   role: string;
@@ -206,8 +207,8 @@ export interface InvitePreview {
 
 export type AcceptedInvite =
   | { scope: "workspace"; workspaceId: string; targetName: string }
-  | { scope: "project"; projectId: string; targetName: string }
-  | { scope: "story-project"; storyProjectId: string; targetName: string };
+  | { scope: "project"; projectId: string; workspaceId: string; targetName: string }
+  | { scope: "story-project"; storyProjectId: string; workspaceId: string; targetName: string };
 
 function scopeBase(scope: ShareScope): string {
   if (scope.kind === "workspace") return `/aurora/workspaces/${scope.id}/invites`;

@@ -661,7 +661,7 @@ export const SEEDREAM_5_PRO_PARAMETER_POLICY = {
 
 export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'gpt-image-2-points-v2-2026-09-11',
+  version: 'gpt-image-2-points-v3-2026-09-11',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -671,9 +671,9 @@ export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K', '4K'],
   qualityOptions: ['low', 'medium', 'high'],
   matrix: {
-    '1K': { low: 14, medium: 42, high: 84 },
-    '2K': { low: 21, medium: 63, high: 126 },
-    '4K': { low: 31.5, medium: 98, high: 196 },
+    '1K': { low: 10, medium: 30, high: 60 },
+    '2K': { low: 15, medium: 45, high: 90 },
+    '4K': { low: 22.5, medium: 70, high: 140 },
   },
   referenceImageSurchargePoints: 10.5,
   extraReferenceImagePoints: 3.5,
@@ -684,8 +684,8 @@ export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
 
 /**
  * Curated selling prices, not a fixed upstream cost quote. Flare and Sunburst
- * share fal's token rates. Low/medium/high match discounted GPT Image 2;
- * xhigh/max are priced at 2x/4x high. Keep explicit matrices for quoting.
+ * share fal's token rates. Keep the launch prices independent of subsequent
+ * Image 2 discounts; xhigh/max are priced at 2x/4x high.
  */
 export const GPT_IMAGE_25_PRODUCT_PRICING: AiProductPricingPolicy = {
   ...GPT_IMAGE_2_PRODUCT_PRICING,
