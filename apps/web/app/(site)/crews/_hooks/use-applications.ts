@@ -83,44 +83,64 @@ export function useCrewApplication(
   });
 }
 
-export function useApplyToPosition(crewId: string, positionId: string) {
+function useApplicationRefresh(crewId: string, changesMembership = false) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const context = { crewId, accountUserId: user?.id ?? null };
+  return {
+    onMutate: () => context,
+    onSuccess: (_data: unknown, _variables: unknown, origin: typeof context | undefined) => {
+      if (!origin?.accountUserId) return;
+      const forAccount = (query: { queryKey: readonly unknown[] }) =>
+        query.queryKey.at(-1) === origin.accountUserId;
+      qc.invalidateQueries({
+        queryKey: crewKeys.applications(origin.crewId),
+        predicate: forAccount,
+      });
+      qc.invalidateQueries({ queryKey: [...crewKeys.detail(origin.crewId), origin.accountUserId] });
+      qc.invalidateQueries({
+        queryKey: crewKeys.positions(origin.crewId),
+        predicate: (query) => query.queryKey[3] === origin.accountUserId,
+      });
+      qc.invalidateQueries({ queryKey: crewKeys.mine, predicate: forAccount });
+      if (changesMembership) {
+        qc.invalidateQueries({ queryKey: crewKeys.members(origin.crewId), predicate: forAccount });
+        qc.invalidateQueries({ queryKey: ["crew", "positions", "public"] });
+        qc.invalidateQueries({ queryKey: ["crew", "list"], predicate: forAccount });
+        qc.invalidateQueries({ queryKey: ["crew", "by-user"], predicate: forAccount });
+      }
+    },
+  };
+}
+
+export function useApplyToPosition(crewId: string, positionId: string) {
+  const refresh = useApplicationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (input: ApplyInput) =>
       crewApi.post<CrewApplicationDTO>(
         `/crews/${encodeURIComponent(crewId)}/positions/${encodeURIComponent(positionId)}/apply`,
         { body: input }
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.applications(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
-    },
   });
 }
 
 export function useApproveApplication(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useApplicationRefresh(crewId, true);
   return useMutation({
+    ...refresh,
     mutationFn: (applicationId: string) =>
       crewApi.post<CrewApplicationDTO>(
         `/applications/${encodeURIComponent(applicationId)}/approve`
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.applications(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
-    },
   });
 }
 
 export function useRejectApplication(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useApplicationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (applicationId: string) =>
       crewApi.post<CrewApplicationDTO>(`/applications/${encodeURIComponent(applicationId)}/reject`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.applications(crewId) });
-    },
   });
 }
