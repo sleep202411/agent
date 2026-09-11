@@ -146,6 +146,8 @@ function exactButton(label: string) {
 }
 
 beforeEach(() => {
+  // jsdom has no layout scrolling; Radix uses this when focusing select options.
+  Element.prototype.scrollIntoView = vi.fn();
   state.create.mockReset();
   state.draft.mockReset();
   state.resetDraft.mockReset();
@@ -285,6 +287,64 @@ describe("TaskQuickCreate", () => {
         expect.objectContaining({
           title: label === "Task title" ? "Newer user text" : "Original prompt",
           description: label === "Task brief" ? "Newer user text" : "",
+        })
+      );
+    }
+  );
+
+  it.each(["deadline", "priority", "assignee", "cycle"])(
+    "preserves a %s choice made during AI preparation",
+    async (field) => {
+      let finish!: (value: unknown) => void;
+      state.draft.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      renderQuickCreate(vi.fn(), vi.fn(), {
+        ...project,
+        cycles: [{ id: "cycle-user", name: "Chosen cycle", status: "planned" }],
+      } as unknown as CrewTaskProjectDTO);
+      const title = document.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Task title"]'
+      )!;
+      act(() => fill(title, "Current title"));
+      await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+      await act(async () => click(button("Organize with AI")));
+      if (field === "deadline") {
+        act(() =>
+          fill(document.querySelector<HTMLInputElement>('input[type="date"]')!, "2026-10-01")
+        );
+      } else {
+        const label =
+          field === "priority" ? "Priority" : field === "assignee" ? "Assignees" : "Cycle";
+        await act(async () => click(document.querySelector(`button[aria-label="${label}"]`)!));
+        const text = field === "priority" ? "priority.low" : field === "assignee" ? "Isaac" : "Chosen cycle";
+        const option = [...document.querySelectorAll('[role="option"]')].find(
+          (item) => item.textContent?.trim() === text
+        );
+        expect(option).toBeDefined();
+        await act(async () => click(option!));
+      }
+      await act(async () =>
+        finish({
+          title: "Old AI title",
+          description: "Old AI brief",
+          priority: "high",
+          assigneeUserIds: [],
+          cycleId: null,
+          dueDate: "2026-09-01",
+          questions: [],
+        })
+      );
+      expect(title.value).toBe("Current title");
+      await act(async () => click(exactButton("Create")));
+      expect(state.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...(field === "deadline" ? { dueAt: new Date("2026-10-01T23:59:59").toISOString() } : {}),
+          ...(field === "priority" ? { priority: "low" } : {}),
+          ...(field === "assignee" ? { assignees: [{ userId: "member-1", currency: "USD" }] } : {}),
+          ...(field === "cycle" ? { cycleId: "cycle-user" } : {}),
         })
       );
     }

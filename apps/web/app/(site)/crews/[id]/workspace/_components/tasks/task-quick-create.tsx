@@ -77,7 +77,7 @@ export function TaskQuickCreate({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   // Keyboard events can arrive before mutation pending state has rendered.
   const operationInFlight = useRef(false);
-  const promptRevision = useRef(0);
+  const draftRevision = useRef(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<CrewTaskPriority>("normal");
@@ -172,7 +172,7 @@ export function TaskQuickCreate({
   }, [onOpenChange]);
 
   const reset = () => {
-    promptRevision.current += 1;
+    draftRevision.current += 1;
     setTitle("");
     setDescription("");
     setPriority("normal");
@@ -198,7 +198,7 @@ export function TaskQuickCreate({
     if (!prompt) return;
     operationInFlight.current = true;
     const requestedSession = session.current;
-    const requestedRevision = promptRevision.current;
+    const requestedRevision = draftRevision.current;
     try {
       const next = await draftTask.mutateAsync({
         prompt,
@@ -209,7 +209,7 @@ export function TaskQuickCreate({
           displayName: displayNameOf(member.userId, displays),
         })),
       });
-      if (session.current !== requestedSession || promptRevision.current !== requestedRevision)
+      if (session.current !== requestedSession || draftRevision.current !== requestedRevision)
         return;
       setDraft(next);
       setTitle(next.title);
@@ -326,7 +326,7 @@ export function TaskQuickCreate({
             ref={titleRef}
             value={title}
             onChange={(event) => {
-              promptRevision.current += 1;
+              draftRevision.current += 1;
               setTitle(event.target.value);
               setDraft(null);
             }}
@@ -345,7 +345,7 @@ export function TaskQuickCreate({
           <textarea
             value={description}
             onChange={(event) => {
-              promptRevision.current += 1;
+              draftRevision.current += 1;
               setDescription(event.target.value);
               setDraft(null);
             }}
@@ -375,7 +375,10 @@ export function TaskQuickCreate({
               value={priority}
               label={priority === "normal" ? t("priorityLabel") : t(`priority.${priority}`)}
               ariaLabel={t("priorityLabel")}
-              onChange={(value) => setPriority(value as CrewTaskPriority)}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                setPriority(value as CrewTaskPriority);
+              }}
               options={(["urgent", "high", "normal", "low"] as const).map((value) => ({
                 value,
                 label: t(`priority.${value}`),
@@ -388,7 +391,10 @@ export function TaskQuickCreate({
                 assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
               }
               ariaLabel={t("chooseAssignees")}
-              onChange={setAssigneeUserId}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                setAssigneeUserId(value);
+              }}
               options={[
                 { value: "", label: t("unassigned") },
                 ...members.map((member) => ({
@@ -439,8 +445,14 @@ export function TaskQuickCreate({
               draft={draft}
               canGenerate={Boolean(title.trim()) && !create.isPending}
               generating={draftTask.isPending}
-              onCycleChange={setCycleId}
-              onDueDateChange={setDueDate}
+              onCycleChange={(value) => {
+                draftRevision.current += 1;
+                setCycleId(value);
+              }}
+              onDueDateChange={(value) => {
+                draftRevision.current += 1;
+                setDueDate(value);
+              }}
               onGenerate={() => void generateDraft()}
             />
           </div>
