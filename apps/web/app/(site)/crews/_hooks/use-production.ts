@@ -132,56 +132,22 @@ export function useCreateCrewProductionResource(crewId: string) {
         `/crews/${encodeURIComponent(crewId)}/production-resources`,
         { body: input }
       ),
-    onMutate: async (input) => {
-      const key = crewKeys.productionOverview(crewId);
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<CrewProductionOverviewDTO>(key);
-      const optimisticId = `optimistic-${crypto.randomUUID()}`;
-      const now = new Date().toISOString();
-      const resource: CrewProductionResourceDTO = {
-        id: optimisticId,
-        crewId,
-        kind: input.kind,
-        title: input.title?.trim() || (input.kind === "link" ? productionLinkTitle(input.url) : ""),
-        url: input.kind === "link" ? input.url : null,
-        assetNodeId: input.kind === "asset" ? input.assetNodeId : null,
-        createdByUserId: "",
-        createdAt: now,
-        updatedAt: now,
-        asset: null,
-      };
-      queryClient.setQueryData<CrewProductionOverviewDTO>(key, (current) =>
-        current ? { ...current, resources: [...current.resources, resource] } : current
-      );
-      return { previous, optimisticId };
-    },
-    onError: (_error, _input, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(crewKeys.productionOverview(crewId), context.previous);
-      }
-    },
-    onSuccess: (resource, _input, context) => {
+    onSuccess: (resource) => {
       queryClient.setQueryData<CrewProductionOverviewDTO>(
         crewKeys.productionOverview(crewId),
-        (current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            resources: current.resources.map((item) =>
-              item.id === context.optimisticId ? resource : item
-            ),
-          };
-        }
+        (current) =>
+          current
+            ? {
+                ...current,
+                resources: [
+                  ...current.resources.filter((item) => item.id !== resource.id),
+                  resource,
+                ],
+              }
+            : current
       );
     },
   });
-}
-
-function productionLinkTitle(value: string) {
-  const url = new URL(value);
-  const host = url.hostname.replace(/^www\./i, "");
-  const path = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, "");
-  return (path ? `${host}/${path}` : host).slice(0, 180);
 }
 
 export function useDeleteCrewProductionResource(crewId: string) {
@@ -189,24 +155,17 @@ export function useDeleteCrewProductionResource(crewId: string) {
   return useMutation({
     mutationFn: (resourceId: string) =>
       crewApi.delete<void>(`/crew-production-resources/${encodeURIComponent(resourceId)}`),
-    onMutate: async (resourceId) => {
-      const key = crewKeys.productionOverview(crewId);
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<CrewProductionOverviewDTO>(key);
-      queryClient.setQueryData<CrewProductionOverviewDTO>(key, (current) =>
-        current
-          ? {
-              ...current,
-              resources: current.resources.filter((resource) => resource.id !== resourceId),
-            }
-          : current
+    onSuccess: (_result, resourceId) => {
+      queryClient.setQueryData<CrewProductionOverviewDTO>(
+        crewKeys.productionOverview(crewId),
+        (current) =>
+          current
+            ? {
+                ...current,
+                resources: current.resources.filter((resource) => resource.id !== resourceId),
+              }
+            : current
       );
-      return { previous };
-    },
-    onError: (_error, _resourceId, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(crewKeys.productionOverview(crewId), context.previous);
-      }
     },
   });
 }
