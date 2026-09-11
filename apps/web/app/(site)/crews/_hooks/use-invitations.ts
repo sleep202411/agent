@@ -40,18 +40,30 @@ export function useMyCrewInvitation(invitationId: string) {
 
 export function useInviteCrewMember(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const origin = { crewId, accountUserId: user?.id ?? null };
   return useMutation({
+    onMutate: () => origin,
     mutationFn: (input: CreateCrewInvitationInput) =>
       crewApi.post<CrewInvitationDTO>(`/crews/${encodeURIComponent(crewId)}/invitations`, {
         body: { ...input, expiresInDays: 7 },
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.invitations(crewId) }),
+    onSuccess: (_data, _variables, context) => {
+      if (!context?.accountUserId) return;
+      return qc.invalidateQueries({
+        queryKey: crewKeys.invitations(context.crewId),
+        predicate: (query) => query.queryKey.at(-1) === context.accountUserId,
+      });
+    },
   });
 }
 
 export function useAcceptCrewInvitation(invitationId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const origin = { invitationId, accountUserId: user?.id ?? null };
   return useMutation({
+    onMutate: () => origin,
     mutationFn: () =>
       crewApi.post<{
         crewId: string;
@@ -60,38 +72,57 @@ export function useAcceptCrewInvitation(invitationId: string) {
         agreementQueued: boolean;
         workspaceHref: string;
       }>(`/crew-invitations/${encodeURIComponent(invitationId)}/accept`),
-    onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: crewKeys.invitation(invitationId) });
-      qc.invalidateQueries({ queryKey: crewKeys.myInvitations });
-      qc.invalidateQueries({ queryKey: crewKeys.mine });
-      qc.invalidateQueries({ queryKey: crewKeys.membership(data.crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.members(data.crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
+    onSuccess: (data, _variables, context) => {
+      if (!context?.accountUserId) return;
+      const predicate = (query: { queryKey: readonly unknown[] }) =>
+        query.queryKey.at(-1) === context.accountUserId;
+      qc.invalidateQueries({
+        queryKey: [...crewKeys.invitation(context.invitationId), context.accountUserId],
+      });
+      qc.invalidateQueries({ queryKey: crewKeys.myInvitations, predicate });
+      qc.invalidateQueries({ queryKey: crewKeys.mine, predicate });
+      qc.invalidateQueries({ queryKey: crewKeys.membership(data.crewId), predicate });
+      qc.invalidateQueries({ queryKey: crewKeys.members(data.crewId), predicate });
+      qc.invalidateQueries({ queryKey: [...crewKeys.taskCenter, context.accountUserId] });
     },
   });
 }
 
 export function useDeclineCrewInvitation(invitationId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const origin = { invitationId, accountUserId: user?.id ?? null };
   return useMutation({
+    onMutate: () => origin,
     mutationFn: () =>
       crewApi.post<{ declined: true }>(
         `/crew-invitations/${encodeURIComponent(invitationId)}/decline`
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.invitation(invitationId) });
-      qc.invalidateQueries({ queryKey: crewKeys.myInvitations });
+    onSuccess: (_data, _variables, context) => {
+      if (!context?.accountUserId) return;
+      const predicate = (query: { queryKey: readonly unknown[] }) =>
+        query.queryKey.at(-1) === context.accountUserId;
+      qc.invalidateQueries({
+        queryKey: [...crewKeys.invitation(context.invitationId), context.accountUserId],
+      });
+      qc.invalidateQueries({ queryKey: crewKeys.myInvitations, predicate });
     },
   });
 }
 
 export function useRevokeCrewInvitation(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const origin = { crewId, accountUserId: user?.id ?? null };
   return useMutation({
+    onMutate: () => origin,
     mutationFn: (invitationId: string) =>
       crewApi.delete<{ revoked: true }>(`/crew-invitations/${encodeURIComponent(invitationId)}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.invitations(crewId) });
+    onSuccess: (_data, _variables, context) => {
+      if (!context?.accountUserId) return;
+      const predicate = (query: { queryKey: readonly unknown[] }) =>
+        query.queryKey.at(-1) === context.accountUserId;
+      qc.invalidateQueries({ queryKey: crewKeys.invitations(context.crewId), predicate });
     },
   });
 }
