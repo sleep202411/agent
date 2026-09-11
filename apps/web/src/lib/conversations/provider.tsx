@@ -66,6 +66,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     userIdRef.current = uid;
 
     clientRef.current?.close();
+    let active = true;
     const recovery = createConversationRecoveryCoordinator(qc, uid);
     clientRef.current = openConversationRealtime(uid, {
       onMessage: (data) => {
@@ -111,7 +112,9 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         toast(preview, {
           action: {
             label: t("toastOpen"),
-            onClick: () => router.push(localizePath(`/messages/${data.conversationId}`, locale)),
+            onClick: () => {
+              if (active) router.push(localizePath(`/messages/${data.conversationId}`, locale));
+            },
           },
         });
       },
@@ -220,10 +223,18 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
             ? {
                 label: notificationT("view"),
                 onClick: () => {
+                  if (!active) return;
                   if (!notification.readAt) {
                     void markNotificationRead(notification.id)
-                      .then(() => qc.invalidateQueries({ queryKey: notificationKeys.all }))
-                      .catch((error: Error) => toast.error(error.message));
+                      .then(() =>
+                        qc.invalidateQueries({
+                          queryKey: notificationKeys.all,
+                          predicate: (query) => query.queryKey[2] === uid,
+                        })
+                      )
+                      .catch((error: Error) => {
+                        if (active) toast.error(error.message);
+                      });
                   }
                   if (href.startsWith("/")) router.push(href);
                   else window.location.assign(href);
@@ -245,6 +256,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     });
 
     return () => {
+      active = false;
       recovery.dispose();
       clientRef.current?.close();
       clientRef.current = null;
