@@ -267,7 +267,7 @@ const StoryClipGraphNodeSchema = z
     // these are the human-facing name and description edited in the inspector.
     // Optional so drafts authored before the field parse unchanged.
     name: z.string().trim().max(120).optional(),
-    description: z.string().trim().max(4_000).optional(),
+    description: z.string().max(4_000).optional(),
     interactions: z.array(StoryHotspotInteractionSchema).max(100).default([]),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
