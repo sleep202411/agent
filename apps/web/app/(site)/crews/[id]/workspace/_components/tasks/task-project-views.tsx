@@ -196,6 +196,7 @@ function ListGroup({ group, props }: { group: ListGroupValue; props: TaskProject
 
 function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProjectViewProps }) {
   const t = useTranslations("crewTaskProject");
+  const locale = useLocale();
   const displayProperties = new Set(props.view.visibleFields);
   const selected = props.selectedIds.has(task.id);
 
@@ -243,10 +244,15 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
             ))
           : null}
         {displayProperties.has("priority") ? <PriorityMark priority={task.priority} /> : null}
+        {displayProperties.has("cycle") && task.cycle ? (
+          <span className="max-w-40 truncate" title={`${t("filterCycle")}: ${task.cycle.name}`}>
+            {task.cycle.name}
+          </span>
+        ) : null}
         {displayProperties.has("dueAt") && task.dueAt ? (
           <span className={cn("inline-flex items-center gap-1", isOverdue(task) && "text-red-300")}>
             <IconCalendar className="size-3.5" />
-            {shortDate(task.dueAt)}
+            {shortDate(task.dueAt, locale)}
           </span>
         ) : null}
         {displayProperties.has("assignees") ? (
@@ -543,7 +549,7 @@ function BoardCard({
 
       {properties.has("assignees") ? <TaskAssignees task={task} displays={props.displays} /> : null}
 
-      <div className="mt-[10px] flex h-6 min-w-0 items-center gap-1.5 overflow-hidden">
+      <div className="mt-[10px] flex min-h-6 min-w-0 flex-wrap items-center gap-1.5">
         {properties.has("priority") ? <CardPriorityProperty priority={task.priority} /> : null}
         {properties.has("labels") && task.labels.length > 0
           ? task.labels.slice(0, 3).map((label) => (
@@ -556,6 +562,14 @@ function BoardCard({
               </span>
             ))
           : null}
+        {properties.has("cycle") && task.cycle ? (
+          <span
+            className="inline-block h-6 max-w-40 shrink-0 truncate rounded-full bg-white/[0.055] px-2 py-1 text-[10px] text-[#929299]"
+            title={`${t("filterCycle")}: ${task.cycle.name}`}
+          >
+            {task.cycle.name}
+          </span>
+        ) : null}
         {properties.has("dueAt") && task.dueAt ? (
           <span
             className={cn(
