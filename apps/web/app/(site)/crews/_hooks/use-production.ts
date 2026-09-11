@@ -77,48 +77,13 @@ export function useUpdateCrewProductionProject(crewId: string) {
         `/crews/${encodeURIComponent(crewId)}/production-overview/properties`,
         { body: input }
       ),
-    onMutate: async (input) => {
-      const key = crewKeys.productionOverview(crewId);
-      await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<CrewProductionOverviewDTO>(key);
-      queryClient.setQueryData<CrewProductionOverviewDTO>(key, (current) => {
-        if (!current) return current;
-        return {
-          ...current,
-          project: {
-            ...current.project,
-            ...(input.status !== undefined ? { status: input.status } : {}),
-            ...(input.priority !== undefined ? { priority: input.priority } : {}),
-            ...(input.leadMemberId !== undefined ? { leadMemberId: input.leadMemberId } : {}),
-            ...(input.startDate !== undefined ? { startDate: input.startDate } : {}),
-            ...(input.startDateGranularity !== undefined
-              ? { startDateGranularity: input.startDateGranularity }
-              : {}),
-            ...(input.targetDate !== undefined ? { targetDate: input.targetDate } : {}),
-            ...(input.targetDateGranularity !== undefined
-              ? { targetDateGranularity: input.targetDateGranularity }
-              : {}),
-            version: current.project.version + 1,
-          },
-          ...(input.labelIds !== undefined
-            ? {
-                labels: current.labelOptions.filter((label) => input.labelIds?.includes(label.id)),
-              }
-            : {}),
-        };
-      });
-      return { previous };
-    },
-    onError: (_error, _input, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(crewKeys.productionOverview(crewId), context.previous);
-      }
-    },
     onSuccess: (result) => {
       queryClient.setQueryData<CrewProductionOverviewDTO>(
         crewKeys.productionOverview(crewId),
         (current) =>
-          current ? { ...current, project: result.project, labels: result.labels } : current
+          current && result.project.version >= current.project.version
+            ? { ...current, project: result.project, labels: result.labels }
+            : current
       );
     },
   });

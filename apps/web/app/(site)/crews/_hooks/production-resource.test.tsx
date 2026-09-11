@@ -4,9 +4,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
-import { useCreateCrewProductionResource, useDeleteCrewProductionResource } from "./use-production";
+import {
+  useUpdateCrewProductionProject,
+  useCreateCrewProductionResource,
+  useDeleteCrewProductionResource,
+} from "./use-production";
 
-vi.mock("./api", () => ({ crewApi: { post: vi.fn(), delete: vi.fn() } }));
+vi.mock("./api", () => ({ crewApi: { post: vi.fn(), delete: vi.fn(), patch: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let client: QueryClient;
@@ -105,4 +109,55 @@ it("a failed resource deletion preserves another confirmed deletion and newer ov
     project: { name: "new" },
     resources: [{ id: "original" }],
   });
+});
+
+it("a failed project edit does not restore old resources", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.patch).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      })
+  );
+  const hook = mount(() => useUpdateCrewProductionProject("crew"));
+  client.setQueryData(key, { project: { version: 1 }, resources: [], labels: [] });
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync({ expectedVersion: 1, priority: "high" })
+      .catch((e) => e);
+  });
+  client.setQueryData(key, (current: object) => ({ ...current, resources: [{ id: "new" }] }));
+  await act(async () => {
+    reject(new Error("conflict"));
+    await failed;
+  });
+  expect(client.getQueryData(key)).toEqual({
+    project: { version: 1 },
+    resources: [{ id: "new" }],
+    labels: [],
+  });
+});
+
+it("a delayed project response does not replace a newer confirmed version", async () => {
+  let complete!: (value: unknown) => void;
+  vi.mocked(crewApi.patch).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      })
+  );
+  const hook = mount(() => useUpdateCrewProductionProject("crew"));
+  client.setQueryData(key, { project: { version: 1 }, resources: [], labels: [] });
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = hook().mutateAsync({ expectedVersion: 1, priority: "high" });
+  });
+  const newer = { project: { version: 3 }, resources: [{ id: "new" }], labels: [{ id: "label" }] };
+  client.setQueryData(key, newer);
+  await act(async () => {
+    complete({ project: { version: 2 }, labels: [] });
+    await pending;
+  });
+  expect(client.getQueryData(key)).toEqual(newer);
 });
