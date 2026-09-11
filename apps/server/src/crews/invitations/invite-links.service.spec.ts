@@ -186,3 +186,71 @@ describe('community invitation replay', () => {
     expect(h.tx.crewInviteLink.update).not.toHaveBeenCalled();
   });
 });
+
+describe('invite link audit atomicity', () => {
+  it.each(['create', 'revoke'] as const)(
+    'rolls back %s when the audit write fails',
+    async (action) => {
+      const initial = {
+        id: 'link',
+        crewId: 'crew',
+        kind: 'member',
+        policyKeys: [],
+        maxUses: null,
+        useCount: 0,
+        expiresAt: null,
+        createdAt: new Date(),
+        createdByUserId: 'owner',
+        revokedAt: null,
+      };
+      let saved: unknown = action === 'create' ? null : initial;
+      const db = {
+        crew: { findFirst: jest.fn().mockResolvedValue({ id: 'crew' }) },
+        crewInviteLink: {
+          create: jest.fn(() => {
+            saved = initial;
+            return Promise.resolve(initial);
+          }),
+          findFirst: jest.fn(() => Promise.resolve(saved)),
+          update: jest.fn(() => {
+            saved = { ...initial, revokedAt: new Date() };
+            return Promise.resolve(saved);
+          }),
+        },
+        crewAuthorizationEvent: {
+          create: jest.fn().mockRejectedValue(new Error('audit unavailable')),
+        },
+      };
+      const prisma = {
+        ...db,
+        $transaction: async (fn: (tx: typeof db) => Promise<unknown>) => {
+          const before = saved;
+          try {
+            return await fn(db);
+          } catch (error) {
+            saved = before;
+            throw error;
+          }
+        },
+      };
+      const service = new CrewInviteLinksService(
+        prisma as never,
+        {
+          require: jest.fn().mockResolvedValue({ memberId: 'owner-member' }),
+        } as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      const request =
+        action === 'create'
+          ? service.create('crew', 'owner', {
+              kind: 'member',
+              policyKeys: [],
+            } as never)
+          : service.revoke('crew', 'owner', 'link');
+      await expect(request).rejects.toThrow('audit unavailable');
+      expect(saved).toBe(action === 'create' ? null : initial);
+    },
+  );
+});

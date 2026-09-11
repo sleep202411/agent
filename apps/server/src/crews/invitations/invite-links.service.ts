@@ -109,58 +109,62 @@ export class CrewInviteLinksService {
     input: CreateCrewInviteLinkInput,
   ): Promise<CrewInviteLinkDTO & { token: string }> {
     await this.requireCrew(crewId);
-    const actor = await this.authorization.require(
-      crewId,
-      userId,
-      'members.invite',
-    );
-    const kind =
-      input.kind === 'community'
-        ? CrewInviteLinkKind.community
-        : CrewInviteLinkKind.member;
-    const policyKeys =
-      kind === CrewInviteLinkKind.community ? [] : input.policyKeys;
-    // Granting access you do not administer yourself would let an inviter
-    // escalate through a link; the named-invitation path guards the same way.
-    if (policyKeys.length > 0) {
-      await this.authorization.require(
+    return this.prisma.$transaction(async (tx) => {
+      const actor = await this.authorization.require(
         crewId,
         userId,
-        'members.permissions.manage',
+        'members.invite',
+        tx,
       );
-    }
+      const kind =
+        input.kind === 'community'
+          ? CrewInviteLinkKind.community
+          : CrewInviteLinkKind.member;
+      const policyKeys =
+        kind === CrewInviteLinkKind.community ? [] : input.policyKeys;
+      // Granting access you do not administer yourself would let an inviter
+      // escalate through a link; the named-invitation path guards the same way.
+      if (policyKeys.length > 0) {
+        await this.authorization.require(
+          crewId,
+          userId,
+          'members.permissions.manage',
+          tx,
+        );
+      }
 
-    const { token, tokenHash } = generateInviteToken();
-    const link = await this.prisma.crewInviteLink.create({
-      data: {
-        crewId,
-        kind,
-        tokenHash,
-        policyKeys,
-        createdByUserId: userId,
-        maxUses: input.maxUses ?? null,
-        expiresAt:
-          input.expiresInDays == null
-            ? null
-            : new Date(Date.now() + input.expiresInDays * MS_PER_DAY),
-      },
-    });
-    await this.prisma.crewAuthorizationEvent.create({
-      data: {
-        crewId,
-        actorMemberId: actor.memberId,
-        actorUserId: userId,
-        action: 'invite_link.created',
-        after: {
-          linkId: link.id,
+      const { token, tokenHash } = generateInviteToken();
+      const link = await tx.crewInviteLink.create({
+        data: {
+          crewId,
           kind,
+          tokenHash,
           policyKeys,
-          maxUses: link.maxUses,
-          expiresAt: link.expiresAt?.toISOString() ?? null,
+          createdByUserId: userId,
+          maxUses: input.maxUses ?? null,
+          expiresAt:
+            input.expiresInDays == null
+              ? null
+              : new Date(Date.now() + input.expiresInDays * MS_PER_DAY),
         },
-      },
+      });
+      await tx.crewAuthorizationEvent.create({
+        data: {
+          crewId,
+          actorMemberId: actor.memberId,
+          actorUserId: userId,
+          action: 'invite_link.created',
+          after: {
+            linkId: link.id,
+            kind,
+            policyKeys,
+            maxUses: link.maxUses,
+            expiresAt: link.expiresAt?.toISOString() ?? null,
+          },
+        },
+      });
+      return { ...toDTO(link), token };
     });
-    return { ...toDTO(link), token };
   }
 
   /** Crew-side management view. Never returns a token or a hash. */
@@ -179,31 +183,34 @@ export class CrewInviteLinksService {
   }
 
   async revoke(crewId: string, userId: string, linkId: string): Promise<void> {
-    const actor = await this.authorization.require(
-      crewId,
-      userId,
-      'members.invite',
-    );
-    const link = await this.prisma.crewInviteLink.findFirst({
-      where: { id: linkId, crewId, revokedAt: null },
-    });
-    if (!link) {
-      throw new NotFoundException({
-        message: 'Invite link not found or already revoked.',
-      });
-    }
-    await this.prisma.crewInviteLink.update({
-      where: { id: linkId },
-      data: { revokedAt: new Date(), revokedByUserId: userId },
-    });
-    await this.prisma.crewAuthorizationEvent.create({
-      data: {
+    await this.prisma.$transaction(async (tx) => {
+      const actor = await this.authorization.require(
         crewId,
-        actorMemberId: actor.memberId,
-        actorUserId: userId,
-        action: 'invite_link.revoked',
-        after: { linkId, kind: link.kind, useCount: link.useCount },
-      },
+        userId,
+        'members.invite',
+        tx,
+      );
+      const link = await tx.crewInviteLink.findFirst({
+        where: { id: linkId, crewId, revokedAt: null },
+      });
+      if (!link) {
+        throw new NotFoundException({
+          message: 'Invite link not found or already revoked.',
+        });
+      }
+      await tx.crewInviteLink.update({
+        where: { id: linkId },
+        data: { revokedAt: new Date(), revokedByUserId: userId },
+      });
+      await tx.crewAuthorizationEvent.create({
+        data: {
+          crewId,
+          actorMemberId: actor.memberId,
+          actorUserId: userId,
+          action: 'invite_link.revoked',
+          after: { linkId, kind: link.kind, useCount: link.useCount },
+        },
+      });
     });
   }
 
