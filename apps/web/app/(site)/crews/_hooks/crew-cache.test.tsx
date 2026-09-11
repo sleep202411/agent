@@ -22,6 +22,7 @@ import {
   useUpdateMember,
   useTransferCrewOwner,
 } from "./use-members";
+import { useCrewPositions } from "./use-positions";
 import { useUpdateCrew, useDeleteCrew } from "./use-crew-detail";
 import { useAcceptCrewInvitation } from "./use-invitations";
 import { useApproveCrewEarning, useReverseCrewEarning } from "./use-earnings";
@@ -68,15 +69,22 @@ async function settle() {
 }
 
 describe("crew roster pagination", () => {
-  it("stops automatic pagination after a failed page and supports an explicit retry", async () => {
+  it.each([
+    ["members", useCrewMembers],
+    ["positions", useCrewPositions],
+  ] as const)("stops automatic %s pagination after failure and supports retry", async (_name, hook) => {
     vi.mocked(crewApi.get)
       .mockResolvedValueOnce({ items: [{ id: "member-1" }], nextCursor: "member-1", total: 2 })
-      .mockRejectedValue(new CrewApiError(403, { message: "Roster access denied" }));
-    const current = mount(() => useCrewMembers("crew-1"));
+      .mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        throw new CrewApiError(403, { message: "Roster access denied" });
+      });
+    const current = mount(() => hook("crew-1"));
     await vi.waitFor(async () => {
       await settle();
       expect(current().isFetchNextPageError).toBe(true);
     });
+    await settle();
     await settle();
     expect(crewApi.get).toHaveBeenCalledTimes(2);
     expect(current().data).toEqual([{ id: "member-1" }]);
