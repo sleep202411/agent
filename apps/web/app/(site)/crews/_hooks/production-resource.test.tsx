@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import {
+  useSaveCrewProductionDocument,
   useReorderCrewEpisode,
   useCreateCrewProductionActivity,
   useUpdateCrewProductionProject,
@@ -245,3 +246,31 @@ it("a failed reorder preserves episodes received while the request was pending",
   expect(client.getQueryData(episodeKey)).toEqual(latest);
   expect(client.getQueryState(episodeKey)?.isInvalidated).toBe(true);
 });
+
+it.each([2, 4])(
+  "applies document response version %s without overwriting a newer page",
+  async (version) => {
+    let complete!: (value: unknown) => void;
+    vi.mocked(crewApi.patch).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        })
+    );
+    const hook = mount(() => useSaveCrewProductionDocument("crew"));
+    client.setQueryData(key, { page: { version: 1 }, resources: [] });
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = hook().mutateAsync({ expectedVersion: 1, document: { type: "doc", content: [] } });
+    });
+    client.setQueryData(key, { page: { version: 3 }, resources: [{ id: "new" }] });
+    await act(async () => {
+      complete({ version });
+      await pending;
+    });
+    expect(client.getQueryData(key)).toEqual({
+      page: { version: Math.max(version, 3) },
+      resources: [{ id: "new" }],
+    });
+  }
+);

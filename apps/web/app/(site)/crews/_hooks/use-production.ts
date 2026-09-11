@@ -194,7 +194,8 @@ export function useSaveCrewProductionDocument(crewId: string) {
     onSuccess: (page) => {
       queryClient.setQueryData<CrewProductionOverviewDTO>(
         crewKeys.productionOverview(crewId),
-        (current) => (current ? { ...current, page } : current)
+        (current) =>
+          current && page.version >= current.page.version ? { ...current, page } : current
       );
     },
   });
