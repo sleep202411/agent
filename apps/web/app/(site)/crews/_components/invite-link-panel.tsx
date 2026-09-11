@@ -13,7 +13,8 @@
  * read it back, so the copy affordance is the whole point of that moment.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { toast } from "sonner";
 import { IconCopy, IconLink, IconLoader2, IconTrash } from "@tabler/icons-react";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -49,7 +50,22 @@ interface InviteLinkPanelProps {
   open: boolean;
 }
 
-export function InviteLinkPanel({ crewId, canGrantPolicies, open }: InviteLinkPanelProps) {
+export function InviteLinkPanel(props: InviteLinkPanelProps) {
+  const { user } = useCurrentUser();
+  if (!props.open || !user) return null;
+  return <InviteLinkSession key={`${props.crewId}:${user.id}`} {...props} />;
+}
+
+function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelProps) {
+  const active = useRef(true);
+  const createPending = useRef(false);
+  const revokePending = useRef(false);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const t = useTranslations("workspace");
 
   const [accessPreset, setAccessPreset] = useState<CrewInviteAccessPreset>("standard");
@@ -62,37 +78,47 @@ export function InviteLinkPanel({ crewId, canGrantPolicies, open }: InviteLinkPa
   const { mutateAsync: revokeLink, isPending: revoking } = useRevokeCrewInviteLink(crewId);
 
   const handleCreate = async () => {
+    if (!active.current || createPending.current) return;
+    createPending.current = true;
     try {
       const created = await createLink({
         policyKeys: canGrantPolicies ? policyKeysForAccessPreset(accessPreset) : [],
         ...(expiry === "never" ? {} : { expiresInDays: Number(expiry) }),
         ...(uses === "unlimited" ? {} : { maxUses: Number(uses) }),
       });
+      if (!active.current) return;
       const url = crewInviteUrl(created.token);
       setFreshUrl(url);
       await copy(url);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
+      if (active.current) toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
+    } finally {
+      createPending.current = false;
     }
   };
 
   const copy = async (url: string) => {
+    if (!active.current) return;
     try {
       await navigator.clipboard.writeText(url);
-      toast.success(t("inviteLinkCopied"));
+      if (active.current) toast.success(t("inviteLinkCopied"));
     } catch {
       // A denied clipboard is not a failed link — the URL is on screen and
       // selectable, so say what to do instead of reporting an error.
-      toast.message(t("inviteLinkCopyFailed"));
+      if (active.current) toast.message(t("inviteLinkCopyFailed"));
     }
   };
 
   const handleRevoke = async (link: CrewInviteLinkDTO) => {
+    if (!active.current || revokePending.current) return;
+    revokePending.current = true;
     try {
       await revokeLink(link.id);
-      toast.success(t("inviteLinkRevoked"));
+      if (active.current) toast.success(t("inviteLinkRevoked"));
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
+      if (active.current) toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
+    } finally {
+      revokePending.current = false;
     }
   };
 
