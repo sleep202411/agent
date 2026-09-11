@@ -7,7 +7,14 @@ import hk from "@/messages/zh-HK.json";
 import { LinearTaskWorkspace } from "./linear-task-workspace";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ locale: "en-US", layout: "board", account: "alice" }));
+const state = vi.hoisted(() => ({
+  locale: "en-US",
+  layout: "board",
+  account: "alice",
+  failed: false,
+  missing: false,
+  retry: vi.fn(),
+}));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: state.account } }),
 }));
@@ -46,7 +53,10 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
     }),
     useCrewProductionActivity: () => ({ data: { pages: [] } }),
     useCrewTask: (id: string) => ({
-      data: id ? { id, title: "Selected task", assignees: [] } : undefined,
+      data: id && !state.missing ? { id, title: "Selected task", assignees: [] } : undefined,
+      isError: state.failed,
+      error: state.failed ? new Error("Task refresh unavailable") : null,
+      refetch: state.retry,
     }),
     useCrewTaskSummary: () => ({ data: {} }),
     useCrewTaskProject: () => ({
@@ -113,6 +123,9 @@ afterEach(() => {
   document.body.innerHTML = "";
   vi.unstubAllGlobals();
   state.account = "alice";
+  state.failed = false;
+  state.missing = false;
+  state.retry.mockClear();
 });
 async function render(deeplinkTaskId?: string | null, reuse = false) {
   if (!reuse) {
@@ -239,4 +252,42 @@ it("starts fresh drawer state when another account has the same task cached", as
   await render("task-1", true);
   expect(document.body.textContent).not.toContain("Private task draft");
   expect(document.body.textContent).toContain("Edit draft");
+});
+
+it("keeps unsaved task details mounted after a background refresh fails", async () => {
+  state.locale = "en-US";
+  await render("task-1");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Edit draft")!
+      .click()
+  );
+  state.failed = true;
+  await render("task-1", true);
+  expect(document.body.textContent).toContain("Private task draft");
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Task refresh unavailable");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click()
+  );
+  expect(state.retry).toHaveBeenCalledOnce();
+  state.failed = false;
+  await render("task-1", true);
+  expect(document.body.textContent).toContain("Private task draft");
+});
+
+it("offers a retry when task details fail before any data loads", async () => {
+  state.locale = "en-US";
+  state.failed = true;
+  state.missing = true;
+  await render("task-1");
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Task refresh unavailable");
+  expect(document.body.textContent).not.toContain("Edit draft");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click()
+  );
+  expect(state.retry).toHaveBeenCalledOnce();
 });

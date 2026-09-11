@@ -661,18 +661,39 @@ function LinearTaskSession({
           className="w-full sm:w-[min(85vw,960px)] sm:max-w-none bg-[#090a0c] p-0 text-[#d5d8dd]"
         >
           <SheetTitle className="sr-only">{taskQuery.data?.title ?? t("issues")}</SheetTitle>
-          {taskQuery.isLoading ? (
+          {taskQuery.isError && taskQuery.data ? (
+            <div className="flex items-center justify-between gap-3 px-6 py-3">
+              <p role="alert">
+                {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
+              </p>
+              <button
+                type="button"
+                disabled={taskQuery.isFetching}
+                onClick={() => void taskQuery.refetch()}
+              >
+                {t("retry")}
+              </button>
+            </div>
+          ) : null}
+          {taskQuery.isLoading && !taskQuery.data ? (
             <div className="grid flex-1 place-content-center gap-4">
               <IconLoader2 className="mx-auto size-5 animate-spin" />
               <button type="button" onClick={() => selectTask(null)}>
                 {t("issues")}
               </button>
             </div>
-          ) : taskQuery.isError ? (
+          ) : taskQuery.isError && !taskQuery.data ? (
             <div className="grid flex-1 place-content-center gap-4 p-6">
               <p role="alert">
                 {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
               </p>
+              <button
+                type="button"
+                disabled={taskQuery.isFetching}
+                onClick={() => void taskQuery.refetch()}
+              >
+                {t("retry")}
+              </button>
               <button type="button" onClick={() => selectTask(null)}>
                 {t("issues")}
               </button>
