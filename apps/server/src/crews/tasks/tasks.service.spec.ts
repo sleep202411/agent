@@ -1,5 +1,9 @@
 import { CrewTaskPriority, CrewTaskStatus, Prisma } from '@prisma/client';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
 import * as Y from 'yjs';
 import {
   ListCrewTaskOptionsQuerySchema,
@@ -1057,6 +1061,26 @@ describe('CrewTasksService', () => {
 
     expect(t.tx.crewTaskTimelineItem.create).not.toHaveBeenCalled();
   });
+
+  it.each(['approve', 'request_revision'] as const)(
+    'rejects %s when review permission is revoked while waiting for the task lock',
+    async (decision) => {
+      const t = build();
+      t.tx.$executeRaw.mockImplementationOnce(() => {
+        t.roles.require.mockRejectedValue(
+          new ForbiddenException('Permission revoked'),
+        );
+        return Promise.resolve(1);
+      });
+      await expect(
+        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(t.tx.crewTaskSubmission.update).not.toHaveBeenCalled();
+      expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+      expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+      expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+    },
+  );
 
   it('posts an approved task reward through the immutable earnings ledger', async () => {
     const t = build();

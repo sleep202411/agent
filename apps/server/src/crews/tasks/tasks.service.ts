@@ -2940,6 +2940,12 @@ export class CrewTasksService {
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-review:${taskId}`})::bigint)
       `;
       const locked = await this.requireActiveTaskTx(tx, taskId);
+      await this.authorization.require(
+        locked.crewId,
+        userId,
+        'tasks.review',
+        tx,
+      );
       if (locked.workflowState.semantic !== CrewTaskStatus.submitted) {
         throw new ConflictException({
           message: 'Only a submitted task can be reviewed.',
