@@ -4,7 +4,7 @@
  * Owner-only dialog: apply for a Java certification level.
  * Required: level + crew + IP. Optional: attachment + notes.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { IconLoader2, IconPaperclip, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -48,15 +48,27 @@ import {
 
 const EXTRA_MAX = 300;
 
+/**
+ * Java `user_level.id` for AI Producer — must stay aligned with Nest
+ * `CREW_CREATE_LEVEL_ID` in `apps/server/src/integrations/java/user-level-gates.ts`.
+ */
+export const AI_PRODUCER_LEVEL_ID = 13;
+
 interface LevelApplyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Lock the level picker to a single Java `user_level.id` (e.g. AI
+   * Producer from the create-crew gate).
+   */
+  lockedLevelId?: number;
 }
 
-export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) {
+export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
   const t = useTranslations("creatorCenter");
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
+  const levelLocked = lockedLevelId != null;
 
   const levelsQuery = useQuery({
     queryKey: ["user-levels", "options"],
@@ -71,7 +83,7 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     staleTime: 30_000,
   });
   const crewsQuery = useMyCrews(open);
-  const ipsQuery = useAllMyIpCommerceIps(open);
+  const ipsQuery = useAllMyIpCommerceIps(open, { locale });
 
   const crews = useMemo(() => {
     const founded = crewsQuery.data?.founded ?? [];
@@ -98,8 +110,10 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
 
   const levels: UserLevelOption[] = useMemo(() => {
     const rows = levelsQuery.data ?? [];
-    return [...rows].sort((a, b) => a.name.localeCompare(b.name));
-  }, [levelsQuery.data]);
+    const filtered =
+      lockedLevelId == null ? rows : rows.filter((l) => Number(l.id) === lockedLevelId);
+    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  }, [levelsQuery.data, lockedLevelId]);
 
   const pendingLevelIds = useMemo(() => {
     const ids = new Set<number>();
@@ -120,6 +134,11 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!open || lockedLevelId == null) return;
+    setLevelId(String(lockedLevelId));
+  }, [open, lockedLevelId]);
+
   const selectedLevel = useMemo(
     () => levels.find((l) => String(l.id) === levelId) ?? null,
     [levelId, levels]
@@ -127,7 +146,7 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
   const selectedLevelPending = selectedLevel ? pendingLevelIds.has(selectedLevel.id) : false;
 
   function resetForm() {
-    setLevelId("");
+    setLevelId(lockedLevelId != null ? String(lockedLevelId) : "");
     setCrewId("");
     setIpId("");
     setExtraInfo("");
@@ -217,9 +236,11 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="flex max-h-[90vh] max-w-md flex-col overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="space-y-1.5 border-b border-border/60 px-5 py-4">
-          <DialogTitle>{t("levels.apply.title")}</DialogTitle>
+          <DialogTitle>
+            {levelLocked ? t("levels.apply.titleAiProducer") : t("levels.apply.title")}
+          </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            {t("levels.apply.description")}
+            {levelLocked ? t("levels.apply.descriptionAiProducer") : t("levels.apply.description")}
           </DialogDescription>
         </DialogHeader>
 
@@ -232,7 +253,11 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
             <FieldGroup className="gap-5">
               <Field>
                 <FieldLabel required>{t("levels.apply.levelLabel")}</FieldLabel>
-                <Select value={levelId} onValueChange={setLevelId}>
+                <Select
+                  value={levelId}
+                  onValueChange={setLevelId}
+                  disabled={levelLocked || levels.length === 0}
+                >
                   <SelectTrigger className="h-9 w-full">
                     <SelectValue placeholder={t("levels.apply.levelPlaceholder")} />
                   </SelectTrigger>
