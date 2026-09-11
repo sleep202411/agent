@@ -5517,6 +5517,8 @@
     }
   },
   "crewInvitations": {
+    "signIn": "Sign in",
+    "signInRequired": "Sign in to view and respond to this Crew invitation.",
     "eyebrow": "Crew invitation",
     "invitedTo": "You've been invited to join",
     "crew": "Crew",

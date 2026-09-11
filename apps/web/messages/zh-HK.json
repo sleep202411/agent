@@ -5517,6 +5517,8 @@
     }
   },
   "crewInvitations": {
+    "signIn": "登入",
+    "signInRequired": "請登入以查看並回覆此 Crew 邀請。",
     "eyebrow": "劇組邀請",
     "invitedTo": "你受邀加入",
     "crew": "劇組",
