@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
-import type { FizzAiReferenceKind } from "@/lib/canvas-authoring/generation-api";
+import type {
+  FizzAiReferenceKind,
+  PromptReferenceRowLike,
+} from "@/lib/canvas-authoring/generation-api";
 import { probeMediaDurationSeconds } from "@/lib/canvas-authoring/probe-media-duration";
 import { isUploadAbort, uploadFileViaSignedUrl } from "@/lib/media-upload";
 
@@ -25,6 +28,18 @@ export interface ReferenceUpload {
   error?: string;
   /** Mention label, e.g. "Image1" — assigned per kind in upload order. */
   label: string;
+}
+
+export function generationReferencesFromUploads(items: ReferenceUpload[]) {
+  const references: Record<string, PromptReferenceRowLike[]> = {};
+  for (const item of items) {
+    (references[item.field] ??= []).push({
+      ...item,
+      url: item.url ?? "",
+      assetId: item.mediaAssetId,
+    });
+  }
+  return references;
 }
 
 const UPLOAD_KIND_BY_REFERENCE: Record<FizzAiReferenceKind, string> = {

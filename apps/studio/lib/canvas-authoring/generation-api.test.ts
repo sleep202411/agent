@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  ReferenceInputError,
   buildPromptDocument,
   buildPromptReferenceBindingsForMode,
   buildReferenceInputForMode,
+  mediaSnapshotsForMode,
 } from "./generation-api";
 import type { FizzAiModel } from "./generation-api";
 
@@ -71,6 +73,11 @@ function seedanceLikeModel(): FizzAiModel {
           maxItems: 3,
           "x-ui": upload("video", 4),
         },
+        referenceAudios: {
+          type: "array",
+          maxItems: 3,
+          "x-ui": upload("audio", 5),
+        },
       },
     },
   } as unknown as FizzAiModel;
@@ -93,6 +100,107 @@ const imageRow = {
 };
 
 describe("buildReferenceInputForMode", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("submits all five media-panel images alongside two audio references", () => {
+    vi.stubGlobal("window", { location: { origin: "https://studio.fizzdragon.com" } });
+    const model = seedanceLikeModel();
+    const references = {
+      referenceImages: Array.from({ length: 5 }, (_, i) => ({
+        id: `image-${i}`,
+        assetId: `asset-${i}`,
+        kind: "image" as const,
+        url: `/aurora/media/assets/asset-${i}/content?variantKey=original`,
+      })),
+      referenceAudios: Array.from({ length: 2 }, (_, i) => ({
+        id: `audio-${i}`,
+        assetId: `audio-asset-${i}`,
+        kind: "audio" as const,
+        url: `https://cdn.example.com/audio-${i}.mp3`,
+        durationSeconds: 4,
+      })),
+    };
+    const input = buildReferenceInputForMode(model, "multimodal_to_video", references);
+    expect(input.referenceImages).toHaveLength(5);
+    expect(input.referenceAudios).toHaveLength(2);
+    expect((input.referenceImages as unknown[])[0]).toEqual({
+      assetId: "asset-0",
+      refId: "image-0",
+      url: "https://studio.fizzdragon.com/aurora/media/assets/asset-0/content",
+    });
+    const bindings = buildPromptReferenceBindingsForMode(model, "multimodal_to_video", references);
+    expect(bindings.map((b) => b.label)).toEqual([
+      "Image1",
+      "Image2",
+      "Image3",
+      "Image4",
+      "Image5",
+      "Audio1",
+      "Audio2",
+    ]);
+    expect(mediaSnapshotsForMode(model, "multimodal_to_video", references)).toHaveLength(7);
+    expect(references.referenceImages[0].url).toBe(
+      "/aurora/media/assets/asset-0/content?variantKey=original"
+    );
+    expect(
+      buildReferenceInputForMode(model, "image_to_video", {
+        startFrame: [references.referenceImages[0]],
+      }).startFrame
+    ).toEqual((input.referenceImages as unknown[])[0]);
+  });
+
+  it.each([
+    { id: "upload", url: "https://cdn.example.com/preview", uploading: true },
+    { id: "blob", url: "blob:https://studio.fizzdragon.com/upload" },
+    { id: "relative", url: "/account" },
+    { id: "broken", url: "https://" },
+    { id: "empty", url: "" },
+  ])("never silently drops an unresolved selected reference: $id", (row) => {
+    const references = { referenceImages: [imageRow, row] };
+    for (const build of [
+      buildReferenceInputForMode,
+      buildPromptReferenceBindingsForMode,
+      mediaSnapshotsForMode,
+    ]) {
+      expect(() => build(seedanceLikeModel(), "multimodal_to_video", references)).toThrow(
+        ReferenceInputError
+      );
+    }
+  });
+
+  it.each([
+    "https://studio.fizzdragon.com",
+    "https://studio.fizzspace.cn",
+    "http://localhost:9540",
+  ])("uses asset identity for every media kind on %s", (origin) => {
+    vi.stubGlobal("window", { location: { origin } });
+    const references = {
+      referenceImages: [{ id: "image", assetId: "image-asset", url: "blob:expired" }],
+      referenceVideos: [{ id: "video", assetId: "video-asset", url: "/old-preview" }],
+      referenceAudios: [{ id: "audio", assetId: "audio-asset", url: "" }],
+    };
+    const input = buildReferenceInputForMode(
+      seedanceLikeModel(),
+      "multimodal_to_video",
+      references
+    );
+    const bindings = buildPromptReferenceBindingsForMode(
+      seedanceLikeModel(),
+      "multimodal_to_video",
+      references
+    );
+    const snapshots = mediaSnapshotsForMode(seedanceLikeModel(), "multimodal_to_video", references);
+    expect(bindings.map((b) => b.url)).toEqual(snapshots.map((r) => r.url));
+    expect((Object.values(input).flat() as { url: string }[]).map((r) => r.url)).toEqual(
+      bindings.map((b) => b.url)
+    );
+    expect(bindings.map((b) => b.url)).toEqual(
+      ["image", "video", "audio"].map(
+        (kind) => `${origin}/aurora/media/assets/${kind}-asset/content`
+      )
+    );
+  });
+
   it("emits only the frame fields for the first/last-frame scenario", () => {
     const input = buildReferenceInputForMode(seedanceLikeModel(), "first_last_frame_to_video", {
       startFrame: [startRow],
@@ -159,17 +267,11 @@ describe("buildPromptReferenceBindingsForMode", () => {
     expect(bindings.map((binding) => binding.label)).toEqual(["Image1", "Image2", "Video1"]);
   });
 
-  it("skips rows still uploading or without an http(s) url", () => {
-    const bindings = buildPromptReferenceBindingsForMode(
-      seedanceLikeModel(),
-      "multimodal_to_video",
-      {
-        referenceImages: [
-          { ...imageRow, uploading: true },
-          { id: "blob-row", url: "blob:http://localhost/abc" },
-        ],
-      }
-    );
-    expect(bindings).toEqual([]);
+  it("preserves composer mention labels after removing an earlier upload", () => {
+    expect(
+      buildPromptReferenceBindingsForMode(seedanceLikeModel(), "multimodal_to_video", {
+        referenceImages: [{ ...imageRow, label: "Image2" }],
+      })[0].label
+    ).toBe("Image2");
   });
 });

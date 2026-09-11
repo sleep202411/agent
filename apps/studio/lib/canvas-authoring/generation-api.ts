@@ -358,7 +358,23 @@ export function isUnsafeGenerationErrorMessage(message?: string): boolean {
 
 function safeGenerationErrorMessage(message?: string): string | undefined {
   if (!message?.trim()) return undefined;
-  return isUnsafeGenerationErrorMessage(message) ? undefined : message;
+  // Provider request IDs are diagnostic metadata, not a reason to discard
+  // actionable validation text. The card already exposes our own task ID.
+  const detail = message.replace(/\brequest\s*id\s*:\s*[a-z0-9_-]+\.?/gi, "").trim();
+  return !detail || isUnsafeGenerationErrorMessage(detail) ? undefined : detail;
+}
+
+export function displayGenerationError(
+  generation: Pick<GenerationState, "error" | "errorCode"> | undefined,
+  copy: { fallback: string; providerUnavailable: string; referenceAudioRequiresVisual: string }
+): string {
+  if (generation?.errorCode === "PROVIDER_NOT_CONFIGURED") return copy.providerUnavailable;
+  const detail = safeGenerationErrorMessage(generation?.error);
+  if (!detail) return generation?.error?.trim() ? copy.providerUnavailable : copy.fallback;
+  if (/\breference_audio\s+cannot be the only reference input\b/i.test(detail)) {
+    return copy.referenceAudioRequiresVisual;
+  }
+  return detail;
 }
 
 /** Project an Ai job update / job view / submit response into a card's state. */
@@ -816,6 +832,40 @@ export type ReferenceRowLike = {
   uploading?: boolean;
 };
 
+export class ReferenceInputError extends Error {
+  constructor(
+    public readonly messageKey: "generationReferenceUploading" | "generationReferenceUnavailable"
+  ) {
+    super(messageKey);
+    this.name = "ReferenceInputError";
+  }
+}
+
+/** A selected reference must survive submission or fail explicitly. Durable
+ * asset identity takes precedence over any cached/local preview address. */
+function readyReferenceRows<T extends ReferenceRowLike>(rows: T[] | undefined): T[] {
+  return (rows ?? []).map((row) => {
+    if (row.uploading) throw new ReferenceInputError("generationReferenceUploading");
+    // Retain working external URLs; the server re-resolves asset-backed rows.
+    try {
+      const url = new URL(row.url);
+      if (url.protocol === "https:" || url.protocol === "http:") return row;
+    } catch {
+      // Relative/expired preview URLs are irrelevant when we have an asset ID.
+    }
+    if (row.assetId) {
+      return {
+        ...row,
+        url: new URL(
+          `/aurora/media/assets/${encodeURIComponent(row.assetId)}/content`,
+          window.location.origin
+        ).href,
+      };
+    }
+    throw new ReferenceInputError("generationReferenceUnavailable");
+  });
+}
+
 function referenceEntry(row: ReferenceRowLike): string | Record<string, string | number> {
   const duration =
     typeof row.durationSeconds === "number" && Number.isFinite(row.durationSeconds)
@@ -869,9 +919,7 @@ export function mediaSnapshotsForMode(
 ): MediaRefSnapshot[] {
   const snapshots: MediaRefSnapshot[] = [];
   for (const field of referenceFieldsForMode(model, mode)) {
-    for (const row of references?.[field.field] ?? []) {
-      if (!/^https?:/i.test(row.url) && !row.url.startsWith("blob:")) continue;
-      if (row.uploading) continue;
+    for (const row of readyReferenceRows(references?.[field.field])) {
       snapshots.push({
         field: field.field,
         kind: row.kind ?? field.kind,
@@ -891,6 +939,7 @@ export function mediaSnapshotsForMode(
 export type PromptReferenceRowLike = ReferenceRowLike & {
   kind?: FizzAiReferenceKind;
   name?: string;
+  label?: string;
   uploading?: boolean;
 };
 
@@ -917,7 +966,7 @@ export function buildReferenceInputForMode(
   const properties = model.input_schema?.properties ?? {};
   const referenceInput: Record<string, unknown> = {};
   for (const { field } of referenceFieldsForMode(model, mode)) {
-    const ready = (references?.[field] ?? []).filter((row) => /^https?:/i.test(row.url));
+    const ready = readyReferenceRows(references?.[field]);
     if (ready.length === 0) continue;
     if (SINGLE_REFERENCE_FIELDS.has(field)) {
       referenceInput[field] = referenceEntry(ready[0]);
@@ -956,16 +1005,14 @@ export function buildPromptReferenceBindingsForMode(
   const bindings: FizzAiReferenceBinding[] = [];
   for (const field of referenceFieldsForMode(model, mode)) {
     if (FRAME_REFERENCE_FIELDS.has(field.field)) continue;
-    const ready = (references?.[field.field] ?? []).filter(
-      (row) => !row.uploading && /^https?:/i.test(row.url)
-    );
+    const ready = readyReferenceRows(references?.[field.field]);
     for (const row of ready) {
       const kind = row.kind ?? field.kind;
       counts[kind] += 1;
       bindings.push({
         refId: row.id,
         kind,
-        label: promptMentionLabel(kind, counts[kind]),
+        label: row.label ?? promptMentionLabel(kind, counts[kind]),
         order: bindings.length,
         url: row.url,
         assetId: row.assetId,
