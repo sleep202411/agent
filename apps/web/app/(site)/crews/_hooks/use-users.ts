@@ -15,6 +15,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useQuery } from "@tanstack/react-query";
 import type { LookupUserDTO } from "@repo/shared/users";
 import { CrewApiError, crewApi } from "./api";
@@ -46,8 +47,9 @@ function detect(raw: string): Detected {
 }
 
 export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
+  const { user } = useCurrentUser();
   const detected = detect(query);
-  const enabled = detected !== null;
+  const enabled = detected !== null && Boolean(user);
 
   const q = useQuery({
     queryKey: [
@@ -56,6 +58,7 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
       detected?.kind ?? "none",
       detected?.value ?? "",
       checkCrewId ?? "_",
+      user?.id ?? null,
     ] as const,
     enabled,
     queryFn: async () => {
@@ -115,6 +118,7 @@ export function chunkUserDisplayIds(userIds: readonly string[]): string[][] {
 }
 
 export function useUserDisplays(userIds: readonly string[]): Map<string, LookupUserDTO> {
+  const { user } = useCurrentUser();
   const sorted = useMemo(() => {
     const uniq = Array.from(new Set(userIds.filter((id) => !!id)));
     uniq.sort();
@@ -122,8 +126,8 @@ export function useUserDisplays(userIds: readonly string[]): Map<string, LookupU
   }, [userIds]);
 
   const q = useQuery({
-    queryKey: ["users", "displays", sorted] as const,
-    enabled: sorted.length > 0,
+    queryKey: ["users", "displays", sorted, user?.id ?? null] as const,
+    enabled: sorted.length > 0 && Boolean(user),
     queryFn: async () => {
       const pages = await Promise.all(
         chunkUserDisplayIds(sorted).map((chunk) => {
