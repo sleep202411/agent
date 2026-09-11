@@ -27,6 +27,10 @@ vi.mock("@/src/i18n/i18n", async () => {
   };
 });
 
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: "user-1" }, isLoading: false }),
+}));
+
 vi.mock("sonner", () => ({
   toast: {
     success: vi.fn(),
