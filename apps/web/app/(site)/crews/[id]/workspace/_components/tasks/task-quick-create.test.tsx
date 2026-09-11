@@ -240,4 +240,79 @@ describe("TaskQuickCreate", () => {
       })
     );
   });
+  it.each(["ctrlKey", "metaKey"] as const)(
+    "ignores repeated %s+Enter while task creation is pending and allows a retry after failure",
+    async (modifier) => {
+      let fail!: (error: Error) => void;
+      state.create.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        })
+      );
+      renderQuickCreate();
+      const input = document.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Task title"]'
+      )!;
+      act(() => fill(input, "Create only once"));
+      const shortcut = () =>
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Enter",
+            [modifier]: true,
+            bubbles: true,
+          })
+        );
+      act(() => {
+        shortcut();
+        shortcut();
+        click(exactButton("Create"));
+      });
+      expect(state.create).toHaveBeenCalledTimes(1);
+      await act(async () => fail(new Error("Temporary failure")));
+      expect(input.value).toBe("Create only once");
+      await act(async () => {
+        shortcut();
+      });
+      expect(state.create).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it("ignores creation shortcuts and repeated draft requests until AI preparation finishes", async () => {
+    let finish!: (draft: unknown) => void;
+    state.draft.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    renderQuickCreate();
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    act(() => fill(input, "Prepare this task"));
+    act(() => click(document.querySelector('button[aria-label="More actions"]')!));
+    act(() => {
+      click(button("Organize with AI"));
+      click(button("Organize with AI"));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })
+      );
+    });
+    expect(state.draft).toHaveBeenCalledTimes(1);
+    expect(state.create).not.toHaveBeenCalled();
+    await act(async () =>
+      finish({
+        title: "Prepared title",
+        description: "Prepared brief",
+        priority: "normal",
+        assigneeUserIds: ["member-1"],
+        questions: [],
+      })
+    );
+    await act(async () => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledTimes(1);
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Prepared title",
+        assignees: [{ userId: "member-1", currency: "USD" }],
+      })
+    );
+  });
 });

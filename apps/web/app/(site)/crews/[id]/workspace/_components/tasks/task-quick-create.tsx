@@ -73,6 +73,8 @@ export function TaskQuickCreate({
   const draftTask = useDraftCrewTask(crewId);
   const displays = useUserDisplays(members.map((member) => member.userId));
   const titleRef = useRef<HTMLTextAreaElement>(null);
+  // Keyboard events can arrive before mutation pending state has rendered.
+  const operationInFlight = useRef(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<CrewTaskPriority>("normal");
@@ -162,8 +164,10 @@ export function TaskQuickCreate({
   };
 
   const generateDraft = async () => {
+    if (operationInFlight.current || create.isPending || draftTask.isPending) return;
     const prompt = [title.trim(), description.trim()].filter(Boolean).join("\n\n");
     if (!prompt) return;
+    operationInFlight.current = true;
     try {
       const next = await draftTask.mutateAsync({
         prompt,
@@ -183,16 +187,20 @@ export function TaskQuickCreate({
       setDueDate(next.dueDate ?? "");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("draftFailed"));
+    } finally {
+      operationInFlight.current = false;
     }
   };
 
   const submit = async () => {
+    if (operationInFlight.current || create.isPending || draftTask.isPending) return;
     const nextTitle = title.trim();
     if (!nextTitle) {
       titleRef.current?.focus();
       return;
     }
     if (!resolvedWorkflowStateId) return;
+    operationInFlight.current = true;
     try {
       const task = await create.mutateAsync({
         title: nextTitle,
@@ -221,6 +229,8 @@ export function TaskQuickCreate({
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t("createFailed"));
+    } finally {
+      operationInFlight.current = false;
     }
   };
 
