@@ -1,5 +1,7 @@
 import {
   BadRequestException,
+  ForbiddenException,
+  GoneException,
   Inject,
   Injectable,
   Logger,
@@ -10,17 +12,29 @@ import type {
   MediaAssetReadinessCapability,
   MediaAssetReadinessResult,
 } from '@repo/shared';
-import {
-  MediaAssetStatus,
-  WorkspaceMemberRole,
-  WorkspaceMemberStatus,
-} from '@prisma/client';
+import { MediaAssetStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
-import { WorkspacePermissionService } from '../workspaces';
+import {
+  MediaAccessService,
+  type MediaAccessContext,
+} from './media-access.service';
 import {
   MEDIA_ASSET_READINESS_ADAPTERS,
   type MediaAssetReadinessAdapter,
 } from './media-asset-readiness.port';
+
+// Readiness consumes the same asset as playback and generation. Keep only the
+// fields the canonical media policy needs; no separate ownership/role policy.
+const READINESS_ASSET_SELECT = {
+  id: true,
+  kind: true,
+  status: true,
+  moderationStatus: true,
+  visibility: true,
+  createdByUserId: true,
+  workspaceId: true,
+  metadata: true,
+} satisfies Prisma.MediaAssetSelect;
 
 @Injectable()
 export class MediaAssetReadinessService {
@@ -32,7 +46,7 @@ export class MediaAssetReadinessService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly workspacePermissions: WorkspacePermissionService,
+    private readonly mediaAccess: MediaAccessService,
     @Inject(MEDIA_ASSET_READINESS_ADAPTERS)
     adapters: MediaAssetReadinessAdapter[],
   ) {
@@ -55,6 +69,7 @@ export class MediaAssetReadinessService {
     userId: string,
     capability: MediaAssetReadinessCapability,
     assetIds: string[],
+    context?: MediaAccessContext,
   ): Promise<MediaAssetReadinessResult[]> {
     const adapter = this.requireAdapter(capability);
     const ids = [...new Set(assetIds)].slice(0, 100);
@@ -64,30 +79,27 @@ export class MediaAssetReadinessService {
       where: {
         id: { in: ids },
         deletedAt: null,
-        OR: [
-          { createdByUserId: userId },
-          {
-            workspace: {
-              members: {
-                some: {
-                  userId,
-                  status: WorkspaceMemberStatus.active,
-                  removedAt: null,
-                },
-              },
-            },
-          },
-        ],
       },
-      select: { id: true, kind: true, status: true },
+      select: READINESS_ASSET_SELECT,
     });
-    const eligibleIds = assets
-      .filter(
-        (asset) =>
-          asset.status === MediaAssetStatus.ready &&
-          adapter.supports(asset.kind),
-      )
-      .map((asset) => asset.id);
+    const eligibleIds: string[] = [];
+    for (const asset of assets) {
+      if (!adapter.supports(asset.kind)) continue;
+      try {
+        await this.mediaAccess.requireUseAccess(userId, asset, context);
+        eligibleIds.push(asset.id);
+      } catch (error) {
+        // A mixed batch may include removed/inaccessible assets. Never turn
+        // infrastructure failures into an apparently unchecked asset.
+        if (
+          !(error instanceof ForbiddenException) &&
+          !(error instanceof GoneException) &&
+          !(error instanceof NotFoundException)
+        ) {
+          throw error;
+        }
+      }
+    }
     if (eligibleIds.length === 0) return [];
 
     if (!adapter.isAvailable()) {
@@ -122,28 +134,15 @@ export class MediaAssetReadinessService {
     userId: string,
     assetId: string,
     capability: MediaAssetReadinessCapability,
+    context?: MediaAccessContext,
   ): Promise<MediaAssetReadinessResult> {
     const adapter = this.requireAdapter(capability);
     const asset = await this.prisma.mediaAsset.findFirst({
       where: {
         id: assetId,
         deletedAt: null,
-        OR: [
-          { createdByUserId: userId },
-          {
-            workspace: {
-              members: {
-                some: {
-                  userId,
-                  status: WorkspaceMemberStatus.active,
-                  removedAt: null,
-                },
-              },
-            },
-          },
-        ],
       },
-      select: { id: true, kind: true, status: true, workspaceId: true },
+      select: READINESS_ASSET_SELECT,
     });
     if (!asset) {
       throw new NotFoundException({
@@ -151,21 +150,12 @@ export class MediaAssetReadinessService {
         message: 'Media asset was not found.',
       });
     }
-    if (
-      asset.status !== MediaAssetStatus.ready ||
-      !adapter.supports(asset.kind)
-    ) {
+    await this.mediaAccess.requireUseAccess(userId, asset, context);
+    if (!adapter.supports(asset.kind)) {
       throw new BadRequestException({
         code: 'MEDIA_ASSET_READINESS_UNSUPPORTED',
         message: `Capability "${capability}" does not support this media asset.`,
       });
-    }
-    if (asset.workspaceId) {
-      await this.workspacePermissions.requireWorkspaceRole(
-        userId,
-        asset.workspaceId,
-        WorkspaceMemberRole.editor,
-      );
     }
     if (!adapter.isAvailable()) {
       throw this.unavailable(capability);
