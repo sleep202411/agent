@@ -352,20 +352,26 @@ describe("Crew lifecycle task-centre refresh", () => {
           }
         };
       });
-      const center = [...crewKeys.taskCenter, "viewer", "all", "active", ""];
+      const center = [...crewKeys.taskCenter, "alice", "all", "active", ""];
       client.setQueryData(center, {
         pages: [{ items: [{ crew: { id: "crew-1", name: "Old name" } }] }],
       });
-      client.setQueryData(crewKeys.membership("crew-1"), { permissions: ["tasks.review"] });
-      client.setQueryData(crewKeys.membership("crew-other"), { permissions: [] });
+      client.setQueryData([...crewKeys.membership("crew-1"), "alice"], {
+        permissions: ["tasks.review"],
+      });
+      client.setQueryData([...crewKeys.membership("crew-other"), "alice"], { permissions: [] });
       await act(async () => {
         await current()();
       });
       expect(client.getQueryState(center)?.isInvalidated).toBe(true);
       if (action !== "rename") {
-        expect(client.getQueryState(crewKeys.membership("crew-1"))?.isInvalidated).toBe(true);
+        expect(
+          client.getQueryState([...crewKeys.membership("crew-1"), "alice"])?.isInvalidated
+        ).toBe(true);
       }
-      expect(client.getQueryState(crewKeys.membership("crew-other"))?.isInvalidated).toBe(false);
+      expect(
+        client.getQueryState([...crewKeys.membership("crew-other"), "alice"])?.isInvalidated
+      ).toBe(false);
     }
   );
 });

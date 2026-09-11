@@ -62,37 +62,54 @@ export function useCrewMembership(crewId: string | undefined) {
   });
 }
 
-export function useRemoveMember(crewId: string) {
+function useMemberRefresh(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const context = { crewId, accountUserId: user?.id ?? null };
+  return {
+    onMutate: () => context,
+    onSuccess: (_data: unknown, _variables: unknown, origin: typeof context | undefined) => {
+      if (!origin?.accountUserId) return;
+      const forAccount = (query: { queryKey: readonly unknown[] }) =>
+        query.queryKey.at(-1) === origin.accountUserId;
+      qc.invalidateQueries({ queryKey: crewKeys.members(origin.crewId), predicate: forAccount });
+      qc.invalidateQueries({ queryKey: [...crewKeys.detail(origin.crewId), origin.accountUserId] });
+      qc.invalidateQueries({
+        queryKey: crewKeys.positions(origin.crewId),
+        predicate: (query) => query.queryKey[3] === origin.accountUserId,
+      });
+      qc.invalidateQueries({ queryKey: crewKeys.mine, predicate: forAccount });
+      qc.invalidateQueries({ queryKey: ["crew", "positions", "public"] });
+      qc.invalidateQueries({ queryKey: ["crew", "list"], predicate: forAccount });
+      qc.invalidateQueries({ queryKey: ["crew", "by-user"], predicate: forAccount });
+      qc.invalidateQueries({
+        queryKey: crewKeys.taskCenter,
+        predicate: (query) => query.queryKey[2] === origin.accountUserId,
+      });
+    },
+  };
+}
+
+export function useRemoveMember(crewId: string) {
+  const refresh = useMemberRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (memberId: string) =>
       crewApi.delete<void>(
         `/crews/${encodeURIComponent(crewId)}/members/${encodeURIComponent(memberId)}`
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.mine });
-    },
   });
 }
 
 export function useUpdateMember(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMemberRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: ({ memberId, input }: { memberId: string; input: UpdateCrewMemberInput }) =>
       crewApi.patch<CrewMemberDTO>(
         `/crews/${encodeURIComponent(crewId)}/members/${encodeURIComponent(memberId)}`,
         { body: input }
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
-    },
   });
 }
 
@@ -102,18 +119,12 @@ export function useUpdateMember(crewId: string) {
  * crew (default keeps them as a normal member).
  */
 export function useTransferCrewOwner(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMemberRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: ({ toUserId, removeOldOwner }: { toUserId: string; removeOldOwner?: boolean }) =>
       crewApi.post(`/crews/${encodeURIComponent(crewId)}/transfer-owner`, {
         body: { toUserId, removeOldOwner },
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
-      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.mine });
-      qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
-    },
   });
 }
