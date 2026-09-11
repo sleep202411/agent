@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { IconCopy, IconLink, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import Image from "next/image";
 
 import { crewInviteUrl, useCreateCrewInviteLink } from "@/app/(site)/crews/_hooks/use-invite-links";
 import { Button } from "@/components/ui/button";
@@ -113,6 +114,7 @@ function CommunityInviteSession({ crewId, open, onOpenChange }: CommunityInviteD
           {url ? (
             <div className="space-y-3">
               <p className="text-sm font-medium text-foreground">{t("linkReady")}</p>
+              <CommunityInviteQr key={url} url={url} />
               <div className="flex items-center gap-2">
                 <Input readOnly value={url} onFocus={(event) => event.currentTarget.select()} />
                 <Button
@@ -144,5 +146,84 @@ function CommunityInviteSession({ crewId, open, onOpenChange }: CommunityInviteD
         </DialogBody>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function CommunityInviteQr({ url }: { url: string }) {
+  const t = useTranslations("crewCommunityChat");
+  const tc = useTranslations("common");
+  const qrFailed = t("qrFailed");
+  const [attempt, setAttempt] = useState(0);
+  const [result, setResult] = useState<
+    { dataUrl: string; error?: never } | { error: string; dataUrl?: never } | null
+  >(null);
+
+  useEffect(() => {
+    let active = true;
+    void import("qrcode")
+      .then(({ default: qr }) =>
+        active ? qr.toDataURL(url, { width: 512, margin: 4, errorCorrectionLevel: "M" }) : undefined
+      )
+      .then((dataUrl) => {
+        if (active && dataUrl) setResult({ dataUrl });
+      })
+      .catch((cause: unknown) => {
+        if (active) setResult({ error: cause instanceof Error ? cause.message : qrFailed });
+      });
+    return () => {
+      active = false;
+    };
+  }, [url, attempt, qrFailed]);
+
+  if (result?.error) {
+    return (
+      <div className="space-y-2" role="alert">
+        <p className="text-sm text-destructive">{result.error}</p>
+        <Button
+          type="button"
+          variant="outline"
+          color="muted"
+          onClick={() => {
+            setResult(null);
+            setAttempt((value) => value + 1);
+          }}
+        >
+          {tc("retry")}
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      {result?.dataUrl ? (
+        <>
+          <Image
+            src={result.dataUrl}
+            alt={t("qrAlt")}
+            width={224}
+            height={224}
+            unoptimized
+            className="rounded-lg"
+          />
+          <p className="text-center text-xs text-muted-foreground">{t("scanToJoin")}</p>
+          <a
+            href={result.dataUrl}
+            download="crew-community-invitation.png"
+            className="text-sm underline underline-offset-4"
+          >
+            {t("downloadQr")}
+          </a>
+        </>
+      ) : (
+        <div
+          role="status"
+          className="flex size-56 items-center justify-center gap-2 text-sm text-muted-foreground"
+        >
+          <IconLoader2 className="size-4 animate-spin" />
+          {t("generatingQr")}
+        </div>
+      )}
+    </div>
   );
 }

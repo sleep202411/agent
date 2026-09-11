@@ -9388,6 +9388,11 @@
     "valueMembershipBoth": "{days} 天 Studio+社區會員"
   },
   "crewCommunityChat": {
+    "qrAlt": "社區邀請二維碼",
+    "scanToJoin": "掃碼加入 Crew 社區。",
+    "downloadQr": "下載二維碼",
+    "generatingQr": "正在產生二維碼…",
+    "qrFailed": "無法產生二維碼。",
     "channels": "頻道",
     "teamChannel": "團隊群聊",
     "communityChannel": "社群群聊",

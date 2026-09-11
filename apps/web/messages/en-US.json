@@ -9388,6 +9388,11 @@
     "valueMembershipBoth": "{days}d Studio + community membership"
   },
   "crewCommunityChat": {
+    "qrAlt": "Community invitation QR code",
+    "scanToJoin": "Scan to join the Crew community.",
+    "downloadQr": "Download QR code",
+    "generatingQr": "Generating QR code…",
+    "qrFailed": "Could not generate the QR code.",
     "channels": "Channels",
     "teamChannel": "Team chat",
     "communityChannel": "Community chat",
