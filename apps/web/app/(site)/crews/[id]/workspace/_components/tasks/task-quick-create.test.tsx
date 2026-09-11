@@ -240,6 +240,46 @@ describe("TaskQuickCreate", () => {
       })
     );
   });
+  it.each(["Task title", "Task brief"])(
+    "preserves edits to %s made while AI preparation runs",
+    async (label) => {
+      let finish!: (value: unknown) => void;
+      state.draft.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      renderQuickCreate();
+      const title = document.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Task title"]'
+      )!;
+      act(() => fill(title, "Original prompt"));
+      await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+      await act(async () => click(button("Organize with AI")));
+      const input = document.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`)!;
+      act(() => fill(input, "Newer user text"));
+      await act(async () =>
+        finish({
+          title: "Old AI title",
+          description: "Old AI brief",
+          priority: "high",
+          assigneeUserIds: [],
+          dueDate: null,
+          questions: [],
+        })
+      );
+      expect(input.value).toBe("Newer user text");
+      expect(title.value).not.toBe("Old AI title");
+      await act(async () => click(exactButton("Create")));
+      expect(state.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: label === "Task title" ? "Newer user text" : "Original prompt",
+          description: label === "Task brief" ? "Newer user text" : "",
+        })
+      );
+    }
+  );
+
   it.each(["ctrlKey", "metaKey"] as const)(
     "ignores repeated %s+Enter while task creation is pending and allows a retry after failure",
     async (modifier) => {

@@ -75,6 +75,7 @@ export function TaskQuickCreate({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   // Keyboard events can arrive before mutation pending state has rendered.
   const operationInFlight = useRef(false);
+  const promptRevision = useRef(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<CrewTaskPriority>("normal");
@@ -144,6 +145,7 @@ export function TaskQuickCreate({
   }, [onOpenChange]);
 
   const reset = () => {
+    promptRevision.current += 1;
     setTitle("");
     setDescription("");
     setPriority("normal");
@@ -168,6 +170,7 @@ export function TaskQuickCreate({
     const prompt = [title.trim(), description.trim()].filter(Boolean).join("\n\n");
     if (!prompt) return;
     operationInFlight.current = true;
+    const requestedRevision = promptRevision.current;
     try {
       const next = await draftTask.mutateAsync({
         prompt,
@@ -178,6 +181,7 @@ export function TaskQuickCreate({
           displayName: displayNameOf(member.userId, displays),
         })),
       });
+      if (promptRevision.current !== requestedRevision) return;
       setDraft(next);
       setTitle(next.title);
       setDescription(next.description);
@@ -287,6 +291,7 @@ export function TaskQuickCreate({
             ref={titleRef}
             value={title}
             onChange={(event) => {
+              promptRevision.current += 1;
               setTitle(event.target.value);
               setDraft(null);
             }}
@@ -305,6 +310,7 @@ export function TaskQuickCreate({
           <textarea
             value={description}
             onChange={(event) => {
+              promptRevision.current += 1;
               setDescription(event.target.value);
               setDraft(null);
             }}
