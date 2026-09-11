@@ -31,81 +31,41 @@ export type StoryCreativeProfileKnownValues = Partial<
   Record<StoryCreativeProfileQuestionId, string>
 >;
 
-type StoryCreativeProfileOption = {
-  value: string;
-  label: string;
-  description?: string;
+/** Fixed question copy is a fallback for clients without the Story locale catalog. */
+const PROFILE_QUESTION_COPY: Record<StoryCreativeProfileQuestionId, [string, string]> = {
+  aspect_ratio: ["Aspect ratio", "Which frame aspect ratio should the project use?"],
+  target_runtime: ["Target runtime", "What is the target runtime?"],
+  visual_direction: ["Visual direction", "Which visual style should the project use?"],
+  story_language: ["Story language", "Which language should the story use?"],
 };
 
 /**
- * Fixed product catalogs are runtime-owned, not model-authored. Models still
- * provide localized labels and question copy, but may abbreviate a long option
- * list even when instructed not to. Expand any valid canonical subset back to
- * the complete ordered catalog before strict validation and persistence.
- *
- * Unknown values, duplicates, malformed options, question omissions, and
- * invented knownValues are deliberately left untouched so the strict schema
- * rejects them instead of silently changing creator intent.
+ * Models identify explicitly known values; code owns every remaining question
+ * and its complete catalog. Missing values become questions, never preferences.
+ * Invalid known values stay invalid so they cannot silently change user intent.
  */
 export function canonicalizeStoryCreativeProfileInputRequest(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   const request = value as Record<string, unknown>;
-  if (request.formId !== STORY_CREATIVE_PROFILE_FORM_ID || !Array.isArray(request.questions)) {
-    return value;
+  if (request.formId !== STORY_CREATIVE_PROFILE_FORM_ID) return value;
+  const knownValues = request.knownValues ?? {};
+  if (!knownValues || typeof knownValues !== "object" || Array.isArray(knownValues)) return value;
+  for (const [id, known] of Object.entries(knownValues)) {
+    const field = STORY_CREATIVE_PROFILE_QUESTION_OPTIONS.find(([key]) => key === id);
+    if (typeof known !== "string" || !field?.[1].some((option) => option === known)) return value;
   }
-
-  let changed = false;
-  const questions = request.questions.map((question) => {
-    if (!question || typeof question !== "object" || Array.isArray(question)) return question;
-    const record = question as Record<string, unknown>;
-    const canonical = STORY_CREATIVE_PROFILE_QUESTION_OPTIONS.find(
-      ([questionId]) => questionId === record.id
-    );
-    if (!canonical || !Array.isArray(record.options)) return question;
-
-    const [, expectedValues] = canonical;
-    if (record.options.length < 2 || record.options.length > expectedValues.length) return question;
-
-    const supplied = record.options as unknown[];
-    const suppliedByValue = new Map<string, StoryCreativeProfileOption>();
-    for (const rawOption of supplied) {
-      if (!rawOption || typeof rawOption !== "object" || Array.isArray(rawOption)) return question;
-      const option = rawOption as Record<string, unknown>;
-      if (
-        typeof option.value !== "string" ||
-        typeof option.label !== "string" ||
-        !expectedValues.some((expectedValue) => expectedValue === option.value) ||
-        suppliedByValue.has(option.value)
-      ) {
-        return question;
-      }
-      suppliedByValue.set(option.value, rawOption as StoryCreativeProfileOption);
-    }
-
-    const alreadyCanonical =
-      supplied.length === expectedValues.length &&
-      supplied.every(
-        (rawOption, optionIndex) =>
-          (rawOption as StoryCreativeProfileOption).value === expectedValues[optionIndex]
-      );
-    if (alreadyCanonical) return question;
-
-    changed = true;
-    return {
-      ...record,
-      options: expectedValues.map(
-        (optionValue): StoryCreativeProfileOption =>
-          suppliedByValue.get(optionValue) ?? {
-            value: optionValue,
-            // Fixed-form clients render canonical values through their locale
-            // catalog. This fallback keeps the generic protocol self-describing.
-            label: optionValue,
-          }
-      ),
-    };
-  });
-
-  return changed ? { ...request, questions } : value;
+  return {
+    ...request,
+    knownValues,
+    questions: STORY_CREATIVE_PROFILE_QUESTION_OPTIONS.filter(
+      ([id]) => !Object.prototype.hasOwnProperty.call(knownValues, id)
+    ).map(([id, values]) => ({
+      id,
+      header: PROFILE_QUESTION_COPY[id][0],
+      question: PROFILE_QUESTION_COPY[id][1],
+      options: values.map((option) => ({ value: option, label: option })),
+    })),
+  };
 }
 
 export function isCanonicalStoryCreativeProfileQuestions(value: unknown): boolean {
