@@ -11,7 +11,7 @@ vi.mock("./api", () => ({ crewApi: { post: vi.fn(), delete: vi.fn(), patch: vi.f
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let client: QueryClient;
-const key = crewKeys.detail("crew");
+const key = [...crewKeys.detail("crew"), "alice"];
 function mount<T>(hook: () => T) {
   client = new QueryClient();
   root = createRoot(document.createElement("div"));

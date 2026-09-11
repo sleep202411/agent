@@ -3,6 +3,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { CreateCrewInput, CrewDTO, UpdateCrewInput, UpdateCrewListingInput } from "./types";
@@ -19,10 +20,11 @@ async function fetchCrewDetail(id: string): Promise<CrewDTO | null> {
 }
 
 export function useCrewDetail(id: string) {
+  const { user, isLoading } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.detail(id),
+    queryKey: [...crewKeys.detail(id), user?.id ?? null],
     queryFn: () => fetchCrewDetail(id),
-    enabled: !!id,
+    enabled: !!id && !isLoading,
   });
 }
 
@@ -39,14 +41,19 @@ export function useCreateCrew() {
 
 export function useUpdateCrew() {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useMutation({
     mutationFn: ({ id, ...rest }: UpdateCrewInput) =>
       crewApi.patch<CrewDTO>(`/crews/${encodeURIComponent(id)}`, { body: rest }),
-    onSuccess: (data, vars) => {
+    onMutate: () => ({ accountUserId }),
+    onSuccess: (data, vars, context) => {
+      if (!context?.accountUserId) return;
       // Server returns the updated row — replace the cache directly so
       // the workspace hero reflects the change before any refetch.
-      qc.setQueryData<CrewDTO | null>(crewKeys.detail(vars.id), (current) =>
-        current && current.version > data.version ? current : data
+      qc.setQueryData<CrewDTO | null>(
+        [...crewKeys.detail(vars.id), context.accountUserId],
+        (current) => (current && current.version > data.version ? current : data)
       );
       qc.invalidateQueries({ queryKey: ["crew", "list"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
@@ -57,12 +64,17 @@ export function useUpdateCrew() {
 
 export function useUpdateCrewListing() {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useMutation({
     mutationFn: ({ id, ...body }: UpdateCrewListingInput) =>
       crewApi.patch<CrewDTO>(`/crews/${encodeURIComponent(id)}/listing`, { body }),
-    onSuccess: (data, vars) => {
-      qc.setQueryData<CrewDTO | null>(crewKeys.detail(vars.id), (current) =>
-        current && current.version > data.version ? current : data
+    onMutate: () => ({ accountUserId }),
+    onSuccess: (data, vars, context) => {
+      if (!context?.accountUserId) return;
+      qc.setQueryData<CrewDTO | null>(
+        [...crewKeys.detail(vars.id), context.accountUserId],
+        (current) => (current && current.version > data.version ? current : data)
       );
       qc.invalidateQueries({ queryKey: ["crew", "list"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
