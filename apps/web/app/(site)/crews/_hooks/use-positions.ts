@@ -44,44 +44,60 @@ export function useCrewPositions(crewId: string | undefined, pageSize = 50) {
   };
 }
 
-export function useCreatePosition(crewId: string) {
+function usePositionRefresh(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const context = { crewId, accountUserId: user?.id ?? null };
+  return {
+    onMutate: () => context,
+    onSuccess: (_data: unknown, _variables: unknown, origin: typeof context | undefined) => {
+      if (!origin?.accountUserId) return;
+      qc.invalidateQueries({
+        queryKey: crewKeys.positions(origin.crewId),
+        predicate: (query) => query.queryKey[3] === origin.accountUserId,
+      });
+      qc.invalidateQueries({ queryKey: [...crewKeys.detail(origin.crewId), origin.accountUserId] });
+      qc.invalidateQueries({ queryKey: ["crew", "positions", "public"] });
+      for (const queryKey of [["crew", "list"], crewKeys.mine, ["crew", "by-user"]]) {
+        qc.invalidateQueries({
+          queryKey,
+          predicate: (query) => query.queryKey.at(-1) === origin.accountUserId,
+        });
+      }
+    },
+  };
+}
+
+export function useCreatePosition(crewId: string) {
+  const refresh = usePositionRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (input: CreatePositionInput) =>
       crewApi.post<CrewPositionDTO>(`/crews/${encodeURIComponent(crewId)}/positions`, {
         body: input,
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
-    },
   });
 }
 
 export function useUpdatePosition(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = usePositionRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: ({ positionId, ...rest }: UpdatePositionInput & { positionId: string }) =>
       crewApi.patch<CrewPositionDTO>(
         `/crews/${encodeURIComponent(crewId)}/positions/${encodeURIComponent(positionId)}`,
         { body: rest }
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
-    },
   });
 }
 
 export function useDeletePosition(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = usePositionRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (positionId: string) =>
       crewApi.delete<void>(
         `/crews/${encodeURIComponent(crewId)}/positions/${encodeURIComponent(positionId)}`
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
-    },
   });
 }
