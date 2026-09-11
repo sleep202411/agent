@@ -3715,6 +3715,45 @@
       "mobileNav": {
         "label": "製作導航",
         "chat": "對話"
+      },
+      "plotImport": {
+        "title": "匯入 JSON",
+        "description": "將其他 AI 工具生成的情節 JSON，直接匯入為可編輯的情節樹。",
+        "download": "下載 AI 範本",
+        "choose": "選擇 JSON 檔案",
+        "reading": "正在讀取檔案…",
+        "summary": "{scenes} 個場景 · {decisions} 個選擇節點",
+        "limits": "JSON · 最大 2 MB，最多 1,000 個節點",
+        "replaceLabel": "覆蓋目前章節情節樹",
+        "replaceHint": "替換目前章節的節點和連線，不影響其他章節。整次覆蓋可一步復原。",
+        "replaced": "情節樹已覆蓋，正在自動儲存…",
+        "appendHint": "以獨立的一組節點加入目前章節，保留已有內容；匯入後可自行連接到所需位置。整次匯入可一步復原。",
+        "emptyHint": "保留原文、選項順序和連線，只建立情節骨架，不生成圖片或影片。",
+        "cancel": "取消",
+        "confirm": "匯入情節樹",
+        "added": "情節樹已加入，正在自動儲存…",
+        "errors": {
+          "json": "JSON 格式有誤。請讓 AI 輸出 JSON 檔案，移除 Markdown 程式碼圍欄、註解和末尾多餘的逗號。",
+          "size": "檔案過大，請將每個檔案控制在 2 MB 以內。",
+          "object": "{path}：應為一個物件。",
+          "field": "{path}：不支援的欄位。請遵循下載的範本，避免內容遺失。",
+          "text": "{path}：應為範本長度限制內的文字，必填文字不可留空。",
+          "id": "{path}：ID 需為 1–64 個字元，以英文字母開頭，僅使用字母、數字、點、底線、冒號或連字號。",
+          "version": "{path}：version 必須為 1。",
+          "nodes": "{path}：需要 1–1,000 個節點，更長的故事請按章節拆分。",
+          "type": "{path}：type 必須為 scene 或 decision。",
+          "choices": "{path}：選擇節點需要 2–6 個選項。",
+          "duplicate": "{path}：節點 ID 重複，請為每個節點使用唯一 ID。",
+          "target": "{path}：目標必須對應檔案中已存在的節點 ID。",
+          "unreachable": "{path}：無法從 entryNodeId 到達此節點，請補充缺失的連線。",
+          "capacity": "目前章節將超過 10,000 個節點，請匯入其他章節。",
+          "read": "無法讀取檔案，請重新選擇。",
+          "locked": "情節樹暫時無法編輯，請在儲存或目前操作結束後重試。",
+          "singleFile": "一次只能拖入一個 JSON 檔案。",
+          "fileType": "請選擇 .json 格式的檔案。"
+        },
+        "dropHint": "點擊選擇或拖曳 JSON 檔案到這裡",
+        "drop": "放開以選擇檔案"
       }
     },
     "workbench": {
