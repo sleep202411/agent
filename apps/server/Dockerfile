@@ -101,6 +101,10 @@ RUN chown -R nestjs:nodejs \
 
 USER nestjs
 
+# Verify the scoped catalog updater works with production-only dependencies and
+# compiled files. Dry-run constructs a plan without opening a DB connection.
+RUN node apps/server/dist/catalog-update/prisma/seed/update-gpt-image-catalog.js --dry-run > /dev/null
+
 # Validate package metadata, entry points and transitive imports as the same
 # unprivileged user that runs the service. A root-only file-existence check
 # misses unreadable package.json files and broken workspace links.
