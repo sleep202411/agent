@@ -27,6 +27,9 @@ const dataHooks = vi.hoisted(() => ({
   read: vi.fn(),
   next: vi.fn(),
   nextError: false,
+  refreshError: false,
+  loaded: true,
+  refetch: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -67,11 +70,12 @@ vi.mock("@/src/lib/notifications", async () => {
     useNotificationFeed: (size: number, filter: string) => {
       dataHooks.feed(size, filter);
       return {
-        data: { pages: [{ items: [ITEM] }] },
+        data: dataHooks.loaded ? { pages: [{ items: [ITEM] }] } : undefined,
         isLoading: false,
-        isError: dataHooks.nextError,
+        isError: dataHooks.nextError || dataHooks.refreshError,
         isFetchNextPageError: dataHooks.nextError,
-        error: dataHooks.nextError ? new Error("Page unavailable") : null,
+        error: dataHooks.nextError || dataHooks.refreshError ? new Error("Page unavailable") : null,
+        refetch: dataHooks.refetch,
         hasNextPage: dataHooks.nextError,
         isFetchingNextPage: false,
         fetchNextPage: dataHooks.next,
@@ -98,6 +102,9 @@ function rowButton(): HTMLButtonElement {
 
 beforeEach(() => {
   dataHooks.nextError = false;
+  dataHooks.refreshError = false;
+  dataHooks.loaded = true;
+  dataHooks.refetch.mockClear();
   dataHooks.next.mockClear();
   nav.push.mockClear();
   dataHooks.read.mockClear();
@@ -184,4 +191,27 @@ it("keeps loaded notifications visible when pagination fails and retries that pa
   expect(retry).toBeDefined();
   act(() => retry!.click());
   expect(dataHooks.next).toHaveBeenCalledOnce();
+});
+
+it("preserves loaded notifications after a background refresh fails and retries the refresh", () => {
+  dataHooks.refreshError = true;
+  act(() => root.render(<NotificationsFeed />));
+  expect(rowButton()).toBeDefined();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Page unavailable");
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "retry");
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(dataHooks.refetch).toHaveBeenCalledOnce();
+  expect(dataHooks.next).not.toHaveBeenCalled();
+});
+
+it("retains initial-load error recovery when no notifications have loaded", () => {
+  dataHooks.refreshError = true;
+  dataHooks.loaded = false;
+  act(() => root.render(<NotificationsFeed />));
+  expect(container.textContent).not.toContain(ITEM.title);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Page unavailable");
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "retry");
+  act(() => retry!.click());
+  expect(dataHooks.refetch).toHaveBeenCalledOnce();
 });

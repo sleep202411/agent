@@ -124,7 +124,7 @@ export function NotificationsFeed() {
 
       {feed.isLoading ? (
         <FeedSkeleton />
-      ) : feed.isError && !feed.isFetchNextPageError ? (
+      ) : feed.isError && items.length === 0 ? (
         <div
           role="alert"
           className="flex flex-col items-center gap-3 rounded-2xl bg-destructive/10 px-6 py-12 text-center"
@@ -168,10 +168,23 @@ export function NotificationsFeed() {
             </section>
           ))}
 
-          {feed.isFetchNextPageError && (
-            <p role="alert" className="text-sm text-destructive">
-              {feed.error instanceof Error ? feed.error.message : t("loadErrorFallback")}
-            </p>
+          {feed.isError && (
+            <div role="alert" className="space-y-3">
+              <p className="text-sm text-destructive">
+                {feed.error instanceof Error ? feed.error.message : t("loadErrorFallback")}
+              </p>
+              {!feed.isFetchNextPageError && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={feed.isFetching}
+                  onClick={() => void feed.refetch()}
+                >
+                  {t("retry")}
+                </Button>
+              )}
+            </div>
           )}
           {feed.hasNextPage && (
             <div className="flex justify-center pt-2">
