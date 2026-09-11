@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useTranslations } from "@/src/i18n/i18n";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
 interface CommunityInviteDialogProps {
   crewId: string;
@@ -22,40 +23,57 @@ interface CommunityInviteDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function CommunityInviteDialog({ crewId, open, onOpenChange }: CommunityInviteDialogProps) {
+export function CommunityInviteDialog(props: CommunityInviteDialogProps) {
+  const { user } = useCurrentUser();
+  if (!props.open || !user) return null;
+  return <CommunityInviteSession key={`${props.crewId}:${user.id}`} {...props} />;
+}
+
+function CommunityInviteSession({ crewId, open, onOpenChange }: CommunityInviteDialogProps) {
   const t = useTranslations("crewCommunityChat");
   const tc = useTranslations("common");
   const { mutateAsync: createLink } = useCreateCrewInviteLink(crewId);
   const requested = useRef(false);
   const requestVersion = useRef(0);
+  const active = useRef(true);
+  const pending = useRef(false);
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const generate = async (clearError = false) => {
+    if (pending.current || !active.current) return;
+    pending.current = true;
     const version = ++requestVersion.current;
     if (clearError) setError(null);
     try {
       const link = await createLink({ kind: "community", policyKeys: [] });
-      if (version !== requestVersion.current) return;
+      if (!active.current || version !== requestVersion.current) return;
       setUrl(crewInviteUrl(link.token));
     } catch (cause) {
-      if (version !== requestVersion.current) return;
+      if (!active.current || version !== requestVersion.current) return;
       setError(cause instanceof Error ? cause.message : t("createFailed"));
+    } finally {
+      pending.current = false;
     }
   };
 
   useEffect(() => {
-    if (!open || requested.current) return;
-    requested.current = true;
-    void generate();
-    // `createLink` is stable for the lifetime of the mutation hook. The ref
-    // fences React Strict Mode so one click never mints two bearer links.
+    active.current = true;
+    if (!requested.current) {
+      requested.current = true;
+      void generate();
+    }
+    return () => {
+      active.current = false;
+    };
+    // Keep one request through Strict Mode effect replay. A new Crew/account
+    // or reopening mounts a fresh keyed session with its own request state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, []);
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
-      requested.current = false;
+      active.current = false;
       requestVersion.current += 1;
       setUrl(null);
       setError(null);
@@ -67,9 +85,9 @@ export function CommunityInviteDialog({ crewId, open, onOpenChange }: CommunityI
     if (!url) return;
     try {
       await navigator.clipboard.writeText(url);
-      toast.success(t("linkCopied"));
+      if (active.current) toast.success(t("linkCopied"));
     } catch {
-      toast.message(t("copyFailed"));
+      if (active.current) toast.message(t("copyFailed"));
     }
   };
 
