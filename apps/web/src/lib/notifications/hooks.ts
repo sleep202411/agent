@@ -4,9 +4,9 @@
  * React Query hooks for the notification inbox.
  *
  * Cache keys:
- *   ["notifications", "unread-count"]      — bell badge
- *   ["notifications", "list"]              — bell dropdown (first page)
- *   ["notifications", "feed"]              — full inbox page (infinite)
+ *   ["notifications", "unread-count", userId] — bell badge
+ *   ["notifications", "list", userId, limit] — bell dropdown (first page)
+ *   ["notifications", "feed", userId, pageSize, filter] — full inbox page (infinite)
  *
  * Mutations invalidate both the count and the list/feed so the bell
  * badge updates atomically with the list view. The WS provider also
@@ -15,6 +15,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { NotificationFilter } from "@repo/shared/notifications";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { toast } from "sonner";
 import {
   fetchUnreadCount,
@@ -33,8 +34,10 @@ export const notificationKeys = {
 const UNREAD_COUNT_POLL_MS = 60_000;
 
 export function useUnreadCount() {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: notificationKeys.unreadCount,
+    queryKey: [...notificationKeys.unreadCount, user?.id ?? null],
+    enabled: Boolean(user?.id),
     queryFn: () => fetchUnreadCount().then((r) => r.count),
     // Poll as a safety net for missed WS pushes (network blips, server
     // restart). WS push is the primary signal — this just papers over
@@ -46,8 +49,10 @@ export function useUnreadCount() {
 
 /** Recent notifications for the bell dropdown — first page only. */
 export function useRecentNotifications(limit = 10) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: [...notificationKeys.list, limit] as const,
+    queryKey: [...notificationKeys.list, user?.id ?? null, limit] as const,
+    enabled: Boolean(user?.id),
     queryFn: () => listNotifications({ limit }),
     refetchInterval: UNREAD_COUNT_POLL_MS,
     staleTime: 30_000,
@@ -56,8 +61,10 @@ export function useRecentNotifications(limit = 10) {
 
 /** Full inbox feed — infinite scroll via cursor. */
 export function useNotificationFeed(pageSize = 30, filter: NotificationFilter = "all") {
+  const { user } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: [...notificationKeys.feed, pageSize, filter] as const,
+    queryKey: [...notificationKeys.feed, user?.id ?? null, pageSize, filter] as const,
+    enabled: Boolean(user?.id),
     queryFn: ({ pageParam }) => listNotifications({ limit: pageSize, cursor: pageParam, filter }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
