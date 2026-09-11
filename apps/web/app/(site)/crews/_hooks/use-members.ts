@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -19,9 +20,10 @@ import type {
 } from "./types";
 
 export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
+  const { user } = useCurrentUser();
   const query = useInfiniteQuery({
-    queryKey: crewKeys.members(crewId ?? ""),
-    enabled: !!crewId,
+    queryKey: [...crewKeys.members(crewId ?? ""), "list", pageSize, user?.id ?? null],
+    enabled: !!crewId && Boolean(user),
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewMemberPageDTO>(`/crews/${encodeURIComponent(crewId!)}/members`, {
         query: { limit: pageSize, cursor: pageParam },
@@ -49,9 +51,10 @@ export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
 }
 
 export function useCrewMembership(crewId: string | undefined) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.membership(crewId ?? ""),
-    enabled: !!crewId,
+    queryKey: [...crewKeys.membership(crewId ?? ""), user?.id ?? null],
+    enabled: !!crewId && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewMembershipDTO>(`/crews/${encodeURIComponent(crewId!)}/members/me`),
     retry: (failureCount, error) =>
