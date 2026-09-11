@@ -34,6 +34,7 @@ vi.mock("@/app/(site)/creators/_hooks/use-conversations", () => ({
     dispose: vi.fn(),
   }),
   conversationKeys: {
+    inbox: () => ["conversation", "inbox"],
     messages: (id: string, uid: string) => ["conversation", "messages", id, uid],
     detail: (id: string, uid: string) => ["conversation", "detail", id, uid],
   },
@@ -138,3 +139,49 @@ it("refreshes owner pending counts when another user submits an application", as
     vi.clearAllMocks();
   }
 });
+
+it.each(["read", "context", "notification", "ready"] as const)(
+  "keeps %s realtime refreshes within the receiving account",
+  async (event) => {
+    const client = new QueryClient();
+    const root = createRoot(document.createElement("div"));
+    const family = event === "read" || event === "context" ? "conversation" : "notifications";
+    const key = (account: string) =>
+      family === "conversation" ? [family, "inbox", "all", account] : [family, "recent", account];
+    for (const account of ["alice", "bob"]) client.setQueryData(key(account), []);
+    try {
+      mocks.userId = "alice";
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <ConversationsProvider>content</ConversationsProvider>
+          </QueryClientProvider>
+        )
+      );
+      const handlers = vi.mocked(openConversationRealtime).mock.calls.at(-1)![1];
+      await act(async () => {
+        if (event === "read")
+          handlers.onReadAdvanced?.(
+            {} as Parameters<NonNullable<typeof handlers.onReadAdvanced>>[0]
+          );
+        if (event === "context")
+          handlers.onContextChanged?.({ conversationId: "chat" } as Parameters<
+            NonNullable<typeof handlers.onContextChanged>
+          >[0]);
+        if (event === "notification")
+          handlers.onNotification?.({
+            id: "notice",
+            type: "crew.task.assigned",
+            readAt: null,
+          } as Parameters<NonNullable<typeof handlers.onNotification>>[0]);
+        if (event === "ready") handlers.onReady?.();
+      });
+      expect(client.getQueryState(key("alice"))?.isInvalidated).toBe(true);
+      expect(client.getQueryState(key("bob"))?.isInvalidated).toBe(false);
+    } finally {
+      act(() => root.unmount());
+      client.clear();
+      vi.clearAllMocks();
+    }
+  }
+);

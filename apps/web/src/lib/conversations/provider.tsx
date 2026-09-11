@@ -121,13 +121,19 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
       onReadAdvanced: () => {
         // The other side's "read" advanced; inbox row may render a
         // read indicator in the future, so invalidate cheaply.
-        qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
+        qc.invalidateQueries({
+          queryKey: conversationKeys.inbox(),
+          predicate: (query) => query.queryKey[3] === uid,
+        });
       },
       onContextChanged: (data) => {
         qc.invalidateQueries({
           queryKey: conversationKeys.detail(data.conversationId, uid),
         });
-        qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
+        qc.invalidateQueries({
+          queryKey: conversationKeys.inbox(),
+          predicate: (query) => query.queryKey[3] === uid,
+        });
       },
       onCrewTaskChanged: (data) => {
         qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
@@ -168,7 +174,10 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         qc.invalidateQueries({ queryKey: crewKeys.assets(data.crewId) });
       },
       onNotification: (notification) => {
-        qc.invalidateQueries({ queryKey: notificationKeys.all });
+        qc.invalidateQueries({
+          queryKey: notificationKeys.all,
+          predicate: (query) => query.queryKey[2] === uid,
+        });
         const crewId =
           typeof notification.meta?.crewId === "string" ? notification.meta.crewId : null;
         if (crewId) {
@@ -253,7 +262,10 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         // realtime frame.
         void recovery.recoverAll();
         qc.invalidateQueries({ queryKey: crewKeys.all });
-        qc.invalidateQueries({ queryKey: notificationKeys.all });
+        qc.invalidateQueries({
+          queryKey: notificationKeys.all,
+          predicate: (query) => query.queryKey[2] === uid,
+        });
       },
     });
 
