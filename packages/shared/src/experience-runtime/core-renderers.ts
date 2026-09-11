@@ -144,7 +144,7 @@ export const ExperienceCoreChoiceRendererConfigSchema = z
   .object({
     decisionId: ExperienceStableIdSchema,
     prompt: ExperienceLocalizedTextSchema,
-    choices: z.array(ExperienceCoreChoiceSchema).min(2).max(6),
+    choices: z.array(ExperienceCoreChoiceSchema).min(1).max(6),
     initiallyOpen: z.boolean(),
   })
   .strict()

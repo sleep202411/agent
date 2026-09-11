@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { ExperienceRuntimeManifestSchema } from '@repo/shared/experience-runtime';
 import { canonicalJsonHash } from './canonical-json';
 import { buildInteractiveFilmTestBundle } from './__tests__/interactive-film-test-bundle';
 import { INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION } from './interactive-film.schema';
@@ -168,6 +169,159 @@ function previewSequences(draft: Draft) {
 }
 
 describe('StoryWorkingPreviewService', () => {
+  it.each([1, 2])(
+    'preserves %i untouched options and plays an unfilmed scene as text for four seconds',
+    async (optionCount) => {
+      const draft = buildInteractiveFilmTestBundle().draftContent;
+      draft.graph = {
+        entryNodeId: 'opening',
+        nodes: [
+          {
+            kind: 'clip',
+            nodeId: 'opening',
+            clipKey: 'OPENING',
+            name: 'The rain',
+            description: 'A cat waits.\nThe door opens.',
+            interactions: [],
+            exit: { kind: 'auto', nextNodeId: 'choice' },
+          },
+          {
+            kind: 'decision',
+            nodeId: 'choice',
+            exit: {
+              kind: 'choice',
+              decisionId: 'choice',
+              prompt: { 'zh-CN': '' },
+              choices: Array.from({ length: optionCount }, (_, index) => ({
+                choiceId: `option:${index + 1}`,
+                label: {},
+                nextNodeId: null,
+              })),
+            },
+          },
+        ],
+      };
+      const original = structuredClone(draft);
+      const preview = await scopedService(draft, []).service.getWorkingPreview(
+        USER as never,
+        PROJECT_ID,
+      );
+      expect(
+        preview.diagnostics.filter((item) => item.severity === 'error'),
+      ).toEqual([]);
+      const runtime = ExperienceRuntimeManifestSchema.parse(preview.runtime);
+      const opening = runtime.graph.nodes.find(
+        (node) => node.sceneId === 'opening',
+      );
+      if (opening?.kind !== 'scene') throw new Error('Opening missing');
+      expect(opening.clock).toEqual({ kind: 'fixed', durationMs: 4000 });
+      expect(
+        opening.renderers.find(
+          (renderer) => renderer.rendererId === 'core.text',
+        )?.config,
+      ).toMatchObject({
+        title: { 'zh-CN': 'The rain' },
+        body: { 'zh-CN': 'A cat waits.\nThe door opens.' },
+        completion: 'passive',
+      });
+      const choice = opening.renderers.find(
+        (renderer) => renderer.rendererId === 'core.choice',
+      );
+      expect(choice?.config).toMatchObject({
+        prompt: { 'zh-CN': '请选择' },
+        initiallyOpen: false,
+      });
+      expect((choice?.config as { choices: unknown[] }).choices).toHaveLength(
+        optionCount,
+      );
+      expect(opening.eventBindings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            on: { type: 'scene.clock-ended', sourceId: 'opening' },
+          }),
+        ]),
+      );
+      expect(runtime.graph.nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            sceneId: 'preview:unconnected-end',
+            clock: { kind: 'none' },
+            eventBindings: [
+              expect.objectContaining({
+                routes: [
+                  expect.objectContaining({
+                    actions: [
+                      { kind: 'ending.complete', endingId: 'film.complete' },
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ]),
+      );
+      expect(draft).toEqual(original);
+    },
+  );
+
+  it('keeps a connected route and an unconnected option distinct when the prompt is blank', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    draft.graph = {
+      entryNodeId: 'choice',
+      nodes: [
+        {
+          kind: 'decision',
+          nodeId: 'choice',
+          exit: {
+            kind: 'choice',
+            decisionId: 'choice',
+            prompt: {},
+            choices: [
+              {
+                choiceId: 'stay',
+                label: { 'en-US': 'Stay' },
+                nextNodeId: 'last',
+              },
+              {
+                choiceId: 'leave',
+                label: { 'en-US': 'Leave' },
+                nextNodeId: null,
+              },
+            ],
+          },
+        },
+        {
+          kind: 'clip',
+          nodeId: 'last',
+          clipKey: 'LAST',
+          interactions: [],
+          exit: { kind: 'auto', nextNodeId: null },
+        },
+      ],
+    };
+    const preview = await scopedService(draft, []).service.getWorkingPreview(
+      USER as never,
+      PROJECT_ID,
+    );
+    expect(
+      preview.diagnostics.filter((item) => item.severity === 'error'),
+    ).toEqual([]);
+    const runtime = ExperienceRuntimeManifestSchema.parse(preview.runtime);
+    const decision = runtime.graph.nodes.find(
+      (node) => node.sceneId === 'choice',
+    );
+    if (decision?.kind !== 'scene') throw new Error('Choice missing');
+    expect(decision.renderers[0]?.config).toMatchObject({
+      initiallyOpen: true,
+    });
+    expect(
+      decision.eventBindings[0]?.routes.map((route) => route.actions),
+    ).toEqual([
+      [{ kind: 'scene.goto', sceneId: 'last' }],
+      [{ kind: 'scene.goto', sceneId: 'preview:unconnected-end' }],
+    ]);
+  });
+
   /**
    * The playtest runs the same ExperiencePlayer the published game does, so this
    * is where a creator actually sees the cover they just picked. Without it the
