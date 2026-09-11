@@ -96,3 +96,45 @@ it.each([
     vi.clearAllMocks();
   }
 });
+
+it("refreshes owner pending counts when another user submits an application", async () => {
+  const client = new QueryClient();
+  const root = createRoot(document.createElement("div"));
+  const affected = [
+    ["crew", "detail", "crew-a", "alice"],
+    ["crew", "mine", "alice"],
+  ];
+  const unaffected = [
+    ["crew", "detail", "crew-b", "alice"],
+    ["crew", "detail", "crew-a", "bob"],
+    ["crew", "mine", "bob"],
+  ];
+  for (const key of [...affected, ...unaffected])
+    client.setQueryData(key, { pendingApplicationCount: 0 });
+  try {
+    mocks.userId = "alice";
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <ConversationsProvider>content</ConversationsProvider>
+        </QueryClientProvider>
+      )
+    );
+    const handlers = vi.mocked(openConversationRealtime).mock.calls.at(-1)![1];
+    handlers.onNotification?.({
+      id: "new-application",
+      title: "New application",
+      body: "An applicant applied",
+      readAt: null,
+      createdAt: "2026-09-11T00:00:00Z",
+      type: "crew.application.submitted",
+      meta: { crewId: "crew-a" },
+    } as Parameters<NonNullable<typeof handlers.onNotification>>[0]);
+    for (const key of affected) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+    for (const key of unaffected) expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+  } finally {
+    act(() => root.unmount());
+    client.clear();
+    vi.clearAllMocks();
+  }
+});

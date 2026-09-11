@@ -173,6 +173,8 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
           typeof notification.meta?.crewId === "string" ? notification.meta.crewId : null;
         if (crewId) {
           if (notification.type === "crew.application.submitted") {
+            qc.invalidateQueries({ queryKey: [...crewKeys.detail(crewId), uid] });
+            qc.invalidateQueries({ queryKey: [...crewKeys.mine, uid] });
             qc.invalidateQueries({ queryKey: crewKeys.applications(crewId) });
             qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
           }
