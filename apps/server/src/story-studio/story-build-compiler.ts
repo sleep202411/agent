@@ -18,6 +18,7 @@ import {
   compileStoryExperienceManifest,
   type StoryExperienceMediaIdentity,
 } from './story-experience-manifest-compiler';
+import { storyPlaybackCopy } from './story-playback-copy';
 
 export interface FrozenStoryVideoAsset {
   assetId: string;
@@ -295,6 +296,26 @@ export function compileStoryBuild(
           ...input.metadata,
         },
         mediaIdentities,
+        previewSceneCopy:
+          input.channel === 'preview'
+            ? new Map(
+                input.draft.graph.nodes.flatMap((node, index) =>
+                  node.kind === 'clip'
+                    ? [
+                        [
+                          node.nodeId,
+                          {
+                            title:
+                              node.name?.trim() ||
+                              `${storyPlaybackCopy(input.defaultLocale).scene} ${index + 1}`,
+                            description: node.description ?? '',
+                          },
+                        ] as const,
+                      ]
+                    : [],
+                ),
+              )
+            : undefined,
       });
       compiled.diagnostics.forEach((item) =>
         diagnostics.push(

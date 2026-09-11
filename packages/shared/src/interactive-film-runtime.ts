@@ -267,7 +267,7 @@ export const RuntimeChoiceExitSchema = z
     kind: z.literal("choice"),
     decisionId: stableId,
     prompt: localizedText,
-    choices: z.array(ChoiceSchema).min(2).max(6),
+    choices: z.array(ChoiceSchema).min(1).max(6),
   })
   .strict();
 

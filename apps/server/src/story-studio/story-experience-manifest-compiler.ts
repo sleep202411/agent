@@ -6,6 +6,7 @@ import {
 import {
   EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID,
   EXPERIENCE_CORE_CHOICE_RENDERER_ID,
+  EXPERIENCE_CORE_TEXT_RENDERER_ID,
   EXPERIENCE_CORE_RENDERER_API_VERSION,
   EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
   EXPERIENCE_CORE_VIDEO_RENDERER_ID,
@@ -14,6 +15,7 @@ import {
   EXPERIENCE_GESTURE_CAPABILITY,
   ExperienceRuntimeManifestSchema,
   type ExperienceCoreChoiceRendererConfig,
+  type ExperienceCoreTextRendererConfig,
   type ExperienceCoreRendererId,
   type ExperienceCoreVideoRendererConfig,
   type ExperienceCoreWorldModelRendererConfig,
@@ -27,6 +29,7 @@ import {
   type ExperienceRuntimeManifest,
   type ExperienceScene,
 } from '@repo/shared/experience-runtime';
+import { STORY_PREVIEW_SCENE_DURATION_MS } from './story-playback-copy';
 
 export const STORY_CORE_THEME_CONFIG_ASSET_ID =
   'theme:core.film-dark:1' as const;
@@ -51,6 +54,11 @@ export interface StoryExperienceManifestCompilerInput {
     summary?: string | null;
   };
   mediaIdentities: readonly StoryExperienceMediaIdentity[];
+  /** Draft preview copy for scenes whose timeline has no playable media. */
+  previewSceneCopy?: ReadonlyMap<
+    string,
+    { title: string; description: string }
+  >;
 }
 
 export interface StoryExperienceManifestDiagnostic {
@@ -75,6 +83,8 @@ interface NodeCompilationContext {
   usedRendererIds: Set<ExperienceCoreRendererId>;
   syntheticScenes: ExperienceScene[];
   diagnostics: StoryExperienceManifestDiagnostic[];
+  previewSceneCopy?: StoryExperienceManifestCompilerInput['previewSceneCopy'];
+  locales: readonly string[];
 }
 
 type RuntimeInteraction = InteractiveFilmRuntimeNode['interactions'][number];
@@ -115,6 +125,9 @@ export function compileStoryExperienceManifest(
     usedRendererIds,
     syntheticScenes,
     diagnostics,
+    previewSceneCopy:
+      input.release.channel === 'preview' ? input.previewSceneCopy : undefined,
+    locales: input.release.locales,
   };
   const graphNodes: ExperienceGraphNode[] = input.release.nodes.flatMap(
     (node, index) => {
@@ -448,6 +461,70 @@ function compileGraphNode(
     return null;
   }
 
+  const previewCopy = context.previewSceneCopy?.get(node.nodeId);
+  if (node.presentation.sequence.length === 0 && previewCopy) {
+    context.usedRendererIds.add(EXPERIENCE_CORE_TEXT_RENDERER_ID);
+    const renderers: ExperienceRendererInstance[] = [
+      {
+        instanceId: `renderer:${node.nodeId}:text`,
+        rendererId: EXPERIENCE_CORE_TEXT_RENDERER_ID,
+        layer: 0,
+        config: {
+          ...(previewCopy.description.trim()
+            ? { title: localizeScalar(previewCopy.title, context.locales) }
+            : {}),
+          body: localizeScalar(
+            previewCopy.description.trim() || previewCopy.title,
+            context.locales,
+          ),
+          completion: 'passive',
+        } satisfies ExperienceCoreTextRendererConfig,
+        bindings: {},
+      },
+    ];
+    const eventBindings: ExperienceEventBinding[] = [];
+    if (node.exit.kind === 'choice') {
+      compileChoiceExit(
+        node,
+        '',
+        'clock-ended',
+        renderers,
+        eventBindings,
+        context,
+        false,
+        { type: 'scene.clock-ended', sourceId: node.nodeId },
+      );
+    } else {
+      eventBindings.push({
+        bindingId: `binding:${node.nodeId}:clock-ended`,
+        on: { type: 'scene.clock-ended', sourceId: node.nodeId },
+        routes: [
+          {
+            routeId: `route:${node.nodeId}:auto`,
+            actions: node.exit.nextNodeId
+              ? [{ kind: 'scene.goto', sceneId: node.exit.nextNodeId }]
+              : [
+                  {
+                    kind: 'ending.complete',
+                    endingId: STORY_EXPERIENCE_COMPLETION_ID,
+                  },
+                ],
+          },
+        ],
+      });
+    }
+    return {
+      kind: 'scene',
+      sceneId: node.nodeId,
+      clock: { kind: 'fixed', durationMs: STORY_PREVIEW_SCENE_DURATION_MS },
+      renderers,
+      eventBindings,
+      anchors: [],
+      gestures: [],
+      timeline: { cues: [] },
+    };
+  }
+
   const primaryRendererId = EXPERIENCE_CORE_VIDEO_RENDERER_ID;
   const primaryInstanceId = `renderer:${node.nodeId}:video`;
   const primaryOutcomeType = 'media-ended';
@@ -711,6 +788,7 @@ function compileChoiceExit(
   eventBindings: ExperienceEventBinding[],
   context: NodeCompilationContext,
   initiallyOpen = false,
+  openOn?: ExperienceEventBinding['on'],
 ): void {
   if (node.exit.kind !== 'choice') return;
   context.usedRendererIds.add(EXPERIENCE_CORE_CHOICE_RENDERER_ID);
@@ -739,14 +817,15 @@ function compileChoiceExit(
     },
   ];
   if (!initiallyOpen)
-    eventBindings.push(
-      rendererOutcomeBinding(
+    eventBindings.push({
+      ...rendererOutcomeBinding(
         node.nodeId,
         primaryInstanceId,
         primaryOutcomeType,
         [{ routeId: `route:${node.nodeId}:choice-open`, actions: openActions }],
       ),
-    );
+      ...(openOn ? { on: openOn } : {}),
+    });
   eventBindings.push({
     bindingId: `binding:${node.nodeId}:choice-selected`,
     on: {
@@ -807,6 +886,16 @@ function compileRendererRequirements(
         commands: [{ commandType: 'open' }],
       };
     }
+    if (rendererId === EXPERIENCE_CORE_TEXT_RENDERER_ID) {
+      return {
+        rendererId,
+        apiVersion: EXPERIENCE_CORE_RENDERER_API_VERSION,
+        configSchemaVersion: EXPERIENCE_CORE_RENDERER_CONFIG_VERSION,
+        requiredCapabilities: [rendererId],
+        outcomes: [{ outcomeType: 'text-completed' }],
+        commands: [],
+      };
+    }
     if (rendererId === EXPERIENCE_CORE_CHARGE_FEEDBACK_RENDERER_ID) {
       return {
         rendererId,
@@ -827,7 +916,9 @@ function compileRendererRequirements(
         commands: [{ commandType: 'end' }],
       };
     }
-    throw new Error(`Unsupported Story renderer requirement: ${rendererId}`);
+    throw new Error(
+      `Unsupported Story renderer requirement: ${String(rendererId)}`,
+    );
   });
 }
 

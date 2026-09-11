@@ -157,6 +157,7 @@ export class StoryWorkingPreviewService {
     );
     const playableDraft = createPlayableInteractiveStoryDraftContentSchema(
       project.defaultLocale,
+      { preserveUnfinishedChoices: true },
     ).safeParse(draft.content);
     if (!playableDraft.success) {
       const emptySnapshotHash = draftShape.success
