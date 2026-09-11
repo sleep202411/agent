@@ -104,3 +104,35 @@ describe("crewApi", () => {
     );
   });
 });
+
+describe("Crew error response recovery", () => {
+  it.each([
+    ["Upstream temporarily unavailable", "Upstream temporarily unavailable"],
+    [
+      JSON.stringify({ message: ["Deadline is invalid", "Assignee is required"] }),
+      "Deadline is invalid; Assignee is required",
+    ],
+    ["", "Crew API error 503"],
+  ])("preserves readable error content from %j", async (body, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 503 })));
+    await expect(crewApi.get("/crews/example")).rejects.toMatchObject({
+      status: 503,
+      message: expected,
+    });
+  });
+  it("ignores malformed issue entries while retaining valid validation details", () => {
+    expect(
+      new CrewApiError(400, {
+        message: "Validation failed",
+        issues: [
+          null,
+          {},
+          { message: null },
+          { message: 42 },
+          { message: "" },
+          { message: "Missing owner", path: "owner" },
+        ],
+      }).message
+    ).toBe("owner: Missing owner");
+  });
+});
