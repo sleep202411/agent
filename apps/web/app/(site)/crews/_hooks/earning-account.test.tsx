@@ -104,7 +104,7 @@ it("applies a late earning result only to its originating account", async () => 
   expect(client.getQueryState(bob)?.isInvalidated).toBe(false);
 });
 
-it("isolates optimistic decisions and failed-request recovery from another account", async () => {
+it("keeps pending decisions and failed-request recovery separate from another account", async () => {
   let fail!: (error: Error) => void;
   vi.mocked(crewApi.post).mockImplementation(
     () =>
@@ -129,7 +129,7 @@ it("isolates optimistic decisions and failed-request recovery from another accou
       .catch((error: unknown) => error);
     await new Promise((resolve) => setTimeout(resolve, 10));
   });
-  expect(client.getQueryData(alice)).toMatchObject({ pages: [{ items: [{ status: "posted" }] }] });
+  expect(client.getQueryData(alice)).toEqual(page);
   expect(client.getQueryData(bob)).toEqual(page);
   session.id = "bob";
   view.render();
@@ -145,4 +145,82 @@ it("isolates optimistic decisions and failed-request recovery from another accou
   expect(client.getQueryData(alice)).toEqual(page);
   expect(client.getQueryData(bob)).toEqual(bobUpdated);
   expect(client.getQueryState(bob)?.isInvalidated).toBe(false);
+});
+
+it("does not roll back a successful decision when a different decision fails later", async () => {
+  let failFirst!: (error: Error) => void;
+  vi.mocked(crewApi.post)
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          failFirst = reject;
+        })
+    )
+    .mockResolvedValueOnce({ id: "earning-2", status: "posted", version: 2 });
+  const view = mount(() => ({
+    first: useApproveCrewEarning("crew-1"),
+    second: useApproveCrewEarning("crew-1"),
+  }));
+  const key = [...crewKeys.earnings("crew-1", "crew"), "all", "all", "USD", "alice"];
+  client.setQueryData(key, {
+    pages: [
+      {
+        items: [
+          { id: "earning-1", status: "pending", version: 1 },
+          { id: "earning-2", status: "pending", version: 1 },
+        ],
+        nextCursor: null,
+      },
+    ],
+    pageParams: [undefined],
+  });
+  let first!: Promise<unknown>;
+  await act(async () => {
+    first = view
+      .current()
+      .first.mutateAsync({ earningId: "earning-1", expectedVersion: 1 })
+      .catch((error: unknown) => error);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+  await act(async () => {
+    await view.current().second.mutateAsync({ earningId: "earning-2", expectedVersion: 1 });
+  });
+  await act(async () => {
+    failFirst(new Error("Conflict"));
+    await first;
+  });
+  expect(client.getQueryData(key)).toMatchObject({
+    pages: [
+      {
+        items: [
+          { id: "earning-1", status: "pending", version: 1 },
+          { id: "earning-2", status: "posted", version: 2 },
+        ],
+      },
+    ],
+  });
+});
+
+it("removes confirmed earnings from a pending-only list without removing other entries", async () => {
+  vi.mocked(crewApi.post).mockResolvedValue({ id: "earning-1", status: "posted", version: 2 });
+  const view = mount(() => useApproveCrewEarning("crew-1"));
+  const key = [...crewKeys.earnings("crew-1", "crew"), "pending", "all", "USD", "alice"];
+  client.setQueryData(key, {
+    pages: [
+      {
+        items: [
+          { id: "earning-1", status: "pending", version: 1 },
+          { id: "earning-2", status: "pending", version: 1 },
+        ],
+        nextCursor: null,
+      },
+    ],
+    pageParams: [undefined],
+  });
+  await act(async () => {
+    await view.current().mutateAsync({ earningId: "earning-1", expectedVersion: 1 });
+  });
+  expect(client.getQueryData(key)).toMatchObject({
+    pages: [{ items: [{ id: "earning-2", status: "pending", version: 1 }] }],
+  });
 });
