@@ -34,6 +34,7 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import type {
   ConversationCardDTO,
   ConversationDTO,
@@ -184,14 +185,16 @@ export const conversationKeys = {
 // ─── Queries ───────────────────────────────────────────────
 
 export function useInbox(contextType?: ConversationContextType) {
+  const { user } = useCurrentUser();
   return useInfiniteQuery<
     InboxResponse,
     ConversationApiError,
     { items: ConversationCardDTO[]; hasMore: boolean },
-    ReturnType<typeof conversationKeys.inboxFiltered>,
+    readonly [...ReturnType<typeof conversationKeys.inboxFiltered>, string | null],
     string | null
   >({
-    queryKey: conversationKeys.inboxFiltered(contextType),
+    queryKey: [...conversationKeys.inboxFiltered(contextType), user?.id ?? null],
+    enabled: Boolean(user?.id),
     initialPageParam: null,
     queryFn: ({ pageParam, signal }) =>
       api.get<InboxResponse>("/conversations", {

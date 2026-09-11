@@ -19,7 +19,13 @@ import {
   removeOptimisticMessage,
   shouldRetryConversationQuery,
   useConversation,
+  useInbox,
 } from "./use-conversations";
+
+const session = vi.hoisted(() => ({ userId: "alice" as string | null }));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: session.userId ? { id: session.userId } : null }),
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -377,4 +383,58 @@ describe("conversation error responses", () => {
       vi.unstubAllGlobals();
     }
   });
+});
+
+it("isolates cached conversation cards after logout and account switching", async () => {
+  session.userId = "alice";
+  const request = vi.fn().mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          items: [{ id: "private-alice-conversation" }],
+          nextCursor: null,
+        })
+      )
+  );
+  vi.stubGlobal("fetch", request);
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  function Probe() {
+    const inbox = useInbox();
+    return createElement("div", null, JSON.stringify(inbox.data));
+  }
+  const render = () =>
+    act(() =>
+      root.render(createElement(QueryClientProvider, { client: qc }, createElement(Probe)))
+    );
+  const settle = async () => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+  try {
+    render();
+    await settle();
+    expect(host.textContent).toContain("private-alice-conversation");
+    const calls = request.mock.calls.length;
+    session.userId = null;
+    render();
+    await settle();
+    expect(host.textContent).not.toContain("private-alice-conversation");
+    expect(request).toHaveBeenCalledTimes(calls);
+    request.mockImplementation(() => new Promise<Response>(() => {}));
+    session.userId = "bob";
+    render();
+    await settle();
+    expect(host.textContent).not.toContain("private-alice-conversation");
+    expect(request).toHaveBeenCalledTimes(calls + 1);
+  } finally {
+    act(() => root.unmount());
+    qc.clear();
+    vi.unstubAllGlobals();
+    session.userId = "alice";
+  }
 });
