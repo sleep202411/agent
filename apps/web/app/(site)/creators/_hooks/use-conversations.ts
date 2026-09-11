@@ -55,9 +55,11 @@ export class ConversationApiError extends Error {
     public readonly body: unknown
   ) {
     super(
-      (body && typeof body === "object" && "message" in body
-        ? String((body as { message: unknown }).message)
-        : null) ?? `Conversation API error ${status}`
+      (typeof body === "string" && body.trim()
+        ? body
+        : body && typeof body === "object" && "message" in body
+          ? String((body as { message: unknown }).message)
+          : null) ?? `Conversation API error ${status}`
     );
     this.name = "ConversationApiError";
   }
@@ -91,11 +93,12 @@ async function call<T>(method: string, path: string, opts: CallOpts = {}): Promi
   const res = await fetch(url, init);
   if (res.status === 204) return undefined as T;
   if (!res.ok) {
-    let body: unknown;
+    const text = await res.text().catch(() => "");
+    let body: unknown = text;
     try {
-      body = await res.json();
+      body = JSON.parse(text);
     } catch {
-      body = await res.text().catch(() => null);
+      // Plain-text upstream failures are actionable too; consume the body only once.
     }
     throw new ConversationApiError(res.status, body);
   }

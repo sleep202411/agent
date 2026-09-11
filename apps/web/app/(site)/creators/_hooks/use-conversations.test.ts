@@ -346,3 +346,35 @@ describe("conversation query cancellation", () => {
     qc.clear();
   });
 });
+
+describe("conversation error responses", () => {
+  it.each([
+    ["Access revoked by owner", "Access revoked by owner"],
+    [JSON.stringify({ message: "Membership required" }), "Membership required"],
+    ["", "Conversation API error 403"],
+  ])("preserves the server error from %j", async (body, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 403 })));
+    const qc = new QueryClient();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    function Probe() {
+      const query = useConversation("conv-error");
+      return createElement("div", null, query.error?.message);
+    }
+    try {
+      act(() =>
+        root.render(createElement(QueryClientProvider, { client: qc }, createElement(Probe)))
+      );
+      await vi.waitFor(async () => {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+        expect(container.textContent).toBe(expected);
+      });
+    } finally {
+      act(() => root.unmount());
+      qc.clear();
+      vi.unstubAllGlobals();
+    }
+  });
+});
