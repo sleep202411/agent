@@ -1,6 +1,7 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -22,10 +23,21 @@ import type {
   UpdateCrewEpisodeInput,
 } from "./types";
 
+interface ProductionContext {
+  crewId: string;
+  accountUserId: string | null;
+}
+
+function useProductionContext(crewId: string): ProductionContext {
+  const { user } = useCurrentUser();
+  return { crewId, accountUserId: user?.id ?? null };
+}
+
 export function useCrewProductionOverview(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.productionOverview(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.productionOverview(crewId), user?.id ?? null],
+    enabled: enabled && Boolean(crewId) && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewProductionOverviewDTO>(
         `/crews/${encodeURIComponent(crewId)}/production-overview`
@@ -34,9 +46,10 @@ export function useCrewProductionOverview(crewId: string, enabled = true) {
 }
 
 export function useCrewStudioProjectOptions(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.studioProjectOptions(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.studioProjectOptions(crewId), user?.id ?? null],
+    enabled: enabled && Boolean(crewId) && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewStudioProjectOptionsDTO>(
         `/crews/${encodeURIComponent(crewId)}/studio-project-options`
@@ -46,33 +59,41 @@ export function useCrewStudioProjectOptions(crewId: string, enabled = true) {
 
 export function useLinkCrewStudioProject(crewId: string) {
   const queryClient = useQueryClient();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: (projectId: string | null) =>
       crewApi.patch<LinkCrewStudioProjectResult>(
         `/crews/${encodeURIComponent(crewId)}/studio-project`,
         { body: { projectId } }
       ),
-    onSuccess: (result) => {
+    onSuccess: (result, _input, context) => {
+      if (!context?.accountUserId) return;
       queryClient.setQueryData<CrewProductionOverviewDTO>(
-        crewKeys.productionOverview(crewId),
+        [...crewKeys.productionOverview(context.crewId), context.accountUserId],
         (current) => (current ? { ...current, studioProject: result.studioProject } : current)
       );
-      void queryClient.invalidateQueries({ queryKey: crewKeys.studioProjectOptions(crewId) });
+      void queryClient.invalidateQueries({
+        queryKey: [...crewKeys.studioProjectOptions(context.crewId), context.accountUserId],
+      });
     },
   });
 }
 
 export function useUpdateCrewProductionProject(crewId: string) {
   const queryClient = useQueryClient();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: (input: UpdateCrewProductionProjectInput) =>
       crewApi.patch<UpdateCrewProductionProjectResult>(
         `/crews/${encodeURIComponent(crewId)}/production-overview/properties`,
         { body: input }
       ),
-    onSuccess: (result) => {
+    onSuccess: (result, _input, context) => {
+      if (!context?.accountUserId) return;
       queryClient.setQueryData<CrewProductionOverviewDTO>(
-        crewKeys.productionOverview(crewId),
+        [...crewKeys.productionOverview(context.crewId), context.accountUserId],
         (current) =>
           current && result.project.version >= current.project.version
             ? { ...current, project: result.project, labels: result.labels }
@@ -84,15 +105,18 @@ export function useUpdateCrewProductionProject(crewId: string) {
 
 export function useCreateCrewProductionResource(crewId: string) {
   const queryClient = useQueryClient();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: (input: CreateCrewProductionResourceInput) =>
       crewApi.post<CrewProductionResourceDTO>(
         `/crews/${encodeURIComponent(crewId)}/production-resources`,
         { body: input }
       ),
-    onSuccess: (resource) => {
+    onSuccess: (resource, _input, context) => {
+      if (!context?.accountUserId) return;
       queryClient.setQueryData<CrewProductionOverviewDTO>(
-        crewKeys.productionOverview(crewId),
+        [...crewKeys.productionOverview(context.crewId), context.accountUserId],
         (current) =>
           current
             ? {
@@ -110,12 +134,15 @@ export function useCreateCrewProductionResource(crewId: string) {
 
 export function useDeleteCrewProductionResource(crewId: string) {
   const queryClient = useQueryClient();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: (resourceId: string) =>
       crewApi.delete<void>(`/crew-production-resources/${encodeURIComponent(resourceId)}`),
-    onSuccess: (_result, resourceId) => {
+    onSuccess: (_result, resourceId, context) => {
+      if (!context?.accountUserId) return;
       queryClient.setQueryData<CrewProductionOverviewDTO>(
-        crewKeys.productionOverview(crewId),
+        [...crewKeys.productionOverview(context.crewId), context.accountUserId],
         (current) =>
           current
             ? {
@@ -129,9 +156,10 @@ export function useDeleteCrewProductionResource(crewId: string) {
 }
 
 export function useCrewProductionActivity(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: crewKeys.productionActivity(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.productionActivity(crewId), user?.id ?? null],
+    enabled: enabled && Boolean(crewId) && Boolean(user),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewProductionActivityPageDTO>(
@@ -144,42 +172,59 @@ export function useCrewProductionActivity(crewId: string, enabled = true) {
 
 export function useCreateCrewProductionActivity(crewId: string) {
   const queryClient = useQueryClient();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: (input: CreateCrewProductionActivityInput) =>
       crewApi.post<CrewProductionActivityDTO>(
         `/crews/${encodeURIComponent(crewId)}/production-activity`,
         { body: input }
       ),
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: crewKeys.productionActivity(crewId) }),
-        queryClient.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) }),
-      ]),
+    onSuccess: (_result, _input, context) => {
+      if (!context?.accountUserId) return;
+      return Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: [...crewKeys.productionActivity(context.crewId), context.accountUserId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [...crewKeys.productionOverview(context.crewId), context.accountUserId],
+        }),
+      ]);
+    },
   });
 }
 
 export function useCrewEpisodes(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.episodes(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.episodes(crewId), user?.id ?? null],
+    enabled: enabled && Boolean(crewId) && Boolean(user),
     queryFn: () => crewApi.get<CrewEpisodeDTO[]>(`/crews/${encodeURIComponent(crewId)}/episodes`),
   });
 }
 
-function useInvalidateProduction(crewId: string) {
+function useInvalidateProduction() {
   const queryClient = useQueryClient();
-  return () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) }),
-      queryClient.invalidateQueries({ queryKey: crewKeys.episodes(crewId) }),
-      queryClient.invalidateQueries({ queryKey: crewKeys.tasks(crewId) }),
-      queryClient.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) }),
+  return (context?: ProductionContext) => {
+    if (!context?.accountUserId) return Promise.resolve([]);
+    return Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: [...crewKeys.productionOverview(context.crewId), context.accountUserId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: [...crewKeys.episodes(context.crewId), context.accountUserId],
+      }),
+      queryClient.invalidateQueries({ queryKey: crewKeys.tasks(context.crewId) }),
+      queryClient.invalidateQueries({ queryKey: crewKeys.taskSummary(context.crewId) }),
     ]);
+  };
 }
 
 export function useSaveCrewProductionDocument(crewId: string) {
   const queryClient = useQueryClient();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: ({
       expectedVersion,
       document,
@@ -191,9 +236,10 @@ export function useSaveCrewProductionDocument(crewId: string) {
         `/crews/${encodeURIComponent(crewId)}/production-overview/document`,
         { body: { expectedVersion, document } }
       ),
-    onSuccess: (page) => {
+    onSuccess: (page, _input, context) => {
+      if (!context?.accountUserId) return;
       queryClient.setQueryData<CrewProductionOverviewDTO>(
-        crewKeys.productionOverview(crewId),
+        [...crewKeys.productionOverview(context.crewId), context.accountUserId],
         (current) =>
           current && page.version >= current.page.version ? { ...current, page } : current
       );
@@ -202,30 +248,36 @@ export function useSaveCrewProductionDocument(crewId: string) {
 }
 
 export function useCreateCrewEpisode(crewId: string) {
-  const invalidate = useInvalidateProduction(crewId);
+  const invalidate = useInvalidateProduction();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: (input: CreateCrewEpisodeInput) =>
       crewApi.post<CrewEpisodeDTO>(`/crews/${encodeURIComponent(crewId)}/episodes`, {
         body: input,
       }),
-    onSuccess: invalidate,
+    onSuccess: (_result, _input, context) => invalidate(context),
   });
 }
 
 export function useUpdateCrewEpisode(crewId: string) {
-  const invalidate = useInvalidateProduction(crewId);
+  const invalidate = useInvalidateProduction();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: ({ episodeId, input }: { episodeId: string; input: UpdateCrewEpisodeInput }) =>
       crewApi.patch<CrewEpisodeDTO>(`/crew-episodes/${encodeURIComponent(episodeId)}`, {
         body: input,
       }),
-    onSuccess: invalidate,
+    onSuccess: (_result, _input, context) => invalidate(context),
   });
 }
 
 export function useReorderCrewEpisode(crewId: string) {
-  const invalidate = useInvalidateProduction(crewId);
+  const invalidate = useInvalidateProduction();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: ({
       episodeId,
       expectedVersion,
@@ -240,22 +292,26 @@ export function useReorderCrewEpisode(crewId: string) {
       crewApi.post<CrewEpisodeDTO>(`/crew-episodes/${encodeURIComponent(episodeId)}/reorder`, {
         body: { expectedVersion, beforeEpisodeId, afterEpisodeId },
       }),
-    onSettled: invalidate,
+    onSettled: (_result, _error, _input, context) => invalidate(context),
   });
 }
 
 export function useDeleteCrewEpisode(crewId: string) {
-  const invalidate = useInvalidateProduction(crewId);
+  const invalidate = useInvalidateProduction();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: (episodeId: string) =>
       crewApi.delete<void>(`/crew-episodes/${encodeURIComponent(episodeId)}`),
-    onSuccess: invalidate,
+    onSuccess: (_result, _input, context) => invalidate(context),
   });
 }
 
 export function useSubmitEpisodeDelivery(crewId: string) {
-  const invalidate = useInvalidateProduction(crewId);
+  const invalidate = useInvalidateProduction();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: ({
       episodeId,
       assetNodeId,
@@ -269,13 +325,15 @@ export function useSubmitEpisodeDelivery(crewId: string) {
         `/crew-episodes/${encodeURIComponent(episodeId)}/deliveries`,
         { body: { assetNodeId, note } }
       ),
-    onSuccess: invalidate,
+    onSuccess: (_result, _input, context) => invalidate(context),
   });
 }
 
 export function useReviewEpisodeDelivery(crewId: string) {
-  const invalidate = useInvalidateProduction(crewId);
+  const invalidate = useInvalidateProduction();
+  const initiatingContext = useProductionContext(crewId);
   return useMutation({
+    onMutate: () => initiatingContext,
     mutationFn: ({
       deliveryId,
       decision,
@@ -289,6 +347,6 @@ export function useReviewEpisodeDelivery(crewId: string) {
         `/crew-episode-deliveries/${encodeURIComponent(deliveryId)}/review`,
         { body: { decision, note } }
       ),
-    onSuccess: invalidate,
+    onSuccess: (_result, _input, context) => invalidate(context),
   });
 }

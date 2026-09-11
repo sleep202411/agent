@@ -13,11 +13,12 @@ import {
   useDeleteCrewProductionResource,
 } from "./use-production";
 
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "alice" } }) }));
 vi.mock("./api", () => ({ crewApi: { post: vi.fn(), delete: vi.fn(), patch: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let client: QueryClient;
-const key = crewKeys.productionOverview("crew");
+const key = [...crewKeys.productionOverview("crew"), "alice"];
 function mount<T>(hook: () => T) {
   client = new QueryClient();
   root = createRoot(document.createElement("div"));
@@ -174,7 +175,7 @@ it("a failed activity post preserves newer feed and overview results", async () 
       })
   );
   const hook = mount(() => useCreateCrewProductionActivity("crew"));
-  const activityKey = crewKeys.productionActivity("crew");
+  const activityKey = [...crewKeys.productionActivity("crew"), "alice"];
   client.setQueryData(activityKey, {
     pages: [{ items: [], nextCursor: null }],
     pageParams: [undefined],
@@ -203,7 +204,7 @@ it("a failed activity post preserves newer feed and overview results", async () 
 it("refreshes activity and overview after the server confirms a post", async () => {
   vi.mocked(crewApi.post).mockResolvedValue({ id: "confirmed" });
   const hook = mount(() => useCreateCrewProductionActivity("crew"));
-  const activityKey = crewKeys.productionActivity("crew");
+  const activityKey = [...crewKeys.productionActivity("crew"), "alice"];
   client.setQueryData(activityKey, { pages: [], pageParams: [] });
   await act(async () => {
     await hook().mutateAsync({ kind: "comment", content: { type: "doc", content: [] } });
@@ -221,7 +222,7 @@ it("a failed reorder preserves episodes received while the request was pending",
       })
   );
   const hook = mount(() => useReorderCrewEpisode("crew"));
-  const episodeKey = crewKeys.episodes("crew");
+  const episodeKey = [...crewKeys.episodes("crew"), "alice"];
   client.setQueryData(episodeKey, [{ id: "episode", version: 1 }]);
   let failed!: Promise<unknown>;
   await act(async () => {
