@@ -2604,10 +2604,10 @@
           "ready": "分镜已就绪",
           "review": "审阅分镜",
           "eyebrow": "分镜提案",
-          "description": "请审阅序列、镜头、时长和提示词。批准后只保存方案，不生成媒体，也不消耗点数。",
+          "description": "请审阅分镜、镜头、时长和提示词。批准后只保存方案，不生成媒体，也不消耗点数。",
           "approve": "批准分镜",
           "saving": "正在保存分镜…",
-          "savingHint": "正在记录你的批准，本次只保存分镜序列和镜头提示词。"
+          "savingHint": "正在记录你的批准，本次只保存分镜和镜头提示词。"
         },
         "patch": {
           "ready": "故事更新已就绪",
@@ -2632,7 +2632,7 @@
           "characters": "角色",
           "locations": "场景",
           "props": "道具",
-          "sequences": "序列",
+          "sequences": "分镜",
           "clips": "镜头",
           "seconds": "秒"
         },
@@ -2642,7 +2642,7 @@
           "structure": "剧本场景与分支",
           "productionNotes": "制作说明",
           "assetSpecs": "可复用资产规格",
-          "storyboard": "序列与镜头"
+          "storyboard": "分镜与镜头"
         },
         "assetKinds": {
           "character": "角色",
@@ -2665,14 +2665,14 @@
         "noAssetSpecs": "本提案不需要可复用的资产规格。",
         "sequenceMeta": "{count} 个镜头 · {seconds} 秒",
         "storyboardTable": {
-          "sequence": "序列",
+          "sequence": "分镜",
           "shots": "镜头",
           "duration": "时长",
           "seconds": "{value} 秒",
           "viewAll": "查看全部分镜",
-          "more": "还有 {count} 个序列",
-          "dialogTitle": "分镜详情 · {count} 个序列",
-          "dialogDescription": "查看本次提案中的全部序列、镜头、时间、提示词和决策提示点。",
+          "more": "还有 {count} 个分镜",
+          "dialogTitle": "分镜详情 · {count} 个分镜",
+          "dialogDescription": "查看本次提案中的全部分镜、镜头、时间、提示词和决策提示点。",
           "shot": "镜头",
           "type": "类型",
           "timing": "时间",
@@ -2994,7 +2994,7 @@
     "storyboardPage": {
       "nodeDescription": "描述",
       "pageTitle": "分镜 · 影游工作室",
-      "pageDescription": "编辑本章的情节序列、镜头、提示点和资产绑定。",
+      "pageDescription": "编辑本章的分镜、镜头、提示点和资产绑定。",
       "loading": "正在加载分镜…",
       "emptyChapter": "本章还没有情节节点。",
       "emptyHint": "在情节树中添加场景后，分镜会在这里逐场景展开。",
@@ -3002,7 +3002,7 @@
       "retry": "重试",
       "plotNode": "情节节点 {index}",
       "clipCount": "{count} 个片段",
-      "noClips": "此序列没有片段。",
+      "noClips": "此分镜没有片段。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。准备好后，可在已保存的片段上选择“生成”。",
       "seconds": "{value} 秒",
       "options": "选项",
@@ -3027,7 +3027,7 @@
       "loadError": "无法加载时间轴。",
       "retry": "重试",
       "emptyTitle": "还没有可剪辑的分镜时间轴",
-      "emptyDescription": "请先准备分镜序列，再进入剪辑器。",
+      "emptyDescription": "请先准备分镜，再进入剪辑器。",
       "backToStoryboard": "返回分镜",
       "saved": "已保存",
       "saving": "正在保存…",
@@ -3057,8 +3057,8 @@
       "prompt": "提示词",
       "timeline": "时间轴",
       "timelineZoom": "时间轴缩放",
-      "play": "播放序列",
-      "pause": "暂停序列",
+      "play": "播放分镜",
+      "pause": "暂停分镜",
       "restart": "回到开头",
       "zoomOut": "缩小时间轴",
       "zoomIn": "放大时间轴",

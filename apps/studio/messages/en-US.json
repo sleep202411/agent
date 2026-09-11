@@ -2604,10 +2604,10 @@
           "ready": "Storyboard ready",
           "review": "Review Storyboard",
           "eyebrow": "Storyboard proposal",
-          "description": "Review the sequences, clips, timing, and prompts. Approving saves the plan only; no media is generated or credits spent.",
+          "description": "Review the storyboards, clips, timing, and prompts. Approving saves the plan only; no media is generated or credits spent.",
           "approve": "Approve Storyboard",
           "saving": "Saving Storyboard…",
-          "savingHint": "Recording your approval and saving storyboard sequences and clip prompts only."
+          "savingHint": "Recording your approval and saving storyboards and clip prompts only."
         },
         "patch": {
           "ready": "Story update ready",
@@ -2632,7 +2632,7 @@
           "characters": "Characters",
           "locations": "Scenes",
           "props": "Props",
-          "sequences": "Sequences",
+          "sequences": "Storyboards",
           "clips": "Clips",
           "seconds": "Seconds"
         },
@@ -2642,7 +2642,7 @@
           "structure": "Screenplay scenes and branches",
           "productionNotes": "Production notes",
           "assetSpecs": "Reusable Asset Specs",
-          "storyboard": "Sequences and clips"
+          "storyboard": "Storyboards and clips"
         },
         "assetKinds": {
           "character": "Character",
@@ -2665,14 +2665,14 @@
         "noAssetSpecs": "This proposal does not require reusable Asset Specs.",
         "sequenceMeta": "{count, plural, one {# clip} other {# clips}} · {seconds}s",
         "storyboardTable": {
-          "sequence": "Sequence",
+          "sequence": "Storyboard",
           "shots": "Shots",
           "duration": "Duration",
           "seconds": "{value}s",
           "viewAll": "View all Storyboard",
           "more": "+{count} more",
-          "dialogTitle": "Storyboard details · {count} sequences",
-          "dialogDescription": "Review every sequence, shot, timing, prompt, and decision cue in this proposal.",
+          "dialogTitle": "Storyboard details · {count} storyboards",
+          "dialogDescription": "Review every storyboard, shot, timing, prompt, and decision cue in this proposal.",
           "shot": "Shot",
           "type": "Type",
           "timing": "Timing",
@@ -2994,7 +2994,7 @@
     "storyboardPage": {
       "nodeDescription": "Description",
       "pageTitle": "Storyboard · Interactive Film Studio",
-      "pageDescription": "Edit chapter-local Plot sequences, clips, cues, and Asset bindings.",
+      "pageDescription": "Edit chapter-local storyboards, clips, cues, and Asset bindings.",
       "loading": "Loading Storyboard…",
       "emptyChapter": "No scenes in this chapter yet.",
       "emptyHint": "Add scenes on the Plot Tree and the storyboard unfolds here scene by scene.",
@@ -3002,7 +3002,7 @@
       "retry": "Try again",
       "plotNode": "Plot node {index}",
       "clipCount": "{count, plural, one {# clip} other {# clips}}",
-      "noClips": "This sequence has no clips.",
+      "noClips": "This storyboard has no clips.",
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
       "seconds": "{value}s",
       "options": "Options",
@@ -3027,7 +3027,7 @@
       "loadError": "The timeline could not be loaded.",
       "retry": "Try again",
       "emptyTitle": "No storyboard timelines yet",
-      "emptyDescription": "Prepare a Storyboard sequence before opening the editor.",
+      "emptyDescription": "Prepare a storyboard before opening the editor.",
       "backToStoryboard": "Back to Storyboard",
       "saved": "Saved",
       "saving": "Saving…",
@@ -3057,8 +3057,8 @@
       "prompt": "Prompt",
       "timeline": "Timeline",
       "timelineZoom": "Timeline zoom",
-      "play": "Play sequence",
-      "pause": "Pause sequence",
+      "play": "Play storyboard",
+      "pause": "Pause storyboard",
       "restart": "Return to start",
       "zoomOut": "Zoom out",
       "zoomIn": "Zoom in",
