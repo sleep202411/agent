@@ -246,7 +246,6 @@ export function TaskQuickCreate({
         dueAt: dateEndIso(dueDate || null),
         startAt: dateStartIso(draft?.startDate ?? null),
         estimatePoints: draft?.estimatePoints ?? null,
-        computeBudgetPoints: draft?.computeBudgetPoints ?? null,
         revisionLimit: draft?.revisionLimit ?? null,
         cycleId: resolvedCycleId || null,
         episodeId,

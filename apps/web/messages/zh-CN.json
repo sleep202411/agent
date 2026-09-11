@@ -5433,7 +5433,7 @@
     "dependencies": "任务依赖",
     "blockedSubmitHint": "请先完成所有前置任务，再提交审核。",
     "budget": "积分预算",
-    "taskLimits": "预算与返修策略",
+    "taskLimits": "返修策略",
     "revisionLimit": "返修上限",
     "revisionUnlimited": "不限",
     "revisionPolicy": "返修轮次",

@@ -5433,7 +5433,7 @@
     "dependencies": "任務依賴",
     "blockedSubmitHint": "請先完成所有前置任務，再提交審核。",
     "budget": "積分預算",
-    "taskLimits": "預算與返修策略",
+    "taskLimits": "返修策略",
     "revisionLimit": "返修上限",
     "revisionUnlimited": "不限",
     "revisionPolicy": "返修輪次",

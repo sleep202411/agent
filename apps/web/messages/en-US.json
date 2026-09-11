@@ -5433,7 +5433,7 @@
     "dependencies": "Dependencies",
     "blockedSubmitHint": "Complete every blocking task before submitting.",
     "budget": "Point budget",
-    "taskLimits": "Budget and revision policy",
+    "taskLimits": "Revision policy",
     "revisionLimit": "Revision limit",
     "revisionUnlimited": "Unlimited",
     "revisionPolicy": "Revision rounds",

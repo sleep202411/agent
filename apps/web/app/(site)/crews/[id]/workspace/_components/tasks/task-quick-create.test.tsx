@@ -251,6 +251,7 @@ describe("TaskQuickCreate", () => {
         assignees: [{ userId: "member-1", currency: "USD" }],
       })
     );
+    expect(state.create.mock.calls[0]![0]).not.toHaveProperty("computeBudgetPoints");
   });
   it.each(["Task title", "Task brief"])(
     "preserves edits to %s made while AI preparation runs",
@@ -319,7 +320,8 @@ describe("TaskQuickCreate", () => {
         const label =
           field === "priority" ? "Priority" : field === "assignee" ? "Assignees" : "Cycle";
         await act(async () => click(document.querySelector(`button[aria-label="${label}"]`)!));
-        const text = field === "priority" ? "priority.low" : field === "assignee" ? "Isaac" : "Chosen cycle";
+        const text =
+          field === "priority" ? "priority.low" : field === "assignee" ? "Isaac" : "Chosen cycle";
         const option = [...document.querySelectorAll('[role="option"]')].find(
           (item) => item.textContent?.trim() === text
         );
