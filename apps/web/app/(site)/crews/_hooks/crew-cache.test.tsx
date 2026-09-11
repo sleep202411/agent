@@ -28,6 +28,10 @@ import { useAcceptCrewInvitation } from "./use-invitations";
 import { useApproveCrewEarning, useReverseCrewEarning } from "./use-earnings";
 import { usePayCrewPayout, useVoidCrewPayout } from "./use-payouts";
 
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: "alice" } }),
+}));
+
 vi.mock("./api", async (original) => {
   const actual = await original<typeof import("./api")>();
   return { ...actual, crewApi: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } };
@@ -131,8 +135,8 @@ describe("crew finance cache refresh", () => {
     ["void", useVoidCrewPayout],
   ] as const)("refreshes payout details and audit events after %s", async (_action, hook) => {
     const current = mount(() => hook("crew-1"));
-    const detailKey = crewKeys.payout("payout-1");
-    const listKey = crewKeys.payouts("crew-1", "crew");
+    const detailKey = [...crewKeys.payout("payout-1"), "alice"];
+    const listKey = [...crewKeys.payouts("crew-1", "crew"), "all", "USD", "alice"];
     client.setQueryData(detailKey, { events: [] });
     client.setQueryData(listKey, {});
     vi.mocked(crewApi.post).mockResolvedValue({ id: "payout-1", version: 2 });
