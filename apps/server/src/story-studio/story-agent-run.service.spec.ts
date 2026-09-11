@@ -322,7 +322,7 @@ describe('StoryAgentRunService', () => {
           ],
         },
       },
-      select: { id: true },
+      select: { id: true, permissionMode: true },
     });
     expect(tx.agentOsExternalHandoffRegistration.create).toHaveBeenCalledWith({
       data: {
@@ -336,10 +336,57 @@ describe('StoryAgentRunService', () => {
         sourceToolId: 'story.author',
         startedMessage: 'I am shaping the proposal now.',
         completionMessage: 'The proposal is ready for review.',
-        continuationPlan: SOURCE_CONTINUATION_PLAN,
+        continuationPlan: {
+          ...SOURCE_CONTINUATION_PLAN,
+          autoApplyTextStages: false,
+        },
       },
     });
   });
+
+  it.each([
+    { permissionMode: 'full', experience: undefined, expected: true },
+    { permissionMode: 'smart', experience: undefined, expected: false },
+    { permissionMode: 'ask', experience: undefined, expected: false },
+    { permissionMode: 'full', experience: 'mobile_h5', expected: false },
+  ])(
+    'derives text auto-apply from trusted $permissionMode / $experience',
+    async ({ permissionMode, experience, expected }) => {
+      const tx = proposalTransaction([]);
+      tx.agentOsRun.findFirst.mockResolvedValue({
+        id: SOURCE_AGENT_RUN_ID,
+        permissionMode,
+      });
+      const { service } = serviceWith(tx);
+      await service.createAuthoringRun(
+        USER,
+        WORKSPACE_ID,
+        PROJECT_ID,
+        briefInput({
+          conversationId: SOURCE_AGENT_CONVERSATION_ID,
+          sourceAgentRunId: SOURCE_AGENT_RUN_ID,
+          sourceAgentTurnId: SOURCE_AGENT_TURN_ID,
+          sourceAgentToolCallId: 'call_story_author_full',
+          sourceStartedMessage: 'Preparing the requested text.',
+          sourceCompletionMessage: 'The text is ready.',
+          sourceContinuationPlan: {
+            ...SOURCE_CONTINUATION_PLAN,
+            ...(experience ? { experience } : {}),
+            autoApplyTextStages: !expected,
+          },
+        }),
+      );
+      expect(tx.agentOsExternalHandoffRegistration.create).toHaveBeenCalledWith(
+        {
+          data: expect.objectContaining({
+            continuationPlan: expect.objectContaining({
+              autoApplyTextStages: expected,
+            }),
+          }),
+        },
+      );
+    },
+  );
 
   it('replays an accepted source handoff after its Agent run becomes terminal', async () => {
     const source = {
@@ -2533,6 +2580,67 @@ describe('StoryAgentRunService', () => {
       }),
     );
   });
+
+  it.each([
+    [
+      StoryAgentRunStatus.authoring,
+      StoryAgentRunStatus.failed,
+      'STORY_AGENT_AUTHORING_TIMEOUT',
+    ],
+    [
+      StoryAgentRunStatus.proposed,
+      StoryAgentRunStatus.stale,
+      'STORY_AGENT_PROPOSAL_EXPIRED',
+    ],
+  ])(
+    'expires %s as %s without confusing execution and approval deadlines',
+    async (status, expectedStatus, expectedCode) => {
+      let current = runRow({
+        status,
+        expiresAt: new Date(NOW.getTime() - 1),
+        ...(status === StoryAgentRunStatus.authoring
+          ? {
+              proposal: briefRecord(),
+              authoringMode: StoryAgentAuthoringMode.screenplay_required,
+            }
+          : {}),
+      });
+      const findMany = jest
+        .fn()
+        .mockResolvedValueOnce([{ id: RUN_ID, storyProjectId: PROJECT_ID }])
+        .mockResolvedValueOnce([{ id: RUN_ID }])
+        .mockImplementation(() => Promise.resolve([current]));
+      const update = jest.fn(({ data }: { data: Partial<typeof current> }) => {
+        current = { ...current, ...data };
+        return Promise.resolve(current);
+      });
+      const tx = {
+        $queryRaw: jest
+          .fn()
+          .mockResolvedValueOnce([{ now: NOW }])
+          .mockResolvedValue([freeWriteState()]),
+        storyAgentRun: { findMany, update },
+      };
+      const { service, realtime } = serviceWith(tx);
+
+      await service.expireProposals();
+
+      expect(current).toMatchObject({
+        status: expectedStatus,
+        errorCode: expectedCode,
+        completedAt: NOW,
+        leaseOwner: null,
+        leaseExpiresAt: null,
+      });
+      if (status === StoryAgentRunStatus.authoring) {
+        expect(update.mock.calls[0][0].data.authoringStages).toBe(
+          Prisma.DbNull,
+        );
+        expect(current.errorDetail).not.toContain('editor confirmed');
+      }
+      expect(realtime.publishCommitted).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('excludes authoring and proposed statuses from the terminal fallback head', async () => {
     const cancelled = runRow({

@@ -792,38 +792,47 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     ).resolves.toBe(0);
   });
 
-  it.each([
-    {
-      assetCase: 'empty',
-      assetPlan: { assetSpecs: [] },
-      storyboardImagePrompt: 'A city guard opens a sealed order in heavy rain.',
-      expectedAssetCount: 0,
-      expectedBindingCount: 0,
-    },
-    {
-      assetCase: 'non-empty',
-      assetPlan: {
-        assetSpecs: [
-          {
-            stableKey: 'asset.character.guard',
-            kind: 'character' as const,
-            name: 'Guard',
-            description: 'A weary city guard in rain-dark armour.',
-            imagePrompt: 'Neutral full-body reference of the city guard.',
-            sourceCharacterId: 'guard',
-            sourceNodeIds: ['city-gate'],
-          },
-        ],
+  it.each(
+    [
+      {
+        assetCase: 'empty',
+        assetPlan: { assetSpecs: [] },
+        storyboardImagePrompt:
+          'A city guard opens a sealed order in heavy rain.',
+        expectedAssetCount: 0,
+        expectedBindingCount: 0,
       },
-      storyboardImagePrompt:
-        '@asset.character.guard opens a sealed order in heavy rain.',
-      expectedAssetCount: 1,
-      expectedBindingCount: 1,
-    },
-  ])(
-    'advances Script, Plot, $assetCase Assets, and Storyboard through four independent approvals',
+      {
+        assetCase: 'non-empty',
+        assetPlan: {
+          assetSpecs: [
+            {
+              stableKey: 'asset.character.guard',
+              kind: 'character' as const,
+              name: 'Guard',
+              description: 'A weary city guard in rain-dark armour.',
+              imagePrompt: 'Neutral full-body reference of the city guard.',
+              sourceCharacterId: 'guard',
+              sourceNodeIds: ['city-gate'],
+            },
+          ],
+        },
+        storyboardImagePrompt:
+          '@asset.character.guard opens a sealed order in heavy rain.',
+        expectedAssetCount: 1,
+        expectedBindingCount: 1,
+      },
+    ].flatMap((fixture) =>
+      ['smart', 'full'].map((permissionMode) => ({
+        ...fixture,
+        permissionMode,
+      })),
+    ),
+  )(
+    'advances Script, Plot, $assetCase Assets, and Storyboard in $permissionMode mode',
     async ({
       assetPlan,
+      permissionMode,
       storyboardImagePrompt,
       expectedAssetCount,
       expectedBindingCount,
@@ -885,7 +894,39 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         ],
       };
 
+      const fullAccess = permissionMode === 'full';
+      const agentRuns = new Map<string, string>();
       const fileStage = async (suffix: string) => {
+        const agentRunId = randomUUID();
+        const conversationId = randomUUID();
+        const turnId = randomUUID();
+        const toolCallId = 'call_' + randomUUID();
+        await prisma.agentOsRun.create({
+          data: {
+            id: agentRunId,
+            projectId: fixture.projectId,
+            conversationId,
+            actorId: fixture.user.userId,
+            modelProfileId: 'integration-test',
+            status: 'running',
+            projectKind: 'story',
+            workbenchMode: 'story.canvas',
+            permissionMode,
+            skillSnapshot: {
+              schemaVersion: 'project-skill-resolution/v1',
+              resolutionId: randomUUID(),
+              ownerKind: 'story',
+              projectId: fixture.projectId,
+              projectRevision: 0,
+              scope: 'agent_prompt',
+              workbenchMode: 'story.canvas',
+              sourceSurface: 'agent_os:story.canvas',
+              resolvedAt: new Date().toISOString(),
+              skills: [],
+              checksum: '0'.repeat(64),
+            },
+          },
+        });
         const filed = await fixture.service.createAuthoringRun(
           fixture.user,
           fixture.workspaceId,
@@ -896,9 +937,40 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
             summary: 'Review only the ' + suffix + ' stage.',
             brief: 'Create the next reviewable ' + suffix + ' stage.',
             idempotencyKey: fixture.prefix + ':stage:' + suffix,
-            conversationId: fixture.prefix + ':conversation:' + suffix,
+            conversationId,
+            ...(fullAccess
+              ? {
+                  sourceAgentRunId: agentRunId,
+                  sourceAgentTurnId: turnId,
+                  sourceAgentToolCallId: toolCallId,
+                  sourceStartedMessage: 'Preparing the requested stage.',
+                  sourceCompletionMessage: 'The stage is ready.',
+                  sourceContinuationPlan: {
+                    continueThrough: 'storyboard' as const,
+                    title: 'The Sealed Order',
+                    summary: 'Prepare text stages.',
+                    brief: 'Complete the four text stages.',
+                  },
+                }
+              : {}),
           },
         );
+        agentRuns.set(filed.id, agentRunId);
+        if (fullAccess)
+          await prisma.agentOsRun.update({
+            where: { id: agentRunId },
+            data: {
+              status: 'waiting_for_external',
+              pendingExternal: {
+                kind: 'external_job',
+                jobId: filed.id,
+                startedMessage: 'Preparing the requested stage.',
+                turnId,
+                toolCallId,
+                toolId: 'story.author',
+              },
+            },
+          });
         const worker = fixture.prefix + ':author:' + suffix;
         expect(await fixture.service.claimAuthoringRuns(worker, 1)).toEqual([
           { id: filed.id },
@@ -912,13 +984,14 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         return { filed, worker, job: load.job };
       };
       const approveStage = async (runId: string, suffix: string) => {
-        await fixture.service.confirm(
-          fixture.user,
-          fixture.workspaceId,
-          fixture.projectId,
-          runId,
-          fixture.prefix + ':confirm:' + suffix,
-        );
+        if (!fullAccess)
+          await fixture.service.confirm(
+            fixture.user,
+            fixture.workspaceId,
+            fixture.projectId,
+            runId,
+            fixture.prefix + ':confirm:' + suffix,
+          );
         const worker = fixture.prefix + ':apply:' + suffix;
         expect(await fixture.service.claimApplyingRuns(worker, 1)).toEqual([
           { id: runId },
@@ -927,10 +1000,75 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         await expect(
           prisma.storyAgentRun.findUniqueOrThrow({ where: { id: runId } }),
         ).resolves.toMatchObject({ status: StoryAgentRunStatus.succeeded });
+        if (fullAccess) {
+          const continuation = new StoryAgentRunContinuationWorkerService(
+            prisma as unknown as PrismaService,
+            fixture.agentOsJournal,
+          );
+          await continuation.drainOnce(1);
+          await continuation.drainOnce(1);
+          const events = await prisma.agentOsRunEvent.findMany({
+            where: { runId: agentRuns.get(runId)! },
+          });
+          expect(
+            events.filter((event) => event.type === 'ApprovalRequired'),
+          ).toHaveLength(0);
+          expect(
+            events.filter((event) => event.type === 'ApprovalResolved'),
+          ).toHaveLength(0);
+          const artifacts = events.filter(
+            (event) => event.type === 'ArtifactCreated',
+          );
+          expect(artifacts).toHaveLength(1);
+          expect(artifacts[0].data).toMatchObject({
+            artifactId: runId,
+            status: 'active',
+            artifact: { stage: suffix },
+          });
+          const agentRun = await prisma.agentOsRun.findUniqueOrThrow({
+            where: { id: agentRuns.get(runId)! },
+          });
+          const updates = events.filter(
+            (event) => event.type === 'ArtifactUpdated',
+          );
+          expect(updates).toHaveLength(1);
+          expect(updates[0].data).toMatchObject({
+            artifactId: runId,
+            status: 'applied',
+          });
+          expect(agentRun.pendingApproval).toBeNull();
+          expect(agentRun.continuationCommand).toMatchObject({
+            permissionMode: 'full',
+            storyContinuation: {
+              completedStage: suffix,
+              plan: {
+                continueThrough: 'storyboard',
+                autoApplyTextStages: true,
+              },
+            },
+          });
+        }
       };
 
       const script = await fileStage('script');
       expect(script.job.targetStage).toBe('script');
+      if (fullAccess) {
+        const invalid = await fixture.service.completeAuthoring(
+          script.filed.id,
+          script.worker,
+          {
+            screenplay: { ...screenplay, entrySceneId: 'missing-entry' },
+            authoredAgainst: script.job.snapshot,
+          },
+        );
+        expect(invalid.kind).toBe('invalid');
+        const unchanged = await prisma.storyAgentRun.findUniqueOrThrow({
+          where: { id: script.filed.id },
+        });
+        expect(unchanged.status).toBe(StoryAgentRunStatus.authoring);
+        expect(unchanged.sourceAutoAppliedAt).toBeNull();
+        expect(unchanged.confirmedAt).toBeNull();
+      }
       const scriptCompletion = await fixture.service.completeAuthoring(
         script.filed.id,
         script.worker,
@@ -942,7 +1080,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       expect(scriptCompletion).toMatchObject({
         kind: 'completed',
         run: {
-          status: StoryAgentRunStatus.proposed,
+          status: fullAccess
+            ? StoryAgentRunStatus.applying
+            : StoryAgentRunStatus.proposed,
           proposal: { schemaVersion: 'story-screenplay-proposal-v1' },
         },
       });
@@ -986,7 +1126,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       expect(plotCompletion).toMatchObject({
         kind: 'completed',
         run: {
-          status: StoryAgentRunStatus.proposed,
+          status: fullAccess
+            ? StoryAgentRunStatus.applying
+            : StoryAgentRunStatus.proposed,
           proposal: {
             schemaVersion: 'story-plot-proposal-v1',
             title: 'The Sealed Order — Plot Tree',
@@ -1039,7 +1181,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       expect(assetCompletion).toMatchObject({
         kind: 'completed',
         run: {
-          status: StoryAgentRunStatus.proposed,
+          status: fullAccess
+            ? StoryAgentRunStatus.applying
+            : StoryAgentRunStatus.proposed,
           proposal: {
             schemaVersion: 'story-asset-proposal-v1',
             title: 'The Sealed Order — Asset Specs',
@@ -1109,7 +1253,9 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
       expect(storyboardCompletion).toMatchObject({
         kind: 'completed',
         run: {
-          status: StoryAgentRunStatus.proposed,
+          status: fullAccess
+            ? StoryAgentRunStatus.applying
+            : StoryAgentRunStatus.proposed,
           proposal: {
             schemaVersion: 'story-storyboard-proposal-v1',
             title: 'The Sealed Order — Storyboard Specs',
@@ -1184,6 +1330,16 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
         },
         ready: true,
       });
+      await expect(
+        prisma.storyProductionGeneration.count({
+          where: { storyProjectId: fixture.projectId },
+        }),
+      ).resolves.toBe(0);
+      await expect(
+        prisma.storyGenerationBatch.count({
+          where: { storyProjectId: fixture.projectId },
+        }),
+      ).resolves.toBe(0);
       expect(assetCount).toBe(expectedAssetCount);
       expect(sequences[0]?.clips[0]?.assetBindings).toHaveLength(
         expectedBindingCount,
@@ -1437,6 +1593,37 @@ describePostgres('StoryAgentRunService PostgreSQL integration', () => {
     ).resolves.toBe(8);
     expect(schedule).toHaveBeenCalledTimes(1);
     expect(schedule).toHaveBeenCalledWith(handoff.agentRunId);
+  });
+
+  it('keeps a pending smart proposal behind its original approval after switching to full', async () => {
+    const fixture = await createFixture(prisma, fixtureWorkspaceIds);
+    const handoff = await createExternalHandoffFixture(prisma, fixture);
+    await prisma.agentOsRun.update({
+      where: { id: handoff.agentRunId },
+      data: { permissionMode: 'full' },
+    });
+    const worker = new StoryAgentRunContinuationWorkerService(
+      prisma as unknown as PrismaService,
+      fixture.agentOsJournal,
+    );
+    await worker.drainOnce(1);
+    const run = await prisma.storyAgentRun.findUniqueOrThrow({
+      where: { id: handoff.storyRunId },
+    });
+    expect(run.status).toBe(StoryAgentRunStatus.proposed);
+    expect(run.sourceAutoAppliedAt).toBeNull();
+    expect(run.confirmedAt).toBeNull();
+    await expect(
+      prisma.agentOsRun.findUniqueOrThrow({
+        where: { id: handoff.agentRunId },
+      }),
+    ).resolves.toMatchObject({ status: 'waiting_for_approval' });
+    const state = await fixture.productionPlans.getProductionState(
+      fixture.user,
+      fixture.projectId,
+      fixture.chapterId,
+    );
+    expect(state.script.status).toBe('missing');
   });
 
   it('atomically closes the Story row and Agent approval when a pending v2 proposal expires', async () => {

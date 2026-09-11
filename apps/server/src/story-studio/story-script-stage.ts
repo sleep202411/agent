@@ -7,6 +7,7 @@ import {
   type StudioDocumentOperation,
 } from '@prisma/client';
 import {
+  STORY_SCREENPLAY_DOCUMENT_SCHEMA_VERSION,
   StoryScreenplayDocumentSchema,
   StoryScreenplaySchema,
   type StoryScreenplay,
@@ -44,6 +45,8 @@ export interface ApprovedStoryScreenplaySnapshot {
 export interface StoryScriptSourceSnapshot extends StoryScriptHead {
   /** Exact current Y.XmlFragment serialization used only as model source. */
   sourceText: string;
+  /** Plain-text blocks from the same CRDT head, without XML markup or generated prose. */
+  document: StoryScreenplayDocument;
 }
 
 export interface DerivedStoryScreenplayLineage {
@@ -125,10 +128,80 @@ export async function readStoryScriptSourceSnapshot(
       hash: hashScript(doc),
       hasContent: true,
       sourceText,
+      document: screenplayDocumentFromXml(content),
     };
   } finally {
     doc.destroy();
   }
+}
+
+export function screenplayDocumentFromXml(
+  content: Y.XmlFragment,
+): StoryScreenplayDocument {
+  const blocks: StoryScreenplayDocument['blocks'] = [];
+  const textOf = (node: Y.XmlElement | Y.XmlText | Y.XmlHook): string => {
+    if (node instanceof Y.XmlText) {
+      const delta: unknown = node.toDelta();
+      if (!Array.isArray(delta)) throw new Error('Invalid Script text delta.');
+      return delta
+        .map((part: unknown) => {
+          if (
+            !part ||
+            typeof part !== 'object' ||
+            !('insert' in part) ||
+            typeof part.insert !== 'string'
+          )
+            throw new Error(
+              'Unsupported embedded Script content; convert it to text before extraction.',
+            );
+          return part.insert;
+        })
+        .join('');
+    }
+    if (!(node instanceof Y.XmlElement))
+      throw new Error(
+        'Unsupported embedded Script content; convert it to text before extraction.',
+      );
+    if (node.nodeName === 'hardBreak') return '\n';
+    return node
+      .toArray()
+      .map((child) => textOf(child))
+      .join('');
+  };
+  const visit = (node: Y.XmlElement | Y.XmlText | Y.XmlHook): void => {
+    if (!(node instanceof Y.XmlElement) && !(node instanceof Y.XmlText)) {
+      throw new Error(
+        'Unsupported embedded Script content; convert it to text before extraction.',
+      );
+    }
+    if (
+      node instanceof Y.XmlElement &&
+      !['paragraph', 'heading'].includes(node.nodeName)
+    ) {
+      if (node.length === 0)
+        throw new Error(
+          `Unsupported Script element: ${node.nodeName}. Convert it to text before extraction.`,
+        );
+      node.toArray().forEach((child) => visit(child));
+      return;
+    }
+    const text = textOf(node);
+    if (!text.trim()) return;
+    const level =
+      node instanceof Y.XmlElement ? Number(node.getAttribute('level')) : 0;
+    blocks.push(
+      node instanceof Y.XmlElement &&
+        node.nodeName === 'heading' &&
+        [1, 2, 3].includes(level)
+        ? { kind: 'heading', level: level as 1 | 2 | 3, text }
+        : { kind: 'paragraph', text },
+    );
+  };
+  content.toArray().forEach((node) => visit(node));
+  return StoryScreenplayDocumentSchema.parse({
+    schemaVersion: STORY_SCREENPLAY_DOCUMENT_SCHEMA_VERSION,
+    blocks,
+  });
 }
 
 /**

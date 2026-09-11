@@ -1,9 +1,11 @@
 import {
   assertStoryPatchComplexity,
   StoryPatchOperationsSchema,
+  StoryPatchOperationShapeSchema,
   StoryPatchPreflightError,
   type StoryPatchOperation,
 } from '@repo/shared/story-agent';
+import { z } from 'zod';
 import { InteractiveStoryDraftContentSchema } from './interactive-film.schema';
 import type { InteractiveStoryDraftContent } from './interactive-film.schema';
 
@@ -43,6 +45,15 @@ type StoryGraphNode = InteractiveStoryDraftContent['graph']['nodes'][number];
 type StoryCharacter =
   InteractiveStoryDraftContent['storyBible']['characters'][number];
 
+// A screenplay can compile 200 scenes, 100 characters, and three operations
+// for overview/entry/notes (decision nodes are expanded during execution). This server-only
+// path retains aggregate complexity and domain validation; public patches
+// continue to use their smaller operation-list contract.
+const CompiledScreenplayOperationsSchema = z
+  .array(StoryPatchOperationShapeSchema)
+  .min(1)
+  .max(303);
+
 /**
  * Apply a typed Story patch as a pure, deterministic operation. It never mutates
  * the caller's draft/layout and performs no I/O. The database service owns CAS,
@@ -52,11 +63,16 @@ export function executeStoryPatch(input: {
   draft: InteractiveStoryDraftContent;
   layout: StoryAgentCanvasLayoutSnapshot;
   operations: readonly StoryPatchOperation[];
+  compiledScreenplay?: boolean;
 }): StoryPatchExecutionResult {
   let operations: StoryPatchOperation[];
   try {
     assertStoryPatchComplexity(input.operations);
-    operations = StoryPatchOperationsSchema.parse(input.operations);
+    operations = (
+      input.compiledScreenplay
+        ? CompiledScreenplayOperationsSchema
+        : StoryPatchOperationsSchema
+    ).parse(input.operations);
   } catch (error) {
     if (error instanceof StoryPatchPreflightError) {
       throw new StoryPatchExecutionError({
