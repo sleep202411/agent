@@ -2367,6 +2367,10 @@
     }
   },
   "invite": {
+    "alreadyJoinedTitle": "您已加入",
+    "alreadyJoinedBody": "您已有「{name}」的访问权限。",
+    "enterProject": "进入项目",
+    "enterWorkspace": "进入工作区",
     "loading": "正在加载邀请…",
     "joinedTeam": "已加入团队",
     "joinedProject": "已加入项目",

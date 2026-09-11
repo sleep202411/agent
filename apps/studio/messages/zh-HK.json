@@ -2367,6 +2367,10 @@
     }
   },
   "invite": {
+    "alreadyJoinedTitle": "您已加入",
+    "alreadyJoinedBody": "您已有「{name}」的存取權限。",
+    "enterProject": "進入專案",
+    "enterWorkspace": "進入工作區",
     "loading": "正在載入邀請…",
     "joinedTeam": "已加入團隊",
     "joinedProject": "已加入專案",

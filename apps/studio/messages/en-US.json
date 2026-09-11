@@ -2367,6 +2367,10 @@
     }
   },
   "invite": {
+    "alreadyJoinedTitle": "You’re already a member",
+    "alreadyJoinedBody": "You already have access to {name}.",
+    "enterProject": "Open project",
+    "enterWorkspace": "Open workspace",
     "loading": "Loading invitation…",
     "joinedTeam": "Joined team",
     "joinedProject": "Joined project",
