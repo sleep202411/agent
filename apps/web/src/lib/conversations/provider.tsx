@@ -66,7 +66,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     userIdRef.current = uid;
 
     clientRef.current?.close();
-    const recovery = createConversationRecoveryCoordinator(qc);
+    const recovery = createConversationRecoveryCoordinator(qc, uid);
     clientRef.current = openConversationRealtime(uid, {
       onMessage: (data) => {
         // Do not patch a realtime frame directly over an in-flight
@@ -85,7 +85,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
           typeof window !== "undefined" &&
           window.location.pathname.endsWith(`/messages/${data.conversationId}`);
         const timelineQuery = qc.getQueryCache().find({
-          queryKey: conversationKeys.messages(data.conversationId),
+          queryKey: conversationKeys.messages(data.conversationId, uid),
           exact: true,
         });
         const timelineVisible =
@@ -98,7 +98,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         if (onInboxConversation || timelineVisible) return;
 
         const detail = qc.getQueryData<ConversationDTO>(
-          conversationKeys.detail(data.conversationId)
+          conversationKeys.detail(data.conversationId, uid)
         );
         const preview =
           data.message.type === "text"
@@ -122,7 +122,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
       },
       onContextChanged: (data) => {
         qc.invalidateQueries({
-          queryKey: conversationKeys.detail(data.conversationId),
+          queryKey: conversationKeys.detail(data.conversationId, uid),
         });
         qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
       },
