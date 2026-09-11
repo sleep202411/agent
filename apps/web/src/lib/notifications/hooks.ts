@@ -49,6 +49,7 @@ export function useRecentNotifications(limit = 10) {
   return useQuery({
     queryKey: [...notificationKeys.list, limit] as const,
     queryFn: () => listNotifications({ limit }),
+    refetchInterval: UNREAD_COUNT_POLL_MS,
     staleTime: 30_000,
   });
 }
