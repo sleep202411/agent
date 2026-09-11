@@ -4488,6 +4488,8 @@
     "logEpisodeApproved": "{actor} 完成了本集驗收",
     "inviteLinkTabAccount": "按帳號",
     "inviteLinkTabLink": "邀請連結",
+    "inviteLinkKindMember": "Crew 成員身份",
+    "inviteLinkKindCommunity": "僅社區聊天",
     "inviteLinkIntro": "任何人開啟這個連結都能加入劇組，權限就是你在這裡選的。",
     "inviteLinkExpiryLabel": "有效期",
     "inviteLinkExpiryNever": "永不過期",

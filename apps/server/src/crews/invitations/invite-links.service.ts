@@ -173,7 +173,6 @@ export class CrewInviteLinksService {
     const links = await this.prisma.crewInviteLink.findMany({
       where: {
         crewId,
-        kind: CrewInviteLinkKind.member,
         revokedAt: null,
       },
       orderBy: { createdAt: 'desc' },

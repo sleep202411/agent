@@ -4488,6 +4488,8 @@
     "logEpisodeApproved": "{actor} finalized this episode",
     "inviteLinkTabAccount": "By account",
     "inviteLinkTabLink": "Invite link",
+    "inviteLinkKindMember": "Crew membership",
+    "inviteLinkKindCommunity": "Community chat only",
     "inviteLinkIntro": "Anyone who opens this link can join the crew with the access you pick here.",
     "inviteLinkExpiryLabel": "Expires",
     "inviteLinkExpiryNever": "Never",

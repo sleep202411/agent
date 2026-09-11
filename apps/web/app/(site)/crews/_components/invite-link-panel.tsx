@@ -228,6 +228,11 @@ function InviteLinkSession({ crewId, canGrantPolicies, open }: InviteLinkPanelPr
               className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.02] px-3 py-2 ring-1 ring-white/[0.06]"
             >
               <div className="min-w-0">
+                <p className="m-0 text-xs font-medium text-foreground">
+                  {t(
+                    link.kind === "community" ? "inviteLinkKindCommunity" : "inviteLinkKindMember"
+                  )}
+                </p>
                 <p className="m-0 truncate text-xs text-foreground">
                   {link.maxUses === null
                     ? t("inviteLinkUsageSummary", { used: link.useCount })

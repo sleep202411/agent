@@ -296,3 +296,46 @@ describe('invite link revocation serialization', () => {
     },
   );
 });
+
+it('lists both community and member links without returning their bearer secrets', async () => {
+  const rows = ['member', 'community'].map((kind) => ({
+    id: kind,
+    kind,
+    crewId: 'crew',
+    policyKeys: [],
+    revokedAt: null,
+    expiresAt: null,
+    maxUses: null,
+    useCount: 0,
+    createdAt: new Date(),
+    createdByUserId: 'owner',
+    tokenHash: 'secret-hash',
+  }));
+  const prisma = {
+    crewInviteLink: {
+      findMany: jest.fn(({ where }: { where: { kind?: string } }) =>
+        Promise.resolve(
+          rows.filter((row) => !where.kind || row.kind === where.kind),
+        ),
+      ),
+    },
+  };
+  const authorization = { require: jest.fn().mockResolvedValue({}) };
+  const service = new CrewInviteLinksService(
+    prisma as never,
+    authorization as never,
+    {} as never,
+    {} as never,
+    {} as never,
+  );
+  const result = await service.list('crew', 'owner');
+  expect(result.map((link) => link.kind)).toEqual(['member', 'community']);
+  expect(
+    result.every((link) => !('tokenHash' in link) && !('token' in link)),
+  ).toBe(true);
+  expect(authorization.require).toHaveBeenCalledWith(
+    'crew',
+    'owner',
+    'members.invite',
+  );
+});

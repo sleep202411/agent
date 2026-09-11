@@ -2,15 +2,26 @@ import { act, StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { InviteLinkPanel } from "./invite-link-panel";
-const mocks = vi.hoisted(() => ({ userId: "alice" as string | null, create: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  userId: "alice" as string | null,
+  create: vi.fn(),
+  revoke: vi.fn(),
+  links: [] as Array<{
+    id: string;
+    kind: string;
+    maxUses: null;
+    useCount: number;
+    expiresAt: null;
+  }>,
+}));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: mocks.userId ? { id: mocks.userId } : null }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/app/(site)/crews/_hooks/use-invite-links", () => ({
   useCreateCrewInviteLink: () => ({ mutateAsync: mocks.create }),
-  useCrewInviteLinks: () => ({ data: [] }),
-  useRevokeCrewInviteLink: () => ({ mutateAsync: vi.fn() }),
+  useCrewInviteLinks: () => ({ data: mocks.links }),
+  useRevokeCrewInviteLink: () => ({ mutateAsync: mocks.revoke }),
   crewInviteUrl: (token: string) => `https://example.test/${token}`,
 }));
 vi.mock("@/components/ui/dialog", () => {
@@ -82,3 +93,29 @@ it.each(["reopen", "crew", "account"] as const)(
     }
   }
 );
+
+it("identifies and revokes community links from the management list", async () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  mocks.links = ["member", "community"].map((kind) => ({
+    id: kind,
+    kind,
+    maxUses: null,
+    useCount: 0,
+    expiresAt: null,
+  }));
+  mocks.revoke.mockResolvedValue(undefined);
+  try {
+    act(() => root.render(<InviteLinkPanel crewId="crew" open canGrantPolicies={false} />));
+    expect(host.textContent).toContain("inviteLinkKindMember");
+    expect(host.textContent).toContain("inviteLinkKindCommunity");
+    await act(async () =>
+      host.querySelectorAll<HTMLButtonElement>('button[aria-label="inviteLinkRevoke"]')[1]!.click()
+    );
+    expect(mocks.revoke).toHaveBeenCalledWith("community");
+  } finally {
+    act(() => root.unmount());
+    mocks.links = [];
+    vi.resetAllMocks();
+  }
+});
