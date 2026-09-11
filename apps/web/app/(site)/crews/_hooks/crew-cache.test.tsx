@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { crewApi, CrewApiError } from "./api";
 import { crewKeys } from "./shared";
 import {
+  useBatchUpdateCrewTasks,
   useUpdateCrewTaskView,
   useDeleteCrewTaskLabel,
   useDeleteCrewTaskCycle,
@@ -195,4 +196,19 @@ it("refreshes saved-view results when its filters change without a new view ID",
   });
   expect(client.getQueryState(view)?.isInvalidated).toBe(true);
   expect(client.getQueryState(other)?.isInvalidated).toBe(false);
+});
+
+it("updates cached task versions and details after a bulk edit without relying on realtime", async () => {
+  const current = mount(() => useBatchUpdateCrewTasks("crew-1"));
+  const detail = crewKeys.task("task-1");
+  const other = crewKeys.task("task-2");
+  const updated = { id: "task-1", crewId: "crew-1", version: 2, priority: "high" };
+  client.setQueryData(detail, { ...updated, version: 1, priority: "low" });
+  client.setQueryData(other, { id: "task-2", version: 1 });
+  vi.mocked(crewApi.patch).mockResolvedValue([updated]);
+  await act(async () => {
+    await current().mutateAsync({ taskIds: ["task-1"], priority: "high" });
+  });
+  expect(client.getQueryData(detail)).toEqual(updated);
+  expect(client.getQueryData(other)).toEqual({ id: "task-2", version: 1 });
 });

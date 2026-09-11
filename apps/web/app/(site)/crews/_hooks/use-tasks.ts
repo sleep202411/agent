@@ -496,7 +496,10 @@ export function useBatchUpdateCrewTasks(crewId: string) {
       crewApi.patch<CrewTaskDTO[]>(`/crews/${encodeURIComponent(crewId)}/tasks/batch`, {
         body: input,
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) }),
+    onSuccess: (tasks) => {
+      for (const task of tasks) qc.setQueryData(crewKeys.task(task.id), task);
+      qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+    },
   });
 }
 
