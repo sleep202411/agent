@@ -73,7 +73,6 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
 
   if (!enabled) return { kind: "idle" };
   if (q.isLoading || q.isFetching) return { kind: "loading" };
-  if (q.data) return { kind: "found", user: q.data };
   if (q.error) {
     if (q.error instanceof CrewApiError) {
       if (q.error.status === 404) return { kind: "notFound" };
@@ -90,6 +89,7 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
       status: null,
     };
   }
+  if (q.data) return { kind: "found", user: q.data };
   return { kind: "idle" };
 }
 

@@ -2,14 +2,17 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { crewApi } from "./api";
+import { CrewApiError, crewApi } from "./api";
 import { useUserLookup, useUserDisplays } from "./use-users";
 
 const session = vi.hoisted(() => ({ id: "alice" as string | null }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: session.id ? { id: session.id } : null }),
 }));
-vi.mock("./api", () => ({ crewApi: { get: vi.fn(), post: vi.fn() } }));
+vi.mock("./api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./api")>()),
+  crewApi: { get: vi.fn(), post: vi.fn() },
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root;
 let client: QueryClient;
@@ -85,3 +88,25 @@ it("does not send authenticated lookups while signed out", async () => {
   expect(view.current().lookup.kind).toBe("idle");
   expect(view.current().displays.size).toBe(0);
 });
+
+it.each([404, 403, 503])(
+  "uses the latest lookup failure (%s) instead of a cached match",
+  async (status) => {
+    vi.mocked(crewApi.get).mockResolvedValue({ userId: "1", nickname: "Previous match" });
+    const view = mount(() => useUserLookup({ query: "person@example.com" }));
+    await settle();
+    expect(view.current().kind).toBe("found");
+    vi.mocked(crewApi.get).mockRejectedValue(
+      new CrewApiError(status, { message: "Latest explanation" })
+    );
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: ["users", "lookup"] });
+    });
+    await settle();
+    expect(view.current()).toEqual(
+      status === 404
+        ? { kind: "notFound" }
+        : { kind: "error", status, message: "Latest explanation" }
+    );
+  }
+);
