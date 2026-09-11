@@ -59,6 +59,12 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
     expect(calls).toEqual(['satoken=FRESH']);
   });
 
+  it('bypassCache re-fetches Java so levelIds are not stale', async () => {
+    await svc.validateToken('satoken=FRESH');
+    await svc.validateToken('satoken=FRESH', { bypassCache: true });
+    expect(calls).toEqual(['satoken=FRESH', 'satoken=FRESH']);
+  });
+
   it('reuses a valid token across cookie reordering and unrelated cookies', async () => {
     await svc.validateToken('locale=en-US; satoken=FRESH');
     const user = await svc.validateToken(

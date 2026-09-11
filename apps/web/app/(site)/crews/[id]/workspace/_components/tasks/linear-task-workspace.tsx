@@ -46,6 +46,7 @@ import {
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -640,43 +641,56 @@ export function LinearTaskWorkspace({
         />
       ) : null}
 
-      {selectedTaskId && taskQuery.isLoading ? (
-        <div className="absolute inset-0 z-40 grid place-items-center bg-black/45 backdrop-blur-sm">
-          <IconLoader2 className="size-5 animate-spin" />
-        </div>
-      ) : null}
-      {taskQuery.isError && selectedTaskId ? (
-        <div className="absolute inset-0 z-40 grid place-content-center gap-4 bg-[#090a0c] p-6">
-          <p role="alert">
-            {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
-          </p>
-          <button type="button" onClick={() => selectTask(null)}>
-            {t("issues")}
-          </button>
-        </div>
-      ) : null}
-      {taskQuery.data && !taskQuery.isError ? (
-        <div className="absolute inset-0 z-40 bg-[#090a0c]">
-          <TaskIssueDetail
-            key={taskQuery.data.id}
-            task={taskQuery.data}
-            members={members}
-            isOwner={isOwner}
-            canWork={
-              isOwner ||
-              Boolean(
-                viewerUserId &&
-                taskQuery.data.assignees.some((item) => item.userId === viewerUserId)
-              )
-            }
-            viewerUserId={viewerUserId}
-            displays={displays}
-            onClose={() => selectTask(null)}
-            onSubmit={() => setSubmitTask(taskQuery.data)}
-            onReviewed={() => undefined}
-          />
-        </div>
-      ) : null}
+      <Sheet
+        open={Boolean(selectedTaskId)}
+        onOpenChange={(open) => {
+          if (!open) selectTask(null);
+        }}
+      >
+        <SheetContent
+          side="right"
+          aria-describedby={undefined}
+          className="w-full sm:w-[min(85vw,960px)] sm:max-w-none bg-[#090a0c] p-0 text-[#d5d8dd]"
+        >
+          <SheetTitle className="sr-only">{taskQuery.data?.title ?? t("issues")}</SheetTitle>
+          {taskQuery.isLoading ? (
+            <div className="grid flex-1 place-content-center gap-4">
+              <IconLoader2 className="mx-auto size-5 animate-spin" />
+              <button type="button" onClick={() => selectTask(null)}>
+                {t("issues")}
+              </button>
+            </div>
+          ) : taskQuery.isError ? (
+            <div className="grid flex-1 place-content-center gap-4 p-6">
+              <p role="alert">
+                {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
+              </p>
+              <button type="button" onClick={() => selectTask(null)}>
+                {t("issues")}
+              </button>
+            </div>
+          ) : taskQuery.data ? (
+            <TaskIssueDetail
+              key={taskQuery.data.id}
+              task={taskQuery.data}
+              members={members}
+              isOwner={isOwner}
+              canWork={
+                isOwner ||
+                Boolean(
+                  viewerUserId &&
+                  taskQuery.data.assignees.some((item) => item.userId === viewerUserId)
+                )
+              }
+              viewerUserId={viewerUserId}
+              displays={displays}
+              onClose={() => selectTask(null)}
+              onSubmit={() => setSubmitTask(taskQuery.data)}
+              onReviewed={() => undefined}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
 
       {isOwner ? (
         <TaskQuickCreate

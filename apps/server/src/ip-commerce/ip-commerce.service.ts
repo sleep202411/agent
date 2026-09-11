@@ -892,7 +892,21 @@ export class IpCommerceService {
       });
     }
 
+    if (input.ipId !== undefined && input.ipId !== existing.ipId) {
+      const ip = await this.prisma.ip.findFirst({
+        where: { id: input.ipId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+    }
+
     const nextStatus = input.status ?? existing.status;
+    const nextIpId = input.ipId ?? existing.ipId;
     const nextImageAssetId =
       input.imageAssetId !== undefined
         ? input.imageAssetId
@@ -931,7 +945,7 @@ export class IpCommerceService {
           });
         const heroFallback =
           existing.placementKey === IpDiscoveryPlacementKey.ip_plaza_hero
-            ? await this.resolveIpHeroFallback(tx, existing.ipId)
+            ? await this.resolveIpHeroFallback(tx, nextIpId)
             : { ipCoverReady: false, ipHasTitle: false };
         assertDiscoveryEnablement(existing.placementKey, nextStatus, {
           imageAssetId: nextImageAssetId,
@@ -944,6 +958,7 @@ export class IpCommerceService {
       return tx.ipDiscoveryRecommendation.update({
         where: { id: recommendationId },
         data: {
+          ...(input.ipId !== undefined ? { ipId: input.ipId } : {}),
           ...(input.status !== undefined
             ? {
                 status: input.status as IpDiscoveryRecommendationStatus,

@@ -76,6 +76,20 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * Java envelopes often carry both `msg` (short status, e.g. "失败") and
+ * `message` (actionable detail, e.g. "该等级已有待审核申请"). Prefer the
+ * detailed field so toasts match DESIGN.md § Error Toasts.
+ */
+export function envelopeErrorMessage(
+  body: { msg?: unknown; message?: unknown },
+  fallback: string
+): string {
+  const detailed = typeof body.message === "string" ? body.message.trim() : "";
+  const short = typeof body.msg === "string" ? body.msg.trim() : "";
+  return detailed || short || fallback;
+}
+
 // ============ Core ============
 
 /**
@@ -237,7 +251,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
       rawBody = await response.text();
       try {
         const body = JSON.parse(rawBody) as Record<string, unknown>;
-        message = String(body.msg || body.message || "") || message;
+        message = envelopeErrorMessage(body, message);
       } catch {
         if (rawBody.trim()) message = rawBody.trim();
       }
@@ -264,7 +278,7 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     if (isUnauthEnvelope) notifyUnauthorized();
     throw new ApiRequestError(
       body.code ?? "UNKNOWN",
-      body.msg || body.message || "Request failed",
+      envelopeErrorMessage(body, "Request failed"),
       isUnauthEnvelope ? 401 : 200,
       JSON.stringify(body)
     );
@@ -343,7 +357,7 @@ async function upload<T>(
   if (!isSuccess) {
     throw new ApiRequestError(
       body.code ?? "UNKNOWN",
-      body.msg || body.message || "Upload failed",
+      envelopeErrorMessage(body, "Upload failed"),
       200
     );
   }

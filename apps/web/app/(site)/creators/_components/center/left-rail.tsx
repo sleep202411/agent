@@ -153,7 +153,7 @@ export function CreatorLeftRail({
           </div>
         ) : (
           <TooltipProvider delayDuration={150}>
-            <ul className="grid grid-cols-3 gap-3">
+            <ul className="grid grid-cols-3 gap-4">
               {levels.map((l) => (
                 <LevelBadge key={l.id} level={l} />
               ))}
@@ -300,11 +300,11 @@ function LevelBadge({ level }: { level: CreatorLevel }) {
           <button
             type="button"
             aria-label={level.name}
-            className="flex w-full flex-col items-center gap-1.5 rounded-lg p-1 outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex w-full flex-col items-center gap-2 rounded-xl p-2 outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring"
           >
             <span
               className={cn(
-                "flex size-12 items-center justify-center",
+                "flex size-16 items-center justify-center",
                 imageOk && level.iconUrl
                   ? "overflow-visible bg-transparent"
                   : "overflow-hidden rounded-full bg-primary/10 text-primary"
@@ -315,15 +315,15 @@ function LevelBadge({ level }: { level: CreatorLevel }) {
                 <img
                   src={level.iconUrl}
                   alt={level.name}
-                  className="size-11 object-contain"
+                  className="size-full object-contain"
                   loading="lazy"
                   onError={() => setImageOk(false)}
                 />
               ) : (
-                <IconCircleCheck className="size-6" />
+                <IconCircleCheck className="size-8" />
               )}
             </span>
-            <span className="line-clamp-1 text-[10px] font-medium text-muted-foreground">
+            <span className="line-clamp-1 text-[11px] font-medium text-muted-foreground">
               {level.name}
             </span>
           </button>

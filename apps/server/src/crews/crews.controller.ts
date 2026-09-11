@@ -54,8 +54,17 @@ export class CrewsController {
 
   @Get('creation-eligibility')
   @Header('Cache-Control', 'no-store')
-  creationEligibility(@CurrentUser() user: AuthUser) {
-    return this.svc.creationEligibility(user);
+  async creationEligibility(
+    @CurrentUser() user: AuthUser,
+    @ViewerCookie() cookie: string,
+  ) {
+    // Level grants (AI 制片人 / Java level 13) land in Java immediately, but
+    // AuthGuard may still serve a 5-minute cached AuthUser without them.
+    // Bypass so eligibility matches the live profile without forcing re-login.
+    const fresh = await this.authService.validateToken(cookie, {
+      bypassCache: true,
+    });
+    return this.svc.creationEligibility(fresh ?? user);
   }
 
   @Post()
@@ -66,7 +75,10 @@ export class CrewsController {
     @Body(new ZodValidationPipe(CreateCrewSchema)) body: CreateCrewInput,
   ) {
     await this.assertCreateAllowed(cookie);
-    return this.svc.create(user, body);
+    const fresh = await this.authService.validateToken(cookie, {
+      bypassCache: true,
+    });
+    return this.svc.create(fresh ?? user, body);
   }
 
   @Public()

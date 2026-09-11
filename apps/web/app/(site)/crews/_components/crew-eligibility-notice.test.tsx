@@ -14,6 +14,11 @@ vi.mock("@/src/i18n/i18n", () => ({
     const copy = dictionaries[state.locale as keyof typeof dictionaries].crew.creationRequirements;
     return copy[key as keyof typeof copy];
   },
+  useLocale: () => state.locale,
+}));
+vi.mock("@/app/(site)/creators/_components/center/dialogs/level-apply-dialog", () => ({
+  AI_PRODUCER_LEVEL_ID: 13,
+  LevelApplyDialog: () => null,
 }));
 const container = document.createElement("div");
 document.body.appendChild(container);
@@ -50,12 +55,12 @@ describe("isolated Crew qualification notice", () => {
       const url = new URL(link.href);
       expect(url.protocol).toBe("mailto:");
       expect(url.pathname).toBe("business@fizzdragon.com");
-      expect(url.searchParams.get("subject")).toBe(
-        "AI Producer Qualification Review – [Your Name / Organisation]"
-      );
-      const button = dialog.querySelector("button")!;
-      expect(button.textContent).toBe(copy.dismiss);
-      await act(async () => button.click());
+      expect(url.searchParams.get("subject")).toBe(copy.subject);
+      const buttons = Array.from(dialog.querySelectorAll("button"));
+      const dismiss = buttons.find((button) => button.textContent === copy.dismiss);
+      expect(dismiss).toBeTruthy();
+      expect(buttons.some((button) => button.textContent === copy.applyCta)).toBe(true);
+      await act(async () => dismiss!.click());
       expect(change).toHaveBeenCalledWith(false);
       await act(async () =>
         root.render(<CrewEligibilityNotice open={false} onOpenChange={change} />)
@@ -72,5 +77,18 @@ describe("isolated Crew qualification notice", () => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     });
     expect(change).toHaveBeenCalledWith(false);
+  });
+  it("opens apply flow from the primary CTA without closing the parent gate", async () => {
+    state.locale = "en-US";
+    const copy = dictionaries["en-US"].crew.creationRequirements;
+    const change = vi.fn();
+    await act(async () => root.render(<CrewEligibilityNotice open onOpenChange={change} />));
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const apply = Array.from(dialog.querySelectorAll("button")).find(
+      (button) => button.textContent === copy.applyCta
+    );
+    expect(apply).toBeTruthy();
+    await act(async () => apply!.click());
+    expect(change).not.toHaveBeenCalled();
   });
 });

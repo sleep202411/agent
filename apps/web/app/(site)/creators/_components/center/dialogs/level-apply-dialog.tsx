@@ -4,7 +4,7 @@
  * Owner-only dialog: apply for a Java certification level.
  * Required: level + crew + IP. Optional: attachment + notes.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { IconLoader2, IconPaperclip, IconUpload, IconX } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -37,24 +37,38 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
 import {
+  listMyUserLevelApplications,
   listUserLevelOptions,
   submitUserLevelApply,
   uploadUserLevelApplyAttachment,
   USER_LEVEL_APPLY_ACCEPT,
+  USER_LEVEL_APPLY_STATUS,
   type UserLevelOption,
 } from "@/src/services/user-level-apply";
 
 const EXTRA_MAX = 300;
 
+/**
+ * Java `user_level.id` for AI Producer — must stay aligned with Nest
+ * `CREW_CREATE_LEVEL_ID` in `apps/server/src/integrations/java/user-level-gates.ts`.
+ */
+export const AI_PRODUCER_LEVEL_ID = 13;
+
 interface LevelApplyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Lock the level picker to a single Java `user_level.id` (e.g. AI
+   * Producer from the create-crew gate).
+   */
+  lockedLevelId?: number;
 }
 
-export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) {
+export function LevelApplyDialog({ open, onOpenChange, lockedLevelId }: LevelApplyDialogProps) {
   const t = useTranslations("creatorCenter");
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
+  const levelLocked = lockedLevelId != null;
 
   const levelsQuery = useQuery({
     queryKey: ["user-levels", "options"],
@@ -62,8 +76,14 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     enabled: open,
     staleTime: 60_000,
   });
+  const pendingQuery = useQuery({
+    queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING],
+    queryFn: () => listMyUserLevelApplications(USER_LEVEL_APPLY_STATUS.PENDING),
+    enabled: open,
+    staleTime: 30_000,
+  });
   const crewsQuery = useMyCrews(open);
-  const ipsQuery = useAllMyIpCommerceIps(open);
+  const ipsQuery = useAllMyIpCommerceIps(open, { locale });
 
   const crews = useMemo(() => {
     const founded = crewsQuery.data?.founded ?? [];
@@ -90,8 +110,18 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
 
   const levels: UserLevelOption[] = useMemo(() => {
     const rows = levelsQuery.data ?? [];
-    return [...rows].sort((a, b) => a.name.localeCompare(b.name));
-  }, [levelsQuery.data]);
+    const filtered =
+      lockedLevelId == null ? rows : rows.filter((l) => Number(l.id) === lockedLevelId);
+    return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+  }, [levelsQuery.data, lockedLevelId]);
+
+  const pendingLevelIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const row of pendingQuery.data ?? []) {
+      if (row?.levelId != null) ids.add(row.levelId);
+    }
+    return ids;
+  }, [pendingQuery.data]);
 
   const [levelId, setLevelId] = useState<string>("");
   const [crewId, setCrewId] = useState<string>("");
@@ -104,13 +134,19 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (!open || lockedLevelId == null) return;
+    setLevelId(String(lockedLevelId));
+  }, [open, lockedLevelId]);
+
   const selectedLevel = useMemo(
     () => levels.find((l) => String(l.id) === levelId) ?? null,
     [levelId, levels]
   );
+  const selectedLevelPending = selectedLevel ? pendingLevelIds.has(selectedLevel.id) : false;
 
   function resetForm() {
-    setLevelId("");
+    setLevelId(lockedLevelId != null ? String(lockedLevelId) : "");
     setCrewId("");
     setIpId("");
     setExtraInfo("");
@@ -152,6 +188,10 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
       toast.error(t("levels.apply.missingRequired"));
       return;
     }
+    if (pendingLevelIds.has(level.id)) {
+      toast.error(t("levels.apply.levelPendingHint"));
+      return;
+    }
     const origin = window.location.origin;
     const crewLink = `${origin}${localizePath(`/crews/${crew.id}`, locale)}`;
     const ipLink = `${origin}${localizePath(ipRoomPath(ip.roomNumber), locale)}`;
@@ -173,6 +213,7 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
         ...(note ? { extraInfo: note } : {}),
       });
       toast.success(t("levels.apply.submitSuccess"));
+      void pendingQuery.refetch();
       handleOpenChange(false);
     } catch (err) {
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.submitFailed");
@@ -182,17 +223,24 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     }
   }
 
-  const loadingLists = levelsQuery.isLoading || crewsQuery.isLoading || ipsQuery.isLoading;
+  const loadingLists =
+    levelsQuery.isLoading || pendingQuery.isLoading || crewsQuery.isLoading || ipsQuery.isLoading;
   const canSubmit =
-    Boolean(levelId && crewId && ipId) && !submitting && !uploading && !loadingLists;
+    Boolean(levelId && crewId && ipId) &&
+    !selectedLevelPending &&
+    !submitting &&
+    !uploading &&
+    !loadingLists;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="flex max-h-[90vh] max-w-md flex-col overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="space-y-1.5 border-b border-border/60 px-5 py-4">
-          <DialogTitle>{t("levels.apply.title")}</DialogTitle>
+          <DialogTitle>
+            {levelLocked ? t("levels.apply.titleAiProducer") : t("levels.apply.title")}
+          </DialogTitle>
           <DialogDescription className="text-xs leading-relaxed">
-            {t("levels.apply.description")}
+            {levelLocked ? t("levels.apply.descriptionAiProducer") : t("levels.apply.description")}
           </DialogDescription>
         </DialogHeader>
 
@@ -205,7 +253,11 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
             <FieldGroup className="gap-5">
               <Field>
                 <FieldLabel required>{t("levels.apply.levelLabel")}</FieldLabel>
-                <Select value={levelId} onValueChange={setLevelId}>
+                <Select
+                  value={levelId}
+                  onValueChange={setLevelId}
+                  disabled={levelLocked || levels.length === 0}
+                >
                   <SelectTrigger className="h-9 w-full">
                     <SelectValue placeholder={t("levels.apply.levelPlaceholder")} />
                   </SelectTrigger>
@@ -215,15 +267,24 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
                         {t("levels.apply.levelEmpty")}
                       </SelectItem>
                     ) : (
-                      levels.map((level) => (
-                        <SelectItem key={level.id} value={String(level.id)}>
-                          {level.name}
-                        </SelectItem>
-                      ))
+                      levels.map((level) => {
+                        const pending = pendingLevelIds.has(level.id);
+                        return (
+                          <SelectItem key={level.id} value={String(level.id)} disabled={pending}>
+                            {pending
+                              ? t("levels.apply.levelPendingOption", { name: level.name })
+                              : level.name}
+                          </SelectItem>
+                        );
+                      })
                     )}
                   </SelectContent>
                 </Select>
-                {selectedLevel?.description ? (
+                {selectedLevelPending ? (
+                  <FieldDescription className="mt-1.5 text-[11px] leading-relaxed text-amber-400">
+                    {t("levels.apply.levelPendingHint")}
+                  </FieldDescription>
+                ) : selectedLevel?.description ? (
                   <FieldDescription className="mt-1.5 line-clamp-3 text-[11px] leading-relaxed">
                     {selectedLevel.description}
                   </FieldDescription>

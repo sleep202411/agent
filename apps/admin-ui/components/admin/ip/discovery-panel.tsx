@@ -152,6 +152,7 @@ export function IpDiscoveryPanel({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingIpId, setEditingIpId] = useState<string | null>(null);
   const [localeTab, setLocaleTab] = useState<LocaleCode>("en-US");
   const [draft, setDraft] = useState<RecommendationDraft>(EMPTY_DRAFT);
   const [statusNow, setStatusNow] = useState(() => new Date());
@@ -199,6 +200,7 @@ export function IpDiscoveryPanel({
   function openCreateDrawer() {
     setDrawerMode("create");
     setEditingId(null);
+    setEditingIpId(null);
     const placementKey = placementFilter === "all" ? "ip_plaza_hero" : placementFilter;
     setDraft(
       normalizeDraftForPlacement({
@@ -215,6 +217,7 @@ export function IpDiscoveryPanel({
   function openEditDrawer(item: RecommendationItem) {
     setDrawerMode("edit");
     setEditingId(item.id);
+    setEditingIpId(item.ipId);
     setDraft(toDraft(item));
     setLocaleTab("en-US");
     setDrawerOpen(true);
@@ -232,15 +235,19 @@ export function IpDiscoveryPanel({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             placementKey: normalized.placementKey,
-            ipId: normalized.ipId,
             ...payload,
           }),
         });
       } else if (editingId) {
+        // Only send ipId when rebinding. Production Nest still uses a strict
+        // update schema that rejects unrecognized `ipId` until that change is
+        // deployed — omitting an unchanged ipId keeps other field edits working.
+        const { ipId, ...rest } = payload;
+        const body = editingIpId && ipId && ipId !== editingIpId ? { ...rest, ipId } : rest;
         await requestEnvelope(`/api/admin/ip-commerce/discovery/${encodeURIComponent(editingId)}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(body),
         });
       }
       setDrawerOpen(false);
@@ -545,11 +552,15 @@ function RecommendationDrawer({
                     ipTitle={draft.ipTitle}
                     ipRoomNumber={draft.ipRoomNumber}
                     onChange={(option) =>
-                      patchDraft({
-                        ipId: option.id,
-                        ipTitle: option.title,
-                        ipRoomNumber: option.roomNumber,
-                      })
+                      patchDraft(
+                        option
+                          ? {
+                              ipId: option.id,
+                              ipTitle: option.title,
+                              ipRoomNumber: option.roomNumber,
+                            }
+                          : { ipId: "", ipTitle: "", ipRoomNumber: "" }
+                      )
                     }
                   />
                 </Field>
@@ -867,7 +878,7 @@ function IpCombobox({
   ipId: string;
   ipTitle: string;
   ipRoomNumber: string;
-  onChange: (option: IpOption) => void;
+  onChange: (option: IpOption | null) => void;
 }) {
   const [options, setOptions] = useState<IpOption[]>([]);
   const [search, setSearch] = useState("");
@@ -915,7 +926,8 @@ function IpCombobox({
         items={items}
         value={selectedIp}
         onValueChange={(option) => {
-          if (option) onChange(option);
+          onChange(option ?? null);
+          if (!option) setSearch("");
         }}
         onInputValueChange={(value: string) => setSearch(value)}
         itemToStringLabel={(option) => `${option.roomNumber} · ${option.title}`}
@@ -923,7 +935,7 @@ function IpCombobox({
         isItemEqualToValue={(item, value) => item.id === value.id}
         autoHighlight
       >
-        <ComboboxInput placeholder="Search room number or title" />
+        <ComboboxInput placeholder="搜索房间号或标题" />
         <ComboboxContent>
           <ComboboxEmpty>未找到 IP</ComboboxEmpty>
           <ComboboxList>
@@ -1331,9 +1343,10 @@ function draftToPayload(draft: RecommendationDraft) {
       })
     : [];
 
-  // Mutable fields shared by create + update. (placementKey/ipId are added only
-  // on create — the update endpoint is strict and rejects them.)
+  // Shared create/update body. `ipId` is mutable on edit so ops can rebind a
+  // placement without deleting and recreating the row.
   return {
+    ipId: draft.ipId,
     status: draft.status,
     sortOrder: draft.sortOrder,
     startsAt: draft.startsAt ? new Date(draft.startsAt).toISOString() : null,

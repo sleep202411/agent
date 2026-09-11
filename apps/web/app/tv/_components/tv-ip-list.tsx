@@ -5,10 +5,13 @@ import Link from "next/link";
 import {
   IconChevronDown,
   IconDeviceTv,
+  IconFlame,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconRefresh,
+  IconSearch,
   IconVideo,
+  IconX,
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -30,6 +33,8 @@ interface TvIpListProps {
   hasMore: boolean;
   isLoadingMore: boolean;
   onLoadMore: () => void;
+  search: string;
+  onSearchChange: (value: string) => void;
 }
 
 export function TvIpList({
@@ -45,6 +50,8 @@ export function TvIpList({
   hasMore,
   isLoadingMore,
   onLoadMore,
+  search,
+  onSearchChange,
 }: TvIpListProps) {
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
@@ -64,47 +71,108 @@ export function TvIpList({
       <div className="relative flex w-full flex-col border-t border-white/[0.06] bg-[#0c0e13] md:h-full md:border-r md:border-t-0">
         <header
           className={cn(
-            "hidden h-[52px] shrink-0 items-center gap-3 border-b border-white/[0.06] px-3 md:flex",
-            collapsed ? "justify-center" : "justify-between"
+            "hidden shrink-0 flex-col gap-2 border-b border-white/[0.06] px-3 py-2 md:flex",
+            collapsed && "items-center"
           )}
         >
-          {embedded ? (
-            <span className={cn("block text-sm font-semibold text-white", detailsClass)}>
-              {t("listTitle")}
-            </span>
-          ) : (
-            <Link
-              href={localizePath("/ips", locale)}
-              className={cn(
-                "min-w-0 rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white",
-                detailsClass
-              )}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/logo.png"
-                alt="FizzDragon"
-                width={439}
-                height={78}
-                className="h-auto w-[142px]"
-              />
-            </Link>
-          )}
-          <button
-            type="button"
-            aria-label={collapsed ? t("expandList") : t("collapseList")}
-            aria-expanded={!collapsed}
-            aria-controls="tv-ip-list"
-            onClick={() => setCollapsed((value) => !value)}
-            className={toggleClass}
-          >
-            {collapsed ? (
-              <IconLayoutSidebarLeftExpand className="size-[18px]" />
-            ) : (
-              <IconLayoutSidebarLeftCollapse className="size-[18px]" />
+          <div
+            className={cn(
+              "flex h-9 items-center gap-3",
+              collapsed ? "justify-center" : "justify-between"
             )}
-          </button>
+          >
+            {embedded ? (
+              <span className={cn("block text-sm font-semibold text-white", detailsClass)}>
+                {t("listTitle")}
+              </span>
+            ) : (
+              <Link
+                href={localizePath("/ips", locale)}
+                className={cn(
+                  "min-w-0 rounded focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white",
+                  detailsClass
+                )}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/logo.png"
+                  alt="FizzDragon"
+                  width={439}
+                  height={78}
+                  className="h-auto w-[142px]"
+                />
+              </Link>
+            )}
+            <button
+              type="button"
+              aria-label={collapsed ? t("expandList") : t("collapseList")}
+              aria-expanded={!collapsed}
+              aria-controls="tv-ip-list"
+              onClick={() => setCollapsed((value) => !value)}
+              className={toggleClass}
+            >
+              {collapsed ? (
+                <IconLayoutSidebarLeftExpand className="size-[18px]" />
+              ) : (
+                <IconLayoutSidebarLeftCollapse className="size-[18px]" />
+              )}
+            </button>
+          </div>
+          {!collapsed && (
+            <label className="relative block">
+              <span className="sr-only">{t("searchLabel")}</span>
+              <IconSearch
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-white/35"
+              />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder={t("searchPlaceholder")}
+                className="h-9 w-full rounded-md border border-white/10 bg-white/[0.04] py-1.5 pl-8 pr-8 text-sm text-white placeholder:text-white/35 outline-none focus-visible:border-white/30 focus-visible:ring-1 focus-visible:ring-white/20"
+              />
+              {search ? (
+                <button
+                  type="button"
+                  aria-label={t("searchClear")}
+                  onClick={() => onSearchChange("")}
+                  className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded text-white/45 hover:bg-white/10 hover:text-white"
+                >
+                  <IconX className="size-3.5" />
+                </button>
+              ) : null}
+            </label>
+          )}
         </header>
+
+        {/* Mobile search — always visible above the horizontal channel strip. */}
+        <div className="border-b border-white/[0.06] px-3 py-2 md:hidden">
+          <label className="relative block">
+            <span className="sr-only">{t("searchLabel")}</span>
+            <IconSearch
+              aria-hidden
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-white/35"
+            />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => onSearchChange(event.target.value)}
+              placeholder={t("searchPlaceholder")}
+              className="h-10 w-full rounded-md border border-white/10 bg-white/[0.04] py-1.5 pl-8 pr-8 text-sm text-white placeholder:text-white/35 outline-none focus-visible:border-white/30 focus-visible:ring-1 focus-visible:ring-white/20"
+            />
+            {search ? (
+              <button
+                type="button"
+                aria-label={t("searchClear")}
+                onClick={() => onSearchChange("")}
+                className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded text-white/45 hover:bg-white/10 hover:text-white"
+              >
+                <IconX className="size-3.5" />
+              </button>
+            ) : null}
+          </label>
+        </div>
 
         <nav
           id="tv-ip-list"
@@ -138,13 +206,19 @@ export function TvIpList({
           )}
           {!isLoading && !isError && items.length === 0 && (
             <p role="status" className={cn("px-3 py-4 text-sm text-white/50", detailsClass)}>
-              {t("noIps")}
+              {search.trim() ? t("noSearchResults") : t("noIps")}
             </p>
           )}
           {items.map((item) => {
             const active = item.id === selectedId;
             const roomNumber = t("roomNumber", { number: item.roomNumber });
-            const label = [item.title, roomNumber, item.genre, item.trailer && t("hasVideo")]
+            const label = [
+              item.title,
+              roomNumber,
+              item.genre,
+              item.hot && t("hot"),
+              item.trailer && t("hasVideo"),
+            ]
               .filter(Boolean)
               .join(", ");
             return (
@@ -160,7 +234,19 @@ export function TvIpList({
                   active ? "bg-white/[0.07] text-white" : "text-white/85 hover:bg-white/5"
                 )}
               >
-                <IpThumbnail key={item.cover} item={item} />
+                <span className="relative shrink-0">
+                  <IpThumbnail key={item.cover} item={item} />
+                  {item.hot ? (
+                    <span
+                      role="img"
+                      aria-label={t("hot")}
+                      title={t("hot")}
+                      className="absolute -bottom-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-[#0c0e13] text-primary"
+                    >
+                      <IconFlame aria-hidden className="size-3" stroke={1.75} />
+                    </span>
+                  ) : null}
+                </span>
                 <span className={cn("block min-w-0 flex-1", detailsClass)}>
                   <span className="block truncate text-sm font-medium leading-5 md:text-[15px]">
                     {item.title}

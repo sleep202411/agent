@@ -16,6 +16,14 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(handle);
+  }, [search]);
+
   const {
     items,
     isLoading,
@@ -26,12 +34,23 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
     fetchNextPage,
     fetchNextChannels,
     isFetchingNextPage,
-  } = useTvIps();
+  } = useTvIps({ q: debouncedSearch });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [nextError, setNextError] = useState<string | null>(null);
   const navigationVersion = useRef(0);
+  const searchEpoch = useRef(debouncedSearch);
+
+  // New search results replace the channel catalog — jump to the first hit.
+  if (searchEpoch.current !== debouncedSearch) {
+    searchEpoch.current = debouncedSearch;
+    if (selectedId !== null) {
+      setSelectedId(null);
+      setIsPlaying(false);
+    }
+  }
+
   const item = items.find((entry) => entry.id === selectedId) ?? items[0];
   // Remember the initial channel so a catalog refresh cannot change it.
   if (item && item.id !== selectedId) {
@@ -105,6 +124,8 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
         hasMore={hasNextPage}
         isLoadingMore={isFetchingNextPage}
         onLoadMore={() => void fetchNextPage()}
+        search={search}
+        onSearchChange={setSearch}
       />
       <section
         aria-label={t("playerTitle")}

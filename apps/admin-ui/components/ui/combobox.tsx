@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox";
-import { IconCheck, IconSelector } from "@tabler/icons-react";
+import { IconCheck, IconSelector, IconX } from "@tabler/icons-react";
 
 import { cn } from "@/lib/utils";
 
@@ -14,22 +14,54 @@ function Combobox<Value, Multiple extends boolean | undefined = false>({
 
 function ComboboxInput({
   className,
+  showClear = true,
   ...props
-}: React.ComponentProps<typeof ComboboxPrimitive.Input>) {
+}: React.ComponentProps<typeof ComboboxPrimitive.Input> & {
+  /** Show an X control to clear the selected value (default true). */
+  showClear?: boolean;
+}) {
   return (
     <div className="relative">
       <ComboboxPrimitive.Input
         data-slot="combobox-input"
         className={cn(
-          "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 pr-8 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+          "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+          showClear ? "pr-14" : "pr-8",
           className
         )}
         {...props}
       />
+      {showClear ? (
+        <ComboboxPrimitive.Clear
+          data-slot="combobox-clear"
+          className="absolute top-1/2 right-8 z-10 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          aria-label="Clear"
+        >
+          <IconX className="size-3.5" />
+        </ComboboxPrimitive.Clear>
+      ) : null}
       <ComboboxPrimitive.Icon className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground">
         <IconSelector className="size-4" />
       </ComboboxPrimitive.Icon>
     </div>
+  );
+}
+
+function ComboboxClear({
+  className,
+  ...props
+}: React.ComponentProps<typeof ComboboxPrimitive.Clear>) {
+  return (
+    <ComboboxPrimitive.Clear
+      data-slot="combobox-clear"
+      className={cn(
+        "inline-flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+        className
+      )}
+      {...props}
+    >
+      <IconX className="size-3.5" />
+    </ComboboxPrimitive.Clear>
   );
 }
 
@@ -119,4 +151,12 @@ function ComboboxEmpty({
   );
 }
 
-export { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList };
+export {
+  Combobox,
+  ComboboxClear,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+};
