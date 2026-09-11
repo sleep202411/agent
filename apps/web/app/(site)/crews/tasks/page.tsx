@@ -99,7 +99,7 @@ export default function CrewTaskCenter() {
       </div>
       {feed.isPending ? (
         <p role="status">{t("loading")}</p>
-      ) : feed.isError ? (
+      ) : feed.isError && !feed.isFetchNextPageError ? (
         <div role="alert" className="space-y-3">
           <p>{feed.error.message}</p>
           <Button onClick={() => void feed.refetch()}>{t("retry")}</Button>
@@ -148,9 +148,14 @@ export default function CrewTaskCenter() {
           ))}
         </ul>
       )}
-      {feed.hasNextPage && (
+      {feed.isFetchNextPageError && (
+        <p role="alert" className="text-sm text-destructive">
+          {feed.error?.message}
+        </p>
+      )}
+      {feed.hasNextPage && (!feed.isError || feed.isFetchNextPageError) && (
         <Button disabled={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>
-          {t("loadMore")}
+          {feed.isFetchNextPageError ? t("retry") : t("loadMore")}
         </Button>
       )}
     </main>

@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   next: vi.fn(),
   get: vi.fn(),
   empty: false,
+  nextError: false,
 }));
 vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "viewer" } }) }));
 vi.mock("@/src/i18n/i18n", () => ({
@@ -69,6 +70,9 @@ vi.mock("@tanstack/react-query", () => ({
           },
         ],
       },
+      isError: state.nextError,
+      isFetchNextPageError: state.nextError,
+      error: state.nextError ? new Error("Page unavailable") : null,
       hasNextPage: !state.empty,
       fetchNextPage: state.next,
     };
@@ -79,6 +83,8 @@ afterEach(() => {
   act(() => root?.unmount());
   document.body.innerHTML = "";
   state.empty = false;
+  state.nextError = false;
+  vi.clearAllMocks();
 });
 function render() {
   const container = document.createElement("div");
@@ -116,4 +122,17 @@ it("shows an empty state with no load-more action", () => {
   render();
   expect(document.body.textContent).toContain("empty");
   expect(document.querySelector("button")).toBeNull();
+});
+
+it("keeps existing tasks visible after a failed next page and retries that page", () => {
+  state.nextError = true;
+  render();
+  expect(document.body.textContent).toContain("First review");
+  expect(document.body.textContent).toContain("Second review");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Page unavailable");
+  const retry = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "retry"
+  )!;
+  act(() => retry.click());
+  expect(state.next).toHaveBeenCalledOnce();
 });
