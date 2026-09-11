@@ -133,7 +133,7 @@ export function AddCrewMemberDialog({
     setAgreementEnabled(checked);
     if (!checked || lookup.kind !== "found") return;
     if (!signerName) {
-      setSignerName(lookup.user.nickname || `User ${lookup.user.userId}`);
+      setSignerName(lookup.user.nickname || `${t("unnamedUser")} ${lookup.user.userId}`);
     }
     if (!signerEmail && debouncedQuery.includes("@")) {
       setSignerEmail(debouncedQuery.trim());
@@ -429,14 +429,14 @@ function LookupPreview({
     <div className="mt-2 flex items-center gap-3 rounded-lg bg-secondary/40 p-2.5">
       <UserAvatar
         src={user.avatar}
-        name={user.nickname || `User ${user.userId}`}
+        name={user.nickname || `${t("unnamedUser")} ${user.userId}`}
         seed={user.userId}
         size={36}
         className="shrink-0"
       />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-semibold text-foreground">
-          {user.nickname || `User ${user.userId}`}
+          {user.nickname || `${t("unnamedUser")} ${user.userId}`}
         </div>
         <div
           className={cn(
