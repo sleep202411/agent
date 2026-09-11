@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type InfiniteData,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -16,7 +10,6 @@ import type {
   CrewEpisodeDTO,
   CrewEpisodeDeliveryDTO,
   CrewProductionDocument,
-  CrewProductionDocumentNode,
   CrewProductionOverviewDTO,
   CrewProductionPageDTO,
   CrewProductionResourceDTO,
@@ -149,7 +142,7 @@ export function useCrewProductionActivity(crewId: string, enabled = true) {
   });
 }
 
-export function useCreateCrewProductionActivity(crewId: string, viewerUserId?: string) {
+export function useCreateCrewProductionActivity(crewId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateCrewProductionActivityInput) =>
@@ -157,124 +150,12 @@ export function useCreateCrewProductionActivity(crewId: string, viewerUserId?: s
         `/crews/${encodeURIComponent(crewId)}/production-activity`,
         { body: input }
       ),
-    onMutate: async (input) => {
-      const activityKey = crewKeys.productionActivity(crewId);
-      const overviewKey = crewKeys.productionOverview(crewId);
-      await Promise.all([
-        queryClient.cancelQueries({ queryKey: activityKey }),
-        queryClient.cancelQueries({ queryKey: overviewKey }),
-      ]);
-      const previousActivity =
-        queryClient.getQueryData<InfiniteData<CrewProductionActivityPageDTO>>(activityKey);
-      const previousOverview = queryClient.getQueryData<CrewProductionOverviewDTO>(overviewKey);
-      const optimisticId = `optimistic-${crypto.randomUUID()}`;
-      const optimistic: CrewProductionActivityDTO = {
-        id: optimisticId,
-        crewId,
-        kind: input.kind,
-        health: input.kind === "update" ? input.health : null,
-        content: input.content,
-        plainText: productionActivityPlainText(input.content),
-        progress: input.kind === "update" ? (input.progress ?? null) : null,
-        payload: {},
-        createdByUserId: viewerUserId ?? "",
-        createdAt: new Date().toISOString(),
-      };
-      queryClient.setQueryData<InfiniteData<CrewProductionActivityPageDTO>>(
-        activityKey,
-        (current) => prependProductionActivity(current, optimistic)
-      );
-      queryClient.setQueryData<CrewProductionOverviewDTO>(overviewKey, (current) =>
-        current && optimistic.kind === "update"
-          ? { ...current, latestUpdate: optimistic as CrewProductionOverviewDTO["latestUpdate"] }
-          : current
-      );
-      return { previousActivity, previousOverview, optimisticId };
-    },
-    onError: (_error, _input, context) => {
-      queryClient.setQueryData(crewKeys.productionActivity(crewId), context?.previousActivity);
-      queryClient.setQueryData(crewKeys.productionOverview(crewId), context?.previousOverview);
-    },
-    onSuccess: (update, _input, context) => {
-      queryClient.setQueryData<InfiniteData<CrewProductionActivityPageDTO>>(
-        crewKeys.productionActivity(crewId),
-        (current) => replaceProductionActivity(current, context.optimisticId, update)
-      );
-      queryClient.setQueryData<CrewProductionOverviewDTO>(
-        crewKeys.productionOverview(crewId),
-        (current) =>
-          current
-            ? {
-                ...current,
-                latestUpdate:
-                  current.latestUpdate?.id === context.optimisticId && update.kind === "update"
-                    ? (update as CrewProductionOverviewDTO["latestUpdate"])
-                    : current.latestUpdate,
-              }
-            : current
-      );
-    },
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: crewKeys.productionActivity(crewId) }),
+        queryClient.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) }),
+      ]),
   });
-}
-
-function productionActivityPlainText(document: CrewProductionDocument) {
-  const readNode = (node: CrewProductionDocumentNode): string => {
-    if (node.type === "text") return typeof node.text === "string" ? node.text : "";
-    if (node.type === "hardBreak") return "\n";
-    if (node.type === "emoji") {
-      const attrs = node.attrs;
-      return attrs && typeof attrs["name"] === "string" ? `:${attrs["name"]}:` : "";
-    }
-    if (!Array.isArray(node.content)) return "";
-    const separator = [
-      "bulletList",
-      "orderedList",
-      "taskList",
-      "blockquote",
-      "table",
-      "tableRow",
-    ].includes(String(node.type))
-      ? "\n"
-      : "";
-    return node.content.map(readNode).join(separator);
-  };
-
-  return document.content
-    .map(readNode)
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-function prependProductionActivity(
-  current: InfiniteData<CrewProductionActivityPageDTO> | undefined,
-  activity: CrewProductionActivityDTO
-): InfiniteData<CrewProductionActivityPageDTO> {
-  if (!current || current.pages.length === 0) {
-    return { pages: [{ items: [activity], nextCursor: null }], pageParams: [undefined] };
-  }
-  return {
-    ...current,
-    pages: [
-      { ...current.pages[0], items: [activity, ...current.pages[0].items] },
-      ...current.pages.slice(1),
-    ],
-  };
-}
-
-function replaceProductionActivity(
-  current: InfiniteData<CrewProductionActivityPageDTO> | undefined,
-  optimisticId: string,
-  activity: CrewProductionActivityDTO
-) {
-  if (!current) return prependProductionActivity(current, activity);
-  return {
-    ...current,
-    pages: current.pages.map((page) => ({
-      ...page,
-      items: page.items.map((item) => (item.id === optimisticId ? activity : item)),
-    })),
-  };
 }
 
 export function useCrewEpisodes(crewId: string, enabled = true) {

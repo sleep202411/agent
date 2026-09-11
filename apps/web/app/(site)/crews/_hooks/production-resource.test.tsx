@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import {
+  useCreateCrewProductionActivity,
   useUpdateCrewProductionProject,
   useCreateCrewProductionResource,
   useDeleteCrewProductionResource,
@@ -160,4 +161,51 @@ it("a delayed project response does not replace a newer confirmed version", asyn
     await pending;
   });
   expect(client.getQueryData(key)).toEqual(newer);
+});
+
+it("a failed activity post preserves newer feed and overview results", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.post).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      })
+  );
+  const hook = mount(() => useCreateCrewProductionActivity("crew"));
+  const activityKey = crewKeys.productionActivity("crew");
+  client.setQueryData(activityKey, {
+    pages: [{ items: [], nextCursor: null }],
+    pageParams: [undefined],
+  });
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync({ kind: "comment", content: { type: "doc", content: [] } })
+      .catch((e) => e);
+  });
+  const latestFeed = {
+    pages: [{ items: [{ id: "other" }], nextCursor: null }],
+    pageParams: [undefined],
+  };
+  const latestOverview = { project: { name: "new" }, resources: [{ id: "resource" }] };
+  client.setQueryData(activityKey, latestFeed);
+  client.setQueryData(key, latestOverview);
+  await act(async () => {
+    reject(new Error("failed"));
+    await failed;
+  });
+  expect(client.getQueryData(key)).toEqual(latestOverview);
+  expect(client.getQueryData(activityKey)).toEqual(latestFeed);
+});
+
+it("refreshes activity and overview after the server confirms a post", async () => {
+  vi.mocked(crewApi.post).mockResolvedValue({ id: "confirmed" });
+  const hook = mount(() => useCreateCrewProductionActivity("crew"));
+  const activityKey = crewKeys.productionActivity("crew");
+  client.setQueryData(activityKey, { pages: [], pageParams: [] });
+  await act(async () => {
+    await hook().mutateAsync({ kind: "comment", content: { type: "doc", content: [] } });
+  });
+  expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(activityKey)?.isInvalidated).toBe(true);
 });

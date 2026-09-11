@@ -36,7 +36,6 @@ const HEALTHS: CrewProductionUpdateHealth[] = ["on_track", "at_risk", "off_track
 
 export function ProductionActivityComposer({
   crewId,
-  viewerUserId,
   canManage,
   startDate,
   projectCreatedAt,
@@ -54,7 +53,7 @@ export function ProductionActivityComposer({
   const t = useTranslations("crewProduction");
   const commonT = useTranslations("common");
   const locale = useLocale();
-  const createActivity = useCreateCrewProductionActivity(crewId, viewerUserId);
+  const createActivity = useCreateCrewProductionActivity(crewId);
   const [mode, setMode] = useState<"comment" | "update">(canManage ? "update" : "comment");
   const [health, setHealth] = useState<CrewProductionUpdateHealth>("on_track");
   const [content, setContent] = useState<CrewProductionDocument>(
