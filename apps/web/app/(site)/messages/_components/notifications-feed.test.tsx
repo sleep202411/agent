@@ -33,7 +33,11 @@ vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string, vars?: Record<string, string | number>) =>
     Object.entries(vars ?? {}).reduce(
       (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
-      key.endsWith("bodyWithActor") ? "Changed by {actor}" : key
+      key.endsWith("bodyWithActor")
+        ? "Changed by {actor}"
+        : key === "performedBy"
+          ? "By {name}"
+          : key
     ),
 }));
 
@@ -139,5 +143,22 @@ it("shows the resolved actor name for a task notification", () => {
     expect(container.textContent).toContain("Changed by Isaac");
   } finally {
     ITEM.meta = original;
+  }
+});
+
+it("identifies a comment author while preserving the comment text", () => {
+  const original = { ...ITEM };
+  ITEM.type = "crew.task.commented";
+  ITEM.meta = {
+    actorUserId: "actor-1",
+    taskTitle: "Storyboard",
+    commentBody: "Please revise the final frame",
+  };
+  try {
+    act(() => root.render(<NotificationsFeed />));
+    expect(container.textContent).toContain("By Isaac");
+    expect(container.textContent).toContain("Please revise the final frame");
+  } finally {
+    Object.assign(ITEM, original);
   }
 });

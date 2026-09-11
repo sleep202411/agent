@@ -9221,6 +9221,7 @@
     }
   },
   "notifications": {
+    "performedBy": "操作人：{name}",
     "title": "通知",
     "view": "查看",
     "ariaUnread": "通知（{count} 条未读）",

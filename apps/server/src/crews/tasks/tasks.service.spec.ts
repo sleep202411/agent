@@ -1272,6 +1272,7 @@ describe('CrewTasksService', () => {
       expect.objectContaining({
         userId: ASSIGNEE_ID,
         type: 'crew.task.approved',
+        meta: expect.objectContaining({ actorUserId: OWNER_ID }) as unknown,
       }),
       t.tx,
     );

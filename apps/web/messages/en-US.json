@@ -9221,6 +9221,7 @@
     }
   },
   "notifications": {
+    "performedBy": "By {name}",
     "title": "Notifications",
     "view": "View",
     "ariaUnread": "Notifications ({count} unread)",

@@ -53,6 +53,14 @@ export function NotificationsFeed() {
     return pages.flatMap((p) => p.items);
   }, [feed.data]);
 
+  const actors = useUserDisplays(
+    items.flatMap((item) =>
+      item.type.startsWith("crew.task.") && typeof item.meta?.actorUserId === "string"
+        ? [item.meta.actorUserId]
+        : []
+    )
+  );
+
   const grouped = useMemo(
     () =>
       groupByDay(items, {
@@ -144,7 +152,16 @@ export function NotificationsFeed() {
               <ul className="overflow-hidden rounded-2xl bg-card/40">
                 {rows.map((n, i) => (
                   <li key={n.id} className={cn(i > 0 && "border-t border-border")}>
-                    <FeedRow item={n} locale={locale} onClick={() => handleClick(n)} />
+                    <FeedRow
+                      actorName={
+                        typeof n.meta?.actorUserId === "string"
+                          ? actors.get(n.meta.actorUserId)?.nickname
+                          : undefined
+                      }
+                      item={n}
+                      locale={locale}
+                      onClick={() => handleClick(n)}
+                    />
                   </li>
                 ))}
               </ul>
@@ -171,19 +188,19 @@ export function NotificationsFeed() {
 }
 
 function FeedRow({
+  actorName,
   item,
   locale,
   onClick,
 }: {
+  actorName?: string | null;
   item: NotificationDTO;
   locale: Locale;
   onClick: () => void;
 }) {
   const unread = !item.readAt;
   const t = useTranslations("notifications");
-  const actorId = typeof item.meta?.actorUserId === "string" ? item.meta.actorUserId : "";
-  const actors = useUserDisplays(actorId ? [actorId] : []);
-  const content = notificationContent(item, locale, t, actors.get(actorId)?.nickname);
+  const content = notificationContent(item, locale, t, actorName);
   return (
     <button
       type="button"
@@ -206,6 +223,14 @@ function FeedRow({
         >
           {content.title}
         </span>
+        {actorName?.trim() &&
+        item.type.startsWith("crew.task.") &&
+        item.type !== "crew.task.assigned" &&
+        item.type !== "crew.task.updated" ? (
+          <span className="text-xs text-muted-foreground">
+            {t("performedBy", { name: actorName.trim() })}
+          </span>
+        ) : null}
         <span className="text-sm text-muted-foreground">{content.body}</span>
         <span className="text-xs text-muted-foreground/80">
           {formatTime(item.createdAt, locale)}
