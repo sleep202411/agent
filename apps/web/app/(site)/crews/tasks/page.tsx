@@ -23,6 +23,7 @@ interface TaskPage {
     title: string;
     number: number;
     status: CrewTaskStatus;
+    workflowState: { name: string; systemKey: string | null; semantic: CrewTaskStatus };
     priority: CrewTaskPriority;
     dueAt: string | null;
     crew: { id: string; name: string };
@@ -136,7 +137,10 @@ export default function CrewTaskCenter() {
                   </span>
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  {taskT(`status.${task.status}`)} · {taskT(`priority.${task.priority}`)}
+                  {task.workflowState.systemKey
+                    ? taskT(`status.${task.workflowState.systemKey}`)
+                    : task.workflowState.name}{" "}
+                  · {taskT(`priority.${task.priority}`)}
                 </span>
                 {task.dueAt && (
                   <time

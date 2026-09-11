@@ -61,6 +61,7 @@ vi.mock("@tanstack/react-query", () => ({
                     number: 1,
                     crew: { id: "crew-a", name: "Crew A" },
                     status: "open",
+                    workflowState: { name: "Open", systemKey: "open", semantic: "open" },
                     priority: "normal",
                     dueAt: null,
                   },
@@ -70,6 +71,11 @@ vi.mock("@tanstack/react-query", () => ({
                     number: 2,
                     crew: { id: "crew-b", name: "Crew B" },
                     status: "in_progress",
+                    workflowState: {
+                      name: "Colour grading",
+                      systemKey: null,
+                      semantic: "in_progress",
+                    },
                     priority: "high",
                     dueAt: null,
                   },
@@ -155,4 +161,11 @@ it("offers sign-in instead of an endless task spinner for a logged-out visitor",
   )!;
   act(() => login.click());
   expect(state.login).toHaveBeenCalledOnce();
+});
+
+it("preserves custom workflow names and translates built-in states", () => {
+  render();
+  expect(document.body.textContent).toContain("Colour grading");
+  expect(document.body.textContent).toContain("status.open");
+  expect(document.body.textContent).not.toContain("status.in_progress");
 });

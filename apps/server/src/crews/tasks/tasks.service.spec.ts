@@ -448,7 +448,10 @@ describe('CrewTasksService', () => {
       .mockResolvedValueOnce({ permissions: ['tasks.view'] })
       .mockResolvedValueOnce({ permissions: [] });
     t.prisma.crewTask.findMany.mockResolvedValue([
-      { id: 'page-end', workflowState: { semantic: 'open' } },
+      {
+        id: 'page-end',
+        workflowState: { semantic: 'open', name: 'Planning', systemKey: null },
+      },
       { id: 'next', workflowState: { semantic: 'open' } },
     ]);
     const result = await t.service.listCenter(ASSIGNEE_ID, {
@@ -459,7 +462,17 @@ describe('CrewTasksService', () => {
       query: 'review',
     });
     expect(result).toEqual({
-      items: [{ id: 'page-end', status: 'open' }],
+      items: [
+        {
+          id: 'page-end',
+          status: 'open',
+          workflowState: {
+            semantic: 'open',
+            name: 'Planning',
+            systemKey: null,
+          },
+        },
+      ],
       nextCursor: 'page-end',
     });
     expect(t.prisma.crewTask.findMany).toHaveBeenCalledWith(

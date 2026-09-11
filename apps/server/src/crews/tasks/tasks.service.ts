@@ -1501,7 +1501,9 @@ export class CrewTasksService {
         id: true,
         title: true,
         number: true,
-        workflowState: { select: { semantic: true } },
+        workflowState: {
+          select: { semantic: true, name: true, systemKey: true },
+        },
         priority: true,
         dueAt: true,
         crew: { select: { id: true, name: true } },
@@ -1512,6 +1514,7 @@ export class CrewTasksService {
       .slice(0, query.limit)
       .map(({ workflowState, ...task }) => ({
         ...task,
+        workflowState,
         status: workflowState.semantic,
       }));
     return { items, nextCursor: more ? items.at(-1)!.id : null };
