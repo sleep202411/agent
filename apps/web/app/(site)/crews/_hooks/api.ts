@@ -94,15 +94,16 @@ interface CallOptions extends Omit<RequestInit, "body"> {
 }
 
 async function call<T>(method: string, path: string, opts: CallOptions = {}): Promise<T> {
-  const url = buildUrl(path, opts.query);
+  const { body, query, headers: suppliedHeaders, ...requestOptions } = opts;
+  const url = buildUrl(path, query);
+  const headers = new Headers(suppliedHeaders);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const init: RequestInit = {
+    ...requestOptions,
     method,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(opts.headers ?? {}),
-    },
-    ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   };
   const res = await fetch(url, init);
 
