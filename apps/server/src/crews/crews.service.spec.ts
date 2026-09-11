@@ -211,7 +211,7 @@ function build(
 }
 
 describe('CrewsService.create — the crew chat is born with the crew', () => {
-  it('creates a localized production template and records its provenance atomically', async () => {
+  it('creates the localized production foundation without automatic tasks', async () => {
     const t = build();
 
     await t.service.create(FOUNDER_USER, {
@@ -251,33 +251,9 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
       title: '第 1 集',
     });
 
-    const taskCreateMock = t.tx.crewTask.createMany as jest.MockedFunction<
-      (args: {
-        data: Array<{ number: number; episodeId: string }>;
-      }) => Promise<unknown>
-    >;
-    const taskCreate = taskCreateMock.mock.calls[0]?.[0];
-    const taskRows = taskCreate?.data ?? [];
-    expect(taskRows).toHaveLength(6);
-    expect(taskRows.map((task: { number: number }) => task.number)).toEqual([
-      1, 2, 3, 4, 5, 6,
-    ]);
-    expect(
-      new Set(taskRows.map((task: { episodeId: string }) => task.episodeId))
-        .size,
-    ).toBe(1);
-    const dependencyCreateMock = t.tx.crewTaskDependency
-      .createMany as jest.MockedFunction<
-      (args: { data: unknown[] }) => Promise<unknown>
-    >;
-    const timelineCreateMock = t.tx.crewTaskTimelineItem
-      .createMany as jest.MockedFunction<
-      (args: { data: unknown[] }) => Promise<unknown>
-    >;
-    const dependencyCreate = dependencyCreateMock.mock.calls[0]?.[0];
-    const timelineCreate = timelineCreateMock.mock.calls[0]?.[0];
-    expect(dependencyCreate?.data).toHaveLength(5);
-    expect(timelineCreate?.data).toHaveLength(6);
+    expect(t.tx.crewTask.createMany).not.toHaveBeenCalled();
+    expect(t.tx.crewTaskDependency.createMany).not.toHaveBeenCalled();
+    expect(t.tx.crewTaskTimelineItem.createMany).not.toHaveBeenCalled();
   });
 
   it('opens the crew conversation and joins the founder inside the create tx', async () => {
