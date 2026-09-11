@@ -8,6 +8,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -18,9 +19,11 @@ import type {
 } from "./types";
 
 export function useCrewPositions(crewId: string | undefined, pageSize = 50) {
+  const { user, isLoading } = useCurrentUser();
+  const enabled = !!crewId && !isLoading;
   const query = useInfiniteQuery({
-    queryKey: crewKeys.positions(crewId ?? ""),
-    enabled: !!crewId,
+    queryKey: [...crewKeys.positions(crewId ?? ""), user?.id ?? null, pageSize],
+    enabled,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewPositionPageDTO>(`/crews/${encodeURIComponent(crewId!)}/positions`, {
         query: { limit: pageSize, cursor: pageParam },
@@ -30,9 +33,9 @@ export function useCrewPositions(crewId: string | undefined, pageSize = 50) {
   });
   const { fetchNextPage, hasNextPage, isFetching, isFetchNextPageError } = query;
   useEffect(() => {
-    if (!hasNextPage || isFetching || isFetchNextPageError) return;
+    if (!enabled || !hasNextPage || isFetching || isFetchNextPageError) return;
     void fetchNextPage();
-  }, [fetchNextPage, hasNextPage, isFetching, isFetchNextPageError]);
+  }, [enabled, fetchNextPage, hasNextPage, isFetching, isFetchNextPageError]);
   const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
   return {
     ...query,
