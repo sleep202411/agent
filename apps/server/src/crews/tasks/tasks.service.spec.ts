@@ -430,7 +430,7 @@ describe('CrewTasksService', () => {
         meta: expect.objectContaining({
           actorUserId: OWNER_ID,
           taskTitle: 'Revised brief',
-        }),
+        }) as unknown,
       }),
       t.tx,
     );
