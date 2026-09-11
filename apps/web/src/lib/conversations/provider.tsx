@@ -39,7 +39,7 @@ import {
   createConversationRecoveryCoordinator,
   conversationKeys,
 } from "@/app/(site)/creators/_hooks/use-conversations";
-import { crewKeys } from "@/app/(site)/crews/_hooks/shared";
+import { crewKeys, crewTaskDetailQueries } from "@/app/(site)/crews/_hooks/shared";
 import { crewConversationKey } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
 
 export function ConversationsProvider({ children }: { children: React.ReactNode }) {
@@ -140,6 +140,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         }
       },
       onCrewTaskProjectChanged: (data) => {
+        qc.invalidateQueries(crewTaskDetailQueries(data.crewId));
         qc.invalidateQueries({ queryKey: crewKeys.taskProject(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
         if (

@@ -4,13 +4,19 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { crewApi, CrewApiError } from "./api";
 import { crewKeys } from "./shared";
+import {
+  useDeleteCrewTaskLabel,
+  useDeleteCrewTaskCycle,
+  useDeleteCrewTaskField,
+  useUpdateCrewTaskWorkflowState,
+} from "./use-tasks";
 import { useCrewMembers } from "./use-members";
 import { useApproveCrewEarning, useReverseCrewEarning } from "./use-earnings";
 import { usePayCrewPayout, useVoidCrewPayout } from "./use-payouts";
 
 vi.mock("./api", async (original) => {
   const actual = await original<typeof import("./api")>();
-  return { ...actual, crewApi: { get: vi.fn(), post: vi.fn() } };
+  return { ...actual, crewApi: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } };
 });
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: Root | undefined;
@@ -130,5 +136,42 @@ describe("crew finance cache refresh", () => {
     });
     expect(client.getQueryState(detailKey)?.isInvalidated).toBe(true);
     expect(client.getQueryState(payoutKey)?.isInvalidated).toBe(true);
+  });
+});
+
+describe("task metadata cache refresh", () => {
+  it.each([
+    ["label", useDeleteCrewTaskLabel],
+    ["cycle", useDeleteCrewTaskCycle],
+    ["field", useDeleteCrewTaskField],
+  ] as const)("refreshes cached task details after deleting a %s", async (_name, hook) => {
+    const current = mount(() => hook("crew-1"));
+    const detail = crewKeys.task("task-1");
+    const unrelated = crewKeys.task("task-2");
+    client.setQueryData(detail, { crewId: "crew-1" });
+    client.setQueryData(unrelated, { crewId: "crew-2" });
+    vi.mocked(crewApi.delete).mockResolvedValue(undefined);
+    await act(async () => {
+      await current().mutateAsync("metadata-1");
+    });
+    expect(client.getQueryState(detail)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(unrelated)?.isInvalidated).toBe(false);
+  });
+  it("refreshes task details after replacing an archived workflow state", async () => {
+    const current = mount(() => useUpdateCrewTaskWorkflowState("crew-1"));
+    const detail = crewKeys.task("task-1");
+    client.setQueryData(detail, { crewId: "crew-1", workflowStateId: "old" });
+    vi.mocked(crewApi.patch).mockResolvedValue({});
+    await act(async () => {
+      await current().mutateAsync({
+        stateId: "old",
+        input: {
+          expectedVersion: 1,
+          archived: true,
+          replacementStateId: "new",
+        },
+      });
+    });
+    expect(client.getQueryState(detail)?.isInvalidated).toBe(true);
   });
 });

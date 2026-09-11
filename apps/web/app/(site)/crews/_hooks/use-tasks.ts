@@ -9,7 +9,7 @@ import {
   type QueryFilters,
 } from "@tanstack/react-query";
 import { crewApi } from "./api";
-import { crewKeys } from "./shared";
+import { crewKeys, crewTaskDetailQueries } from "./shared";
 import {
   optimisticallyReorderCrewTaskPages,
   type ReorderCrewTaskCommand,
@@ -225,6 +225,7 @@ export function useUpdateCrewTaskWorkflowState(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
 }
@@ -279,6 +280,7 @@ export function useUpdateCrewTaskCycle(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
 }
@@ -291,6 +293,7 @@ export function useDeleteCrewTaskCycle(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
 }
@@ -324,6 +327,7 @@ export function useUpdateCrewTaskLabel(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
 }
@@ -336,6 +340,7 @@ export function useDeleteCrewTaskLabel(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
 }
@@ -384,6 +389,7 @@ export function useDeleteCrewTaskField(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
 }

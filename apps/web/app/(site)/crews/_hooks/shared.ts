@@ -1,3 +1,5 @@
+import type { QueryFilters } from "@tanstack/react-query";
+
 /**
  * Crews feature data layer — shared cache keys.
  *
@@ -47,3 +49,20 @@ export const crewKeys = {
   assetList: (crewId: string, query: Record<string, unknown>) =>
     ["crew", "assets", crewId, "list", query] as const,
 };
+
+// Task detail keys use task IDs, so select their Crew from the cached DTO.
+export function crewTaskDetailQueries(crewId: string): QueryFilters {
+  return {
+    queryKey: ["crew", "task"],
+    predicate: (query) => {
+      const data = query.state.data;
+      return (
+        query.queryKey.length === 3 &&
+        typeof data === "object" &&
+        data !== null &&
+        "crewId" in data &&
+        data.crewId === crewId
+      );
+    },
+  };
+}
