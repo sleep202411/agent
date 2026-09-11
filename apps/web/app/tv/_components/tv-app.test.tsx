@@ -150,7 +150,12 @@ describe("TV IP list", () => {
     await render();
     await waitForText("Second IP");
     expect(harness.get).toHaveBeenCalledWith("/aurora/ip-commerce/ips", {
-      params: { locale: "en-US", cursor: undefined, limit: 20 },
+      params: {
+        locale: "en-US",
+        cursor: undefined,
+        q: undefined,
+        limit: 20,
+      },
     });
     expect(container.querySelectorAll("nav button")).toHaveLength(2);
     expect(selected()).toContain("First IP");
@@ -212,7 +217,7 @@ describe("TV IP list", () => {
     await render();
     await waitForText("First IP");
     await act(async () => {
-      queryClient.setQueryData(["tv", "ips", "en-US"], {
+      queryClient.setQueryData(["tv", "ips", "en-US", ""], {
         pages: [{ items: [...ips].reverse(), nextCursor: null }],
         pageParams: [undefined],
       });
@@ -263,11 +268,16 @@ describe("TV IP list", () => {
     );
     await waitForText("Third IP");
     expect(harness.get).toHaveBeenLastCalledWith("/aurora/ip-commerce/ips", {
-      params: { locale: "en-US", cursor: "next", limit: 20 },
+      params: {
+        locale: "en-US",
+        cursor: "next",
+        q: undefined,
+        limit: 20,
+      },
     });
     expect(selected()).toContain("Second IP");
     await act(async () => {
-      queryClient.setQueryData(["tv", "ips", "en-US"], {
+      queryClient.setQueryData(["tv", "ips", "en-US", ""], {
         pages: [{ items: [...ips].reverse(), nextCursor: null }],
         pageParams: [undefined],
       });
@@ -310,7 +320,7 @@ describe("TV IP list", () => {
       player().pause();
     });
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["tv", "ips", "en-US"] });
+      await queryClient.invalidateQueries({ queryKey: ["tv", "ips", "en-US", ""] });
     });
     expect(container.querySelector("video")).toBe(video);
     expect(player()).toBe(instance);
@@ -467,6 +477,27 @@ describe("TV IP list", () => {
     await waitForText("tv.noIps");
     expect(container.querySelectorAll("nav button")).toHaveLength(0);
     expect(container.querySelector("video")).toBeNull();
+  });
+
+  it("searches by room number or name through the shared catalog API", async () => {
+    await render();
+    await waitForText("First IP");
+    const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(input.getAttribute("placeholder")).toBe("tv.searchPlaceholder");
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+      proto?.set?.call(input, "100001");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "100001" }));
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(harness.get).toHaveBeenCalledWith(
+      "/aurora/ip-commerce/ips",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          q: "100001",
+        }),
+      })
+    );
   });
 
   it("shows upstream errors and retries the list request", async () => {

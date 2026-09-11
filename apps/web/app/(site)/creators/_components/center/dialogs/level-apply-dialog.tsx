@@ -37,10 +37,12 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
 import {
+  listMyUserLevelApplications,
   listUserLevelOptions,
   submitUserLevelApply,
   uploadUserLevelApplyAttachment,
   USER_LEVEL_APPLY_ACCEPT,
+  USER_LEVEL_APPLY_STATUS,
   type UserLevelOption,
 } from "@/src/services/user-level-apply";
 
@@ -61,6 +63,12 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     queryFn: listUserLevelOptions,
     enabled: open,
     staleTime: 60_000,
+  });
+  const pendingQuery = useQuery({
+    queryKey: ["user-levels", "apply", "mine", USER_LEVEL_APPLY_STATUS.PENDING],
+    queryFn: () => listMyUserLevelApplications(USER_LEVEL_APPLY_STATUS.PENDING),
+    enabled: open,
+    staleTime: 30_000,
   });
   const crewsQuery = useMyCrews(open);
   const ipsQuery = useAllMyIpCommerceIps(open);
@@ -93,6 +101,14 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     return [...rows].sort((a, b) => a.name.localeCompare(b.name));
   }, [levelsQuery.data]);
 
+  const pendingLevelIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const row of pendingQuery.data ?? []) {
+      if (row?.levelId != null) ids.add(row.levelId);
+    }
+    return ids;
+  }, [pendingQuery.data]);
+
   const [levelId, setLevelId] = useState<string>("");
   const [crewId, setCrewId] = useState<string>("");
   const [ipId, setIpId] = useState<string>("");
@@ -108,6 +124,7 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     () => levels.find((l) => String(l.id) === levelId) ?? null,
     [levelId, levels]
   );
+  const selectedLevelPending = selectedLevel ? pendingLevelIds.has(selectedLevel.id) : false;
 
   function resetForm() {
     setLevelId("");
@@ -152,6 +169,10 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
       toast.error(t("levels.apply.missingRequired"));
       return;
     }
+    if (pendingLevelIds.has(level.id)) {
+      toast.error(t("levels.apply.levelPendingHint"));
+      return;
+    }
     const origin = window.location.origin;
     const crewLink = `${origin}${localizePath(`/crews/${crew.id}`, locale)}`;
     const ipLink = `${origin}${localizePath(ipRoomPath(ip.roomNumber), locale)}`;
@@ -173,6 +194,7 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
         ...(note ? { extraInfo: note } : {}),
       });
       toast.success(t("levels.apply.submitSuccess"));
+      void pendingQuery.refetch();
       handleOpenChange(false);
     } catch (err) {
       const msg = err instanceof ApiRequestError ? err.message : t("levels.apply.submitFailed");
@@ -182,9 +204,14 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
     }
   }
 
-  const loadingLists = levelsQuery.isLoading || crewsQuery.isLoading || ipsQuery.isLoading;
+  const loadingLists =
+    levelsQuery.isLoading || pendingQuery.isLoading || crewsQuery.isLoading || ipsQuery.isLoading;
   const canSubmit =
-    Boolean(levelId && crewId && ipId) && !submitting && !uploading && !loadingLists;
+    Boolean(levelId && crewId && ipId) &&
+    !selectedLevelPending &&
+    !submitting &&
+    !uploading &&
+    !loadingLists;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -215,15 +242,24 @@ export function LevelApplyDialog({ open, onOpenChange }: LevelApplyDialogProps) 
                         {t("levels.apply.levelEmpty")}
                       </SelectItem>
                     ) : (
-                      levels.map((level) => (
-                        <SelectItem key={level.id} value={String(level.id)}>
-                          {level.name}
-                        </SelectItem>
-                      ))
+                      levels.map((level) => {
+                        const pending = pendingLevelIds.has(level.id);
+                        return (
+                          <SelectItem key={level.id} value={String(level.id)} disabled={pending}>
+                            {pending
+                              ? t("levels.apply.levelPendingOption", { name: level.name })
+                              : level.name}
+                          </SelectItem>
+                        );
+                      })
                     )}
                   </SelectContent>
                 </Select>
-                {selectedLevel?.description ? (
+                {selectedLevelPending ? (
+                  <FieldDescription className="mt-1.5 text-[11px] leading-relaxed text-amber-400">
+                    {t("levels.apply.levelPendingHint")}
+                  </FieldDescription>
+                ) : selectedLevel?.description ? (
                   <FieldDescription className="mt-1.5 line-clamp-3 text-[11px] leading-relaxed">
                     {selectedLevel.description}
                   </FieldDescription>

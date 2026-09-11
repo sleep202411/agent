@@ -34,4 +34,27 @@ describe("api client response unwrapping", () => {
       api.get<{ info: { id: number }; level: string[] }>("/user/query/user/info", { raw: true })
     ).resolves.toEqual({ code: 200, info: { id: 1 }, level: ["creator"] });
   });
+
+  it("prefers detailed message over generic msg on envelope failures", async () => {
+    const { ApiRequestError } = await import("./api-client");
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: 500,
+          msg: "失败",
+          message: "该等级已有待审核申请",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }
+      )
+    );
+
+    await expect(api.post("/user/levels/apply", { data: {} })).rejects.toMatchObject({
+      name: "ApiRequestError",
+      message: "该等级已有待审核申请",
+      code: 500,
+    } satisfies Partial<InstanceType<typeof ApiRequestError>>);
+  });
 });

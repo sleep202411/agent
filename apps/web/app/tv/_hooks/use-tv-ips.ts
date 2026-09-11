@@ -8,19 +8,23 @@ import type { IpCommerceAsset, IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { ipPreviewVideoUrl } from "@/src/lib/ip-commerce/preview-video";
 import type { TvItem } from "./types";
 
-function listTvIps(params: { locale: string; cursor?: string }) {
+function listTvIps(params: { locale: string; cursor?: string; q?: string }) {
   return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>("/aurora/ip-commerce/ips", {
-    params: { ...params, limit: 20 },
+    params: {
+      ...params,
+      limit: 20,
+    },
   });
 }
 
-export function useTvIps() {
+export function useTvIps(options?: { q?: string }) {
   const locale = useLocale();
   const t = useTranslations("tv");
+  const q = options?.q?.trim() || undefined;
   const query = useInfiniteQuery({
-    queryKey: ["tv", "ips", locale],
+    queryKey: ["tv", "ips", locale, q ?? ""],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => listTvIps({ locale, cursor: pageParam }),
+    queryFn: ({ pageParam }) => listTvIps({ locale, cursor: pageParam, q }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 60_000,
   });
