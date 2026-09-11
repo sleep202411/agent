@@ -57,6 +57,7 @@ import type {
   CreateCrewTaskWorkflowStateInput,
   ListCrewTaskOptionsQuery,
   ListCrewTasksQuery,
+  CrewTaskCenterQuery,
   ReorderCrewTaskInput,
   ReorderCrewTaskWorkflowStatesInput,
   UpdateCrewTaskCycleInput,
@@ -1452,6 +1453,68 @@ export class CrewTasksService {
       userId,
     );
     return this.toDtoWithUsage(updated);
+  }
+
+  async listCenter(userId: string, query: CrewTaskCenterQuery) {
+    const memberships = await this.prisma.crewMember.findMany({
+      where: { userId, status: 'active', crew: { deletedAt: null } },
+      select: { crewId: true },
+    });
+    const crewIds: string[] = [];
+    for (const { crewId } of memberships) {
+      try {
+        const access = await this.authorization.resolve(crewId, userId);
+        if (access?.permissions.includes('tasks.view')) crewIds.push(crewId);
+      } catch (error) {
+        // A Crew can be deleted after the membership scan. Omit that Crew;
+        // unavailable authorization infrastructure must still fail the read.
+        if (!(error instanceof NotFoundException)) throw error;
+      }
+    }
+    if (!crewIds.length) return { items: [], nextCursor: null };
+    const rows = await this.prisma.crewTask.findMany({
+      where: {
+        deletedAt: null,
+        crewId: { in: crewIds },
+        crew: {
+          deletedAt: null,
+          members: { some: { userId, status: 'active' } },
+        },
+        ...(query.scope === 'mine' ? { assignees: { some: { userId } } } : {}),
+        ...(query.status === 'active'
+          ? {
+              workflowState: {
+                semantic: {
+                  notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+                },
+              },
+            }
+          : {}),
+        ...(query.query
+          ? { title: { contains: query.query, mode: 'insensitive' as const } }
+          : {}),
+        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: query.limit + 1,
+      select: {
+        id: true,
+        title: true,
+        number: true,
+        workflowState: { select: { semantic: true } },
+        priority: true,
+        dueAt: true,
+        crew: { select: { id: true, name: true } },
+      },
+    });
+    const more = rows.length > query.limit;
+    const items = rows
+      .slice(0, query.limit)
+      .map(({ workflowState, ...task }) => ({
+        ...task,
+        status: workflowState.semantic,
+      }));
+    return { items, nextCursor: more ? items.at(-1)!.id : null };
   }
 
   async list(crewId: string, userId: string, query: ListCrewTasksQuery) {

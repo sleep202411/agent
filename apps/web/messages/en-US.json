@@ -9462,5 +9462,23 @@
     "nowPlaying": "Now playing",
     "notPlaying": "Not playing",
     "loadingChannel": "Loading next channel…"
+  },
+  "crewTaskCenter": {
+    "unreadCrewNotifications": "{count} unread Crew notifications",
+    "unreadNotifications": "{count} unread task notifications",
+    "title": "Task center",
+    "description": "Manage tasks across your Crews.",
+    "back": "Back to Crews",
+    "scope": "Scope",
+    "allTasks": "All accessible tasks",
+    "mine": "Assigned to me",
+    "status": "Status",
+    "active": "Active tasks",
+    "allStatuses": "All statuses",
+    "search": "Search task titles",
+    "loading": "Loading tasks…",
+    "retry": "Retry",
+    "empty": "No tasks match these filters.",
+    "loadMore": "Load more"
   }
 }

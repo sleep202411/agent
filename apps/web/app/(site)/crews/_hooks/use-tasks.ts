@@ -175,6 +175,7 @@ export function useUpdateCrewTaskView(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
     },
   });
 }
@@ -228,6 +229,7 @@ export function useUpdateCrewTaskWorkflowState(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
@@ -283,6 +285,7 @@ export function useUpdateCrewTaskCycle(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
@@ -296,6 +299,7 @@ export function useDeleteCrewTaskCycle(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
@@ -330,6 +334,7 @@ export function useUpdateCrewTaskLabel(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
@@ -343,6 +348,7 @@ export function useDeleteCrewTaskLabel(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
@@ -392,6 +398,7 @@ export function useDeleteCrewTaskField(crewId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskProject(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries(crewTaskDetailQueries(crewId));
     },
   });
@@ -464,6 +471,7 @@ export function useReorderCrewTask(crewId: string) {
     onSettled: (_task, _error, { taskId }) => {
       void Promise.all([
         qc.invalidateQueries(taskViewQueries),
+        qc.invalidateQueries({ queryKey: crewKeys.taskCenter }),
         qc.invalidateQueries({ queryKey: crewKeys.task(taskId) }),
         qc.invalidateQueries(crewTaskDetailQueries(crewId, taskId)),
       ]);
@@ -500,6 +508,7 @@ export function useBatchUpdateCrewTasks(crewId: string) {
     onSuccess: (tasks) => {
       for (const task of tasks) qc.setQueryData(crewKeys.task(task.id), task);
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
     },
   });
 }
@@ -534,6 +543,7 @@ export function useCreateCrewTask(crewId: string) {
       qc.setQueryData(crewKeys.task(task.id), task);
       qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
@@ -562,6 +572,7 @@ export function useUpdateCrewTask(crewId: string) {
       qc.setQueryData(crewKeys.task(task.id), task);
       qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
@@ -582,6 +593,7 @@ export function useDeleteCrewTask(crewId: string) {
       // Reparented children and unblocked tasks can have open detail queries too.
       qc.invalidateQueries({ queryKey: ["crew", "task"] });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.productionOverview(crewId) });
@@ -600,6 +612,7 @@ export function useCreateCrewTaskComment(crewId: string, taskId: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(taskId) });
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
     },
   });
 }
@@ -644,6 +657,7 @@ export function useSubmitCrewTask(crewId: string) {
       qc.setQueryData(crewKeys.task(task.id), task);
       qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
@@ -672,6 +686,7 @@ export function useReviewCrewTask(crewId: string) {
       qc.setQueryData(crewKeys.task(task.id), task);
       qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });

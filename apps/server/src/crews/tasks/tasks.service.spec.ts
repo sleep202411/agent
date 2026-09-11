@@ -2,6 +2,7 @@ import { CrewTaskPriority, CrewTaskStatus, Prisma } from '@prisma/client';
 import {
   BadRequestException,
   ConflictException,
+  NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
 import * as Y from 'yjs';
@@ -304,6 +305,7 @@ function build() {
     },
   };
   const prisma = {
+    crewMember: { findMany: jest.fn().mockResolvedValue([]) },
     crewTask: {
       findUnique: jest.fn().mockResolvedValue(current),
       findMany: jest.fn(),
@@ -434,6 +436,81 @@ describe('CrewTasksService', () => {
       }),
       t.tx,
     );
+  });
+
+  it('limits the center to authorized Crews and applies assignment and cursor filters', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: 'allowed' },
+      { crewId: 'denied' },
+    ]);
+    t.roles.resolve
+      .mockResolvedValueOnce({ permissions: ['tasks.view'] })
+      .mockResolvedValueOnce({ permissions: [] });
+    t.prisma.crewTask.findMany.mockResolvedValue([
+      { id: 'page-end', workflowState: { semantic: 'open' } },
+      { id: 'next', workflowState: { semantic: 'open' } },
+    ]);
+    const result = await t.service.listCenter(ASSIGNEE_ID, {
+      scope: 'mine',
+      status: 'active',
+      limit: 1,
+      cursor: TASK_ID,
+      query: 'review',
+    });
+    expect(result).toEqual({
+      items: [{ id: 'page-end', status: 'open' }],
+      nextCursor: 'page-end',
+    });
+    expect(t.prisma.crewTask.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          crewId: { in: ['allowed'] },
+          workflowState: { semantic: { notIn: ['approved', 'cancelled'] } },
+          title: { contains: 'review', mode: 'insensitive' },
+          crew: {
+            deletedAt: null,
+            members: { some: { userId: ASSIGNEE_ID, status: 'active' } },
+          },
+          assignees: { some: { userId: ASSIGNEE_ID } },
+          id: { lt: TASK_ID },
+          deletedAt: null,
+        }) as unknown,
+        take: 2,
+      }),
+    );
+  });
+
+  it('omits a concurrently deleted Crew but propagates authorization failures', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'deleted' }]);
+    t.roles.resolve.mockRejectedValueOnce(
+      new NotFoundException('Crew not found'),
+    );
+    const query = { scope: 'all' as const, status: 'all' as const, limit: 30 };
+    await expect(t.service.listCenter(ASSIGNEE_ID, query)).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
+    t.roles.resolve.mockRejectedValueOnce(new Error('Database unavailable'));
+    await expect(t.service.listCenter(ASSIGNEE_ID, query)).rejects.toThrow(
+      'Database unavailable',
+    );
+  });
+
+  it('does not query tasks when no Crew grants task access', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'denied' }]);
+    t.roles.resolve.mockResolvedValue({ permissions: [] });
+    await expect(
+      t.service.listCenter(ASSIGNEE_ID, {
+        scope: 'all',
+        status: 'all',
+        limit: 30,
+      }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+    expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
   });
 
   it('updates a production cycle only from the expected revision', async () => {

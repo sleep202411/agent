@@ -1,3 +1,6 @@
+vi.mock("@/app/(site)/crews/_components/crew-unread-marker", () => ({
+  CrewUnreadMarker: () => null,
+}));
 // @vitest-environment jsdom
 
 import { act } from "react";

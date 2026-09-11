@@ -127,6 +127,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
       },
       onCrewTaskChanged: (data) => {
+        qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
         qc.invalidateQueries(crewTaskDetailQueries(data.crewId, data.taskId));
         qc.invalidateQueries({ queryKey: crewKeys.taskSummary(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.taskActivity(data.crewId) });
@@ -141,6 +142,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         }
       },
       onCrewTaskProjectChanged: (data) => {
+        qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
         qc.invalidateQueries(crewTaskDetailQueries(data.crewId));
         qc.invalidateQueries({ queryKey: crewKeys.taskProject(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });

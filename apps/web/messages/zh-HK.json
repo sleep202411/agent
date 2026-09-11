@@ -9462,5 +9462,23 @@
     "nowPlaying": "正在播放",
     "notPlaying": "未播放",
     "loadingChannel": "正在載入下一頻道…"
+  },
+  "crewTaskCenter": {
+    "unreadCrewNotifications": "{count} 則未讀劇組通知",
+    "unreadNotifications": "{count} 則未讀任務通知",
+    "title": "任務中心",
+    "description": "集中管理你參與劇組的任務。",
+    "back": "返回劇組",
+    "scope": "範圍",
+    "allTasks": "所有可存取任務",
+    "mine": "指派給我",
+    "status": "狀態",
+    "active": "未完成任務",
+    "allStatuses": "所有狀態",
+    "search": "搜尋任務標題",
+    "loading": "正在載入任務…",
+    "retry": "重試",
+    "empty": "沒有符合篩選條件的任務。",
+    "loadMore": "載入更多"
   }
 }
