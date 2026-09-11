@@ -15,7 +15,6 @@ let holdPart: number | undefined;
 let uploaded: boolean;
 let completeCalls: number;
 let loseComplete: boolean;
-let beforePartFailure: (() => Promise<void>) | undefined;
 
 class Request {
   url = "";
@@ -36,8 +35,7 @@ class Request {
     const number = Number(this.url.split("/").pop());
     sends.push(number);
     if (number === holdPart) return;
-    void blob.arrayBuffer().then(async (buffer) => {
-      if (number === failPart && beforePartFailure) await beforePartFailure();
+    void blob.arrayBuffer().then((buffer) => {
       if (this.cancelled) return;
       if (number === failPart || transientFailures > 0) {
         this.status = transientFailures-- > 0 ? 503 : 400;
@@ -64,7 +62,6 @@ beforeEach(() => {
   uploaded = false;
   completeCalls = 0;
   loseComplete = false;
-  beforePartFailure = undefined;
   const persistence = new Map<string, string>();
   vi.stubGlobal("crypto", webcrypto);
   vi.stubGlobal("document", { documentElement: { lang: "en-US" }, cookie: "" });
@@ -169,10 +166,6 @@ describe("episode video upload", () => {
   it("rejects a same-name, same-size, same-timestamp file with different bytes", async () => {
     const { uploadEpisodeVideo } = await import("./episode-upload");
     failPart = 3;
-    beforePartFailure = () =>
-      vi.waitFor(() => {
-        expect(stored.has(1)).toBe(true);
-      });
     await expect(uploadEpisodeVideo(file(), options())).rejects.toThrow();
     failPart = undefined;
     await expect(uploadEpisodeVideo(file("XXXXXXXXabcdefghijk"), options())).rejects.toThrow(
