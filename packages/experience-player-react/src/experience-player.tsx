@@ -562,6 +562,27 @@ function ActiveExperienceRuntimePlayer({
     }
   };
 
+  const renderSlot = ({ renderer, key }: (typeof rendererSlots)[number]) => (
+    <CoreRenderer
+      key={key}
+      manifest={manifest}
+      renderer={renderer}
+      runtimeState={runtimeState}
+      active={started}
+      open={openRendererIds.has(renderer.instanceId)}
+      locale={playbackLocale}
+      orientation={orientation}
+      copy={copy}
+      muted={soundBlocked}
+      onTimelineTimeMs={(timeMs) => advanceTimeline(renderer.instanceId, timeMs)}
+      onOutcome={emitOutcome}
+      onRuntimeError={setRuntimeError}
+      onPlaybackHandle={registerPlaybackHandle}
+      onSoundBlocked={handleSoundBlocked}
+      renderWorldModel={renderWorldModel}
+    />
+  );
+
   return (
     <PlayerFrame
       orientation={orientation}
@@ -569,31 +590,37 @@ function ActiveExperienceRuntimePlayer({
       stageProfile={stageProfile}
       copy={copy}
       style={theme ? themeStyle(theme) : undefined}
+      stage={
+        <>
+          {scene ? (
+            rendererSlots
+              .filter(({ renderer }) => renderer.rendererId !== EXPERIENCE_CORE_CHOICE_RENDERER_ID)
+              .map(renderSlot)
+          ) : (
+            <div className="absolute inset-0 bg-black" />
+          )}
+          {scene && started && !endingId ? (
+            <ExperienceSpatialLayer
+              key={scene.sceneId}
+              manifest={manifest}
+              scene={scene}
+              runtimeState={runtimeState}
+              sceneTimeMs={sceneTimeMs}
+              locale={playbackLocale}
+              orientation={orientation}
+              onEvents={emitRuntimeEvents}
+              onRuntimeError={setRuntimeError}
+              onTimelineHoldGateChange={setTimelineHoldGate}
+            />
+          ) : null}
+        </>
+      }
     >
-      {scene ? (
-        rendererSlots.map(({ renderer, key }) => (
-          <CoreRenderer
-            key={key}
-            manifest={manifest}
-            renderer={renderer}
-            runtimeState={runtimeState}
-            active={started}
-            open={openRendererIds.has(renderer.instanceId)}
-            locale={playbackLocale}
-            orientation={orientation}
-            copy={copy}
-            muted={soundBlocked}
-            onTimelineTimeMs={(timeMs) => advanceTimeline(renderer.instanceId, timeMs)}
-            onOutcome={emitOutcome}
-            onRuntimeError={setRuntimeError}
-            onPlaybackHandle={registerPlaybackHandle}
-            onSoundBlocked={handleSoundBlocked}
-            renderWorldModel={renderWorldModel}
-          />
-        ))
-      ) : (
-        <div className="absolute inset-0 bg-black" />
-      )}
+      {!endingId && !runtimeError
+        ? rendererSlots
+            .filter(({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID)
+            .map(renderSlot)
+        : null}
 
       {soundBlocked && started && !endingId && !runtimeError && hasVideoRenderer ? (
         // Renderer overlays stack on the manifest's own `renderer.layer` as a raw
@@ -601,7 +628,7 @@ function ActiveExperienceRuntimePlayer({
         // this button puts it BEHIND the overlay it most needs to sit next to.
         // Stack above the widest band any manifest may declare instead.
         <div
-          className="absolute top-0 right-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6"
+          className="pointer-events-auto absolute top-0 right-0 p-4 pt-[max(1rem,env(safe-area-inset-top))] sm:p-6"
           style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 1 }}
         >
           <button type="button" className={SECONDARY_BUTTON} onClick={enableSound}>
@@ -611,25 +638,10 @@ function ActiveExperienceRuntimePlayer({
         </div>
       ) : null}
 
-      {scene && started && !endingId ? (
-        <ExperienceSpatialLayer
-          key={scene.sceneId}
-          manifest={manifest}
-          scene={scene}
-          runtimeState={runtimeState}
-          sceneTimeMs={sceneTimeMs}
-          locale={playbackLocale}
-          orientation={orientation}
-          onEvents={emitRuntimeEvents}
-          onRuntimeError={setRuntimeError}
-          onTimelineHoldGateChange={setTimelineHoldGate}
-        />
-      ) : null}
-
       {!started && !runtimeError ? (
         <div
           className={classNames(
-            "absolute inset-0 z-40 grid place-items-center p-6 text-center",
+            "pointer-events-auto absolute inset-0 z-40 grid place-items-center p-6 text-center",
             experienceProfile === "cinematic"
               ? "bg-black/68 backdrop-blur-sm"
               : "bg-[var(--experience-color-background,#111)]"
@@ -682,7 +694,7 @@ function ActiveExperienceRuntimePlayer({
         <div
           role="dialog"
           aria-modal="true"
-          className="absolute inset-0 z-50 grid place-items-center bg-black/78 p-6 text-center backdrop-blur-md"
+          className="pointer-events-auto absolute inset-0 z-50 grid place-items-center bg-black/78 p-6 text-center backdrop-blur-md"
         >
           <div className="max-w-lg">
             <p className="text-[11px] font-semibold tracking-[0.18em] text-white/42 uppercase">
@@ -710,7 +722,7 @@ function ActiveExperienceRuntimePlayer({
         <div
           role="alertdialog"
           aria-modal="true"
-          className="absolute inset-0 z-[60] grid place-items-center bg-black/84 p-6 text-center backdrop-blur-md"
+          className="pointer-events-auto absolute inset-0 z-[60] grid place-items-center bg-black/84 p-6 text-center backdrop-blur-md"
         >
           <div className="max-w-md">
             <IconAlertTriangle className="mx-auto size-6 text-red-400" />
@@ -1404,7 +1416,7 @@ function CoreChoiceRenderer({
     <div
       role="group"
       aria-labelledby={promptId}
-      className="absolute inset-x-0 bottom-0 bg-linear-to-t from-black via-black/88 to-transparent px-4 pt-24 pb-12 sm:px-8 sm:pb-16"
+      className="pointer-events-auto absolute inset-x-0 bottom-0 bg-linear-to-t from-black via-black/88 to-transparent px-4 pt-24 pb-12 sm:px-8 sm:pb-16"
       style={{ zIndex: renderer.layer }}
     >
       <p
@@ -1463,7 +1475,8 @@ const STAGE_ASPECT: Record<ExperienceOrientation, number> = {
  * viewport, rotating landscape work on portrait screens when necessary. The
  * narrative shell is responsive instead, so long-form text owns the available
  * reading viewport without being cropped. Renderer selection remains entirely
- * manifest-driven in both profiles.
+ * manifest-driven in both profiles. Choices and player controls belong to the
+ * visible viewport, outside the cropped/rotated media coordinate space.
  */
 function PlayerFrame({
   orientation,
@@ -1471,6 +1484,7 @@ function PlayerFrame({
   stageProfile,
   copy,
   style,
+  stage,
   children,
 }: {
   orientation: ExperienceOrientation;
@@ -1478,6 +1492,7 @@ function PlayerFrame({
   stageProfile: ExperienceProfile;
   copy: ExperiencePlayerCopy;
   style?: CSSProperties;
+  stage: React.ReactNode;
   children: React.ReactNode;
 }) {
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -1506,11 +1521,18 @@ function PlayerFrame({
       className="relative h-full min-h-[inherit] w-full overflow-hidden bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
     >
       <div
-        className="absolute left-1/2 top-1/2"
+        data-experience-media-stage=""
+        className="absolute left-1/2 top-1/2 isolate z-0"
         style={{
           ...stageStyle,
           transform: rotated ? "translate(-50%, -50%) rotate(90deg)" : "translate(-50%, -50%)",
         }}
+      >
+        {stage}
+      </div>
+      <div
+        data-experience-viewport-overlay=""
+        className="pointer-events-none absolute inset-0 isolate z-10"
       >
         {children}
       </div>
