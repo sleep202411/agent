@@ -71,6 +71,8 @@ export function TaskQuickCreate({
   const create = useCreateCrewTask(crewId);
   const episodes = useCrewEpisodes(crewId);
   const draftTask = useDraftCrewTask(crewId);
+  const { reset: resetCreate } = create;
+  const { reset: resetDraft } = draftTask;
   const displays = useUserDisplays(members.map((member) => member.userId));
   const titleRef = useRef<HTMLTextAreaElement>(null);
   // Keyboard events can arrive before mutation pending state has rendered.
@@ -88,6 +90,31 @@ export function TaskQuickCreate({
   const [createMore, setCreateMore] = useState(false);
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
   const [expanded, setExpanded] = useState(false);
+
+  const [context, setContext] = useState({ open, crewId, parentId });
+  if (context.open !== open || context.crewId !== crewId || context.parentId !== parentId) {
+    setContext({ open, crewId, parentId });
+    setTitle("");
+    setDescription("");
+    setPriority("normal");
+    setWorkflowStateId(null);
+    setAssigneeUserId("");
+    setLabelIds([]);
+    setCycleId(null);
+    setEpisodeId(null);
+    setDueDate("");
+    setDraft(null);
+  }
+  const session = useRef(0);
+  useEffect(() => {
+    session.current += 1;
+    operationInFlight.current = false;
+    resetCreate();
+    resetDraft();
+    return () => {
+      session.current += 1;
+    };
+  }, [open, crewId, parentId, resetCreate, resetDraft]);
 
   const activeCycle = project.cycles.find((cycle) => cycle.status === "active") ?? null;
   const defaultCycleId = useMemo(() => {
@@ -166,10 +193,11 @@ export function TaskQuickCreate({
   };
 
   const generateDraft = async () => {
-    if (operationInFlight.current || create.isPending || draftTask.isPending) return;
+    if (!open || operationInFlight.current || create.isPending || draftTask.isPending) return;
     const prompt = [title.trim(), description.trim()].filter(Boolean).join("\n\n");
     if (!prompt) return;
     operationInFlight.current = true;
+    const requestedSession = session.current;
     const requestedRevision = promptRevision.current;
     try {
       const next = await draftTask.mutateAsync({
@@ -181,7 +209,8 @@ export function TaskQuickCreate({
           displayName: displayNameOf(member.userId, displays),
         })),
       });
-      if (promptRevision.current !== requestedRevision) return;
+      if (session.current !== requestedSession || promptRevision.current !== requestedRevision)
+        return;
       setDraft(next);
       setTitle(next.title);
       setDescription(next.description);
@@ -190,14 +219,16 @@ export function TaskQuickCreate({
       setCycleId(next.cycleId ?? defaultCycleId);
       setDueDate(next.dueDate ?? "");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("draftFailed"));
+      if (session.current === requestedSession) {
+        toast.error(error instanceof Error ? error.message : t("draftFailed"));
+      }
     } finally {
-      operationInFlight.current = false;
+      if (session.current === requestedSession) operationInFlight.current = false;
     }
   };
 
   const submit = async () => {
-    if (operationInFlight.current || create.isPending || draftTask.isPending) return;
+    if (!open || operationInFlight.current || create.isPending || draftTask.isPending) return;
     const nextTitle = title.trim();
     if (!nextTitle) {
       titleRef.current?.focus();
@@ -205,6 +236,7 @@ export function TaskQuickCreate({
     }
     if (!resolvedWorkflowStateId) return;
     operationInFlight.current = true;
+    const requestedSession = session.current;
     try {
       const task = await create.mutateAsync({
         title: nextTitle,
@@ -223,6 +255,7 @@ export function TaskQuickCreate({
         labelIds,
         assignees: assigneeUserId ? [{ userId: assigneeUserId, currency: CREW_CURRENCY }] : [],
       });
+      if (session.current !== requestedSession) return;
       toast.success(t("created"));
       onCreated?.(task);
       if (createMore) {
@@ -232,9 +265,11 @@ export function TaskQuickCreate({
         setOpen(false);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("createFailed"));
+      if (session.current === requestedSession) {
+        toast.error(error instanceof Error ? error.message : t("createFailed"));
+      }
     } finally {
-      operationInFlight.current = false;
+      if (session.current === requestedSession) operationInFlight.current = false;
     }
   };
 

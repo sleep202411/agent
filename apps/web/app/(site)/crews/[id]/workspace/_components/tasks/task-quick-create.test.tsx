@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   create: vi.fn(),
   draft: vi.fn(),
   resetDraft: vi.fn(),
+  resetCreate: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -38,6 +39,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCreateCrewTask: () => ({
     mutateAsync: state.create,
+    reset: state.resetCreate,
     isPending: false,
   }),
   useDraftCrewTask: () => ({
@@ -87,10 +89,17 @@ const view = {
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function renderQuickCreate(onCreated = vi.fn(), onOpenChange = vi.fn(), taskProject = project) {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+function renderQuickCreate(
+  onCreated = vi.fn(),
+  onOpenChange = vi.fn(),
+  taskProject = project,
+  context: { open?: boolean; crewId?: string; parentId?: string } = {}
+) {
+  if (!root) {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  }
   act(() =>
     root!.render(
       <TaskQuickCreate
@@ -101,6 +110,7 @@ function renderQuickCreate(onCreated = vi.fn(), onOpenChange = vi.fn(), taskProj
         project={taskProject}
         activeView={view}
         onCreated={onCreated}
+        {...context}
       />
     )
   );
@@ -277,6 +287,98 @@ describe("TaskQuickCreate", () => {
           description: label === "Task brief" ? "Newer user text" : "",
         })
       );
+    }
+  );
+
+  it("ignores AI results from a closed composer session", async () => {
+    let finish!: (value: unknown) => void;
+    state.draft.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const onCreated = vi.fn();
+    const onOpenChange = vi.fn();
+    renderQuickCreate(onCreated, onOpenChange);
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Old prompt"
+      )
+    );
+    await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+    await act(async () => click(button("Organize with AI")));
+    renderQuickCreate(onCreated, onOpenChange, project, { open: false });
+    renderQuickCreate(onCreated, onOpenChange);
+    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    expect(title.value).toBe("");
+    act(() => fill(title, "New session"));
+    await act(async () =>
+      finish({
+        title: "Old AI title",
+        description: "Old AI brief",
+        priority: "normal",
+        assigneeUserIds: [],
+        questions: [],
+      })
+    );
+    expect(title.value).toBe("New session");
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("does not clear a new composer or release its pending guard when an old creation finishes", async () => {
+    let finishOld!: (value: unknown) => void;
+    let finishNew!: (value: unknown) => void;
+    state.create.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishOld = resolve;
+      })
+    );
+    state.create.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishNew = resolve;
+      })
+    );
+    const onCreated = vi.fn();
+    const onOpenChange = vi.fn();
+    renderQuickCreate(onCreated, onOpenChange);
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Old task"
+      )
+    );
+    act(() => click(exactButton("Create")));
+    renderQuickCreate(onCreated, onOpenChange, project, { open: false });
+    renderQuickCreate(onCreated, onOpenChange);
+    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    act(() => fill(title, "New task"));
+    act(() => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledTimes(2);
+    await act(async () => finishOld({ id: "old-task" }));
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(title.value).toBe("New task");
+    act(() => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledTimes(2);
+    await act(async () => finishNew({ id: "new-task" }));
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith({ id: "new-task" });
+  });
+
+  it.each([{ crewId: "crew-2" }, { parentId: "parent-2" }])(
+    "clears draft text when the creation context changes: %j",
+    (context) => {
+      renderQuickCreate();
+      act(() =>
+        fill(
+          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+          "Previous context"
+        )
+      );
+      renderQuickCreate(vi.fn(), vi.fn(), project, context);
+      expect(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value
+      ).toBe("");
     }
   );
 
