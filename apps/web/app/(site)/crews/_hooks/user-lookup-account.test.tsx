@@ -110,3 +110,15 @@ it.each([404, 403, 503])(
     );
   }
 );
+
+it("retains actionable lookup validation details", async () => {
+  const error = new CrewApiError(400, {
+    message: "Validation failed",
+    issues: [{ path: "email", message: "Use a supported email address" }],
+  });
+  vi.mocked(crewApi.get).mockRejectedValue(error);
+  const view = mount(() => useUserLookup({ query: "person@example.com" }));
+  await settle();
+  expect(view.current()).toEqual({ kind: "error", status: 400, message: error.message });
+  expect(error.message).toContain("Use a supported email address");
+});

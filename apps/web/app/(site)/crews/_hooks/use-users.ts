@@ -76,12 +76,7 @@ export function useUserLookup({ query, checkCrewId }: LookupArgs): LookupState {
   if (q.error) {
     if (q.error instanceof CrewApiError) {
       if (q.error.status === 404) return { kind: "notFound" };
-      const body = q.error.body;
-      const message =
-        body && typeof body === "object" && "message" in body
-          ? String((body as { message: unknown }).message)
-          : q.error.message;
-      return { kind: "error", message, status: q.error.status };
+      return { kind: "error", message: q.error.message, status: q.error.status };
     }
     return {
       kind: "error",
