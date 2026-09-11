@@ -1,3 +1,6 @@
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({ open: vi.fn() }),
+}));
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot } from "react-dom/client";

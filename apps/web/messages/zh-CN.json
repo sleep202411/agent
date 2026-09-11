@@ -9465,6 +9465,8 @@
     "loadingChannel": "正在加载下一频道…"
   },
   "crewTaskCenter": {
+    "signInRequired": "登录后查看你的剧组任务。",
+    "signIn": "登录",
     "unreadCrewNotifications": "{count} 条未读剧组通知",
     "unreadNotifications": "{count} 条未读任务通知",
     "title": "任务中心",

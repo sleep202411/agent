@@ -9465,6 +9465,8 @@
     "loadingChannel": "Loading next channel…"
   },
   "crewTaskCenter": {
+    "signInRequired": "Sign in to view your Crew tasks.",
+    "signIn": "Sign in",
     "unreadCrewNotifications": "{count} unread Crew notifications",
     "unreadNotifications": "{count} unread task notifications",
     "title": "Task center",

@@ -11,8 +11,15 @@ const state = vi.hoisted(() => ({
   get: vi.fn(),
   empty: false,
   nextError: false,
+  userId: "viewer" as string | null,
+  login: vi.fn(),
 }));
-vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "viewer" } }) }));
+vi.mock("@/components/auth/auth-dialog-provider", () => ({
+  useAuthDialog: () => ({ open: state.login }),
+}));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: state.userId ? { id: state.userId } : null, isLoading: false }),
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "zh-CN",
   useTranslations: () => (key: string) => key,
@@ -84,6 +91,7 @@ afterEach(() => {
   document.body.innerHTML = "";
   state.empty = false;
   state.nextError = false;
+  state.userId = "viewer";
   vi.clearAllMocks();
 });
 function render() {
@@ -135,4 +143,16 @@ it("keeps existing tasks visible after a failed next page and retries that page"
   )!;
   act(() => retry.click());
   expect(state.next).toHaveBeenCalledOnce();
+});
+
+it("offers sign-in instead of an endless task spinner for a logged-out visitor", () => {
+  state.userId = null;
+  render();
+  expect(document.body.textContent).toContain("signInRequired");
+  expect(document.body.textContent).not.toContain("First review");
+  const login = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "signIn"
+  )!;
+  act(() => login.click());
+  expect(state.login).toHaveBeenCalledOnce();
 });

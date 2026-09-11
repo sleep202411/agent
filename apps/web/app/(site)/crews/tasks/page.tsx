@@ -2,6 +2,7 @@
 
 import { useDeferredValue, useState } from "react";
 import Link from "next/link";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { TaskUnreadMarker } from "../_components/task-unread-marker";
@@ -31,7 +32,8 @@ interface TaskPage {
 
 export default function CrewTaskCenter() {
   const t = useTranslations("crewTaskCenter");
-  const { user } = useCurrentUser();
+  const { user, isLoading: authLoading } = useCurrentUser();
+  const { open: openAuthDialog } = useAuthDialog();
   const taskT = useTranslations("crewTasks");
   const locale = useLocale() as Locale;
   const [scope, setScope] = useState("all");
@@ -97,7 +99,14 @@ export default function CrewTaskCenter() {
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
-      {feed.isPending ? (
+      {authLoading ? (
+        <p role="status">{t("loading")}</p>
+      ) : !user ? (
+        <div className="space-y-3">
+          <p>{t("signInRequired")}</p>
+          <Button onClick={() => openAuthDialog()}>{t("signIn")}</Button>
+        </div>
+      ) : feed.isPending ? (
         <p role="status">{t("loading")}</p>
       ) : feed.isError && !feed.isFetchNextPageError ? (
         <div role="alert" className="space-y-3">
@@ -148,12 +157,12 @@ export default function CrewTaskCenter() {
           ))}
         </ul>
       )}
-      {feed.isFetchNextPageError && (
+      {user && !authLoading && feed.isFetchNextPageError && (
         <p role="alert" className="text-sm text-destructive">
           {feed.error?.message}
         </p>
       )}
-      {feed.hasNextPage && (!feed.isError || feed.isFetchNextPageError) && (
+      {user && !authLoading && feed.hasNextPage && (!feed.isError || feed.isFetchNextPageError) && (
         <Button disabled={feed.isFetchingNextPage} onClick={() => void feed.fetchNextPage()}>
           {feed.isFetchNextPageError ? t("retry") : t("loadMore")}
         </Button>
