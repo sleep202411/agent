@@ -634,7 +634,11 @@ function workflowStateLabel(
   state: CrewTaskProjectDTO["workflowStates"][number],
   t: ReturnType<typeof useTranslations>
 ) {
-  return state.systemKey === "backlog" ? t("backlog") : t(`status.${state.semantic}`);
+  return state.systemKey === "backlog"
+    ? t("backlog")
+    : state.systemKey
+      ? t(`status.${state.systemKey}`)
+      : state.name;
 }
 
 function dateStartIso(value: string | null): string | null {

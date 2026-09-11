@@ -87,7 +87,7 @@ const view = {
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function renderQuickCreate(onCreated = vi.fn(), onOpenChange = vi.fn()) {
+function renderQuickCreate(onCreated = vi.fn(), onOpenChange = vi.fn(), taskProject = project) {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -98,7 +98,7 @@ function renderQuickCreate(onCreated = vi.fn(), onOpenChange = vi.fn()) {
         onOpenChange={onOpenChange}
         crewId="crew-1"
         members={[member]}
-        project={project}
+        project={taskProject}
         activeView={view}
         onCreated={onCreated}
       />
@@ -330,5 +330,20 @@ describe("TaskQuickCreate", () => {
         dueAt: date ? new Date(`${date}T23:59:59`).toISOString() : null,
       })
     );
+  });
+  it("shows a custom workflow name instead of its generic semantic status", () => {
+    renderQuickCreate(vi.fn(), vi.fn(), {
+      ...project,
+      workflowStates: [
+        {
+          ...project.workflowStates[0]!,
+          id: "custom-review",
+          systemKey: null,
+          semantic: "open",
+          name: "Producer briefing",
+        },
+      ],
+    });
+    expect(document.body.textContent).toContain("Producer briefing");
   });
 });
