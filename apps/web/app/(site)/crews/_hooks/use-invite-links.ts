@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 
@@ -29,9 +30,10 @@ export interface CreateCrewInviteLinkInput {
 }
 
 export function useCrewInviteLinks(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.inviteLinks(crewId),
-    enabled: enabled && !!crewId,
+    queryKey: [...crewKeys.inviteLinks(crewId), user?.id ?? null],
+    enabled: enabled && !!crewId && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewInviteLinkDTO[]>(`/crews/${encodeURIComponent(crewId)}/invite-links`),
   });

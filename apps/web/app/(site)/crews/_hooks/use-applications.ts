@@ -8,6 +8,7 @@
 
 import { useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -33,6 +34,7 @@ export function useCrewApplications(
   enabled = true,
   options: CrewApplicationsOptions = {}
 ) {
+  const { user } = useCurrentUser();
   const pageSize = options.pageSize ?? 50;
   const query = useInfiniteQuery({
     queryKey: [
@@ -40,8 +42,9 @@ export function useCrewApplications(
       options.positionId ?? "all-positions",
       options.status ?? "all-statuses",
       pageSize,
+      user?.id ?? null,
     ] as const,
-    enabled: !!crewId && enabled,
+    enabled: !!crewId && enabled && Boolean(user),
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewApplicationPageDTO>(`/crews/${encodeURIComponent(crewId!)}/applications`, {
         query: {
@@ -69,9 +72,10 @@ export function useCrewApplication(
   applicationId: string | null | undefined,
   enabled = true
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.application(crewId ?? "", applicationId ?? ""),
-    enabled: !!crewId && !!applicationId && enabled,
+    queryKey: [...crewKeys.application(crewId ?? "", applicationId ?? ""), user?.id ?? null],
+    enabled: !!crewId && !!applicationId && enabled && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewApplicationDTO>(
         `/crews/${encodeURIComponent(crewId!)}/applications/${encodeURIComponent(applicationId!)}`
