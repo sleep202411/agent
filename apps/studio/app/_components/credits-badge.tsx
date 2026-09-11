@@ -73,7 +73,7 @@ async function getComputeWalletBalance(
   return { available, held, total: available + held, nextExpiry };
 }
 
-export function useComputeWalletBalance(enabled = true) {
+export function useComputeWalletBalance(enabled = true, explicitWorkspaceId?: string) {
   const { user } = useAuth();
   // Scopes to the pot the CURRENT USER pays from FOR THE OPEN PROJECT (mirrors
   // the server payer rule, keyed on the project's workspace): a team project
@@ -81,7 +81,8 @@ export function useComputeWalletBalance(enabled = true) {
   // personal pot — including when collaborating in someone else's personal
   // project, where reading the host's wallet would 403. Outside any project it
   // falls back to the global billing workspace.
-  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
+  const payerWorkspaceId = useProjectPayerWorkspace()?.id ?? null;
+  const workspaceId = explicitWorkspaceId ?? payerWorkspaceId;
   return useQuery({
     queryKey: computeWalletBalanceKey(workspaceId),
     queryFn: () => getComputeWalletBalance(workspaceId),

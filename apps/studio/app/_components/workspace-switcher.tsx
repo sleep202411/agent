@@ -1,9 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { openSettings } from "@/lib/settings-hash";
-import { IconChevronDown, IconPlus, IconUpload, IconUserPlus, IconX } from "@tabler/icons-react";
+import {
+  IconBolt,
+  IconChevronDown,
+  IconPlus,
+  IconUpload,
+  IconUserPlus,
+  IconX,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -29,6 +36,7 @@ import { Field, FIELD_BUTTON, FIELD_CONTROL, FIELD_CONTROL_TEXTAREA } from "@/co
 import { GlassRim } from "@/components/ui/glass-rim";
 import type { WorkspaceRef } from "@/lib/collab/projects-api";
 import { useWorkspace } from "./workspace-context";
+import { useComputeWalletBalance } from "./credits-badge";
 
 const canManage = (ws: WorkspaceRef) => ws.role === "owner" || ws.role === "admin";
 
@@ -65,6 +73,29 @@ function WsAvatar({
   );
 }
 
+/** Each row reads its own wallet, independently of the open project's payer. */
+function WorkspaceBalance({ workspaceId, enabled }: { workspaceId: string; enabled: boolean }) {
+  const t = useTranslations("workspace");
+  const locale = useLocale();
+  const { data, isError, error } = useComputeWalletBalance(enabled, workspaceId);
+  const amount = data?.available.toLocaleString(locale);
+  const label = isError
+    ? error.message || t("balanceUnavailable")
+    : amount != null
+      ? t("availableCredits", { amount })
+      : t("balanceLoading");
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium tabular-nums text-muted-foreground"
+      title={label}
+      aria-label={label}
+    >
+      <IconBolt className="size-3.5" stroke={1.8} aria-hidden />
+      {isError ? "—" : (amount ?? <span className="h-3 w-10 animate-pulse rounded bg-white/10" />)}
+    </span>
+  );
+}
+
 export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
@@ -78,6 +109,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         | "roles.member"
     );
   const { workspaces, activeWorkspace, setActiveWorkspaceId, createTeam } = useWorkspace();
+  const [menuOpen, setMenuOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [teamDescription, setTeamDescription] = useState("");
@@ -123,7 +155,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           aria-label={collapsed ? t("switchTeams") : undefined}
           className={cn(
@@ -149,7 +181,11 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
           )}
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="start" sideOffset={8} className="w-80">
+        <DropdownMenuContent
+          align="start"
+          sideOffset={8}
+          className="w-[min(26rem,calc(100vw-1rem))]"
+        >
           <DropdownMenuLabel className="text-muted-foreground">
             {t("switchTeams")}
           </DropdownMenuLabel>
@@ -183,21 +219,24 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
                   </span>
                 </span>
               </span>
-              {ws.type === "team" && canManage(ws) && (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    setActiveWorkspaceId(ws.id);
-                    openSettings("members");
-                  }}
-                  className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
-                >
-                  <IconUserPlus className="size-3.5" />
-                  {t("invite")}
-                </button>
-              )}
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <WorkspaceBalance workspaceId={ws.id} enabled={menuOpen} />
+                {ws.type === "team" && canManage(ws) && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      event.preventDefault();
+                      setActiveWorkspaceId(ws.id);
+                      openSettings("members");
+                    }}
+                    className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
+                  >
+                    <IconUserPlus className="size-3.5" />
+                    {t("invite")}
+                  </button>
+                )}
+              </span>
             </DropdownMenuItem>
           ))}
 
