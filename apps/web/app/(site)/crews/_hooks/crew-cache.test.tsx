@@ -16,7 +16,14 @@ import {
   useDeleteCrewTaskField,
   useUpdateCrewTaskWorkflowState,
 } from "./use-tasks";
-import { useCrewMembers } from "./use-members";
+import {
+  useCrewMembers,
+  useRemoveMember,
+  useUpdateMember,
+  useTransferCrewOwner,
+} from "./use-members";
+import { useUpdateCrew, useDeleteCrew } from "./use-crew-detail";
+import { useAcceptCrewInvitation } from "./use-invitations";
 import { useApproveCrewEarning, useReverseCrewEarning } from "./use-earnings";
 import { usePayCrewPayout, useVoidCrewPayout } from "./use-payouts";
 
@@ -258,3 +265,59 @@ it.each(["create", "update", "submit", "review"] as const)(
     expect(client.getQueryState(crewKeys.task("child"))?.isInvalidated).toBe(false);
   }
 );
+
+describe("Crew lifecycle task-centre refresh", () => {
+  it.each(["rename", "delete", "remove", "permissions", "transfer", "accept"])(
+    "refreshes task-centre results after %s succeeds",
+    async (action) => {
+      vi.mocked(crewApi.patch).mockResolvedValue({ id: "crew-1" });
+      vi.mocked(crewApi.delete).mockResolvedValue(undefined);
+      vi.mocked(crewApi.post).mockResolvedValue({ crewId: "crew-1" });
+      const current = mount(() => {
+        const rename = useUpdateCrew();
+        const removeCrew = useDeleteCrew();
+        const removeMember = useRemoveMember("crew-1");
+        const permissions = useUpdateMember("crew-1");
+        const transfer = useTransferCrewOwner("crew-1");
+        const accept = useAcceptCrewInvitation("invite-1");
+        return () => {
+          switch (action) {
+            case "rename":
+              return rename.mutateAsync({
+                id: "crew-1",
+                expectedVersion: 1,
+                name: "Renamed",
+              } as never);
+            case "delete":
+              return removeCrew.mutateAsync("crew-1");
+            case "remove":
+              return removeMember.mutateAsync("member-1");
+            case "permissions":
+              return permissions.mutateAsync({
+                memberId: "member-1",
+                input: { policyKeys: [] },
+              } as never);
+            case "transfer":
+              return transfer.mutateAsync({ toUserId: "new-owner", removeOldOwner: true });
+            default:
+              return accept.mutateAsync();
+          }
+        };
+      });
+      const center = [...crewKeys.taskCenter, "viewer", "all", "active", ""];
+      client.setQueryData(center, {
+        pages: [{ items: [{ crew: { id: "crew-1", name: "Old name" } }] }],
+      });
+      client.setQueryData(crewKeys.membership("crew-1"), { permissions: ["tasks.review"] });
+      client.setQueryData(crewKeys.membership("crew-other"), { permissions: [] });
+      await act(async () => {
+        await current()();
+      });
+      expect(client.getQueryState(center)?.isInvalidated).toBe(true);
+      if (action !== "rename") {
+        expect(client.getQueryState(crewKeys.membership("crew-1"))?.isInvalidated).toBe(true);
+      }
+      expect(client.getQueryState(crewKeys.membership("crew-other"))?.isInvalidated).toBe(false);
+    }
+  );
+});

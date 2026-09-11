@@ -57,10 +57,13 @@ export function useAcceptCrewInvitation(invitationId: string) {
         agreementQueued: boolean;
         workspaceHref: string;
       }>(`/crew-invitations/${encodeURIComponent(invitationId)}/accept`),
-    onSuccess: () => {
+    onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: crewKeys.invitation(invitationId) });
       qc.invalidateQueries({ queryKey: crewKeys.myInvitations });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
+      qc.invalidateQueries({ queryKey: crewKeys.membership(data.crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.members(data.crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
     },
   });
 }

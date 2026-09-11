@@ -68,8 +68,11 @@ export function useRemoveMember(crewId: string) {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.mine });
     },
   });
 }
@@ -84,6 +87,7 @@ export function useUpdateMember(crewId: string) {
       ),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
     },
   });
@@ -103,8 +107,10 @@ export function useTransferCrewOwner(crewId: string) {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
       qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
+      qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
     },
   });
 }

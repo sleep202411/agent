@@ -70,6 +70,7 @@ export function useUpdateCrew() {
       qc.setQueryData(crewKeys.detail(vars.id), data);
       qc.invalidateQueries({ queryKey: ["crew", "list"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
     },
   });
 }
@@ -95,6 +96,8 @@ export function useDeleteCrew() {
       qc.invalidateQueries({ queryKey: crewKeys.detail(id) });
       qc.invalidateQueries({ queryKey: ["crew", "list"] });
       qc.invalidateQueries({ queryKey: crewKeys.mine });
+      qc.invalidateQueries({ queryKey: crewKeys.membership(id) });
+      qc.invalidateQueries({ queryKey: crewKeys.taskCenter });
     },
   });
 }
