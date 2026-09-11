@@ -8,7 +8,12 @@ import type { IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const harness = vi.hoisted(() => ({ get: vi.fn(), routerPush: vi.fn() }));
+const harness = vi.hoisted(() => ({
+  get: vi.fn(),
+  list: vi.fn(),
+  discovery: vi.fn(),
+  routerPush: vi.fn(),
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: (ns: string) => (key: string, values?: { number?: string }) =>
     key === "roomNumber" ? `Room ${values?.number}` : `${ns}.${key}`,
@@ -16,7 +21,15 @@ vi.mock("@/src/i18n/i18n", () => ({
 }));
 vi.mock("@/src/i18n/locale-url", () => ({ localizePath: (path: string) => path }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: harness.routerPush }) }));
-vi.mock("@/src/lib/api", () => ({ api: { get: harness.get } }));
+vi.mock("@/src/lib/api", () => ({
+  api: {
+    get: (path: string, config?: unknown) => {
+      harness.get(path, config);
+      if (String(path).includes("/discovery")) return harness.discovery();
+      return harness.list(config);
+    },
+  },
+}));
 function makeIp(id: string, title: string): IpCommerceIp {
   const asset = (url: string, kind: "image" | "video") => ({
     id: `${id}-${url}`,
@@ -93,7 +106,9 @@ describe("TV IP list", () => {
         disconnect() {}
       }
     );
-    harness.get.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
+    harness.get.mockReset();
+    harness.list.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
+    harness.discovery.mockReset().mockResolvedValue({ items: [] });
     harness.routerPush.mockClear();
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement("div");
@@ -167,8 +182,28 @@ describe("TV IP list", () => {
     await waitForSource("ip-1");
   });
 
+  it("leads the catalog with IP Plaza For you placements", async () => {
+    const featured = makeIp("ip-featured", "Featured IP");
+    harness.discovery.mockResolvedValue({
+      items: [{ ipCard: featured, sortOrder: 0 }],
+    });
+    harness.list.mockResolvedValue({ items: ips, nextCursor: null });
+    await render();
+    await waitForText("Featured IP");
+    expect(selected()).toContain("Featured IP");
+    expect(selected()).toContain("tv.hot");
+    const labels = [...container.querySelectorAll("nav button")].map((button) =>
+      button.getAttribute("aria-label")
+    );
+    expect(labels[0]).toContain("Featured IP");
+    expect(labels[0]).toContain("tv.hot");
+    expect(labels[1]).toContain("First IP");
+    expect(container.querySelector('nav [aria-label="tv.hot"]')).not.toBeNull();
+    await waitForSource("ip-featured");
+  });
+
   it("shows genres consistently and marks only playable channels with a video icon", async () => {
-    harness.get.mockResolvedValue({
+    harness.list.mockResolvedValue({
       items: [
         { ...ips[0], subtitle: "A marketing tagline", copyrightOwner: "First creator" },
         { ...ips[1], genres: [], subtitle: "Another tagline", trailerAsset: null },
@@ -196,7 +231,7 @@ describe("TV IP list", () => {
     "shows stable room numbers in the list and selected IP (embedded=%s)",
     async (embedded) => {
       const roomNumber = "9223372036854775807";
-      harness.get.mockResolvedValue({
+      harness.list.mockResolvedValue({
         items: [{ ...ips[0], roomNumber }, ips[1]],
         nextCursor: null,
       });
@@ -255,7 +290,7 @@ describe("TV IP list", () => {
   });
 
   it("preserves selection when loading another page or refreshing reordered results", async () => {
-    harness.get
+    harness.list
       .mockResolvedValueOnce({ items: ips, nextCursor: "next" })
       .mockResolvedValueOnce({ items: [makeIp("ip-3", "Third IP")], nextCursor: null });
     await render();
@@ -267,7 +302,7 @@ describe("TV IP list", () => {
         .click()
     );
     await waitForText("Third IP");
-    expect(harness.get).toHaveBeenLastCalledWith("/aurora/ip-commerce/ips", {
+    expect(harness.list).toHaveBeenLastCalledWith({
       params: {
         locale: "en-US",
         cursor: "next",
@@ -330,7 +365,7 @@ describe("TV IP list", () => {
   });
 
   it("advances to the next playable channel on ended and stops at the catalog end", async () => {
-    harness.get.mockResolvedValue({
+    harness.list.mockResolvedValue({
       items: [ips[0], { ...ips[1], trailerAsset: null }, makeIp("ip-3", "Third IP")],
       nextCursor: null,
     });
@@ -350,7 +385,7 @@ describe("TV IP list", () => {
   });
 
   it("loads through cover-only pages when advancing beyond the current page", async () => {
-    harness.get
+    harness.list
       .mockReset()
       .mockResolvedValueOnce({ items: [ips[0]], nextCursor: "page-2" })
       .mockResolvedValueOnce({ items: [{ ...ips[1], trailerAsset: null }], nextCursor: "page-3" })
@@ -360,13 +395,13 @@ describe("TV IP list", () => {
     act(() => player().trigger("ended"));
     await waitForSource("ip-3");
     expect(selected()).toContain("Third IP");
-    expect(harness.get).toHaveBeenCalledTimes(3);
+    expect(harness.list).toHaveBeenCalledTimes(3);
     expect(container.textContent).not.toContain("tv.loadingChannel");
   });
 
   it("does not let a late next-page response override a manual selection", async () => {
     let resolvePage!: (value: unknown) => void;
-    harness.get
+    harness.list
       .mockReset()
       .mockResolvedValueOnce({ items: ips, nextCursor: "page-2" })
       .mockImplementationOnce(
@@ -391,7 +426,7 @@ describe("TV IP list", () => {
   });
 
   it("surfaces a next-page failure and lets the viewer retry without losing the channel", async () => {
-    harness.get
+    harness.list
       .mockReset()
       .mockResolvedValueOnce({ items: [ips[0]], nextCursor: "page-2" })
       .mockRejectedValueOnce(new Error("Catalog page unavailable"))
@@ -407,7 +442,7 @@ describe("TV IP list", () => {
   });
 
   it("preserves volume and mute through a cover-only channel", async () => {
-    harness.get.mockResolvedValue({
+    harness.list.mockResolvedValue({
       items: [ips[0], { ...ips[1], trailerAsset: null }, makeIp("ip-3", "Third IP")],
       nextCursor: null,
     });
@@ -472,7 +507,7 @@ describe("TV IP list", () => {
   });
 
   it("shows an empty list without inventing an aggregate channel", async () => {
-    harness.get.mockResolvedValue({ items: [], nextCursor: null });
+    harness.list.mockResolvedValue({ items: [], nextCursor: null });
     await render();
     await waitForText("tv.noIps");
     expect(container.querySelectorAll("nav button")).toHaveLength(0);
@@ -501,7 +536,7 @@ describe("TV IP list", () => {
   });
 
   it("shows upstream errors and retries the list request", async () => {
-    harness.get.mockRejectedValueOnce(new Error("Catalog temporarily unavailable"));
+    harness.list.mockRejectedValueOnce(new Error("Catalog temporarily unavailable"));
     await render();
     await waitForText("Catalog temporarily unavailable");
     act(() =>

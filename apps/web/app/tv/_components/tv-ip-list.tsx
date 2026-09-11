@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   IconChevronDown,
   IconDeviceTv,
+  IconFlame,
   IconLayoutSidebarLeftCollapse,
   IconLayoutSidebarLeftExpand,
   IconRefresh,
@@ -211,7 +212,13 @@ export function TvIpList({
           {items.map((item) => {
             const active = item.id === selectedId;
             const roomNumber = t("roomNumber", { number: item.roomNumber });
-            const label = [item.title, roomNumber, item.genre, item.trailer && t("hasVideo")]
+            const label = [
+              item.title,
+              roomNumber,
+              item.genre,
+              item.hot && t("hot"),
+              item.trailer && t("hasVideo"),
+            ]
               .filter(Boolean)
               .join(", ");
             return (
@@ -227,7 +234,19 @@ export function TvIpList({
                   active ? "bg-white/[0.07] text-white" : "text-white/85 hover:bg-white/5"
                 )}
               >
-                <IpThumbnail key={item.cover} item={item} />
+                <span className="relative shrink-0">
+                  <IpThumbnail key={item.cover} item={item} />
+                  {item.hot ? (
+                    <span
+                      role="img"
+                      aria-label={t("hot")}
+                      title={t("hot")}
+                      className="absolute -bottom-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-[#0c0e13] text-primary"
+                    >
+                      <IconFlame aria-hidden className="size-3" stroke={1.75} />
+                    </span>
+                  ) : null}
+                </span>
                 <span className={cn("block min-w-0 flex-1", detailsClass)}>
                   <span className="block truncate text-sm font-medium leading-5 md:text-[15px]">
                     {item.title}

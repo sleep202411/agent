@@ -13,4 +13,6 @@ export interface TvItem {
   trailer: string;
   ownerName: string;
   episodeCount: number;
+  /** Operator "For you" placement — shown with a Hot stamp. */
+  hot?: boolean;
 }

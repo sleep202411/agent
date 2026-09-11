@@ -287,6 +287,7 @@ export type CreateAdminIpDiscoveryInput = z.infer<
 
 export const UpdateAdminIpDiscoverySchema = z
   .object({
+    ipId: z.string().uuid().optional(),
     status: IpDiscoveryRecommendationStatusSchema.optional(),
     sortOrder: z.number().int().min(0).max(1_000_000).optional(),
     startsAt: z.coerce.date().nullable().optional(),
