@@ -40,6 +40,10 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCreateCrew: () => ({ mutate: state.create, isPending: false }),
   useUpdateCrew: () => ({ mutate: state.update, isPending: false }),
 }));
+vi.mock("@/app/(site)/creators/_components/center/dialogs/level-apply-dialog", () => ({
+  AI_PRODUCER_LEVEL_ID: 13,
+  LevelApplyDialog: () => null,
+}));
 const container = document.createElement("div");
 document.body.appendChild(container);
 let root = createRoot(container);
@@ -89,7 +93,13 @@ it.each(["en-US", "zh-CN", "zh-HK"] as const)(
       )!;
       expect(notice).toBeTruthy();
       await act(async () => {
-        if (dismissal === "button") (notice.querySelector("button") as HTMLButtonElement).click();
+        if (dismissal === "button") {
+          const dismiss = Array.from(notice.querySelectorAll("button")).find(
+            (button) => button.textContent === dictionaries[locale].crew.creationRequirements.dismiss
+          );
+          expect(dismiss).toBeTruthy();
+          dismiss!.click();
+        }
         else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       });
       await vi.waitFor(() => expect(document.activeElement).toBe(opener));
