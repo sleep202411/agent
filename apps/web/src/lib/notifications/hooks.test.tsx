@@ -2,8 +2,15 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
-import { fetchUnreadCount, listNotifications } from "./api";
 import {
+  fetchUnreadCount,
+  listNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+} from "./api";
+import {
+  useMarkRead,
+  useMarkAllRead,
   notificationKeys,
   useRecentNotifications,
   useUnreadCount,
@@ -14,7 +21,12 @@ const session = vi.hoisted(() => ({ userId: "alice" as string | null }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: session.userId ? { id: session.userId } : null }),
 }));
-vi.mock("./api", () => ({ listNotifications: vi.fn(), fetchUnreadCount: vi.fn() }));
+vi.mock("./api", () => ({
+  listNotifications: vi.fn(),
+  fetchUnreadCount: vi.fn(),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 it("recovers recent notifications after a missed realtime push", async () => {
@@ -132,3 +144,76 @@ it("isolates the bell, count and inbox across logout and an account switch", asy
     vi.resetAllMocks();
   }
 });
+
+it.each(["one", "all"] as const)(
+  "keeps delayed mark-read (%s) refreshes with the initiating account",
+  async (mode) => {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    const keys = (account: string | null) => [
+      [...notificationKeys.unreadCount, account],
+      [...notificationKeys.list, account, 10],
+      [...notificationKeys.list, account, 20],
+      [...notificationKeys.feed, account, 30, "all"],
+      [...notificationKeys.feed, account, 30, "unread"],
+    ];
+    for (const account of ["alice", "bob", null]) {
+      for (const key of keys(account)) client.setQueryData(key, { retained: true });
+    }
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+    vi.mocked(markNotificationRead).mockImplementation(async () => {
+      await pending;
+      return { id: "notification" } as Awaited<ReturnType<typeof markNotificationRead>>;
+    });
+    vi.mocked(markAllNotificationsRead).mockImplementation(async () => {
+      await pending;
+      return { count: 1 };
+    });
+    let submit!: () => Promise<unknown>;
+    function Probe() {
+      const one = useMarkRead();
+      const all = useMarkAllRead();
+      submit = () => (mode === "one" ? one.mutateAsync("notification") : all.mutateAsync());
+      return null;
+    }
+    const render = async () => {
+      await act(async () =>
+        root.render(
+          <QueryClientProvider client={client}>
+            <Probe />
+          </QueryClientProvider>
+        )
+      );
+    };
+    try {
+      session.userId = "alice";
+      await render();
+      let result!: Promise<unknown>;
+      await act(async () => {
+        result = submit();
+      });
+      session.userId = "bob";
+      await render();
+      await act(async () => {
+        resolve();
+        await result;
+      });
+      for (const key of keys("alice")) expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+      for (const account of ["bob", null]) {
+        for (const key of keys(account))
+          expect(client.getQueryState(key)?.isInvalidated).toBe(false);
+      }
+    } finally {
+      act(() => root.unmount());
+      client.clear();
+      session.userId = "alice";
+      vi.resetAllMocks();
+    }
+  }
+);

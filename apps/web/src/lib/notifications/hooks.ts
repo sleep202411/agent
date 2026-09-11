@@ -72,24 +72,39 @@ export function useNotificationFeed(pageSize = 30, filter: NotificationFilter = 
   });
 }
 
-export function useMarkRead() {
+function useNotificationRefresh<TVariables = void>() {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  return {
+    onMutate: () => ({ accountUserId: user?.id ?? null }),
+    onSuccess: (
+      _data: unknown,
+      _variables: TVariables,
+      origin: { accountUserId: string | null } | undefined
+    ) => {
+      if (!origin?.accountUserId) return;
+      return qc.invalidateQueries({
+        queryKey: notificationKeys.all,
+        predicate: (query) => query.queryKey[2] === origin.accountUserId,
+      });
+    },
+  };
+}
+
+export function useMarkRead() {
+  const refresh = useNotificationRefresh<string>();
   return useMutation({
     mutationFn: (id: string) => markNotificationRead(id),
     onError: (error) => toast.error(error.message),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: notificationKeys.all });
-    },
+    ...refresh,
   });
 }
 
 export function useMarkAllRead() {
-  const qc = useQueryClient();
+  const refresh = useNotificationRefresh();
   return useMutation({
     mutationFn: () => markAllNotificationsRead(),
     onError: (error) => toast.error(error.message),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: notificationKeys.all });
-    },
+    ...refresh,
   });
 }
