@@ -223,7 +223,6 @@ export function useUpdateCrewEpisode(crewId: string) {
 }
 
 export function useReorderCrewEpisode(crewId: string) {
-  const queryClient = useQueryClient();
   const invalidate = useInvalidateProduction(crewId);
   return useMutation({
     mutationFn: ({
@@ -240,35 +239,6 @@ export function useReorderCrewEpisode(crewId: string) {
       crewApi.post<CrewEpisodeDTO>(`/crew-episodes/${encodeURIComponent(episodeId)}/reorder`, {
         body: { expectedVersion, beforeEpisodeId, afterEpisodeId },
       }),
-    onMutate: async ({ episodeId, beforeEpisodeId, afterEpisodeId }) => {
-      await queryClient.cancelQueries({ queryKey: crewKeys.episodes(crewId) });
-      const previous = queryClient.getQueryData<CrewEpisodeDTO[]>(crewKeys.episodes(crewId));
-      queryClient.setQueryData<CrewEpisodeDTO[]>(crewKeys.episodes(crewId), (current) => {
-        if (!current) return current;
-        const moved = current.find((episode) => episode.id === episodeId);
-        if (!moved) return current;
-        const remaining = current.filter((episode) => episode.id !== episodeId);
-        let index = remaining.length;
-        if (afterEpisodeId) {
-          const afterIndex = remaining.findIndex((episode) => episode.id === afterEpisodeId);
-          index = afterIndex < 0 ? remaining.length : afterIndex;
-        } else if (beforeEpisodeId) {
-          const beforeIndex = remaining.findIndex((episode) => episode.id === beforeEpisodeId);
-          index = beforeIndex < 0 ? remaining.length : beforeIndex + 1;
-        } else {
-          index = 0;
-        }
-        const next = [...remaining];
-        next.splice(index, 0, { ...moved, version: moved.version + 1 });
-        return next;
-      });
-      return { previous };
-    },
-    onError: (_error, _input, context) => {
-      if (context?.previous) {
-        queryClient.setQueryData(crewKeys.episodes(crewId), context.previous);
-      }
-    },
     onSettled: invalidate,
   });
 }

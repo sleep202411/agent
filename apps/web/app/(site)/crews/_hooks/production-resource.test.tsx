@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import {
+  useReorderCrewEpisode,
   useCreateCrewProductionActivity,
   useUpdateCrewProductionProject,
   useCreateCrewProductionResource,
@@ -208,4 +209,39 @@ it("refreshes activity and overview after the server confirms a post", async () 
   });
   expect(client.getQueryState(key)?.isInvalidated).toBe(true);
   expect(client.getQueryState(activityKey)?.isInvalidated).toBe(true);
+});
+
+it("a failed reorder preserves episodes received while the request was pending", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.post).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      })
+  );
+  const hook = mount(() => useReorderCrewEpisode("crew"));
+  const episodeKey = crewKeys.episodes("crew");
+  client.setQueryData(episodeKey, [{ id: "episode", version: 1 }]);
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync({
+        episodeId: "episode",
+        expectedVersion: 1,
+        beforeEpisodeId: null,
+        afterEpisodeId: null,
+      })
+      .catch((e) => e);
+  });
+  const latest = [
+    { id: "episode", version: 3 },
+    { id: "new", version: 1 },
+  ];
+  client.setQueryData(episodeKey, latest);
+  await act(async () => {
+    reject(new Error("conflict"));
+    await failed;
+  });
+  expect(client.getQueryData(episodeKey)).toEqual(latest);
+  expect(client.getQueryState(episodeKey)?.isInvalidated).toBe(true);
 });
