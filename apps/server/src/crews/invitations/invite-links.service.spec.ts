@@ -205,6 +205,7 @@ describe('invite link audit atomicity', () => {
       };
       let saved: unknown = action === 'create' ? null : initial;
       const db = {
+        $queryRaw: jest.fn().mockResolvedValue([{ id: 'link' }]),
         crew: { findFirst: jest.fn().mockResolvedValue({ id: 'crew' }) },
         crewInviteLink: {
           create: jest.fn(() => {
@@ -251,6 +252,47 @@ describe('invite link audit atomicity', () => {
           : service.revoke('crew', 'owner', 'link');
       await expect(request).rejects.toThrow('audit unavailable');
       expect(saved).toBe(action === 'create' ? null : initial);
+    },
+  );
+});
+
+describe('invite link revocation serialization', () => {
+  it.each(['already revoked', 'permission removed'])(
+    'rejects a waiting request after %s',
+    async (reason) => {
+      let acquired = false;
+      const tx = {
+        $queryRaw: jest.fn(() => {
+          acquired = true;
+          return Promise.resolve(
+            reason === 'already revoked' ? [] : [{ id: 'link' }],
+          );
+        }),
+        crewInviteLink: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValue({ id: 'link', kind: 'member', useCount: 1 }),
+          update: jest.fn(),
+        },
+        crewAuthorizationEvent: { create: jest.fn() },
+      };
+      const authorization = {
+        require: jest.fn(() => {
+          if (acquired && reason === 'permission removed')
+            return Promise.reject(new Error('permission removed'));
+          return Promise.resolve({ memberId: 'actor' });
+        }),
+      };
+      const service = new CrewInviteLinksService(
+        { $transaction: (fn: (db: typeof tx) => unknown) => fn(tx) } as never,
+        authorization as never,
+        {} as never,
+        {} as never,
+        {} as never,
+      );
+      await expect(service.revoke('crew', 'actor', 'link')).rejects.toThrow();
+      expect(tx.crewInviteLink.update).not.toHaveBeenCalled();
+      expect(tx.crewAuthorizationEvent.create).not.toHaveBeenCalled();
     },
   );
 });

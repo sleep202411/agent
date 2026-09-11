@@ -184,6 +184,18 @@ export class CrewInviteLinksService {
 
   async revoke(crewId: string, userId: string, linkId: string): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      await this.authorization.require(crewId, userId, 'members.invite', tx);
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM crew_invite_links
+        WHERE id = ${linkId}::uuid AND crew_id = ${crewId}
+          AND revoked_at IS NULL
+        FOR UPDATE
+      `;
+      if (locked.length === 0) {
+        throw new NotFoundException({
+          message: 'Invite link not found or already revoked.',
+        });
+      }
       const actor = await this.authorization.require(
         crewId,
         userId,
