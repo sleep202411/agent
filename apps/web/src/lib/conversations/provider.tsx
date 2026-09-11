@@ -127,6 +127,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
       },
       onCrewTaskChanged: (data) => {
+        qc.invalidateQueries(crewTaskDetailQueries(data.crewId, data.taskId));
         qc.invalidateQueries({ queryKey: crewKeys.taskSummary(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.taskActivity(data.crewId) });
         qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });

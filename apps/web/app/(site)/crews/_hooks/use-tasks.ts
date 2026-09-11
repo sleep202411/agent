@@ -465,6 +465,7 @@ export function useReorderCrewTask(crewId: string) {
       void Promise.all([
         qc.invalidateQueries(taskViewQueries),
         qc.invalidateQueries({ queryKey: crewKeys.task(taskId) }),
+        qc.invalidateQueries(crewTaskDetailQueries(crewId, taskId)),
       ]);
     },
   });
@@ -531,6 +532,7 @@ export function useCreateCrewTask(crewId: string) {
       crewApi.post<CrewTaskDTO>(`/crews/${encodeURIComponent(crewId)}/tasks`, { body: input }),
     onSuccess: (task) => {
       qc.setQueryData(crewKeys.task(task.id), task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskActivity(crewId) });
@@ -558,6 +560,7 @@ export function useUpdateCrewTask(crewId: string) {
       }),
     onSuccess: (task) => {
       qc.setQueryData(crewKeys.task(task.id), task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
@@ -639,6 +642,7 @@ export function useSubmitCrewTask(crewId: string) {
       }),
     onSuccess: (task) => {
       qc.setQueryData(crewKeys.task(task.id), task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });
@@ -666,6 +670,7 @@ export function useReviewCrewTask(crewId: string) {
       }),
     onSuccess: (task) => {
       qc.setQueryData(crewKeys.task(task.id), task);
+      qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id));
       qc.invalidateQueries({ queryKey: crewKeys.tasks(crewId) });
       qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(task.id) });
       qc.invalidateQueries({ queryKey: crewKeys.taskSummary(crewId) });

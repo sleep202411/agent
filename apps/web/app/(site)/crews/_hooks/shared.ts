@@ -51,13 +51,14 @@ export const crewKeys = {
 };
 
 // Task detail keys use task IDs, so select their Crew from the cached DTO.
-export function crewTaskDetailQueries(crewId: string): QueryFilters {
+export function crewTaskDetailQueries(crewId: string, exceptTaskId?: string): QueryFilters {
   return {
     queryKey: ["crew", "task"],
     predicate: (query) => {
       const data = query.state.data;
       return (
         query.queryKey.length === 3 &&
+        query.queryKey[2] !== exceptTaskId &&
         typeof data === "object" &&
         data !== null &&
         "crewId" in data &&

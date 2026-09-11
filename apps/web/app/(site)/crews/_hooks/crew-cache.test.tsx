@@ -5,6 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { crewApi, CrewApiError } from "./api";
 import { crewKeys } from "./shared";
 import {
+  useCreateCrewTask,
+  useUpdateCrewTask,
+  useSubmitCrewTask,
+  useReviewCrewTask,
   useBatchUpdateCrewTasks,
   useUpdateCrewTaskView,
   useDeleteCrewTaskLabel,
@@ -212,3 +216,45 @@ it("updates cached task versions and details after a bulk edit without relying o
   expect(client.getQueryData(detail)).toEqual(updated);
   expect(client.getQueryData(other)).toEqual({ id: "task-2", version: 1 });
 });
+
+it.each(["create", "update", "submit", "review"] as const)(
+  "refreshes related task details after %s while preserving the returned task",
+  async (action) => {
+    const current = mount(() => ({
+      create: useCreateCrewTask("crew-1"),
+      update: useUpdateCrewTask("crew-1"),
+      submit: useSubmitCrewTask("crew-1"),
+      review: useReviewCrewTask("crew-1"),
+    }));
+    const parent = crewKeys.task("parent");
+    const other = crewKeys.task("unrelated");
+    client.setQueryData(parent, { id: "parent", crewId: "crew-1", children: [] });
+    client.setQueryData(other, { id: "unrelated", crewId: "crew-2" });
+    const updated = { id: "child", crewId: "crew-1", version: 2 };
+    vi.mocked(crewApi.post).mockResolvedValue(updated);
+    vi.mocked(crewApi.patch).mockResolvedValue(updated);
+    await act(async () => {
+      if (action === "create")
+        await current().create.mutateAsync({ title: "Child", parentId: "parent" } as Parameters<
+          ReturnType<typeof useCreateCrewTask>["mutateAsync"]
+        >[0]);
+      if (action === "update")
+        await current().update.mutateAsync({
+          taskId: "child",
+          input: { expectedVersion: 1, title: "New title" },
+        });
+      if (action === "submit")
+        await current().submit.mutateAsync({ taskId: "child", note: "Ready" });
+      if (action === "review")
+        await current().review.mutateAsync({
+          taskId: "child",
+          decision: "approve",
+          note: "Accepted",
+        });
+    });
+    expect(client.getQueryState(parent)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(other)?.isInvalidated).toBe(false);
+    expect(client.getQueryData(crewKeys.task("child"))).toEqual(updated);
+    expect(client.getQueryState(crewKeys.task("child"))?.isInvalidated).toBe(false);
+  }
+);
