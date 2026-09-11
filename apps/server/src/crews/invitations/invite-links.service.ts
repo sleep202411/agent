@@ -438,13 +438,21 @@ export class CrewInviteLinksService {
         where: { linkId_userId: { linkId: link.id, userId: user.userId } },
       });
       if (already) {
-        return (
-          await this.conversations.joinCrewCommunityConversation(
-            link.crewId,
-            user.userId,
-            tx,
-          )
-        ).id;
+        // A previous redemption only permits replay of access that still
+        // exists. Rejoining changes authorization and must pass link validity.
+        const participant = await tx.conversationParticipant.findFirst({
+          where: {
+            userId: user.userId,
+            leftAt: null,
+            conversation: {
+              contextType: 'crew',
+              contextId: link.crewId,
+              crewChannel: 'community',
+            },
+          },
+          select: { conversationId: true },
+        });
+        if (participant) return participant.conversationId;
       }
 
       const state = crewInviteLinkState({
@@ -471,6 +479,7 @@ export class CrewInviteLinksService {
           user.userId,
           tx,
         );
+      if (already) return conversation.id;
       await tx.crewInviteLinkRedemption.create({
         data: {
           linkId: link.id,

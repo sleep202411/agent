@@ -1,4 +1,7 @@
-import { crewInviteLinkState } from './invite-links.service';
+import {
+  CrewInviteLinksService,
+  crewInviteLinkState,
+} from './invite-links.service';
 
 const NOW = new Date('2026-08-24T12:00:00.000Z');
 
@@ -57,5 +60,129 @@ describe('crewInviteLinkState', () => {
     expect(
       crewInviteLinkState(link({ maxUses: null, useCount: 9_999 }), NOW),
     ).toBe('active');
+  });
+});
+
+describe('community invitation replay', () => {
+  function harness(active: boolean) {
+    const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([
+        {
+          kind: 'community',
+          revoked_at: new Date(),
+          expires_at: null,
+          max_uses: 1,
+          use_count: 1,
+        },
+      ]),
+      crewInviteLinkRedemption: {
+        findUnique: jest.fn().mockResolvedValue({ id: 'redemption' }),
+        create: jest.fn(),
+      },
+      crewInviteLink: { update: jest.fn() },
+      conversationParticipant: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(
+            active ? { conversationId: 'community-chat' } : null,
+          ),
+      },
+    };
+    const prisma = {
+      crew: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'crew', name: 'Crew' }),
+      },
+      $transaction: jest.fn(async (fn: (db: typeof tx) => Promise<unknown>) =>
+        fn(tx),
+      ),
+    };
+    const conversations = {
+      joinCrewCommunityConversation: jest
+        .fn()
+        .mockResolvedValue({ id: 'community-chat' }),
+    };
+    const service = new CrewInviteLinksService(
+      prisma as never,
+      {} as never,
+      conversations as never,
+      {} as never,
+      {} as never,
+    );
+    return { service, conversations, tx };
+  }
+
+  it('returns an existing active membership without rejoining through a revoked link', async () => {
+    const h = harness(true);
+    await expect(
+      h.service.accept(
+        { id: 'link', kind: 'community', crewId: 'crew' } as never,
+        { userId: 'user' } as never,
+      ),
+    ).resolves.toMatchObject({ conversationId: 'community-chat' });
+    expect(
+      h.conversations.joinCrewCommunityConversation,
+    ).not.toHaveBeenCalled();
+    expect(h.tx.conversationParticipant.findFirst).toHaveBeenCalledWith({
+      where: {
+        userId: 'user',
+        leftAt: null,
+        conversation: {
+          contextType: 'crew',
+          contextId: 'crew',
+          crewChannel: 'community',
+        },
+      },
+      select: { conversationId: true },
+    });
+  });
+
+  it.each(['revoked', 'expired', 'exhausted'])(
+    'does not restore departed access through an %s link',
+    async (state) => {
+      const h = harness(false);
+      h.tx.$queryRaw.mockResolvedValue([
+        {
+          kind: 'community',
+          revoked_at: state === 'revoked' ? new Date() : null,
+          expires_at: state === 'expired' ? new Date(0) : null,
+          max_uses: state === 'exhausted' ? 1 : null,
+          use_count: 1,
+        },
+      ]);
+      await expect(
+        h.service.accept(
+          { id: 'link', kind: 'community', crewId: 'crew' } as never,
+          { userId: 'user' } as never,
+        ),
+      ).rejects.toMatchObject({
+        response: { code: 'CREW_COMMUNITY_INVITE_LINK_NOT_ACTIVE' },
+      });
+      expect(
+        h.conversations.joinCrewCommunityConversation,
+      ).not.toHaveBeenCalled();
+    },
+  );
+  it('allows re-entry through a still-valid link without consuming another use', async () => {
+    const h = harness(false);
+    h.tx.$queryRaw.mockResolvedValue([
+      {
+        kind: 'community',
+        revoked_at: null,
+        expires_at: null,
+        max_uses: null,
+        use_count: 1,
+      },
+    ]);
+    await expect(
+      h.service.accept(
+        { id: 'link', kind: 'community', crewId: 'crew' } as never,
+        { userId: 'user' } as never,
+      ),
+    ).resolves.toMatchObject({ conversationId: 'community-chat' });
+    expect(h.conversations.joinCrewCommunityConversation).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(h.tx.crewInviteLinkRedemption.create).not.toHaveBeenCalled();
+    expect(h.tx.crewInviteLink.update).not.toHaveBeenCalled();
   });
 });
