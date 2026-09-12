@@ -75,7 +75,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
             title: "Agreement",
             signerName: "Signer",
             signerEmail: "person@example.com",
-            status: "pending",
+            status: "sent",
             providerDocumentId: "provider",
             capabilities: { sign: true },
             delivery: { status: "completed", canRetry: true },

@@ -4,6 +4,8 @@ import { afterEach, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   failed: true,
+  loaded: false,
+  nextPageError: true,
   fetching: false,
   next: vi.fn(),
   refetch: vi.fn(),
@@ -30,10 +32,27 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
   const mutation = () => ({ isPending: false, mutate: vi.fn() });
   return {
     useCrewAgreements: () => ({
-      data: { items: [], capabilities: { create: false }, summary: {} },
+      data: {
+        items: state.loaded
+          ? [
+              {
+                id: "loaded",
+                title: "Loaded agreement",
+                signerName: "Signer",
+                signerEmail: "signer@example.com",
+                status: "completed",
+                capabilities: { sign: false },
+                delivery: { status: "completed", canRetry: false },
+                archive: { status: "pending", canRetry: false },
+              },
+            ]
+          : [],
+        capabilities: { create: false },
+        summary: {},
+      },
       isLoading: false,
       isError: state.failed,
-      isFetchNextPageError: state.failed,
+      isFetchNextPageError: state.failed && state.nextPageError,
       isFetching: state.fetching,
       isFetchingNextPage: false,
       hasNextPage: true,
@@ -57,6 +76,8 @@ afterEach(() => {
   act(() => root.unmount());
   vi.clearAllMocks();
   state.failed = true;
+  state.loaded = false;
+  state.nextPageError = true;
   state.fetching = false;
 });
 function render() {
@@ -81,7 +102,8 @@ it("stops searching later pages after an error and leaves an explicit retry", ()
   const retry = [...host.querySelectorAll("button")].find((b) => b.textContent === "retry");
   expect(retry).toBeDefined();
   act(() => retry!.click());
-  expect(state.refetch).toHaveBeenCalledOnce();
+  expect(state.next).toHaveBeenCalledOnce();
+  expect(state.refetch).not.toHaveBeenCalled();
 });
 it("does not interrupt an existing refresh to search for an agreement", () => {
   state.failed = false;
@@ -93,4 +115,37 @@ it("continues searching when the query is idle and healthy", () => {
   state.failed = false;
   render();
   expect(state.next).toHaveBeenCalledOnce();
+});
+
+it("retains loaded agreements after refresh failure and retries the refresh", () => {
+  state.loaded = true;
+  state.nextPageError = false;
+  render();
+  expect(host.textContent).toContain("Loaded agreement");
+  expect(host.textContent).toContain("Agreement page unavailable");
+  const retry = [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!;
+  act(() => retry.click());
+  expect(state.refetch).toHaveBeenCalledOnce();
+  expect(state.next).not.toHaveBeenCalled();
+});
+it("retains loaded agreements after pagination failure and retries only that page", () => {
+  state.loaded = true;
+  render();
+  expect(host.textContent).toContain("Loaded agreement");
+  expect([...host.querySelectorAll("button")].some((b) => b.textContent === "loadMore")).toBe(
+    false
+  );
+  act(() => [...host.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click());
+  expect(state.next).toHaveBeenCalledOnce();
+  expect(state.refetch).not.toHaveBeenCalled();
+});
+it("disables explicit pagination while refreshing loaded agreements", () => {
+  state.loaded = true;
+  state.failed = false;
+  state.fetching = true;
+  render();
+  const more = [...host.querySelectorAll("button")].find((b) => b.textContent === "loadMore")!;
+  expect(more.disabled).toBe(true);
+  act(() => more.click());
+  expect(state.next).not.toHaveBeenCalled();
 });
