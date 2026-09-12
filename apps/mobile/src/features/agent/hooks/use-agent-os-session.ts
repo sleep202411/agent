@@ -10,8 +10,6 @@ import {
   normalizePendingUserInput,
   type AgentOsDisplayLocale,
   type AgentOsEvent,
-  type AgentOsModelPreferences,
-  type AgentOsModelProfile,
   type AgentOsPendingApproval,
   type AgentOsPendingExternal,
   type AgentOsPendingUserInput,
@@ -142,8 +140,6 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
     pendingExternal: null,
   });
   const [sending, setSending] = useState(false);
-  const [models, setModels] = useState<AgentOsModelProfile[]>([]);
-  const [modelPreferences, setModelPreferences] = useState<AgentOsModelPreferences | null>(null);
 
   const conversationIdRef = useRef<string | null>(null);
   const modelProfileIdRef = useRef<string | null>(null);
@@ -176,6 +172,9 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
   const ingestRunPage = useCallback(
     (runId: string, page: AgentOsRunResponse) => {
       const incoming = page.events ?? [];
+      const acceptedModel = incoming.find((event) => event.type === "RunStarted")?.data
+        .modelProfileId;
+      if (typeof acceptedModel === "string") modelProfileIdRef.current = acceptedModel;
       const fresh = incoming.filter((event) => event.sequence > lastSequenceRef.current);
       if (fresh.length) {
         eventsBufRef.current = [...eventsBufRef.current, ...fresh];
@@ -202,6 +201,7 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
       setSession((prev) => ({
         ...prev,
         runId,
+        modelProfileId: modelProfileIdRef.current,
         status: page.status,
         ...live,
         error: undefined,
@@ -265,25 +265,11 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
 
   const ensureModelProfile = useCallback(async () => {
     if (modelProfileIdRef.current) return modelProfileIdRef.current;
-    if (models[0]?.id) {
-      modelProfileIdRef.current = models[0].id;
-      setSession((prev) => ({ ...prev, modelProfileId: models[0].id }));
-      return models[0].id;
-    }
-    const { models: rows } = await agentOsApi.listModels();
-    setModels(rows);
-    const first = rows[0]?.id;
-    if (!first) throw new Error("No model profiles from /agent-os/models");
-    modelProfileIdRef.current = first;
-    setSession((prev) => ({ ...prev, modelProfileId: first }));
-    return first;
-  }, [models]);
-
-  const setModelProfileId = useCallback((id: string) => {
-    const trimmed = id.trim();
-    if (!trimmed) return;
-    modelProfileIdRef.current = trimmed;
-    setSession((prev) => ({ ...prev, modelProfileId: trimmed }));
+    const { mobileDefaultModelProfileId } = await agentOsApi.listModels();
+    if (!mobileDefaultModelProfileId) throw new Error("No mobile default model configured");
+    modelProfileIdRef.current = mobileDefaultModelProfileId;
+    setSession((prev) => ({ ...prev, modelProfileId: mobileDefaultModelProfileId }));
+    return mobileDefaultModelProfileId;
   }, []);
 
   const restore = useCallback(
@@ -400,28 +386,9 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
           disabledDefaultSkillInstallationIds: extras?.disabledDefaultSkillInstallationIds,
         });
 
-        const live = liveFromPage(run, run.events ?? []);
-        setSession({
-          conversationId,
-          modelProfileId,
-          runId: run.runId,
-          status: run.status,
-          ...live,
-        });
-
-        if (run.events?.length) {
-          eventsBufRef.current = run.events;
-          lastSequenceRef.current = Math.max(...run.events.map((e) => e.sequence));
-          setRunEvents([...eventsBufRef.current]);
-          setMessages((prev) =>
-            mergeRunMessages(
-              prev.filter((message) => message.id !== `user:${messageId}`),
-              run.runId,
-              eventsBufRef.current,
-              { text: trimmed, at, attachmentNames: userPromptRef.current?.attachmentNames }
-            )
-          );
-        }
+        setSession((prev) => ({ ...prev, conversationId }));
+        setMessages((prev) => prev.filter((message) => message.id !== `user:${messageId}`));
+        ingestRunPage(run.runId, run);
 
         if (!isTerminalRunStatus(run.status) && !isWaitingForUserStatus(run.status)) {
           void pollRun(run.runId, projectId);
@@ -447,7 +414,16 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
         setSending(false);
       }
     },
-    [configured, projectId, workbenchMode, chapterIdOpt, ensureModelProfile, pollRun, stopPolling]
+    [
+      configured,
+      projectId,
+      workbenchMode,
+      chapterIdOpt,
+      ensureModelProfile,
+      ingestRunPage,
+      pollRun,
+      stopPolling,
+    ]
   );
 
   const approve = useCallback(
@@ -591,30 +567,6 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
     });
   }, [stopPolling]);
 
-  useEffect(() => {
-    if (!configured) return;
-    void (async () => {
-      try {
-        const [{ models: rows }, preferences] = await Promise.all([
-          agentOsApi.listModels(),
-          agentOsApi.getModelPreferences(projectId).catch(() => null),
-        ]);
-        setModels(rows);
-        if (preferences) setModelPreferences(preferences);
-        const preferred = preferences?.chatModelProfileId;
-        const fromPreference =
-          preferred && rows.some((model) => model.id === preferred) ? preferred : null;
-        const next = fromPreference ?? (!modelProfileIdRef.current ? rows[0]?.id : null);
-        if (next) {
-          modelProfileIdRef.current = next;
-          setSession((prev) => ({ ...prev, modelProfileId: next }));
-        }
-      } catch {
-        // Composer stays usable; send will surface model load errors.
-      }
-    })();
-  }, [configured, projectId]);
-
   useEffect(() => () => stopPolling(), [stopPolling]);
 
   const activity = useMemo(
@@ -630,8 +582,6 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
     assistantStreaming,
     pendingExternal: session.pendingExternal,
     messages,
-    models,
-    modelPreferences,
     session,
     sending,
     send,
@@ -640,8 +590,6 @@ export function useAgentOsSession(options: UseAgentOsSessionOptions) {
     cancel,
     restore,
     newChat,
-    setModelProfileId,
-    setModelPreferences,
     stopPolling,
   };
 }

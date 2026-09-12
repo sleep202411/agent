@@ -24,7 +24,9 @@ export function storyAuthoringModelId(): string {
   return process.env.STORY_AGENT_AUTHOR_MODEL?.trim() || DEFAULT_AUTHOR_MODEL;
 }
 
-export function createStoryAuthoringModel(): LanguageModel {
+export function createStoryAuthoringModel(
+  modelId = storyAuthoringModelId(),
+): LanguageModel {
   const apiKey = process.env.ALIBABA_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
@@ -58,7 +60,7 @@ export function createStoryAuthoringModel(): LanguageModel {
       return fetch(url, { ...init, body: JSON.stringify(body) });
     },
   });
-  return provider(storyAuthoringModelId()) as unknown as LanguageModel;
+  return provider(modelId) as unknown as LanguageModel;
 }
 
 /**

@@ -195,6 +195,7 @@ export class StoryAgentRunWorkerService
               document = load.job.screenplaySnapshot.document;
             } else if (load.job.scriptSource) {
               const compiled = await this.pipeline.compileScript({
+                ...(load.job.modelId ? { modelId: load.job.modelId } : {}),
                 sourceText: load.job.scriptSource.sourceText,
                 document: load.job.scriptSource.document,
                 title: load.job.brief.title,
@@ -220,6 +221,7 @@ export class StoryAgentRunWorkerService
             }
             screenplay = load.job.screenplaySnapshot.screenplay;
             assetPlan = await this.pipeline.planAssets({
+              ...(load.job.modelId ? { modelId: load.job.modelId } : {}),
               screenplay,
               creativeProfile: load.job.creativeProfile,
               signal: controller.signal,
@@ -236,6 +238,7 @@ export class StoryAgentRunWorkerService
             screenplay = load.job.screenplaySnapshot.screenplay;
             assetPlan = load.job.assetPlan;
             storyboardPlan = await this.pipeline.planStoryboard({
+              ...(load.job.modelId ? { modelId: load.job.modelId } : {}),
               screenplay,
               assetPlan,
               creativeProfile: load.job.creativeProfile,

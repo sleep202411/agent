@@ -473,7 +473,7 @@ describe('StoryAgentCapabilityHandler', () => {
         outputKind: 'image',
         options: {},
       },
-      { dispatchMode: 'sequential' },
+      { dispatchMode: 'sequential', experience: 'mobile_h5' },
     );
   });
 

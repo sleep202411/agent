@@ -338,7 +338,10 @@ export class AgentOsGatewayService {
       actorId: user.userId,
       message: body.message,
       modelContext,
-      modelProfileId: body.modelProfileId,
+      modelProfileId:
+        workbenchContext?.experience === 'mobile_h5'
+          ? mobileChatModelProfileId()
+          : body.modelProfileId,
       attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
       attachments,
       permissionMode: body.permissionMode ?? 'smart',
@@ -398,7 +401,11 @@ export class AgentOsGatewayService {
   /** Relay of the worker's model list — no auth beyond the session guard: it
    *  names models, not projects. */
   async listModels() {
-    return this.worker.listModels();
+    const catalog = objectRecord(await this.worker.listModels());
+    return {
+      ...catalog,
+      mobileDefaultModelProfileId: mobileChatModelProfileId(),
+    };
   }
 
   async listSkills(user: AuthUser, projectId: string, workbenchMode: string) {
@@ -1200,4 +1207,8 @@ export class AgentOsGatewayService {
     }
     return undefined;
   }
+}
+
+function mobileChatModelProfileId(): string {
+  return process.env.AGENT_OS_MOBILE_CHAT_MODEL?.trim() || 'qwen3.7-flash';
 }

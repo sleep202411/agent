@@ -34,6 +34,7 @@ export const ModelProfileSchema = z
     label: z.string().trim().min(1).max(64),
     /** One line on when to reach for it. Optional; shown under the label. */
     hint: z.string().trim().max(120).optional(),
+    enableThinking: z.boolean().optional(),
     temperature: z.number().min(0).max(2).default(0.4),
     maxTokens: z.number().int().positive().max(200_000).default(4096),
   })
@@ -54,6 +55,14 @@ const BUILT_IN_PROFILES: readonly ModelProfile[] = [
     hint: "Everyday driver",
     temperature: 0.4,
     maxTokens: 8192,
+  },
+  {
+    id: "qwen3.7-flash",
+    model: "qwen3.7-flash",
+    label: "Qwen Flash",
+    temperature: 0.4,
+    maxTokens: 8192,
+    enableThinking: false,
   },
   {
     id: "qwen3.8-max",
