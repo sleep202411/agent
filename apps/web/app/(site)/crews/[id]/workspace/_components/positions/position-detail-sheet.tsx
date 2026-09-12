@@ -614,9 +614,29 @@ function ApplicantRow({
 }) {
   const approve = useApproveApplication(crewId);
   const reject = useRejectApplication(crewId);
-  const busy =
-    (approve.isPending && approve.variables === applicant.id) ||
-    (reject.isPending && reject.variables === applicant.id);
+  const alive = useRef(false);
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const decide = (decision: "approve" | "reject") => {
+    if (!alive.current || pending.current || kind !== "pending" || applicant.status !== "pending") return;
+    pending.current = true;
+    setBusy(true);
+    const mutation = decision === "approve" ? approve : reject;
+    mutation.mutate(applicant.id, {
+      onError: (error) => {
+        if (alive.current) surfaceErr(error, t(decision === "approve" ? "reviewDialogApproveFailed" : "reviewDialogRejectFailed"));
+      },
+      onSettled: () => {
+        if (!alive.current) return;
+        pending.current = false;
+        setBusy(false);
+      },
+    });
+  };
   const lookup = displays.get(applicant.applicantId);
   const displayName = displayNameOf(applicant.applicantId, displays);
   const initial = (lookup?.nickname?.trim() || applicant.applicantId).charAt(0).toUpperCase();
@@ -682,11 +702,7 @@ function ApplicantRow({
               color="success"
               size="xs"
               disabled={busy}
-              onClick={() =>
-                approve.mutate(applicant.id, {
-                  onError: (err) => surfaceErr(err, t("approve") + " failed"),
-                })
-              }
+              onClick={() => decide("approve")}
             >
               <IconCheck className="size-3" />
               {t("approve")}
@@ -697,11 +713,7 @@ function ApplicantRow({
               color="destructive"
               size="xs"
               disabled={busy}
-              onClick={() =>
-                reject.mutate(applicant.id, {
-                  onError: (err) => surfaceErr(err, t("reject") + " failed"),
-                })
-              }
+              onClick={() => decide("reject")}
             >
               <IconX className="size-3" />
               {t("reject")}

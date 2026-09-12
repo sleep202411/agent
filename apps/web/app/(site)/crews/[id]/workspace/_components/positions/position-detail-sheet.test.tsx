@@ -5,6 +5,7 @@ import { PositionDetailSheet } from "./position-detail-sheet";
 import type { CrewPositionDTO } from "@repo/shared/crew";
 const state = vi.hoisted(() => ({
   account: "alice",
+  applicantIds: [] as string[],
   update: vi.fn(),
   remove: vi.fn(),
   approve: vi.fn(),
@@ -77,8 +78,18 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useApproveApplication: () => ({ mutate: state.approve, isPending: false }),
   useRejectApplication: () => ({ mutate: state.reject, isPending: false }),
   useCrewApplications: () => ({
-    data: [],
-    summary: { total: 0, pending: 0, approved: 0, rejected: 0 },
+    data: state.applicantIds.map((id) => ({
+      id,
+      applicantId: id,
+      status: "pending",
+      message: `Application ${id}`,
+    })),
+    summary: {
+      total: state.applicantIds.length,
+      pending: state.applicantIds.length,
+      approved: 0,
+      rejected: 0,
+    },
     isLoading: false,
     isError: false,
     hasNextPage: false,
@@ -107,6 +118,7 @@ const position = {
 beforeEach(() => {
   vi.clearAllMocks();
   state.account = "alice";
+  state.applicantIds = [];
   host = document.createElement("div");
   root = createRoot(host);
 });
@@ -200,3 +212,45 @@ it("resets the nested editor when the position changes", async () => {
   await render({ ...position, id: "next" });
   expect(host.querySelector("[data-editor]")).toBeNull();
 });
+
+it.each(["approve", "reject"])("serializes inline %s decisions and allows retry", async (first) => {
+  state.applicantIds = ["12"];
+  await render();
+  await act(async () => {
+    button(first).click();
+    button("approve").click();
+    button("reject").click();
+  });
+  const selected = first === "approve" ? state.approve : state.reject;
+  expect(selected).toHaveBeenCalledTimes(1);
+  expect(first === "approve" ? state.reject : state.approve).not.toHaveBeenCalled();
+  const h = selected.mock.calls[0]?.[1];
+  await act(async () => {
+    h.onError(new Error("Specific review error"));
+    h.onSettled?.();
+  });
+  expect(state.error).toHaveBeenCalledWith("Specific review error");
+  await click(first);
+  expect(selected).toHaveBeenCalledTimes(2);
+});
+it.each(["account", "position", "applicant", "close"])(
+  "drops inline review results after %s changes",
+  async (change) => {
+    state.applicantIds = ["12"];
+    await render();
+    await click("approve");
+    const old = state.approve.mock.calls[0]?.[1];
+    if (change === "account") state.account = "bob";
+    if (change === "applicant") state.applicantIds = ["13"];
+    if (change === "close") await render(null);
+    await render(change === "position" ? { ...position, id: "next" } : position);
+    await click("reject");
+    await act(async () => {
+      old.onError(new Error("Old review error"));
+      old.onSettled?.();
+    });
+    expect(state.error).not.toHaveBeenCalled();
+    await click("reject");
+    expect(state.reject).toHaveBeenCalledTimes(1);
+  }
+);
