@@ -685,35 +685,67 @@ function CommentItem({
   const remove = useDeleteCrewTaskComment(task.id);
   const [editing, setEditing] = useState(false);
   const [body, setBody] = useState(item.body ?? "");
+  const [editVersion, setEditVersion] = useState(item.version);
+  const [editMentions, setEditMentions] = useState(item.mentions);
+  const alive = useRef(true);
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const authorName = item.actorUserId
     ? displayNameOf(item.actorUserId, displays)
     : t("systemAssistant");
   const canManage = item.actorUserId === viewerUserId || isOwner;
 
+  const startEditing = () => {
+    if (pending.current || !canManage || item.deletedAt) return;
+    setBody(item.body ?? "");
+    setEditVersion(item.version);
+    setEditMentions(item.mentions);
+    setEditing(true);
+  };
   const save = async () => {
+    if (!alive.current || pending.current || !canManage || item.deletedAt || !body.trim()) return;
+    pending.current = true;
+    setSaving(true);
     try {
       await update.mutateAsync({
         commentId: item.id,
         input: {
-          expectedVersion: item.version,
+          expectedVersion: editVersion,
           body,
-          mentions: item.mentions.filter((mention) => body.includes(`@${mention.label}`)),
+          mentions: editMentions.filter((mention) => body.includes(`@${mention.label}`)),
         },
       });
+      if (!alive.current) return;
       setEditing(false);
       toast.success(t("commentUpdated"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
+    } finally {
+      pending.current = false;
+      if (alive.current) setSaving(false);
     }
   };
 
   const deleteComment = async () => {
+    if (!alive.current || pending.current || !canManage || item.deletedAt || !confirmDelete) return;
+    pending.current = true;
+    setSaving(true);
     try {
       await remove.mutateAsync(item.id);
-      toast.success(t("commentDeleted"));
+      if (alive.current) {
+        setConfirmDelete(false);
+        toast.success(t("commentDeleted"));
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
+    } finally {
+      pending.current = false;
+      if (alive.current) setSaving(false);
     }
   };
 
@@ -730,16 +762,18 @@ function CommentItem({
               {!confirmDelete ? (
                 <>
                   <button
+                    disabled={saving}
                     type="button"
-                    onClick={() => setEditing(true)}
+                    onClick={startEditing}
                     className="rounded p-1.5 text-[#656b76] hover:bg-white/[0.055] hover:text-[#d3d5da]"
                     aria-label={t("editComment")}
                   >
                     <IconEdit className="size-3.5" />
                   </button>
                   <button
+                    disabled={saving}
                     type="button"
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={() => { if (!pending.current) setConfirmDelete(true); }}
                     className="rounded p-1.5 text-[#656b76] hover:bg-red-500/10 hover:text-red-300"
                     aria-label={t("deleteComment")}
                   >
@@ -750,6 +784,7 @@ function CommentItem({
                 <>
                   <span className="mr-1 text-[10px] text-red-300">{t("confirmDelete")}</span>
                   <button
+                    disabled={saving}
                     type="button"
                     className="rounded bg-red-500/15 px-2 py-1 text-[10px] text-red-300"
                     onClick={() => void deleteComment()}
@@ -757,9 +792,10 @@ function CommentItem({
                     {t("delete")}
                   </button>
                   <button
+                    disabled={saving}
                     type="button"
                     className="rounded px-2 py-1 text-[10px] text-[#8e949e]"
-                    onClick={() => setConfirmDelete(false)}
+                    onClick={() => { if (!pending.current) setConfirmDelete(false); }}
                   >
                     {t("cancel")}
                   </button>
@@ -774,6 +810,7 @@ function CommentItem({
           ) : editing ? (
             <div>
               <Textarea
+                disabled={saving}
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
                 className="min-h-24 border-white/[0.08] bg-[#090a0c]"
@@ -781,12 +818,12 @@ function CommentItem({
                 autoFocus
               />
               <div className="mt-2 flex justify-end gap-2">
-                <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
+                <Button size="sm" variant="ghost" color="muted" disabled={saving} onClick={() => { if (!pending.current) setEditing(false); }}>
                   {t("cancel")}
                 </Button>
                 <Button
                   size="sm"
-                  disabled={!body.trim() || update.isPending}
+                  disabled={!body.trim() || saving}
                   onClick={() => void save()}
                 >
                   {t("save")}

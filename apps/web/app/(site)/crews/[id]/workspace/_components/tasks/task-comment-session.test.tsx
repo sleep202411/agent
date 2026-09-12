@@ -1,19 +1,25 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import type { CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
+import type { CrewTaskDTO, CrewTaskTimelineItemDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { TaskIssueDetail } from "./task-issue-detail";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   create: vi.fn(),
+  update: vi.fn(),
+  remove: vi.fn(),
+  success: vi.fn(),
+  items: [] as CrewTaskTimelineItemDTO[],
   upload: vi.fn(),
   discard: vi.fn(),
   error: vi.fn(),
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
+  useUpdateCrewTaskComment: () => ({ mutateAsync: state.update, isPending: false }),
+  useDeleteCrewTaskComment: () => ({ mutateAsync: state.remove, isPending: false }),
   useCreateCrewTaskComment: () => ({ mutateAsync: state.create, isPending: false }),
   useUpdateCrewTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCrewTaskTimeline: () => ({ data: { pages: [{ items: [] }] } }),
+  useCrewTaskTimeline: () => ({ data: { pages: [{ items: state.items }] } }),
   useCrewTaskProject: () => ({
     data: { views: [], fields: [], labels: [], cycles: [], workflowStates: [] },
   }),
@@ -33,7 +39,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-position-label", () => ({
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
 vi.mock("./delete-task-button", () => ({ DeleteTaskButton: () => null }));
 vi.mock("./task-review-form", () => ({ TaskReviewForm: () => null }));
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: state.error } }));
+vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error } }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 state.discard.mockResolvedValue(undefined);
 const container = document.createElement("div");
@@ -112,6 +118,7 @@ afterEach(async () => {
   await act(async () => root.unmount());
   root = createRoot(container);
   vi.clearAllMocks();
+  state.items = [];
   state.discard.mockResolvedValue(undefined);
 });
 it("blocks duplicate comment sends and reuses the retry key for unchanged input", async () => {
@@ -210,4 +217,108 @@ it("cleans up an unsubmitted attachment after closing", async () => {
   await upload([new File(["x"], "one.png")]);
   await act(async () => root.render(null));
   expect(state.discard).toHaveBeenCalledWith("crew", "unused");
+});
+
+function comment() {
+  state.items = [
+    {
+      id: "comment",
+      kind: "comment",
+      actorUserId: "alice",
+      body: "original",
+      version: 1,
+      createdAt: new Date().toISOString(),
+      mentions: [],
+      attachments: [],
+    } as unknown as CrewTaskTimelineItemDTO,
+  ];
+}
+function row() {
+  return container.querySelector("article")!;
+}
+function rowButton(text: string) {
+  return Array.from(row().querySelectorAll("button")).find(
+    (button) => button.textContent === text
+  )!;
+}
+async function edit() {
+  await act(async () =>
+    (row().querySelector('[aria-label="editComment"]') as HTMLButtonElement).click()
+  );
+}
+it("keeps a comment draft's original version across a collaborator refresh", async () => {
+  comment();
+  state.update.mockResolvedValue(undefined);
+  await render();
+  await edit();
+  const textarea = row().querySelector("textarea")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+      textarea,
+      "my draft"
+    );
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  state.items = [{ ...state.items[0]!, body: "collaborator text", version: 2 }];
+  await render();
+  expect(row().querySelector("textarea")!.value).toBe("my draft");
+  await act(async () => rowButton("save").click());
+  expect(state.update).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({ body: "my draft", expectedVersion: 1 }),
+    })
+  );
+});
+it("prevents overlapping comment edits and retains the draft after failure", async () => {
+  comment();
+  const pending = deferred<void>();
+  state.update.mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
+  await render();
+  await edit();
+  await act(async () => {
+    rowButton("save").click();
+    rowButton("save").click();
+  });
+  expect(state.update).toHaveBeenCalledTimes(1);
+  expect(row().querySelector("textarea")!.disabled).toBe(true);
+  await act(async () => pending.reject(new Error("edit failed")));
+  expect(row().querySelector("textarea")!.value).toBe("original");
+  await act(async () => rowButton("save").click());
+  expect(state.update).toHaveBeenCalledTimes(2);
+});
+it("prevents duplicate comment deletions and permits retry", async () => {
+  comment();
+  const pending = deferred<void>();
+  state.remove.mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
+  await render();
+  await act(async () =>
+    (row().querySelector('[aria-label="deleteComment"]') as HTMLButtonElement).click()
+  );
+  await act(async () => {
+    rowButton("delete").click();
+    rowButton("delete").click();
+  });
+  expect(state.remove).toHaveBeenCalledTimes(1);
+  await act(async () => pending.reject(new Error("delete failed")));
+  await act(async () => rowButton("delete").click());
+  expect(state.remove).toHaveBeenCalledTimes(2);
+});
+it.each(["edit", "delete"])("ignores late comment %s results after leaving", async (action) => {
+  comment();
+  const pending = deferred<void>();
+  state.update.mockReturnValue(pending.promise);
+  state.remove.mockReturnValue(pending.promise);
+  await render();
+  if (action === "edit") {
+    await edit();
+    await act(async () => rowButton("save").click());
+  } else {
+    await act(async () =>
+      (row().querySelector('[aria-label="deleteComment"]') as HTMLButtonElement).click()
+    );
+    await act(async () => rowButton("delete").click());
+  }
+  await act(async () => root.render(null));
+  await act(async () => pending.resolve());
+  expect(state.success).not.toHaveBeenCalled();
 });
