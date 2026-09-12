@@ -27,7 +27,8 @@
  * other surfaces refresh too.
  */
 
-import { useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
 import {
@@ -95,7 +96,13 @@ const STATUS_CHIP: Record<CrewApplicationStatus, { labelKey: string; className: 
   },
 };
 
-export function ApplicationReviewDialog({
+export function ApplicationReviewDialog(props: ApplicationReviewDialogProps) {
+  const { user } = useCurrentUser();
+  if (props.applicationId === null) return null;
+  return <ApplicationReviewSession key={JSON.stringify([user?.id, props.crewId, props.applicationId])} {...props} />;
+}
+
+function ApplicationReviewSession({
   crewId,
   applicationId,
   onClose,
@@ -126,27 +133,35 @@ export function ApplicationReviewDialog({
 
   const approve = useApproveApplication(crewId);
   const reject = useRejectApplication(crewId);
-  const busy = approve.isPending || reject.isPending;
+  const [decision, setDecision] = useState<"approve" | "reject" | null>(null);
+  const pending = useRef(false);
+  const alive = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const busy = decision !== null;
 
-  const handleApprove = () => {
-    if (!application) return;
-    approve.mutate(application.id, {
+  const handleDecision = (next: "approve" | "reject") => {
+    if (!alive.current || pending.current || application?.status !== "pending") return;
+    pending.current = true;
+    setDecision(next);
+    const mutation = next === "approve" ? approve : reject;
+    const successKey = next === "approve" ? "reviewDialogApproveSuccess" : "reviewDialogRejectSuccess";
+    mutation.mutate(application.id, {
       onSuccess: () => {
-        toast.success(t("reviewDialogApproveSuccess"));
+        if (!alive.current) return;
+        toast.success(t(successKey));
         onClose();
       },
-      onError: (err) => reportError(err, t("reviewDialogApproveSuccess") + " failed"),
-    });
-  };
-
-  const handleReject = () => {
-    if (!application) return;
-    reject.mutate(application.id, {
-      onSuccess: () => {
-        toast.success(t("reviewDialogRejectSuccess"));
-        onClose();
+      onError: (err) => {
+        if (alive.current) reportError(err, t(successKey) + " failed");
       },
-      onError: (err) => reportError(err, t("reviewDialogRejectSuccess") + " failed"),
+      onSettled: () => {
+        if (!alive.current) return;
+        pending.current = false;
+        setDecision(null);
+      },
     });
   };
 
@@ -337,10 +352,10 @@ export function ApplicationReviewDialog({
                 type="button"
                 variant="outline"
                 color="muted"
-                onClick={handleReject}
+                onClick={() => handleDecision("reject")}
                 disabled={busy}
               >
-                {reject.isPending ? (
+                {decision === "reject" ? (
                   <IconLoader2 className="size-3.5 animate-spin" />
                 ) : (
                   <IconX className="size-3.5" />
@@ -351,10 +366,10 @@ export function ApplicationReviewDialog({
                 type="button"
                 variant="solid"
                 color="primary"
-                onClick={handleApprove}
+                onClick={() => handleDecision("approve")}
                 disabled={busy}
               >
-                {approve.isPending ? (
+                {decision === "approve" ? (
                   <IconLoader2 className="size-3.5 animate-spin" />
                 ) : (
                   <IconCheck className="size-3.5" />
