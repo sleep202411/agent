@@ -112,7 +112,6 @@ describe('CrewTaskDraftService', () => {
       startDate: null,
       dueDate: '2026-08-10',
       estimatePoints: 0,
-      computeBudgetPoints: 1_000_000_000,
       revisionLimit: 100,
       cycleId: null,
       parentId: 'task-10',

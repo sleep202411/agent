@@ -105,7 +105,8 @@ export function CrewAgreementsDialog({
       !payload ||
       focusedAgreementLoaded ||
       !agreements.hasNextPage ||
-      agreements.isFetchingNextPage
+      agreements.isFetching ||
+      agreements.isError
     ) {
       return;
     }

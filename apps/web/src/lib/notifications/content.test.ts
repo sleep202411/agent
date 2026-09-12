@@ -185,3 +185,36 @@ it.each([
     }
   }
 );
+
+it.each([
+  ["en-US", enUS],
+  ["zh-CN", zhCN],
+  ["zh-HK", zhHK],
+] as const)(
+  "includes the actor name in assignment and update messages in %s",
+  (locale, catalog) => {
+    for (const [type, key] of [
+      ["crew.task.assigned", "taskAssigned"],
+      ["crew.task.updated", "taskUpdated"],
+    ] as const) {
+      const t = (path: string, values?: Record<string, string | number | Date>) => {
+        const text = path.endsWith("bodyWithActor")
+          ? catalog.notifications.events[key].bodyWithActor
+          : path;
+        return text.replace("{actor}", String(values?.actor ?? ""));
+      };
+      const result = notificationContent(
+        row(type, { taskTitle: "Storyboard" }),
+        locale,
+        t,
+        "Isaac"
+      );
+      expect(result.body).toBe(
+        catalog.notifications.events[key].bodyWithActor.replace("{actor}", "Isaac")
+      );
+      expect(notificationContent(row(type, { taskTitle: "Storyboard" }), locale, t, " ").body).toBe(
+        `events.${key}.body`
+      );
+    }
+  }
+);

@@ -4470,6 +4470,8 @@
     "logEpisodeApproved": "{actor} 完成了本集验收",
     "inviteLinkTabAccount": "按账号",
     "inviteLinkTabLink": "邀请链接",
+    "inviteLinkKindMember": "Crew 成员身份",
+    "inviteLinkKindCommunity": "仅社区聊天",
     "inviteLinkIntro": "任何人打开这个链接都能加入剧组，权限就是你在这里选的。",
     "inviteLinkExpiryLabel": "有效期",
     "inviteLinkExpiryNever": "永不过期",
@@ -5413,7 +5415,7 @@
     "dependencies": "任务依赖",
     "blockedSubmitHint": "请先完成所有前置任务，再提交审核。",
     "budget": "积分预算",
-    "taskLimits": "预算与返修策略",
+    "taskLimits": "返修策略",
     "revisionLimit": "返修上限",
     "revisionUnlimited": "不限",
     "revisionPolicy": "返修轮次",
@@ -5503,6 +5505,8 @@
     }
   },
   "crewInvitations": {
+    "signIn": "登录",
+    "signInRequired": "请登录以查看并回复此 Crew 邀请。",
     "eyebrow": "剧组邀请",
     "invitedTo": "你受邀加入",
     "crew": "剧组",
@@ -9221,6 +9225,7 @@
     }
   },
   "notifications": {
+    "performedBy": "操作人：{name}",
     "title": "通知",
     "view": "查看",
     "ariaUnread": "通知（{count} 条未读）",
@@ -9287,11 +9292,13 @@
       },
       "taskAssigned": {
         "title": "新任务：{task}",
-        "body": "该任务已分配给你。"
+        "body": "该任务已分配给你。",
+        "bodyWithActor": "{actor} 将此任务指派给你。"
       },
       "taskUpdated": {
         "title": "任务已更新：{task}",
-        "body": "任务信息或参与成员发生了变化。"
+        "body": "任务信息或参与成员发生了变化。",
+        "bodyWithActor": "{actor} 更新了此任务。"
       },
       "taskCommented": {
         "title": "任务有新评论：{task}",
@@ -9381,6 +9388,11 @@
     "valueMembershipBoth": "{days} 天 Studio+社区会员"
   },
   "crewCommunityChat": {
+    "qrAlt": "社区邀请二维码",
+    "scanToJoin": "扫码加入 Crew 社区。",
+    "downloadQr": "下载二维码",
+    "generatingQr": "正在生成二维码…",
+    "qrFailed": "无法生成二维码。",
     "channels": "频道",
     "teamChannel": "团队群聊",
     "communityChannel": "社区群聊",
@@ -9516,6 +9528,26 @@
       "next": "下一页",
       "page": "第 {page} 页"
     }
+  },
+  "crewTaskCenter": {
+    "signInRequired": "登录后查看你的剧组任务。",
+    "signIn": "登录",
+    "unreadCrewNotifications": "{count} 条未读剧组通知",
+    "unreadNotifications": "{count} 条未读任务通知",
+    "title": "任务中心",
+    "description": "集中管理你参与剧组的任务。",
+    "back": "返回剧组",
+    "scope": "范围",
+    "allTasks": "所有可访问任务",
+    "mine": "指派给我",
+    "status": "状态",
+    "active": "未完成任务",
+    "allStatuses": "所有状态",
+    "search": "搜索任务标题",
+    "loading": "正在加载任务…",
+    "retry": "重试",
+    "empty": "没有符合筛选条件的任务。",
+    "loadMore": "加载更多"
   },
   "crewAccountability": {
     "commitments": "任务承诺与交接",

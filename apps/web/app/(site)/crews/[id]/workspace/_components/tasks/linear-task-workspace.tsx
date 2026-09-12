@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useMemo, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
   IconBell,
@@ -46,6 +46,7 @@ import {
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 import { Button } from "@/components/ui/button";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -76,7 +77,13 @@ interface LinearTaskWorkspaceProps {
   onSelectedTaskChange?: (taskId: string | null) => void;
 }
 
-export function LinearTaskWorkspace({
+export function LinearTaskWorkspace(props: LinearTaskWorkspaceProps) {
+  const { user } = useCurrentUser();
+  if (!user?.id) return null;
+  return <LinearTaskSession key={`${user.id}:${props.crewId}`} {...props} />;
+}
+
+function LinearTaskSession({
   crewId,
   crewName,
   crewSummary,
@@ -122,10 +129,11 @@ export function LinearTaskWorkspace({
   const [projectPanelOpen, setProjectPanelOpen] = useState(false);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
 
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setSelectedTaskId(deeplinkTaskId ?? null));
-    return () => cancelAnimationFrame(frame);
-  }, [deeplinkTaskId]);
+  const [previousDeeplinkTaskId, setPreviousDeeplinkTaskId] = useState(deeplinkTaskId);
+  if (previousDeeplinkTaskId !== deeplinkTaskId) {
+    setPreviousDeeplinkTaskId(deeplinkTaskId);
+    setSelectedTaskId(deeplinkTaskId ?? null);
+  }
 
   const selectTask = useCallback(
     (taskId: string | null) => {
@@ -653,18 +661,39 @@ export function LinearTaskWorkspace({
           className="w-full sm:w-[min(85vw,960px)] sm:max-w-none bg-[#090a0c] p-0 text-[#d5d8dd]"
         >
           <SheetTitle className="sr-only">{taskQuery.data?.title ?? t("issues")}</SheetTitle>
-          {taskQuery.isLoading ? (
+          {taskQuery.isError && taskQuery.data ? (
+            <div className="flex items-center justify-between gap-3 px-6 py-3">
+              <p role="alert">
+                {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
+              </p>
+              <button
+                type="button"
+                disabled={taskQuery.isFetching}
+                onClick={() => void taskQuery.refetch()}
+              >
+                {t("retry")}
+              </button>
+            </div>
+          ) : null}
+          {taskQuery.isLoading && !taskQuery.data ? (
             <div className="grid flex-1 place-content-center gap-4">
               <IconLoader2 className="mx-auto size-5 animate-spin" />
               <button type="button" onClick={() => selectTask(null)}>
                 {t("issues")}
               </button>
             </div>
-          ) : taskQuery.isError ? (
+          ) : taskQuery.isError && !taskQuery.data ? (
             <div className="grid flex-1 place-content-center gap-4 p-6">
               <p role="alert">
                 {taskQuery.error instanceof Error ? taskQuery.error.message : t("taskLoadFailed")}
               </p>
+              <button
+                type="button"
+                disabled={taskQuery.isFetching}
+                onClick={() => void taskQuery.refetch()}
+              >
+                {t("retry")}
+              </button>
               <button type="button" onClick={() => selectTask(null)}>
                 {t("issues")}
               </button>

@@ -33,6 +33,10 @@ import {
   UpdateCrewTaskCommentSchema,
   type UpdateCrewTaskCommentInput,
 } from '../dto';
+import {
+  CrewTaskCenterQuerySchema,
+  type CrewTaskCenterQuery,
+} from './project-dto';
 import { CrewTasksService } from './tasks.service';
 import {
   BatchUpdateCrewTasksSchema,
@@ -74,6 +78,15 @@ export class CrewTasksController {
     private readonly tasks: CrewTasksService,
     private readonly taskDrafts: CrewTaskDraftService,
   ) {}
+
+  @Get('crew-task-center')
+  taskCenter(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(CrewTaskCenterQuerySchema))
+    query: CrewTaskCenterQuery,
+  ) {
+    return this.tasks.listCenter(user.userId, query);
+  }
 
   @Get('crews/:crewId/task-project')
   project(@Param('crewId') crewId: string, @CurrentUser() user: AuthUser) {

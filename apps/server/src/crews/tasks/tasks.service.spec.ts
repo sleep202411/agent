@@ -1,5 +1,10 @@
 import { CrewTaskPriority, CrewTaskStatus, Prisma } from '@prisma/client';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import * as Y from 'yjs';
 import {
   ListCrewTaskOptionsQuerySchema,
@@ -176,6 +181,7 @@ function build() {
   const tx = {
     crewTaskCommitment: { findFirst: jest.fn().mockResolvedValue(null) },
     crewParticipationRecord: { findFirst: jest.fn().mockResolvedValue(null) },
+    $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewMember: {
       findMany: jest
@@ -302,6 +308,7 @@ function build() {
     },
   };
   const prisma = {
+    crewMember: { findMany: jest.fn().mockResolvedValue([]) },
     crewTask: {
       findUnique: jest.fn().mockResolvedValue(current),
       findMany: jest.fn(),
@@ -338,6 +345,8 @@ function build() {
       callback(tx),
     ),
   };
+  // Transactional and direct reads share the same label fixture.
+  Object.assign(tx, { crewTaskLabel: prisma.crewTaskLabel });
   const roles = {
     require: jest.fn().mockResolvedValue('admin'),
     requireMembership: jest.fn().mockResolvedValue({
@@ -407,6 +416,120 @@ describe('CrewTasksService', () => {
       });
     },
   );
+
+  it('records the actor in task update notifications', async () => {
+    const t = build();
+    const current = { ...task(), canvasProjectId: null };
+    t.prisma.crewTask.findUnique.mockResolvedValue(current);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+    t.tx.crewTask.update.mockResolvedValue({
+      ...current,
+      title: 'Revised brief',
+      version: 2,
+    });
+    await t.service.update(TASK_ID, OWNER_ID, {
+      expectedVersion: 1,
+      title: 'Revised brief',
+    });
+    expect(t.notifications.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'crew.task.updated',
+        meta: expect.objectContaining({
+          actorUserId: OWNER_ID,
+          taskTitle: 'Revised brief',
+        }) as unknown,
+      }),
+      t.tx,
+    );
+  });
+
+  it('limits the center to authorized Crews and applies assignment and cursor filters', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: 'allowed' },
+      { crewId: 'denied' },
+    ]);
+    t.roles.resolve
+      .mockResolvedValueOnce({ permissions: ['tasks.view'] })
+      .mockResolvedValueOnce({ permissions: [] });
+    t.prisma.crewTask.findMany.mockResolvedValue([
+      {
+        id: 'page-end',
+        workflowState: { semantic: 'open', name: 'Planning', systemKey: null },
+      },
+      { id: 'next', workflowState: { semantic: 'open' } },
+    ]);
+    const result = await t.service.listCenter(ASSIGNEE_ID, {
+      scope: 'mine',
+      status: 'active',
+      limit: 1,
+      cursor: TASK_ID,
+      query: 'review',
+    });
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'page-end',
+          status: 'open',
+          workflowState: {
+            semantic: 'open',
+            name: 'Planning',
+            systemKey: null,
+          },
+        },
+      ],
+      nextCursor: 'page-end',
+    });
+    expect(t.prisma.crewTask.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          crewId: { in: ['allowed'] },
+          workflowState: { semantic: { notIn: ['approved', 'cancelled'] } },
+          title: { contains: 'review', mode: 'insensitive' },
+          crew: {
+            deletedAt: null,
+            members: { some: { userId: ASSIGNEE_ID, status: 'active' } },
+          },
+          assignees: { some: { userId: ASSIGNEE_ID } },
+          id: { lt: TASK_ID },
+          deletedAt: null,
+        }) as unknown,
+        take: 2,
+      }),
+    );
+  });
+
+  it('omits a concurrently deleted Crew but propagates authorization failures', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'deleted' }]);
+    t.roles.resolve.mockRejectedValueOnce(
+      new NotFoundException('Crew not found'),
+    );
+    const query = { scope: 'all' as const, status: 'all' as const, limit: 30 };
+    await expect(t.service.listCenter(ASSIGNEE_ID, query)).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
+    t.roles.resolve.mockRejectedValueOnce(new Error('Database unavailable'));
+    await expect(t.service.listCenter(ASSIGNEE_ID, query)).rejects.toThrow(
+      'Database unavailable',
+    );
+  });
+
+  it('does not query tasks when no Crew grants task access', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'denied' }]);
+    t.roles.resolve.mockResolvedValue({ permissions: [] });
+    await expect(
+      t.service.listCenter(ASSIGNEE_ID, {
+        scope: 'all',
+        status: 'all',
+        limit: 30,
+      }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+    expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
+  });
 
   it('updates a production cycle only from the expected revision', async () => {
     const t = build();
@@ -1084,6 +1207,44 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTaskTimelineItem.create).not.toHaveBeenCalled();
   });
 
+  it.each(['approve', 'request_revision'] as const)(
+    'rejects %s when review permission is revoked while waiting for the task lock',
+    async (decision) => {
+      const t = build();
+      t.tx.$executeRaw.mockImplementationOnce(() => {
+        t.roles.require.mockRejectedValue(
+          new ForbiddenException('Permission revoked'),
+        );
+        return Promise.resolve(1);
+      });
+      await expect(
+        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(t.tx.crewTaskSubmission.update).not.toHaveBeenCalled();
+      expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+      expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+      expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['approve', 'request_revision'] as const)(
+    'rejects %s after permission is withdrawn during notification writes',
+    async (decision) => {
+      const t = build();
+      t.notifications.send.mockImplementation(() => {
+        t.roles.require.mockRejectedValue(
+          new ForbiddenException('Permission revoked'),
+        );
+        return Promise.resolve({});
+      });
+      await expect(
+        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+      ).rejects.toThrow('Permission revoked');
+      expect(t.tx.crewTask.update).toHaveBeenCalled();
+      expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+    },
+  );
+
   it('posts an approved task reward through the immutable earnings ledger', async () => {
     const t = build();
 
@@ -1171,6 +1332,7 @@ describe('CrewTasksService', () => {
       expect.objectContaining({
         userId: ASSIGNEE_ID,
         type: 'crew.task.approved',
+        meta: expect.objectContaining({ actorUserId: OWNER_ID }) as unknown,
       }),
       t.tx,
     );

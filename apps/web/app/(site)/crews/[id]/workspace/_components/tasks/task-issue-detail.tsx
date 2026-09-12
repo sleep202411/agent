@@ -44,7 +44,6 @@ import {
   IconUserCircle,
   IconX,
 } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -54,7 +53,6 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  crewKeys,
   useCreateCrewTaskComment,
   useDeleteCrewTaskComment,
   useCrewTaskOptions,
@@ -115,7 +113,6 @@ export function TaskIssueDetail({
 }: TaskIssueDetailProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
-  const qc = useQueryClient();
   const review = useReviewCrewTask(task.crewId);
   const updateTask = useUpdateCrewTask(task.crewId);
   const timeline = useCrewTaskTimeline(task.id);
@@ -724,9 +721,6 @@ export function TaskIssueDetail({
           activeView={project.views[0]}
           presetWorkflowStateId={task.workflowStateId}
           parentId={task.id}
-          onCreated={() => {
-            void qc.invalidateQueries({ queryKey: crewKeys.task(task.id) });
-          }}
         />
       ) : null}
     </div>
@@ -1926,37 +1920,13 @@ function TaskLimitsEditor({
 }) {
   const t = useTranslations("crewTasks");
   const [open, setOpen] = useState(false);
-  const [budget, setBudget] = useState(
-    task.computeBudgetPoints == null ? "" : String(task.computeBudgetPoints)
-  );
   const [revisionLimit, setRevisionLimit] = useState(
     task.revisionLimit == null ? "" : String(task.revisionLimit)
   );
   const invalidLimit = revisionLimit !== "" && Number(revisionLimit) < task.revisionRoundsUsed;
-  const invalidBudget = !isNullableIntegerInputValid(budget, 0, 1_000_000_000);
   const invalidRevision = !isNullableIntegerInputValid(revisionLimit, 0, 100);
   const summary = (
     <div className="w-full space-y-2">
-      <div>
-        <span className="block">
-          {task.computeUsedPoints}
-          {task.computeBudgetPoints != null ? ` / ${task.computeBudgetPoints}` : ""}{" "}
-          {t("pointsUnit")}
-        </span>
-        {task.computeBudgetPoints != null ? (
-          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.07]">
-            <div
-              className="h-full rounded-full bg-[#e12b32]"
-              style={{
-                width: `${Math.min(
-                  100,
-                  (task.computeUsedPoints / Math.max(task.computeBudgetPoints, 1)) * 100
-                )}%`,
-              }}
-            />
-          </div>
-        ) : null}
-      </div>
       <span className="block text-[10px] text-[#777980]">
         {task.revisionLimit == null
           ? t("revisionUnlimitedProgress", { used: task.revisionRoundsUsed })
@@ -1967,9 +1937,8 @@ function TaskLimitsEditor({
   if (!editable) return summary;
 
   const save = async () => {
-    if (invalidLimit || invalidBudget || invalidRevision) return;
+    if (invalidLimit || invalidRevision) return;
     const ok = await onSave({
-      computeBudgetPoints: parseNullableInteger(budget, 0, 1_000_000_000),
       revisionLimit: parseNullableInteger(revisionLimit, 0, 100),
     });
     if (ok) setOpen(false);
@@ -1987,16 +1956,6 @@ function TaskLimitsEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <p className="text-[12px] font-semibold">{t("taskLimits")}</p>
-        <PropertyInput label={t("budget")}>
-          <Input
-            type="number"
-            min={0}
-            max={1_000_000_000}
-            step={1}
-            value={budget}
-            onChange={(event) => setBudget(event.target.value)}
-          />
-        </PropertyInput>
         <PropertyInput label={t("revisionLimit")}>
           <Input
             type="number"
@@ -2012,12 +1971,12 @@ function TaskLimitsEditor({
           <p className="text-[10px] text-red-300">
             {t("revisionUsedHint", { used: task.revisionRoundsUsed })}
           </p>
-        ) : invalidBudget || invalidRevision ? (
+        ) : invalidRevision ? (
           <p className="text-[10px] text-red-300">{t("invalidNumber")}</p>
         ) : null}
         <PropertyActions
           pending={pending}
-          disabled={invalidLimit || invalidBudget || invalidRevision}
+          disabled={invalidLimit || invalidRevision}
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />

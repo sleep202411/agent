@@ -60,18 +60,19 @@ export class NotificationApiError extends Error {
 }
 
 export function listNotifications(
-  opts: { limit?: number; cursor?: string; filter?: NotificationFilter } = {}
+  opts: { limit?: number; cursor?: string; filter?: NotificationFilter } = {},
+  signal?: AbortSignal
 ): Promise<ListResult> {
   const qs = new URLSearchParams();
   if (opts.limit) qs.set("limit", String(opts.limit));
   if (opts.cursor) qs.set("cursor", opts.cursor);
   if (opts.filter) qs.set("filter", opts.filter);
   const path = qs.toString() ? `${BASE}?${qs.toString()}` : BASE;
-  return jsonFetch<ListResult>(path);
+  return jsonFetch<ListResult>(path, { signal });
 }
 
-export function fetchUnreadCount(): Promise<{ count: number }> {
-  return jsonFetch<{ count: number }>(`${BASE}/unread-count`);
+export function fetchUnreadCount(signal?: AbortSignal): Promise<{ count: number }> {
+  return jsonFetch<{ count: number }>(`${BASE}/unread-count`, { signal });
 }
 
 export function markNotificationRead(id: string): Promise<NotificationDTO> {

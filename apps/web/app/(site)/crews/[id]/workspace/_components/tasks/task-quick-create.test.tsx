@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   create: vi.fn(),
   draft: vi.fn(),
   resetDraft: vi.fn(),
+  resetCreate: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -38,6 +39,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useCreateCrewTask: () => ({
     mutateAsync: state.create,
+    reset: state.resetCreate,
     isPending: false,
   }),
   useDraftCrewTask: () => ({
@@ -87,10 +89,17 @@ const view = {
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 
-function renderQuickCreate(onCreated = vi.fn(), onOpenChange = vi.fn()) {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
+function renderQuickCreate(
+  onCreated = vi.fn(),
+  onOpenChange = vi.fn(),
+  taskProject = project,
+  context: { open?: boolean; crewId?: string; parentId?: string } = {}
+) {
+  if (!root) {
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+  }
   act(() =>
     root!.render(
       <TaskQuickCreate
@@ -98,9 +107,10 @@ function renderQuickCreate(onCreated = vi.fn(), onOpenChange = vi.fn()) {
         onOpenChange={onOpenChange}
         crewId="crew-1"
         members={[member]}
-        project={project}
+        project={taskProject}
         activeView={view}
         onCreated={onCreated}
+        {...context}
       />
     )
   );
@@ -136,6 +146,8 @@ function exactButton(label: string) {
 }
 
 beforeEach(() => {
+  // jsdom has no layout scrolling; Radix uses this when focusing select options.
+  Element.prototype.scrollIntoView = vi.fn();
   state.create.mockReset();
   state.draft.mockReset();
   state.resetDraft.mockReset();
@@ -239,5 +251,322 @@ describe("TaskQuickCreate", () => {
         assignees: [{ userId: "member-1", currency: "USD" }],
       })
     );
+    expect(state.create.mock.calls[0]![0]).not.toHaveProperty("computeBudgetPoints");
   });
+  it.each(["Task title", "Task brief"])(
+    "preserves edits to %s made while AI preparation runs",
+    async (label) => {
+      let finish!: (value: unknown) => void;
+      state.draft.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      renderQuickCreate();
+      const title = document.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Task title"]'
+      )!;
+      act(() => fill(title, "Original prompt"));
+      await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+      await act(async () => click(button("Organize with AI")));
+      const input = document.querySelector<HTMLTextAreaElement>(`textarea[aria-label="${label}"]`)!;
+      act(() => fill(input, "Newer user text"));
+      await act(async () =>
+        finish({
+          title: "Old AI title",
+          description: "Old AI brief",
+          priority: "high",
+          assigneeUserIds: [],
+          dueDate: null,
+          questions: [],
+        })
+      );
+      expect(input.value).toBe("Newer user text");
+      expect(title.value).not.toBe("Old AI title");
+      await act(async () => click(exactButton("Create")));
+      expect(state.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: label === "Task title" ? "Newer user text" : "Original prompt",
+          description: label === "Task brief" ? "Newer user text" : "",
+        })
+      );
+    }
+  );
+
+  it.each(["deadline", "priority", "assignee", "cycle"])(
+    "preserves a %s choice made during AI preparation",
+    async (field) => {
+      let finish!: (value: unknown) => void;
+      state.draft.mockReturnValueOnce(
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+      );
+      renderQuickCreate(vi.fn(), vi.fn(), {
+        ...project,
+        cycles: [{ id: "cycle-user", name: "Chosen cycle", status: "planned" }],
+      } as unknown as CrewTaskProjectDTO);
+      const title = document.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Task title"]'
+      )!;
+      act(() => fill(title, "Current title"));
+      await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+      await act(async () => click(button("Organize with AI")));
+      if (field === "deadline") {
+        act(() =>
+          fill(document.querySelector<HTMLInputElement>('input[type="date"]')!, "2026-10-01")
+        );
+      } else {
+        const label =
+          field === "priority" ? "Priority" : field === "assignee" ? "Assignees" : "Cycle";
+        await act(async () => click(document.querySelector(`button[aria-label="${label}"]`)!));
+        const text =
+          field === "priority" ? "priority.low" : field === "assignee" ? "Isaac" : "Chosen cycle";
+        const option = [...document.querySelectorAll('[role="option"]')].find(
+          (item) => item.textContent?.trim() === text
+        );
+        expect(option).toBeDefined();
+        await act(async () => click(option!));
+      }
+      await act(async () =>
+        finish({
+          title: "Old AI title",
+          description: "Old AI brief",
+          priority: "high",
+          assigneeUserIds: [],
+          cycleId: null,
+          dueDate: "2026-09-01",
+          questions: [],
+        })
+      );
+      expect(title.value).toBe("Current title");
+      await act(async () => click(exactButton("Create")));
+      expect(state.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...(field === "deadline" ? { dueAt: new Date("2026-10-01T23:59:59").toISOString() } : {}),
+          ...(field === "priority" ? { priority: "low" } : {}),
+          ...(field === "assignee" ? { assignees: [{ userId: "member-1", currency: "USD" }] } : {}),
+          ...(field === "cycle" ? { cycleId: "cycle-user" } : {}),
+        })
+      );
+    }
+  );
+
+  it("ignores AI results from a closed composer session", async () => {
+    let finish!: (value: unknown) => void;
+    state.draft.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    const onCreated = vi.fn();
+    const onOpenChange = vi.fn();
+    renderQuickCreate(onCreated, onOpenChange);
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Old prompt"
+      )
+    );
+    await act(async () => click(document.querySelector('button[aria-label="More actions"]')!));
+    await act(async () => click(button("Organize with AI")));
+    renderQuickCreate(onCreated, onOpenChange, project, { open: false });
+    renderQuickCreate(onCreated, onOpenChange);
+    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    expect(title.value).toBe("");
+    act(() => fill(title, "New session"));
+    await act(async () =>
+      finish({
+        title: "Old AI title",
+        description: "Old AI brief",
+        priority: "normal",
+        assigneeUserIds: [],
+        questions: [],
+      })
+    );
+    expect(title.value).toBe("New session");
+    expect(onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("does not clear a new composer or release its pending guard when an old creation finishes", async () => {
+    let finishOld!: (value: unknown) => void;
+    let finishNew!: (value: unknown) => void;
+    state.create.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishOld = resolve;
+      })
+    );
+    state.create.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishNew = resolve;
+      })
+    );
+    const onCreated = vi.fn();
+    const onOpenChange = vi.fn();
+    renderQuickCreate(onCreated, onOpenChange);
+    act(() =>
+      fill(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+        "Old task"
+      )
+    );
+    act(() => click(exactButton("Create")));
+    renderQuickCreate(onCreated, onOpenChange, project, { open: false });
+    renderQuickCreate(onCreated, onOpenChange);
+    const title = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    act(() => fill(title, "New task"));
+    act(() => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledTimes(2);
+    await act(async () => finishOld({ id: "old-task" }));
+    expect(onCreated).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(title.value).toBe("New task");
+    act(() => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledTimes(2);
+    await act(async () => finishNew({ id: "new-task" }));
+    expect(onCreated).toHaveBeenCalledExactlyOnceWith({ id: "new-task" });
+  });
+
+  it.each([{ crewId: "crew-2" }, { parentId: "parent-2" }])(
+    "clears draft text when the creation context changes: %j",
+    (context) => {
+      renderQuickCreate();
+      act(() =>
+        fill(
+          document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+          "Previous context"
+        )
+      );
+      renderQuickCreate(vi.fn(), vi.fn(), project, context);
+      expect(
+        document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value
+      ).toBe("");
+    }
+  );
+
+  it.each(["ctrlKey", "metaKey"] as const)(
+    "ignores repeated %s+Enter while task creation is pending and allows a retry after failure",
+    async (modifier) => {
+      let fail!: (error: Error) => void;
+      state.create.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          fail = reject;
+        })
+      );
+      renderQuickCreate();
+      const input = document.querySelector<HTMLTextAreaElement>(
+        'textarea[aria-label="Task title"]'
+      )!;
+      act(() => fill(input, "Create only once"));
+      const shortcut = () =>
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "Enter",
+            [modifier]: true,
+            bubbles: true,
+          })
+        );
+      act(() => {
+        shortcut();
+        shortcut();
+        click(exactButton("Create"));
+      });
+      expect(state.create).toHaveBeenCalledTimes(1);
+      await act(async () => fail(new Error("Temporary failure")));
+      expect(input.value).toBe("Create only once");
+      await act(async () => {
+        shortcut();
+      });
+      expect(state.create).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it("ignores creation shortcuts and repeated draft requests until AI preparation finishes", async () => {
+    let finish!: (draft: unknown) => void;
+    state.draft.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
+    renderQuickCreate();
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    act(() => fill(input, "Prepare this task"));
+    act(() => click(document.querySelector('button[aria-label="More actions"]')!));
+    act(() => {
+      click(button("Organize with AI"));
+      click(button("Organize with AI"));
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true })
+      );
+    });
+    expect(state.draft).toHaveBeenCalledTimes(1);
+    expect(state.create).not.toHaveBeenCalled();
+    await act(async () =>
+      finish({
+        title: "Prepared title",
+        description: "Prepared brief",
+        priority: "normal",
+        assigneeUserIds: ["member-1"],
+        questions: [],
+      })
+    );
+    await act(async () => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledTimes(1);
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Prepared title",
+        assignees: [{ userId: "member-1", currency: "USD" }],
+      })
+    );
+  });
+  it.each(["", "2026-09-25"])("respects the user changing an AI deadline to %s", async (date) => {
+    renderQuickCreate();
+    const input = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!;
+    act(() => fill(input, "Prepare storyboard"));
+    act(() => click(document.querySelector('button[aria-label="More actions"]')!));
+    await act(async () => click(button("Organize with AI")));
+    const dateInput = document.querySelector<HTMLInputElement>('input[type="date"]')!;
+    expect(dateInput.value).toBe("2026-08-07");
+    act(() => fill(dateInput, date));
+    await act(async () => click(exactButton("Create")));
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dueAt: date ? new Date(`${date}T23:59:59`).toISOString() : null,
+      })
+    );
+  });
+  it("shows a custom workflow name instead of its generic semantic status", () => {
+    renderQuickCreate(vi.fn(), vi.fn(), {
+      ...project,
+      workflowStates: [
+        {
+          ...project.workflowStates[0]!,
+          id: "custom-review",
+          systemKey: null,
+          semantic: "open",
+          name: "Producer briefing",
+        },
+      ],
+    });
+    expect(document.body.textContent).toContain("Producer briefing");
+  });
+});
+
+it("submits a manually selected assignee and preserves it after server rejection", async () => {
+  state.create.mockRejectedValueOnce(new Error("Every assignee must be an active crew member."))
+    .mockResolvedValueOnce({ id: "task-created" });
+  renderQuickCreate();
+  act(() => fill(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!, "Assigned task"));
+  const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Assignees"]');
+  expect(trigger).not.toBeNull();
+  await act(async () => trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
+  const option = [...document.querySelectorAll('[role="option"]')].find((element) => element.textContent?.includes("Isaac"));
+  expect(option).toBeDefined();
+  await act(async () => option!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await act(async () => click(exactButton("Create")));
+  expect(state.create).toHaveBeenLastCalledWith(expect.objectContaining({ assignees: [expect.objectContaining({ userId: "member-1" })] }));
+  expect(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value).toBe("Assigned task");
+  await act(async () => click(exactButton("Create")));
+  expect(state.create).toHaveBeenCalledTimes(2);
+  expect(state.create.mock.calls[1]![0].assignees).toEqual(state.create.mock.calls[0]![0].assignees);
 });

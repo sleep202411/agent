@@ -73,8 +73,17 @@ export default function CrewsPage() {
   const [kycGateOpen, setKycGateOpen] = useState(false);
   const [checkingKyc, setCheckingKyc] = useState(false);
 
-  const { data, isLoading, isError, isFetchingNextPage, hasNextPage, fetchNextPage } =
-    useCrewList(24);
+  const {
+    data,
+    isLoading,
+    isError,
+    isFetching,
+    isFetchNextPageError,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useCrewList(24);
   const { data: kycStatus, refetch: refetchKycStatus } = useKycAuthStatus({
     enabled: isCnRegion,
   });
@@ -172,11 +181,7 @@ export default function CrewsPage() {
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                 {isLoading ? (
                   <CardSkeleton count={10} />
-                ) : isError ? (
-                  <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
-                    {tc("loadFailed")}
-                  </div>
-                ) : items.length === 0 ? (
+                ) : items.length === 0 && !isError ? (
                   <div className="col-span-full rounded-2xl border border-dashed border-border py-20 text-center text-sm text-muted-foreground">
                     {t("noData")}
                   </div>
@@ -185,11 +190,27 @@ export default function CrewsPage() {
                 )}
               </div>
 
-              {items.length > 0 && hasNextPage && (
+              {isError && (
+                <div
+                  role="alert"
+                  className="mt-6 flex items-center justify-center gap-3 text-sm text-muted-foreground"
+                >
+                  <span>{tc("loadFailed")}</span>
+                  <Button
+                    variant="outline"
+                    disabled={isFetching}
+                    onClick={() => void (isFetchNextPageError ? fetchNextPage() : refetch())}
+                  >
+                    {tc("retry")}
+                  </Button>
+                </div>
+              )}
+
+              {items.length > 0 && hasNextPage && !isError && (
                 <div className="mt-10 flex justify-center">
                   <button
                     type="button"
-                    disabled={isFetchingNextPage}
+                    disabled={isFetching}
                     onClick={() => fetchNextPage()}
                     className={cn(
                       "inline-flex h-11 items-center rounded-xl border border-border px-6 text-sm font-semibold transition-colors",
