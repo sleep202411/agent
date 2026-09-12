@@ -12,6 +12,9 @@
  * tab is active or how full it is, and lets the left rail stay
  * laser-focused on stats + business info.
  */
+import Link from "next/link";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
@@ -38,7 +41,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { useUploadAvatar } from "@/src/hooks/use-user";
 import { creatorKeys, type Creator } from "@/app/(site)/creators/_hooks/use-creator";
 
@@ -165,17 +168,18 @@ function OwnerCtas({
   referralPending?: boolean;
   onShareProfile?: () => void;
 }) {
-  // Secondary owner CTAs (inbox / earnings / referral / share-profile)
-  // and the profile-edit affordance moved off the hero — share/inbox/
-  // earnings collapse into this overflow menu, and edit lives next to
-  // each editable section in the left rail. The hero now carries only
-  // the single primary "+ new service" action so the band stops
-  // crowding the avatar / name on common laptop widths.
+  const locale = useLocale() as Locale;
   return (
     <>
       <Button type="button" variant="solid" color="primary" onClick={() => onCreateService?.()}>
         <IconPlus className="size-4" />
         {t("cta.createService")}
+      </Button>
+      <Button variant="outline" color="muted" asChild>
+        <Link href={localizePath("/profile/earnings", locale)}>
+          <IconWallet className="size-4" />
+          {t("cta.earnings")}
+        </Link>
       </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -188,10 +192,6 @@ function OwnerCtas({
           <DropdownMenuItem onSelect={() => toast.info(t("ctaPhase1bHint"))}>
             <IconInbox className="size-4 text-muted-foreground" />
             <span>{t("cta.inbox")}</span>
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => toast.info(t("ctaPhase1bHint"))}>
-            <IconWallet className="size-4 text-muted-foreground" />
-            <span>{t("cta.earnings")}</span>
           </DropdownMenuItem>
           <DropdownMenuItem disabled={referralPending} onSelect={() => onShareReferral?.()}>
             <IconLink className="size-4 text-muted-foreground" />
