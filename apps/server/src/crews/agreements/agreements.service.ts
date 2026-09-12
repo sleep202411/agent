@@ -213,6 +213,27 @@ export class CrewAgreementsService {
       });
     }
     await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM crew_agreements WHERE id = ${agreement.id}::uuid FOR UPDATE`;
+      await tx.$executeRaw`SELECT id FROM crew_agreement_send_jobs WHERE agreement_id = ${agreement.id}::uuid FOR UPDATE`;
+      await this.authorization.require(
+        agreement.crewId,
+        userId,
+        'agreements.manage',
+        tx,
+      );
+      const current = await tx.crewAgreement.findUnique({
+        where: { id: agreement.id },
+        include: AGREEMENT_ARCHIVE_INCLUDE,
+      });
+      if (
+        !current ||
+        current.providerDocumentId ||
+        current.sendJob?.status !== CrewAgreementSendJobStatus.failed ||
+        (current.status !== CrewAgreementStatus.failed &&
+          current.status !== CrewAgreementStatus.draft)
+      )
+        return;
+
       await tx.crewAgreement.update({
         where: { id: agreement.id },
         data: {
@@ -233,6 +254,12 @@ export class CrewAgreementsService {
           completedAt: null,
         },
       });
+      await this.authorization.require(
+        agreement.crewId,
+        userId,
+        'agreements.manage',
+        tx,
+      );
     });
     const updated = await this.prisma.crewAgreement.findUniqueOrThrow({
       where: { id: agreement.id },
@@ -362,11 +389,29 @@ export class CrewAgreementsService {
     if (agreement.assetNodeId && agreement.auditAssetNodeId) {
       return agreementDto(agreement, true);
     }
-    if (
-      agreement.archiveJob?.status !== CrewAgreementArchiveJobStatus.pending &&
-      agreement.archiveJob?.status !== CrewAgreementArchiveJobStatus.processing
-    ) {
-      await this.prisma.crewAgreementArchiveJob.upsert({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT id FROM crew_agreements WHERE id = ${agreement.id}::uuid FOR UPDATE`;
+      await tx.$executeRaw`SELECT id FROM crew_agreement_archive_jobs WHERE agreement_id = ${agreement.id}::uuid FOR UPDATE`;
+      await this.authorization.require(
+        agreement.crewId,
+        userId,
+        'agreements.manage',
+        tx,
+      );
+      const current = await tx.crewAgreement.findUnique({
+        where: { id: agreement.id },
+        include: AGREEMENT_ARCHIVE_INCLUDE,
+      });
+      if (
+        !current ||
+        current.status !== CrewAgreementStatus.signed ||
+        !current.providerDocumentId ||
+        (current.assetNodeId && current.auditAssetNodeId) ||
+        current.archiveJob?.status === CrewAgreementArchiveJobStatus.pending ||
+        current.archiveJob?.status === CrewAgreementArchiveJobStatus.processing
+      )
+        return;
+      await tx.crewAgreementArchiveJob.upsert({
         where: { agreementId: agreement.id },
         create: { agreementId: agreement.id },
         update: {
@@ -379,7 +424,13 @@ export class CrewAgreementsService {
           completedAt: null,
         },
       });
-    }
+      await this.authorization.require(
+        agreement.crewId,
+        userId,
+        'agreements.manage',
+        tx,
+      );
+    });
     const updated = await this.prisma.crewAgreement.findUniqueOrThrow({
       where: { id: agreement.id },
       include: AGREEMENT_ARCHIVE_INCLUDE,
