@@ -2788,6 +2788,26 @@ export class CrewTasksService {
           message: 'This task is not accepting submissions.',
         });
       }
+      // A manager submitting on behalf of the team must not bypass another
+      // assignee's withdrawal and accidentally approve that person's reward.
+      const commitment = await tx.crewTaskCommitment.findFirst({
+        where: {
+          assignmentId: { in: locked.assignees.map((a) => a.id) },
+          status: 'withdrawn',
+        },
+      });
+      const participation = await tx.crewParticipationRecord.findFirst({
+        where: {
+          crewId: locked.crewId,
+          userId: { in: [userId, ...locked.assignees.map((a) => a.userId)] },
+          withdrawalAt: { not: null },
+        },
+      });
+      if (commitment?.status === 'withdrawn' || participation?.withdrawalAt) {
+        throw new ConflictException(
+          'A withdrawal is recorded. Arrange a handover with the leader before further work.',
+        );
+      }
       const unresolvedBlockers = locked.dependenciesAsBlocked
         .map((dependency) => dependency.blockingTask)
         .filter(

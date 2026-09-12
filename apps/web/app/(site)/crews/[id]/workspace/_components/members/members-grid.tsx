@@ -1,4 +1,5 @@
 "use client";
+import { ProjectAccountability } from "@/app/(site)/crews/_components/accountability/project-accountability";
 
 /**
  * Members tab content. Ownership, production positions and access policies
@@ -173,6 +174,7 @@ export function MembersGrid({
 
   return (
     <div className="space-y-5">
+      <ProjectAccountability crewId={crewId} members={members} />
       {/* This is a toolbar, not a second page title: the workspace header
           already establishes "Member management" above the scroll pane. */}
       <section className="flex flex-col gap-4 rounded-xl bg-white/[0.025] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">

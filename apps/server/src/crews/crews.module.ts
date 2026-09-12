@@ -1,3 +1,5 @@
+import { CrewAccountabilityController } from './accountability/accountability.controller';
+import { CrewAccountabilityService } from './accountability/accountability.service';
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
 import { AuthModule } from '../auth';
@@ -68,6 +70,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewAccountabilityController,
     CrewsController,
     CrewsAdminController,
     CrewPositionsAdminController,
@@ -85,6 +88,7 @@ import { CrewProductionService } from './production/production.service';
     CrewPayoutsController,
   ],
   providers: [
+    CrewAccountabilityService,
     CrewsService,
     PositionsService,
     ApplicationsService,
