@@ -877,7 +877,9 @@
       "tooltip": "算力积分",
       "tooltipDetailed": "算力积分 · 可用 {available} · 冻结 {held} · 总计 {total}",
       "manage": "管理算力积分",
-      "teamTag": "团队",
+      "unavailable": "读取失败",
+      "personalHint": "个人空间始终显示你自己的算力积分，包括他人的个人空间。点击可充值。",
+      "teamHint": "当前团队共用的算力积分。点击可查看充值管理。",
       "recharge": "积分充值"
     },
     "header": {
@@ -1044,6 +1046,8 @@
     "balanceLoading": "正在加载积分余额…",
     "balanceUnavailable": "积分余额暂不可用",
     "switchTeams": "切换团队",
+    "searchPlaceholder": "搜索空间名称…",
+    "noSearchResults": "没有匹配的空间",
     "current": "当前",
     "teamType": "团队",
     "personalType": "个人",

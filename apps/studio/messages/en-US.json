@@ -877,7 +877,9 @@
       "tooltip": "Compute credits",
       "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}",
       "manage": "Manage compute credits",
-      "teamTag": "Team",
+      "unavailable": "Unavailable",
+      "personalHint": "Your own compute credits, shown in any personal workspace. Click to add credits.",
+      "teamHint": "The current team’s shared compute credits. Click to manage top-ups.",
       "recharge": "Add credits"
     },
     "header": {
@@ -1044,6 +1046,8 @@
     "balanceLoading": "Loading credit balance…",
     "balanceUnavailable": "Credit balance unavailable",
     "switchTeams": "Switch Teams",
+    "searchPlaceholder": "Search by name…",
+    "noSearchResults": "No matching workspaces",
     "current": "current",
     "teamType": "Team",
     "personalType": "Personal",

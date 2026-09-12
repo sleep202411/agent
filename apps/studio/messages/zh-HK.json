@@ -877,7 +877,9 @@
       "tooltip": "算力積分",
       "tooltipDetailed": "算力積分 · 可用 {available} · 凍結 {held} · 總計 {total}",
       "manage": "管理算力積分",
-      "teamTag": "團隊",
+      "unavailable": "讀取失敗",
+      "personalHint": "個人空間一律顯示你自己的算力積分，包括他人的個人空間。點擊可儲值。",
+      "teamHint": "目前團隊共用的算力積分。點擊可查看儲值管理。",
       "recharge": "積分儲值"
     },
     "header": {
@@ -1044,6 +1046,8 @@
     "balanceLoading": "正在載入積分餘額…",
     "balanceUnavailable": "積分餘額暫時無法使用",
     "switchTeams": "切換團隊",
+    "searchPlaceholder": "搜尋空間名稱…",
+    "noSearchResults": "沒有符合的空間",
     "current": "目前",
     "teamType": "團隊",
     "personalType": "個人",
