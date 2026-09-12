@@ -352,12 +352,8 @@ function AgreementSession({
             </div>
           ) : null}
 
-          {agreements.isLoading ? (
-            <div className="flex h-36 items-center justify-center">
-              <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
-            </div>
-          ) : agreements.isError ? (
-            <div className="py-12 text-center">
+          {agreements.isError ? (
+            <div role="alert" className="py-4 text-center">
               <p className="text-sm text-destructive">
                 {agreements.error instanceof Error ? agreements.error.message : t("loadFailed")}
               </p>
@@ -367,10 +363,16 @@ function AgreementSession({
                 variant="ghost"
                 color="muted"
                 className="mt-3"
-                onClick={() => void agreements.refetch()}
+                disabled={agreements.isFetching}
+                onClick={() => void (agreements.isFetchNextPageError ? agreements.fetchNextPage() : agreements.refetch())}
               >
                 {tc("retry")}
               </Button>
+            </div>
+          ) : null}
+          {agreements.isLoading && !payload ? (
+            <div className="flex h-36 items-center justify-center">
+              <IconLoader2 className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : payload?.items.length ? (
             <>
@@ -482,14 +484,14 @@ function AgreementSession({
                   );
                 })}
               </div>
-              {agreements.hasNextPage ? (
+              {agreements.hasNextPage && !agreements.isError ? (
                 <div className="border-t border-white/[0.065] pt-3 text-center">
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
                     color="muted"
-                    disabled={agreements.isFetchingNextPage}
+                    disabled={agreements.isFetching}
                     onClick={() => void agreements.fetchNextPage()}
                     icon={
                       agreements.isFetchingNextPage ? (
@@ -502,7 +504,7 @@ function AgreementSession({
                 </div>
               ) : null}
             </>
-          ) : (
+          ) : agreements.isError ? null : (
             <div className="py-14 text-center">
               <IconCheck className="mx-auto size-6 text-white/25" />
               <p className="mt-3 text-sm text-white/55">
