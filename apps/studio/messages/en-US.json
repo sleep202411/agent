@@ -3761,6 +3761,23 @@
         },
         "dropHint": "Click or drag a JSON file here",
         "drop": "Drop to select this file"
+      },
+      "communityPrice": {
+        "free": "Free",
+        "title": "Community Points settings",
+        "currency": "Community Points",
+        "amount": "{count} Community Points",
+        "configure": "Set Community Points for {title}",
+        "nodeHint": "Set the Community Points required to unlock this node.",
+        "destinationHint": "Price of the linked story node",
+        "freeHint": "Set to 0 for free access.",
+        "price": "Unlock price",
+        "cancel": "Cancel",
+        "save": "Save",
+        "saving": "Saving…",
+        "invalid": "Enter a whole number from 0 to 2,147,483,647.",
+        "unavailable": "The draft cannot be edited right now. Try again when it is ready.",
+        "saveFailed": "Unable to save. Please try again."
       }
     },
     "workbench": {
@@ -3774,7 +3791,8 @@
         "overview": "Overview",
         "story": "Story",
         "references": "References"
-      }
+      },
+      "viewEarnings": "View earnings"
     },
     "overview": {
       "productionTitle": "Video production",
@@ -3904,6 +3922,14 @@
     "studioDescription": "AI creative studio"
   },
   "experiencePlayer": {
+    "communityAccess": {
+      "title": "Unlock content",
+      "price": "{amount} Community Points",
+      "chargeHint": "Players spend these points to unlock this content once. Replays are free.",
+      "previewHint": "Playtest only · No points will be deducted.",
+      "cancel": "Cancel",
+      "unlock": "Preview unlock"
+    },
     "invalidManifest": "The runtime manifest is invalid",
     "manifestRoot": "Manifest root",
     "interactiveFilm": "Interactive story",

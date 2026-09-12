@@ -3761,6 +3761,23 @@
         },
         "dropHint": "点击选择或拖拽 JSON 文件到这里",
         "drop": "松开以选择文件"
+      },
+      "communityPrice": {
+        "free": "免费",
+        "title": "社区积分设置",
+        "currency": "社区积分",
+        "amount": "{count} 社区积分",
+        "configure": "设置「{title}」的社区积分",
+        "nodeHint": "设置解锁这个节点所需的社区积分。",
+        "destinationHint": "价格来自连接的剧情节点",
+        "freeHint": "设为 0 即可免费进入。",
+        "price": "解锁价格",
+        "cancel": "取消",
+        "save": "保存",
+        "saving": "保存中…",
+        "invalid": "请输入 0 至 2,147,483,647 之间的整数。",
+        "unavailable": "当前草稿暂不可编辑，请待就绪后重试。",
+        "saveFailed": "保存失败，请重试。"
       }
     },
     "workbench": {
@@ -3774,7 +3791,8 @@
         "overview": "总览",
         "story": "故事",
         "references": "参考包"
-      }
+      },
+      "viewEarnings": "查看收益"
     },
     "overview": {
       "productionTitle": "视频生产",
@@ -3904,6 +3922,14 @@
     "studioDescription": "AI 创意工作台"
   },
   "experiencePlayer": {
+    "communityAccess": {
+      "title": "解锁内容",
+      "price": "{amount} 社区积分",
+      "chargeHint": "玩家确认后将扣除以上积分，一次解锁，重玩不重复扣分。",
+      "previewHint": "当前为试播，不会实际扣除积分。",
+      "cancel": "取消",
+      "unlock": "模拟解锁"
+    },
     "invalidManifest": "Runtime 清单无效",
     "manifestRoot": "清单根节点",
     "interactiveFilm": "互动故事",
