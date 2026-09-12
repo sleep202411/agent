@@ -124,6 +124,17 @@ export class BillingController {
     };
   }
 
+  @Get('compute-balance')
+  async getComputeBalance(
+    @CurrentUser() user: AuthUser,
+    @Headers('x-fizz-workspace-id') workspaceId: string | undefined,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.getComputeBalance(user, workspaceId),
+    };
+  }
+
   @Get('wallet-ledger')
   async listWalletLedger(
     @CurrentUser() user: AuthUser,
