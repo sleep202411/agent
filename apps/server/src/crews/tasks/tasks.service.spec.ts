@@ -342,6 +342,8 @@ function build() {
       callback(tx),
     ),
   };
+  // Transactional and direct reads share the same label fixture.
+  Object.assign(tx, { crewTaskLabel: prisma.crewTaskLabel });
   const roles = {
     require: jest.fn().mockResolvedValue('admin'),
     requireMembership: jest.fn().mockResolvedValue({
