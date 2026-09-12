@@ -5,6 +5,13 @@ import { MembersGrid } from "./members-grid";
 import type { CrewMemberDTO } from "@repo/shared/crew";
 const state = vi.hoisted(() => ({
   account: "alice",
+  locale: "en-US",
+  failed: false,
+  nextPageError: false,
+  fetching: false,
+  hasNextPage: false,
+  next: vi.fn(),
+  refetch: vi.fn(),
   remove: vi.fn(),
   transfer: vi.fn(),
   revoke: vi.fn(),
@@ -15,8 +22,9 @@ vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: state.account } }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
-  useTranslations: () => (key: string, args?: { name?: string }) =>
-    args?.name ? `${key}:${args.name}` : key,
+  useLocale: () => state.locale,
+  useTranslations: () => (key: string, args?: { name?: string; date?: string }) =>
+    args?.name ? `${key}:${args.name}` : args?.date ? `${key}:${args.date}` : key,
 }));
 vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error } }));
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
@@ -107,8 +115,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     ],
     total: 1,
     isLoading: false,
-    isError: false,
-    hasNextPage: false,
+    isError: state.failed,
+    error: new Error("Invitation list unavailable"),
+    isFetchNextPageError: state.nextPageError,
+    isFetching: state.fetching,
+    hasNextPage: state.hasNextPage,
+    fetchNextPage: state.next,
+    refetch: state.refetch,
   }),
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -120,6 +133,11 @@ let root: Root;
 beforeEach(() => {
   vi.clearAllMocks();
   state.account = "alice";
+  state.locale = "en-US";
+  state.failed = false;
+  state.nextPageError = false;
+  state.fetching = false;
+  state.hasNextPage = false;
   host = document.createElement("div");
   root = createRoot(host);
 });
@@ -227,4 +245,38 @@ it("blocks duplicate revocations and ignores success after account switching", a
   await render();
   await act(async () => resolve({}));
   expect(state.success).not.toHaveBeenCalled();
+});
+
+it.each([false, true])(
+  "retains invitations and retries the right request (next page: %s)",
+  async (nextPage) => {
+    await render();
+    state.failed = true;
+    state.nextPageError = nextPage;
+    state.hasNextPage = true;
+    await render();
+    expect(host.textContent).toContain("recipient");
+    expect(host.textContent).toContain("Invitation list unavailable");
+    expect(button("revokeInvitation")).toBeDefined();
+    expect(button("loadMore")).toBeUndefined();
+    await click("retry");
+    expect(nextPage ? state.next : state.refetch).toHaveBeenCalledTimes(1);
+    expect(nextPage ? state.refetch : state.next).not.toHaveBeenCalled();
+  }
+);
+it("pauses manual invitation pagination during refresh", async () => {
+  state.hasNextPage = true;
+  state.fetching = true;
+  await render();
+  expect(button("loadMore").disabled).toBe(true);
+  await click("loadMore");
+  expect(state.next).not.toHaveBeenCalled();
+});
+it.each(["en-US", "zh-CN", "zh-HK"])("formats invitation expiry in %s", async (locale) => {
+  state.locale = locale;
+  await render();
+  const expected = new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
+    new Date("2026-10-01T00:00:00Z")
+  );
+  expect(host.textContent).toContain(expected);
 });
