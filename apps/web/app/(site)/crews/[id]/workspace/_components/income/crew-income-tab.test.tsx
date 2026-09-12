@@ -6,6 +6,11 @@ import { CrewIncomeTab } from "./crew-income-tab";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   account: "alice",
+  failed: false,
+  pageFailed: false,
+  fetching: false,
+  refetch: vi.fn(),
+  nextPage: vi.fn(),
   earning: false,
   payout: false,
   posted: false,
@@ -53,7 +58,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
           },
         ]
       : [],
-    refetch: vi.fn(),
+    refetch: state.refetch,
+    fetchNextPage: state.nextPage,
+    hasNextPage: true,
+    isError: state.failed,
+    isFetchNextPageError: state.pageFailed,
+    isFetching: state.fetching,
+    error: new Error("Ledger unavailable"),
   }),
   useCrewPayouts: () => ({
     data: state.payout
@@ -71,7 +82,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
           },
         ]
       : [],
-    refetch: vi.fn(),
+    refetch: state.refetch,
+    fetchNextPage: state.nextPage,
+    hasNextPage: true,
+    isError: state.failed,
+    isFetchNextPageError: state.pageFailed,
+    isFetching: state.fetching,
+    error: new Error("Ledger unavailable"),
   }),
   useCrewEarningDetail: () => ({}),
   useCrewPayoutDetail: () => ({}),
@@ -172,6 +189,9 @@ afterEach(async () => {
   root = createRoot(container);
   vi.clearAllMocks();
   state.account = "alice";
+  state.failed = false;
+  state.pageFailed = false;
+  state.fetching = false;
   state.earning = false;
   state.payout = false;
   state.posted = false;
@@ -318,4 +338,35 @@ it("guards rapid repeated earnings approval", async () => {
   });
   expect(state.create).toHaveBeenCalledTimes(1);
   await act(async () => pending.resolve());
+});
+
+it.each(["earnings", "payouts"])(
+  "retains %s records after a failed page and retries that page",
+  async (view) => {
+    state.earning = view === "earnings";
+    state.payout = view === "payouts";
+    await render();
+    if (state.payout) await act(async () => button("views.payouts").click());
+    state.failed = true;
+    state.pageFailed = true;
+    await render();
+    expect(container.textContent).toContain(state.payout ? "payout.record" : "Recorded bonus");
+    expect(container.textContent).toContain("Ledger unavailable");
+    await act(async () => button("retry").click());
+    expect(state.nextPage).toHaveBeenCalledTimes(1);
+    expect(state.refetch).not.toHaveBeenCalled();
+  }
+);
+it("retains earnings after refresh errors and waits for refresh before pagination", async () => {
+  state.earning = true;
+  state.fetching = true;
+  await render();
+  expect(button("loadMore").disabled).toBe(true);
+  state.fetching = false;
+  state.failed = true;
+  await render();
+  expect(container.textContent).toContain("Recorded bonus");
+  await act(async () => button("retry").click());
+  expect(state.refetch).toHaveBeenCalledTimes(1);
+  expect(state.nextPage).not.toHaveBeenCalled();
 });

@@ -1385,6 +1385,8 @@ function ResultState({
     refetch: () => unknown;
     hasNextPage?: boolean;
     isFetchingNextPage?: boolean;
+    isFetching?: boolean;
+    isFetchNextPageError?: boolean;
     fetchNextPage: () => unknown;
   };
   emptyTitle: string;
@@ -1392,31 +1394,32 @@ function ResultState({
   children: React.ReactNode;
 }) {
   const t = useTranslations("crewIncome");
-  if (query.isLoading)
+  if (query.isLoading && !query.data.length)
     return (
       <div className="flex min-h-56 items-center justify-center gap-2 text-[11px] text-[#777d87]">
         <IconLoader2 className="size-4 animate-spin" />
         {t("loading")}
       </div>
     );
-  if (query.isError)
-    return (
-      <div className="flex min-h-56 flex-col items-center justify-center text-center">
-        <p className="text-[11px] text-[#a5aab2]">
-          {query.error instanceof Error ? query.error.message : t("loadFailed")}
-        </p>
-        <Button
-          size="sm"
-          variant="ghost"
-          color="muted"
-          className="mt-3"
-          icon={<IconRefresh />}
-          onClick={() => void query.refetch()}
-        >
-          {t("retry")}
-        </Button>
-      </div>
-    );
+  const error = query.isError ? (
+    <div role="alert" className="flex min-h-32 flex-col items-center justify-center text-center">
+      <p className="text-[11px] text-[#a5aab2]">
+        {query.error instanceof Error ? query.error.message : t("loadFailed")}
+      </p>
+      <Button
+        size="sm"
+        variant="ghost"
+        color="muted"
+        className="mt-3"
+        icon={<IconRefresh />}
+        disabled={query.isFetching}
+        onClick={() => void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())}
+      >
+        {t("retry")}
+      </Button>
+    </div>
+  ) : null;
+  if (error && !query.data.length) return error;
   if (!query.data.length)
     return (
       <div className="flex min-h-56 flex-col items-center justify-center px-6 text-center">
@@ -1427,13 +1430,15 @@ function ResultState({
     );
   return (
     <>
+      {error}
       {children}
-      {query.hasNextPage ? (
+      {query.hasNextPage && !query.isError ? (
         <div className="flex justify-center py-4">
           <Button
             size="sm"
             variant="ghost"
             color="muted"
+            disabled={query.isFetching}
             loading={query.isFetchingNextPage}
             onClick={() => void query.fetchNextPage()}
           >
