@@ -39,6 +39,9 @@ suite('Task update authorization during PostgreSQL waits', () => {
     'field',
     'cycle',
     'workflow',
+    'comment-create',
+    'comment-update',
+    'comment-delete',
   ] as const)('%s preserves task authorization', async (mode) => {
     const crewId = randomUUID(),
       ownerId = randomUUID(),
@@ -115,6 +118,83 @@ suite('Task update authorization during PostgreSQL waits', () => {
     let holder: Promise<unknown> | undefined;
     let result: Promise<unknown> | undefined;
     try {
+      if (mode.startsWith('comment-')) {
+        await db.crewMemberPermissionOverride.create({
+          data: {
+            memberId,
+            permissionKey: 'tasks.comment',
+            effect: 'allow',
+            changedByUserId: ownerId,
+          },
+        });
+        const comment = await db.crewTaskTimelineItem.create({
+          data: {
+            taskId: task.id,
+            actorUserId: actorId,
+            kind: 'comment',
+            body: 'Original comment',
+            mentions: [],
+            payload: {},
+          },
+        });
+        const client = db.$extends({
+          query: {
+            crewTaskTimelineItem: {
+              async $allOperations({ operation, args, query }) {
+                const value = await query(args);
+                if (['create', 'update', 'updateMany'].includes(operation))
+                  await db.crewMember.update({
+                    where: { id: memberId },
+                    data: { status: 'removed', removedAt: new Date() },
+                  });
+                return value;
+              },
+            },
+          },
+        });
+        const comments = new CrewTasksService(
+          client as unknown as PrismaService,
+          new CrewAuthorizationService(db as PrismaService),
+          {} as never,
+          new NotificationService(db as PrismaService),
+          { broadcastCrewTaskChange: broadcast } as never,
+          {} as never,
+        );
+        const action =
+          mode === 'comment-create'
+            ? () =>
+                comments.createComment(task.id, actorId, {
+                  body: 'Rejected comment',
+                  mentions: [],
+                  attachments: [],
+                  clientKey: 'retry-comment',
+                })
+            : mode === 'comment-update'
+              ? () =>
+                  comments.updateComment(comment.id, actorId, {
+                    body: 'Rejected edit',
+                    mentions: [],
+                    expectedVersion: comment.version,
+                  })
+              : () => comments.deleteComment(comment.id, actorId);
+        await expect(action()).rejects.toMatchObject({
+          response: { code: 'CREW_MEMBERSHIP_REQUIRED' },
+        });
+        expect(
+          await db.crewTaskTimelineItem.count({ where: { taskId: task.id } }),
+        ).toBe(1);
+        expect(
+          await db.crewTaskTimelineItem.findUnique({
+            where: { id: comment.id },
+          }),
+        ).toMatchObject({
+          body: 'Original comment',
+          deletedAt: null,
+          version: comment.version,
+        });
+        expect(broadcast).not.toHaveBeenCalled();
+        return;
+      }
       if (['label', 'view', 'field', 'cycle', 'workflow'].includes(mode)) {
         const client = db.$extends({
           query: {

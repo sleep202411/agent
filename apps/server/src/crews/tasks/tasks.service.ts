@@ -278,6 +278,20 @@ export class CrewTasksService {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
   }
 
+  private async authorizedTaskWrite<T>(
+    crewId: string,
+    authorize: (tx: Prisma.TransactionClient) => Promise<void>,
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
+      await authorize(tx);
+      const result = await write(tx);
+      await authorize(tx);
+      return result;
+    });
+  }
+
   private async manageTaskWrite<T>(
     crewId: string,
     userId: string,
@@ -2589,146 +2603,157 @@ export class CrewTasksService {
   ) {
     const task = await this.requireTask(taskId);
     await this.authorization.require(task.crewId, userId, 'tasks.comment');
-    const created = await this.prisma.$transaction(async (tx) => {
-      await this.lockTaskWrites(tx, task.crewId);
-      await tx.crewTask.findUniqueOrThrow({
-        where: { id: task.id, deletedAt: null },
-      });
-      await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(
+    const created = await this.authorizedTaskWrite(
+      task.crewId,
+      async (tx) => {
+        await this.authorization.require(
+          task.crewId,
+          userId,
+          'tasks.comment',
+          tx,
+        );
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, task.crewId);
+        await tx.crewTask.findUniqueOrThrow({
+          where: { id: task.id, deletedAt: null },
+        });
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(
           hashtextextended(
             ${`crew-task-comment:${taskId}:${userId}:${input.clientKey}`},
             0
           )
         )`,
-      );
-      const existing = await tx.crewTaskTimelineItem.findFirst({
-        where: { taskId, actorUserId: userId, clientKey: input.clientKey },
-        include: timelineInclude,
-      });
-      if (existing) {
-        this.assertCommentReplay(existing, input);
-        return { row: existing, created: false };
-      }
+        );
+        const existing = await tx.crewTaskTimelineItem.findFirst({
+          where: { taskId, actorUserId: userId, clientKey: input.clientKey },
+          include: timelineInclude,
+        });
+        if (existing) {
+          this.assertCommentReplay(existing, input);
+          return { row: existing, created: false };
+        }
 
-      await this.assertValidMentions(
-        tx,
-        task.crewId,
-        userId,
-        input.body,
-        input.mentions,
-      );
-      if (input.replyToId) {
-        const reply = await tx.crewTaskTimelineItem.findFirst({
-          where: {
-            id: input.replyToId,
+        await this.assertValidMentions(
+          tx,
+          task.crewId,
+          userId,
+          input.body,
+          input.mentions,
+        );
+        if (input.replyToId) {
+          const reply = await tx.crewTaskTimelineItem.findFirst({
+            where: {
+              id: input.replyToId,
+              taskId,
+              kind: 'comment',
+              deletedAt: null,
+            },
+            select: { id: true },
+          });
+          if (!reply) {
+            throw new BadRequestException({
+              message: 'The comment you are replying to is unavailable.',
+            });
+          }
+        }
+
+        const assetNodeIds = await this.claimCommentAttachments(
+          tx,
+          task.crewId,
+          userId,
+          input.attachments,
+        );
+        const row = await tx.crewTaskTimelineItem.create({
+          data: {
             taskId,
             kind: 'comment',
+            actorUserId: userId,
+            body: input.body,
+            mentions: input.mentions as unknown as Prisma.InputJsonValue,
+            replyToId: input.replyToId ?? null,
+            clientKey: input.clientKey,
+            attachments: {
+              create: assetNodeIds.map((assetNodeId, position) => ({
+                assetNodeId,
+                position,
+              })),
+            },
+          },
+          include: timelineInclude,
+        });
+
+        const mentionedIds = new Set(
+          input.mentions.map((mention) => mention.userId),
+        );
+        for (const mentionedUserId of mentionedIds) {
+          await this.notifications.send(
+            {
+              userId: mentionedUserId,
+              type: 'crew.task.mentioned',
+              title: `Mentioned in: ${task.title}`,
+              body: input.body || 'You were mentioned with an attachment.',
+              meta: {
+                crewId: task.crewId,
+                taskId,
+                taskTitle: task.title,
+                actorUserId: userId,
+                commentBody: input.body || null,
+                hasAttachments: input.attachments.length > 0,
+                timelineItemId: row.id,
+                deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
+              },
+              idempotencyKey: `crew.task.mentioned:${row.id}:${mentionedUserId}`,
+            },
+            tx,
+          );
+        }
+        const participantIds = new Set([
+          crewOwnerUserId(task.crew),
+          task.createdByUserId,
+          ...task.assignees.map((assignee) => assignee.userId),
+        ]);
+        const previousCommenters = await tx.crewTaskTimelineItem.findMany({
+          where: {
+            taskId,
+            kind: 'comment',
+            actorUserId: { not: null },
             deletedAt: null,
           },
-          select: { id: true },
+          distinct: ['actorUserId'],
+          select: { actorUserId: true },
         });
-        if (!reply) {
-          throw new BadRequestException({
-            message: 'The comment you are replying to is unavailable.',
-          });
+        previousCommenters.forEach(({ actorUserId }) => {
+          if (actorUserId) participantIds.add(actorUserId);
+        });
+        participantIds.delete(userId);
+        for (const participantId of participantIds) {
+          if (mentionedIds.has(participantId)) continue;
+          await this.notifications.send(
+            {
+              userId: participantId,
+              type: 'crew.task.commented',
+              title: `New comment: ${task.title}`,
+              body: input.body || 'A file was added to the task discussion.',
+              meta: {
+                crewId: task.crewId,
+                taskId,
+                taskTitle: task.title,
+                actorUserId: userId,
+                commentBody: input.body || null,
+                hasAttachments: input.attachments.length > 0,
+                timelineItemId: row.id,
+                deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
+              },
+              idempotencyKey: `crew.task.commented:${row.id}:${participantId}`,
+            },
+            tx,
+          );
         }
-      }
-
-      const assetNodeIds = await this.claimCommentAttachments(
-        tx,
-        task.crewId,
-        userId,
-        input.attachments,
-      );
-      const row = await tx.crewTaskTimelineItem.create({
-        data: {
-          taskId,
-          kind: 'comment',
-          actorUserId: userId,
-          body: input.body,
-          mentions: input.mentions as unknown as Prisma.InputJsonValue,
-          replyToId: input.replyToId ?? null,
-          clientKey: input.clientKey,
-          attachments: {
-            create: assetNodeIds.map((assetNodeId, position) => ({
-              assetNodeId,
-              position,
-            })),
-          },
-        },
-        include: timelineInclude,
-      });
-
-      const mentionedIds = new Set(
-        input.mentions.map((mention) => mention.userId),
-      );
-      for (const mentionedUserId of mentionedIds) {
-        await this.notifications.send(
-          {
-            userId: mentionedUserId,
-            type: 'crew.task.mentioned',
-            title: `Mentioned in: ${task.title}`,
-            body: input.body || 'You were mentioned with an attachment.',
-            meta: {
-              crewId: task.crewId,
-              taskId,
-              taskTitle: task.title,
-              actorUserId: userId,
-              commentBody: input.body || null,
-              hasAttachments: input.attachments.length > 0,
-              timelineItemId: row.id,
-              deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
-            },
-            idempotencyKey: `crew.task.mentioned:${row.id}:${mentionedUserId}`,
-          },
-          tx,
-        );
-      }
-      const participantIds = new Set([
-        crewOwnerUserId(task.crew),
-        task.createdByUserId,
-        ...task.assignees.map((assignee) => assignee.userId),
-      ]);
-      const previousCommenters = await tx.crewTaskTimelineItem.findMany({
-        where: {
-          taskId,
-          kind: 'comment',
-          actorUserId: { not: null },
-          deletedAt: null,
-        },
-        distinct: ['actorUserId'],
-        select: { actorUserId: true },
-      });
-      previousCommenters.forEach(({ actorUserId }) => {
-        if (actorUserId) participantIds.add(actorUserId);
-      });
-      participantIds.delete(userId);
-      for (const participantId of participantIds) {
-        if (mentionedIds.has(participantId)) continue;
-        await this.notifications.send(
-          {
-            userId: participantId,
-            type: 'crew.task.commented',
-            title: `New comment: ${task.title}`,
-            body: input.body || 'A file was added to the task discussion.',
-            meta: {
-              crewId: task.crewId,
-              taskId,
-              taskTitle: task.title,
-              actorUserId: userId,
-              commentBody: input.body || null,
-              hasAttachments: input.attachments.length > 0,
-              timelineItemId: row.id,
-              deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
-            },
-            idempotencyKey: `crew.task.commented:${row.id}:${participantId}`,
-          },
-          tx,
-        );
-      }
-      return { row, created: true };
-    });
+        return { row, created: true };
+      },
+    );
     if (created.created) {
       await this.conversations.broadcastCrewTaskChange(
         task.crewId,
@@ -2771,75 +2796,94 @@ export class CrewTasksService {
           'Only the author or a crew administrator can edit this comment.',
       });
     }
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await this.lockTaskWrites(tx, current.task.crewId);
-      await tx.crewTask.findUniqueOrThrow({
-        where: { id: current.taskId, deletedAt: null },
-      });
-      await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(
-          hashtextextended(${`crew-task-comment-edit:${commentId}`}, 0)
-        )`,
-      );
-      await this.assertValidMentions(
-        tx,
-        current.task.crewId,
-        userId,
-        input.body,
-        input.mentions,
-      );
-      const result = await tx.crewTaskTimelineItem.updateMany({
-        where: {
-          id: commentId,
-          version: input.expectedVersion,
-          deletedAt: null,
-          kind: 'comment',
-        },
-        data: {
-          body: input.body,
-          mentions: input.mentions as unknown as Prisma.InputJsonValue,
-          editedAt: new Date(),
-          version: { increment: 1 },
-        },
-      });
-      if (result.count !== 1) {
-        throw new ConflictException({
-          code: 'CREW_TASK_COMMENT_VERSION_CONFLICT',
-          message:
-            'This comment changed while you were editing it. Refresh before saving again.',
-        });
-      }
-      const row = await tx.crewTaskTimelineItem.findUniqueOrThrow({
-        where: { id: commentId },
-        include: timelineInclude,
-      });
-      const previousMentionIds = new Set(
-        parseMentions(current.mentions).map((mention) => mention.userId),
-      );
-      for (const mention of input.mentions) {
-        if (previousMentionIds.has(mention.userId)) continue;
-        await this.notifications.send(
-          {
-            userId: mention.userId,
-            type: 'crew.task.mentioned',
-            title: `Mentioned in: ${current.task.title}`,
-            body: input.body,
-            meta: {
-              crewId: current.task.crewId,
-              taskId: current.taskId,
-              taskTitle: current.task.title,
-              actorUserId: userId,
-              commentBody: input.body || null,
-              timelineItemId: commentId,
-              deeplink: `/crews/${current.task.crewId}/workspace?tab=tasks&task=${current.taskId}&comment=${commentId}`,
-            },
-            idempotencyKey: `crew.task.mentioned:${commentId}:${row.version}:${mention.userId}`,
-          },
+    const updated = await this.authorizedTaskWrite(
+      current.task.crewId,
+      async (tx) => {
+        const context = await this.authorization.require(
+          current.task.crewId,
+          userId,
+          'tasks.comment',
           tx,
         );
-      }
-      return row;
-    });
+        if (
+          current.actorUserId !== userId &&
+          !context.permissions.includes('tasks.manage')
+        )
+          throw new ForbiddenException({
+            message:
+              'Only the author or a crew administrator can change this comment.',
+          });
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.task.crewId);
+        await tx.crewTask.findUniqueOrThrow({
+          where: { id: current.taskId, deletedAt: null },
+        });
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(
+          hashtextextended(${`crew-task-comment-edit:${commentId}`}, 0)
+        )`,
+        );
+        await this.assertValidMentions(
+          tx,
+          current.task.crewId,
+          userId,
+          input.body,
+          input.mentions,
+        );
+        const result = await tx.crewTaskTimelineItem.updateMany({
+          where: {
+            id: commentId,
+            version: input.expectedVersion,
+            deletedAt: null,
+            kind: 'comment',
+          },
+          data: {
+            body: input.body,
+            mentions: input.mentions as unknown as Prisma.InputJsonValue,
+            editedAt: new Date(),
+            version: { increment: 1 },
+          },
+        });
+        if (result.count !== 1) {
+          throw new ConflictException({
+            code: 'CREW_TASK_COMMENT_VERSION_CONFLICT',
+            message:
+              'This comment changed while you were editing it. Refresh before saving again.',
+          });
+        }
+        const row = await tx.crewTaskTimelineItem.findUniqueOrThrow({
+          where: { id: commentId },
+          include: timelineInclude,
+        });
+        const previousMentionIds = new Set(
+          parseMentions(current.mentions).map((mention) => mention.userId),
+        );
+        for (const mention of input.mentions) {
+          if (previousMentionIds.has(mention.userId)) continue;
+          await this.notifications.send(
+            {
+              userId: mention.userId,
+              type: 'crew.task.mentioned',
+              title: `Mentioned in: ${current.task.title}`,
+              body: input.body,
+              meta: {
+                crewId: current.task.crewId,
+                taskId: current.taskId,
+                taskTitle: current.task.title,
+                actorUserId: userId,
+                commentBody: input.body || null,
+                timelineItemId: commentId,
+                deeplink: `/crews/${current.task.crewId}/workspace?tab=tasks&task=${current.taskId}&comment=${commentId}`,
+              },
+              idempotencyKey: `crew.task.mentioned:${commentId}:${row.version}:${mention.userId}`,
+            },
+            tx,
+          );
+        }
+        return row;
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       current.task.crewId,
       current.taskId,
@@ -2876,24 +2920,43 @@ export class CrewTasksService {
           'Only the author or a crew administrator can delete this comment.',
       });
     }
-    await this.prisma.$transaction(async (tx) => {
-      await this.lockTaskWrites(tx, current.task.crewId);
-      await tx.crewTask.findUniqueOrThrow({
-        where: { id: current.taskId, deletedAt: null },
-      });
-      await tx.crewTaskTimelineItem.update({
-        where: { id: commentId },
-        data: {
-          body: null,
-          mentions: [],
-          payload: {
-            deletedByUserId: userId,
+    await this.authorizedTaskWrite(
+      current.task.crewId,
+      async (tx) => {
+        const context = await this.authorization.require(
+          current.task.crewId,
+          userId,
+          'tasks.comment',
+          tx,
+        );
+        if (
+          current.actorUserId !== userId &&
+          !context.permissions.includes('tasks.manage')
+        )
+          throw new ForbiddenException({
+            message:
+              'Only the author or a crew administrator can change this comment.',
+          });
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.task.crewId);
+        await tx.crewTask.findUniqueOrThrow({
+          where: { id: current.taskId, deletedAt: null },
+        });
+        await tx.crewTaskTimelineItem.update({
+          where: { id: commentId },
+          data: {
+            body: null,
+            mentions: [],
+            payload: {
+              deletedByUserId: userId,
+            },
+            deletedAt: new Date(),
+            version: { increment: 1 },
           },
-          deletedAt: new Date(),
-          version: { increment: 1 },
-        },
-      });
-    });
+        });
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       current.task.crewId,
       current.taskId,
@@ -2922,166 +2985,186 @@ export class CrewTasksService {
       });
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await this.lockTaskWrites(tx, task.crewId);
-      await tx.$executeRaw`
+    const updated = await this.authorizedTaskWrite(
+      task.crewId,
+      async (tx) => {
+        const currentTask = await this.requireActiveTaskTx(tx, taskId);
+        const context = await this.authorization.requireMembership(
+          currentTask.crewId,
+          userId,
+          tx,
+        );
+        if (
+          !context.permissions.includes('tasks.submit_assigned') ||
+          (!currentTask.assignees.some((a) => a.userId === userId) &&
+            !context.permissions.includes('tasks.manage'))
+        )
+          throw new ForbiddenException({
+            message: 'Only a current task assignee can submit this task.',
+          });
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, task.crewId);
+        await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-submit:${taskId}`})::bigint)
       `;
-      const locked = await this.requireActiveTaskTx(tx, taskId);
-      const currentContext = await this.authorization.requireMembership(
-        locked.crewId,
-        userId,
-        tx,
-      );
-      if (
-        !currentContext.permissions.includes('tasks.submit_assigned') ||
-        (!locked.assignees.some((a) => a.userId === userId) &&
-          !currentContext.permissions.includes('tasks.manage'))
-      ) {
-        throw new ForbiddenException({
-          message: 'Only a current task assignee can submit this task.',
-        });
-      }
-
-      if (!ACCEPTING_TASK_STATUSES.has(locked.workflowState.semantic)) {
-        throw new ConflictException({
-          message: 'This task is not accepting submissions.',
-        });
-      }
-      const unresolvedBlockers = locked.dependenciesAsBlocked
-        .map((dependency) => dependency.blockingTask)
-        .filter(
-          (blocker) =>
-            blocker.workflowState.semantic !== CrewTaskStatus.approved &&
-            blocker.workflowState.semantic !== CrewTaskStatus.cancelled,
+        const locked = await this.requireActiveTaskTx(tx, taskId);
+        const currentContext = await this.authorization.requireMembership(
+          locked.crewId,
+          userId,
+          tx,
         );
-      if (unresolvedBlockers.length > 0) {
-        throw new ConflictException({
-          code: 'CREW_TASK_BLOCKED',
-          message:
-            'Complete every blocking task before submitting this work for review.',
-          blockers: unresolvedBlockers.map(taskReferenceDto),
-        });
-      }
-      if (input.assetNodeIds.length > 0) {
-        const count = await tx.crewAssetNode.count({
-          where: {
-            id: { in: input.assetNodeIds },
-            crewId: locked.crewId,
-            status: 'active',
-            kind: 'file',
-          },
-        });
-        if (count !== new Set(input.assetNodeIds).size) {
-          throw new BadRequestException({
-            message: 'One or more submitted assets are unavailable.',
+        if (
+          !currentContext.permissions.includes('tasks.submit_assigned') ||
+          (!locked.assignees.some((a) => a.userId === userId) &&
+            !currentContext.permissions.includes('tasks.manage'))
+        ) {
+          throw new ForbiddenException({
+            message: 'Only a current task assignee can submit this task.',
           });
         }
-        await this.assetAccess.requireNodesPermission(
-          locked.crewId,
-          input.assetNodeIds,
-          userId,
-          CrewAssetPermission.view,
-          tx,
-        );
-      }
 
-      let canvasVersionId: string | null = null;
-      if (locked.canvasDocumentId) {
-        const document = await this.materializeCanvasDocumentTx(
-          tx,
-          locked.canvasDocumentId,
-        );
-        const latestDocumentVersion = await tx.studioDocumentVersion.findFirst({
-          where: { documentId: document.id },
-          orderBy: { versionNumber: 'desc' },
-        });
-        const canvasVersion = await tx.studioDocumentVersion.create({
-          data: {
-            documentId: document.id,
-            versionNumber: (latestDocumentVersion?.versionNumber ?? 0) + 1,
-            schemaVersion: document.schemaVersion,
-            sequence: document.currentSequence,
-            title: document.title,
-            label: `Task submission v${locked.submissions.length + 1}`,
-            source: StudioDocumentVersionSource.manual,
-            sourceId: taskId,
-            snapshot: document.contentSnapshot as Prisma.InputJsonValue,
-            crdtState: document.crdtState,
-            metadata: {
-              reason: 'crew_task_submission',
-              taskId,
-              documentSequence: document.currentSequence,
+        if (!ACCEPTING_TASK_STATUSES.has(locked.workflowState.semantic)) {
+          throw new ConflictException({
+            message: 'This task is not accepting submissions.',
+          });
+        }
+        const unresolvedBlockers = locked.dependenciesAsBlocked
+          .map((dependency) => dependency.blockingTask)
+          .filter(
+            (blocker) =>
+              blocker.workflowState.semantic !== CrewTaskStatus.approved &&
+              blocker.workflowState.semantic !== CrewTaskStatus.cancelled,
+          );
+        if (unresolvedBlockers.length > 0) {
+          throw new ConflictException({
+            code: 'CREW_TASK_BLOCKED',
+            message:
+              'Complete every blocking task before submitting this work for review.',
+            blockers: unresolvedBlockers.map(taskReferenceDto),
+          });
+        }
+        if (input.assetNodeIds.length > 0) {
+          const count = await tx.crewAssetNode.count({
+            where: {
+              id: { in: input.assetNodeIds },
+              crewId: locked.crewId,
+              status: 'active',
+              kind: 'file',
             },
-            createdById: userId,
+          });
+          if (count !== new Set(input.assetNodeIds).size) {
+            throw new BadRequestException({
+              message: 'One or more submitted assets are unavailable.',
+            });
+          }
+          await this.assetAccess.requireNodesPermission(
+            locked.crewId,
+            input.assetNodeIds,
+            userId,
+            CrewAssetPermission.view,
+            tx,
+          );
+        }
+
+        let canvasVersionId: string | null = null;
+        if (locked.canvasDocumentId) {
+          const document = await this.materializeCanvasDocumentTx(
+            tx,
+            locked.canvasDocumentId,
+          );
+          const latestDocumentVersion =
+            await tx.studioDocumentVersion.findFirst({
+              where: { documentId: document.id },
+              orderBy: { versionNumber: 'desc' },
+            });
+          const canvasVersion = await tx.studioDocumentVersion.create({
+            data: {
+              documentId: document.id,
+              versionNumber: (latestDocumentVersion?.versionNumber ?? 0) + 1,
+              schemaVersion: document.schemaVersion,
+              sequence: document.currentSequence,
+              title: document.title,
+              label: `Task submission v${locked.submissions.length + 1}`,
+              source: StudioDocumentVersionSource.manual,
+              sourceId: taskId,
+              snapshot: document.contentSnapshot as Prisma.InputJsonValue,
+              crdtState: document.crdtState,
+              metadata: {
+                reason: 'crew_task_submission',
+                taskId,
+                documentSequence: document.currentSequence,
+              },
+              createdById: userId,
+            },
+          });
+          canvasVersionId = canvasVersion.id;
+          await tx.studioDocument.update({
+            where: { id: document.id },
+            data: {
+              currentVersionId: canvasVersion.id,
+              updatedById: userId,
+              version: { increment: 1 },
+            },
+          });
+        }
+        const submission = await tx.crewTaskSubmission.create({
+          data: {
+            taskId,
+            versionNumber: locked.submissions.length + 1,
+            submittedByUserId: userId,
+            note: input.note,
+            canvasVersionId,
+            assets: {
+              create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
+                assetNodeId,
+              })),
+            },
           },
         });
-        canvasVersionId = canvasVersion.id;
-        await tx.studioDocument.update({
-          where: { id: document.id },
+        const reviewState = await this.requireSystemWorkflowState(
+          tx,
+          locked.crewId,
+          CrewTaskStatus.submitted,
+          userId,
+        );
+        const result = await tx.crewTask.update({
+          where: { deletedAt: null, id: taskId },
           data: {
-            currentVersionId: canvasVersion.id,
-            updatedById: userId,
+            workflowStateId: reviewState.id,
+            submittedAt: new Date(),
             version: { increment: 1 },
           },
+          include: taskInclude,
         });
-      }
-      const submission = await tx.crewTaskSubmission.create({
-        data: {
-          taskId,
-          versionNumber: locked.submissions.length + 1,
-          submittedByUserId: userId,
+        await this.writeActivity(tx, taskId, 'task.submitted', userId, {
+          submissionId: submission.id,
+          versionNumber: submission.versionNumber,
           note: input.note,
-          canvasVersionId,
-          assets: {
-            create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
-              assetNodeId,
-            })),
+          assetNodeIds: [...new Set(input.assetNodeIds)],
+        });
+        await this.notifications.send(
+          {
+            userId: crewOwnerUserId(locked.crew),
+            type: 'crew.task.submitted',
+            title: `Task submitted: ${locked.title}`,
+            body: `Submission v${submission.versionNumber} is ready for review.`,
+            meta: {
+              crewId: locked.crewId,
+              taskId,
+              taskTitle: locked.title,
+              actorUserId: userId,
+              submissionId: submission.id,
+              submissionVersion: submission.versionNumber,
+              deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
+            },
+            idempotencyKey: `crew.task.submitted:${submission.id}`,
           },
-        },
-      });
-      const reviewState = await this.requireSystemWorkflowState(
-        tx,
-        locked.crewId,
-        CrewTaskStatus.submitted,
-        userId,
-      );
-      const result = await tx.crewTask.update({
-        where: { deletedAt: null, id: taskId },
-        data: {
-          workflowStateId: reviewState.id,
-          submittedAt: new Date(),
-          version: { increment: 1 },
-        },
-        include: taskInclude,
-      });
-      await this.writeActivity(tx, taskId, 'task.submitted', userId, {
-        submissionId: submission.id,
-        versionNumber: submission.versionNumber,
-        note: input.note,
-        assetNodeIds: [...new Set(input.assetNodeIds)],
-      });
-      await this.notifications.send(
-        {
-          userId: crewOwnerUserId(locked.crew),
-          type: 'crew.task.submitted',
-          title: `Task submitted: ${locked.title}`,
-          body: `Submission v${submission.versionNumber} is ready for review.`,
-          meta: {
-            crewId: locked.crewId,
-            taskId,
-            taskTitle: locked.title,
-            actorUserId: userId,
-            submissionId: submission.id,
-            submissionVersion: submission.versionNumber,
-            deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
-          },
-          idempotencyKey: `crew.task.submitted:${submission.id}`,
-        },
-        tx,
-      );
-      return result;
-    });
+          tx,
+        );
+        return result;
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       updated.crewId,
       updated.id,
@@ -3095,152 +3178,163 @@ export class CrewTasksService {
     const current = await this.requireTask(taskId);
     await this.authorization.require(current.crewId, userId, 'tasks.review');
 
-    const task = await this.prisma.$transaction(async (tx) => {
-      await this.lockTaskWrites(tx, current.crewId);
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`crew:task-review:${taskId}`})::bigint)
-      `;
-      const locked = await this.requireActiveTaskTx(tx, taskId);
-      await this.authorization.require(
-        locked.crewId,
-        userId,
-        'tasks.review',
-        tx,
-      );
-      if (locked.workflowState.semantic !== CrewTaskStatus.submitted) {
-        throw new ConflictException({
-          message: 'Only a submitted task can be reviewed.',
-        });
-      }
-      const latest = locked.submissions[0];
-      if (!latest) {
-        throw new ConflictException({ message: 'No submission to review.' });
-      }
-      const now = new Date();
-      const approved = input.decision === 'approve';
-      if (
-        !approved &&
-        locked.revisionLimit != null &&
-        locked.revisionRoundsUsed >= locked.revisionLimit
-      ) {
-        throw new ConflictException({
-          code: 'CREW_TASK_REVISION_LIMIT_REACHED',
-          message:
-            'This task has used every included revision round. Increase the revision limit or approve the current submission.',
-          revisionLimit: locked.revisionLimit,
-          revisionRoundsUsed: locked.revisionRoundsUsed,
-        });
-      }
-      const productionVersion =
-        approved && latest.canvasVersion
-          ? await this.mergeSubmissionIntoProductionTx(
-              tx,
-              locked,
-              latest,
-              userId,
-              now,
-            )
-          : null;
-      await tx.crewTaskSubmission.update({
-        where: { id: latest.id },
-        data: {
-          reviewNote: input.note,
-          reviewedByUserId: userId,
-          reviewedAt: now,
-          productionVersionId: productionVersion?.id ?? null,
-          mergedAt: productionVersion ? now : null,
-        },
-      });
-      if (approved) {
-        for (const assignee of locked.assignees.filter(
-          (candidate) =>
-            candidate.rewardAmountMinor != null &&
-            candidate.rewardAmountMinor > 0n,
-        )) {
-          await this.earnings.postTaskRewardTx(tx, {
-            crewId: locked.crewId,
-            taskId,
-            taskNumber: locked.number,
-            taskTitle: locked.title,
-            crewMemberId: assignee.crewMemberId,
-            userId: assignee.userId,
-            amountMinor: assignee.rewardAmountMinor!,
-            currency: assignee.currency,
-            approvedByUserId: userId,
-          });
-        }
-      }
-      const targetSemantic = approved
-        ? CrewTaskStatus.approved
-        : CrewTaskStatus.revision_requested;
-      const targetWorkflowState = await this.requireSystemWorkflowState(
-        tx,
-        locked.crewId,
-        targetSemantic,
-        userId,
-      );
-      const updated = await tx.crewTask.update({
-        where: { deletedAt: null, id: taskId },
-        data: approved
-          ? {
-              workflowStateId: targetWorkflowState.id,
-              approvedAt: now,
-              approvedByUserId: userId,
-              version: { increment: 1 },
-            }
-          : {
-              workflowStateId: targetWorkflowState.id,
-              submittedAt: null,
-              revisionRoundsUsed: { increment: 1 },
-              version: { increment: 1 },
-            },
-        include: taskInclude,
-      });
-      await this.writeActivity(
-        tx,
-        taskId,
-        approved ? 'task.approved' : 'task.revision_requested',
-        userId,
-        {
-          submissionId: latest.id,
-          versionNumber: latest.versionNumber,
-          note: input.note,
-          revisionRound: approved ? undefined : locked.revisionRoundsUsed + 1,
-          revisionLimit: locked.revisionLimit,
-          productionVersionId: productionVersion?.id,
-        },
-      );
-      for (const assignee of locked.assignees) {
-        await this.notifications.send(
-          {
-            userId: assignee.userId,
-            type: approved
-              ? 'crew.task.approved'
-              : 'crew.task.revision_requested',
-            title: approved
-              ? `Task approved: ${locked.title}`
-              : `Revision requested: ${locked.title}`,
-            body:
-              input.note ||
-              (approved
-                ? 'Your work was approved.'
-                : 'Open the task canvas and submit a new version.'),
-            meta: {
-              crewId: locked.crewId,
-              taskId,
-              taskTitle: locked.title,
-              actorUserId: userId,
-              reviewNote: input.note || null,
-              decision: approved ? 'approved' : 'revision_requested',
-              deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
-            },
-            idempotencyKey: `crew.task.reviewed:${latest.id}:${assignee.userId}`,
-          },
+    const task = await this.authorizedTaskWrite(
+      current.crewId,
+      async (tx) => {
+        await this.authorization.require(
+          current.crewId,
+          userId,
+          'tasks.review',
           tx,
         );
-      }
-      return updated;
-    });
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.crewId);
+        await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`crew:task-review:${taskId}`})::bigint)
+      `;
+        const locked = await this.requireActiveTaskTx(tx, taskId);
+        await this.authorization.require(
+          locked.crewId,
+          userId,
+          'tasks.review',
+          tx,
+        );
+        if (locked.workflowState.semantic !== CrewTaskStatus.submitted) {
+          throw new ConflictException({
+            message: 'Only a submitted task can be reviewed.',
+          });
+        }
+        const latest = locked.submissions[0];
+        if (!latest) {
+          throw new ConflictException({ message: 'No submission to review.' });
+        }
+        const now = new Date();
+        const approved = input.decision === 'approve';
+        if (
+          !approved &&
+          locked.revisionLimit != null &&
+          locked.revisionRoundsUsed >= locked.revisionLimit
+        ) {
+          throw new ConflictException({
+            code: 'CREW_TASK_REVISION_LIMIT_REACHED',
+            message:
+              'This task has used every included revision round. Increase the revision limit or approve the current submission.',
+            revisionLimit: locked.revisionLimit,
+            revisionRoundsUsed: locked.revisionRoundsUsed,
+          });
+        }
+        const productionVersion =
+          approved && latest.canvasVersion
+            ? await this.mergeSubmissionIntoProductionTx(
+                tx,
+                locked,
+                latest,
+                userId,
+                now,
+              )
+            : null;
+        await tx.crewTaskSubmission.update({
+          where: { id: latest.id },
+          data: {
+            reviewNote: input.note,
+            reviewedByUserId: userId,
+            reviewedAt: now,
+            productionVersionId: productionVersion?.id ?? null,
+            mergedAt: productionVersion ? now : null,
+          },
+        });
+        if (approved) {
+          for (const assignee of locked.assignees.filter(
+            (candidate) =>
+              candidate.rewardAmountMinor != null &&
+              candidate.rewardAmountMinor > 0n,
+          )) {
+            await this.earnings.postTaskRewardTx(tx, {
+              crewId: locked.crewId,
+              taskId,
+              taskNumber: locked.number,
+              taskTitle: locked.title,
+              crewMemberId: assignee.crewMemberId,
+              userId: assignee.userId,
+              amountMinor: assignee.rewardAmountMinor!,
+              currency: assignee.currency,
+              approvedByUserId: userId,
+            });
+          }
+        }
+        const targetSemantic = approved
+          ? CrewTaskStatus.approved
+          : CrewTaskStatus.revision_requested;
+        const targetWorkflowState = await this.requireSystemWorkflowState(
+          tx,
+          locked.crewId,
+          targetSemantic,
+          userId,
+        );
+        const updated = await tx.crewTask.update({
+          where: { deletedAt: null, id: taskId },
+          data: approved
+            ? {
+                workflowStateId: targetWorkflowState.id,
+                approvedAt: now,
+                approvedByUserId: userId,
+                version: { increment: 1 },
+              }
+            : {
+                workflowStateId: targetWorkflowState.id,
+                submittedAt: null,
+                revisionRoundsUsed: { increment: 1 },
+                version: { increment: 1 },
+              },
+          include: taskInclude,
+        });
+        await this.writeActivity(
+          tx,
+          taskId,
+          approved ? 'task.approved' : 'task.revision_requested',
+          userId,
+          {
+            submissionId: latest.id,
+            versionNumber: latest.versionNumber,
+            note: input.note,
+            revisionRound: approved ? undefined : locked.revisionRoundsUsed + 1,
+            revisionLimit: locked.revisionLimit,
+            productionVersionId: productionVersion?.id,
+          },
+        );
+        for (const assignee of locked.assignees) {
+          await this.notifications.send(
+            {
+              userId: assignee.userId,
+              type: approved
+                ? 'crew.task.approved'
+                : 'crew.task.revision_requested',
+              title: approved
+                ? `Task approved: ${locked.title}`
+                : `Revision requested: ${locked.title}`,
+              body:
+                input.note ||
+                (approved
+                  ? 'Your work was approved.'
+                  : 'Open the task canvas and submit a new version.'),
+              meta: {
+                crewId: locked.crewId,
+                taskId,
+                taskTitle: locked.title,
+                actorUserId: userId,
+                reviewNote: input.note || null,
+                decision: approved ? 'approved' : 'revision_requested',
+                deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
+              },
+              idempotencyKey: `crew.task.reviewed:${latest.id}:${assignee.userId}`,
+            },
+            tx,
+          );
+        }
+        return updated;
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       task.crewId,
       task.id,

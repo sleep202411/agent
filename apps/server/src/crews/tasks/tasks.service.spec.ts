@@ -1200,6 +1200,24 @@ describe('CrewTasksService', () => {
     },
   );
 
+  it.each(['approve', 'request_revision'] as const)(
+    'rejects %s after permission is withdrawn during notification writes',
+    async (decision) => {
+      const t = build();
+      t.notifications.send.mockImplementation(() => {
+        t.roles.require.mockRejectedValue(
+          new ForbiddenException('Permission revoked'),
+        );
+        return Promise.resolve({});
+      });
+      await expect(
+        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+      ).rejects.toThrow('Permission revoked');
+      expect(t.tx.crewTask.update).toHaveBeenCalled();
+      expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+    },
+  );
+
   it('posts an approved task reward through the immutable earnings ledger', async () => {
     const t = build();
 
