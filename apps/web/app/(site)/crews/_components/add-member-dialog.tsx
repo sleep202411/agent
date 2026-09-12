@@ -15,7 +15,7 @@
  *      and the server resolves the contact again before inserting.
  */
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconCheck,
@@ -26,6 +26,7 @@ import {
   IconUserCheck,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import { UserAvatar } from "@/components/user-avatar";
@@ -69,7 +70,13 @@ interface AddCrewMemberDialogProps {
   canGrantPolicies: boolean;
 }
 
-export function AddCrewMemberDialog({
+export function AddCrewMemberDialog(props: AddCrewMemberDialogProps) {
+  const { user } = useCurrentUser();
+  if (!props.open) return null;
+  return <MemberInvitationForm key={JSON.stringify([user?.id, props.crewId])} {...props} />;
+}
+
+function MemberInvitationForm({
   open,
   onOpenChange,
   crewId,
@@ -90,7 +97,15 @@ export function AddCrewMemberDialog({
   const debouncedQuery = useDebouncedValue(queryInput, 400);
   const lookup = useUserLookup({ query: debouncedQuery, checkCrewId: crewId });
 
-  const { mutateAsync: inviteMember, isPending: submitting } = useInviteCrewMember(crewId);
+  const { mutateAsync: inviteMember } = useInviteCrewMember(crewId);
+  const [submitting, setSubmitting] = useState(false);
+  const pending = useRef(false);
+  const alive = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const lookupCurrent = queryInput.trim() === debouncedQuery.trim();
   const agreementCapability = useCrewAgreements(crewId, open, "all", 1);
   const canRequestAgreement = agreementCapability.data?.capabilities.create === true;
 
@@ -109,7 +124,7 @@ export function AddCrewMemberDialog({
 
   // Submit gate: the account must resolve to a user who is not already a member.
   const canSubmit = useMemo(() => {
-    if (submitting) return false;
+    if (submitting || !lookupCurrent) return false;
     if (lookup.kind !== "found") return false;
     if (lookup.user.isCrewMember || lookup.user.isCrewOwner) return false;
     if (
@@ -124,6 +139,7 @@ export function AddCrewMemberDialog({
     agreementTitle,
     canRequestAgreement,
     lookup,
+    lookupCurrent,
     signerEmail,
     signerName,
     submitting,
@@ -131,7 +147,7 @@ export function AddCrewMemberDialog({
 
   const toggleAgreement = (checked: boolean) => {
     setAgreementEnabled(checked);
-    if (!checked || lookup.kind !== "found") return;
+    if (!checked || !lookupCurrent || lookup.kind !== "found") return;
     if (!signerName) {
       setSignerName(lookup.user.nickname || `User ${lookup.user.userId}`);
     }
@@ -141,7 +157,9 @@ export function AddCrewMemberDialog({
   };
 
   const handleSubmit = async () => {
-    if (!canSubmit || lookup.kind !== "found") return;
+    if (!alive.current || pending.current || !canSubmit || lookup.kind !== "found") return;
+    pending.current = true;
+    setSubmitting(true);
     try {
       await inviteMember({
         account: debouncedQuery.trim(),
@@ -156,9 +174,11 @@ export function AddCrewMemberDialog({
             }
           : {}),
       });
+      if (!alive.current) return;
       toast.success(agreementEnabled ? t("addMemberAgreementSuccess") : t("addMemberSuccess"));
       handleOpenChange(false);
     } catch (err) {
+      if (!alive.current) return;
       if (err instanceof CrewApiError) {
         const detail =
           typeof err.body === "object" && err.body && "message" in err.body
@@ -167,6 +187,11 @@ export function AddCrewMemberDialog({
         toast.error(`HTTP ${err.status}`, { description: detail, duration: 10000 });
       } else {
         toast.error(err instanceof Error ? err.message : t("addMemberFailed"));
+      }
+    } finally {
+      if (alive.current) {
+        pending.current = false;
+        setSubmitting(false);
       }
     }
   };
@@ -188,6 +213,7 @@ export function AddCrewMemberDialog({
                 key={value}
                 type="button"
                 onClick={() => setMode(value)}
+                disabled={submitting}
                 className={cn(
                   "flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                   mode === value
@@ -218,7 +244,7 @@ export function AddCrewMemberDialog({
                   disabled={submitting}
                   autoFocus
                 />
-                <LookupPreview state={lookup} contact={debouncedQuery} t={t} />
+                {lookupCurrent ? <LookupPreview state={lookup} contact={debouncedQuery} t={t} /> : null}
               </Field>
 
               {canGrantPolicies ? (
