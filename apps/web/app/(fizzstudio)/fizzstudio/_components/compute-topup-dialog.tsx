@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -97,6 +98,13 @@ function ComputeTopupDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { user } = useCurrentUser();
+  const pathname = usePathname();
+  if (!open || !user?.id) return null;
+  return <ComputeTopupSession key={`${user.id}:${pathname}`} onOpenChange={onOpenChange} />;
+}
+
+function ComputeTopupSession({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const t = useTranslations("fizzStudio");
   const locale = useLocale();
   const catalog = useComputeTopupCatalog();
@@ -104,6 +112,15 @@ function ComputeTopupDialog({
   const createTopup = useCreateComputeTopup();
   const [selectedPriceId, setSelectedPriceId] = useState("");
   const idemRef = useRef<IdempotencyState | null>(null);
+  const active = useRef(false);
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   const prices = useMemo(() => catalog.data?.prices ?? [], [catalog.data?.prices]);
   const selectedPrice = useMemo(
@@ -113,8 +130,10 @@ function ComputeTopupDialog({
   const balance = availableComputeBalance(wallet.data);
 
   async function handleSubmit() {
-    if (!selectedPrice || !catalog.data) return;
-    const sig = selectedPrice.id;
+    if (!active.current || pending.current || !selectedPrice || !catalog.data) return;
+    pending.current = true;
+    setBusy(true);
+    const sig = `${catalog.data.provider}:${selectedPrice.id}`;
     if (!idemRef.current || idemRef.current.sig !== sig) {
       idemRef.current = { sig, key: crypto.randomUUID() };
     }
@@ -132,6 +151,7 @@ function ComputeTopupDialog({
         backUrl,
       });
 
+      if (!active.current) return;
       if (result.order.status === "fulfilled" && !result.paymentIntent) {
         toast.success(t("computeBilling.successToast"));
         onOpenChange(false);
@@ -146,9 +166,10 @@ function ComputeTopupDialog({
 
       if (result.order.provider === "airwallex" && pi?.providerPaymentIntentId && pi.clientSecret) {
         const { init } = await import("@airwallex/components-sdk");
+        if (!active.current) return;
         const aw = await init({ env: result.env, enabledElements: ["payments"] });
+        if (!active.current) return;
         if (!aw.payments) {
-          idemRef.current = null;
           toast.error(t("computeBilling.paymentFailed"));
           return;
         }
@@ -165,10 +186,9 @@ function ComputeTopupDialog({
         return;
       }
 
-      idemRef.current = null;
       toast.error(t("computeBilling.providerUnavailable"));
     } catch (error) {
-      idemRef.current = null;
+      if (!active.current) return;
       const message =
         error instanceof ApiRequestError
           ? error.message
@@ -176,13 +196,18 @@ function ComputeTopupDialog({
             ? error.message
             : t("computeBilling.paymentFailed");
       toast.error(message);
+    } finally {
+      if (active.current) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
   }
 
-  const canSubmit = Boolean(selectedPrice) && !catalog.isLoading && !createTopup.isPending;
+  const canSubmit = Boolean(selectedPrice) && !catalog.isLoading && !createTopup.isPending && !busy;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100vh-2rem)] overflow-hidden rounded-[8px] border border-white/10 bg-[#151516] text-white shadow-2xl sm:max-w-[720px]">
         <DialogHeader className="border-white/10 px-5 py-4">
           <DialogTitle className="text-lg font-semibold tracking-normal text-white">
@@ -232,7 +257,9 @@ function ComputeTopupDialog({
                   price={price}
                   locale={locale}
                   selected={price.id === selectedPrice?.id}
-                  onSelect={() => setSelectedPriceId(price.id)}
+                  onSelect={() => {
+                    if (!pending.current) setSelectedPriceId(price.id);
+                  }}
                 />
               ))}
             </div>
