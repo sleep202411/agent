@@ -35,6 +35,10 @@ vi.mock("@/src/i18n/i18n", () => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("posthog-js", () => ({ default: { capture: vi.fn(), captureException: vi.fn() } }));
 vi.mock("@/src/services/user", () => ({ uploadBanner: vi.fn() }));
+vi.mock("@/app/(site)/creators/_components/center/dialogs/level-apply-dialog", () => ({
+  AI_PRODUCER_LEVEL_ID: 13,
+  LevelApplyDialog: () => null,
+}));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   CrewApiError: class extends Error {},
   useCreateCrew: () => ({ mutate: state.create, isPending: false }),
@@ -89,8 +93,14 @@ it.each(["en-US", "zh-CN", "zh-HK"] as const)(
       )!;
       expect(notice).toBeTruthy();
       await act(async () => {
-        if (dismissal === "button") (notice.querySelector("button") as HTMLButtonElement).click();
-        else document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        if (dismissal === "button") {
+          const dismiss = Array.from(notice.querySelectorAll("button")).find(
+            (button) =>
+              button.textContent === dictionaries[locale].crew.creationRequirements.dismiss
+          )!;
+          dismiss.click();
+        } else
+          document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       });
       await vi.waitFor(() => expect(document.activeElement).toBe(opener));
       expect(document.querySelector('a[href^="mailto:"]')).toBeNull();

@@ -44,7 +44,7 @@ export function useTvIps(options?: { q?: string }) {
         if (!item.ipCard) return null;
         return { ...toTvItem(item.ipCard, t), hot: true as const };
       })
-      .filter((item): item is TvItem => item !== null);
+      .filter((item) => item !== null);
   }, [discovery.data?.items, q, t]);
   const listedItems = useMemo(
     () => query.data?.pages.flatMap((page) => page.items).map((ip) => toTvItem(ip, t)) ?? [],
