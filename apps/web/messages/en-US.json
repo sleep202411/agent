@@ -7875,6 +7875,9 @@
       "comingSoon": "{label} is coming soon."
     },
     "computeBilling": {
+      "balanceUnavailable": "Balance unavailable",
+      "loadFailed": "Could not load billing information.",
+      "retry": "Retry",
       "openRecharge": "Open compute point recharge",
       "balance": "{amount} compute points",
       "balanceLoading": "Compute points",

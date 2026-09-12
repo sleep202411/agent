@@ -7875,6 +7875,9 @@
       "comingSoon": "{label}即將上線。"
     },
     "computeBilling": {
+      "balanceUnavailable": "餘額暫不可用",
+      "loadFailed": "無法載入帳單資訊。",
+      "retry": "重試",
       "openRecharge": "打開算力積分充值",
       "balance": "{amount} 算力積分",
       "balanceLoading": "算力積分",

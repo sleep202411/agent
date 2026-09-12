@@ -76,7 +76,9 @@ export function ComputeTopupButton({ variant }: { variant: "enterprise" | "studi
 
   const label = wallet.isLoading
     ? t("computeBilling.balanceLoading")
-    : t("computeBilling.balance", { amount: formatInteger(balance) });
+    : wallet.isError && !wallet.data
+      ? t("computeBilling.balanceUnavailable")
+      : t("computeBilling.balance", { amount: formatInteger(balance) });
 
   return (
     <>
@@ -217,7 +219,13 @@ function ComputeTopupSession({ onOpenChange }: { onOpenChange: (open: boolean) =
     }
   }
 
-  const canSubmit = Boolean(selectedPrice) && !catalog.isLoading && !createTopup.isPending && !busy;
+  const canSubmit =
+    Boolean(selectedPrice) &&
+    !catalog.isLoading &&
+    !catalog.isError &&
+    !catalog.isFetching &&
+    !createTopup.isPending &&
+    !busy;
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -238,7 +246,9 @@ function ComputeTopupSession({ onOpenChange }: { onOpenChange: (open: boolean) =
                   {t("computeBilling.availableBalance")}
                 </p>
                 <p className="mt-0.5 truncate text-2xl font-semibold tracking-normal text-white">
-                  {formatInteger(balance)}
+                  {wallet.isError && !wallet.data
+                    ? t("computeBilling.balanceUnavailable")
+                    : formatInteger(balance)}
                 </p>
               </div>
             </div>
@@ -251,11 +261,43 @@ function ComputeTopupSession({ onOpenChange }: { onOpenChange: (open: boolean) =
             ) : null}
           </div>
 
+          {wallet.isError && (
+            <div role="alert" className="mt-3 text-sm text-white/80">
+              <p>
+                {wallet.error instanceof Error
+                  ? wallet.error.message
+                  : t("computeBilling.loadFailed")}
+              </p>
+              <Button
+                variant="outline"
+                disabled={wallet.isFetching}
+                onClick={() => void wallet.refetch()}
+              >
+                {t("computeBilling.retry")}
+              </Button>
+            </div>
+          )}
+          {catalog.isError && (
+            <div role="alert" className="mt-3 text-sm text-white/80">
+              <p>
+                {catalog.error instanceof Error
+                  ? catalog.error.message
+                  : t("computeBilling.loadFailed")}
+              </p>
+              <Button
+                variant="outline"
+                disabled={catalog.isFetching}
+                onClick={() => void catalog.refetch()}
+              >
+                {t("computeBilling.retry")}
+              </Button>
+            </div>
+          )}
           {catalog.isLoading ? (
             <div className="grid min-h-[220px] place-items-center rounded-[8px] border border-white/10 bg-white/[0.03] text-white/60">
               <IconLoader2 className="size-5 animate-spin" />
             </div>
-          ) : prices.length === 0 ? (
+          ) : catalog.isError && prices.length === 0 ? null : prices.length === 0 ? (
             <div className="rounded-[8px] border border-white/10 bg-white/[0.03] px-4 py-8 text-center">
               <p className="text-sm font-semibold text-white">{t("computeBilling.emptyTitle")}</p>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/58">

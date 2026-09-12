@@ -5,6 +5,10 @@ import { ComputeTopupButton } from "./compute-topup-dialog";
 const state = vi.hoisted(() => ({
   account: "alice" as string | null,
   search: "",
+  catalogError: false,
+  catalogLoaded: true,
+  walletError: false,
+  catalogRetry: vi.fn(),
   refetch: vi.fn(),
   info: vi.fn(),
   create: vi.fn(),
@@ -32,21 +36,31 @@ vi.mock("sonner", () => ({
 vi.mock("@airwallex/components-sdk", () => ({ init: state.init }));
 vi.mock("../../_hooks/use-billing", () => ({
   availableComputeBalance: () => 0n,
-  useComputeWalletLedger: () => ({ data: {}, refetch: state.refetch }),
+  useComputeWalletLedger: () => ({
+    data: state.walletError ? undefined : {},
+    isError: state.walletError,
+    error: new Error("Wallet unavailable"),
+    refetch: state.refetch,
+  }),
   useCreateComputeTopup: () => ({ mutateAsync: state.create, isPending: false }),
   useComputeTopupCatalog: () => ({
-    data: {
-      provider: "airwallex",
-      prices: [
-        {
-          id: "pack-1",
-          name: "Pack",
-          amountMinor: "100",
-          currency: "USD",
-          grantsWalletAmount: "100",
-        },
-      ],
-    },
+    isError: state.catalogError,
+    error: new Error("Package service unavailable"),
+    refetch: state.catalogRetry,
+    data: state.catalogLoaded
+      ? {
+          provider: "airwallex",
+          prices: [
+            {
+              id: "pack-1",
+              name: "Pack",
+              amountMinor: "100",
+              currency: "USD",
+              grantsWalletAmount: "100",
+            },
+          ],
+        }
+      : undefined,
   }),
 }));
 vi.mock("@/components/ui/dialog", () => {
@@ -87,6 +101,9 @@ afterEach(() => {
   vi.resetAllMocks();
   state.account = "alice";
   state.search = "";
+  state.catalogError = false;
+  state.catalogLoaded = true;
+  state.walletError = false;
 });
 it("prevents duplicate checkout requests and reuses the key after response failure", async () => {
   state.create.mockRejectedValue(new Error("Connection lost"));
@@ -197,4 +214,30 @@ it("preserves existing query parameters and anchors in checkout return URLs", as
     expect(url.hash).toBe("#ledger");
   }
   window.history.replaceState({}, "", "/");
+});
+
+it.each([false, true])(
+  "shows package failures with retry while preserving cached options: %s",
+  async (cached) => {
+    state.catalogError = true;
+    state.catalogLoaded = cached;
+    await mount();
+    expect(container.textContent).toContain("Package service unavailable");
+    expect(container.textContent).not.toContain("computeBilling.emptyTitle");
+    if (cached) expect(container.textContent).toContain("Pack");
+    await click("computeBilling.retry");
+    expect(state.catalogRetry).toHaveBeenCalledTimes(1);
+    const pay = Array.from(container.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("computeBilling.payNow")
+    )!;
+    expect(pay.disabled).toBe(true);
+  }
+);
+it("shows wallet failure instead of an unavailable zero balance", async () => {
+  state.walletError = true;
+  await mount();
+  expect(container.textContent).toContain("computeBilling.balanceUnavailable");
+  expect(container.textContent).toContain("Wallet unavailable");
+  await click("computeBilling.retry");
+  expect(state.refetch).toHaveBeenCalledTimes(1);
 });
