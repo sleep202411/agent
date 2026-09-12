@@ -8,6 +8,7 @@ import {
 import { ensureWorkspaceMembershipForStory } from './story-project-membership';
 import { StoryProjectMembersService } from './story-project-members.service';
 import { STORY_ROLE_MAP } from './story-project-sharing.dto';
+import { EntitlementService } from '../entitlements/entitlement.service';
 
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
@@ -36,7 +37,17 @@ function tx(overrides: {
     },
     client: {
       $executeRaw: jest.fn().mockResolvedValue(0),
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue(
+          Array.from({ length: 28 }, (_, i) => ({ user_id: `existing-${i}` })),
+        ),
+      entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
       workspace: {
+        findUnique: jest.fn().mockResolvedValue({
+          type: overrides.workspaceType ?? WorkspaceType.team,
+          createdAt: new Date('2026-09-13T00:00:00Z'),
+        }),
         // The row still carries `type` even though the function stopped reading
         // it — that is exactly what the personal-workspace case pins.
         findFirst: jest.fn().mockResolvedValue({
@@ -73,6 +84,28 @@ const entitlements = {
 } as never;
 
 describe('ensureWorkspaceMembershipForStory', () => {
+  it.each([WorkspaceType.personal, WorkspaceType.team])(
+    'admits a story editor beyond the %s seat allowance with project-only access',
+    async (workspaceType) => {
+      const t = tx({ workspaceType });
+      await ensureWorkspaceMembershipForStory(t.client, {
+        workspaceId: WORKSPACE_ID,
+        userId: 'editor-29',
+        actorUserId: 'owner-1',
+        role: StoryProjectMemberRole.editor,
+        entitlements: new EntitlementService({} as never),
+        allowReactivatingRemoved: true,
+      });
+      expect(t.calls.workspaceMemberCreate.mock.calls[0][0].data).toMatchObject(
+        {
+          userId: 'editor-29',
+          role: WorkspaceMemberRole.viewer,
+          accessScope: WorkspaceMemberAccessScope.project_only,
+        },
+      );
+    },
+  );
+
   it('enrols a brand-new collaborator as a workspace viewer', async () => {
     const t = tx({});
     const result = await ensureWorkspaceMembershipForStory(t.client, {

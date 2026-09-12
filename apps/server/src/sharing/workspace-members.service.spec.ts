@@ -113,20 +113,21 @@ describe('WorkspaceMembersService.add on a personal workspace', () => {
     expect(t.audit.record).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a second creator in a no-plan personal workspace', async () => {
+  it('adds a second creator in a no-plan personal workspace during open collaboration', async () => {
     const t = build();
     const input = { account: 'guest@example.com', role: 'editor' } as const;
 
     await expect(
       t.service.add(WORKSPACE_ID, ACTOR, COOKIE, input),
-    ).rejects.toMatchObject({
-      response: {
-        code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
-        includedSeats: 1,
-      },
-    });
-    expect(t.memberCreate).not.toHaveBeenCalled();
-    expect(t.audit.record).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ memberId: 'wm-new', userId: 'guest-1' });
+    expect(t.memberCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: WorkspaceMemberRole.editor,
+        }) as unknown,
+      }),
+    );
+    expect(t.audit.record).toHaveBeenCalledTimes(1);
   });
 });
 
