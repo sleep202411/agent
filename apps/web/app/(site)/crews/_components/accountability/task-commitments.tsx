@@ -49,7 +49,7 @@ function TaskCommitmentSession({
   const assigned = task.assignees.some((a) => a.userId === userId);
   const active = !["submitted", "approved", "cancelled"].includes(task.status);
   async function submit(kind: "accept" | "at_risk" | "withdraw") {
-    if (busy.current) return;
+    if (busy.current || query.isError) return;
     busy.current = true;
     setError("");
     try {
@@ -72,17 +72,19 @@ function TaskCommitmentSession({
     <section className="my-6 space-y-3 border-t border-white/[0.06] pt-5 text-xs text-zinc-300">
       <h3 className="font-semibold text-zinc-100">{t("commitments")}</h3>
       <p className="text-zinc-400">{t("commitmentHelp")}</p>
-      {query.isLoading ? (
+      {query.isLoading && !query.data ? (
         <p role="status">{t("loading")}</p>
-      ) : query.isError ? (
+      ) : null}
+      {query.isError && (
         <div role="alert">
           <p>{query.error.message}</p>
           <Button size="sm" onClick={() => void query.refetch()}>
             {t("retry")}
           </Button>
         </div>
-      ) : (
-        <>
+      )}
+      {query.data && (
+        <fieldset disabled={query.isError} className="contents">
           {task.assignees
             .filter((a) => !records.some((r) => r.assignmentId === a.id))
             .map((a) => (
@@ -173,7 +175,7 @@ function TaskCommitmentSession({
               </div>
             </div>
           )}
-        </>
+        </fieldset>
       )}
       {error && (
         <p role="alert" className="text-red-300">

@@ -1,6 +1,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
+import { ProjectAccountability } from "./project-accountability";
 import { TaskCommitments } from "./task-commitments";
 import type { CrewTaskDTO } from "../../_hooks/types";
 import en from "@/messages/en-US.json";
@@ -8,6 +9,8 @@ import cn from "@/messages/zh-CN.json";
 import hk from "@/messages/zh-HK.json";
 const state = vi.hoisted(() => ({
   user: "alice",
+  loaded: true,
+  refetch: vi.fn(),
   mutate: vi.fn(),
   error: null as Error | null,
   records: [] as unknown[],
@@ -23,11 +26,15 @@ vi.mock("../../_hooks/use-users", () => ({
 }));
 vi.mock("../../_hooks/use-accountability", () => ({
   useTaskCommitments: () => ({
-    data: { records: state.records },
+    data: state.loaded ? { records: state.records } : undefined,
     isLoading: false,
     isError: !!state.error,
     error: state.error,
-    refetch: vi.fn(),
+    refetch: state.refetch,
+  }),
+  useAccountability: () => ({
+    data: state.loaded ? { participants: [], feedback: [], commitments: [], reliability: [], completed: false, hasMore: true, rewardPoints: null } : undefined,
+    isError: !!state.error, error: state.error, isFetching: false, refetch: state.refetch,
   }),
   useAccountabilityAction: () => ({ mutateAsync: state.mutate, isPending: false }),
 }));
@@ -69,6 +76,7 @@ afterEach(() => {
   state.user = "alice";
   state.records = [];
   state.error = null;
+  state.loaded = true;
   vi.resetAllMocks();
 });
 it("blocks rapid duplicate acceptance before the mutation hook rerenders", async () => {
@@ -129,6 +137,7 @@ it("clears drafts and ignores a previous account's delayed error", async () => {
   expect(node.querySelector("textarea")).toBeNull();
 });
 it("does not offer commitment actions when records cannot be loaded", () => {
+  state.loaded = false;
   state.error = new Error("Access revoked");
   mount();
   expect(node.textContent).toContain("Access revoked");
@@ -141,4 +150,23 @@ it("provides the same complete accountability copy in all supported languages", 
   expect(Object.keys(hk.crewAccountability).sort()).toEqual(
     Object.keys(en.crewAccountability).sort()
   );
+});
+
+it.each(["task", "project"])("preserves %s drafts and pauses decisions during refresh errors", (surface) => {
+  node = document.createElement("div"); root = createRoot(node);
+  const render = () => act(() => root.render(surface === "task"
+    ? <TaskCommitments task={task} canManage={false} />
+    : <ProjectAccountability crewId="crew" members={[]} />));
+  render(); fill("Please preserve this handover explanation");
+  const original = node.querySelector("textarea");
+  state.error = new Error("Refresh unavailable"); render();
+  expect(node.textContent).toContain("Refresh unavailable");
+  expect(node.querySelector("textarea")).toBe(original);
+  expect(node.querySelector("textarea")?.value).toBe("Please preserve this handover explanation");
+  expect(node.querySelector("textarea")?.matches(":disabled")).toBe(true);
+  const retry = [...node.querySelectorAll("button")].find(b => b.textContent === en.crewAccountability.retry)!;
+  act(() => retry.click()); expect(state.refetch).toHaveBeenCalledTimes(1);
+  state.error = null; render();
+  expect(node.querySelector("textarea")).toBe(original);
+  expect(node.querySelector("textarea")?.matches(":disabled")).toBe(false);
 });

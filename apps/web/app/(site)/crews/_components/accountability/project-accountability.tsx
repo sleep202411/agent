@@ -39,18 +39,19 @@ function ProjectSession({
   return (
     <section className="space-y-5 rounded-xl bg-white/[0.025] p-4 text-xs text-zinc-300 sm:p-5">
       <h3 className="text-sm font-semibold text-zinc-100">{t("projectTitle")}</h3>
-      {query.isLoading ? (
+      {query.isLoading && !data ? (
         <p role="status">{t("loading")}</p>
-      ) : query.isError ? (
+      ) : null}
+      {query.isError && (
         <div role="alert">
           <p>{query.error.message}</p>
           <Button size="sm" onClick={() => void query.refetch()}>
             {t("retry")}
           </Button>
         </div>
-      ) : (
-        data && (
-          <>
+      )}
+      {data && (
+          <fieldset disabled={query.isError} className="contents">
             <div className="space-y-2">
               <h4 className="font-semibold">{t("reliability")}</h4>
               <p className="text-zinc-400">{t("reliabilityHelp")}</p>
@@ -287,8 +288,7 @@ function ProjectSession({
                 {t("next")}
               </Button>
             </div>
-          </>
-        )
+          </fieldset>
       )}
     </section>
   );
