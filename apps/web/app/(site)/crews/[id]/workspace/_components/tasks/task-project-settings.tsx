@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import {
   IconArchive,
   IconArrowLeft,
@@ -53,7 +54,40 @@ import { TaskSelect } from "./task-select";
 
 type SettingsSection = "workflow" | "cycles" | "labels" | "fields";
 
-export function ProjectSettingsDialog({
+export function ProjectSettingsDialog(props: Parameters<typeof ProjectSettingsSession>[0]) {
+  const { user } = useCurrentUser();
+  return props.open ? (
+    <ProjectSettingsSession key={JSON.stringify([user?.id, props.crewId])} {...props} />
+  ) : null;
+}
+
+function useSettingsAction() {
+  const current = useRef({ alive: true, pending: false });
+  const [busy, setBusy] = useState(false);
+  useLayoutEffect(() => {
+    const session = current.current;
+    session.alive = true;
+    return () => {
+      session.alive = false;
+    };
+  }, []);
+  return {
+    busy,
+    active: () => current.current.alive,
+    start: () => {
+      if (!current.current.alive || current.current.pending) return false;
+      current.current.pending = true;
+      setBusy(true);
+      return true;
+    },
+    finish: () => {
+      current.current.pending = false;
+      if (current.current.alive) setBusy(false);
+    },
+  };
+}
+
+function ProjectSettingsSession({
   crewId,
   project,
   open,
@@ -139,6 +173,7 @@ function WorkflowPanel({
   onEdit: (state: CrewTaskWorkflowStateDTO) => void;
 }) {
   const t = useTranslations("crewTaskProject");
+  const action = useSettingsAction();
   const updateState = useUpdateCrewTaskWorkflowState(crewId);
   const reorderStates = useReorderCrewTaskWorkflowStates(crewId);
   const deleteState = useDeleteCrewTaskWorkflowState(crewId);
@@ -153,7 +188,7 @@ function WorkflowPanel({
         (state) => state.id !== archiveTarget.id && state.semantic === archiveTarget.semantic
       )
     : [];
-  const pending = updateState.isPending || reorderStates.isPending || deleteState.isPending;
+  const pending = action.busy;
 
   const moveState = async (stateId: string, direction: -1 | 1) => {
     const index = activeStates.findIndex((state) => state.id === stateId);
@@ -161,13 +196,18 @@ function WorkflowPanel({
     if (index < 0 || destination < 0 || destination >= activeStates.length) return;
     const ordered = [...activeStates];
     [ordered[index], ordered[destination]] = [ordered[destination], ordered[index]];
+    if (!action.start()) return;
     try {
       await reorderStates.mutateAsync(
         ordered.map((state) => ({ id: state.id, expectedVersion: state.version }))
       );
+      if (!action.active()) return;
       toast.success(t("workflowColumnsReordered"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("workflowColumnSaveFailed"));
+    } finally {
+      action.finish();
     }
   };
 
@@ -175,6 +215,7 @@ function WorkflowPanel({
     if (!archiveTarget) return;
     const taskCount = archiveTarget.taskCount ?? 0;
     if (taskCount > 0 && !replacementStateId) return;
+    if (!action.start()) return;
     try {
       await updateState.mutateAsync({
         stateId: archiveTarget.id,
@@ -184,23 +225,32 @@ function WorkflowPanel({
           replacementStateId: replacementStateId || undefined,
         },
       });
+      if (!action.active()) return;
       setArchiveTargetId(null);
       setReplacementStateId("");
       toast.success(t("workflowColumnArchived"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("workflowColumnSaveFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   const restoreState = async (state: CrewTaskWorkflowStateDTO) => {
+    if (!action.start()) return;
     try {
       await updateState.mutateAsync({
         stateId: state.id,
         input: { expectedVersion: state.version, archived: false },
       });
+      if (!action.active()) return;
       toast.success(t("workflowColumnRestored"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("workflowColumnSaveFailed"));
+    } finally {
+      action.finish();
     }
   };
 
@@ -209,173 +259,187 @@ function WorkflowPanel({
       setDeleteConfirmId(state.id);
       return;
     }
+    if (!action.start()) return;
     try {
       await deleteState.mutateAsync(state.id);
+      if (!action.active()) return;
       setDeleteConfirmId(null);
       toast.success(t("workflowColumnDeleted"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("workflowColumnDeleteFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   return (
-    <SettingsPanel title={t("workflowManagement")} description={t("workflowManagementDescription")}>
-      <div className="divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.08]">
-        {project.workflowStates.map((state) => {
-          const activeIndex = activeStates.findIndex((item) => item.id === state.id);
-          const taskCount = state.taskCount ?? 0;
-          const isArchiveTarget = archiveTargetId === state.id;
-          return (
-            <div key={state.id} className="bg-white/[0.015]">
-              <div className="flex items-center gap-3 px-3 py-3">
-                <span className="size-2.5 rounded-full" style={{ backgroundColor: state.color }} />
-                <button
-                  type="button"
-                  onClick={() => onEdit(state)}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-[12px] font-medium">
-                      {state.systemKey ? t(`status.${state.systemKey}`) : state.name}
-                    </span>
-                    {state.archived ? (
-                      <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-[#858b95]">
-                        {t("workflowArchived")}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 truncate text-[10px] text-[#747a84]">
-                    {t(`workflowBehaviorHelp.${state.semantic}`)} ·{" "}
-                    {t("workflowColumnTaskCount", { count: taskCount })}
-                  </p>
-                </button>
-                {!state.archived ? (
-                  <>
-                    <ActionButton
-                      label={t("moveColumnLeft")}
-                      disabled={pending || activeIndex <= 0}
-                      onClick={() => void moveState(state.id, -1)}
-                    >
-                      <IconArrowLeft />
-                    </ActionButton>
-                    <ActionButton
-                      label={t("moveColumnRight")}
-                      disabled={pending || activeIndex === activeStates.length - 1}
-                      onClick={() => void moveState(state.id, 1)}
-                    >
-                      <IconArrowRight />
-                    </ActionButton>
-                  </>
-                ) : null}
-                <ActionButton
-                  label={t("editWorkflowColumnTitle")}
-                  disabled={pending}
-                  onClick={() => onEdit(state)}
-                >
-                  <IconPencil />
-                </ActionButton>
-                {state.archived ? (
-                  <ActionButton
-                    label={t("restoreColumn")}
-                    disabled={pending}
-                    onClick={() => void restoreState(state)}
-                  >
-                    <IconRefresh />
-                  </ActionButton>
-                ) : (
-                  <ActionButton
-                    label={t("archiveColumn")}
-                    disabled={pending || activeStates.length <= 1}
-                    onClick={() => {
-                      setArchiveTargetId(isArchiveTarget ? null : state.id);
-                      setReplacementStateId("");
-                    }}
-                  >
-                    <IconArchive />
-                  </ActionButton>
-                )}
-                {state.archived && !state.systemKey ? (
+    <fieldset disabled={action.busy} className="contents">
+      {" "}
+      <SettingsPanel
+        title={t("workflowManagement")}
+        description={t("workflowManagementDescription")}
+      >
+        <div className="divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.08]">
+          {project.workflowStates.map((state) => {
+            const activeIndex = activeStates.findIndex((item) => item.id === state.id);
+            const taskCount = state.taskCount ?? 0;
+            const isArchiveTarget = archiveTargetId === state.id;
+            return (
+              <div key={state.id} className="bg-white/[0.015]">
+                <div className="flex items-center gap-3 px-3 py-3">
+                  <span
+                    className="size-2.5 rounded-full"
+                    style={{ backgroundColor: state.color }}
+                  />
                   <button
                     type="button"
-                    disabled={pending || taskCount > 0}
-                    onClick={() => void permanentlyDeleteState(state)}
-                    className={cn(
-                      "h-7 rounded-md px-2 text-[9px] transition-colors disabled:cursor-not-allowed disabled:opacity-35",
-                      deleteConfirmId === state.id
-                        ? "bg-[#e52227]/16 text-red-300"
-                        : "text-[#777d87] hover:bg-[#e52227]/10 hover:text-red-300"
-                    )}
-                    title={
-                      taskCount > 0
-                        ? t("workflowDeleteNeedsEmpty")
-                        : t("deleteWorkflowColumnConfirm", { name: state.name })
-                    }
+                    onClick={() => onEdit(state)}
+                    className="min-w-0 flex-1 text-left"
                   >
-                    {deleteConfirmId === state.id
-                      ? t("deleteWorkflowColumnConfirmAction")
-                      : t("deleteColumn")}
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[12px] font-medium">
+                        {state.systemKey ? t(`status.${state.systemKey}`) : state.name}
+                      </span>
+                      {state.archived ? (
+                        <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-[#858b95]">
+                          {t("workflowArchived")}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="mt-1 truncate text-[10px] text-[#747a84]">
+                      {t(`workflowBehaviorHelp.${state.semantic}`)} ·{" "}
+                      {t("workflowColumnTaskCount", { count: taskCount })}
+                    </p>
                   </button>
+                  {!state.archived ? (
+                    <>
+                      <ActionButton
+                        label={t("moveColumnLeft")}
+                        disabled={pending || activeIndex <= 0}
+                        onClick={() => void moveState(state.id, -1)}
+                      >
+                        <IconArrowLeft />
+                      </ActionButton>
+                      <ActionButton
+                        label={t("moveColumnRight")}
+                        disabled={pending || activeIndex === activeStates.length - 1}
+                        onClick={() => void moveState(state.id, 1)}
+                      >
+                        <IconArrowRight />
+                      </ActionButton>
+                    </>
+                  ) : null}
+                  <ActionButton
+                    label={t("editWorkflowColumnTitle")}
+                    disabled={pending}
+                    onClick={() => onEdit(state)}
+                  >
+                    <IconPencil />
+                  </ActionButton>
+                  {state.archived ? (
+                    <ActionButton
+                      label={t("restoreColumn")}
+                      disabled={pending}
+                      onClick={() => void restoreState(state)}
+                    >
+                      <IconRefresh />
+                    </ActionButton>
+                  ) : (
+                    <ActionButton
+                      label={t("archiveColumn")}
+                      disabled={pending || activeStates.length <= 1}
+                      onClick={() => {
+                        setArchiveTargetId(isArchiveTarget ? null : state.id);
+                        setReplacementStateId("");
+                      }}
+                    >
+                      <IconArchive />
+                    </ActionButton>
+                  )}
+                  {state.archived && !state.systemKey ? (
+                    <button
+                      type="button"
+                      disabled={pending || taskCount > 0}
+                      onClick={() => void permanentlyDeleteState(state)}
+                      className={cn(
+                        "h-7 rounded-md px-2 text-[9px] transition-colors disabled:cursor-not-allowed disabled:opacity-35",
+                        deleteConfirmId === state.id
+                          ? "bg-[#e52227]/16 text-red-300"
+                          : "text-[#777d87] hover:bg-[#e52227]/10 hover:text-red-300"
+                      )}
+                      title={
+                        taskCount > 0
+                          ? t("workflowDeleteNeedsEmpty")
+                          : t("deleteWorkflowColumnConfirm", { name: state.name })
+                      }
+                    >
+                      {deleteConfirmId === state.id
+                        ? t("deleteWorkflowColumnConfirmAction")
+                        : t("deleteColumn")}
+                    </button>
+                  ) : null}
+                </div>
+                {isArchiveTarget ? (
+                  <div className="border-t border-white/[0.06] bg-black/10 px-3 py-3">
+                    <p className="text-[10px] text-[#9298a2]">
+                      {t("archiveWorkflowColumnPrompt", {
+                        name: state.systemKey ? t(`status.${state.systemKey}`) : state.name,
+                      })}
+                    </p>
+                    {taskCount > 0 ? (
+                      replacementCandidates.length ? (
+                        <label className="mt-3 flex items-center gap-3 text-[10px] text-[#858b95]">
+                          <span>{t("archiveMoveTasksTo")}</span>
+                          <TaskSelect
+                            value={replacementStateId}
+                            onValueChange={setReplacementStateId}
+                            ariaLabel={t("archiveMoveTasksTo")}
+                            className="h-8 min-w-0 flex-1 rounded-md border border-white/[0.09] bg-[#0d0e11] px-2 text-[10px] text-[#c4c8cf]"
+                            options={[
+                              { value: "", label: t("selectWorkflowColumn") },
+                              ...replacementCandidates.map((candidate) => ({
+                                value: candidate.id,
+                                label: candidate.systemKey
+                                  ? t(`status.${candidate.systemKey}`)
+                                  : candidate.name,
+                              })),
+                            ]}
+                          />
+                        </label>
+                      ) : (
+                        <p className="mt-2 text-[10px] text-amber-300/75">
+                          {t("archiveNeedsMatchingColumn")}
+                        </p>
+                      )
+                    ) : null}
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        color="muted"
+                        onClick={() => setArchiveTargetId(null)}
+                      >
+                        {t("cancel")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        loading={action.busy}
+                        disabled={taskCount > 0 && !replacementStateId}
+                        onClick={() => void archiveState()}
+                      >
+                        {t("archiveColumn")}
+                      </Button>
+                    </div>
+                  </div>
                 ) : null}
               </div>
-              {isArchiveTarget ? (
-                <div className="border-t border-white/[0.06] bg-black/10 px-3 py-3">
-                  <p className="text-[10px] text-[#9298a2]">
-                    {t("archiveWorkflowColumnPrompt", {
-                      name: state.systemKey ? t(`status.${state.systemKey}`) : state.name,
-                    })}
-                  </p>
-                  {taskCount > 0 ? (
-                    replacementCandidates.length ? (
-                      <label className="mt-3 flex items-center gap-3 text-[10px] text-[#858b95]">
-                        <span>{t("archiveMoveTasksTo")}</span>
-                        <TaskSelect
-                          value={replacementStateId}
-                          onValueChange={setReplacementStateId}
-                          ariaLabel={t("archiveMoveTasksTo")}
-                          className="h-8 min-w-0 flex-1 rounded-md border border-white/[0.09] bg-[#0d0e11] px-2 text-[10px] text-[#c4c8cf]"
-                          options={[
-                            { value: "", label: t("selectWorkflowColumn") },
-                            ...replacementCandidates.map((candidate) => ({
-                              value: candidate.id,
-                              label: candidate.systemKey
-                                ? t(`status.${candidate.systemKey}`)
-                                : candidate.name,
-                            })),
-                          ]}
-                        />
-                      </label>
-                    ) : (
-                      <p className="mt-2 text-[10px] text-amber-300/75">
-                        {t("archiveNeedsMatchingColumn")}
-                      </p>
-                    )
-                  ) : null}
-                  <div className="mt-3 flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      color="muted"
-                      onClick={() => setArchiveTargetId(null)}
-                    >
-                      {t("cancel")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      loading={updateState.isPending}
-                      disabled={taskCount > 0 && !replacementStateId}
-                      onClick={() => void archiveState()}
-                    >
-                      {t("archiveColumn")}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-      <p className="text-[10px] leading-5 text-[#747a84]">{t("workflowSettingsHint")}</p>
-    </SettingsPanel>
+            );
+          })}
+        </div>
+        <p className="text-[10px] leading-5 text-[#747a84]">{t("workflowSettingsHint")}</p>
+      </SettingsPanel>
+    </fieldset>
   );
 }
 
@@ -406,6 +470,7 @@ function ActionButton({
 
 function CyclesPanel({ crewId, cycles }: { crewId: string; cycles: CrewTaskCycleDTO[] }) {
   const t = useTranslations("crewTaskProject");
+  const action = useSettingsAction();
   const createCycle = useCreateCrewTaskCycle(crewId);
   const [name, setName] = useState("");
   const [goal, setGoal] = useState("");
@@ -413,6 +478,7 @@ function CyclesPanel({ crewId, cycles }: { crewId: string; cycles: CrewTaskCycle
   const [endAt, setEndAt] = useState("");
 
   const create = async () => {
+    if (!action.start()) return;
     try {
       await createCycle.mutateAsync({
         name: name.trim(),
@@ -420,59 +486,67 @@ function CyclesPanel({ crewId, cycles }: { crewId: string; cycles: CrewTaskCycle
         startAt: dateStartIso(startAt),
         endAt: dateEndIso(endAt),
       });
+      if (!action.active()) return;
       setName("");
       setGoal("");
       setStartAt("");
       setEndAt("");
       toast.success(t("cycleSaved"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("cycleCreateFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   return (
-    <SettingsPanel title={t("cycleManagement")} description={t("cycleManagementDescription")}>
-      <div className="space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.018] p-3">
-        <Input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={t("cycleName")}
-        />
-        <Textarea
-          value={goal}
-          onChange={(event) => setGoal(event.target.value)}
-          placeholder={t("cycleGoal")}
-          className="min-h-16"
-        />
-        <div className="grid grid-cols-2 gap-2">
-          <DateField label={t("startAt")} value={startAt} onChange={setStartAt} />
-          <DateField label={t("endAt")} value={endAt} onChange={setEndAt} />
+    <fieldset disabled={action.busy} className="contents">
+      {" "}
+      <SettingsPanel title={t("cycleManagement")} description={t("cycleManagementDescription")}>
+        <div className="space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.018] p-3">
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("cycleName")}
+          />
+          <Textarea
+            value={goal}
+            onChange={(event) => setGoal(event.target.value)}
+            placeholder={t("cycleGoal")}
+            className="min-h-16"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <DateField label={t("startAt")} value={startAt} onChange={setStartAt} />
+            <DateField label={t("endAt")} value={endAt} onChange={setEndAt} />
+          </div>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              icon={<IconPlus />}
+              loading={action.busy}
+              disabled={!name.trim() || !startAt || !endAt || endAt < startAt}
+              onClick={() => void create()}
+            >
+              {t("createCycle")}
+            </Button>
+          </div>
         </div>
-        <div className="flex justify-end">
-          <Button
-            size="sm"
-            icon={<IconPlus />}
-            loading={createCycle.isPending}
-            disabled={!name.trim() || !startAt || !endAt || endAt < startAt}
-            onClick={() => void create()}
-          >
-            {t("createCycle")}
-          </Button>
+        <div className="space-y-2">
+          {cycles.length ? (
+            cycles.map((cycle) => <CycleRow key={cycle.id} crewId={crewId} cycle={cycle} />)
+          ) : (
+            <EmptyState text={t("noCycles")} />
+          )}
         </div>
-      </div>
-      <div className="space-y-2">
-        {cycles.length ? (
-          cycles.map((cycle) => <CycleRow key={cycle.id} crewId={crewId} cycle={cycle} />)
-        ) : (
-          <EmptyState text={t("noCycles")} />
-        )}
-      </div>
-    </SettingsPanel>
+      </SettingsPanel>
+    </fieldset>
   );
 }
 
 function CycleRow({ crewId, cycle }: { crewId: string; cycle: CrewTaskCycleDTO }) {
   const t = useTranslations("crewTaskProject");
+  const action = useSettingsAction();
   const updateCycle = useUpdateCrewTaskCycle(crewId);
   const deleteCycle = useDeleteCrewTaskCycle(crewId);
   const [editing, setEditing] = useState(false);
@@ -484,6 +558,7 @@ function CycleRow({ crewId, cycle }: { crewId: string; cycle: CrewTaskCycleDTO }
   const [endAt, setEndAt] = useState(toDateInput(cycle.endAt));
 
   const save = async () => {
+    if (!action.start()) return;
     try {
       await updateCycle.mutateAsync({
         cycleId: cycle.id,
@@ -496,153 +571,177 @@ function CycleRow({ crewId, cycle }: { crewId: string; cycle: CrewTaskCycleDTO }
           endAt: dateEndIso(endAt),
         },
       });
+      if (!action.active()) return;
       setEditing(false);
       toast.success(t("cycleSaved"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("cycleUpdateFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   const remove = async () => {
     if (!deleteArmed) return setDeleteArmed(true);
+    if (!action.start()) return;
     try {
       await deleteCycle.mutateAsync(cycle.id);
+      if (!action.active()) return;
       toast.success(t("cycleDeleted"));
     } catch (error) {
+      if (!action.active()) return;
       setDeleteArmed(false);
       toast.error(error instanceof Error ? error.message : t("cycleDeleteFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.015] p-3">
-      {editing ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-2">
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
-            <TaskSelect
-              value={status}
-              onValueChange={(nextValue) => setStatus(nextValue as CrewTaskCycleDTO["status"])}
-              options={(["planned", "active", "completed", "cancelled"] as const).map((value) => ({
-                value,
-                label: t(`cycleStatus.${value}`),
-              }))}
-            />
-          </div>
-          <Textarea
-            value={goal}
-            onChange={(event) => setGoal(event.target.value)}
-            className="min-h-16"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <DateField label={t("startAt")} value={startAt} onChange={setStartAt} />
-            <DateField label={t("endAt")} value={endAt} onChange={setEndAt} />
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
-              {t("cancel")}
-            </Button>
-            <Button
-              size="sm"
-              loading={updateCycle.isPending}
-              disabled={!name.trim() || !startAt || !endAt || endAt < startAt}
-              onClick={() => void save()}
-            >
-              {t("save")}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-[9px] text-[#777d87]">C{cycle.number}</span>
-              <span className="truncate text-[12px] font-medium">{cycle.name}</span>
-              <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-[#9297a0]">
-                {t(`cycleStatus.${cycle.status}`)}
-              </span>
+    <fieldset disabled={action.busy} className="contents">
+      {" "}
+      <div className="rounded-xl border border-white/[0.08] bg-white/[0.015] p-3">
+        {editing ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-[minmax(0,1fr)_150px] gap-2">
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
+              <TaskSelect
+                value={status}
+                onValueChange={(nextValue) => setStatus(nextValue as CrewTaskCycleDTO["status"])}
+                options={(["planned", "active", "completed", "cancelled"] as const).map(
+                  (value) => ({
+                    value,
+                    label: t(`cycleStatus.${value}`),
+                  })
+                )}
+              />
             </div>
-            <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#777d87]">
-              {cycle.goal || t("noCycleGoal")}
-            </p>
+            <Textarea
+              value={goal}
+              onChange={(event) => setGoal(event.target.value)}
+              className="min-h-16"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <DateField label={t("startAt")} value={startAt} onChange={setStartAt} />
+              <DateField label={t("endAt")} value={endAt} onChange={setEndAt} />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
+                {t("cancel")}
+              </Button>
+              <Button
+                size="sm"
+                loading={action.busy}
+                disabled={!name.trim() || !startAt || !endAt || endAt < startAt}
+                onClick={() => void save()}
+              >
+                {t("save")}
+              </Button>
+            </div>
           </div>
-          <IconButton label={t("edit")} onClick={() => setEditing(true)}>
-            <IconPencil />
-          </IconButton>
-          <IconButton
-            label={deleteArmed ? t("confirmDeleteCycle") : t("delete")}
-            destructive={deleteArmed}
-            disabled={deleteCycle.isPending}
-            onClick={() => void remove()}
-          >
-            <IconTrash />
-          </IconButton>
-        </div>
-      )}
-    </div>
+        ) : (
+          <div className="flex items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[9px] text-[#777d87]">C{cycle.number}</span>
+                <span className="truncate text-[12px] font-medium">{cycle.name}</span>
+                <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-[#9297a0]">
+                  {t(`cycleStatus.${cycle.status}`)}
+                </span>
+              </div>
+              <p className="mt-1 line-clamp-2 text-[10px] leading-4 text-[#777d87]">
+                {cycle.goal || t("noCycleGoal")}
+              </p>
+            </div>
+            <IconButton label={t("edit")} onClick={() => setEditing(true)}>
+              <IconPencil />
+            </IconButton>
+            <IconButton
+              label={deleteArmed ? t("confirmDeleteCycle") : t("delete")}
+              destructive={deleteArmed}
+              disabled={action.busy}
+              onClick={() => void remove()}
+            >
+              <IconTrash />
+            </IconButton>
+          </div>
+        )}
+      </div>
+    </fieldset>
   );
 }
 
 function LabelsPanel({ crewId, labels }: { crewId: string; labels: CrewTaskLabelDTO[] }) {
   const t = useTranslations("crewTaskProject");
+  const action = useSettingsAction();
   const createLabel = useCreateCrewTaskLabel(crewId);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState("#e12b32");
 
   const create = async () => {
+    if (!action.start()) return;
     try {
       await createLabel.mutateAsync({ name: name.trim(), description: description.trim(), color });
+      if (!action.active()) return;
       setName("");
       setDescription("");
       toast.success(t("labelCreated"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("labelCreateFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   return (
-    <SettingsPanel title={t("labelManagement")} description={t("labelManagementDescription")}>
-      <div className="grid grid-cols-[40px_minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-2">
-        <input
-          type="color"
-          value={color}
-          onChange={(event) => setColor(event.target.value)}
-          className="h-9 w-10 rounded-md border border-white/[0.1] bg-transparent p-1"
-          aria-label={t("labelColor")}
-        />
-        <Input
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          placeholder={t("labelName")}
-        />
-        <Input
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder={t("labelDescription")}
-        />
-        <Button
-          size="sm"
-          disabled={!name.trim()}
-          loading={createLabel.isPending}
-          onClick={() => void create()}
-        >
-          {t("addLabel")}
-        </Button>
-      </div>
-      <div className="divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.08]">
-        {labels.length ? (
-          labels.map((label) => <LabelRow key={label.id} crewId={crewId} label={label} />)
-        ) : (
-          <EmptyState text={t("noLabels")} />
-        )}
-      </div>
-    </SettingsPanel>
+    <fieldset disabled={action.busy} className="contents">
+      {" "}
+      <SettingsPanel title={t("labelManagement")} description={t("labelManagementDescription")}>
+        <div className="grid grid-cols-[40px_minmax(0,1fr)_minmax(0,1.4fr)_auto] gap-2">
+          <input
+            type="color"
+            value={color}
+            onChange={(event) => setColor(event.target.value)}
+            className="h-9 w-10 rounded-md border border-white/[0.1] bg-transparent p-1"
+            aria-label={t("labelColor")}
+          />
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("labelName")}
+          />
+          <Input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder={t("labelDescription")}
+          />
+          <Button
+            size="sm"
+            disabled={!name.trim()}
+            loading={action.busy}
+            onClick={() => void create()}
+          >
+            {t("addLabel")}
+          </Button>
+        </div>
+        <div className="divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.08]">
+          {labels.length ? (
+            labels.map((label) => <LabelRow key={label.id} crewId={crewId} label={label} />)
+          ) : (
+            <EmptyState text={t("noLabels")} />
+          )}
+        </div>
+      </SettingsPanel>
+    </fieldset>
   );
 }
 
 function LabelRow({ crewId, label }: { crewId: string; label: CrewTaskLabelDTO }) {
   const t = useTranslations("crewTaskProject");
+  const action = useSettingsAction();
   const updateLabel = useUpdateCrewTaskLabel(crewId);
   const deleteLabel = useDeleteCrewTaskLabel(crewId);
   const [editing, setEditing] = useState(false);
@@ -652,6 +751,7 @@ function LabelRow({ crewId, label }: { crewId: string; label: CrewTaskLabelDTO }
   const [color, setColor] = useState(label.color);
 
   const save = async () => {
+    if (!action.start()) return;
     try {
       await updateLabel.mutateAsync({
         labelId: label.id,
@@ -662,78 +762,91 @@ function LabelRow({ crewId, label }: { crewId: string; label: CrewTaskLabelDTO }
           color,
         },
       });
+      if (!action.active()) return;
       setEditing(false);
       toast.success(t("labelSaved"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("labelSaveFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   const remove = async () => {
     if (!deleteArmed) return setDeleteArmed(true);
+    if (!action.start()) return;
     try {
       await deleteLabel.mutateAsync(label.id);
+      if (!action.active()) return;
       toast.success(t("labelDeleted"));
     } catch (error) {
+      if (!action.active()) return;
       setDeleteArmed(false);
       toast.error(error instanceof Error ? error.message : t("labelDeleteFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   return (
-    <div className="bg-white/[0.015] p-3">
-      {editing ? (
-        <div className="space-y-2">
-          <div className="grid grid-cols-[40px_minmax(0,1fr)] gap-2">
-            <input
-              type="color"
-              value={color}
-              onChange={(event) => setColor(event.target.value)}
-              className="h-9 w-10 rounded-md border border-white/[0.1] bg-transparent p-1"
-            />
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
+    <fieldset disabled={action.busy} className="contents">
+      {" "}
+      <div className="bg-white/[0.015] p-3">
+        {editing ? (
+          <div className="space-y-2">
+            <div className="grid grid-cols-[40px_minmax(0,1fr)] gap-2">
+              <input
+                type="color"
+                value={color}
+                onChange={(event) => setColor(event.target.value)}
+                className="h-9 w-10 rounded-md border border-white/[0.1] bg-transparent p-1"
+              />
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
+            </div>
+            <Input value={description} onChange={(event) => setDescription(event.target.value)} />
+            <div className="flex justify-end gap-2">
+              <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
+                {t("cancel")}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!name.trim()}
+                loading={action.busy}
+                onClick={() => void save()}
+              >
+                {t("save")}
+              </Button>
+            </div>
           </div>
-          <Input value={description} onChange={(event) => setDescription(event.target.value)} />
-          <div className="flex justify-end gap-2">
-            <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
-              {t("cancel")}
-            </Button>
-            <Button
-              size="sm"
-              disabled={!name.trim()}
-              loading={updateLabel.isPending}
-              onClick={() => void save()}
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="size-2.5 rounded-full" style={{ backgroundColor: label.color }} />
+            <span className="text-[12px] font-medium">{label.name}</span>
+            <span className="min-w-0 flex-1 truncate text-[10px] text-[#777d87]">
+              {label.description || t("noLabelDescription")}
+            </span>
+            <IconButton label={t("edit")} onClick={() => setEditing(true)}>
+              <IconPencil />
+            </IconButton>
+            <IconButton
+              label={deleteArmed ? t("confirmDelete") : t("delete")}
+              destructive={deleteArmed}
+              disabled={action.busy}
+              onClick={() => void remove()}
             >
-              {t("save")}
-            </Button>
+              <IconTrash />
+            </IconButton>
           </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <span className="size-2.5 rounded-full" style={{ backgroundColor: label.color }} />
-          <span className="text-[12px] font-medium">{label.name}</span>
-          <span className="min-w-0 flex-1 truncate text-[10px] text-[#777d87]">
-            {label.description || t("noLabelDescription")}
-          </span>
-          <IconButton label={t("edit")} onClick={() => setEditing(true)}>
-            <IconPencil />
-          </IconButton>
-          <IconButton
-            label={deleteArmed ? t("confirmDelete") : t("delete")}
-            destructive={deleteArmed}
-            disabled={deleteLabel.isPending}
-            onClick={() => void remove()}
-          >
-            <IconTrash />
-          </IconButton>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </fieldset>
   );
 }
 
 function FieldsPanel({ crewId, fields }: { crewId: string; fields: CrewTaskFieldDTO[] }) {
   const t = useTranslations("crewTaskProject");
+  const action = useSettingsAction();
   const createField = useCreateCrewTaskField(crewId);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -743,6 +856,7 @@ function FieldsPanel({ crewId, fields }: { crewId: string; fields: CrewTaskField
   const supportsOptions = type === "single_select" || type === "multi_select";
 
   const create = async () => {
+    if (!action.start()) return;
     try {
       await createField.mutateAsync({
         name: name.trim(),
@@ -753,89 +867,97 @@ function FieldsPanel({ crewId, fields }: { crewId: string; fields: CrewTaskField
           ? uniqueLabels(options).map((label) => ({ id: crypto.randomUUID(), label }))
           : [],
       });
+      if (!action.active()) return;
       setName("");
       setDescription("");
       setOptions("");
       setRequired(false);
       toast.success(t("customFieldCreated"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("customFieldCreateFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   return (
-    <SettingsPanel
-      title={t("customFieldManagement")}
-      description={t("customFieldManagementDescription")}
-    >
-      <div className="space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.018] p-3">
-        <div className="grid grid-cols-[minmax(0,1fr)_160px] gap-2">
-          <Input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("customFieldName")}
-          />
-          <TaskSelect
-            value={type}
-            onValueChange={(nextValue) => setType(nextValue as CrewTaskFieldType)}
-            options={(
-              [
-                "text",
-                "number",
-                "single_select",
-                "multi_select",
-                "date",
-                "checkbox",
-                "user",
-              ] as const
-            ).map((value) => ({ value, label: t(`customFieldType.${value}`) }))}
-          />
-        </div>
-        <Input
-          value={description}
-          onChange={(event) => setDescription(event.target.value)}
-          placeholder={t("customFieldDescription")}
-        />
-        {supportsOptions ? (
-          <Input
-            value={options}
-            onChange={(event) => setOptions(event.target.value)}
-            placeholder={t("customFieldOptions")}
-          />
-        ) : null}
-        <div className="flex items-center justify-between gap-3">
-          <label className="flex items-center gap-2 text-[10px] text-[#858b95]">
-            <input
-              type="checkbox"
-              checked={required}
-              onChange={(event) => setRequired(event.target.checked)}
+    <fieldset disabled={action.busy} className="contents">
+      {" "}
+      <SettingsPanel
+        title={t("customFieldManagement")}
+        description={t("customFieldManagementDescription")}
+      >
+        <div className="space-y-2 rounded-xl border border-white/[0.08] bg-white/[0.018] p-3">
+          <div className="grid grid-cols-[minmax(0,1fr)_160px] gap-2">
+            <Input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder={t("customFieldName")}
             />
-            {t("customFieldRequired")}
-          </label>
-          <Button
-            size="sm"
-            icon={<IconPlus />}
-            disabled={!name.trim() || (supportsOptions && uniqueLabels(options).length === 0)}
-            loading={createField.isPending}
-            onClick={() => void create()}
-          >
-            {t("addCustomField")}
-          </Button>
+            <TaskSelect
+              value={type}
+              onValueChange={(nextValue) => setType(nextValue as CrewTaskFieldType)}
+              options={(
+                [
+                  "text",
+                  "number",
+                  "single_select",
+                  "multi_select",
+                  "date",
+                  "checkbox",
+                  "user",
+                ] as const
+              ).map((value) => ({ value, label: t(`customFieldType.${value}`) }))}
+            />
+          </div>
+          <Input
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder={t("customFieldDescription")}
+          />
+          {supportsOptions ? (
+            <Input
+              value={options}
+              onChange={(event) => setOptions(event.target.value)}
+              placeholder={t("customFieldOptions")}
+            />
+          ) : null}
+          <div className="flex items-center justify-between gap-3">
+            <label className="flex items-center gap-2 text-[10px] text-[#858b95]">
+              <input
+                type="checkbox"
+                checked={required}
+                onChange={(event) => setRequired(event.target.checked)}
+              />
+              {t("customFieldRequired")}
+            </label>
+            <Button
+              size="sm"
+              icon={<IconPlus />}
+              disabled={!name.trim() || (supportsOptions && uniqueLabels(options).length === 0)}
+              loading={action.busy}
+              onClick={() => void create()}
+            >
+              {t("addCustomField")}
+            </Button>
+          </div>
         </div>
-      </div>
-      <div className="divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.08]">
-        {fields.length ? (
-          fields.map((field) => <FieldRow key={field.id} crewId={crewId} field={field} />)
-        ) : (
-          <EmptyState text={t("noCustomFields")} />
-        )}
-      </div>
-    </SettingsPanel>
+        <div className="divide-y divide-white/[0.07] overflow-hidden rounded-xl border border-white/[0.08]">
+          {fields.length ? (
+            fields.map((field) => <FieldRow key={field.id} crewId={crewId} field={field} />)
+          ) : (
+            <EmptyState text={t("noCustomFields")} />
+          )}
+        </div>
+      </SettingsPanel>
+    </fieldset>
   );
 }
 
 function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }) {
   const t = useTranslations("crewTaskProject");
+  const action = useSettingsAction();
   const updateField = useUpdateCrewTaskField(crewId);
   const deleteField = useDeleteCrewTaskField(crewId);
   const [editing, setEditing] = useState(false);
@@ -847,6 +969,7 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
   const supportsOptions = field.type === "single_select" || field.type === "multi_select";
 
   const save = async () => {
+    if (!action.start()) return;
     try {
       const nextLabels = uniqueLabels(options);
       await updateField.mutateAsync({
@@ -868,88 +991,100 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
             : {}),
         },
       });
+      if (!action.active()) return;
       setEditing(false);
       toast.success(t("customFieldSaved"));
     } catch (error) {
+      if (!action.active()) return;
       toast.error(error instanceof Error ? error.message : t("customFieldSaveFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   const remove = async () => {
     if (!deleteArmed) return setDeleteArmed(true);
+    if (!action.start()) return;
     try {
       await deleteField.mutateAsync(field.id);
+      if (!action.active()) return;
       toast.success(t("customFieldDeleted"));
     } catch (error) {
+      if (!action.active()) return;
       setDeleteArmed(false);
       toast.error(error instanceof Error ? error.message : t("customFieldDeleteFailed"));
+    } finally {
+      action.finish();
     }
   };
 
   return (
-    <div className="bg-white/[0.015] p-3">
-      {editing ? (
-        <div className="space-y-2">
-          <Input value={name} onChange={(event) => setName(event.target.value)} />
-          <Input value={description} onChange={(event) => setDescription(event.target.value)} />
-          {supportsOptions ? (
-            <Input value={options} onChange={(event) => setOptions(event.target.value)} />
-          ) : null}
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 text-[10px] text-[#858b95]">
-              <input
-                type="checkbox"
-                checked={required}
-                onChange={(event) => setRequired(event.target.checked)}
-              />
-              {t("customFieldRequired")}
-            </label>
-            <div className="flex gap-2">
-              <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
-                {t("cancel")}
-              </Button>
-              <Button
-                size="sm"
-                disabled={!name.trim() || (supportsOptions && uniqueLabels(options).length === 0)}
-                loading={updateField.isPending}
-                onClick={() => void save()}
-              >
-                {t("save")}
-              </Button>
+    <fieldset disabled={action.busy} className="contents">
+      {" "}
+      <div className="bg-white/[0.015] p-3">
+        {editing ? (
+          <div className="space-y-2">
+            <Input value={name} onChange={(event) => setName(event.target.value)} />
+            <Input value={description} onChange={(event) => setDescription(event.target.value)} />
+            {supportsOptions ? (
+              <Input value={options} onChange={(event) => setOptions(event.target.value)} />
+            ) : null}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-[10px] text-[#858b95]">
+                <input
+                  type="checkbox"
+                  checked={required}
+                  onChange={(event) => setRequired(event.target.checked)}
+                />
+                {t("customFieldRequired")}
+              </label>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
+                  {t("cancel")}
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={!name.trim() || (supportsOptions && uniqueLabels(options).length === 0)}
+                  loading={action.busy}
+                  onClick={() => void save()}
+                >
+                  {t("save")}
+                </Button>
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3">
-          <IconColumns3 className="size-3.5 text-[#717781]" />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-[12px] font-medium">{field.name}</span>
-              <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-[#858b95]">
-                {t(`customFieldType.${field.type}`)}
-              </span>
-              {field.required ? (
-                <span className="text-[9px] text-red-300">{t("required")}</span>
-              ) : null}
+        ) : (
+          <div className="flex items-center gap-3">
+            <IconColumns3 className="size-3.5 text-[#717781]" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="truncate text-[12px] font-medium">{field.name}</span>
+                <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[9px] text-[#858b95]">
+                  {t(`customFieldType.${field.type}`)}
+                </span>
+                {field.required ? (
+                  <span className="text-[9px] text-red-300">{t("required")}</span>
+                ) : null}
+              </div>
+              <p className="mt-1 truncate text-[10px] text-[#777d87]">
+                {field.description || t("noCustomFieldDescription")}
+              </p>
             </div>
-            <p className="mt-1 truncate text-[10px] text-[#777d87]">
-              {field.description || t("noCustomFieldDescription")}
-            </p>
+            <IconButton label={t("edit")} onClick={() => setEditing(true)}>
+              <IconPencil />
+            </IconButton>
+            <IconButton
+              label={deleteArmed ? t("confirmDelete") : t("delete")}
+              destructive={deleteArmed}
+              disabled={action.busy}
+              onClick={() => void remove()}
+            >
+              <IconTrash />
+            </IconButton>
           </div>
-          <IconButton label={t("edit")} onClick={() => setEditing(true)}>
-            <IconPencil />
-          </IconButton>
-          <IconButton
-            label={deleteArmed ? t("confirmDelete") : t("delete")}
-            destructive={deleteArmed}
-            disabled={deleteField.isPending}
-            onClick={() => void remove()}
-          >
-            <IconTrash />
-          </IconButton>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </fieldset>
   );
 }
 
