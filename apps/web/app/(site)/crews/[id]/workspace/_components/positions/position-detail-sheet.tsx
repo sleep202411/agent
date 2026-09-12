@@ -8,7 +8,8 @@
  *   - Freeze / unfreeze / delete the position
  */
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
   IconBriefcase,
@@ -75,12 +76,18 @@ interface PositionDetailSheetProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function PositionDetailSheet({
+export function PositionDetailSheet(props: PositionDetailSheetProps) {
+  const { user } = useCurrentUser();
+  if (!props.position) return null;
+  return <PositionDetailSession key={JSON.stringify([user?.id, props.crewId, props.position.id])} {...props} position={props.position} />;
+}
+
+function PositionDetailSession({
   crewId,
   position,
   canManage = false,
   onOpenChange,
-}: PositionDetailSheetProps) {
+}: PositionDetailSheetProps & { position: CrewPositionDTO }) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const translatePosition = useTranslatePositionValue();
@@ -104,9 +111,24 @@ export function PositionDetailSheet({
   const applicantIds = useMemo(() => applications.map((a) => a.applicantId), [applications]);
   const displays = useUserDisplays(applicantIds);
 
-  if (!position) {
-    return <Sheet open={false} onOpenChange={onOpenChange} />;
-  }
+  const alive = useRef(false);
+  const pendingAction = useRef(false);
+  const [busy, setBusy] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const begin = () => {
+    if (!alive.current || pendingAction.current || !canManage) return false;
+    pendingAction.current = true;
+    setBusy(true);
+    return true;
+  };
+  const onSettled = () => {
+    if (!alive.current) return;
+    pendingAction.current = false;
+    setBusy(false);
+  };
 
   const label = translatePosition(position.positionType);
   const isFrozen = position.status === "frozen";
@@ -124,26 +146,32 @@ export function PositionDetailSheet({
     };
 
   const handleFreezeToggle = () => {
+    if (!begin()) return;
     updatePosition.mutate(
       { positionId: position.id, status: isFrozen ? "open" : "frozen" },
       {
+        onSettled,
         onSuccess: () => {
+          if (!alive.current) return;
           toast.success(isFrozen ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label }));
           setConfirmFreeze(false);
         },
-        onError: (err) => surfaceErr(err, t("closeJobFailed")),
+        onError: (err) => { if (alive.current) surfaceErr(err, t("closeJobFailed")); },
       }
     );
   };
 
   const handleDelete = () => {
+    if (applicationCounts.pending > 0 || !begin()) return;
     deletePosition.mutate(position.id, {
+      onSettled,
       onSuccess: () => {
+        if (!alive.current) return;
         toast.success(t("positionDeleted"));
         setConfirmDelete(false);
         onOpenChange(false);
       },
-      onError: (err) => surfaceErr(err, t("positionDeleteFailed")),
+      onError: (err) => { if (alive.current) surfaceErr(err, t("positionDeleteFailed")); },
     });
   };
 
@@ -320,8 +348,8 @@ export function PositionDetailSheet({
                   variant="ghost"
                   color="destructive"
                   size="sm"
-                  onClick={() => setConfirmDelete(true)}
-                  disabled={deletePosition.isPending}
+                  onClick={() => { if (!pendingAction.current) setConfirmDelete(true); }}
+                  disabled={busy}
                 >
                   <IconTrash className="size-3.5" />
                   {tc("delete")}
@@ -332,8 +360,8 @@ export function PositionDetailSheet({
                     variant="outline"
                     color="muted"
                     size="sm"
-                    onClick={() => setEditOpen(true)}
-                    disabled={updatePosition.isPending}
+                    onClick={() => { if (!pendingAction.current) setEditOpen(true); }}
+                    disabled={busy}
                   >
                     <IconPencil className="size-3.5" />
                     {t("editJobAction")}
@@ -345,7 +373,7 @@ export function PositionDetailSheet({
                       color="muted"
                       size="sm"
                       onClick={() => handleFreezeToggle()}
-                      disabled={updatePosition.isPending}
+                      disabled={busy}
                     >
                       <IconLockOpen className="size-3.5" />
                       {t("unfreezeJob")}
@@ -356,8 +384,8 @@ export function PositionDetailSheet({
                       variant="outline"
                       color="muted"
                       size="sm"
-                      onClick={() => setConfirmFreeze(true)}
-                      disabled={updatePosition.isPending}
+                      onClick={() => { if (!pendingAction.current) setConfirmFreeze(true); }}
+                      disabled={busy}
                     >
                       <IconLock className="size-3.5" />
                       {t("closeJob")}
@@ -385,26 +413,26 @@ export function PositionDetailSheet({
       ) : null}
 
       {/* Confirm freeze */}
-      <AlertDialog open={canManage && confirmFreeze} onOpenChange={setConfirmFreeze}>
+      <AlertDialog open={canManage && confirmFreeze} onOpenChange={next => { if (!pendingAction.current) setConfirmFreeze(next); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("closeJob")}</AlertDialogTitle>
             <AlertDialogDescription>{t("closeJobConfirm", { name: label })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={updatePosition.isPending}>
+            <AlertDialogCancel disabled={busy}>
               {tc("cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               variant="solid"
               color="destructive"
-              disabled={updatePosition.isPending}
+              disabled={busy}
               onClick={(e) => {
                 e.preventDefault();
                 handleFreezeToggle();
               }}
             >
-              {updatePosition.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {busy ? <IconLoader2 className="size-4 animate-spin" /> : null}
               {tc("confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -412,7 +440,7 @@ export function PositionDetailSheet({
       </AlertDialog>
 
       {/* Confirm delete */}
-      <AlertDialog open={canManage && confirmDelete} onOpenChange={setConfirmDelete}>
+      <AlertDialog open={canManage && confirmDelete} onOpenChange={next => { if (!pendingAction.current) setConfirmDelete(next); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("positionDeleteTitle")}</AlertDialogTitle>
@@ -423,19 +451,19 @@ export function PositionDetailSheet({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deletePosition.isPending}>
+            <AlertDialogCancel disabled={busy}>
               {tc("cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               variant="solid"
               color="destructive"
-              disabled={deletePosition.isPending || applicationCounts.pending > 0}
+              disabled={busy || applicationCounts.pending > 0}
               onClick={(e) => {
                 e.preventDefault();
                 handleDelete();
               }}
             >
-              {deletePosition.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
+              {busy ? <IconLoader2 className="size-4 animate-spin" /> : null}
               {tc("delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
