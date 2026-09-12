@@ -189,6 +189,11 @@ import {
 import type { StoryCandidateAssetUploadState } from "./story-candidate-asset-picker-dialog";
 import { useStoryCandidateAssets } from "./use-story-candidate-assets";
 import { StoryNodeInspector } from "./story-node-inspector";
+import {
+  StoryCommunityPriceButton,
+  StoryCommunityPriceLabel,
+} from "./story-community-price-dialog";
+import { updateStoryCommunityPointPrice } from "./story-community-price";
 import { StoryWorldBindingControl, StoryWorldNodeEditor } from "./story-world-node-editor";
 import { StoryInteractionEditor } from "./story-interaction-editor";
 import { migrateLegacyStoryHotspotIds } from "./story-interaction-ids";
@@ -229,6 +234,7 @@ type PendingCompletionDrop = {
   flowPosition: StoryCanvasPosition;
 };
 type StoryCanvasChoiceContextValue = {
+  setCommunityPointPrice: (nodeId: string, price: number) => Promise<void>;
   canEditContent: boolean;
   canCreateOption: boolean;
   start: (sourceNodeId: string) => void;
@@ -1127,6 +1133,19 @@ function StoryProjectCanvasInner({
   const canEdit = editPolicy.canEditContent;
   const canMutateCanvasLayout = editPolicy.canEditLayout;
   const choiceContext: StoryCanvasChoiceContextValue = {
+    setCommunityPointPrice: async (nodeId, price) => {
+      if (!mutationBarrier.permits("content")) throw new Error(t("communityPrice.unavailable"));
+      const current = latestContentRef.current;
+      if (!current) throw new Error(t("communityPrice.unavailable"));
+      const next = updateStoryCommunityPointPrice(current, nodeId, price);
+      if (next !== current) {
+        const applied = applyGraphMutation(() => next, {
+          mergeKey: `community-price:${nodeId}`,
+        });
+        if (!applied) throw new Error(t("communityPrice.unavailable"));
+      }
+      await withSavedDraftSnapshot(async () => undefined);
+    },
     canEditContent: canEdit,
     canCreateOption: canMutateCanvasLayout,
     start: (sourceNodeId) => {
@@ -2900,6 +2919,16 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
         </span>
         {t(`nodeKinds.${data.kind}`)}
       </FrostedPanel>
+      {choiceContext && data.kind !== "decision" ? (
+        <div className="absolute top-0 right-0 z-10">
+          <StoryCommunityPriceButton
+            title={data.title}
+            price={data.communityPointPrice}
+            disabled={!choiceContext.canEditContent}
+            onSave={(price) => choiceContext.setCommunityPointPrice(data.nodeId, price)}
+          />
+        </div>
+      ) : null}
       <article
         {...mediaPreview.hoverProps}
         className={cn(
@@ -3218,7 +3247,7 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                 {interactionChoices.map((choice, index) => (
                   <div
                     key={choice.choiceId}
-                    className="group/choice relative grid min-h-14 grid-cols-[32px_minmax(0,1fr)_auto_26px] items-center gap-2 border-b border-white/[0.055] px-3 text-xs transition-colors last:border-b-0 hover:bg-white/[0.035] focus-within:bg-white/[0.045]"
+                    className="group/choice relative grid min-h-14 grid-cols-[32px_minmax(0,1fr)_auto_auto_26px] items-center gap-2 border-b border-white/[0.055] px-3 text-xs transition-colors last:border-b-0 hover:bg-white/[0.035] focus-within:bg-white/[0.045]"
                   >
                     <span className="grid size-7 place-items-center rounded-lg bg-white/[0.055] text-[10px] font-semibold text-[#9bc4ff] tabular-nums">
                       {String(index + 1).padStart(2, "0")}
@@ -3237,6 +3266,11 @@ function StoryGraphNodeCard({ id, data, selected, isConnectable }: NodeProps<Sto
                         choice.label.trim() ? "text-white/78" : "text-white/36"
                       )}
                     />
+                    {choice.targetNodeId ? (
+                      <StoryCommunityPriceLabel price={choice.communityPointPrice} />
+                    ) : (
+                      <span />
+                    )}
                     <span className="max-w-[118px] truncate rounded-lg bg-white/[0.055] px-2 py-1.5 text-[10px] text-white/42 group-hover/choice:hidden group-focus-within/choice:hidden">
                       {choice.targetNodeId
                         ? `→ ${choice.targetTitle ?? t("interactionCard.linkedTarget")}`

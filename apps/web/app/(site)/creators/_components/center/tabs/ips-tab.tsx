@@ -7,26 +7,15 @@
  * endpoint, all pages) linking to the public IP detail page.
  */
 import { useState } from "react";
-import {
-  IconBook2,
-  IconCoin,
-  IconEdit,
-  IconLoader2,
-  IconLock,
-  IconWallet,
-} from "@tabler/icons-react";
+import { IconBook2, IconEdit, IconLoader2 } from "@tabler/icons-react";
 import Link from "next/link";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { type Creator } from "@/app/(site)/creators/_hooks/use-creator";
 import { NewIpCreateDialog } from "@/app/(site)/ip-studio/_components/new-ip-create-form";
-import type { IpCommerceIp, IpCreatorIp, IpCreatorRevenueEntry } from "@/src/lib/ip-commerce/api";
-import {
-  useCreatorRevenue,
-  useAllMyIpCommerceIps,
-  usePublicCreatorIps,
-} from "@/src/lib/ip-commerce/hooks";
+import type { IpCommerceIp, IpCreatorIp } from "@/src/lib/ip-commerce/api";
+import { useAllMyIpCommerceIps, usePublicCreatorIps } from "@/src/lib/ip-commerce/hooks";
 
 interface IpsTabProps {
   creator: Creator;
@@ -100,7 +89,6 @@ export function IpsTab({ creator, isOwner }: IpsTabProps) {
 
   return (
     <>
-      {isOwner ? <CreatorEarningsCard locale={locale} /> : null}
       {isOwner ? (
         <div className="mb-4 flex justify-end">
           <button
@@ -250,134 +238,4 @@ function EmptyShell({ title, body, cta }: { title: string; body: string; cta: Re
       {cta}
     </div>
   );
-}
-
-function CreatorEarningsCard({ locale }: { locale: Locale }) {
-  const t = useTranslations("creatorCenter");
-  const { data, isLoading, isError } = useCreatorRevenue(true, { locale, limit: 6 });
-  const entries = data?.entries ?? [];
-
-  return (
-    <div className="mb-4 rounded-2xl bg-card p-5 ring-1 ring-border/60">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[#e52227]/12 text-[#e52227]">
-            <IconWallet className="size-5" />
-          </span>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">{t("earnings.title")}</h3>
-            <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
-              {t("earnings.shareNote")}
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          disabled
-          aria-disabled
-          className="inline-flex h-9 cursor-not-allowed items-center gap-1.5 rounded-md border border-border bg-secondary/60 px-3 text-sm font-medium text-muted-foreground"
-        >
-          <IconLock className="size-3.5" />
-          {t("earnings.cashOutComingSoon")}
-        </button>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-border bg-background p-4">
-          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <IconCoin className="size-3.5" />
-            {t("earnings.withdrawableRevenue")}
-          </p>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-            {isLoading ? "—" : formatPoints(data?.withdrawableBalance ?? "0", locale)}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border bg-background p-4">
-          <p className="text-xs text-muted-foreground">{t("earnings.lifetimeEarned")}</p>
-          <p className="mt-1.5 text-2xl font-semibold tabular-nums tracking-tight text-foreground">
-            {isLoading ? "—" : formatPoints(data?.lifetimeEarned ?? "0", locale)}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <p className="text-xs font-semibold text-foreground">{t("earnings.revenueHistory")}</p>
-        {isLoading ? (
-          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-            <IconLoader2 className="size-4 animate-spin" />
-            {t("earnings.loading")}
-          </div>
-        ) : isError ? (
-          <p className="mt-3 text-xs text-muted-foreground">{t("earnings.loadFailed")}</p>
-        ) : entries.length === 0 ? (
-          <p className="mt-3 text-xs text-muted-foreground">{t("earnings.noRevenueYet")}</p>
-        ) : (
-          <div className="mt-3 divide-y divide-border/70">
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className="grid gap-2 py-2.5 text-sm sm:grid-cols-[minmax(0,1fr)_110px_110px]"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-foreground">
-                    {entry.ip?.title ?? t("earnings.unknownIp")}
-                  </p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {[
-                      entry.orderNo,
-                      formatDateTime(entry.createdAt, locale),
-                      salePctLabel(entry, t),
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground sm:text-sm">
-                  {t(`earnings.entryStatus.${entry.status}`)}
-                </p>
-                <p className="font-medium tabular-nums text-foreground sm:text-right">
-                  {formatPoints(entry.amount, locale)}
-                </p>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// True fraction of THIS sale the creator earned = amount / sourceAmount.
-// (entry.poolShareBps is only the beneficiary's share of the creator pool, so
-// it cannot be shown as a sale percentage.)
-function salePctLabel(
-  entry: IpCreatorRevenueEntry,
-  t: (key: string, values?: Record<string, string | number>) => string
-): string | null {
-  if (!entry.sourceAmount) return null;
-  const source = Number(entry.sourceAmount);
-  if (!Number.isFinite(source) || source <= 0) return null;
-  const pct = Math.round((Number(entry.amount) / source) * 100);
-  return t("earnings.percentOfSale", { pct });
-}
-
-function formatPoints(value: string, locale: Locale): string {
-  try {
-    return new Intl.NumberFormat(locale).format(Number(BigInt(value)));
-  } catch {
-    return value;
-  }
-}
-
-function formatDateTime(value: string, locale: Locale): string {
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
-  } catch {
-    return value;
-  }
 }

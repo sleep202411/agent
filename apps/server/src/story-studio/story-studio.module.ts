@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { StoryCommunityAccessService } from './story-community-access.service';
+import { StoryCommunityAccessController } from './story-community-access.controller';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { StorageModule } from '../infra/storage/storage.module';
 import { MediaModule } from '../media/media.module';
@@ -24,12 +26,14 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryAgentRunModule,
   ],
   controllers: [
+    StoryCommunityAccessController,
     StoryProjectsController,
     StoryReferenceController,
     StoryBuildController,
     StoryWorkingPreviewController,
   ],
   providers: [
+    StoryCommunityAccessService,
     StoryProjectsService,
     StoryReferenceService,
     StoryBuildService,

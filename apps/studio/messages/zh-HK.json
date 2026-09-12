@@ -3761,6 +3761,23 @@
         },
         "dropHint": "點擊選擇或拖曳 JSON 檔案到這裡",
         "drop": "放開以選擇檔案"
+      },
+      "communityPrice": {
+        "free": "免費",
+        "title": "社區積分設定",
+        "currency": "社區積分",
+        "amount": "{count} 社區積分",
+        "configure": "設定「{title}」的社區積分",
+        "nodeHint": "設定解鎖這個節點所需的社區積分。",
+        "destinationHint": "價格來自連接的劇情節點",
+        "freeHint": "設為 0 即可免費進入。",
+        "price": "解鎖價格",
+        "cancel": "取消",
+        "save": "儲存",
+        "saving": "儲存中…",
+        "invalid": "請輸入 0 至 2,147,483,647 之間的整數。",
+        "unavailable": "目前草稿暫不可編輯，請待就緒後重試。",
+        "saveFailed": "儲存失敗，請重試。"
       }
     },
     "workbench": {
@@ -3774,7 +3791,8 @@
         "overview": "總覽",
         "story": "故事",
         "references": "參考包"
-      }
+      },
+      "viewEarnings": "查看收益"
     },
     "overview": {
       "productionTitle": "影片生產",
@@ -3904,6 +3922,14 @@
     "studioDescription": "AI 創意工作台"
   },
   "experiencePlayer": {
+    "communityAccess": {
+      "title": "解鎖內容",
+      "price": "{amount} 社區積分",
+      "chargeHint": "玩家確認後將扣除以上積分，一次解鎖，重玩不重複扣分。",
+      "previewHint": "目前為試播，不會實際扣除積分。",
+      "cancel": "取消",
+      "unlock": "模擬解鎖"
+    },
     "invalidManifest": "Runtime 清單無效",
     "manifestRoot": "清單根節點",
     "interactiveFilm": "互動故事",

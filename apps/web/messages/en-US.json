@@ -2246,24 +2246,6 @@
       "issuedAt": "Issued",
       "certNo": "Certificate No."
     },
-    "earnings": {
-      "title": "Withdrawable revenue",
-      "withdrawableRevenue": "Withdrawable balance",
-      "lifetimeEarned": "Lifetime earned",
-      "percentOfSale": "{pct}% of sale",
-      "shareNote": "You earn a revenue share on every sale of your IPs.",
-      "revenueHistory": "Recent revenue",
-      "cashOutComingSoon": "Cash-out coming soon",
-      "noRevenueYet": "No revenue yet. Earnings appear here once your IPs start selling.",
-      "loading": "Loading revenue",
-      "loadFailed": "Failed to load revenue.",
-      "unknownIp": "Unknown IP",
-      "entryStatus": {
-        "pending": "Pending",
-        "posted": "Posted",
-        "voided": "Voided"
-      }
-    },
     "ips": {
       "emptyOwnerTitle": "Start an IP",
       "emptyOwnerBody": "IPs are the canonical projects you own — characters, scenes, episodes all live under one.",
@@ -9128,7 +9110,21 @@
     "shareCopied": "Link copied",
     "shareFailed": "Copy failed",
     "emptySequence": "No footage yet",
-    "loadingMedia": "Loading footage"
+    "loadingMedia": "Loading footage",
+    "communityAccess": {
+      "title": "Unlock to continue",
+      "checking": "Checking access…",
+      "price": "{amount} Community Points",
+      "once": "Unlock once. Replay anytime.",
+      "balance": "Available: {amount} Community Points",
+      "cancel": "Cancel",
+      "retry": "Retry",
+      "signIn": "Sign in to continue",
+      "recharge": "Top up Community Points",
+      "unlock": "Unlock and continue",
+      "unlocking": "Unlocking…",
+      "failed": "Unable to unlock. Please try again."
+    }
   },
   "games": {
     "back": "Back to IP plaza",
@@ -9472,6 +9468,62 @@
     "nowPlaying": "Now playing",
     "notPlaying": "Not playing",
     "loadingChannel": "Loading next channel…"
+  },
+  "creatorEarnings": {
+    "title": "Earnings",
+    "subtitle": "Your story and IP earnings, in one place.",
+    "back": "Creator center",
+    "unit": "Community points",
+    "overview": "Earnings overview",
+    "lifetime": "Lifetime earnings",
+    "balance": "Withdrawable balance",
+    "lifetimeHint": "All income credited to your account",
+    "balanceHint": "Credited earnings · Cash-out is not available yet",
+    "transactions": "Transactions",
+    "workFilter": "Filter by work",
+    "timeFilter": "Filter by time",
+    "allWorks": "All works",
+    "selectedWork": "Selected story",
+    "unknownWork": "Untitled work",
+    "period": {
+      "all": "All time",
+      "30": "Last 30 days",
+      "90": "Last 90 days"
+    },
+    "work": "Work / content",
+    "sale": "Community points paid",
+    "credited": "Your earnings",
+    "status": "Status",
+    "posted": "Credited",
+    "loading": "Loading earnings",
+    "emptyTitle": "Your earnings start here",
+    "emptyHint": "When someone unlocks your paid content, the income credited to you will appear here automatically.",
+    "noMatches": "No transactions in this view",
+    "noMatchesHint": "Try another work or time range.",
+    "clearFilters": "Clear filters",
+    "loadFailed": "Unable to load earnings",
+    "retry": "Try again",
+    "ledgerNote": "All amounts are community points credited to your account. Previews do not generate earnings.",
+    "detail": "Transaction details",
+    "content": "Unlocked content",
+    "order": "Purchase reference",
+    "transaction": "Credit reference",
+    "splitNote": "Your earnings are your credited share after the platform and contributor split. Community points paid is the amount the viewer spent.",
+    "viewEarnings": "View earnings",
+    "incomeType": "Income type",
+    "incomeTypes": {
+      "story": "Story income",
+      "ipEpisode": "IP episode income",
+      "ip": "IP income"
+    },
+    "storyRevenueNote": "The story owner receives the full amount of community points paid. No platform or collaborator split applies to story income.",
+    "pagination": {
+      "label": "Transaction pagination",
+      "pageSize": "10 transactions per page",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {page}"
+    }
   },
   "crewTaskCenter": {
     "signInRequired": "Sign in to view your Crew tasks.",

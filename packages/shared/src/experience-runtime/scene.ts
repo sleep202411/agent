@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ExperienceAccessRequirementSchema } from "./access.js";
 import {
   ExperienceLocalizedTextSchema,
   ExperienceRuntimeUriSchema,
@@ -78,6 +79,7 @@ export const ExperienceSceneSchema = z
   .object({
     kind: z.literal("scene"),
     sceneId: ExperienceStableIdSchema,
+    access: ExperienceAccessRequirementSchema.optional(),
     music: ExperienceSceneMusicSchema.optional(),
     clock: ExperienceSceneClockSchema.default({ kind: "none" }),
     renderers: z.array(ExperienceRendererInstanceSchema).default([]),
@@ -92,6 +94,7 @@ export const ExperienceRouterSchema = z
   .object({
     kind: z.literal("router"),
     sceneId: ExperienceStableIdSchema,
+    access: ExperienceAccessRequirementSchema.optional(),
     eventBindings: z.array(ExperienceEventBindingSchema).min(1),
   })
   .strict();

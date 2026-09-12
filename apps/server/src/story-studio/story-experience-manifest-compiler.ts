@@ -78,6 +78,7 @@ export interface StoryExperienceManifestCompilerResult {
 }
 
 interface NodeCompilationContext {
+  nodesById: Map<string, InteractiveFilmRuntimeNode>;
   experienceProfile: 'cinematic';
   projectId: string;
   usedRendererIds: Set<ExperienceCoreRendererId>;
@@ -120,6 +121,7 @@ export function compileStoryExperienceManifest(
   const usedRendererIds = new Set<ExperienceCoreRendererId>();
   const syntheticScenes: ExperienceScene[] = [];
   const context: NodeCompilationContext = {
+    nodesById: new Map(input.release.nodes.map((node) => [node.nodeId, node])),
     experienceProfile: input.experienceProfile,
     projectId: input.release.gameId,
     usedRendererIds,
@@ -132,6 +134,17 @@ export function compileStoryExperienceManifest(
   const graphNodes: ExperienceGraphNode[] = input.release.nodes.flatMap(
     (node, index) => {
       const compiled = compileGraphNode(node, context, ['nodes', index]);
+      if (
+        compiled &&
+        node.presentation.kind !== 'decision' &&
+        node.communityPointPrice
+      )
+        compiled.access = {
+          key: `node:${node.nodeId}`,
+          communityPointPrice: node.communityPointPrice,
+          title:
+            node.title ?? localizeScalar(node.nodeId, input.release.locales),
+        };
       return compiled ? [compiled] : [];
     },
   );
@@ -204,6 +217,15 @@ export function compileStoryExperienceManifest(
       semanticRulesVersion: 1,
       requiredCapabilities: [
         ...usedRendererIds,
+        ...(graphNodes.some(
+          (node) =>
+            node.access ||
+            node.eventBindings.some((binding) =>
+              binding.routes.some((route) => route.access),
+            ),
+        )
+          ? ['commerce.community-points']
+          : []),
         ...(hasStillSegments ? [EXPERIENCE_CORE_VIDEO_STILL_CAPABILITY] : []),
         ...(hasSpatialInteractions
           ? [
@@ -835,10 +857,31 @@ function compileChoiceExit(
     },
     routes: node.exit.choices.map((choice) => ({
       routeId: `route:${node.nodeId}:choice:${choice.choiceId}`,
+      ...choiceDestinationAccess(choice.nextNodeId, context),
       when: eventValueEquals('choiceId', choice.choiceId),
       actions: [{ kind: 'scene.goto' as const, sceneId: choice.nextNodeId }],
     })),
   });
+}
+
+function choiceDestinationAccess(
+  nodeId: string,
+  context: NodeCompilationContext,
+) {
+  const target = context.nodesById.get(nodeId);
+  if (
+    !target ||
+    target.presentation.kind === 'decision' ||
+    !target.communityPointPrice
+  )
+    return {};
+  return {
+    access: {
+      key: `node:${target.nodeId}`,
+      communityPointPrice: target.communityPointPrice,
+      title: target.title ?? localizeScalar(target.nodeId, context.locales),
+    },
+  };
 }
 
 function rendererOutcomeBinding(

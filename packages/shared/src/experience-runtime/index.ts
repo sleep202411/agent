@@ -1,6 +1,7 @@
 export * from "./common.js";
 export * from "./assets.js";
 export * from "./state.js";
+export * from "./access.js";
 export * from "./logic.js";
 export * from "./spatial.js";
 export * from "./audio.js";

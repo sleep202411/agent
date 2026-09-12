@@ -12,6 +12,7 @@ import {
   Res,
 } from '@nestjs/common';
 import type { Response } from 'express';
+import { streamStoryPrivateMedia } from './story-private-media';
 import { CurrentUser, Public, type AuthUser } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
 import {
@@ -95,6 +96,7 @@ export class StoryBuildController {
     @Param(new ZodValidationPipe(StoryBuildAssetParamsSchema))
     params: StoryBuildAssetParams,
     @Res() response: Response,
+    @Headers('range') range?: string,
   ) {
     // @Public keeps Java/CDN's immutable Manifest URI usable anonymously after
     // publication. AuthGuard still attaches a valid optional viewer, allowing
@@ -107,7 +109,29 @@ export class StoryBuildController {
       params.variantId,
     );
     response.setHeader('cache-control', 'private, no-store');
+    if (access.stream)
+      return streamStoryPrivateMedia(access.url, response, range);
     return response.redirect(HttpStatus.FOUND, access.url);
+  }
+
+  @Get(':projectId/builds/:buildId/assets/:assetId/variants/:variantId/poster')
+  @Public()
+  async buildAssetPoster(
+    @CurrentUser() user: AuthUser | undefined,
+    @Param(new ZodValidationPipe(StoryBuildAssetParamsSchema))
+    params: StoryBuildAssetParams,
+    @Res() response: Response,
+  ) {
+    const frame = await this.builds.readBuildAssetPoster(
+      user,
+      params.projectId,
+      params.buildId,
+      params.assetId,
+      params.variantId,
+    );
+    response.setHeader('cache-control', 'private, no-store');
+    response.type('image/jpeg');
+    return response.send(frame);
   }
 
   @Post(':projectId/builds/:buildId/cancel')

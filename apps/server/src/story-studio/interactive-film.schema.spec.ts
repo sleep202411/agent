@@ -63,6 +63,44 @@ function filmDraft(): InteractiveStoryDraftContent {
 }
 
 describe('interactive film draft contract', () => {
+  it('only accepts Community Points prices on story nodes', () => {
+    const draft = filmDraft();
+    const node = draft.graph.nodes[0];
+    if (node.kind !== 'clip') throw new Error('Expected clip');
+    node.communityPointPrice = 30;
+    expect(
+      InteractiveStoryDraftContentSchema.parse(draft).graph.nodes[0],
+    ).toMatchObject({ communityPointPrice: 30 });
+    for (const price of [-1, 1.5, 2_147_483_648]) {
+      node.communityPointPrice = price;
+      expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
+        false,
+      );
+    }
+    node.communityPointPrice = 30;
+    if (node.exit.kind !== 'choice') throw new Error('Expected choice');
+    Object.assign(node.exit.choices[0], { communityPointPrice: 20 });
+    expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
+      false,
+    );
+    expect(
+      InteractiveStoryDraftContentSchema.safeParse({
+        ...filmDraft(),
+        graph: {
+          entryNodeId: 'decision',
+          nodes: [
+            {
+              kind: 'decision',
+              nodeId: 'decision',
+              communityPointPrice: 20,
+              exit: node.exit,
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts only fully identified film clips and natural terminal exits', () => {
     expect(
       InteractiveStoryDraftContentSchema.safeParse(filmDraft()).success,

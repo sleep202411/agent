@@ -385,40 +385,6 @@ export interface IpCreatorCommerceOverview {
   recentEntitlements: IpCreatorCommerceEntitlement[];
 }
 
-export type IpCreatorRevenueEntryType = "revenue_share" | "refund_reversal" | "manual_adjustment";
-
-export type IpCreatorRevenueEntryStatus = "pending" | "posted" | "voided";
-
-export interface IpCreatorRevenueEntry {
-  id: string;
-  ip: {
-    id: string;
-    title: string;
-    status: string;
-    listingVisibility: string;
-    localization?: IpCommerceLocalizationMeta;
-  } | null;
-  orderNo: string | null;
-  entryType: IpCreatorRevenueEntryType;
-  status: IpCreatorRevenueEntryStatus;
-  amount: string;
-  /** Sale total this credit came from. The true sale fraction is
-   *  amount / sourceAmount; `poolShareBps` is only the share of the creator
-   *  pool, NOT of the whole sale. */
-  sourceAmount: string | null;
-  poolShareBps: number | null;
-  createdAt: string;
-}
-
-export interface IpCreatorRevenue {
-  currency: "community_point";
-  withdrawableBalance: string;
-  lifetimeEarned: string;
-  note: string;
-  entries: IpCreatorRevenueEntry[];
-  nextCursor: string | null;
-}
-
 export type IpContributorRole =
   | "owner"
   | "producer"
@@ -872,10 +838,6 @@ export function transferIpOwner(input: TransferIpOwnerInput) {
     `/aurora/ip-commerce/me/ips/${encodeURIComponent(ipId)}/transfer-owner`,
     { data: { toUserId, removeOldOwner } }
   );
-}
-
-export function getMyCreatorRevenue(params?: { locale?: string; cursor?: string; limit?: number }) {
-  return api.get<IpCreatorRevenue>("/aurora/ip-commerce/me/revenue", { params });
 }
 
 export function listMyIpCommerceIpAssets(

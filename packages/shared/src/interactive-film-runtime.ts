@@ -376,6 +376,8 @@ const RuntimeNodeExitSchema = z.discriminatedUnion("kind", [
 const SceneNodeSchema = z
   .object({
     nodeId: stableId,
+    communityPointPrice: z.number().int().nonnegative().max(2_147_483_647).optional(),
+    title: localizedText.optional(),
     presentation: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("decision") }).strict(),
       VideoPresentationSchema,
