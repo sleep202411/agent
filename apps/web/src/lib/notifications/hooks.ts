@@ -38,7 +38,7 @@ export function useUnreadCount() {
   return useQuery({
     queryKey: [...notificationKeys.unreadCount, user?.id ?? null],
     enabled: Boolean(user?.id),
-    queryFn: () => fetchUnreadCount().then((r) => r.count),
+    queryFn: ({ signal }) => fetchUnreadCount(signal).then((r) => r.count),
     // Poll as a safety net for missed WS pushes (network blips, server
     // restart). WS push is the primary signal — this just papers over
     // gaps; 1 min is well below human notice for a stale badge.
@@ -53,7 +53,7 @@ export function useRecentNotifications(limit = 10) {
   return useQuery({
     queryKey: [...notificationKeys.list, user?.id ?? null, limit] as const,
     enabled: Boolean(user?.id),
-    queryFn: () => listNotifications({ limit }),
+    queryFn: ({ signal }) => listNotifications({ limit }, signal),
     refetchInterval: UNREAD_COUNT_POLL_MS,
     staleTime: 30_000,
   });
@@ -65,7 +65,7 @@ export function useNotificationFeed(pageSize = 30, filter: NotificationFilter = 
   return useInfiniteQuery({
     queryKey: [...notificationKeys.feed, user?.id ?? null, pageSize, filter] as const,
     enabled: Boolean(user?.id),
-    queryFn: ({ pageParam }) => listNotifications({ limit: pageSize, cursor: pageParam, filter }),
+    queryFn: ({ pageParam, signal }) => listNotifications({ limit: pageSize, cursor: pageParam, filter }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     refetchInterval: UNREAD_COUNT_POLL_MS,

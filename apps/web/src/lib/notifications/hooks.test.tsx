@@ -217,3 +217,33 @@ it.each(["one", "all"] as const)(
     }
   }
 );
+
+
+it("cancels abandoned notification reads on account switch", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const signals: AbortSignal[] = [];
+  vi.mocked(listNotifications).mockImplementation((_opts, signal?: AbortSignal) => {
+    if (signal) signals.push(signal);
+    return new Promise(() => undefined);
+  });
+  vi.mocked(fetchUnreadCount).mockImplementation((signal?: AbortSignal) => {
+    if (signal) signals.push(signal);
+    return new Promise(() => undefined);
+  });
+  function Probe() { useRecentNotifications(); useUnreadCount(); useNotificationFeed(); return null; }
+  const render = () => act(async () => root.render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>));
+  try {
+    session.userId = "alice";
+    await render();
+    expect(signals).toHaveLength(3);
+    const original = [...signals];
+    session.userId = "bob";
+    await render();
+    expect(original.every(signal => signal.aborted)).toBe(true);
+    expect(signals.slice(3).every(signal => !signal.aborted)).toBe(true);
+  } finally {
+    act(() => root.unmount()); client.clear(); session.userId = "alice"; vi.resetAllMocks();
+  }
+});
