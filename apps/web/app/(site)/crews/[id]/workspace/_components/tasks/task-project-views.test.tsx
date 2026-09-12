@@ -12,6 +12,9 @@ vi.mock("@/src/i18n/i18n", () => ({
 vi.mock("@/components/user-avatar", () => ({
   UserAvatar: ({ name }: { name: string }) => <span role="img" aria-label={name} />,
 }));
+vi.mock("@/app/(site)/crews/_components/task-unread-marker", () => ({
+  TaskUnreadMarker: ({ taskId }: { taskId: string }) => <span role="status" data-task-id={taskId}>2 unread</span>,
+}));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
   if (root) act(() => root.unmount());
@@ -116,3 +119,13 @@ it.each(["zh-CN", "zh-HK"])(
     );
   }
 );
+
+
+it.each(["list", "board"])("shows the task unread marker in %s", async (layout) => {
+  const props = propsFor(layout);
+  const el = document.createElement("div");
+  document.body.append(el);
+  root = createRoot(el);
+  await act(async () => root.render(<TaskProjectView {...props} />));
+  expect(el.querySelector('[role="status"]')?.getAttribute("data-task-id")).toBe("task");
+});

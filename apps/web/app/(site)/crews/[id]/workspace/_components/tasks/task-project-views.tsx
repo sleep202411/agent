@@ -1,5 +1,7 @@
 "use client";
 
+import { TaskUnreadMarker } from "@/app/(site)/crews/_components/task-unread-marker";
+
 import { isCrewTaskOverdue as isOverdue } from "@/app/(site)/crews/_lib/task-dates";
 
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -221,9 +223,10 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
       <button
         type="button"
         onClick={() => props.onOpenTask(task.id)}
-        className="min-w-0 truncate pr-4 text-left text-[11px] font-medium text-[#d9dce1]"
+        className="flex min-w-0 items-center pr-4 text-left text-[11px] font-medium text-[#d9dce1]"
       >
-        {task.title}
+        <span className="truncate">{task.title}</span>
+        <TaskUnreadMarker taskId={task.id} />
       </button>
       <div className="flex items-center gap-3 pr-2 text-[10px] text-[#656c77]">
         {displayProperties.has("subtasks") && task.subtaskProgress.total > 0 ? (
@@ -544,6 +547,7 @@ function BoardCard({
           <span className="block min-w-0 truncate text-[13px] leading-4 font-medium tracking-[-0.13px] text-white">
             {task.title}
           </span>
+          <TaskUnreadMarker taskId={task.id} />
         </span>
       </div>
 
