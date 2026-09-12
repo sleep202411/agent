@@ -32,7 +32,10 @@ function outbox(attempt = 0) {
 function buildHarness(attempt = 0) {
   const claimed = outbox(attempt);
   const tx = {
-    $queryRaw: jest.fn().mockResolvedValue([{ id: claimed.id }]),
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue([])
+      .mockResolvedValueOnce([{ id: claimed.id }]),
     notificationOutbox: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findMany: jest.fn().mockResolvedValue([claimed]),
@@ -56,6 +59,43 @@ function buildHarness(attempt = 0) {
 }
 
 describe('NotificationDispatcherService', () => {
+  it('does not claim another notification while the current publish is stalled', async () => {
+    const { service, tx, realtime } = buildHarness();
+    let release!: () => void;
+    let entered!: () => void;
+    const publishing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    realtime.publishUserFrame.mockImplementationOnce(() => {
+      entered();
+      return new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+    const draining = service.drainOnce();
+    await publishing;
+    try {
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+      const calls = tx.$queryRaw.mock.calls as unknown[][];
+      const sql = calls[0]?.[0] as { values: unknown[] };
+      expect(sql.values.at(-1)).toBe(1);
+      await service.drainOnce();
+      expect(tx.$queryRaw).toHaveBeenCalledTimes(1);
+    } finally {
+      release();
+      await draining;
+    }
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('bounds a continuously replenished queue to 50 sends per drain', async () => {
+    const { service, tx, realtime } = buildHarness();
+    tx.$queryRaw.mockResolvedValue([{ id: 'notification-outbox-1' }]);
+    await service.drainOnce();
+    expect(realtime.publishUserFrame).toHaveBeenCalledTimes(50);
+    expect(tx.$queryRaw).toHaveBeenCalledTimes(50);
+  });
+
   it('publishes a notification.created frame and acknowledges only after Ably succeeds', async () => {
     const { service, prisma, realtime } = buildHarness();
 
@@ -135,7 +175,7 @@ describe('NotificationDispatcherService', () => {
   it('does not overlap drain cycles in one process', async () => {
     const { service, tx } = buildHarness();
     let release: (() => void) | undefined;
-    tx.$queryRaw.mockImplementationOnce(
+    tx.$queryRaw.mockReset().mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           release = () => resolve([]);
