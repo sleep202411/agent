@@ -2017,6 +2017,17 @@ export class CrewTasksService {
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-update:${taskId}`})::bigint)
       `;
         const locked = await this.requireActiveTaskTx(tx, taskId);
+        // Membership projections and canvas metadata share the document writer's
+        // project boundary. Acquire it before changing either projection.
+        if (
+          locked.canvasProjectId &&
+          (input.assignees !== undefined ||
+            input.title !== undefined ||
+            input.description !== undefined)
+        ) {
+          await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${locked.canvasProjectId}::uuid FOR UPDATE`;
+        }
+
         await this.authorization.require(
           locked.crewId,
           userId,

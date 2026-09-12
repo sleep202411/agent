@@ -19,6 +19,7 @@ function build(opts: {
   incomingProjectMember?: Record<string, unknown> | null;
 }) {
   const db = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
     crew: {
       findUnique: jest.fn().mockResolvedValue({
         workspaceId:

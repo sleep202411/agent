@@ -179,6 +179,7 @@ function build() {
     updatedAt: new Date('2026-07-29T10:00:00.000Z'),
   });
   const tx = {
+    $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewMember: {
       findMany: jest

@@ -4,6 +4,7 @@ import {
   CreateCrewTaskCycleSchema,
   CreateCrewTaskWorkflowStateSchema,
 } from './project-dto';
+import { CrewCollaborationService } from '../collaboration/crew-collaboration.service';
 import { NotificationService } from '../../notification/notification.service';
 import { randomUUID } from 'node:crypto';
 import { buildPrisma, type PrismaService } from '../../infra/db/db.module';
@@ -31,6 +32,9 @@ suite('Task update authorization during PostgreSQL waits', () => {
     await db?.$disconnect();
   });
   it.each([
+    'crew-membership',
+    'canvas-membership',
+    'canvas-membership-rejected',
     'crew-wait',
     'task-wait',
     'authorized',
@@ -115,9 +119,54 @@ suite('Task update authorization during PostgreSQL waits', () => {
     const entered = new Promise<number>((resolve) => {
       ready = resolve;
     });
+    let workspaceId: string | undefined;
+    let canvasProjectId: string | undefined;
     let holder: Promise<unknown> | undefined;
     let result: Promise<unknown> | undefined;
     try {
+      if (
+        [
+          'canvas-membership',
+          'canvas-membership-rejected',
+          'crew-membership',
+        ].includes(mode)
+      ) {
+        const workspace = await db.workspace.create({
+          data: {
+            type: 'team',
+            name: 'Canvas lock fixture',
+            ownerUserId: ownerId,
+            createdById: ownerId,
+          },
+        });
+        workspaceId = workspace.id;
+        const project = await db.platformProject.create({
+          data: { workspaceId, name: 'Task canvas', createdById: ownerId },
+        });
+        canvasProjectId = project.id;
+        await db.crew.update({ where: { id: crewId }, data: { workspaceId } });
+        await db.crewTask.update({
+          where: { id: task.id },
+          data: { canvasProjectId },
+        });
+        await db.projectMember.create({
+          data: {
+            projectId: canvasProjectId,
+            userId: actorId,
+            role: 'editor',
+            grantedById: ownerId,
+          },
+        });
+        await db.crewTaskAssignee.create({
+          data: {
+            crewId,
+            taskId: task.id,
+            crewMemberId: memberId,
+            userId: actorId,
+            currency: 'USD',
+          },
+        });
+      }
       if (mode.startsWith('comment-')) {
         await db.crewMemberPermissionOverride.create({
           data: {
@@ -298,7 +347,15 @@ suite('Task update authorization during PostgreSQL waits', () => {
         return;
       }
       holder = db.$transaction(async (tx) => {
-        if (mode === 'crew-wait')
+        if (
+          [
+            'canvas-membership',
+            'canvas-membership-rejected',
+            'crew-membership',
+          ].includes(mode)
+        )
+          await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${canvasProjectId}::uuid FOR UPDATE`;
+        else if (mode === 'crew-wait')
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
         else
           await tx.$queryRaw`SELECT id FROM crew_tasks WHERE id = ${task.id}::uuid FOR UPDATE`;
@@ -309,15 +366,29 @@ suite('Task update authorization during PostgreSQL waits', () => {
         await release;
       });
       const pid = await entered;
-      result = service
-        .update(task.id, actorId, {
-          expectedVersion: task.version,
-          title: 'Must not commit',
-        })
-        .then(
-          (value) => ({ value }),
-          (error: unknown) => ({ error }),
-        );
+      const operation =
+        mode === 'crew-membership'
+          ? db.$transaction(async (tx) =>
+              new CrewCollaborationService(
+                db as PrismaService,
+                {} as never,
+                {} as never,
+              ).removeCrewMemberAccess(crewId, actorId, tx),
+            )
+          : service.update(task.id, actorId, {
+              expectedVersion: task.version,
+              ...([
+                'canvas-membership',
+                'canvas-membership-rejected',
+                'crew-membership',
+              ].includes(mode)
+                ? { assignees: [] }
+                : { title: 'Must not commit' }),
+            });
+      result = operation.then(
+        (value: unknown) => ({ value }),
+        (error: unknown) => ({ error }),
+      );
       let waiting = false;
       for (let i = 0; i < 100; i++) {
         const [row] = await db.$queryRaw<
@@ -330,6 +401,64 @@ suite('Task update authorization during PostgreSQL waits', () => {
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
       expect(waiting).toBe(true);
+      if (
+        [
+          'canvas-membership',
+          'canvas-membership-rejected',
+          'crew-membership',
+        ].includes(mode)
+      ) {
+        expect(
+          await db.projectMember.count({
+            where: {
+              projectId: canvasProjectId,
+              userId: actorId,
+              removedAt: null,
+            },
+          }),
+        ).toBe(1);
+        if (mode === 'canvas-membership-rejected') {
+          await db.crewMember.update({
+            where: { id: memberId },
+            data: { status: 'removed', removedAt: new Date() },
+          });
+          unlock();
+          await holder;
+          expect(await result).toMatchObject({
+            error: { response: { code: 'CREW_MEMBERSHIP_REQUIRED' } },
+          });
+          expect(
+            await db.projectMember.count({
+              where: {
+                projectId: canvasProjectId,
+                userId: actorId,
+                removedAt: null,
+              },
+            }),
+          ).toBe(1);
+          expect(
+            await db.crewTaskAssignee.count({ where: { taskId: task.id } }),
+          ).toBe(1);
+          expect(broadcast).not.toHaveBeenCalled();
+          return;
+        }
+        unlock();
+        await holder;
+        expect(await result).toHaveProperty('value');
+        expect(
+          await db.projectMember.count({
+            where: {
+              projectId: canvasProjectId,
+              userId: actorId,
+              removedAt: null,
+            },
+          }),
+        ).toBe(0);
+        expect(broadcast).toHaveBeenCalledTimes(
+          mode === 'crew-membership' ? 0 : 1,
+        );
+        return;
+      }
       await db.crewMember.update({
         where: { id: memberId },
         data: { status: 'removed', removedAt: new Date() },
@@ -355,8 +484,11 @@ suite('Task update authorization during PostgreSQL waits', () => {
       await result;
       await db.notificationOutbox.deleteMany({ where: { userId: ownerId } });
       await db.notification.deleteMany({ where: { userId: ownerId } });
+      await db.crewTaskAssignee.deleteMany({ where: { crewId } });
       await db.crewOwnership.deleteMany({ where: { crewId } });
       await db.crew.delete({ where: { id: crewId } });
+      if (workspaceId)
+        await db.workspace.delete({ where: { id: workspaceId } });
     }
   });
 });
