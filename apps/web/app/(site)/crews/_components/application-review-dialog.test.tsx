@@ -2,8 +2,17 @@ import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { ApplicationReviewDialog } from "./application-review-dialog";
+import en from "@/messages/en-US.json";
+import cn from "@/messages/zh-CN.json";
+import hk from "@/messages/zh-HK.json";
+const messages = { "en-US": en, "zh-CN": cn, "zh-HK": hk };
 const state = vi.hoisted(() => ({
   account: "alice",
+  locale: "en-US" as "en-US" | "zh-CN" | "zh-HK",
+  translate: false,
+  negotiable: true,
+  period: "month",
+  createdAt: "2026-09-12T00:00:00Z",
   missingApplication: false,
   missingPosition: false,
   morePositions: false,
@@ -23,8 +32,18 @@ vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: { id: state.account } }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
-  useTranslations: () => (key: string) => key,
-  useLocale: () => "en-US",
+  useTranslations:
+    (namespace: string) =>
+    (key: string, args: Record<string, unknown> = {}) => {
+      if (!state.translate) return key;
+      const namespaces = messages[state.locale] as unknown as Record<
+        string,
+        Record<string, string>
+      >;
+      const text = namespaces[namespace]?.[key] ?? key;
+      return text.replace(/\{(\w+)\}/g, (_, name: string) => String(args[name] ?? `{${name}}`));
+    },
+  useLocale: () => state.locale,
 }));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   CURRENCY_SYMBOLS: { USD: "$", CNY: "¥" },
@@ -41,7 +60,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
           applicantId: "12",
           status: "pending",
           message: "Application " + id,
-          createdAt: "2026-09-12T00:00:00Z",
+          createdAt: state.createdAt,
         },
     isLoading: false,
     isError: state.failed === "application",
@@ -57,7 +76,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
             positionType: "director",
             workMode: "remote",
             experienceLevel: "any",
-            salary: { negotiable: true },
+            salary: {
+              negotiable: state.negotiable,
+              period: state.period,
+              currency: "USD",
+              minAmount: 10000,
+              maxAmount: 20000,
+            },
             targetCount: 1,
             recruitedCount: 0,
           },
@@ -101,6 +126,11 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   state.account = "alice";
+  state.locale = "en-US";
+  state.translate = false;
+  state.negotiable = true;
+  state.period = "month";
+  state.createdAt = "2026-09-12T00:00:00Z";
   state.missingApplication = false;
   state.missingPosition = false;
   state.morePositions = false;
@@ -111,6 +141,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => root.unmount());
+  vi.restoreAllMocks();
 });
 async function render(applicationId: string | null = "application", crewId = "crew") {
   await act(async () =>
@@ -237,4 +268,57 @@ it("waits for position pagination and retries the failed page", async () => {
   state.morePositions = false;
   await render();
   expect(container.textContent).toContain("Application application");
+});
+
+it.each(["en-US", "zh-CN", "zh-HK"] as const)(
+  "localizes review details, dates and decision errors in %s",
+  async (locale) => {
+    state.locale = locale;
+    state.translate = true;
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-12T02:00:00Z"));
+    await render();
+    const text = messages[locale].workspace;
+    expect(container.textContent).toContain(text.workModeRemote);
+    expect(container.textContent).toContain(text.experienceAny);
+    expect(container.textContent).toContain(text.salaryNegotiable);
+    expect(container.textContent).toContain(messages[locale].crewRoles.director);
+    expect(container.textContent).toContain(
+      new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-2, "hour")
+    );
+    state.negotiable = false;
+    await render();
+    expect(container.textContent).toContain(text.salaryPeriodMonth);
+    await act(async () =>
+      [...container.querySelectorAll("button")].find((b) => b.textContent === text.approve)!.click()
+    );
+    const handlers = state.approve.mock.calls[0]?.[1];
+    await act(async () => {
+      handlers.onError({});
+      handlers.onSettled();
+    });
+    expect(state.error).toHaveBeenCalledWith(text.reviewDialogApproveFailed);
+    await act(async () =>
+      [...container.querySelectorAll("button")].find((b) => b.textContent === text.reject)!.click()
+    );
+    await act(async () => state.reject.mock.calls[0]?.[1].onError({}));
+    expect(state.error).toHaveBeenCalledWith(text.reviewDialogRejectFailed);
+  }
+);
+it.each(["episode", "project"])("translates the %s salary period", async (period) => {
+  state.translate = true;
+  state.locale = "zh-HK";
+  state.negotiable = false;
+  state.period = period;
+  await render();
+  expect(container.textContent).toContain(
+    period === "episode" ? hk.workspace.salaryPeriodEpisode : hk.workspace.salaryPeriodProject
+  );
+});
+it("formats older application dates in the selected locale", async () => {
+  state.translate = true;
+  state.locale = "zh-HK";
+  state.createdAt = "2026-01-01T00:00:00Z";
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-09-12T02:00:00Z"));
+  await render();
+  expect(container.textContent).toContain(new Date(state.createdAt).toLocaleDateString("zh-HK"));
 });

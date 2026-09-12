@@ -69,6 +69,7 @@ import {
   type CrewApplicationStatus,
   type CurrencyCode,
 } from "@/app/(site)/crews/_hooks/use-crew";
+import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
 
 interface ApplicationReviewDialogProps {
@@ -99,7 +100,12 @@ const STATUS_CHIP: Record<CrewApplicationStatus, { labelKey: string; className: 
 export function ApplicationReviewDialog(props: ApplicationReviewDialogProps) {
   const { user } = useCurrentUser();
   if (props.applicationId === null) return null;
-  return <ApplicationReviewSession key={JSON.stringify([user?.id, props.crewId, props.applicationId])} {...props} />;
+  return (
+    <ApplicationReviewSession
+      key={JSON.stringify([user?.id, props.crewId, props.applicationId])}
+      {...props}
+    />
+  );
 }
 
 function ApplicationReviewSession({
@@ -110,14 +116,11 @@ function ApplicationReviewSession({
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const locale = useLocale() as Locale;
+  const translatePosition = useTranslatePositionValue();
 
   const open = applicationId !== null;
 
-  const applicationQuery = useCrewApplication(
-    crewId,
-    applicationId,
-    open
-  );
+  const applicationQuery = useCrewApplication(crewId, applicationId, open);
   const { data: application, isLoading: appsLoading } = applicationQuery;
   const positionsQuery = useCrewPositions(crewId);
   const positions = positionsQuery.data;
@@ -125,7 +128,14 @@ function ApplicationReviewSession({
   const { data: crew } = crewQuery;
   const loadErrors = [
     { key: "application", query: applicationQuery, retry: () => applicationQuery.refetch() },
-    { key: "positions", query: positionsQuery, retry: () => positionsQuery.isFetchNextPageError ? positionsQuery.fetchNextPage() : positionsQuery.refetch() },
+    {
+      key: "positions",
+      query: positionsQuery,
+      retry: () =>
+        positionsQuery.isFetchNextPageError
+          ? positionsQuery.fetchNextPage()
+          : positionsQuery.refetch(),
+    },
     { key: "crew", query: crewQuery, retry: () => crewQuery.refetch() },
   ].filter(({ query }) => query.isError);
 
@@ -146,16 +156,26 @@ function ApplicationReviewSession({
   const alive = useRef(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const busy = decision !== null;
 
   const handleDecision = (next: "approve" | "reject") => {
-    if (!alive.current || pending.current || application?.status !== "pending" || !position || loadErrors.length > 0) return;
+    if (
+      !alive.current ||
+      pending.current ||
+      application?.status !== "pending" ||
+      !position ||
+      loadErrors.length > 0
+    )
+      return;
     pending.current = true;
     setDecision(next);
     const mutation = next === "approve" ? approve : reject;
-    const successKey = next === "approve" ? "reviewDialogApproveSuccess" : "reviewDialogRejectSuccess";
+    const successKey =
+      next === "approve" ? "reviewDialogApproveSuccess" : "reviewDialogRejectSuccess";
     mutation.mutate(application.id, {
       onSuccess: () => {
         if (!alive.current) return;
@@ -163,7 +183,11 @@ function ApplicationReviewSession({
         onClose();
       },
       onError: (err) => {
-        if (alive.current) reportError(err, t(successKey) + " failed");
+        if (alive.current)
+          reportError(
+            err,
+            t(next === "approve" ? "reviewDialogApproveFailed" : "reviewDialogRejectFailed")
+          );
       },
       onSettled: () => {
         if (!alive.current) return;
@@ -176,7 +200,13 @@ function ApplicationReviewSession({
   // Dialog body branches: loading → spinner; missing → not-found;
   // otherwise → full review layout.
   const body = (() => {
-    if ((appsLoading && !application) || (application && !position && !positionsQuery.isError && (positionsQuery.isLoading || positionsQuery.isFetching || positionsQuery.hasNextPage))) {
+    if (
+      (appsLoading && !application) ||
+      (application &&
+        !position &&
+        !positionsQuery.isError &&
+        (positionsQuery.isLoading || positionsQuery.isFetching || positionsQuery.hasNextPage))
+    ) {
       return (
         <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
           <IconLoader2 className="size-4 animate-spin" />
@@ -221,19 +251,25 @@ function ApplicationReviewSession({
               <IconBriefcase className="size-5" />
             </div>
             <div className="min-w-0 flex-1 space-y-1.5">
-              <div className="text-sm font-semibold text-foreground">{position.positionType}</div>
+              <div className="text-sm font-semibold text-foreground">
+                {translatePosition(position.positionType)}
+              </div>
               {crew?.name ? <div className="text-xs text-muted-foreground">{crew.name}</div> : null}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                 <PositionMeta icon={<IconMapPin className="size-3" />}>
-                  {position.workMode}
+                  {t(
+                    `workMode${position.workMode.charAt(0).toUpperCase()}${position.workMode.slice(1)}`
+                  )}
                   {position.location ? ` · ${position.location}` : ""}
                 </PositionMeta>
                 <PositionMeta icon={<IconShield className="size-3" />}>
-                  {position.experienceLevel}
+                  {t(
+                    `experience${position.experienceLevel.charAt(0).toUpperCase()}${position.experienceLevel.slice(1)}`
+                  )}
                 </PositionMeta>
                 {position.salary.negotiable || position.salary.minAmount != null ? (
                   <PositionMeta icon={<IconCoin className="size-3 text-amber-400" />}>
-                    {formatSalary(position.salary)}
+                    {formatSalary(position.salary, t)}
                   </PositionMeta>
                 ) : null}
                 <PositionMeta>
@@ -292,7 +328,9 @@ function ApplicationReviewSession({
                 </div>
               ) : null}
               <div className="text-[11px] text-muted-foreground">
-                {t("reviewDialogAppliedAt", { when: formatRelative(application.createdAt) })}
+                {t("reviewDialogAppliedAt", {
+                  when: formatRelative(application.createdAt, locale),
+                })}
               </div>
             </div>
           </div>
@@ -354,9 +392,19 @@ function ApplicationReviewSession({
           <DialogTitle>{t("reviewDialogTitle")}</DialogTitle>
         </DialogHeader>
         {loadErrors.map(({ key, query, retry }) => (
-          <div key={key} role="alert" className="mx-4 mb-3 rounded-lg border border-destructive/30 p-3 text-sm">
+          <div
+            key={key}
+            role="alert"
+            className="mx-4 mb-3 rounded-lg border border-destructive/30 p-3 text-sm"
+          >
             <p>{query.error instanceof Error ? query.error.message : tc("loadFailed")}</p>
-            <Button type="button" variant="outline" color="muted" disabled={query.isFetching} onClick={() => void retry()}>
+            <Button
+              type="button"
+              variant="outline"
+              color="muted"
+              disabled={query.isFetching}
+              onClick={() => void retry()}
+            >
               {tc("retry")}
             </Button>
           </div>
@@ -416,19 +464,30 @@ function PositionMeta({ icon, children }: { icon?: React.ReactNode; children: Re
   );
 }
 
-function formatSalary(salary: {
-  period: string | null;
-  currency: CurrencyCode | null;
-  minAmount: number | null;
-  maxAmount: number | null;
-  negotiable: boolean;
-}): string {
-  if (salary.negotiable) return "面议";
+function formatSalary(
+  salary: {
+    period: string | null;
+    currency: CurrencyCode | null;
+    minAmount: number | null;
+    maxAmount: number | null;
+    negotiable: boolean;
+  },
+  t: ReturnType<typeof useTranslations>
+): string {
+  if (salary.negotiable) return t("salaryNegotiable");
   if (salary.minAmount == null || salary.currency == null) return "—";
   const symbol = CURRENCY_SYMBOLS[salary.currency] ?? salary.currency;
   const lo = displayUnit(salary.minAmount, salary.currency);
   const hi = salary.maxAmount != null ? displayUnit(salary.maxAmount, salary.currency) : null;
-  const periodSuffix = salary.period ? `/${salary.period}` : "";
+  const periodKey =
+    salary.period === "month"
+      ? "salaryPeriodMonth"
+      : salary.period === "episode"
+        ? "salaryPeriodEpisode"
+        : salary.period === "project"
+          ? "salaryPeriodProject"
+          : null;
+  const periodSuffix = periodKey ? `/${t(periodKey)}` : "";
   const range = hi != null ? `${lo}-${hi}` : `${lo}`;
   return `${symbol}${range}${periodSuffix}`;
 }
@@ -443,18 +502,16 @@ function formatMoney(amount: number, currency: CurrencyCode): string {
   return `${symbol}${displayUnit(amount, currency)}`;
 }
 
-function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return iso;
-  const diffMs = Date.now() - t;
-  const min = Math.floor(diffMs / 60_000);
-  if (min < 1) return "just now";
-  if (min < 60) return `${min}m ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr}h ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day}d ago`;
-  return new Date(iso).toLocaleDateString();
+function formatRelative(iso: string, locale: Locale): string {
+  const timestamp = new Date(iso).getTime();
+  if (Number.isNaN(timestamp)) return iso;
+  const seconds = (timestamp - Date.now()) / 1000;
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  if (Math.abs(seconds) < 60) return relative.format(0, "second");
+  if (Math.abs(seconds) < 3600) return relative.format(Math.trunc(seconds / 60), "minute");
+  if (Math.abs(seconds) < 86400) return relative.format(Math.trunc(seconds / 3600), "hour");
+  if (Math.abs(seconds) < 30 * 86400) return relative.format(Math.trunc(seconds / 86400), "day");
+  return new Date(iso).toLocaleDateString(locale);
 }
 
 function reportError(err: unknown, fallback: string): void {
