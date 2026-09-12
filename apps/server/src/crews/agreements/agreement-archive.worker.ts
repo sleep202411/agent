@@ -276,8 +276,8 @@ export class CrewAgreementArchiveWorker
         where: { id: agreement.id },
         data: { assetNodeId, auditAssetNodeId },
       });
-      await tx.crewAgreementArchiveJob.update({
-        where: { id: job.id },
+      const acknowledged = await tx.crewAgreementArchiveJob.updateMany({
+        where: leaseWhere(job),
         data: {
           status: CrewAgreementArchiveJobStatus.completed,
           completedAt: new Date(),
@@ -287,6 +287,11 @@ export class CrewAgreementArchiveWorker
           lastError: null,
         },
       });
+      if (acknowledged.count !== 1) {
+        // Throw inside the transaction so assets and agreement links created
+        // after the initial lease read cannot commit for a displaced worker.
+        throw new Error(`Crew agreement archive lease lost job=${job.id}`);
+      }
     });
   }
 

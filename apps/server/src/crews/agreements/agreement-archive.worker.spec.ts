@@ -4,6 +4,7 @@ import {
   MediaStorageProvider,
 } from '@prisma/client';
 import { CrewAgreementArchiveWorker } from './agreement-archive.worker';
+import { hostname } from 'node:os';
 
 const AGREEMENT_ID = '01910d50-4c88-7c78-92d4-16892c06a001';
 const LOCKED_AT = new Date('2026-07-29T12:00:00.000Z');
@@ -98,6 +99,66 @@ function build() {
 }
 
 describe('CrewAgreementArchiveWorker', () => {
+  it.each([false, true])(
+    'commits publication only with the original lease (displaced=%s)',
+    async (displaced) => {
+      const job = archiveJob({ lockedBy: `${hostname()}-${process.pid}` });
+      const acknowledge = jest
+        .fn()
+        .mockResolvedValue({ count: displaced ? 0 : 1 });
+      const tx = {
+        $executeRaw: jest.fn().mockResolvedValue(1),
+        crewAgreementArchiveJob: {
+          findUnique: jest.fn().mockResolvedValue(job),
+          update: jest.fn().mockResolvedValue({}),
+          updateMany: acknowledge,
+        },
+        crewAgreement: {
+          findUniqueOrThrow: jest.fn().mockResolvedValue({
+            ...job.agreement,
+            assetNodeId: 'signed',
+            auditAssetNodeId: 'audit',
+          }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        crewAssetNode: { findMany: jest.fn().mockResolvedValue([]) },
+      };
+      let committed = false;
+      const worker = new CrewAgreementArchiveWorker(
+        {
+          $transaction: async (
+            callback: (value: typeof tx) => Promise<void>,
+          ) => {
+            await callback(tx);
+            committed = true;
+          },
+        } as never,
+        {} as never,
+        {} as never,
+      ) as unknown as {
+        persistArchive(
+          value: unknown,
+          signed: unknown,
+          audit: unknown,
+        ): Promise<void>;
+      };
+      const result = worker.persistArchive(job, {}, {});
+      if (displaced) await expect(result).rejects.toThrow('archive lease lost');
+      else await expect(result).resolves.toBeUndefined();
+      expect(committed).toBe(!displaced);
+      expect(acknowledge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: job.id,
+            status: CrewAgreementArchiveJobStatus.processing,
+            lockedAt: LOCKED_AT,
+            lockedBy: job.lockedBy,
+          },
+        }),
+      );
+    },
+  );
+
   it('claims only ready-to-archive work and retains the sweep limit', async () => {
     const { worker } = build();
     const internals = worker as unknown as {
