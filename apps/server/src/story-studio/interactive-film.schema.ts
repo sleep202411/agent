@@ -122,6 +122,13 @@ export const StoryCharacterSchema = z.preprocess((value) => {
   return value;
 }, StoryCharacterObjectSchema);
 
+const StoryCommunityPointPriceSchema = z
+  .number()
+  .int()
+  .min(0)
+  .max(2_147_483_647)
+  .optional();
+
 export const StoryGraphChoiceSchema = z
   .object({
     choiceId: StoryStableIdSchema,
@@ -262,6 +269,7 @@ const StoryClipGraphNodeSchema = z
   .object({
     kind: z.literal('clip'),
     nodeId: StoryStableIdSchema,
+    communityPointPrice: StoryCommunityPointPriceSchema,
     clipKey: StoryClipKeySchema,
     // Authoring-only display metadata. clipKey stays the uppercase stable key;
     // these are the human-facing name and description edited in the inspector.
@@ -286,6 +294,7 @@ const StoryWorldGraphNodeSchema = z
   .object({
     kind: z.literal('world'),
     nodeId: StoryStableIdSchema,
+    communityPointPrice: StoryCommunityPointPriceSchema,
     worldId: StoryUuidSchema.nullable(),
     name: z.string().trim().max(120).optional(),
     entryInstruction: z.string().trim().max(4_000).optional(),

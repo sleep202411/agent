@@ -1,3 +1,5 @@
+import { CreatorEarningsController } from '../creator-earnings/creator-earnings.controller';
+import { CreatorEarningsService } from '../creator-earnings/creator-earnings.service';
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
 import { EntitlementsModule } from '../entitlements';
@@ -17,8 +19,16 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     EntitlementsModule,
     LegacyMysqlModule,
   ],
-  controllers: [IpCommerceController, IpCommerceAdminController],
-  providers: [IpCommerceService, LegacyCnVideoResolverService],
+  controllers: [
+    IpCommerceController,
+    IpCommerceAdminController,
+    CreatorEarningsController,
+  ],
+  providers: [
+    IpCommerceService,
+    LegacyCnVideoResolverService,
+    CreatorEarningsService,
+  ],
   exports: [IpCommerceService],
 })
 export class IpCommerceModule {}

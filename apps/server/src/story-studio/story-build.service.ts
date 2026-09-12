@@ -1,3 +1,5 @@
+import { StoryCommunityAccessService } from './story-community-access.service';
+import { readStoryPoster } from './story-build-poster';
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
@@ -116,6 +118,7 @@ const BUILD_DELIVERY_ASSET_INCLUDE =
         kind: true,
         scope: true,
         runtimeSchemaVersion: true,
+        runtimeJson: true,
         experiencePublication: {
           select: {
             mediaAuthorizedAt: true,
@@ -217,6 +220,7 @@ export class StoryBuildService {
     private readonly permissions: StoryPermissionService,
     private readonly storageAccess: MediaStorageAccessService,
     private readonly writeGuard: StoryProjectWriteGuardService,
+    private readonly communityAccess: StoryCommunityAccessService,
   ) {}
 
   async createBuild(
@@ -534,7 +538,8 @@ export class StoryBuildService {
     buildId: string,
     assetId: string,
     variantId: string,
-  ): Promise<{ url: string; expiresAt: string | null }> {
+    posterOnly = false,
+  ): Promise<{ url: string; expiresAt: string | null; stream?: boolean }> {
     const frozen = await this.prisma.storyBuildAsset.findFirst({
       where: { storyProjectId: projectId, buildId, assetId, variantId },
       include: BUILD_DELIVERY_ASSET_INCLUDE,
@@ -580,6 +585,41 @@ export class StoryBuildService {
         'story.read',
       );
     }
+    const paidContent = hasStoryCommunityAccess(frozen.build.runtimeJson);
+    if (
+      posterOnly &&
+      (frozen.asset.kind !== MediaAssetKind.video ||
+        !frozen.variant.contentType.startsWith('video/'))
+    ) {
+      throw buildAssetNotFound();
+    }
+    if (publiclyAuthorized && paidContent && !posterOnly) {
+      let authoringAccess = false;
+      if (user) {
+        try {
+          await this.permissions.requireProject(
+            user.userId,
+            projectId,
+            'story.read',
+          );
+          authoringAccess = true;
+        } catch (error) {
+          if (
+            !(error instanceof NotFoundException) &&
+            !(error instanceof ForbiddenException)
+          )
+            throw error;
+        }
+      }
+      if (!authoringAccess)
+        await this.communityAccess.requireAssetAccess(
+          user,
+          projectId,
+          buildId,
+          assetId,
+          variantId,
+        );
+    }
     const unavailable = currentMediaDiagnostics(
       [frozen],
       requireModerationApproval(),
@@ -610,7 +650,7 @@ export class StoryBuildService {
     // catalogue film. Revoking publication still stops NEW /aurora
     // redirects; already-known CDN URLs stay reachable — same trade as
     // cover/music. Preview / unpublished Builds keep a signed URL.
-    if (publiclyAuthorized) {
+    if (publiclyAuthorized && !paidContent && !posterOnly) {
       const publicUrl = resolveMediaPublicVariantUrl(
         {
           ...frozen.asset,
@@ -622,11 +662,42 @@ export class StoryBuildService {
         return { url: publicUrl, expiresAt: null };
       }
     }
+    if (
+      (paidContent || posterOnly) &&
+      source.storageProvider === MediaStorageProvider.external_url
+    ) {
+      throw new UnprocessableEntityException(
+        'Paid story media must be stored in managed storage.',
+      );
+    }
     const signed = await this.storageAccess.createReadUrl(source, {
       cacheControl: 'private, no-store',
       expiresInSeconds: BUILD_MEDIA_READ_URL_TTL_SECONDS,
     });
-    return { url: signed.url, expiresAt: signed.expiresAt };
+    return {
+      url: signed.url,
+      expiresAt: signed.expiresAt,
+      ...(paidContent ? { stream: true } : {}),
+    };
+  }
+
+  async readBuildAssetPoster(
+    user: AuthUser | undefined,
+    projectId: string,
+    buildId: string,
+    assetId: string,
+    variantId: string,
+  ): Promise<Buffer> {
+    // Recheck release, story.read, moderation and storage before every cache read.
+    const source = await this.issueBuildAssetReadUrl(
+      user,
+      projectId,
+      buildId,
+      assetId,
+      variantId,
+      true,
+    );
+    return readStoryPoster(`${buildId}:${assetId}:${variantId}`, source.url);
   }
 
   async cancelBuild(
@@ -1763,4 +1834,18 @@ function decodeBuildCursor(value: string): BuildCursor {
 function positiveInt(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function hasStoryCommunityAccess(runtimeJson: unknown): boolean {
+  const parsed = ExperienceRuntimeManifestSchema.safeParse(runtimeJson);
+  return (
+    parsed.success &&
+    parsed.data.graph.nodes.some(
+      (node) =>
+        node.access ||
+        node.eventBindings.some((binding) =>
+          binding.routes.some((route) => route.access),
+        ),
+    )
+  );
 }
