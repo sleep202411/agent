@@ -20,7 +20,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconLoader2, IconPhoto } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -41,6 +41,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { uploadBanner } from "@/src/services/user";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
@@ -78,11 +79,16 @@ interface CreateCrewDialogProps {
 }
 
 export function CreateCrewDialog(props: CreateCrewDialogProps) {
+  const { user, isLoading } = useCurrentUser();
+  return <CrewDialogSession key={user?.id ?? "anonymous"} {...props} accountId={user?.id ?? null} accountLoading={isLoading} />;
+}
+
+function CrewDialogSession(props: CreateCrewDialogProps & { accountId: string | null; accountLoading: boolean }) {
   const t = useTranslations("crew.creationRequirements");
   const eligibility = useQuery({
-    queryKey: ["crew-creation-eligibility"],
+    queryKey: ["crew-creation-eligibility", props.accountId],
     queryFn: () => crewApi.get<{ eligible: boolean }>("/crews/creation-eligibility"),
-    enabled: props.open && !props.initial,
+    enabled: props.open && !props.initial && !props.accountLoading,
     staleTime: 0,
     gcTime: 0,
     retry: false,
@@ -137,26 +143,43 @@ function CrewFormDialog({
   const update = useUpdateCrew();
   // Kept named `creating` in body so the existing JSX still reads
   // naturally — in edit mode this just means "update in flight".
-  const creating = create.isPending || update.isPending;
+  const [creating, setCreating] = useState(false);
+  const alive = useRef(false);
+  const operation = useRef<"save" | "upload" | null>(null);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const finishSave = () => {
+    if (!alive.current) return;
+    operation.current = null;
+    setCreating(false);
+  };
 
   // ─── Logo upload (image) ──────────────────────────
   const handleLogoFile = async (file: File) => {
+    if (!alive.current || operation.current) return;
     if (!file.type.startsWith("image/")) {
       toast.error(t("createLogoImageOnly"));
       return;
     }
+    operation.current = "upload";
     setUploadingLogo(true);
     try {
       const path = await uploadBanner(file);
+      if (!alive.current) return;
       if (typeof path !== "string" || path.length === 0) {
         throw new Error("upload returned empty path");
       }
       setLogoPath(path);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
-      toast.error(msg || t("createLogoUploadFailed"));
+      if (alive.current) toast.error(msg || t("createLogoUploadFailed"));
     } finally {
-      setUploadingLogo(false);
+      if (alive.current) {
+        operation.current = null;
+        setUploadingLogo(false);
+      }
     }
   };
 
@@ -180,7 +203,9 @@ function CrewFormDialog({
 
   // ─── Submit ─────────────────────────────────────────
   const handleSubmit = () => {
-    if (!name.trim() || !description.trim() || !logoPath || creating) return;
+    if (!alive.current || operation.current || !name.trim() || !description.trim() || !logoPath) return;
+    operation.current = "save";
+    setCreating(true);
 
     if (isEdit && initial) {
       update.mutate(
@@ -192,10 +217,12 @@ function CrewFormDialog({
         },
         {
           onSuccess: () => {
+            if (!alive.current) return;
             onOpenChange(false);
             toast.success(t("updateSuccess"));
           },
-          onError: (err) => reportError(err, "updateFailed"),
+          onError: (err) => { if (alive.current) reportError(err, "updateFailed"); },
+          onSettled: finishSave,
         }
       );
       return;
@@ -210,12 +237,14 @@ function CrewFormDialog({
       },
       {
         onSuccess: (crew) => {
+          if (!alive.current) return;
           posthog.capture("crew_created", { crew_id: crew.id });
           onOpenChange(false);
           toast.success(t("createSuccess"));
           router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
         },
         onError: (err) => {
+          if (!alive.current) return;
           if (
             err instanceof CrewApiError &&
             err.status === 403 &&
@@ -229,6 +258,7 @@ function CrewFormDialog({
           posthog.captureException(err);
           reportError(err, "createFailed");
         },
+        onSettled: finishSave,
       }
     );
   };
@@ -267,7 +297,7 @@ function CrewFormDialog({
               <button
                 type="button"
                 onClick={() => logoInputRef.current?.click()}
-                disabled={uploadingLogo}
+                disabled={uploadingLogo || creating}
                 className={cn(
                   "relative flex size-28 items-center justify-center overflow-hidden rounded-full border border-dashed border-border bg-muted/30 transition-colors hover:border-primary/50",
                   uploadingLogo && "cursor-wait opacity-60"
@@ -308,6 +338,7 @@ function CrewFormDialog({
             <Field>
               <FieldLabel required>{t("createNameLabel")}</FieldLabel>
               <Input
+                disabled={creating}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("createNamePlaceholder")}
@@ -322,6 +353,7 @@ function CrewFormDialog({
                 // submit button out of the dialog. Auto-grow stops at
                 // max-h and the textarea's own scrollbar takes over.
                 className="max-h-40 overflow-y-auto"
+                disabled={creating}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={t("createDescriptionPlaceholder")}

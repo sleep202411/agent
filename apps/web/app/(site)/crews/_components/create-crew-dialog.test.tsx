@@ -21,6 +21,9 @@ vi.mock("@tanstack/react-query", () => ({
     isError: false,
   }),
 }));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: "alice" }, isLoading: false }),
+}));
 const dictionaries = { "en-US": en, "zh-CN": cn, "zh-HK": hk };
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => state.locale,
