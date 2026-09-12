@@ -119,6 +119,21 @@ export function TaskIssueDetail({
   const [editingBrief, setEditingBrief] = useState(false);
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftDescription, setDraftDescription] = useState(task.description);
+  const [briefVersion, setBriefVersion] = useState(task.version);
+  const alive = useRef(true);
+  const patchPending = useRef(false);
+  const [patching, setPatching] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const startBriefEdit = () => {
+    if (patchPending.current || !isOwner) return;
+    setDraftTitle(task.title);
+    setDraftDescription(task.description);
+    setBriefVersion(task.version);
+    setEditingBrief(true);
+  };
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const canShowSubmit = canWork && ACTIVE_STATUSES.includes(task.status);
@@ -134,23 +149,30 @@ export function TaskIssueDetail({
     [timeline.data]
   );
 
-  const quickPatch = async (input: Omit<UpdateCrewTaskInput, "expectedVersion">) => {
+  const quickPatch = async (input: Omit<UpdateCrewTaskInput, "expectedVersion">, expectedVersion = task.version) => {
+    if (!alive.current || patchPending.current || !isOwner) return false;
+    patchPending.current = true;
+    setPatching(true);
     try {
       await updateTask.mutateAsync({
         taskId: task.id,
-        input: { expectedVersion: task.version, ...input },
+        input: { expectedVersion, ...input },
       });
+      if (!alive.current) return false;
       toast.success(t("taskUpdated"));
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
       return false;
+    } finally {
+      patchPending.current = false;
+      if (alive.current) setPatching(false);
     }
   };
 
   const saveBrief = async () => {
     if (!draftTitle.trim()) return;
-    if (await quickPatch({ title: draftTitle.trim(), description: draftDescription.trim() })) {
+    if (await quickPatch({ title: draftTitle.trim(), description: draftDescription.trim() }, briefVersion)) {
       setEditingBrief(false);
     }
   };
@@ -167,7 +189,6 @@ export function TaskIssueDetail({
       setCancelConfirmOpen(false);
     }
   };
-
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#101012]">
@@ -226,7 +247,7 @@ export function TaskIssueDetail({
                 <Button
                   size="sm"
                   color="destructive"
-                  loading={updateTask.isPending}
+                  loading={patching}
                   icon={<IconBan />}
                   onClick={() => void cancelTask()}
                 >
@@ -275,6 +296,7 @@ export function TaskIssueDetail({
               {editingBrief ? (
                 <>
                   <input
+                    disabled={patching}
                     value={draftTitle}
                     onChange={(event) => setDraftTitle(event.target.value)}
                     maxLength={180}
@@ -282,6 +304,7 @@ export function TaskIssueDetail({
                     autoFocus
                   />
                   <Textarea
+                    disabled={patching}
                     value={draftDescription}
                     onChange={(event) => setDraftDescription(event.target.value)}
                     placeholder={t("descriptionPlaceholder")}
@@ -293,7 +316,9 @@ export function TaskIssueDetail({
                       size="sm"
                       variant="ghost"
                       color="muted"
+                      disabled={patching}
                       onClick={() => {
+                        if (patchPending.current) return;
                         setDraftTitle(task.title);
                         setDraftDescription(task.description);
                         setEditingBrief(false);
@@ -303,8 +328,8 @@ export function TaskIssueDetail({
                     </Button>
                     <Button
                       size="sm"
-                      disabled={!draftTitle.trim()}
-                      loading={updateTask.isPending}
+                      disabled={patching || !draftTitle.trim()}
+                      loading={patching}
                       onClick={() => void saveBrief()}
                     >
                       {t("saveChanges")}
@@ -315,16 +340,16 @@ export function TaskIssueDetail({
                 <>
                   <button
                     type="button"
-                    disabled={!isOwner}
-                    onClick={() => setEditingBrief(true)}
+                    disabled={!isOwner || patching}
+                    onClick={startBriefEdit}
                     className="block max-w-full text-left text-[24px] font-semibold leading-8 tracking-[-0.025em] text-[#f0f0f2] disabled:cursor-default"
                   >
                     {task.title}
                   </button>
                   <button
                     type="button"
-                    disabled={!isOwner}
-                    onClick={() => setEditingBrief(true)}
+                    disabled={!isOwner || patching}
+                    onClick={startBriefEdit}
                     className="mt-7 block min-h-12 w-full whitespace-pre-wrap text-left text-[13px] leading-6 text-[#b8bac0] disabled:cursor-default"
                   >
                     {task.description || (
@@ -462,7 +487,7 @@ export function TaskIssueDetail({
                 members={members}
                 displays={displays}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>
@@ -475,7 +500,7 @@ export function TaskIssueDetail({
                 labels={project?.labels ?? []}
                 selected={task.labels}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>
@@ -526,7 +551,7 @@ export function TaskIssueDetail({
                 key={`planning-${task.version}`}
                 task={task}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>
@@ -536,7 +561,7 @@ export function TaskIssueDetail({
                   key={`relationships-${task.version}`}
                   task={task}
                   editable={isOwner}
-                  pending={updateTask.isPending}
+                  pending={patching}
                   onSave={quickPatch}
                 />
                 {task.children.length > 0 ? (
@@ -596,7 +621,7 @@ export function TaskIssueDetail({
                       members={members}
                       displays={displays}
                       editable={isOwner}
-                      pending={updateTask.isPending}
+                      pending={patching}
                       onSave={quickPatch}
                     />
                   </div>
@@ -611,7 +636,7 @@ export function TaskIssueDetail({
                 key={`limits-${task.version}`}
                 task={task}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>

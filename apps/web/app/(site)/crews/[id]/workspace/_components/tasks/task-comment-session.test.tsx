@@ -6,6 +6,10 @@ import { TaskIssueDetail } from "./task-issue-detail";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   create: vi.fn(),
+  patch: vi.fn(),
+  owner: false,
+  version: 1,
+  title: "Task",
   update: vi.fn(),
   remove: vi.fn(),
   success: vi.fn(),
@@ -18,7 +22,7 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useUpdateCrewTaskComment: () => ({ mutateAsync: state.update, isPending: false }),
   useDeleteCrewTaskComment: () => ({ mutateAsync: state.remove, isPending: false }),
   useCreateCrewTaskComment: () => ({ mutateAsync: state.create, isPending: false }),
-  useUpdateCrewTask: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateCrewTask: () => ({ mutateAsync: state.patch, isPending: false }),
   useCrewTaskTimeline: () => ({ data: { pages: [{ items: state.items }] } }),
   useCrewTaskProject: () => ({
     data: { views: [], fields: [], labels: [], cycles: [], workflowStates: [] },
@@ -56,7 +60,7 @@ async function render(id = "task", account = "alice") {
             crewId: "crew",
             status: "open",
             workflowState: { systemKey: "open", name: "Open" },
-            title: "Task",
+            title: state.title,
             description: "",
             createdAt: new Date().toISOString(),
             assignees: [],
@@ -65,13 +69,13 @@ async function render(id = "task", account = "alice") {
             labels: [],
             customFieldValues: [],
             revisionLimit: null,
-            version: 1,
+            version: state.version,
           } as unknown as CrewTaskDTO
         }
         viewerUserId={account}
         members={[]}
         displays={new Map()}
-        isOwner={false}
+        isOwner={state.owner}
         canWork={true}
         onSubmit={vi.fn()}
         onReviewed={vi.fn()}
@@ -119,6 +123,9 @@ afterEach(async () => {
   root = createRoot(container);
   vi.clearAllMocks();
   state.items = [];
+  state.owner = false;
+  state.version = 1;
+  state.title = "Task";
   state.discard.mockResolvedValue(undefined);
 });
 it("blocks duplicate comment sends and reuses the retry key for unchanged input", async () => {
@@ -321,4 +328,72 @@ it.each(["edit", "delete"])("ignores late comment %s results after leaving", asy
   await act(async () => root.render(null));
   await act(async () => pending.resolve());
   expect(state.success).not.toHaveBeenCalled();
+});
+
+function textButton(text: string) {
+  return Array.from(container.querySelectorAll("button")).find(
+    (button) => button.textContent === text
+  )!;
+}
+async function brief() {
+  await act(async () => textButton(state.title).click());
+}
+it("keeps the brief's edit version when task details refresh", async () => {
+  state.owner = true;
+  state.patch.mockResolvedValue(undefined);
+  await render();
+  await brief();
+  state.version = 2;
+  state.title = "New server title";
+  await render();
+  await act(async () => textButton("saveChanges").click());
+  expect(state.patch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({ title: "Task", expectedVersion: 1 }),
+    })
+  );
+});
+it("blocks duplicate brief saves and preserves failure drafts", async () => {
+  state.owner = true;
+  const pending = deferred<void>();
+  state.patch.mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
+  await render();
+  await brief();
+  await act(async () => {
+    textButton("saveChanges").click();
+    textButton("saveChanges").click();
+  });
+  expect(state.patch).toHaveBeenCalledTimes(1);
+  expect((container.querySelector('input[maxlength="180"]') as HTMLInputElement).disabled).toBe(
+    true
+  );
+  await act(async () => pending.reject(new Error("brief conflict")));
+  expect(container.querySelector('input[maxlength="180"]')).not.toBeNull();
+  await act(async () => textButton("saveChanges").click());
+  expect(state.patch).toHaveBeenCalledTimes(2);
+});
+it.each(["success", "failure"])("ignores late task patch %s after leaving", async (outcome) => {
+  state.owner = true;
+  const pending = deferred<void>();
+  state.patch.mockReturnValue(pending.promise);
+  await render();
+  await brief();
+  await act(async () => textButton("saveChanges").click());
+  await act(async () => root.render(null));
+  await act(async () =>
+    outcome === "success" ? pending.resolve() : pending.reject(new Error("old patch"))
+  );
+  expect(state.success).not.toHaveBeenCalled();
+  expect(state.error).not.toHaveBeenCalled();
+});
+it("loads the latest title when starting another brief edit", async () => {
+  state.owner = true;
+  await render();
+  state.version = 2;
+  state.title = "Updated";
+  await render();
+  await brief();
+  expect((container.querySelector('input[maxlength="180"]') as HTMLInputElement).value).toBe(
+    "Updated"
+  );
 });
