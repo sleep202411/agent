@@ -34,7 +34,6 @@ function ProjectSession({
     ...(data?.feedback.flatMap((f) => [f.authorUserId, f.subjectUserId]) ?? []),
   ]);
   const [subject, setSubject] = useState("");
-  const [rating, setRating] = useState("5");
   const base = `/crews/${encodeURIComponent(crewId)}`;
   return (
     <section className="space-y-5 rounded-xl bg-white/[0.025] p-4 text-xs text-zinc-300 sm:p-5">
@@ -214,26 +213,12 @@ function ProjectSession({
                   </label>
                   {!!subject && (
                     <>
-                      <label className="block">
-                        {t("rating")}
-                        <NativeSelect
-                          className="ml-2 rounded-md bg-zinc-900 p-2"
-                          aria-label={t("rating")}
-                          value={rating}
-                          onChange={setRating}
-                        >
-                          {[5, 4, 3, 2, 1].map((n) => (
-                            <NativeSelectOption key={n} value={String(n)}>
-                              {n}/5
-                            </NativeSelectOption>
-                          ))}
-                        </NativeSelect>
-                      </label>
                       <RecordedAction
-                        key={`feedback:${subject}:${rating}`}
+                        key={`feedback:${subject}`}
                         path={`${base}/peer-feedback`}
                         field="comment"
-                        extra={{ subjectUserId: subject, rating: Number(rating) }}
+                        extra={{ subjectUserId: subject }}
+                        withRating
                         label={t("sendFeedback")}
                       />
                     </>
@@ -298,15 +283,18 @@ function RecordedAction({
   field,
   extra,
   label,
+  withRating = false,
 }: {
   path: string;
   field?: string;
   extra?: Record<string, unknown>;
   label: string;
+  withRating?: boolean;
 }) {
   const t = useTranslations("crewAccountability");
   const action = useAccountabilityAction();
   const [text, setText] = useState("");
+  const [rating, setRating] = useState("5");
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const busy = useRef(false);
@@ -328,7 +316,7 @@ function RecordedAction({
         try {
           await action.mutateAsync({
             path,
-            body: { ...extra, ...(field ? { [field]: text.trim() } : {}) },
+            body: { ...extra, ...(withRating ? { rating: Number(rating) } : {}), ...(field ? { [field]: text.trim() } : {}) },
           });
           if (alive.current) {
             setText("");
@@ -341,6 +329,22 @@ function RecordedAction({
         }
       }}
     >
+      {withRating && (
+        <label className="block">
+          {t("rating")}
+          <NativeSelect
+            className="ml-2 rounded-md bg-zinc-900 p-2"
+            aria-label={t("rating")}
+            value={rating}
+            onChange={setRating}
+            disabled={action.isPending || saved}
+          >
+            {[5, 4, 3, 2, 1].map((n) => (
+              <NativeSelectOption key={n} value={String(n)}>{n}/5</NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </label>
+      )}
       {field && (
         <Textarea
           aria-label={label}

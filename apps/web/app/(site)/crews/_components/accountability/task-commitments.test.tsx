@@ -10,6 +10,7 @@ import hk from "@/messages/zh-HK.json";
 const state = vi.hoisted(() => ({
   user: "alice",
   loaded: true,
+  completed: false,
   refetch: vi.fn(),
   mutate: vi.fn(),
   error: null as Error | null,
@@ -33,10 +34,15 @@ vi.mock("../../_hooks/use-accountability", () => ({
     refetch: state.refetch,
   }),
   useAccountability: () => ({
-    data: state.loaded ? { participants: [], feedback: [], commitments: [], reliability: [], completed: false, hasMore: true, rewardPoints: null } : undefined,
+    data: state.loaded ? { participants: [], feedback: [], commitments: [], reliability: [], completed: state.completed, hasMore: true, rewardPoints: null } : undefined,
     isError: !!state.error, error: state.error, isFetching: false, refetch: state.refetch,
   }),
   useAccountabilityAction: () => ({ mutateAsync: state.mutate, isPending: false }),
+}));
+vi.mock("@/components/ui/native-select", () => ({
+ // eslint-disable-next-line no-restricted-syntax -- NativeSelect test double exposes controlled selection.
+ NativeSelect: ({ onChange, ...props }: { onChange: (value: string) => void }) => <select {...props} onChange={e => onChange(e.target.value)} />,
+ NativeSelectOption: (props: object) => <option {...props} />,
 }));
 vi.mock("@/components/ui/button", () => ({
   Button: ({ children, ...props }: { children: ReactNode }) => (
@@ -77,6 +83,7 @@ afterEach(() => {
   state.records = [];
   state.error = null;
   state.loaded = true;
+  state.completed = false;
   vi.resetAllMocks();
 });
 it("blocks rapid duplicate acceptance before the mutation hook rerenders", async () => {
@@ -169,4 +176,21 @@ it.each(["task", "project"])("preserves %s drafts and pauses decisions during re
   state.error = null; render();
   expect(node.querySelector("textarea")).toBe(original);
   expect(node.querySelector("textarea")?.matches(":disabled")).toBe(false);
+});
+
+it("preserves feedback while changing its rating and submits the chosen rating once", async () => {
+  state.completed = true;
+  node = document.createElement("div"); root = createRoot(node);
+  act(() => root.render(<ProjectAccountability crewId="crew" members={[{ userId: "bob" } as never]} />));
+  function select(label: string, value: string) {
+    const input = node.querySelector(`select[aria-label="${label}"]`)! as HTMLSelectElement;
+    act(() => { input.value = value; input.dispatchEvent(new Event("change", { bubbles: true })); });
+  }
+  select(en.crewAccountability.creator, "bob");
+  fill("Careful and reliable delivery");
+  select(en.crewAccountability.rating, "4");
+  expect(node.querySelector("textarea")?.value).toBe("Careful and reliable delivery");
+  state.mutate.mockResolvedValue({});
+  await act(async () => node.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })));
+  expect(state.mutate).toHaveBeenCalledWith({ path: "/crews/crew/peer-feedback", body: { subjectUserId: "bob", rating: 4, comment: "Careful and reliable delivery" } });
 });
