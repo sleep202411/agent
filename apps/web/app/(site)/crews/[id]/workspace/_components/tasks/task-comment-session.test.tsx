@@ -13,6 +13,9 @@ const state = vi.hoisted(() => ({
   nextPage: vi.fn(),
   patch: vi.fn(),
   owner: false,
+  custom: false,
+  customValue: "custom-original",
+  limit: null as number | null,
   version: 1,
   title: "Task",
   update: vi.fn(),
@@ -39,7 +42,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
     hasNextPage: true,
   }),
   useCrewTaskProject: () => ({
-    data: { views: [], fields: [], labels: [], cycles: [], workflowStates: [] },
+    data: {
+      views: [],
+      fields: state.custom ? [{ id: "field", name: "Custom text", type: "text", options: [] }] : [],
+      labels: [],
+      cycles: [],
+      workflowStates: [],
+    },
   }),
   useCrewEpisodes: () => ({ data: [] }),
   useCrewTaskOptions: () => ({ data: [] }),
@@ -81,8 +90,8 @@ async function render(id = "task", account = "alice") {
             children: [],
             blockedBy: [],
             labels: [],
-            customFieldValues: [],
-            revisionLimit: null,
+            customFieldValues: state.custom ? [{ fieldId: "field", value: state.customValue }] : [],
+            revisionLimit: state.limit,
             version: state.version,
           } as unknown as CrewTaskDTO
         }
@@ -141,6 +150,9 @@ afterEach(async () => {
   state.pageError = false;
   state.fetching = false;
   state.owner = false;
+  state.custom = false;
+  state.customValue = "custom-original";
+  state.limit = null;
   state.version = 1;
   state.title = "Task";
   state.discard.mockResolvedValue(undefined);
@@ -449,4 +461,90 @@ it("waits for a timeline refresh before loading earlier comments", async () => {
   expect(textButton("loadEarlier").disabled).toBe(true);
   await act(async () => textButton("loadEarlier").click());
   expect(state.nextPage).not.toHaveBeenCalled();
+});
+
+it.each(["assignees", "labels", "planning", "relationships", "limits"])(
+  "preserves the open %s draft and its version during a refresh",
+  async (kind) => {
+    state.owner = true;
+    state.patch.mockResolvedValue(undefined);
+    await render();
+    const matches = (text: string) =>
+      kind === "assignees"
+        ? text === "unassigned"
+        : kind === "labels"
+          ? text === "none"
+          : kind === "planning"
+            ? text.includes("estimate")
+            : kind === "relationships"
+              ? text === "noParentTask"
+              : text.includes("revisionUnlimitedProgress");
+    const trigger = Array.from(container.querySelectorAll("button")).find((button) =>
+      matches(button.textContent ?? "")
+    )!;
+    await act(async () => trigger.click());
+    expect(document.querySelector('[data-slot="popover-content"]')).not.toBeNull();
+    state.version = 2;
+    await render();
+    const panel = document.querySelector('[data-slot="popover-content"]')!;
+    expect(panel).not.toBeNull();
+    const save = Array.from(panel.querySelectorAll("button")).find(
+      (button) => button.textContent === "save"
+    )!;
+    await act(async () => save.click());
+    expect(state.patch).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ expectedVersion: 1 }) })
+    );
+  }
+);
+
+it("preserves custom-field drafts and their edit version across refreshes", async () => {
+  state.owner = true;
+  state.custom = true;
+  state.patch.mockResolvedValue(undefined);
+  await render();
+  await act(async () => textButton("custom-original").click());
+  const panel = document.querySelector('[data-slot="popover-content"]')!;
+  const input = panel.querySelector("input")!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+      input,
+      "custom draft"
+    );
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  state.version = 2;
+  state.customValue = "server replacement";
+  await render();
+  expect((panel.querySelector("input") as HTMLInputElement).value).toBe("custom draft");
+  await act(async () =>
+    Array.from(panel.querySelectorAll("button"))
+      .find((b) => b.textContent === "save")!
+      .click()
+  );
+  expect(state.patch).toHaveBeenCalledWith(
+    expect.objectContaining({
+      input: expect.objectContaining({
+        expectedVersion: 1,
+        customFieldValues: [{ fieldId: "field", value: "custom draft" }],
+      }),
+    })
+  );
+});
+it("loads current revision settings when reopening after cancellation", async () => {
+  state.owner = true;
+  await render();
+  await act(async () => textButton("revisionUnlimitedProgress").click());
+  let panel = document.querySelector('[data-slot="popover-content"]')!;
+  await act(async () =>
+    Array.from(panel.querySelectorAll("button"))
+      .find((b) => b.textContent === "cancel")!
+      .click()
+  );
+  state.version = 2;
+  state.limit = 5;
+  await render();
+  await act(async () => textButton("revisionProgress").click());
+  panel = document.querySelector('[data-slot="popover-content"]')!;
+  expect((panel.querySelector("input") as HTMLInputElement).value).toBe("5");
 });

@@ -486,7 +486,7 @@ export function TaskIssueDetail({
             </RailRow>
             <RailRow icon={<IconUserCircle className="size-4" />} align="start">
               <AssigneesEditor
-                key={`assignees-${task.version}`}
+
                 task={task}
                 members={members}
                 displays={displays}
@@ -500,7 +500,8 @@ export function TaskIssueDetail({
           <RailSection title={t("labels")}>
             <RailRow icon={<IconTag className="size-4" />} align="start">
               <LabelsEditor
-                key={`labels-${task.version}`}
+                version={task.version}
+
                 labels={project?.labels ?? []}
                 selected={task.labels}
                 editable={isOwner}
@@ -552,7 +553,7 @@ export function TaskIssueDetail({
             </RailRow>
             <RailRow icon={<IconClock className="size-4" />} align="start">
               <PlanningEditor
-                key={`planning-${task.version}`}
+
                 task={task}
                 editable={isOwner}
                 pending={patching}
@@ -562,7 +563,7 @@ export function TaskIssueDetail({
             <RailRow icon={<IconSitemap className="size-4" />} align="start">
               <div className="w-full space-y-2">
                 <TaskRelationshipsEditor
-                  key={`relationships-${task.version}`}
+
                   task={task}
                   editable={isOwner}
                   pending={patching}
@@ -619,7 +620,8 @@ export function TaskIssueDetail({
                   <div key={field.id} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 py-1.5">
                     <span className="text-[10px] text-[#777980]">{field.name}</span>
                     <CustomFieldEditor
-                      key={`${field.id}-${task.version}`}
+                      version={task.version}
+                      key={field.id}
                       field={field}
                       value={value}
                       members={members}
@@ -637,7 +639,7 @@ export function TaskIssueDetail({
           <RailSection title={t("taskInfo")}>
             <RailRow icon={<IconClipboardCheck className="size-4" />} align="start">
               <TaskLimitsEditor
-                key={`limits-${task.version}`}
+
                 task={task}
                 editable={isOwner}
                 pending={patching}
@@ -1386,7 +1388,36 @@ function TaskReferenceLink({
   );
 }
 
-type TaskPatch = (input: Omit<UpdateCrewTaskInput, "expectedVersion">) => Promise<boolean>;
+type TaskPatch = (input: Omit<UpdateCrewTaskInput, "expectedVersion">, expectedVersion?: number) => Promise<boolean>;
+
+function useTaskPropertySession(version: number, pending: boolean, onSave: TaskPatch, reset: () => void) {
+  const [open, setOpened] = useState(false);
+  const session = useRef({ alive: true, open: false, generation: 0, version, saving: false });
+  useLayoutEffect(() => {
+    const current = session.current;
+    current.alive = true;
+    return () => { current.alive = false; current.generation += 1; };
+  }, []);
+  const setOpen = (next: boolean) => {
+    const current = session.current;
+    if (!current.alive || current.saving || pending || next === current.open) return;
+    current.open = next;
+    current.generation += 1;
+    if (next) { current.version = version; reset(); }
+    setOpened(next);
+  };
+  const saveDraft: TaskPatch = async (input) => {
+    const current = session.current;
+    if (!current.alive || !current.open || current.saving || pending) return false;
+    current.saving = true;
+    const generation = current.generation;
+    try {
+      const saved = await onSave(input, current.version);
+      return saved && current.alive && current.generation === generation;
+    } finally { current.saving = false; }
+  };
+  return { open, setOpen, saveDraft };
+}
 
 const PROPERTY_POPOVER_CLASS =
   "w-80 gap-3 border border-white/[0.1] bg-[#19191c] p-3 text-[#d8dade] shadow-[0_20px_60px_rgba(0,0,0,.55)]";
@@ -1407,7 +1438,7 @@ function AssigneesEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [draft, setDraft] = useState(() =>
     task.assignees.map((assignee) => ({
       userId: assignee.userId,
@@ -1418,6 +1449,7 @@ function AssigneesEditor({
           : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
     }))
   );
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setDraft(task.assignees.map(assignee => ({ userId: assignee.userId, currency: assignee.rewardAmountMinor == null ? CREW_CURRENCY : assignee.currency, rewardAmountMinor: assignee.rewardAmountMinor == null ? "" : formatCrewMoneyInput(String(assignee.rewardAmountMinor)) }))); });
   const invalidReward = draft.some(
     (item) => item.rewardAmountMinor !== "" && parseReward(item.rewardAmountMinor) == null
   );
@@ -1460,7 +1492,7 @@ function AssigneesEditor({
       currency: item.currency,
       rewardAmountMinor: parseReward(item.rewardAmountMinor),
     }));
-    if (await onSave({ assignees })) setOpen(false);
+    if (await saveDraft({ assignees })) setOpen(false);
   };
 
   return (
@@ -1474,6 +1506,7 @@ function AssigneesEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("chooseAssignees")}</p>
         <div className="max-h-64 space-y-1 overflow-y-auto">
           {members.map((member) => {
@@ -1521,18 +1554,21 @@ function AssigneesEditor({
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
 }
 
 function LabelsEditor({
+  version,
   labels,
   selected,
   editable,
   pending,
   onSave,
 }: {
+  version: number;
   labels: CrewTaskLabelDTO[];
   selected: CrewTaskLabelDTO[];
   editable: boolean;
@@ -1540,8 +1576,9 @@ function LabelsEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [ids, setIds] = useState(() => selected.map((label) => label.id));
+  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => { setIds(selected.map(label => label.id)); });
   const summary = selected.length ? (
     <div className="flex flex-wrap gap-1.5">
       {selected.map((label) => (
@@ -1570,6 +1607,7 @@ function LabelsEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("labels")}</p>
         {labels.length ? (
           <div className="max-h-56 space-y-1 overflow-y-auto">
@@ -1599,8 +1637,9 @@ function LabelsEditor({
         <PropertyActions
           pending={pending}
           onCancel={() => setOpen(false)}
-          onSave={() => void onSave({ labelIds: ids }).then((ok) => ok && setOpen(false))}
+          onSave={() => void saveDraft({ labelIds: ids }).then((ok) => ok && setOpen(false))}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
@@ -1618,12 +1657,13 @@ function PlanningEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [startAt, setStartAt] = useState(toDateInput(task.startAt));
   const [dueAt, setDueAt] = useState(toDateInput(task.dueAt));
   const [estimate, setEstimate] = useState(
     task.estimatePoints == null ? "" : String(task.estimatePoints)
   );
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setStartAt(toDateInput(task.startAt)); setDueAt(toDateInput(task.dueAt)); setEstimate(task.estimatePoints == null ? "" : String(task.estimatePoints)); });
   const invalidRange = Boolean(startAt && dueAt && dueAt < startAt);
   const invalidEstimate = !isNullableIntegerInputValid(estimate, 0, 1_000_000);
   const summary = (
@@ -1644,7 +1684,7 @@ function PlanningEditor({
 
   const save = async () => {
     if (invalidRange || invalidEstimate) return;
-    const ok = await onSave({
+    const ok = await saveDraft({
       startAt: dateStartIso(startAt),
       dueAt: dateEndIso(dueAt),
       estimatePoints: parseNullableInteger(estimate, 0, 1_000_000),
@@ -1663,6 +1703,7 @@ function PlanningEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("planning")}</p>
         <div className="grid grid-cols-2 gap-2">
           <PropertyInput label={t("startAt")}>
@@ -1697,6 +1738,7 @@ function PlanningEditor({
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
@@ -1714,14 +1756,15 @@ function TaskRelationshipsEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
+  const [parentId, setParentId] = useState(task.parentId ?? "");
+  const [blockerIds, setBlockerIds] = useState(() => task.blockedBy.map((item) => item.id));
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setParentId(task.parentId ?? ""); setBlockerIds(task.blockedBy.map(item => item.id)); });
   const options = useCrewTaskOptions(
     task.crewId,
     { excludeTaskId: task.id, limit: 100 },
     editable && open
   );
-  const [parentId, setParentId] = useState(task.parentId ?? "");
-  const [blockerIds, setBlockerIds] = useState(() => task.blockedBy.map((item) => item.id));
   const summary = (
     <div className="space-y-1.5">
       <span className="block truncate text-[11px]">
@@ -1747,6 +1790,7 @@ function TaskRelationshipsEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <PropertyInput label={t("parentTask")}>
           <TaskSelect
             value={parentId}
@@ -1790,17 +1834,19 @@ function TaskRelationshipsEditor({
           pending={pending}
           onCancel={() => setOpen(false)}
           onSave={() =>
-            void onSave({ parentId: parentId || null, blockedByTaskIds: blockerIds }).then(
+            void saveDraft({ parentId: parentId || null, blockedByTaskIds: blockerIds }).then(
               (ok) => ok && setOpen(false)
             )
           }
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
 }
 
 function CustomFieldEditor({
+  version,
   field,
   value,
   members,
@@ -1809,6 +1855,7 @@ function CustomFieldEditor({
   pending,
   onSave,
 }: {
+  version: number;
   field: CrewTaskFieldDTO;
   value: CrewTaskDTO["customFieldValues"][number]["value"] | undefined;
   members: CrewMemberDTO[];
@@ -1818,8 +1865,9 @@ function CustomFieldEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [draft, setDraft] = useState<CrewTaskCustomValue>(value ?? null);
+  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => { setDraft(value ?? null); });
   const invalidNumber =
     field.type === "number" && draft !== null && draft !== "" && !Number.isFinite(Number(draft));
   const summary = (
@@ -1831,7 +1879,7 @@ function CustomFieldEditor({
 
   const save = async () => {
     const normalized = normalizeCustomFieldDraft(field, draft);
-    if (await onSave({ customFieldValues: [{ fieldId: field.id, value: normalized }] })) {
+    if (await saveDraft({ customFieldValues: [{ fieldId: field.id, value: normalized }] })) {
       setOpen(false);
     }
   };
@@ -1844,6 +1892,7 @@ function CustomFieldEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <div>
           <p className="text-[12px] font-semibold">{field.name}</p>
           {field.description ? (
@@ -1864,6 +1913,7 @@ function CustomFieldEditor({
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
@@ -1961,10 +2011,11 @@ function TaskLimitsEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [revisionLimit, setRevisionLimit] = useState(
     task.revisionLimit == null ? "" : String(task.revisionLimit)
   );
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setRevisionLimit(task.revisionLimit == null ? "" : String(task.revisionLimit)); });
   const invalidLimit = revisionLimit !== "" && Number(revisionLimit) < task.revisionRoundsUsed;
   const invalidRevision = !isNullableIntegerInputValid(revisionLimit, 0, 100);
   const summary = (
@@ -1980,7 +2031,7 @@ function TaskLimitsEditor({
 
   const save = async () => {
     if (invalidLimit || invalidRevision) return;
-    const ok = await onSave({
+    const ok = await saveDraft({
       revisionLimit: parseNullableInteger(revisionLimit, 0, 100),
     });
     if (ok) setOpen(false);
@@ -1997,6 +2048,7 @@ function TaskLimitsEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("taskLimits")}</p>
         <PropertyInput label={t("revisionLimit")}>
           <Input
@@ -2022,6 +2074,7 @@ function TaskLimitsEditor({
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
