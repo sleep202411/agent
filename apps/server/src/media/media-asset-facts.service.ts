@@ -70,6 +70,8 @@ export interface DurationProbeAsset {
 
 /** Authoritative media facts for one asset. `null` means genuinely unknown. */
 export interface MediaAssetFacts {
+  width?: number | null;
+  height?: number | null;
   durationSeconds: number | null;
   bytes: number | null;
 }
@@ -141,14 +143,26 @@ export class MediaAssetFactsService {
         contentType: true,
         sizeBytes: true,
         durationSeconds: true,
+        variants: {
+          where: { variantKey: 'original', deletedAt: null },
+          select: { durationMs: true },
+        },
+        width: true,
+        height: true,
       },
     });
 
     const pending: Array<DurationProbeAsset & { id: string }> = [];
     for (const row of rows) {
-      const stored = storedDuration(row.durationSeconds);
+      const stored = storedDuration(
+        row.variants?.[0]?.durationMs == null
+          ? row.durationSeconds
+          : row.variants[0].durationMs / 1000,
+      );
       out.set(row.id, {
         durationSeconds: stored,
+        width: row.width,
+        height: row.height,
         bytes: row.sizeBytes == null ? null : Number(row.sizeBytes),
       });
       if (stored == null && DURATION_KINDS.has(row.kind)) pending.push(row);
@@ -205,9 +219,19 @@ export class MediaAssetFactsService {
       // Re-read under the slot: another worker may have persisted duration.
       const fresh = await this.prisma.mediaAsset.findFirst({
         where: { id: row.id, deletedAt: null },
-        select: { durationSeconds: true },
+        select: {
+          durationSeconds: true,
+          variants: {
+            where: { variantKey: 'original', deletedAt: null },
+            select: { durationMs: true },
+          },
+        },
       });
-      const stored = storedDuration(fresh?.durationSeconds ?? null);
+      const stored = storedDuration(
+        fresh?.variants?.[0]?.durationMs == null
+          ? (fresh?.durationSeconds ?? null)
+          : fresh.variants[0].durationMs / 1000,
+      );
       if (stored != null) return stored;
       return this.probeAndPersist(row);
     }).finally(() => {
@@ -224,7 +248,15 @@ export class MediaAssetFactsService {
     const seconds = await this.probeFromStorage(row);
     await this.prisma.mediaAsset.update({
       where: { id: row.id },
-      data: { durationSeconds: seconds },
+      data: {
+        durationSeconds: Math.round(seconds),
+        variants: {
+          updateMany: {
+            where: { variantKey: 'original', deletedAt: null },
+            data: { durationMs: Math.ceil(seconds * 1000) },
+          },
+        },
+      },
     });
     return seconds;
   }

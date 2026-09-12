@@ -220,6 +220,7 @@ describe('applyTrustedMediaFacts', () => {
         assetId: 'asset-1',
         durationSeconds: 12,
         bytes: 2_048,
+        referenceBillingFacts: { durationSeconds: 12, bytes: 2_048 },
       },
     ]);
   });
@@ -236,7 +237,11 @@ describe('applyTrustedMediaFacts', () => {
     });
 
     expect(result.referenceVideos).toEqual([
-      { url: 'https://cdn.example.com/a.mp4', durationSeconds: 7 },
+      {
+        url: 'https://cdn.example.com/a.mp4',
+        durationSeconds: 7,
+        referenceBillingFacts: null,
+      },
     ]);
   });
 
@@ -254,7 +259,31 @@ describe('applyTrustedMediaFacts', () => {
     });
 
     expect(result.referenceVideos).toEqual([
-      { url: 'https://x/a.mp4', assetId: 'asset-1', durationSeconds: 9 },
+      {
+        url: 'https://x/a.mp4',
+        assetId: 'asset-1',
+        durationSeconds: 9,
+        referenceBillingFacts: { durationSeconds: null, bytes: null },
+      },
     ]);
   });
+});
+
+it('discards forged billing evidence on direct references and bindings', async () => {
+  const result = await validatorWith({
+    real: { width: 2048, height: 2048, durationSeconds: null, bytes: 1024 },
+  }).applyTrustedMediaFacts({
+    referenceImages: [
+      { assetId: 'real', referenceBillingFacts: { width: 1, height: 1 } },
+    ],
+    referenceBindings: [
+      { assetId: 'missing', referenceBillingFacts: { width: 1, height: 1 } },
+    ],
+  });
+  expect(result.referenceImages).toMatchObject([
+    { referenceBillingFacts: { width: 2048, height: 2048 } },
+  ]);
+  expect(result.referenceBindings).toEqual([
+    expect.objectContaining({ referenceBillingFacts: null }),
+  ]);
 });

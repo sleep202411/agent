@@ -245,9 +245,10 @@ export class AiGenerationService {
     // freezes the wallet quote, and Seedance 2.5 charges reference-video jobs
     // on input-video + output duration; accepting client-claimed duration here
     // would let a caller understate the hold before validation corrected it.
-    const input = await this.validator.applyTrustedMediaFacts(
-      characterExpansion.input,
-    );
+    const input = await this.validator.applyTrustedMediaFacts({
+      ...characterExpansion.input,
+      referenceBindings: characterExpansion.bindings,
+    });
     const referenceBindings = characterExpansion.bindings;
 
     const entitlement = await this.entitlements.resolveForUser(user, {

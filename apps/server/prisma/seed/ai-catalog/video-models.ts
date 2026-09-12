@@ -415,7 +415,99 @@ const miniMaxH3Provider: ProviderEntry = {
   },
 };
 
+/** fal H3 Max is a separate model from MiniMax's native H3 endpoint. */
+const H3_MAX_POLICY = {
+  parameterMode: 'provider_union',
+  providerFamily: 'minimax-h3-max',
+  promptMaxLength: 50000,
+  defaultResolution: '768P',
+  resolutionOptions: ['768P'],
+  defaultDurationSeconds: '5',
+  durationOptions: Array.from({ length: 11 }, (_, i) => String(i + 5)),
+  defaultAspectRatio: '16:9',
+  supportedAspectRatios: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+  startFrame: { enabled: true },
+  endFrame: { enabled: true },
+  referenceInputs: {
+    enabled: true,
+    images: { min: 0, max: 9 },
+    videos: { min: 0, max: 3 },
+    audios: { min: 0, max: 3 },
+    maxTotalFiles: 12,
+  },
+  seed: { enabled: true },
+} satisfies Prisma.InputJsonObject;
+
 export const VIDEO_MODELS: VideoModelSeed[] = [
+  {
+    slug: 'minimax-h3-max',
+    displayName: 'MiniMax H3 Max',
+    family: 'minimax',
+    vendor: 'fal',
+    description:
+      'fal H3 Max: fast text-to-video and first/last-frame video generation.',
+    modes: [T2V, I2V, FLF2V, MM2V],
+    requiredPlan: null,
+    cost: 180,
+    parameterPolicy: H3_MAX_POLICY,
+    productPricing: {
+      mode: 'per_second_matrix',
+      currency: 'COMPUTE_POINTS',
+      defaultOutputCount: 1,
+      minOutputCount: 1,
+      maxOutputCount: 1,
+      maxSeconds: 15,
+      defaultSeconds: 5,
+      autoQuoteSeconds: 15,
+      minimumPoints: 1,
+      roundTo: 1,
+      // fal list rate (not the temporary launch discount): $0.08/s at 768P.
+      // Product rate = $0.12/s; reference tokens are billed separately at cost.
+      // https://fal.ai/models/minimax/h3-max/reference-to-video (2026-09-12)
+      referenceTokenPricing: {
+        includedTokens: 4096,
+        pointsPerThousandTokens: 2,
+        imagePixelsPerToken: 1024,
+        videoTokensPerSecond: { '768P': 7460 },
+        audioTokensPerSecond: 80,
+      },
+      version: 'minimax-h3-max-points-v1',
+      defaultResolution: '768P',
+      pointsPerSecond: { '768P': 12 },
+      minSeconds: 5,
+    },
+    group: 'video',
+    sortOrder: 14,
+    recommended: false,
+    providers: [
+      {
+        provider: 'fal-ai',
+        endpointId: 'minimax/h3-max/text-to-video',
+        modes: [T2V],
+        priority: 100,
+        requestTimeoutSeconds: 600,
+      },
+      {
+        provider: 'fal-ai',
+        endpointId: 'minimax/h3-max/image-to-video',
+        modes: [I2V, FLF2V],
+        priority: 100,
+        requestTimeoutSeconds: 600,
+      },
+      {
+        provider: 'fal-ai',
+        endpointId: 'minimax/h3-max/reference-to-video',
+        modes: [MM2V],
+        priority: 100,
+        requestTimeoutSeconds: 600,
+      },
+    ],
+    providerAliases: [
+      'minimax/h3-max/text-to-video',
+      'minimax/h3-max/image-to-video',
+      'minimax/h3-max/reference-to-video',
+    ],
+  },
   {
     slug: 'wan-3-0',
     displayName: 'Wan 3.0',

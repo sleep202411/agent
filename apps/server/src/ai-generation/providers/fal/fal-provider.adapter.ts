@@ -731,6 +731,9 @@ export function videoGenerationModeFromPayload(
   payload: Record<string, unknown>,
 ): AiGenerationMode {
   if (
+    hasItems(payload.reference_image_urls) ||
+    hasItems(payload.reference_video_urls) ||
+    hasItems(payload.reference_audio_urls) ||
     hasItems(payload.image_urls) ||
     hasItems(payload.video_urls) ||
     hasItems(payload.audio_urls)

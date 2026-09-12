@@ -86,6 +86,14 @@ export interface AiPerSecondMatrixPricingPolicy extends AiProductPricingBase {
    * catalog, server preflight and clients quote the exact same contract.
    */
   referenceVideoPointsPerSecond?: Record<string, number>;
+  /** Pooled reference-input token meter, independent of output-video pricing. */
+  referenceTokenPricing?: {
+    includedTokens: number;
+    pointsPerThousandTokens: number;
+    imagePixelsPerToken: number;
+    videoTokensPerSecond: Record<string, number>;
+    audioTokensPerSecond: number;
+  };
 }
 
 /** Character-metered product pricing for speech synthesis. */
@@ -118,6 +126,11 @@ export interface EstimateProductModelPointsInput {
   /** Text billed by a character-metered provider (usually the prompt). */
   text?: string;
   referenceImageCount?: number;
+  referenceMedia?: {
+    images?: readonly unknown[];
+    videos?: readonly unknown[];
+    audios?: readonly unknown[];
+  };
   /** Combined duration of all reference videos supplied to the job. */
   referenceVideoSeconds?: number;
   /** Whether native audio is requested. Only affects policies with a video-only rate. */
@@ -193,10 +206,23 @@ export function estimateProductModelPoints(
   }
 
   const basePoints = pointsPerOutput * outputCount;
-  const referenceSurchargePoints =
-    referenceImageCount > 0
-      ? (positiveNumber(policy.referenceImageSurchargePoints) ?? 0) * outputCount
+  if (
+    policy.mode === "per_second_matrix" &&
+    policy.referenceTokenPricing &&
+    !input.referenceMedia &&
+    (referenceImageCount > 0 || (input.referenceVideoSeconds ?? 0) > 0)
+  ) {
+    throw new Error("Reference media facts are required for pricing.");
+  }
+  const referenceTokenPoints =
+    policy.mode === "per_second_matrix" && policy.referenceTokenPricing
+      ? priceReferenceTokens(policy, input.referenceMedia, selection.resolution!) * outputCount
       : 0;
+  const referenceSurchargePoints =
+    referenceTokenPoints +
+    (referenceImageCount > 0
+      ? (positiveNumber(policy.referenceImageSurchargePoints) ?? 0) * outputCount
+      : 0);
   const extraReferencePoints =
     referenceImageCount > 1
       ? (referenceImageCount - 1) * (positiveNumber(policy.extraReferenceImagePoints) ?? 0)
@@ -349,4 +375,53 @@ function finiteNonNegative(value: unknown): number | undefined {
 function roundUp(value: number, increment: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.ceil(value / increment) * increment;
+}
+
+function priceReferenceTokens(
+  policy: AiPerSecondMatrixPricingPolicy,
+  media: EstimateProductModelPointsInput["referenceMedia"],
+  resolution: string
+): number {
+  const meter = policy.referenceTokenPricing!;
+  function positiveFact(item: unknown, field: string): number {
+    const value =
+      item && typeof item === "object" ? (item as Record<string, unknown>)[field] : undefined;
+    if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+      throw new Error(`Reference ${field} is required for pricing.`);
+    }
+    return value;
+  }
+  const imageTokens = (media?.images ?? []).reduce<number>(
+    (total, image) =>
+      total +
+      (positiveFact(image, "width") * positiveFact(image, "height")) / meter.imagePixelsPerToken,
+    0
+  );
+  const videoSeconds = (media?.videos ?? []).reduce<number>(
+    (total, video) => total + positiveFact(video, "durationSeconds"),
+    0
+  );
+  const audioSeconds = (media?.audios ?? []).reduce<number>(
+    (total, audio) => total + positiveFact(audio, "durationSeconds"),
+    0
+  );
+  const videoRate = meter.videoTokensPerSecond[resolution];
+  if (
+    !Number.isFinite(videoRate) ||
+    videoRate < 0 ||
+    !Number.isFinite(meter.pointsPerThousandTokens) ||
+    meter.pointsPerThousandTokens <= 0 ||
+    !Number.isFinite(meter.imagePixelsPerToken) ||
+    meter.imagePixelsPerToken <= 0 ||
+    !Number.isFinite(meter.audioTokensPerSecond) ||
+    meter.audioTokensPerSecond < 0 ||
+    !Number.isFinite(meter.includedTokens) ||
+    meter.includedTokens < 0
+  ) {
+    throw new Error("Invalid reference token pricing.");
+  }
+  const tokens = imageTokens + videoSeconds * videoRate + audioSeconds * meter.audioTokensPerSecond;
+  return Math.ceil(
+    (Math.max(0, tokens - meter.includedTokens) * meter.pointsPerThousandTokens) / 1000
+  );
 }

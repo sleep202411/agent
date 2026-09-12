@@ -109,9 +109,13 @@ export class AiGenerationValidatorService {
 
     const assetId = typeof item.assetId === 'string' ? item.assetId.trim() : '';
     const facts = assetId ? factsById.get(assetId) : undefined;
-    if (!facts) return item;
-
-    const trusted: Record<string, unknown> = { ...item };
+    // Always overwrite this field, including when the asset is missing: a
+    // client cannot supply its own billing evidence for metered references.
+    const trusted: Record<string, unknown> = {
+      ...item,
+      referenceBillingFacts: facts ?? null,
+    };
+    if (!facts) return trusted;
     if (facts.durationSeconds != null) {
       trusted.durationSeconds = facts.durationSeconds;
     }
