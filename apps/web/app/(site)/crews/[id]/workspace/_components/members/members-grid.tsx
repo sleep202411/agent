@@ -16,7 +16,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useCurrentUser } from "@/src/hooks/use-user";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -77,6 +77,7 @@ function MembersGridSession({
 }: MembersGridProps) {
   const t = useTranslations("workspace");
   const ta = useTranslations("crewAgreements");
+  const locale = useLocale();
   const tc = useTranslationsCommon("common");
   const invitations = useCrewInvitations(crewId, canInvite);
   const revokeInvitation = useRevokeCrewInvitation(crewId);
@@ -198,26 +199,28 @@ function MembersGridSession({
               {t("pendingInvitations")} · {invitations.total}
             </h3>
           </div>
-          {invitations.isLoading ? (
-            <div className="flex h-14 items-center justify-center">
-              <IconLoader2 className="size-4 animate-spin text-white/35" />
-            </div>
-          ) : invitations.isError ? (
-            <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+          {invitations.isError ? (
+            <div role="alert" className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
               <p className="text-xs text-destructive">
                 {invitations.error instanceof Error
                   ? invitations.error.message
-                  : t("invitationRevokeFailed")}
+                  : tc("loadFailed")}
               </p>
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
                 color="muted"
-                onClick={() => void invitations.refetch()}
+                disabled={invitations.isFetching}
+                onClick={() => void (invitations.isFetchNextPageError ? invitations.fetchNextPage() : invitations.refetch())}
               >
                 {tc("retry")}
               </Button>
+            </div>
+          ) : null}
+          {invitations.isLoading && pendingInvitations.length === 0 ? (
+            <div className="flex h-14 items-center justify-center">
+              <IconLoader2 className="size-4 animate-spin text-white/35" />
             </div>
           ) : (
             <>
@@ -250,7 +253,7 @@ function MembersGridSession({
                           ].join(" + ")}{" "}
                           ·{" "}
                           {t("invitationExpires", {
-                            date: new Intl.DateTimeFormat(undefined, {
+                            date: new Intl.DateTimeFormat(locale, {
                               month: "short",
                               day: "numeric",
                             }).format(new Date(invitation.expiresAt)),
@@ -280,14 +283,14 @@ function MembersGridSession({
                   </div>
                 ))}
               </div>
-              {invitations.hasNextPage ? (
+              {invitations.hasNextPage && !invitations.isError ? (
                 <div className="border-t border-white/[0.06] px-4 py-2.5 text-center">
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
                     color="muted"
-                    disabled={invitations.isFetchingNextPage}
+                    disabled={invitations.isFetching}
                     onClick={() => void invitations.fetchNextPage()}
                     icon={
                       invitations.isFetchingNextPage ? (
