@@ -13,6 +13,7 @@
  * touches the same keys when a push arrives — see provider.tsx.
  */
 
+import { useLayoutEffect, useRef } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { NotificationFilter } from "@repo/shared/notifications";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -75,7 +76,15 @@ export function useNotificationFeed(pageSize = 30, filter: NotificationFilter = 
 function useNotificationRefresh<TVariables = void>() {
   const qc = useQueryClient();
   const { user } = useCurrentUser();
+  const scope = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    scope.current = user?.id ?? null;
+    return () => { scope.current = null; };
+  }, [user?.id]);
   return {
+    onError: (error: Error, _variables: TVariables, origin: { accountUserId: string | null } | undefined) => {
+      if (origin?.accountUserId && scope.current === origin.accountUserId) toast.error(error.message);
+    },
     onMutate: () => ({ accountUserId: user?.id ?? null }),
     onSuccess: (
       _data: unknown,
@@ -95,7 +104,6 @@ export function useMarkRead() {
   const refresh = useNotificationRefresh<string>();
   return useMutation({
     mutationFn: (id: string) => markNotificationRead(id),
-    onError: (error) => toast.error(error.message),
     ...refresh,
   });
 }
@@ -104,7 +112,6 @@ export function useMarkAllRead() {
   const refresh = useNotificationRefresh();
   return useMutation({
     mutationFn: () => markAllNotificationsRead(),
-    onError: (error) => toast.error(error.message),
     ...refresh,
   });
 }

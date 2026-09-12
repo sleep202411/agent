@@ -1,4 +1,5 @@
 import { act } from "react";
+import { toast } from "sonner";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider, focusManager } from "@tanstack/react-query";
 import { expect, it, vi } from "vitest";
@@ -17,6 +18,7 @@ import {
   useNotificationFeed,
 } from "./hooks";
 
+vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 const session = vi.hoisted(() => ({ userId: "alice" as string | null }));
 vi.mock("@/src/hooks/use-user", () => ({
   useCurrentUser: () => ({ user: session.userId ? { id: session.userId } : null }),
@@ -245,5 +247,30 @@ it("cancels abandoned notification reads on account switch", async () => {
     expect(signals.slice(3).every(signal => !signal.aborted)).toBe(true);
   } finally {
     act(() => root.unmount()); client.clear(); session.userId = "alice"; vi.resetAllMocks();
+  }
+});
+
+
+it.each(["switch", "unmount", "current"])("handles a delayed mark-read failure after %s", async (change) => {
+  const client = new QueryClient();
+  const root = createRoot(document.createElement("div"));
+  let reject!: (error: Error) => void;
+  vi.mocked(markAllNotificationsRead).mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+  let submit!: () => Promise<unknown>;
+  function Probe() { const mutation = useMarkAllRead(); submit = () => mutation.mutateAsync().catch(() => undefined); return null; }
+  const render = () => act(async () => root.render(<QueryClientProvider client={client}><Probe /></QueryClientProvider>));
+  let unmounted = false;
+  try {
+    session.userId = "alice"; await render();
+    let pending!: Promise<unknown>;
+    await act(async () => { pending = submit(); });
+    if (change === "switch") { session.userId = "bob"; await render(); }
+    if (change === "unmount") { act(() => root.unmount()); unmounted = true; }
+    await act(async () => { reject(new Error("Account-specific failure")); await pending; });
+    if (change === "current") expect(toast.error).toHaveBeenCalledWith("Account-specific failure");
+    else expect(toast.error).not.toHaveBeenCalled();
+  } finally {
+    if (!unmounted) act(() => root.unmount());
+    client.clear(); session.userId = "alice"; vi.resetAllMocks();
   }
 });
