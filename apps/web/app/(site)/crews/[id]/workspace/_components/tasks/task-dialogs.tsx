@@ -35,6 +35,7 @@ export function SubmitTaskDialog({
 }) {
   const t = useTranslations("crewTasks");
   const submitTask = useSubmitCrewTask(crewId);
+  const [saving, setSaving] = useState(false);
   const [note, setNote] = useState("");
   const [assetIds, setAssetIds] = useState<string[]>([]);
   const assets =
@@ -44,6 +45,7 @@ export function SubmitTaskDialog({
   const [context, setContext] = useState({ open, crewId, taskId: task?.id });
   if (context.open !== open || context.crewId !== crewId || context.taskId !== task?.id) {
     setContext({ open, crewId, taskId: task?.id });
+    setSaving(false);
     setNote("");
     setAssetIds([]);
   }
@@ -70,6 +72,7 @@ export function SubmitTaskDialog({
     if (!open || !task || pendingGeneration.current !== null) return;
     const requestGeneration = generation.current;
     pendingGeneration.current = requestGeneration;
+    setSaving(true);
     try {
       await submitTask.mutateAsync({ taskId: task.id, note, assetNodeIds: assetIds });
       if (generation.current !== requestGeneration) return;
@@ -81,7 +84,10 @@ export function SubmitTaskDialog({
         toast.error(error instanceof Error ? error.message : t("submitFailed"));
       }
     } finally {
-      if (pendingGeneration.current === requestGeneration) pendingGeneration.current = null;
+      if (generation.current === requestGeneration && pendingGeneration.current === requestGeneration) {
+        pendingGeneration.current = null;
+        setSaving(false);
+      }
     }
   };
 
@@ -105,6 +111,7 @@ export function SubmitTaskDialog({
             </div>
           ) : null}
           <Textarea
+            disabled={saving}
             value={note}
             onChange={(event) => setNote(event.target.value)}
             placeholder={t("submitNotePlaceholder")}
@@ -125,6 +132,7 @@ export function SubmitTaskDialog({
                     className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-xs hover:bg-muted/50"
                   >
                     <Checkbox
+                      disabled={saving}
                       checked={assetIds.includes(asset.id)}
                       onCheckedChange={() =>
                         setAssetIds((current) =>
@@ -147,8 +155,8 @@ export function SubmitTaskDialog({
             {t("cancel")}
           </Button>
           <Button
-            disabled={submitTask.isPending}
-            loading={submitTask.isPending}
+            disabled={saving}
+            loading={saving}
             onClick={() => void submit()}
             icon={<IconSend />}
           >

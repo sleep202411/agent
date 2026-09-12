@@ -8,7 +8,7 @@ const submit = vi.hoisted(() => vi.fn());
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useSubmitCrewTask: () => ({ mutateAsync: submit, isPending: false }),
 }));
-vi.mock("../../_hooks/use-crew-assets", () => ({ useCrewAssets: () => ({ data: { items: [] } }) }));
+vi.mock("../../_hooks/use-crew-assets", () => ({ useCrewAssets: () => ({ data: { items: [{ id: "asset-1", name: "Output" }] } }) }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -102,4 +102,20 @@ it("retains notes and permits retry after a failed submission", async () => {
   await act(async () => clickSubmit());
   expect(submit).toHaveBeenCalledTimes(2);
   expect(onSubmitted).toHaveBeenCalledTimes(1);
+});
+
+it("locks the submitted draft and restores editing after failure", async () => {
+  let reject!: (error: Error) => void;
+  submit.mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+  render("task-1");
+  act(() => fill("Review this output"));
+  act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
+  act(clickSubmit);
+  expect(document.querySelector("textarea")!.disabled).toBe(true);
+  expect(document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.disabled).toBe(true);
+  expect(submit).toHaveBeenCalledWith({ taskId: "task-1", note: "Review this output", assetNodeIds: ["asset-1"] });
+  await act(async () => reject(new Error("Please retry")));
+  expect(document.querySelector("textarea")!.disabled).toBe(false);
+  expect(document.querySelector("textarea")!.value).toBe("Review this output");
+  expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
 });
