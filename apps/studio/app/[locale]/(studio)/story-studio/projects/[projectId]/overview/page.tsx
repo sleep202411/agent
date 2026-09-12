@@ -6,5 +6,13 @@ export default async function StoryProjectOverviewPage({
   params: Promise<{ projectId: string }>;
 }) {
   const { projectId } = await params;
-  return <StoryProjectWorkbench projectId={projectId} stage="overview" />;
+  // WEB_APP_URL optionally points to apps/web during local development.
+  // Production defaults to the current deployment region in the workbench.
+  return (
+    <StoryProjectWorkbench
+      projectId={projectId}
+      stage="overview"
+      earningsWebBase={process.env.WEB_APP_URL}
+    />
+  );
 }

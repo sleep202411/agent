@@ -23,6 +23,7 @@ import {
   ExperienceCoreVideoRendererConfigSchema,
   ExperienceCoreWorldModelRendererConfigSchema,
   ExperienceRuntimeManifestSchema,
+  type ExperienceAccessRequirement,
   type ExperienceCoreVideoRendererConfig,
   type ExperienceCoreWorldModelRendererConfig,
   type ExperienceGraphNode,
@@ -39,6 +40,7 @@ import {
 } from "@repo/shared/experience-runtime";
 import {
   EXPERIENCE_CORE_RENDERER_ADAPTERS,
+  ExperienceAccessRequiredError,
   advanceExperienceTimeline,
   createExperienceTimelineCursor,
   evaluateExperienceCondition,
@@ -52,6 +54,7 @@ import {
 import {
   IconAlertTriangle,
   IconArrowRight,
+  IconLock,
   IconPlayerPlay,
   IconRefresh,
   IconVolumeOff,
@@ -80,7 +83,27 @@ export interface ExperienceWorldModelRendererProps {
   onError: (error: unknown) => void;
 }
 
+export interface ExperiencePlayerAccess {
+  canAccess: (requirement: ExperienceAccessRequirement) => boolean;
+  /** Refresh durable entitlements before showing a purchase prompt. Never debits. */
+  checkAccess?: (requirement: ExperienceAccessRequirement) => Promise<boolean>;
+  requestAccess: (requirement: ExperienceAccessRequirement) => Promise<boolean>;
+  formatPrice: (amount: number) => string;
+  /** Private authoring hosts may extract a frame from media they can already read. */
+  renderPreview?: (media: { videoUri?: string; posterUri?: string }) => ReactNode;
+}
+
+export interface ExperienceAccessCheckpoint {
+  state: ExperienceRuntimeState;
+  events: ExperienceRuntimeEvent[];
+}
+
 export interface ExperiencePlayerProps {
+  accessCheckpoint?: ExperienceAccessCheckpoint;
+  onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
+  access?: ExperiencePlayerAccess;
+  /** Only private authoring hosts may bypass payment for playtests. */
+  previewAccess?: boolean;
   runtime: unknown;
   locale: string;
   copy: ExperiencePlayerCopy;
@@ -105,6 +128,10 @@ export function ExperiencePlayer({
   frameProfile = "auto",
   loadTheme = defaultLoadExperienceTheme,
   renderWorldModel,
+  access,
+  previewAccess = false,
+  accessCheckpoint,
+  onAccessCheckpoint,
 }: ExperiencePlayerProps) {
   const hydrationSeedId = useId();
   const [restartEpoch, setRestartEpoch] = useState(0);
@@ -129,6 +156,9 @@ export function ExperiencePlayer({
         controller: createExperienceRuntime(parsed.data, {
           rendererAdapters: EXPERIENCE_CORE_RENDERER_ADAPTERS,
           randomSeed,
+          canAccess: access?.canAccess,
+          previewAccess,
+          restore: restartEpoch === 0 ? accessCheckpoint?.state : undefined,
         }),
       };
     } catch (error) {
@@ -137,7 +167,7 @@ export function ExperiencePlayer({
         issues: [{ path: [], message: runtimeErrorMessage(error) }],
       };
     }
-  }, [randomSeed, runtime]);
+  }, [access, accessCheckpoint, previewAccess, randomSeed, restartEpoch, runtime]);
 
   if (!prepared.ok) {
     return (
@@ -160,6 +190,10 @@ export function ExperiencePlayer({
   return (
     <ActiveExperienceRuntimePlayer
       key={`${prepared.manifest.buildId}:${randomSeed}:${restartEpoch}`}
+      access={access}
+      previewAccess={previewAccess}
+      accessCheckpoint={restartEpoch === 0 ? accessCheckpoint : undefined}
+      onAccessCheckpoint={onAccessCheckpoint}
       manifest={prepared.manifest}
       controller={prepared.controller}
       locale={locale}
@@ -186,7 +220,15 @@ function ActiveExperienceRuntimePlayer({
   loadTheme,
   renderWorldModel,
   onRestart,
+  access,
+  previewAccess,
+  accessCheckpoint,
+  onAccessCheckpoint,
 }: {
+  accessCheckpoint?: ExperienceAccessCheckpoint;
+  onAccessCheckpoint?: (checkpoint: ExperienceAccessCheckpoint) => void;
+  access?: ExperiencePlayerAccess;
+  previewAccess: boolean;
   manifest: ExperienceRuntimeManifest;
   controller: ExperienceRuntimeController;
   locale: string;
@@ -205,6 +247,17 @@ function ActiveExperienceRuntimePlayer({
   const [started, setStarted] = useState(false);
   const [starting, setStarting] = useState(false);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const accessPendingRef = useRef(false);
+  const [accessPending, setAccessPending] = useState(false);
+  const [retryAccess, setRetryAccess] = useState<(() => void) | null>(null);
+  const [nodeGate, setNodeGate] = useState<ExperienceGraphNode | null>(null);
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    return () => {
+      aliveRef.current = false;
+    };
+  }, []);
   // Playback always asks for sound. This flips only when a browser actually
   // refuses audible playback, and it stays flipped for the rest of the session
   // so later clips do not each re-run the same rejected attempt. Turning sound
@@ -227,7 +280,12 @@ function ActiveExperienceRuntimePlayer({
   // state.
   const [timelineHoldGate, setTimelineHoldGate] = useState(false);
   const orientation = usePlaybackOrientation(manifest, frameProfile);
-  useNextScenePreload(manifest, runtimeState.currentSceneId, orientation);
+  const canAccess = useCallback(
+    (requirement: ExperienceAccessRequirement) =>
+      previewAccess || Boolean(access?.canAccess(requirement)),
+    [access, previewAccess]
+  );
+  useNextScenePreload(manifest, runtimeState.currentSceneId, orientation, canAccess);
   // The cover is the only art that exists before any clip has played, so it is
   // what the loading and title screen should stand on — otherwise the viewer
   // waits on a black rectangle. Absent cover simply falls back to that.
@@ -305,22 +363,76 @@ function ActiveExperienceRuntimePlayer({
   );
 
   const run = useCallback(
-    (operation: () => ExperienceEventQueueResult) => {
-      try {
-        applyResult(operation());
-        return true;
-      } catch (error) {
-        // A late input is normal, not a fault. `<video>` fires `ended` on its own
-        // schedule, so one can land after the scene it belonged to is gone or
-        // after the experience finished; a queued rAF frame can do the same. The
-        // runtime is right to refuse it — but ending the viewer's session over it
-        // turns an ordinary race into "试玩无法继续". Discard and carry on.
-        if (isDiscardableLateInput(error)) return false;
-        setRuntimeError(runtimeErrorMessage(error));
-        return false;
-      }
+    async (operation: () => ExperienceEventQueueResult, cancellable = false) => {
+      if (accessPendingRef.current) return false;
+      const attempt = async (): Promise<boolean> => {
+        try {
+          applyResult(operation());
+          setRetryAccess(null);
+          return true;
+        } catch (error) {
+          if (error instanceof ExperienceAccessRequiredError && access) {
+            accessPendingRef.current = true;
+            setAccessPending(true);
+            playbackHandlesRef.current.forEach((handle) => handle.pause());
+            onAccessCheckpoint?.({ state: controller.state(), events: error.events });
+            try {
+              await suspendAudio();
+              const alreadyOwned = access.checkAccess
+                ? await access.checkAccess(error.requirement)
+                : access.canAccess(error.requirement);
+              if (!aliveRef.current) return false;
+              let allowed = alreadyOwned;
+              if (!alreadyOwned) {
+                const lockedNode = manifest.graph.nodes.find(
+                  (node) => node.access?.key === error.requirement.key
+                );
+                // The player owns the protected first-frame backdrop; the host
+                // owns one confirmation with price, balance and failure handling.
+                setNodeGate(lockedNode ?? null);
+                allowed = await access.requestAccess(error.requirement);
+              }
+              if (!aliveRef.current) return false;
+              if (allowed) {
+                if (!access.canAccess(error.requirement))
+                  throw new Error("The unlock could not be verified.");
+                setNodeGate(null);
+                return await attempt();
+              }
+              if (!cancellable)
+                setRetryAccess(() => () => {
+                  if (accessPendingRef.current) return;
+                  setRuntimeError(null);
+                  void attempt();
+                });
+              return false;
+            } catch (failure) {
+              if (aliveRef.current) {
+                setRuntimeError(runtimeErrorMessage(failure));
+                if (!cancellable)
+                  setRetryAccess(() => () => {
+                    if (accessPendingRef.current) return;
+                    setRuntimeError(null);
+                    void attempt();
+                  });
+              }
+              return false;
+            } finally {
+              if (aliveRef.current) {
+                accessPendingRef.current = false;
+                setAccessPending(false);
+                setNodeGate(null);
+              }
+            }
+          }
+          if (isDiscardableLateInput(error)) return false;
+          setRuntimeError(runtimeErrorMessage(error));
+          return false;
+        }
+      };
+      return attempt();
     },
-    [applyResult]
+    [access, applyResult, controller, manifest, onAccessCheckpoint, suspendAudio]
   );
 
   useEffect(() => {
@@ -334,7 +446,10 @@ function ActiveExperienceRuntimePlayer({
   }, [loadTheme, manifest]);
 
   const currentNode = findGraphNode(manifest, runtimeState.currentSceneId);
-  const scene = currentNode?.kind === "scene" ? currentNode : null;
+  const entryLocked = Boolean(
+    currentNode?.access && !previewAccess && !access?.canAccess(currentNode.access)
+  );
+  const scene = !entryLocked && currentNode?.kind === "scene" ? currentNode : null;
   const endingId = runtimeState.completedEndingId ?? null;
   const ending = endingId
     ? (manifest.endings.find((candidate) => candidate.endingId === endingId) ?? null)
@@ -369,7 +484,12 @@ function ActiveExperienceRuntimePlayer({
       instanceId: string,
       outcomeType: string,
       payload: Record<string, never> | { choiceId: string }
-    ) => run(() => controller.emitRendererOutcome({ instanceId, outcomeType, payload })),
+    ) => {
+      void run(
+        () => controller.emitRendererOutcome({ instanceId, outcomeType, payload }),
+        outcomeType === "choice-selected"
+      );
+    },
     [controller, run]
   );
 
@@ -493,7 +613,7 @@ function ActiveExperienceRuntimePlayer({
   // so gating every registered handle is equivalent to gating the clock.
   useEffect(() => {
     if (!started) return;
-    if (timelineHoldGate) {
+    if (timelineHoldGate || accessPending || retryAccess) {
       playbackHandlesRef.current.forEach((handle) => handle.pause());
       return;
     }
@@ -501,7 +621,7 @@ function ActiveExperienceRuntimePlayer({
     playbackHandlesRef.current.forEach((handle) => {
       void handle.play().catch(() => undefined);
     });
-  }, [started, timelineHoldGate]);
+  }, [accessPending, retryAccess, started, timelineHoldGate]);
 
   const registerPlaybackHandle = useCallback(
     (instanceId: string, handle: ExperienceMediaPlaybackHandle | null) => {
@@ -510,7 +630,7 @@ function ActiveExperienceRuntimePlayer({
         return;
       }
       playbackHandlesRef.current.set(instanceId, handle);
-      if (!playbackEnabledRef.current) return;
+      if (!playbackEnabledRef.current || accessPendingRef.current) return;
       void handle.play().catch((error: unknown) => {
         // Two guards, both about the gap between "a play() rejected" and "the
         // film is broken": the rejection may belong to a handle that has since
@@ -538,14 +658,19 @@ function ActiveExperienceRuntimePlayer({
     setStarting(true);
     const playbackHandles = [...playbackHandlesRef.current.values()];
     try {
-      const playbacks = playbackHandles.map((handle) => handle.play());
+      const playbacks: Promise<void>[] = [];
       const audioUnlock = unlockAudio();
-      if (!run(() => controller.start())) {
+      if (
+        !(await run(() =>
+          accessCheckpoint ? controller.dispatch(accessCheckpoint.events) : controller.start()
+        ))
+      ) {
         await Promise.allSettled([audioUnlock, ...playbacks]);
         playbackHandles.forEach((handle) => handle.pause());
         await Promise.allSettled([suspendAudio()]);
         return;
       }
+      playbacks.push(...playbackHandles.map((handle) => handle.play()));
       const results = await Promise.allSettled([audioUnlock, ...playbacks]);
       const failure = results.find(
         (result): result is PromiseRejectedResult => result.status === "rejected"
@@ -568,6 +693,7 @@ function ActiveExperienceRuntimePlayer({
       manifest={manifest}
       renderer={renderer}
       runtimeState={runtimeState}
+      formatPrice={access?.formatPrice}
       active={started}
       open={openRendererIds.has(renderer.instanceId)}
       locale={playbackLocale}
@@ -582,6 +708,8 @@ function ActiveExperienceRuntimePlayer({
       renderWorldModel={renderWorldModel}
     />
   );
+
+  const gatePreview = nodeGate ? resolveLockedScenePreview(manifest, nodeGate, orientation) : null;
 
   return (
     <PlayerFrame
@@ -599,7 +727,7 @@ function ActiveExperienceRuntimePlayer({
           ) : (
             <div className="absolute inset-0 bg-black" />
           )}
-          {scene && started && !endingId ? (
+          {scene && started && !endingId && !accessPending && !retryAccess ? (
             <ExperienceSpatialLayer
               key={scene.sceneId}
               manifest={manifest}
@@ -616,7 +744,47 @@ function ActiveExperienceRuntimePlayer({
         </>
       }
     >
-      {!endingId && !runtimeError
+      {nodeGate ? (
+        <div
+          className="pointer-events-auto absolute inset-0 grid place-items-center bg-black p-6 text-center"
+          style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 3 }}
+        >
+          <div className="absolute inset-0 overflow-hidden" aria-hidden>
+            <div
+              className="absolute inset-0"
+              style={{ filter: "blur(12px)", transform: "scale(1.05)" }}
+            >
+              {gatePreview && access?.renderPreview ? (
+                access.renderPreview(gatePreview)
+              ) : gatePreview?.posterUri ? (
+                <img
+                  src={gatePreview.posterUri}
+                  alt=""
+                  className="absolute inset-0 size-full object-cover"
+                />
+              ) : null}
+            </div>
+          </div>
+          <div className="absolute inset-0 bg-black/50" />
+        </div>
+      ) : null}
+      {retryAccess && started && !nodeGate ? (
+        <div
+          className="pointer-events-auto absolute inset-0 grid place-items-center bg-black/60"
+          style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 2 }}
+        >
+          <button type="button" className={PRIMARY_BUTTON} onClick={retryAccess}>
+            {copy.continue}
+          </button>
+        </div>
+      ) : null}
+      {accessPending && !nodeGate ? (
+        <div
+          className="pointer-events-auto absolute inset-0 bg-black/40"
+          style={{ zIndex: EXPERIENCE_RENDERER_MAX_LAYER + 2 }}
+        />
+      ) : null}
+      {!endingId && !runtimeError && !nodeGate
         ? rendererSlots
             .filter(({ renderer }) => renderer.rendererId === EXPERIENCE_CORE_CHOICE_RENDERER_ID)
             .map(renderSlot)
@@ -638,7 +806,7 @@ function ActiveExperienceRuntimePlayer({
         </div>
       ) : null}
 
-      {!started && !runtimeError ? (
+      {!started && !runtimeError && !nodeGate ? (
         <div
           className={classNames(
             "pointer-events-auto absolute inset-0 z-40 grid place-items-center p-6 text-center",
@@ -755,7 +923,9 @@ function CoreRenderer({
   onPlaybackHandle,
   onSoundBlocked,
   renderWorldModel,
+  formatPrice,
 }: {
+  formatPrice?: (amount: number) => string;
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   runtimeState: ExperienceRuntimeState;
@@ -826,6 +996,7 @@ function CoreRenderer({
         open={open}
         locale={locale}
         copy={copy}
+        formatPrice={formatPrice}
         onSelect={(choiceId) => onOutcome(renderer.instanceId, "choice-selected", { choiceId })}
       />
     );
@@ -1392,7 +1563,9 @@ function CoreChoiceRenderer({
   locale,
   copy,
   onSelect,
+  formatPrice,
 }: {
+  formatPrice?: (amount: number) => string;
   manifest: ExperienceRuntimeManifest;
   renderer: ExperienceRendererInstance;
   runtimeState: ExperienceRuntimeState;
@@ -1421,39 +1594,88 @@ function CoreChoiceRenderer({
     >
       <p
         id={promptId}
-        className="mx-auto max-w-2xl text-center text-[15px] leading-6 font-semibold text-balance text-white sm:text-base sm:leading-7"
+        className="mx-auto max-w-2xl text-center text-sm leading-5 font-medium text-balance text-white/80"
       >
         {localize(config.prompt, locale, manifest.localization.defaultLocale)}
       </p>
       {choices.length > 0 ? (
-        <div className="mx-auto mt-5 grid max-w-2xl gap-2.5 sm:grid-cols-2">
-          {choices.map((choice, index) => (
-            <button
-              key={choice.choiceId}
-              type="button"
-              onClick={() => onSelect(choice.choiceId)}
-              className={classNames(
-                // Frosted glass over arbitrary footage: one flat fill and one
-                // hairline, so the card reads on a bright frame and a black
-                // one without decorating the shot.
-                "min-h-13 rounded-2xl px-4 py-3.5 text-left text-sm leading-5 font-semibold text-white sm:text-[15px]",
-                "bg-white/[0.10] ring-1 ring-inset ring-white/10 backdrop-blur-2xl",
-                "transition-colors duration-200 hover:bg-white/[0.17] hover:ring-white/16",
-                "focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none",
-                // An odd final choice spans the row rather than leaving a gap.
-                choices.length % 2 === 1 && index === choices.length - 1
-                  ? "sm:col-span-2"
-                  : undefined
-              )}
-              aria-label={
-                choice.accessibilityLabel
-                  ? localize(choice.accessibilityLabel, locale, manifest.localization.defaultLocale)
-                  : undefined
-              }
-            >
-              {localize(choice.label, locale, manifest.localization.defaultLocale)}
-            </button>
-          ))}
+        <div className="mx-auto mt-3 grid max-w-2xl gap-2 sm:grid-cols-2">
+          {choices.map((choice, index) => {
+            const requirement = manifest.graph.nodes
+              .flatMap((node) => node.eventBindings)
+              .filter(
+                (binding) =>
+                  binding.on.type === "renderer.outcome" &&
+                  binding.on.sourceId === renderer.instanceId &&
+                  binding.on.qualifierId === "choice-selected"
+              )
+              .flatMap((binding) => binding.routes)
+              .find(
+                (route) =>
+                  !route.when ||
+                  evaluateExperienceCondition(route.when, runtimeState, {
+                    type: "renderer.outcome",
+                    sourceId: renderer.instanceId,
+                    qualifierId: "choice-selected",
+                    payload: { choiceId: choice.choiceId },
+                  })
+              )?.access;
+            const price =
+              requirement && formatPrice ? formatPrice(requirement.communityPointPrice) : null;
+            return (
+              <button
+                key={choice.choiceId}
+                type="button"
+                onClick={() => onSelect(choice.choiceId)}
+                className={classNames(
+                  "flex min-h-11 min-w-0 items-center gap-2 rounded-xl border px-3 py-2.5 text-left text-[13px] leading-5 font-medium text-white",
+                  "bg-white/[0.10] backdrop-blur-2xl transition-colors duration-200 hover:bg-white/[0.17]",
+                  "focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:outline-none",
+                  !price ? "border-white/10 hover:border-white/20" : undefined,
+                  choices.length % 2 === 1 && index === choices.length - 1
+                    ? "sm:col-span-2"
+                    : undefined
+                )}
+                style={
+                  price
+                    ? {
+                        borderColor:
+                          "color-mix(in srgb, var(--brand-yellow, #ffd84d) 45%, transparent)",
+                      }
+                    : undefined
+                }
+                aria-label={
+                  choice.accessibilityLabel
+                    ? localize(
+                        choice.accessibilityLabel,
+                        locale,
+                        manifest.localization.defaultLocale
+                      )
+                    : undefined
+                }
+              >
+                {price ? (
+                  <span
+                    className="flex shrink-0 items-center"
+                    style={{ color: "var(--brand-yellow, #ffd84d)" }}
+                  >
+                    <IconLock className="size-4" stroke={1.8} aria-hidden />
+                  </span>
+                ) : null}
+                <span className="min-w-0 flex-1 wrap-anywhere">
+                  {localize(choice.label, locale, manifest.localization.defaultLocale)}
+                </span>
+                {price ? (
+                  <span
+                    className="max-w-[45%] shrink-0 text-right text-xs font-medium leading-4 tabular-nums"
+                    style={{ color: "var(--brand-yellow, #ffd84d)" }}
+                  >
+                    {price}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       ) : (
         <p role="alert" className="mt-3 text-center text-xs text-white/52">
@@ -1515,10 +1737,12 @@ function PlayerFrame({
       ref={shellRef}
       role="region"
       aria-label={copy.regionLabel}
-      style={style}
+      // Clip the oversized cover stage without allowing focus restoration to
+      // scroll this shell and displace the viewport controls.
+      style={{ ...style, overflow: "clip" }}
       data-experience-profile={experienceProfile}
       data-experience-stage-profile={stageProfile}
-      className="relative h-full min-h-[inherit] w-full overflow-hidden bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
+      className="relative isolate h-full min-h-[inherit] w-full bg-[var(--experience-color-background,#000)] text-[var(--experience-color-text,#fff)]"
     >
       <div
         data-experience-media-stage=""
@@ -1710,11 +1934,12 @@ function localize(value: ExperienceLocalizedText, locale: string, defaultLocale:
 function useNextScenePreload(
   manifest: ExperienceRuntimeManifest,
   sceneId: string,
-  orientation: ExperienceOrientation
+  orientation: ExperienceOrientation,
+  canAccess: (requirement: ExperienceAccessRequirement) => boolean
 ): void {
   const uris = useMemo(
-    () => resolveNextSceneVideoUris(manifest, sceneId, orientation),
-    [manifest, orientation, sceneId]
+    () => resolveNextSceneVideoUris(manifest, sceneId, orientation, canAccess),
+    [canAccess, manifest, orientation, sceneId]
   );
   useEffect(() => {
     if (uris.length === 0) return;
@@ -1740,23 +1965,26 @@ function useNextScenePreload(
 export function resolveNextSceneVideoUris(
   manifest: ExperienceRuntimeManifest,
   sceneId: string,
-  orientation: ExperienceOrientation
+  orientation: ExperienceOrientation,
+  canAccess: (requirement: ExperienceAccessRequirement) => boolean = () => false
 ): string[] {
   const current = findGraphNode(manifest, sceneId);
   if (!current || current.kind !== "scene") return [];
   const targetSceneIds = new Set(
     current.eventBindings.flatMap((binding) =>
-      binding.routes.flatMap((route) =>
-        route.actions.flatMap((action) =>
-          action.kind === "scene.goto" && action.sceneId !== sceneId ? [action.sceneId] : []
+      binding.routes
+        .filter((route) => !route.access || canAccess(route.access))
+        .flatMap((route) =>
+          route.actions.flatMap((action) =>
+            action.kind === "scene.goto" && action.sceneId !== sceneId ? [action.sceneId] : []
+          )
         )
-      )
     )
   );
   const wanted = new Set<string>();
   targetSceneIds.forEach((targetSceneId) => {
     const target = findGraphNode(manifest, targetSceneId);
-    if (!target || target.kind !== "scene") return;
+    if (!target || target.kind !== "scene" || (target.access && !canAccess(target.access))) return;
     target.renderers.forEach((renderer) => {
       if (renderer.rendererId !== EXPERIENCE_CORE_VIDEO_RENDERER_ID) return;
       const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer.config);
@@ -1768,6 +1996,32 @@ export function resolveNextSceneVideoUris(
     });
   });
   return [...wanted];
+}
+
+export function resolveLockedScenePreview(
+  manifest: ExperienceRuntimeManifest,
+  node: ExperienceGraphNode,
+  orientation: ExperienceOrientation
+): { videoUri?: string; posterUri?: string } {
+  if (node.kind !== "scene") return {};
+  const renderer = node.renderers.find(
+    (item) => item.rendererId === EXPERIENCE_CORE_VIDEO_RENDERER_ID
+  );
+  const parsed = ExperienceCoreVideoRendererConfigSchema.safeParse(renderer?.config);
+  if (!parsed.success) return {};
+  const first = parsed.data.sequence[0];
+  if (!first) return {};
+  const videoUri = resolveVideoMedia(manifest.assets, first.assetId, orientation)?.variant.uri;
+  // Frozen public media has a separate image-only endpoint. Never fetch the
+  // protected video to produce an anonymous preview in the browser.
+  const posterUri =
+    videoUri &&
+    /\/story-projects\/[^/]+\/builds\/[^/]+\/assets\/[^/]+\/variants\/[^/]+\/content$/.test(
+      videoUri
+    )
+      ? videoUri.replace(/\/content$/, "/poster")
+      : undefined;
+  return { videoUri, posterUri };
 }
 
 function resolveVideoMedia(

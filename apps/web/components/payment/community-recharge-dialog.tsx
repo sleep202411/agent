@@ -315,9 +315,11 @@ export function CommunityRechargeDialog({
     if (idemKeyRef.current?.sig !== intentSig) {
       idemKeyRef.current = { sig: intentSig, key: crypto.randomUUID() };
     }
-    const base = `${window.location.origin}${window.location.pathname}`;
-    const successUrl = `${base}?recharge=success`;
-    const backUrl = `${base}?recharge=cancelled`;
+    const returnUrl = new URL(window.location.href);
+    returnUrl.searchParams.set("recharge", "success");
+    const successUrl = returnUrl.toString();
+    returnUrl.searchParams.set("recharge", "cancelled");
+    const backUrl = returnUrl.toString();
     const aleid = axonAleid();
     try {
       if (submit.kind === "custom") {

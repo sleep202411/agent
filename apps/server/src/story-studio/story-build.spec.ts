@@ -549,3 +549,51 @@ describe('compileStoryBuild', () => {
     );
   });
 });
+
+describe('Community Points compilation', () => {
+  it('projects one destination price onto every incoming choice, including inline decisions', () => {
+    const content = draft();
+    const opening = content.graph.nodes[0];
+    const exit = opening.exit;
+    if (exit.kind !== 'choice') throw new Error('Expected choice fixture');
+    exit.choices[1].nextNodeId = exit.choices[0].nextNodeId;
+    opening.exit = { kind: 'auto', nextNodeId: 'decision:routes' };
+    content.graph.nodes.push({
+      kind: 'decision',
+      nodeId: 'decision:routes',
+      exit,
+    });
+    const target = content.graph.nodes[1];
+    if (target.kind !== 'clip') throw new Error('Expected clip');
+    target.communityPointPrice = 30;
+    const result = compileStoryBuild(input({ draft: content }));
+    expect(result.diagnostics.filter((d) => d.severity === 'error')).toEqual(
+      [],
+    );
+    const nodes = result.runtime!.graph.nodes;
+    const destination = nodes.find((node) => node.sceneId === 'left')!;
+    expect(destination.access).toMatchObject({
+      key: 'node:left',
+      communityPointPrice: 30,
+    });
+    content.graph.entryNodeId = 'decision:routes';
+    const direct = compileStoryBuild(input({ draft: content })).runtime!;
+    for (const decision of [
+      nodes.find((node) => node.sceneId === 'opening')!,
+      direct.graph.nodes.find((node) => node.sceneId === 'decision:routes')!,
+    ]) {
+      expect(decision.access).toBeUndefined();
+      const routes = decision.eventBindings
+        .flatMap((binding) => binding.routes)
+        .filter((route) => route.access);
+      expect(routes).toHaveLength(2);
+      expect(routes.map((route) => route.access)).toEqual([
+        destination.access,
+        destination.access,
+      ]);
+    }
+    expect(result.runtime!.compatibility.requiredCapabilities).toContain(
+      'commerce.community-points',
+    );
+  });
+});

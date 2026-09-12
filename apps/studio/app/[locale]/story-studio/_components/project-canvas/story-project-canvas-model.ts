@@ -14,6 +14,7 @@ type StoryCanvasNodeKind = "clip" | "world" | "decision";
 type StoryCanvasExitKind = "auto" | "choice";
 
 export interface StoryCanvasChoiceData {
+  communityPointPrice?: number;
   choiceId: string;
   label: string;
   targetNodeId: string | null;
@@ -39,6 +40,7 @@ export interface StoryCanvasInteractionOutcomeData {
 }
 
 export interface StoryCanvasNodeData extends Record<string, unknown> {
+  communityPointPrice?: number;
   kind: StoryCanvasNodeKind;
   title: string;
   /** Canonical plot description, shared with the storyboard. */
@@ -126,6 +128,10 @@ export function buildStoryCanvasModel(
   const frameAspectRatioOf = (profile: StoryFrameProfile): "16:9" | "9:16" =>
     profile === "portrait_9_16" ? "9:16" : "16:9";
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
+  const destinationPrice = (nodeId: string | null) => {
+    const target = graphNodesById.get(nodeId ?? "");
+    return target && target.kind !== "decision" ? target.communityPointPrice : undefined;
+  };
   const clipOrdinalsByNodeId = new Map<string, number>();
   let nextClipOrdinal = 0;
   content.graph.nodes.forEach((node) => {
@@ -153,6 +159,7 @@ export function buildStoryCanvasModel(
               summary: localizedDraftText(node.exit.prompt, locale),
               choices: node.exit.choices.map((choice) => ({
                 choiceId: choice.choiceId,
+                communityPointPrice: destinationPrice(choice.nextNodeId),
                 label: localizedDraftText(choice.label, locale),
                 targetNodeId: choice.nextNodeId,
                 targetTitle: choice.nextNodeId
@@ -181,6 +188,7 @@ export function buildStoryCanvasModel(
               title: node.name?.trim() || world?.name?.trim() || `${copy.world} ${worldOrdinal}`,
               eyebrow: `${copy.world} ${String(worldOrdinal).padStart(2, "0")}`,
               nodeId: node.nodeId,
+              communityPointPrice: node.communityPointPrice,
               worldId: node.worldId,
               world,
               worldEntryInstruction: node.entryInstruction,
@@ -196,6 +204,7 @@ export function buildStoryCanvasModel(
         node.exit.kind === "choice"
           ? node.exit.choices.map((choice) => ({
               choiceId: choice.choiceId,
+              communityPointPrice: destinationPrice(choice.nextNodeId),
               label: localizedDraftText(choice.label, locale),
               targetNodeId: choice.nextNodeId,
               targetTitle: graphNodeDisplayTitle(
@@ -234,6 +243,7 @@ export function buildStoryCanvasModel(
           description: node.description,
           eyebrow: `${copy.clip} ${String(clipOrdinal).padStart(2, "0")}`,
           nodeId: node.nodeId,
+          communityPointPrice: node.communityPointPrice,
           clipKey: node.clipKey,
           // A choice scene completes into a derived Decision node. Keeping the
           // scene itself automatic makes the visual grammar unambiguous:

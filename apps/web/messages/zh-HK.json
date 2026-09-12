@@ -2246,24 +2246,6 @@
       "issuedAt": "簽發時間",
       "certNo": "證書編號"
     },
-    "earnings": {
-      "title": "可提現收入",
-      "withdrawableRevenue": "可提現餘額",
-      "lifetimeEarned": "累計收入",
-      "percentOfSale": "佔銷售 {pct}%",
-      "shareNote": "你的 IP 每筆銷售都會為你帶來收入分成。",
-      "revenueHistory": "最近收入",
-      "cashOutComingSoon": "提現即將開放",
-      "noRevenueYet": "暫無收入。IP 開始銷售後，收入將在此顯示。",
-      "loading": "正在載入收入",
-      "loadFailed": "收入載入失敗。",
-      "unknownIp": "未知 IP",
-      "entryStatus": {
-        "pending": "待入帳",
-        "posted": "已入帳",
-        "voided": "已作廢"
-      }
-    },
     "ips": {
       "emptyOwnerTitle": "建立你的 IP",
       "emptyOwnerBody": "IP 是你擁有的核心專案，角色、場景、劇集都歸屬於其下。",
@@ -9128,7 +9110,21 @@
     "shareCopied": "連結已複製",
     "shareFailed": "複製失敗",
     "emptySequence": "暫無影片",
-    "loadingMedia": "正在載入影片"
+    "loadingMedia": "正在載入影片",
+    "communityAccess": {
+      "title": "解鎖後繼續",
+      "checking": "正在確認解鎖狀態…",
+      "price": "{amount} 社區積分",
+      "once": "解鎖一次，重玩不再扣分。",
+      "balance": "可用：{amount} 社區積分",
+      "cancel": "取消",
+      "retry": "重試",
+      "signIn": "登入後繼續",
+      "recharge": "儲值社區積分",
+      "unlock": "解鎖並繼續",
+      "unlocking": "解鎖中…",
+      "failed": "解鎖失敗，請重試。"
+    }
   },
   "games": {
     "back": "返回 IP 廣場",
@@ -9464,6 +9460,62 @@
     "nowPlaying": "正在播放",
     "notPlaying": "未播放",
     "loadingChannel": "正在載入下一頻道…"
+  },
+  "creatorEarnings": {
+    "title": "收益",
+    "subtitle": "統一查看影遊與 IP 的收入明細。",
+    "back": "創作者中心",
+    "unit": "社區積分",
+    "overview": "收益概覽",
+    "lifetime": "累計收益",
+    "balance": "可提現餘額",
+    "lifetimeHint": "全部交易中實際入賬的收益",
+    "balanceHint": "已入賬的收益積分 · 提現暫未開放",
+    "transactions": "收入明細",
+    "workFilter": "篩選作品",
+    "timeFilter": "篩選時間",
+    "allWorks": "全部作品",
+    "selectedWork": "目前影遊",
+    "unknownWork": "未命名作品",
+    "period": {
+      "all": "全部時間",
+      "30": "近 30 天",
+      "90": "近 90 天"
+    },
+    "work": "作品 / 內容",
+    "sale": "支付社區積分",
+    "credited": "我的收益",
+    "status": "狀態",
+    "posted": "已入賬",
+    "loading": "正在載入收益",
+    "emptyTitle": "讓好故事帶來第一筆收益",
+    "emptyHint": "玩家解鎖你的付費內容後，實際入賬的收益會自動記錄在這裡。",
+    "noMatches": "暫無符合條件的收入",
+    "noMatchesHint": "試試其他作品或時間範圍。",
+    "clearFilters": "清除篩選",
+    "loadFailed": "無法載入收益",
+    "retry": "重試",
+    "ledgerNote": "金額均為社區積分，僅統計實際入賬的收益；預覽不會產生收益。",
+    "detail": "交易詳情",
+    "content": "解鎖內容",
+    "order": "購買編號",
+    "transaction": "入賬編號",
+    "splitNote": "我的收益為扣除平台及協作者分成後，實際入賬的個人收益。支付社區積分為玩家實際支出的積分。",
+    "viewEarnings": "查看收益",
+    "incomeType": "收入類型",
+    "incomeTypes": {
+      "story": "影遊收入",
+      "ipEpisode": "IP 劇集收入",
+      "ip": "IP 收入"
+    },
+    "storyRevenueNote": "玩家支付的社區積分全額歸屬影遊所有者。影遊收入不扣除平台或協作者分成。",
+    "pagination": {
+      "label": "收入明細分頁",
+      "pageSize": "每頁 10 筆",
+      "previous": "上一頁",
+      "next": "下一頁",
+      "page": "第 {page} 頁"
+    }
   },
   "crewAccountability": {
     "commitments": "任務承諾與交接",

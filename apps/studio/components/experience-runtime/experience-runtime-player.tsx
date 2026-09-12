@@ -5,6 +5,7 @@ import { ExperiencePlayer, type ExperiencePlayerCopy } from "@repo/experience-pl
 import { useTranslations } from "next-intl";
 import type { StoryFrameProfile } from "@/lib/story-projects-api";
 import { WorldModelExperienceRenderer } from "./world-model-experience-renderer";
+import { useStoryPreviewAccess } from "./use-story-preview-access";
 
 export function ExperienceRuntimePlayer({
   runtime,
@@ -18,6 +19,7 @@ export function ExperienceRuntimePlayer({
   coverUrl?: string | null;
 }) {
   const t = useTranslations("experiencePlayer");
+  const { access, dialog } = useStoryPreviewAccess(locale);
   const copy = useMemo<ExperiencePlayerCopy>(
     () => ({
       invalidManifest: t("invalidManifest"),
@@ -53,15 +55,19 @@ export function ExperienceRuntimePlayer({
   );
 
   return (
-    <ExperiencePlayer
-      runtime={runtime}
-      locale={locale}
-      coverUrl={coverUrl ?? undefined}
-      frameProfile={
-        frameProfile ? (frameProfile === "portrait_9_16" ? "portrait" : "landscape") : "auto"
-      }
-      copy={copy}
-      renderWorldModel={(props) => <WorldModelExperienceRenderer {...props} />}
-    />
+    <>
+      <ExperiencePlayer
+        access={access}
+        runtime={runtime}
+        locale={locale}
+        coverUrl={coverUrl ?? undefined}
+        frameProfile={
+          frameProfile ? (frameProfile === "portrait_9_16" ? "portrait" : "landscape") : "auto"
+        }
+        copy={copy}
+        renderWorldModel={(props) => <WorldModelExperienceRenderer {...props} />}
+      />
+      {dialog}
+    </>
   );
 }

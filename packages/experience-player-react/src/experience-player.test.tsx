@@ -1,10 +1,36 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import type { ExperienceRuntimeManifest } from "@repo/shared/experience-runtime";
-import { ExperiencePlayer, resolveNextSceneVideoUris } from "./experience-player";
+import {
+  ExperienceRuntimeManifestSchema,
+  type ExperienceRuntimeManifest,
+} from "@repo/shared/experience-runtime";
+import {
+  ExperiencePlayer,
+  resolveNextSceneVideoUris,
+  resolveLockedScenePreview,
+} from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 
 const HASH = "a".repeat(64);
+
+it("uses an image-only frozen-media endpoint for the locked scene preview", () => {
+  const runtime = ExperienceRuntimeManifestSchema.parse(
+    runtimeFixture({ completion: "passive", rendererKind: "video" })
+  );
+  const asset = runtime.assets.find((item) => item.kind === "video")!;
+  if (asset.kind !== "video") throw new Error("Missing video");
+  const content =
+    "/aurora/story-projects/project/builds/build/assets/asset/variants/original/content";
+  asset.variants[0]!.uri = content;
+  expect(resolveLockedScenePreview(runtime, runtime.graph.nodes[0]!, "landscape")).toEqual({
+    videoUri: content,
+    posterUri: content.replace("/content", "/poster"),
+  });
+  asset.variants[0]!.uri = "https://external.test/paid.mp4";
+  expect(
+    resolveLockedScenePreview(runtime, runtime.graph.nodes[0]!, "landscape").posterUri
+  ).toBeUndefined();
+});
 
 const copy: ExperiencePlayerCopy = {
   invalidManifest: "Invalid manifest",
@@ -587,4 +613,43 @@ describe("ExperiencePlayer core.text", () => {
 
     expect(resolveNextSceneVideoUris(runtime, "scene.text", "landscape")).toEqual(["/next.mp4"]);
   });
+});
+
+it("does not render paid entry content before authorization", () => {
+  const runtime = runtimeFixture({ experienceProfile: "narrative", completion: "continue" });
+  const paid = {
+    ...runtime,
+    compatibility: {
+      ...runtime.compatibility,
+      requiredCapabilities: [
+        ...runtime.compatibility.requiredCapabilities,
+        "commerce.community-points",
+      ],
+    },
+    graph: {
+      ...runtime.graph,
+      nodes: runtime.graph.nodes.map((node, index) =>
+        index === 0
+          ? {
+              ...node,
+              access: { key: "node:entry", communityPointPrice: 20, title: { "en-US": "Entry" } },
+            }
+          : node
+      ),
+    },
+  };
+  const html = renderToStaticMarkup(
+    <ExperiencePlayer
+      runtime={paid}
+      locale="en-US"
+      copy={copy}
+      access={{
+        canAccess: () => false,
+        requestAccess: async () => false,
+        formatPrice: (amount) => `${amount} points`,
+      }}
+    />
+  );
+  expect(html).not.toContain('data-experience-renderer="core.text"');
+  expect(html).not.toContain(copy.invalidManifest);
 });

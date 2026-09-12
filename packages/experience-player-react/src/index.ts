@@ -2,6 +2,7 @@ export {
   ExperiencePlayer,
   type ExperiencePlayerFrameProfile,
   type ExperiencePlayerProps,
+  type ExperienceAccessCheckpoint,
   type ExperienceWorldModelRendererProps,
 } from "./experience-player";
 export type { ExperiencePlayerCopy, ExperiencePlayerVideoCopy } from "./experience-player-copy";

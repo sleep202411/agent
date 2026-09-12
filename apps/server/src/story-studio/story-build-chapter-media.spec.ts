@@ -9,6 +9,12 @@ import {
   StoryBuildStatus,
 } from '@prisma/client';
 import { StoryBuildService } from './story-build.service';
+import { readStoryPoster } from './story-build-poster';
+import { compileStoryExperienceManifest } from './story-experience-manifest-compiler';
+import { InteractiveFilmReleaseSchema } from '@repo/shared/interactive-film-runtime';
+jest.mock('./story-build-poster', () => ({
+  readStoryPoster: jest.fn().mockResolvedValue(Buffer.from('jpeg')),
+}));
 
 const PROJECT_ID = '019f993d-aecc-7020-b59f-3fec0fb7bfc6';
 const BUILD_ID = '019f60f4-b101-70d4-8000-00000000a001';
@@ -107,6 +113,9 @@ function serviceFor(frozen: unknown) {
       project: { workspaceId: '019f60f4-b101-70d4-8000-000000000003' },
     }),
   };
+  const communityAccess = {
+    requireAssetAccess: jest.fn().mockRejectedValue(new Error('locked')),
+  };
   const service = new StoryBuildService(
     {
       storyBuildAsset: { findFirst: jest.fn().mockResolvedValue(frozen) },
@@ -114,11 +123,135 @@ function serviceFor(frozen: unknown) {
     permissions as never,
     storage as never,
     { assertHumanWriteAllowed: jest.fn() } as never,
+    communityAccess as never,
   );
-  return { service, permissions, storage };
+  return { service, permissions, storage, communityAccess };
 }
 
 describe('release-candidate media delivery', () => {
+  it('serves only a first-frame image before unlock while keeping the video protected', async () => {
+    const frozen = frozenWholeAsset({ status: 'confirmed' });
+    const runtimeJson = compileStoryExperienceManifest({
+      release: InteractiveFilmReleaseSchema.parse({
+        schemaVersion: 2,
+        channel: 'production',
+        gameId: PROJECT_ID,
+        releaseId: BUILD_ID,
+        contentVersion: BUILD_ID,
+        entryNodeId: 'paid',
+        defaultLocale: 'en-US',
+        locales: ['en-US'],
+        media: [
+          {
+            assetId: ASSET_ID,
+            kind: 'video',
+            orientationPolicy: 'single-master',
+            variants: {
+              landscape: {
+                sourceAssetId: ASSET_ID,
+                sha256: CHECKSUM,
+                src: `/aurora/story-projects/${PROJECT_ID}/builds/${BUILD_ID}/assets/${ASSET_ID}/variants/${VARIANT_ID}/content`,
+                width: 1920,
+                height: 1080,
+                durationSeconds: 7,
+              },
+            },
+          },
+        ],
+        nodes: [
+          {
+            nodeId: 'paid',
+            communityPointPrice: 3,
+            presentation: {
+              kind: 'video',
+              fit: 'cover',
+              sequence: [
+                {
+                  clipId: 'clip',
+                  assetId: ASSET_ID,
+                  endBehavior: { behavior: 'advance' },
+                },
+              ],
+            },
+            exit: { kind: 'auto', nextNodeId: null },
+          },
+        ],
+      }),
+      metadata: { title: 'Paid' },
+      experienceProfile: 'cinematic',
+      mediaIdentities: [
+        {
+          runtimeAssetId: ASSET_ID,
+          variantId: VARIANT_ID,
+          mediaType: 'video/mp4',
+        },
+      ],
+    }).manifest;
+    expect(runtimeJson?.graph.nodes[0]?.access?.communityPointPrice).toBe(3);
+    Object.assign(frozen.build, { runtimeJson });
+    frozen.asset.storageProvider = MediaStorageProvider.aliyun_oss;
+    frozen.asset.bucket = 'test';
+    frozen.asset.region = 'test';
+    frozen.asset.objectKey = 'paid.mp4';
+    frozen.asset.externalUrl = null;
+    const { service, communityAccess } = serviceFor(frozen);
+    await expect(
+      service.readBuildAssetPoster(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).resolves.toEqual(Buffer.from('jpeg'));
+    expect(readStoryPoster).toHaveBeenCalledWith(
+      `${BUILD_ID}:${ASSET_ID}:${VARIANT_ID}`,
+      SIGNED_URL,
+    );
+    expect(communityAccess.requireAssetAccess).not.toHaveBeenCalled();
+    await expect(
+      service.issueBuildAssetReadUrl(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toThrow('locked');
+  });
+
+  it('does not expose posters for private, removed, or externally hosted media', async () => {
+    const privateMedia = serviceFor(frozenWholeAsset(null));
+    await expect(
+      privateMedia.service.readBuildAssetPoster(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    const external = frozenWholeAsset({ status: 'confirmed' });
+    await expect(
+      serviceFor(external).service.readBuildAssetPoster(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toThrow('managed storage');
+    external.asset.deletedAt = new Date() as never;
+    await expect(
+      serviceFor(external).service.readBuildAssetPoster(
+        undefined,
+        PROJECT_ID,
+        BUILD_ID,
+        ASSET_ID,
+        VARIANT_ID,
+      ),
+    ).rejects.toThrow();
+  });
   it('keeps a whole production Build private without a candidate receipt', async () => {
     const { service } = serviceFor(frozenWholeAsset(null));
 

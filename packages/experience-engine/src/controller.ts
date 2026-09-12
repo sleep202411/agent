@@ -9,9 +9,11 @@ import {
 import { ExperienceRendererRegistry } from "./renderer-registry.js";
 import {
   ExperienceRuntimeInvariantError,
+  ExperienceAccessRequiredError,
   initializeExperienceRuntime,
   restoreExperienceRuntime,
   runExperienceEventQueue,
+  type ExperienceAccessCheck,
   type ExperienceEventQueueResult,
   type ExperienceRuntimeEvent,
   type ExperienceRuntimeRestoreInput,
@@ -23,6 +25,7 @@ export interface ExperienceRuntimeControllerOptions {
   rendererRegistry: ExperienceRendererRegistry;
   randomSeed?: string;
   restore?: ExperienceRuntimeRestoreInput;
+  canAccess?: ExperienceAccessCheck;
 }
 
 /**
@@ -35,11 +38,13 @@ export class ExperienceRuntimeController {
   readonly #rendererRegistry: ExperienceRendererRegistry;
   #state: ExperienceRuntimeState;
   #started: boolean;
+  readonly #canAccess?: ExperienceAccessCheck;
 
   constructor(manifest: ExperienceRuntimeManifest, options: ExperienceRuntimeControllerOptions) {
     assertExperienceRuntimeCompatibility(manifest, options.compatibility);
     options.rendererRegistry.assertManifest(manifest);
     this.#manifest = manifest;
+    this.#canAccess = options.canAccess;
     this.#rendererRegistry = options.rendererRegistry;
     this.#state = options.restore
       ? restoreExperienceRuntime(manifest, options.restore)
@@ -64,13 +69,18 @@ export class ExperienceRuntimeController {
       );
     }
     this.#started = true;
-    return this.dispatch([
-      {
-        type: "scene.entered",
-        sourceId: this.#state.currentSceneId,
-        payload: {},
-      },
-    ]);
+    try {
+      return this.dispatch([
+        {
+          type: "scene.entered",
+          sourceId: this.#state.currentSceneId,
+          payload: {},
+        },
+      ]);
+    } catch (error) {
+      this.#started = false;
+      throw error;
+    }
   }
 
   dispatch(
@@ -78,7 +88,17 @@ export class ExperienceRuntimeController {
     options?: { maxProcessedEvents?: number }
   ): ExperienceEventQueueResult {
     this.#assertStarted();
-    const result = runExperienceEventQueue(this.#manifest, this.#state, events, options);
+    let result: ExperienceEventQueueResult;
+    try {
+      result = runExperienceEventQueue(this.#manifest, this.#state, events, {
+        ...options,
+        canAccess: this.#canAccess,
+      });
+    } catch (error) {
+      if (error instanceof ExperienceAccessRequiredError)
+        error.events = structuredClone([...events]);
+      throw error;
+    }
     result.effects.forEach((effect) => {
       if (effect.kind !== "renderer.command") return;
       const instance = this.#manifest.graph.nodes

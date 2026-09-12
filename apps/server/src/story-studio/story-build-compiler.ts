@@ -824,6 +824,10 @@ function compileIntermediateRelease(
   const timelineByNodeId = new Map(
     includedTimelines.map((timeline) => [timeline.graphNodeId, timeline]),
   );
+  const locales = collectInteractiveStoryRuntimeLocales(
+    input.draft,
+    input.defaultLocale,
+  );
   const runtimeNodes: InteractiveFilmRelease['nodes'] = [];
   [...selection].sort().forEach((nodeId) => {
     const node = nodes.get(nodeId);
@@ -832,6 +836,13 @@ function compileIntermediateRelease(
       if (!node.worldId) return;
       runtimeNodes.push({
         nodeId: node.nodeId,
+        communityPointPrice: node.communityPointPrice,
+        title: Object.fromEntries(
+          locales.map((locale) => [
+            locale,
+            storyNodeTitle(node, locale, input.defaultLocale),
+          ]),
+        ),
         presentation: {
           kind: 'world',
           worldId: node.worldId,
@@ -849,6 +860,12 @@ function compileIntermediateRelease(
     if (node.kind === 'decision') {
       runtimeNodes.push({
         nodeId: node.nodeId,
+        title: Object.fromEntries(
+          locales.map((locale) => [
+            locale,
+            storyNodeTitle(node, locale, input.defaultLocale),
+          ]),
+        ),
         presentation: { kind: 'decision' },
         overlays: [],
         interactions: [],
@@ -875,6 +892,10 @@ function compileIntermediateRelease(
         : node;
     runtimeNodes.push({
       nodeId: node.nodeId,
+      communityPointPrice: node.communityPointPrice,
+      title: Object.fromEntries(
+        locales.map((locale) => [locale, node.name || node.clipKey]),
+      ),
       presentation: {
         kind: 'video',
         // A video segment advances when its footage ends; a still segment
@@ -900,10 +921,7 @@ function compileIntermediateRelease(
       exit: compileExit(exitOwner),
     });
   });
-  const locales = collectInteractiveStoryRuntimeLocales(
-    input.draft,
-    input.defaultLocale,
-  );
+
   // Inlining a decision over its preceding video can make its standalone
   // scene unnecessary. Prune only the compiled release, never authored nodes.
   const runtimeById = new Map(runtimeNodes.map((node) => [node.nodeId, node]));
@@ -1039,5 +1057,18 @@ function sortAndDedupeDiagnostics(
       left.code.localeCompare(right.code) ||
       (left.entityId ?? '').localeCompare(right.entityId ?? '') ||
       left.message.localeCompare(right.message),
+  );
+}
+
+function storyNodeTitle(
+  node: InteractiveStoryDraftContent['graph']['nodes'][number],
+  locale: string,
+  defaultLocale: string,
+): string {
+  if (node.kind !== 'decision') return node.name || node.nodeId;
+  return (
+    (node.exit.kind === 'choice' &&
+      (node.exit.prompt[locale] || node.exit.prompt[defaultLocale])) ||
+    node.nodeId
   );
 }

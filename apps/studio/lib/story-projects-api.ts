@@ -183,6 +183,8 @@ export interface StoryChoiceExit {
 }
 
 export interface StoryClipGraphNode {
+  /** Authoring price; omitted means free. Currency is community_point. */
+  communityPointPrice?: number;
   kind: "clip";
   nodeId: string;
   clipKey: string;
@@ -193,6 +195,8 @@ export interface StoryClipGraphNode {
 }
 
 export interface StoryWorldGraphNode {
+  /** Authoring price; omitted means free. Currency is community_point. */
+  communityPointPrice?: number;
   kind: "world";
   nodeId: string;
   worldId: string | null;
