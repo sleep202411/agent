@@ -50,7 +50,7 @@ suite('Crew accountability on isolated PostgreSQL', () => {
         id: crewId,
         name: 'Accountability integration',
         description: '',
-        logo: '',
+        logo: 'https://example.test/crew.png',
         createdByUserId: leader,
       },
     });
