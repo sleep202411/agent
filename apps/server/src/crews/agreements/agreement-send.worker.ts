@@ -114,8 +114,10 @@ export class CrewAgreementSendWorker
   }
 
   private async drain(): Promise<void> {
-    const claimed = await this.claim(this.batchSize);
-    for (const job of claimed) {
+    for (let sent = 0; sent < this.batchSize; sent += 1) {
+      // Do not consume later jobs' leases while waiting on the provider.
+      const [job] = await this.claim(1);
+      if (!job) break;
       await this.dispatchOne(job);
     }
   }

@@ -98,6 +98,44 @@ function build() {
 }
 
 describe('CrewAgreementArchiveWorker', () => {
+  it('claims only ready-to-archive work and retains the sweep limit', async () => {
+    const { worker } = build();
+    const internals = worker as unknown as {
+      batchSize: number;
+      claim(limit: number): Promise<unknown[]>;
+      archiveOne(value: unknown): Promise<void>;
+    };
+    internals.batchSize = 2;
+    const queue = [archiveJob(), archiveJob(), archiveJob()];
+    const claim = jest
+      .spyOn(internals, 'claim')
+      .mockImplementation((limit) => Promise.resolve(queue.splice(0, limit)));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const send = jest
+      .spyOn(internals, 'archiveOne')
+      .mockResolvedValue()
+      .mockReturnValueOnce(pending);
+    const first = worker.drainOnce();
+    const overlap = worker.drainOnce();
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(claim).toHaveBeenCalledWith(1);
+      expect(queue).toHaveLength(2);
+    } finally {
+      release();
+      await Promise.all([first, overlap]);
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(queue).toHaveLength(1);
+    await worker.drainOnce();
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(queue).toHaveLength(0);
+  });
+
   it('downloads both immutable provider artifacts and stores deterministic objects', async () => {
     const t = build();
     const persistArchive = jest.fn().mockResolvedValue(undefined);

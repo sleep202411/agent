@@ -102,8 +102,10 @@ export class CrewAgreementArchiveWorker
     if (this.draining) return;
     this.draining = true;
     try {
-      const claimed = await this.claim(this.batchSize);
-      for (const job of claimed) {
+      for (let archived = 0; archived < this.batchSize; archived += 1) {
+        // Downloading and storing one agreement must not age queued leases.
+        const [job] = await this.claim(1);
+        if (!job) break;
         await this.archiveOne(job);
       }
     } catch (error) {
