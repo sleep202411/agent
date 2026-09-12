@@ -1832,6 +1832,9 @@
       "error": "签到失败"
     },
     "members": "成员",
+    "projectSettings": "项目设置",
+    "projectMembers": "项目成员",
+    "projectMembersSubtitle": "参与“{name}”协作的成员。",
     "membersSubtitle": "“{name}”的成员可以协作处理该工作区的每个项目。",
     "overview": "概览",
     "teamName": "团队名称",

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
-import { openSettings } from "@/lib/settings-hash";
+import { ShareDialog } from "./share-dialog";
 import {
   IconBolt,
   IconChevronDown,
@@ -118,6 +118,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
     );
   const { workspaces, activeWorkspace, setActiveWorkspaceId, createTeam } = useWorkspace();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [invitingWorkspace, setInvitingWorkspace] = useState<WorkspaceRef | null>(null);
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -273,8 +274,8 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
                         onClick={(event) => {
                           event.stopPropagation();
                           event.preventDefault();
-                          setActiveWorkspaceId(ws.id);
-                          openSettings("members");
+                          setMenuOpen(false);
+                          setInvitingWorkspace(ws);
                         }}
                         className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
                       >
@@ -305,6 +306,14 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {invitingWorkspace && (
+        <ShareDialog
+          scope={{ kind: "workspace", id: invitingWorkspace.id, name: invitingWorkspace.name }}
+          canManage={canManage(invitingWorkspace)}
+          open
+          onOpenChange={(open) => !open && setInvitingWorkspace(null)}
+        />
+      )}
       <Dialog
         open={creating}
         onOpenChange={(open) => {

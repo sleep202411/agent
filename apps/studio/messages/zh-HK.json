@@ -1832,6 +1832,9 @@
       "error": "簽到失敗"
     },
     "members": "成員",
+    "projectSettings": "專案設定",
+    "projectMembers": "專案成員",
+    "projectMembersSubtitle": "參與「{name}」協作的成員。",
     "membersSubtitle": "「{name}」的成員可以協作處理此工作區的每個專案。",
     "overview": "概覽",
     "teamName": "團隊名稱",

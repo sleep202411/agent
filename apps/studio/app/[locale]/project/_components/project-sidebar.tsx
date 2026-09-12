@@ -213,17 +213,15 @@ export function ProjectSidebar({
         </nav>
 
         <div className="flex shrink-0 flex-col items-center gap-1 px-3 pt-2 pb-4">
-          {canManage ? (
-            <button
-              type="button"
-              onClick={openShare}
-              aria-label={t("sidebar.members")}
-              title={t("sidebar.members")}
-              className="flex size-9 items-center justify-center rounded-lg text-white/90 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none"
-            >
-              <IconUsersGroup className="size-[19px]" stroke={1.45} />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={openShare}
+            aria-label={t("sidebar.members")}
+            title={t("sidebar.members")}
+            className="flex size-9 items-center justify-center rounded-lg text-white/90 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none"
+          >
+            <IconUsersGroup className="size-[19px]" stroke={1.45} />
+          </button>
           <span className="flex size-9 items-center justify-center rounded-lg text-white/90">
             <ConnectionSignal status={connectionStatus} rtt={rtt} />
           </span>

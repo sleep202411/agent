@@ -83,9 +83,16 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
     );
   const queryClient = useQueryClient();
   const membersKey = ["share-members", scope.kind, scope.id] as const;
-  const { data: members, isLoading } = useQuery({
+  const {
+    data: members,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: membersKey,
     queryFn: () => listMembers(scope),
+    retry: false,
   });
 
   // Role vocabulary is per scope: a Story project assigns story roles, every
@@ -222,7 +229,14 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
       )}
 
       <div className="max-h-80 space-y-0.5 overflow-auto">
-        {isLoading || !filtered ? (
+        {isError ? (
+          <div role="alert" className="space-y-3 px-1.5 py-3 text-sm">
+            <p>{error.message}</p>
+            <Button variant="secondary" size="sm" onClick={() => void refetch()}>
+              {tc("retry")}
+            </Button>
+          </div>
+        ) : isLoading || !filtered ? (
           <>
             {[0, 1].map((key) => (
               <Skeleton key={key} className="h-11 w-full rounded-lg" />

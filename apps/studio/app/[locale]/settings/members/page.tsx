@@ -1,19 +1,27 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { usePathname } from "@/i18n/navigation";
+import { settingsMemberProject } from "@/lib/settings-member-scope";
+import { getProject } from "@/lib/collab/projects-api";
+import { getStoryWorkbench } from "@/lib/story-projects-api";
+import { Button } from "@/components/ui/button";
 import { useTranslations } from "next-intl";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MembersManager } from "@/app/_components/members-manager";
 import { useWorkspace } from "@/app/_components/workspace-context";
 import { PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
 
-/**
- * Workspace members — the full roster for the active workspace (add-by-account,
- * invite links, role changes, removal). Personal workspaces get the same roster:
- * the server's seat policy, not the workspace type, decides how many people fit,
- * so hiding it here would only make that policy unreachable. Per-project sharing
- * uses the modal.
- */
 export default function MembersSettingsPage() {
+  const project = settingsMemberProject(usePathname());
+  return project ? (
+    <ProjectMembers key={`${project.kind}:${project.id}`} project={project} />
+  ) : (
+    <WorkspaceMembers />
+  );
+}
+
+function WorkspaceMembers() {
   const t = useTranslations("settings");
   const { activeWorkspace: ws, loading } = useWorkspace();
   const canManage = ws?.role === "owner" || ws?.role === "admin";
@@ -36,11 +44,58 @@ export default function MembersSettingsPage() {
       ) : (
         <Panel>
           <MembersManager
+            key={ws.id}
             scope={{ kind: "workspace", id: ws.id, name: ws.name }}
             canManage={canManage}
           />
         </Panel>
       )}
+    </main>
+  );
+}
+
+function ProjectMembers({
+  project,
+}: {
+  project: NonNullable<ReturnType<typeof settingsMemberProject>>;
+}) {
+  const t = useTranslations("settings");
+  const tc = useTranslations("common");
+  const query = useQuery({
+    queryKey: ["settings-member-project", project.kind, project.id],
+    queryFn: async () => {
+      if (project.kind === "project") {
+        const data = await getProject(project.id);
+        return { name: data.name, canManage: data.role === "owner" || data.role === "admin" };
+      }
+      const { project: data } = await getStoryWorkbench(project.id);
+      return { name: data.title, canManage: data.capabilities.includes("story.admin") };
+    },
+    retry: false,
+  });
+  return (
+    <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
+      <PageHeader
+        title={t("projectMembers")}
+        subtitle={query.data ? t("projectMembersSubtitle", { name: query.data.name }) : undefined}
+      />
+      <Panel>
+        {query.isError ? (
+          <div role="alert" className="space-y-3 text-sm">
+            <p>{query.error.message}</p>
+            <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>
+              {tc("retry")}
+            </Button>
+          </div>
+        ) : query.data ? (
+          <MembersManager
+            scope={{ ...project, name: query.data.name }}
+            canManage={query.data.canManage}
+          />
+        ) : (
+          <Skeleton className="h-11 w-full rounded-lg" />
+        )}
+      </Panel>
     </main>
   );
 }

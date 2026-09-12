@@ -1832,6 +1832,9 @@
       "error": "Could not check in"
     },
     "members": "Members",
+    "projectSettings": "Project settings",
+    "projectMembers": "Project members",
+    "projectMembersSubtitle": "People collaborating on “{name}”.",
     "membersSubtitle": "Members of “{name}” can collaborate on every project in this workspace.",
     "overview": "Overview",
     "teamName": "Team name",
