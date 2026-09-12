@@ -161,8 +161,9 @@ function PositionDetailSession({
     );
   };
 
+  const applicantReadUnavailable = applicationInbox.isLoading || applicationInbox.isError;
   const handleDelete = () => {
-    if (applicationCounts.pending > 0 || !begin()) return;
+    if (applicantReadUnavailable || applicationCounts.pending > 0 || !begin()) return;
     deletePosition.mutate(position.id, {
       onSettled,
       onSuccess: () => {
@@ -273,15 +274,19 @@ function PositionDetailSession({
                 title={t("applicantsTriageTitle", { count: applicationCounts.total })}
                 defaultExpanded
               >
-                {applicationInbox.isLoading ? (
+                {applicationInbox.isError ? (
+                  <div role="alert" className="mb-3 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-300">
+                    <p>{surfaceMessage(applicationInbox.error, t("applicantsLoadFailed"))}</p>
+                    <Button type="button" variant="outline" color="muted" size="sm" disabled={applicationInbox.isFetching} onClick={() => void (applicationInbox.isFetchNextPageError ? applicationInbox.fetchNextPage() : applicationInbox.refetch())}>
+                      {tc("retry")}
+                    </Button>
+                  </div>
+                ) : null}
+                {applicationInbox.isLoading && applications.length === 0 ? (
                   <div className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground">
                     <IconLoader2 className="size-4 animate-spin" />
                     {tc("loading")}
                   </div>
-                ) : applicationInbox.isError ? (
-                  <p className="rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-300">
-                    {surfaceMessage(applicationInbox.error, t("applicantsLoadFailed"))}
-                  </p>
                 ) : (
                   <>
                     <ApplicantSection
@@ -290,6 +295,7 @@ function PositionDetailSession({
                       applicants={pending}
                       totalCount={applicationCounts.pending}
                       displays={displays}
+                      canReview={!applicantReadUnavailable}
                       kind="pending"
                       t={t}
                     />
@@ -320,14 +326,14 @@ function PositionDetailSession({
                     {t("noApplicantsYet")}
                   </p>
                 ) : null}
-                {applicationInbox.hasNextPage ? (
+                {applicationInbox.hasNextPage && !applicationInbox.isError ? (
                   <Button
                     type="button"
                     variant="outline"
                     color="muted"
                     size="sm"
                     className="mt-3 w-full"
-                    disabled={applicationInbox.isFetchingNextPage}
+                    disabled={applicationInbox.isFetching}
                     onClick={() => void applicationInbox.fetchNextPage()}
                   >
                     {applicationInbox.isFetchingNextPage ? (
@@ -457,7 +463,7 @@ function PositionDetailSession({
             <AlertDialogAction
               variant="solid"
               color="destructive"
-              disabled={busy || applicationCounts.pending > 0}
+              disabled={busy || applicantReadUnavailable || applicationCounts.pending > 0}
               onClick={(e) => {
                 e.preventDefault();
                 handleDelete();
@@ -558,6 +564,7 @@ function ApplicantSection({
   totalCount,
   displays,
   kind,
+  canReview = true,
   t,
 }: {
   crewId: string;
@@ -566,6 +573,7 @@ function ApplicantSection({
   totalCount: number;
   displays: Map<string, LookupUserDTO>;
   kind: "pending" | "approved" | "rejected";
+  canReview?: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
   if (applicants.length === 0) return null;
@@ -590,6 +598,7 @@ function ApplicantSection({
             crewId={crewId}
             applicant={a}
             displays={displays}
+            canReview={canReview}
             kind={kind}
             t={t}
           />
@@ -604,12 +613,14 @@ function ApplicantRow({
   applicant,
   displays,
   kind,
+  canReview,
   t,
 }: {
   crewId: string;
   applicant: CrewApplicationDTO;
   displays: Map<string, LookupUserDTO>;
   kind: "pending" | "approved" | "rejected";
+  canReview: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
   const approve = useApproveApplication(crewId);
@@ -622,7 +633,7 @@ function ApplicantRow({
     return () => { alive.current = false; };
   }, []);
   const decide = (decision: "approve" | "reject") => {
-    if (!alive.current || pending.current || kind !== "pending" || applicant.status !== "pending") return;
+    if (!alive.current || pending.current || !canReview || kind !== "pending" || applicant.status !== "pending") return;
     pending.current = true;
     setBusy(true);
     const mutation = decision === "approve" ? approve : reject;
@@ -701,7 +712,7 @@ function ApplicantRow({
               variant="soft"
               color="success"
               size="xs"
-              disabled={busy}
+              disabled={busy || !canReview}
               onClick={() => decide("approve")}
             >
               <IconCheck className="size-3" />
@@ -712,7 +723,7 @@ function ApplicantRow({
               variant="soft"
               color="destructive"
               size="xs"
-              disabled={busy}
+              disabled={busy || !canReview}
               onClick={() => decide("reject")}
             >
               <IconX className="size-3" />

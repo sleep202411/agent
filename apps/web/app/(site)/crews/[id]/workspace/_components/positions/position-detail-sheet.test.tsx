@@ -5,6 +5,12 @@ import { PositionDetailSheet } from "./position-detail-sheet";
 import type { CrewPositionDTO } from "@repo/shared/crew";
 const state = vi.hoisted(() => ({
   account: "alice",
+  failed: false,
+  nextPageError: false,
+  hasNextPage: false,
+  fetching: false,
+  next: vi.fn(),
+  refetch: vi.fn(),
   applicantIds: [] as string[],
   update: vi.fn(),
   remove: vi.fn(),
@@ -91,8 +97,13 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
       rejected: 0,
     },
     isLoading: false,
-    isError: false,
-    hasNextPage: false,
+    isError: state.failed,
+    error: new Error("Applicants unavailable"),
+    isFetching: state.fetching,
+    isFetchNextPageError: state.nextPageError,
+    hasNextPage: state.hasNextPage,
+    fetchNextPage: state.next,
+    refetch: state.refetch,
   }),
 }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -118,6 +129,10 @@ const position = {
 beforeEach(() => {
   vi.clearAllMocks();
   state.account = "alice";
+  state.failed = false;
+  state.nextPageError = false;
+  state.hasNextPage = false;
+  state.fetching = false;
   state.applicantIds = [];
   host = document.createElement("div");
   root = createRoot(host);
@@ -254,3 +269,49 @@ it.each(["account", "position", "applicant", "close"])(
     expect(state.reject).toHaveBeenCalledTimes(1);
   }
 );
+
+it.each([false, true])(
+  "retains loaded applicants and retries the failed request (page: %s)",
+  async (nextPage) => {
+    state.applicantIds = ["12"];
+    await render();
+    state.failed = true;
+    state.nextPageError = nextPage;
+    state.hasNextPage = true;
+    await render();
+    expect(host.textContent).toContain("Application 12");
+    expect(host.textContent).toContain("Applicants unavailable");
+    expect(button("approve").disabled).toBe(true);
+    await click("approve");
+    expect(state.approve).not.toHaveBeenCalled();
+    expect(button("loadMore")).toBeUndefined();
+    await click("retry");
+    expect(nextPage ? state.next : state.refetch).toHaveBeenCalledTimes(1);
+    expect(nextPage ? state.refetch : state.next).not.toHaveBeenCalled();
+    state.failed = false;
+    state.hasNextPage = false;
+    await render();
+    await click("approve");
+    expect(state.approve).toHaveBeenCalledTimes(1);
+  }
+);
+it("offers initial applicant-load recovery and pauses deletion until recovery", async () => {
+  state.failed = true;
+  await render();
+  expect(host.textContent).toContain("Applicants unavailable");
+  expect(host.textContent).not.toContain("noApplicantsYet");
+  await click("delete");
+  const confirm = button("delete", host.querySelector('[role="alertdialog"]')!);
+  expect(confirm.disabled).toBe(true);
+  await click("retry");
+  expect(state.refetch).toHaveBeenCalledTimes(1);
+  expect(state.remove).not.toHaveBeenCalled();
+});
+it("pauses manual applicant pagination during refresh", async () => {
+  state.hasNextPage = true;
+  state.fetching = true;
+  await render();
+  expect(button("loadMore").disabled).toBe(true);
+  await click("loadMore");
+  expect(state.next).not.toHaveBeenCalled();
+});
