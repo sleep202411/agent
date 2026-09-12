@@ -12,7 +12,7 @@ import { DeleteTaskButton } from "./delete-task-button";
 
 import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
 
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import Link from "next/link";
 import {
   IconArrowUpRight,
@@ -881,18 +881,36 @@ function CommentComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canUpload = assetContext.data?.capabilities.upload === true;
 
-  useEffect(
-    () => () => {
-      for (const mediaAssetId of pendingUploadsRef.current) {
-        void discardPendingCrewAssetUpload(task.crewId, mediaAssetId);
+  const alive = useRef(true);
+  const sending = useRef(false);
+  const uploadingBatch = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const retry = useRef<{ fingerprint: string; key: string } | null>(null);
+  const submittedUploads = useRef(new Set<string>());
+  const uploadController = useRef<AbortController | null>(null);
+  const discard = (mediaAssetId: string) => {
+    void discardPendingCrewAssetUpload(task.crewId, mediaAssetId).catch(() => undefined);
+  };
+  useLayoutEffect(() => {
+    alive.current = true;
+    const uploads = pendingUploadsRef.current;
+    const submitted = submittedUploads.current;
+    return () => {
+      alive.current = false;
+      uploadController.current?.abort();
+      // A lost response does not prove the server rejected these attachments.
+      // Leave attempted submissions to the server's bound/expired upload recovery.
+      for (const id of uploads) {
+        if (!submitted.has(id)) {
+          void discardPendingCrewAssetUpload(task.crewId, id).catch(() => undefined);
+        }
       }
-      pendingUploadsRef.current.clear();
-    },
-    [task.crewId]
-  );
+      uploads.clear();
+    };
+  }, [task.crewId]);
 
   const addMention = (member: CrewMemberDTO) => {
-    if (member.userId === viewerUserId) return;
+    if (!alive.current || sending.current || member.userId === viewerUserId) return;
     const label = displayNameOf(member.userId, displays)
       .replace(/[@\r\n]/g, "")
       .slice(0, 80);
@@ -906,61 +924,77 @@ function CommentComposer({
   };
 
   const uploadFiles = async (files: File[]) => {
-    if (!canUpload || files.length === 0) return;
+    if (!alive.current || sending.current || uploadingBatch.current || !canUpload || files.length === 0) return;
+    uploadingBatch.current = true;
+    const controller = new AbortController();
+    uploadController.current = controller;
     const available = Math.max(0, 10 - attachments.length);
-    for (const file of files.slice(0, available)) {
-      const localKey = `${file.name}:${file.size}:${file.lastModified}`;
-      setUploading((current) => ({ ...current, [localKey]: 0 }));
-      try {
-        const uploaded = await uploadFileViaSignedUrl(file, {
-          kind: "crew_asset_file",
-          scope: { crewId: task.crewId },
-          onProgress: (progress) =>
-            setUploading((current) => ({ ...current, [localKey]: progress })),
-        });
-        pendingUploadsRef.current.add(uploaded.mediaAssetId);
-        setAttachments((current) => [
-          ...current,
-          { source: "upload", mediaAssetId: uploaded.mediaAssetId, name: file.name },
-        ]);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : t("uploadFailed"));
-      } finally {
-        setUploading((current) => {
-          const next = { ...current };
-          delete next[localKey];
-          return next;
-        });
+    try {
+      for (const file of files.slice(0, available)) {
+        if (!alive.current) break;
+        const localKey = `${file.name}:${file.size}:${file.lastModified}`;
+        setUploading((current) => ({ ...current, [localKey]: 0 }));
+        try {
+          const uploaded = await uploadFileViaSignedUrl(file, {
+            kind: "crew_asset_file",
+            scope: { crewId: task.crewId },
+            signal: controller.signal,
+            onProgress: (progress) => {
+              if (alive.current) setUploading((current) => ({ ...current, [localKey]: progress }));
+            },
+          });
+          if (!alive.current) { discard(uploaded.mediaAssetId); break; }
+          pendingUploadsRef.current.add(uploaded.mediaAssetId);
+          setAttachments((current) => [...current, { source: "upload", mediaAssetId: uploaded.mediaAssetId, name: file.name }]);
+        } catch (error) {
+          if (alive.current) toast.error(error instanceof Error ? error.message : t("uploadFailed"));
+        } finally {
+          if (alive.current) setUploading((current) => {
+            const next = { ...current }; delete next[localKey]; return next;
+          });
+        }
       }
+    } finally {
+      uploadingBatch.current = false;
+      uploadController.current = null;
     }
   };
 
   const removeAttachment = (attachment: CrewTaskCommentAttachmentInput) => {
+    if (!alive.current || sending.current || uploadingBatch.current) return;
     setAttachments((current) => current.filter((candidate) => candidate !== attachment));
     if (attachment.source === "upload") {
       pendingUploadsRef.current.delete(attachment.mediaAssetId);
-      void discardPendingCrewAssetUpload(task.crewId, attachment.mediaAssetId);
+      discard(attachment.mediaAssetId);
     }
   };
 
   const send = async () => {
+    if (!alive.current || sending.current || uploadingBatch.current) return;
     const activeMentions = mentions.filter((mention) => body.includes(`@${mention.label}`));
     if (!body.trim() && attachments.length === 0) return;
+    const input = { body, mentions: activeMentions, attachments };
+    const fingerprint = JSON.stringify(input);
+    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: crypto.randomUUID() };
+    sending.current = true;
+    setSaving(true);
+    for (const id of pendingUploadsRef.current) submittedUploads.current.add(id);
     try {
-      await create.mutateAsync({
-        body,
-        mentions: activeMentions,
-        attachments,
-        clientKey: crypto.randomUUID(),
-      });
+      await create.mutateAsync({ ...input, clientKey: retry.current.key });
       pendingUploadsRef.current.clear();
+      submittedUploads.current.clear();
+      retry.current = null;
+      if (!alive.current) return;
       setBody("");
       setMentions([]);
       setAttachments([]);
       setMentionOpen(false);
       setAssetOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("commentFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("commentFailed"));
+    } finally {
+      sending.current = false;
+      if (alive.current) setSaving(false);
     }
   };
 
@@ -986,6 +1020,7 @@ function CommentComposer({
       onDrop={onDrop}
     >
       <Textarea
+        disabled={saving}
         value={body}
         onChange={(event) => setBody(event.target.value)}
         onPaste={onPaste}
@@ -1027,6 +1062,7 @@ function CommentComposer({
                 <span className="max-w-44 truncate">{name}</span>
                 <button
                   type="button"
+                  disabled={saving || Object.keys(uploading).length > 0}
                   onClick={() => removeAttachment(attachment)}
                   className="text-[#6e747e] hover:text-[#dddfe3]"
                   aria-label={t("removeAttachment")}
@@ -1080,13 +1116,11 @@ function CommentComposer({
               <button
                 key={asset.id}
                 type="button"
-                disabled={selected || attachments.length >= 10}
-                onClick={() =>
-                  setAttachments((current) => [
-                    ...current,
-                    { source: "asset", assetNodeId: asset.id },
-                  ])
-                }
+                disabled={saving || Object.keys(uploading).length > 0 || selected || attachments.length >= 10}
+                onClick={() => {
+                  if (!alive.current || sending.current || uploadingBatch.current) return;
+                  setAttachments((current) => current.length >= 10 || current.some(item => item.source === "asset" && item.assetNodeId === asset.id) ? current : [...current, { source: "asset", assetNodeId: asset.id }]);
+                }}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-white/[0.055] disabled:opacity-45"
               >
                 {asset.media?.kind === "image" ? (
@@ -1107,6 +1141,7 @@ function CommentComposer({
       <footer className="flex items-center gap-1 px-3 py-2.5">
         <button
           type="button"
+          disabled={saving}
           onClick={() => {
             setMentionOpen((open) => !open);
             setAssetOpen(false);
@@ -1118,6 +1153,7 @@ function CommentComposer({
         </button>
         <button
           type="button"
+          disabled={saving || Object.keys(uploading).length > 0}
           onClick={() => {
             setAssetOpen((open) => !open);
             setMentionOpen(false);
@@ -1139,7 +1175,7 @@ function CommentComposer({
         />
         <button
           type="button"
-          disabled={!canUpload}
+          disabled={!canUpload || saving || Object.keys(uploading).length > 0}
           onClick={() => fileInputRef.current?.click()}
           className="rounded-md p-2 text-[#777d88] hover:bg-white/[0.055] hover:text-[#d7d9dd] disabled:cursor-not-allowed disabled:opacity-35"
           aria-label={t("uploadFile")}
@@ -1156,14 +1192,14 @@ function CommentComposer({
           type="button"
           aria-label={t("comment")}
           disabled={
-            create.isPending ||
+            saving ||
             Object.keys(uploading).length > 0 ||
             (!body.trim() && attachments.length === 0)
           }
           onClick={() => void send()}
           className="grid size-8 place-items-center rounded-full bg-[#2a2a2f] text-[#c6c7cb] transition-colors hover:bg-[#333338] disabled:bg-[#242428] disabled:text-[#66686e]"
         >
-          {create.isPending ? (
+          {saving ? (
             <IconLoader2 className="size-4 animate-spin" />
           ) : (
             <IconSend className="size-4" />
