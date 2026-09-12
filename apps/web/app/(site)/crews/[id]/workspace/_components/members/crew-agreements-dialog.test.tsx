@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   next: vi.fn(),
   refetch: vi.fn(),
 }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "alice" } }) }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
   useUserDisplays: () => new Map(),

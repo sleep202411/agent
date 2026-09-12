@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   IconAlertCircle,
   IconArchive,
@@ -44,6 +44,7 @@ import {
   type CrewMemberDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { displayNameOf, useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { cn } from "@/lib/utils";
 
@@ -56,7 +57,13 @@ interface CrewAgreementsDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-export function CrewAgreementsDialog({
+export function CrewAgreementsDialog(props: CrewAgreementsDialogProps) {
+  const { user } = useCurrentUser();
+  if (!props.open) return null;
+  return <AgreementSession key={JSON.stringify([user?.id, props.crewId])} {...props} />;
+}
+
+function AgreementSession({
   crewId,
   members,
   isOwner,
@@ -79,6 +86,31 @@ export function CrewAgreementsDialog({
   const [signerName, setSignerName] = useState("");
   const [signerEmail, setSignerEmail] = useState("");
   const [title, setTitle] = useState("");
+  const alive = useRef(false);
+  const operations = useRef(new Set<string>());
+  const signingWindows = useRef(new Map<string, Window>());
+  const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
+  useLayoutEffect(() => {
+    alive.current = true;
+    const windows = signingWindows.current;
+    return () => {
+      alive.current = false;
+      for (const popup of windows.values()) popup.close();
+      windows.clear();
+    };
+  }, []);
+  const begin = (key: string) => {
+    if (!alive.current || operations.current.has(key)) return false;
+    operations.current.add(key);
+    setPending(new Set(operations.current));
+    return true;
+  };
+  const finish = (key: string) => {
+    if (!alive.current) return;
+    operations.current.delete(key);
+    setPending(new Set(operations.current));
+  };
+  const creating = pending.has("create");
 
   const memberOptions = useMemo(
     () =>
@@ -137,7 +169,7 @@ export function CrewAgreementsDialog({
   };
 
   const create = async () => {
-    if (!memberUserId || !signerName.trim() || !signerEmail.trim() || !title.trim()) return;
+    if (!canCreate || !memberUserId || !signerName.trim() || !signerEmail.trim() || !title.trim() || !begin("create")) return;
     try {
       await createAgreement.mutateAsync({
         memberUserId,
@@ -145,27 +177,49 @@ export function CrewAgreementsDialog({
         signerEmail: signerEmail.trim(),
         title: title.trim(),
       });
+      if (!alive.current) return;
       toast.success(t("queued"));
       resetComposer();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("sendFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("sendFailed"));
+    } finally {
+      finish("create");
+    }
+  };
+
+  const runAgreementAction = async (id: string, action: () => Promise<unknown>, success: string, failure: string) => {
+    if (!begin(id)) return;
+    try {
+      await action();
+      if (alive.current) toast.success(t(success));
+    } catch (error) {
+      if (alive.current) toast.error(error instanceof Error ? error.message : t(failure));
+    } finally {
+      finish(id);
     }
   };
 
   const openSigningSession = async (agreementId: string) => {
-    const signingWindow = window.open("about:blank", "_blank", "popup");
-    if (!signingWindow) {
-      toast.error(t("popupBlocked"));
-      return;
-    }
-    signingWindow.opener = null;
-    signingWindow.document.title = t("openingSigning");
+    if (!begin(agreementId)) return;
+    let signingWindow: Window | null = null;
     try {
+      signingWindow = window.open("about:blank", "_blank", "popup");
+      if (!signingWindow) {
+        toast.error(t("popupBlocked"));
+        return;
+      }
+      signingWindows.current.set(agreementId, signingWindow);
+      signingWindow.opener = null;
+      signingWindow.document.title = t("openingSigning");
       const session = await createSigningSession.mutateAsync(agreementId);
+      if (!alive.current || signingWindow.closed) return;
       signingWindow.location.replace(session.signLink);
     } catch (error) {
-      signingWindow.close();
-      toast.error(error instanceof Error ? error.message : t("signingFailed"));
+      signingWindow?.close();
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("signingFailed"));
+    } finally {
+      signingWindows.current.delete(agreementId);
+      finish(agreementId);
     }
   };
 
@@ -208,7 +262,7 @@ export function CrewAgreementsDialog({
               <FieldGroup>
                 <Field>
                   <FieldLabel required>{t("member")}</FieldLabel>
-                  <Select value={memberUserId} onValueChange={chooseMember}>
+                  <Select value={memberUserId} onValueChange={chooseMember} disabled={creating}>
                     <SelectTrigger className="w-full">
                       <SelectValue placeholder={t("chooseMember")} />
                     </SelectTrigger>
@@ -224,11 +278,12 @@ export function CrewAgreementsDialog({
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field>
                     <FieldLabel required>{t("signerName")}</FieldLabel>
-                    <Input value={signerName} onChange={(e) => setSignerName(e.target.value)} />
+                    <Input disabled={creating} value={signerName} onChange={(e) => setSignerName(e.target.value)} />
                   </Field>
                   <Field>
                     <FieldLabel required>{t("signerEmail")}</FieldLabel>
                     <Input
+                      disabled={creating}
                       type="email"
                       value={signerEmail}
                       onChange={(e) => setSignerEmail(e.target.value)}
@@ -239,6 +294,7 @@ export function CrewAgreementsDialog({
                 <Field>
                   <FieldLabel required>{t("agreementTitle")}</FieldLabel>
                   <Input
+                    disabled={creating}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder={t("agreementTitlePlaceholder")}
@@ -246,12 +302,12 @@ export function CrewAgreementsDialog({
                 </Field>
               </FieldGroup>
               <div className="mt-4 flex justify-end gap-2">
-                <Button variant="ghost" color="muted" onClick={resetComposer}>
+                <Button variant="ghost" color="muted" disabled={creating} onClick={resetComposer}>
                   {t("cancel")}
                 </Button>
                 <Button
                   disabled={
-                    createAgreement.isPending ||
+                    creating ||
                     !memberUserId ||
                     !signerName.trim() ||
                     !signerEmail.trim() ||
@@ -259,14 +315,14 @@ export function CrewAgreementsDialog({
                   }
                   onClick={() => void create()}
                   icon={
-                    createAgreement.isPending ? (
+                    creating ? (
                       <IconLoader2 className="animate-spin" />
                     ) : (
                       <IconSignature />
                     )
                   }
                 >
-                  {createAgreement.isPending ? t("queueing") : t("queueWithBoldSign")}
+                  {creating ? t("queueing") : t("queueWithBoldSign")}
                 </Button>
               </div>
             </div>
@@ -320,11 +376,10 @@ export function CrewAgreementsDialog({
             <>
               <div className="divide-y divide-white/[0.065]">
                 {payload.items.map((agreement) => {
-                  const syncing =
-                    syncAgreement.isPending && syncAgreement.variables === agreement.id;
-                  const retrying =
-                    retryArchive.isPending && retryArchive.variables === agreement.id;
-                  const retryingSend = retrySend.isPending && retrySend.variables === agreement.id;
+                  const busy = pending.has(agreement.id);
+                  const syncing = busy && syncAgreement.isPending;
+                  const retrying = busy && retryArchive.isPending;
+                  const retryingSend = busy && retrySend.isPending;
                   return (
                     <div
                       key={agreement.id}
@@ -358,22 +413,17 @@ export function CrewAgreementsDialog({
                             size="sm"
                             variant="solid"
                             color="primary"
-                            disabled={
-                              createSigningSession.isPending &&
-                              createSigningSession.variables === agreement.id
-                            }
+                            disabled={busy}
                             onClick={() => void openSigningSession(agreement.id)}
                             icon={
-                              createSigningSession.isPending &&
-                              createSigningSession.variables === agreement.id ? (
+                              busy && createSigningSession.isPending ? (
                                 <IconLoader2 className="animate-spin" />
                               ) : (
                                 <IconExternalLink />
                               )
                             }
                           >
-                            {createSigningSession.isPending &&
-                            createSigningSession.variables === agreement.id
+                            {busy && createSigningSession.isPending
                               ? t("openingSigning")
                               : t("reviewAndSign")}
                           </Button>
@@ -384,16 +434,8 @@ export function CrewAgreementsDialog({
                             size="sm"
                             variant="ghost"
                             color="warning"
-                            disabled={retryingSend}
-                            onClick={() =>
-                              retrySend.mutate(agreement.id, {
-                                onSuccess: () => toast.success(t("sendRetrying")),
-                                onError: (error) =>
-                                  toast.error(
-                                    error instanceof Error ? error.message : t("sendRetryFailed")
-                                  ),
-                              })
-                            }
+                            disabled={busy}
+                            onClick={() => void runAgreementAction(agreement.id, () => retrySend.mutateAsync(agreement.id), "sendRetrying", "sendRetryFailed")}
                             icon={
                               retryingSend ? (
                                 <IconLoader2 className="animate-spin" />
@@ -411,16 +453,8 @@ export function CrewAgreementsDialog({
                             size="sm"
                             variant="ghost"
                             color="warning"
-                            disabled={retrying}
-                            onClick={() =>
-                              retryArchive.mutate(agreement.id, {
-                                onSuccess: () => toast.success(t("archiveRetrying")),
-                                onError: (error) =>
-                                  toast.error(
-                                    error instanceof Error ? error.message : t("archiveRetryFailed")
-                                  ),
-                              })
-                            }
+                            disabled={busy}
+                            onClick={() => void runAgreementAction(agreement.id, () => retryArchive.mutateAsync(agreement.id), "archiveRetrying", "archiveRetryFailed")}
                             icon={
                               retrying ? <IconLoader2 className="animate-spin" /> : <IconArchive />
                             }
@@ -434,16 +468,8 @@ export function CrewAgreementsDialog({
                             size="sm"
                             variant="ghost"
                             color="muted"
-                            disabled={syncing}
-                            onClick={() =>
-                              syncAgreement.mutate(agreement.id, {
-                                onSuccess: () => toast.success(t("synced")),
-                                onError: (error) =>
-                                  toast.error(
-                                    error instanceof Error ? error.message : t("syncFailed")
-                                  ),
-                              })
-                            }
+                            disabled={busy}
+                            onClick={() => void runAgreementAction(agreement.id, () => syncAgreement.mutateAsync(agreement.id), "synced", "syncFailed")}
                             icon={
                               syncing ? <IconLoader2 className="animate-spin" /> : <IconRefresh />
                             }
