@@ -34,13 +34,13 @@ export function SubmitTaskDialog({
   onSubmitted: (taskId: string) => void;
 }) {
   const t = useTranslations("crewTasks");
+  const common = useTranslations("common");
   const submitTask = useSubmitCrewTask(crewId);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState("");
   const [assetIds, setAssetIds] = useState<string[]>([]);
-  const assets =
-    useCrewAssets(crewId, { source: "recent", sort: "modified", kind: "file" }, open).data?.items ??
-    [];
+  const assetQuery = useCrewAssets(crewId, { source: "recent", sort: "modified", kind: "file" }, open);
+  const assets = assetQuery.data?.items ?? [];
 
   const [context, setContext] = useState({ open, crewId, taskId: task?.id });
   if (context.open !== open || context.crewId !== crewId || context.taskId !== task?.id) {
@@ -121,7 +121,20 @@ export function SubmitTaskDialog({
           <div>
             <p className="mb-2 text-[11px] text-muted-foreground">{t("attachAssets")}</p>
             <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
-              {assets.length === 0 ? (
+              {assetQuery.isLoading ? (
+                <p role="status" className="px-2 py-4 text-center text-[11px] text-muted-foreground">
+                  {common("loading")}
+                </p>
+              ) : null}
+              {assetQuery.error ? (
+                <div role="alert" className="space-y-2 px-2 py-3 text-xs">
+                  <p>{assetQuery.error instanceof Error ? assetQuery.error.message : common("loadFailed")}</p>
+                  <Button variant="outline" color="muted" size="sm" disabled={saving || assetQuery.isFetching} onClick={() => void assetQuery.refetch()}>
+                    {common("retry")}
+                  </Button>
+                </div>
+              ) : null}
+              {assets.length === 0 && !assetQuery.isLoading && !assetQuery.error ? (
                 <p className="px-2 py-4 text-center text-[11px] text-muted-foreground">
                   {t("noRecentAssets")}
                 </p>

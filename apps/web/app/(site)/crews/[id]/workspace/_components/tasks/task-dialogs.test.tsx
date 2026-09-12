@@ -5,10 +5,17 @@ import type { CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { SubmitTaskDialog } from "./task-dialogs";
 
 const submit = vi.hoisted(() => vi.fn());
+const assetQuery = vi.hoisted(() => ({
+  data: { items: [{ id: "asset-1", name: "Output" }] },
+  isLoading: false,
+  isFetching: false,
+  error: null as Error | null,
+  refetch: vi.fn(),
+}));
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useSubmitCrewTask: () => ({ mutateAsync: submit, isPending: false }),
 }));
-vi.mock("../../_hooks/use-crew-assets", () => ({ useCrewAssets: () => ({ data: { items: [{ id: "asset-1", name: "Output" }] } }) }));
+vi.mock("../../_hooks/use-crew-assets", () => ({ useCrewAssets: () => assetQuery }));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -47,6 +54,9 @@ afterEach(() => {
   root = undefined;
   host?.remove();
   vi.resetAllMocks();
+  assetQuery.error = null;
+  assetQuery.isLoading = false;
+  assetQuery.data = { items: [{ id: "asset-1", name: "Output" }] };
 });
 
 it("does not close a new submission dialog when an earlier request completes", async () => {
@@ -118,4 +128,20 @@ it("locks the submitted draft and restores editing after failure", async () => {
   expect(document.querySelector("textarea")!.disabled).toBe(false);
   expect(document.querySelector("textarea")!.value).toBe("Review this output");
   expect(document.querySelector('[role="checkbox"]')!.getAttribute("aria-checked")).toBe("true");
+});
+
+it("distinguishes asset loading from an empty result", () => {
+  assetQuery.isLoading = true;
+  assetQuery.data = { items: [] };
+  render("task-1");
+  expect(document.body.textContent).toContain("loading");
+  expect(document.body.textContent).not.toContain("noRecentAssets");
+});
+it("keeps loaded attachments and exposes a failed refresh for retry", async () => {
+  assetQuery.error = new Error("Asset service unavailable");
+  render("task-1");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Asset service unavailable");
+  expect(document.body.textContent).toContain("Output");
+  await act(async () => [...document.querySelectorAll("button")].find((button) => button.textContent?.trim() === "retry")!.click());
+  expect(assetQuery.refetch).toHaveBeenCalledTimes(1);
 });
