@@ -548,3 +548,5 @@ it("loads current revision settings when reopening after cancellation", async ()
   panel = document.querySelector('[data-slot="popover-content"]')!;
   expect((panel.querySelector("input") as HTMLInputElement).value).toBe("5");
 });
+
+vi.mock("@/app/(site)/crews/_components/accountability/task-commitments", () => ({ TaskCommitments: () => null }));
