@@ -113,13 +113,21 @@ function ApplicationReviewSession({
 
   const open = applicationId !== null;
 
-  const { data: application, isLoading: appsLoading } = useCrewApplication(
+  const applicationQuery = useCrewApplication(
     crewId,
     applicationId,
     open
   );
-  const { data: positions = [] } = useCrewPositions(crewId);
-  const { data: crew } = useCrewDetail(crewId);
+  const { data: application, isLoading: appsLoading } = applicationQuery;
+  const positionsQuery = useCrewPositions(crewId);
+  const positions = positionsQuery.data;
+  const crewQuery = useCrewDetail(crewId);
+  const { data: crew } = crewQuery;
+  const loadErrors = [
+    { key: "application", query: applicationQuery, retry: () => applicationQuery.refetch() },
+    { key: "positions", query: positionsQuery, retry: () => positionsQuery.isFetchNextPageError ? positionsQuery.fetchNextPage() : positionsQuery.refetch() },
+    { key: "crew", query: crewQuery, retry: () => crewQuery.refetch() },
+  ].filter(({ query }) => query.isError);
 
   const position = useMemo(
     () => (application ? (positions.find((p) => p.id === application.positionId) ?? null) : null),
@@ -143,7 +151,7 @@ function ApplicationReviewSession({
   const busy = decision !== null;
 
   const handleDecision = (next: "approve" | "reject") => {
-    if (!alive.current || pending.current || application?.status !== "pending") return;
+    if (!alive.current || pending.current || application?.status !== "pending" || !position || loadErrors.length > 0) return;
     pending.current = true;
     setDecision(next);
     const mutation = next === "approve" ? approve : reject;
@@ -168,7 +176,7 @@ function ApplicationReviewSession({
   // Dialog body branches: loading → spinner; missing → not-found;
   // otherwise → full review layout.
   const body = (() => {
-    if (appsLoading && !application) {
+    if ((appsLoading && !application) || (application && !position && !positionsQuery.isError && (positionsQuery.isLoading || positionsQuery.isFetching || positionsQuery.hasNextPage))) {
       return (
         <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
           <IconLoader2 className="size-4 animate-spin" />
@@ -178,6 +186,7 @@ function ApplicationReviewSession({
     }
 
     if (!application || !position) {
+      if (loadErrors.length > 0) return null;
       return (
         <div className="py-10 text-center text-sm text-muted-foreground">
           {t("reviewDialogNotFound")}
@@ -328,7 +337,7 @@ function ApplicationReviewSession({
     );
   })();
 
-  const showActions = application?.status === "pending";
+  const showActions = application?.status === "pending" && !!position;
 
   return (
     <Dialog
@@ -344,6 +353,14 @@ function ApplicationReviewSession({
         <DialogHeader>
           <DialogTitle>{t("reviewDialogTitle")}</DialogTitle>
         </DialogHeader>
+        {loadErrors.map(({ key, query, retry }) => (
+          <div key={key} role="alert" className="mx-4 mb-3 rounded-lg border border-destructive/30 p-3 text-sm">
+            <p>{query.error instanceof Error ? query.error.message : tc("loadFailed")}</p>
+            <Button type="button" variant="outline" color="muted" disabled={query.isFetching} onClick={() => void retry()}>
+              {tc("retry")}
+            </Button>
+          </div>
+        ))}
         {body}
         <DialogFooter>
           {showActions ? (
@@ -353,7 +370,7 @@ function ApplicationReviewSession({
                 variant="outline"
                 color="muted"
                 onClick={() => handleDecision("reject")}
-                disabled={busy}
+                disabled={busy || loadErrors.length > 0}
               >
                 {decision === "reject" ? (
                   <IconLoader2 className="size-3.5 animate-spin" />
@@ -367,7 +384,7 @@ function ApplicationReviewSession({
                 variant="solid"
                 color="primary"
                 onClick={() => handleDecision("approve")}
-                disabled={busy}
+                disabled={busy || loadErrors.length > 0}
               >
                 {decision === "approve" ? (
                   <IconLoader2 className="size-3.5 animate-spin" />
