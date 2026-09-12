@@ -7891,8 +7891,8 @@
       "paymentFailed": "支付失败，请重试。",
       "providerUnavailable": "当前支付渠道尚未接入浏览器支付。",
       "successToast": "算力积分已到账。",
-      "completedToast": "充值已完成，余额正在刷新。",
-      "cancelledToast": "充值已取消。"
+      "returnedToast": "已返回充值页面，付款可能仍在确认中。",
+      "cancelledToast": "支付页面已关闭，付款状态可能仍待确认。"
     },
     "billingUsage": {
       "title": "账单",

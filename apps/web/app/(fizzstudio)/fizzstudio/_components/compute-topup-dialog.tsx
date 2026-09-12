@@ -46,11 +46,20 @@ export function ComputeTopupButton({ variant }: { variant: "enterprise" | "studi
   const wallet = useComputeWalletLedger();
   const balance = availableComputeBalance(wallet.data);
   const returnStatus = searchParams.get("computeTopup");
+  const { user } = useCurrentUser();
+  const handledReturn = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!returnStatus) return;
+    if (!returnStatus) {
+      handledReturn.current = null;
+      return;
+    }
+    if (!user?.id) return;
+    const identity = `${pathname}?${searchParams.toString()}`;
+    if (handledReturn.current === identity) return;
+    handledReturn.current = identity;
     if (returnStatus === "success") {
-      toast.success(t("computeBilling.completedToast"));
+      toast.info(t("computeBilling.returnedToast"));
       void wallet.refetch();
     } else if (returnStatus === "cancelled") {
       toast.info(t("computeBilling.cancelledToast"));
@@ -59,9 +68,11 @@ export function ComputeTopupButton({ variant }: { variant: "enterprise" | "studi
     const next = new URLSearchParams(searchParams.toString());
     next.delete("computeTopup");
     const query = next.toString();
-    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+    router.replace(`${pathname}${query ? `?${query}` : ""}${window.location.hash}`, {
+      scroll: false,
+    });
     // searchParams intentionally stays in deps so repeated provider returns are handled.
-  }, [pathname, returnStatus, router, searchParams, t, wallet]);
+  }, [pathname, returnStatus, router, searchParams, t, wallet, user?.id]);
 
   const label = wallet.isLoading
     ? t("computeBilling.balanceLoading")
@@ -138,9 +149,11 @@ function ComputeTopupSession({ onOpenChange }: { onOpenChange: (open: boolean) =
       idemRef.current = { sig, key: crypto.randomUUID() };
     }
 
-    const base = `${window.location.origin}${window.location.pathname}`;
-    const successUrl = `${base}?computeTopup=success`;
-    const backUrl = `${base}?computeTopup=cancelled`;
+    const returnUrl = new URL(window.location.href);
+    returnUrl.searchParams.set("computeTopup", "success");
+    const successUrl = returnUrl.toString();
+    returnUrl.searchParams.set("computeTopup", "cancelled");
+    const backUrl = returnUrl.toString();
 
     try {
       const result = await createTopup.mutateAsync({

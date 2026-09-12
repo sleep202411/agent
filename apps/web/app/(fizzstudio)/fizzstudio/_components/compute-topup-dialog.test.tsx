@@ -3,7 +3,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import { ComputeTopupButton } from "./compute-topup-dialog";
 const state = vi.hoisted(() => ({
-  account: "alice",
+  account: "alice" as string | null,
+  search: "",
+  refetch: vi.fn(),
+  info: vi.fn(),
   create: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
@@ -11,23 +14,25 @@ const state = vi.hoisted(() => ({
   redirect: vi.fn(),
 }));
 vi.mock("@/src/hooks/use-user", () => ({
-  useCurrentUser: () => ({ user: { id: state.account } }),
+  useCurrentUser: () => ({ user: state.account ? { id: state.account } : null }),
 }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
   usePathname: () => "/billing",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(state.search),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
 vi.mock("@/src/lib/api", () => ({ ApiRequestError: Error }));
-vi.mock("sonner", () => ({ toast: { success: state.success, error: state.error, info: vi.fn() } }));
+vi.mock("sonner", () => ({
+  toast: { success: state.success, error: state.error, info: state.info },
+}));
 vi.mock("@airwallex/components-sdk", () => ({ init: state.init }));
 vi.mock("../../_hooks/use-billing", () => ({
   availableComputeBalance: () => 0n,
-  useComputeWalletLedger: () => ({ data: {}, refetch: vi.fn() }),
+  useComputeWalletLedger: () => ({ data: {}, refetch: state.refetch }),
   useCreateComputeTopup: () => ({ mutateAsync: state.create, isPending: false }),
   useComputeTopupCatalog: () => ({
     data: {
@@ -81,6 +86,7 @@ afterEach(() => {
   act(() => root?.unmount());
   vi.resetAllMocks();
   state.account = "alice";
+  state.search = "";
 });
 it("prevents duplicate checkout requests and reuses the key after response failure", async () => {
   state.create.mockRejectedValue(new Error("Connection lost"));
@@ -146,4 +152,49 @@ it("does not redirect after the payment SDK finishes in an ended account session
   await render();
   await act(async () => finish({ payments: { redirectToCheckout: state.redirect } }));
   expect(state.redirect).not.toHaveBeenCalled();
+});
+
+it("refreshes a checkout return once without claiming payment success", async () => {
+  state.search = "computeTopup=success&tab=history";
+  await mount();
+  await render();
+  await render();
+  expect(state.refetch).toHaveBeenCalledTimes(1);
+  expect(state.success).not.toHaveBeenCalled();
+  expect(state.info).toHaveBeenCalledExactlyOnceWith("computeBilling.returnedToast");
+  state.account = "bob";
+  await render();
+  expect(state.refetch).toHaveBeenCalledTimes(1);
+});
+it("waits for sign-in before refreshing a return and handles a later return", async () => {
+  state.account = null;
+  state.search = "computeTopup=success";
+  await mount();
+  expect(state.refetch).not.toHaveBeenCalled();
+  state.account = "alice";
+  await render();
+  expect(state.refetch).toHaveBeenCalledTimes(1);
+  state.search = "";
+  await render();
+  state.search = "computeTopup=success";
+  await render();
+  expect(state.refetch).toHaveBeenCalledTimes(2);
+});
+
+it("preserves existing query parameters and anchors in checkout return URLs", async () => {
+  window.history.replaceState({}, "", "/billing?tab=history#ledger");
+  state.create.mockRejectedValue(new Error("Test request"));
+  await mount();
+  await click("computeBilling.payNowWithAmount");
+  const input = state.create.mock.calls[0]![0];
+  for (const [field, status] of [
+    ["successUrl", "success"],
+    ["backUrl", "cancelled"],
+  ]) {
+    const url = new URL(input[field!]);
+    expect(url.searchParams.get("tab")).toBe("history");
+    expect(url.searchParams.get("computeTopup")).toBe(status);
+    expect(url.hash).toBe("#ledger");
+  }
+  window.history.replaceState({}, "", "/");
 });
