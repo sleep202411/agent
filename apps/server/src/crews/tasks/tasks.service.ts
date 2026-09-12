@@ -1936,6 +1936,12 @@ export class CrewTasksService {
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-update:${taskId}`})::bigint)
       `;
       const locked = await this.requireActiveTaskTx(tx, taskId);
+      await this.authorization.require(
+        locked.crewId,
+        userId,
+        'tasks.manage',
+        tx,
+      );
       if (locked.version !== input.expectedVersion) {
         throw new ConflictException({
           code: 'CREW_TASK_VERSION_CONFLICT',
@@ -2390,6 +2396,14 @@ export class CrewTasksService {
           );
         }
       }
+      // Linked canvas, task and activity writes may have waited on other rows.
+      // Losing authority during those waits must roll back this whole update.
+      await this.authorization.require(
+        locked.crewId,
+        userId,
+        'tasks.manage',
+        tx,
+      );
       return updated;
     });
     await this.conversations.broadcastCrewTaskChange(
