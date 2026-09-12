@@ -374,12 +374,13 @@ export function TaskIssueDetail({
               <span className="text-[10px] text-[#626873]">{timelineItems.length}</span>
             </div>
 
-            {timeline.isLoading ? (
+            {timeline.isLoading && !timeline.data ? (
               <TimelineState
                 icon={<IconLoader2 className="size-4 animate-spin" />}
                 text={t("timelineLoading")}
               />
-            ) : timeline.isError ? (
+            ) : null}
+            {timeline.isError ? (
               <TimelineState
                 icon={<IconRefresh className="size-4" />}
                 text={
@@ -390,20 +391,23 @@ export function TaskIssueDetail({
                     size="sm"
                     variant="outline"
                     color="muted"
-                    onClick={() => void timeline.refetch()}
+                    disabled={timeline.isFetching}
+                    onClick={() => void (timeline.isFetchNextPageError ? timeline.fetchNextPage() : timeline.refetch())}
                   >
                     {t("retry")}
                   </Button>
                 }
               />
-            ) : (
+            ) : null}
+            {timeline.data ? (
               <div className="relative space-y-3 before:absolute before:bottom-4 before:left-[17px] before:top-3 before:w-px before:bg-white/[0.075]">
-                {timeline.hasNextPage ? (
+                {timeline.hasNextPage && !timeline.isError ? (
                   <div className="relative z-10 flex justify-center pb-2">
                     <Button
                       size="sm"
                       variant="outline"
                       color="muted"
+                      disabled={timeline.isFetching}
                       loading={timeline.isFetchingNextPage}
                       onClick={() => void timeline.fetchNextPage()}
                     >
@@ -426,7 +430,7 @@ export function TaskIssueDetail({
                   )
                 )}
               </div>
-            )}
+            ) : null}
 
             {isOwner && task.status === "submitted" ? (
               <TaskReviewForm task={task} onReviewed={onReviewed} />

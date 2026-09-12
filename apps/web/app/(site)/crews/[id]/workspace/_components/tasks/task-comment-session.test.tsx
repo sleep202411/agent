@@ -6,6 +6,11 @@ import { TaskIssueDetail } from "./task-issue-detail";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   create: vi.fn(),
+  timelineError: false,
+  pageError: false,
+  fetching: false,
+  refetch: vi.fn(),
+  nextPage: vi.fn(),
   patch: vi.fn(),
   owner: false,
   version: 1,
@@ -23,7 +28,16 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useDeleteCrewTaskComment: () => ({ mutateAsync: state.remove, isPending: false }),
   useCreateCrewTaskComment: () => ({ mutateAsync: state.create, isPending: false }),
   useUpdateCrewTask: () => ({ mutateAsync: state.patch, isPending: false }),
-  useCrewTaskTimeline: () => ({ data: { pages: [{ items: state.items }] } }),
+  useCrewTaskTimeline: () => ({
+    data: { pages: [{ items: state.items }] },
+    isError: state.timelineError,
+    isFetchNextPageError: state.pageError,
+    error: new Error("timeline unavailable"),
+    isFetching: state.fetching,
+    refetch: state.refetch,
+    fetchNextPage: state.nextPage,
+    hasNextPage: true,
+  }),
   useCrewTaskProject: () => ({
     data: { views: [], fields: [], labels: [], cycles: [], workflowStates: [] },
   }),
@@ -123,6 +137,9 @@ afterEach(async () => {
   root = createRoot(container);
   vi.clearAllMocks();
   state.items = [];
+  state.timelineError = false;
+  state.pageError = false;
+  state.fetching = false;
   state.owner = false;
   state.version = 1;
   state.title = "Task";
@@ -396,4 +413,40 @@ it("loads the latest title when starting another brief edit", async () => {
   expect((container.querySelector('input[maxlength="180"]') as HTMLInputElement).value).toBe(
     "Updated"
   );
+});
+
+it.each(["refresh", "page"])(
+  "retains loaded comments and edits after a %s failure",
+  async (kind) => {
+    comment();
+    await render();
+    await edit();
+    const textarea = row().querySelector("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        textarea,
+        "unsaved"
+      );
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    state.timelineError = true;
+    state.pageError = kind === "page";
+    await render();
+    expect(row()).not.toBeNull();
+    expect(row().querySelector("textarea")!.value).toBe("unsaved");
+    expect(container.textContent).toContain("timeline unavailable");
+    expect(
+      Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "loadEarlier")
+    ).toBeUndefined();
+    await act(async () => textButton("retry").click());
+    expect(kind === "page" ? state.nextPage : state.refetch).toHaveBeenCalledTimes(1);
+    expect(kind === "page" ? state.refetch : state.nextPage).not.toHaveBeenCalled();
+  }
+);
+it("waits for a timeline refresh before loading earlier comments", async () => {
+  state.fetching = true;
+  await render();
+  expect(textButton("loadEarlier").disabled).toBe(true);
+  await act(async () => textButton("loadEarlier").click());
+  expect(state.nextPage).not.toHaveBeenCalled();
 });
