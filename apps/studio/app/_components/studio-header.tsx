@@ -4,6 +4,8 @@ import { IconBolt, IconCrown } from "@tabler/icons-react";
 import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { AccountMenu } from "./account-menu";
+import { CreditsBadge } from "./credits-badge";
+import { LocaleSwitcher } from "./locale-switcher";
 import { SubscriptionDialog } from "./subscription-dialog";
 import { useAuth } from "./auth-provider";
 import { formatEntitlementPlanName, useMyEntitlement } from "./entitlement-context";
@@ -27,23 +29,30 @@ export function StudioHeader() {
   return (
     <header className="relative z-40 flex h-16 items-center justify-end gap-4 overflow-visible px-3 text-[14px] sm:px-6">
       <div className="flex min-w-0 max-w-full items-center gap-2">
-        {!loading && (
-          <button
-            type="button"
-            aria-label={tc("recharge")}
-            title={tc("recharge")}
-            disabled={Boolean(user) && !billingWorkspace}
-            onClick={() => requireAuth(() => setRechargeOpen(true))}
-            className="flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] bg-white/[0.08] px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white transition hover:bg-white/[0.12] focus-visible:ring-2 focus-visible:ring-white/35 disabled:opacity-50"
-          >
-            <IconBolt className="size-4" stroke={1.8} aria-hidden />
-            <span className="hidden sm:inline">{tc("recharge")}</span>
-          </button>
-        )}
+        <LocaleSwitcher />
+        {!loading &&
+          (user ? (
+            <CreditsBadge
+              variant="secondary"
+              onClick={() => setRechargeOpen(true)}
+              className="h-8 rounded-[12px] bg-card/95 px-2.5 text-[14px] text-white hover:bg-accent"
+            />
+          ) : (
+            <button
+              type="button"
+              aria-label={tc("recharge")}
+              title={tc("recharge")}
+              onClick={() => requireAuth(() => setRechargeOpen(true))}
+              className="flex h-8 shrink-0 items-center gap-1.5 rounded-[12px] bg-white/[0.08] px-2.5 py-1.5 text-[14px] leading-5 font-medium whitespace-nowrap text-white transition hover:bg-white/[0.12] focus-visible:ring-2 focus-visible:ring-white/35 disabled:opacity-50"
+            >
+              <IconBolt className="size-4" stroke={1.8} aria-hidden />
+              <span className="hidden sm:inline">{tc("recharge")}</span>
+            </button>
+          ))}
         {loading ? (
           <>
             <div className="h-8 w-16 animate-pulse rounded-[12px] bg-white/[0.06] sm:w-28" />
-            <div className="h-9 w-16 animate-pulse rounded-[14px] bg-white/[0.06] sm:w-56" />
+            <div className="h-8 w-16 animate-pulse rounded-[12px] bg-white/[0.06] sm:w-56" />
             <div className="size-8 animate-pulse rounded-full bg-white/[0.06]" />
           </>
         ) : user ? (

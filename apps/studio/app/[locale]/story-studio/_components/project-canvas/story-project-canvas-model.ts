@@ -41,6 +41,8 @@ export interface StoryCanvasInteractionOutcomeData {
 export interface StoryCanvasNodeData extends Record<string, unknown> {
   kind: StoryCanvasNodeKind;
   title: string;
+  /** Canonical plot description, shared with the storyboard. */
+  description?: string;
   eyebrow: string;
   nodeId: string;
   /** Canonical node that owns the decision; legacy projections use their scene id. */
@@ -229,6 +231,7 @@ export function buildStoryCanvasModel(
         data: {
           kind: "clip",
           title: node.name?.trim() || `${copy.clip} ${clipOrdinal}`,
+          description: node.description,
           eyebrow: `${copy.clip} ${String(clipOrdinal).padStart(2, "0")}`,
           nodeId: node.nodeId,
           clipKey: node.clipKey,

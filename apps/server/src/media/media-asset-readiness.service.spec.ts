@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest assertions intentionally inspect mocked adapter methods by reference. */
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, GoneException } from '@nestjs/common';
 import {
   MEDIA_ASSET_READINESS_CAPABILITY,
   type MediaAssetReadinessResult,
@@ -7,10 +7,17 @@ import {
 import {
   MediaAssetKind,
   MediaAssetStatus,
+  MediaAssetModerationStatus,
+  MediaAssetVisibility,
   WorkspaceMemberRole,
 } from '@prisma/client';
 import type { MediaAssetReadinessAdapter } from './media-asset-readiness.port';
 import { MediaAssetReadinessService } from './media-asset-readiness.service';
+import { MediaAccessService } from './media-access.service';
+import {
+  MediaAssetReadinessCheckRequestSchema,
+  MediaAssetReadinessStatusRequestSchema,
+} from './dto';
 
 const USER_ID = 'user-1';
 const ASSET_ID = '0197f4a2-0800-7000-8000-000000000001';
@@ -36,8 +43,8 @@ function fixture() {
       findFirst: jest.fn().mockResolvedValue(null),
     },
   };
-  const workspacePermissions = {
-    requireWorkspaceRole: jest.fn().mockResolvedValue({}),
+  const mediaAccess = {
+    requireUseAccess: jest.fn().mockResolvedValue(undefined),
   };
   const adapter: MediaAssetReadinessAdapter = {
     capability: CAPABILITY,
@@ -50,10 +57,10 @@ function fixture() {
   };
   const service = new MediaAssetReadinessService(
     prisma as never,
-    workspacePermissions as never,
+    mediaAccess as never,
     [adapter],
   );
-  return { service, prisma, workspacePermissions, adapter };
+  return { service, prisma, mediaAccess, adapter };
 }
 
 describe('MediaAssetReadinessService', () => {
@@ -116,7 +123,7 @@ describe('MediaAssetReadinessService', () => {
     expect(f.adapter.request).toHaveBeenCalledWith(ASSET_ID);
   });
 
-  it('requires editor access before checking a workspace asset', async () => {
+  it('uses the shared media policy and preserves its denial before contacting the provider', async () => {
     const f = fixture();
     f.prisma.mediaAsset.findFirst.mockResolvedValue({
       id: ASSET_ID,
@@ -124,20 +131,14 @@ describe('MediaAssetReadinessService', () => {
       status: MediaAssetStatus.ready,
       workspaceId: WORKSPACE_ID,
     });
-    f.workspacePermissions.requireWorkspaceRole.mockRejectedValue(
-      new ForbiddenException({ code: 'WORKSPACE_PERMISSION_DENIED' }),
+    f.mediaAccess.requireUseAccess.mockRejectedValue(
+      new ForbiddenException({ code: 'MEDIA_ASSET_ACCESS_DENIED' }),
     );
-
     await expect(
       f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY),
     ).rejects.toMatchObject({
-      response: { code: 'WORKSPACE_PERMISSION_DENIED' },
+      response: { code: 'MEDIA_ASSET_ACCESS_DENIED' },
     });
-    expect(f.workspacePermissions.requireWorkspaceRole).toHaveBeenCalledWith(
-      USER_ID,
-      WORKSPACE_ID,
-      WorkspaceMemberRole.editor,
-    );
     expect(f.adapter.request).not.toHaveBeenCalled();
   });
 
@@ -189,9 +190,211 @@ describe('MediaAssetReadinessService', () => {
       () =>
         new MediaAssetReadinessService(
           f.prisma as never,
-          f.workspacePermissions as never,
+          f.mediaAccess as never,
           [f.adapter, f.adapter],
         ),
     ).toThrow(`Duplicate media asset readiness adapter: ${CAPABILITY}`);
   });
+});
+
+// Exercise readiness against the real media policy, not a stubbed permission
+// verdict: shared personal images must work for a canvas-only collaborator.
+describe('readiness with canonical media access', () => {
+  const DOCUMENT_ID = '0197f4a2-0800-7000-8000-000000000003';
+  const context = { documentId: DOCUMENT_ID };
+
+  function sharedFixture(overrides: Record<string, unknown> = {}) {
+    const f = fixture();
+    const asset = {
+      id: ASSET_ID,
+      kind: MediaAssetKind.image,
+      status: MediaAssetStatus.ready,
+      moderationStatus: MediaAssetModerationStatus.approved,
+      visibility: MediaAssetVisibility.private,
+      createdByUserId: 'teammate',
+      workspaceId: null,
+      metadata: {},
+      ...overrides,
+    };
+    const prisma = {
+      ...f.prisma,
+      characterMedia: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    prisma.mediaAsset.findFirst.mockResolvedValue(asset);
+    prisma.mediaAsset.findMany.mockResolvedValue([asset]);
+    const documents = {
+      requireDocument: jest.fn().mockResolvedValue({
+        contentSnapshot: { nodes: [{ data: { mediaAssetId: ASSET_ID } }] },
+      }),
+    };
+    const workspaces = {
+      requireWorkspaceRole: jest.fn().mockResolvedValue({}),
+    };
+    const access = new MediaAccessService(
+      prisma as never,
+      {} as never,
+      workspaces as never,
+      {} as never,
+      documents as never,
+    );
+    const service = new MediaAssetReadinessService(prisma as never, access, [
+      f.adapter,
+    ]);
+    return { ...f, service, prisma, documents, workspaces };
+  }
+
+  it('lists and checks another uploader’s personal asset through a readable canvas', async () => {
+    const f = sharedFixture();
+    await expect(
+      f.service.listStatusesForUser(USER_ID, CAPABILITY, [ASSET_ID], context),
+    ).resolves.toMatchObject([{ assetId: ASSET_ID, status: 'not_requested' }]);
+    await expect(
+      f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY, context),
+    ).resolves.toMatchObject({ status: 'pending' });
+    expect(f.documents.requireDocument).toHaveBeenCalledWith(
+      USER_ID,
+      DOCUMENT_ID,
+      'read',
+    );
+    expect(f.workspaces.requireWorkspaceRole).not.toHaveBeenCalled();
+    expect(f.prisma.mediaAsset.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: ASSET_ID, deletedAt: null },
+      }),
+    );
+    expect(f.prisma.mediaAsset.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: { in: [ASSET_ID] }, deletedAt: null },
+      }),
+    );
+    expect(f.adapter.request).toHaveBeenCalledWith(ASSET_ID);
+  });
+
+  it('lets a workspace viewer check without requesting editor privileges', async () => {
+    const f = sharedFixture({ workspaceId: WORKSPACE_ID });
+    await expect(
+      f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY),
+    ).resolves.toMatchObject({ status: 'pending' });
+    expect(f.workspaces.requireWorkspaceRole).toHaveBeenCalledTimes(1);
+    expect(f.workspaces.requireWorkspaceRole).toHaveBeenCalledWith(
+      USER_ID,
+      WORKSPACE_ID,
+      WorkspaceMemberRole.viewer,
+    );
+  });
+
+  it('uses canvas access for an asset from a different workspace', async () => {
+    const f = sharedFixture({ workspaceId: WORKSPACE_ID });
+    f.workspaces.requireWorkspaceRole.mockRejectedValue(
+      new ForbiddenException(),
+    );
+    await expect(
+      f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY, context),
+    ).resolves.toMatchObject({ status: 'pending' });
+  });
+
+  it('accepts public assets through the same policy', async () => {
+    const f = sharedFixture({ visibility: MediaAssetVisibility.public });
+    await expect(
+      f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY),
+    ).resolves.toMatchObject({ status: 'pending' });
+    expect(f.documents.requireDocument).not.toHaveBeenCalled();
+  });
+
+  it('rechecks the canvas grant when a previously visible asset is checked', async () => {
+    const f = sharedFixture();
+    await expect(
+      f.service.listStatusesForUser(USER_ID, CAPABILITY, [ASSET_ID], context),
+    ).resolves.toMatchObject([{ status: 'not_requested' }]);
+    f.documents.requireDocument.mockResolvedValue({
+      contentSnapshot: { nodes: [] },
+    });
+    await expect(
+      f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY, context),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(f.adapter.request).not.toHaveBeenCalled();
+  });
+
+  it.each(['no context', 'unreadable canvas', 'unreferenced asset'] as const)(
+    'does not grant access for %s',
+    async (scenario) => {
+      const f = sharedFixture();
+      if (scenario === 'unreadable canvas')
+        f.documents.requireDocument.mockRejectedValue(new ForbiddenException());
+      if (scenario === 'unreferenced asset')
+        f.documents.requireDocument.mockResolvedValue({
+          contentSnapshot: { nodes: [] },
+        });
+      const requestContext = scenario === 'no context' ? undefined : context;
+      await expect(
+        f.service.listStatusesForUser(
+          USER_ID,
+          CAPABILITY,
+          [ASSET_ID],
+          requestContext,
+        ),
+      ).resolves.toEqual([]);
+      await expect(
+        f.service.requestCheckForUser(
+          USER_ID,
+          ASSET_ID,
+          CAPABILITY,
+          requestContext,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(f.adapter.list).not.toHaveBeenCalled();
+      expect(f.adapter.request).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    { status: MediaAssetStatus.deleted },
+    { moderationStatus: MediaAssetModerationStatus.blocked },
+  ])('keeps lifecycle and moderation gates: %j', async (overrides) => {
+    const f = sharedFixture(overrides);
+    await expect(
+      f.service.listStatusesForUser(USER_ID, CAPABILITY, [ASSET_ID], context),
+    ).resolves.toEqual([]);
+    await expect(
+      f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY, context),
+    ).rejects.toBeInstanceOf(GoneException);
+    expect(f.adapter.request).not.toHaveBeenCalled();
+  });
+
+  it('returns not-found only when the asset lookup is empty', async () => {
+    const f = sharedFixture();
+    f.prisma.mediaAsset.findFirst.mockResolvedValue(null);
+    await expect(
+      f.service.requestCheckForUser(USER_ID, ASSET_ID, CAPABILITY, context),
+    ).rejects.toMatchObject({ response: { code: 'MEDIA_ASSET_NOT_FOUND' } });
+    expect(f.adapter.request).not.toHaveBeenCalled();
+  });
+
+  it('does not swallow policy infrastructure failures as missing statuses', async () => {
+    const f = sharedFixture({ workspaceId: WORKSPACE_ID });
+    f.workspaces.requireWorkspaceRole.mockRejectedValue(
+      new Error('database unavailable'),
+    );
+    await expect(
+      f.service.listStatusesForUser(USER_ID, CAPABILITY, [ASSET_ID], context),
+    ).rejects.toThrow('database unavailable');
+  });
+
+  it.each([
+    MediaAssetReadinessCheckRequestSchema,
+    MediaAssetReadinessStatusRequestSchema,
+  ])(
+    'preserves and validates canvas context at the HTTP boundary',
+    (schema) => {
+      const body = {
+        capability: CAPABILITY,
+        assetIds: [ASSET_ID],
+        documentId: DOCUMENT_ID,
+      };
+      expect(schema.parse(body)).toMatchObject(context);
+      expect(schema.safeParse({ ...body, documentId: 'invalid' }).success).toBe(
+        false,
+      );
+    },
+  );
 });

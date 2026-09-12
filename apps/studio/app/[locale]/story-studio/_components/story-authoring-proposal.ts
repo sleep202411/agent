@@ -64,7 +64,10 @@ export function storyAuthoringProposalReview(
       nodeId: scene.nodeId,
       clipKey: scene.clipKey,
       ...(scene.name ? { name: scene.name } : {}),
-      description: [scene.heading, scene.action].join("\n\n"),
+      description:
+        proposal.screenplay.sourceMode === "preserved"
+          ? scene.action
+          : [scene.heading, scene.action].join("\n\n"),
       interactions: [],
       exit: scene.exit,
     }));
@@ -73,7 +76,7 @@ export function storyAuthoringProposalReview(
       synopsis: proposal.screenplay.synopsis,
       characters: proposal.screenplay.characters,
       scenes,
-      productionNotes: [],
+      productionNotes: proposal.screenplay.reviewNotes ?? [],
       metrics: {
         scenes: scenes.length,
         branches: scenes.reduce(
@@ -81,7 +84,10 @@ export function storyAuthoringProposalReview(
           0
         ),
         endings: scenes.filter(
-          (scene) => scene.exit.kind === "auto" && scene.exit.nextNodeId === null
+          (scene) =>
+            scene.exit.kind === "auto" &&
+            scene.exit.nextNodeId === null &&
+            !proposal.screenplay.unresolvedNodeIds?.includes(scene.nodeId)
         ).length,
         interactions: 0,
       },

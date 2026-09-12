@@ -2,7 +2,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useStore, type Node, type NodeProps } from "@xyflow/react";
 import { MEDIA_ASSET_READINESS_CAPABILITY } from "@repo/shared";
 import {
@@ -62,7 +62,9 @@ import {
   normalizeModelSettings,
   estimateModelSellPoints,
   hasSchemaProperty,
-  isUnsafeGenerationErrorMessage,
+  displayGenerationError,
+  generationStateFromJob,
+  getFizzAiJob,
   referenceFieldsForMode,
   type FizzAiReferenceFieldConstraints,
   type FizzAiModel,
@@ -162,16 +164,6 @@ const MODALITY = {
   video: { icon: IconVideo },
   audio: { icon: IconAudioWaveform },
 } as const;
-
-function displayGenerationError(
-  generation: GenerationState | undefined,
-  fallback: string,
-  providerUnavailable: string
-): string {
-  if (generation?.errorCode === "PROVIDER_NOT_CONFIGURED") return providerUnavailable;
-  if (isUnsafeGenerationErrorMessage(generation?.error)) return providerUnavailable;
-  return generation?.error || fallback;
-}
 
 const SOURCE_NODE_GAP_X = 96;
 const SOURCE_NODE_STACK_Y = 92;
@@ -407,10 +399,26 @@ function GenerationCard({
   const opTitle = ol(data.opType);
   const displayTitle = data.name ?? opTitle ?? modalityLabel;
   const generation = data.generation;
+  // Older canvas snapshots lost errors containing provider request IDs. Fetch
+  // the authoritative failure once; completed failures need no polling.
+  const failureJobId = generation?.jobId;
+  const failureDetails = useQuery({
+    queryKey: ["canvas-job-error", failureJobId],
+    queryFn: () => getFizzAiJob(failureJobId!),
+    enabled: generation?.status === "failed" && !generation.error?.trim() && !!failureJobId,
+    staleTime: Infinity,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
   const generationErrorMessage = displayGenerationError(
-    generation,
-    t("generationFailed"),
-    t("generationProviderUnavailable")
+    failureDetails.data?.status === "failed"
+      ? generationStateFromJob(failureDetails.data)
+      : generation,
+    {
+      fallback: t("generationFailed"),
+      providerUnavailable: t("generationProviderUnavailable"),
+      referenceAudioRequiresVisual: t("generationReferenceAudioRequiresVisual"),
+    }
   );
   const busy =
     generation?.status === "submitting" ||

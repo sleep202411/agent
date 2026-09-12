@@ -567,6 +567,44 @@ describe('StoryAgentRunContinuationWorkerService', () => {
     );
   });
 
+  it.each(['succeeded', 'failed'] as const)(
+    'delivers a full-access Script %s without manufacturing approval',
+    async (status) => {
+      const plan = { ...SCRIPT_CONTINUATION_PLAN, autoApplyTextStages: true };
+      const fixture = createFixture({
+        run: storyRun({
+          proposal: SCRIPT_PROPOSAL,
+          decisionContractVersion: 2,
+          status,
+          sourceAutoAppliedAt: NOW,
+        }),
+        registration: registration({
+          decisionContractVersion: 2,
+          continuationPlan: plan,
+        }),
+      });
+      await fixture.worker.drainOnce();
+      const calls = fixture.appendExternalResultInTransaction.mock
+        .calls as unknown as Array<[unknown, Record<string, unknown>]>;
+      const input = calls[0][1];
+      expect(input).toMatchObject({
+        phase: 'apply',
+        toolId: 'story.author',
+        outcome: status === 'succeeded' ? 'completed' : 'failed',
+        storyArtifact: { stage: 'script', storyProjectId: STORY_PROJECT_ID },
+      });
+      if (status === 'succeeded') {
+        expect(input).toHaveProperty('storyContinuation', {
+          locale: 'en-US',
+          plan,
+          completedStage: 'script',
+        });
+      } else {
+        expect(input).not.toHaveProperty('storyContinuation');
+      }
+    },
+  );
+
   it('resumes a completed apply with the immutable production scope', async () => {
     const fixture = createFixture({
       run: storyRun({

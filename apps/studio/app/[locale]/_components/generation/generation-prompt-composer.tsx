@@ -325,7 +325,7 @@ export function GenerationPromptComposer({
           "nodrag nopan nowheel nokey",
           isExpanded
             ? "flex size-full min-h-0 flex-col"
-            : "relative w-[680px] rounded-3xl bg-white/[0.05] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-3xl backdrop-saturate-200",
+            : "relative w-[800px] max-w-[calc(100vw-2rem)] rounded-3xl bg-white/[0.05] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.16)] backdrop-blur-3xl backdrop-saturate-200",
           className
         )}
         aria-label={ariaLabel}
@@ -440,7 +440,10 @@ export function GenerationPromptComposer({
           </div>
 
           <div
-            className={cn("flex min-h-10 items-center gap-2 pt-2", isExpanded && "mt-4 shrink-0")}
+            className={cn(
+              "flex min-h-10 flex-wrap items-center gap-2 pt-2",
+              isExpanded && "mt-4 shrink-0"
+            )}
           >
             {fixedControls}
 
@@ -539,7 +542,7 @@ export function GenerationPromptComposer({
               </div>
             ) : null}
 
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex shrink-0 items-center gap-3 whitespace-nowrap">
               {cost != null ? (
                 <span className="flex h-10 items-center gap-1 px-1 text-xs text-muted-foreground tabular-nums">
                   <IconBolt className="size-3.5" stroke={1.8} />

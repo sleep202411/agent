@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist/catalog-update",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["prisma/seed/update-gpt-image-catalog.ts"],
+  "exclude": ["node_modules", "dist", "**/*.spec.ts"]
+}

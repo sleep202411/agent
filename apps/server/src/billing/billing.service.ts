@@ -413,6 +413,94 @@ export class BillingService {
     };
   }
 
+  /** Balance-only read: project collaborators may see the team's shared pot.
+   * Ledger details and recharge retain their existing role checks. */
+  async getComputeBalance(user: AuthUser, workspaceId?: string | null) {
+    let scope: { ownerType: WalletOwnerType; ownerId: string };
+    if (workspaceId) {
+      // Project invitations already maintain an active workspace roster entry.
+      // Presence accepts project_only without granting workspace-wide access.
+      await this.permissions.requireWorkspacePresence(user.userId, workspaceId);
+      const workspace = await this.prisma.workspace.findUniqueOrThrow({
+        where: { id: workspaceId },
+        select: { type: true },
+      });
+      scope =
+        workspace.type === WorkspaceType.team
+          ? { ownerType: WalletOwnerType.workspace, ownerId: workspaceId }
+          : await this.walletLedgerScope(
+              user,
+              WalletCurrencyType.compute_point,
+            );
+    } else {
+      scope = await this.walletLedgerScope(
+        user,
+        WalletCurrencyType.compute_point,
+      );
+    }
+    const accounts = await this.readWalletAccounts({
+      ...scope,
+      currency: WalletCurrencyType.compute_point,
+      balanceKind: WalletBalanceKind.consumable,
+      status: WalletAccountStatus.active,
+    });
+    const available = accounts.reduce(
+      (sum, account) => sum + account.availableBalance,
+      0n,
+    );
+    const held = accounts.reduce(
+      (sum, account) => sum + account.heldBalance,
+      0n,
+    );
+    return {
+      available: available.toString(),
+      held: held.toString(),
+      total: (available + held).toString(),
+      nextExpiry: await this.nextWalletExpiry(accounts),
+    };
+  }
+
+  private async readWalletAccounts(where: Prisma.WalletAccountWhereInput) {
+    let accounts = await this.prisma.walletAccount.findMany({
+      where,
+      orderBy: [{ createdAt: 'asc' }],
+    });
+    let swept = false;
+    for (const account of accounts) {
+      const { expired } = await this.walletLedger.expireLapsedGrants(
+        account.id,
+      );
+      if (expired > 0n) swept = true;
+    }
+    if (swept) {
+      accounts = await this.prisma.walletAccount.findMany({
+        where,
+        orderBy: [{ createdAt: 'asc' }],
+      });
+    }
+    return accounts;
+  }
+
+  private async nextWalletExpiry(accounts: WalletAccount[]) {
+    if (accounts.length === 0) return null;
+    const grant = await this.prisma.walletCreditGrant.findFirst({
+      where: {
+        accountId: { in: accounts.map((account) => account.id) },
+        status: WalletCreditGrantStatus.active,
+        availableAmount: { gt: 0n },
+        expiresAt: { not: null },
+      },
+      orderBy: { expiresAt: 'asc' },
+      select: { availableAmount: true, expiresAt: true },
+    });
+    return grant
+      ? {
+          amount: grant.availableAmount.toString(),
+          expiresAt: grant.expiresAt!.toISOString(),
+        }
+      : null;
+  }
+
   async listWalletLedger(
     user: AuthUser,
     query: ListWalletLedgerQuery,
@@ -429,25 +517,7 @@ export class BillingService {
       currency: query.currency as WalletCurrencyType,
       balanceKind: query.balanceKind as WalletBalanceKind,
     };
-    let accounts = await this.prisma.walletAccount.findMany({
-      where: accountWhere,
-      orderBy: [{ createdAt: 'asc' }],
-    });
-    // Sweep lapsed credit grants so the displayed balance is honest (the spend
-    // path already refuses expired grants; this reflects expiry on the balance).
-    let swept = false;
-    for (const account of accounts) {
-      const { expired } = await this.walletLedger.expireLapsedGrants(
-        account.id,
-      );
-      if (expired > 0n) swept = true;
-    }
-    if (swept) {
-      accounts = await this.prisma.walletAccount.findMany({
-        where: accountWhere,
-        orderBy: [{ createdAt: 'asc' }],
-      });
-    }
+    const accounts = await this.readWalletAccounts(accountWhere);
     if (accounts.length === 0) {
       return {
         accounts: [],
@@ -480,25 +550,8 @@ export class BillingService {
       take: query.limit,
     });
 
-    // The next credit grant to expire (for surfacing "X credits expire on DATE").
-    const nextExpiringGrant = await this.prisma.walletCreditGrant.findFirst({
-      where: {
-        accountId: { in: accounts.map((account) => account.id) },
-        status: WalletCreditGrantStatus.active,
-        availableAmount: { gt: 0n },
-        expiresAt: { not: null },
-      },
-      orderBy: { expiresAt: 'asc' },
-      select: { availableAmount: true, expiresAt: true },
-    });
-
     return {
-      nextExpiry: nextExpiringGrant
-        ? {
-            amount: nextExpiringGrant.availableAmount.toString(),
-            expiresAt: nextExpiringGrant.expiresAt!.toISOString(),
-          }
-        : null,
+      nextExpiry: await this.nextWalletExpiry(accounts),
       accounts: accounts.map((account) => ({
         id: account.id,
         ownerType: account.ownerType,

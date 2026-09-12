@@ -25,7 +25,11 @@ import { PrismaService } from '../infra/db/db.module';
 import { NotificationService } from '../notification';
 import { generateInviteToken } from '../sharing/invite-token';
 import type { InvitePreviewDTO } from '../sharing/mappers';
-import { effectiveInviteStatus, isUniqueViolation } from '../sharing/util';
+import {
+  effectiveInviteStatus,
+  isUniqueViolation,
+  existingInviteAccess,
+} from '../sharing/util';
 import {
   acquireSeatLock,
   storyRoleConsumesCreatorSeat,
@@ -157,12 +161,27 @@ export class StoryProjectInvitesService {
 
   async preview(
     invite: NonNullable<Awaited<ReturnType<this['findByHash']>>>,
+    user: AuthUser,
   ): Promise<InvitePreviewDTO> {
     const project = await this.prisma.storyProject.findFirst({
       where: { id: invite.storyProjectId },
       select: { title: true },
     });
+    const existingAccess = await existingInviteAccess(async () => {
+      const { project } = await this.permissions.requireProject(
+        user.userId,
+        invite.storyProjectId,
+        'story.read',
+      );
+      return {
+        scope: 'story-project' as const,
+        storyProjectId: project.id,
+        workspaceId: project.workspaceId,
+        targetName: project.title,
+      };
+    });
     return {
+      existingAccess,
       scope: 'story-project',
       targetName: project?.title ?? 'a story',
       role: invite.role,
@@ -177,6 +196,7 @@ export class StoryProjectInvitesService {
   ): Promise<{
     scope: 'story-project';
     storyProjectId: string;
+    workspaceId: string;
     targetName: string;
   }> {
     const project = await this.requireProject(invite.storyProjectId);
@@ -299,6 +319,7 @@ export class StoryProjectInvitesService {
     return {
       scope: 'story-project',
       storyProjectId: invite.storyProjectId,
+      workspaceId: project.workspaceId,
       targetName: project.title,
     };
   }

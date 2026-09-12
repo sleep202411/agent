@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { openSettings } from "@/lib/settings-hash";
 import {
@@ -27,8 +27,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -36,8 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { GlassRim } from "@/components/ui/glass-rim";
-import { usePathname, useRouter } from "@/i18n/navigation";
-import { LOCALE_OPTIONS, isValidLocale } from "@/i18n/config";
+import { LocaleMenuItems } from "./locale-switcher";
 
 function PillButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
@@ -62,13 +59,6 @@ export function AccountMenu({
   const tLocale = useTranslations("localeSwitcher");
   const locale = useLocale();
   const siteRegion = useSiteRegion();
-  const router = useRouter();
-  const pathname = usePathname();
-  const [, startLocaleTransition] = useTransition();
-  const selectLocale = (next: string) => {
-    if (!isValidLocale(next) || next === locale) return;
-    startLocaleTransition(() => router.replace(pathname, { locale: next }));
-  };
   const { user, loading, signIn, signOut } = useAuth();
   const entitlement = useMyEntitlement();
   const { data: computeCredits } = useComputeWalletBalance(Boolean(user));
@@ -266,17 +256,7 @@ export function AccountMenu({
               {tLocale("label")}
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="min-w-40 p-1.5">
-              <DropdownMenuRadioGroup value={locale} onValueChange={selectLocale}>
-                {LOCALE_OPTIONS.map((option) => (
-                  <DropdownMenuRadioItem
-                    key={option.value}
-                    value={option.value}
-                    className="rounded-lg text-sm"
-                  >
-                    {option.label}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
+              <LocaleMenuItems />
             </DropdownMenuSubContent>
           </DropdownMenuSub>
           <DropdownMenuItem

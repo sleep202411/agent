@@ -222,7 +222,7 @@ export default function ProjectLayout({
           />
         </div>
 
-        {canManage && (
+        {role != null && (
           <ShareDialog
             scope={{ kind: "project", id: projectId, name: name || t("thisProject") }}
             canManage={canManage}

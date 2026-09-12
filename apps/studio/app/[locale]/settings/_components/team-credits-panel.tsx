@@ -38,12 +38,14 @@ const CAN_MANAGE_BILLING = new Set(["owner", "admin", "billing"]);
  */
 export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
   const t = useTranslations("settings");
+  const tc = useTranslations("common");
+  const tw = useTranslations("shell.credits");
   const isTeam = ws.type === "team";
   const canManageBilling = Boolean(ws.role && CAN_MANAGE_BILLING.has(ws.role));
   // A personal workspace is funded by its owner; a team requires the billing role.
   const canRecharge = !isTeam || canManageBilling;
 
-  const { data: balance } = useComputeWalletBalance();
+  const { data: balance, error, refetch, isFetching } = useComputeWalletBalance(true, ws.id);
 
   return (
     <Panel
@@ -58,8 +60,33 @@ export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
             </div>
             <div className="mt-1 flex items-center gap-1.5 text-3xl font-semibold tabular-nums">
               <IconBolt className="size-6 text-white/85" stroke={1.8} />
-              {balance ? balance.available.toLocaleString() : "—"}
+              {balance ? (
+                balance.available.toLocaleString()
+              ) : error ? (
+                <span className="text-sm text-muted-foreground">{tw("unavailable")}</span>
+              ) : (
+                <span
+                  className="h-8 w-24 animate-pulse rounded bg-white/10"
+                  aria-label={tc("loading")}
+                />
+              )}
             </div>
+            {error && (
+              <div
+                role="alert"
+                className="mt-2 flex items-center gap-2 text-sm text-muted-foreground"
+              >
+                <span>{error.message}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={isFetching}
+                  onClick={() => void refetch()}
+                >
+                  {tc("retry")}
+                </Button>
+              </div>
+            )}
             {balance && balance.held > BigInt(0) && (
               <div className="mt-0.5 text-xs text-muted-foreground">
                 {t("reservedByRunningJobs", { amount: balance.held.toLocaleString() })}

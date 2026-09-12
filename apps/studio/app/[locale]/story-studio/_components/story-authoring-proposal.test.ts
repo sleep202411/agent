@@ -116,5 +116,14 @@ describe("storyAuthoringProposalReview", () => {
         },
       ],
     });
+    proposal.screenplay.sourceMode = "preserved";
+    proposal.screenplay.scenes[0]!.action = "  原文台词。\n第二段。  ";
+    proposal.screenplay.unresolvedNodeIds = ["gate"];
+    proposal.screenplay.reviewNotes = ["尚未实现：信任值条件"];
+    expect(storyAuthoringProposalReview(proposal)).toMatchObject({
+      metrics: { scenes: 1, endings: 0 },
+      scenes: [{ description: "  原文台词。\n第二段。  " }],
+      productionNotes: ["尚未实现：信任值条件"],
+    });
   });
 });

@@ -49,9 +49,21 @@ export const GPT_IMAGE_2_PARAMETER_POLICY = {
   referenceImages: {
     enabled: true,
     min: 0,
-    max: 4,
+    max: 16,
     maskSupported: true,
   },
+} as const satisfies Prisma.InputJsonObject;
+
+/** fal queue OpenAPI: both GPT Image 2.5 variants share these controls. */
+export const GPT_IMAGE_25_PARAMETER_POLICY = {
+  ...GPT_IMAGE_2_PARAMETER_POLICY,
+  promptMaxLength: 32000,
+  defaultQuality: 'high',
+  qualityOptions: ['low', 'medium', 'high', 'xhigh', 'max'],
+  // OpenAPI num_images maximum is 10; reference images have a separate cap of 16.
+  variationOptions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+  backgroundOptions: ['auto', 'transparent', 'opaque'],
+  defaultBackground: 'auto',
 } as const satisfies Prisma.InputJsonObject;
 
 export const NANO_BANANA_PARAMETER_POLICY = {
@@ -649,7 +661,7 @@ export const SEEDREAM_5_PRO_PARAMETER_POLICY = {
 
 export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   mode: 'parameter_matrix',
-  version: 'gpt-image-2-points-v1-2026-06-07',
+  version: 'gpt-image-2-points-v3-2026-09-11',
   currency: 'COMPUTE_POINTS',
   defaultOutputCount: 1,
   minOutputCount: 1,
@@ -659,15 +671,33 @@ export const GPT_IMAGE_2_PRODUCT_PRICING: AiProductPricingPolicy = {
   resolutionOptions: ['1K', '2K', '4K'],
   qualityOptions: ['low', 'medium', 'high'],
   matrix: {
-    '1K': { low: 20, medium: 60, high: 120 },
-    '2K': { low: 30, medium: 90, high: 180 },
-    '4K': { low: 45, medium: 140, high: 280 },
+    '1K': { low: 10, medium: 30, high: 60 },
+    '2K': { low: 15, medium: 45, high: 90 },
+    '4K': { low: 22.5, medium: 70, high: 140 },
   },
-  referenceImageSurchargePoints: 15,
-  extraReferenceImagePoints: 5,
+  referenceImageSurchargePoints: 10.5,
+  extraReferenceImagePoints: 3.5,
   maskSurchargePoints: 0,
   minimumPoints: 1,
   roundTo: 1,
+};
+
+/**
+ * Curated selling prices, not a fixed upstream cost quote. Flare and Sunburst
+ * share fal's token rates. Keep the launch prices independent of subsequent
+ * Image 2 discounts; xhigh/max are priced at 2x/4x high.
+ */
+export const GPT_IMAGE_25_PRODUCT_PRICING: AiProductPricingPolicy = {
+  ...GPT_IMAGE_2_PRODUCT_PRICING,
+  version: 'gpt-image-2.5-points-v1-2026-09-11',
+  defaultQuality: 'high',
+  maxOutputCount: 10,
+  qualityOptions: ['low', 'medium', 'high', 'xhigh', 'max'],
+  matrix: {
+    '1K': { low: 14, medium: 42, high: 84, xhigh: 168, max: 336 },
+    '2K': { low: 21, medium: 63, high: 126, xhigh: 252, max: 504 },
+    '4K': { low: 31.5, medium: 98, high: 196, xhigh: 392, max: 784 },
+  },
 };
 
 export const NANO_BANANA_PRODUCT_PRICING: AiProductPricingPolicy = {

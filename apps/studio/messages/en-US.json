@@ -877,7 +877,9 @@
       "tooltip": "Compute credits",
       "tooltipDetailed": "Compute credits · available {available} · held {held} · total {total}",
       "manage": "Manage compute credits",
-      "teamTag": "Team",
+      "unavailable": "Unavailable",
+      "personalHint": "Your own compute credits, shown in any personal workspace. Click to add credits.",
+      "teamHint": "The current team’s shared compute credits. Click to manage top-ups.",
       "recharge": "Add credits"
     },
     "header": {
@@ -1040,7 +1042,12 @@
     "createInviteFailed": "Couldn't create invite link",
     "inviteLinkRevoked": "Invite link revoked",
     "revokeLinkFailed": "Couldn't revoke link",
+    "availableCredits": "{amount} credits available",
+    "balanceLoading": "Loading credit balance…",
+    "balanceUnavailable": "Credit balance unavailable",
     "switchTeams": "Switch Teams",
+    "searchPlaceholder": "Search by name…",
+    "noSearchResults": "No matching workspaces",
     "current": "current",
     "teamType": "Team",
     "personalType": "Personal",
@@ -1493,6 +1500,9 @@
     "resultsPlaceholder": "Results will appear here.",
     "generationFailed": "Generation failed",
     "generationProviderUnavailable": "This model is temporarily unavailable. Please choose another model or try again later.",
+    "generationReferenceUploading": "Reference media is still uploading. Please wait for the upload to finish.",
+    "generationReferenceUnavailable": "A selected reference is unavailable. Upload it again or remove it before generating.",
+    "generationReferenceAudioRequiresVisual": "Reference audio needs at least one reference image or video. Add one, then try again.",
     "assetUnavailable": "This asset is no longer available.",
     "chooseModelFirst": "Choose a model first",
     "writePromptFirst": "Write a prompt first",
@@ -1822,6 +1832,9 @@
       "error": "Could not check in"
     },
     "members": "Members",
+    "projectSettings": "Project settings",
+    "projectMembers": "Project members",
+    "projectMembersSubtitle": "People collaborating on “{name}”.",
     "membersSubtitle": "Members of “{name}” can collaborate on every project in this workspace.",
     "overview": "Overview",
     "teamName": "Team name",
@@ -2361,6 +2374,10 @@
     }
   },
   "invite": {
+    "alreadyJoinedTitle": "You’re already a member",
+    "alreadyJoinedBody": "You already have access to {name}.",
+    "enterProject": "Open project",
+    "enterWorkspace": "Open workspace",
     "loading": "Loading invitation…",
     "joinedTeam": "Joined team",
     "joinedProject": "Joined project",
@@ -2451,6 +2468,7 @@
   },
   "storyStudio": {
     "authoringRun": {
+      "sourceReviewNotes": "Script rules and production notes ({count})",
       "title": {
         "authoring": "Drafting…",
         "proposed": "Screenplay ready",
@@ -2514,6 +2532,7 @@
         }
       },
       "plotCard": {
+        "unresolved": "Route not implemented",
         "eyebrow": "Plot Tree proposal",
         "review": "Open canvas preview",
         "dialogDescription": "Explore the exact scene topology, branches, and endings in a read-only canvas. Approval remains in the conversation decision area.",
@@ -2602,10 +2621,10 @@
           "ready": "Storyboard ready",
           "review": "Review Storyboard",
           "eyebrow": "Storyboard proposal",
-          "description": "Review the sequences, clips, timing, and prompts. Approving saves the plan only; no media is generated or credits spent.",
+          "description": "Review the storyboards, clips, timing, and prompts. Approving saves the plan only; no media is generated or credits spent.",
           "approve": "Approve Storyboard",
           "saving": "Saving Storyboard…",
-          "savingHint": "Recording your approval and saving storyboard sequences and clip prompts only."
+          "savingHint": "Recording your approval and saving storyboards and clip prompts only."
         },
         "patch": {
           "ready": "Story update ready",
@@ -2630,7 +2649,7 @@
           "characters": "Characters",
           "locations": "Scenes",
           "props": "Props",
-          "sequences": "Sequences",
+          "sequences": "Storyboards",
           "clips": "Clips",
           "seconds": "Seconds"
         },
@@ -2640,7 +2659,7 @@
           "structure": "Screenplay scenes and branches",
           "productionNotes": "Production notes",
           "assetSpecs": "Reusable Asset Specs",
-          "storyboard": "Sequences and clips"
+          "storyboard": "Storyboards and clips"
         },
         "assetKinds": {
           "character": "Character",
@@ -2663,14 +2682,14 @@
         "noAssetSpecs": "This proposal does not require reusable Asset Specs.",
         "sequenceMeta": "{count, plural, one {# clip} other {# clips}} · {seconds}s",
         "storyboardTable": {
-          "sequence": "Sequence",
+          "sequence": "Storyboard",
           "shots": "Shots",
           "duration": "Duration",
           "seconds": "{value}s",
           "viewAll": "View all Storyboard",
           "more": "+{count} more",
-          "dialogTitle": "Storyboard details · {count} sequences",
-          "dialogDescription": "Review every sequence, shot, timing, prompt, and decision cue in this proposal.",
+          "dialogTitle": "Storyboard details · {count} storyboards",
+          "dialogDescription": "Review every storyboard, shot, timing, prompt, and decision cue in this proposal.",
           "shot": "Shot",
           "type": "Type",
           "timing": "Timing",
@@ -2990,8 +3009,9 @@
       }
     },
     "storyboardPage": {
+      "nodeDescription": "Description",
       "pageTitle": "Storyboard · Interactive Film Studio",
-      "pageDescription": "Edit chapter-local Plot sequences, clips, cues, and Asset bindings.",
+      "pageDescription": "Edit chapter-local storyboards, clips, cues, and Asset bindings.",
       "loading": "Loading Storyboard…",
       "emptyChapter": "No scenes in this chapter yet.",
       "emptyHint": "Add scenes on the Plot Tree and the storyboard unfolds here scene by scene.",
@@ -2999,7 +3019,7 @@
       "retry": "Try again",
       "plotNode": "Plot node {index}",
       "clipCount": "{count, plural, one {# clip} other {# clips}}",
-      "noClips": "This sequence has no clips.",
+      "noClips": "This storyboard has no clips.",
       "generationHint": "Opening this page never generates media or spends credits. Use Generate on a saved clip when you are ready.",
       "seconds": "{value}s",
       "options": "Options",
@@ -3024,7 +3044,7 @@
       "loadError": "The timeline could not be loaded.",
       "retry": "Try again",
       "emptyTitle": "No storyboard timelines yet",
-      "emptyDescription": "Prepare a Storyboard sequence before opening the editor.",
+      "emptyDescription": "Prepare a storyboard before opening the editor.",
       "backToStoryboard": "Back to Storyboard",
       "saved": "Saved",
       "saving": "Saving…",
@@ -3054,8 +3074,8 @@
       "prompt": "Prompt",
       "timeline": "Timeline",
       "timelineZoom": "Timeline zoom",
-      "play": "Play sequence",
-      "pause": "Pause sequence",
+      "play": "Play storyboard",
+      "pause": "Pause storyboard",
       "restart": "Return to start",
       "zoomOut": "Zoom out",
       "zoomIn": "Zoom in",
@@ -3665,6 +3685,8 @@
         "moveChoiceDown": "Move option down",
         "delete": "Delete node",
         "nodeName": "Name",
+        "nodeDescription": "Description",
+        "nodeDescriptionPlaceholder": "Paste the corresponding passage from your script.",
         "storyboard": {
           "title": "Storyboard",
           "summary": "{count} clips · {ready} with media",
@@ -3700,6 +3722,45 @@
       "mobileNav": {
         "label": "Production navigation",
         "chat": "Chat"
+      },
+      "plotImport": {
+        "title": "Import JSON",
+        "description": "Turn a plot JSON file from any AI tool into an editable plot tree.",
+        "download": "Download AI template",
+        "choose": "Choose JSON file",
+        "reading": "Reading file…",
+        "summary": "{scenes} scenes · {decisions} decisions",
+        "limits": "JSON · up to 2 MB and 1,000 nodes",
+        "replaceLabel": "Replace the current chapter’s plot tree",
+        "replaceHint": "Replaces this chapter’s nodes and connections. Other chapters stay unchanged. You can undo this in one step.",
+        "replaced": "Plot tree replaced. Saving automatically…",
+        "appendHint": "Adds a separate group to this chapter. Existing content stays in place; connect the new group where you need it. You can undo the import in one step.",
+        "emptyHint": "Preserves the text, choice order and connections. Creates the skeleton only; no media is generated.",
+        "cancel": "Cancel",
+        "confirm": "Import plot tree",
+        "added": "Plot tree added. Saving automatically…",
+        "errors": {
+          "json": "Invalid JSON. Ask your AI to return a JSON file without Markdown fences, comments or trailing commas.",
+          "size": "File is too large. Keep each file under 2 MB.",
+          "object": "{path}: expected an object.",
+          "field": "{path}: unsupported field. Follow the downloaded template so no content is lost.",
+          "text": "{path}: expected text within the template’s length limit. Required text cannot be blank.",
+          "id": "{path}: use an ID of 1–64 characters, starting with an English letter, followed by letters, digits, dots, underscores, colons or hyphens.",
+          "version": "{path}: version must be 1.",
+          "nodes": "{path}: provide 1–1,000 nodes. Split larger stories into chapters.",
+          "type": "{path}: type must be scene or decision.",
+          "choices": "{path}: a decision needs 2–6 choices.",
+          "duplicate": "{path}: duplicate node ID. Give every node a unique ID.",
+          "target": "{path}: this target must match an existing node ID in the file.",
+          "unreachable": "{path}: this node cannot be reached from entryNodeId. Add its missing connection.",
+          "capacity": "This chapter would exceed 10,000 nodes. Import into another chapter.",
+          "read": "Could not read the file. Choose it again.",
+          "locked": "The plot tree is not editable right now. Try again when saving or the current operation finishes.",
+          "singleFile": "Drop one JSON file at a time.",
+          "fileType": "Choose a file with the .json extension."
+        },
+        "dropHint": "Click or drag a JSON file here",
+        "drop": "Drop to select this file"
       }
     },
     "workbench": {
@@ -4036,7 +4097,25 @@
       "continue": "Continue",
       "submit": "Confirm",
       "submitting": "Confirming…",
-      "failed": "Could not submit these answers"
+      "failed": "Could not submit these answers",
+      "profile": {
+        "aspect_ratio": {
+          "header": "Aspect ratio",
+          "question": "Which frame aspect ratio should the project use?"
+        },
+        "target_runtime": {
+          "header": "Target runtime",
+          "question": "What is the target runtime?"
+        },
+        "visual_direction": {
+          "header": "Visual direction",
+          "question": "Which visual style should the project use?"
+        },
+        "story_language": {
+          "header": "Story language",
+          "question": "Which language should the story use?"
+        }
+      }
     },
     "workerOnline": "Worker online",
     "workerOffline": "Unavailable right now — retrying automatically",

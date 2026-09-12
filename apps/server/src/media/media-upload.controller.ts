@@ -102,6 +102,7 @@ export class MediaUploadController {
       user.userId,
       body.capability,
       body.assetIds,
+      { documentId: body.documentId },
     );
     return { assets };
   }
@@ -119,6 +120,7 @@ export class MediaUploadController {
       user.userId,
       params.assetId,
       body.capability,
+      { documentId: body.documentId },
     );
     return { asset };
   }

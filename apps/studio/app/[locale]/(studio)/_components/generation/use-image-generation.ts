@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslations } from "next-intl";
 import {
   buildPromptDocument,
+  buildReferenceInputForMode,
+  buildPromptReferenceBindingsForMode,
+  mediaSnapshotsForMode,
+  ReferenceInputError,
+  normalizeFizzAiError,
   compactFizzAiInput,
   defaultMode,
   defaultSettingsForModel,
@@ -13,14 +18,13 @@ import {
   referenceFieldsForMode,
   validateModelGenerationInput,
   type FizzAiModel,
-  type FizzAiReferenceBinding,
   type ModelSettings,
   type ValidationIssue,
 } from "@/lib/canvas-authoring/generation-api";
 import { formatValidationIssue } from "@/lib/canvas-authoring/format-validation-issue";
 import { useAiCatalog, usableModelsByModality } from "@/lib/canvas-authoring/use-ai-catalog";
 import { useGenerationFeed } from "./use-generation-feed";
-import { useReferenceUploads } from "./use-reference-uploads";
+import { generationReferencesFromUploads, useReferenceUploads } from "./use-reference-uploads";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 
 /**
@@ -32,6 +36,7 @@ import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 export function useImageGeneration() {
   const t = useTranslations("studioModes");
   const tv = useTranslations("generation");
+  const tc = useTranslations("canvasOps");
   const { data: catalog } = useAiCatalog();
   const feed = useGenerationFeed("image", "fizzstudio-image-studio");
   const { data: wallet } = useComputeWalletBalance();
@@ -110,52 +115,44 @@ export function useImageGeneration() {
       setSubmitting(false);
       return { ok: false };
     }
-    const ready = activeUploads.filter((item) => item.url);
-    const bindings: FizzAiReferenceBinding[] = ready.map((item, order) => ({
-      refId: item.id,
-      kind: item.kind,
-      label: item.label,
-      order,
-      url: item.url,
-      assetId: item.mediaAssetId,
-    }));
-    const referenceInput =
-      ready.length > 0
-        ? {
-            referenceImages: ready.map((item) => ({
-              url: item.url!,
-              refId: item.id,
-              label: item.label,
-              assetId: item.mediaAssetId,
-              ...(typeof item.bytes === "number" ? { bytes: item.bytes } : {}),
-            })),
-          }
-        : {};
-    const input = compactFizzAiInput(
-      filterFizzAiInput(model, { ...settings, ...referenceInput, prompt })
-    );
-    const preflight = validateModelGenerationInput(model, input);
-    if (generationInputHasBlockingIssues(preflight)) {
-      setValidationIssues(preflight);
-      const first = preflight.find((issue) => issue.severity === "error");
-      setSubmitError(first ? formatValidationIssue(tv, first) : t("error.generationFailed"));
+    try {
+      const references = generationReferencesFromUploads(activeUploads);
+      const referenceInput = buildReferenceInputForMode(model, mode, references);
+      const bindings = buildPromptReferenceBindingsForMode(model, mode, references);
+      const media = mediaSnapshotsForMode(model, mode, references);
+      const input = compactFizzAiInput(
+        filterFizzAiInput(model, { ...settings, ...referenceInput, prompt })
+      );
+      const preflight = validateModelGenerationInput(model, input, media);
+      if (generationInputHasBlockingIssues(preflight)) {
+        setValidationIssues(preflight);
+        const first = preflight.find((issue) => issue.severity === "error");
+        setSubmitError(first ? formatValidationIssue(tv, first) : t("error.generationFailed"));
+        return { ok: false };
+      }
+      const result = await feed.submit({
+        prompt,
+        modelId: model.id,
+        schemaVersion: model.schemaVersion,
+        input,
+        promptDocument: buildPromptDocument(prompt, bindings),
+        referenceBindings: bindings.length ? bindings : undefined,
+      });
+      if (!result.ok) {
+        setSubmitError(result.error ?? t("error.generationFailed"));
+        return { ok: false };
+      }
+      return { ok: true };
+    } catch (error) {
+      setSubmitError(
+        error instanceof ReferenceInputError
+          ? tc(error.messageKey)
+          : normalizeFizzAiError(error, t("error.generationFailed"))
+      );
+      return { ok: false };
+    } finally {
       setSubmitting(false);
-      return { ok: false };
     }
-    const result = await feed.submit({
-      prompt,
-      modelId: model.id,
-      schemaVersion: model.schemaVersion,
-      input,
-      promptDocument: buildPromptDocument(prompt, bindings),
-      referenceBindings: bindings.length ? bindings : undefined,
-    });
-    setSubmitting(false);
-    if (!result.ok) {
-      setSubmitError(result.error ?? t("error.generationFailed"));
-      return { ok: false };
-    }
-    return { ok: true };
   };
 
   return {

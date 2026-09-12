@@ -877,7 +877,9 @@
       "tooltip": "算力积分",
       "tooltipDetailed": "算力积分 · 可用 {available} · 冻结 {held} · 总计 {total}",
       "manage": "管理算力积分",
-      "teamTag": "团队",
+      "unavailable": "读取失败",
+      "personalHint": "个人空间始终显示你自己的算力积分，包括他人的个人空间。点击可充值。",
+      "teamHint": "当前团队共用的算力积分。点击可查看充值管理。",
       "recharge": "积分充值"
     },
     "header": {
@@ -1040,7 +1042,12 @@
     "createInviteFailed": "无法创建邀请链接",
     "inviteLinkRevoked": "邀请链接已撤销",
     "revokeLinkFailed": "无法撤销链接",
+    "availableCredits": "可用积分：{amount}",
+    "balanceLoading": "正在加载积分余额…",
+    "balanceUnavailable": "积分余额暂不可用",
     "switchTeams": "切换团队",
+    "searchPlaceholder": "搜索空间名称…",
+    "noSearchResults": "没有匹配的空间",
     "current": "当前",
     "teamType": "团队",
     "personalType": "个人",
@@ -1493,6 +1500,9 @@
     "resultsPlaceholder": "生成结果将显示在这里。",
     "generationFailed": "生成失败",
     "generationProviderUnavailable": "该模型暂时不可用。请切换模型或稍后再试。",
+    "generationReferenceUploading": "参考素材正在上传，请等待上传完成。",
+    "generationReferenceUnavailable": "选中的参考素材不可用，请重新上传或移除后再生成。",
+    "generationReferenceAudioRequiresVisual": "参考音频需要搭配至少一张参考图片或一段参考视频，请补充后重试。",
     "assetUnavailable": "此素材已不可用。",
     "chooseModelFirst": "请先选择模型",
     "writePromptFirst": "请先输入提示词",
@@ -1822,6 +1832,9 @@
       "error": "签到失败"
     },
     "members": "成员",
+    "projectSettings": "项目设置",
+    "projectMembers": "项目成员",
+    "projectMembersSubtitle": "参与“{name}”协作的成员。",
     "membersSubtitle": "“{name}”的成员可以协作处理该工作区的每个项目。",
     "overview": "概览",
     "teamName": "团队名称",
@@ -2361,6 +2374,10 @@
     }
   },
   "invite": {
+    "alreadyJoinedTitle": "您已加入",
+    "alreadyJoinedBody": "您已有「{name}」的访问权限。",
+    "enterProject": "进入项目",
+    "enterWorkspace": "进入工作区",
     "loading": "正在加载邀请…",
     "joinedTeam": "已加入团队",
     "joinedProject": "已加入项目",
@@ -2451,6 +2468,7 @@
   },
   "storyStudio": {
     "authoringRun": {
+      "sourceReviewNotes": "剧本规则与制作备注（{count}）",
       "title": {
         "authoring": "正在起草…",
         "proposed": "剧本已完成",
@@ -2514,6 +2532,7 @@
         }
       },
       "plotCard": {
+        "unresolved": "走向尚未实现",
         "eyebrow": "情节树提案",
         "review": "打开画布预览",
         "dialogDescription": "在只读画布中查看本提案的完整场景拓扑、分支与结局；批准或退回仍在消息流底部的决策区完成。",
@@ -2602,10 +2621,10 @@
           "ready": "分镜已就绪",
           "review": "审阅分镜",
           "eyebrow": "分镜提案",
-          "description": "请审阅序列、镜头、时长和提示词。批准后只保存方案，不生成媒体，也不消耗点数。",
+          "description": "请审阅分镜、镜头、时长和提示词。批准后只保存方案，不生成媒体，也不消耗点数。",
           "approve": "批准分镜",
           "saving": "正在保存分镜…",
-          "savingHint": "正在记录你的批准，本次只保存分镜序列和镜头提示词。"
+          "savingHint": "正在记录你的批准，本次只保存分镜和镜头提示词。"
         },
         "patch": {
           "ready": "故事更新已就绪",
@@ -2630,7 +2649,7 @@
           "characters": "角色",
           "locations": "场景",
           "props": "道具",
-          "sequences": "序列",
+          "sequences": "分镜",
           "clips": "镜头",
           "seconds": "秒"
         },
@@ -2640,7 +2659,7 @@
           "structure": "剧本场景与分支",
           "productionNotes": "制作说明",
           "assetSpecs": "可复用资产规格",
-          "storyboard": "序列与镜头"
+          "storyboard": "分镜与镜头"
         },
         "assetKinds": {
           "character": "角色",
@@ -2663,14 +2682,14 @@
         "noAssetSpecs": "本提案不需要可复用的资产规格。",
         "sequenceMeta": "{count} 个镜头 · {seconds} 秒",
         "storyboardTable": {
-          "sequence": "序列",
+          "sequence": "分镜",
           "shots": "镜头",
           "duration": "时长",
           "seconds": "{value} 秒",
           "viewAll": "查看全部分镜",
-          "more": "还有 {count} 个序列",
-          "dialogTitle": "分镜详情 · {count} 个序列",
-          "dialogDescription": "查看本次提案中的全部序列、镜头、时间、提示词和决策提示点。",
+          "more": "还有 {count} 个分镜",
+          "dialogTitle": "分镜详情 · {count} 个分镜",
+          "dialogDescription": "查看本次提案中的全部分镜、镜头、时间、提示词和决策提示点。",
           "shot": "镜头",
           "type": "类型",
           "timing": "时间",
@@ -2990,8 +3009,9 @@
       }
     },
     "storyboardPage": {
+      "nodeDescription": "描述",
       "pageTitle": "分镜 · 影游工作室",
-      "pageDescription": "编辑本章的情节序列、镜头、提示点和资产绑定。",
+      "pageDescription": "编辑本章的分镜、镜头、提示点和资产绑定。",
       "loading": "正在加载分镜…",
       "emptyChapter": "本章还没有情节节点。",
       "emptyHint": "在情节树中添加场景后，分镜会在这里逐场景展开。",
@@ -2999,7 +3019,7 @@
       "retry": "重试",
       "plotNode": "情节节点 {index}",
       "clipCount": "{count} 个片段",
-      "noClips": "此序列没有片段。",
+      "noClips": "此分镜没有片段。",
       "generationHint": "打开此页面不会生成媒体，也不会消耗点数。准备好后，可在已保存的片段上选择“生成”。",
       "seconds": "{value} 秒",
       "options": "选项",
@@ -3024,7 +3044,7 @@
       "loadError": "无法加载时间轴。",
       "retry": "重试",
       "emptyTitle": "还没有可剪辑的分镜时间轴",
-      "emptyDescription": "请先准备分镜序列，再进入剪辑器。",
+      "emptyDescription": "请先准备分镜，再进入剪辑器。",
       "backToStoryboard": "返回分镜",
       "saved": "已保存",
       "saving": "正在保存…",
@@ -3054,8 +3074,8 @@
       "prompt": "提示词",
       "timeline": "时间轴",
       "timelineZoom": "时间轴缩放",
-      "play": "播放序列",
-      "pause": "暂停序列",
+      "play": "播放分镜",
+      "pause": "暂停分镜",
       "restart": "回到开头",
       "zoomOut": "缩小时间轴",
       "zoomIn": "放大时间轴",
@@ -3665,6 +3685,8 @@
         "moveChoiceDown": "下移选项",
         "delete": "删除节点",
         "nodeName": "名称",
+        "nodeDescription": "描述",
+        "nodeDescriptionPlaceholder": "粘贴剧本中对应的原文段落。",
         "storyboard": {
           "title": "分镜",
           "summary": "{count} 个片段 · {ready} 个已有媒体",
@@ -3700,6 +3722,45 @@
       "mobileNav": {
         "label": "制作导航",
         "chat": "对话"
+      },
+      "plotImport": {
+        "title": "导入 JSON",
+        "description": "将其他 AI 工具生成的情节 JSON，直接导入为可编辑的情节树。",
+        "download": "下载 AI 模板",
+        "choose": "选择 JSON 文件",
+        "reading": "正在读取文件…",
+        "summary": "{scenes} 个场景 · {decisions} 个选择节点",
+        "limits": "JSON · 最大 2 MB，最多 1,000 个节点",
+        "replaceLabel": "覆盖当前章节情节树",
+        "replaceHint": "替换当前章节的节点和连线，不影响其他章节。整次覆盖可一步撤销。",
+        "replaced": "情节树已覆盖，正在自动保存…",
+        "appendHint": "作为独立的一组节点加入当前章节，保留已有内容；导入后可自行连接到所需位置。整次导入可一步撤销。",
+        "emptyHint": "保留原文、选项顺序和连线，只创建情节骨架，不生成图片或视频。",
+        "cancel": "取消",
+        "confirm": "导入情节树",
+        "added": "情节树已加入，正在自动保存…",
+        "errors": {
+          "json": "JSON 格式有误。请让 AI 输出 JSON 文件，去掉 Markdown 代码围栏、注释和末尾多余的逗号。",
+          "size": "文件过大，请将每个文件控制在 2 MB 以内。",
+          "object": "{path}：应为一个对象。",
+          "field": "{path}：不支持的字段。请遵循下载的模板，避免内容丢失。",
+          "text": "{path}：应为模板长度限制内的文本，必填文本不能为空。",
+          "id": "{path}：ID 需为 1–64 个字符，以英文字母开头，仅使用字母、数字、点、下划线、冒号或连字符。",
+          "version": "{path}：version 必须为 1。",
+          "nodes": "{path}：需要 1–1,000 个节点，更长的故事请按章节拆分。",
+          "type": "{path}：type 必须为 scene 或 decision。",
+          "choices": "{path}：选择节点需要 2–6 个选项。",
+          "duplicate": "{path}：节点 ID 重复，请为每个节点使用唯一 ID。",
+          "target": "{path}：目标必须对应文件中已存在的节点 ID。",
+          "unreachable": "{path}：无法从 entryNodeId 到达此节点，请补充缺失的连线。",
+          "capacity": "当前章节将超过 10,000 个节点，请导入其他章节。",
+          "read": "无法读取文件，请重新选择。",
+          "locked": "情节树暂时无法编辑，请在保存或当前操作结束后重试。",
+          "singleFile": "一次只能拖入一个 JSON 文件。",
+          "fileType": "请选择 .json 格式的文件。"
+        },
+        "dropHint": "点击选择或拖拽 JSON 文件到这里",
+        "drop": "松开以选择文件"
       }
     },
     "workbench": {
@@ -4036,7 +4097,25 @@
       "continue": "继续",
       "submit": "确认",
       "submitting": "确认中…",
-      "failed": "无法提交这些回答"
+      "failed": "无法提交这些回答",
+      "profile": {
+        "aspect_ratio": {
+          "header": "画面比例",
+          "question": "本项目使用什么画面比例？"
+        },
+        "target_runtime": {
+          "header": "目标时长",
+          "question": "目标体验时长是多少？"
+        },
+        "visual_direction": {
+          "header": "视觉风格",
+          "question": "本项目采用哪种视觉风格？"
+        },
+        "story_language": {
+          "header": "故事语言",
+          "question": "剧本与故事内容使用哪种语言？"
+        }
+      }
     },
     "workerOnline": "Worker 在线",
     "workerOffline": "当前不可用——正在自动重试",

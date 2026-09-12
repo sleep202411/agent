@@ -14,10 +14,15 @@ interface CheckResponse {
 
 export const mediaAssetReadinessKeys = {
   all: ["fizzstudio", "media-asset-readiness"] as const,
-  statuses: (capability: MediaAssetReadinessCapability, assetIds: string[]) =>
+  statuses: (
+    capability: MediaAssetReadinessCapability,
+    assetIds: string[],
+    documentId?: string | null
+  ) =>
     [
       ...mediaAssetReadinessKeys.all,
       capability,
+      documentId ?? null,
       "statuses",
       [...assetIds].sort().join(","),
     ] as const,
@@ -25,7 +30,8 @@ export const mediaAssetReadinessKeys = {
 
 export async function getMediaAssetReadinessStatuses(
   capability: MediaAssetReadinessCapability,
-  assetIds: string[]
+  assetIds: string[],
+  documentId?: string | null
 ): Promise<Record<string, MediaAssetReadinessResult>> {
   const unique = [...new Set(assetIds)].filter(Boolean).slice(0, 100);
   if (unique.length === 0) return {};
@@ -34,7 +40,7 @@ export async function getMediaAssetReadinessStatuses(
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ capability, assetIds: unique }),
+    body: JSON.stringify({ capability, assetIds: unique, documentId: documentId ?? undefined }),
   });
 
   let json: Partial<StatusResponse> & {
@@ -73,13 +79,14 @@ export async function getMediaAssetReadinessStatuses(
 
 export async function requestMediaAssetReadinessCheck(
   assetId: string,
-  capability: MediaAssetReadinessCapability
+  capability: MediaAssetReadinessCapability,
+  documentId?: string | null
 ): Promise<MediaAssetReadinessResult> {
   const res = await fetch(`/aurora/media/assets/${encodeURIComponent(assetId)}/readiness-checks`, {
     method: "POST",
     credentials: "include",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ capability }),
+    body: JSON.stringify({ capability, documentId: documentId ?? undefined }),
   });
 
   let json: Partial<CheckResponse> & {

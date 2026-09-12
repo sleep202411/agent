@@ -13,6 +13,8 @@ import {
   requestMediaAssetReadinessCheck,
 } from "@/lib/media-asset-readiness";
 
+import { useCanvasDocumentId } from "./canvas-document-context";
+
 export type MediaAssetReadinessState =
   | { kind: "active" }
   | { kind: "pending" }
@@ -114,9 +116,7 @@ export function MediaAssetReadinessChipForAsset({
 
   if (!mediaAssetId || query.isPending) return null;
   const status = query.data?.[mediaAssetId];
-  const fallback: MediaAssetReadinessState = query.isError
-    ? { kind: "unavailable" }
-    : { kind: "not_requested" };
+  const fallback: MediaAssetReadinessState = { kind: "unavailable" };
   return (
     <MediaAssetReadinessChip
       capability={capability}
@@ -198,6 +198,7 @@ export function useMediaAssetReadinessCheck(
   const t = useTranslations("canvasNodes");
   const copy = capabilityCopy(t, capability);
   const queryClient = useQueryClient();
+  const documentId = useCanvasDocumentId();
   const assetIds = useMemo(() => (mediaAssetId ? [mediaAssetId] : []), [mediaAssetId]);
   const statusQuery = useMediaAssetReadinessStatusQuery(
     capability,
@@ -208,12 +209,12 @@ export function useMediaAssetReadinessCheck(
   const mutation = useMutation({
     mutationFn: async () => {
       if (!mediaAssetId) throw new Error(t("asset.readiness.missingAsset"));
-      return requestMediaAssetReadinessCheck(mediaAssetId, capability);
+      return requestMediaAssetReadinessCheck(mediaAssetId, capability, documentId);
     },
     onSuccess: (asset) => {
       queryClient.setQueriesData<Record<string, MediaAssetReadinessResult>>(
-        { queryKey: [...mediaAssetReadinessKeys.all, capability] },
-        (current) => (current ? { ...current, [asset.assetId]: asset } : current)
+        { queryKey: [...mediaAssetReadinessKeys.all, capability, documentId] },
+        (current) => (current?.[asset.assetId] ? { ...current, [asset.assetId]: asset } : current)
       );
       if (asset.status === "active") {
         toast.success(copy.alreadyPassed);
@@ -230,10 +231,7 @@ export function useMediaAssetReadinessCheck(
   const state =
     !mediaAssetId || statusQuery.isPending
       ? null
-      : mediaAssetReadinessState(
-          status,
-          statusQuery.isError ? { kind: "unavailable" } : { kind: "not_requested" }
-        );
+      : mediaAssetReadinessState(status, { kind: "unavailable" });
   const checking = mutation.isPending || state?.kind === "pending";
   return {
     state,
@@ -249,9 +247,10 @@ function useMediaAssetReadinessStatusQuery(
   assetIds: string[],
   enabled: boolean
 ) {
+  const documentId = useCanvasDocumentId();
   return useQuery({
-    queryKey: mediaAssetReadinessKeys.statuses(capability, assetIds),
-    queryFn: () => getMediaAssetReadinessStatuses(capability, assetIds),
+    queryKey: mediaAssetReadinessKeys.statuses(capability, assetIds, documentId),
+    queryFn: () => getMediaAssetReadinessStatuses(capability, assetIds, documentId),
     enabled: enabled && assetIds.length > 0,
     refetchInterval: (query) => {
       const data = query.state.data;

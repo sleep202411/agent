@@ -73,7 +73,7 @@ export const RequestUserInputInputSchema = z
         code: "custom",
         path: ["knownValues"],
         message:
-          "story_creative_profile must classify every profile field exactly once: put explicitly supplied canonical values in knownValues and ask only the remaining questions in canonical relative order with their complete option sets.",
+          "For story_creative_profile, provide only explicitly supplied canonical knownValues. The runtime builds every missing question. If all four values are known, call story.confirmCreativeProfile without a question.",
       });
       return;
     }
@@ -450,7 +450,7 @@ const AGENT_INTERACTION_TOOLS = [
   {
     id: "request_user_input",
     description:
-      "Pause the current turn and ask the user one to four structured single-choice questions with two to twelve options each. Always provide leadIn (the completed assistant sentence shown before the blocking composer card) and resumeAcknowledgement (the immediate assistant acknowledgement persisted after the user answers). Use only when the answer is genuinely required to continue; never use it as a page-load wizard or for information already supplied by the user. For story_creative_profile, classify every field exactly once: put explicitly supplied canonical values in knownValues and put only missing fields in questions, in canonical relative order. Supply every canonical option without abbreviating the catalog: aspect_ratio has exactly 2, target_runtime exactly 3, visual_direction exactly 12, and story_language exactly 3. The runtime owns and canonicalizes those fixed option values before persistence.",
+      "Pause the current turn and ask the user one to four structured single-choice questions with two to twelve options each. Always provide leadIn (the completed assistant sentence shown before the blocking composer card) and resumeAcknowledgement (the immediate assistant acknowledgement persisted after the user answers). Use only when the answer is genuinely required to continue; never use it as a page-load wizard or for information already supplied by the user. For the fixed Story creative profile, set formId=story_creative_profile, provide knownValues containing only explicitly supplied preferences (or {}), and OMIT questions. Code constructs the remaining questions and complete option catalogs; the client localizes them. Never invent preferences or omit formId to bypass the fixed form. Other requests must supply questions.",
     kind: "query",
     risk: "read",
     inputSchema: RequestUserInputInputSchema,

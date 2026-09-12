@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { storyPlaybackCopy } from './story-playback-copy';
 
 /**
  * Interactive-story authoring contracts.
@@ -266,7 +267,7 @@ const StoryClipGraphNodeSchema = z
     // these are the human-facing name and description edited in the inspector.
     // Optional so drafts authored before the field parse unchanged.
     name: z.string().trim().max(120).optional(),
-    description: z.string().trim().max(4_000).optional(),
+    description: z.string().max(4_000).optional(),
     interactions: z.array(StoryHotspotInteractionSchema).max(100).default([]),
     exit: z.discriminatedUnion('kind', [
       StoryClipAutoExitSchema,
@@ -621,15 +622,24 @@ function semanticValuesEqual(left: unknown, right: unknown): boolean {
 /** Full-story playtest gate for story structure and runtime copy. */
 export function createPlayableInteractiveStoryDraftContentSchema(
   defaultLocale?: string,
+  options: { preserveUnfinishedChoices?: boolean } = {},
 ) {
   const normalizedDefaultLocale = defaultLocale
     ? StoryLocaleSchema.parse(defaultLocale)
     : undefined;
   return z.preprocess(
     (value) =>
-      normalizeInteractiveFilmRuntimeDraft(value, normalizedDefaultLocale),
+      normalizeInteractiveFilmRuntimeDraft(
+        value,
+        normalizedDefaultLocale,
+        options,
+      ),
     InteractiveStoryDraftContentSchema.superRefine((draft, context) => {
-      validateInteractiveStoryGameplayReadiness(draft, context);
+      validateInteractiveStoryGameplayReadiness(
+        draft,
+        context,
+        options.preserveUnfinishedChoices ? 1 : 2,
+      );
     }),
   );
 }
@@ -664,6 +674,7 @@ export const LockableInteractiveStoryDraftContentSchema =
 function validateInteractiveStoryGameplayReadiness(
   draft: InteractiveStoryDraftContent,
   context: z.RefinementCtx,
+  minimumChoices = 2,
 ): void {
   const requireLocalizedText = (
     value: Record<string, string>,
@@ -755,11 +766,11 @@ function validateInteractiveStoryGameplayReadiness(
     }
     if (node.exit.kind === 'choice') {
       requireLocalizedText(node.exit.prompt, [...exitPath, 'prompt']);
-      if (node.exit.choices.length < 2) {
+      if (node.exit.choices.length < minimumChoices) {
         context.addIssue({
           code: 'custom',
           path: [...exitPath, 'choices'],
-          message: 'A choice exit needs at least two choices.',
+          message: `A choice exit needs at least ${minimumChoices} choices.`,
         });
       }
       unique(
@@ -787,14 +798,16 @@ function validateInteractiveStoryGameplayReadiness(
  * Turns the permissive canvas document into the exact runtime document.
  *
  * Film clips are the only production requirement. A half-authored branch is
- * canvas metadata, not a reason to block preview or release: until its prompt
+ * canvas metadata, not a reason to block release: until its prompt
  * and at least two labelled routes are complete, playback follows the first
  * connected route (or ends on the current clip). Invalid automatic routes are
- * likewise treated as terminal. The saved mutable draft is never rewritten.
+ * likewise treated as terminal. Working previews preserve unfinished choices
+ * with default copy and terminal routes. The saved draft is never rewritten.
  */
 function normalizeInteractiveFilmRuntimeDraft(
   value: unknown,
   defaultLocale?: string,
+  options: { preserveUnfinishedChoices?: boolean } = {},
 ): unknown {
   const parsed = InteractiveStoryDraftContentSchema.safeParse(value);
   if (!parsed.success) return value;
@@ -809,6 +822,29 @@ function normalizeInteractiveFilmRuntimeDraft(
   const hasCopy = (copy: Record<string, string>) =>
     Object.values(copy).some((text) => Boolean(text.trim()));
   const runtimeLocale = defaultLocale ?? 'en-US';
+  const previewCopy = storyPlaybackCopy(runtimeLocale);
+  const previewLocalizedCopy = (
+    copy: Record<string, string>,
+    fallback: string,
+  ): Record<string, string> => {
+    const entries = Object.entries(copy).filter(([, text]) => text.trim());
+    const language = runtimeLocale.split('-')[0];
+    const preferred =
+      entries.find(([locale]) => locale === runtimeLocale) ??
+      entries.find(([locale]) => locale.split('-')[0] === language) ??
+      entries[0];
+    return {
+      ...Object.fromEntries(entries),
+      [runtimeLocale]: preferred?.[1] ?? fallback,
+    };
+  };
+  // Unconnected preview options explicitly end their path. This runtime-only
+  // terminal keeps the strict wire contract intact without editing the draft.
+  let previewTerminalId = 'preview:unconnected-end';
+  let previewTerminalSuffix = 1;
+  while (nodeIds.has(previewTerminalId))
+    previewTerminalId = `preview:unconnected-end-${previewTerminalSuffix++}`;
+  let needsPreviewTerminal = false;
 
   const normalizeInteractions = (
     interactions: StoryHotspotInteraction[],
@@ -871,6 +907,36 @@ function normalizeInteractiveFilmRuntimeDraft(
           };
     }
 
+    if (
+      normalizedNode.kind !== 'world' &&
+      options.preserveUnfinishedChoices &&
+      normalizedNode.exit.choices.length > 0
+    ) {
+      return {
+        ...normalizedNode,
+        exit: {
+          ...normalizedNode.exit,
+          prompt: previewLocalizedCopy(
+            normalizedNode.exit.prompt,
+            previewCopy.prompt,
+          ),
+          choices: normalizedNode.exit.choices.map((choice, index) => {
+            const connected =
+              choice.nextNodeId !== null && nodeIds.has(choice.nextNodeId);
+            if (!connected) needsPreviewTerminal = true;
+            return {
+              ...choice,
+              label: previewLocalizedCopy(
+                choice.label,
+                `${previewCopy.option} ${index + 1}`,
+              ),
+              nextNodeId: connected ? choice.nextNodeId : previewTerminalId,
+            };
+          }),
+        },
+      };
+    }
+
     const connectedChoices = normalizedNode.exit.choices.filter(
       (choice) => choice.nextNodeId !== null && nodeIds.has(choice.nextNodeId),
     );
@@ -889,6 +955,14 @@ function normalizeInteractiveFilmRuntimeDraft(
       },
     };
   });
+
+  if (needsPreviewTerminal) {
+    normalizedNodes.push({
+      kind: 'decision',
+      nodeId: previewTerminalId,
+      exit: { kind: 'auto', nextNodeId: null },
+    });
+  }
 
   // Reusing a decision id is useful when two predecessor clips present the
   // same authored choice. If those copies drift while editing, saving must not

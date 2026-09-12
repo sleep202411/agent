@@ -352,6 +352,7 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             title: args.title,
             summary: args.summary,
             brief: args.brief,
+            ...(args.sourceMode ? { sourceMode: args.sourceMode } : {}),
             ...(args.sourceAttachmentId
               ? { sourceAttachmentId: args.sourceAttachmentId }
               : {}),
