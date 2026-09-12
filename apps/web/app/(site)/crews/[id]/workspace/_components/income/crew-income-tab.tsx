@@ -112,6 +112,36 @@ function useIncomeSession() {
   }, []);
   return active;
 }
+function useIncomeAction() {
+  const active = useIncomeSession();
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const retry = useRef<{ fingerprint: string; key: string } | null>(null);
+  return {
+    active,
+    busy,
+    begin: () => {
+      if (!active.current || pending.current) return false;
+      pending.current = true;
+      setBusy(true);
+      return true;
+    },
+    finish: () => {
+      pending.current = false;
+      if (active.current) setBusy(false);
+    },
+    key: (input: unknown) => {
+      const fingerprint = JSON.stringify(input);
+      if (retry.current?.fingerprint !== fingerprint)
+        retry.current = { fingerprint, key: crypto.randomUUID() };
+      return retry.current.key;
+    },
+    confirmed: () => {
+      retry.current = null;
+    },
+  };
+}
+
 function IncomeSession({
   crewId,
   crewName,
@@ -329,10 +359,13 @@ function EarningsLedger({
   onDecision: (kind: "reject" | "reverse", earning: CrewEarningEntryDTO) => void;
 }) {
   const t = useTranslations("crewIncome");
-  const active = useIncomeSession();
+  const action = useIncomeAction();
+  const { active } = action;
   const approve = useApproveCrewEarning(crewId);
   const summary = query.summary;
   const approveEntry = async (earning: CrewEarningEntryDTO) => {
+    if (!canApprove || earning.status !== "pending") return;
+    if (!action.begin()) return;
     try {
       await approve.mutateAsync({ earningId: earning.id, expectedVersion: earning.version });
       if (!active.current) return;
@@ -340,6 +373,8 @@ function EarningsLedger({
     } catch (error) {
       if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -455,7 +490,7 @@ function EarningsLedger({
                     <button
                       type="button"
                       className="grid size-7 place-items-center rounded-md text-emerald-300 transition-colors hover:bg-emerald-400/[0.08] [&_svg]:size-3.5"
-                      disabled={approve.isPending}
+                      disabled={action.busy}
                       onClick={() => void approveEntry(earning)}
                       aria-label={t("actions.approve")}
                     >
@@ -632,7 +667,8 @@ function CreateEarningDialog({
   displays: ReturnType<typeof useUserDisplays>;
 }) {
   const t = useTranslations("crewIncome");
-  const active = useIncomeSession();
+  const action = useIncomeAction();
+  const { active } = action;
   const create = useCreateCrewEarning(crewId);
   const [memberId, setMemberId] = useState("");
   const [sourceType, setSourceType] = useState<ManualSource>("milestone_bonus");
@@ -652,21 +688,25 @@ function CreateEarningDialog({
   };
   const submit = async () => {
     if (!memberId || !title.trim() || !parsedAmount) return;
+    if (!action.begin()) return;
     try {
-      await create.mutateAsync({
+      const input = {
         crewMemberId: memberId,
         sourceType,
         title: title.trim(),
         description: description.trim() || undefined,
         amountMinor: parsedAmount,
-        idempotencyKey: crypto.randomUUID(),
-      });
+      };
+      await create.mutateAsync({ ...input, idempotencyKey: action.key(input) });
+      action.confirmed();
       if (!active.current) return;
       toast.success(t("messages.created"));
       close(false);
     } catch (error) {
       if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.createFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -677,63 +717,65 @@ function CreateEarningDialog({
           <DialogDescription>{t("create.description")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          <MemberSelect
-            value={memberId}
-            onChange={setMemberId}
-            members={members}
-            displays={displays}
-            label={t("create.member")}
-          />
-          <Field label={t("create.source")}>
-            <Select
-              value={sourceType}
-              onValueChange={(value) => setSourceType(value as ManualSource)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MANUAL_SOURCES.map((source) => (
-                  <SelectItem key={source} value={source}>
-                    {t(`sources.${source}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label={t("create.titleLabel")}>
-            <Input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder={t("create.titlePlaceholder")}
-              maxLength={180}
+          <fieldset disabled={action.busy} className="contents">
+            <MemberSelect
+              value={memberId}
+              onChange={setMemberId}
+              members={members}
+              displays={displays}
+              label={t("create.member")}
             />
-          </Field>
-          <Field label={`${t("create.amount")} (${CREW_CURRENCY})`}>
-            <Input
-              value={amountInput}
-              onChange={(event) => setAmountInput(event.target.value)}
-              inputMode="decimal"
-              placeholder="0"
-              aria-invalid={Boolean(amountInput) && !parsedAmount}
-            />
-          </Field>
-          <Field label={t("create.note")} optional>
-            <Textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder={t("create.notePlaceholder")}
-              maxLength={10_000}
-            />
-          </Field>
-          <p className="text-[10px] leading-5 text-[#767c86]">{t("create.pendingNotice")}</p>
+            <Field label={t("create.source")}>
+              <Select
+                value={sourceType}
+                onValueChange={(value) => setSourceType(value as ManualSource)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MANUAL_SOURCES.map((source) => (
+                    <SelectItem key={source} value={source}>
+                      {t(`sources.${source}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("create.titleLabel")}>
+              <Input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder={t("create.titlePlaceholder")}
+                maxLength={180}
+              />
+            </Field>
+            <Field label={`${t("create.amount")} (${CREW_CURRENCY})`}>
+              <Input
+                value={amountInput}
+                onChange={(event) => setAmountInput(event.target.value)}
+                inputMode="decimal"
+                placeholder="0"
+                aria-invalid={Boolean(amountInput) && !parsedAmount}
+              />
+            </Field>
+            <Field label={t("create.note")} optional>
+              <Textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder={t("create.notePlaceholder")}
+                maxLength={10_000}
+              />
+            </Field>
+            <p className="text-[10px] leading-5 text-[#767c86]">{t("create.pendingNotice")}</p>
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
           <Button
-            loading={create.isPending}
+            loading={action.busy}
             disabled={!memberId || !title.trim() || !parsedAmount}
             onClick={() => void submit()}
           >
@@ -761,7 +803,8 @@ function CreatePayoutDialog({
   locale: string;
 }) {
   const t = useTranslations("crewIncome");
-  const active = useIncomeSession();
+  const action = useIncomeAction();
+  const { active } = action;
   const create = useCreateCrewPayout(crewId);
   const [memberId, setMemberId] = useState("");
   const [amountInput, setAmountInput] = useState("");
@@ -789,21 +832,25 @@ function CreatePayoutDialog({
   };
   const submit = async () => {
     if (!valid || !parsedAmount || withholdingMinor == null) return;
+    if (!action.begin()) return;
     try {
-      await create.mutateAsync({
+      const input = {
         crewMemberId: memberId,
         amountMinor: parsedAmount,
         currency: CREW_CURRENCY,
         withholdingAmountMinor: withholdingMinor,
         note: note.trim() || undefined,
-        idempotencyKey: crypto.randomUUID(),
-      });
+      };
+      await create.mutateAsync({ ...input, idempotencyKey: action.key(input) });
+      action.confirmed();
       if (!active.current) return;
       toast.success(t("payout.messages.created"));
       close(false);
     } catch (error) {
       if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("payout.messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -814,55 +861,57 @@ function CreatePayoutDialog({
           <DialogDescription>{t("payout.create.description")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          <MemberSelect
-            value={memberId}
-            onChange={setMemberId}
-            members={members}
-            displays={displays}
-            label={t("payout.create.member")}
-          />
-          <Field label={`${t("payout.create.amount")} (${CREW_CURRENCY})`}>
-            <Input
-              value={amountInput}
-              onChange={(event) => setAmountInput(event.target.value)}
-              inputMode="decimal"
-              placeholder="0"
+          <fieldset disabled={action.busy} className="contents">
+            <MemberSelect
+              value={memberId}
+              onChange={setMemberId}
+              members={members}
+              displays={displays}
+              label={t("payout.create.member")}
             />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t("payout.create.gross")}>
-              <Input value={grossMinor ? formatCrewMoneyInput(grossMinor) : ""} readOnly />
-            </Field>
-            <Field label={t("payout.create.withholding")}>
+            <Field label={`${t("payout.create.amount")} (${CREW_CURRENCY})`}>
               <Input
-                value={withholding}
-                onChange={(event) => setWithholding(event.target.value)}
+                value={amountInput}
+                onChange={(event) => setAmountInput(event.target.value)}
                 inputMode="decimal"
+                placeholder="0"
               />
             </Field>
-          </div>
-          <div className="flex items-center justify-between border-y border-white/[0.07] py-3">
-            <span className="text-[11px] text-[#878d97]">{t("payout.create.net")}</span>
-            <strong className="font-mono text-[15px] text-[#f0f1f3]">
-              {netMinor && netMinor > 0n
-                ? formatCrewMoney(netMinor.toString(), locale, CREW_CURRENCY)
-                : "—"}
-            </strong>
-          </div>
-          <Field label={t("payout.create.note")} optional>
-            <Textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              maxLength={10_000}
-            />
-          </Field>
-          <p className="text-[10px] leading-5 text-[#767c86]">{t("payout.create.notice")}</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={t("payout.create.gross")}>
+                <Input value={grossMinor ? formatCrewMoneyInput(grossMinor) : ""} readOnly />
+              </Field>
+              <Field label={t("payout.create.withholding")}>
+                <Input
+                  value={withholding}
+                  onChange={(event) => setWithholding(event.target.value)}
+                  inputMode="decimal"
+                />
+              </Field>
+            </div>
+            <div className="flex items-center justify-between border-y border-white/[0.07] py-3">
+              <span className="text-[11px] text-[#878d97]">{t("payout.create.net")}</span>
+              <strong className="font-mono text-[15px] text-[#f0f1f3]">
+                {netMinor && netMinor > 0n
+                  ? formatCrewMoney(netMinor.toString(), locale, CREW_CURRENCY)
+                  : "—"}
+              </strong>
+            </div>
+            <Field label={t("payout.create.note")} optional>
+              <Textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                maxLength={10_000}
+              />
+            </Field>
+            <p className="text-[10px] leading-5 text-[#767c86]">{t("payout.create.notice")}</p>
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
-          <Button loading={create.isPending} disabled={!valid} onClick={() => void submit()}>
+          <Button loading={action.busy} disabled={!valid} onClick={() => void submit()}>
             {t("payout.create.submit")}
           </Button>
         </DialogFooter>
@@ -881,7 +930,8 @@ function EarningDecisionDialog({
   crewId: string;
 }) {
   const t = useTranslations("crewIncome");
-  const active = useIncomeSession();
+  const action = useIncomeAction();
+  const { active } = action;
   const reject = useRejectCrewEarning(crewId);
   const reverse = useReverseCrewEarning(crewId);
   const [reason, setReason] = useState("");
@@ -892,6 +942,7 @@ function EarningDecisionDialog({
   };
   const submit = async () => {
     if (!value || !reason.trim()) return;
+    if (!action.begin()) return;
     try {
       await mutation.mutateAsync({
         earningId: value.earning.id,
@@ -904,6 +955,8 @@ function EarningDecisionDialog({
     } catch (error) {
       if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -920,22 +973,20 @@ function EarningDecisionDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <Textarea
-            autoFocus
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder={t("decision.reasonPlaceholder")}
-          />
+          <fieldset disabled={action.busy} className="contents">
+            <Textarea
+              autoFocus
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={t("decision.reasonPlaceholder")}
+            />
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
-          <Button
-            loading={mutation.isPending}
-            disabled={!reason.trim()}
-            onClick={() => void submit()}
-          >
+          <Button loading={action.busy} disabled={!reason.trim()} onClick={() => void submit()}>
             {t(value?.kind === "reverse" ? "actions.confirmReverse" : "actions.confirmReject")}
           </Button>
         </DialogFooter>
@@ -956,7 +1007,8 @@ function PayoutActionDialog({
   locale: string;
 }) {
   const t = useTranslations("crewIncome");
-  const active = useIncomeSession();
+  const action = useIncomeAction();
+  const { active } = action;
   const pay = usePayCrewPayout(crewId);
   const voidPayout = useVoidCrewPayout(crewId);
   const [method, setMethod] = useState<CrewPayoutMethod>("bank_transfer");
@@ -976,6 +1028,7 @@ function PayoutActionDialog({
   const valid = value?.kind === "pay" ? Boolean(reference.trim()) : Boolean(reason.trim());
   const submit = async () => {
     if (!value || !valid) return;
+    if (!action.begin()) return;
     try {
       await mutation.mutateAsync({
         payoutId: value.payout.id,
@@ -991,6 +1044,8 @@ function PayoutActionDialog({
     } catch (error) {
       if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("payout.messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -1016,47 +1071,49 @@ function PayoutActionDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          {value?.kind === "pay" ? (
-            <>
-              <Field label={t("payout.dialog.method")}>
-                <Select
-                  value={method}
-                  onValueChange={(next) => setMethod(next as CrewPayoutMethod)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAYOUT_METHODS.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {t(`payout.methods.${item}`)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <fieldset disabled={action.busy} className="contents">
+            {value?.kind === "pay" ? (
+              <>
+                <Field label={t("payout.dialog.method")}>
+                  <Select
+                    value={method}
+                    onValueChange={(next) => setMethod(next as CrewPayoutMethod)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYOUT_METHODS.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {t(`payout.methods.${item}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label={t("payout.dialog.reference")}>
+                  <Input value={reference} onChange={(event) => setReference(event.target.value)} />
+                </Field>
+                <Field label={t("payout.dialog.proof")} optional>
+                  <Input
+                    value={proof}
+                    onChange={(event) => setProof(event.target.value)}
+                    type="url"
+                  />
+                </Field>
+              </>
+            ) : value?.kind === "void" ? (
+              <Field label={t("payout.dialog.reason")}>
+                <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
               </Field>
-              <Field label={t("payout.dialog.reference")}>
-                <Input value={reference} onChange={(event) => setReference(event.target.value)} />
-              </Field>
-              <Field label={t("payout.dialog.proof")} optional>
-                <Input
-                  value={proof}
-                  onChange={(event) => setProof(event.target.value)}
-                  type="url"
-                />
-              </Field>
-            </>
-          ) : value?.kind === "void" ? (
-            <Field label={t("payout.dialog.reason")}>
-              <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
-            </Field>
-          ) : null}
+            ) : null}
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
-          <Button loading={mutation.isPending} disabled={!valid} onClick={() => void submit()}>
+          <Button loading={action.busy} disabled={!valid} onClick={() => void submit()}>
             {t(`payout.dialog.${value?.kind ?? "pay"}.submit`)}
           </Button>
         </DialogFooter>

@@ -6,6 +6,9 @@ import { CrewIncomeTab } from "./crew-income-tab";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   account: "alice",
+  earning: false,
+  payout: false,
+  posted: false,
   create: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
@@ -34,8 +37,42 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
       "useVoidCrewPayout",
     ].map((name) => [name, () => ({ mutateAsync: state.create, isPending: false })])
   ),
-  useCrewEarnings: () => ({ data: [], refetch: vi.fn() }),
-  useCrewPayouts: () => ({ data: [], refetch: vi.fn() }),
+  useCrewEarnings: () => ({
+    data: state.earning
+      ? [
+          {
+            id: "earning",
+            version: 1,
+            userId: "user",
+            title: "Recorded bonus",
+            status: state.posted ? "posted" : "pending",
+            currency: "USD",
+            amountMinor: "1000",
+            sourceType: "milestone_bonus",
+            createdAt: "2026-09-01T00:00:00Z",
+          },
+        ]
+      : [],
+    refetch: vi.fn(),
+  }),
+  useCrewPayouts: () => ({
+    data: state.payout
+      ? [
+          {
+            id: "payout",
+            version: 1,
+            userId: "user",
+            status: "pending",
+            currency: "USD",
+            amountMinor: "1000",
+            netAmountMinor: "1000",
+            withholdingAmountMinor: "0",
+            createdAt: "2026-09-01T00:00:00Z",
+          },
+        ]
+      : [],
+    refetch: vi.fn(),
+  }),
   useCrewEarningDetail: () => ({}),
   useCrewPayoutDetail: () => ({}),
 }));
@@ -96,7 +133,9 @@ async function render(crewId = "crew") {
   );
 }
 function button(text: string) {
-  return Array.from(container.querySelectorAll("button")).find((b) => b.textContent === text)!;
+  return Array.from(container.querySelectorAll("button")).find(
+    (b) => b.textContent?.trim() === text
+  )!;
 }
 async function fill(placeholder: string, text: string) {
   await act(async () => {
@@ -133,6 +172,9 @@ afterEach(async () => {
   root = createRoot(container);
   vi.clearAllMocks();
   state.account = "alice";
+  state.earning = false;
+  state.payout = false;
+  state.posted = false;
 });
 it.each(["account", "crew"])("resets income dialogs and drafts on %s change", async (change) => {
   await prepare();
@@ -171,4 +213,109 @@ it("suppresses income errors after leaving", async () => {
   await act(async () => root.render(null));
   await act(async () => pending.reject(new Error("old failure")));
   expect(state.error).not.toHaveBeenCalled();
+});
+
+async function preparePayout() {
+  await render();
+  await act(async () => button("views.payouts").click());
+  await act(async () => button("payout.create.action").click());
+  await act(async () => {
+    const dialog = container.querySelector('[role="dialog"]')!;
+    const select = dialog.querySelector("select")!;
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(
+      select,
+      "member"
+    );
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const input = dialog.querySelector("input")!;
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "10");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+it.each(["earning", "payout"])(
+  "guards duplicate %s creation and retries unchanged inputs with the same key",
+  async (kind) => {
+    const pending = deferred();
+    state.create.mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
+    if (kind === "earning") await prepare();
+    else await preparePayout();
+    const submit = kind === "earning" ? "create.submit" : "payout.create.submit";
+    await act(async () => {
+      button(submit).click();
+      button(submit).click();
+    });
+    expect(state.create).toHaveBeenCalledTimes(1);
+    const original = state.create.mock.calls[0]![0].idempotencyKey;
+    expect(container.querySelector('[role="dialog"] input')!.matches(":disabled")).toBe(true);
+    await act(async () => pending.reject(new Error("response lost")));
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => button(submit).click());
+    expect(state.create.mock.calls[1]![0].idempotencyKey).toBe(original);
+  }
+);
+it("uses a new creation key after the earning inputs change", async () => {
+  state.create.mockRejectedValueOnce(new Error("try again")).mockResolvedValue(undefined);
+  await prepare();
+  await act(async () => button("create.submit").click());
+  const original = state.create.mock.calls[0]![0].idempotencyKey;
+  await fill("create.titlePlaceholder", "Changed bonus");
+  await act(async () => button("create.submit").click());
+  expect(state.create.mock.calls[1]![0].idempotencyKey).not.toBe(original);
+});
+
+it.each(["reject", "reverse", "pay", "void"])(
+  "prevents duplicate %s decisions and retains failed input",
+  async (action) => {
+    const pending = deferred();
+    state.create.mockReturnValueOnce(pending.promise).mockResolvedValue(undefined);
+    state.earning = action === "reject" || action === "reverse";
+    state.posted = action === "reverse";
+    state.payout = !state.earning;
+    await render();
+    if (state.payout) await act(async () => button("views.payouts").click());
+    if (action === "pay") await act(async () => button("payout.actions.pay").click());
+    else {
+      const label = state.payout ? "payout.actions.void" : `actions.${action}`;
+      await act(async () =>
+        (container.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement).click()
+      );
+    }
+    const dialog = container.querySelector('[role="dialog"]')!;
+    const field = dialog.querySelector(action === "pay" ? "input" : "textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        action === "pay" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype,
+        "value"
+      )!.set!.call(field, "Confirmed reason");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const submit =
+      action === "reject"
+        ? "actions.confirmReject"
+        : action === "reverse"
+          ? "actions.confirmReverse"
+          : `payout.dialog.${action}.submit`;
+    await act(async () => {
+      button(submit).click();
+      button(submit).click();
+    });
+    expect(state.create).toHaveBeenCalledTimes(1);
+    await act(async () => pending.reject(new Error("decision failed")));
+    expect(container.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => button(submit).click());
+    expect(state.create).toHaveBeenCalledTimes(2);
+  }
+);
+it("guards rapid repeated earnings approval", async () => {
+  state.earning = true;
+  const pending = deferred();
+  state.create.mockReturnValue(pending.promise);
+  await render();
+  const approve = container.querySelector('[aria-label="actions.approve"]') as HTMLButtonElement;
+  await act(async () => {
+    approve.click();
+    approve.click();
+  });
+  expect(state.create).toHaveBeenCalledTimes(1);
+  await act(async () => pending.resolve());
 });
