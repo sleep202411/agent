@@ -96,21 +96,23 @@ it.each([false, true])(
   }
 );
 
-it("refreshes develop's existing task cache only while the initiating account is current", async () => {
+it.each([false, true])("refreshes originating task caches after settlement (switched=%s)", async (switched) => {
   const view = mount(useAccountabilityAction);
-  const taskKey = ["crew", "task", "task"];
-  client.setQueryData(taskKey, { version: 1 });
+  const alice = ["crew", "task", "task", "alice"];
+  const bob = ["crew", "task", "task", "bob"];
+  for (const key of [alice, bob]) client.setQueryData(key, { version: 1 });
   client.setQueryData(["user", "info"], { id: "alice" });
-  session.post.mockResolvedValue({});
+  let finish!: (value: unknown) => void;
+  session.post.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
   view.render();
-  await act(async () => {
-    await view.current().mutateAsync({ path: "/crew-tasks/task/commitments" });
-  });
-  expect(client.getQueryState(taskKey)?.isInvalidated).toBe(true);
-  client.setQueryData(taskKey, { version: 2 });
-  client.setQueryData(["user", "info"], { id: "bob" });
-  await act(async () => {
-    await view.current().mutateAsync({ path: "/crew-tasks/task/commitments" });
-  });
-  expect(client.getQueryState(taskKey)?.isInvalidated).toBe(false);
+  let pending!: Promise<unknown>;
+  await act(async () => { pending = view.current().mutateAsync({ path: "/crew-tasks/task/commitments" }); });
+  if (switched) {
+    session.account = "bob";
+    client.setQueryData(["user", "info"], { id: "bob" });
+    view.render();
+  }
+  await act(async () => { finish({}); await pending; });
+  expect(client.getQueryState(alice)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(bob)?.isInvalidated).toBe(false);
 });

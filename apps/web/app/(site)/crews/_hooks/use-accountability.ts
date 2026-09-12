@@ -2,6 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
+import { crewAccountQueries, crewKeys } from "./shared";
 
 export interface Commitment {
   id: string;
@@ -102,18 +103,7 @@ export function useAccountabilityAction() {
       crewApi.post<unknown>(path, { body }),
     onSettled: (_data, _error, _variables, origin) => {
       if (!origin?.accountUserId) return;
-      return qc.invalidateQueries({
-        queryKey: ["crew"],
-        predicate: (query) => {
-          if (["commitments", "accountability"].includes(String(query.queryKey[1]))) {
-            return query.queryKey.at(-1) === origin.accountUserId;
-          }
-          // develop's existing Crew queries are not account-suffixed. Refresh
-          // them only if the initiating account is still the current session.
-          const current = qc.getQueryData<{ id?: string | number }>(["user", "info"]);
-          return current?.id != null && String(current.id) === origin.accountUserId;
-        },
-      });
+      return qc.invalidateQueries(crewAccountQueries(crewKeys.all, origin.accountUserId));
     },
   });
 }
