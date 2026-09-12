@@ -13,6 +13,7 @@ import { DEFAULT_FREE_BENEFITS } from './membership-benefits';
 import {
   DEFAULT_TEAM_SEAT_POLICY,
   PERSONAL_WORKSPACE_SEAT_POLICY,
+  decideSeatAdmission,
 } from './seat-policy';
 import { enqueueEntitlementChanged } from '../billing/entitlement-realtime';
 
@@ -383,6 +384,11 @@ describe('EntitlementService.grantComplimentary', () => {
 
 describe('EntitlementService.resolveWorkspaceSeatPolicy', () => {
   const WORKSPACE_ID = 'workspace-1';
+  const openSeats = {
+    maxSeats: null,
+    seatOverageAllowed: true,
+    seatOveragePriceId: null,
+  };
 
   function seatPrismaMock(input: {
     type: WorkspaceType;
@@ -415,22 +421,22 @@ describe('EntitlementService.resolveWorkspaceSeatPolicy', () => {
     });
   }
 
-  it('gives a personal workspace with no grant the provisional 5-seat allowance', async () => {
+  it('opens seats for a personal workspace with no grant', async () => {
     const prisma = seatPrismaMock({ type: WorkspaceType.personal });
     const service = new EntitlementService(prisma as never);
 
     await expect(
       service.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
-    ).resolves.toEqual(PERSONAL_WORKSPACE_SEAT_POLICY);
+    ).resolves.toEqual({ ...PERSONAL_WORKSPACE_SEAT_POLICY, ...openSeats });
   });
 
-  it('keeps a TEAM workspace with no grant owner-only', async () => {
+  it('opens seats for a team workspace with no grant', async () => {
     const prisma = seatPrismaMock({ type: WorkspaceType.team });
     const service = new EntitlementService(prisma as never);
 
     await expect(
       service.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
-    ).resolves.toEqual(DEFAULT_TEAM_SEAT_POLICY);
+    ).resolves.toEqual({ ...DEFAULT_TEAM_SEAT_POLICY, ...openSeats });
   });
 
   it('branches on type for the other fallback too: grants naming no active plan', async () => {
@@ -450,13 +456,13 @@ describe('EntitlementService.resolveWorkspaceSeatPolicy', () => {
 
     await expect(
       personal.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
-    ).resolves.toEqual(PERSONAL_WORKSPACE_SEAT_POLICY);
+    ).resolves.toEqual({ ...PERSONAL_WORKSPACE_SEAT_POLICY, ...openSeats });
     await expect(
       team.resolveWorkspaceSeatPolicy(WORKSPACE_ID),
-    ).resolves.toEqual(DEFAULT_TEAM_SEAT_POLICY);
+    ).resolves.toEqual({ ...DEFAULT_TEAM_SEAT_POLICY, ...openSeats });
   });
 
-  it('lets an active plan row set the seats, without reading the workspace type', async () => {
+  it('preserves paid included seats while allowing unlimited free overage', async () => {
     const prisma = seatPrismaMock({
       type: WorkspaceType.personal,
       grants: [
@@ -475,10 +481,12 @@ describe('EntitlementService.resolveWorkspaceSeatPolicy', () => {
     ).resolves.toEqual({
       planKey: 'team',
       includedSeats: 12,
-      maxSeats: 12,
-      seatOverageAllowed: false,
+      ...openSeats,
     });
     expect(prisma.workspace.findUnique).not.toHaveBeenCalled();
+
+    const resolved = await service.resolveWorkspaceSeatPolicy(WORKSPACE_ID);
+    expect(decideSeatAdmission(resolved, 100_000)).toEqual({ kind: 'allow' });
   });
 });
 
