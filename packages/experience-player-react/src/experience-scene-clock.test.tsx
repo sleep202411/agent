@@ -3,7 +3,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExperienceThemeConfig } from "@repo/shared/experience-runtime";
+import {
+  ExperienceRuntimeManifestSchema,
+  type ExperienceThemeConfig,
+} from "@repo/shared/experience-runtime";
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 
@@ -282,5 +285,197 @@ describe("ExperiencePlayer fixed scene clock", () => {
     nowMs = DURATION_MS * 10;
     await runFrame();
     expect(frames).toHaveLength(0);
+  });
+  it("shows destination prices and confirms a paid choice once without a second node gate", async () => {
+    const runtime = ExperienceRuntimeManifestSchema.parse(timedManifest());
+    runtime.compatibility.requiredCapabilities.push("core.choice", "commerce.community-points");
+    runtime.rendererRequirements.push({
+      rendererId: "core.choice",
+      apiVersion: "1.0.0",
+      configSchemaVersion: "1.0.0",
+      requiredCapabilities: ["core.choice"],
+      outcomes: [{ outcomeType: "choice-selected" }],
+      commands: [{ commandType: "open" }],
+    });
+    const source = runtime.graph.nodes[0]!;
+    if (source.kind !== "scene") throw new Error("Expected scene");
+    source.clock = { kind: "none" };
+    source.renderers = [
+      {
+        instanceId: "choice",
+        rendererId: "core.choice",
+        layer: 100,
+        bindings: {},
+        config: {
+          decisionId: "routes",
+          prompt: localized("Choose"),
+          initiallyOpen: true,
+          choices: [
+            { choiceId: "one", label: localized("First path") },
+            { choiceId: "two", label: localized("Second path") },
+          ],
+        },
+      },
+    ];
+    const requirement = {
+      key: "node:scene.after",
+      communityPointPrice: 20,
+      title: localized("Next scene"),
+    };
+    runtime.graph.nodes[1]!.access = requirement;
+    source.eventBindings = [
+      {
+        bindingId: "choice.selected",
+        on: { type: "renderer.outcome", sourceId: "choice", qualifierId: "choice-selected" },
+        routes: ["one", "two"].map((choiceId) => ({
+          routeId: `route.${choiceId}`,
+          access: requirement,
+          when: {
+            kind: "compare",
+            left: { kind: "event", path: "choiceId" },
+            operator: "equals",
+            right: { kind: "literal", value: choiceId },
+          },
+          actions: [{ kind: "scene.goto", sceneId: "scene.after" }],
+        })),
+      },
+    ];
+    let owned = false;
+    const requestAccess = vi.fn(async () => {
+      owned = true;
+      return true;
+    });
+    await act(async () => {
+      root.render(
+        <ExperiencePlayer
+          runtime={runtime}
+          locale="en-US"
+          copy={copy}
+          loadTheme={() => Promise.resolve(theme)}
+          access={{
+            canAccess: () => owned,
+            requestAccess,
+            formatPrice: (amount) => `${amount} points`,
+          }}
+        />
+      );
+    });
+    const button = (text: string) =>
+      [...container.querySelectorAll("button")].find((item) => item.textContent?.includes(text))!;
+    await act(async () => {
+      button(copy.start).click();
+    });
+    expect(button("First path").textContent).toContain("20 points");
+    expect(button("Second path").textContent).toContain("20 points");
+    await act(async () => {
+      button("First path").click();
+    });
+    expect(requestAccess).toHaveBeenCalledExactlyOnceWith(requirement);
+    expect(container.textContent).toContain("next");
+  });
+
+  it("refreshes existing ownership before showing a purchase prompt", async () => {
+    const runtime = ExperienceRuntimeManifestSchema.parse(timedManifest());
+    runtime.compatibility.requiredCapabilities.push("commerce.community-points");
+    runtime.graph.nodes[1]!.access = {
+      key: "node:scene.after",
+      communityPointPrice: 20,
+      title: localized("Next scene"),
+    };
+    let owned = false;
+    const checkAccess = vi.fn(async () => {
+      owned = true;
+      return true;
+    });
+    const requestAccess = vi.fn(async () => false);
+    await act(async () => {
+      root.render(
+        <ExperiencePlayer
+          runtime={runtime}
+          locale="en-US"
+          copy={copy}
+          loadTheme={() => Promise.resolve(theme)}
+          access={{
+            canAccess: () => owned,
+            checkAccess,
+            requestAccess,
+            formatPrice: (amount) => `${amount} points`,
+          }}
+        />
+      );
+    });
+    await act(async () => {
+      [...container.querySelectorAll("button")]
+        .find((button) => button.textContent === copy.start)!
+        .click();
+    });
+    nowMs = DURATION_MS;
+    await runFrame();
+    expect(checkAccess).toHaveBeenCalledTimes(1);
+    expect(requestAccess).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("next");
+  });
+
+  it("pauses before paid content, cancels safely, and resumes the same operation after unlock", async () => {
+    const runtime = ExperienceRuntimeManifestSchema.parse(timedManifest());
+    runtime.compatibility.requiredCapabilities.push("commerce.community-points");
+    runtime.graph.nodes[1]!.access = {
+      key: "node:scene.after",
+      communityPointPrice: 20,
+      title: { "en-US": "Next scene" },
+    };
+    let allowed = false;
+    let resolveAccess: (result: boolean) => void = () => {};
+    const requestAccess = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveAccess = resolve;
+        })
+    );
+    const checkpoint = vi.fn();
+    await act(async () => {
+      root.render(
+        <ExperiencePlayer
+          runtime={runtime}
+          locale="en-US"
+          copy={copy}
+          loadTheme={() => Promise.resolve(theme)}
+          access={{
+            canAccess: () => allowed,
+            requestAccess,
+            formatPrice: (amount) => `${amount} points`,
+          }}
+          onAccessCheckpoint={checkpoint}
+        />
+      );
+    });
+    const start = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === copy.start
+    )!;
+    await act(async () => {
+      start.click();
+    });
+    nowMs = DURATION_MS;
+    await runFrame();
+    expect(requestAccess).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("next");
+    expect(checkpoint.mock.calls[0]?.[0].events[0].type).toBe("scene.clock-ended");
+    await act(async () => {
+      resolveAccess(false);
+    });
+    expect(container.textContent).not.toContain("next");
+    const retry = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === copy.continue
+    )!;
+    await act(async () => {
+      retry.click();
+    });
+    expect(requestAccess).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      allowed = true;
+      resolveAccess(true);
+    });
+    expect(container.textContent).toContain("next");
+    expect(container.textContent).not.toContain(copy.runtimeError);
   });
 });
