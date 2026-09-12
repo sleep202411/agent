@@ -7,6 +7,7 @@ import {
   formatCrewMoneyInput,
   type CrewLedgerCurrency,
 } from "@/src/lib/crew-money";
+import { TaskReviewForm } from "./task-review-form";
 import { DeleteTaskButton } from "./delete-task-button";
 
 import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
@@ -57,7 +58,6 @@ import {
   useCrewTaskOptions,
   useCrewEpisodes,
   useCrewTaskProject,
-  useReviewCrewTask,
   useUpdateCrewTask,
   useUpdateCrewTaskComment,
   useCrewTaskTimeline,
@@ -112,12 +112,10 @@ export function TaskIssueDetail({
 }: TaskIssueDetailProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
-  const review = useReviewCrewTask(task.crewId);
   const updateTask = useUpdateCrewTask(task.crewId);
   const timeline = useCrewTaskTimeline(task.id);
   const project = useCrewTaskProject(task.crewId).data;
   const episodes = useCrewEpisodes(task.crewId).data ?? [];
-  const [reviewNote, setReviewNote] = useState("");
   const [editingBrief, setEditingBrief] = useState(false);
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftDescription, setDraftDescription] = useState(task.description);
@@ -126,8 +124,6 @@ export function TaskIssueDetail({
   const canShowSubmit = canWork && ACTIVE_STATUSES.includes(task.status);
   const unresolvedBlockers = task.blockedBy.filter((blocker) => !blocker.resolved);
   const canSubmit = canShowSubmit && unresolvedBlockers.length === 0;
-  const revisionLimitReached =
-    task.revisionLimit != null && task.revisionRoundsUsed >= task.revisionLimit;
   const timelineItems = useMemo(
     () =>
       (timeline.data?.pages.flatMap((page) => page.items) ?? [])
@@ -172,16 +168,6 @@ export function TaskIssueDetail({
     }
   };
 
-  const decide = async (decision: "approve" | "request_revision") => {
-    try {
-      await review.mutateAsync({ taskId: task.id, decision, note: reviewNote });
-      toast.success(decision === "approve" ? t("approved") : t("revisionRequested"));
-      setReviewNote("");
-      onReviewed(decision);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
-    }
-  };
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#101012]">
@@ -418,50 +404,7 @@ export function TaskIssueDetail({
             )}
 
             {isOwner && task.status === "submitted" ? (
-              <section className="mt-6 rounded-xl border border-amber-400/20 bg-amber-400/[0.035] p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <IconClipboardCheck className="size-4 text-amber-300" />
-                  <h3 className="text-[12px] font-semibold text-[#e2e3e6]">
-                    {t("reviewSubmission")}
-                  </h3>
-                </div>
-                <Textarea
-                  value={reviewNote}
-                  onChange={(event) => setReviewNote(event.target.value)}
-                  placeholder={t("reviewNotePlaceholder")}
-                  maxLength={5000}
-                  className="min-h-24 border-white/[0.09] bg-[#090a0d]"
-                />
-                <p
-                  className={cn(
-                    "mt-2 text-[9px] text-[#686e79]",
-                    revisionLimitReached && "text-amber-300"
-                  )}
-                >
-                  {revisionLimitReached
-                    ? t("revisionLimitReached")
-                    : t("revisionInstructionsRequired")}
-                </p>
-                <div className="mt-3 flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    color="muted"
-                    disabled={review.isPending || revisionLimitReached || !reviewNote.trim()}
-                    onClick={() => void decide("request_revision")}
-                  >
-                    {t("requestRevision")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={review.isPending}
-                    onClick={() => void decide("approve")}
-                    icon={<IconCheck />}
-                  >
-                    {t("approve")}
-                  </Button>
-                </div>
-              </section>
+              <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}
 
             <CommentComposer
