@@ -49,7 +49,7 @@ export function PositionsGrid({ crewId, positions, isOwner, onPublish }: Positio
         (p) => p.status !== "frozen" && p.status !== "full" && p.recruitedCount < p.targetCount
       );
     if (filter === "full")
-      return positions.filter((p) => p.status === "full" || p.recruitedCount >= p.targetCount);
+      return positions.filter((p) => p.status !== "frozen" && (p.status === "full" || p.recruitedCount >= p.targetCount));
     return positions.filter((p) => p.status === "frozen");
   }, [positions, filter]);
 
