@@ -73,4 +73,3 @@ it("hides invitation lists and details on logout and while another account loads
   await settle();
   expect(crewApi.get).toHaveBeenCalledTimes(4);
 });
-

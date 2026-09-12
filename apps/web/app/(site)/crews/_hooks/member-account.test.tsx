@@ -73,4 +73,3 @@ it("hides member lists and current-user permissions on logout and while another 
   await settle();
   expect(crewApi.get).toHaveBeenCalledTimes(4);
 });
-
