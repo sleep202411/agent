@@ -6,6 +6,9 @@ import { ProjectSettingsDialog } from "./task-project-settings";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({
   account: "alice",
+  rows: false,
+  name: "Original",
+  updatedAt: "2026-09-01T00:00:00.000Z",
   create: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
@@ -61,9 +64,44 @@ async function render(open = true, crewId = "crew") {
         project={
           {
             workflowStates: [],
-            cycles: [],
-            labels: [],
-            fields: [],
+            cycles: state.rows
+              ? [
+                  {
+                    id: "cycle",
+                    name: state.name,
+                    goal: "Goal",
+                    status: "planned",
+                    number: 1,
+                    startAt: "2026-09-01T00:00:00.000Z",
+                    endAt: "2026-09-10T00:00:00.000Z",
+                    updatedAt: state.updatedAt,
+                  },
+                ]
+              : [],
+            labels: state.rows
+              ? [
+                  {
+                    id: "label",
+                    name: state.name,
+                    description: "Description",
+                    color: "#ffffff",
+                    updatedAt: state.updatedAt,
+                  },
+                ]
+              : [],
+            fields: state.rows
+              ? [
+                  {
+                    id: "field",
+                    name: state.name,
+                    description: "Description",
+                    type: "text",
+                    required: false,
+                    options: [],
+                    updatedAt: state.updatedAt,
+                  },
+                ]
+              : [],
           } as unknown as CrewTaskProjectDTO
         }
       />
@@ -96,6 +134,9 @@ afterEach(async () => {
   root = createRoot(container);
   vi.clearAllMocks();
   state.account = "alice";
+  state.rows = false;
+  state.name = "Original";
+  state.updatedAt = "2026-09-01T00:00:00.000Z";
 });
 it.each(["labels", "customFields"])(
   "guards duplicate %s creation and allows retry",
@@ -163,3 +204,47 @@ it("suppresses late settings errors after closing", async () => {
   await act(async () => pending.reject(new Error("old failure")));
   expect(state.error).not.toHaveBeenCalled();
 });
+
+async function startEdit(section: string) {
+  await act(async () => button(section).click());
+  await act(async () =>
+    (container.querySelector('[aria-label="edit"]') as HTMLButtonElement).click()
+  );
+}
+it.each(["cycles", "labels", "customFields"])(
+  "retains the original %s edit timestamp during refresh",
+  async (section) => {
+    state.rows = true;
+    state.create.mockResolvedValue(undefined);
+    await render();
+    await startEdit(section);
+    state.updatedAt = "2026-09-02T00:00:00.000Z";
+    state.name = "Collaborator";
+    await render();
+    await act(async () => button("save").click());
+    expect(state.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+          name: "Original",
+        }),
+      })
+    );
+  }
+);
+it.each(["cycles", "labels", "customFields"])(
+  "loads current %s values when editing starts",
+  async (section) => {
+    state.rows = true;
+    await render();
+    await act(async () => button(section).click());
+    state.name = "Updated";
+    state.updatedAt = "2026-09-02T00:00:00.000Z";
+    await render();
+    await act(async () =>
+      (container.querySelector('[aria-label="edit"]') as HTMLButtonElement).click()
+    );
+    const inputs = Array.from(container.querySelectorAll("input"));
+    expect(inputs.some((input) => input.value === "Updated")).toBe(true);
+  }
+);

@@ -557,13 +557,26 @@ function CycleRow({ crewId, cycle }: { crewId: string; cycle: CrewTaskCycleDTO }
   const [startAt, setStartAt] = useState(toDateInput(cycle.startAt));
   const [endAt, setEndAt] = useState(toDateInput(cycle.endAt));
 
+  const [editUpdatedAt, setEditUpdatedAt] = useState(cycle.updatedAt);
+  const startEditing = () => {
+    if (action.busy) return;
+    setName(cycle.name);
+    setGoal(cycle.goal);
+    setStatus(cycle.status);
+    setStartAt(toDateInput(cycle.startAt));
+    setEndAt(toDateInput(cycle.endAt));
+    setEditUpdatedAt(cycle.updatedAt);
+    setDeleteArmed(false);
+    setEditing(true);
+  };
+
   const save = async () => {
     if (!action.start()) return;
     try {
       await updateCycle.mutateAsync({
         cycleId: cycle.id,
         input: {
-          expectedUpdatedAt: cycle.updatedAt,
+          expectedUpdatedAt: editUpdatedAt,
           name: name.trim(),
           goal: goal.trim(),
           status,
@@ -654,7 +667,7 @@ function CycleRow({ crewId, cycle }: { crewId: string; cycle: CrewTaskCycleDTO }
                 {cycle.goal || t("noCycleGoal")}
               </p>
             </div>
-            <IconButton label={t("edit")} onClick={() => setEditing(true)}>
+            <IconButton label={t("edit")} onClick={startEditing}>
               <IconPencil />
             </IconButton>
             <IconButton
@@ -750,13 +763,24 @@ function LabelRow({ crewId, label }: { crewId: string; label: CrewTaskLabelDTO }
   const [description, setDescription] = useState(label.description);
   const [color, setColor] = useState(label.color);
 
+  const [editUpdatedAt, setEditUpdatedAt] = useState(label.updatedAt);
+  const startEditing = () => {
+    if (action.busy) return;
+    setName(label.name);
+    setDescription(label.description);
+    setColor(label.color);
+    setEditUpdatedAt(label.updatedAt);
+    setDeleteArmed(false);
+    setEditing(true);
+  };
+
   const save = async () => {
     if (!action.start()) return;
     try {
       await updateLabel.mutateAsync({
         labelId: label.id,
         input: {
-          expectedUpdatedAt: label.updatedAt,
+          expectedUpdatedAt: editUpdatedAt,
           name: name.trim(),
           description: description.trim(),
           color,
@@ -826,7 +850,7 @@ function LabelRow({ crewId, label }: { crewId: string; label: CrewTaskLabelDTO }
             <span className="min-w-0 flex-1 truncate text-[10px] text-[#777d87]">
               {label.description || t("noLabelDescription")}
             </span>
-            <IconButton label={t("edit")} onClick={() => setEditing(true)}>
+            <IconButton label={t("edit")} onClick={startEditing}>
               <IconPencil />
             </IconButton>
             <IconButton
@@ -968,6 +992,18 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
   const [required, setRequired] = useState(field.required);
   const supportsOptions = field.type === "single_select" || field.type === "multi_select";
 
+  const [editUpdatedAt, setEditUpdatedAt] = useState(field.updatedAt);
+  const startEditing = () => {
+    if (action.busy) return;
+    setName(field.name);
+    setDescription(field.description);
+    setOptions(field.options.map((option) => option.label).join(", "));
+    setRequired(field.required);
+    setEditUpdatedAt(field.updatedAt);
+    setDeleteArmed(false);
+    setEditing(true);
+  };
+
   const save = async () => {
     if (!action.start()) return;
     try {
@@ -975,7 +1011,7 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
       await updateField.mutateAsync({
         fieldId: field.id,
         input: {
-          expectedUpdatedAt: field.updatedAt,
+          expectedUpdatedAt: editUpdatedAt,
           name: name.trim(),
           description: description.trim(),
           required,
@@ -1070,7 +1106,7 @@ function FieldRow({ crewId, field }: { crewId: string; field: CrewTaskFieldDTO }
                 {field.description || t("noCustomFieldDescription")}
               </p>
             </div>
-            <IconButton label={t("edit")} onClick={() => setEditing(true)}>
+            <IconButton label={t("edit")} onClick={startEditing}>
               <IconPencil />
             </IconButton>
             <IconButton
