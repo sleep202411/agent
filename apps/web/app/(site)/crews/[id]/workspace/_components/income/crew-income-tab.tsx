@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import {
   CREW_CURRENCY,
   formatCrewMoney,
@@ -97,7 +98,21 @@ const PAYOUT_METHODS: CrewPayoutMethod[] = [
   "other",
 ];
 
-export function CrewIncomeTab({
+export function CrewIncomeTab(props: Parameters<typeof IncomeSession>[0]) {
+  const { user } = useCurrentUser();
+  return <IncomeSession key={JSON.stringify([user?.id, props.crewId])} {...props} />;
+}
+function useIncomeSession() {
+  const active = useRef(true);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  return active;
+}
+function IncomeSession({
   crewId,
   crewName,
   members,
@@ -237,32 +252,43 @@ export function CrewIncomeTab({
         />
       )}
 
-      <CreateEarningDialog
-        open={createEarningOpen}
-        onOpenChange={setCreateEarningOpen}
-        crewId={crewId}
-        members={members}
-        displays={displays}
-      />
-      <CreatePayoutDialog
-        open={createPayoutOpen}
-        onOpenChange={setCreatePayoutOpen}
-        crewId={crewId}
-        members={members}
-        displays={displays}
-        locale={locale}
-      />
-      <EarningDecisionDialog
-        value={earningDecision}
-        onOpenChange={(open) => !open && setEarningDecision(null)}
-        crewId={crewId}
-      />
-      <PayoutActionDialog
-        value={payoutAction}
-        onOpenChange={(open) => !open && setPayoutAction(null)}
-        crewId={crewId}
-        locale={locale}
-      />
+      {createEarningOpen && canCreateEarning ? (
+        <CreateEarningDialog
+          open={createEarningOpen}
+          onOpenChange={setCreateEarningOpen}
+          crewId={crewId}
+          members={members}
+          displays={displays}
+        />
+      ) : null}
+      {createPayoutOpen && canCreatePayout ? (
+        <CreatePayoutDialog
+          open={createPayoutOpen}
+          onOpenChange={setCreatePayoutOpen}
+          crewId={crewId}
+          members={members}
+          displays={displays}
+          locale={locale}
+        />
+      ) : null}
+      {earningDecision &&
+      (earningDecision.kind === "reverse" ? canReverseEarning : canApproveEarning) ? (
+        <EarningDecisionDialog
+          key={JSON.stringify([earningDecision.kind, earningDecision.earning.id])}
+          value={earningDecision}
+          onOpenChange={(open) => !open && setEarningDecision(null)}
+          crewId={crewId}
+        />
+      ) : null}
+      {payoutAction && canManagePayout ? (
+        <PayoutActionDialog
+          key={JSON.stringify([payoutAction.kind, payoutAction.payout.id])}
+          value={payoutAction}
+          onOpenChange={(open) => !open && setPayoutAction(null)}
+          crewId={crewId}
+          locale={locale}
+        />
+      ) : null}
       <EarningDetailDialog
         earning={earningDetail}
         onOpenChange={(open) => !open && setEarningDetail(null)}
@@ -303,13 +329,16 @@ function EarningsLedger({
   onDecision: (kind: "reject" | "reverse", earning: CrewEarningEntryDTO) => void;
 }) {
   const t = useTranslations("crewIncome");
+  const active = useIncomeSession();
   const approve = useApproveCrewEarning(crewId);
   const summary = query.summary;
   const approveEntry = async (earning: CrewEarningEntryDTO) => {
     try {
       await approve.mutateAsync({ earningId: earning.id, expectedVersion: earning.version });
+      if (!active.current) return;
       toast.success(t("messages.approved"));
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.actionFailed"));
     }
   };
@@ -603,6 +632,7 @@ function CreateEarningDialog({
   displays: ReturnType<typeof useUserDisplays>;
 }) {
   const t = useTranslations("crewIncome");
+  const active = useIncomeSession();
   const create = useCreateCrewEarning(crewId);
   const [memberId, setMemberId] = useState("");
   const [sourceType, setSourceType] = useState<ManualSource>("milestone_bonus");
@@ -631,9 +661,11 @@ function CreateEarningDialog({
         amountMinor: parsedAmount,
         idempotencyKey: crypto.randomUUID(),
       });
+      if (!active.current) return;
       toast.success(t("messages.created"));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.createFailed"));
     }
   };
@@ -729,6 +761,7 @@ function CreatePayoutDialog({
   locale: string;
 }) {
   const t = useTranslations("crewIncome");
+  const active = useIncomeSession();
   const create = useCreateCrewPayout(crewId);
   const [memberId, setMemberId] = useState("");
   const [amountInput, setAmountInput] = useState("");
@@ -765,9 +798,11 @@ function CreatePayoutDialog({
         note: note.trim() || undefined,
         idempotencyKey: crypto.randomUUID(),
       });
+      if (!active.current) return;
       toast.success(t("payout.messages.created"));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("payout.messages.actionFailed"));
     }
   };
@@ -846,6 +881,7 @@ function EarningDecisionDialog({
   crewId: string;
 }) {
   const t = useTranslations("crewIncome");
+  const active = useIncomeSession();
   const reject = useRejectCrewEarning(crewId);
   const reverse = useReverseCrewEarning(crewId);
   const [reason, setReason] = useState("");
@@ -862,9 +898,11 @@ function EarningDecisionDialog({
         expectedVersion: value.earning.version,
         reason: reason.trim(),
       });
+      if (!active.current) return;
       toast.success(t(`messages.${value.kind === "reverse" ? "reversed" : "rejected"}`));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.actionFailed"));
     }
   };
@@ -918,6 +956,7 @@ function PayoutActionDialog({
   locale: string;
 }) {
   const t = useTranslations("crewIncome");
+  const active = useIncomeSession();
   const pay = usePayCrewPayout(crewId);
   const voidPayout = useVoidCrewPayout(crewId);
   const [method, setMethod] = useState<CrewPayoutMethod>("bank_transfer");
@@ -946,9 +985,11 @@ function PayoutActionDialog({
         paymentProofUrl: proof.trim() || undefined,
         reason: reason.trim() || undefined,
       });
+      if (!active.current) return;
       toast.success(t(`payout.messages.${value.kind}`));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("payout.messages.actionFailed"));
     }
   };
