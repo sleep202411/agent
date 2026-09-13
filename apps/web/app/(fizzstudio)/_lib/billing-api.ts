@@ -54,10 +54,16 @@ export interface ComputeWalletAccount {
 }
 
 export interface ComputeWalletLedgerData {
+  nextCursor?: string | null;
   accounts: ComputeWalletAccount[];
   entries: Array<{
     id: string;
     transactionId: string;
+    projectId?: string | null;
+    workspaceId?: string | null;
+    actorUserId?: string | null;
+    transactionStatus?: string;
+    postedAt?: string | null;
     accountId: string;
     entryType:
       | "adjustment"
@@ -148,9 +154,20 @@ export async function listComputeTopupPackages(): Promise<ComputeTopupCatalog> {
   return api.get<ComputeTopupCatalog>("/aurora/billing/compute-topup-packages");
 }
 
-export async function getComputeWalletLedger(limit = 12): Promise<ComputeWalletLedgerData> {
+export async function getComputeWalletLedger(
+  limit = 12,
+  options?: { workspaceId: string; projectId?: string; cursor?: string; signal?: AbortSignal }
+): Promise<ComputeWalletLedgerData> {
   return api.get<ComputeWalletLedgerData>("/aurora/billing/wallet-ledger", {
-    params: { currency: "compute_point", balanceKind: "consumable", limit },
+    params: {
+      currency: "compute_point",
+      balanceKind: "consumable",
+      limit,
+      projectId: options?.projectId,
+      cursor: options?.cursor,
+    },
+    signal: options?.signal,
+    ...(options ? { headers: { "X-Fizz-Workspace-Id": options.workspaceId } } : {}),
   });
 }
 

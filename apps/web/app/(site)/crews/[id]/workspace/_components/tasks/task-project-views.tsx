@@ -2,13 +2,12 @@
 
 import { TaskUnreadMarker } from "@/app/(site)/crews/_components/task-unread-marker";
 
-import { isCrewTaskOverdue as isOverdue } from "@/app/(site)/crews/_lib/task-dates";
+import { TaskDeadline } from "@/app/(site)/crews/_components/task-deadline";
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   IconAntennaBars1,
   IconAntennaBars5,
-  IconCalendar,
   IconCheck,
   IconChevronDown,
   IconCircle,
@@ -198,7 +197,6 @@ function ListGroup({ group, props }: { group: ListGroupValue; props: TaskProject
 
 function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProjectViewProps }) {
   const t = useTranslations("crewTaskProject");
-  const locale = useLocale();
   const displayProperties = new Set(props.view.visibleFields);
   const selected = props.selectedIds.has(task.id);
 
@@ -253,10 +251,7 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
           </span>
         ) : null}
         {displayProperties.has("dueAt") && task.dueAt ? (
-          <span className={cn("inline-flex items-center gap-1", isOverdue(task) && "text-red-300")}>
-            <IconCalendar className="size-3.5" />
-            {shortDate(task.dueAt, locale)}
-          </span>
+          <TaskDeadline dueAt={task.dueAt} status={task.status} />
         ) : null}
         {displayProperties.has("assignees") ? (
           <TaskAssignees task={task} displays={props.displays} />
@@ -575,15 +570,7 @@ function BoardCard({
           </span>
         ) : null}
         {properties.has("dueAt") && task.dueAt ? (
-          <span
-            className={cn(
-              "inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-white/[0.055] px-2 text-[10px] font-[450] text-[#929299]",
-              isOverdue(task) && "text-red-300"
-            )}
-          >
-            <IconCalendar className="size-3.5" />
-            {shortDate(task.dueAt, locale)}
-          </span>
+          <TaskDeadline dueAt={task.dueAt} status={task.status} />
         ) : null}
       </div>
 

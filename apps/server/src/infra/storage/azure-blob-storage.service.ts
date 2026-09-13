@@ -1,3 +1,4 @@
+import { requirePrivateUploadTarget } from './private-upload-target';
 /**
  * Azure Blob implementation of OutputStorageService.
  *
@@ -69,6 +70,9 @@ export class AzureBlobStorageService extends OutputStorageService {
   private readonly client: ContainerClient | null;
   private readonly publicBaseUrl: string | null;
   private readonly containerName: string;
+  private readonly privateUploadTarget = (
+    process.env.AZURE_BLOB_PRIVATE_CONTAINER ?? ''
+  ).trim();
   /** Private container that takendown blobs are moved into (Azure has no
    *  per-blob ACL). Defaults to `${container}-quarantine`. Created on demand. */
   private readonly quarantineContainer: string;
@@ -276,6 +280,24 @@ export class AzureBlobStorageService extends OutputStorageService {
   async createUploadUrl(
     input: CreateUploadUrlInput,
   ): Promise<CreateUploadUrlResult> {
+    return this.signUploadUrl(input, this.containerName);
+  }
+
+  async createPrivateUploadUrl(
+    input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    const target = requirePrivateUploadTarget(
+      'AZURE_BLOB_PRIVATE_CONTAINER',
+      this.privateUploadTarget,
+      [this.containerName, this.quarantineContainer],
+    );
+    return this.signUploadUrl(input, target);
+  }
+
+  private async signUploadUrl(
+    input: CreateUploadUrlInput,
+    target: string,
+  ): Promise<CreateUploadUrlResult> {
     if (!this.client) {
       throw new ServiceUnavailableException(
         'azure_blob storage is not configured',
@@ -283,7 +305,9 @@ export class AzureBlobStorageService extends OutputStorageService {
     }
     const ttl = input.expiresInSeconds ?? DEFAULT_UPLOAD_URL_TTL_SECONDS;
     const expiresOn = new Date(Date.now() + ttl * 1000);
-    const block = this.client.getBlockBlobClient(input.storageKey);
+    const block = this.containerClient(target).getBlockBlobClient(
+      input.storageKey,
+    );
     // Write-SAS via the SDK. The signing credential is the
     // StorageSharedKeyCredential already parsed from the connection
     // string by BlobServiceClient.fromConnectionString — no new env var.
@@ -313,7 +337,7 @@ export class AzureBlobStorageService extends OutputStorageService {
       },
       storageKey: input.storageKey,
       provider: 'azure_blob',
-      bucket: this.containerName,
+      bucket: target,
       region: this.region,
       expiresAt: expiresOn.toISOString(),
     };

@@ -17,6 +17,8 @@ import {
   DecideCrewEarningSchema,
   type DecideCrewEarningInput,
   ListCrewEarningsQuerySchema,
+  ListMyCrewEarningsQuerySchema,
+  type ListMyCrewEarningsQuery,
   type ListCrewEarningsQuery,
   RejectCrewEarningSchema,
   type RejectCrewEarningInput,
@@ -28,6 +30,15 @@ import { CrewEarningsService } from './earnings.service';
 @Controller()
 export class CrewEarningsController {
   constructor(private readonly earnings: CrewEarningsService) {}
+
+  @Get('me/crew-earnings')
+  mine(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListMyCrewEarningsQuerySchema))
+    query: ListMyCrewEarningsQuery,
+  ) {
+    return this.earnings.listMine(user.userId, query);
+  }
 
   @Get('crews/:crewId/earnings')
   list(

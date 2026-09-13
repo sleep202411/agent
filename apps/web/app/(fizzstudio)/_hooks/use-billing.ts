@@ -1,13 +1,14 @@
 "use client";
 
-import { useCurrentUser } from "@/src/hooks/use-user";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
 import {
   createComputeTopup,
   getComputeWalletLedger,
   listComputeTopupPackages,
   type ComputeWalletLedgerData,
 } from "../_lib/billing-api";
+
+import { useCurrentUser } from "@/src/hooks/use-user";
 
 export const computeBillingKeys = {
   all: ["fizzstudio", "compute-billing"] as const,
@@ -54,4 +55,22 @@ export function availableComputeBalance(data: ComputeWalletLedgerData | undefine
     if (account.status !== "active") return sum;
     return sum + BigInt(account.availableBalance);
   }, 0n);
+}
+
+export function useProjectComputeLedger(workspaceId: string, projectId?: string) {
+  const { user } = useCurrentUser();
+  return useInfiniteQuery({
+    queryKey: [
+      ...computeBillingKeys.wallets(user?.id ?? null),
+      "project-ledger",
+      workspaceId,
+      projectId,
+    ],
+    enabled: !!user && !!workspaceId,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ signal, pageParam }) =>
+      getComputeWalletLedger(50, { workspaceId, projectId, cursor: pageParam, signal }),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    retry: false,
+  });
 }

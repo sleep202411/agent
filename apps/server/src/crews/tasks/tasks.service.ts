@@ -1,3 +1,18 @@
+import {
+  readTaskDeliveryTemplate,
+  validateProfessionalDelivery,
+  TaskDeliveryTemplateInput,
+} from './task-delivery-template';
+import type { z } from 'zod';
+import {
+  captureTaskTimelinessTx,
+  recordApprovedTaskTimelinessTx,
+  postApprovedTaskTrustTx,
+} from './task-timeliness';
+import {
+  taskDeliveryFolderTx,
+  publishTaskDeliveryAssetsTx,
+} from './task-delivery-folder';
 import { assertNewCrewCurrency } from '../earnings/ledger-currency';
 import {
   BadRequestException,
@@ -2976,6 +2991,82 @@ export class CrewTasksService {
     );
   }
 
+  async getDeliveryTemplate(taskId: string, userId: string) {
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.view');
+    return this.prisma.$transaction(async (tx) => {
+      await this.authorization.require(task.crewId, userId, 'tasks.view', tx);
+      await this.requireActiveTaskTx(tx, taskId);
+      return readTaskDeliveryTemplate(tx, taskId);
+    });
+  }
+
+  async setDeliveryTemplate(
+    taskId: string,
+    userId: string,
+    input: z.infer<typeof TaskDeliveryTemplateInput>,
+  ) {
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.manage');
+    const result = await this.manageTaskWrite(
+      task.crewId,
+      userId,
+      async (tx) => {
+        const current = await this.requireActiveTaskTx(tx, taskId);
+        if (current.version !== input.expectedVersion)
+          throw new ConflictException(
+            'Task changed. Refresh before changing its delivery template.',
+          );
+        if (!ACCEPTING_TASK_STATUSES.has(current.workflowState.semantic))
+          throw new ConflictException(
+            'The task is not accepting delivery-template changes.',
+          );
+        const before = await readTaskDeliveryTemplate(tx, taskId);
+        if (input.category) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:delivery-catalog:${input.category.id}`},0))`;
+          const [latest] = await tx.$queryRaw<
+            Array<{ version: number; status: string }>
+          >`SELECT version, definition->>'status' AS status FROM crew_delivery_catalog_revisions WHERE category_id=${input.category.id}::uuid ORDER BY version DESC LIMIT 1`;
+          if (
+            !latest ||
+            latest.version !== input.category.version ||
+            latest.status !== 'active'
+          )
+            throw new ConflictException(
+              'Choose the current active delivery category.',
+            );
+          await tx.$executeRaw`INSERT INTO crew_task_delivery_templates(task_id,category_id,category_version) VALUES (${taskId}::uuid,${input.category.id}::uuid,${input.category.version}) ON CONFLICT(task_id) DO UPDATE SET category_id=EXCLUDED.category_id,category_version=EXCLUDED.category_version`;
+        } else {
+          await tx.$executeRaw`DELETE FROM crew_task_delivery_templates WHERE task_id=${taskId}::uuid`;
+        }
+        await tx.crewTask.update({
+          where: { id: taskId },
+          data: { version: { increment: 1 } },
+        });
+        await this.writeActivity(
+          tx,
+          taskId,
+          'task.delivery_template.changed',
+          userId,
+          {
+            before: before
+              ? { id: before.categoryId, version: before.version }
+              : null,
+            after: input.category,
+          },
+        );
+        return readTaskDeliveryTemplate(tx, taskId);
+      },
+    );
+    await this.conversations.broadcastCrewTaskChange(
+      task.crewId,
+      taskId,
+      'updated',
+      userId,
+    );
+    return result;
+  }
+
   async submit(taskId: string, userId: string, input: SubmitCrewTaskInput) {
     const task = await this.requireTask(taskId);
     const context = await this.authorization.requireMembership(
@@ -2996,6 +3087,7 @@ export class CrewTasksService {
       });
     }
 
+    let deliveryFolderId: string | undefined;
     const updated = await this.authorizedTaskWrite(
       task.crewId,
       async (tx) => {
@@ -3098,6 +3190,11 @@ export class CrewTasksService {
           );
         }
 
+        const professionalDelivery = validateProfessionalDelivery(
+          await readTaskDeliveryTemplate(tx, taskId),
+          input.professionalDelivery,
+          input.assetNodeIds,
+        );
         let canvasVersionId: string | null = null;
         if (locked.canvasDocumentId) {
           const document = await this.materializeCanvasDocumentTx(
@@ -3139,6 +3236,13 @@ export class CrewTasksService {
             },
           });
         }
+        deliveryFolderId = await taskDeliveryFolderTx(
+          tx,
+          this.assetAccess,
+          locked,
+          userId,
+          input.deliveryFolderId,
+        );
         const submission = await tx.crewTaskSubmission.create({
           data: {
             taskId,
@@ -3146,6 +3250,7 @@ export class CrewTasksService {
             submittedByUserId: userId,
             note: input.note,
             canvasVersionId,
+            ...(professionalDelivery ? { professionalDelivery } : {}),
             assets: {
               create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
                 assetNodeId,
@@ -3153,6 +3258,12 @@ export class CrewTasksService {
             },
           },
         });
+        await captureTaskTimelinessTx(
+          tx,
+          submission.id,
+          locked.dueAt,
+          locked.assignees,
+        );
         const reviewState = await this.requireSystemWorkflowState(
           tx,
           locked.crewId,
@@ -3202,6 +3313,13 @@ export class CrewTasksService {
       'submitted',
       userId,
     );
+    if (deliveryFolderId)
+      await this.conversations.broadcastCrewAssetChange(
+        updated.crewId,
+        deliveryFolderId,
+        'updated',
+        userId,
+      );
     return this.toDtoWithUsage(updated);
   }
 
@@ -3276,6 +3394,15 @@ export class CrewTasksService {
           },
         });
         if (approved) {
+          await recordApprovedTaskTimelinessTx(tx, latest.id, userId);
+          await postApprovedTaskTrustTx(tx, latest.id);
+          await publishTaskDeliveryAssetsTx(
+            tx,
+            this.assetAccess,
+            locked,
+            userId,
+            latest.assets.map((asset) => asset.assetNodeId),
+          );
           for (const assignee of locked.assignees.filter(
             (candidate) =>
               candidate.rewardAmountMinor != null &&
@@ -3372,6 +3499,16 @@ export class CrewTasksService {
       'reviewed',
       userId,
     );
+    if (input.decision === 'approve') {
+      for (const asset of task.submissions[0]?.assets ?? []) {
+        await this.conversations.broadcastCrewAssetChange(
+          task.crewId,
+          asset.assetNodeId,
+          'updated',
+          userId,
+        );
+      }
+    }
     return this.toDtoWithUsage(task);
   }
 
@@ -4381,6 +4518,7 @@ function taskDto(task: TaskRow, computeUsedPoints: number) {
       versionNumber: submission.versionNumber,
       submittedByUserId: submission.submittedByUserId,
       note: submission.note,
+      professionalDelivery: submission.professionalDelivery ?? null,
       canvasVersionId: submission.canvasVersionId,
       productionVersionId: submission.productionVersionId,
       reviewNote: submission.reviewNote,

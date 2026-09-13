@@ -47,6 +47,7 @@ export class CrewAssetUploadCleanupWorker
   );
   private timer: NodeJS.Timeout | null = null;
   private draining: Promise<void> | null = null;
+  private stopped = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -54,6 +55,7 @@ export class CrewAssetUploadCleanupWorker
   ) {}
 
   onApplicationBootstrap(): void {
+    if (this.stopped) return;
     this.timer = setInterval(
       () => this.runScheduledDrain(),
       this.pollIntervalMs,
@@ -63,6 +65,7 @@ export class CrewAssetUploadCleanupWorker
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     try {
@@ -85,6 +88,7 @@ export class CrewAssetUploadCleanupWorker
   }
 
   async drainOnce(now = new Date()): Promise<void> {
+    if (this.stopped) return;
     if (this.draining) return this.draining;
     this.draining = this.drain(now).finally(() => {
       this.draining = null;
@@ -94,6 +98,7 @@ export class CrewAssetUploadCleanupWorker
 
   private async drain(now: Date): Promise<void> {
     await this.assets.cleanupUploadReservations();
+    if (this.stopped) return;
     const createdBefore = new Date(now.getTime() - this.maxAgeMs);
     const candidates = await this.prisma.mediaAsset.findMany({
       where: {
@@ -112,6 +117,7 @@ export class CrewAssetUploadCleanupWorker
     });
 
     for (const candidate of candidates) {
+      if (this.stopped) return;
       try {
         await this.assets.reclaimExpiredPendingUpload(
           candidate.id,

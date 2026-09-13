@@ -1,5 +1,7 @@
 "use client";
 
+import { EpisodeFeedback } from "../../_components/episode-feedback";
+import { IpProductionStage } from "../../_components/ip-production-stage";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -115,6 +117,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const t = useTranslations("newIpDetail");
+  const originT = useTranslations("ipCrewOrigin");
   const tPay = useTranslations("payment");
   const statusT = useTranslations("newIpWorkbench");
   const { user, isLoading: userLoading } = useCurrentUser();
@@ -447,10 +450,17 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
               t={t}
             />
 
+            {selectedEpisode &&
+              !isTrailerSelected &&
+              selectedEpisode.episodeNo >= 1 &&
+              selectedEpisode.episodeNo <= 3 && (
+                <EpisodeFeedback ipId={detailIp.id} episodeId={selectedEpisode.id} />
+              )}
             <section className="mt-4">
               <h1 className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">
                 {detailIp.title}
               </h1>
+              <IpProductionStage ipId={detailIp.id} />
               {isTrailerSelected ? (
                 <p className="mt-1.5 text-sm font-semibold text-primary">{t("episodes.trailer")}</p>
               ) : selectedEpisode ? (
@@ -493,6 +503,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   ))}
                 </div>
 
+                <p className="text-xs text-muted-foreground">{originT("likeNotice")}</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <ActionButton
                     onClick={() => void shareIp(ipRoomPath(detailIp.roomNumber), locale, t)}

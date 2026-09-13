@@ -1,4 +1,5 @@
 "use client";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
 import {
   useInfiniteQuery,
@@ -201,10 +202,14 @@ export function useIpCommerceDiscovery(params: {
   locale?: string;
   enabled?: boolean;
 }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.discovery(params.placementKey, params.locale),
-    queryFn: () =>
-      listIpCommerceDiscovery({ placementKey: params.placementKey, locale: params.locale }),
+    queryKey: [
+      ...ipCommerceKeys.discovery(params.placementKey, params.locale),
+      user?.id ?? "guest",
+    ],
+    queryFn: ({ signal }) =>
+      listIpCommerceDiscovery({ placementKey: params.placementKey, locale: params.locale }, signal),
     staleTime: 60_000,
     enabled: params.enabled ?? true,
   });

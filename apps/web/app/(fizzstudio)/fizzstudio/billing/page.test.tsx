@@ -1,16 +1,21 @@
+// @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import BillingPage from "./page";
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "creator" } }) }));
+vi.mock("@/src/lib/api", () => ({ api: { get: async () => ({ projects: [] }) } }));
 const ledger = vi.hoisted(() => ({
   data: undefined as unknown,
   isError: true,
   error: new Error("Ledger access unavailable"),
   refetch: vi.fn(),
 }));
-vi.mock("../../_hooks/use-billing", () => ({ useComputeWalletLedger: () => ledger }));
+vi.mock("../../_hooks/use-billing", () => ({ useProjectComputeLedger: () => ledger }));
 vi.mock("../_components/fizzstudio-shell", () => ({
-  useFizzStudioWorkspace: () => ({}),
+  useFizzStudioWorkspace: () => ({ workspaceId: "personal" }),
   FizzStudioShell: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("@/src/i18n/i18n", () => ({
@@ -29,12 +34,22 @@ it.each([false, true])(
   async (cached) => {
     if (cached)
       ledger.data = {
-        accounts: [{ status: "active", availableBalance: "123", heldBalance: "4" }],
-        entries: [],
+        pages: [
+          {
+            accounts: [{ status: "active", availableBalance: "123", heldBalance: "4" }],
+            entries: [],
+          },
+        ],
       };
     const container = document.createElement("div");
     root = createRoot(container);
-    await act(async () => root.render(<BillingPage />));
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <BillingPage />
+        </QueryClientProvider>
+      )
+    );
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
       "Ledger access unavailable"
     );

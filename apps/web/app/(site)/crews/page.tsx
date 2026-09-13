@@ -11,9 +11,17 @@
  * navigates to the new crew's workspace.
  */
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { IconBriefcase, IconEye, IconLoader2, IconPlus, IconUsers } from "@tabler/icons-react";
+import {
+  IconBriefcase,
+  IconEye,
+  IconLoader2,
+  IconListCheck,
+  IconPlus,
+  IconUsers,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -24,17 +32,12 @@ import { Button } from "@/components/ui/button";
 import { KycGateDialog } from "@/app/_components/kyc-gate-dialog";
 import { useCrewList, useMyCrews, type CrewDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { CreateCrewDialog } from "@/app/(site)/crews/_components/create-crew-dialog";
-import {
-  CrewSwitcherRailView,
-  mergeCrewMemberships,
-  shouldShowCrewSwitcherRail,
-} from "@/app/(site)/crews/_components/crew-switcher-rail";
 import { useTranslatePositionValue } from "@/app/(site)/crews/_hooks/use-position-label";
 import { PositionsTab } from "@/app/(site)/crews/_components/positions-tab";
 import { useKycAuthStatus } from "@/src/hooks/use-kyc";
 import { useCurrentUser } from "@/src/hooks/use-user";
 
-type ViewMode = "crews" | "positions";
+type ViewMode = "mine" | "crews" | "positions";
 
 export default function CrewsPage() {
   const tCrew = useTranslations("crew");
@@ -46,21 +49,14 @@ export default function CrewsPage() {
   const isCnRegion = env.SITE_REGION === "cn";
   const { user } = useCurrentUser();
   const myCrews = useMyCrews(Boolean(user));
-  const myCrewItems = useMemo(
-    () => mergeCrewMemberships(myCrews.data?.founded ?? [], myCrews.data?.joined ?? []),
-    [myCrews.data]
-  );
-  const myCrewCount = (myCrews.data?.founded.length ?? 0) + (myCrews.data?.joined.length ?? 0);
-  const showMyCrewsRail = Boolean(
-    user &&
-    shouldShowCrewSwitcherRail({
-      crewCount: myCrewCount,
-      isPending: myCrews.isPending,
-      isError: myCrews.isError,
-    })
-  );
-
-  const view: ViewMode = searchParams.get("view") === "positions" ? "positions" : "crews";
+  const myCrewItems = useMemo(() => {
+    if (!user) return [];
+    const memberships = [...(myCrews.data?.founded ?? []), ...(myCrews.data?.joined ?? [])];
+    return [...new Map(memberships.map((crew) => [crew.id, crew])).values()];
+  }, [user, myCrews.data]);
+  const requestedView = searchParams.get("view");
+  const view: ViewMode =
+    requestedView === "positions" || requestedView === "mine" ? requestedView : "crews";
   const setView = (next: ViewMode) => {
     const params = new URLSearchParams(searchParams.toString());
     if (next === "crews") params.delete("view");
@@ -115,12 +111,7 @@ export default function CrewsPage() {
   };
 
   return (
-    <div
-      className={cn(
-        "min-h-screen bg-background",
-        showMyCrewsRail && "lg:pl-[60px] min-[1152px]:!pl-[180px]"
-      )}
-    >
+    <div className="min-h-screen bg-background">
       <CreateCrewDialog open={createOpen} onOpenChange={setCreateOpen} />
       <KycGateDialog
         open={kycGateOpen}
@@ -129,23 +120,29 @@ export default function CrewsPage() {
       />
 
       <div className="mx-auto max-w-[1800px] px-4 pb-24 pt-8 sm:px-6">
-        {showMyCrewsRail ? (
-          <CrewSwitcherRailView
-            crews={myCrewItems}
-            allCrewsActive
-            rootLabel={tCrew("myCrewsTitle")}
-            showNames
-            isPending={myCrews.isPending}
-            error={myCrews.error}
-            onRetry={() => void myCrews.refetch()}
-            className="fixed inset-y-0 left-0 z-30 w-[60px] min-[1152px]:w-[180px] lg:flex"
-          />
-        ) : null}
-
         <div className="min-w-0">
           {/* Tabs — crews vs positions. URL state via `?view=positions`
               so refreshes / shared links keep the same surface. */}
           <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-border">
+            <Link
+              href={localizePath("/crews/tasks", locale)}
+              className="inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+            >
+              <IconListCheck className="size-4" />
+              {tCrew("myTasksTab")}
+            </Link>
+            <Link
+              href={localizePath("/crews/income", locale)}
+              className="inline-flex min-h-11 items-center px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+            >
+              {tCrew("myIncomeTab")}
+            </Link>
+            <PlazaTab
+              label={tCrew("myCrewsTitle")}
+              icon={IconUsers}
+              active={view === "mine"}
+              onClick={() => setView("mine")}
+            />
             <PlazaTab
               label={tCrew("allCrewsTitle")}
               icon={IconUsers}
@@ -176,7 +173,47 @@ export default function CrewsPage() {
             </div>
           </div>
 
-          {view === "crews" ? (
+          {view === "mine" ? (
+            <section aria-label={tCrew("myCrewsTitle")}>
+              {!user ? (
+                <p className="py-12 text-center text-muted-foreground">{tCrew("myCrewsSignIn")}</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
+                    {myCrews.isPending ? (
+                      <CardSkeleton count={6} />
+                    ) : (
+                      myCrewItems.map((crew) => (
+                        <CrewCard key={crew.id} item={crew} locale={locale} workspace />
+                      ))
+                    )}
+                  </div>
+                  {!myCrews.isPending && !myCrews.isError && myCrewItems.length === 0 ? (
+                    <p className="py-12 text-center text-muted-foreground">
+                      {tCrew("myCrewsEmpty")}
+                    </p>
+                  ) : null}
+                  {myCrews.isError ? (
+                    <div
+                      role="alert"
+                      className="flex items-center justify-center gap-3 py-6 text-sm"
+                    >
+                      <span>
+                        {myCrews.error instanceof Error ? myCrews.error.message : tc("loadFailed")}
+                      </span>
+                      <Button
+                        variant="outline"
+                        disabled={myCrews.isFetching}
+                        onClick={() => void myCrews.refetch()}
+                      >
+                        {tc("retry")}
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </section>
+          ) : view === "crews" ? (
             <section>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                 {isLoading ? (
@@ -250,6 +287,7 @@ function PlazaTab({
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       className={cn(
         "relative inline-flex items-center gap-2 px-4 py-3 text-sm font-semibold transition-colors",
         active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -264,9 +302,20 @@ function PlazaTab({
   );
 }
 
-function CrewCard({ item, locale }: { item: CrewDTO; locale: Locale }) {
+function CrewCard({
+  item,
+  locale,
+  workspace = false,
+}: {
+  item: CrewDTO;
+  locale: Locale;
+  workspace?: boolean;
+}) {
   const router = useRouter();
-  const detailHref = localizePath(`/crews/${item.id}`, locale);
+  const detailHref = localizePath(
+    `/crews/${encodeURIComponent(item.id)}${workspace ? "/workspace" : ""}`,
+    locale
+  );
   return (
     <button
       type="button"

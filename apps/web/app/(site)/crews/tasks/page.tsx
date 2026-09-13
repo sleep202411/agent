@@ -12,7 +12,7 @@ import type { CrewTaskPriority, CrewTaskStatus } from "../_hooks/use-crew";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import type { Locale } from "@/src/i18n/config";
 import { localizePath } from "@/src/i18n/locale-url";
-import { isCrewTaskOverdue } from "../_lib/task-dates";
+import { TaskDeadline } from "../_components/task-deadline";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
@@ -32,6 +32,8 @@ interface TaskPage {
 }
 
 export default function CrewTaskCenter() {
+  const deadlineT = useTranslations("crewDeadline");
+  const [warningHours, setWarningHours] = useState(48);
   const t = useTranslations("crewTaskCenter");
   const { user, isLoading: authLoading } = useCurrentUser();
   const { open: openAuthDialog } = useAuthDialog();
@@ -67,6 +69,20 @@ export default function CrewTaskCenter() {
         <p className="text-sm text-muted-foreground">{t("description")}</p>
       </header>
       <div className="flex flex-wrap items-end gap-3">
+        <label className="space-y-1 text-sm">
+          {deadlineT("warningWindow")}
+          <NativeSelect
+            value={String(warningHours)}
+            onChange={(value) => setWarningHours(Number(value))}
+            aria-label={deadlineT("warningWindow")}
+          >
+            {[24, 48, 72].map((hours) => (
+              <NativeSelectOption key={hours} value={String(hours)}>
+                {deadlineT("hours", { count: hours })}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </label>
         <label className="space-y-1 text-sm">
           {t("scope")}
           <NativeSelect
@@ -142,20 +158,7 @@ export default function CrewTaskCenter() {
                     : task.workflowState.name}{" "}
                   · {taskT(`priority.${task.priority}`)}
                 </span>
-                {task.dueAt && (
-                  <time
-                    className={
-                      isCrewTaskOverdue(task)
-                        ? "text-sm text-red-300"
-                        : "text-sm text-muted-foreground"
-                    }
-                    dateTime={task.dueAt}
-                  >
-                    {new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
-                      new Date(task.dueAt)
-                    )}
-                  </time>
-                )}
+                <TaskDeadline dueAt={task.dueAt} status={task.status} warningHours={warningHours} />
               </Link>
             </li>
           ))}

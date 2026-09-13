@@ -20,6 +20,22 @@ import type {
   CrewEarningStatus,
 } from "./types";
 
+export function useMyCrewEarnings(currency: CrewLedgerCurrency) {
+  const { user } = useCurrentUser();
+  return useInfiniteQuery({
+    queryKey: ["crew-personal-earnings", user?.id ?? null, currency],
+    enabled: Boolean(user?.id),
+    refetchInterval: 60_000,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      crewApi.get<CrewEarningPageDTO>("/me/crew-earnings", {
+        signal,
+        query: { currency, cursor: pageParam, limit: 50 },
+      }),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+}
+
 export function useCrewEarningDetail(earningId: string | null) {
   const { user } = useCurrentUser();
   return useQuery({

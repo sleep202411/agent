@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   IconAlertTriangle,
   IconBook2,
@@ -654,6 +655,9 @@ function IpDetailDrawer({
           {error ? <ErrorBanner message={error} /> : null}
           {ip ? (
             <div className="space-y-4">
+              <Link href={`/ip/titles/${encodeURIComponent(ip.id)}/production`} className="inline-block text-sm underline">
+                Production review evidence
+              </Link>
               <section className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
                 <DetailCell label="状态" value={statusLabel(ip.status)} />
                 <DetailCell label="可见性" value={visibilityLabel(ip.listingVisibility)} />

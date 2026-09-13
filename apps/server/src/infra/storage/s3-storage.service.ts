@@ -1,3 +1,4 @@
+import { requirePrivateUploadTarget } from './private-upload-target';
 /**
  * S3-compatible implementation of OutputStorageService — built for
  * Cloudflare R2.
@@ -92,6 +93,9 @@ export class S3CompatibleStorageService extends OutputStorageService {
   private readonly logger = new Logger(S3CompatibleStorageService.name);
   private readonly client: S3Client | null;
   private readonly bucket: string;
+  private readonly privateUploadTarget = (
+    process.env.S3_PRIVATE_BUCKET ?? ''
+  ).trim();
   private readonly quarantineBucket: string;
   private readonly region: string | null;
   private readonly endpoint: string;
@@ -332,6 +336,24 @@ export class S3CompatibleStorageService extends OutputStorageService {
   async createUploadUrl(
     input: CreateUploadUrlInput,
   ): Promise<CreateUploadUrlResult> {
+    return this.signUploadUrl(input, this.bucket);
+  }
+
+  async createPrivateUploadUrl(
+    input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    const target = requirePrivateUploadTarget(
+      'S3_PRIVATE_BUCKET',
+      this.privateUploadTarget,
+      [this.bucket, this.quarantineBucket],
+    );
+    return this.signUploadUrl(input, target);
+  }
+
+  private async signUploadUrl(
+    input: CreateUploadUrlInput,
+    target: string,
+  ): Promise<CreateUploadUrlResult> {
     const client = this.requireClient();
     const ttl = input.expiresInSeconds ?? DEFAULT_UPLOAD_URL_TTL_SECONDS;
     // Presigned PUT with ContentType pinned into the signature — the
@@ -342,7 +364,7 @@ export class S3CompatibleStorageService extends OutputStorageService {
     const url = await getSignedUrl(
       client,
       new PutObjectCommand({
-        Bucket: this.bucket,
+        Bucket: target,
         Key: input.storageKey,
         ContentType: input.contentType,
       }),
@@ -361,7 +383,7 @@ export class S3CompatibleStorageService extends OutputStorageService {
       headers: { 'Content-Type': input.contentType },
       storageKey: input.storageKey,
       provider: 's3_compatible',
-      bucket: this.bucket,
+      bucket: target,
       region: this.region,
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
     };

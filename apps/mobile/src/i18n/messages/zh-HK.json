@@ -789,5 +789,12 @@
   "agent.publish.offline.failed": "無法下線這部影遊。",
   "agent.credits.title": "算力積分",
   "agent.credits.manage": "算力積分",
-  "agent.credits.insufficientBody": "請前往 Web 端購買算力積分。"
+  "agent.credits.insufficientBody": "請前往 Web 端購買算力積分。",
+  "ipDetail.likeFanNotice": "若此 IP 已關聯劇組，讚好會加入其公開粉絲社區。取消讚好不會退出社區。",
+  "episodeFeedback.title": "前三集回饋",
+  "episodeFeedback.like": "喜歡",
+  "episodeFeedback.dislike": "不喜歡",
+  "episodeFeedback.loading": "正在載入回饋…",
+  "episodeFeedback.failed": "回饋儲存失敗。",
+  "episodeFeedback.retry": "重試"
 }

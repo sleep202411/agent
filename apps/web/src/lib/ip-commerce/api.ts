@@ -735,12 +735,16 @@ export interface IpCommerceDiscoveryItem {
   ipCard: IpCommerceIp | null;
 }
 
-export function listIpCommerceDiscovery(params: {
-  placementKey: IpDiscoveryPlacementKey;
-  locale?: string;
-}) {
+export function listIpCommerceDiscovery(
+  params: {
+    placementKey: IpDiscoveryPlacementKey;
+    locale?: string;
+  },
+  signal?: AbortSignal
+) {
   return api.get<{ items: IpCommerceDiscoveryItem[] }>("/aurora/ip-commerce/discovery", {
     params,
+    signal,
   });
 }
 

@@ -1,3 +1,4 @@
+import { ListWalletLedgerQuerySchema } from './dto';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
 import { WorkspacePermissionService } from '../workspaces/workspace-permission.service';
@@ -55,7 +56,10 @@ function setup({
     },
     walletAccount: { findMany: jest.fn().mockResolvedValue([account]) },
     walletCreditGrant: { findFirst: jest.fn().mockResolvedValue(null) },
-    walletLedgerEntry: { findMany: jest.fn().mockResolvedValue([]) },
+    walletLedgerEntry: {
+      findMany: jest.fn().mockResolvedValue([]),
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
   };
   const expiry = {
     expireLapsedGrants: jest.fn().mockResolvedValue({ expired: 0n }),
@@ -230,4 +234,139 @@ describe('compute balance access', () => {
       nextExpiry: { amount: '5', expiresAt: expiresAt.toISOString() },
     });
   });
+});
+
+describe('project ledger attribution', () => {
+  const projectId = '00000000-0000-4000-8000-000000000001';
+  const query = {
+    currency: 'compute_point' as const,
+    balanceKind: 'consumable' as const,
+    limit: 20,
+    projectId,
+  };
+  it('validates the project filter', () => {
+    expect(ListWalletLedgerQuerySchema.parse(query).projectId).toBe(projectId);
+    expect(
+      ListWalletLedgerQuerySchema.safeParse({ ...query, projectId: 'invalid' })
+        .success,
+    ).toBe(false);
+  });
+  it('intersects project attribution with the authorized wallet instead of widening access', async () => {
+    const { service, prisma } = setup({ scope: 'workspace' });
+    await service.listWalletLedger(user, query, 'team');
+    expect(prisma.walletLedgerEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { accountId: { in: ['account'] }, transaction: { projectId } },
+      }),
+    );
+  });
+  it('rejects project-only collaborators before reading the ledger', async () => {
+    const { service, prisma } = setup();
+    await expect(
+      service.listWalletLedger(user, query, 'team'),
+    ).rejects.toMatchObject({ response: { code: 'WORKSPACE_ACCESS_DENIED' } });
+    expect(prisma.walletLedgerEntry.findMany).not.toHaveBeenCalled();
+  });
+  it('preserves recorded attribution and transaction status with exact amounts', async () => {
+    const { service, prisma } = setup({ scope: 'workspace' });
+    const createdAt = new Date('2026-01-01T00:00:00Z');
+    const stored = {
+      id: 'entry',
+      transactionId: 'transaction',
+      accountId: 'account',
+      entryType: 'settle',
+      currency: 'compute_point',
+      balanceKind: 'consumable',
+      amount: 9007199254740993n,
+      availableDelta: 0n,
+      heldDelta: -9007199254740993n,
+      availableBalanceAfter: 0n,
+      heldBalanceAfter: 0n,
+      reason: 'ai_job_settle',
+      createdAt,
+      creditAllocations: [],
+      transaction: {
+        projectId,
+        workspaceId: 'team',
+        actorUserId: 'original-actor',
+        status: 'posted',
+        postedAt: createdAt,
+        sourceType: 'ai_job',
+        sourceId: 'job',
+        metadata: {},
+        description: 'Usage',
+      },
+    };
+    prisma.walletLedgerEntry.findMany.mockResolvedValue([stored] as never);
+    const result = await service.listWalletLedger(user, query, 'team');
+    expect(result.entries[0]).toMatchObject({
+      projectId,
+      workspaceId: 'team',
+      actorUserId: 'original-actor',
+      transactionStatus: 'posted',
+      postedAt: createdAt.toISOString(),
+      amount: '9007199254740993',
+      sourceId: 'job',
+    });
+    const original = result.entries[0];
+    prisma.walletLedgerEntry.findMany.mockResolvedValue([
+      stored,
+      { ...stored, id: 'older' },
+    ] as never);
+    const page = await service.listWalletLedger(
+      user,
+      { ...query, limit: 1 },
+      'team',
+    );
+    expect(page.entries).toHaveLength(1);
+    expect(page.nextCursor).toBe(original.id);
+    prisma.walletLedgerEntry.findFirst.mockResolvedValue({
+      id: original.id,
+    } as never);
+    prisma.walletLedgerEntry.findMany.mockResolvedValue([
+      { ...stored, id: 'older' },
+    ] as never);
+    const next = await service.listWalletLedger(
+      user,
+      { ...query, limit: 1, cursor: original.id },
+      'team',
+    );
+    expect(next.entries).toEqual([expect.objectContaining({ id: 'older' })]);
+    expect(next.nextCursor).toBeNull();
+    expect(prisma.walletLedgerEntry.findMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        cursor: { id: original.id },
+        skip: 1,
+        take: 2,
+      }),
+    );
+  });
+});
+
+it('rejects a ledger cursor outside the wallet and project scope', async () => {
+  const { service, prisma } = setup({ scope: 'workspace' });
+  const projectId = '00000000-0000-4000-8000-000000000001';
+  const cursor = '00000000-0000-4000-8000-000000000002';
+  await expect(
+    service.listWalletLedger(
+      user,
+      {
+        currency: 'compute_point',
+        balanceKind: 'consumable',
+        limit: 1,
+        projectId,
+        cursor,
+      },
+      'team',
+    ),
+  ).rejects.toMatchObject({ response: { code: 'INVALID_LEDGER_CURSOR' } });
+  expect(prisma.walletLedgerEntry.findFirst).toHaveBeenCalledWith({
+    where: {
+      accountId: { in: ['account'] },
+      transaction: { projectId },
+      id: cursor,
+    },
+    select: { id: true },
+  });
+  expect(prisma.walletLedgerEntry.findMany).not.toHaveBeenCalled();
 });

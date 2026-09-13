@@ -46,6 +46,64 @@ function allowCrewAssetAccess() {
 }
 
 describe('MediaAccessService', () => {
+  it.each(['user-1', 'user-2', null])(
+    'rejects receipt media access for %s before canvas or visibility grants',
+    async (userId) => {
+      const asset = readyAsset({
+        visibility: MediaAssetVisibility.public,
+        metadata: { uploadKind: 'crew_expense_receipt', draftId: 'draft' },
+      });
+      const prisma = {
+        mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
+      };
+      const storage = { createReadUrl: jest.fn() };
+      const documentAccess = {
+        requireDocument: jest
+          .fn()
+          .mockResolvedValue({ contentSnapshot: { assetId: asset.id } }),
+      };
+      const service = new MediaAccessService(
+        prisma as never,
+        storage as never,
+        {} as never,
+        allowCrewAssetAccess() as never,
+        documentAccess as never,
+      );
+      await expect(
+        service.issueBrowserAccessUrl(userId, asset.id, {
+          variantKey: 'original',
+          documentId: 'document',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(documentAccess.requireDocument).not.toHaveBeenCalled();
+      expect(storage.createReadUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects generic administrator receipt access before signing', async () => {
+    const prisma = {
+      mediaAsset: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(
+            readyAsset({ metadata: { uploadKind: 'crew_expense_receipt' } }),
+          ),
+      },
+    };
+    const storage = { createReadUrl: jest.fn() };
+    const service = new MediaAccessService(
+      prisma as never,
+      storage as never,
+      {} as never,
+      allowCrewAssetAccess() as never,
+      {} as never,
+    );
+    await expect(
+      service.issueAdminAccessUrl('receipt', { variantKey: 'original' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(storage.createReadUrl).not.toHaveBeenCalled();
+  });
+
   it('issues an access URL for the owner', async () => {
     const prisma = {
       $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),

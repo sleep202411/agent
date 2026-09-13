@@ -134,6 +134,38 @@ describe("worker HTTP auth", () => {
     expect((await res.json()).error.code).toBe("UNAUTHORIZED");
   });
 
+  it("requires the internal token for viewing assistance", async () => {
+    const res = await fetch(`${baseUrl}/v1/agent-os/viewer-assistance`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ preference: "calm", locale: "en-US", candidates: [] }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects invalid viewer context and missing viewer model configuration", async () => {
+    const previous = process.env.AGENT_OS_VIEWER_MODEL_PROFILE;
+    delete process.env.AGENT_OS_VIEWER_MODEL_PROFILE;
+    try {
+      const send = (body: unknown) =>
+        fetch(`${baseUrl}/v1/agent-os/viewer-assistance`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-agent-os-internal-token": TOKEN },
+          body: JSON.stringify(body),
+        });
+      const invalid = await send({ preference: "calm", projectId: "private" });
+      expect(invalid.status).toBe(400);
+      const unavailable = await send({ preference: "calm", locale: "en-US", candidates: [] });
+      expect(unavailable.status).toBe(503);
+      await expect(unavailable.json()).resolves.toMatchObject({
+        error: { code: "VIEWER_MODEL_NOT_CONFIGURED" },
+      });
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_OS_VIEWER_MODEL_PROFILE;
+      else process.env.AGENT_OS_VIEWER_MODEL_PROFILE = previous;
+    }
+  });
+
   it("refuses a wrong token", async () => {
     const res = await fetch(`${baseUrl}/v1/agent-os/runs`, {
       method: "POST",

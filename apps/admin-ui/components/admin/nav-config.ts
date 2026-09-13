@@ -468,6 +468,18 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           icon: IconBriefcase,
           permission: "crew.manage",
         },
+        {
+          href: "/crews/expenses",
+          label: "Expense submissions",
+          icon: IconChecklist,
+          permission: "crew.manage",
+        },
+        {
+          href: "/crews/delivery-catalog",
+          label: "Delivery catalog",
+          icon: IconChecklist,
+          permission: "crew.manage",
+        },
       ],
     },
   ],

@@ -15,6 +15,8 @@ import {
   CreateCrewPayoutSchema,
   type CreateCrewPayoutInput,
   ListCrewPayoutsQuerySchema,
+  ListMyCrewPayoutsQuerySchema,
+  type ListMyCrewPayoutsQuery,
   type ListCrewPayoutsQuery,
   PayCrewPayoutSchema,
   type PayCrewPayoutInput,
@@ -26,6 +28,15 @@ import { CrewPayoutsService } from './payouts.service';
 @Controller()
 export class CrewPayoutsController {
   constructor(private readonly payouts: CrewPayoutsService) {}
+
+  @Get('me/crew-payouts')
+  mine(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListMyCrewPayoutsQuerySchema))
+    query: ListMyCrewPayoutsQuery,
+  ) {
+    return this.payouts.listMine(user.userId, query);
+  }
 
   @Get('crews/:crewId/payouts')
   list(

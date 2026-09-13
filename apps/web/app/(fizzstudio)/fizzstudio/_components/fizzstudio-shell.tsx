@@ -35,10 +35,10 @@ export type FizzStudioWorkspaceState = {
   workspaces: FizzWorkspace[];
 };
 
-export function useFizzStudioWorkspace(): FizzStudioWorkspaceState {
+export function useFizzStudioWorkspace(initialWorkspaceId = ""): FizzStudioWorkspaceState {
   const locale = useLocale();
   const currentLocale = locale as Locale;
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>(initialWorkspaceId);
   const bootstrappedRef = useRef(false);
 
   const ensureWs = useEnsureDefaultWorkspace();

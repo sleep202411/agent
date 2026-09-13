@@ -1,5 +1,24 @@
 import { CrewAccountabilityController } from './accountability/accountability.controller';
 import { CrewAccountabilityService } from './accountability/accountability.service';
+import {
+  CrewTrustAppealController,
+  CrewTrustAppealService,
+} from './tasks/trust-appeals';
+import {
+  CrewExpenseReceiptService,
+  CrewExpenseReceiptController,
+  CrewExpenseReceiptAdminController,
+} from './expenses/expense-receipts';
+import {
+  CrewExpenseSubmissionAdminController,
+  CrewExpenseDraftController,
+  CrewExpenseDraftService,
+} from './expenses/expense-drafts';
+import {
+  CrewDeliveryCatalogAdminController,
+  CrewDeliveryCatalogController,
+  CrewDeliveryCatalogService,
+} from './tasks/delivery-catalog';
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
 import { AuthModule } from '../auth';
@@ -71,6 +90,13 @@ import { CrewProductionService } from './production/production.service';
   ],
   controllers: [
     CrewAccountabilityController,
+    CrewTrustAppealController,
+    CrewExpenseReceiptController,
+    CrewExpenseReceiptAdminController,
+    CrewExpenseSubmissionAdminController,
+    CrewExpenseDraftController,
+    CrewDeliveryCatalogController,
+    CrewDeliveryCatalogAdminController,
     CrewsController,
     CrewsAdminController,
     CrewPositionsAdminController,
@@ -89,6 +115,10 @@ import { CrewProductionService } from './production/production.service';
   ],
   providers: [
     CrewAccountabilityService,
+    CrewTrustAppealService,
+    CrewExpenseReceiptService,
+    CrewExpenseDraftService,
+    CrewDeliveryCatalogService,
     CrewsService,
     PositionsService,
     ApplicationsService,

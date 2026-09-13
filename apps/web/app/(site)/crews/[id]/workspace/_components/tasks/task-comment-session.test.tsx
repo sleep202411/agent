@@ -550,3 +550,4 @@ it("loads current revision settings when reopening after cancellation", async ()
 });
 
 vi.mock("@/app/(site)/crews/_components/accountability/task-commitments", () => ({ TaskCommitments: () => null }));
+vi.mock("./task-delivery-template", () => ({ TaskDeliveryTemplatePanel: () => null }));
