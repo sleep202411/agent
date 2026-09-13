@@ -190,6 +190,50 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       });
     });
 
+    it('joins a public fan community idempotently without granting production membership', async () => {
+      const fan = `fan-${randomUUID()}`;
+      await db.crew.update({
+        where: { id: crewId },
+        data: { listingStatus: 'listed' },
+      });
+      await crews.block(crewId, `blocked-${fan}`);
+      await expect(
+        crews.joinFanCommunity(crewId, `blocked-${fan}`),
+      ).rejects.toThrow('Crew not found');
+      const first = await crews.joinFanCommunity(crewId, fan);
+      expect(await crews.joinFanCommunity(crewId, fan)).toEqual(first);
+      expect(
+        await db.crewMember.count({ where: { crewId, userId: fan } }),
+      ).toBe(0);
+      expect(
+        await db.conversationParticipant.count({
+          where: {
+            conversationId: first.conversationId,
+            userId: fan,
+            leftAt: null,
+          },
+        }),
+      ).toBe(1);
+      expect((await crews.communityConversation(crewId, fan)).id).toBe(
+        first.conversationId,
+      );
+      await expect(crews.conversation(crewId, fan)).rejects.toThrow();
+      await db.crew.update({
+        where: { id: crewId },
+        data: { listingStatus: 'unlisted' },
+      });
+      await expect(
+        crews.joinFanCommunity(crewId, `hidden-${fan}`),
+      ).rejects.toThrow('Crew not found');
+      await db.crew.update({
+        where: { id: crewId },
+        data: { listingStatus: 'listed', moderationStatus: 'taken_down' },
+      });
+      await expect(
+        crews.joinFanCommunity(crewId, `moderated-${fan}`),
+      ).rejects.toThrow('Crew not found');
+    });
+
     it('recruits, edits roles, shares a restricted asset, reviews revisions, pays and revokes access', async () => {
       await expect(
         authorization.require(crewId, finance, 'tasks.manage'),

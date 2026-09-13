@@ -202,7 +202,7 @@ describe("TV IP list", () => {
     await waitForSource("ip-featured");
   });
 
-  it("shows genres consistently and marks only playable channels with a video icon", async () => {
+  it("keeps poster-only IPs out of TV while retaining playable channels and genres", async () => {
     harness.list.mockResolvedValue({
       items: [
         { ...ips[0], subtitle: "A marketing tagline", copyrightOwner: "First creator" },
@@ -211,20 +211,14 @@ describe("TV IP list", () => {
       nextCursor: null,
     });
     await render();
-    await waitForText("Second IP");
+    await waitForSource("ip-1");
     const list = container.querySelector("nav")!;
     expect(list.textContent).toContain("Sci-Fi");
     expect(list.textContent).not.toContain("tv.uncategorized");
-    expect(list.querySelector('button[aria-label^="Second IP,"]')?.textContent).toBe(
-      "Second IPRoom 100002"
-    );
+    expect(list.querySelector('button[aria-label^="Second IP,"]')).toBeNull();
     expect(list.textContent).not.toContain("tagline");
     expect(list.textContent).not.toContain("creator");
     expect(list.querySelectorAll('[role="img"][aria-label="tv.hasVideo"]')).toHaveLength(1);
-    clickIp("Second IP");
-    expect(player().currentSrc()).toBe("");
-    expect(player().paused()).toBe(true);
-    expect(container.querySelector("section img")?.getAttribute("src")).toContain("ip-2.jpg");
   });
 
   it.each([false, true])(
@@ -441,7 +435,7 @@ describe("TV IP list", () => {
     expect(container.textContent).not.toContain("Catalog page unavailable");
   });
 
-  it("preserves volume and mute through a cover-only channel", async () => {
+  it("preserves volume and mute when switching past an excluded poster-only IP", async () => {
     harness.list.mockResolvedValue({
       items: [ips[0], { ...ips[1], trailerAsset: null }, makeIp("ip-3", "Third IP")],
       nextCursor: null,
@@ -453,8 +447,7 @@ describe("TV IP list", () => {
       player().muted(false);
       player().volume(0.3);
     });
-    clickIp("Second IP");
-    expect(player().currentSrc()).toBe("");
+    expect(container.querySelector('button[aria-label^="Second IP,"]')).toBeNull();
     clickIp("Third IP");
     await waitForSource("ip-3");
     expect(player()).toBe(instance);

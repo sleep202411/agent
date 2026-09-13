@@ -9603,5 +9603,10 @@
     "crew": "Crew",
     "record": "Payout record",
     "more": "Load more payouts"
+  },
+  "crewFans": {
+    "join": "Join fan group",
+    "joining": "Joining…",
+    "description": "Join the public Crew community. This does not add you to the production team."
   }
 }

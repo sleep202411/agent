@@ -86,7 +86,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
     setNextError(null);
     setAdvancing(true);
     try {
-      // Continue through catalog pages; cover-only IPs remain manually selectable.
+      // Continue through catalog pages that may contain no eligible video channels.
       while (version === navigationVersion.current) {
         const currentIndex = channels.findIndex((entry) => entry.id === item.id);
         if (currentIndex < 0) return;

@@ -425,12 +425,43 @@ export class CrewsService {
   }
 
   /**
-   * Resolve the crew's separate community channel.
-   *
-   * Active crew members may enter directly. Everyone else must already be a
-   * live participant, which is created only by redeeming a community invitation.
-   * No path here creates a CrewMember or exposes the private team channel.
+   * Explicitly join a listed Crew's public fan community. This creates only a
+   * community participant, never a production-team membership.
    */
+  async joinFanCommunity(crewId: string, viewerId: string) {
+    const conversation = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:block:${viewerId}:${crewId}`})::bigint)`;
+      await tx.$queryRaw`SELECT id FROM crews WHERE id = ${crewId} FOR UPDATE`;
+      const crew = await tx.crew.findFirst({
+        where: {
+          id: crewId,
+          deletedAt: null,
+          listingStatus: 'listed',
+          moderationStatus: 'ok',
+        },
+        select: { id: true },
+      });
+      if (!crew) throw new NotFoundException('Crew not found');
+      const block = await tx.ipUserContentBlock.findFirst({
+        where: {
+          userId: viewerId,
+          targetType: IpUserBlockTargetType.crew,
+          targetId: crewId,
+          unblockedAt: null,
+        },
+        select: { id: true },
+      });
+      if (block) throw new NotFoundException('Crew not found');
+      return this.conversations.joinCrewCommunityConversation(
+        crewId,
+        viewerId,
+        tx,
+      );
+    });
+    return { conversationId: conversation.id };
+  }
+
+  /** Existing members, invitation recipients and public fan participants may read the community. */
   async communityConversation(
     crewId: string,
     viewerId: string,

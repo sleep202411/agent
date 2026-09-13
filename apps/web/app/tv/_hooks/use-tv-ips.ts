@@ -41,13 +41,17 @@ export function useTvIps(options?: { q?: string }) {
     if (q) return [];
     return (discovery.data?.items ?? [])
       .map((item) => {
-        if (!item.ipCard) return null;
+        if (!item.ipCard || !ipPreviewVideoUrl(item.ipCard)) return null;
         return { ...toTvItem(item.ipCard, t), hot: true as const };
       })
       .filter((item) => item !== null);
   }, [discovery.data?.items, q, t]);
   const listedItems = useMemo(
-    () => query.data?.pages.flatMap((page) => page.items).map((ip) => toTvItem(ip, t)) ?? [],
+    () =>
+      query.data?.pages
+        .flatMap((page) => page.items)
+        .filter((ip) => Boolean(ipPreviewVideoUrl(ip)))
+        .map((ip) => toTvItem(ip, t)) ?? [],
     [query.data, t]
   );
   const items = useMemo(
@@ -58,7 +62,10 @@ export function useTvIps(options?: { q?: string }) {
     const result = await query.fetchNextPage({ cancelRefetch: false });
     if (result.isError) throw result.error;
     const listed =
-      result.data?.pages.flatMap((page) => page.items).map((ip) => toTvItem(ip, t)) ?? [];
+      result.data?.pages
+        .flatMap((page) => page.items)
+        .filter((ip) => Boolean(ipPreviewVideoUrl(ip)))
+        .map((ip) => toTvItem(ip, t)) ?? [];
     return {
       items: prioritizeForYou(listed, forYouItems),
       hasMore: result.hasNextPage,
