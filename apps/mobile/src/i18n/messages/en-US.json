@@ -804,5 +804,11 @@
   "agent.credits.title": "Compute credits",
   "agent.credits.manage": "Compute credits",
   "agent.credits.insufficientBody": "Please buy compute credits on the web.",
-  "ipDetail.likeFanNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it."
+  "ipDetail.likeFanNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it.",
+  "episodeFeedback.title": "First-three-episode feedback",
+  "episodeFeedback.like": "Like",
+  "episodeFeedback.dislike": "Dislike",
+  "episodeFeedback.loading": "Loading feedback…",
+  "episodeFeedback.failed": "Feedback could not be saved.",
+  "episodeFeedback.retry": "Retry"
 }

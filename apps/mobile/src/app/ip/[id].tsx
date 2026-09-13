@@ -1,3 +1,4 @@
+import { EpisodeFeedback } from "@/components/episode-feedback";
 import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { SymbolView } from "expo-symbols";
@@ -167,7 +168,7 @@ export default function IpDetailScreen() {
   const [unlocking, setUnlocking] = useState(false);
   const [likeBusy, setLikeBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
-  const [playing, setPlaying] = useState<{ url: string; title: string }>();
+  const [playing, setPlaying] = useState<{ url: string; title: string; episodeId?: string }>();
   const [reportOpen, setReportOpen] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -299,9 +300,13 @@ export default function IpDetailScreen() {
     ip.episodeCount ? `${ip.episodeCount} ${t("ipDetail.episodesUnit")}` : undefined,
   ].filter(Boolean);
 
-  const playVideo = (url?: string, title?: string) => {
+  const playVideo = (url?: string, title?: string, episode?: IpEpisode) => {
     if (!url) return;
-    setPlaying({ url, title: title ?? ip.title });
+    setPlaying({
+      url,
+      title: title ?? ip.title,
+      episodeId: episode?.feedbackEligible ? episode.id : undefined,
+    });
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
@@ -325,7 +330,7 @@ export default function IpDetailScreen() {
       // The just-unlocked episode's media URL now resolves — start playback.
       const fresh = detail?.episodes.find((e) => e.id === episode.id);
       if (fresh?.videoUrl && !resolvePlan(acc, fresh)) {
-        playVideo(fresh.videoUrl, epLabel(fresh));
+        playVideo(fresh.videoUrl, epLabel(fresh), fresh);
       }
     } catch (error) {
       if (isInsufficientBalanceError(error)) {
@@ -392,7 +397,7 @@ export default function IpDetailScreen() {
             const freshPlan = resolvePlan(acc, fresh);
             if (!freshPlan) {
               // Now granted → just play it (member-free media, etc).
-              if (fresh.videoUrl) playVideo(fresh.videoUrl, epLabel(fresh));
+              if (fresh.videoUrl) playVideo(fresh.videoUrl, epLabel(fresh), fresh);
               return;
             }
             if (freshPlan.kind === "pending") return;
@@ -576,6 +581,7 @@ export default function IpDetailScreen() {
         </View>
 
         <View style={styles.body}>
+          {playing?.episodeId && <EpisodeFeedback ipId={ip.id} episodeId={playing.episodeId} />}
           <View style={styles.titleBlock}>
             <ThemedText type="subtitle" style={styles.title} numberOfLines={2}>
               {ip.title}
@@ -679,7 +685,7 @@ export default function IpDetailScreen() {
                     plan={planFor(episode)}
                     locale={locale}
                     disabled={unlocking}
-                    onPlay={() => playVideo(episode.videoUrl, epLabel(episode))}
+                    onPlay={() => playVideo(episode.videoUrl, epLabel(episode), episode)}
                     onUnlock={() => unlockEpisode(episode)}
                   />
                 ))}
