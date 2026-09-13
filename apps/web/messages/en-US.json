@@ -9709,5 +9709,16 @@
     "pending": "Awaiting review",
     "approved": "Approved",
     "rejected": "Rejected"
+  },
+  "crewTrustHistory": {
+    "title": "Trust evidence",
+    "loading": "Loading evidence…",
+    "retry": "Retry",
+    "task": "Task reference",
+    "submission": "Submission reference",
+    "submitted": "Submitted",
+    "deadline": "Captured deadline",
+    "empty": "No measured submissions yet.",
+    "more": "Load more"
   }
 }

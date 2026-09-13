@@ -396,6 +396,31 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       );
       expect(trust).toHaveLength(2);
       const trustReader = new CreatorTrustController(db as never);
+      const history = await trustReader.entries(
+        { userId: worker },
+        { limit: 1 },
+      );
+      expect(history.items).toHaveLength(1);
+      expect(history.items[0]).toMatchObject({
+        taskId: task.id,
+        points: 200,
+        deadline: '2100-01-01T00:00:00.000Z',
+      });
+      expect(history.nextCursor).toBeNull();
+      expect(
+        (
+          await trustReader.entries(
+            { userId: worker },
+            { limit: 1, cursor: task.id },
+          )
+        ).items,
+      ).toEqual([]);
+      await expect(
+        trustReader.entries({ userId: finance }, { limit: 1, cursor: task.id }),
+      ).rejects.toThrow('cursor');
+      expect(
+        (await trustReader.entries({ userId: finance }, { limit: 20 })).items,
+      ).toEqual([]);
       expect((await trustReader.read({ userId: worker }, {})).points).toBe(
         '200',
       );

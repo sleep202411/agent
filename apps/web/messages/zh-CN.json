@@ -9709,5 +9709,16 @@
     "pending": "待审核",
     "approved": "已批准",
     "rejected": "已拒绝"
+  },
+  "crewTrustHistory": {
+    "title": "信任记录依据",
+    "loading": "正在加载依据…",
+    "retry": "重试",
+    "task": "任务编号",
+    "submission": "提交编号",
+    "submitted": "提交时间",
+    "deadline": "留存截止时间",
+    "empty": "暂无已计量提交。",
+    "more": "加载更多"
   }
 }

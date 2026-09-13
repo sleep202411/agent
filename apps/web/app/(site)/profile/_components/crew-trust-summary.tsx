@@ -1,5 +1,6 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
+import { CrewTrustHistory } from "./crew-trust-history";
 import { api } from "@/src/lib/api";
 import { useTranslations } from "@/src/i18n/i18n";
 type Trust = { points: string; taskCount: string; onTime: string; late: string };
@@ -38,6 +39,7 @@ export function CrewTrustSummary({ userId }: { userId: string }) {
         </div>
       )}
       <p className="text-sm text-muted-foreground">{t("note")}</p>
+      <CrewTrustHistory userId={userId} />
     </section>
   );
 }
