@@ -7879,6 +7879,9 @@
       "comingSoon": "{label} is coming soon."
     },
     "computeBilling": {
+      "balanceUnavailable": "Balance unavailable",
+      "loadFailed": "Could not load billing information.",
+      "retry": "Retry",
       "openRecharge": "Open compute point recharge",
       "balance": "{amount} compute points",
       "balanceLoading": "Compute points",
@@ -7895,8 +7898,8 @@
       "paymentFailed": "Payment failed. Please retry.",
       "providerUnavailable": "This payment provider is not available in the browser yet.",
       "successToast": "Compute points added.",
-      "completedToast": "Recharge completed. Balance is refreshing.",
-      "cancelledToast": "Recharge cancelled."
+      "returnedToast": "Returned from checkout. Payment confirmation may still be pending.",
+      "cancelledToast": "Checkout closed. Payment status may still be pending."
     },
     "billingUsage": {
       "title": "Billing",

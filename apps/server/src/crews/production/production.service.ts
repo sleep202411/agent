@@ -233,6 +233,23 @@ export class CrewProductionService {
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-project:${crewId}`})::bigint)
         `;
+        const recheckAuthority = async () => {
+          await this.authorization.require(
+            crewId,
+            userId,
+            'production.manage',
+            tx,
+          );
+          if (input.projectId) {
+            await this.workspacePermissions.requireProjectRole(
+              userId,
+              input.projectId,
+              ProjectMemberRole.editor,
+              tx,
+            );
+          }
+        };
+        await recheckAuthority();
         const crew = await tx.crew.findFirstOrThrow({
           where: { id: crewId, deletedAt: null },
           select: { studioProjectId: true },
@@ -293,6 +310,7 @@ export class CrewProductionService {
             },
           });
         }
+        await recheckAuthority();
         return project;
       });
     } catch (error) {

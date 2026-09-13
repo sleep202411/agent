@@ -16,6 +16,7 @@ import {
 export const userKeys = {
   info: ["user", "info"] as const,
   credits: ["user", "credits"] as const,
+  accountCredits: (accountId: string | null) => ["user", "credits", accountId] as const,
 };
 
 // ─── User Info ────────────────────────────────────────
@@ -73,8 +74,10 @@ export function useCurrentUser(): {
 // ─── Credits ──────────────────────────────────────────
 
 export function useCredits() {
+  const { user } = useCurrentUser();
   return useQuery<number>({
-    queryKey: userKeys.credits,
+    queryKey: userKeys.accountCredits(user?.id ?? null),
+    enabled: !!user?.id,
     queryFn: getCredits,
     staleTime: 60 * 1000, // 1 minute
   });
@@ -142,5 +145,9 @@ export function useReferralCode() {
 
 export function useRefreshCredits() {
   const queryClient = useQueryClient();
-  return () => queryClient.invalidateQueries({ queryKey: userKeys.credits });
+  const { user } = useCurrentUser();
+  return () =>
+    user?.id
+      ? queryClient.invalidateQueries({ queryKey: userKeys.accountCredits(user.id) })
+      : Promise.resolve();
 }
