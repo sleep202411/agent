@@ -1,5 +1,14 @@
 {
   "crewExpenses": {
+    "attachReceipt": "附上已上傳收據",
+    "receipts": "收據",
+    "receipt": "收據",
+    "openReceipt": "開啟收據",
+    "receiptFile": "收據檔案",
+    "uploadReceipt": "上傳收據",
+    "removeReceipt": "從本草稿移除",
+    "receiptInvalid": "請選擇不超過 10 MB 的非空 PDF、PNG 或 JPEG 檔案。",
+    "receiptHelp": "請先儲存草稿。最多上傳 10 份收據，再次儲存後納入該版本。之前已儲存的依據仍會保留。",
     "history": "已儲存版本歷史",
     "revision": "版本",
     "savedAt": "儲存時間",

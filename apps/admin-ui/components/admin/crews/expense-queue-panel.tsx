@@ -1,4 +1,5 @@
 "use client";
+import { ExpenseReceiptLink } from "./expense-receipt-link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -15,6 +16,7 @@ type Submission = {
     currency: "USD" | "CNY";
     amountMinor: string;
     evidenceNote: string;
+    receiptIds?: string[];
   };
 };
 type Page = { items: Submission[]; nextCursor: string | null };
@@ -148,6 +150,15 @@ export function ExpenseQueuePanel() {
                           {row.definition.evidenceNote || "No notes supplied."}
                         </dd>
                       </dl>
+                      {(row.definition.receiptIds ?? []).map((id, index) => (
+                        <ExpenseReceiptLink
+                          key={`${row.id}:${row.version}:${id}`}
+                          draftId={row.id}
+                          version={row.version}
+                          id={id}
+                          index={index + 1}
+                        />
+                      ))}
                     </details>
                   </td>
                 </tr>

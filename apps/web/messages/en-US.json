@@ -1,5 +1,14 @@
 {
   "crewExpenses": {
+    "attachReceipt": "Attach uploaded receipt",
+    "receipts": "Receipts",
+    "receipt": "Receipt",
+    "openReceipt": "Open receipt",
+    "receiptFile": "Receipt file",
+    "uploadReceipt": "Upload receipt",
+    "removeReceipt": "Remove from this draft",
+    "receiptInvalid": "Choose a nonempty PDF, PNG or JPEG up to 10 MB.",
+    "receiptHelp": "Save the draft first. Upload up to 10 receipts, then save to include them in the revision. Earlier saved evidence is preserved.",
     "history": "Saved revision history",
     "revision": "Revision",
     "savedAt": "Saved at",
