@@ -123,7 +123,7 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
 
   if (mfaChallenge) {
     return (
-      <form onSubmit={onVerifyMfa} className="space-y-5">
+      <form method="post" onSubmit={onVerifyMfa} className="space-y-5">
         <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-600">
           <div className="flex items-start gap-2">
             <IconDatabase className="mt-0.5 size-4 shrink-0 text-slate-500" />
@@ -223,7 +223,7 @@ export function LoginForm({ site }: { site: AdminSiteOption }) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-5">
+    <form method="post" onSubmit={onSubmit} className="space-y-5">
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
           <label className="text-[13px] font-medium text-slate-700">当前站点</label>
