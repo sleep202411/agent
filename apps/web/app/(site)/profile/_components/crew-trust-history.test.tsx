@@ -63,7 +63,11 @@ it("retains evidence after a failed next page and retries that page", async () =
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });
-    await act(async () => host.querySelector("button")!.click());
+    await act(async () =>
+      Array.from(host.querySelectorAll("button"))
+        .find((button) => button.textContent === "more")!
+        .click()
+    );
     await act(async () => {
       await new Promise((r) => setTimeout(r, 20));
     });

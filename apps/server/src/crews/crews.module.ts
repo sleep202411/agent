@@ -1,4 +1,8 @@
 import {
+  CrewTrustAppealController,
+  CrewTrustAppealService,
+} from './tasks/trust-appeals';
+import {
   CrewExpenseReceiptService,
   CrewExpenseReceiptController,
   CrewExpenseReceiptAdminController,
@@ -83,6 +87,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewTrustAppealController,
     CrewExpenseReceiptController,
     CrewExpenseReceiptAdminController,
     CrewExpenseSubmissionAdminController,
@@ -106,6 +111,7 @@ import { CrewProductionService } from './production/production.service';
     CrewPayoutsController,
   ],
   providers: [
+    CrewTrustAppealService,
     CrewExpenseReceiptService,
     CrewExpenseDraftService,
     CrewDeliveryCatalogService,

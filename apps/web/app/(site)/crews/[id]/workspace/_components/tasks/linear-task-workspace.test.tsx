@@ -1,3 +1,4 @@
+vi.mock("./trust-appeal-link", () => ({ TrustAppealLink: () => null }));
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";

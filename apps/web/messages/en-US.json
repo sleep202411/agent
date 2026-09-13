@@ -9767,7 +9767,9 @@
     "submitted": "Submitted",
     "deadline": "Captured deadline",
     "empty": "No measured submissions yet.",
-    "more": "Load more"
+    "more": "Load more",
+    "original": "Original result",
+    "correction": "Result corrected"
   },
   "crewDeliveryTemplate": {
     "referencePrices": "Reference prices",
@@ -9792,5 +9794,39 @@
     "cancel": "Cancel",
     "timeout": "Suggestions took too long. Please retry.",
     "empty": "No matching suggestions from this catalog."
+  },
+  "trustAppeals": {
+    "open": "Trust appeal and history",
+    "help": "Explain which recorded evidence you dispute. Your Crew task manager reviews the appeal.",
+    "reason": "Appeal reason",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "more": "Load more",
+    "sending": "Sending…",
+    "submit": "Submit appeal",
+    "pending": "Pending review",
+    "upheld": "Current result upheld",
+    "corrected": "Result corrected",
+    "reviewReason": "Review reason",
+    "queue": "Trust appeals",
+    "managerHelp": "Review the recorded submission evidence and the creator’s explanation. A reason is required for every decision.",
+    "back": "Back to Crew",
+    "task": "Task",
+    "creator": "Creator",
+    "original": "Original result",
+    "current": "Current result",
+    "submitted": "Submitted at",
+    "deadline": "Captured deadline",
+    "review": "Review",
+    "empty": "No pending appeals",
+    "shared": "A corrected result and its reason are shown to every recorded assignee of this submission. Original evidence is retained; money and wallets are unchanged.",
+    "decision": "Decision",
+    "uphold": "Uphold the current result",
+    "onTime": "Correct to on time (+200)",
+    "late": "Correct to late (−200)",
+    "confirm": "Record decision",
+    "cancel": "Cancel",
+    "refresh": "Refresh queue",
+    "history": "Include reviewed appeals"
   }
 }

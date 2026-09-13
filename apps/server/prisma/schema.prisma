@@ -894,7 +894,7 @@ enum IpUserBlockTargetType {
 model Workspace {
   id               String          @id @default(uuid(7)) @db.Uuid
   /// Stable destination for this user's account credits and initial selection.
-  defaultForUserId  String?         @unique @map("default_for_user_id") @db.VarChar(64)
+  defaultForUserId String?         @unique @map("default_for_user_id") @db.VarChar(64)
   status           WorkspaceStatus @default(active)
   name             String          @db.VarChar(120)
   slug             String?         @db.VarChar(80)
@@ -5749,6 +5749,7 @@ model CrewTaskAssignee {
 model CrewTaskSubmission {
   professionalDelivery Json?                   @map("professional_delivery") @db.JsonB
   trustEntries         CrewCreatorTrustEntry[]
+  trustCorrections     CrewTrustCorrection[]
   timelinessResult     Json?                   @map("timeliness_result") @db.JsonB
   timelinessEvidence   Json?                   @map("timeliness_evidence") @db.JsonB
   id                   String                  @id @default(uuid(7)) @db.Uuid
@@ -8391,30 +8392,30 @@ enum WorldModelTravelStatus {
 }
 
 model StoryProject {
-  id                         String                  @id @default(uuid(7)) @db.Uuid
-  workspaceId                String                  @map("workspace_id") @db.Uuid
-  frameProfile               StoryFrameProfile       @map("frame_profile")
-  durationPreset             StoryDurationPreset?    @map("duration_preset")
+  id                         String               @id @default(uuid(7)) @db.Uuid
+  workspaceId                String               @map("workspace_id") @db.Uuid
+  frameProfile               StoryFrameProfile    @map("frame_profile")
+  durationPreset             StoryDurationPreset? @map("duration_preset")
   /// Stable catalog slug shown to creators and carried over the wire.
-  visualStyle                String?                 @map("visual_style") @db.VarChar(128)
+  visualStyle                String?              @map("visual_style") @db.VarChar(128)
   /// Immutable Skill identity pinned when the creative profile is confirmed.
-  visualStyleSkillId         String?                 @map("visual_style_skill_id") @db.Uuid
-  visualStyleSkillVersionId  String?                 @map("visual_style_skill_version_id") @db.Uuid
-  creativeProfileConfirmedAt DateTime?               @map("creative_profile_confirmed_at") @db.Timestamptz(6)
-  status                     StoryProjectStatus      @default(active)
-  visibility                 StoryVisibility         @default(private)
-  title                      String                  @db.VarChar(160)
-  summary                    String?                 @db.Text
-  defaultLocale              String                  @default("en-US") @map("default_locale") @db.VarChar(16)
-  coverAssetId               String?                 @map("cover_asset_id") @db.Uuid
-  tags                       Json                    @default("[]") @db.JsonB
-  sourceIpId                 String?                 @map("source_ip_id") @db.Uuid
-  nextBuildNumber            Int                     @default(1) @map("next_build_number")
-  version                    Int                     @default(0)
-  createdByUserId            String                  @map("created_by_user_id") @db.VarChar(64)
-  archivedAt                 DateTime?               @map("archived_at") @db.Timestamptz(6)
-  createdAt                  DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                  DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  visualStyleSkillId         String?              @map("visual_style_skill_id") @db.Uuid
+  visualStyleSkillVersionId  String?              @map("visual_style_skill_version_id") @db.Uuid
+  creativeProfileConfirmedAt DateTime?            @map("creative_profile_confirmed_at") @db.Timestamptz(6)
+  status                     StoryProjectStatus   @default(active)
+  visibility                 StoryVisibility      @default(private)
+  title                      String               @db.VarChar(160)
+  summary                    String?              @db.Text
+  defaultLocale              String               @default("en-US") @map("default_locale") @db.VarChar(16)
+  coverAssetId               String?              @map("cover_asset_id") @db.Uuid
+  tags                       Json                 @default("[]") @db.JsonB
+  sourceIpId                 String?              @map("source_ip_id") @db.Uuid
+  nextBuildNumber            Int                  @default(1) @map("next_build_number")
+  version                    Int                  @default(0)
+  createdByUserId            String               @map("created_by_user_id") @db.VarChar(64)
+  archivedAt                 DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace               Workspace                         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   cover                   MediaAsset?                       @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
@@ -9994,6 +9995,7 @@ model IpEpisodeFeedback {
 }
 
 model CrewCreatorTrustEntry {
+  appeals      CrewTrustAppeal[]
   submissionId String             @map("submission_id") @db.Uuid
   taskId       String             @map("task_id") @db.Uuid
   userId       String             @map("user_id") @db.VarChar(64)
@@ -10083,4 +10085,38 @@ model CrewExpenseSubmission {
 
   @@id([draftId, draftVersion])
   @@map("crew_expense_submissions")
+}
+
+/// Append-only adjudication; original submission/entry evidence is preserved.
+model CrewTrustCorrection {
+  revision     BigInt             @default(autoincrement())
+  submission   CrewTaskSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  appeals      CrewTrustAppeal[]
+  id           String             @id @db.Uuid
+  submissionId String             @map("submission_id") @db.Uuid
+  points       Int
+  reviewerId   String             @map("reviewer_id") @db.VarChar(64)
+  reason       String             @db.Text
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([submissionId, revision(sort: Desc)], map: "crew_trust_corrections_submission")
+  @@map("crew_trust_corrections")
+}
+
+model CrewTrustAppeal {
+  entry        CrewCreatorTrustEntry @relation(fields: [taskId, userId], references: [taskId, userId], onDelete: Restrict, onUpdate: NoAction)
+  correction   CrewTrustCorrection?  @relation(fields: [correctionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  id           String                @id @db.Uuid
+  taskId       String                @map("task_id") @db.Uuid
+  userId       String                @map("user_id") @db.VarChar(64)
+  reason       String                @db.Text
+  status       String                @default("pending") @db.VarChar(16)
+  reviewerId   String?               @map("reviewer_id") @db.VarChar(64)
+  reviewReason String?               @map("review_reason") @db.Text
+  correctionId String?               @map("correction_id") @db.Uuid
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt   DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+
+  @@index([taskId, userId, createdAt(sort: Desc), id(sort: Desc)], map: "crew_trust_appeal_history")
+  @@map("crew_trust_appeals")
 }

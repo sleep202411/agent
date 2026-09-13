@@ -1,4 +1,10 @@
-import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Header,
+  Query,
+} from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { CurrentUser, type AuthUser } from '../auth';
@@ -14,6 +20,7 @@ export const TrustEntriesQuery = z
 export class CreatorTrustController {
   constructor(private readonly prisma: PrismaService) {}
   @Get('entries')
+  @Header('Cache-Control', 'private, no-store')
   async entries(
     @CurrentUser() user: AuthUser,
     @Query(new ZodValidationPipe(TrustEntriesQuery))
@@ -33,14 +40,17 @@ export class CreatorTrustController {
         taskId: string;
         submissionId: string;
         points: number;
+        originalPoints: number;
+        correctionReason: string | null;
         recordedAt: Date;
         submittedAt: Date;
         deadline: string;
       }[]
     >(Prisma.sql`
-      SELECT e.task_id AS "taskId", e.submission_id AS "submissionId", e.points, e.created_at AS "recordedAt",
+      SELECT e.task_id AS "taskId", e.submission_id AS "submissionId", COALESCE(c.points,e.points) AS points, e.points AS "originalPoints",c.reason AS "correctionReason", e.created_at AS "recordedAt",
         s.created_at AS "submittedAt", s.timeliness_result->>'deadline' AS deadline
       FROM crew_creator_trust_entries e JOIN crew_task_submissions s ON s.id=e.submission_id
+      LEFT JOIN LATERAL (SELECT points,reason FROM crew_trust_corrections WHERE submission_id=e.submission_id ORDER BY revision DESC LIMIT 1) c ON true
       WHERE e.user_id=${user.userId} ${boundary} ORDER BY e.created_at DESC,e.task_id DESC LIMIT ${query.limit + 1}`);
     const items = rows.slice(0, query.limit);
     return {
@@ -50,6 +60,7 @@ export class CreatorTrustController {
     };
   }
   @Get()
+  @Header('Cache-Control', 'private, no-store')
   async read(
     @CurrentUser() user: AuthUser,
     @Query(new ZodValidationPipe(z.object({}).strict()))
@@ -59,9 +70,11 @@ export class CreatorTrustController {
     const [summary] = await this.prisma.$queryRaw<
       { points: string; taskCount: string; onTime: string; late: string }[]
     >`
- SELECT COALESCE(sum(points),0)::text AS points, count(*)::text AS "taskCount",
- count(*) FILTER(WHERE points=200)::text AS "onTime", count(*) FILTER(WHERE points=-200)::text AS late
- FROM crew_creator_trust_entries WHERE user_id=${user.userId}`;
+ SELECT COALESCE(sum(COALESCE(c.points,e.points)),0)::text AS points, count(*)::text AS "taskCount",
+ count(*) FILTER(WHERE COALESCE(c.points,e.points)=200)::text AS "onTime", count(*) FILTER(WHERE COALESCE(c.points,e.points)=-200)::text AS late
+ FROM crew_creator_trust_entries e
+ LEFT JOIN LATERAL (SELECT points FROM crew_trust_corrections WHERE submission_id=e.submission_id ORDER BY revision DESC LIMIT 1) c ON true
+ WHERE e.user_id=${user.userId}`;
     return summary;
   }
 }

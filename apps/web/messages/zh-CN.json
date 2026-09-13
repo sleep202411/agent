@@ -9767,7 +9767,9 @@
     "submitted": "提交时间",
     "deadline": "留存截止时间",
     "empty": "暂无已计量提交。",
-    "more": "加载更多"
+    "more": "加载更多",
+    "original": "原始结果",
+    "correction": "已更正结果"
   },
   "crewDeliveryTemplate": {
     "referencePrices": "参考价格",
@@ -9792,5 +9794,39 @@
     "cancel": "取消",
     "timeout": "推荐等待超时，请重试。",
     "empty": "当前目录没有匹配建议。"
+  },
+  "trustAppeals": {
+    "open": "信任申诉及历史",
+    "help": "说明对哪项已记录依据有异议，由剧组任务管理员审核。",
+    "reason": "申诉原因",
+    "loading": "加载中…",
+    "retry": "重试",
+    "more": "加载更多",
+    "sending": "发送中…",
+    "submit": "提交申诉",
+    "pending": "待审核",
+    "upheld": "维持当前结果",
+    "corrected": "已更正结果",
+    "reviewReason": "审核原因",
+    "queue": "信任申诉",
+    "managerHelp": "核对已记录的提审依据及创作者说明，每次决定均须填写原因。",
+    "back": "返回剧组",
+    "task": "任务",
+    "creator": "创作者",
+    "original": "原始结果",
+    "current": "当前结果",
+    "submitted": "提交时间",
+    "deadline": "留存截止时间",
+    "review": "审核",
+    "empty": "暂无待审核申诉",
+    "shared": "更正结果及原因向此次提交记录的每位负责人显示。原始依据保留，不改变现金或钱包。",
+    "decision": "决定",
+    "uphold": "维持当前结果",
+    "onTime": "更正为按时（+200）",
+    "late": "更正为逾期（−200）",
+    "confirm": "记录决定",
+    "cancel": "取消",
+    "refresh": "刷新队列",
+    "history": "包括已审核申诉"
   }
 }

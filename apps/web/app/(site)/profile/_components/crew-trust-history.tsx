@@ -1,4 +1,5 @@
 "use client";
+import { CrewTrustAppeals } from "./crew-trust-appeals";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { api } from "@/src/lib/api";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -6,6 +7,8 @@ type Entry = {
   taskId: string;
   submissionId: string;
   points: number;
+  originalPoints?: number;
+  correctionReason?: string | null;
   submittedAt: string;
   recordedAt: string;
   deadline: string;
@@ -48,6 +51,11 @@ export function CrewTrustHistory({ userId }: { userId: string }) {
             {item.points > 0 ? "+" : ""}
             {item.points}
           </p>
+          {item.correctionReason && (
+            <p>
+              {t("correction")}: {item.correctionReason} ({t("original")}: {item.originalPoints})
+            </p>
+          )}
           <p>
             {t("task")}: <span className="font-mono break-all">{item.taskId}</span>
           </p>
@@ -62,6 +70,7 @@ export function CrewTrustHistory({ userId }: { userId: string }) {
             {t("deadline")}:{" "}
             <time dateTime={item.deadline}>{new Date(item.deadline).toLocaleString()}</time>
           </p>
+          <CrewTrustAppeals key={`${userId}:${item.taskId}`} userId={userId} taskId={item.taskId} />
         </article>
       ))}
       {!query.isPending && !query.isError && !items.length ? <p>{t("empty")}</p> : null}

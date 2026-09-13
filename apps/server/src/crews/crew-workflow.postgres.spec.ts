@@ -1,3 +1,4 @@
+import { CrewTrustAppealService } from './tasks/trust-appeals';
 import { CreatorTrustController } from '../ip-commerce/creator-trust.controller';
 import { postApprovedTaskTrustTx } from './tasks/task-timeliness';
 import { randomUUID } from 'node:crypto';
@@ -184,6 +185,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         .memberId;
     });
     afterEach(async () => {
+      await db.$executeRaw`DELETE FROM crew_trust_appeals WHERE task_id IN (SELECT id FROM crew_tasks WHERE crew_id=${crewId})`;
       await db.$executeRaw`DELETE FROM crew_creator_trust_entries WHERE task_id IN (SELECT id FROM crew_tasks WHERE crew_id=${crewId})`;
       // Posted ledger rows are deliberately immutable. Keep the unique fixtures
       // in this disposable test database rather than disabling audit triggers.
@@ -509,6 +511,150 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       expect((await trustReader.read({ userId: finance }, {})).points).toBe(
         '0',
       );
+
+      const appeals = new CrewTrustAppealService(db as never, authorization);
+      const appealInput = {
+        id: randomUUID(),
+        reason: 'The timing classification is incorrect',
+      };
+      const [firstAppeal, replayAppeal] = await Promise.all([
+        appeals.submit(task.id, worker, appealInput),
+        appeals.submit(task.id, worker, appealInput),
+      ]);
+      expect(firstAppeal.id).toBe(replayAppeal.id);
+      await expect(
+        appeals.submit(task.id, finance, {
+          id: randomUUID(),
+          reason: 'Not my entry',
+        }),
+      ).rejects.toThrow('Trust entry not found');
+      await expect(
+        appeals.submit(task.id, worker, {
+          id: randomUUID(),
+          reason: 'Duplicate pending',
+        }),
+      ).rejects.toThrow('already pending');
+      await expect(appeals.list(finance, { taskId: task.id })).rejects.toThrow(
+        'Trust entry not found',
+      );
+      const secondAppeal = await appeals.submit(task.id, owner, {
+        id: randomUUID(),
+        reason: 'Shared evidence issue',
+      });
+      const queue = await appeals.list(owner, { crewId });
+      expect(queue.items.map((a) => a.id)).toEqual(
+        expect.arrayContaining([firstAppeal.id, secondAppeal.id]),
+      );
+      const decision = {
+        decision: 'corrected' as const,
+        points: -200 as const,
+        reason: 'Verified late submission against agreed delivery evidence',
+        expectedCorrectionId: null,
+      };
+      await expect(
+        appeals.review(crewId, firstAppeal.id, worker, decision),
+      ).rejects.toThrow();
+      const reviewed = await appeals.review(
+        crewId,
+        firstAppeal.id,
+        owner,
+        decision,
+      );
+      expect(reviewed.status).toBe('corrected');
+      expect(
+        await appeals.review(crewId, firstAppeal.id, owner, decision),
+      ).toEqual(reviewed);
+      expect((await trustReader.read({ userId: worker }, {})).points).toBe(
+        '-200',
+      );
+      expect((await trustReader.read({ userId: owner }, {})).points).toBe(
+        '-200',
+      );
+      const correctedHistory = await trustReader.entries(
+        { userId: worker },
+        { limit: 20 },
+      );
+      expect(correctedHistory.items[0]).toMatchObject({
+        originalPoints: 200,
+        points: -200,
+        deadline: '2100-01-01T00:00:00.000Z',
+        correctionReason: decision.reason,
+      });
+      await expect(
+        appeals.review(crewId, secondAppeal.id, owner, decision),
+      ).rejects.toThrow('Trust evidence changed');
+      await expect(
+        appeals.review(crewId, firstAppeal.id, owner, {
+          ...decision,
+          points: 200,
+        }),
+      ).rejects.toThrow('already been reviewed');
+      await appeals.review(crewId, secondAppeal.id, owner, {
+        decision: 'upheld',
+        reason: 'Current corrected result is confirmed',
+        expectedCorrectionId: reviewed.correctionId,
+      });
+      const rollbackAppeal = await appeals.submit(task.id, worker, {
+        id: randomUUID(),
+        reason: 'Further evidence',
+      });
+      const unmockedAuthorization = new CrewAuthorizationService(db as never);
+      let checks = 0;
+      const recheck = jest
+        .spyOn(authorization, 'require')
+        .mockImplementation((...args) => {
+          checks++;
+          if (checks === 4)
+            return Promise.reject(
+              new Error('Permission withdrawn before commit'),
+            );
+          return unmockedAuthorization.require(...args);
+        });
+      try {
+        await expect(
+          appeals.review(crewId, rollbackAppeal.id, owner, {
+            ...decision,
+            points: 200,
+            expectedCorrectionId: reviewed.correctionId,
+          }),
+        ).rejects.toThrow('Permission withdrawn');
+      } finally {
+        recheck.mockRestore();
+      }
+      expect((await trustReader.read({ userId: worker }, {})).points).toBe(
+        '-200',
+      );
+      expect(
+        (await appeals.list(worker, { taskId: task.id })).items.find(
+          (a) => a.id === rollbackAppeal.id,
+        )?.status,
+      ).toBe('pending');
+      await appeals.review(crewId, rollbackAppeal.id, owner, {
+        decision: 'upheld',
+        reason: 'Current correction stands',
+        expectedCorrectionId: reviewed.correctionId,
+      });
+      expect((await appeals.list(owner, { crewId })).items).toHaveLength(0);
+      expect(
+        (await appeals.list(worker, { taskId: task.id })).items.find(
+          (a) => a.id === firstAppeal.id,
+        )?.status,
+      ).toBe('corrected');
+      expect(
+        await db.$queryRaw`SELECT points FROM crew_creator_trust_entries WHERE task_id=${task.id}::uuid`,
+      ).toEqual([{ points: 200 }, { points: 200 }]);
+      // A newer decision remains authoritative even if its wall clock is earlier.
+      const backdatedCorrection = randomUUID();
+      await db.$executeRaw`INSERT INTO crew_trust_corrections(id,submission_id,points,reviewer_id,reason,created_at) VALUES(${backdatedCorrection}::uuid,${approvedSubmission.id}::uuid,200,${owner},'Clock-order fixture','2000-01-01T00:00:00Z'::timestamptz)`;
+      expect((await trustReader.read({ userId: worker }, {})).points).toBe(
+        '200',
+      );
+      expect((await trustReader.read({ userId: owner }, {})).points).toBe(
+        '200',
+      );
+      expect(
+        (await appeals.list(owner, { crewId, history: true })).items,
+      ).toHaveLength(3);
 
       await expect(
         tasks.review(task.id, owner, { decision: 'approve', note: '' }),
