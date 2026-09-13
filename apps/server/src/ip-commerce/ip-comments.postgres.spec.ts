@@ -28,6 +28,7 @@ integration('IP public comments (local PostgreSQL)', () => {
         undefined as never,
         undefined as never,
         undefined as never,
+        undefined as never,
       ),
     );
   });

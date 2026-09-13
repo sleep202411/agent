@@ -3578,6 +3578,7 @@ enum MemberPoolBatchStatus {
 }
 
 model Ip {
+  crewOrigin             IpCrewOrigin?
   releaseLinks           Json                @default("[]") @map("release_links") @db.JsonB
   publicComments         IpPublicComment[]
   id                     String              @id @default(uuid(7)) @db.Uuid
@@ -4810,6 +4811,7 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
+  originatingIps      IpCrewOrigin[]
   likes               CrewLike[]
   storageLimitBytes   BigInt                  @default(100000000000) @map("storage_limit_bytes")
   uploadReservations  CrewUploadReservation[]
@@ -9985,4 +9987,16 @@ model IpPublicComment {
   ip            Ip        @relation(fields: [ipId], references: [id], onDelete: Cascade)
 
   @@map("ip_public_comments")
+}
+
+model IpCrewOrigin {
+  ipId       String   @id @map("ip_id") @db.Uuid
+  crewId     String   @map("crew_id")
+  linkedById String   @map("linked_by_id") @db.VarChar(64)
+  linkedAt   DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+  ip         Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  crew       Crew     @relation(fields: [crewId], references: [id], onDelete: Restrict)
+
+  @@index([crewId], map: "ip_crew_origins_crew_idx")
+  @@map("ip_crew_origins")
 }

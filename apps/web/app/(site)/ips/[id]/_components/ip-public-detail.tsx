@@ -115,6 +115,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
   const locale = useLocale() as Locale;
   const router = useRouter();
   const t = useTranslations("newIpDetail");
+  const originT = useTranslations("ipCrewOrigin");
   const tPay = useTranslations("payment");
   const statusT = useTranslations("newIpWorkbench");
   const { user, isLoading: userLoading } = useCurrentUser();
@@ -493,6 +494,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
                   ))}
                 </div>
 
+                <p className="text-xs text-muted-foreground">{originT("likeNotice")}</p>
                 <div className="flex flex-wrap items-center gap-2">
                   <ActionButton
                     onClick={() => void shareIp(ipRoomPath(detailIp.roomNumber), locale, t)}

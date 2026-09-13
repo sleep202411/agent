@@ -1,5 +1,6 @@
 "use client";
 
+import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
 import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
 import Link from "next/link";
 import { IconPlayerPlay, IconUser } from "@tabler/icons-react";
@@ -52,6 +53,7 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
         <IconPlayerPlay className="size-4" />
         {t("viewDetail")}
       </Link>
+      <IpCrewOrigin ipId={item.id} />
       <IpReleaseLinks ipId={item.id} />
     </div>
   );

@@ -31,6 +31,7 @@ vi.mock("@/src/lib/api", () => ({
   },
 }));
 vi.mock("@/app/(site)/ips/_components/ip-release-links", () => ({ IpReleaseLinks: () => null }));
+vi.mock("@/app/(site)/ips/_components/ip-crew-origin", () => ({ IpCrewOrigin: () => null }));
 vi.mock("./tv-comments", () => ({ TvComments: () => null }));
 function makeIp(id: string, title: string): IpCommerceIp {
   const asset = (url: string, kind: "image" | "video") => ({

@@ -803,5 +803,6 @@
   "agent.publish.offline.failed": "无法下线这部影游。",
   "agent.credits.title": "算力积分",
   "agent.credits.manage": "算力积分",
-  "agent.credits.insufficientBody": "请前往 Web 端购买算力积分。"
+  "agent.credits.insufficientBody": "请前往 Web 端购买算力积分。",
+  "ipDetail.likeFanNotice": "若此 IP 已关联剧组，点赞会加入其公开粉丝社区。取消点赞不会退出社区。"
 }

@@ -29,6 +29,7 @@ integration('IP release links (local PostgreSQL)', () => {
         undefined as never,
         undefined as never,
         undefined as never,
+        undefined as never,
       ),
     );
   });

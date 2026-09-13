@@ -1,3 +1,4 @@
+import { joinCrewFanTx } from './fan-community';
 /**
  * Crew CRUD — create / list / detail / update / soft delete.
  *
@@ -430,32 +431,11 @@ export class CrewsService {
    */
   async joinFanCommunity(crewId: string, viewerId: string, recordLike = false) {
     const conversation = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:block:${viewerId}:${crewId}`})::bigint)`;
-      await tx.$queryRaw`SELECT id FROM crews WHERE id = ${crewId} FOR UPDATE`;
-      const crew = await tx.crew.findFirst({
-        where: {
-          id: crewId,
-          deletedAt: null,
-          listingStatus: 'listed',
-          moderationStatus: 'ok',
-        },
-        select: { id: true },
-      });
-      if (!crew) throw new NotFoundException('Crew not found');
-      const block = await tx.ipUserContentBlock.findFirst({
-        where: {
-          userId: viewerId,
-          targetType: IpUserBlockTargetType.crew,
-          targetId: crewId,
-          unblockedAt: null,
-        },
-        select: { id: true },
-      });
-      if (block) throw new NotFoundException('Crew not found');
-      const joined = await this.conversations.joinCrewCommunityConversation(
+      const joined = await joinCrewFanTx(
+        tx,
+        this.conversations,
         crewId,
         viewerId,
-        tx,
       );
       if (recordLike) {
         await tx.$executeRaw`

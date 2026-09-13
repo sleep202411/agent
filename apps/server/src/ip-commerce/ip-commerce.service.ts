@@ -1,3 +1,5 @@
+import { ConversationsService } from '../conversations/conversations.service';
+import { joinCrewFanTx } from '../crews/fan-community';
 import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import {
   BadRequestException,
@@ -473,6 +475,7 @@ export class IpCommerceService {
     private readonly legacyCnVideo: LegacyCnVideoResolverService,
     private readonly entitlements: EntitlementService,
     private readonly legacyMysql: LegacyMysqlService,
+    private readonly conversations: ConversationsService,
   ) {}
 
   /**
@@ -3715,11 +3718,32 @@ export class IpCommerceService {
   ) {
     const now = new Date();
     let changed = false;
+    let conversationId: string | null = null;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${actor.userId}`})::bigint)
       `;
+      await tx.$queryRaw`SELECT id FROM ips WHERE id = ${ipId}::uuid FOR UPDATE`;
+      await this.ensurePublicEngagementTarget(
+        actor.actorKind === IpEngagementActorKind.human ? viewer : undefined,
+        ipId,
+        tx,
+      );
+      if (actor.actorKind === IpEngagementActorKind.human) {
+        const [origin] = await tx.$queryRaw<
+          { crewId: string }[]
+        >`SELECT crew_id AS "crewId" FROM ip_crew_origins WHERE ip_id = ${ipId}::uuid`;
+        if (origin)
+          conversationId = (
+            await joinCrewFanTx(
+              tx,
+              this.conversations,
+              origin.crewId,
+              actor.userId,
+            )
+          ).id;
+      }
       const existing = await tx.ipLike.findUnique({
         where: { ipId_userId: { ipId, userId: actor.userId } },
       });
@@ -3759,6 +3783,7 @@ export class IpCommerceService {
 
     return {
       liked: true,
+      conversationId,
       changed,
       engagement: publicIpEngagementDto(
         await this.engagementStatsForIp(ipId, viewer),

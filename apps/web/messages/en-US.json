@@ -9634,5 +9634,20 @@
     "save": "Save links",
     "reload": "Reload saved links",
     "retry": "Retry"
+  },
+  "ipCrewOrigin": {
+    "title": "Originating Crew",
+    "loading": "Loading Crew…",
+    "noGroup": "The IP was liked, but it no longer has an available fan group.",
+    "editDescription": "Link the Crew that produced this IP. You need IP edit access and Crew production-management permission. Existing likes and fan memberships are not migrated.",
+    "select": "Crew",
+    "none": "No linked Crew",
+    "existing": "Currently linked Crew",
+    "save": "Save Crew",
+    "reload": "Reload saved Crew",
+    "joinDescription": "Liking joins this Crew’s public fan community, without production-team access.",
+    "join": "Like IP and join fans",
+    "retry": "Retry",
+    "likeNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it."
   }
 }

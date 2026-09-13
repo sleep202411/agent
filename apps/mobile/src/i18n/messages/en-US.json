@@ -803,5 +803,6 @@
   "agent.publish.offline.failed": "The interactive film could not be taken offline.",
   "agent.credits.title": "Compute credits",
   "agent.credits.manage": "Compute credits",
-  "agent.credits.insufficientBody": "Please buy compute credits on the web."
+  "agent.credits.insufficientBody": "Please buy compute credits on the web.",
+  "ipDetail.likeFanNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it."
 }

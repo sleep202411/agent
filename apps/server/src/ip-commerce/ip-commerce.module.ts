@@ -1,3 +1,6 @@
+import { ConversationsModule } from '../conversations/conversations.module';
+import { CrewAuthorizationService } from '../crews/crew-authorization.service';
+import { IpCrewOriginService, IpCrewOriginController } from './ip-crew-origin';
 import {
   IpReleaseLinksController,
   IpReleaseLinksService,
@@ -22,6 +25,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
 
 @Module({
   imports: [
+    ConversationsModule,
     AdminAuthModule,
     StorageModule,
     WorkspacesModule,
@@ -29,6 +33,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    IpCrewOriginController,
     IpReleaseLinksController,
     IpCommentsController,
     IpCommentsAdminController,
@@ -37,6 +42,8 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorEarningsController,
   ],
   providers: [
+    CrewAuthorizationService,
+    IpCrewOriginService,
     IpReleaseLinksService,
     IpCommentsService,
     IpCommerceService,

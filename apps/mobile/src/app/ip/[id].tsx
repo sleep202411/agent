@@ -633,6 +633,10 @@ export default function IpDetailScreen() {
             </View>
           </View>
 
+          <ThemedText type="small" themeColor="textSecondary">
+            {t("ipDetail.likeFanNotice")}
+          </ThemedText>
+
           {ip.episodes.length ? (
             <View style={styles.section}>
               <SectionHeader
