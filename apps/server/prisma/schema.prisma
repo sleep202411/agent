@@ -6454,23 +6454,19 @@ model AiJob {
   workspaceId           String?               @map("workspace_id") @db.Uuid
   projectId             String?               @map("project_id") @db.Uuid
   storyProjectId        String?               @map("story_project_id") @db.Uuid
-  /// Immutable payer identity resolved at submission time. New product-plane
-  /// jobs set both fields; legacy rows remain NULL and use the historical
-  /// workspace/actor resolver. Settlement and release follow the recorded
-  /// wallet hold and never re-resolve this identity.
+  /// Immutable payer identity resolved at submission time. The workspace
+  /// cutover backfills historical payers before retiring the old policy.
+  /// Settlement and release follow the recorded wallet hold.
   billingSubjectType    BillingSubjectType?   @map("billing_subject_type")
   billingSubjectId      String?               @map("billing_subject_id") @db.VarChar(64)
   documentId            String?               @map("document_id") @db.Uuid
   documentBlockId       String?               @map("document_block_id") @db.VarChar(128)
   /// UI surface snapshot for ops analysis. Examples: 'art-studio' | 'timeline' | 'batch'.
   sourceSurface         String?               @map("source_surface") @db.VarChar(64)
-  /// Storage backend this job's outputs MUST be written to, decided from the
-  /// submitting surface and frozen here. NULL means the cell-default binding
-  /// (`StorageModule`), which is every surface but Story Studio
-  /// interactive-film footage. Frozen instead of re-read at upload time so a
-  /// retried attempt cannot land in a different store than the first attempt
-  /// and orphan its object. `external_url` is excluded by a CHECK constraint
-  /// in migration SQL — nothing can write there.
+  /// Selected cell storage provider, frozen on every new admission. Historical
+  /// NULL rows use OutputStorageService. Retries retain their original provider
+  /// so output objects cannot be orphaned by a later configuration change.
+  /// A database CHECK excludes external_url from writable providers.
   outputStorageProvider MediaStorageProvider? @map("output_storage_provider")
   status                AiJobStatus
   stage                 AiJobStage

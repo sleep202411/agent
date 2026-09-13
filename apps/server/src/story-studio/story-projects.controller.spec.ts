@@ -47,6 +47,62 @@ describe('StoryProjectsController list', () => {
   });
 });
 
+describe('StoryProjectsController installed mobile clients', () => {
+  const workspaceId = '0197f4a2-0800-7000-8000-000000000001';
+  const body = {
+    title: 'Story',
+    defaultLocale: 'en-US',
+    visibility: 'private' as const,
+  };
+  function fixture() {
+    const service = {
+      create: jest.fn().mockResolvedValue({}),
+      list: jest.fn().mockResolvedValue({ items: [] }),
+    };
+    return {
+      service,
+      controller: new StoryProjectsController(service as never),
+    };
+  }
+  it('accepts the existing mobile header for creation', async () => {
+    const { controller, service } = fixture();
+    await controller.create(USER as never, body, workspaceId);
+    expect(service.create).toHaveBeenCalledWith(USER, { ...body, workspaceId });
+  });
+  it('accepts the existing mobile header for listing', async () => {
+    const { controller, service } = fixture();
+    await controller.list(
+      USER as never,
+      { status: 'active', limit: 20 },
+      workspaceId,
+    );
+    expect(service.list).toHaveBeenCalledWith(USER, {
+      status: 'active',
+      limit: 20,
+      workspaceId,
+    });
+  });
+  it('keeps an explicit workspace ahead of the UI header', async () => {
+    const { controller, service } = fixture();
+    await controller.create(
+      USER as never,
+      { ...body, workspaceId },
+      PROJECT_ID,
+    );
+    expect(service.create).toHaveBeenCalledWith(USER, { ...body, workspaceId });
+  });
+  it.each([undefined, 'invalid'])(
+    'rejects missing or malformed workspace identity (%s)',
+    async (header) => {
+      const { controller, service } = fixture();
+      await expect(
+        controller.create(USER as never, body, header),
+      ).rejects.toMatchObject({ status: 400 });
+      expect(service.create).not.toHaveBeenCalled();
+    },
+  );
+});
+
 describe('StoryProjectsController chapters', () => {
   it('creates a chapter inside the tenant-scoped project', async () => {
     const chapter = {

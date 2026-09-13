@@ -66,7 +66,9 @@ images include `dist/catalog-update/prisma/seed/update-model-catalog.js`.
    schema-compatible release. Do not roll back only the application image.
 4. Run the explicit backup-annotated migration Job, update the scoped model
    catalog and roll out the matching services. Resume admission only after
-   readiness checks pass. Old browser pages should reload the matching client.
+   readiness checks pass. Old browser pages should reload the matching client. Installed mobile clients
+   keep their bootstrap URL and workspace-header contract; the HTTP boundary
+   normalizes those requests into the same strict workspace DTOs.
 5. Verify project access, movement, wallet grant/debit, Agent editor/viewer access
    and OSS-backed outputs. Verify all 41 models and their usable routes on CN.
 

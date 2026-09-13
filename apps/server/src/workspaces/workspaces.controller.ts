@@ -45,7 +45,8 @@ export class WorkspacesController {
    * returns the existing workspace if it already exists.
    * Intentionally a POST (not GET) because it has a write side effect.
    */
-  @Post('workspaces/default/ensure')
+  // Installed mobile clients still use the former bootstrap URL.
+  @Post(['workspaces/default/ensure', 'workspaces/personal/ensure'])
   async ensureDefaultWorkspace(@CurrentUser() user: AuthUser) {
     return {
       code: 200,
