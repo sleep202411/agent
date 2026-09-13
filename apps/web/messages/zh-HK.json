@@ -2041,7 +2041,8 @@
     },
     "myTasksTab": "我的任務",
     "myCrewsSignIn": "登入後查看我的劇組。",
-    "myCrewsEmpty": "你還沒有建立或加入劇組。"
+    "myCrewsEmpty": "你還沒有建立或加入劇組。",
+    "myIncomeTab": "我的收入"
   },
   "crewRoles": {
     "director": "導演",
@@ -9558,5 +9559,30 @@
     "upcoming": "剩餘 {{count}} 小時",
     "warningWindow": "標記此時間內到期的任務",
     "hours": "{{count}} 小時"
+  },
+  "crewPersonalIncome": {
+    "title": "我的收入",
+    "back": "劇組大廳",
+    "description": "查看跨劇組的本人收入記錄，各幣種分別顯示。",
+    "loading": "載入中…",
+    "signInRequired": "登入後查看本人收入。",
+    "signIn": "登入",
+    "currency": "幣種",
+    "refresh": "重新整理",
+    "retry": "重試",
+    "posted": "已確認收入",
+    "pending": "待審核",
+    "rejected": "已拒絕",
+    "reversed": "已沖回",
+    "settlementNote": "已確認收入不代表已經付款或可以提現。待審核金額不計入已確認收入。",
+    "empty": "此幣種暫無收入記錄。",
+    "record": "記錄",
+    "status": "狀態",
+    "amount": "金額",
+    "date": "記錄日期",
+    "references": "來源記錄",
+    "crew": "劇組",
+    "task": "任務",
+    "loadMore": "載入更多"
   }
 }

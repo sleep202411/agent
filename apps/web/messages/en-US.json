@@ -2041,7 +2041,8 @@
     },
     "myTasksTab": "My tasks",
     "myCrewsSignIn": "Sign in to view your crews.",
-    "myCrewsEmpty": "You have not founded or joined a crew yet."
+    "myCrewsEmpty": "You have not founded or joined a crew yet.",
+    "myIncomeTab": "My income"
   },
   "crewRoles": {
     "director": "Director",
@@ -9558,5 +9559,30 @@
     "upcoming": "{{count}} h left",
     "warningWindow": "Highlight deadlines within",
     "hours": "{{count}} hours"
+  },
+  "crewPersonalIncome": {
+    "title": "My income",
+    "back": "Crew hall",
+    "description": "Your recorded earnings across Crews, separately for each currency.",
+    "loading": "Loading…",
+    "signInRequired": "Sign in to view your income.",
+    "signIn": "Sign in",
+    "currency": "Currency",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "posted": "Confirmed earnings",
+    "pending": "Awaiting approval",
+    "rejected": "Rejected",
+    "reversed": "Reversed",
+    "settlementNote": "Confirmed earnings do not mean money has been paid or is available for cash-out. Pending amounts are excluded from confirmed earnings.",
+    "empty": "No earnings recorded in this currency.",
+    "record": "Record",
+    "status": "Status",
+    "amount": "Amount",
+    "date": "Recorded date",
+    "references": "Source references",
+    "crew": "Crew",
+    "task": "Task",
+    "loadMore": "Load more"
   }
 }

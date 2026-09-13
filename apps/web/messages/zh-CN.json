@@ -2041,7 +2041,8 @@
     },
     "myTasksTab": "我的任务",
     "myCrewsSignIn": "登录后查看我的剧组。",
-    "myCrewsEmpty": "你还没有创建或加入剧组。"
+    "myCrewsEmpty": "你还没有创建或加入剧组。",
+    "myIncomeTab": "我的收入"
   },
   "crewRoles": {
     "director": "导演",
@@ -9558,5 +9559,30 @@
     "upcoming": "剩余 {{count}} 小时",
     "warningWindow": "标记此时间内到期的任务",
     "hours": "{{count}} 小时"
+  },
+  "crewPersonalIncome": {
+    "title": "我的收入",
+    "back": "剧组大厅",
+    "description": "查看跨剧组的本人收入记录，各币种分别显示。",
+    "loading": "加载中…",
+    "signInRequired": "登录后查看本人收入。",
+    "signIn": "登录",
+    "currency": "币种",
+    "refresh": "刷新",
+    "retry": "重试",
+    "posted": "已确认收入",
+    "pending": "待审核",
+    "rejected": "已拒绝",
+    "reversed": "已冲回",
+    "settlementNote": "已确认收入不代表已经付款或可以提现。待审核金额不计入已确认收入。",
+    "empty": "此币种暂无收入记录。",
+    "record": "记录",
+    "status": "状态",
+    "amount": "金额",
+    "date": "记录日期",
+    "references": "来源记录",
+    "crew": "剧组",
+    "task": "任务",
+    "loadMore": "加载更多"
   }
 }

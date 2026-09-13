@@ -131,6 +131,12 @@ export default function CrewsPage() {
               <IconListCheck className="size-4" />
               {tCrew("myTasksTab")}
             </Link>
+            <Link
+              href={localizePath("/crews/income", locale)}
+              className="inline-flex min-h-11 items-center px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
+            >
+              {tCrew("myIncomeTab")}
+            </Link>
             <PlazaTab
               label={tCrew("myCrewsTitle")}
               icon={IconUsers}
