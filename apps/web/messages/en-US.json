@@ -4047,6 +4047,8 @@
     "reviewDialogAvailable": "Available from {date}",
     "reviewDialogApproveSuccess": "Applicant approved",
     "reviewDialogRejectSuccess": "Applicant rejected",
+    "reviewDialogApproveFailed": "Could not approve the application",
+    "reviewDialogRejectFailed": "Could not reject the application",
     "closeJob": "Close Job",
     "closeJobConfirm": "Close the “{name}” recruitment slot? Pending applications will be archived.",
     "closeJobSuccess": "“{name}” closed",

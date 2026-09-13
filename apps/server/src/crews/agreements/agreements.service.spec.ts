@@ -342,6 +342,68 @@ describe('CrewAgreementsService', () => {
     expect(t.prisma.crewAgreementSendJob.create).toHaveBeenCalledTimes(1);
   });
 
+  it.each(['retrySend', 'retryArchive'] as const)(
+    'rejects %s when transaction permission is withdrawn',
+    async (method) => {
+      const t = build();
+      const failed = agreement({
+        status:
+          method === 'retrySend'
+            ? CrewAgreementStatus.failed
+            : CrewAgreementStatus.signed,
+        providerDocumentId: method === 'retrySend' ? null : 'document',
+        sendJob: { status: CrewAgreementSendJobStatus.failed },
+        archiveJob: { status: CrewAgreementArchiveJobStatus.failed },
+      });
+      t.prisma.crewAgreement.findUnique.mockResolvedValue(failed);
+      const denied = new Error('Agreement management withdrawn');
+      t.authorization.require
+        .mockResolvedValueOnce({} as never)
+        .mockRejectedValueOnce(denied);
+      await expect(t.service[method](AGREEMENT_ID, OWNER_ID)).rejects.toBe(
+        denied,
+      );
+      expect(t.authorization.require).toHaveBeenLastCalledWith(
+        CREW_ID,
+        OWNER_ID,
+        'agreements.manage',
+        t.prisma,
+      );
+      expect(t.prisma.crewAgreement.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewAgreementSendJob.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewAgreementArchiveJob.upsert).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['retrySend', 'retryArchive'] as const)(
+    'preserves a job restarted while %s waited',
+    async (method) => {
+      const t = build();
+      const failed = agreement({
+        status:
+          method === 'retrySend'
+            ? CrewAgreementStatus.failed
+            : CrewAgreementStatus.signed,
+        providerDocumentId: method === 'retrySend' ? null : 'document',
+        sendJob: { status: CrewAgreementSendJobStatus.failed },
+        archiveJob: { status: CrewAgreementArchiveJobStatus.failed },
+      });
+      const restarted = {
+        ...failed,
+        sendJob: { status: CrewAgreementSendJobStatus.processing },
+        archiveJob: { status: CrewAgreementArchiveJobStatus.processing },
+      };
+      t.prisma.crewAgreement.findUnique
+        .mockResolvedValueOnce(failed)
+        .mockResolvedValue(restarted);
+      t.prisma.crewAgreement.findUniqueOrThrow.mockResolvedValue(restarted);
+      await t.service[method](AGREEMENT_ID, OWNER_ID);
+      expect(t.prisma.crewAgreementSendJob.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewAgreementArchiveJob.upsert).not.toHaveBeenCalled();
+      expect(t.prisma.crewAgreement.update).not.toHaveBeenCalled();
+    },
+  );
+
   it('lets an owner explicitly retry a terminal initial dispatch failure', async () => {
     const t = build();
     t.prisma.crewAgreement.findUnique.mockResolvedValue(
