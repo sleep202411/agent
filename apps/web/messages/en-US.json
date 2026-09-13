@@ -9608,5 +9608,19 @@
     "join": "Like and join fan group",
     "joining": "Joining…",
     "description": "Liking this Crew also joins its public community. This does not add you to the production team."
+  },
+  "tvComments": {
+    "title": "Comments",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "loading": "Loading comments…",
+    "empty": "No comments yet.",
+    "viewer": "Viewer",
+    "you": "You",
+    "remove": "Remove",
+    "more": "Load older comments",
+    "label": "Your comment",
+    "send": "Post comment",
+    "signIn": "Sign in to comment"
   }
 }

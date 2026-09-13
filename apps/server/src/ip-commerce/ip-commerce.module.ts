@@ -1,3 +1,8 @@
+import {
+  IpCommentsController,
+  IpCommentsAdminController,
+} from './ip-comments.controller';
+import { IpCommentsService } from './ip-comments.service';
 import { CreatorEarningsController } from '../creator-earnings/creator-earnings.controller';
 import { CreatorEarningsService } from '../creator-earnings/creator-earnings.service';
 import { Module } from '@nestjs/common';
@@ -20,11 +25,14 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    IpCommentsController,
+    IpCommentsAdminController,
     IpCommerceController,
     IpCommerceAdminController,
     CreatorEarningsController,
   ],
   providers: [
+    IpCommentsService,
     IpCommerceService,
     LegacyCnVideoResolverService,
     CreatorEarningsService,

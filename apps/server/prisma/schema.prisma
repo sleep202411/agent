@@ -3578,6 +3578,7 @@ enum MemberPoolBatchStatus {
 }
 
 model Ip {
+  publicComments         IpPublicComment[]
   id                     String              @id @default(uuid(7)) @db.Uuid
   /// Stable public room number, allocated by PostgreSQL for every IP.
   roomNumber             String              @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
@@ -9968,4 +9969,19 @@ model CrewLike {
   @@id([crewId, userId])
   @@index([userId], map: "crew_likes_user_idx")
   @@map("crew_likes")
+}
+
+model IpPublicComment {
+  id            String    @id @db.Uuid
+  ipId          String    @map("ip_id") @db.Uuid
+  userId        String    @map("user_id") @db.VarChar(64)
+  body          String    @db.VarChar(2000)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  removedAt     DateTime? @map("removed_at") @db.Timestamptz(6)
+  authorName    String?   @map("author_name") @db.VarChar(160)
+  removalActor  String?   @map("removal_actor") @db.VarChar(80)
+  removalReason String?   @map("removal_reason") @db.VarChar(1000)
+  ip            Ip        @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@map("ip_public_comments")
 }

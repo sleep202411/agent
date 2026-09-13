@@ -9608,5 +9608,19 @@
     "join": "點讚並加入粉絲群",
     "joining": "加入中…",
     "description": "點讚本劇組會同時加入其公開社區，不會加入製作團隊。"
+  },
+  "tvComments": {
+    "title": "評論",
+    "refresh": "重新整理",
+    "retry": "重試",
+    "loading": "正在載入評論…",
+    "empty": "暫無評論。",
+    "viewer": "觀眾",
+    "you": "你",
+    "remove": "移除",
+    "more": "載入更早評論",
+    "label": "你的評論",
+    "send": "發表評論",
+    "signIn": "登入後評論"
   }
 }

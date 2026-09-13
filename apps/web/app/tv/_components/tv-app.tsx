@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useTvIps } from "../_hooks/use-tv-ips";
+import { TvComments } from "./tv-comments";
 import { TvStage } from "./tv-stage";
 import { TvIpList } from "./tv-ip-list";
 import { TvInfoBar } from "./tv-info-bar";
@@ -169,6 +170,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
           </div>
         )}
       </section>
+      {item && <TvComments ipId={item.id} />}
     </div>
   );
 }

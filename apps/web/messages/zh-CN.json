@@ -9608,5 +9608,19 @@
     "join": "点赞并加入粉丝群",
     "joining": "加入中…",
     "description": "点赞本剧组会同时加入其公开社区，不会加入制作团队。"
+  },
+  "tvComments": {
+    "title": "评论",
+    "refresh": "刷新",
+    "retry": "重试",
+    "loading": "正在加载评论…",
+    "empty": "暂无评论。",
+    "viewer": "观众",
+    "you": "你",
+    "remove": "移除",
+    "more": "加载更早评论",
+    "label": "你的评论",
+    "send": "发表评论",
+    "signIn": "登录后评论"
   }
 }

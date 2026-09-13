@@ -5346,9 +5346,12 @@ export class IpCommerceService {
 
   private async viewerBlockWhere(
     user?: AuthUser,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<Prisma.IpWhereInput> {
-    const { blockedIpIds, blockedCreatorIds } =
-      await this.viewerBlockLists(user);
+    const { blockedIpIds, blockedCreatorIds } = await this.viewerBlockLists(
+      user,
+      db,
+    );
     const not: Prisma.IpWhereInput[] = [];
     if (blockedIpIds.length > 0) {
       not.push({ id: { in: blockedIpIds } });
@@ -5359,9 +5362,12 @@ export class IpCommerceService {
     return not.length > 0 ? { NOT: not } : {};
   }
 
-  private async viewerBlockLists(user?: AuthUser): Promise<ViewerBlockLists> {
+  private async viewerBlockLists(
+    user?: AuthUser,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<ViewerBlockLists> {
     if (!user) return { blockedIpIds: [], blockedCreatorIds: [] };
-    const blocks = await this.prisma.ipUserContentBlock.findMany({
+    const blocks = await db.ipUserContentBlock.findMany({
       where: {
         userId: user.userId,
         unblockedAt: null,
@@ -5387,12 +5393,13 @@ export class IpCommerceService {
     return IpEngagementActorKind.human;
   }
 
-  private async ensurePublicEngagementTarget(
+  async ensurePublicEngagementTarget(
     user: AuthUser | undefined,
     ipId: string,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
-    const viewerBlockWhere = await this.viewerBlockWhere(user);
-    const ip = await this.prisma.ip.findFirst({
+    const viewerBlockWhere = await this.viewerBlockWhere(user, db);
+    const ip = await db.ip.findFirst({
       where: {
         id: ipId,
         deletedAt: null,
