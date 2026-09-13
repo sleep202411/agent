@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: 66eb9d54bae5f52e1b116f14318a764697583efc
+    tag: b27f9e54cb4576283fbdb7faa45dbfef44651556
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: 66eb9d54bae5f52e1b116f14318a764697583efc
+    tag: b27f9e54cb4576283fbdb7faa45dbfef44651556
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: 0ed9c3c67a34e9f8c6061b204c5d610577081f19
+    tag: b27f9e54cb4576283fbdb7faa45dbfef44651556
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -394,7 +394,7 @@ server:
   # Graceful drain window: the preStop sleep deregisters the pod from the Service,
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
-  migrateOnStart: true
+  migrateOnStart: false
   migrationJob:
     enabled: false
     revision: ""
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 40bff0d0d
+    tag: b27f9e54cb4576283fbdb7faa45dbfef44651556
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -544,7 +544,7 @@ agentOs:
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: 5dcd40836fe856bbf215085dcbac93c36a3b3614
+    tag: b27f9e54cb4576283fbdb7faa45dbfef44651556
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
