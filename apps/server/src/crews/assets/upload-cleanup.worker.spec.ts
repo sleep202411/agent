@@ -2,6 +2,64 @@ import { MediaAssetStatus } from '@prisma/client';
 import { CrewAssetUploadCleanupWorker } from './upload-cleanup.worker';
 
 describe('CrewAssetUploadCleanupWorker', () => {
+  it.each(['reservation', 'discovery', 'reclaim'] as const)(
+    'stops queued cleanup after shutdown during %s while finishing active work',
+    async (stage) => {
+      let release!: () => void;
+      let entered!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const pause = async () => {
+        entered();
+        await waiting;
+      };
+      const candidates = [{ id: 'first' }, { id: 'second' }];
+      const mediaAsset = {
+        findMany: jest.fn(async () => {
+          if (stage === 'discovery') await pause();
+          return candidates;
+        }),
+      };
+      const assets = {
+        cleanupUploadReservations: jest.fn(async () => {
+          if (stage === 'reservation') await pause();
+        }),
+        reclaimExpiredPendingUpload: jest.fn(async () => {
+          if (stage === 'reclaim') await pause();
+          return true;
+        }),
+      };
+      const worker = new CrewAssetUploadCleanupWorker(
+        { mediaAsset } as never,
+        assets as never,
+      );
+      const drain = worker.drainOnce();
+      await started;
+      let shutdownFinished = false;
+      const shutdown = worker.onModuleDestroy().then(() => {
+        shutdownFinished = true;
+      });
+      await worker.drainOnce();
+      expect(shutdownFinished).toBe(false);
+      release();
+      await Promise.all([drain, shutdown]);
+      expect(assets.cleanupUploadReservations).toHaveBeenCalledTimes(1);
+      expect(mediaAsset.findMany).toHaveBeenCalledTimes(
+        stage === 'reservation' ? 0 : 1,
+      );
+      expect(assets.reclaimExpiredPendingUpload).toHaveBeenCalledTimes(
+        stage === 'reclaim' ? 1 : 0,
+      );
+      await worker.drainOnce();
+      worker.onApplicationBootstrap();
+      expect(assets.cleanupUploadReservations).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('discovers only expired unclaimed crew uploads and reclaims a bounded batch', async () => {
     const mediaAsset = {
       findMany: jest
