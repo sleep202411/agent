@@ -1,3 +1,7 @@
+import {
+  CrewDeliveryCatalogAdminController,
+  CrewDeliveryCatalogService,
+} from './tasks/delivery-catalog';
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
 import { AuthModule } from '../auth';
@@ -68,6 +72,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewDeliveryCatalogAdminController,
     CrewsController,
     CrewsAdminController,
     CrewPositionsAdminController,
@@ -85,6 +90,7 @@ import { CrewProductionService } from './production/production.service';
     CrewPayoutsController,
   ],
   providers: [
+    CrewDeliveryCatalogService,
     CrewsService,
     PositionsService,
     ApplicationsService,

@@ -10060,3 +10060,16 @@ model IpStageApplication {
   @@index([ipId, createdAt(sort: Desc)], map: "ip_stage_application_history")
   @@map("ip_stage_applications")
 }
+
+/// Immutable category, reference-price and delivery-form revisions.
+model CrewDeliveryCatalogRevision {
+  categoryId String   @map("category_id") @db.Uuid
+  version    Int
+  definition Json     @db.JsonB
+  createdBy  String   @map("created_by") @db.Uuid
+  reason     String   @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([categoryId, version])
+  @@map("crew_delivery_catalog_revisions")
+}
