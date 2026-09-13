@@ -17,15 +17,13 @@ export const ProjectParamsSchema = z.object({
 });
 export type ProjectParams = z.infer<typeof ProjectParamsSchema>;
 
-export const CreateTeamWorkspaceSchema = z.object({
+export const CreateWorkspaceSchema = z.object({
   name: z.string().trim().min(1).max(120),
   slug: SlugSchema,
   description: z.string().trim().max(500).optional(),
   avatarUrl: z.string().trim().url().max(512).optional(),
 });
-export type CreateTeamWorkspaceInput = z.infer<
-  typeof CreateTeamWorkspaceSchema
->;
+export type CreateWorkspaceInput = z.infer<typeof CreateWorkspaceSchema>;
 
 export const UpdateWorkspaceSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),

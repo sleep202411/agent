@@ -44,6 +44,26 @@ describe('WorkspacePermissionService project fallback', () => {
     });
   });
 
+  it('does not let a billing member create projects or generate at workspace scope', async () => {
+    const { service } = serviceWithWorkspaceRole(WorkspaceMemberRole.billing);
+    await expect(
+      service.requireWorkspaceRole(
+        'user-1',
+        PROJECT.workspaceId,
+        WorkspaceMemberRole.editor,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'WORKSPACE_PERMISSION_DENIED' },
+    });
+    await expect(
+      service.requireWorkspaceRole(
+        'user-1',
+        PROJECT.workspaceId,
+        WorkspaceMemberRole.billing,
+      ),
+    ).resolves.toMatchObject({ role: WorkspaceMemberRole.billing });
+  });
+
   it('still lets billing members read workspace projects', async () => {
     const { service } = serviceWithWorkspaceRole(WorkspaceMemberRole.billing);
 

@@ -73,12 +73,12 @@ function CastingAcceptInner() {
     retry: false,
   });
 
-  // The actor's own likenesses live in their personal workspace.
-  const personalWorkspaceId = useMemo(
-    () => workspaces.find((w) => w.type === "personal")?.id ?? null,
+  // The actor's own likenesses live in their default workspace.
+  const defaultWorkspaceId = useMemo(
+    () => workspaces.find((w) => w.isDefault)?.id ?? null,
     [workspaces]
   );
-  const charactersQ = useCharacters(user ? personalWorkspaceId : null);
+  const charactersQ = useCharacters(user ? defaultWorkspaceId : null);
   const likenesses = useMemo(
     () => (charactersQ.data ?? []).filter((c) => c.kind === "real_person" && c.status === "active"),
     [charactersQ.data]

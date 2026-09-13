@@ -84,7 +84,9 @@ export class WorkspacePermissionService {
       });
     }
     if (
-      WORKSPACE_ROLE_RANK[membership.role] < WORKSPACE_ROLE_RANK[minimumRole]
+      WORKSPACE_ROLE_RANK[membership.role] < WORKSPACE_ROLE_RANK[minimumRole] ||
+      (minimumRole === WorkspaceMemberRole.editor &&
+        membership.role === WorkspaceMemberRole.billing)
     ) {
       throw new ForbiddenException({
         code: 'WORKSPACE_PERMISSION_DENIED',

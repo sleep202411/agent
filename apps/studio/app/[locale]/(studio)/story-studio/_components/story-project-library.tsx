@@ -18,6 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "next-intl";
 import { toast } from "sonner";
+import { useWorkspace } from "@/app/_components/workspace-context";
 import { ShareDialog } from "@/app/_components/share-dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +50,7 @@ import {
   updateStoryProject,
   type StoryProjectSummary,
 } from "@/lib/story-projects-api";
+import { MoveStoryProjectDialog } from "./move-story-project-dialog";
 import { StoryStudioHero } from "./story-studio-hero";
 
 const STORY_PROJECTS_QUERY = ["story-studio", "projects"] as const;
@@ -58,21 +60,28 @@ const JINLING_FEATURE_TAGS = ["interactive_film", "classical_literature", "myste
 export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref: string }) {
   const t = useTranslations("storyStudio");
   const locale = useLocale();
+  const { activeWorkspace, loading: workspaceLoading } = useWorkspace();
+  const workspaceId = activeWorkspace?.id;
+  const canCreate =
+    activeWorkspace?.accessScope !== "project_only" &&
+    ["owner", "admin", "editor"].includes(activeWorkspace?.role ?? "");
   const router = useRouter();
   const queryClient = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
   const [editing, setEditing] = useState<StoryProjectSummary | null>(null);
   const [archiving, setArchiving] = useState<StoryProjectSummary | null>(null);
+  const [moving, setMoving] = useState<StoryProjectSummary | null>(null);
   const [sharing, setSharing] = useState<StoryProjectSummary | null>(null);
 
   const projectsQuery = useQuery({
-    queryKey: STORY_PROJECTS_QUERY,
-    queryFn: () => listStoryProjects({ limit: 100 }),
+    queryKey: [...STORY_PROJECTS_QUERY, workspaceId],
+    queryFn: () => listStoryProjects({ workspaceId: workspaceId!, limit: 100 }),
+    enabled: Boolean(workspaceId),
     retry: false,
   });
 
   const projects = projectsQuery.data?.items ?? [];
-  const isLoading = projectsQuery.isLoading;
+  const isLoading = workspaceLoading || projectsQuery.isLoading;
   const featuredProject = projects.find(
     (project) =>
       project.title.trim() === JINLING_SOURCE_TITLE &&
@@ -106,6 +115,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
             </div>
             <Button
               type="button"
+              disabled={!canCreate}
               onClick={() => setCreateOpen(true)}
               className="h-10 rounded-xl bg-[#E52227] px-4 text-white hover:bg-[#f02b30]"
             >
@@ -137,7 +147,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
                 </p>
               </FrostedPanel>
             ) : projects.length === 0 ? (
-              <EmptyProjects onCreate={() => setCreateOpen(true)} />
+              <EmptyProjects onCreate={canCreate ? () => setCreateOpen(true) : undefined} />
             ) : (
               <div className="mt-5 grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
                 {projects.map((project) => (
@@ -148,6 +158,7 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
                     onEdit={() => setEditing(project)}
                     onShare={() => setSharing(project)}
                     onArchive={() => setArchiving(project)}
+                    onMove={() => setMoving(project)}
                   />
                 ))}
               </div>
@@ -155,15 +166,19 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
           </section>
         </div>
 
-        <CreateProjectDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          defaultLocale={locale}
-          onCreated={(project) => {
-            void refresh();
-            router.push(`/story-studio/projects/${project.id}/canvas`);
-          }}
-        />
+        {workspaceId && canCreate && (
+          <CreateProjectDialog
+            key={workspaceId}
+            workspaceId={workspaceId}
+            open={createOpen}
+            onOpenChange={setCreateOpen}
+            defaultLocale={locale}
+            onCreated={(project) => {
+              void refresh();
+              router.push(`/story-studio/projects/${project.id}/canvas`);
+            }}
+          />
+        )}
         {editing ? (
           <EditProjectDialog
             key={`${editing.id}:${editing.projectVersion}`}
@@ -182,6 +197,9 @@ export function StoryProjectLibrary({ featuredPlayerHref }: { featuredPlayerHref
             open
             onOpenChange={(open) => !open && setSharing(null)}
           />
+        ) : null}
+        {moving ? (
+          <MoveStoryProjectDialog project={moving} onClose={() => setMoving(null)} />
         ) : null}
         {archiving ? (
           <ArchiveProjectDialog
@@ -204,12 +222,14 @@ function StoryProjectCard({
   onEdit,
   onShare,
   onArchive,
+  onMove,
 }: {
   project: StoryProjectSummary;
   locale: string;
   onEdit: () => void;
   onShare: () => void;
   onArchive: () => void;
+  onMove: () => void;
 }) {
   const t = useTranslations("storyStudio");
   const canEdit = project.capabilities.includes("story.edit");
@@ -320,6 +340,12 @@ function StoryProjectCard({
               </DropdownMenuItem>
             ) : null}
             {canEdit && canAdmin ? <DropdownMenuSeparator /> : null}
+            {project.canMove ? (
+              <DropdownMenuItem onSelect={onMove}>
+                <IconArrowRight className="size-4" />
+                {t("move.action")}
+              </DropdownMenuItem>
+            ) : null}
             {canAdmin ? (
               <DropdownMenuItem variant="destructive" onSelect={onArchive}>
                 <IconArchive className="size-4" />
@@ -368,7 +394,7 @@ function ProjectSkeletons() {
   );
 }
 
-function EmptyProjects({ onCreate }: { onCreate: () => void }) {
+function EmptyProjects({ onCreate }: { onCreate?: () => void }) {
   const t = useTranslations("storyStudio");
   return (
     <div className="mt-5 flex min-h-64 flex-col items-center justify-center px-6 text-center">
@@ -377,20 +403,24 @@ function EmptyProjects({ onCreate }: { onCreate: () => void }) {
       </div>
       <h3 className="mt-4 text-sm font-semibold text-white">{t("empty.title")}</h3>
       <p className="mt-2 max-w-md text-xs leading-5 text-white/42">{t("empty.description")}</p>
-      <Button className="mt-5" variant="secondary" onClick={onCreate}>
-        <IconPlus className="size-4" />
-        {t("newProject")}
-      </Button>
+      {onCreate && (
+        <Button className="mt-5" variant="secondary" onClick={onCreate}>
+          <IconPlus className="size-4" />
+          {t("newProject")}
+        </Button>
+      )}
     </div>
   );
 }
 
 function CreateProjectDialog({
+  workspaceId,
   open,
   onOpenChange,
   defaultLocale,
   onCreated,
 }: {
+  workspaceId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultLocale: string;
@@ -402,6 +432,7 @@ function CreateProjectDialog({
   const createMutation = useMutation({
     mutationFn: () =>
       createStoryProject({
+        workspaceId,
         title: title.trim(),
         summary: summary.trim() || null,
         // Provisional only. FizzAgent confirms the authored story language as

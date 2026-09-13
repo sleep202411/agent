@@ -76,7 +76,7 @@ describe('Java points bridge compatibility contract', () => {
         }),
     };
     const workspaces = {
-      ensurePersonalWorkspace: jest
+      ensureDefaultWorkspace: jest
         .fn()
         .mockResolvedValue({ id: 'workspace-1' }),
     };
@@ -128,7 +128,7 @@ describe('Java points bridge compatibility contract', () => {
     const service = new InternalPointsService(
       prisma as never,
       walletLedger as never,
-      { ensurePersonalWorkspace: jest.fn() } as never,
+      { ensureDefaultWorkspace: jest.fn() } as never,
     );
 
     const result = await service.grantCommunity({
@@ -173,7 +173,7 @@ describe('Java points bridge compatibility contract', () => {
     const service = new InternalPointsService(
       prisma as never,
       walletLedger as never,
-      { ensurePersonalWorkspace: jest.fn() } as never,
+      { ensureDefaultWorkspace: jest.fn() } as never,
     );
 
     await expect(

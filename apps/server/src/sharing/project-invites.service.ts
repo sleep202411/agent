@@ -4,7 +4,7 @@
  * sha256, return raw once, multi-use until revoke/expiry, lazy expiry,
  * idempotent per-user accept), but grants a per-project ProjectMember role
  * rather than workspace membership. Unlike workspaces, any project (even one in
- * a personal workspace) is shareable per-project.
+ * a default workspace) is shareable per-project.
  */
 import {
   ForbiddenException,

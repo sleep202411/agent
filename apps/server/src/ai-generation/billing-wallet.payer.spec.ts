@@ -4,13 +4,7 @@ jest.mock('../workspaces/wallet-realtime', () => ({
   enqueueWalletChanged: jest.fn(() => Promise.resolve()),
 }));
 
-/**
- * Payer attribution regression (2026-08-18 incident): an invited collaborator
- * generating inside someone ELSE's personal-workspace project must charge
- * their OWN personal pot — never the host's. Team-workspace projects keep
- * charging the shared team pot; the owner working in their own personal
- * project resolves to the same pot as before.
- */
+/** Projects spend from their workspace; frozen historical payers remain authoritative. */
 describe('AiGenerationBillingWalletService payer resolution', () => {
   function expectUpsertPayer(
     upsert: jest.Mock,
@@ -33,10 +27,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
     );
   }
 
-  function buildTx(input: {
-    hostWorkspace: { id: string; type: 'personal' | 'team' } | null;
-    actorPersonalWorkspaceId: string | null;
-  }) {
+  function buildTx() {
     const upsert = jest.fn(() =>
       Promise.resolve({ id: 'acct-1', currency: 'compute_point' }),
     );
@@ -57,14 +48,8 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
     };
     const tx = {
       workspace: {
-        findUnique: jest.fn(() => Promise.resolve(input.hostWorkspace)),
-        findFirst: jest.fn(() =>
-          Promise.resolve(
-            input.actorPersonalWorkspaceId
-              ? { id: input.actorPersonalWorkspaceId }
-              : null,
-          ),
-        ),
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
       },
       walletAccount: {
         upsert,
@@ -125,28 +110,8 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       ...overrides,
     }) as never;
 
-  it('charges the ACTOR personal pot when the host workspace is personal (invited collaborator)', async () => {
-    const { tx, upsert } = buildTx({
-      hostWorkspace: { id: 'host-ws', type: 'personal' },
-      actorPersonalWorkspaceId: 'guest-own-ws',
-    });
-    const service = new AiGenerationBillingWalletService(
-      null as never,
-      null as never,
-    );
-    await service.reserveForJobInTransaction({ tx: tx as never, job: job() });
-
-    expectUpsertPayer(upsert, {
-      ownerType: 'workspace',
-      ownerId: 'guest-own-ws',
-    });
-  });
-
-  it('keeps charging the shared team pot when the host workspace is a team', async () => {
-    const { tx, upsert } = buildTx({
-      hostWorkspace: { id: 'host-ws', type: 'team' },
-      actorPersonalWorkspaceId: 'guest-own-ws',
-    });
+  it('charges the project workspace for an invited collaborator', async () => {
+    const { tx, upsert } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
@@ -157,16 +122,26 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
       ownerType: 'workspace',
       ownerId: 'host-ws',
     });
-    // Team path never needs the actor's personal-workspace lookup.
+  });
+
+  it('never queries the actor workspace while resolving a project payer', async () => {
+    const { tx, upsert } = buildTx();
+    const service = new AiGenerationBillingWalletService(
+      null as never,
+      null as never,
+    );
+    await service.reserveForJobInTransaction({ tx: tx as never, job: job() });
+
+    expectUpsertPayer(upsert, {
+      ownerType: 'workspace',
+      ownerId: 'host-ws',
+    });
+    // Payer resolution must not depend on the actor's default workspace.
     expect(tx.workspace.findFirst).not.toHaveBeenCalled();
   });
 
-  it('resolves the owner in their own personal workspace to the same pot as before', async () => {
-    const { tx, upsert } = buildTx({
-      hostWorkspace: { id: 'host-ws', type: 'personal' },
-      // The owner's personal workspace IS the host workspace.
-      actorPersonalWorkspaceId: 'host-ws',
-    });
+  it('charges the same workspace when the actor is the project owner', async () => {
+    const { tx, upsert } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
@@ -183,10 +158,7 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
   });
 
   it('uses the immutable job payer instead of inferring it from workspace scope', async () => {
-    const { tx, upsert } = buildTx({
-      hostWorkspace: { id: 'host-ws', type: 'team' },
-      actorPersonalWorkspaceId: 'guest-own-ws',
-    });
+    const { tx, upsert } = buildTx();
     const service = new AiGenerationBillingWalletService(
       null as never,
       null as never,
@@ -207,51 +179,37 @@ describe('AiGenerationBillingWalletService payer resolution', () => {
     expect(tx.workspace.findFirst).not.toHaveBeenCalled();
   });
 
-  it('maps an actor-funded Story project to the actor personal wallet without moving balance', async () => {
+  it('resolves Story billing directly from the project workspace', async () => {
     const prisma = {
       storyProject: {
-        findUnique: jest.fn().mockResolvedValue({
-          billingMode: 'actor',
-          billingAccountId: null,
-        }),
-      },
-      workspace: {
-        findFirst: jest.fn().mockResolvedValue({ id: 'guest-own-ws' }),
+        findUnique: jest.fn().mockResolvedValue({ workspaceId: 'host-ws' }),
       },
     };
     const service = new AiGenerationBillingWalletService(
       prisma as never,
       null as never,
     );
-
-    await expect(
-      service.resolveStoryProjectPayer('story-1', 'guest-user'),
-    ).resolves.toEqual({ type: 'workspace', id: 'guest-own-ws' });
+    await expect(service.resolveStoryProjectPayer('story-1')).resolves.toEqual({
+      type: 'workspace',
+      id: 'host-ws',
+    });
   });
 
-  it('resolves an account-funded Story project through its explicit compute wallet', async () => {
-    const prisma = {
-      storyProject: {
-        findUnique: jest.fn().mockResolvedValue({
-          billingMode: 'account',
-          billingAccountId: 'account-1',
-        }),
-      },
-      walletAccount: {
-        findFirst: jest.fn().mockResolvedValue({
-          ownerType: 'workspace',
-          ownerId: 'project-pool-1',
-        }),
-      },
-    };
+  it('fails closed without a resolved workspace rather than spending a user wallet', async () => {
+    const { tx, upsert } = buildTx();
     const service = new AiGenerationBillingWalletService(
-      prisma as never,
+      null as never,
       null as never,
     );
-
     await expect(
-      service.resolveStoryProjectPayer('story-1', 'guest-user'),
-    ).resolves.toEqual({ type: 'workspace', id: 'project-pool-1' });
+      service.reserveForJobInTransaction({
+        tx: tx as never,
+        job: job({ workspaceId: null }),
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'GENERATION_WORKSPACE_REQUIRED' },
+    });
+    expect(upsert).not.toHaveBeenCalled();
   });
 
   it('sweeps expired grants before returning the payer balance', async () => {

@@ -29,7 +29,6 @@ interface LegacyUser {
   phone: string | null;
   email: string | null;
   nickName: string | null;
-  scoreBalance: number;
 }
 
 interface MembershipGrant {

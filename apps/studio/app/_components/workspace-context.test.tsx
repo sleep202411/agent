@@ -13,12 +13,12 @@ vi.mock("./auth-provider", () => ({
 }));
 vi.mock("@/lib/api", () => ({ setApiWorkspaceId: vi.fn() }));
 vi.mock("@/lib/collab/projects-api", () => ({
-  ensurePersonalWorkspace: vi.fn().mockResolvedValue(undefined),
+  ensureDefaultWorkspace: vi.fn().mockResolvedValue(undefined),
   listWorkspaces: vi.fn().mockResolvedValue([
-    { id: "personal", type: "personal", role: "owner", name: "Personal" },
-    { id: "team", type: "team", role: "editor", name: "Team" },
+    { id: "personal", isDefault: true, role: "owner", name: "Personal" },
+    { id: "team", isDefault: false, role: "editor", name: "Team" },
   ]),
-  createTeamWorkspace: vi.fn(),
+  createWorkspace: vi.fn(),
 }));
 import { WorkspaceProvider, useWorkspace, ACTIVE_WORKSPACE_STORAGE_KEY } from "./workspace-context";
 
@@ -62,7 +62,7 @@ async function render(query: string) {
   });
 }
 describe("workspace links from notifications", () => {
-  it("selects the invited team instead of the previous personal workspace", async () => {
+  it("selects the invited team instead of the previous default workspace", async () => {
     await render("?ws=team");
     expect(container.querySelector("output")?.textContent).toBe("team");
     expect(localStorage.getItem(ACTIVE_WORKSPACE_STORAGE_KEY)).toBe("team");

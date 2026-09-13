@@ -30,13 +30,7 @@ import { PrismaClient } from '@prisma/client';
 const TRANSACTION_OPTIONS = { maxWait: 5_000, timeout: 15_000 } as const;
 
 function buildPrisma(): PrismaClient {
-  const connectionString = requiredEnv('DATABASE_URL');
-  const adapter = new PrismaPg({
-    connectionString,
-    max: 10,
-    idleTimeoutMillis: 30_000,
-  });
-  return new PrismaClient({ adapter, transactionOptions: TRANSACTION_OPTIONS });
+  return new PrismaClient(buildPrismaCtorArgs());
 }
 
 @Injectable()
@@ -62,7 +56,16 @@ export class PrismaService
 }
 
 function buildPrismaCtorArgs(): ConstructorParameters<typeof PrismaClient>[0] {
-  const connectionString = requiredEnv('DATABASE_URL');
+  // Prisma's pg adapter serializes Date parameters without a timezone suffix.
+  // Pin every pooled connection to UTC, including URLs carrying PG options.
+  const url = new URL(requiredEnv('DATABASE_URL'));
+  url.searchParams.set(
+    'options',
+    [url.searchParams.get('options'), '-c timezone=UTC']
+      .filter(Boolean)
+      .join(' '),
+  );
+  const connectionString = url.toString();
   const adapter = new PrismaPg({
     connectionString,
     max: 10,

@@ -57,10 +57,10 @@ export function CreateCharacterDialog({
   const router = useRouter();
   const queryClient = useQueryClient();
   const activeWorkspace = useActiveWorkspace();
-  // real_person v1 lives ONLY in the subject's personal workspace (design §0);
+  // real_person v1 lives ONLY in the subject's default workspace (design §0);
   // the server 400s (REAL_PERSON_PERSONAL_ONLY) in a team, so gate the option
   // up front rather than after the whole consent walk.
-  const realPersonAllowed = activeWorkspace?.type === "personal";
+  const realPersonAllowed = activeWorkspace?.isDefault === true;
 
   const [kind, setKind] = useState<CharacterKind>("virtual");
   const [step, setStep] = useState<Step>("details");

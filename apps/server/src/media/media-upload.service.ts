@@ -92,6 +92,7 @@ import type { UploadKind } from './dto';
 import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
 import { WorkspacePermissionService } from '../workspaces';
+import { StoryPermissionService } from '../story-studio/story-permission.service';
 import {
   UploadedImageProbeService,
   type UploadedImageProbeResult,
@@ -347,6 +348,7 @@ export class MediaUploadService {
     private readonly uploadedImages: UploadedImageProbeService,
     private readonly mediaFacts: MediaAssetFactsService,
     private readonly storageRegistry: StorageProviderRegistry,
+    private readonly storyPermissions: StoryPermissionService,
   ) {}
 
   /**
@@ -399,6 +401,7 @@ export class MediaUploadService {
       input.kind,
       input.scope?.crewId,
       workspaceId,
+      input.scope?.storyProjectId,
     );
     const policy = UPLOAD_KIND_POLICY[input.kind];
     const storage = this.storageForUpload(input.kind);
@@ -564,6 +567,7 @@ export class MediaUploadService {
       input.kind,
       input.scope?.crewId,
       workspaceId,
+      input.scope?.storyProjectId,
     );
     const policy = UPLOAD_KIND_POLICY[input.kind];
     let storage = this.storageForUpload(input.kind);
@@ -866,21 +870,19 @@ export class MediaUploadService {
               source: MediaAssetSource.user_upload,
               createdByUserId: userId,
               workspaceId: uploadScope.workspaceId,
-              metadata: policy.verifiedImageFinalKeySegment
-                ? {
-                    uploadKind: input.kind,
-                    ...(uploadScope.crewId
-                      ? { crewId: uploadScope.crewId }
-                      : {}),
-                    storagePhase: 'immutable_final',
-                    inspectedBy: 'server_byte_probe',
-                  }
-                : {
-                    uploadKind: input.kind,
-                    ...(uploadScope.crewId
-                      ? { crewId: uploadScope.crewId }
-                      : {}),
-                  },
+              metadata: {
+                uploadKind: input.kind,
+                ...(uploadScope.storyProjectId
+                  ? { storyProjectId: uploadScope.storyProjectId }
+                  : {}),
+                ...(uploadScope.crewId ? { crewId: uploadScope.crewId } : {}),
+                ...(policy.verifiedImageFinalKeySegment
+                  ? {
+                      storagePhase: 'immutable_final',
+                      inspectedBy: 'server_byte_probe',
+                    }
+                  : {}),
+              },
             },
             select: {
               id: true,
@@ -1138,10 +1140,9 @@ export class MediaUploadService {
   }
 
   /**
-   * Generic uploads are either explicitly workspace-owned or explicitly
-   * personal. Encoding that choice into the signed object key binds issue and
-   * confirm without a mutable upload-session row. A caller cannot issue under
-   * one workspace and confirm the same bytes under another.
+   * Bind upload issue and confirmation to the same owner and scope without an
+   * upload-session row. Story uploads derive their workspace from the project
+   * and include its identity, so confirmation cannot switch projects.
    */
   private buildUploadScopePrefix(
     keySegment: string,
@@ -1156,7 +1157,31 @@ export class MediaUploadService {
     kind: UploadKind,
     crewId: string | undefined,
     workspaceHeader: string | undefined,
+    storyProjectId?: string,
   ): Promise<UploadScope> {
+    if (storyProjectId) {
+      if (
+        crewId !== undefined ||
+        kind === 'crew_asset_file' ||
+        kind === 'episode_source_video'
+      ) {
+        throw new BadRequestException({
+          code: 'MEDIA_SCOPE_CONFLICT',
+          message: 'This upload kind cannot declare scope.storyProjectId',
+        });
+      }
+      const { project } = await this.storyPermissions.requireProject(
+        userId,
+        storyProjectId,
+        'story.edit',
+      );
+      return {
+        workspaceId: project.workspaceId,
+        crewId: null,
+        storyProjectId: project.id,
+        keyScope: `workspace-${project.workspaceId}/story-${project.id}`,
+      };
+    }
     if (kind === 'crew_asset_file') {
       if (!crewId) {
         throw new BadRequestException({
@@ -1237,6 +1262,7 @@ export class MediaUploadService {
       asset.metadata && typeof asset.metadata === 'object'
         ? (asset.metadata as Record<string, unknown>)
         : {};
+    if (metadata.storyProjectId !== scope.storyProjectId) return false;
     return scope.crewId
       ? metadata.crewId === scope.crewId
       : metadata.crewId === undefined;
@@ -1279,6 +1305,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface UploadScope {
+  storyProjectId?: string;
   workspaceId: string | null;
   crewId: string | null;
   keyScope: string;

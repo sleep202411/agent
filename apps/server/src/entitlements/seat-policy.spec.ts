@@ -1,6 +1,5 @@
 import {
-  DEFAULT_TEAM_SEAT_POLICY,
-  PERSONAL_WORKSPACE_SEAT_POLICY,
+  DEFAULT_WORKSPACE_SEAT_POLICY,
   decideSeatAdmission,
   type SeatPolicy,
 } from './seat-policy';
@@ -33,12 +32,14 @@ describe('decideSeatAdmission', () => {
    * dead end — the wall only showed up when an invitee clicked accept.
    */
   it('no-plan TEAM default: a free team seats a real team', () => {
-    expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 1).kind).toBe('allow');
-    expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 27).kind).toBe(
+    expect(decideSeatAdmission(DEFAULT_WORKSPACE_SEAT_POLICY, 1).kind).toBe(
       'allow',
     );
-    expect(decideSeatAdmission(DEFAULT_TEAM_SEAT_POLICY, 28).kind).toBe(
-      'block',
+    expect(decideSeatAdmission(DEFAULT_WORKSPACE_SEAT_POLICY, 27).kind).toBe(
+      'allow',
+    );
+    expect(decideSeatAdmission(DEFAULT_WORKSPACE_SEAT_POLICY, 1000).kind).toBe(
+      'allow',
     );
   });
 
@@ -49,25 +50,28 @@ describe('decideSeatAdmission', () => {
    * not a drift.
    */
   it('free team seats match the paid team plan', () => {
-    expect(DEFAULT_TEAM_SEAT_POLICY.includedSeats).toBe(28);
-    expect(DEFAULT_TEAM_SEAT_POLICY.maxSeats).toBe(28);
-    expect(DEFAULT_TEAM_SEAT_POLICY.seatOverageAllowed).toBe(false);
+    expect(DEFAULT_WORKSPACE_SEAT_POLICY.includedSeats).toBe(28);
+    expect(DEFAULT_WORKSPACE_SEAT_POLICY.maxSeats).toBeNull();
+    expect(DEFAULT_WORKSPACE_SEAT_POLICY.seatOverageAllowed).toBe(true);
   });
 
   it('no-plan PERSONAL allowance is owner-only for creator seats', () => {
-    expect(decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 0).kind).toBe(
-      'allow',
-    );
-    expect(decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 1).kind).toBe(
-      'block',
-    );
+    expect(
+      decideSeatAdmission(policy({ includedSeats: 1, maxSeats: 1 }), 0).kind,
+    ).toBe('allow');
+    expect(
+      decideSeatAdmission(policy({ includedSeats: 1, maxSeats: 1 }), 1).kind,
+    ).toBe('block');
   });
 
   it('owner alone at a 1-seat cap: no member to remove, so the remedy is seats', () => {
     // Now reached by a PERSONAL workspace, which stays owner-only: the owner holds
     // the only seat and cannot be removed, so "remove a member" would be advice
     // nobody can act on.
-    const result = decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 1);
+    const result = decideSeatAdmission(
+      policy({ includedSeats: 1, maxSeats: 1 }),
+      1,
+    );
     if (result.kind !== 'block') throw new Error('expected a block');
     expect(result.reason).toBe(
       'This workspace is limited to 1 creator seat. That seat belongs to the workspace owner, so there is no member to remove — subscribe to a plan with more seats to add a member.',
@@ -86,7 +90,10 @@ describe('decideSeatAdmission', () => {
     // Live on .com: a personal workspace holding 2 creators against a 1-seat cap,
     // from a period when the guard was looser. Enforcement is add-time only, so
     // they keep their seats; removing one still leaves the workspace at the cap.
-    const result = decideSeatAdmission(PERSONAL_WORKSPACE_SEAT_POLICY, 2);
+    const result = decideSeatAdmission(
+      policy({ includedSeats: 1, maxSeats: 1 }),
+      2,
+    );
     if (result.kind !== 'block') throw new Error('expected a block');
     expect(result.reason).toBe(
       'This workspace is limited to 1 creator seat. 2 members already hold a seat, so removing one will not free any — restore the plan that granted them to add another member.',

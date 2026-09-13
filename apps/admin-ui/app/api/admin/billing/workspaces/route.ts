@@ -8,7 +8,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Read-only: search workspaces (?query=&type=&limit=) for the team-wallet picker.
+// Read-only: search workspaces (?query=&relatedUserId=&limit=) for the workspace-wallet picker.
 export async function GET(request: NextRequest) {
   try {
     const upstream = await fetch(adminPathWithSearch(request, "/billing/workspaces"), {

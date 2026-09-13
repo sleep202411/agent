@@ -1,4 +1,9 @@
 import { ConflictException } from '@nestjs/common';
+import { KLING_MOTION_PRODUCT_PRICING } from '../../prisma/seed/ai-catalog/defaults';
+import {
+  createFalModelConfig,
+  toAiModelDefinition,
+} from '../ai-generation/providers/fal/fal-schema.mapper';
 import {
   StoryProductionGenerationService,
   assertStoryGenerationQuoteMatches,
@@ -11,6 +16,48 @@ import {
 } from './story-production-generation.service';
 
 describe('Story production generation model constraints', () => {
+  const imageOnlyVideo = () =>
+    toAiModelDefinition(
+      createFalModelConfig({
+        endpointId: 'fal-ai/kling-video/v1/standard/image-to-video',
+        type: 'video',
+        generationModes: ['image_to_video'],
+        requiredPlan: null,
+        enabled: true,
+        queueName: 'ai-video-generation',
+        globalConcurrency: 4,
+        perUserRunning: 1,
+        perUserQueued: 10,
+        pollDelayMs: 1_000,
+        billing: { productPricing: KLING_MOTION_PRODUCT_PRICING },
+      }),
+    );
+
+  it('skips an image-only fal model for a Story shot with no source frame', async () => {
+    const imageOnly = imageOnlyVideo();
+    imageOnly.ui_policy = {
+      defaultMode: 'simple',
+      ...imageOnly.ui_policy,
+      recommended: true,
+    };
+    const resolved = await resolveDefaultVideoModel([
+      imageOnly,
+      videoModel('text-video', ['5', '10']),
+    ]);
+    expect(resolved.id).toBe('text-video');
+  });
+
+  it('reports the missing source frame when no text-to-video model is available', async () => {
+    await expect(
+      resolveDefaultVideoModel([imageOnlyVideo()]),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'STORY_GENERATION_MODEL_INPUT_REQUIRED',
+        fields: ['startFrame'],
+      },
+    });
+  });
+
   it('defaults duration to the closest provider-supported form value', () => {
     expect(
       nearestStoryDurationValue(

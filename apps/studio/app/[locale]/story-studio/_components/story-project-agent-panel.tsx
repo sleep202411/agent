@@ -11,6 +11,7 @@ import {
   isStoryStoryboardProposal,
   STORY_AUTHORING_STAGE_KEYS,
 } from "@repo/shared/story-agent";
+import { getStoryWorkbench } from "@/lib/story-projects-api";
 import { AgentOsPanel } from "@/components/agent-os/agent-os-panel";
 import { getStoryProductionState, storyProductionKeys } from "@/lib/story-production-api";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,11 @@ import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
  */
 export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
   const segment = useSelectedLayoutSegment();
+  const workbench = useQuery({
+    queryKey: ["story-studio", "script-workbench", projectId],
+    queryFn: () => getStoryWorkbench(projectId),
+    retry: false,
+  });
   const queryClient = useQueryClient();
   const t = useTranslations("storyStudio.authoringRun");
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
@@ -89,6 +95,7 @@ export function StoryProjectAgentPanel({ projectId }: { projectId: string }) {
 
   return (
     <AgentOsPanel
+      canWrite={workbench.data?.project.capabilities.includes("story.edit") ?? false}
       className={cn("p-0 max-md:min-w-0 max-md:flex-1", mobileView === "work" && "max-md:hidden")}
       variant="docked"
       projectId={projectId}

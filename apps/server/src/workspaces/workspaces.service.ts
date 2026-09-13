@@ -20,7 +20,6 @@ import {
   WalletOwnerType,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
-  WorkspaceType,
   type PlatformProject,
   type Workspace,
   type WorkspaceMember,
@@ -31,7 +30,7 @@ import { PlatformAuditLogService } from './audit-log.service';
 import type {
   ArchiveProjectInput,
   CreateProjectInput,
-  CreateTeamWorkspaceInput,
+  CreateWorkspaceInput,
   DeleteWorkspaceInput,
   UpdateProjectInput,
   UpdateWorkspaceInput,
@@ -71,27 +70,26 @@ export class WorkspacesService {
 
     return {
       workspaces: memberships.map((membership) =>
-        this.workspaceDto(membership.workspace, membership),
+        this.workspaceDto(membership.workspace, user.userId, membership),
       ),
     };
   }
 
-  async ensureAndReturnPersonalWorkspace(user: AuthUser) {
-    const workspace = await this.ensurePersonalWorkspace(user);
-    return { workspace: this.workspaceDto(workspace) };
+  async ensureAndReturnDefaultWorkspace(user: AuthUser) {
+    const workspace = await this.ensureDefaultWorkspace(user);
+    return { workspace: this.workspaceDto(workspace, user.userId) };
   }
 
-  async ensurePersonalWorkspace(user: AuthUser) {
+  async ensureDefaultWorkspace(user: AuthUser) {
     return this.prisma
       .$transaction(async (tx) => {
         await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`workspace:personal:${user.userId}`})::bigint)
+        SELECT pg_advisory_xact_lock(hashtext(${`workspace:default:${user.userId}`})::bigint)
       `;
 
         let workspace = await tx.workspace.findFirst({
           where: {
-            type: WorkspaceType.personal,
-            ownerUserId: user.userId,
+            defaultForUserId: user.userId,
             deletedAt: null,
           },
         });
@@ -99,7 +97,7 @@ export class WorkspacesService {
         if (!workspace) {
           workspace = await tx.workspace.create({
             data: {
-              type: WorkspaceType.personal,
+              defaultForUserId: user.userId,
               name: `${displayName(user)}'s Workspace`,
               ownerUserId: user.userId,
               createdById: user.userId,
@@ -148,11 +146,10 @@ export class WorkspacesService {
       });
   }
 
-  async createTeamWorkspace(user: AuthUser, input: CreateTeamWorkspaceInput) {
+  async createWorkspace(user: AuthUser, input: CreateWorkspaceInput) {
     const workspace = await this.prisma.$transaction(async (tx) => {
       const created = await tx.workspace.create({
         data: {
-          type: WorkspaceType.team,
           name: input.name,
           slug: input.slug,
           description: input.description,
@@ -185,7 +182,7 @@ export class WorkspacesService {
       after: workspace,
     });
 
-    return { workspace: this.workspaceDto(workspace) };
+    return { workspace: this.workspaceDto(workspace, user.userId) };
   }
 
   async getWorkspace(user: AuthUser, workspaceId: string) {
@@ -202,7 +199,7 @@ export class WorkspacesService {
         msg: 'Workspace not found.',
       });
     }
-    return { workspace: this.workspaceDto(workspace, membership) };
+    return { workspace: this.workspaceDto(workspace, user.userId, membership) };
   }
 
   async updateWorkspace(
@@ -222,12 +219,6 @@ export class WorkspacesService {
       throw new NotFoundException({
         code: 'WORKSPACE_NOT_FOUND',
         msg: 'Workspace not found.',
-      });
-    }
-    if (before.type === WorkspaceType.personal && input.slug !== undefined) {
-      throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_SLUG_LOCKED',
-        msg: 'Personal workspace slug cannot be changed.',
       });
     }
 
@@ -268,7 +259,7 @@ export class WorkspacesService {
       after: workspace,
     });
 
-    return { workspace: this.workspaceDto(workspace) };
+    return { workspace: this.workspaceDto(workspace, user.userId) };
   }
 
   async listProjects(user: AuthUser, workspaceId: string) {
@@ -464,7 +455,7 @@ export class WorkspacesService {
     return { project: this.projectDto(project) };
   }
 
-  async deleteTeamWorkspace(
+  async deleteWorkspace(
     user: AuthUser,
     workspaceId: string,
     input: DeleteWorkspaceInput,
@@ -483,10 +474,10 @@ export class WorkspacesService {
         msg: 'Workspace not found.',
       });
     }
-    if (workspace.type === WorkspaceType.personal) {
+    if (workspace.defaultForUserId !== null) {
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_CANNOT_BE_DELETED',
-        msg: 'Personal workspace cannot be deleted.',
+        code: 'DEFAULT_WORKSPACE_CANNOT_BE_DELETED',
+        msg: 'The default workspace cannot be deleted while it receives account credits.',
       });
     }
 
@@ -581,7 +572,7 @@ export class WorkspacesService {
     if (blockers.length > 0) {
       throw new ConflictException({
         code: 'WORKSPACE_NOT_EMPTY',
-        msg: `This team still has ${blockers
+        msg: `This workspace still has ${blockers
           .map((blocker) => blocker.detail)
           .join(
             '; ',
@@ -699,10 +690,14 @@ export class WorkspacesService {
     return { archived: true, projectId };
   }
 
-  private workspaceDto(workspace: Workspace, membership?: WorkspaceMember) {
+  private workspaceDto(
+    workspace: Workspace,
+    userId: string,
+    membership?: WorkspaceMember,
+  ) {
     return {
       id: workspace.id,
-      type: workspace.type,
+      isDefault: workspace.defaultForUserId === userId,
       status: workspace.status,
       name: workspace.name,
       slug: workspace.slug,
@@ -711,6 +706,7 @@ export class WorkspacesService {
       ownerUserId: workspace.ownerUserId,
       defaultProjectId: workspace.defaultProjectId,
       role: membership?.role,
+      accessScope: membership?.accessScope,
       version: workspace.version,
       createdAt: workspace.createdAt.toISOString(),
       updatedAt: workspace.updatedAt.toISOString(),
@@ -783,5 +779,5 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function displayName(user: AuthUser): string {
-  return user.nickName?.trim() || user.userName?.trim() || 'Personal';
+  return user.nickName?.trim() || user.userName?.trim() || 'My';
 }

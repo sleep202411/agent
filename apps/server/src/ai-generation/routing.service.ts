@@ -427,6 +427,11 @@ function estimateQuotaCost(
       duration: durationInput(input?.duration),
       durationSeconds: numberInput(input?.durationSeconds),
       text: stringInput(input?.prompt),
+      referenceMedia:
+        productPricing.mode === 'per_second_matrix' &&
+        productPricing.referenceTokenPricing
+          ? trustedReferenceBillingFacts(input)
+          : undefined,
       referenceImageCount: arrayLength(input?.referenceImages),
       referenceVideoSeconds: sumMediaDuration(input?.referenceVideos),
       generateAudio: booleanInput(input?.generateAudio),
@@ -518,4 +523,50 @@ function hasMediaValue(value: unknown): boolean {
     typeof (value as { url?: unknown }).url === 'string' &&
     Boolean((value as { url?: string }).url?.trim())
   );
+}
+
+function trustedReferenceBillingFacts(
+  input: Record<string, unknown> | undefined,
+) {
+  const media: { images: unknown[]; videos: unknown[]; audios: unknown[] } = {
+    images: [],
+    videos: [],
+    audios: [],
+  };
+  const seen = new Set<string>();
+  for (const [field, defaultKind] of [
+    ['referenceBindings', 'image'],
+    ['referenceImages', 'image'],
+    ['referenceVideos', 'video'],
+    ['referenceAudios', 'audio'],
+  ] as const) {
+    const items = input?.[field];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) {
+      const ref: Record<string, unknown> =
+        item && typeof item === 'object'
+          ? (item as Record<string, unknown>)
+          : { url: item };
+      const keys = [ref.assetId, ref.url]
+        .filter(
+          (value): value is string =>
+            typeof value === 'string' && value.trim().length > 0,
+        )
+        .map((value) => value.trim());
+      if (keys.some((key) => seen.has(key))) continue;
+      keys.forEach((key) => seen.add(key));
+      const rawKind = typeof ref.kind === 'string' ? ref.kind.trim() : '';
+      const kind = ['image', 'video', 'audio'].includes(rawKind)
+        ? rawKind
+        : defaultKind;
+      const target =
+        kind === 'video'
+          ? media.videos
+          : kind === 'audio'
+            ? media.audios
+            : media.images;
+      target.push(ref.referenceBillingFacts);
+    }
+  }
+  return media;
 }

@@ -871,7 +871,7 @@ export function ProductFamilyTabs({
 export function productTypeHelp(value: string) {
   const labels: Record<string, string> = {
     community_point_pack: "购买后发放可消费社区积分；可提现社区积分只能来自创作者收入。",
-    compute_point_pack: "购买后发放算力积分，用于 AI 生成等平台能力消耗。",
+    compute_point_pack: "购买后向工作区发放算力积分，用于该工作区的 AI 生成等消耗。",
     membership_plan: "购买后开通个人会员权益，可按月/年订阅或一次性购买。",
     team_membership_plan: "购买后开通工作区或团队会员权益。",
     community_membership_plan: "购买后开通社区会员权益(会员免费观看 + 购买折扣)。",

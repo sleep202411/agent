@@ -35,6 +35,7 @@ function setup(variants: unknown[] = []) {
     placements: [],
   };
   const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
     mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
     mediaProcessingJob: {
       upsert: jest.fn().mockResolvedValue({ status: 'pending' }),

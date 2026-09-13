@@ -16,7 +16,6 @@ import {
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
-  WorkspaceType,
   type Voucher,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
@@ -40,7 +39,7 @@ function isUniqueViolation(err: unknown): boolean {
 
 /**
  * Redemption vouchers (兑换券). A voucher is redeemed for a DIRECT grant — today,
- * compute_point credits to the redeemer's personal-workspace wallet. Distinct
+ * compute_point credits to the redeemer's default-workspace wallet. Distinct
  * from BillingPromotion (which discounts an order). Redeem is financial-grade:
  *
  *   1. Claim — flip active->redeemed with a row-locked conditional update; the
@@ -178,20 +177,19 @@ export class VoucherService {
       });
     }
 
-    // compute_point is workspace-owned -> credits land in the redeemer's personal
+    // compute_point is workspace-owned -> credits land in the redeemer's defaultWorkspace
     // workspace pot (matches admin grants / the wallet the user reads + spends).
-    const personal = await this.prisma.workspace.findFirst({
+    const defaultWorkspace = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: userId,
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (!personal) {
+    if (!defaultWorkspace) {
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'No personal workspace to receive the credits yet.',
+        code: 'DEFAULT_WORKSPACE_MISSING',
+        msg: 'No default workspace to receive the credits yet.',
       });
     }
 
@@ -203,7 +201,7 @@ export class VoucherService {
         data: {
           status: VoucherStatus.redeemed,
           redeemedByUserId: userId,
-          redeemedWorkspaceId: personal.id,
+          redeemedWorkspaceId: defaultWorkspace.id,
           redeemedAt: now,
         },
       });
@@ -232,7 +230,8 @@ export class VoucherService {
 
     // Credit. Idempotent by voucher id: a retry / same-user re-redeem (e.g. after
     // a crash between claim and credit) credits exactly once (postEntry dedupes).
-    const targetWorkspaceId = voucher.redeemedWorkspaceId ?? personal.id;
+    const targetWorkspaceId =
+      voucher.redeemedWorkspaceId ?? defaultWorkspace.id;
     const amount = BigInt(voucher.computeCreditAmount ?? 0);
     const account = await this.prisma.walletAccount.upsert({
       where: {

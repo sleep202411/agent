@@ -75,6 +75,7 @@ integration('episode upload against local PostgreSQL and MinIO', () => {
       {} as never,
       new MediaAssetFactsService(prisma, access),
       registry as never,
+      {} as never,
     );
     makeService = () =>
       new EpisodeUploadService(prisma, uploads, registry as never);

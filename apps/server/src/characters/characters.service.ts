@@ -154,8 +154,8 @@ export class CharactersService {
         })
       : null;
     if (realPerson) {
-      // ⟦R5⟧ a likeness lives ONLY in the subject's personal workspace (v1).
-      await this.enrollment.requirePersonalWorkspace(user, input.workspaceId);
+      // ⟦R5⟧ a likeness lives ONLY in the subject's default workspace (v1).
+      await this.enrollment.requireDefaultWorkspace(user, input.workspaceId);
     }
 
     if (input.castProjectId) {

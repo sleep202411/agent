@@ -59,3 +59,17 @@ describe("model stream completion", () => {
     }
   );
 });
+
+describe("mobile speed profile", () => {
+  it("sends Flash with thinking disabled to the provider", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(modelResponse("stop")));
+    vi.stubGlobal("fetch", fetchMock);
+    await createLiteLlmChatModel({
+      profileId: "qwen3.7-flash",
+      config: { baseUrl: "http://model.test/v1", apiKey: "test-only" },
+    }).invoke("Continue");
+    const [request, init] = fetchMock.mock.calls[0]!;
+    const body = request instanceof Request ? await request.text() : init.body;
+    expect(JSON.parse(body)).toMatchObject({ model: "qwen3.7-flash", enable_thinking: false });
+  });
+});

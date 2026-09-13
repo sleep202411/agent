@@ -557,7 +557,7 @@
     "consentRetentionTitle": "How long we keep it",
     "consentRetentionBody": "For as long as this character stays active. If you revoke, provider-side assets are deleted and our copies of your face data are permanently deleted within 30 days. A consent ledger — timestamps, versions, and hashes, never face images — is retained as legal evidence.",
     "consentScopeTitle": "Who can use your likeness",
-    "consentScopeBody": "Only you. This character lives in your personal workspace and can be used only by your own account in your own projects. It is never shared with other users, teams, or workspaces.",
+    "consentScopeBody": "Only you. This character lives in your default workspace and can be used only by your own account in your own projects. It is never shared with other users, teams, or workspaces.",
     "consentWithdrawTitle": "Withdrawing consent",
     "consentWithdrawBody": "You can revoke at any time by deleting this character. Revoking deletes the provider-side face assets, cancels running generations that use this likeness, and starts the 30-day purge of your face data.",
     "consentOutputsTitle": "Videos already generated",
@@ -607,8 +607,8 @@
     "revokeConfirm": "Revoke",
     "characterRevoked": "Likeness revoked",
     "revokedNotice": "Consent was withdrawn for this likeness. Provider-side face assets were deleted and the face-data purge is underway. This character can no longer be used in generation.",
-    "realPersonPersonalOnlyHint": "Available only in your personal library.",
-    "errorRealPersonPersonalOnly": "Real-person characters can only be created in your personal library.",
+    "realPersonPersonalOnlyHint": "请在你的默认空间中创建。",
+    "errorRealPersonPersonalOnly": "请在你的默认空间中创建。",
     "callbackCompleteTitle": "Verification received",
     "callbackCompleteBody": "You can return to the FizzDragon tab — we are confirming your likeness.",
     "grantProjectTitle": "Project",
@@ -878,9 +878,8 @@
       "tooltipDetailed": "算力积分 · 可用 {available} · 冻结 {held} · 总计 {total}",
       "manage": "管理算力积分",
       "unavailable": "读取失败",
-      "personalHint": "个人空间始终显示你自己的算力积分，包括他人的个人空间。点击可充值。",
-      "teamHint": "当前团队共用的算力积分。点击可查看充值管理。",
-      "recharge": "积分充值"
+      "recharge": "积分充值",
+      "workspaceHint": "此工作空间的共享算力积分。点击管理积分。"
     },
     "header": {
       "fizzDragonHomeAriaLabel": "FizzDragon 首页"
@@ -922,7 +921,7 @@
       "title": "分享“{name}”",
       "descriptionWorkspace": "成员可以协作处理该团队中的所有项目。",
       "descriptionProject": "成员可以协作处理该项目。",
-      "descriptionStoryProject": "添加的人会同时加入这个影游和它所属的团队空间，因此也能看到团队里的其他内容。"
+      "descriptionStoryProject": "受邀成员可以访问此影游项目，不会因此获得空间内其他项目的访问权限。"
     }
   },
   "auth": {
@@ -1028,7 +1027,7 @@
     "removeMemberFailed": "无法移除成员",
     "inviteLink": "邀请链接",
     "inviteLinkHint": "在你撤销之前，任何持有链接的人都可以以你选择的角色加入{scope}。",
-    "thisTeam": "此团队",
+    "thisTeam": "此空间",
     "thisProject": "此项目",
     "inviteLinkRole": "邀请链接角色",
     "createLink": "创建链接",
@@ -1045,29 +1044,27 @@
     "availableCredits": "可用积分：{amount}",
     "balanceLoading": "正在加载积分余额…",
     "balanceUnavailable": "积分余额暂不可用",
-    "switchTeams": "切换团队",
+    "switchWorkspaces": "切换空间",
     "searchPlaceholder": "搜索空间名称…",
     "noSearchResults": "没有匹配的空间",
     "current": "当前",
-    "teamType": "团队",
-    "personalType": "个人",
     "invite": "邀请",
-    "createTeam": "创建团队",
-    "createTeamTitle": "创建团队",
+    "createWorkspace": "创建空间",
+    "createWorkspaceTitle": "创建空间",
     "collaborateRealtime": "实时协作。",
-    "myTeam": "我的团队",
-    "createTeamDescription": "团队是与同事协作、管理项目和整理资源的协作空间。",
-    "teamName": "团队名称",
+    "myTeam": "我的空间",
+    "createWorkspaceDescription": "创建空间，管理项目、共享资源并邀请成员协作。",
+    "teamName": "空间名称",
     "teamNamePlaceholder": "例如：营销设计",
     "description": "描述",
     "optional": "（可选）",
-    "teamDescriptionPlaceholder": "这个团队是关于什么的？",
-    "teamIcon": "团队图标",
+    "teamDescriptionPlaceholder": "这个空间是关于什么的？",
+    "teamIcon": "空间图标",
     "uploadComingSoon": "上传自定义图标——即将推出",
     "uploadIconComingSoon": "上传你自己的图标（即将推出）",
     "presetIconLabel": "{name} 图标",
-    "teamCreated": "团队“{name}”已创建",
-    "createTeamFailed": "无法创建团队"
+    "teamCreated": "空间“{name}”已创建",
+    "createWorkspaceFailed": "无法创建空间"
   },
   "billing": {
     "dialogLabel": "选择你的 FizzStudio 方案",
@@ -1128,7 +1125,7 @@
     },
     "toast": {
       "plansLoadFailed": "会员方案加载失败",
-      "teamWorkspaceRequired": "切换到或创建一个团队工作空间以购买团队套餐。",
+      "teamWorkspaceRequired": "请先选择工作空间，再购买套餐。",
       "membershipActivated": "会员已激活",
       "checkoutUrlMissing": "未返回支付结算链接",
       "paymentFailed": "支付失败"
@@ -1685,8 +1682,6 @@
       "editor": "编辑者",
       "viewer": "查看者"
     },
-    "personal": "个人",
-    "team": "团队",
     "signIn": "登录",
     "signOut": "退出登录",
     "signInToManageAccount": "登录以管理你的账户。",
@@ -1699,12 +1694,12 @@
     "total": "总计",
     "upgrade": "升级",
     "credits": "算力积分",
-    "teamCredits": "团队算力积分",
+    "teamCredits": "空间算力积分",
     "availableBalance": "可用余额",
-    "sharedTeamBalance": "团队共享余额",
+    "sharedTeamBalance": "空间共享余额",
     "reservedByRunningJobs": "{amount} 已被运行中的任务占用",
     "creditsExpireOn": "{amount} 积分将于 {date} 过期",
-    "onlyBillingAdminsCanTopUp": "只有账单管理员可以为该团队充值算力积分。",
+    "onlyBillingAdminsCanTopUp": "只有账单管理员可以为该空间充值算力积分。",
     "creditsAdded": "已添加 {amount} 算力积分",
     "creditsAddedGeneric": "已添加算力积分",
     "couldntStartTopUp": "无法发起充值",
@@ -1837,25 +1832,26 @@
     "projectMembersSubtitle": "参与“{name}”协作的成员。",
     "membersSubtitle": "“{name}”的成员可以协作处理该工作区的每个项目。",
     "overview": "概览",
-    "teamName": "团队名称",
+    "teamName": "空间名称",
     "workspaceName": "工作区名称",
     "workspaceNameUpdated": "工作区名称已更新",
     "couldntUpdateName": "无法更新名称",
-    "teamMembers": "团队成员",
-    "teamMembersWithCount": "团队成员（{count}）",
+    "teamMembers": "空间成员",
+    "teamMembersWithCount": "空间成员（{count}）",
     "noMembersYet": "暂无成员。",
     "inviteMembers": "邀请成员",
     "manageAccess": "管理访问权限",
-    "sharedTeamBalancePool": "团队共享余额 · 所有成员从此池中扣减",
+    "sharedTeamBalancePool": "空间共享余额 · 所有成员从此池中扣减",
     "availableCredits": "可用算力积分",
     "manageCredits": "管理算力积分",
     "dangerZone": "危险操作",
-    "dangerZoneDescription": "删除该团队并移除所有成员的访问权限。此操作无法撤销。",
-    "deleteTeam": "删除团队",
+    "dangerZoneDescription": "删除该空间并移除所有成员的访问权限。此操作无法撤销。",
+    "deleteTeam": "删除空间",
     "teamDeleted": "已删除“{name}”",
-    "couldntDeleteTeam": "无法删除团队",
+    "couldntDeleteTeam": "无法删除空间",
     "deleteTeamConfirmTitle": "删除“{name}”？",
-    "deleteTeamConfirmBody": "所有成员将失去访问权限，团队的项目将被归档。此操作无法撤销。"
+    "deleteTeamConfirmBody": "所有成员将失去访问权限，空间的项目将被归档。此操作无法撤销。",
+    "workspace": "工作空间"
   },
   "project": {
     "renameFailed": "无法重命名项目",
@@ -2719,7 +2715,7 @@
     "newProject": "新建故事项目",
     "projects": {
       "title": "故事项目",
-      "subtitle": "集中查看你有权访问的全部故事。",
+      "subtitle": "查看当前空间中的故事项目。",
       "draft": "草稿",
       "noSummary": "尚未填写项目简介。",
       "videoProgress": "当前视频 {current}/{total}",
@@ -2740,7 +2736,7 @@
       "cancel": "取消",
       "create": "创建项目",
       "save": "保存",
-      "share": "共创"
+      "share": "分享"
     },
     "errors": {
       "loadProjects": "无法加载项目。",
@@ -2907,8 +2903,6 @@
           "prop": "描述道具的造型、材质与细节；输入 @ 引用已有资产…"
         },
         "model": "模型",
-        "save": "保存",
-        "saved": "已保存。",
         "saveError": "无法保存资产规格。",
         "generate": "生成",
         "generateStarted": "已开始生成。",
@@ -2931,6 +2925,7 @@
         "turnaroundDescription": "AI 视频生成会优先使用三视图作为角色参考。",
         "turnaroundFor": "{name}的三视图",
         "turnaroundNeedsPrimary": "请先生成或上传角色形象图。",
+        "completeDetails": "请先填写资产名称和图片提示词。",
         "turnaroundEmpty": "尚未生成三视图。",
         "turnaroundUpload": "上传三视图",
         "turnaroundDownload": "下载三视图",
@@ -3714,7 +3709,7 @@
       "tidy": {
         "action": "整理画布"
       },
-      "share": "共创",
+      "share": "分享",
       "catalogPanel": {
         "choice": "选择",
         "end": "结局"
@@ -3904,6 +3899,19 @@
       "videoLabel": "视频",
       "imageModel": "图片模型",
       "videoModel": "视频模型"
+    },
+    "move": {
+      "action": "移动到",
+      "confirm": "移动",
+      "title": "移动“{title}”",
+      "description": "项目链接、内容、所有者和直接协作者保持不变。当前空间成员继承的访问权限结束，目标空间成员获得访问权限。",
+      "destination": "目标空间",
+      "choose": "选择空间",
+      "credits": "后续生成使用目标空间的积分；余额和历史扣费保留在原空间。",
+      "noDestination": "你需要成为另一个空间的所有者或管理员才能移动项目。",
+      "moving": "正在移动…",
+      "success": "项目已移动",
+      "failed": "无法移动项目。"
     }
   },
   "storyStudioLanding": {
@@ -3973,6 +3981,7 @@
     }
   },
   "agentOs": {
+    "readOnlyProject": "此项目为只读，需要编辑权限才能使用 FizzAgent。",
     "title": "FizzAgent",
     "subtitle": "对话式执行智能体 — 工具会真正写入项目",
     "close": "关闭 FizzAgent",

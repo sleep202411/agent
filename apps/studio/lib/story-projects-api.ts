@@ -4,9 +4,8 @@ import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "
 /**
  * Product Story Studio client.
  *
- * StoryProject is a sovereign project root. Project membership authorizes
- * project reads and writes. Workspace is legacy storage metadata only; project
- * creation and billing are resolved server-side from the signed-in creator.
+ * StoryProject belongs to a workspace. Direct project membership and workspace
+ * roles authorize access; new generation uses the project workspace wallet.
  * Mutable drafts use revision CAS; Build records capture server-owned
  * immutable input snapshots automatically.
  */
@@ -92,6 +91,7 @@ export interface StoryProjectProductionSummary {
 }
 
 export interface StoryProjectSummary {
+  canMove: boolean;
   id: string;
   workspaceId: string;
   frameProfile: StoryFrameProfile;
@@ -116,6 +116,7 @@ export interface StoryProjectSummary {
 }
 
 export interface StoryBillingBalance {
+  workspaceId: string;
   availablePoints: string;
   heldPoints: string;
   totalPoints: string;
@@ -473,6 +474,7 @@ export interface StoryChapter {
 }
 
 export interface CreateStoryProjectInput {
+  workspaceId: string;
   title: string;
   summary?: string | null;
   defaultLocale: string;
@@ -495,13 +497,12 @@ export async function createStoryProject(
   return workbench.project;
 }
 
-export async function listStoryProjects(
-  query: {
-    status?: StoryProjectStatus;
-    cursor?: string;
-    limit?: number;
-  } = {}
-): Promise<CursorPage<StoryProjectSummary>> {
+export async function listStoryProjects(query: {
+  workspaceId: string;
+  status?: StoryProjectStatus;
+  cursor?: string;
+  limit?: number;
+}): Promise<CursorPage<StoryProjectSummary>> {
   const page = await api.get<CursorPage<StoryProjectSummary>>("/aurora/story-projects", {
     params: query,
     requestScope: "project",
@@ -1043,4 +1044,14 @@ function nullableSha256String(value: unknown): value is string | null {
 function validIsoTimestamp(value: unknown): value is string {
   if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return false;
   return new Date(value).toISOString() === value;
+}
+
+export async function moveStoryProject(
+  projectId: string,
+  input: { targetWorkspaceId: string; expectedWorkspaceId: string; expectedProjectVersion: number }
+): Promise<{ projectId: string; workspaceId: string; projectVersion: number }> {
+  return api.post(`/aurora/story-projects/${encodeURIComponent(projectId)}/move`, {
+    data: input,
+    requestScope: "project",
+  });
 }

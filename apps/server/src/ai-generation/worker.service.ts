@@ -42,6 +42,7 @@ import {
   OutputStorageService,
   type OutputStorageResult,
 } from '../infra/storage/storage.types';
+import { inspectImage } from '../media/uploaded-image-probe.service';
 import { MediaAssetReadinessService } from '../media/media-asset-readiness.service';
 import {
   PlayableVideoProbeService,
@@ -1636,6 +1637,7 @@ export class AiGenerationWorkerService
       let result: OutputStorageResult;
       let actualVideo: PlayableVideoProbeResult | null = null;
       let actualAudio: PlayableAudioProbeResult | null = null;
+      let actualImage: { width: number; height: number } | null = null;
       if (outputType === 'video') {
         // Every video takes one byte-truth path: spool, hash, ffprobe, then
         // upload. Provider width/height/duration and requested audio flags are
@@ -1714,6 +1716,17 @@ export class AiGenerationWorkerService
         if (!body) {
           throw new Error(`no bytes available for output index ${raw.index}`);
         }
+        // Some image providers return only a URL. Persist dimensions now so
+        // later reference quotes need neither client guesses nor re-downloads.
+        if (outputType === 'image' && (!raw.width || !raw.height)) {
+          const imagePath = join(tmpdir(), `ai-image-${newShortId()}.spool`);
+          try {
+            await writeFile(imagePath, body);
+            actualImage = await inspectImage(imagePath);
+          } finally {
+            await unlink(imagePath).catch(() => {});
+          }
+        }
         checksumSha256 = createHash('sha256').update(body).digest('hex');
         result = await storage.upload({
           body,
@@ -1725,8 +1738,8 @@ export class AiGenerationWorkerService
       const contentHash = checksumSha256.slice(0, 12);
       const contentType =
         actualVideo?.contentType ?? actualAudio?.contentType ?? raw.mimeType;
-      const width = actualVideo?.width ?? raw.width;
-      const height = actualVideo?.height ?? raw.height;
+      const width = actualVideo?.width ?? actualImage?.width ?? raw.width;
+      const height = actualVideo?.height ?? actualImage?.height ?? raw.height;
       const durationSeconds =
         actualVideo?.durationSeconds ??
         actualAudio?.durationSeconds ??

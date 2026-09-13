@@ -14,7 +14,6 @@ import {
   StoryVisibility,
   StudioDocumentType,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import {
@@ -2627,7 +2626,7 @@ async function createFixture(
   const user = { userId: `${prefix}:user`.slice(0, 64) } as AuthUser;
   const workspace = await prisma.workspace.create({
     data: {
-      type: WorkspaceType.team,
+      defaultForUserId: null,
       name: prefix,
       ownerUserId: user.userId,
       createdById: user.userId,
@@ -2916,7 +2915,7 @@ async function createExternalHandoffFixture(
           data: {
             turnId,
             status: 'running',
-            workspaceType: 'story',
+            defaultForUserId: 'story',
             modelProfileId: 'integration-test',
           },
           occurredAt: new Date(),

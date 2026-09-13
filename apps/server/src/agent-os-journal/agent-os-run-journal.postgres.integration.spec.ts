@@ -1,4 +1,5 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, Logger } from '@nestjs/common';
+import { AgentOsExternalHandoffReconcilerService } from './agent-os-external-handoff-reconciler.service';
 import { Prisma } from '@prisma/client';
 import type { AgentEventEnvelope, AgentRunStatus } from '@repo/agent-protocol';
 import { config as loadEnv } from 'dotenv';
@@ -74,6 +75,46 @@ describePostgres(
         });
       }
       await prisma.$disconnect();
+    });
+
+    it('preserves Date instants even when the connection URL requests Asia/Shanghai', async () => {
+      const original = process.env.DATABASE_URL;
+      const url = new URL(databaseUrl);
+      url.searchParams.set('options', '-c timezone=Asia/Shanghai');
+      process.env.DATABASE_URL = url.toString();
+      const client = buildPrisma();
+      if (original === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = original;
+      try {
+        const instant = new Date('2026-09-12T14:10:31.895Z');
+        const [row] = await client.$queryRaw<
+          Array<{ instant: Date; zone: string }>
+        >(
+          Prisma.sql`SELECT ${instant}::timestamptz AS instant, current_setting('TimeZone') AS zone`,
+        );
+        expect(row.zone).toBe('UTC');
+        expect(row.instant.toISOString()).toBe(instant.toISOString());
+      } finally {
+        await client.$disconnect();
+      }
+    });
+
+    it('runs the recovery candidate query against PostgreSQL without timezone or UUID comparison errors', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      try {
+        const reconciler = new AgentOsExternalHandoffReconcilerService(
+          prisma as PrismaService,
+          {
+            reconcileExternalHandoff: jest.fn().mockResolvedValue({}),
+          } as unknown as AgentOsRunJournalService,
+        );
+        await reconciler.drainOnce();
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('serializes two pods and replays the first durable admission after response loss', async () => {

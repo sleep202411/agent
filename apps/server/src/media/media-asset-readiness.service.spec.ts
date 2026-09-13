@@ -38,6 +38,7 @@ function status(
 
 function fixture() {
   const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
     mediaAsset: {
       findMany: jest.fn().mockResolvedValue([]),
       findFirst: jest.fn().mockResolvedValue(null),

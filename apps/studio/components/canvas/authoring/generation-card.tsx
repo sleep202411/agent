@@ -661,6 +661,17 @@ function GenerationCard({
           typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
         generateAudio:
           typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
+        referenceMedia: {
+          images: refFields
+            .filter((field) => field.kind === "image" && field.field === "referenceImages")
+            .flatMap((field) => references?.[field.field] ?? []),
+          videos: refFields
+            .filter((field) => field.kind === "video")
+            .flatMap((field) => references?.[field.field] ?? []),
+          audios: refFields
+            .filter((field) => field.kind === "audio")
+            .flatMap((field) => references?.[field.field] ?? []),
+        },
         referenceImageCount: uploadedReferenceCount || undefined,
         referenceVideoSeconds: referenceVideoSeconds || undefined,
       })?.sellPoints ?? null

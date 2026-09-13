@@ -1,29 +1,13 @@
 "use client";
 
-// MemberWorkspacesDrawer — 用户列表「查看」打开的抽屉：这个人的基本信息 + 他参与的
-// **全部**工作区（自己创建的和被拉进去的都在内），每个工作区可以直接充值。
-//
-// 为什么工作区要单独列出来：算力积分（compute_point）是 **workspace 拥有**的，不是用户
-// 拥有的。给「用户」加积分只会落到他的个人工作区；他和同事共用的团队池是另一个账户。
-// 所以要回答「该给谁充值」，必须先看见他到底跟哪些池子有关系、每个池子是谁的。
-//
-// 数据来自两处：
-//   GET /billing/workspaces?relatedUserId=<userId>&type=all —— 拥有 OR 参与，带该用户的角色
-//   GET /legacy-points/users-by-ids?ids=…                   —— 把 ownerUserId 批量换成名字
-// 后者是必要的：工作区表里只有外部 userId，没有用户名（我们库里根本没有用户表）。
+// Resolve a user's workspaces, then adjust the explicitly selected workspace wallet.
+// Owner identities are looked up separately through the existing user directory.
 
 import { useEffect, useState } from "react";
 import { IconCrown, IconExternalLink, IconUsers, IconWallet } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import {
-  ErrorBanner,
-  StatusPill,
-  formatDate,
-  formatInteger,
-  requestEnvelope,
-  toErrorMessage,
-} from "./shared";
+import { ErrorBanner, formatDate, formatInteger, requestEnvelope, toErrorMessage } from "./shared";
 import { WorkspaceGrantDialog } from "./workspace-grant-dialog";
 import { GrantMembershipDialog } from "./grant-membership-dialog";
 import type {
@@ -49,15 +33,18 @@ interface LegacyIdentity {
 const ROLE_LABEL: Record<AdminWorkspaceMemberRole, string> = {
   owner: "所有者",
   admin: "管理员",
-  member: "成员",
+  editor: "编辑者",
+  billing: "财务",
   viewer: "只读",
 };
 
 export function MemberWorkspacesDrawer({
   member,
+  canWrite,
   onClose,
 }: {
   member: MemberSummaryForDrawer | null;
+  canWrite: boolean;
   onClose: () => void;
 }) {
   const [rows, setRows] = useState<AdminWorkspaceRow[]>([]);
@@ -65,7 +52,9 @@ export function MemberWorkspacesDrawer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [granting, setGranting] = useState<AdminWorkspaceRow | null>(null);
-  const [grantingTeamPlan, setGrantingTeamPlan] = useState<AdminWorkspaceRow | null>(null);
+  const [grantingWorkspacePlan, setGrantingWorkspacePlan] = useState<AdminWorkspaceRow | null>(
+    null
+  );
 
   const userId = member?.userId ?? null;
 
@@ -83,7 +72,7 @@ export function MemberWorkspacesDrawer({
       setError(null);
       try {
         const data = await requestEnvelope<AdminBillingWorkspacesData>(
-          `/api/admin/billing/workspaces?relatedUserId=${encodeURIComponent(userId)}&type=all&limit=50`
+          `/api/admin/billing/workspaces?relatedUserId=${encodeURIComponent(userId)}&limit=50`
         );
         if (cancelled) return;
         const items = data?.items ?? [];
@@ -120,6 +109,9 @@ export function MemberWorkspacesDrawer({
   }, [userId]);
 
   function applyBalance(workspaceId: string, availableBalance: string) {
+    setGranting((current) =>
+      current?.id === workspaceId ? { ...current, hasWallet: true, availableBalance } : current
+    );
     setRows((prev) =>
       prev.map((row) =>
         row.id === workspaceId ? { ...row, hasWallet: true, availableBalance } : row
@@ -180,9 +172,6 @@ export function MemberWorkspacesDrawer({
                           <div className="min-w-0 space-y-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="font-medium text-slate-950">{row.name}</span>
-                              <StatusPill tone={row.type === "team" ? "success" : "muted"}>
-                                {row.type === "team" ? "团队" : "个人"}
-                              </StatusPill>
                               {isOwner ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                                   <IconCrown className="size-3" />
@@ -194,6 +183,7 @@ export function MemberWorkspacesDrawer({
                                 </span>
                               ) : null}
                             </div>
+                            <p className="font-mono text-[11px] text-slate-400">{row.id}</p>
                             <p className="text-[11px] text-slate-500">
                               所有者 {owner?.nickName || "—"}
                               <span className="ml-1 font-mono text-slate-400">
@@ -211,27 +201,28 @@ export function MemberWorkspacesDrawer({
                           <div className="flex shrink-0 flex-col items-end gap-2">
                             <span className="flex items-center gap-1 text-[13px] font-semibold text-slate-950">
                               <IconWallet className="size-3.5 text-slate-400" />
+                              <span className="font-normal text-slate-500">可用积分</span>
                               {row.hasWallet ? formatInteger(row.availableBalance) : "0"}
                             </span>
                             <div className="flex items-center gap-1.5">
-                              {row.type === "team" ? (
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => setGrantingTeamPlan(row)}
-                                >
-                                  <IconCrown className="size-3.5" />
-                                  Team Plan
-                                </Button>
-                              ) : null}
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setGrantingWorkspacePlan(row)}
+                                disabled={!canWrite || row.status !== "active"}
+                              >
+                                <IconCrown className="size-3.5" />
+                                工作区会员
+                              </Button>
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
                                 onClick={() => setGranting(row)}
+                                disabled={!canWrite || row.status !== "active"}
                               >
-                                充值
+                                调整积分
                               </Button>
                             </div>
                           </div>
@@ -245,7 +236,7 @@ export function MemberWorkspacesDrawer({
 
             <p className="flex items-center gap-1 text-[11px] text-slate-400">
               <IconExternalLink className="size-3" />
-              按名称搜索任意工作区请到「财务 → 团队算力池」。
+              按名称搜索任意工作区请到「财务 → 工作区积分」。
             </p>
           </div>
         </SheetContent>
@@ -253,17 +244,18 @@ export function MemberWorkspacesDrawer({
 
       {granting ? (
         <WorkspaceGrantDialog
+          key={granting.id}
           workspace={granting}
           onClose={() => setGranting(null)}
           onGranted={applyBalance}
         />
       ) : null}
 
-      {grantingTeamPlan ? (
+      {grantingWorkspacePlan ? (
         <GrantMembershipDialog
           open
-          workspace={grantingTeamPlan}
-          onClose={() => setGrantingTeamPlan(null)}
+          workspace={grantingWorkspacePlan}
+          onClose={() => setGrantingWorkspacePlan(null)}
         />
       ) : null}
     </>

@@ -1,4 +1,5 @@
 "use client";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 
 import {
   Component,
@@ -409,12 +410,14 @@ function SectionAgentPanel({
   open: boolean;
   onClose: () => void;
 }) {
+  const { canEdit } = useProjectContext();
   const { activeSection } = useProjectSections();
   const workbenchMode = agentOsWorkbenchModeFromStudioMode(activeMode);
   const isSectionMode = workbenchMode === "canvas" || workbenchMode === "storyboard";
   if (isSectionMode && !activeSection) return null;
   return (
     <AgentOsPanel
+      canWrite={canEdit}
       className="p-0"
       projectId={projectId}
       projectKind="platform"

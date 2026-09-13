@@ -52,7 +52,7 @@ import type {
 
 const PAYOUT_TYPE_LABELS: Record<PayoutType, string> = {
   cash: "现金",
-  points_compute: "算力积分",
+  points_compute: "工作区算力积分",
   points_community: "社区积分",
   membership_compute: "studio 会员",
   membership_community: "社区会员",
@@ -264,7 +264,7 @@ export function ReferralsPanel({
           </>
         }
         title="邀请奖励"
-        description="老带新邀请奖励：阶梯奖励按注册人数发放；消费返佣按被邀请人实付订单发放。"
+        description="阶梯奖励按注册人数发放，消费返佣按实付订单发放。算力积分奖励到账获奖用户的默认工作区。"
       />
 
       {error ? <ErrorBanner message={error} /> : null}

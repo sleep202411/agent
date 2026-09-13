@@ -6,9 +6,6 @@ import { Pressable, StyleSheet, TextInput, View } from "react-native";
 import { Colors, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 
-import type { AgentOsModelProfile } from "../api/agent-os-api";
-import { AgentModelMenu } from "./agent-model-menu";
-
 const theme = Colors.dark;
 /** Same #E52227 as 开始创作 / home +. */
 const BRAND_RED = theme.brand;
@@ -28,11 +25,6 @@ type AgentComposerProps = {
   sendDisabled?: boolean;
   /** Allow sending with empty text (an attachment carries the content). */
   canSendWithoutText?: boolean;
-  modelProfileId?: string;
-  modelOptions?: readonly AgentOsModelProfile[];
-  onOpenModelSettings?: () => void;
-  modelMenuLabel?: string;
-  modelMenuDisabled?: boolean;
   /** Skills / file chips above the textarea (H5 CopilotComposer attachmentBar). */
   attachmentBar?: ReactNode;
   /** Bottom toolbar, leading side (paperclip). */
@@ -54,11 +46,6 @@ export function AgentComposer({
   stopAccessibilityLabel,
   sendDisabled = false,
   canSendWithoutText = false,
-  modelProfileId,
-  modelOptions,
-  onOpenModelSettings,
-  modelMenuLabel,
-  modelMenuDisabled = false,
   attachmentBar,
   leadingAction,
   beforeSend,
@@ -66,9 +53,6 @@ export function AgentComposer({
 }: AgentComposerProps) {
   const colors = useTheme();
   const canSend = (value.trim().length > 0 || canSendWithoutText) && !sendDisabled && !busy;
-  const showModelMenu = Boolean(onOpenModelSettings && modelMenuLabel);
-  const selectedModelLabel =
-    modelOptions?.find((option) => option.id === modelProfileId)?.label ?? modelMenuLabel;
   const [inputEpoch, setInputEpoch] = useState(0);
   const wasEmptyRef = useRef(value.length === 0);
 
@@ -108,15 +92,6 @@ export function AgentComposer({
           {leadingAction}
           <View style={styles.toolbarSpacer} />
           {beforeSend}
-          {showModelMenu ? (
-            <View style={styles.modelSlot}>
-              <AgentModelMenu
-                label={selectedModelLabel ?? modelMenuLabel ?? ""}
-                onPress={() => onOpenModelSettings?.()}
-                disabled={modelMenuDisabled || sendDisabled}
-              />
-            </View>
-          ) : null}
           {busy && onStop ? (
             <Pressable
               accessibilityRole="button"
@@ -203,11 +178,6 @@ const styles = StyleSheet.create({
   },
   toolbarSpacer: {
     flex: 1,
-  },
-  modelSlot: {
-    flexShrink: 1,
-    maxWidth: 196,
-    minWidth: 0,
   },
   sendThread: {
     alignItems: "center",

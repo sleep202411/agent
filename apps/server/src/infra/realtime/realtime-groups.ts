@@ -22,7 +22,7 @@ export function assetsWorkspaceGroup(workspaceId: string): string {
 
 /**
  * Per-workspace compute-wallet channel (P3). Compute credits are workspace-owned
- * (the user's personal credits live in their personal workspace's pot), so the
+ * (compute credits belong to workspace wallets), so the
  * channel is keyed by the owning workspace id, not the user.
  */
 export function walletWorkspaceChannel(workspaceId: string): string {

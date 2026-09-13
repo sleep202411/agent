@@ -158,6 +158,105 @@ describe('StoryGenerationBatchService quote payer snapshot', () => {
   });
 });
 
+describe('mobile generation defaults', () => {
+  it('overrides client preferences for a new quote and replays the frozen quote without reselecting models', async () => {
+    const findUnique = jest.fn().mockResolvedValue(null);
+    const create = jest
+      .fn()
+      .mockImplementation(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({
+          ...batch(),
+          requestFingerprint: data.requestFingerprint,
+        }),
+      );
+    const quoteAssetGeneration = jest.fn().mockResolvedValue({
+      targetId: 'asset-1',
+      targetVersion: 0,
+      outputKind: 'image',
+      modelId: 'wan-image-2.7',
+      schemaVersion: 'wan-v1',
+      options: { resolution: '1K' },
+      quotedPoints: 12,
+      pricingVersion: 'price-v1',
+    });
+    const listCatalog = jest.fn().mockResolvedValue({
+      models: [
+        {
+          id: process.env.AGENT_OS_MOBILE_IMAGE_MODEL || 'wan-image-2.7',
+          type: 'image',
+          enabled: true,
+          schemaVersion: 'wan-v1',
+        },
+      ],
+    });
+    const service = new StoryGenerationBatchService(
+      { storyGenerationBatch: { findUnique, create } } as never,
+      {
+        requireProject: jest
+          .fn()
+          .mockResolvedValue({ project: { workspaceId: scope.workspaceId } }),
+      } as never,
+      { quoteAssetGeneration } as never,
+      {
+        listCatalog,
+        resolveStoryBillingSubject: jest
+          .fn()
+          .mockResolvedValue({ type: 'workspace', id: 'payer' }),
+        getBillingSubjectComputeBalance: jest
+          .fn()
+          .mockResolvedValue({ available: 100n }),
+      } as never,
+    );
+    const request = {
+      targets: [{ id: 'asset-1', expectedVersion: 0 }],
+      modelId: 'old-slow-model',
+      outputKind: 'image' as const,
+      options: { resolution: '4K' },
+    };
+    const execution = {
+      experience: 'mobile_h5' as const,
+      dispatchMode: 'sequential' as const,
+    };
+    await service.quoteAssets(
+      actor,
+      scope.projectId,
+      scope.chapterId,
+      'mobile-quote',
+      request,
+      execution,
+    );
+    expect(quoteAssetGeneration).toHaveBeenCalledWith(
+      actor,
+      scope.workspaceId,
+      scope.projectId,
+      scope.chapterId,
+      'asset-1',
+      expect.objectContaining({
+        modelId: process.env.AGENT_OS_MOBILE_IMAGE_MODEL || 'wan-image-2.7',
+        schemaVersion: 'wan-v1',
+        options: { resolution: '1K' },
+      }),
+    );
+    const saved = (await create.mock.results[0].value) as ReturnType<
+      typeof batch
+    >;
+    findUnique.mockResolvedValue(saved);
+    listCatalog.mockRejectedValue(new Error('New model unavailable'));
+    await expect(
+      service.quoteAssets(
+        actor,
+        scope.projectId,
+        scope.chapterId,
+        'mobile-quote',
+        request,
+        execution,
+      ),
+    ).resolves.toMatchObject({ id: scope.batchId });
+    expect(quoteAssetGeneration).toHaveBeenCalledTimes(1);
+    expect(listCatalog).toHaveBeenCalledTimes(1);
+  });
+});
+
 function makeService(
   initial: ReturnType<typeof batch>,
   winner: ReturnType<typeof batch>,

@@ -18,7 +18,7 @@ describe("uploadFileViaSignedUrl", () => {
     const result = await uploadFileViaSignedUrl(new File(["image"], "frame.png", { type: "" }), {
       kind: "ai_reference_image",
       workspaceId: "workspace-1",
-      scope: { projectId: "project-1" },
+      scope: { storyProjectId: "project-1" },
     });
 
     expect(FakeXMLHttpRequest.instances[0]?.headers).toEqual(
@@ -31,12 +31,13 @@ describe("uploadFileViaSignedUrl", () => {
       kind: "ai_reference_image",
       contentType: "image/png",
       fileName: "frame.png",
-      scope: { projectId: "project-1" },
+      scope: { storyProjectId: "project-1" },
     });
-    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
-      "x-fizz-workspace-id": "workspace-1",
-    });
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1]?.headers).not.toHaveProperty("x-fizz-workspace-id");
+    }
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toMatchObject({
+      scope: { storyProjectId: "project-1" },
       kind: "ai_reference_image",
       contentType: "image/png",
     });

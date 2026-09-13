@@ -970,6 +970,15 @@ describe('StoryAgentRunService', () => {
         crdtState: Buffer.from([0, 0]),
       };
       const tx = {
+        agentOsExternalHandoffRegistration: {
+          findUnique: jest.fn().mockResolvedValue({
+            continuationPlan: {
+              ...SOURCE_CONTINUATION_PLAN,
+              experience: 'mobile_h5',
+            },
+            sourceAgentRun: { modelProfileId: 'qwen3.7-plus' },
+          }),
+        },
         $executeRaw: jest.fn().mockResolvedValue(0),
         $queryRaw: jest.fn().mockResolvedValue([{ now: NOW }]),
         storyAgentRun: {
@@ -1013,6 +1022,8 @@ describe('StoryAgentRunService', () => {
 
       expect(load.kind).toBe('job');
       if (load.kind !== 'job') throw new Error('expected job');
+      // A resumed mobile job keeps its admitted model, even after the default changes.
+      expect(load.job.modelId).toBe('qwen3.7-plus');
       expect(load.job.document).toEqual({
         id: DOCUMENT_ID,
         name: '剧本.docx',
@@ -3137,6 +3148,10 @@ function serviceWith(
     findFirst: jest.fn().mockResolvedValue(null),
   };
   const prisma = {
+    agentOsExternalHandoffRegistration:
+      tx.agentOsExternalHandoffRegistration ?? {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
     $transaction: jest.fn(
       (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
     ),

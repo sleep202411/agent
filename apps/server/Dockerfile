@@ -103,7 +103,7 @@ USER nestjs
 
 # Verify the scoped catalog updater works with production-only dependencies and
 # compiled files. Dry-run constructs a plan without opening a DB connection.
-RUN node apps/server/dist/catalog-update/prisma/seed/update-gpt-image-catalog.js --dry-run > /dev/null
+RUN node apps/server/dist/catalog-update/prisma/seed/update-model-catalog.js --dry-run gpt-image-2 > /dev/null
 
 # Validate package metadata, entry points and transitive imports as the same
 # unprivileged user that runs the service. A root-only file-existence check

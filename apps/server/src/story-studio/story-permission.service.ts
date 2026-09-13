@@ -7,6 +7,7 @@ import {
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
+  type WorkspaceMemberRole,
   type Prisma,
   type StoryProject,
 } from '@prisma/client';
@@ -72,6 +73,47 @@ export class StoryPermissionService {
     return [...ROLE_CAPABILITIES[role]];
   }
 
+  /** Workspace administration grants project administration; ownership remains explicit. */
+  workspaceRole(
+    role: WorkspaceMemberRole | undefined,
+  ): StoryProjectMemberRole | null {
+    switch (role) {
+      case 'owner':
+      case 'admin':
+        return StoryProjectMemberRole.owner;
+      case 'editor':
+        return StoryProjectMemberRole.editor;
+      case 'billing':
+      case 'viewer':
+        return StoryProjectMemberRole.viewer;
+      default:
+        return null;
+    }
+  }
+
+  /** Workspace access is the baseline; direct project grants can only add capabilities. */
+  effectiveAccess(
+    directRole: StoryProjectMemberRole | undefined,
+    workspaceRole: WorkspaceMemberRole | undefined,
+  ): { role: StoryProjectMemberRole; capabilities: StoryCapability[] } | null {
+    const inherited = this.workspaceRole(workspaceRole);
+    const roles = [directRole, inherited].filter(
+      (role): role is StoryProjectMemberRole => Boolean(role),
+    );
+    if (!roles.length) return null;
+    const role = roles.reduce((best, current) =>
+      ROLE_CAPABILITIES[current].length > ROLE_CAPABILITIES[best].length
+        ? current
+        : best,
+    );
+    return {
+      role,
+      capabilities: [
+        ...new Set(roles.flatMap((item) => this.capabilities(item))),
+      ],
+    };
+  }
+
   async requireProject(
     userId: string,
     storyProjectId: string,
@@ -86,15 +128,38 @@ export class StoryPermissionService {
       where: {
         id: storyProjectId,
         ...(options.allowArchived ? {} : { status: StoryProjectStatus.active }),
-        members: {
-          some: {
-            userId,
-            status: StoryProjectMemberStatus.active,
-            removedAt: null,
+        workspace: { status: 'active', deletedAt: null },
+        OR: [
+          { members: { some: { userId, status: 'active', removedAt: null } } },
+          {
+            workspace: {
+              members: {
+                some: {
+                  userId,
+                  status: 'active',
+                  removedAt: null,
+                  accessScope: 'workspace',
+                },
+              },
+            },
           },
-        },
+        ],
       },
       include: {
+        workspace: {
+          select: {
+            members: {
+              where: {
+                userId,
+                status: 'active',
+                removedAt: null,
+                accessScope: 'workspace',
+              },
+              select: { role: true },
+              take: 1,
+            },
+          },
+        },
         members: {
           where: {
             userId,
@@ -112,16 +177,19 @@ export class StoryPermissionService {
         message: 'Story project not found.',
       });
     }
-    const { members, ...projectRow } = project;
-    if (members.length !== 1) {
+    const { members, workspace, ...projectRow } = project;
+    const access = this.effectiveAccess(
+      members[0]?.role,
+      workspace.members[0]?.role,
+    );
+    if (!access) {
       throw new NotFoundException({
         code: 'STORY_PROJECT_NOT_FOUND',
         message: 'Story project not found.',
       });
     }
 
-    const role = members[0].role;
-    const capabilities = this.capabilities(role);
+    const { role, capabilities } = access;
     if (!capabilities.includes(capability)) {
       throw new ForbiddenException({
         code: 'STORY_PERMISSION_DENIED',
@@ -159,41 +227,42 @@ export class StoryPermissionService {
     role: StoryProjectMemberRole;
     capabilities: StoryCapability[];
   }> {
-    const authorization = await tx.$queryRaw<
-      Array<{
-        storyProjectMemberRole: StoryProjectMemberRole;
-      }>
-    >`
-      SELECT
-        story_member."role" AS "storyProjectMemberRole"
-      FROM "story_projects" AS project
-      INNER JOIN "story_project_members" AS story_member
-        ON story_member."story_project_id" = project."id"
-        AND story_member."user_id" = ${userId}
-        AND story_member."status" = ${StoryProjectMemberStatus.active}::"StoryProjectMemberStatus"
-        AND story_member."removed_at" IS NULL
-      WHERE project."id" = ${storyProjectId}::uuid
-        AND project."status" = ${StoryProjectStatus.active}::"StoryProjectStatus"
-      FOR UPDATE OF project, story_member
+    const projects = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT project.id FROM story_projects AS project
+      JOIN workspaces AS workspace ON workspace.id = project.workspace_id
+      WHERE project.id = ${storyProjectId}::uuid AND project.status = 'active'
+        AND workspace.status = 'active' AND workspace.deleted_at IS NULL
+      FOR UPDATE OF project FOR SHARE OF workspace
     `;
-    if (authorization.length !== 1) {
-      throw new NotFoundException({
-        code: 'STORY_PROJECT_NOT_FOUND',
-        message: 'Story project not found.',
-      });
-    }
-
-    const project = await tx.storyProject.findUnique({
-      where: { id: storyProjectId },
-    });
+    const project =
+      projects.length === 1
+        ? await tx.storyProject.findUnique({ where: { id: storyProjectId } })
+        : null;
     if (!project) {
       throw new NotFoundException({
         code: 'STORY_PROJECT_NOT_FOUND',
         message: 'Story project not found.',
       });
     }
-    const role = authorization[0].storyProjectMemberRole;
-    const capabilities = this.capabilities(role);
+    const direct = await tx.$queryRaw<Array<{ role: StoryProjectMemberRole }>>`
+      SELECT role FROM story_project_members
+      WHERE story_project_id = ${storyProjectId}::uuid AND user_id = ${userId}
+        AND status = 'active' AND removed_at IS NULL FOR SHARE
+    `;
+    const members = await tx.$queryRaw<Array<{ role: WorkspaceMemberRole }>>`
+      SELECT role FROM workspace_members
+      WHERE workspace_id = ${project.workspaceId}::uuid AND user_id = ${userId}
+        AND status = 'active' AND removed_at IS NULL AND access_scope = 'workspace'
+      FOR SHARE
+    `;
+    const access = this.effectiveAccess(direct[0]?.role, members[0]?.role);
+    if (!access) {
+      throw new NotFoundException({
+        code: 'STORY_PROJECT_NOT_FOUND',
+        message: 'Story project not found.',
+      });
+    }
+    const { role, capabilities } = access;
     if (!capabilities.includes(capability)) {
       throw new ForbiddenException({
         code: 'STORY_PERMISSION_DENIED',
