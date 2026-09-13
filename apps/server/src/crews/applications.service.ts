@@ -272,7 +272,7 @@ export class ApplicationsService {
     });
     if (!app || app.crew.deletedAt)
       throw new NotFoundException('Application not found');
-    const reviewer = await this.authorization.require(
+    await this.authorization.require(
       app.crewId,
       reviewerId,
       'applications.review',
@@ -298,6 +298,15 @@ export class ApplicationsService {
             message: 'Application was already reviewed',
           });
         }
+
+        // The conditional update may wait for another transaction. Recheck
+        // access after acquiring that row before applying the review effects.
+        const reviewer = await this.authorization.require(
+          app.crewId,
+          reviewerId,
+          'applications.review',
+          tx,
+        );
 
         const updatedApp = await tx.crewApplication.findUniqueOrThrow({
           where: { id: applicationId },

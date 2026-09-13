@@ -4047,6 +4047,8 @@
     "reviewDialogAvailable": "Available from {date}",
     "reviewDialogApproveSuccess": "Applicant approved",
     "reviewDialogRejectSuccess": "Applicant rejected",
+    "reviewDialogApproveFailed": "Could not approve the application",
+    "reviewDialogRejectFailed": "Could not reject the application",
     "closeJob": "Close Job",
     "closeJobConfirm": "Close the “{name}” recruitment slot? Pending applications will be archived.",
     "closeJobSuccess": "“{name}” closed",
@@ -4470,6 +4472,8 @@
     "logEpisodeApproved": "{actor} finalized this episode",
     "inviteLinkTabAccount": "By account",
     "inviteLinkTabLink": "Invite link",
+    "inviteLinkKindMember": "Crew membership",
+    "inviteLinkKindCommunity": "Community chat only",
     "inviteLinkIntro": "Anyone who opens this link can join the crew with the access you pick here.",
     "inviteLinkExpiryLabel": "Expires",
     "inviteLinkExpiryNever": "Never",
@@ -5413,7 +5417,7 @@
     "dependencies": "Dependencies",
     "blockedSubmitHint": "Complete every blocking task before submitting.",
     "budget": "Point budget",
-    "taskLimits": "Budget and revision policy",
+    "taskLimits": "Revision policy",
     "revisionLimit": "Revision limit",
     "revisionUnlimited": "Unlimited",
     "revisionPolicy": "Revision rounds",
@@ -5499,6 +5503,8 @@
     }
   },
   "crewInvitations": {
+    "signIn": "Sign in",
+    "signInRequired": "Sign in to view and respond to this Crew invitation.",
     "eyebrow": "Crew invitation",
     "invitedTo": "You've been invited to join",
     "crew": "Crew",
@@ -9217,6 +9223,7 @@
     }
   },
   "notifications": {
+    "performedBy": "By {name}",
     "title": "Notifications",
     "view": "View",
     "ariaUnread": "Notifications ({count} unread)",
@@ -9283,11 +9290,13 @@
       },
       "taskAssigned": {
         "title": "New task: {task}",
-        "body": "You were assigned to this task."
+        "body": "You were assigned to this task.",
+        "bodyWithActor": "{actor} assigned this task to you."
       },
       "taskUpdated": {
         "title": "Task updated: {task}",
-        "body": "Task details or participants changed."
+        "body": "Task details or participants changed.",
+        "bodyWithActor": "{actor} updated this task."
       },
       "taskCommented": {
         "title": "New comment: {task}",
@@ -9377,6 +9386,11 @@
     "valueMembershipBoth": "{days}d Studio + community membership"
   },
   "crewCommunityChat": {
+    "qrAlt": "Community invitation QR code",
+    "scanToJoin": "Scan to join the Crew community.",
+    "downloadQr": "Download QR code",
+    "generatingQr": "Generating QR code…",
+    "qrFailed": "Could not generate the QR code.",
     "channels": "Channels",
     "teamChannel": "Team chat",
     "communityChannel": "Community chat",
@@ -9512,5 +9526,25 @@
       "next": "Next",
       "page": "Page {page}"
     }
+  },
+  "crewTaskCenter": {
+    "signInRequired": "Sign in to view your Crew tasks.",
+    "signIn": "Sign in",
+    "unreadCrewNotifications": "{count} unread Crew notifications",
+    "unreadNotifications": "{count} unread task notifications",
+    "title": "Task center",
+    "description": "Manage tasks across your Crews.",
+    "back": "Back to Crews",
+    "scope": "Scope",
+    "allTasks": "All accessible tasks",
+    "mine": "Assigned to me",
+    "status": "Status",
+    "active": "Active tasks",
+    "allStatuses": "All statuses",
+    "search": "Search task titles",
+    "loading": "Loading tasks…",
+    "retry": "Retry",
+    "empty": "No tasks match these filters.",
+    "loadMore": "Load more"
   }
 }

@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo } from "react";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { CrewApiError, crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type {
@@ -19,9 +20,10 @@ import type {
 } from "./types";
 
 export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
+  const { user } = useCurrentUser();
   const query = useInfiniteQuery({
-    queryKey: crewKeys.members(crewId ?? ""),
-    enabled: !!crewId,
+    queryKey: [...crewKeys.members(crewId ?? ""), "list", pageSize, user?.id ?? null],
+    enabled: !!crewId && Boolean(user),
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewMemberPageDTO>(`/crews/${encodeURIComponent(crewId!)}/members`, {
         query: { limit: pageSize, cursor: pageParam },
@@ -35,11 +37,11 @@ export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
     retry: (failureCount, error) =>
       failureCount < 2 && !(error instanceof CrewApiError && error.status < 500),
   });
-  const { fetchNextPage, hasNextPage, isFetching, isFetchNextPageError } = query;
+  const { fetchNextPage, hasNextPage, isFetching, isError } = query;
   useEffect(() => {
-    if (!hasNextPage || isFetching || isFetchNextPageError) return;
+    if (!hasNextPage || isFetching || isError) return;
     void fetchNextPage();
-  }, [fetchNextPage, hasNextPage, isFetching, isFetchNextPageError]);
+  }, [fetchNextPage, hasNextPage, isFetching, isError]);
   const data = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data]);
   return {
     ...query,
@@ -49,9 +51,10 @@ export function useCrewMembers(crewId: string | undefined, pageSize = 50) {
 }
 
 export function useCrewMembership(crewId: string | undefined) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.membership(crewId ?? ""),
-    enabled: !!crewId,
+    queryKey: [...crewKeys.membership(crewId ?? ""), user?.id ?? null],
+    enabled: !!crewId && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewMembershipDTO>(`/crews/${encodeURIComponent(crewId!)}/members/me`),
     retry: (failureCount, error) =>
@@ -59,33 +62,54 @@ export function useCrewMembership(crewId: string | undefined) {
   });
 }
 
-export function useRemoveMember(crewId: string) {
+function useMemberRefresh(crewId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const context = { crewId, accountUserId: user?.id ?? null };
+  return {
+    onMutate: () => context,
+    onSuccess: (_data: unknown, _variables: unknown, origin: typeof context | undefined) => {
+      if (!origin?.accountUserId) return;
+      const forAccount = (query: { queryKey: readonly unknown[] }) =>
+        query.queryKey.at(-1) === origin.accountUserId;
+      qc.invalidateQueries({ queryKey: crewKeys.members(origin.crewId), predicate: forAccount });
+      qc.invalidateQueries({ queryKey: [...crewKeys.detail(origin.crewId), origin.accountUserId] });
+      qc.invalidateQueries({
+        queryKey: crewKeys.positions(origin.crewId),
+        predicate: (query) => query.queryKey[3] === origin.accountUserId,
+      });
+      qc.invalidateQueries({ queryKey: crewKeys.mine, predicate: forAccount });
+      qc.invalidateQueries({ queryKey: ["crew", "positions", "public"] });
+      qc.invalidateQueries({ queryKey: ["crew", "list"], predicate: forAccount });
+      qc.invalidateQueries({ queryKey: ["crew", "by-user"], predicate: forAccount });
+      qc.invalidateQueries({
+        queryKey: crewKeys.taskCenter,
+        predicate: (query) => query.queryKey[2] === origin.accountUserId,
+      });
+    },
+  };
+}
+
+export function useRemoveMember(crewId: string) {
+  const refresh = useMemberRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (memberId: string) =>
       crewApi.delete<void>(
         `/crews/${encodeURIComponent(crewId)}/members/${encodeURIComponent(memberId)}`
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
-    },
   });
 }
 
 export function useUpdateMember(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMemberRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: ({ memberId, input }: { memberId: string; input: UpdateCrewMemberInput }) =>
       crewApi.patch<CrewMemberDTO>(
         `/crews/${encodeURIComponent(crewId)}/members/${encodeURIComponent(memberId)}`,
         { body: input }
       ),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.membership(crewId) });
-    },
   });
 }
 
@@ -95,16 +119,12 @@ export function useUpdateMember(crewId: string) {
  * crew (default keeps them as a normal member).
  */
 export function useTransferCrewOwner(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMemberRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: ({ toUserId, removeOldOwner }: { toUserId: string; removeOldOwner?: boolean }) =>
       crewApi.post(`/crews/${encodeURIComponent(crewId)}/transfer-owner`, {
         body: { toUserId, removeOldOwner },
       }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: crewKeys.members(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.detail(crewId) });
-      qc.invalidateQueries({ queryKey: crewKeys.mine });
-    },
   });
 }

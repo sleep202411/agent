@@ -9,6 +9,8 @@ import {
 } from "@tabler/icons-react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { useAuthDialog } from "@/components/auth/auth-dialog-provider";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { Button } from "@/components/ui/button";
 import {
   useAcceptCrewInvitation,
@@ -20,6 +22,8 @@ import { getCurrentLocale, localizePath } from "@/src/i18n/locale-url";
 
 export default function CrewInvitationPage() {
   const t = useTranslations("crewInvitations");
+  const { user, isLoading: accountLoading } = useCurrentUser();
+  const { open: openAuthDialog } = useAuthDialog();
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const invitationId = params.id;
@@ -27,7 +31,7 @@ export default function CrewInvitationPage() {
   const accept = useAcceptCrewInvitation(invitationId);
   const decline = useDeclineCrewInvitation(invitationId);
 
-  if (invitation.isLoading) {
+  if (accountLoading || invitation.isLoading) {
     return (
       <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-[#08090b] px-6">
         <div
@@ -35,6 +39,21 @@ export default function CrewInvitationPage() {
           className="size-7 animate-spin rounded-full border-2 border-white/15 border-t-white"
         />
       </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <StateCard
+        icon={<IconUsers className="size-5" />}
+        title={t("signIn")}
+        body={t("signInRequired")}
+        action={
+          <Button className="mt-5" onClick={() => openAuthDialog()}>
+            {t("signIn")}
+          </Button>
+        }
+      />
     );
   }
 
@@ -188,7 +207,17 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StateCard({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+function StateCard({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+  action?: React.ReactNode;
+}) {
   return (
     <main className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-[#08090b] px-6 text-white">
       <section className="w-full max-w-md rounded-2xl bg-[#111318] p-7 ring-1 ring-white/10">
@@ -197,6 +226,7 @@ function StateCard({ icon, title, body }: { icon: React.ReactNode; title: string
         </div>
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="mt-2 text-sm leading-6 text-white/50">{body}</p>
+        {action}
       </section>
     </main>
   );

@@ -902,7 +902,6 @@ export interface CrewTaskDraftDTO {
   startDate: string | null;
   dueDate: string | null;
   estimatePoints: number | null;
-  computeBudgetPoints: number | null;
   revisionLimit: number | null;
   cycleId: string | null;
   parentId: string | null;

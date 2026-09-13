@@ -52,9 +52,17 @@ export class CrewApiError extends Error {
 }
 
 function describeError(status: number, body: unknown): string {
+  if (typeof body === "string" && body.trim()) return body;
   if (!body || typeof body !== "object") return `Crew API error ${status}`;
   const { message, issues } = body as { message?: unknown; issues?: unknown };
-  const headline = typeof message === "string" && message.length > 0 ? message : null;
+  const headline =
+    typeof message === "string" && message.trim()
+      ? message
+      : Array.isArray(message)
+        ? message
+            .filter((part): part is string => typeof part === "string" && Boolean(part.trim()))
+            .join("; ") || null
+        : null;
   const detail = describeIssues(issues);
 
   if (!detail) return headline ?? `Crew API error ${status}`;
@@ -71,8 +79,11 @@ function describeError(status: number, body: unknown): string {
 function describeIssues(issues: unknown): string | null {
   if (!Array.isArray(issues)) return null;
   const parts = issues
-    .filter((i): i is CrewApiIssue => !!i && typeof i === "object" && "message" in i)
-    .map((i) => (i.path ? `${i.path}: ${i.message}` : i.message))
+    .filter(
+      (i): i is CrewApiIssue =>
+        !!i && typeof i === "object" && typeof i.message === "string" && Boolean(i.message.trim())
+    )
+    .map((i) => (typeof i.path === "string" && i.path ? `${i.path}: ${i.message}` : i.message))
     .filter((line) => line.length > 0);
   return parts.length > 0 ? parts.join("; ") : null;
 }
@@ -83,15 +94,16 @@ interface CallOptions extends Omit<RequestInit, "body"> {
 }
 
 async function call<T>(method: string, path: string, opts: CallOptions = {}): Promise<T> {
-  const url = buildUrl(path, opts.query);
+  const { body, query, headers: suppliedHeaders, ...requestOptions } = opts;
+  const url = buildUrl(path, query);
+  const headers = new Headers(suppliedHeaders);
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
   const init: RequestInit = {
+    ...requestOptions,
     method,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(opts.headers ?? {}),
-    },
-    ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+    headers,
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   };
   const res = await fetch(url, init);
 
@@ -99,11 +111,12 @@ async function call<T>(method: string, path: string, opts: CallOptions = {}): Pr
   if (res.status === 204) return undefined as T;
 
   if (!res.ok) {
-    let body: unknown;
+    const text = await res.text().catch(() => "");
+    let body: unknown = text;
     try {
-      body = await res.json();
+      body = JSON.parse(text);
     } catch {
-      body = await res.text().catch(() => null);
+      // A proxy may return plain text; read the response body only once.
     }
     throw new CrewApiError(res.status, body);
   }

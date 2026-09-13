@@ -47,6 +47,7 @@ function build() {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewInvitation: {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       findUnique: jest.fn().mockResolvedValue(invitation()),
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest
@@ -315,6 +316,7 @@ describe('CrewInvitationsService', () => {
       response: { message: 'This invitation belongs to another account.' },
     });
     expect(t.tx.crewMember.create).not.toHaveBeenCalled();
+    expect(t.tx.crewInvitation.updateMany).not.toHaveBeenCalled();
     expect(t.collaboration.addCrewMemberAccess).not.toHaveBeenCalled();
   });
 
@@ -346,4 +348,71 @@ describe('CrewInvitationsService', () => {
       t.tx,
     );
   });
+});
+
+it.each(['decline', 'revoke'] as const)(
+  'rejects %s if another request already changed the invitation',
+  async (action) => {
+    const t = build();
+    t.prisma.crewInvitation.updateMany.mockResolvedValue({ count: 0 });
+    await expect(
+      t.service[action](
+        INVITATION_ID,
+        action === 'decline' ? INVITEE_ID : OWNER_ID,
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(t.prisma.crewInvitation.update).not.toHaveBeenCalled();
+    expect(t.prisma.crewInvitation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: INVITATION_ID, status: CrewInvitationStatus.pending },
+      }),
+    );
+  },
+);
+
+it('does not grant membership when acceptance loses the pending-state transition', async () => {
+  const t = build();
+  t.tx.crewInvitation.updateMany.mockResolvedValue({ count: 0 });
+  await expect(
+    t.service.accept(INVITATION_ID, INVITEE_ID),
+  ).rejects.toMatchObject({ status: 409 });
+  expect(t.tx.crewMember.create).not.toHaveBeenCalled();
+  expect(t.tx.crewInvitation.updateMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: {
+        id: INVITATION_ID,
+        status: CrewInvitationStatus.pending,
+        expiresAt: { gt: expect.any(Date) as unknown },
+      },
+    }),
+  );
+
+  expect(t.agreements.stageInvitationAgreement).not.toHaveBeenCalled();
+  expect(t.notifications.send).not.toHaveBeenCalled();
+});
+
+it('does not expire an invitation that was accepted after the detail read', async () => {
+  const t = build();
+  const stale = invitation({ expiresAt: new Date(0) });
+  const accepted = invitation({
+    status: CrewInvitationStatus.accepted,
+    expiresAt: new Date(0),
+  });
+  t.prisma.crewInvitation.findUnique
+    .mockResolvedValueOnce(stale)
+    .mockResolvedValueOnce(accepted);
+  t.prisma.crewInvitation.updateMany.mockResolvedValue({ count: 0 });
+  await expect(
+    t.service.getMine(INVITATION_ID, INVITEE_ID),
+  ).resolves.toMatchObject({ status: 'accepted' });
+  expect(t.prisma.crewInvitation.update).not.toHaveBeenCalled();
+  expect(t.prisma.crewInvitation.updateMany).toHaveBeenCalledWith(
+    expect.objectContaining({
+      where: expect.objectContaining({
+        id: INVITATION_ID,
+        status: CrewInvitationStatus.pending,
+        expiresAt: { lte: expect.any(Date) as unknown },
+      }) as unknown,
+    }),
+  );
 });

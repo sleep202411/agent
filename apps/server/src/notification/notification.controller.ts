@@ -57,6 +57,18 @@ export class NotificationController {
     });
   }
 
+  @Get('unread-crews')
+  @Header('Cache-Control', 'no-store')
+  unreadCrews(@CurrentUser() user: AuthUser) {
+    return this.svc.unreadCrews(user.userId);
+  }
+
+  @Get('unread-crew-tasks')
+  @Header('Cache-Control', 'no-store')
+  unreadCrewTasks(@CurrentUser() user: AuthUser) {
+    return this.svc.unreadCrewTasks(user.userId);
+  }
+
   @Get('unread-count')
   @Header('Cache-Control', 'no-store')
   async unreadCount(@CurrentUser() user: AuthUser) {

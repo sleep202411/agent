@@ -14,9 +14,9 @@
  *
  * Cache keys are scoped per resource so a single mutation
  * invalidates the right surfaces:
- *   ["conversation", "inbox"]                  inbox list
- *   ["conversation", "detail", id]             detail row
- *   ["conversation", "messages", id]           message timeline
+ *   ["conversation", "inbox", filter, userId]  inbox list
+ *   ["conversation", "detail", id, userId]     detail row
+ *   ["conversation", "messages", id, userId]   message timeline
  *
  * Live WS pushes patch the cache directly via the
  * `applyIncomingMessage` helper so connected tabs don't need to
@@ -34,6 +34,7 @@ import {
   type InfiniteData,
 } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import type {
   ConversationCardDTO,
   ConversationDTO,
@@ -55,9 +56,11 @@ export class ConversationApiError extends Error {
     public readonly body: unknown
   ) {
     super(
-      (body && typeof body === "object" && "message" in body
-        ? String((body as { message: unknown }).message)
-        : null) ?? `Conversation API error ${status}`
+      (typeof body === "string" && body.trim()
+        ? body
+        : body && typeof body === "object" && "message" in body
+          ? String((body as { message: unknown }).message)
+          : null) ?? `Conversation API error ${status}`
     );
     this.name = "ConversationApiError";
   }
@@ -91,11 +94,12 @@ async function call<T>(method: string, path: string, opts: CallOpts = {}): Promi
   const res = await fetch(url, init);
   if (res.status === 204) return undefined as T;
   if (!res.ok) {
-    let body: unknown;
+    const text = await res.text().catch(() => "");
+    let body: unknown = text;
     try {
-      body = await res.json();
+      body = JSON.parse(text);
     } catch {
-      body = await res.text().catch(() => null);
+      // Plain-text upstream failures are actionable too; consume the body only once.
     }
     throw new ConversationApiError(res.status, body);
   }
@@ -174,21 +178,29 @@ export const conversationKeys = {
   inbox: () => ["conversation", "inbox"] as const,
   inboxFiltered: (contextType?: ConversationContextType) =>
     ["conversation", "inbox", contextType ?? "all"] as const,
-  detail: (id: string) => ["conversation", "detail", id] as const,
-  messages: (id: string) => ["conversation", "messages", id] as const,
+  detail: (id: string, accountUserId?: string | null) =>
+    accountUserId === undefined
+      ? (["conversation", "detail", id] as const)
+      : (["conversation", "detail", id, accountUserId] as const),
+  messages: (id: string, accountUserId?: string | null) =>
+    accountUserId === undefined
+      ? (["conversation", "messages", id] as const)
+      : (["conversation", "messages", id, accountUserId] as const),
 };
 
 // ─── Queries ───────────────────────────────────────────────
 
 export function useInbox(contextType?: ConversationContextType) {
+  const { user } = useCurrentUser();
   return useInfiniteQuery<
     InboxResponse,
     ConversationApiError,
     { items: ConversationCardDTO[]; hasMore: boolean },
-    ReturnType<typeof conversationKeys.inboxFiltered>,
+    readonly [...ReturnType<typeof conversationKeys.inboxFiltered>, string | null],
     string | null
   >({
-    queryKey: conversationKeys.inboxFiltered(contextType),
+    queryKey: [...conversationKeys.inboxFiltered(contextType), user?.id ?? null],
+    enabled: Boolean(user?.id),
     initialPageParam: null,
     queryFn: ({ pageParam, signal }) =>
       api.get<InboxResponse>("/conversations", {
@@ -217,15 +229,17 @@ export function useInbox(contextType?: ConversationContextType) {
 }
 
 export function useConversation(id: string | null, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery<ConversationDTO, ConversationApiError>({
-    queryKey: id ? conversationKeys.detail(id) : ["conversation", "detail", "_none"],
-    enabled: !!id && enabled,
+    queryKey: conversationKeys.detail(id ?? "_none", user?.id ?? null),
+    enabled: !!id && enabled && Boolean(user?.id),
     retry: shouldRetryConversationQuery,
     queryFn: ({ signal }) => api.get<ConversationDTO>(`/conversations/${id}`, { signal }),
   });
 }
 
 export function useMessages(conversationId: string | null, enabled = true) {
+  const { user } = useCurrentUser();
   return useInfiniteQuery<
     MessagesResponse,
     ConversationApiError,
@@ -233,10 +247,8 @@ export function useMessages(conversationId: string | null, enabled = true) {
     ReturnType<typeof conversationKeys.messages>,
     string | null
   >({
-    queryKey: conversationId
-      ? conversationKeys.messages(conversationId)
-      : (["conversation", "messages", "_none"] as never),
-    enabled: !!conversationId && enabled,
+    queryKey: conversationKeys.messages(conversationId ?? "_none", user?.id ?? null),
+    enabled: !!conversationId && enabled && Boolean(user?.id),
     retry: shouldRetryConversationQuery,
     initialPageParam: null,
     queryFn: ({ pageParam, signal }) =>
@@ -259,24 +271,31 @@ export function useMessages(conversationId: string | null, enabled = true) {
 // ─── Mutations ─────────────────────────────────────────────
 
 export function useOpenConversation() {
+  const { user } = useCurrentUser();
   const qc = useQueryClient();
   return useMutation<
     { conversation: ConversationDTO; firstMessage: MessageDTO | null },
     ConversationApiError,
-    OpenConversationBody
+    OpenConversationBody,
+    string | null
   >({
     mutationFn: (body) =>
       api.post<{ conversation: ConversationDTO; firstMessage: MessageDTO | null }>(
         "/conversations",
         { body }
       ),
-    onSuccess: ({ conversation, firstMessage }) => {
-      qc.setQueryData(conversationKeys.detail(conversation.id), conversation);
+    onMutate: () => user?.id ?? null,
+    onSuccess: ({ conversation, firstMessage }, _variables, accountUserId) => {
+      if (!accountUserId) return;
+      qc.setQueryData(
+        conversationKeys.detail(conversation.id, accountUserId ?? null),
+        conversation
+      );
       qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
       if (firstMessage) {
         // Prepend the first message to the cache if the timeline
         // query is already alive (rare on a freshly-opened conv).
-        seedFirstMessage(qc, conversation.id, firstMessage);
+        seedFirstMessage(qc, conversation.id, firstMessage, accountUserId ?? null);
       }
     },
   });
@@ -302,7 +321,7 @@ export function useSendText(conversationId: string, authorId: string | null) {
       mentions?: ConversationMentionPayload[];
       tasks?: ConversationTaskReferencePayload[];
     },
-    { optimisticId: string | null }
+    { optimisticId: string | null; accountUserId: string | null }
   >({
     mutationFn: ({ body, clientKey, mentions, tasks }) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/messages`, {
@@ -314,9 +333,9 @@ export function useSendText(conversationId: string, authorId: string | null) {
         },
       }),
     onMutate: async ({ body, clientKey, mentions, tasks }) => {
-      if (!authorId || !clientKey) return { optimisticId: null };
+      if (!authorId || !clientKey) return { optimisticId: null, accountUserId: authorId };
 
-      const key = conversationKeys.messages(conversationId);
+      const key = conversationKeys.messages(conversationId, authorId);
       // Stop an older REST response from replacing the cache immediately
       // after the optimistic row is inserted. `revert: false` preserves any
       // realtime frames that landed while that request was in flight.
@@ -329,10 +348,11 @@ export function useSendText(conversationId: string, authorId: string | null) {
         mentions,
         tasks,
       });
-      applyOptimisticMessage(qc, conversationId, optimistic);
-      return { optimisticId: optimistic.id };
+      applyOptimisticMessage(qc, conversationId, optimistic, authorId);
+      return { optimisticId: optimistic.id, accountUserId: authorId };
     },
-    onSuccess: (message, variables) => {
+    onSuccess: (message, variables, context) => {
+      if (!context?.accountUserId) return;
       // A server deployed just before `clientKey` was added to MessageDTO may
       // omit it from the response. The mutation still knows the exact key.
       applyIncomingMessage(
@@ -341,14 +361,19 @@ export function useSendText(conversationId: string, authorId: string | null) {
         message.clientKey === undefined
           ? { ...message, clientKey: variables.clientKey ?? null }
           : message,
-        { optimisticClientKey: variables.clientKey }
+        { optimisticClientKey: variables.clientKey, accountUserId: context?.accountUserId ?? null }
       );
     },
     onError: (_error, variables, context) => {
       if (context?.optimisticId) {
-        removeOptimisticMessage(qc, conversationId, context.optimisticId);
+        removeOptimisticMessage(qc, conversationId, context.optimisticId, context.accountUserId);
       } else if (variables.clientKey) {
-        removeOptimisticMessage(qc, conversationId, optimisticMessageId(variables.clientKey));
+        removeOptimisticMessage(
+          qc,
+          conversationId,
+          optimisticMessageId(variables.clientKey),
+          context?.accountUserId ?? null
+        );
       }
     },
   });
@@ -356,6 +381,7 @@ export function useSendText(conversationId: string, authorId: string | null) {
 
 export function useSendAttachments(conversationId: string) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation<
     MessageDTO,
     ConversationApiError,
@@ -368,38 +394,47 @@ export function useSendAttachments(conversationId: string) {
       clientKey?: string;
       mentions?: ConversationMentionPayload[];
       tasks?: ConversationTaskReferencePayload[];
-    }
+    },
+    string | null
   >({
     mutationFn: ({ attachments, body, clientKey, mentions, tasks }) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/attachments`, {
         body: { attachments, body, clientKey, mentions, tasks },
       }),
-    onSuccess: (message) => {
-      applyIncomingMessage(qc, conversationId, message);
+    onMutate: () => user?.id ?? null,
+    onSuccess: (message, _variables, accountUserId) => {
+      if (!accountUserId) return;
+      applyIncomingMessage(qc, conversationId, message, { accountUserId: accountUserId ?? null });
     },
   });
 }
 
 export function useSendProposal(conversationId: string) {
   const qc = useQueryClient();
-  return useMutation<MessageDTO, ConversationApiError, SendProposalBody>({
+  const { user } = useCurrentUser();
+  return useMutation<MessageDTO, ConversationApiError, SendProposalBody, string | null>({
     mutationFn: (body) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/proposals`, {
         body,
       }),
-    onSuccess: (message) => {
-      applyIncomingMessage(qc, conversationId, message);
+    onMutate: () => user?.id ?? null,
+    onSuccess: (message, _variables, accountUserId) => {
+      if (!accountUserId) return;
+      applyIncomingMessage(qc, conversationId, message, { accountUserId: accountUserId ?? null });
     },
   });
 }
 
 export function useDeclineProposal(conversationId: string) {
   const qc = useQueryClient();
-  return useMutation<MessageDTO, ConversationApiError, { messageId: string }>({
+  const { user } = useCurrentUser();
+  return useMutation<MessageDTO, ConversationApiError, { messageId: string }, string | null>({
     mutationFn: ({ messageId }) =>
       api.post<MessageDTO>(`/conversations/${conversationId}/proposals/${messageId}/decline`),
-    onSuccess: (message) => {
-      applyIncomingMessage(qc, conversationId, message);
+    onMutate: () => user?.id ?? null,
+    onSuccess: (message, _variables, accountUserId) => {
+      if (!accountUserId) return;
+      applyIncomingMessage(qc, conversationId, message, { accountUserId: accountUserId ?? null });
     },
   });
 }
@@ -441,9 +476,13 @@ export function applyIncomingMessage(
   qc: QueryClient,
   conversationId: string,
   message: MessageDTO,
-  options: { revalidate?: boolean; optimisticClientKey?: string } = {}
+  options: {
+    revalidate?: boolean;
+    optimisticClientKey?: string;
+    accountUserId?: string | null;
+  } = {}
 ) {
-  const key = conversationKeys.messages(conversationId);
+  const key = conversationKeys.messages(conversationId, options.accountUserId);
   qc.setQueryData<InfiniteData<MessagesResponse>>(key, (old) => {
     if (!old) return old;
     const clientKey = message.clientKey ?? options.optimisticClientKey;
@@ -534,9 +573,10 @@ export function createOptimisticTextMessage({
 export function applyOptimisticMessage(
   qc: QueryClient,
   conversationId: string,
-  message: MessageDTO
+  message: MessageDTO,
+  accountUserId?: string | null
 ) {
-  const key = conversationKeys.messages(conversationId);
+  const key = conversationKeys.messages(conversationId, accountUserId);
   qc.setQueryData<InfiniteData<MessagesResponse>>(key, (old) => {
     if (!old) return old;
     const firstPage = old.pages[0];
@@ -552,10 +592,11 @@ export function applyOptimisticMessage(
 export function removeOptimisticMessage(
   qc: QueryClient,
   conversationId: string,
-  optimisticId: string
+  optimisticId: string,
+  accountUserId?: string | null
 ) {
   qc.setQueryData<InfiniteData<MessagesResponse>>(
-    conversationKeys.messages(conversationId),
+    conversationKeys.messages(conversationId, accountUserId),
     (old) =>
       old
         ? {
@@ -569,11 +610,16 @@ export function removeOptimisticMessage(
   );
 }
 
-function seedFirstMessage(qc: QueryClient, conversationId: string, message: MessageDTO) {
-  const key = conversationKeys.messages(conversationId);
+function seedFirstMessage(
+  qc: QueryClient,
+  conversationId: string,
+  message: MessageDTO,
+  accountUserId: string | null
+) {
+  const key = conversationKeys.messages(conversationId, accountUserId);
   const existing = qc.getQueryData<InfiniteData<MessagesResponse>>(key);
   if (existing) {
-    applyIncomingMessage(qc, conversationId, message);
+    applyIncomingMessage(qc, conversationId, message, { accountUserId });
     return;
   }
   qc.setQueryData<InfiniteData<MessagesResponse>>(key, {
@@ -601,9 +647,13 @@ export function isConversationAccessError(error: unknown): error is Conversation
   return error instanceof ConversationApiError && (error.status === 403 || error.status === 404);
 }
 
-export function clearConversationAccessCache(qc: QueryClient, conversationId: string): void {
-  const detailKey = conversationKeys.detail(conversationId);
-  const messagesKey = conversationKeys.messages(conversationId);
+export function clearConversationAccessCache(
+  qc: QueryClient,
+  conversationId: string,
+  accountUserId?: string | null
+): void {
+  const detailKey = conversationKeys.detail(conversationId, accountUserId);
+  const messagesKey = conversationKeys.messages(conversationId, accountUserId);
 
   // Cancellation consumes the AbortSignal passed by the query
   // functions above, preventing a late successful response from
@@ -612,25 +662,34 @@ export function clearConversationAccessCache(qc: QueryClient, conversationId: st
   void qc.cancelQueries({ queryKey: messagesKey, exact: true }, { silent: true });
   qc.removeQueries({ queryKey: detailKey, exact: true });
   qc.removeQueries({ queryKey: messagesKey, exact: true });
-  qc.setQueriesData<InfiniteData<InboxResponse>>({ queryKey: conversationKeys.inbox() }, (old) =>
-    old
-      ? {
-          ...old,
-          pages: old.pages.map((page) => ({
-            ...page,
-            items: page.items.filter((item) => item.id !== conversationId),
-          })),
-        }
-      : old
+  qc.setQueriesData<InfiniteData<InboxResponse>>(
+    {
+      queryKey: conversationKeys.inbox(),
+      predicate: (query) => accountUserId === undefined || query.queryKey.at(-1) === accountUserId,
+    },
+    (old) =>
+      old
+        ? {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              items: page.items.filter((item) => item.id !== conversationId),
+            })),
+          }
+        : old
   );
-  void qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
+  void qc.invalidateQueries({
+    queryKey: conversationKeys.inbox(),
+    predicate: (query) => accountUserId === undefined || query.queryKey.at(-1) === accountUserId,
+  });
 }
 
 export function useClearConversationAccessCache(): (conversationId: string) => void {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useCallback(
-    (conversationId: string) => clearConversationAccessCache(qc, conversationId),
-    [qc]
+    (conversationId: string) => clearConversationAccessCache(qc, conversationId, user?.id ?? null),
+    [qc, user?.id]
   );
 }
 
@@ -666,7 +725,8 @@ export interface ConversationRecoveryCoordinator {
  * microseconds.
  */
 export function createConversationRecoveryCoordinator(
-  qc: QueryClient
+  qc: QueryClient,
+  accountUserId?: string | null
 ): ConversationRecoveryCoordinator {
   const buffered = new Map<string, IncomingConversationMessage>();
   const pendingConversationIds = new Set<string>();
@@ -679,11 +739,11 @@ export function createConversationRecoveryCoordinator(
     const cleared = new Set<string>();
     for (const data of buffered.values()) {
       const detailQuery = qc.getQueryCache().find({
-        queryKey: conversationKeys.detail(data.conversationId),
+        queryKey: conversationKeys.detail(data.conversationId, accountUserId),
         exact: true,
       });
       const timelineQuery = qc.getQueryCache().find({
-        queryKey: conversationKeys.messages(data.conversationId),
+        queryKey: conversationKeys.messages(data.conversationId, accountUserId),
         exact: true,
       });
       const accessWasRevoked =
@@ -699,7 +759,7 @@ export function createConversationRecoveryCoordinator(
           (timelineQuery?.getObserversCount() ?? 0) > 0;
         if (!hasObserver && !cleared.has(data.conversationId)) {
           cleared.add(data.conversationId);
-          clearConversationAccessCache(qc, data.conversationId);
+          clearConversationAccessCache(qc, data.conversationId, accountUserId);
         }
         continue;
       }
@@ -712,6 +772,7 @@ export function createConversationRecoveryCoordinator(
       }
       applyIncomingMessage(qc, data.conversationId, data.message, {
         revalidate: false,
+        accountUserId,
       });
     }
   };
@@ -731,17 +792,21 @@ export function createConversationRecoveryCoordinator(
           // pre-disconnect value for the global 60s stale window.
           await qc.invalidateQueries({
             queryKey: conversationKeys.all,
+            predicate: (query) =>
+              accountUserId === undefined || query.queryKey.at(-1) === accountUserId,
             refetchType: "none",
           });
           await qc.refetchQueries({
             queryKey: conversationKeys.all,
+            predicate: (query) =>
+              accountUserId === undefined || query.queryKey.at(-1) === accountUserId,
             type: "active",
           });
         } else {
           await Promise.all([
             ...conversationIds.map((conversationId) =>
               qc.refetchQueries({
-                queryKey: conversationKeys.messages(conversationId),
+                queryKey: conversationKeys.messages(conversationId, accountUserId),
                 exact: true,
                 // If this timeline was open recently but unmounted, keep
                 // its cached total order authoritative too. Queries that
@@ -751,6 +816,8 @@ export function createConversationRecoveryCoordinator(
             ),
             qc.refetchQueries({
               queryKey: conversationKeys.inbox(),
+              predicate: (query) =>
+                accountUserId === undefined || query.queryKey.at(-1) === accountUserId,
               type: "all",
             }),
           ]);

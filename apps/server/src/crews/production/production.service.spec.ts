@@ -501,6 +501,45 @@ describe('CrewProductionService', () => {
     });
   });
 
+  it.each([
+    ['100%', '100%'],
+    ['%E0%A4', '%E0%A4'],
+    ['hello%20world', 'hello world'],
+  ])('derives a title for URL path %s', async (path, title) => {
+    const t = build();
+    t.prisma.crewProductionResource.create.mockResolvedValue({
+      id: ASSET_ID,
+    });
+    t.prisma.crewProductionResource.findUniqueOrThrow.mockResolvedValue({
+      id: ASSET_ID,
+      crewId: CREW_ID,
+      kind: CrewProductionResourceKind.link,
+      title: `linear.app/${title}`,
+      url: `https://linear.app/${path}`,
+      assetNodeId: null,
+      createdByUserId: USER_ID,
+      createdAt: new Date('2026-08-02T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-02T12:00:00.000Z'),
+      assetNode: null,
+    });
+
+    await t.service.createResource(CREW_ID, USER_ID, {
+      kind: 'link',
+      url: `https://linear.app/${path}`,
+    });
+
+    expect(t.prisma.crewProductionResource.create).toHaveBeenCalledWith({
+      data: {
+        crewId: CREW_ID,
+        kind: CrewProductionResourceKind.link,
+        title: `linear.app/${title}`,
+        url: `https://linear.app/${path}`,
+        assetNodeId: null,
+        createdByUserId: USER_ID,
+      },
+    });
+  });
+
   it('requires an actionable note when a final cut is rejected', () => {
     expect(
       ReviewEpisodeDeliverySchema.safeParse({ decision: 'reject', note: '' })

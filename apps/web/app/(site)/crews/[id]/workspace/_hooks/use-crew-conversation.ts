@@ -20,15 +20,17 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import type { ConversationDTO } from "@repo/shared/conversation";
 import { CrewApiError, crewApi } from "@/app/(site)/crews/_hooks/api";
 
 export const crewConversationKey = (crewId: string) => ["crew", "conversation", crewId] as const;
 
 export function useCrewConversation(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery<ConversationDTO, CrewApiError>({
-    queryKey: crewConversationKey(crewId),
-    enabled: !!crewId && enabled,
+    queryKey: [...crewConversationKey(crewId), user?.id ?? null],
+    enabled: !!crewId && enabled && Boolean(user),
     queryFn: () =>
       crewApi.get<ConversationDTO>(`/crews/${encodeURIComponent(crewId)}/conversation`),
     // A crew's chat row never changes identity, so this is a one-shot

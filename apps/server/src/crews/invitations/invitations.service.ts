@@ -167,14 +167,22 @@ export class CrewInvitationsService {
       invitation.status === CrewInvitationStatus.pending &&
       invitation.expiresAt <= new Date()
     ) {
-      const expired = await this.prisma.crewInvitation.update({
-        where: { id: invitation.id },
+      await this.prisma.crewInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          status: CrewInvitationStatus.pending,
+          expiresAt: { lte: new Date() },
+        },
         data: { status: CrewInvitationStatus.expired },
+      });
+      const expired = await this.prisma.crewInvitation.findUnique({
+        where: { id: invitation.id },
         include: {
           crew: { select: { id: true, name: true, logo: true, tagline: true } },
           agreement: { select: { id: true, status: true } },
         },
       });
+      if (!expired) throw new NotFoundException('Invitation not found.');
       return { ...invitationDto(expired), crew: expired.crew };
     }
     return { ...invitationDto(invitation), crew: invitation.crew };
@@ -303,6 +311,23 @@ export class CrewInvitationsService {
         });
       }
 
+      // Claim the pending row before granting access. The row lock is held
+      // until commit, so decline, revoke and expiry cannot overwrite acceptance.
+      const acceptedAt = new Date();
+      const claimed = await tx.crewInvitation.updateMany({
+        where: {
+          id: invitation.id,
+          status: CrewInvitationStatus.pending,
+          expiresAt: { gt: acceptedAt },
+        },
+        data: { status: CrewInvitationStatus.accepted, acceptedAt },
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException({
+          message: 'This invitation is no longer pending or has expired.',
+        });
+      }
+
       const joined = await joinCrewInTransaction(
         tx,
         {
@@ -323,13 +348,6 @@ export class CrewInvitationsService {
         invitation,
         tx,
       );
-      await tx.crewInvitation.update({
-        where: { id: invitation.id },
-        data: {
-          status: CrewInvitationStatus.accepted,
-          acceptedAt: new Date(),
-        },
-      });
       await this.notifications.send(
         {
           userId: invitation.invitedByUserId,
@@ -371,13 +389,18 @@ export class CrewInvitationsService {
       where: { id: invitationId },
     });
     this.requirePendingInvitation(invitation, userId);
-    await this.prisma.crewInvitation.update({
-      where: { id: invitationId },
+    const changed = await this.prisma.crewInvitation.updateMany({
+      where: { id: invitationId, status: CrewInvitationStatus.pending },
       data: {
         status: CrewInvitationStatus.declined,
         declinedAt: new Date(),
       },
     });
+    if (changed.count !== 1) {
+      throw new ConflictException({
+        message: 'This invitation is no longer pending.',
+      });
+    }
     return { declined: true };
   }
 
@@ -396,13 +419,18 @@ export class CrewInvitationsService {
         message: 'Only a pending invitation can be revoked.',
       });
     }
-    await this.prisma.crewInvitation.update({
-      where: { id: invitationId },
+    const changed = await this.prisma.crewInvitation.updateMany({
+      where: { id: invitationId, status: CrewInvitationStatus.pending },
       data: {
         status: CrewInvitationStatus.revoked,
         revokedAt: new Date(),
       },
     });
+    if (changed.count !== 1) {
+      throw new ConflictException({
+        message: 'This invitation is no longer pending.',
+      });
+    }
     return { revoked: true };
   }
 

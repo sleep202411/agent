@@ -57,7 +57,10 @@ function job(overrides: Record<string, unknown> = {}) {
 function build(overrides: Record<string, unknown> = {}) {
   const claimed = job(overrides);
   const prisma = {
-    $queryRaw: jest.fn().mockResolvedValue([{ id: JOB_ID }]),
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue([])
+      .mockResolvedValueOnce([{ id: JOB_ID }]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewAgreementSendJob: {
       updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -98,6 +101,44 @@ function build(overrides: Record<string, unknown> = {}) {
 }
 
 describe('CrewAgreementSendWorker', () => {
+  it('claims only ready-to-send work and retains the sweep limit', async () => {
+    const { worker } = build();
+    const internals = worker as unknown as {
+      batchSize: number;
+      claim(limit: number): Promise<unknown[]>;
+      dispatchOne(value: unknown): Promise<void>;
+    };
+    internals.batchSize = 2;
+    const queue = [job(), job(), job()];
+    const claim = jest
+      .spyOn(internals, 'claim')
+      .mockImplementation((limit) => Promise.resolve(queue.splice(0, limit)));
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const send = jest
+      .spyOn(internals, 'dispatchOne')
+      .mockResolvedValue()
+      .mockReturnValueOnce(pending);
+    const first = worker.drainOnce();
+    const overlap = worker.drainOnce();
+    try {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(claim).toHaveBeenCalledWith(1);
+      expect(queue).toHaveLength(2);
+    } finally {
+      release();
+      await Promise.all([first, overlap]);
+    }
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(queue).toHaveLength(1);
+    await worker.drainOnce();
+    expect(send).toHaveBeenCalledTimes(3);
+    expect(queue).toHaveLength(0);
+  });
+
   it('dispatches outside the request transaction and waits for the Sent webhook', async () => {
     const t = build();
 
