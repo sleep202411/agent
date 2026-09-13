@@ -5761,22 +5761,23 @@ model CrewTaskAssignee {
 }
 
 model CrewTaskSubmission {
-  timelinessResult    Json?     @map("timeliness_result") @db.JsonB
-  timelinessEvidence  Json?     @map("timeliness_evidence") @db.JsonB
-  id                  String    @id @default(uuid(7)) @db.Uuid
-  taskId              String    @map("task_id") @db.Uuid
-  versionNumber       Int       @map("version_number")
-  submittedByUserId   String    @map("submitted_by_user_id") @db.VarChar(64)
-  note                String    @default("") @db.Text
-  canvasVersionId     String?   @map("canvas_version_id") @db.Uuid
+  trustEntries        CrewCreatorTrustEntry[]
+  timelinessResult    Json?                   @map("timeliness_result") @db.JsonB
+  timelinessEvidence  Json?                   @map("timeliness_evidence") @db.JsonB
+  id                  String                  @id @default(uuid(7)) @db.Uuid
+  taskId              String                  @map("task_id") @db.Uuid
+  versionNumber       Int                     @map("version_number")
+  submittedByUserId   String                  @map("submitted_by_user_id") @db.VarChar(64)
+  note                String                  @default("") @db.Text
+  canvasVersionId     String?                 @map("canvas_version_id") @db.Uuid
   /// Immutable version created on the crew's main production canvas by an
   /// approved CRDT merge. Null until this submission is approved.
-  productionVersionId String?   @unique(map: "crew_task_submissions_production_version_unique") @map("production_version_id") @db.Uuid
-  reviewNote          String?   @map("review_note") @db.Text
-  reviewedByUserId    String?   @map("reviewed_by_user_id") @db.VarChar(64)
-  reviewedAt          DateTime? @map("reviewed_at") @db.Timestamptz(6)
-  mergedAt            DateTime? @map("merged_at") @db.Timestamptz(6)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  productionVersionId String?                 @unique(map: "crew_task_submissions_production_version_unique") @map("production_version_id") @db.Uuid
+  reviewNote          String?                 @map("review_note") @db.Text
+  reviewedByUserId    String?                 @map("reviewed_by_user_id") @db.VarChar(64)
+  reviewedAt          DateTime?               @map("reviewed_at") @db.Timestamptz(6)
+  mergedAt            DateTime?               @map("merged_at") @db.Timestamptz(6)
+  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   task              CrewTask                  @relation(fields: [taskId], references: [id], onDelete: Cascade)
   canvasVersion     StudioDocumentVersion?    @relation("CrewTaskSubmissionCanvasVersion", fields: [canvasVersionId], references: [id], onDelete: Restrict)
@@ -10013,4 +10014,17 @@ model IpEpisodeFeedback {
 
   @@id([episodeId, userId])
   @@map("ip_episode_feedback")
+}
+
+model CrewCreatorTrustEntry {
+  submissionId String             @map("submission_id") @db.Uuid
+  taskId       String             @map("task_id") @db.Uuid
+  userId       String             @map("user_id") @db.VarChar(64)
+  points       Int
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  submission   CrewTaskSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  @@id([taskId, userId])
+  @@index([userId, createdAt(sort: Desc)], map: "crew_creator_trust_user_idx")
+  @@map("crew_creator_trust_entries")
 }

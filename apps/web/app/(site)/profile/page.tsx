@@ -12,6 +12,7 @@
  * still exist under `_hooks/` and `*-dialog.tsx`; they get
  * re-wired into the CreatorCenter sections as Phase 1b lands.
  */
+import { CrewTrustSummary } from "./_components/crew-trust-summary";
 import { IconLoader2 } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -50,5 +51,10 @@ export default function ProfilePage() {
     );
   }
 
-  return <ProfileCreatorCenter creatorId={user.id} />;
+  return (
+    <>
+      <CrewTrustSummary key={user.id} userId={user.id} />
+      <ProfileCreatorCenter creatorId={user.id} />
+    </>
+  );
 }

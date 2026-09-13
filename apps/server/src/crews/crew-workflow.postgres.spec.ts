@@ -1,3 +1,5 @@
+import { CreatorTrustController } from '../ip-commerce/creator-trust.controller';
+import { postApprovedTaskTrustTx } from './tasks/task-timeliness';
 import { randomUUID } from 'node:crypto';
 import { PrismaClient, CrewMembershipStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -182,6 +184,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         .memberId;
     });
     afterEach(async () => {
+      await db.$executeRaw`DELETE FROM crew_creator_trust_entries WHERE task_id IN (SELECT id FROM crew_tasks WHERE crew_id=${crewId})`;
       // Posted ledger rows are deliberately immutable. Keep the unique fixtures
       // in this disposable test database rather than disabling audit triggers.
       await db.crew.updateMany({
@@ -317,6 +320,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           revisionLimit: 2,
           assignees: [
             { userId: worker, currency: 'USD', rewardAmountMinor: 1000 },
+            { userId: owner, currency: 'USD' },
           ],
         }),
       );
@@ -370,8 +374,35 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       expect(evidenceRows[1].evidence.deadline).toBe(
         '2100-01-01T00:00:00.000Z',
       );
-      expect(evidenceRows[1].evidence.assigneeUserIds).toEqual([worker]);
+      expect(evidenceRows[1].evidence.assigneeUserIds).toEqual(
+        [worker, owner].sort(),
+      );
       expect(evidenceRows[1].result?.points).toBe(200);
+      const approvedSubmission = await db.crewTaskSubmission.findFirstOrThrow({
+        where: { taskId: task.id },
+        orderBy: { versionNumber: 'desc' },
+      });
+      await db.$transaction((tx) =>
+        postApprovedTaskTrustTx(tx, approvedSubmission.id),
+      );
+      const trust = await db.$queryRaw<
+        { userId: string; points: number }[]
+      >`SELECT user_id AS "userId",points FROM crew_creator_trust_entries WHERE task_id=${task.id}::uuid`;
+      expect(trust).toEqual(
+        expect.arrayContaining([
+          { userId: worker, points: 200 },
+          { userId: owner, points: 200 },
+        ]),
+      );
+      expect(trust).toHaveLength(2);
+      const trustReader = new CreatorTrustController(db as never);
+      expect((await trustReader.read({ userId: worker }, {})).points).toBe(
+        '200',
+      );
+      expect((await trustReader.read({ userId: finance }, {})).points).toBe(
+        '0',
+      );
+
       await expect(
         tasks.review(task.id, owner, { decision: 'approve', note: '' }),
       ).rejects.toThrow();

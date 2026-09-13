@@ -60,3 +60,17 @@ export async function recordApprovedTaskTimelinessTx(
     WHERE id = ${submissionId}::uuid AND timeliness_result IS NULL
   `;
 }
+
+/** One trust contribution per task and captured assignee, separate from money. */
+export async function postApprovedTaskTrustTx(
+  tx: Prisma.TransactionClient,
+  submissionId: string,
+) {
+  await tx.$executeRaw`
+ INSERT INTO crew_creator_trust_entries (submission_id, task_id, user_id, points)
+ SELECT s.id, s.task_id, recipient.user_id, (s.timeliness_result->>'points')::integer
+ FROM crew_task_submissions s
+ CROSS JOIN LATERAL jsonb_array_elements_text(s.timeliness_evidence->'assigneeUserIds') AS recipient(user_id)
+ WHERE s.id=${submissionId}::uuid AND s.timeliness_result IS NOT NULL
+ ON CONFLICT (task_id,user_id) DO NOTHING`;
+}

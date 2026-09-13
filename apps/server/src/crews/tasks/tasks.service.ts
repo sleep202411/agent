@@ -1,6 +1,7 @@
 import {
   captureTaskTimelinessTx,
   recordApprovedTaskTimelinessTx,
+  postApprovedTaskTrustTx,
 } from './task-timeliness';
 import {
   taskDeliveryFolderTx,
@@ -3286,6 +3287,7 @@ export class CrewTasksService {
         });
         if (approved) {
           await recordApprovedTaskTimelinessTx(tx, latest.id, userId);
+          await postApprovedTaskTrustTx(tx, latest.id);
           await publishTaskDeliveryAssetsTx(
             tx,
             this.assetAccess,

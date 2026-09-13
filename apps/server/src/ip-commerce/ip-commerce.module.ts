@@ -1,3 +1,4 @@
+import { CreatorTrustController } from './creator-trust.controller';
 import {
   IpEpisodeFeedbackController,
   IpEpisodeFeedbackService,
@@ -45,6 +46,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCommerceController,
     IpCommerceAdminController,
     CreatorEarningsController,
+    CreatorTrustController,
   ],
   providers: [
     CrewAuthorizationService,

@@ -9672,5 +9672,16 @@
     "loading": "Loading feedback…",
     "failed": "Feedback could not be saved.",
     "retry": "Retry"
+  },
+  "crewTrust": {
+    "title": "My Crew trust",
+    "points": "Trust score",
+    "taskCount": "Measured tasks",
+    "onTime": "On time",
+    "late": "Late",
+    "loading": "Loading trust…",
+    "failed": "Trust could not be refreshed.",
+    "retry": "Retry",
+    "note": "Based on approved submissions with recorded deadlines. This is not money or spendable points; unmeasured historical work is excluded."
   }
 }
