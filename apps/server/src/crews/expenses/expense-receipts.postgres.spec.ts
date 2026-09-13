@@ -4,16 +4,23 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewExpenseDraftService, SaveExpenseDraft } from './expense-drafts';
 import { CrewExpenseReceiptService } from './expense-receipts';
-const url = process.env.TASK01_TEST_DATABASE_URL;
+const url =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.DATABASE_POSTGRES_INTEGRATION === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
 (url ? describe : describe.skip)('private expense receipts', () => {
   it('recovers finalization, isolates draft evidence, submits once and retains own reads after departure', async () => {
     const target = new URL(url!);
     if (
-      target.hostname !== '127.0.0.1' ||
-      target.port !== '55439' ||
-      target.pathname !== '/task01'
+      !['localhost', '127.0.0.1'].includes(target.hostname) ||
+      !(
+        (target.port === '55439' && target.pathname === '/task01') ||
+        (target.port === '5433' &&
+          target.pathname === '/fizzdragon_outbox_test')
+      )
     )
-      throw Error('Owned task01 fixture required');
+      throw Error('Explicitly allowed loopback test database required');
     const db = new PrismaClient({
       adapter: new PrismaPg({ connectionString: url }),
       transactionOptions: { timeout: 15000 },
@@ -30,23 +37,23 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
     let failAfterCopy = true;
     const storage = {
       createPrivateUploadUrl: jest.fn(
-        async (input: { storageKey: string; contentType: string }) => ({
-          url: 'https://fixture.invalid/put',
-          method: 'PUT',
-          headers: { 'Content-Type': input.contentType },
-          storageKey: input.storageKey,
-          bucket: 'private-receipts',
-          region: null,
-          provider: 's3_compatible',
-          expiresAt: new Date(Date.now() + 900000).toISOString(),
-        }),
+        (input: { storageKey: string; contentType: string }) =>
+          Promise.resolve({
+            url: 'https://fixture.invalid/put',
+            method: 'PUT',
+            headers: { 'Content-Type': input.contentType },
+            storageKey: input.storageKey,
+            bucket: 'private-receipts',
+            region: null,
+            provider: 's3_compatible',
+            expiresAt: new Date(Date.now() + 900000).toISOString(),
+          }),
       ),
-      headStoredObject: jest.fn(
-        async (ref: { storageKey: string }) =>
-          objects.get(ref.storageKey) ?? { exists: false },
+      headStoredObject: jest.fn((ref: { storageKey: string }) =>
+        Promise.resolve(objects.get(ref.storageKey) ?? { exists: false }),
       ),
       promoteObject: jest.fn(
-        async (input: {
+        (input: {
           source: { storageKey: string };
           destination: { storageKey: string };
         }) => {
@@ -56,13 +63,16 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
           );
           if (failAfterCopy) {
             failAfterCopy = false;
-            throw Error('Copy response lost');
+            return Promise.reject(Error('Copy response lost'));
           }
+          return Promise.resolve();
         },
       ),
-      createReadUrl: jest.fn(async () => ({
-        url: 'https://fixture.invalid/read',
-      })),
+      createReadUrl: jest.fn(() =>
+        Promise.resolve({
+          url: 'https://fixture.invalid/read',
+        }),
+      ),
     };
     const authz = new CrewAuthorizationService(db as never);
     const receipts = new CrewExpenseReceiptService(
