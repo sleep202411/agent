@@ -255,6 +255,10 @@ kind: ServiceAccount
 metadata:
   name: {{ $googleVertex.kubernetesServiceAccount }}
   namespace: {{ .Release.Namespace }}
+{{- with .Values.image.pullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
 {{- end }}
 ---
 # ADC external-account configuration only. It contains no secret or private

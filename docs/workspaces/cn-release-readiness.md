@@ -41,7 +41,8 @@ authority for existing production overrides: preserve COM's current product
 policies when synchronizing the catalog rather than resetting them to defaults.
 
 The owner authorized sharing COM provider accounts with separate runtime
-identities. CN MiniMax credentials have been provisioned. Google Vertex uses the
+identities. CN MiniMax credentials have been provisioned and verified from ACK by querying
+an existing completed task (HTTP 200, succeeded; no new generation). Google Vertex uses the
 same Google project with a dedicated ACK federation, Kubernetes service account
 and Google service account. Run `deploy/setup-cn-vertex.sh` with an authenticated
 Google operator session, then verify token exchange from an ACK pod before
@@ -64,6 +65,8 @@ images include `dist/catalog-update/prisma/seed/update-model-catalog.js`.
    instances before the schema migration. The old Prisma client cannot run after
    retired columns are dropped. This is a coordinated cutover, not a rolling
    schema-compatible release. Do not roll back only the application image.
+   Use a forward-only Helm upgrade for this cutover, without `--atomic`: an
+   automatic rollback would restore an old Prisma client against the new schema.
 4. Run the explicit backup-annotated migration Job, update the scoped model
    catalog and roll out the matching services. Resume admission only after
    readiness checks pass. Old browser pages should reload the matching client. Installed mobile clients

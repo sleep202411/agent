@@ -47,6 +47,8 @@ grep -q 'serviceAccountToken:' <<<"$cn_server" || fail "CN must mount a rotating
 if grep -Eq 'fizzdragon-aks|aks-com|fizzdragon-agent-platform@' <<<"$cn_server"; then
   fail "CN must not inherit the COM runtime identity"
 fi
+grep -q 'imagePullSecrets:' <<<"$cn_server" || fail "the dedicated CN identity must retain ACR pull access"
+grep -q 'name: acr-pull' <<<"$cn_server" || fail "the dedicated CN identity must use the provisioned ACR secret"
 ok "CN renders independent keyless ACK→GCP federation"
 
 expect_fail() {

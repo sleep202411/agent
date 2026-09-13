@@ -25,6 +25,8 @@ image:
   # (fixed password via ResetLoginPassword).
   registry: fizzdragon-registry-vpc.cn-hangzhou.cr.aliyuncs.com/fizzdragon
   pullPolicy: IfNotPresent
+  pullSecrets:
+    - name: acr-pull
 
 ingress:
   enabled: true
