@@ -26,8 +26,8 @@ ok "Agent OS is enabled with its scoped Secret and mainland model endpoint"
 grep -q 'name: fizzdragon-temporal$' <<<"$render" && fail "Temporal must not render before CN infrastructure exists"
 ok "Temporal is absent from CN"
 
-grep -A 1 'name: MINIMAX_ENABLED' <<<"$render" | grep -q 'value: "false"' || fail "MiniMax must be explicitly disabled on CN"
-ok "MiniMax is explicitly disabled"
+grep -A 1 'name: MINIMAX_ENABLED' <<<"$render" | grep -q 'value: "true"' || fail "MiniMax must be enabled with its provisioned account"
+ok "MiniMax is explicitly enabled"
 
 server="$(helm template fizzdragon "$CHART" -n fizzdragon -f "$CHART/values.yaml" -f "$CN_VALUES" \
   -s templates/server.yaml --set-string "server.image.tag=$REVISION")"

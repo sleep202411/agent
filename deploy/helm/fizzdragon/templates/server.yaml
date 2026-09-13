@@ -7,9 +7,6 @@
 {{- $vertexVideoLocation := "" -}}
 {{- $vertexServiceAccount := "" -}}
 {{- if $googleVertex.enabled -}}
-{{- if not .Values.azure.enabled -}}
-{{- fail "server.googleVertex.enabled requires the AKS workload-identity deployment path; disable it in non-Azure cells" -}}
-{{- end -}}
 {{- $vertexProject = required "server.googleVertex.project is required" $googleVertex.project -}}
 {{- $vertexImageLocation = required "server.googleVertex.imageLocation is required" $googleVertex.imageLocation -}}
 {{- $vertexVideoLocation = required "server.googleVertex.videoLocation is required" $googleVertex.videoLocation -}}
@@ -37,6 +34,8 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.server.terminationGracePeriodSeconds | default 30 }}
       {{- if .Values.azure.enabled }}
       serviceAccountName: {{ .Values.azure.workloadIdentity.serviceAccountName }}
+      {{- else if $googleVertex.enabled }}
+      serviceAccountName: {{ required "server.googleVertex.kubernetesServiceAccount is required outside Azure" $googleVertex.kubernetesServiceAccount }}
       {{- end }}
       {{- if .Values.server.migrateOnStart }}
       initContainers:
@@ -119,8 +118,9 @@ spec:
             - secretRef:
                 name: {{ .Values.agentOsServerSecrets.projectedName }}
             {{- end }}
-          {{- if .Values.azure.enabled }}
+          {{- if or .Values.azure.enabled $googleVertex.enabled }}
           volumeMounts:
+            {{- if .Values.azure.enabled }}
             - name: kv-secrets
               mountPath: /mnt/secrets
               readOnly: true
@@ -133,6 +133,7 @@ spec:
             - name: server-kv-secrets
               mountPath: /mnt/server-secrets
               readOnly: true
+            {{- end }}
             {{- end }}
             {{- if $googleVertex.enabled }}
             - name: google-vertex-identity
@@ -168,8 +169,9 @@ spec:
                 # Service before SIGTERM — new + in-flight connections drain to
                 # healthy pods; the WS gateway then closes sockets on shutdown.
                 command: ["sh", "-c", "sleep 8"]
-      {{- if .Values.azure.enabled }}
+      {{- if or .Values.azure.enabled $googleVertex.enabled }}
       volumes:
+        {{- if .Values.azure.enabled }}
         - name: kv-secrets
           csi:
             driver: secrets-store.csi.k8s.io
@@ -191,6 +193,7 @@ spec:
             readOnly: true
             volumeAttributes:
               secretProviderClass: {{ .Release.Name }}-server-kv
+        {{- end }}
         {{- end }}
         {{- if $googleVertex.enabled }}
         - name: google-vertex-identity
@@ -245,6 +248,14 @@ spec:
     matchLabels:
       {{- include "fizzdragon.componentSelector" $ctx | nindent 6 }}
 {{- if $googleVertex.enabled }}
+{{- if not .Values.azure.enabled }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $googleVertex.kubernetesServiceAccount }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 # ADC external-account configuration only. It contains no secret or private
 # key; the projected, audience-bound K8s token is rotated by kubelet and

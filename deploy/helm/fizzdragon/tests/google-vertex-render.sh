@@ -40,10 +40,14 @@ ok ".com renders keyless AKS→GCP Workload Identity Federation"
 
 cn_server="$(helm template fizzdragon "$CHART" -f "$CN_VALUES" -s templates/server.yaml)" ||
   fail "CN server render"
-if grep -Eq 'GOOGLE_VERTEX|google-vertex|external_account|sts.googleapis.com' <<<"$cn_server"; then
-  fail "the CN server must not inherit the .com Google Vertex identity path"
+grep -q 'serviceAccountName: fizzdragon-server-vertex' <<<"$cn_server" || fail "CN needs its own Kubernetes identity"
+grep -q 'workloadIdentityPools/fizzdragon-ack/providers/ack-cn' <<<"$cn_server" || fail "CN needs its own federation"
+grep -q 'fizzdragon-cn-vertex@' <<<"$cn_server" || fail "CN needs its own Google runtime identity"
+grep -q 'serviceAccountToken:' <<<"$cn_server" || fail "CN must mount a rotating token"
+if grep -Eq 'fizzdragon-aks|aks-com|fizzdragon-agent-platform@' <<<"$cn_server"; then
+  fail "CN must not inherit the COM runtime identity"
 fi
-ok "CN renders with no Google Vertex configuration"
+ok "CN renders independent keyless ACK→GCP federation"
 
 expect_fail() {
   local why="$1"; shift
@@ -53,7 +57,7 @@ expect_fail() {
   ok "rejected: $why"
 }
 
-expect_fail "Google Vertex enabled outside the AKS identity path" \
+expect_fail "Google Vertex outside Azure without a Kubernetes identity" \
   --set azure.enabled=false
 expect_fail "Google Vertex enabled without a project" \
   --set-string server.googleVertex.project=

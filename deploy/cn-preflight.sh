@@ -110,6 +110,12 @@ else
   if has_service server && [ "$PHASE" = deploy ]; then
     secret_has_key fizzdragon-server-secrets REALTIME_WS_SECRET
     secret_has_key fizzdragon-server-secrets ABLY_API_KEY
+    # These are required by the selected CN write path and enabled providers.
+    for key in OSS_BUCKET OSS_REGION OSS_ACCESS_KEY_ID OSS_ACCESS_KEY_SECRET; do
+      secret_has_key fizzdragon-secrets "$key"
+    done
+    secret_has_key fizzdragon-server-secrets FAL_API_KEY
+    secret_has_key fizzdragon-server-secrets MINIMAX_API_KEY
   fi
   if has_service admin-ui; then
     secret_has_key fizzdragon-adminui-secrets JAVA_ADMIN_API_TOKEN

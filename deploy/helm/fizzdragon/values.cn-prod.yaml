@@ -202,11 +202,14 @@ studio:
   tolerations: null
 
 server:
-  # Google Vertex is intentionally unavailable in the CN cell. This explicit
-  # override prevents the production-com WIF configuration from inheriting
-  # into ACK, where the Azure-bound K8s identity path does not exist.
+  # Same Google project, separate ACK federation and runtime identity.
   googleVertex:
-    enabled: false
+    enabled: true
+    kubernetesServiceAccount: fizzdragon-server-vertex
+    workloadIdentityFederation:
+      pool: fizzdragon-ack
+      provider: ack-cn
+      serviceAccountEmail: fizzdragon-cn-vertex@glass-proxy-501907-d2.iam.gserviceaccount.com
   replicaCount: 1
   # CN migrations are an explicit, separately approved Job. Never couple
   # irreversible schema/data changes to an ordinary pod rollout.
@@ -230,13 +233,10 @@ server:
     PROJECT_SKILL_PREVIEW_BASE_URL: https://media.fizzspace.cn/product-skills/previews/v1
     # Mirrors prod-cn .env (2026-06-10).
     AI_PROVIDER: deepseek
-    # Happy Oyster is enabled only in the global cell until the CN deployment
-    # has its own supported control plane and FAL_API_KEY provisioning.
-    WORLD_MODEL_HAPPY_OYSTER_ENABLED: "false"
-    # No MiniMax credential is provisioned in the CN cell. Keep the provider
-    # explicitly off instead of inheriting the .com=true flag and presenting a
-    # model binding that can only fail at runtime.
-    MINIMAX_ENABLED: "false"
+    # Provider credentials are provisioned separately; both gates fail at boot
+    # if their required key is absent.
+    WORLD_MODEL_HAPPY_OYSTER_ENABLED: "true"
+    MINIMAX_ENABLED: "true"
     # Remove .com-only storage endpoints and analytics identifiers. Existing CN
     # rows live in the separate CN database and are OSS-backed.
     S3_ENDPOINT: null
