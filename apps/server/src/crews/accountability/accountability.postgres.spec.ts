@@ -4,7 +4,6 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { CrewAccountabilityService } from './accountability.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewTasksService } from '../tasks/tasks.service';
-import { WalletLedgerService } from '../../workspaces';
 import type { PrismaService } from '../../infra/db/db.module';
 
 const suite =
@@ -37,12 +36,9 @@ suite('Crew accountability on isolated PostgreSQL', () => {
     });
     const prisma = db as PrismaService;
     authorization = new CrewAuthorizationService(prisma);
-    service = new CrewAccountabilityService(
-      prisma,
-      authorization,
-      new WalletLedgerService(prisma),
-      { send: () => Promise.resolve({}) } as never,
-    );
+    service = new CrewAccountabilityService(prisma, authorization, {
+      send: () => Promise.resolve({}),
+    } as never);
     process.env.CREW_COMPLETION_REWARD_POINTS = '10';
     process.env.CREW_COMPLETION_REWARD_APPROVER_IDS = leader;
     await db.crew.create({
@@ -268,7 +264,7 @@ suite('Crew accountability on isolated PostgreSQL', () => {
       resolvedByUserId: leader,
     });
   });
-  it('enforces one peer review and one real wallet credit under concurrent retries', async () => {
+  it('enforces one peer review and rejects concurrent point awards without wallet writes', async () => {
     await db.crewProductionPage.update({
       where: { crewId },
       data: { status: 'completed' },
@@ -287,28 +283,20 @@ suite('Crew accountability on isolated PostgreSQL', () => {
         where: { crewId, authorUserId: alice, subjectUserId: bob },
       }),
     ).toBe(1);
-    await Promise.all([1, 2].map(() => service.recognize(crewId, bob, leader)));
-    const account = await db.walletAccount.findUniqueOrThrow({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: 'user',
-          ownerId: bob,
-          currency: 'community_point',
-          balanceKind: 'consumable',
-        },
-      },
-    });
-    expect(account.availableBalance).toBe(10n);
+    const results = await Promise.allSettled(
+      [1, 2].map(() => service.recognize(crewId, bob, leader)),
+    );
+    expect(results.every((result) => result.status === 'rejected')).toBe(true);
     expect(
       await db.walletTransaction.count({
         where: { idempotencyKey: `crew_completion_reward:${crewId}:${bob}` },
       }),
-    ).toBe(1);
+    ).toBe(0);
     expect(
       await db.crewParticipationRecord.findUnique({
         where: { crewId_userId: { crewId, userId: bob } },
       }),
-    ).toMatchObject({ communityPoints: 10, awardedByUserId: leader });
+    ).toBeNull();
     const feedback = await db.crewPeerFeedback.findFirstOrThrow({
       where: { crewId },
     });
@@ -325,11 +313,14 @@ suite('Crew accountability on isolated PostgreSQL', () => {
       where: { crewId },
       data: { status: 'completed' },
     });
-    await service.recognize(crewId, bob, leader);
+    await expect(service.recognize(crewId, bob, leader)).rejects.toThrow(
+      'Crew compensation is money and agreed profit sharing',
+    );
     expect(
-      (await db.walletAccount.findUniqueOrThrow({ where: { id: account.id } }))
-        .availableBalance,
-    ).toBe(10n);
+      await db.walletTransaction.count({
+        where: { idempotencyKey: `crew_completion_reward:${crewId}:${bob}` },
+      }),
+    ).toBe(0);
   });
   it('database constraints reject invalid ratings and duplicate project awards', async () => {
     await expect(

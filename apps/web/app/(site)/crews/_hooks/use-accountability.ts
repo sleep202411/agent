@@ -53,7 +53,7 @@ export interface Accountability {
   canManage: boolean;
   canAward: boolean;
   rewardPoints: number | null;
-  rewardExpiryDays: number;
+  rewardExpiryDays: number | null;
   participants: Participation[];
   feedback: PeerFeedback[];
   commitments: Commitment[];

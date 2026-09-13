@@ -4,25 +4,11 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
-import {
-  Prisma,
-  WalletOwnerType,
-  WalletCurrencyType,
-  WalletBalanceKind,
-  WalletAccountStatus,
-  WalletLedgerEntryType,
-  WalletCreditGrantType,
-} from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { NotificationService } from '../../notification';
-import { WalletLedgerService } from '../../workspaces';
-import {
-  promoCreditExpiresAt,
-  PROMO_CREDIT_VALIDITY_DAYS,
-} from '../../billing/credit-policy';
 import type { CommitmentAction } from './accountability.dto';
 
 const taskInclude = {
@@ -37,31 +23,8 @@ export class CrewAccountabilityService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authorization: CrewAuthorizationService,
-    private readonly ledger: WalletLedgerService,
     private readonly notifications: NotificationService,
   ) {}
-
-  private rewardPolicy() {
-    const raw = process.env.CREW_COMPLETION_REWARD_POINTS;
-    const approvers = (process.env.CREW_COMPLETION_REWARD_APPROVER_IDS ?? '')
-      .split(',')
-      .map((id) => id.trim())
-      .filter(Boolean);
-    if (raw === undefined && approvers.length === 0) return null;
-    const amount = Number(raw);
-    if (
-      !raw ||
-      !Number.isSafeInteger(amount) ||
-      amount < 1 ||
-      amount > 50000 ||
-      !approvers.length
-    ) {
-      throw new ServiceUnavailableException(
-        'Configure a completion reward of 1–50,000 points and its authorized approvers.',
-      );
-    }
-    return { amount, approvers };
-  }
 
   private async task(
     taskId: string,
@@ -411,14 +374,12 @@ export class CrewAccountabilityService {
       WHERE t.crew_id = ${crewId} AND t.deleted_at IS NULL
       GROUP BY c.user_id) metrics ORDER BY CASE WHEN measured >= 5 THEN "onTime"::float / measured ELSE NULL END DESC NULLS LAST, completed DESC, "userId" LIMIT ${PAGE_SIZE + 1} OFFSET ${skip}
     `;
-    const policy = this.rewardPolicy();
     return {
       reliability: reliability.slice(0, PAGE_SIZE),
-      rewardPoints: policy?.amount ?? null,
-      rewardExpiryDays: PROMO_CREDIT_VALIDITY_DAYS,
-      canAward:
-        !!policy?.approvers.includes(userId) &&
-        access.permissions.includes('production.manage'),
+      // Historical read fields remain compatible; no configuration enables grants.
+      rewardPoints: null,
+      rewardExpiryDays: null,
+      canAward: false,
       page,
       hasMore: [participants, feedback, commitments, reliability].some(
         (rows) => rows.length > PAGE_SIZE,
@@ -681,91 +642,12 @@ export class CrewAccountabilityService {
     return this.prisma.crewPeerFeedback.findUniqueOrThrow({ where: { id } });
   }
 
-  async recognize(crewId: string, subjectUserId: string, userId: string) {
+  async recognize(crewId: string, _subjectUserId: string, userId: string) {
     await this.authorization.require(crewId, userId, 'production.manage');
-    if (subjectUserId === userId)
-      throw new ForbiddenException(
-        'Another project leader must verify your contribution.',
-      );
-    const policy = this.rewardPolicy();
-    if (!policy)
-      throw new ServiceUnavailableException(
-        'Completion rewards are not configured yet.',
-      );
-    if (!policy.approvers.includes(userId))
-      throw new ForbiddenException(
-        'Only a configured reward approver may issue community points.',
-      );
-    return this.prisma.$transaction(async (tx) => {
-      await this.lock(tx, crewId);
-      await this.authorization.require(crewId, userId, 'production.manage', tx);
-      await this.requireCompleted(tx, crewId);
-      const existing = await tx.crewParticipationRecord.findUnique({
-        where: { crewId_userId: { crewId, userId: subjectUserId } },
-      });
-      if (existing?.awardedAt) return existing;
-      if (existing?.withdrawalAt)
-        throw new ConflictException(
-          'A withdrawal is recorded. Recognition requires a completed participation.',
-        );
-      if (!(await this.contributed(tx, crewId, subjectUserId)))
-        throw new BadRequestException(
-          'No approved contribution exists for this teammate.',
-        );
-      const unfinished = await tx.crewTask.count({
-        where: {
-          crewId,
-          deletedAt: null,
-          assignees: { some: { userId: subjectUserId } },
-          workflowState: { semantic: { notIn: ['approved', 'cancelled'] } },
-        },
-      });
-      if (unfinished)
-        throw new ConflictException(
-          'This teammate still has unfinished assignments.',
-        );
-      const now = new Date();
-      const accountKey = {
-        ownerType: WalletOwnerType.user,
-        ownerId: subjectUserId,
-        currency: WalletCurrencyType.community_point,
-        balanceKind: WalletBalanceKind.consumable,
-      };
-      const account = await tx.walletAccount.upsert({
-        where: { ownerType_ownerId_currency_balanceKind: accountKey },
-        create: { ...accountKey, status: WalletAccountStatus.active },
-        update: {},
-      });
-      const sourceId = `${crewId}:${subjectUserId}`;
-      await this.ledger.postEntryTx(tx, {
-        accountId: account.id,
-        entryType: WalletLedgerEntryType.credit,
-        amount: BigInt(policy.amount),
-        availableDelta: BigInt(policy.amount),
-        heldDelta: 0n,
-        sourceType: 'crew_completion_reward',
-        sourceId,
-        idempotencyKey: `crew_completion_reward:${sourceId}`,
-        actorUserId: userId,
-        description: 'Crew project completion reward',
-        reason: 'crew_completion_reward',
-        metadata: { crewId, subjectUserId, approvedByUserId: userId },
-        creditGrant: {
-          grantType: WalletCreditGrantType.system_grant,
-          expiresAt: promoCreditExpiresAt(now),
-          metadata: { crewId },
-        },
-      });
-      const data = {
-        communityPoints: policy.amount,
-        awardedAt: now,
-        awardedByUserId: userId,
-      };
-      return tx.crewParticipationRecord.upsert({
-        where: { crewId_userId: { crewId, userId: subjectUserId } },
-        create: { crewId, userId: subjectUserId, ...data },
-        update: data,
-      });
+    throw new ForbiddenException({
+      code: 'CREW_COMPLETION_POINTS_DISABLED',
+      message:
+        'Crew compensation is money and agreed profit sharing. Community-point rewards are not available.',
     });
   }
 }

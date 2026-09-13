@@ -38,9 +38,7 @@ function ProjectSession({
   return (
     <section className="space-y-5 rounded-xl bg-white/[0.025] p-4 text-xs text-zinc-300 sm:p-5">
       <h3 className="text-sm font-semibold text-zinc-100">{t("projectTitle")}</h3>
-      {query.isLoading && !data ? (
-        <p role="status">{t("loading")}</p>
-      ) : null}
+      {query.isLoading && !data ? <p role="status">{t("loading")}</p> : null}
       {query.isError && (
         <div role="alert">
           <p>{query.error.message}</p>
@@ -50,230 +48,204 @@ function ProjectSession({
         </div>
       )}
       {data && (
-          <fieldset disabled={query.isError} className="contents">
-            <div className="space-y-2">
-              <h4 className="font-semibold">{t("reliability")}</h4>
-              <p className="text-zinc-400">{t("reliabilityHelp")}</p>
-              {!data.reliability.length ? (
-                <p>{t("noEvidence")}</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr>
-                        {[
-                          "creator",
-                          "onTime",
-                          "completedTasks",
-                          "scheduleChanges",
-                          "withdrawn",
-                          "declined",
-                          "at_risk",
-                          "overdue",
-                        ].map((key) => (
-                          <th className="whitespace-nowrap px-3 py-2 font-medium" key={key}>
-                            {t(key)}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.reliability.map((r) => (
-                        <tr className="border-t border-white/[0.05]" key={r.userId}>
-                          <td className="px-3 py-2">{displayNameOf(r.userId, displays)}</td>
-                          <td className="px-3 py-2">
-                            {r.measured >= 5
-                              ? `${Math.round((r.onTime / r.measured) * 100)}%`
-                              : t("insufficientHistory")}{" "}
-                            <span className="text-zinc-500">
-                              ({r.onTime}/{r.measured})
-                            </span>
-                          </td>
-                          <td className="px-3 py-2">{r.completed}</td>
-                          <td className="px-3 py-2">{r.scheduleChanges}</td>
-                          <td className="px-3 py-2">{r.withdrawn}</td>
-                          <td className="px-3 py-2">{r.declined}</td>
-                          <td className="px-3 py-2">{r.atRisk}</td>
-                          <td className="px-3 py-2">{r.overdue}</td>
-                        </tr>
+        <fieldset disabled={query.isError} className="contents">
+          <div className="space-y-2">
+            <h4 className="font-semibold">{t("reliability")}</h4>
+            <p className="text-zinc-400">{t("reliabilityHelp")}</p>
+            {!data.reliability.length ? (
+              <p>{t("noEvidence")}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr>
+                      {[
+                        "creator",
+                        "onTime",
+                        "completedTasks",
+                        "scheduleChanges",
+                        "withdrawn",
+                        "declined",
+                        "at_risk",
+                        "overdue",
+                      ].map((key) => (
+                        <th className="whitespace-nowrap px-3 py-2 font-medium" key={key}>
+                          {t(key)}
+                        </th>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-semibold">{t("taskRegister")}</h4>
-              {data.commitments.map((r) => (
-                <div key={r.id} className="border-b border-white/[0.05] py-2">
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.reliability.map((r) => (
+                      <tr className="border-t border-white/[0.05]" key={r.userId}>
+                        <td className="px-3 py-2">{displayNameOf(r.userId, displays)}</td>
+                        <td className="px-3 py-2">
+                          {r.measured >= 5
+                            ? `${Math.round((r.onTime / r.measured) * 100)}%`
+                            : t("insufficientHistory")}{" "}
+                          <span className="text-zinc-500">
+                            ({r.onTime}/{r.measured})
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">{r.completed}</td>
+                        <td className="px-3 py-2">{r.scheduleChanges}</td>
+                        <td className="px-3 py-2">{r.withdrawn}</td>
+                        <td className="px-3 py-2">{r.declined}</td>
+                        <td className="px-3 py-2">{r.atRisk}</td>
+                        <td className="px-3 py-2">{r.overdue}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <h4 className="font-semibold">{t("taskRegister")}</h4>
+            {data.commitments.map((r) => (
+              <div key={r.id} className="border-b border-white/[0.05] py-2">
+                <p>
+                  {r.task?.number} · {r.task?.title} · {displayNameOf(r.userId, displays)} ·{" "}
+                  {t(
+                    r.releasedAt
+                      ? "handedOver"
+                      : r.status === "withdrawn" && !r.acceptedAt
+                        ? "declined"
+                        : r.status
+                  )}
+                </p>
+                {r.promisedDueAt && (
                   <p>
-                    {r.task?.number} · {r.task?.title} · {displayNameOf(r.userId, displays)} ·{" "}
-                    {t(
-                      r.releasedAt
-                        ? "handedOver"
-                        : r.status === "withdrawn" && !r.acceptedAt
-                          ? "declined"
-                          : r.status
-                    )}
+                    {t("promisedDeadline")}: {new Date(r.promisedDueAt).toLocaleString()}
                   </p>
-                  {r.promisedDueAt && (
-                    <p>
-                      {t("promisedDeadline")}: {new Date(r.promisedDueAt).toLocaleString()}
-                    </p>
-                  )}
-                  {r.reason && <p className="whitespace-pre-wrap break-words">{r.reason}</p>}
-                  {r.handoverNote && (
-                    <p>
-                      {t("handover")}: {r.handoverNote}
-                    </p>
-                  )}
-                </div>
-              ))}
-              {!data.commitments.length && <p className="text-zinc-400">{t("noEvidence")}</p>}
-            </div>
-            <div className="space-y-3">
-              <h4 className="font-semibold">{t("projectWithdrawals")}</h4>
-              <p className="text-zinc-400">{t("withdrawalHelp")}</p>
-              {data.participants
-                .filter((p) => p.withdrawalAt)
-                .map((p) => (
-                  <div key={p.id} className="space-y-2 border-b border-white/[0.05] py-2">
-                    <p>
-                      {displayNameOf(p.userId, displays)} ·{" "}
-                      {p.withdrawalAt && new Date(p.withdrawalAt).toLocaleString()} ·{" "}
-                      {t(p.resolvedAt ? "resolved" : "handoverPending")}
-                    </p>
-                    <p className="whitespace-pre-wrap break-words">{p.withdrawalReason}</p>
-                    {p.resolution && <p>{p.resolution}</p>}
-                    {data.canManage && !p.resolvedAt && (
-                      <RecordedAction
-                        key={p.id}
-                        path={`${base}/withdrawals/${encodeURIComponent(p.userId)}/resolve`}
-                        field="note"
-                        label={t("resolveWithdrawal")}
-                      />
-                    )}
-                  </div>
-                ))}
-              {!data.completed &&
-                !members.find((m) => m.userId === userId)?.isOwner &&
-                !data.participants.some((p) => p.userId === userId && p.withdrawalAt) && (
-                  <RecordedAction
-                    path={`${base}/withdrawal`}
-                    field="reason"
-                    label={t("withdrawProject")}
-                  />
                 )}
-            </div>
-            <div className="space-y-3">
-              <h4 className="font-semibold">{t("peerFeedback")}</h4>
-              <p className="text-zinc-400">{t("feedbackHelp")}</p>
-              {data.feedback.map((f) => (
-                <div key={f.id} className="space-y-2 border-b border-white/[0.05] py-3">
+                {r.reason && <p className="whitespace-pre-wrap break-words">{r.reason}</p>}
+                {r.handoverNote && (
                   <p>
-                    {displayNameOf(f.authorUserId, displays)} →{" "}
-                    {displayNameOf(f.subjectUserId, displays)} · {f.rating}/5 ·{" "}
-                    {new Date(f.createdAt).toLocaleDateString()}
+                    {t("handover")}: {r.handoverNote}
                   </p>
-                  <p className="whitespace-pre-wrap break-words">{f.comment}</p>
-                  {f.response && (
-                    <p className="whitespace-pre-wrap break-words">
-                      {t("response")}: {f.response}
-                    </p>
-                  )}
-                  {userId === f.subjectUserId && !f.response && (
+                )}
+              </div>
+            ))}
+            {!data.commitments.length && <p className="text-zinc-400">{t("noEvidence")}</p>}
+          </div>
+          <div className="space-y-3">
+            <h4 className="font-semibold">{t("projectWithdrawals")}</h4>
+            <p className="text-zinc-400">{t("withdrawalHelp")}</p>
+            {data.participants
+              .filter((p) => p.withdrawalAt)
+              .map((p) => (
+                <div key={p.id} className="space-y-2 border-b border-white/[0.05] py-2">
+                  <p>
+                    {displayNameOf(p.userId, displays)} ·{" "}
+                    {p.withdrawalAt && new Date(p.withdrawalAt).toLocaleString()} ·{" "}
+                    {t(p.resolvedAt ? "resolved" : "handoverPending")}
+                  </p>
+                  <p className="whitespace-pre-wrap break-words">{p.withdrawalReason}</p>
+                  {p.resolution && <p>{p.resolution}</p>}
+                  {data.canManage && !p.resolvedAt && (
                     <RecordedAction
-                      key={f.id}
-                      path={`/crew-peer-feedback/${encodeURIComponent(f.id)}/response`}
-                      field="response"
-                      label={t("respond")}
+                      key={p.id}
+                      path={`${base}/withdrawals/${encodeURIComponent(p.userId)}/resolve`}
+                      field="note"
+                      label={t("resolveWithdrawal")}
                     />
                   )}
                 </div>
               ))}
-              {data.completed ? (
-                <>
-                  <label className="block">
-                    {t("creator")}
-                    <NativeSelect
-                      className="ml-2 rounded-md bg-zinc-900 p-2"
-                      aria-label={t("creator")}
-                      value={subject}
-                      onChange={setSubject}
-                    >
-                      <NativeSelectOption value="">{t("chooseCreator")}</NativeSelectOption>
-                      {members
-                        .filter((m) => m.userId !== userId)
-                        .map((m) => (
-                          <NativeSelectOption value={m.userId} key={m.userId}>
-                            {displayNameOf(m.userId, displays)}
-                          </NativeSelectOption>
-                        ))}
-                    </NativeSelect>
-                  </label>
-                  {!!subject && (
-                    <>
-                      <RecordedAction
-                        key={`feedback:${subject}`}
-                        path={`${base}/peer-feedback`}
-                        field="comment"
-                        extra={{ subjectUserId: subject }}
-                        withRating
-                        label={t("sendFeedback")}
-                      />
-                    </>
-                  )}
-                </>
-              ) : (
-                <p>{t("completionRequired")}</p>
+            {!data.completed &&
+              !members.find((m) => m.userId === userId)?.isOwner &&
+              !data.participants.some((p) => p.userId === userId && p.withdrawalAt) && (
+                <RecordedAction
+                  path={`${base}/withdrawal`}
+                  field="reason"
+                  label={t("withdrawProject")}
+                />
               )}
-            </div>
-            <div className="space-y-3">
-              <h4 className="font-semibold">{t("communityPoints")}</h4>
-              <p className="text-zinc-400">
-                {data.rewardPoints === null
-                  ? t("rewardNotConfigured")
-                  : t("rewardPolicy", { points: data.rewardPoints, days: data.rewardExpiryDays })}
-              </p>
-              {data.participants
-                .filter((p) => p.awardedAt)
-                .map((p) => (
-                  <p key={p.id}>
-                    {displayNameOf(p.userId, displays)} · +{p.communityPoints} ·{" "}
-                    {p.awardedAt && new Date(p.awardedAt).toLocaleDateString()}
+          </div>
+          <div className="space-y-3">
+            <h4 className="font-semibold">{t("peerFeedback")}</h4>
+            <p className="text-zinc-400">{t("feedbackHelp")}</p>
+            {data.feedback.map((f) => (
+              <div key={f.id} className="space-y-2 border-b border-white/[0.05] py-3">
+                <p>
+                  {displayNameOf(f.authorUserId, displays)} →{" "}
+                  {displayNameOf(f.subjectUserId, displays)} · {f.rating}/5 ·{" "}
+                  {new Date(f.createdAt).toLocaleDateString()}
+                </p>
+                <p className="whitespace-pre-wrap break-words">{f.comment}</p>
+                {f.response && (
+                  <p className="whitespace-pre-wrap break-words">
+                    {t("response")}: {f.response}
                   </p>
-                ))}
-              {data.completed &&
-                data.canAward &&
-                !!subject &&
-                !data.participants.some((p) => p.userId === subject && p.awardedAt) && (
+                )}
+                {userId === f.subjectUserId && !f.response && (
                   <RecordedAction
-                    key={`award:${subject}`}
-                    path={`${base}/completion-rewards/${encodeURIComponent(subject)}`}
-                    label={t("awardPoints")}
+                    key={f.id}
+                    path={`/crew-peer-feedback/${encodeURIComponent(f.id)}/response`}
+                    field="response"
+                    label={t("respond")}
                   />
                 )}
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-              >
-                {t("previous")}
-              </Button>
-              <span>{t("page", { page })}</span>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!data.hasMore}
-                onClick={() => setPage((p) => p + 1)}
-              >
-                {t("next")}
-              </Button>
-            </div>
-          </fieldset>
+              </div>
+            ))}
+            {data.completed ? (
+              <>
+                <label className="block">
+                  {t("creator")}
+                  <NativeSelect
+                    className="ml-2 rounded-md bg-zinc-900 p-2"
+                    aria-label={t("creator")}
+                    value={subject}
+                    onChange={setSubject}
+                  >
+                    <NativeSelectOption value="">{t("chooseCreator")}</NativeSelectOption>
+                    {members
+                      .filter((m) => m.userId !== userId)
+                      .map((m) => (
+                        <NativeSelectOption value={m.userId} key={m.userId}>
+                          {displayNameOf(m.userId, displays)}
+                        </NativeSelectOption>
+                      ))}
+                  </NativeSelect>
+                </label>
+                {!!subject && (
+                  <>
+                    <RecordedAction
+                      key={`feedback:${subject}`}
+                      path={`${base}/peer-feedback`}
+                      field="comment"
+                      extra={{ subjectUserId: subject }}
+                      withRating
+                      label={t("sendFeedback")}
+                    />
+                  </>
+                )}
+              </>
+            ) : (
+              <p>{t("completionRequired")}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+            >
+              {t("previous")}
+            </Button>
+            <span>{t("page", { page })}</span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!data.hasMore}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              {t("next")}
+            </Button>
+          </div>
+        </fieldset>
       )}
     </section>
   );
@@ -316,7 +288,11 @@ function RecordedAction({
         try {
           await action.mutateAsync({
             path,
-            body: { ...extra, ...(withRating ? { rating: Number(rating) } : {}), ...(field ? { [field]: text.trim() } : {}) },
+            body: {
+              ...extra,
+              ...(withRating ? { rating: Number(rating) } : {}),
+              ...(field ? { [field]: text.trim() } : {}),
+            },
           });
           if (alive.current) {
             setText("");
@@ -340,7 +316,9 @@ function RecordedAction({
             disabled={action.isPending || saved}
           >
             {[5, 4, 3, 2, 1].map((n) => (
-              <NativeSelectOption key={n} value={String(n)}>{n}/5</NativeSelectOption>
+              <NativeSelectOption key={n} value={String(n)}>
+                {n}/5
+              </NativeSelectOption>
             ))}
           </NativeSelect>
         </label>

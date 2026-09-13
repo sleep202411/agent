@@ -2,7 +2,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  ServiceUnavailableException,
 } from '@nestjs/common';
 import { CrewAccountabilityService } from './accountability.service';
 import { CommitmentActionSchema, FeedbackSchema } from './accountability.dto';
@@ -94,7 +93,6 @@ function fixture() {
   const service = new CrewAccountabilityService(
     db as never,
     auth as never,
-    ledger as never,
     notifications as never,
   );
   return { service, tx, auth, ledger, notifications, task, record };
@@ -381,88 +379,21 @@ describe('Crew accountability', () => {
       f.service.respond('feedback', 'stranger', 'My reply'),
     ).rejects.toBeInstanceOf(ForbiddenException);
   });
-  it('keeps rewards unavailable without an explicit policy', async () => {
-    const f = fixture();
-    delete process.env.CREW_COMPLETION_REWARD_POINTS;
-    delete process.env.CREW_COMPLETION_REWARD_APPROVER_IDS;
-    await expect(
-      f.service.recognize('crew', 'creator', 'leader'),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(f.ledger.postEntryTx).not.toHaveBeenCalled();
-  });
-  it('rejects unauthorized issuers and self awards', async () => {
-    rewards();
-    const f = fixture();
-    await expect(
-      f.service.recognize('crew', 'creator', 'other-leader'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-    await expect(
-      f.service.recognize('crew', 'leader', 'leader'),
-    ).rejects.toBeInstanceOf(ForbiddenException);
-  });
-  it('rejects rewards for withdrawals or unfinished assignments', async () => {
-    rewards();
-    const f = fixture();
-    f.tx.crewParticipationRecord.findUnique.mockResolvedValue({
-      withdrawalAt: new Date(),
-    } as never);
-    await expect(
-      f.service.recognize('crew', 'creator', 'leader'),
-    ).rejects.toBeInstanceOf(ConflictException);
-    f.tx.crewParticipationRecord.findUnique.mockResolvedValue(null);
-    f.tx.crewTask.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
-    await expect(
-      f.service.recognize('crew', 'creator', 'leader'),
-    ).rejects.toBeInstanceOf(ConflictException);
-  });
-  it('credits the existing consumable wallet and stores the award in one transaction', async () => {
-    rewards();
-    const f = fixture();
-    f.tx.crewTask.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
-    await f.service.recognize('crew', 'creator', 'leader');
-    expect(f.tx.walletAccount.upsert).toHaveBeenCalledWith(
-      containing({
-        create: containing({
-          ownerId: 'creator',
-          currency: 'community_point',
-          balanceKind: 'consumable',
-        }),
-      }),
-    );
-    expect(f.ledger.postEntryTx).toHaveBeenCalledWith(
-      f.tx,
-      containing({
-        amount: 10n,
-        idempotencyKey: 'crew_completion_reward:crew:creator',
-        creditGrant: containing({ expiresAt: expect.any(Date) as unknown }),
-      }),
-    );
-    expect(f.tx.crewParticipationRecord.upsert).toHaveBeenCalledWith(
-      containing({
-        update: containing({ communityPoints: 10 }),
-      }),
-    );
-  });
-  it('does not issue a second reward on retry or configuration change', async () => {
-    rewards();
-    const f = fixture();
-    f.tx.crewParticipationRecord.findUnique.mockResolvedValue({
-      awardedAt: new Date(),
-      communityPoints: 5,
-    } as never);
-    expect(
-      await f.service.recognize('crew', 'creator', 'leader'),
-    ).toMatchObject({ communityPoints: 5 });
-    expect(f.ledger.postEntryTx).not.toHaveBeenCalled();
-  });
-  it('does not record success if the wallet write fails', async () => {
-    rewards();
-    const f = fixture();
-    f.tx.crewTask.count.mockResolvedValueOnce(1).mockResolvedValueOnce(0);
-    f.ledger.postEntryTx.mockRejectedValue(new Error('wallet unavailable'));
-    await expect(
-      f.service.recognize('crew', 'creator', 'leader'),
-    ).rejects.toThrow('wallet unavailable');
-    expect(f.tx.crewParticipationRecord.upsert).not.toHaveBeenCalled();
-  });
+  it.each([false, true])(
+    'rejects community rewards even with legacy configuration: %s',
+    async (configured) => {
+      if (configured) rewards();
+      else {
+        delete process.env.CREW_COMPLETION_REWARD_POINTS;
+        delete process.env.CREW_COMPLETION_REWARD_APPROVER_IDS;
+      }
+      const f = fixture();
+      await expect(
+        f.service.recognize('crew', 'creator', 'leader'),
+      ).rejects.toThrow('Crew compensation is money and agreed profit sharing');
+      expect(f.tx.walletAccount.upsert).not.toHaveBeenCalled();
+      expect(f.ledger.postEntryTx).not.toHaveBeenCalled();
+      expect(f.tx.crewParticipationRecord.upsert).not.toHaveBeenCalled();
+    },
+  );
 });
