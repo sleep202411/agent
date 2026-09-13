@@ -49,6 +49,7 @@ suite('private expense drafts in PostgreSQL', () => {
     });
   });
   afterAll(async () => {
+    await db.$executeRaw`DELETE FROM crew_expense_submissions WHERE draft_id = ${id}::uuid`;
     await db.$executeRaw`DELETE FROM crew_expense_draft_revisions WHERE crew_id = ${crew}`;
     await db.crew.delete({ where: { id: crew } });
     await db.$disconnect();
@@ -73,6 +74,27 @@ suite('private expense drafts in PostgreSQL', () => {
       (await service.list(crew, user, { limit: 30 })).items[0].definition
         .amountMinor,
     ).toBe('1234');
+  });
+  it('submits one exact revision on concurrent replay and freezes pending edits', async () => {
+    const [a, b] = await Promise.all([
+      service.submit(crew, id, user, { expectedVersion: 1 }),
+      service.submit(crew, id, user, { expectedVersion: 1 }),
+    ]);
+    expect(a).toEqual(b);
+    expect(a.status).toBe('pending');
+    const queue = await service.pending({ limit: 100 });
+    expect(queue.items.find((item) => item.id === id)?.definition).toEqual(
+      input.definition,
+    );
+    await expect(
+      service.save(crew, id, user, { ...input, expectedVersion: 1 }),
+    ).rejects.toThrow('awaiting review');
+    await expect(
+      service.submit(crew, id, randomUUID(), { expectedVersion: 1 }),
+    ).rejects.toThrow();
+    await expect(
+      service.submit(crew, id, user, { expectedVersion: 2 }),
+    ).rejects.toThrow('Refresh');
   });
   it('retains personal reads after departure and rejects further writes', async () => {
     await db.crewMember.update({

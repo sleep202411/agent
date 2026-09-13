@@ -1,4 +1,5 @@
 import {
+  CrewExpenseSubmissionAdminController,
   CrewExpenseDraftController,
   CrewExpenseDraftService,
 } from './expenses/expense-drafts';
@@ -77,6 +78,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewExpenseSubmissionAdminController,
     CrewExpenseDraftController,
     CrewDeliveryCatalogController,
     CrewDeliveryCatalogAdminController,

@@ -10089,15 +10089,27 @@ model CrewTaskDeliveryTemplate {
 }
 
 model CrewExpenseDraftRevision {
-  id             String   @db.Uuid
+  submission     CrewExpenseSubmission?
+  id             String                 @db.Uuid
   version        Int
-  crewId         String   @map("crew_id")
-  claimantUserId String   @map("claimant_user_id") @db.VarChar(64)
-  definition     Json     @db.JsonB
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  crew           Crew     @relation(fields: [crewId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  crewId         String                 @map("crew_id")
+  claimantUserId String                 @map("claimant_user_id") @db.VarChar(64)
+  definition     Json                   @db.JsonB
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew           Crew                   @relation(fields: [crewId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@id([id, version])
   @@index([claimantUserId, crewId, id, version(sort: Desc)], map: "crew_expense_draft_owner_idx")
   @@map("crew_expense_draft_revisions")
+}
+
+model CrewExpenseSubmission {
+  draftId      String                   @map("draft_id") @db.Uuid
+  draftVersion Int                      @map("draft_version")
+  status       String                   @default("pending")
+  submittedAt  DateTime                 @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  draft        CrewExpenseDraftRevision @relation(fields: [draftId, draftVersion], references: [id, version], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([draftId, draftVersion])
+  @@map("crew_expense_submissions")
 }
