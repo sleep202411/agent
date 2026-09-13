@@ -22,6 +22,22 @@ export type AdminIpLoadResult<T> = {
   error: string | null;
 };
 
+export type IpProductionEvidence = {
+  ipId: string;
+  publicationStatus: string;
+  humanIpLikes: string;
+  episodes: { episodeId: string; episodeNo: number; likes: string; dislikes: string }[];
+};
+
+export async function fetchIpProductionEvidence(
+  ipId: string
+): Promise<AdminIpLoadResult<IpProductionEvidence>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/ips/${encodeURIComponent(ipId)}/production-evidence`,
+    "Production evidence could not be loaded."
+  );
+}
+
 export async function fetchAdminIpOverview(): Promise<AdminIpLoadResult<AdminIpOverviewData>> {
   return fetchAdminIpResource("/ip-commerce/overview", "IP 总览数据加载失败。");
 }

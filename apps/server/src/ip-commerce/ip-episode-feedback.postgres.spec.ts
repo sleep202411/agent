@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { IpCommerceService } from './ip-commerce.service';
 import { IpEpisodeFeedbackService } from './ip-episode-feedback';
+import { readIpProductionEvidence } from './ip-production-evidence';
 const integration =
   process.env.IP_FEEDBACK_POSTGRES_TEST === '1' ? describe : describe.skip;
 integration('IP episode feedback (local PostgreSQL)', () => {
@@ -69,6 +70,53 @@ integration('IP episode feedback (local PostgreSQL)', () => {
   });
   afterAll(async () => {
     await prisma?.$disconnect();
+  });
+
+  it('collects human likes and canonical published testing-episode feedback without inferring promotion', async () => {
+    await prisma.ipLike.createMany({
+      data: [
+        { ipId, userId: 'human-evidence' },
+        { ipId, userId: 'agent-evidence', actorKind: 'agent' },
+        { ipId, userId: 'removed-evidence', status: 'removed' },
+        { ipId, userId: 'removed-time-evidence', removedAt: new Date() },
+      ],
+    });
+    await service.vote(ipId, episodeId, viewer, 1);
+    await service.vote(ipId, episodeId, { userId: 'other-evidence' }, -1);
+    const fourth = await prisma.ipEpisode.create({
+      data: {
+        ipId,
+        episodeNo: 4,
+        createdById: viewer.userId,
+        status: 'published',
+        localizations: {
+          create: { locale: 'en-US', title: 'Fourth', status: 'published' },
+        },
+      },
+    });
+    await prisma.$executeRaw`INSERT INTO ip_episode_feedback(episode_id,user_id,value) VALUES (${fourth.id}::uuid, ${viewer.userId}, 1)`;
+    expect(
+      await readIpProductionEvidence(prisma as PrismaService, ipId),
+    ).toEqual({
+      ipId,
+      publicationStatus: 'published',
+      humanIpLikes: '1',
+      episodes: [{ episodeId, episodeNo: 1, likes: '1', dislikes: '1' }],
+    });
+    await prisma.ipEpisodeLocalization.updateMany({
+      where: { episodeId },
+      data: { archivedAt: new Date() },
+    });
+    expect(
+      (await readIpProductionEvidence(prisma as PrismaService, ipId)).episodes,
+    ).toEqual([]);
+    await prisma.ip.update({
+      where: { id: ipId },
+      data: { deletedAt: new Date() },
+    });
+    await expect(
+      readIpProductionEvidence(prisma as PrismaService, ipId),
+    ).rejects.toThrow('IP not found');
   });
 
   it('records repeated votes once, changes preference and clears only the caller vote', async () => {
