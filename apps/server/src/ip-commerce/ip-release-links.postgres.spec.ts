@@ -1,10 +1,16 @@
-import { buildPrisma, type PrismaService } from '../infra/db/db.module';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import type { PrismaService } from '../infra/db/db.module';
 import { IpCommerceService } from './ip-commerce.service';
 import { IpReleaseLinksService } from './ip-release-links';
-const integration =
-  process.env.IP_RELEASE_LINKS_POSTGRES_TEST === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.IP_RELEASE_LINKS_POSTGRES_TEST === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const integration = databaseUrl ? describe : describe.skip;
 integration('IP release links (local PostgreSQL)', () => {
-  let prisma: ReturnType<typeof buildPrisma>;
+  let prisma: PrismaClient;
   let service: IpReleaseLinksService;
   let ipId: string;
   const user = { userId: 'release-owner' };
@@ -12,13 +18,19 @@ integration('IP release links (local PostgreSQL)', () => {
     { label: 'Published platform', url: 'https://example.com/release' },
   ];
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = new URL(databaseUrl!);
     if (
-      !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) ||
-      url.port !== '5433'
+      !['localhost', '127.0.0.1'].includes(url.hostname) ||
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Local PostgreSQL 5433 required');
-    prisma = buildPrisma();
+      throw new Error('Explicitly allowed loopback test database required');
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: databaseUrl }),
+      transactionOptions: { timeout: 15000 },
+    });
     await prisma.$connect();
     service = new IpReleaseLinksService(
       prisma as PrismaService,

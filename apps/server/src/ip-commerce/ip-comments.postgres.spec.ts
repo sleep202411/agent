@@ -1,23 +1,35 @@
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'node:crypto';
-import { buildPrisma, type PrismaService } from '../infra/db/db.module';
+import type { PrismaService } from '../infra/db/db.module';
 import { IpCommerceService } from './ip-commerce.service';
 import { IpCommentsService } from './ip-comments.service';
-const integration =
-  process.env.IP_COMMENTS_POSTGRES_TEST === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.IP_COMMENTS_POSTGRES_TEST === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const integration = databaseUrl ? describe : describe.skip;
 integration('IP public comments (local PostgreSQL)', () => {
-  let prisma: ReturnType<typeof buildPrisma>;
+  let prisma: PrismaClient;
   let service: IpCommentsService;
   let ipId: string;
   const viewer = { userId: 'comment-test-viewer', nickName: 'Viewer' };
 
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = new URL(databaseUrl!);
     if (
-      !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) ||
-      url.port !== '5433'
+      !['localhost', '127.0.0.1'].includes(url.hostname) ||
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Local PostgreSQL on port 5433 required.');
-    prisma = buildPrisma();
+      throw new Error('Explicitly allowed loopback test database required');
+    prisma = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: databaseUrl }),
+      transactionOptions: { timeout: 15000 },
+    });
     await prisma.$connect();
     service = new IpCommentsService(
       prisma as PrismaService,

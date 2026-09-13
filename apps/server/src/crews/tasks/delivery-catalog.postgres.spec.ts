@@ -1,14 +1,20 @@
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'node:crypto';
-import { buildPrisma, type PrismaService } from '../../infra/db/db.module';
+import type { PrismaService } from '../../infra/db/db.module';
 import type { AdminActor } from '../../admin-auth';
 import {
   CrewDeliveryCatalogService,
   SaveDeliveryCategory,
 } from './delivery-catalog';
-const suite =
-  process.env.DATABASE_POSTGRES_INTEGRATION === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.DATABASE_POSTGRES_INTEGRATION === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const suite = databaseUrl ? describe : describe.skip;
 suite('delivery catalog on local PostgreSQL', () => {
-  let db: ReturnType<typeof buildPrisma>,
+  let db: PrismaClient,
     service: CrewDeliveryCatalogService,
     actor: AdminActor,
     roleId: string,
@@ -36,14 +42,19 @@ suite('delivery catalog on local PostgreSQL', () => {
     definition,
   };
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = new URL(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
-      url.port !== '5433' ||
-      url.pathname !== '/fizzdragon_outbox_test'
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Owned local fixture database required.');
-    db = buildPrisma();
+      throw new Error('Explicitly allowed loopback test database required');
+    db = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: databaseUrl }),
+      transactionOptions: { timeout: 15000 },
+    });
     await db.$connect();
     service = new CrewDeliveryCatalogService(db as PrismaService);
   });

@@ -1,11 +1,17 @@
 import { randomUUID } from 'node:crypto';
-import { buildPrisma, type PrismaService } from '../../infra/db/db.module';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import type { PrismaService } from '../../infra/db/db.module';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewExpenseDraftService, SaveExpenseDraft } from './expense-drafts';
-const suite =
-  process.env.DATABASE_POSTGRES_INTEGRATION === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.DATABASE_POSTGRES_INTEGRATION === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const suite = databaseUrl ? describe : describe.skip;
 suite('private expense drafts in PostgreSQL', () => {
-  let db: ReturnType<typeof buildPrisma>, service: CrewExpenseDraftService;
+  let db: PrismaClient, service: CrewExpenseDraftService;
   const crew = randomUUID(),
     user = randomUUID(),
     member = randomUUID(),
@@ -22,14 +28,19 @@ suite('private expense drafts in PostgreSQL', () => {
     },
   });
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = new URL(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
-      url.port !== '5433' ||
-      url.pathname !== '/fizzdragon_outbox_test'
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw Error('Owned local DB required');
-    db = buildPrisma();
+      throw Error('Explicitly allowed loopback test database required');
+    db = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: databaseUrl }),
+      transactionOptions: { timeout: 15000 },
+    });
     await db.$connect();
     service = new CrewExpenseDraftService(
       db as PrismaService,

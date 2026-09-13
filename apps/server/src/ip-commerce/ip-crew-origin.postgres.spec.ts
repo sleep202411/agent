@@ -1,13 +1,19 @@
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { randomUUID } from 'node:crypto';
-import { buildPrisma, type PrismaService } from '../infra/db/db.module';
+import type { PrismaService } from '../infra/db/db.module';
 import { CrewAuthorizationService } from '../crews/crew-authorization.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { IpCommerceService } from './ip-commerce.service';
 import { IpCrewOriginService } from './ip-crew-origin';
-const integration =
-  process.env.IP_ORIGIN_POSTGRES_TEST === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.IP_ORIGIN_POSTGRES_TEST === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const integration = databaseUrl ? describe : describe.skip;
 integration('Originating Crew and IP likes (local PostgreSQL)', () => {
-  let db: ReturnType<typeof buildPrisma>;
+  let db: PrismaClient;
   let ips: IpCommerceService;
   let origins: IpCrewOriginService;
   let conversations: ConversationsService;
@@ -15,13 +21,19 @@ integration('Originating Crew and IP likes (local PostgreSQL)', () => {
   let crewId: string;
   let owner: string;
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = new URL(databaseUrl!);
     if (
-      !['127.0.0.1', 'localhost'].includes(url.hostname) ||
-      url.port !== '5433'
+      !['localhost', '127.0.0.1'].includes(url.hostname) ||
+      !(
+        (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01')
+      )
     )
-      throw new Error('Local PostgreSQL 5433 required');
-    db = buildPrisma();
+      throw new Error('Explicitly allowed loopback test database required');
+    db = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: databaseUrl }),
+      transactionOptions: { timeout: 15000 },
+    });
     await db.$connect();
     conversations = new ConversationsService(
       db as never,
