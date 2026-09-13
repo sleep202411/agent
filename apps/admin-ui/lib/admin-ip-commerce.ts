@@ -140,3 +140,20 @@ export async function fetchIpProductionStage(
     "Production stage could not be loaded."
   );
 }
+
+export type StageApplication = {
+  id: string;
+  stage: string;
+  reason: string;
+  status: string;
+  reviewReason: string | null;
+  applicantId: string;
+};
+export async function fetchIpStageApplications(
+  ipId: string
+): Promise<AdminIpLoadResult<{ items: StageApplication[] }>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/ips/${encodeURIComponent(ipId)}/stage-applications`,
+    "Applications could not be loaded."
+  );
+}

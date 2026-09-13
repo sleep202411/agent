@@ -9693,5 +9693,21 @@
     "loading": "Loading production stage…",
     "error": "Production stage could not be loaded.",
     "retry": "Retry"
+  },
+  "ipStageApplications": {
+    "title": "Production stage applications",
+    "refresh": "Refresh / retry",
+    "loading": "Loading applications…",
+    "current": "Current stage",
+    "awaiting": "An application is awaiting review.",
+    "target": "Requested stage",
+    "reason": "Application reason",
+    "submit": "Submit application",
+    "history": "Recent applications (up to 20)",
+    "review": "Review reason",
+    "empty": "No applications yet.",
+    "pending": "Awaiting review",
+    "approved": "Approved",
+    "rejected": "Rejected"
   }
 }

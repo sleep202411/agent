@@ -9693,5 +9693,21 @@
     "loading": "正在載入製作階段…",
     "error": "無法載入製作階段。",
     "retry": "重試"
+  },
+  "ipStageApplications": {
+    "title": "製作階段申請",
+    "refresh": "重新整理／重試",
+    "loading": "正在載入申請…",
+    "current": "目前階段",
+    "awaiting": "已有申請待審核。",
+    "target": "申請階段",
+    "reason": "申請原因",
+    "submit": "提交申請",
+    "history": "近期申請（最多 20 筆）",
+    "review": "審核原因",
+    "empty": "暫無申請。",
+    "pending": "待審核",
+    "approved": "已批准",
+    "rejected": "已拒絕"
   }
 }

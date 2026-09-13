@@ -1,3 +1,5 @@
+import { StageApplicationReviews } from "@/components/admin/ip/stage-application-reviews";
+import { fetchIpStageApplications } from "@/lib/admin-ip-commerce";
 import { ProductionStageForm } from "@/components/admin/ip/production-stage-form";
 import { getAdminSession } from "@/lib/admin-session";
 import { fetchIpProductionStage } from "@/lib/admin-ip-commerce";
@@ -10,10 +12,11 @@ export default async function IpProductionEvidencePage({
   params: Promise<{ ipId: string }>;
 }) {
   const { ipId } = await params;
-  const [{ data, error }, stage, session] = await Promise.all([
+  const [{ data, error }, stage, session, applications] = await Promise.all([
     fetchIpProductionEvidence(ipId),
     fetchIpProductionStage(ipId),
     getAdminSession(),
+    fetchIpStageApplications(ipId),
   ]);
   return (
     <main className="space-y-4 p-5">
@@ -36,10 +39,19 @@ export default async function IpProductionEvidencePage({
       {stage.error ? <div role="alert">{stage.error}</div> : null}
       {stage.data && session ? (
         <ProductionStageForm
-          key={`${session.site.key}:${session.user.id}:${session.session.id}:${ipId}`}
+          key={`${session.site.key}:${session.user.id}:${session.session.id}:${ipId}:${stage.data.version}`}
           ipId={ipId}
           initial={stage.data}
           canApprove={session.user.permissions.includes("ip.publish")}
+        />
+      ) : null}
+      {applications.error ? <p role="alert">{applications.error}</p> : null}
+      {applications.data && session ? (
+        <StageApplicationReviews
+          key={`${session.site.key}:${session.user.id}:${session.session.id}:${ipId}`}
+          ipId={ipId}
+          initial={applications.data.items}
+          canReview={session.user.permissions.includes("ip.publish")}
         />
       ) : null}
       {data ? (

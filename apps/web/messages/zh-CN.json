@@ -9693,5 +9693,21 @@
     "loading": "正在加载制作阶段…",
     "error": "无法加载制作阶段。",
     "retry": "重试"
+  },
+  "ipStageApplications": {
+    "title": "制作阶段申请",
+    "refresh": "刷新／重试",
+    "loading": "正在加载申请…",
+    "current": "当前阶段",
+    "awaiting": "已有申请待审核。",
+    "target": "申请阶段",
+    "reason": "申请原因",
+    "submit": "提交申请",
+    "history": "近期申请（最多 20 条）",
+    "review": "审核原因",
+    "empty": "暂无申请。",
+    "pending": "待审核",
+    "approved": "已批准",
+    "rejected": "已拒绝"
   }
 }

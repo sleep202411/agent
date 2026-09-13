@@ -2,6 +2,7 @@
 
 import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
 import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
+import { IpStageApplications } from "@/app/(site)/ips/_components/ip-stage-applications";
 import { useEffect, useRef, useState } from "react";
 import { EPISODE_SOURCE_MAX_BYTES } from "@repo/shared";
 import {
@@ -3038,6 +3039,7 @@ function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
       <RightsGovernanceEditor ip={ip} t={t} />
       <IpCrewOrigin ipId={ip.id} editable />
       <IpReleaseLinks ipId={ip.id} editable />
+      <IpStageApplications ipId={ip.id} />
     </Section>
   );
 }
