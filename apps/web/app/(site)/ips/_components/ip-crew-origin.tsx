@@ -45,7 +45,7 @@ function OriginPanel({
     const controller = new AbortController();
     operation.current = controller;
     api
-      .get<Origin>(path, { signal: controller.signal, raw: true })
+      .get<Origin>(path, { signal: controller.signal })
       .then((value) => {
         if (!controller.signal.aborted) {
           setData(value);
@@ -95,10 +95,9 @@ function OriginPanel({
           action === "save"
             ? await api.put<Origin>(path, {
                 signal: controller.signal,
-                raw: true,
                 data: { crewId: selected || null, expectedVersion: data?.version },
               })
-            : await api.get<Origin>(path, { signal: controller.signal, raw: true });
+            : await api.get<Origin>(path, { signal: controller.signal });
         if (!controller.signal.aborted) {
           setData(value);
           setSelected(value.crewId ?? "");
