@@ -1,3 +1,4 @@
+import { requirePrivateUploadTarget } from './private-upload-target';
 /**
  * Alibaba OSS implementation of OutputStorageService.
  *
@@ -81,6 +82,9 @@ export class AliyunOssStorageService extends OutputStorageService {
   private readonly logger = new Logger(AliyunOssStorageService.name);
   private readonly client: OSS | null;
   private readonly bucket: string;
+  private readonly privateUploadTarget = (
+    process.env.OSS_PRIVATE_BUCKET ?? ''
+  ).trim();
   private readonly rawRegion: string;
   private readonly accessKeyId: string;
   private readonly accessKeySecret: string;
@@ -310,6 +314,24 @@ export class AliyunOssStorageService extends OutputStorageService {
   async createUploadUrl(
     input: CreateUploadUrlInput,
   ): Promise<CreateUploadUrlResult> {
+    return this.signUploadUrl(input, this.bucket);
+  }
+
+  async createPrivateUploadUrl(
+    input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    const target = requirePrivateUploadTarget(
+      'OSS_PRIVATE_BUCKET',
+      this.privateUploadTarget,
+      [this.bucket, ''],
+    );
+    return this.signUploadUrl(input, target);
+  }
+
+  private async signUploadUrl(
+    input: CreateUploadUrlInput,
+    target: string,
+  ): Promise<CreateUploadUrlResult> {
     if (!this.client) {
       throw new ServiceUnavailableException(
         'aliyun_oss storage is not configured',
@@ -319,7 +341,7 @@ export class AliyunOssStorageService extends OutputStorageService {
     // V4 presigned PUT. Signing Content-Type means the browser MUST send
     // the identical value (uploads.ts already does). Region is persisted
     // in the bare form so the read resolver re-builds the host correctly.
-    const url = await this.browserSigner(this.bucket).signatureUrlV4(
+    const url = await this.browserSigner(target).signatureUrlV4(
       'PUT',
       ttl,
       { headers: { 'Content-Type': input.contentType } },
@@ -332,7 +354,7 @@ export class AliyunOssStorageService extends OutputStorageService {
       headers: { 'Content-Type': input.contentType },
       storageKey: input.storageKey,
       provider: 'aliyun_oss',
-      bucket: this.bucket,
+      bucket: target,
       region: this.region,
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
     };

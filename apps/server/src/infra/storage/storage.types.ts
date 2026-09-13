@@ -381,6 +381,19 @@ export abstract class OutputStorageService {
   abstract createUploadUrl(
     input: CreateUploadUrlInput,
   ): Promise<CreateUploadUrlResult>;
+  /** Sign directly into an explicitly configured private destination. No public-media fallback.
+   * Deployment must disable anonymous access/CDN publication for this destination.
+   * Domain callers still enforce ownership, limits, finalization and retention.
+   */
+  createPrivateUploadUrl(
+    _input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    void _input;
+    return Promise.reject(
+      new Error('Private uploads are not supported by this storage provider'),
+    );
+  }
+
   /**
    * Mint a short-lived, read-only URL. Product surfaces should call this only
    * after domain access checks have passed; storage providers do not know
