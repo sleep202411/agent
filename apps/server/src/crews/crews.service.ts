@@ -428,7 +428,7 @@ export class CrewsService {
    * Explicitly join a listed Crew's public fan community. This creates only a
    * community participant, never a production-team membership.
    */
-  async joinFanCommunity(crewId: string, viewerId: string) {
+  async joinFanCommunity(crewId: string, viewerId: string, recordLike = false) {
     const conversation = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:block:${viewerId}:${crewId}`})::bigint)`;
       await tx.$queryRaw`SELECT id FROM crews WHERE id = ${crewId} FOR UPDATE`;
@@ -452,11 +452,18 @@ export class CrewsService {
         select: { id: true },
       });
       if (block) throw new NotFoundException('Crew not found');
-      return this.conversations.joinCrewCommunityConversation(
+      const joined = await this.conversations.joinCrewCommunityConversation(
         crewId,
         viewerId,
         tx,
       );
+      if (recordLike) {
+        await tx.$executeRaw`
+          INSERT INTO crew_likes (crew_id, user_id) VALUES (${crewId}, ${viewerId})
+          ON CONFLICT (crew_id, user_id) DO NOTHING
+        `;
+      }
+      return joined;
     });
     return { conversationId: conversation.id };
   }

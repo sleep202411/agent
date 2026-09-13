@@ -41,8 +41,8 @@ function FanAction({ crewId, signedIn }: { crewId: string; signedIn: boolean }) 
     setPending(true);
     setError(null);
     try {
-      const result = await crewApi.post<{ conversationId: string }>(
-        `/crews/${encodeURIComponent(crewId)}/fan-community`,
+      const result = await crewApi.put<{ conversationId: string }>(
+        `/crews/${encodeURIComponent(crewId)}/like`,
         { signal: controller.signal }
       );
       if (!controller.signal.aborted)

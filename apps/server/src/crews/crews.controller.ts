@@ -23,6 +23,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -129,6 +130,15 @@ export class CrewsController {
   conversation(@Param('id') idRaw: string, @CurrentUser() user: AuthUser) {
     const id = parseIdParam(idRaw, 'id');
     return this.svc.conversation(id, user.userId);
+  }
+
+  @Put(':id/like')
+  likeAndJoinCommunity(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    return this.svc.joinFanCommunity(
+      parseIdParam(id, 'crewId'),
+      user.userId,
+      true,
+    );
   }
 
   @Post(':id/fan-community')

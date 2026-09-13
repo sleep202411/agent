@@ -4808,6 +4808,7 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
+  likes               CrewLike[]
   storageLimitBytes   BigInt                  @default(100000000000) @map("storage_limit_bytes")
   uploadReservations  CrewUploadReservation[]
   id                  String                  @id
@@ -9955,4 +9956,16 @@ model CrewTaskDeliveryAsset {
   @@id([taskId, assetNodeId])
   @@index([assetNodeId], map: "crew_task_delivery_assets_node_idx")
   @@map("crew_task_delivery_assets")
+}
+
+/// An explicit human Crew like; fan-community joining commits with this record.
+model CrewLike {
+  crewId    String   @map("crew_id")
+  userId    String   @map("user_id") @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew      Crew     @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  @@id([crewId, userId])
+  @@index([userId], map: "crew_likes_user_idx")
+  @@map("crew_likes")
 }

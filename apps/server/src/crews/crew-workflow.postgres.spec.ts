@@ -200,7 +200,26 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       await expect(
         crews.joinFanCommunity(crewId, `blocked-${fan}`),
       ).rejects.toThrow('Crew not found');
+      const failingFan = `failed-${randomUUID()}`;
+      const failedJoin = jest
+        .spyOn(conversations, 'joinCrewCommunityConversation')
+        .mockRejectedValueOnce(new Error('Community temporarily unavailable'));
+      await expect(
+        crews.joinFanCommunity(crewId, failingFan, true),
+      ).rejects.toThrow('Community temporarily unavailable');
+      failedJoin.mockRestore();
+      expect(
+        await db.$queryRaw`SELECT user_id FROM crew_likes WHERE crew_id = ${crewId} AND user_id = ${failingFan}`,
+      ).toEqual([]);
       const first = await crews.joinFanCommunity(crewId, fan);
+      expect(
+        await db.$queryRaw`SELECT user_id FROM crew_likes WHERE crew_id = ${crewId} AND user_id = ${fan}`,
+      ).toEqual([]);
+      expect(await crews.joinFanCommunity(crewId, fan, true)).toEqual(first);
+      expect(await crews.joinFanCommunity(crewId, fan, true)).toEqual(first);
+      expect(
+        await db.$queryRaw`SELECT user_id FROM crew_likes WHERE crew_id = ${crewId} AND user_id = ${fan}`,
+      ).toEqual([{ user_id: fan }]);
       expect(await crews.joinFanCommunity(crewId, fan)).toEqual(first);
       expect(
         await db.crewMember.count({ where: { crewId, userId: fan } }),
