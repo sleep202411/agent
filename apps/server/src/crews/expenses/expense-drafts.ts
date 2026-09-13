@@ -11,6 +11,7 @@ import {
   ConflictException,
   Controller,
   Get,
+  Header,
   Injectable,
   Param,
   Post,
@@ -225,6 +226,7 @@ export class CrewExpenseDraftService {
 export class CrewExpenseDraftController {
   constructor(private readonly drafts: CrewExpenseDraftService) {}
   @Get(':id/history')
+  @Header('Cache-Control', 'private, no-store')
   history(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
@@ -234,6 +236,7 @@ export class CrewExpenseDraftController {
     return this.drafts.history(params.crewId, params.id, user.userId, query);
   }
   @Get()
+  @Header('Cache-Control', 'private, no-store')
   list(
     @Param(new ZodValidationPipe(ListParams))
     params: z.infer<typeof ListParams>,
@@ -243,6 +246,7 @@ export class CrewExpenseDraftController {
     return this.drafts.list(params.crewId, user.userId, query);
   }
   @Post(':id/submit')
+  @Header('Cache-Control', 'private, no-store')
   submit(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
@@ -253,6 +257,7 @@ export class CrewExpenseDraftController {
   }
 
   @Post(':id')
+  @Header('Cache-Control', 'private, no-store')
   save(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
@@ -269,6 +274,7 @@ export class CrewExpenseDraftController {
 export class CrewExpenseSubmissionAdminController {
   constructor(private readonly drafts: CrewExpenseDraftService) {}
   @Get()
+  @Header('Cache-Control', 'private, no-store')
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.CrewManage)
   async pending(
     @Query(new ZodValidationPipe(ListQuery)) query: z.infer<typeof ListQuery>,
