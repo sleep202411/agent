@@ -7901,6 +7901,17 @@
       "cancelledToast": "充值已取消。"
     },
     "billingUsage": {
+      "projectFilter": "项目",
+      "allProjects": "全部项目",
+      "walletScope": "余额属于整个钱包。流水是算力积分变动，包含冻结及释放，不是现金成本总额。",
+      "loadMore": "加载更多",
+      "projectReference": "项目：{value}",
+      "transactionStatuses": {
+        "failed": "失败",
+        "pending": "待处理",
+        "posted": "已入账",
+        "voided": "已作废"
+      },
       "title": "账单",
       "subtitle": "查看充值、AI 生成、退款和人工调整带来的算力积分余额变化。",
       "refresh": "刷新",

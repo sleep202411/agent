@@ -7901,6 +7901,17 @@
       "cancelledToast": "充值已取消。"
     },
     "billingUsage": {
+      "projectFilter": "項目",
+      "allProjects": "全部項目",
+      "walletScope": "餘額屬於整個錢包。流水是算力積分變動，包含凍結及釋放，並非現金成本總額。",
+      "loadMore": "載入更多",
+      "projectReference": "項目：{value}",
+      "transactionStatuses": {
+        "failed": "失敗",
+        "pending": "待處理",
+        "posted": "已入賬",
+        "voided": "已作廢"
+      },
       "title": "賬單",
       "subtitle": "查看充值、AI 生成、退款和人工調整帶來的算力積分餘額變化。",
       "refresh": "刷新",

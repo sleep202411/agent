@@ -7901,6 +7901,17 @@
       "cancelledToast": "Recharge cancelled."
     },
     "billingUsage": {
+      "projectFilter": "Project",
+      "allProjects": "All projects",
+      "walletScope": "Balances cover the whole wallet. Entries are compute-point movements, including holds and releases, not a cash cost total.",
+      "loadMore": "Load more",
+      "projectReference": "Project: {value}",
+      "transactionStatuses": {
+        "failed": "Failed",
+        "pending": "Pending",
+        "posted": "Posted",
+        "voided": "Voided"
+      },
       "title": "Billing",
       "subtitle": "Track compute point balance changes from recharge, AI generation, refunds, and manual adjustments.",
       "refresh": "Refresh",
