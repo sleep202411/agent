@@ -60,7 +60,12 @@ export function availableComputeBalance(data: ComputeWalletLedgerData | undefine
 export function useProjectComputeLedger(workspaceId: string, projectId?: string) {
   const { user } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: [...computeBillingKeys.all, "project-ledger", user?.id, workspaceId, projectId],
+    queryKey: [
+      ...computeBillingKeys.wallets(user?.id ?? null),
+      "project-ledger",
+      workspaceId,
+      projectId,
+    ],
     enabled: !!user && !!workspaceId,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ signal, pageParam }) =>
