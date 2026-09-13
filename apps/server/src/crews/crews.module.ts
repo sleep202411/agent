@@ -1,5 +1,6 @@
 import {
   CrewDeliveryCatalogAdminController,
+  CrewDeliveryCatalogController,
   CrewDeliveryCatalogService,
 } from './tasks/delivery-catalog';
 import { Module } from '@nestjs/common';
@@ -72,6 +73,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewDeliveryCatalogController,
     CrewDeliveryCatalogAdminController,
     CrewsController,
     CrewsAdminController,

@@ -9720,5 +9720,17 @@
     "deadline": "Captured deadline",
     "empty": "No measured submissions yet.",
     "more": "Load more"
+  },
+  "crewDeliveryTemplate": {
+    "title": "Professional delivery template",
+    "revision": "Revision",
+    "required": "required",
+    "selectAttachments": "Select submission attachments above first.",
+    "loading": "Loading delivery requirements…",
+    "none": "No professional template",
+    "retry": "Refresh / retry",
+    "save": "Save template",
+    "more": "More categories",
+    "unavailableAttachment": "Unavailable attachment"
   }
 }

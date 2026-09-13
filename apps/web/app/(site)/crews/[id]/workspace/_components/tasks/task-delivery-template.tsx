@@ -1,0 +1,270 @@
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useTranslations } from "@/src/i18n/i18n";
+import {
+  crewKeys,
+  crewAccountQueries,
+  crewTaskDetailQueries,
+} from "@/app/(site)/crews/_hooks/shared";
+import { crewApi } from "@/app/(site)/crews/_hooks/api";
+import type { CrewDeliveryTemplateDTO, CrewTaskDTO } from "@/app/(site)/crews/_hooks/types";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+export function useTaskDeliveryTemplate(taskId?: string, enabled = true) {
+  const { user } = useCurrentUser();
+  const query = useQuery({
+    queryKey: ["task-delivery-template", taskId, user?.id],
+    enabled: !!user && !!taskId && enabled,
+    retry: false,
+    queryFn: ({ signal }) =>
+      crewApi.get<CrewDeliveryTemplateDTO | null>(`/crew-tasks/${taskId}/delivery-template`, {
+        signal,
+      }),
+  });
+  return { ...query, accountId: user?.id };
+}
+
+export function TaskDeliveryFields({
+  template,
+  answers,
+  onChange,
+  assets,
+  disabled,
+}: {
+  template: CrewDeliveryTemplateDTO;
+  answers: Record<string, string | string[]>;
+  onChange: (answers: Record<string, string | string[]>) => void;
+  assets: { id: string; name: string }[];
+  disabled: boolean;
+}) {
+  const t = useTranslations("crewDeliveryTemplate");
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-medium">
+        {template.definition.name} · {t("revision")} {template.version}
+      </h3>
+      {template.definition.fields.map((field) => (
+        <div key={field.key} className="space-y-1 text-sm">
+          <p>
+            {field.label}
+            {field.required ? ` (${t("required")})` : ""}
+          </p>
+          {field.instructions ? (
+            <p className="text-xs text-muted-foreground">{field.instructions}</p>
+          ) : null}
+          {field.type === "text" ? (
+            <Textarea
+              aria-label={field.label}
+              disabled={disabled}
+              required={field.required}
+              maxLength={5000}
+              value={typeof answers[field.key] === "string" ? (answers[field.key] as string) : ""}
+              onChange={(e) => onChange({ ...answers, [field.key]: e.target.value })}
+            />
+          ) : (
+            <div className="space-y-1">
+              {!assets.length ? (
+                <p>{t("selectAttachments")}</p>
+              ) : (
+                assets.map((asset) => {
+                  const selected = Array.isArray(answers[field.key])
+                    ? (answers[field.key] as string[])
+                    : [];
+                  return (
+                    <label key={asset.id} className="flex items-center gap-2">
+                      <Checkbox
+                        disabled={disabled}
+                        checked={selected.includes(asset.id)}
+                        onCheckedChange={() =>
+                          onChange({
+                            ...answers,
+                            [field.key]: selected.includes(asset.id)
+                              ? selected.filter((id) => id !== asset.id)
+                              : [...selected, asset.id],
+                          })
+                        }
+                      />
+                      {asset.name}
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+      ))}
+    </section>
+  );
+}
+export function TaskDeliveryTemplatePanel(props: { task: CrewTaskDTO; canManage: boolean }) {
+  const { user } = useCurrentUser();
+  return user ? <TemplatePanel key={`${user.id}:${props.task.id}`} {...props} /> : null;
+}
+function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: boolean }) {
+  const t = useTranslations("crewDeliveryTemplate"),
+    { user } = useCurrentUser();
+  const qc = useQueryClient();
+  const refreshTask = () => {
+    if (!user?.id) return;
+    void qc.invalidateQueries({ queryKey: [...crewKeys.task(task.id), user.id] });
+    void qc.invalidateQueries(crewTaskDetailQueries(task.crewId, task.id, user.id));
+    void qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(task.crewId), user.id));
+    void qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(task.id), user.id));
+  };
+  const current = useTaskDeliveryTemplate(task.id);
+  type Category = {
+    id: string;
+    version: number;
+    definition: CrewDeliveryTemplateDTO["definition"];
+  };
+  const catalog = useInfiniteQuery({
+    queryKey: ["crew-delivery-catalog", task.crewId, user?.id],
+    enabled: canManage,
+    initialPageParam: undefined as string | undefined,
+    retry: false,
+    queryFn: ({ signal, pageParam }) =>
+      crewApi.get<{ items: Category[]; nextCursor: string | null }>(
+        `/crews/${task.crewId}/delivery-catalog`,
+        { signal, query: { cursor: pageParam, limit: 50 } }
+      ),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+  const [choice, setChoice] = useState<string | null>(null),
+    [pending, setPending] = useState(false),
+    [error, setError] = useState<string | null>(null);
+  const active = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      active.current?.abort();
+      active.current = null;
+    },
+    []
+  );
+  const categories = catalog.data?.pages.flatMap((page) => page.items) ?? [];
+  const currentKey = current.data ? `${current.data.categoryId}:${current.data.version}` : "";
+  async function save() {
+    if (active.current || choice === null) return;
+    const controller = new AbortController();
+    active.current = controller;
+    setPending(true);
+    setError(null);
+    try {
+      const [id, version] = choice.split(":");
+      await crewApi.post(`/crew-tasks/${task.id}/delivery-template`, {
+        signal: controller.signal,
+        body: {
+          expectedVersion: task.version,
+          category: choice ? { id, version: Number(version) } : null,
+        },
+      });
+      if (!controller.signal.aborted) {
+        setChoice(null);
+        await current.refetch();
+        if (!controller.signal.aborted) refreshTask();
+      }
+    } catch (e) {
+      if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (active.current === controller) {
+        active.current = null;
+        setPending(false);
+      }
+    }
+  }
+  return (
+    <section className="space-y-2 py-3 text-sm">
+      <h3 className="font-medium">{t("title")}</h3>
+      {current.isPending ? (
+        <p role="status">{t("loading")}</p>
+      ) : (
+        <p>
+          {current.data
+            ? `${current.data.definition.name} · ${t("revision")} ${current.data.version}`
+            : t("none")}
+        </p>
+      )}
+      {current.error || catalog.error || error ? (
+        <div role="alert">
+          {error ?? current.error?.message ?? catalog.error?.message}
+          <Button
+            disabled={pending}
+            onClick={() => {
+              void current.refetch();
+              void catalog.refetch();
+              refreshTask();
+            }}
+          >
+            {t("retry")}
+          </Button>
+        </div>
+      ) : null}
+      {canManage && !["submitted", "approved", "cancelled"].includes(task.status) ? (
+        <>
+          <NativeSelect
+            aria-label={t("title")}
+            disabled={pending || current.isPending || catalog.isPending}
+            value={choice ?? currentKey}
+            onChange={setChoice}
+          >
+            <NativeSelectOption value="">{t("none")}</NativeSelectOption>
+            {current.data &&
+            !categories.some((row) => `${row.id}:${row.version}` === currentKey) ? (
+              <NativeSelectOption value={currentKey}>
+                {current.data.definition.name} · {t("revision")} {current.data.version}
+              </NativeSelectOption>
+            ) : null}
+            {categories.map((row) => (
+              <NativeSelectOption key={row.id} value={`${row.id}:${row.version}`}>
+                {row.definition.name} · {t("revision")} {row.version}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <Button
+            disabled={pending || choice === null || current.isError}
+            onClick={() => void save()}
+          >
+            {t("save")}
+          </Button>
+          {catalog.hasNextPage ? (
+            <Button
+              disabled={pending || catalog.isFetching}
+              onClick={() => void catalog.fetchNextPage({ cancelRefetch: false })}
+            >
+              {t("more")}
+            </Button>
+          ) : null}
+        </>
+      ) : null}
+      {task.submissions
+        .filter((submission) => submission.professionalDelivery)
+        .map((submission) => {
+          const form = submission.professionalDelivery!;
+          return (
+            <div key={submission.id} className="space-y-1">
+              <p>
+                {form.definition.name} · {t("revision")} {form.version}
+              </p>
+              {form.definition.fields.map((field) => (
+                <p key={field.key}>
+                  <strong>{field.label}: </strong>
+                  {Array.isArray(form.answers[field.key])
+                    ? (form.answers[field.key] as string[])
+                        .map(
+                          (id) =>
+                            submission.assets.find((asset) => asset.id === id)?.name ??
+                            t("unavailableAttachment")
+                        )
+                        .join(", ")
+                    : form.answers[field.key]}
+                </p>
+              ))}
+            </div>
+          );
+        })}
+    </section>
+  );
+}

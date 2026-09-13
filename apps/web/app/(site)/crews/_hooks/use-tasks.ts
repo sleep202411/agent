@@ -1,4 +1,5 @@
 "use client";
+import type { CrewProfessionalDeliveryInput } from "./types";
 
 import {
   useInfiniteQuery,
@@ -814,14 +815,21 @@ export function useSubmitCrewTask(crewId: string) {
       note,
       assetNodeIds = [],
       deliveryFolderId,
+      professionalDelivery,
     }: {
       taskId: string;
       note: string;
       assetNodeIds?: string[];
       deliveryFolderId?: string;
+      professionalDelivery?: CrewProfessionalDeliveryInput;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/submissions`, {
-        body: { note, assetNodeIds, ...(deliveryFolderId ? { deliveryFolderId } : {}) },
+        body: {
+          note,
+          assetNodeIds,
+          ...(professionalDelivery ? { professionalDelivery } : {}),
+          ...(deliveryFolderId ? { deliveryFolderId } : {}),
+        },
       }),
     onSuccess: (task, _variables, origin) => {
       if (!origin?.accountUserId) return;

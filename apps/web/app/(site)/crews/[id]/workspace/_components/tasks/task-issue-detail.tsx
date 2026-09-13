@@ -1,5 +1,7 @@
 "use client";
 
+import { TaskDeliveryTemplatePanel } from "./task-delivery-template";
+
 import {
   CREW_CURRENCY,
   formatCrewMoney,
@@ -432,6 +434,7 @@ export function TaskIssueDetail({
               </div>
             ) : null}
 
+            <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
             {isOwner && task.status === "submitted" ? (
               <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}

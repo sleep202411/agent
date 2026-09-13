@@ -193,6 +193,87 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       });
     });
 
+    it('pins a delivery revision, validates submission and preserves the original form after catalog edits', async () => {
+      const categoryId = randomUUID();
+      const definition = {
+        name: 'Professional fixture',
+        description: '',
+        status: 'active',
+        prices: [],
+        fields: [
+          {
+            key: 'summary',
+            label: 'Summary',
+            instructions: 'Describe delivery',
+            type: 'text',
+            required: true,
+          },
+        ],
+      };
+      const task = await tasks.create(
+        crewId,
+        owner,
+        CreateCrewTaskSchema.parse({
+          title: 'Professional task',
+          assignees: [{ userId: worker, currency: 'USD' }],
+        }),
+      );
+      try {
+        await db.$executeRaw`INSERT INTO crew_delivery_catalog_revisions(category_id,version,definition,created_by,reason) VALUES (${categoryId}::uuid,1,${JSON.stringify(definition)}::jsonb,${randomUUID()}::uuid,'fixture')`;
+        await expect(
+          tasks.setDeliveryTemplate(task.id, worker, {
+            expectedVersion: task.version,
+            category: { id: categoryId, version: 1 },
+          }),
+        ).rejects.toThrow();
+        await tasks.setDeliveryTemplate(task.id, owner, {
+          expectedVersion: task.version,
+          category: { id: categoryId, version: 1 },
+        });
+        await expect(
+          tasks.setDeliveryTemplate(task.id, owner, {
+            expectedVersion: task.version,
+            category: null,
+          }),
+        ).rejects.toThrow('Task changed');
+        await db.$executeRaw`INSERT INTO crew_delivery_catalog_revisions(category_id,version,definition,created_by,reason) VALUES (${categoryId}::uuid,2,${JSON.stringify({ ...definition, status: 'archived', name: 'Archived definition' })}::jsonb,${randomUUID()}::uuid,'fixture archive')`;
+        expect(
+          (await tasks.getDeliveryTemplate(task.id, worker))?.version,
+        ).toBe(1);
+        await expect(
+          tasks.submit(task.id, worker, { note: '', assetNodeIds: [] }),
+        ).rejects.toThrow('template');
+        await expect(
+          tasks.submit(task.id, worker, {
+            note: '',
+            assetNodeIds: [],
+            professionalDelivery: { categoryId, version: 1, answers: {} },
+          }),
+        ).rejects.toThrow('Summary');
+        expect(
+          await db.crewTaskSubmission.count({ where: { taskId: task.id } }),
+        ).toBe(0);
+        const result = await tasks.submit(task.id, worker, {
+          note: '',
+          assetNodeIds: [],
+          professionalDelivery: {
+            categoryId,
+            version: 1,
+            answers: { summary: 'Original configured form' },
+          },
+        });
+        expect(result.submissions[0].professionalDelivery).toMatchObject({
+          categoryId,
+          version: 1,
+          definition: { name: 'Professional fixture' },
+          answers: { summary: 'Original configured form' },
+        });
+      } finally {
+        await db.$executeRaw`DELETE FROM crew_task_delivery_templates WHERE task_id=${task.id}::uuid`;
+        await db.$executeRaw`DELETE FROM crew_delivery_catalog_revisions WHERE category_id=${categoryId}::uuid`;
+      }
+    });
+
     it('joins a public fan community idempotently without granting production membership', async () => {
       const fan = `fan-${randomUUID()}`;
       await db.crew.update({

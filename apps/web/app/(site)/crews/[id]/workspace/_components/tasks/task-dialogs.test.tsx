@@ -162,3 +162,8 @@ it("keeps loaded attachments and exposes a failed refresh for retry", async () =
   );
   expect(assetQuery.refetch).toHaveBeenCalledTimes(1);
 });
+
+vi.mock("./task-delivery-template", () => ({
+  useTaskDeliveryTemplate: () => ({ data: null, isPending: false, isError: false }),
+  TaskDeliveryFields: () => null,
+}));

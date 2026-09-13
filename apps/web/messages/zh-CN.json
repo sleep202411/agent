@@ -9720,5 +9720,17 @@
     "deadline": "留存截止时间",
     "empty": "暂无已计量提交。",
     "more": "加载更多"
+  },
+  "crewDeliveryTemplate": {
+    "title": "专业交付模板",
+    "revision": "版本",
+    "required": "必填",
+    "selectAttachments": "请先在上方选择提审附件。",
+    "loading": "正在加载交付要求…",
+    "none": "不使用专业模板",
+    "retry": "刷新／重试",
+    "save": "保存模板",
+    "more": "更多分类",
+    "unavailableAttachment": "附件不可用"
   }
 }

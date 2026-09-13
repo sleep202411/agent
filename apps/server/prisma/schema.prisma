@@ -5312,48 +5312,49 @@ model CrewInviteLinkRedemption {
 /// GitHub-Issue-like production unit. Its project/document are the editable
 /// task canvas; submissions point to immutable document versions and assets.
 model CrewTask {
-  id                  String           @id @default(uuid(7)) @db.Uuid
-  crewId              String           @map("crew_id")
-  deletedAt           DateTime?        @map("deleted_at") @db.Timestamptz(6)
-  deletedByUserId     String?          @map("deleted_by_user_id") @db.VarChar(64)
-  parentId            String?          @map("parent_id") @db.Uuid
+  deliveryTemplate    CrewTaskDeliveryTemplate?
+  id                  String                    @id @default(uuid(7)) @db.Uuid
+  crewId              String                    @map("crew_id")
+  deletedAt           DateTime?                 @map("deleted_at") @db.Timestamptz(6)
+  deletedByUserId     String?                   @map("deleted_by_user_id") @db.VarChar(64)
+  parentId            String?                   @map("parent_id") @db.Uuid
   /// Stable human-facing sequence within a crew (for example TASK-42).
   number              Int
-  title               String           @db.VarChar(180)
-  description         String           @default("") @db.Text
+  title               String                    @db.VarChar(180)
+  description         String                    @default("") @db.Text
   /// Product-configurable board column and the only task lifecycle source.
   /// Its semantic drives submission, review and settlement rules; multiple
   /// workflow states may intentionally share one semantic.
-  workflowStateId     String           @map("workflow_state_id") @db.Uuid
-  priority            CrewTaskPriority @default(normal)
-  startAt             DateTime?        @map("start_at") @db.Timestamptz(6)
-  dueAt               DateTime?        @map("due_at") @db.Timestamptz(6)
-  estimatePoints      Int?             @map("estimate_points")
-  computeBudgetPoints Int?             @map("compute_budget_points")
+  workflowStateId     String                    @map("workflow_state_id") @db.Uuid
+  priority            CrewTaskPriority          @default(normal)
+  startAt             DateTime?                 @map("start_at") @db.Timestamptz(6)
+  dueAt               DateTime?                 @map("due_at") @db.Timestamptz(6)
+  estimatePoints      Int?                      @map("estimate_points")
+  computeBudgetPoints Int?                      @map("compute_budget_points")
   /// Optional production agreement: how many revision requests are included.
   /// `null` means unlimited; the used counter advances only on a reviewer's
   /// explicit request for another version.
-  revisionLimit       Int?             @map("revision_limit")
-  revisionRoundsUsed  Int              @default(0) @map("revision_rounds_used")
-  cycleId             String?          @map("cycle_id") @db.Uuid
-  episodeId           String?          @map("episode_id") @db.Uuid
+  revisionLimit       Int?                      @map("revision_limit")
+  revisionRoundsUsed  Int                       @default(0) @map("revision_rounds_used")
+  cycleId             String?                   @map("cycle_id") @db.Uuid
+  episodeId           String?                   @map("episode_id") @db.Uuid
   /// One shared sparse ordering key. Reordering within a board/list group
   /// uses exact decimal midpoints and periodically rebalances under a lock.
-  rank                Decimal          @default(1024) @db.Decimal(36, 18)
+  rank                Decimal                   @default(1024) @db.Decimal(36, 18)
   /// Optimistic concurrency token. Every mutable task-field/assignee write
   /// increments it; clients send the version they edited.
-  version             Int              @default(1)
+  version             Int                       @default(1)
   /// Optional focused Studio branch. Ordinary issues stay lightweight and
   /// acquire a branch only when somebody explicitly starts canvas work.
-  canvasProjectId     String?          @unique(map: "crew_tasks_canvas_project_unique") @map("canvas_project_id") @db.Uuid
-  canvasDocumentId    String?          @unique(map: "crew_tasks_canvas_document_unique") @map("canvas_document_id") @db.Uuid
-  createdByUserId     String           @map("created_by_user_id") @db.VarChar(64)
-  approvedByUserId    String?          @map("approved_by_user_id") @db.VarChar(64)
-  submittedAt         DateTime?        @map("submitted_at") @db.Timestamptz(6)
-  approvedAt          DateTime?        @map("approved_at") @db.Timestamptz(6)
-  cancelledAt         DateTime?        @map("cancelled_at") @db.Timestamptz(6)
-  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  canvasProjectId     String?                   @unique(map: "crew_tasks_canvas_project_unique") @map("canvas_project_id") @db.Uuid
+  canvasDocumentId    String?                   @unique(map: "crew_tasks_canvas_document_unique") @map("canvas_document_id") @db.Uuid
+  createdByUserId     String                    @map("created_by_user_id") @db.VarChar(64)
+  approvedByUserId    String?                   @map("approved_by_user_id") @db.VarChar(64)
+  submittedAt         DateTime?                 @map("submitted_at") @db.Timestamptz(6)
+  approvedAt          DateTime?                 @map("approved_at") @db.Timestamptz(6)
+  cancelledAt         DateTime?                 @map("cancelled_at") @db.Timestamptz(6)
+  createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   crew                  Crew                      @relation(fields: [crewId], references: [id], onDelete: Cascade)
   parent                CrewTask?                 @relation("CrewTaskHierarchy", fields: [parentId, crewId], references: [id, crewId], onDelete: Restrict)
@@ -5764,23 +5765,24 @@ model CrewTaskAssignee {
 }
 
 model CrewTaskSubmission {
-  trustEntries        CrewCreatorTrustEntry[]
-  timelinessResult    Json?                   @map("timeliness_result") @db.JsonB
-  timelinessEvidence  Json?                   @map("timeliness_evidence") @db.JsonB
-  id                  String                  @id @default(uuid(7)) @db.Uuid
-  taskId              String                  @map("task_id") @db.Uuid
-  versionNumber       Int                     @map("version_number")
-  submittedByUserId   String                  @map("submitted_by_user_id") @db.VarChar(64)
-  note                String                  @default("") @db.Text
-  canvasVersionId     String?                 @map("canvas_version_id") @db.Uuid
+  professionalDelivery Json?                   @map("professional_delivery") @db.JsonB
+  trustEntries         CrewCreatorTrustEntry[]
+  timelinessResult     Json?                   @map("timeliness_result") @db.JsonB
+  timelinessEvidence   Json?                   @map("timeliness_evidence") @db.JsonB
+  id                   String                  @id @default(uuid(7)) @db.Uuid
+  taskId               String                  @map("task_id") @db.Uuid
+  versionNumber        Int                     @map("version_number")
+  submittedByUserId    String                  @map("submitted_by_user_id") @db.VarChar(64)
+  note                 String                  @default("") @db.Text
+  canvasVersionId      String?                 @map("canvas_version_id") @db.Uuid
   /// Immutable version created on the crew's main production canvas by an
   /// approved CRDT merge. Null until this submission is approved.
-  productionVersionId String?                 @unique(map: "crew_task_submissions_production_version_unique") @map("production_version_id") @db.Uuid
-  reviewNote          String?                 @map("review_note") @db.Text
-  reviewedByUserId    String?                 @map("reviewed_by_user_id") @db.VarChar(64)
-  reviewedAt          DateTime?               @map("reviewed_at") @db.Timestamptz(6)
-  mergedAt            DateTime?               @map("merged_at") @db.Timestamptz(6)
-  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  productionVersionId  String?                 @unique(map: "crew_task_submissions_production_version_unique") @map("production_version_id") @db.Uuid
+  reviewNote           String?                 @map("review_note") @db.Text
+  reviewedByUserId     String?                 @map("reviewed_by_user_id") @db.VarChar(64)
+  reviewedAt           DateTime?               @map("reviewed_at") @db.Timestamptz(6)
+  mergedAt             DateTime?               @map("merged_at") @db.Timestamptz(6)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   task              CrewTask                  @relation(fields: [taskId], references: [id], onDelete: Cascade)
   canvasVersion     StudioDocumentVersion?    @relation("CrewTaskSubmissionCanvasVersion", fields: [canvasVersionId], references: [id], onDelete: Restrict)
@@ -10063,13 +10065,24 @@ model IpStageApplication {
 
 /// Immutable category, reference-price and delivery-form revisions.
 model CrewDeliveryCatalogRevision {
-  categoryId String   @map("category_id") @db.Uuid
+  tasks      CrewTaskDeliveryTemplate[]
+  categoryId String                     @map("category_id") @db.Uuid
   version    Int
-  definition Json     @db.JsonB
-  createdBy  String   @map("created_by") @db.Uuid
-  reason     String   @db.Text
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  definition Json                       @db.JsonB
+  createdBy  String                     @map("created_by") @db.Uuid
+  reason     String                     @db.Text
+  createdAt  DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@id([categoryId, version])
   @@map("crew_delivery_catalog_revisions")
+}
+
+model CrewTaskDeliveryTemplate {
+  task            CrewTask                    @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category        CrewDeliveryCatalogRevision @relation(fields: [categoryId, categoryVersion], references: [categoryId, version], onDelete: NoAction, onUpdate: NoAction)
+  taskId          String                      @id @map("task_id") @db.Uuid
+  categoryId      String                      @map("category_id") @db.Uuid
+  categoryVersion Int                         @map("category_version")
+
+  @@map("crew_task_delivery_templates")
 }

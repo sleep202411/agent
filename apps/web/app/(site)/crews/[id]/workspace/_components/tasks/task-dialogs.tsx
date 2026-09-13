@@ -1,4 +1,5 @@
 "use client";
+import { useTaskDeliveryTemplate, TaskDeliveryFields } from "./task-delivery-template";
 
 import { useEffect, useRef, useState } from "react";
 import { IconFile, IconGitBranch, IconSend } from "@tabler/icons-react";
@@ -35,6 +36,15 @@ export function SubmitTaskDialog({
   onSubmitted: (taskId: string) => void;
 }) {
   const t = useTranslations("crewTasks");
+  const deliveryT = useTranslations("crewDeliveryTemplate");
+  const template = useTaskDeliveryTemplate(task?.id, open);
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const answerKey = `${template.accountId}:${task?.id}:${template.data?.categoryId}:${template.data?.version}`;
+  const [answerScope, setAnswerScope] = useState(answerKey);
+  if (answerScope !== answerKey) {
+    setAnswerScope(answerKey);
+    setAnswers({});
+  }
   const common = useTranslations("common");
   const submitTask = useSubmitCrewTask(crewId);
   const [saving, setSaving] = useState(false);
@@ -49,12 +59,23 @@ export function SubmitTaskDialog({
   );
   const assets = assetQuery.data?.items ?? [];
 
-  const [context, setContext] = useState({ open, crewId, taskId: task?.id });
-  if (context.open !== open || context.crewId !== crewId || context.taskId !== task?.id) {
-    setContext({ open, crewId, taskId: task?.id });
+  const [context, setContext] = useState({
+    open,
+    crewId,
+    taskId: task?.id,
+    accountId: template.accountId,
+  });
+  if (
+    context.open !== open ||
+    context.crewId !== crewId ||
+    context.taskId !== task?.id ||
+    context.accountId !== template.accountId
+  ) {
+    setContext({ open, crewId, taskId: task?.id, accountId: template.accountId });
     setSaving(false);
     setNote("");
     setAssetIds([]);
+    setAnswers({});
     setDeliveryFolderId("");
   }
   const generation = useRef(0);
@@ -65,20 +86,28 @@ export function SubmitTaskDialog({
     return () => {
       generation.current += 1;
     };
-  }, [open, crewId, task?.id]);
+  }, [open, crewId, task?.id, template.accountId]);
 
   const close = (next: boolean) => {
     if (!next) {
       generation.current += 1;
       setNote("");
       setAssetIds([]);
+      setAnswers({});
       setDeliveryFolderId("");
     }
     onOpenChange(next);
   };
 
   const submit = async () => {
-    if (!open || !task || pendingGeneration.current !== null) return;
+    if (
+      !open ||
+      !task ||
+      pendingGeneration.current !== null ||
+      template.isPending ||
+      template.isError
+    )
+      return;
     const requestGeneration = generation.current;
     pendingGeneration.current = requestGeneration;
     setSaving(true);
@@ -87,6 +116,20 @@ export function SubmitTaskDialog({
         taskId: task.id,
         note,
         assetNodeIds: assetIds,
+        ...(template.data
+          ? {
+              professionalDelivery: {
+                categoryId: template.data.categoryId,
+                version: template.data.version,
+                answers: Object.fromEntries(
+                  Object.entries(answers).map(([key, value]) => [
+                    key,
+                    Array.isArray(value) ? value.filter((id) => assetIds.includes(id)) : value,
+                  ])
+                ),
+              },
+            }
+          : {}),
         ...(deliveryFolderId ? { deliveryFolderId } : {}),
       });
       if (generation.current !== requestGeneration) return;
@@ -225,13 +268,34 @@ export function SubmitTaskDialog({
               )}
             </div>
           </div>
+          {template.isPending ? <p role="status">{deliveryT("loading")}</p> : null}
+          {template.error ? (
+            <div role="alert">
+              {template.error.message}
+              <Button
+                disabled={saving || template.isFetching}
+                onClick={() => void template.refetch()}
+              >
+                {deliveryT("retry")}
+              </Button>
+            </div>
+          ) : null}
+          {template.data ? (
+            <TaskDeliveryFields
+              template={template.data}
+              answers={answers}
+              onChange={setAnswers}
+              disabled={saving}
+              assets={assets.filter((asset) => assetIds.includes(asset.id))}
+            />
+          ) : null}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("cancel")}
           </Button>
           <Button
-            disabled={saving}
+            disabled={saving || template.isPending || template.isError}
             loading={saving}
             onClick={() => void submit()}
             icon={<IconSend />}

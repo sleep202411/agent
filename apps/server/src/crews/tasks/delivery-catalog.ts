@@ -13,7 +13,8 @@ import {
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
-import { Public } from '../../auth';
+import { Public, CurrentUser, type AuthUser } from '../../auth';
+import { CrewAuthorizationService } from '../crew-authorization.service';
 import {
   ADMIN_PERMISSION_KEYS,
   AdminAuthGuard,
@@ -201,5 +202,22 @@ export class CrewDeliveryCatalogAdminController {
       code: 200,
       data: await this.service.save(actor, params.id, input),
     };
+  }
+}
+
+@Controller('crews/:crewId/delivery-catalog')
+export class CrewDeliveryCatalogController {
+  constructor(
+    private readonly service: CrewDeliveryCatalogService,
+    private readonly authorization: CrewAuthorizationService,
+  ) {}
+  @Get()
+  async list(
+    @Param('crewId') crewId: string,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(ListQuery)) query: z.infer<typeof ListQuery>,
+  ) {
+    await this.authorization.require(crewId, user.userId, 'tasks.view');
+    return this.service.list(query, true);
   }
 }
