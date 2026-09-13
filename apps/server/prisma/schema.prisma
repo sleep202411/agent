@@ -3783,26 +3783,27 @@ model IpDiscoveryRecommendationLocalization {
 }
 
 model IpEpisode {
-  id              String              @id @default(uuid(7)) @db.Uuid
-  ipId            String              @map("ip_id") @db.Uuid
-  episodeNo       Int                 @map("episode_no")
-  sortOrder       Int                 @default(0) @map("sort_order")
-  status          IpPublicationStatus @default(draft)
-  durationSeconds Int?                @map("duration_seconds")
-  isFreePreview   Boolean             @default(false) @map("is_free_preview")
-  coverAssetId    String?             @map("cover_asset_id") @db.Uuid
-  mediaAssetId    String?             @map("media_asset_id") @db.Uuid
-  trailerAssetId  String?             @map("trailer_asset_id") @db.Uuid
-  createdById     String              @map("created_by_id") @db.VarChar(64)
-  updatedById     String?             @map("updated_by_id") @db.VarChar(64)
-  version         Int                 @default(0)
-  scheduledAt     DateTime?           @map("scheduled_at") @db.Timestamptz(6)
-  publishedAt     DateTime?           @map("published_at") @db.Timestamptz(6)
-  suspendedAt     DateTime?           @map("suspended_at") @db.Timestamptz(6)
-  archivedAt      DateTime?           @map("archived_at") @db.Timestamptz(6)
-  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt       DateTime?           @map("deleted_at") @db.Timestamptz(6)
+  audienceFeedback IpEpisodeFeedback[]
+  id               String              @id @default(uuid(7)) @db.Uuid
+  ipId             String              @map("ip_id") @db.Uuid
+  episodeNo        Int                 @map("episode_no")
+  sortOrder        Int                 @default(0) @map("sort_order")
+  status           IpPublicationStatus @default(draft)
+  durationSeconds  Int?                @map("duration_seconds")
+  isFreePreview    Boolean             @default(false) @map("is_free_preview")
+  coverAssetId     String?             @map("cover_asset_id") @db.Uuid
+  mediaAssetId     String?             @map("media_asset_id") @db.Uuid
+  trailerAssetId   String?             @map("trailer_asset_id") @db.Uuid
+  createdById      String              @map("created_by_id") @db.VarChar(64)
+  updatedById      String?             @map("updated_by_id") @db.VarChar(64)
+  version          Int                 @default(0)
+  scheduledAt      DateTime?           @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt      DateTime?           @map("published_at") @db.Timestamptz(6)
+  suspendedAt      DateTime?           @map("suspended_at") @db.Timestamptz(6)
+  archivedAt       DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?           @map("deleted_at") @db.Timestamptz(6)
 
   ip           Ip          @relation(fields: [ipId], references: [id], onDelete: Cascade)
   coverAsset   MediaAsset? @relation("IpEpisodeCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
@@ -9999,4 +10000,15 @@ model IpCrewOrigin {
 
   @@index([crewId], map: "ip_crew_origins_crew_idx")
   @@map("ip_crew_origins")
+}
+
+model IpEpisodeFeedback {
+  episodeId String    @map("episode_id") @db.Uuid
+  userId    String    @map("user_id") @db.VarChar(64)
+  value     Int       @db.SmallInt
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  episode   IpEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, userId])
+  @@map("ip_episode_feedback")
 }

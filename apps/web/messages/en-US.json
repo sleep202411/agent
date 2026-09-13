@@ -9662,5 +9662,13 @@
     "player": "Game player",
     "open": "Open full player",
     "choose": "Choose a published game to play."
+  },
+  "episodeFeedback": {
+    "title": "First-three-episode feedback",
+    "like": "Like",
+    "dislike": "Dislike",
+    "loading": "Loading feedback…",
+    "failed": "Feedback could not be saved.",
+    "retry": "Retry"
   }
 }

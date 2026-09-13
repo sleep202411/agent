@@ -9662,5 +9662,13 @@
     "player": "游戏播放器",
     "open": "打开完整播放器",
     "choose": "选择已上线游戏开始体验。"
+  },
+  "episodeFeedback": {
+    "title": "前三集反馈",
+    "like": "喜欢",
+    "dislike": "不喜欢",
+    "loading": "正在加载反馈…",
+    "failed": "反馈保存失败。",
+    "retry": "重试"
   }
 }

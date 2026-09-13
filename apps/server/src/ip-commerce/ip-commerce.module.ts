@@ -1,3 +1,7 @@
+import {
+  IpEpisodeFeedbackController,
+  IpEpisodeFeedbackService,
+} from './ip-episode-feedback';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { CrewAuthorizationService } from '../crews/crew-authorization.service';
 import { IpCrewOriginService, IpCrewOriginController } from './ip-crew-origin';
@@ -36,6 +40,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCrewOriginController,
     IpReleaseLinksController,
     IpCommentsController,
+    IpEpisodeFeedbackController,
     IpCommentsAdminController,
     IpCommerceController,
     IpCommerceAdminController,
@@ -46,6 +51,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     IpCrewOriginService,
     IpReleaseLinksService,
     IpCommentsService,
+    IpEpisodeFeedbackService,
     IpCommerceService,
     LegacyCnVideoResolverService,
     CreatorEarningsService,

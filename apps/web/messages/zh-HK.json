@@ -9662,5 +9662,13 @@
     "player": "遊戲播放器",
     "open": "開啟完整播放器",
     "choose": "選擇已上線遊戲開始體驗。"
+  },
+  "episodeFeedback": {
+    "title": "前三集回饋",
+    "like": "喜歡",
+    "dislike": "不喜歡",
+    "loading": "正在載入回饋…",
+    "failed": "回饋儲存失敗。",
+    "retry": "重試"
   }
 }

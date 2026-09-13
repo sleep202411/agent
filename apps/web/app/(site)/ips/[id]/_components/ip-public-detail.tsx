@@ -1,5 +1,6 @@
 "use client";
 
+import { EpisodeFeedback } from "../../_components/episode-feedback";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -448,6 +449,12 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
               t={t}
             />
 
+            {selectedEpisode &&
+              !isTrailerSelected &&
+              selectedEpisode.episodeNo >= 1 &&
+              selectedEpisode.episodeNo <= 3 && (
+                <EpisodeFeedback ipId={detailIp.id} episodeId={selectedEpisode.id} />
+              )}
             <section className="mt-4">
               <h1 className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">
                 {detailIp.title}
