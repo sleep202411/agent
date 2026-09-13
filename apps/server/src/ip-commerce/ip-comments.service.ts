@@ -7,7 +7,7 @@ import { PrismaService } from '../infra/db/db.module';
 import { IpCommerceService } from './ip-commerce.service';
 import type { AuthUser } from '../auth';
 
-interface CommentRow {
+export interface CommentRow {
   id: string;
   ipId: string;
   userId: string;
