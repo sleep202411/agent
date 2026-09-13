@@ -68,3 +68,25 @@ describe('WorkspacePermissionService project fallback', () => {
     ).resolves.toEqual(PROJECT);
   });
 });
+
+describe('transaction-scoped project permission', () => {
+  it('uses the transaction for project and workspace fallback reads', async () => {
+    const outer = serviceWithWorkspaceRole(WorkspaceMemberRole.owner);
+    const tx = serviceWithWorkspaceRole(WorkspaceMemberRole.viewer).prisma;
+    await expect(
+      outer.service.requireProjectRole(
+        'user-1',
+        PROJECT.id,
+        ProjectMemberRole.editor,
+        tx as never,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'PROJECT_PERMISSION_DENIED' },
+    });
+    expect(tx.platformProject.findFirst).toHaveBeenCalled();
+    expect(tx.projectMember.findFirst).toHaveBeenCalled();
+    expect(tx.workspaceMember.findFirst).toHaveBeenCalled();
+    expect(outer.prisma.platformProject.findFirst).not.toHaveBeenCalled();
+    expect(outer.prisma.workspaceMember.findFirst).not.toHaveBeenCalled();
+  });
+});
