@@ -312,6 +312,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         owner,
         CreateCrewTaskSchema.parse({
           title: 'Deliver animation',
+          dueAt: '2100-01-01T00:00:00.000Z',
           labelIds: [label.id],
           revisionLimit: 2,
           assignees: [
@@ -350,10 +351,27 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         note: 'Timing adjusted',
         assetNodeIds: [file.id],
       });
+      await db.crewTask.update({
+        where: { id: task.id },
+        data: { dueAt: new Date('2000-01-01T00:00:00.000Z') },
+      });
       await tasks.review(task.id, owner, {
         decision: 'approve',
         note: 'Accepted',
       });
+      const evidenceRows = await db.$queryRaw<
+        {
+          evidence: { deadline: string; assigneeUserIds: string[] };
+          result: { points: number } | null;
+        }[]
+      >`
+        SELECT timeliness_evidence AS evidence, timeliness_result AS result FROM crew_task_submissions WHERE task_id=${task.id}::uuid ORDER BY version_number`;
+      expect(evidenceRows[0].result).toBeNull();
+      expect(evidenceRows[1].evidence.deadline).toBe(
+        '2100-01-01T00:00:00.000Z',
+      );
+      expect(evidenceRows[1].evidence.assigneeUserIds).toEqual([worker]);
+      expect(evidenceRows[1].result?.points).toBe(200);
       await expect(
         tasks.review(task.id, owner, { decision: 'approve', note: '' }),
       ).rejects.toThrow();

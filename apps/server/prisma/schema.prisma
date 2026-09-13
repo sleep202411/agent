@@ -5761,6 +5761,8 @@ model CrewTaskAssignee {
 }
 
 model CrewTaskSubmission {
+  timelinessResult    Json?     @map("timeliness_result") @db.JsonB
+  timelinessEvidence  Json?     @map("timeliness_evidence") @db.JsonB
   id                  String    @id @default(uuid(7)) @db.Uuid
   taskId              String    @map("task_id") @db.Uuid
   versionNumber       Int       @map("version_number")

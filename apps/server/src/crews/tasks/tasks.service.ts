@@ -1,4 +1,8 @@
 import {
+  captureTaskTimelinessTx,
+  recordApprovedTaskTimelinessTx,
+} from './task-timeliness';
+import {
   taskDeliveryFolderTx,
   publishTaskDeliveryAssetsTx,
 } from './task-delivery-folder';
@@ -3145,6 +3149,12 @@ export class CrewTasksService {
             },
           },
         });
+        await captureTaskTimelinessTx(
+          tx,
+          submission.id,
+          locked.dueAt,
+          locked.assignees,
+        );
         const reviewState = await this.requireSystemWorkflowState(
           tx,
           locked.crewId,
@@ -3275,6 +3285,7 @@ export class CrewTasksService {
           },
         });
         if (approved) {
+          await recordApprovedTaskTimelinessTx(tx, latest.id, userId);
           await publishTaskDeliveryAssetsTx(
             tx,
             this.assetAccess,
