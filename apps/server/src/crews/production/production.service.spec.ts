@@ -133,6 +133,8 @@ function build() {
     prisma,
     authorization,
     assetAccess,
+    conversations,
+    workspacePermissions,
     service: new CrewProductionService(
       prisma as never,
       authorization as never,
@@ -255,6 +257,46 @@ describe('CrewProductionService', () => {
       id: projectId,
       name: 'Episode canvas',
     });
+  });
+
+  it.each(['crew', 'project'] as const)(
+    'rejects a link when %s authority is withdrawn during admission',
+    async (scope) => {
+      const t = build();
+      const check =
+        scope === 'crew'
+          ? t.authorization.require
+          : t.workspacePermissions.requireProjectRole;
+      check
+        .mockResolvedValueOnce(undefined as never)
+        .mockRejectedValueOnce(new Error('Access revoked'));
+      await expect(
+        t.service.linkStudioProject(CREW_ID, USER_ID, {
+          projectId: '01910d50-4c88-7c78-92d4-16892c06e010',
+        }),
+      ).rejects.toThrow('Access revoked');
+      expect(t.prisma.crew.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewProductionActivity.create).not.toHaveBeenCalled();
+      expect(
+        t.conversations.broadcastCrewTaskProjectChange,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects the transaction and suppresses broadcasts if unlink authority changes during its write', async () => {
+    const t = build();
+    t.prisma.crew.findFirstOrThrow.mockResolvedValue({
+      studioProjectId: 'old-project',
+    });
+    t.prisma.crew.update.mockImplementation(() => {
+      t.authorization.require.mockRejectedValue(new Error('Access revoked'));
+    });
+    await expect(
+      t.service.linkStudioProject(CREW_ID, USER_ID, { projectId: null }),
+    ).rejects.toThrow('Access revoked');
+    expect(
+      t.conversations.broadcastCrewTaskProjectChange,
+    ).not.toHaveBeenCalled();
   });
 
   it.each([
