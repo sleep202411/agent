@@ -14,9 +14,9 @@ export interface CommentPage {
 const path = (ipId: string) => `/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}/comments`;
 export const commentsApi = {
   list: (ipId: string, signal: AbortSignal, cursor?: string) =>
-    api.get<CommentPage>(path(ipId), { signal, params: { cursor }, raw: true }),
+    api.get<CommentPage>(path(ipId), { signal, params: { cursor } }),
   create: (ipId: string, body: string, requestId: string, signal: AbortSignal) =>
-    api.post<TvComment>(path(ipId), { signal, data: { body, requestId }, raw: true }),
+    api.post<TvComment>(path(ipId), { signal, data: { body, requestId } }),
   remove: (ipId: string, id: string, signal: AbortSignal) =>
-    api.delete(`${path(ipId)}/${encodeURIComponent(id)}`, { signal, raw: true }),
+    api.delete(`${path(ipId)}/${encodeURIComponent(id)}`, { signal }),
 };

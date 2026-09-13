@@ -35,7 +35,7 @@ export class IpCommentsController {
   constructor(private readonly comments: IpCommentsService) {}
   @Public()
   @Get()
-  list(
+  async list(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser | undefined,
     @Query(
@@ -45,23 +45,32 @@ export class IpCommentsController {
     )
     query: { cursor?: string },
   ) {
-    return this.comments.list(params.ipId, user, query.cursor);
+    return {
+      code: 200,
+      data: await this.comments.list(params.ipId, user, query.cursor),
+    };
   }
   @Post()
-  create(
+  async create(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(Create)) input: z.infer<typeof Create>,
   ) {
-    return this.comments.create(params.ipId, user, input);
+    return {
+      code: 200,
+      data: await this.comments.create(params.ipId, user, input),
+    };
   }
   @Delete(':id')
-  remove(
+  async remove(
     @Param(new ZodValidationPipe(Params.extend({ id: z.string().uuid() })))
     params: { ipId: string; id: string },
     @CurrentUser() user: AuthUser,
   ) {
-    return this.comments.remove(params.ipId, params.id, user);
+    return {
+      code: 200,
+      data: await this.comments.remove(params.ipId, params.id, user),
+    };
   }
 }
 
