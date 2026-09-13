@@ -185,6 +185,39 @@ function getAcceptLanguage(): Locale {
   return getCookieLocale() ?? getPathLocale() ?? defaultLocale;
 }
 
+function assertRequestActive(signal: AbortSignal): void {
+  if (signal.aborted) throw signal.reason;
+}
+
+/** Keep caller cancellation and the timeout active through response parsing. */
+async function withRequestSignal<T>(
+  caller: AbortSignal | null | undefined,
+  timeout: number,
+  operation: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const controller = new AbortController();
+  const cancel = () =>
+    controller.abort(caller?.reason ?? new DOMException("Request cancelled", "AbortError"));
+  if (caller?.aborted) cancel();
+  else caller?.addEventListener("abort", cancel, { once: true });
+  const timer = setTimeout(
+    () => controller.abort(new ApiRequestError("NETWORK_ERROR", "Request timed out", 0)),
+    timeout
+  );
+  try {
+    assertRequestActive(controller.signal);
+    const result = await operation(controller.signal);
+    assertRequestActive(controller.signal);
+    return result;
+  } catch (error) {
+    assertRequestActive(controller.signal);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    caller?.removeEventListener("abort", cancel);
+  }
+}
+
 async function request<T>(method: string, path: string, config: ApiRequestConfig = {}): Promise<T> {
   const { params, data, form, timeout = 30_000, headers: customHeaders, ...rest } = config;
 
@@ -227,67 +260,63 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     init.body = JSON.stringify(data);
   }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
-
-  let response: Response;
-  try {
-    response = await fetch(url, { ...init, signal: controller.signal });
-  } catch (error) {
-    const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new ApiRequestError(
-      "NETWORK_ERROR",
-      isTimeout ? "Request timed out" : "Network connection failed",
-      0
-    );
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!response.ok) {
-    let message = `HTTP ${response.status}`;
-    let rawBody = "";
+  return withRequestSignal(config.signal, timeout, async (signal) => {
+    let response: Response;
     try {
-      rawBody = await response.text();
-      try {
-        const body = JSON.parse(rawBody) as Record<string, unknown>;
-        message = envelopeErrorMessage(body, message);
-      } catch {
-        if (rawBody.trim()) message = rawBody.trim();
-      }
+      response = await fetch(url, { ...init, signal });
     } catch {
-      /* ignore read error */
+      assertRequestActive(signal);
+      throw new ApiRequestError("NETWORK_ERROR", "Network connection failed", 0);
     }
-    if (response.status === 401) notifyUnauthorized();
-    throw new ApiRequestError(`HTTP_${response.status}`, message, response.status, rawBody);
-  }
+    assertRequestActive(signal);
 
-  const body = await response.json();
+    if (!response.ok) {
+      let message = `HTTP ${response.status}`;
+      let rawBody = "";
+      try {
+        rawBody = await response.text();
+        try {
+          const body = JSON.parse(rawBody) as Record<string, unknown>;
+          message = envelopeErrorMessage(body, message);
+        } catch {
+          if (rawBody.trim()) message = rawBody.trim();
+        }
+      } catch {
+        /* ignore read error */
+      }
+      assertRequestActive(signal);
+      if (response.status === 401) notifyUnauthorized();
+      throw new ApiRequestError(`HTTP_${response.status}`, message, response.status, rawBody);
+    }
 
-  const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
-  if (!isSuccess) {
-    // Java backends return 200 OK with an envelope-level "not authed"
-    // code for expired / missing sessions. Sa-Token uses 302 (the
-    // legacy Vue redirect-on-unauth dance), and other handlers
-    // historically used 401. Both mean the same thing to us: the
-    // session is gone — surface this uniformly so downstream callers
-    // can do a single `err.status === 401` check instead of having
-    // to know about each backend's quirks.
-    const isUnauthEnvelope =
-      body.code === 401 || body.code === "401" || body.code === 302 || body.code === "302";
-    if (isUnauthEnvelope) notifyUnauthorized();
-    throw new ApiRequestError(
-      body.code ?? "UNKNOWN",
-      envelopeErrorMessage(body, "Request failed"),
-      isUnauthEnvelope ? 401 : 200,
-      JSON.stringify(body)
-    );
-  }
+    const body = await response.json();
+    assertRequestActive(signal);
 
-  // Different endpoints return data in different fields. When `raw` is
-  // set the caller wants the whole envelope (multi-field responses).
-  if (config.raw) return body as T;
-  return unwrapResponseBody<T>(body);
+    const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
+    if (!isSuccess) {
+      // Java backends return 200 OK with an envelope-level "not authed"
+      // code for expired / missing sessions. Sa-Token uses 302 (the
+      // legacy Vue redirect-on-unauth dance), and other handlers
+      // historically used 401. Both mean the same thing to us: the
+      // session is gone — surface this uniformly so downstream callers
+      // can do a single `err.status === 401` check instead of having
+      // to know about each backend's quirks.
+      const isUnauthEnvelope =
+        body.code === 401 || body.code === "401" || body.code === 302 || body.code === "302";
+      if (isUnauthEnvelope) notifyUnauthorized();
+      throw new ApiRequestError(
+        body.code ?? "UNKNOWN",
+        envelopeErrorMessage(body, "Request failed"),
+        isUnauthEnvelope ? 401 : 200,
+        JSON.stringify(body)
+      );
+    }
+
+    // Different endpoints return data in different fields. When `raw` is
+    // set the caller wants the whole envelope (multi-field responses).
+    if (config.raw) return body as T;
+    return unwrapResponseBody<T>(body);
+  });
 }
 
 /**
@@ -316,53 +345,48 @@ async function upload<T>(
   const formData = new FormData();
   formData.append(fieldName, file);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  return withRequestSignal(config.signal, timeout, async (signal) => {
+    let response: Response;
+    try {
+      response = await fetch(buildUrl(path), {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "accept-language": getAcceptLanguage(),
+          ...workspaceHeaders(path),
+          ...(customHeaders as Record<string, string>),
+        },
+        body: formData,
+        ...rest,
+        signal,
+      });
+    } catch {
+      assertRequestActive(signal);
+      throw new ApiRequestError("NETWORK_ERROR", "Network connection failed", 0);
+    }
+    assertRequestActive(signal);
 
-  let response: Response;
-  try {
-    response = await fetch(buildUrl(path), {
-      method: "POST",
-      credentials: "include",
-      headers: {
-        "accept-language": getAcceptLanguage(),
-        ...workspaceHeaders(path),
-        ...(customHeaders as Record<string, string>),
-      },
-      body: formData,
-      signal: controller.signal,
-      ...rest,
-    });
-  } catch (error) {
-    const isTimeout = error instanceof DOMException && error.name === "AbortError";
-    throw new ApiRequestError(
-      "NETWORK_ERROR",
-      isTimeout ? "Request timed out" : "Network connection failed",
-      0
-    );
-  } finally {
-    clearTimeout(timer);
-  }
+    if (!response.ok) {
+      throw new ApiRequestError(
+        `HTTP_${response.status}`,
+        `HTTP ${response.status}`,
+        response.status
+      );
+    }
 
-  if (!response.ok) {
-    throw new ApiRequestError(
-      `HTTP_${response.status}`,
-      `HTTP ${response.status}`,
-      response.status
-    );
-  }
+    const body = await response.json();
+    assertRequestActive(signal);
+    const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
+    if (!isSuccess) {
+      throw new ApiRequestError(
+        body.code ?? "UNKNOWN",
+        envelopeErrorMessage(body, "Upload failed"),
+        200
+      );
+    }
 
-  const body = await response.json();
-  const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
-  if (!isSuccess) {
-    throw new ApiRequestError(
-      body.code ?? "UNKNOWN",
-      envelopeErrorMessage(body, "Upload failed"),
-      200
-    );
-  }
-
-  return unwrapResponseBody<T>(body);
+    return unwrapResponseBody<T>(body);
+  });
 }
 
 /**

@@ -28,6 +28,7 @@ export default function FizzStudioBillingPage() {
 
 function BillingUsageSurface() {
   const t = useTranslations("fizzStudio.billingUsage");
+  const tb = useTranslations("fizzStudio.computeBilling");
   const locale = useLocale();
   const ledger = useComputeWalletLedger(100);
   const summary = useMemo(() => summarizeAccounts(ledger.data), [ledger.data]);
@@ -45,6 +46,7 @@ function BillingUsageSurface() {
         </div>
         <button
           type="button"
+          disabled={ledger.isFetching}
           onClick={() => void ledger.refetch()}
           className="inline-flex h-10 items-center justify-center gap-2 rounded-[8px] border border-white/12 px-4 text-sm font-semibold text-white/84 transition-colors hover:bg-white/8 hover:text-white"
         >
@@ -57,11 +59,18 @@ function BillingUsageSurface() {
         </button>
       </div>
 
-      <div className="mt-7 grid gap-3 md:grid-cols-3">
-        <SummaryTile label={t("summary.available")} value={summary.available} tone="strong" />
-        <SummaryTile label={t("summary.held")} value={summary.held} tone="reserved" />
-        <SummaryTile label={t("summary.total")} value={summary.total} tone="neutral" />
-      </div>
+      {ledger.isError && (
+        <p role="alert" className="mt-4 text-sm text-white/80">
+          {ledger.error instanceof Error ? ledger.error.message : tb("loadFailed")}
+        </p>
+      )}
+      {ledger.data && (
+        <div className="mt-7 grid gap-3 md:grid-cols-3">
+          <SummaryTile label={t("summary.available")} value={summary.available} tone="strong" />
+          <SummaryTile label={t("summary.held")} value={summary.held} tone="reserved" />
+          <SummaryTile label={t("summary.total")} value={summary.total} tone="neutral" />
+        </div>
+      )}
 
       <div className="mt-6 overflow-x-auto rounded-[8px] border border-white/10 bg-[#141416]">
         <div className="grid min-w-[1120px] grid-cols-[minmax(136px,.9fr)_minmax(190px,1.35fr)_minmax(136px,.9fr)_minmax(112px,.75fr)_minmax(120px,.7fr)_minmax(120px,.8fr)_minmax(150px,1fr)] border-b border-white/8 px-5 py-3 text-[11px] font-semibold uppercase text-white/42">
@@ -81,7 +90,7 @@ function BillingUsageSurface() {
               {t("loading")}
             </span>
           </div>
-        ) : entries.length === 0 ? (
+        ) : ledger.isError && !ledger.data ? null : entries.length === 0 ? (
           <div className="grid min-h-[280px] place-items-center px-6 text-center">
             <div>
               <div className="mx-auto grid size-12 place-items-center rounded-[8px] bg-white/[0.05] text-white/58">

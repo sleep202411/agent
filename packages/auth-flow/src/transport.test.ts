@@ -9,7 +9,7 @@
  * the envelope reader.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AuthTransportError, createFetchTransport, isJsonObject } from "./transport";
 
@@ -18,6 +18,57 @@ function respondWith(body: string, init?: ResponseInit) {
 }
 
 const GET = { method: "GET", path: "/user/new/getCode" } as const;
+
+afterEach(() => vi.useRealTimers());
+
+describe("auth request deadline", () => {
+  it.each(["headers", "body"])(
+    "releases a request stalled at %s without resending it",
+    async (stage) => {
+      vi.useFakeTimers();
+      const never = new Promise<never>(() => undefined);
+      let signal: AbortSignal | null | undefined;
+      const fetchImpl = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+        signal = init?.signal;
+        const response = new Response();
+        vi.spyOn(response, "text").mockReturnValue(never);
+        return stage === "headers" ? never : Promise.resolve(response);
+      });
+      const transport = createFetchTransport({ fetchImpl });
+      let outcome = "pending";
+      void transport.request(GET).then(
+        () => {
+          outcome = "success";
+        },
+        (error: unknown) => {
+          outcome = error instanceof AuthTransportError ? error.reason : "unexpected";
+        }
+      );
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(outcome).toBe("network");
+      expect(signal?.aborted).toBe(true);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  );
+
+  it("cleans up its deadline after success or invalid response", async () => {
+    vi.useFakeTimers();
+    for (const body of ['{"code":200}', "not-json"]) {
+      let signal: AbortSignal | null | undefined;
+      const transport = createFetchTransport({
+        fetchImpl: (_url, init) => {
+          signal = init?.signal;
+          return Promise.resolve(new Response(body));
+        },
+      });
+      await transport.request(GET).catch(() => undefined);
+      expect(vi.getTimerCount()).toBe(0);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(signal?.aborted).toBe(false);
+    }
+  });
+});
 
 describe("createFetchTransport", () => {
   it("returns the parsed envelope on a normal response", async () => {

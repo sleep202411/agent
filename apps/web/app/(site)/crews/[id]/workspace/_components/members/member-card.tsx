@@ -13,6 +13,8 @@
  * real "who is this person" view.
  */
 
+import { useLayoutEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import Link from "next/link";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import {
@@ -68,7 +70,12 @@ interface MemberCardProps {
   onAskTransfer: (userId: string, name: string) => void;
 }
 
-export function MemberCard({
+export function MemberCard(props: MemberCardProps) {
+  const { user } = useCurrentUser();
+  return <MemberCardSession key={JSON.stringify([user?.id, props.crewId, props.member.id])} {...props} />;
+}
+
+function MemberCardSession({
   crewId,
   member,
   displays,
@@ -81,6 +88,13 @@ export function MemberCard({
   const t = useTranslations("workspace");
   const translatePosition = useTranslatePositionValue();
   const updateMember = useUpdateMember(crewId);
+  const alive = useRef(false);
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   const isCrewOwner = member.isOwner;
   const lookup = displays.get(member.userId);
   const displayName = displayNameOf(member.userId, displays);
@@ -103,7 +117,9 @@ export function MemberCard({
   const accessPreset = accessPresetForPolicyKeys(member.policyKeys);
 
   const handleAccessPresetChange = (value: string) => {
-    if (!isCrewAccessPreset(value) || value === accessPreset) return;
+    if (!alive.current || pending.current || !canManagePermissions || isCrewOwner || !isCrewAccessPreset(value) || value === accessPreset) return;
+    pending.current = true;
+    setSaving(true);
     const policyKeys = policyKeysForAccessPreset(value);
     updateMember.mutate(
       {
@@ -111,8 +127,13 @@ export function MemberCard({
         input: { policyKeys, expectedVersion: member.version },
       },
       {
-        onSuccess: () => toast.success(t("memberAccessUpdated")),
-        onError: (err) => surfaceErr(err, t("memberAccessUpdateFailed")),
+        onSuccess: () => { if (alive.current) toast.success(t("memberAccessUpdated")); },
+        onError: (err) => { if (alive.current) surfaceErr(err, t("memberAccessUpdateFailed")); },
+        onSettled: () => {
+          if (!alive.current) return;
+          pending.current = false;
+          setSaving(false);
+        },
       }
     );
   };
@@ -197,7 +218,7 @@ export function MemberCard({
               <Select
                 value={accessPreset}
                 onValueChange={handleAccessPresetChange}
-                disabled={updateMember.isPending}
+                disabled={saving}
               >
                 <SelectTrigger
                   size="sm"
@@ -222,7 +243,8 @@ export function MemberCard({
                 type="button"
                 variant="ghost"
                 size="icon-xs"
-                onClick={() => onAskTransfer(member.userId, displayName)}
+                disabled={saving}
+                onClick={() => { if (!pending.current) onAskTransfer(member.userId, displayName); }}
                 aria-label={t("transferOwner")}
                 title={t("transferOwner")}
               >
@@ -235,7 +257,8 @@ export function MemberCard({
                 variant="ghost"
                 size="icon-xs"
                 color="destructive"
-                onClick={() => onAskRemove(member.id, displayName)}
+                disabled={saving}
+                onClick={() => { if (!pending.current) onAskRemove(member.id, displayName); }}
                 aria-label={t("removeMember")}
                 title={t("removeMember")}
               >
@@ -250,7 +273,7 @@ export function MemberCard({
         ) : null}
       </div>
 
-      {updateMember.isPending ? (
+      {saving ? (
         <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-background/60">
           <IconLoader2 className="size-4 animate-spin text-muted-foreground" />
         </div>
