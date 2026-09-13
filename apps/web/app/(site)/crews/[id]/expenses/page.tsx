@@ -188,6 +188,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         <label className="block space-y-1">
           {t("category")}
           <Input
+            aria-label={t("category")}
             disabled={frozen}
             maxLength={120}
             value={draft.definition.category}
@@ -197,6 +198,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         <label className="block space-y-1">
           {t("purpose")}
           <Textarea
+            aria-label={t("purpose")}
             disabled={frozen}
             maxLength={2000}
             value={draft.definition.purpose}
@@ -206,6 +208,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         <label className="block space-y-1">
           {t("date")}
           <Input
+            aria-label={t("date")}
             type="date"
             disabled={frozen}
             value={draft.definition.occurredOn ?? ""}
@@ -215,6 +218,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         <label className="block space-y-1">
           {t("currency")}
           <NativeSelect
+            aria-label={t("currency")}
             disabled={frozen}
             value={draft.definition.currency}
             onChange={(value) => edit({ currency: value as "USD" | "CNY" })}
@@ -226,6 +230,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         <label className="block space-y-1">
           {t("amount")}
           <Input
+            aria-label={t("amount")}
             inputMode="decimal"
             disabled={frozen}
             value={amount}
@@ -238,6 +243,7 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
         <label className="block space-y-1">
           {t("evidence")}
           <Textarea
+            aria-label={t("evidence")}
             disabled={frozen}
             maxLength={4000}
             value={draft.definition.evidenceNote}
