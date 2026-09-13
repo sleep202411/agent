@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, StrictMode } from "react";
+import { act, StrictMode, type ReactNode } from "react";
 import videojs from "video.js";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -33,6 +33,28 @@ vi.mock("@/src/lib/api", () => ({
 vi.mock("@/app/(site)/ips/_components/ip-release-links", () => ({ IpReleaseLinks: () => null }));
 vi.mock("@/app/(site)/ips/_components/ip-crew-origin", () => ({ IpCrewOrigin: () => null }));
 vi.mock("./tv-comments", () => ({ TvComments: () => null }));
+vi.mock("@/components/ui/native-select", () => ({
+  NativeSelect: ({
+    value,
+    onChange,
+    children,
+    ...props
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    children: ReactNode;
+  }) => (
+    <select {...props} value={value} onChange={(e) => onChange(e.target.value)}>
+      {children}
+    </select>
+  ),
+  NativeSelectOption: ({ children, ...props }: { children: ReactNode; value: string }) => (
+    <option {...props}>{children}</option>
+  ),
+}));
+vi.mock("@/app/(site)/ips/_components/episode-feedback", () => ({
+  EpisodeFeedback: ({ episodeId }: { episodeId: string }) => <div data-feedback={episodeId} />,
+}));
 function makeIp(id: string, title: string): IpCommerceIp {
   const asset = (url: string, kind: "image" | "video") => ({
     id: `${id}-${url}`,
@@ -164,6 +186,44 @@ describe("TV IP list", () => {
   const selected = () =>
     container.querySelector('nav button[aria-current="true"]')?.getAttribute("aria-label");
 
+  it("selects only authorized full episodes and clears feedback on another channel", async () => {
+    const first = makeIp("ip-1", "First IP");
+    const media = { ...first.trailerAsset!, url: "https://cdn.test/episode-one.mp4" };
+    first.episodes = [
+      {
+        id: "episode-1",
+        episodeNo: 1,
+        title: "First episode",
+        status: "published",
+        mediaAsset: media,
+      },
+      {
+        id: "locked",
+        episodeNo: 2,
+        title: "Locked",
+        status: "published",
+        mediaAsset: null,
+        trailerAsset: media,
+      },
+    ] as typeof first.episodes;
+    harness.list.mockResolvedValue({ items: [first, ips[1]], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="tv.episodeSelector"]'
+    )!;
+    expect(select.textContent).toContain("First episode");
+    expect(select.textContent).not.toContain("Locked");
+    await act(async () => {
+      select.value = "episode-1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await waitForSource("episode-one");
+    expect(container.querySelector('[data-feedback="episode-1"]')).not.toBeNull();
+    clickIp("Second IP");
+    await waitForSource("ip-2");
+    expect(container.querySelector("[data-feedback]")).toBeNull();
+  });
   it("opens the first channel and allows manual selection", async () => {
     await render();
     await waitForText("Second IP");

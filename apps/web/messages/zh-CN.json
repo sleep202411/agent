@@ -9475,7 +9475,9 @@
     "hot": "推荐",
     "nowPlaying": "正在播放",
     "notPlaying": "未播放",
-    "loadingChannel": "正在加载下一频道…"
+    "loadingChannel": "正在加载下一频道…",
+    "episodeSelector": "选择分集",
+    "preview": "IP 预览"
   },
   "creatorEarnings": {
     "title": "收益",

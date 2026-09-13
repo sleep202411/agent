@@ -9475,7 +9475,9 @@
     "hot": "Recommended",
     "nowPlaying": "Now playing",
     "notPlaying": "Not playing",
-    "loadingChannel": "Loading next channel…"
+    "loadingChannel": "Loading next channel…",
+    "episodeSelector": "Choose episode",
+    "preview": "IP preview"
   },
   "creatorEarnings": {
     "title": "Earnings",

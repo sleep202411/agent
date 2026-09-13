@@ -6,7 +6,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { api } from "@/src/lib/api";
 import type { IpCommerceAsset, IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { useIpCommerceDiscovery } from "@/src/lib/ip-commerce/hooks";
-import { ipPreviewVideoUrl } from "@/src/lib/ip-commerce/preview-video";
+import { ipPreviewVideoUrl, previewVideoUrl } from "@/src/lib/ip-commerce/preview-video";
 import { prioritizeForYou } from "./prioritize-for-you";
 import type { TvItem } from "./types";
 
@@ -95,6 +95,15 @@ function toTvItem(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>): TvIt
     trailer,
     ownerName: ip.copyrightOwner?.trim() || t("anonymousOwner"),
     episodeCount: ip.episodes.length,
+    episodes: ip.episodes
+      .map((episode) => ({
+        id: episode.id,
+        number: episode.episodeNo,
+        title: episode.title,
+        video: previewVideoUrl(episode.mediaAsset),
+        published: episode.status === "published",
+      }))
+      .filter((episode) => episode.published && Boolean(episode.video)),
   };
 }
 

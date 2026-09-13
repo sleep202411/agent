@@ -7,6 +7,8 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useTvIps } from "../_hooks/use-tv-ips";
+import { EpisodeFeedback } from "@/app/(site)/ips/_components/episode-feedback";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { TvGames } from "./tv-games";
 import { TvComments } from "./tv-comments";
 import { TvStage } from "./tv-stage";
@@ -73,6 +75,9 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     fetchNextChannels,
     isFetchingNextPage,
   } = useTvIps({ q: debouncedSearch });
+  const [episodeChoice, setEpisodeChoice] = useState<{ ipId: string; episodeId: string } | null>(
+    null
+  );
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [advancing, setAdvancing] = useState(false);
@@ -95,6 +100,11 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     setSelectedId(item.id);
     setIsPlaying(false);
   }
+  const episode =
+    episodeChoice?.ipId === item?.id
+      ? item?.episodes?.find((entry) => entry.id === episodeChoice.episodeId)
+      : undefined;
+  const playbackItem = item && episode ? { ...item, trailer: episode.video } : item;
   const errorMessage = error instanceof Error ? error.message : undefined;
   const index = items.findIndex((entry) => entry.id === item?.id);
   const hasNext = hasNextPage || items.slice(index + 1).some((entry) => entry.trailer);
@@ -111,6 +121,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
     setAdvancing(false);
     setNextError(null);
     if (id !== selectedId) {
+      setEpisodeChoice(null);
       setSelectedId(id);
       setIsPlaying(false);
     }
@@ -172,7 +183,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
         <div className="relative aspect-video shrink-0 md:aspect-auto md:min-h-0 md:flex-1">
           {item ? (
             <TvStage
-              item={item}
+              item={playbackItem!}
               onPlaybackChange={(playing) => {
                 setIsPlaying(playing);
                 if (playing) {
@@ -192,6 +203,31 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
             <TvEmptyState />
           )}
         </div>
+        {item && Boolean(item.episodes?.length) && (
+          <div className="shrink-0 px-4 py-2">
+            <NativeSelect
+              aria-label={t("episodeSelector")}
+              value={episode?.id ?? ""}
+              onChange={(episodeId) => {
+                navigationVersion.current += 1;
+                setAdvancing(false);
+                setNextError(null);
+                setIsPlaying(false);
+                setEpisodeChoice(episodeId ? { ipId: item.id, episodeId } : null);
+              }}
+            >
+              <NativeSelectOption value="">{t("preview")}</NativeSelectOption>
+              {item.episodes?.map((entry) => (
+                <NativeSelectOption key={entry.id} value={entry.id}>
+                  {entry.number}. {entry.title}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+            {episode && episode.number >= 1 && episode.number <= 3 && (
+              <EpisodeFeedback ipId={item.id} episodeId={episode.id} />
+            )}
+          </div>
+        )}
         {item && <TvInfoBar item={item} />}
 
         {!embedded && (
