@@ -56,6 +56,12 @@ const ListQuery = z
     limit: z.coerce.number().int().min(1).max(100).default(30),
   })
   .strict();
+const HistoryQuery = z
+  .object({
+    beforeVersion: z.coerce.number().int().positive().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(30),
+  })
+  .strict();
 type Row = {
   id: string;
   version: number;
@@ -71,6 +77,28 @@ export class CrewExpenseDraftService {
     private readonly prisma: PrismaService,
     private readonly authz: CrewAuthorizationService,
   ) {}
+
+  async history(
+    crewId: string,
+    id: string,
+    userId: string,
+    query: z.infer<typeof HistoryQuery>,
+  ) {
+    const rows = await this.prisma.$queryRaw<Row[]>(Prisma.sql`
+      SELECT d.id, d.version, d.crew_id AS "crewId", d.claimant_user_id AS "claimantUserId",
+        d.definition, d.created_at AS "createdAt", s.status AS "submissionStatus", s.submitted_at AS "submittedAt"
+      FROM crew_expense_draft_revisions d LEFT JOIN crew_expense_submissions s
+        ON s.draft_id=d.id AND s.draft_version=d.version
+      WHERE d.id=${id}::uuid AND d.crew_id=${crewId} AND d.claimant_user_id=${userId}
+        AND ${query.beforeVersion ? Prisma.sql`d.version < ${query.beforeVersion}` : Prisma.sql`TRUE`}
+      ORDER BY d.version DESC LIMIT ${query.limit + 1}
+    `);
+    return {
+      items: rows.slice(0, query.limit),
+      nextCursor:
+        rows.length > query.limit ? rows[query.limit - 1].version : null,
+    };
+  }
 
   async list(crewId: string, userId: string, query: z.infer<typeof ListQuery>) {
     // Ownership is sufficient for retained personal records after departure.
@@ -188,6 +216,15 @@ export class CrewExpenseDraftService {
 @Controller('crews/:crewId/expense-drafts')
 export class CrewExpenseDraftController {
   constructor(private readonly drafts: CrewExpenseDraftService) {}
+  @Get(':id/history')
+  history(
+    @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(HistoryQuery))
+    query: z.infer<typeof HistoryQuery>,
+  ) {
+    return this.drafts.history(params.crewId, params.id, user.userId, query);
+  }
   @Get()
   list(
     @Param(new ZodValidationPipe(ListParams))

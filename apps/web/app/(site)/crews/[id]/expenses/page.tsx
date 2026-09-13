@@ -263,6 +263,114 @@ function ExpenseForm({ crewId, userId }: { crewId: string; userId: string }) {
           </Button>
         </div>
       </section>
+      {draft.version > 0 ? (
+        <ExpenseHistory
+          key={draft.id}
+          crewId={crewId}
+          userId={userId}
+          draftId={draft.id}
+          version={draft.version}
+          status={draft.submissionStatus}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function ExpenseHistory({
+  crewId,
+  userId,
+  draftId,
+  version,
+  status,
+}: {
+  crewId: string;
+  userId: string;
+  draftId: string;
+  version: number;
+  status: string | null;
+}) {
+  const t = useTranslations("crewExpenses");
+  const history = useInfiniteQuery({
+    queryKey: ["crew-expense-history", userId, crewId, draftId, version, status],
+    initialPageParam: undefined as number | undefined,
+    retry: false,
+    queryFn: ({ signal, pageParam }) =>
+      crewApi.get<{
+        items: (Draft & { createdAt: string; submittedAt: string | null })[];
+        nextCursor: number | null;
+      }>(`/crews/${crewId}/expense-drafts/${draftId}/history`, {
+        signal,
+        query: { beforeVersion: pageParam, limit: 10 },
+      }),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+  return (
+    <section aria-label={t("history")} className="space-y-3">
+      <h2 className="text-lg font-semibold">{t("history")}</h2>
+      {history.isPending ? <p role="status">{t("loading")}</p> : null}
+      {history.error ? (
+        <div role="alert">
+          {history.error.message}
+          <Button
+            disabled={history.isFetching}
+            onClick={() =>
+              void (history.isFetchNextPageError
+                ? history.fetchNextPage({ cancelRefetch: false })
+                : history.refetch())
+            }
+          >
+            {t("retry")}
+          </Button>
+        </div>
+      ) : null}
+      {history.data?.pages
+        .flatMap((page) => page.items)
+        .map((row) => (
+          <details key={row.version}>
+            <summary className="cursor-pointer py-2">
+              {t("revision")} {row.version} · {row.definition.category || t("draft")} ·{" "}
+              {t(row.submissionStatus ?? "draft")}
+            </summary>
+            <dl className="grid gap-2 text-sm">
+              <div>
+                <dt>{t("savedAt")}</dt>
+                <dd>
+                  <time dateTime={row.createdAt}>{row.createdAt}</time>
+                </dd>
+              </div>
+              <div>
+                <dt>{t("purpose")}</dt>
+                <dd className="whitespace-pre-wrap break-words">{row.definition.purpose}</dd>
+              </div>
+              <div>
+                <dt>{t("date")}</dt>
+                <dd>{row.definition.occurredOn ?? "—"}</dd>
+              </div>
+              <div>
+                <dt>{t("amount")}</dt>
+                <dd>
+                  {row.definition.amountMinor === null
+                    ? "—"
+                    : formatCrewMoneyInput(row.definition.amountMinor)}{" "}
+                  {row.definition.currency}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("evidence")}</dt>
+                <dd className="whitespace-pre-wrap break-words">{row.definition.evidenceNote}</dd>
+              </div>
+            </dl>
+          </details>
+        ))}
+      {history.hasNextPage ? (
+        <Button
+          disabled={history.isFetching}
+          onClick={() => void history.fetchNextPage({ cancelRefetch: false })}
+        >
+          {t("more")}
+        </Button>
+      ) : null}
+    </section>
   );
 }

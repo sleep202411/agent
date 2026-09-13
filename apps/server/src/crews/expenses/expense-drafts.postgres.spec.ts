@@ -115,9 +115,51 @@ suite('private expense drafts in PostgreSQL', () => {
     expect((await service.list(crew, user, { limit: 30 })).items).toHaveLength(
       1,
     );
+    expect(
+      (await service.history(crew, id, user, { limit: 30 })).items,
+    ).toHaveLength(1);
     await expect(
       service.save(crew, id, user, { ...input, expectedVersion: 1 }),
     ).rejects.toThrow('Active crew membership');
+  });
+  it('pages immutable private revisions without exposing another claimant or Crew', async () => {
+    await db.crewMember.update({
+      where: { id: member },
+      data: { status: 'active', removedAt: null },
+    });
+    const historyId = randomUUID();
+    await service.save(crew, historyId, user, input);
+    await service.save(crew, historyId, user, {
+      expectedVersion: 1,
+      definition: {
+        ...input.definition,
+        amountMinor: '900719925474099',
+        evidenceNote: 'Updated evidence',
+      },
+    });
+    const first = await service.history(crew, historyId, user, { limit: 1 });
+    expect(first.items[0].version).toBe(2);
+    expect(first.items[0].definition.amountMinor).toBe('900719925474099');
+    expect(first.nextCursor).toBe(2);
+    const second = await service.history(crew, historyId, user, {
+      limit: 1,
+      beforeVersion: first.nextCursor!,
+    });
+    expect(second.items[0].definition).toEqual(input.definition);
+    expect(second.nextCursor).toBeNull();
+    expect(
+      (await service.history(crew, historyId, randomUUID(), { limit: 30 }))
+        .items,
+    ).toEqual([]);
+    expect(
+      (await service.history(randomUUID(), historyId, user, { limit: 30 }))
+        .items,
+    ).toEqual([]);
+    expect(
+      (await service.pending({ limit: 100 })).items.some(
+        (row) => row.id === historyId,
+      ),
+    ).toBe(false);
   });
 });
 it('rejects authority/payment fields and invalid amounts or dates in a draft', () => {

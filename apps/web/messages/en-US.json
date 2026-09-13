@@ -1,5 +1,8 @@
 {
   "crewExpenses": {
+    "history": "Saved revision history",
+    "revision": "Revision",
+    "savedAt": "Saved at",
     "back": "Back to Crew income",
     "title": "My expense claims",
     "note": "Submission requests administrator review. It does not confirm reimbursement or payment. Evidence notes are not uploaded receipts.",

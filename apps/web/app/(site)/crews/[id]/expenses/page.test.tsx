@@ -76,3 +76,78 @@ it("retains failed drafts, submits saved identity and resets private edits on ac
     state.account = "a";
   }
 });
+
+it("retains history after pagination failure and cancels retry on account change", async () => {
+  const container = document.createElement("div"),
+    root = createRoot(container);
+  const client = new QueryClient();
+  const row = {
+    id: "history-id",
+    version: 2,
+    submissionStatus: null,
+    createdAt: "2026-09-13T00:00:00Z",
+    definition: {
+      category: "Travel",
+      purpose: "Meeting",
+      occurredOn: "2026-09-13",
+      currency: "USD",
+      amountMinor: "900719925474099",
+      evidenceNote: "Original note",
+    },
+  };
+  let signal: AbortSignal | null | undefined;
+  let attempts = 0;
+  vi.mocked(crewApi.get).mockImplementation(async (path, options) => {
+    if (!path.endsWith("/history")) return { items: [row], nextCursor: null };
+    if (!options?.query?.beforeVersion) return { items: [row], nextCursor: 2 };
+    if (++attempts === 1) throw new Error("History offline");
+    signal = options?.signal;
+    return new Promise(() => {});
+  });
+  const render = async () =>
+    act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <Page />
+        </QueryClientProvider>
+      )
+    );
+  const flush = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  try {
+    await render();
+    await flush();
+    await act(async () =>
+      [...container.querySelectorAll("button")]
+        .find((b) => b.textContent?.includes("Travel"))!
+        .click()
+    );
+    await flush();
+    expect(container.querySelector('[aria-label="history"]')?.textContent).toContain(
+      "9007199254740.99"
+    );
+    expect(container.textContent).toContain("Original note");
+    const history = container.querySelector('[aria-label="history"]')!;
+    await act(async () =>
+      [...history.querySelectorAll("button")].find((b) => b.textContent === "more")!.click()
+    );
+    await flush();
+    expect(history.textContent).toContain("History offline");
+    expect(history.textContent).toContain("Original note");
+    await act(async () =>
+      [...history.querySelectorAll("button")].find((b) => b.textContent === "retry")!.click()
+    );
+    await flush();
+    expect(signal).toBeDefined();
+    state.account = "other";
+    await render();
+    expect(signal?.aborted).toBe(true);
+    expect(container.querySelector('[aria-label="history"]')).toBeNull();
+  } finally {
+    act(() => root.unmount());
+    client.clear();
+    state.account = "a";
+  }
+});
