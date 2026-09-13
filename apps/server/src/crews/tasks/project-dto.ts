@@ -424,3 +424,12 @@ export const BatchUpdateCrewTasksSchema = z
 export type BatchUpdateCrewTasksInput = z.infer<
   typeof BatchUpdateCrewTasksSchema
 >;
+
+export const CrewTaskCenterQuerySchema = z.object({
+  scope: z.enum(['all', 'mine']).default('all'),
+  status: z.enum(['active', 'all']).default('active'),
+  query: z.string().trim().max(180).optional(),
+  cursor: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+export type CrewTaskCenterQuery = z.infer<typeof CrewTaskCenterQuerySchema>;

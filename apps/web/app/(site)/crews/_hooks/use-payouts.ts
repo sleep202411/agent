@@ -2,6 +2,7 @@
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { type CrewLedgerCurrency } from "@/src/lib/crew-money";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
@@ -22,9 +23,15 @@ export function useCrewPayouts(
   },
   enabled = true
 ) {
+  const { user } = useCurrentUser();
   const result = useInfiniteQuery({
-    queryKey: [...crewKeys.payouts(crewId, input.scope), input.status ?? "all", input.currency],
-    enabled: enabled && Boolean(crewId),
+    queryKey: [
+      ...crewKeys.payouts(crewId, input.scope),
+      input.status ?? "all",
+      input.currency,
+      user?.id ?? null,
+    ],
+    enabled: enabled && Boolean(crewId) && Boolean(user),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewPayoutPageDTO>(`/crews/${encodeURIComponent(crewId)}/payouts`, {
@@ -46,9 +53,10 @@ export function useCrewPayouts(
 }
 
 export function useCrewPayoutDetail(payoutId: string | null) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.payout(payoutId ?? ""),
-    enabled: Boolean(payoutId),
+    queryKey: [...crewKeys.payout(payoutId ?? ""), user?.id ?? null],
+    enabled: Boolean(payoutId) && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewPayoutDetailDTO>(`/crew-payouts/${encodeURIComponent(payoutId!)}`),
   });
@@ -56,7 +64,9 @@ export function useCrewPayoutDetail(payoutId: string | null) {
 
 export function useCreateCrewPayout(crewId: string) {
   const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null }),
     mutationFn: (input: {
       currency: CrewLedgerCurrency;
       crewMemberId: string;
@@ -68,7 +78,8 @@ export function useCreateCrewPayout(crewId: string) {
       crewApi.post<CrewPayoutDTO>(`/crews/${encodeURIComponent(crewId)}/payouts`, {
         body: input,
       }),
-    onSuccess: () => invalidatePayouts(queryClient, crewId),
+    onSuccess: (_payout, _input, context) =>
+      invalidatePayouts(queryClient, crewId, context?.accountUserId),
   });
 }
 
@@ -82,7 +93,9 @@ export function useVoidCrewPayout(crewId: string) {
 
 function usePayoutTransition(crewId: string, action: "pay" | "void") {
   const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
+    onMutate: () => ({ accountUserId: user?.id ?? null }),
     mutationFn: (input: {
       payoutId: string;
       expectedVersion: number;
@@ -100,19 +113,32 @@ function usePayoutTransition(crewId: string, action: "pay" | "void") {
           reason: input.reason,
         },
       }),
-    onSuccess: (payout) => {
-      queryClient.setQueryData(crewKeys.payout(payout.id), (current: unknown) =>
-        current && typeof current === "object" ? { ...current, ...payout } : current
+    onSuccess: (payout, _input, context) => {
+      if (!context?.accountUserId) return;
+      queryClient.setQueryData(
+        [...crewKeys.payout(payout.id), context.accountUserId],
+        (current: unknown) =>
+          current && typeof current === "object" ? { ...current, ...payout } : current
       );
     },
-    onSettled: (_data, _error, input) =>
+    onSettled: (_data, _error, input, context) =>
       Promise.all([
-        invalidatePayouts(queryClient, crewId),
-        queryClient.invalidateQueries({ queryKey: crewKeys.payout(input.payoutId) }),
+        invalidatePayouts(queryClient, crewId, context?.accountUserId),
+        queryClient.invalidateQueries({
+          queryKey: [...crewKeys.payout(input.payoutId), context?.accountUserId ?? null],
+          exact: true,
+        }),
       ]),
   });
 }
 
-function invalidatePayouts(queryClient: ReturnType<typeof useQueryClient>, crewId: string) {
-  return queryClient.invalidateQueries({ queryKey: ["crew", "payouts", crewId] });
+function invalidatePayouts(
+  queryClient: ReturnType<typeof useQueryClient>,
+  crewId: string,
+  accountUserId?: string | null
+) {
+  return queryClient.invalidateQueries({
+    queryKey: ["crew", "payouts", crewId],
+    predicate: (query) => Boolean(accountUserId) && query.queryKey.at(-1) === accountUserId,
+  });
 }

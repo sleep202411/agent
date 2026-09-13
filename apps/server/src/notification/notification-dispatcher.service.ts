@@ -84,7 +84,7 @@ export class NotificationDispatcherService
 
   /**
    * One drain cycle:
-   *   1. Claim up to BATCH eligible rows with SKIP LOCKED.
+   *   1. Claim one eligible row when ready to publish, up to BATCH per cycle.
    *   2. Publish each one to Ably with a deterministic message id.
    *   3. Mark dispatched OR schedule retry / DLQ.
    *   4. GC old dispatched rows once per cycle.
@@ -93,8 +93,9 @@ export class NotificationDispatcherService
     if (this.draining) return; // overlap guard
     this.draining = true;
     try {
-      const claimed = await this.claim(DISPATCH_BATCH);
-      for (const row of claimed) {
+      for (let sent = 0; sent < DISPATCH_BATCH; sent += 1) {
+        const [row] = await this.claim(1);
+        if (!row) break;
         await this.dispatchOne(row);
       }
       await this.gc();

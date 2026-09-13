@@ -6,6 +6,7 @@
  * transaction, so roster, production canvas and chat never disagree.
  * Rejection changes no membership and must leave all three untouched.
  */
+import { ForbiddenException } from '@nestjs/common';
 import { ApplicationsService } from './applications.service';
 
 const CREW_ID = 'crew-1';
@@ -119,7 +120,12 @@ function build() {
     addCrewMemberAccess: jest.fn().mockResolvedValue(undefined),
   };
 
+  const authorization = {
+    require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
+  };
   return {
+    authorization,
+    notifications,
     prisma,
     tx,
     conversations,
@@ -132,9 +138,7 @@ function build() {
       notifications as never,
       conversations as never,
       collaboration as never,
-      {
-        require: jest.fn().mockResolvedValue({ memberId: 'member-owner' }),
-      } as never,
+      authorization as never,
     ),
   };
 }
@@ -223,3 +227,23 @@ describe('ApplicationsService.reject — rejection touches no chat', () => {
     expect(t.collaboration.addCrewMemberAccess).not.toHaveBeenCalled();
   });
 });
+
+it.each(['approve', 'reject'] as const)(
+  'rejects %s when review permission is revoked while claiming the application',
+  async (action) => {
+    const t = build();
+    t.tx.crewApplication.updateMany.mockImplementation(() => {
+      t.authorization.require.mockRejectedValue(
+        new ForbiddenException('Review permission revoked'),
+      );
+      return Promise.resolve({ count: 1 });
+    });
+    await expect(t.service[action](APPLICATION_ID, OWNER)).rejects.toThrow(
+      'Review permission revoked',
+    );
+    expect(t.tx.crewMember.create).not.toHaveBeenCalled();
+    expect(t.collaboration.addCrewMemberAccess).not.toHaveBeenCalled();
+    expect(t.notifications.send).not.toHaveBeenCalled();
+    expect(t.broadcast).toEqual([]);
+  },
+);

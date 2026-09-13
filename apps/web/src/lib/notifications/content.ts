@@ -19,7 +19,8 @@ export interface NotificationContent {
 export function notificationContent(
   item: NotificationDTO,
   locale: Locale,
-  t: Translate
+  t: Translate,
+  actorName?: string | null
 ): NotificationContent {
   const fallback = { title: item.title, body: item.body };
   const crewName = metaString(item, "crewName");
@@ -98,14 +99,18 @@ export function notificationContent(
       return taskTitle
         ? {
             title: t("events.taskAssigned.title", { task: taskTitle }),
-            body: t("events.taskAssigned.body"),
+            body: actorName?.trim()
+              ? t("events.taskAssigned.bodyWithActor", { actor: actorName.trim() })
+              : t("events.taskAssigned.body"),
           }
         : fallback;
     case "crew.task.updated":
       return taskTitle
         ? {
             title: t("events.taskUpdated.title", { task: taskTitle }),
-            body: t("events.taskUpdated.body"),
+            body: actorName?.trim()
+              ? t("events.taskUpdated.bodyWithActor", { actor: actorName.trim() })
+              : t("events.taskUpdated.body"),
           }
         : fallback;
     case "crew.task.commented":

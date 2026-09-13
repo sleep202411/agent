@@ -197,35 +197,6 @@ export class CrewsService {
         },
       });
 
-      const initialTasks = productionPlan.tasks.map((task, index) => ({
-        id: randomUUID(),
-        crewId: c.id,
-        number: index + 1,
-        title: task.title,
-        description: task.description,
-        workflowStateId: workflowStateIds.get('open')!,
-        priority: 'normal' as const,
-        episodeId,
-        rank: (index + 1) * 1024,
-        createdByUserId: creatorUserId,
-      }));
-      await tx.crewTask.createMany({ data: initialTasks });
-      await tx.crewTaskDependency.createMany({
-        data: initialTasks.slice(1).map((task, index) => ({
-          crewId: c.id,
-          blockingTaskId: initialTasks[index].id,
-          blockedTaskId: task.id,
-          createdByUserId: creatorUserId,
-        })),
-      });
-      await tx.crewTaskTimelineItem.createMany({
-        data: initialTasks.map((task) => ({
-          taskId: task.id,
-          kind: 'task.created',
-          actorUserId: creatorUserId,
-          payload: { title: task.title, template: true },
-        })),
-      });
       // One crew, one group chat — opened with the crew so there is
       // never a window where a member exists without a thread to talk
       // in. No `crew.member.joined` system message here on purpose:

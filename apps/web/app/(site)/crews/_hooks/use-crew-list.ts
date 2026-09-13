@@ -3,6 +3,7 @@
  */
 
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 import type { CrewDTO } from "./types";
@@ -27,12 +28,14 @@ interface CreatorCrewsResult {
  * server (one round-trip per page).
  */
 export function useCrewList(pageSize = 24) {
+  const { user, isLoading } = useCurrentUser();
   return useInfiniteQuery({
-    queryKey: ["crew", "list", "infinite", pageSize] as const,
+    queryKey: ["crew", "list", "infinite", pageSize, user?.id ?? null] as const,
     queryFn: ({ pageParam }) =>
       crewApi.get<ListResult>("/crews", {
         query: { limit: pageSize, cursor: pageParam },
       }),
+    enabled: !isLoading,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
@@ -40,10 +43,11 @@ export function useCrewList(pageSize = 24) {
 
 /** Profile "My Crews" tab — owner + member breakdown in one call. */
 export function useMyCrews(enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.mine,
+    queryKey: [...crewKeys.mine, user?.id ?? null],
     queryFn: () => crewApi.get<MyCrewsResult>("/crews/my"),
-    enabled,
+    enabled: enabled && Boolean(user),
   });
 }
 
@@ -53,9 +57,10 @@ export function useMyCrews(enabled = true) {
  * useMyCrews() instead (full set incl. unlisted).
  */
 export function usePublicCreatorCrews(userId: string, enabled = true) {
+  const { user, isLoading } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.byUser(userId),
+    queryKey: [...crewKeys.byUser(userId), user?.id ?? null],
     queryFn: () => crewApi.get<CreatorCrewsResult>(`/crews/by-user/${encodeURIComponent(userId)}`),
-    enabled: enabled && !!userId,
+    enabled: enabled && !!userId && !isLoading,
   });
 }

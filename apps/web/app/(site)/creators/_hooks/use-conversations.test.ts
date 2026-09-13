@@ -19,7 +19,15 @@ import {
   removeOptimisticMessage,
   shouldRetryConversationQuery,
   useConversation,
+  useInbox,
+  useMessages,
+  useSendText,
 } from "./use-conversations";
+
+const session = vi.hoisted(() => ({ userId: "alice" as string | null }));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: session.userId ? { id: session.userId } : null }),
+}));
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -345,4 +353,190 @@ describe("conversation query cancellation", () => {
     container.remove();
     qc.clear();
   });
+});
+
+describe("conversation error responses", () => {
+  it.each([
+    ["Access revoked by owner", "Access revoked by owner"],
+    [JSON.stringify({ message: "Membership required" }), "Membership required"],
+    ["", "Conversation API error 403"],
+  ])("preserves the server error from %j", async (body, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 403 })));
+    const qc = new QueryClient();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    function Probe() {
+      const query = useConversation("conv-error");
+      return createElement("div", null, query.error?.message);
+    }
+    try {
+      act(() =>
+        root.render(createElement(QueryClientProvider, { client: qc }, createElement(Probe)))
+      );
+      await vi.waitFor(async () => {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+        expect(container.textContent).toBe(expected);
+      });
+    } finally {
+      act(() => root.unmount());
+      qc.clear();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+it("isolates cached conversation cards after logout and account switching", async () => {
+  session.userId = "alice";
+  const request = vi.fn().mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          items: [{ id: "private-alice-conversation" }],
+          nextCursor: null,
+        })
+      )
+  );
+  vi.stubGlobal("fetch", request);
+  const qc = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  function Probe() {
+    const inbox = useInbox();
+    const detail = useConversation("private-conv");
+    const messages = useMessages("private-conv");
+    return createElement("div", null, JSON.stringify([inbox.data, detail.data, messages.data]));
+  }
+  const render = () =>
+    act(() =>
+      root.render(createElement(QueryClientProvider, { client: qc }, createElement(Probe)))
+    );
+  const settle = async () => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+  };
+  try {
+    render();
+    await settle();
+    expect(host.textContent).toContain("private-alice-conversation");
+    const calls = request.mock.calls.length;
+    session.userId = null;
+    render();
+    await settle();
+    expect(host.textContent).not.toContain("private-alice-conversation");
+    expect(request).toHaveBeenCalledTimes(calls);
+    request.mockImplementation(() => new Promise<Response>(() => {}));
+    session.userId = "bob";
+    render();
+    await settle();
+    expect(host.textContent).not.toContain("private-alice-conversation");
+    expect(request).toHaveBeenCalledTimes(calls + 3);
+  } finally {
+    act(() => root.unmount());
+    qc.clear();
+    vi.unstubAllGlobals();
+    session.userId = "alice";
+  }
+});
+
+it("keeps an in-flight send attached to its originating account", async () => {
+  session.userId = "alice";
+  let complete!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          complete = resolve;
+        })
+    )
+  );
+  const qc = new QueryClient();
+  const aliceKey = conversationKeys.messages("conv-1", "alice");
+  const bobKey = conversationKeys.messages("conv-1", "bob");
+  const old = message("original", "2026-09-11T00:00:00Z");
+  qc.setQueryData(aliceKey, timeline(old));
+  qc.setQueryData(bobKey, timeline(old));
+  const root = createRoot(document.createElement("div"));
+  let mutation!: ReturnType<typeof useSendText>;
+  function Probe() {
+    mutation = useSendText("conv-1", session.userId);
+    return null;
+  }
+  const render = () =>
+    act(() =>
+      root.render(createElement(QueryClientProvider, { client: qc }, createElement(Probe)))
+    );
+  try {
+    render();
+    let pending!: Promise<MessageDTO>;
+    await act(async () => {
+      pending = mutation.mutateAsync({ body: "Alice draft", clientKey: "alice-send" });
+    });
+    expect(JSON.stringify(qc.getQueryData(aliceKey))).toContain("Alice draft");
+    expect(JSON.stringify(qc.getQueryData(bobKey))).not.toContain("Alice draft");
+    session.userId = "bob";
+    render();
+    await act(async () => {
+      complete(
+        new Response(
+          JSON.stringify({ ...message("sent", "2026-09-11T00:00:01Z"), body: "Alice draft" })
+        )
+      );
+      await pending;
+    });
+    expect(JSON.stringify(qc.getQueryData(aliceKey))).toContain('"id":"sent"');
+    expect(JSON.stringify(qc.getQueryData(bobKey))).not.toContain("Alice draft");
+  } finally {
+    act(() => root.unmount());
+    qc.clear();
+    vi.unstubAllGlobals();
+    session.userId = "alice";
+  }
+});
+
+it("scopes reconnect recovery and revocation cleanup to one account", async () => {
+  const qc = new QueryClient();
+  const aliceKey = conversationKeys.messages("conv-1", "alice");
+  const bobKey = conversationKeys.messages("conv-1", "bob");
+  const old = message("old", "2026-09-11T00:00:00Z");
+  const page = timeline(old);
+  const aliceFetch = vi.fn().mockResolvedValue(page);
+  const bobFetch = vi.fn().mockResolvedValue(page);
+  qc.setQueryDefaults(aliceKey, { queryFn: aliceFetch });
+  qc.setQueryDefaults(bobKey, { queryFn: bobFetch });
+  qc.setQueryData(aliceKey, timeline(old));
+  qc.setQueryData(bobKey, timeline(old));
+  const bobInbox = [...conversationKeys.inboxFiltered(), "bob"];
+  qc.setQueryData(bobInbox, {
+    pages: [{ items: [{ id: "conv-1" }], nextCursor: null }],
+    pageParams: [null],
+  });
+  const recovery = createConversationRecoveryCoordinator(qc, "alice");
+  try {
+    await recovery.recoverAll();
+    expect(qc.getQueryState(bobKey)?.isInvalidated).toBe(false);
+    const incoming = message("new", "2026-09-11T00:00:01Z");
+    await recovery.receiveMessage({
+      conversationId: "conv-1",
+      message: incoming,
+      lastMessageAt: incoming.createdAt,
+      unreadCount: 1,
+    });
+    expect(aliceFetch).toHaveBeenCalled();
+    expect(bobFetch).not.toHaveBeenCalled();
+    expect(JSON.stringify(qc.getQueryData(aliceKey))).toContain('"id":"new"');
+    expect(qc.getQueryData(bobKey)).toEqual(timeline(old));
+    clearConversationAccessCache(qc, "conv-1", "alice");
+    expect(qc.getQueryData(aliceKey)).toBeUndefined();
+    expect(qc.getQueryData(bobKey)).toEqual(timeline(old));
+    expect(JSON.stringify(qc.getQueryData(bobInbox))).toContain("conv-1");
+  } finally {
+    recovery.dispose();
+    qc.clear();
+  }
 });

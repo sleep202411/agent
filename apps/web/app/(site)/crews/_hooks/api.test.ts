@@ -104,3 +104,70 @@ describe("crewApi", () => {
     );
   });
 });
+
+describe("Crew error response recovery", () => {
+  it.each([
+    ["Upstream temporarily unavailable", "Upstream temporarily unavailable"],
+    [
+      JSON.stringify({ message: ["Deadline is invalid", "Assignee is required"] }),
+      "Deadline is invalid; Assignee is required",
+    ],
+    ["", "Crew API error 503"],
+  ])("preserves readable error content from %j", async (body, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 503 })));
+    await expect(crewApi.get("/crews/example")).rejects.toMatchObject({
+      status: 503,
+      message: expected,
+    });
+  });
+  it("ignores malformed issue entries while retaining valid validation details", () => {
+    expect(
+      new CrewApiError(400, {
+        message: "Validation failed",
+        issues: [
+          null,
+          {},
+          { message: null },
+          { message: 42 },
+          { message: "" },
+          { message: "Missing owner", path: "owner" },
+        ],
+      }).message
+    ).toBe("owner: Missing owner");
+  });
+});
+
+describe("Crew request options", () => {
+  it("keeps upload cancellation alive during navigation", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", request);
+    await crewApi.delete("/crews/crew-1/assets/uploads/upload-1", { keepalive: true });
+    expect(request.mock.calls[0]?.[1]).toMatchObject({
+      method: "DELETE",
+      keepalive: true,
+      credentials: "include",
+    });
+  });
+  it("forwards cancellation signals and Headers values", async () => {
+    const controller = new AbortController();
+    const request = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () =>
+            reject(new DOMException("Cancelled", "AbortError"))
+          );
+        })
+    );
+    vi.stubGlobal("fetch", request);
+    const pending = crewApi.get("/crews/crew-1", {
+      signal: controller.signal,
+      headers: new Headers({ "X-Request-Id": "test-request" }),
+    });
+    const init = request.mock.calls[0]?.[1];
+    expect(init?.signal).toBe(controller.signal);
+    expect(new Headers(init?.headers).get("X-Request-Id")).toBe("test-request");
+    const result = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    await result;
+  });
+});

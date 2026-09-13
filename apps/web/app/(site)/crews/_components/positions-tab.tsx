@@ -140,16 +140,12 @@ export function PositionsTab() {
 
         {positions.isLoading ? (
           <PositionsSkeleton />
-        ) : positions.isError || all.length === 0 ? (
+        ) : all.length === 0 && !positions.isError ? (
           <EmptyState
             message={
-              positions.isError
-                ? positions.error instanceof Error
-                  ? positions.error.message
-                  : tc("loadFailed")
-                : employment.size || seniority.size || workMode.size
-                  ? t("noFilterMatches")
-                  : t("noOpenPositions")
+              employment.size || seniority.size || workMode.size
+                ? t("noFilterMatches")
+                : t("noOpenPositions")
             }
           />
         ) : (
@@ -159,13 +155,13 @@ export function PositionsTab() {
                 <PositionCard key={position.id} crew={crew} position={position} locale={locale} />
               ))}
             </div>
-            {positions.hasNextPage ? (
+            {positions.hasNextPage && !positions.isError ? (
               <div className="flex justify-center pt-3">
                 <Button
                   type="button"
                   variant="outline"
                   color="muted"
-                  disabled={positions.isFetchingNextPage}
+                  disabled={positions.isFetching}
                   onClick={() => void positions.fetchNextPage()}
                 >
                   {positions.isFetchingNextPage ? tc("loading") : tc("loadMore")}
@@ -173,6 +169,27 @@ export function PositionsTab() {
               </div>
             ) : null}
           </>
+        )}
+        {positions.isError && (
+          <div
+            role="alert"
+            className="flex items-center justify-center gap-3 text-sm text-muted-foreground"
+          >
+            <span>
+              {positions.error instanceof Error ? positions.error.message : tc("loadFailed")}
+            </span>
+            <Button
+              variant="outline"
+              disabled={positions.isFetching}
+              onClick={() =>
+                void (positions.isFetchNextPageError
+                  ? positions.fetchNextPage()
+                  : positions.refetch())
+              }
+            >
+              {tc("retry")}
+            </Button>
+          </div>
         )}
       </section>
     </div>

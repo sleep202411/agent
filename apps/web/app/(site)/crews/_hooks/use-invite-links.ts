@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
 
@@ -29,12 +30,29 @@ export interface CreateCrewInviteLinkInput {
 }
 
 export function useCrewInviteLinks(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.inviteLinks(crewId),
-    enabled: enabled && !!crewId,
+    queryKey: [...crewKeys.inviteLinks(crewId), user?.id ?? null],
+    enabled: enabled && !!crewId && Boolean(user),
     queryFn: () =>
       crewApi.get<CrewInviteLinkDTO[]>(`/crews/${encodeURIComponent(crewId)}/invite-links`),
   });
+}
+
+function useMutationRefresh(crewId: string) {
+  const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const context = { crewId, accountUserId: user?.id ?? null };
+  return {
+    onMutate: () => context,
+    onSuccess: (_data: unknown, _variables: unknown, origin: typeof context | undefined) => {
+      if (!origin?.accountUserId) return;
+      return qc.invalidateQueries({
+        queryKey: crewKeys.inviteLinks(origin.crewId),
+        predicate: (query) => query.queryKey.at(-1) === origin.accountUserId,
+      });
+    },
+  };
 }
 
 /**
@@ -42,25 +60,25 @@ export function useCrewInviteLinks(crewId: string, enabled = true) {
  * caller must surface it immediately — a lost token means minting a new link.
  */
 export function useCreateCrewInviteLink(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (input: CreateCrewInviteLinkInput) =>
       crewApi.post<CrewInviteLinkDTO & { token: string }>(
         `/crews/${encodeURIComponent(crewId)}/invite-links`,
         { body: input }
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.inviteLinks(crewId) }),
   });
 }
 
 export function useRevokeCrewInviteLink(crewId: string) {
-  const qc = useQueryClient();
+  const refresh = useMutationRefresh(crewId);
   return useMutation({
+    ...refresh,
     mutationFn: (linkId: string) =>
       crewApi.delete<void>(
         `/crews/${encodeURIComponent(crewId)}/invite-links/${encodeURIComponent(linkId)}`
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: crewKeys.inviteLinks(crewId) }),
   });
 }
 

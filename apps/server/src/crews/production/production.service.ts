@@ -1415,7 +1415,14 @@ function projectPeriodEnd(
 function productionLinkTitle(value: string) {
   const url = new URL(value);
   const host = url.hostname.replace(/^www\./i, '');
-  const path = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, '');
+  let decodedPath = url.pathname;
+  try {
+    decodedPath = decodeURIComponent(decodedPath);
+  } catch {
+    // Valid URLs may contain literal percent signs or invalid UTF-8 escapes.
+    // Keep the original path when it cannot be decoded for display.
+  }
+  const path = decodedPath.replace(/^\/+|\/+$/g, '');
   return (path ? `${host}/${path}` : host).slice(0, 180);
 }
 
