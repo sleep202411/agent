@@ -1,4 +1,9 @@
 import {
+  CrewExpenseReceiptService,
+  CrewExpenseReceiptController,
+  CrewExpenseReceiptAdminController,
+} from './expenses/expense-receipts';
+import {
   CrewExpenseSubmissionAdminController,
   CrewExpenseDraftController,
   CrewExpenseDraftService,
@@ -78,6 +83,8 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewExpenseReceiptController,
+    CrewExpenseReceiptAdminController,
     CrewExpenseSubmissionAdminController,
     CrewExpenseDraftController,
     CrewDeliveryCatalogController,
@@ -99,6 +106,7 @@ import { CrewProductionService } from './production/production.service';
     CrewPayoutsController,
   ],
   providers: [
+    CrewExpenseReceiptService,
     CrewExpenseDraftService,
     CrewDeliveryCatalogService,
     CrewsService,

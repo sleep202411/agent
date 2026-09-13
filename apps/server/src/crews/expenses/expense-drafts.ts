@@ -1,3 +1,4 @@
+import { requireExpenseReceipts } from './expense-receipts';
 import {
   ADMIN_PERMISSION_KEYS,
   AdminAuthGuard,
@@ -34,6 +35,11 @@ export const ExpenseDraftDefinition = z
       .regex(/^(0|[1-9][0-9]{0,14})$/)
       .nullable(),
     evidenceNote: z.string().trim().max(4000),
+    receiptIds: z
+      .array(z.string().uuid())
+      .max(10)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
   })
   .strict();
 export const SaveExpenseDraft = z
@@ -148,6 +154,7 @@ export class CrewExpenseDraftService {
       >`SELECT draft_id FROM crew_expense_submissions WHERE draft_id = ${id}::uuid AND status = 'pending'`;
       if (pending.length)
         throw new ConflictException('This claim is awaiting review.');
+      await requireExpenseReceipts(tx, id, userId, input.definition.receiptIds);
       const [saved] = await tx.$queryRaw<Row[]>(Prisma.sql`
         INSERT INTO crew_expense_draft_revisions(id, version, crew_id, claimant_user_id, definition)
         VALUES (${id}::uuid, ${input.expectedVersion + 1}, ${crewId}, ${userId}, ${JSON.stringify(input.definition)}::jsonb)
@@ -198,6 +205,7 @@ export class CrewExpenseDraftService {
         throw new BadRequestException(
           'Category, purpose, expense date and a positive amount are required.',
         );
+      await requireExpenseReceipts(tx, id, userId, definition.receiptIds);
       await tx.$executeRaw`INSERT INTO crew_expense_submissions(draft_id, draft_version) VALUES (${id}::uuid, ${draft.version}) ON CONFLICT (draft_id,draft_version) DO NOTHING`;
       await this.authz.requireMembership(crewId, userId, tx);
       const [submission] = await tx.$queryRaw<
