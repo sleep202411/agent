@@ -1,53 +1,64 @@
 // @vitest-environment jsdom
-import { act, type ReactNode } from "react";
-import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { it, expect, vi } from "vitest";
-import Page from "./page";
-const state = vi.hoisted(() => ({ query: "", account: "a", reads: [] as string[][] }));
-vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams(state.query) }));
-vi.mock("@/src/hooks/use-user", () => ({
-  useCurrentUser: () => ({ user: { id: state.account } }),
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+import BillingPage from "./page";
+vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "creator" } }) }));
+vi.mock("@/src/lib/api", () => ({ api: { get: async () => ({ projects: [] }) } }));
+const ledger = vi.hoisted(() => ({
+  data: undefined as unknown,
+  isError: true,
+  error: new Error("Ledger access unavailable"),
+  refetch: vi.fn(),
+}));
+vi.mock("../../_hooks/use-billing", () => ({ useProjectComputeLedger: () => ledger }));
+vi.mock("../_components/fizzstudio-shell", () => ({
+  useFizzStudioWorkspace: () => ({ workspaceId: "personal" }),
+  FizzStudioShell: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("@/src/i18n/i18n", () => ({
   useLocale: () => "en-US",
   useTranslations: () => (key: string) => key,
 }));
-vi.mock("@/src/lib/api", () => ({ api: { get: async () => ({ projects: [] }) } }));
-vi.mock("../_components/fizzstudio-shell", () => ({
-  FizzStudioShell: ({ children }: { children: ReactNode }) => children,
-  useFizzStudioWorkspace: (initial: string) => ({ workspaceId: initial || "personal" }),
-}));
-vi.mock("../../_hooks/use-billing", () => ({
-  useProjectComputeLedger: (workspace: string, project: string) => {
-    state.reads.push([state.account, workspace, project]);
-    return { data: undefined, isLoading: true, isFetching: true };
-  },
-}));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-it("opens the requested project wallet and discards stale selections on navigation/account changes", async () => {
-  const root = createRoot(document.createElement("div"));
-  const client = new QueryClient();
-  const workspace = "00000000-0000-4000-8000-000000000001";
-  const project = "00000000-0000-4000-8000-000000000002";
-  const render = async () =>
-    act(async () =>
+let root: Root;
+afterEach(() => {
+  act(() => root?.unmount());
+  ledger.data = undefined;
+  vi.clearAllMocks();
+});
+it.each([false, true])(
+  "shows ledger errors and retains only confirmed summaries: cached=%s",
+  async (cached) => {
+    if (cached)
+      ledger.data = {
+        pages: [
+          {
+            accounts: [{ status: "active", availableBalance: "123", heldBalance: "4" }],
+            entries: [],
+          },
+        ],
+      };
+    const container = document.createElement("div");
+    root = createRoot(container);
+    await act(async () =>
       root.render(
-        <QueryClientProvider client={client}>
-          <Page />
+        <QueryClientProvider client={new QueryClient()}>
+          <BillingPage />
         </QueryClientProvider>
       )
     );
-  try {
-    state.query = `workspaceId=${workspace}&projectId=${project}`;
-    await render();
-    expect(state.reads.at(-1)).toEqual(["a", workspace, project]);
-    state.query = "workspaceId=invalid&projectId=invalid";
-    state.account = "b";
-    await render();
-    expect(state.reads.at(-1)).toEqual(["b", "personal", undefined]);
-  } finally {
-    act(() => root.unmount());
-    client.clear();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Ledger access unavailable"
+    );
+    if (cached) expect(container.textContent).toContain("123");
+    else {
+      expect(container.textContent).not.toContain("summary.available");
+      expect(container.textContent).not.toContain("emptyTitle");
+    }
+    await act(async () => container.querySelector("button")!.click());
+    expect(ledger.refetch).toHaveBeenCalledTimes(1);
   }
-});
+);

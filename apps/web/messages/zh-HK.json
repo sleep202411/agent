@@ -7906,6 +7906,9 @@
       "comingSoon": "{label}即將上線。"
     },
     "computeBilling": {
+      "balanceUnavailable": "餘額暫不可用",
+      "loadFailed": "無法載入帳單資訊。",
+      "retry": "重試",
       "openRecharge": "打開算力積分充值",
       "balance": "{amount} 算力積分",
       "balanceLoading": "算力積分",
@@ -7922,8 +7925,8 @@
       "paymentFailed": "支付失敗，請重試。",
       "providerUnavailable": "當前支付渠道尚未接入瀏覽器支付。",
       "successToast": "算力積分已到賬。",
-      "completedToast": "充值已完成，餘額正在刷新。",
-      "cancelledToast": "充值已取消。"
+      "returnedToast": "已返回充值頁面，付款可能仍在確認中。",
+      "cancelledToast": "支付頁面已關閉，付款狀態可能仍待確認。"
     },
     "billingUsage": {
       "projectFilter": "項目",

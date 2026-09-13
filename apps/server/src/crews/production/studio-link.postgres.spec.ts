@@ -24,7 +24,8 @@ suite('Studio linking authorization on PostgreSQL', () => {
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(
         (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
-        (url.port === '55439' && url.pathname === '/task01')
+        (url.port === '55439' && url.pathname === '/task01') ||
+        (url.port === '55459' && url.pathname === '/develop_selection_test')
       )
     )
       throw new Error('Explicitly allowed loopback test database required');

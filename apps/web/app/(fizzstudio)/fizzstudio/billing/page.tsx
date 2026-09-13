@@ -69,6 +69,7 @@ function BillingUsageSurface({
   initialProjectId?: string;
 }) {
   const t = useTranslations("fizzStudio.billingUsage");
+  const tb = useTranslations("fizzStudio.computeBilling");
   const locale = useLocale();
   const { user } = useCurrentUser();
   const [projectId, setProjectId] = useState(initialProjectId);
@@ -140,7 +141,7 @@ function BillingUsageSurface({
         ) : null}
         {ledger.error ? (
           <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-red-300">
-            {ledger.error.message}
+            {ledger.error instanceof Error ? ledger.error.message : tb("loadFailed")}
             <button
               disabled={ledger.isFetching}
               onClick={() =>

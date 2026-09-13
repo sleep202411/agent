@@ -13,7 +13,9 @@ import { useCurrentUser } from "@/src/hooks/use-user";
 export const computeBillingKeys = {
   all: ["fizzstudio", "compute-billing"] as const,
   catalog: () => [...computeBillingKeys.all, "catalog"] as const,
-  wallet: (limit = 12) => [...computeBillingKeys.all, "wallet", limit] as const,
+  wallets: (accountId: string | null) => [...computeBillingKeys.all, "wallet", accountId] as const,
+  wallet: (accountId: string | null, limit = 12) =>
+    [...computeBillingKeys.wallets(accountId), limit] as const,
 };
 
 export function useComputeTopupCatalog() {
@@ -25,8 +27,10 @@ export function useComputeTopupCatalog() {
 }
 
 export function useComputeWalletLedger(limit = 12) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: computeBillingKeys.wallet(limit),
+    queryKey: computeBillingKeys.wallet(user?.id ?? null, limit),
+    enabled: !!user?.id,
     queryFn: () => getComputeWalletLedger(limit),
     staleTime: 20_000,
   });
@@ -34,11 +38,13 @@ export function useComputeWalletLedger(limit = 12) {
 
 export function useCreateComputeTopup() {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
   return useMutation({
     mutationFn: createComputeTopup,
-    onSuccess: (result) => {
-      if (result.order.status === "fulfilled") {
-        void qc.invalidateQueries({ queryKey: computeBillingKeys.all });
+    onMutate: () => ({ accountId: user?.id ?? null }),
+    onSuccess: (result, _input, context) => {
+      if (result.order.status === "fulfilled" && context?.accountId) {
+        void qc.invalidateQueries({ queryKey: computeBillingKeys.wallets(context.accountId) });
       }
     },
   });
