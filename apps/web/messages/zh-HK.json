@@ -9683,5 +9683,15 @@
     "failed": "信任記錄重新整理失敗。",
     "retry": "重試",
     "note": "依據已審核通過且保留截止依據的提交計算。此分數不是現金或可消費積分，不包括未計量的歷史工作。"
+  },
+  "ipProductionStage": {
+    "title": "製作階段",
+    "testing": "測試",
+    "story_testing": "劇情測試／初期生產",
+    "production": "正式生產",
+    "released": "已上線",
+    "loading": "正在載入製作階段…",
+    "error": "無法載入製作階段。",
+    "retry": "重試"
   }
 }

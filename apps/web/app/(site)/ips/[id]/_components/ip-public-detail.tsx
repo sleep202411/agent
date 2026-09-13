@@ -1,6 +1,7 @@
 "use client";
 
 import { EpisodeFeedback } from "../../_components/episode-feedback";
+import { IpProductionStage } from "../../_components/ip-production-stage";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -459,6 +460,7 @@ export function IpPublicDetail({ ipReference }: IpPublicDetailProps) {
               <h1 className="text-xl font-semibold leading-snug text-foreground sm:text-2xl">
                 {detailIp.title}
               </h1>
+              <IpProductionStage ipId={detailIp.id} />
               {isTrailerSelected ? (
                 <p className="mt-1.5 text-sm font-semibold text-primary">{t("episodes.trailer")}</p>
               ) : selectedEpisode ? (

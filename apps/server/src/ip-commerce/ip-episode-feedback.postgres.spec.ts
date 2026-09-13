@@ -3,11 +3,13 @@ import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import { IpCommerceService } from './ip-commerce.service';
 import { IpEpisodeFeedbackService } from './ip-episode-feedback';
 import { readIpProductionEvidence } from './ip-production-evidence';
+import { IpProductionPublicController } from './ip-production-public';
 const integration =
   process.env.IP_FEEDBACK_POSTGRES_TEST === '1' ? describe : describe.skip;
 integration('IP episode feedback (local PostgreSQL)', () => {
   let prisma: ReturnType<typeof buildPrisma>;
   let service: IpEpisodeFeedbackService;
+  let publicStage: IpProductionPublicController;
   let ipId: string;
   let episodeId: string;
   const viewer = { userId: 'comment-test-viewer', nickName: 'Viewer' };
@@ -22,6 +24,18 @@ integration('IP episode feedback (local PostgreSQL)', () => {
     prisma = buildPrisma();
     await prisma.$connect();
     service = new IpEpisodeFeedbackService(
+      prisma as PrismaService,
+      new IpCommerceService(
+        prisma as PrismaService,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+      ),
+    );
+    publicStage = new IpProductionPublicController(
       prisma as PrismaService,
       new IpCommerceService(
         prisma as PrismaService,
@@ -70,6 +84,19 @@ integration('IP episode feedback (local PostgreSQL)', () => {
   });
   afterAll(async () => {
     await prisma?.$disconnect();
+  });
+
+  it('shows the public production stage without audit metadata and rejects private IPs', async () => {
+    expect(await publicStage.read({ ipId }, viewer)).toEqual({
+      stage: 'testing',
+    });
+    await prisma.$executeRaw`INSERT INTO ip_production_stages(ip_id,stage,version) VALUES (${ipId}::uuid,'production',1)`;
+    expect(await publicStage.read({ ipId })).toEqual({ stage: 'production' });
+    await prisma.ip.update({
+      where: { id: ipId },
+      data: { listingVisibility: 'private' },
+    });
+    await expect(publicStage.read({ ipId }, viewer)).rejects.toThrow();
   });
 
   it('collects human likes and canonical published testing-episode feedback without inferring promotion', async () => {

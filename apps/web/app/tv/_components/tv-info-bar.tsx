@@ -2,6 +2,7 @@
 
 import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
 import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
+import { IpProductionStage } from "@/app/(site)/ips/_components/ip-production-stage";
 import Link from "next/link";
 import { IconPlayerPlay, IconUser } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -55,6 +56,7 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
       </Link>
       <IpCrewOrigin ipId={item.id} />
       <IpReleaseLinks ipId={item.id} />
+      <IpProductionStage ipId={item.id} />
     </div>
   );
 }

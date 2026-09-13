@@ -1,6 +1,7 @@
 import { CreatorTrustController } from './creator-trust.controller';
 import { IpProductionEvidenceController } from './ip-production-evidence';
 import { IpProductionStageController } from './ip-production-stage';
+import { IpProductionPublicController } from './ip-production-public';
 import {
   IpEpisodeFeedbackController,
   IpEpisodeFeedbackService,
@@ -40,6 +41,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    IpProductionPublicController,
     IpProductionStageController,
     IpProductionEvidenceController,
     IpCrewOriginController,

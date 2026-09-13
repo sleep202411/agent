@@ -9683,5 +9683,15 @@
     "failed": "Trust could not be refreshed.",
     "retry": "Retry",
     "note": "Based on approved submissions with recorded deadlines. This is not money or spendable points; unmeasured historical work is excluded."
+  },
+  "ipProductionStage": {
+    "title": "Production stage",
+    "testing": "Testing",
+    "story_testing": "Story testing / initial production",
+    "production": "Formal production",
+    "released": "Released",
+    "loading": "Loading production stage…",
+    "error": "Production stage could not be loaded.",
+    "retry": "Retry"
   }
 }

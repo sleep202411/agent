@@ -9683,5 +9683,15 @@
     "failed": "信任记录刷新失败。",
     "retry": "重试",
     "note": "依据已审核通过且保留截止依据的提交计算。此分数不是现金或可消费积分，不包括未计量的历史工作。"
+  },
+  "ipProductionStage": {
+    "title": "制作阶段",
+    "testing": "测试",
+    "story_testing": "剧情测试／初期生产",
+    "production": "正式生产",
+    "released": "已上线",
+    "loading": "正在加载制作阶段…",
+    "error": "无法加载制作阶段。",
+    "retry": "重试"
   }
 }
