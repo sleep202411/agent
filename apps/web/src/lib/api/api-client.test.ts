@@ -35,6 +35,38 @@ describe("api client response unwrapping", () => {
     ).resolves.toEqual({ code: 200, info: { id: 1 }, level: ["creator"] });
   });
 
+  it("accepts successful direct Nest responses without a Java envelope", async () => {
+    const page = {
+      items: [{ id: "comment-1", body: "Useful" }],
+      nextCursor: null,
+    };
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(page), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    );
+
+    await expect(
+      api.get<typeof page>("/aurora/ip-commerce/ips/ip-1/comments", { raw: true })
+    ).resolves.toEqual(page);
+  });
+
+  it("continues to reject failed Java envelopes returned with HTTP 200", async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 500, message: "Upstream rejected the request" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      })
+    );
+
+    await expect(api.get("/user/query/user/info")).rejects.toMatchObject({
+      name: "ApiRequestError",
+      message: "Upstream rejected the request",
+      code: 500,
+    } satisfies Partial<InstanceType<typeof ApiRequestError>>);
+  });
+
   it("prefers detailed message over generic msg on envelope failures", async () => {
     globalThis.fetch = vi.fn().mockResolvedValue(
       new Response(

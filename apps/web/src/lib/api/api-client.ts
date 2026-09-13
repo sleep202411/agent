@@ -292,7 +292,14 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
     const body = await response.json();
     assertRequestActive(signal);
 
-    const isSuccess = body.success === true || body.code === 200 || body.code === "SUCCESS";
+    // Java services use an application-level response envelope even for HTTP
+    // 200, while Nest (/aurora) returns domain JSON directly and expresses
+    // failures with non-2xx HTTP statuses. Do not require Java envelope fields
+    // from a successful Nest response: doing so turns valid payloads such as
+    // `{ items, nextCursor }` into a client-side "Request failed" error.
+    const isNestResponse = path === "/aurora" || path.startsWith("/aurora/");
+    const isSuccess =
+      isNestResponse || body.success === true || body.code === 200 || body.code === "SUCCESS";
     if (!isSuccess) {
       // Java backends return 200 OK with an envelope-level "not authed"
       // code for expired / missing sessions. Sa-Token uses 302 (the
