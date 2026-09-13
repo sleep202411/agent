@@ -3560,45 +3560,46 @@ enum MemberPoolBatchStatus {
 }
 
 model Ip {
+  gameAssociations       IpGameAssociationRevision[]
   stageApplications      IpStageApplication[]
   productionStage        IpProductionStage?
   crewOrigin             IpCrewOrigin?
-  releaseLinks           Json                 @default("[]") @map("release_links") @db.JsonB
+  releaseLinks           Json                        @default("[]") @map("release_links") @db.JsonB
   publicComments         IpPublicComment[]
-  id                     String               @id @default(uuid(7)) @db.Uuid
+  id                     String                      @id @default(uuid(7)) @db.Uuid
   /// Stable public room number, allocated by PostgreSQL for every IP.
-  roomNumber             String               @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
-  status                 IpPublicationStatus  @default(draft)
-  listingVisibility      IpListingVisibility  @default(private) @map("listing_visibility")
-  ageRating              IpAgeRating          @default(general) @map("age_rating")
-  sourceLocale           String               @default("zh-CN") @map("source_locale") @db.VarChar(16)
-  region                 String?              @map("region") @db.VarChar(16)
-  copyrightOwner         String?              @map("copyright_owner") @db.VarChar(160)
-  rightsSummary          Json                 @default("{}") @map("rights_summary") @db.JsonB
-  aiDisclosure           Json                 @default("{}") @map("ai_disclosure") @db.JsonB
-  coverAssetId           String?              @map("cover_asset_id") @db.Uuid
-  trailerAssetId         String?              @map("trailer_asset_id") @db.Uuid
-  createdById            String               @map("created_by_id") @db.VarChar(64)
-  updatedById            String?              @map("updated_by_id") @db.VarChar(64)
+  roomNumber             String                      @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
+  status                 IpPublicationStatus         @default(draft)
+  listingVisibility      IpListingVisibility         @default(private) @map("listing_visibility")
+  ageRating              IpAgeRating                 @default(general) @map("age_rating")
+  sourceLocale           String                      @default("zh-CN") @map("source_locale") @db.VarChar(16)
+  region                 String?                     @map("region") @db.VarChar(16)
+  copyrightOwner         String?                     @map("copyright_owner") @db.VarChar(160)
+  rightsSummary          Json                        @default("{}") @map("rights_summary") @db.JsonB
+  aiDisclosure           Json                        @default("{}") @map("ai_disclosure") @db.JsonB
+  coverAssetId           String?                     @map("cover_asset_id") @db.Uuid
+  trailerAssetId         String?                     @map("trailer_asset_id") @db.Uuid
+  createdById            String                      @map("created_by_id") @db.VarChar(64)
+  updatedById            String?                     @map("updated_by_id") @db.VarChar(64)
   /// Per-IP override of the platform-vs-creator revenue split, in basis points
   /// (0..10000) of each sale that goes to the creator pool. NULL inherits the
   /// global default (ip_commerce_settings key `ip.creator_revenue_share_bps`).
-  creatorRevenueShareBps Int?                 @map("creator_revenue_share_bps")
+  creatorRevenueShareBps Int?                        @map("creator_revenue_share_bps")
   /// Creator-chosen access policy. `member_free` lets active community members
   /// unlock this IP's content for free; non-members still pay the price rule.
-  accessMode             IpAccessMode         @default(points_priced) @map("access_mode")
+  accessMode             IpAccessMode                @default(points_priced) @map("access_mode")
   /// Per-IP override (basis points, 0..10000) of the creator earn-share counted
   /// for this IP when distributing the monthly member pool. NULL inherits the
   /// global default (ip_commerce_settings key `ip.member_free_bps`).
-  memberFreeBps          Int?                 @map("member_free_bps")
-  version                Int                  @default(0)
-  scheduledAt            DateTime?            @map("scheduled_at") @db.Timestamptz(6)
-  publishedAt            DateTime?            @map("published_at") @db.Timestamptz(6)
-  suspendedAt            DateTime?            @map("suspended_at") @db.Timestamptz(6)
-  archivedAt             DateTime?            @map("archived_at") @db.Timestamptz(6)
-  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt              DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  memberFreeBps          Int?                        @map("member_free_bps")
+  version                Int                         @default(0)
+  scheduledAt            DateTime?                   @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt            DateTime?                   @map("published_at") @db.Timestamptz(6)
+  suspendedAt            DateTime?                   @map("suspended_at") @db.Timestamptz(6)
+  archivedAt             DateTime?                   @map("archived_at") @db.Timestamptz(6)
+  createdAt              DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?                   @map("deleted_at") @db.Timestamptz(6)
 
   coverAsset      MediaAsset?     @relation("IpCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
   trailerAsset    MediaAsset?     @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
@@ -8392,30 +8393,31 @@ enum WorldModelTravelStatus {
 }
 
 model StoryProject {
-  id                         String               @id @default(uuid(7)) @db.Uuid
-  workspaceId                String               @map("workspace_id") @db.Uuid
-  frameProfile               StoryFrameProfile    @map("frame_profile")
-  durationPreset             StoryDurationPreset? @map("duration_preset")
+  gameAssociations           IpGameAssociationRevision[]
+  id                         String                      @id @default(uuid(7)) @db.Uuid
+  workspaceId                String                      @map("workspace_id") @db.Uuid
+  frameProfile               StoryFrameProfile           @map("frame_profile")
+  durationPreset             StoryDurationPreset?        @map("duration_preset")
   /// Stable catalog slug shown to creators and carried over the wire.
-  visualStyle                String?              @map("visual_style") @db.VarChar(128)
+  visualStyle                String?                     @map("visual_style") @db.VarChar(128)
   /// Immutable Skill identity pinned when the creative profile is confirmed.
-  visualStyleSkillId         String?              @map("visual_style_skill_id") @db.Uuid
-  visualStyleSkillVersionId  String?              @map("visual_style_skill_version_id") @db.Uuid
-  creativeProfileConfirmedAt DateTime?            @map("creative_profile_confirmed_at") @db.Timestamptz(6)
-  status                     StoryProjectStatus   @default(active)
-  visibility                 StoryVisibility      @default(private)
-  title                      String               @db.VarChar(160)
-  summary                    String?              @db.Text
-  defaultLocale              String               @default("en-US") @map("default_locale") @db.VarChar(16)
-  coverAssetId               String?              @map("cover_asset_id") @db.Uuid
-  tags                       Json                 @default("[]") @db.JsonB
-  sourceIpId                 String?              @map("source_ip_id") @db.Uuid
-  nextBuildNumber            Int                  @default(1) @map("next_build_number")
-  version                    Int                  @default(0)
-  createdByUserId            String               @map("created_by_user_id") @db.VarChar(64)
-  archivedAt                 DateTime?            @map("archived_at") @db.Timestamptz(6)
-  createdAt                  DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                  DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  visualStyleSkillId         String?                     @map("visual_style_skill_id") @db.Uuid
+  visualStyleSkillVersionId  String?                     @map("visual_style_skill_version_id") @db.Uuid
+  creativeProfileConfirmedAt DateTime?                   @map("creative_profile_confirmed_at") @db.Timestamptz(6)
+  status                     StoryProjectStatus          @default(active)
+  visibility                 StoryVisibility             @default(private)
+  title                      String                      @db.VarChar(160)
+  summary                    String?                     @db.Text
+  defaultLocale              String                      @default("en-US") @map("default_locale") @db.VarChar(16)
+  coverAssetId               String?                     @map("cover_asset_id") @db.Uuid
+  tags                       Json                        @default("[]") @db.JsonB
+  sourceIpId                 String?                     @map("source_ip_id") @db.Uuid
+  nextBuildNumber            Int                         @default(1) @map("next_build_number")
+  version                    Int                         @default(0)
+  createdByUserId            String                      @map("created_by_user_id") @db.VarChar(64)
+  archivedAt                 DateTime?                   @map("archived_at") @db.Timestamptz(6)
+  createdAt                  DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace               Workspace                         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   cover                   MediaAsset?                       @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
@@ -9485,6 +9487,7 @@ model StoryExperienceDraftRelease {
 /// of silently re-serving the previous chapter set — while re-running the same
 /// candidate converges on this row. Java remains the only publication authority.
 model StoryExperienceGameRelease {
+  gameAssociations    IpGameAssociationRevision[]
   id                  String                           @id @default(uuid(7)) @db.Uuid
   storyProjectId      String                           @map("story_project_id") @db.Uuid
   gameId              String                           @map("game_id") @db.VarChar(160)
@@ -10119,4 +10122,25 @@ model CrewTrustAppeal {
 
   @@index([taskId, userId, createdAt(sort: Desc), id(sort: Desc)], map: "crew_trust_appeal_history")
   @@map("crew_trust_appeals")
+}
+
+/// Explicit ownership-verified associations; sourceIpId is never imported.
+model IpGameAssociationRevision {
+  gameId        String                     @map("game_id") @db.Uuid
+  version       Int
+  ipId          String                     @map("ip_id") @db.Uuid
+  releaseId     String                     @map("release_id") @db.Uuid
+  ownerMemberId String                     @map("owner_member_id") @db.Uuid
+  actorId       String                     @map("actor_id") @db.VarChar(64)
+  active        Boolean
+  requestId     String                     @map("request_id") @db.Uuid
+  createdAt     DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  game          StoryProject               @relation(fields: [gameId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ip            Ip                         @relation(fields: [ipId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  release       StoryExperienceGameRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@id([gameId, version])
+  @@unique([gameId, requestId])
+  @@index([ipId, gameId, version(sort: Desc)], map: "ip_game_association_ip")
+  @@map("ip_game_association_revisions")
 }

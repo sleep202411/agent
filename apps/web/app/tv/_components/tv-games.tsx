@@ -9,6 +9,8 @@ import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { parseTvGames, type TvGameKind } from "../_hooks/tv-games";
 
+import { GameIpLink } from "./game-ip-link";
+
 export function TvGames() {
   const { user } = useCurrentUser();
   return <GameCatalog key={user?.id ?? "guest"} account={user?.id ?? "guest"} />;
@@ -87,6 +89,7 @@ function GameCatalog({ account }: { account: string }) {
                 {t("open")}
               </Link>
             </div>
+            <GameIpLink gameKey={game.id} />
             <iframe
               key={game.id}
               src={localizePath(game.href, locale)}

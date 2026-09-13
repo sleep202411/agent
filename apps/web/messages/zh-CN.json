@@ -9828,5 +9828,18 @@
     "cancel": "取消",
     "refresh": "刷新队列",
     "history": "包括已审核申诉"
+  },
+  "ipGameAssociations": {
+    "title": "关联游戏",
+    "description": "将您拥有的已确认上线 Story 游戏关联至此 IP。您需要此 IP 的编辑权限及当前游戏所有权；仅通过其他系统发布的游戏不在列表中。",
+    "loading": "正在加载本人游戏…",
+    "empty": "暂无符合条件的本人游戏。",
+    "elsewhere": "已关联其他 IP",
+    "link": "关联游戏",
+    "unlink": "解除关联",
+    "refresh": "刷新",
+    "retry": "重试",
+    "more": "加载更多",
+    "viewIp": "查看此游戏的 IP"
   }
 }

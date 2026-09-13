@@ -1,3 +1,7 @@
+import {
+  IpGameAssociationController,
+  IpGameAssociationService,
+} from './ip-game-associations';
 import { ViewerAssistanceController } from './viewer-assistance.controller';
 import {
   IpStageApplicationsService,
@@ -47,6 +51,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    IpGameAssociationController,
     ViewerAssistanceController,
     IpStageApplicationsController,
     IpStageApplicationsAdminController,
@@ -64,6 +69,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorTrustController,
   ],
   providers: [
+    IpGameAssociationService,
     IpStageApplicationsService,
     CrewAuthorizationService,
     IpCrewOriginService,

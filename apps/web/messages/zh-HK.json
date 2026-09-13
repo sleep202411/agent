@@ -9828,5 +9828,18 @@
     "cancel": "取消",
     "refresh": "重新整理佇列",
     "history": "包括已審核申訴"
+  },
+  "ipGameAssociations": {
+    "title": "關聯遊戲",
+    "description": "將您擁有的已確認上線 Story 遊戲關聯至此 IP。您需要此 IP 的編輯權限及目前遊戲所有權；僅透過其他系統發佈的遊戲不在清單中。",
+    "loading": "正在載入本人遊戲…",
+    "empty": "暫無符合條件的本人遊戲。",
+    "elsewhere": "已關聯其他 IP",
+    "link": "關聯遊戲",
+    "unlink": "解除關聯",
+    "refresh": "重新整理",
+    "retry": "重試",
+    "more": "載入更多",
+    "viewIp": "查看此遊戲的 IP"
   }
 }

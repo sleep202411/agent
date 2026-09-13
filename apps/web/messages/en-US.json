@@ -9828,5 +9828,18 @@
     "cancel": "Cancel",
     "refresh": "Refresh queue",
     "history": "Include reviewed appeals"
+  },
+  "ipGameAssociations": {
+    "title": "Linked games",
+    "description": "Link a confirmed Story game you own to this IP. You need editing access to this IP and current game ownership. Games published only through other systems are not listed.",
+    "loading": "Loading owned games…",
+    "empty": "No eligible owned games.",
+    "elsewhere": "Linked to another IP",
+    "link": "Link game",
+    "unlink": "Unlink game",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "more": "Load more",
+    "viewIp": "View this game's IP"
   }
 }
