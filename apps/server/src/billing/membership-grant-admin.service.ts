@@ -9,7 +9,6 @@ import {
   BillingSubjectType,
   EntitlementGrantStatus,
   WorkspaceStatus,
-  WorkspaceType,
   type EntitlementGrant,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
@@ -177,18 +176,12 @@ export class MembershipGrantAdminService {
 
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: input.subjectId, deletedAt: null },
-      select: { type: true, status: true },
+      select: { status: true },
     });
     if (!workspace) {
       throw new NotFoundException({
         code: 'WORKSPACE_NOT_FOUND',
         msg: 'Workspace not found.',
-      });
-    }
-    if (workspace.type !== WorkspaceType.team) {
-      throw new ConflictException({
-        code: 'TEAM_PLAN_REQUIRES_TEAM_WORKSPACE',
-        msg: 'Team plans can only be granted to team workspaces.',
       });
     }
     if (workspace.status !== WorkspaceStatus.active) {

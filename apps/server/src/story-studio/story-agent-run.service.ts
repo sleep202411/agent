@@ -307,6 +307,7 @@ interface ClaimedRunRow {
 }
 
 export interface StoryAgentAuthoringJob {
+  modelId?: string;
   runId: string;
   projectId: string;
   chapterId: string;
@@ -3184,9 +3185,27 @@ export class StoryAgentRunService {
       }
       document = { id: row.id, name: row.name, text: row.text };
     }
+    const registration =
+      await this.prisma.agentOsExternalHandoffRegistration.findUnique({
+        where: { storyAgentRunId: run.id },
+        select: {
+          continuationPlan: true,
+          sourceAgentRun: { select: { modelProfileId: true } },
+        },
+      });
+    const mobilePlan = StoryProductionContinuationPlanSchema.safeParse(
+      registration?.continuationPlan,
+    );
+    const modelId =
+      registration &&
+      mobilePlan.success &&
+      mobilePlan.data.experience === 'mobile_h5'
+        ? registration.sourceAgentRun.modelProfileId
+        : undefined;
     return {
       kind: 'job',
       job: {
+        ...(modelId ? { modelId } : {}),
         runId: run.id,
         projectId: run.storyProjectId,
         chapterId: run.storyChapterId,

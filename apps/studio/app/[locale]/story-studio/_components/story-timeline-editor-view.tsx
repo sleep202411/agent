@@ -304,7 +304,7 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
 
   const canEdit = projectCanEdit;
   const allowGeneration = projectCanEdit;
-  const canImportMedia = canEdit && Boolean(workbenchQuery.workspaceId);
+  const canImportMedia = canEdit;
 
   const addClip = () =>
     addMutation.mutate({
@@ -429,7 +429,6 @@ export function StoryTimelineEditorView({ projectId }: { projectId: string }) {
               sequenceId={selectedSequence.id}
               projectId={projectId}
               chapterId={chapterId}
-              workspaceId={workbenchQuery.workspaceId}
               editable={canEdit}
               allowGeneration={allowGeneration}
               canImportMedia={canImportMedia}
@@ -1002,7 +1001,6 @@ function TimelineClipInspector({
   sequenceId,
   projectId,
   chapterId,
-  workspaceId,
   editable,
   allowGeneration,
   canImportMedia,
@@ -1011,7 +1009,6 @@ function TimelineClipInspector({
   sequenceId: string;
   projectId: string;
   chapterId: string;
-  workspaceId: string | null;
   editable: boolean;
   allowGeneration: boolean;
   canImportMedia: boolean;
@@ -1164,13 +1161,13 @@ function TimelineClipInspector({
     onState: (state: StoryCandidateAssetUploadState) => void,
     signal: AbortSignal
   ) => {
-    if (!workspaceId || !canImportMedia) {
+    if (!canImportMedia) {
       throw new Error(t("inspectorForm.mediaUnavailable"));
     }
     const uploadKind = storyTimelineUploadKind(file);
     const uploaded = await uploadFileViaSignedUrl(file, {
       kind: uploadKind === "video" ? "ai_reference_video" : "ai_reference_image",
-      workspaceId,
+      scope: { storyProjectId: projectId },
       onProgress: (progress) => onState({ stage: "uploading", progress }),
       signal,
     });

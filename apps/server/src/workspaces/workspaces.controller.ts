@@ -13,7 +13,7 @@ import { ZodValidationPipe } from '../common/zod.pipe';
 import {
   ArchiveProjectSchema,
   CreateProjectSchema,
-  CreateTeamWorkspaceSchema,
+  CreateWorkspaceSchema,
   DeleteWorkspaceSchema,
   ProjectParamsSchema,
   UpdateProjectSchema,
@@ -21,7 +21,7 @@ import {
   WorkspaceParamsSchema,
   type ArchiveProjectInput,
   type CreateProjectInput,
-  type CreateTeamWorkspaceInput,
+  type CreateWorkspaceInput,
   type DeleteWorkspaceInput,
   type ProjectParams,
   type UpdateProjectInput,
@@ -40,28 +40,29 @@ export class WorkspacesController {
   }
 
   /**
-   * Idempotent personal workspace bootstrap — called once when the user
+   * Idempotent default workspace bootstrap — called once when the user
    * first lands on the FizzStudio page. Safe to call multiple times:
    * returns the existing workspace if it already exists.
    * Intentionally a POST (not GET) because it has a write side effect.
    */
-  @Post('workspaces/personal/ensure')
-  async ensurePersonalWorkspace(@CurrentUser() user: AuthUser) {
+  // Installed mobile clients still use the former bootstrap URL.
+  @Post(['workspaces/default/ensure', 'workspaces/personal/ensure'])
+  async ensureDefaultWorkspace(@CurrentUser() user: AuthUser) {
     return {
       code: 200,
-      data: await this.workspaces.ensureAndReturnPersonalWorkspace(user),
+      data: await this.workspaces.ensureAndReturnDefaultWorkspace(user),
     };
   }
 
-  @Post('workspaces/team')
-  async createTeamWorkspace(
+  @Post('workspaces')
+  async createWorkspace(
     @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(CreateTeamWorkspaceSchema))
-    body: CreateTeamWorkspaceInput,
+    @Body(new ZodValidationPipe(CreateWorkspaceSchema))
+    body: CreateWorkspaceInput,
   ) {
     return {
       code: 200,
-      data: await this.workspaces.createTeamWorkspace(user, body),
+      data: await this.workspaces.createWorkspace(user, body),
     };
   }
 
@@ -87,7 +88,7 @@ export class WorkspacesController {
   ) {
     return {
       code: 200,
-      data: await this.workspaces.deleteTeamWorkspace(
+      data: await this.workspaces.deleteWorkspace(
         user,
         params.workspaceId,
         body,

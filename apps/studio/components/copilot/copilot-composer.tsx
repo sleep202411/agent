@@ -5,6 +5,7 @@ import { IconArrowUp, IconPlayerStopFilled } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 
 export function CopilotComposer({
+  readOnly = false,
   value,
   onChange,
   onSubmit,
@@ -27,6 +28,7 @@ export function CopilotComposer({
   appearance = "default",
   className,
 }: {
+  readOnly?: boolean;
   value: string;
   onChange: (value: string) => void;
   onSubmit: () => void;
@@ -89,7 +91,8 @@ export function CopilotComposer({
     textareaRef.current?.focus();
   }, [focusRequestKey]);
 
-  const canSend = (Boolean(value.trim()) || canSendWithoutText) && !sendDisabled && !busy;
+  const canSend =
+    !readOnly && (Boolean(value.trim()) || canSendWithoutText) && !sendDisabled && !busy;
   /**
    * Stacked layout (prompt on top, toolbar bottom) when there are toolbar
    * affordances — attach / mode / model / inline chips. A bare composer
@@ -99,6 +102,7 @@ export function CopilotComposer({
 
   const textarea = (className?: string, style?: React.CSSProperties) => (
     <textarea
+      readOnly={readOnly}
       ref={textareaRef}
       data-agent-composer-input="true"
       id={inputId}

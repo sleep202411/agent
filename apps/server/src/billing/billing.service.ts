@@ -37,7 +37,6 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
   WalletTransactionStatus,
-  WorkspaceType,
   WorkspaceStatus,
   WorkspaceMemberRole,
   type BillingOrder,
@@ -87,8 +86,6 @@ import type {
   CreateAdminMembershipPlanInput,
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
-  CreateAdminUserWalletCreditInput,
-  GetAdminUserWalletCreditQueryInput,
   CreateAdminWorkspaceWalletCreditInput,
   GetAdminWorkspaceWalletCreditQueryInput,
   ListAdminWorkspacesQueryInput,
@@ -421,17 +418,7 @@ export class BillingService {
       // Project invitations already maintain an active workspace roster entry.
       // Presence accepts project_only without granting workspace-wide access.
       await this.permissions.requireWorkspacePresence(user.userId, workspaceId);
-      const workspace = await this.prisma.workspace.findUniqueOrThrow({
-        where: { id: workspaceId },
-        select: { type: true },
-      });
-      scope =
-        workspace.type === WorkspaceType.team
-          ? { ownerType: WalletOwnerType.workspace, ownerId: workspaceId }
-          : await this.walletLedgerScope(
-              user,
-              WalletCurrencyType.compute_point,
-            );
+      scope = { ownerType: WalletOwnerType.workspace, ownerId: workspaceId };
     } else {
       scope = await this.walletLedgerScope(
         user,
@@ -711,7 +698,7 @@ export class BillingService {
     if (!workspaceId) {
       throw new BadRequestException({
         code: 'WORKSPACE_REQUIRED',
-        msg: 'Member usage is only available for a team workspace.',
+        msg: 'Choose a workspace to view member usage.',
       });
     }
     // Per-member consumption is sensitive — restrict to workspace admins/owners.
@@ -848,7 +835,7 @@ export class BillingService {
 
     // compute_point is uniformly workspace-owned: every member may READ a
     // workspace's balance (viewer); with no workspace in context, fall back to the
-    // caller's personal-workspace pot. Recharge stays billing-role gated at its own
+    // caller's default-workspace pot. Recharge stays billing-role gated at its own
     // call site (resolveTopupSubject).
     if (workspaceId) {
       const membership = await this.permissions.requireWorkspaceRole(
@@ -862,20 +849,23 @@ export class BillingService {
       };
     }
 
-    const personal = await this.prisma.workspace.findFirst({
+    const defaultWorkspace = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: user.userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: user.userId,
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (personal) {
-      return { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
+    if (defaultWorkspace) {
+      return {
+        ownerType: WalletOwnerType.workspace,
+        ownerId: defaultWorkspace.id,
+      };
     }
-    // No personal workspace yet → no compute pot; an owner that yields an empty
-    // balance rather than throwing.
-    return { ownerType: WalletOwnerType.user, ownerId: user.userId };
+    throw new ConflictException({
+      code: 'DEFAULT_WORKSPACE_REQUIRED',
+      msg: 'Open the studio to initialize your default workspace.',
+    });
   }
 
   async listMembershipPlans(query: ListMembershipPlansQuery) {
@@ -1526,168 +1516,13 @@ export class BillingService {
     return this.getAdminWalletAccountDetail(account.id);
   }
 
-  async createAdminUserWalletCredit(
-    adminId: string,
-    input: CreateAdminUserWalletCreditInput,
-  ) {
-    const inputUserId = input.userId.trim();
-    const resolvedUserId =
-      input.idFormat === 'raw' ? inputUserId : decodeUserId(inputUserId);
-    if (!/^\d{1,18}$/.test(resolvedUserId)) {
-      throw new BadRequestException({
-        code: 'INVALID_USER_ID',
-        msg: 'User id must resolve to a numeric Java user id.',
-      });
-    }
-
-    // compute_point is workspace-owned, so an admin compute grant lands in the
-    // user's personal-workspace pot (the wallet they read from + spend); only
-    // community_point stays user-owned.
-    const currency = input.currency as WalletCurrencyType;
-    let owner: { ownerType: WalletOwnerType; ownerId: string };
-    if (currency === WalletCurrencyType.compute_point) {
-      const personal = await this.prisma.workspace.findFirst({
-        where: {
-          ownerUserId: resolvedUserId,
-          type: WorkspaceType.personal,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      if (!personal) {
-        throw new ConflictException({
-          code: 'PERSONAL_WORKSPACE_MISSING',
-          msg: 'User has no personal workspace yet; cannot grant compute points.',
-        });
-      }
-      owner = { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
-    } else {
-      owner = { ownerType: WalletOwnerType.user, ownerId: resolvedUserId };
-    }
-
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          currency,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        currency,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
-
-    return this.createAdminWalletAdjustment(adminId, account.id, {
-      amount: input.amount,
-      grantType: input.grantType,
-      expiresAt: input.expiresAt,
-      reason: input.reason,
-      idempotencyKey: input.idempotencyKey,
-      metadata: {
-        ...input.metadata,
-        inputUserId,
-        idFormat: input.idFormat,
-        resolvedUserId,
-        inputWasDecoded:
-          input.idFormat !== 'raw' && inputUserId !== resolvedUserId,
-        balanceKind: input.balanceKind,
-      },
-    });
-  }
-
-  /**
-   * Read-only compute_point balance for a userId — powers the admin 加积分
-   * dialog's "current balance" line. Mirrors createAdminUserWalletCredit's
-   * resolution (compute_point lives in the user's personal-workspace pot) but
-   * does NOT upsert / adjust / audit: it only reads. Returns "0" + hasWallet
-   * false when the workspace or wallet doesn't exist yet.
-   */
-  async getAdminUserWalletBalance(input: GetAdminUserWalletCreditQueryInput) {
-    const inputUserId = input.userId.trim();
-    const resolvedUserId =
-      input.idFormat === 'raw' ? inputUserId : decodeUserId(inputUserId);
-    if (!/^\d{1,18}$/.test(resolvedUserId)) {
-      throw new BadRequestException({
-        code: 'INVALID_USER_ID',
-        msg: 'User id must resolve to a numeric Java user id.',
-      });
-    }
-
-    const currency = input.currency as WalletCurrencyType;
-    const balanceKind = WalletBalanceKind.consumable;
-    let owner: { ownerType: WalletOwnerType; ownerId: string } | null = null;
-    if (currency === WalletCurrencyType.compute_point) {
-      const personal = await this.prisma.workspace.findFirst({
-        where: {
-          ownerUserId: resolvedUserId,
-          type: WorkspaceType.personal,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      if (personal) {
-        owner = { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
-      }
-    } else {
-      owner = { ownerType: WalletOwnerType.user, ownerId: resolvedUserId };
-    }
-
-    let account = owner
-      ? await this.prisma.walletAccount.findUnique({
-          where: {
-            ownerType_ownerId_currency_balanceKind: {
-              ownerType: owner.ownerType,
-              ownerId: owner.ownerId,
-              currency,
-              balanceKind,
-            },
-          },
-          select: { id: true, availableBalance: true },
-        })
-      : null;
-    // Sweep lapsed credit grants so the reported balance excludes expired
-    // credits (grant-backed accounts only; best-effort).
-    if (account && isGrantBackedCurrencyKind(currency, balanceKind)) {
-      await this.walletLedger
-        .expireLapsedGrants(account.id)
-        .catch(() => undefined);
-      account = await this.prisma.walletAccount.findUnique({
-        where: { id: account.id },
-        select: { id: true, availableBalance: true },
-      });
-    }
-
-    return {
-      resolvedUserId,
-      currency,
-      balanceKind,
-      availableBalance: account ? account.availableBalance.toString() : '0',
-      hasWallet: Boolean(account),
-    };
-  }
-
-  /**
-   * Credit (or debit) a WORKSPACE's compute_point pot directly by workspaceId —
-   * the only admin path that can fund a TEAM workspace. Ensures the pot exists
-   * (workspaces always own exactly one compute_point/consumable account) and
-   * routes through createAdminWalletAdjustment, which owns the grant / balance /
-   * idempotency / audit semantics. Rejects deleted or non-active workspaces so
-   * funds never land in an unreachable pot.
-   */
   async createAdminWorkspaceWalletCredit(
     adminId: string,
     input: CreateAdminWorkspaceWalletCreditInput,
   ) {
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: input.workspaceId, deletedAt: null },
-      select: { id: true, name: true, type: true, status: true },
+      select: { id: true, name: true, status: true },
     });
     if (!workspace) {
       throw new NotFoundException({
@@ -1732,14 +1567,12 @@ export class BillingService {
         subject: 'workspace',
         workspaceId: workspace.id,
         workspaceName: workspace.name,
-        workspaceType: workspace.type,
       },
     });
   }
 
   /**
-   * Read-only compute_point balance for a single workspace pot (team or
-   * personal). Sweeps lapsed grants first so the number excludes expired credits.
+   * Read-only compute_point balance for a workspace. Sweeps lapsed grants first so the number excludes expired credits.
    */
   async getAdminWorkspaceWalletBalance(
     input: GetAdminWorkspaceWalletCreditQueryInput,
@@ -1749,7 +1582,6 @@ export class BillingService {
       select: {
         id: true,
         name: true,
-        type: true,
         status: true,
         ownerUserId: true,
       },
@@ -1792,7 +1624,6 @@ export class BillingService {
       workspace: {
         id: workspace.id,
         name: workspace.name,
-        type: workspace.type,
         status: workspace.status,
         ownerUserId: workspace.ownerUserId,
       },
@@ -1804,17 +1635,12 @@ export class BillingService {
   }
 
   /**
-   * Search workspaces for the admin team-wallet picker. Defaults to team
-   * workspaces; `query` matches id / name (case-insensitive) / ownerUserId.
+   * Search all workspaces for the admin wallet picker; `query` matches id / name (case-insensitive) / ownerUserId.
    * Returns each workspace's current compute_point balance so the operator can
    * pick the right pot without a second round-trip.
    */
   async listAdminWorkspaces(input: ListAdminWorkspacesQueryInput) {
     const where: Prisma.WorkspaceWhereInput = { deletedAt: null };
-    if (input.type !== 'all') {
-      where.type =
-        input.type === 'team' ? WorkspaceType.team : WorkspaceType.personal;
-    }
     const query = input.query?.trim();
     if (query) {
       // ownerUserId is stored raw; the operator may type the raw id, or paste
@@ -1865,11 +1691,12 @@ export class BillingService {
       select: {
         id: true,
         name: true,
-        type: true,
         status: true,
         ownerUserId: true,
         createdAt: true,
-        _count: { select: { members: true } },
+        _count: {
+          select: { members: { where: { status: 'active', removedAt: null } } },
+        },
         // Only that user's own membership row, so each workspace can say what
         // they are in it (owner / admin / member).
         ...(rawRelatedUserId
@@ -1885,14 +1712,11 @@ export class BillingService {
     });
 
     const accounts = workspaces.length
-      ? await this.prisma.walletAccount.findMany({
-          where: {
-            ownerType: WalletOwnerType.workspace,
-            ownerId: { in: workspaces.map((workspace) => workspace.id) },
-            currency: WalletCurrencyType.compute_point,
-            balanceKind: WalletBalanceKind.consumable,
-          },
-          select: { ownerId: true, availableBalance: true, heldBalance: true },
+      ? await this.readWalletAccounts({
+          ownerType: WalletOwnerType.workspace,
+          ownerId: { in: workspaces.map((workspace) => workspace.id) },
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
         })
       : [];
     const balanceByWorkspace = new Map(
@@ -1907,7 +1731,6 @@ export class BillingService {
         return {
           id: workspace.id,
           name: workspace.name,
-          type: workspace.type,
           status: workspace.status,
           // Encoded public id — the raw owner id stays server-side.
           ownerUserId: encodeUserId(workspace.ownerUserId),
@@ -3676,7 +3499,7 @@ export class BillingService {
     // The arbitrary-amount recharge funds either the community wallet (default,
     // user-only) or the compute wallet (which may target a team workspace). Each
     // currency has its own hidden anchor SKU + order type; the workspace is only
-    // honored for compute (community recharge stays personal).
+    // honored for compute (community recharge stays user-owned).
     const isCompute = input.currency === WalletCurrencyType.compute_point;
     const anchorCode = isCompute
       ? COMPUTE_RECHARGE_ITEM_CODE
@@ -4007,7 +3830,7 @@ export class BillingService {
     }
 
     // Authz: workspace subscriptions need the workspace billing role (same as
-    // buying); personal subscriptions are cancelable only by their owner.
+    // buying); user subscriptions are cancelable only by their owner.
     if (subscription.subjectType === BillingSubjectType.workspace) {
       if (!subscription.workspaceId) {
         throw new ConflictException({
@@ -5438,7 +5261,7 @@ export class BillingService {
    * Resolve the wallet account owner for an order's credit / refund-reversal.
    * compute_point is workspace-owned, so a user-subject order (individual
    * membership, legacy top-up, or a compute pack bought via generic checkout)
-   * credits/reverses the buyer's PERSONAL-workspace pot — the wallet they read
+   * credits/reverses the buyer's default-workspace pot — the wallet they read
    * from and spend — never a dead user-owned account. community_point stays
    * user-owned. A workspace-subject order uses its workspace directly. Single
    * chokepoint so every fulfillment/refund path stays consistent with
@@ -5454,20 +5277,22 @@ export class BillingService {
     }
     if (currency === WalletCurrencyType.compute_point) {
       // user-subject order → subjectId is the buyer's userId.
-      const personal = await tx.workspace.findFirst({
+      const defaultWorkspace = await tx.workspace.findFirst({
         where: {
-          ownerUserId: order.subjectId,
-          type: WorkspaceType.personal,
+          defaultForUserId: order.subjectId,
           deletedAt: null,
         },
         select: { id: true },
       });
-      if (personal) {
-        return { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
+      if (defaultWorkspace) {
+        return {
+          ownerType: WalletOwnerType.workspace,
+          ownerId: defaultWorkspace.id,
+        };
       }
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'Cannot place compute credit: the order owner has no personal workspace.',
+        code: 'DEFAULT_WORKSPACE_MISSING',
+        msg: 'Cannot place compute credit: the order owner has no default workspace.',
       });
     }
     return { ownerType: WalletOwnerType.user, ownerId: order.subjectId };
@@ -6915,7 +6740,7 @@ export class BillingService {
   ): Promise<string | null> {
     if (plan.includedComputeCredits <= 0n) return null;
     // compute_point is workspace-owned: an individual (user-subject) membership's
-    // included credits land in the buyer's personal-workspace pot, not a dead
+    // included credits land in the buyer's default-workspace pot, not a dead
     // user-owned account.
     const owner = await this.resolveOrderWalletOwnerTx(
       tx,
@@ -7170,7 +6995,7 @@ export class BillingService {
     if (!grantCurrency || !grantPerUnit) {
       return null;
     }
-    // Route compute_point grants to the workspace pot (the buyer's personal
+    // Route compute_point grants to the workspace pot (the buyer's default
     // workspace for a user-subject order); community_point stays user-owned.
     const owner = await this.resolveOrderWalletOwnerTx(
       tx,
@@ -7428,11 +7253,9 @@ export class BillingService {
   /**
    * Resolve the wallet owner for a top-up / recharge order. Unlike
    * {@link resolveCheckoutSubject} this is driven by the REQUEST (an optional
-   * workspaceId), not the price subject — a compute_point pack is a user-subject
-   * catalog SKU that can fund either the caller's own wallet or, when a
-   * workspaceId is supplied, a team's shared wallet. Crediting a team requires
-   * the billing role; the fulfillment path keys the wallet credit off the
-   * resulting order.subjectType.
+   * workspaceId), not the price subject. Compute credits fund the explicitly
+   * selected workspace (billing role required), or the caller's default
+   * workspace. Fulfillment uses the resulting workspace order subject.
    */
   private async resolveTopupSubject(
     user: AuthUser,
@@ -7445,7 +7268,7 @@ export class BillingService {
     // compute_point is uniformly workspace-owned, so every top-up funds a
     // workspace pot — the one its members read from and spend against. An explicit
     // workspace requires the billing role; with none, fund the caller's own
-    // personal-workspace pot (they own it, so no extra gate). The fulfillment
+    // default-workspace pot (they own it, so no extra gate). The fulfillment
     // routes the grant off order.subjectType === workspace.
     if (workspaceId) {
       await this.permissions.requireWorkspaceRole(
@@ -7459,24 +7282,23 @@ export class BillingService {
         workspaceId,
       };
     }
-    const personal = await this.prisma.workspace.findFirst({
+    const defaultWorkspace = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: user.userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: user.userId,
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (!personal) {
+    if (!defaultWorkspace) {
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'No personal workspace to fund. Open the studio once to initialize it.',
+        code: 'DEFAULT_WORKSPACE_MISSING',
+        msg: 'No default workspace to fund. Open the studio once to initialize it.',
       });
     }
     return {
       subjectType: BillingSubjectType.workspace,
-      subjectId: personal.id,
-      workspaceId: personal.id,
+      subjectId: defaultWorkspace.id,
+      workspaceId: defaultWorkspace.id,
     };
   }
 

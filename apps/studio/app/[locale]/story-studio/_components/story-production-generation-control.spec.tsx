@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act } from "react";
+import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -107,6 +107,70 @@ describe("StoryProductionGenerationControl", () => {
     await renderControl(assetTarget(null, "archived"));
 
     expect(button("generate")).toBeNull();
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
+  });
+
+  it("allows a fresh storyboard generation after a non-retryable provider configuration error", async () => {
+    const failed = generation({ kind: "storyboard_clip", id: "clip-1", sequenceId: "sequence-1" });
+    failed.aiJob.status = "failed";
+    failed.aiJob.error = { message: "BAILIAN_API_KEY unset", retryable: false };
+    apiMocks.getClip.mockResolvedValue(failed);
+    apiMocks.createClip.mockResolvedValue({ ...failed, id: "generation-2" });
+    await renderControl(clipTarget(latest(failed)));
+    expect(button("retry")).toBeNull();
+    expect(button("generate")?.disabled).toBe(false);
+    await act(async () => button("generate")?.click());
+    expect(apiMocks.createClip).toHaveBeenCalledOnce();
+    expect(apiMocks.retryClip).not.toHaveBeenCalled();
+  });
+
+  it("keeps an incomplete asset's inline action visible with its reason", async () => {
+    await renderControl(assetTarget(null), true, null, {
+      layout: "inline",
+      allowConcurrent: true,
+      generationDisabledReason: "Generate the character image first.",
+    });
+    const generate = container.querySelector<HTMLButtonElement>('button[aria-label="generate"]');
+    expect(generate?.disabled).toBe(true);
+    expect(container.textContent).toContain("Generate the character image first.");
+    await act(async () => generate?.click());
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
+  });
+
+  it("waits for pending edits to save and generates from the returned version", async () => {
+    let finishSave!: (version: number) => void;
+    const prepareGeneration = vi.fn(
+      () =>
+        new Promise<number>((resolve) => {
+          finishSave = resolve;
+        })
+    );
+    const accepted = generation({ kind: "asset_spec", id: "asset-1", sequenceId: null });
+    apiMocks.createAsset.mockResolvedValue(accepted);
+    apiMocks.getAsset.mockResolvedValue(accepted);
+    await renderControl(assetTarget(null), true, null, {
+      submitGeneration: async (submit) => submit(await prepareGeneration()),
+    });
+    await act(async () => button("generate")?.click());
+    expect(prepareGeneration).toHaveBeenCalledOnce();
+    expect(apiMocks.createAsset).not.toHaveBeenCalled();
+    await act(async () => finishSave(4));
+    expect(apiMocks.createAsset).toHaveBeenCalledWith(
+      "project-1",
+      "chapter-1",
+      "asset-1",
+      expect.any(String),
+      { expectedVersion: 4, purpose: "primary" }
+    );
+  });
+
+  it("does not submit a paid run when saving the edits fails", async () => {
+    await renderControl(assetTarget(null), true, null, {
+      submitGeneration: async () => {
+        throw new Error("Asset changed. Reload before saving.");
+      },
+    });
+    await act(async () => button("generate")?.click());
     expect(apiMocks.createAsset).not.toHaveBeenCalled();
   });
 
@@ -479,7 +543,8 @@ describe("StoryProductionGenerationControl", () => {
   async function renderControl(
     target: ReturnType<typeof assetTarget> | ReturnType<typeof clipTarget>,
     allowGeneration = true,
-    selectedMedia: StoryCreativeMediaVersion | null = null
+    selectedMedia: StoryCreativeMediaVersion | null = null,
+    options: Partial<ComponentProps<typeof StoryProductionGenerationControl>> = {}
   ) {
     await act(async () => {
       root.render(
@@ -493,6 +558,7 @@ describe("StoryProductionGenerationControl", () => {
             label="Production target"
             selectedMedia={selectedMedia}
             allowGeneration={allowGeneration}
+            {...options}
           />
         </QueryClientProvider>
       );

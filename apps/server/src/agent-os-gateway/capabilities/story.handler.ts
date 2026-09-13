@@ -460,7 +460,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           },
           args.dispatchMode === 'sequential' ||
             input.workbenchContext?.experience === 'mobile_h5'
-            ? { dispatchMode: 'sequential' }
+            ? {
+                dispatchMode: 'sequential',
+                ...(input.workbenchContext?.experience === 'mobile_h5'
+                  ? { experience: 'mobile_h5' as const }
+                  : {}),
+              }
             : undefined,
         );
       }
@@ -518,7 +523,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           },
           args.dispatchMode === 'sequential' ||
             input.workbenchContext?.experience === 'mobile_h5'
-            ? { dispatchMode: 'sequential' }
+            ? {
+                dispatchMode: 'sequential',
+                ...(input.workbenchContext?.experience === 'mobile_h5'
+                  ? { experience: 'mobile_h5' as const }
+                  : {}),
+              }
             : undefined,
         );
       }

@@ -64,4 +64,36 @@ describe("CopilotComposer committed operation controls", () => {
       container.querySelector('textarea[data-agent-composer-input="true"]')
     );
   });
+  it("blocks sending and editing when the project becomes read-only", async () => {
+    const onSubmit = vi.fn();
+    const render = (readOnly: boolean) =>
+      root.render(
+        <CopilotComposer
+          value="Update the story"
+          onChange={vi.fn()}
+          onSubmit={onSubmit}
+          onStop={vi.fn()}
+          busy={false}
+          readOnly={readOnly}
+          placeholder="Read only"
+          inputLabel="Message"
+          sendLabel="Send"
+          stopLabel="Stop"
+        />
+      );
+    await act(async () => render(false));
+    expect(
+      (container.querySelector('button[aria-label="Send"]') as HTMLButtonElement).disabled
+    ).toBe(false);
+    await act(async () => render(true));
+    const input = container.querySelector("textarea")!;
+    expect(input.readOnly).toBe(true);
+    expect(
+      (container.querySelector('button[aria-label="Send"]') as HTMLButtonElement).disabled
+    ).toBe(true);
+    await act(async () =>
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+    );
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
 });

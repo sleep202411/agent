@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { falError } from './fal-error.mapper';
 import type { FalModelRuntimeConfig } from './fal.types';
 
 const logger = new Logger('FalRequestMapper');
@@ -22,6 +23,7 @@ const NORMALIZERS_BY_FAMILY: Record<string, FalRequestNormalizer> = {
   seedream: normalizeSeedreamRequest,
   'qwen-image-2.0': normalizeQwenImageRequest,
   'flux-2': normalizeFluxImageRequest,
+  'minimax-h3-max': normalizeH3MaxRequest,
 };
 
 export function mapFalProviderRequest(
@@ -47,6 +49,50 @@ export function mapFalProviderRequest(
   const family = policyProviderFamily(config) ?? endpointFamilyFallback(config);
   if (family) NORMALIZERS_BY_FAMILY[family]?.(config, input, body);
   return body;
+}
+
+function normalizeH3MaxRequest(
+  _config: FalModelRuntimeConfig,
+  input: Record<string, unknown>,
+  body: Record<string, unknown>,
+): void {
+  // Official H3 Max OpenAPI requires an integer duration and expansion mode.
+  body.duration = Number(body.duration ?? 5);
+  if (
+    !Number.isInteger(body.duration) ||
+    Number(body.duration) < 5 ||
+    Number(body.duration) > 15
+  ) {
+    throw falError(
+      'VALIDATION_ERROR',
+      'H3 Max duration must be an integer between 5 and 15 seconds.',
+      'H3 Max duration must be an integer between 5 and 15 seconds.',
+    );
+  }
+  body.resolution = input.resolution ?? '768P';
+  body.prompt_expansion_mode = 'balanced';
+  body.enable_safety_checker = true;
+  body.sync_mode = false;
+  for (const kind of ['image', 'video', 'audio']) {
+    const key = `${kind}_urls`;
+    if (Array.isArray(body[key]) && body[key].length > 0) {
+      body[`reference_${key}`] = body[key];
+    }
+    delete body[key];
+  }
+  const referenceCount = ['image', 'video', 'audio'].reduce((count, kind) => {
+    const values = body[`reference_${kind}_urls`];
+    return count + (Array.isArray(values) ? values.length : 0);
+  }, 0);
+  if (referenceCount > 0 && (body.image_url || body.end_image_url)) {
+    throw falError(
+      'VALIDATION_ERROR',
+      'H3 Max cannot mix keyframes with reference media.',
+      'H3 Max cannot mix keyframes with reference media.',
+    );
+  }
+  // Image-to-video derives its canvas from the keyframe, not aspect_ratio.
+  if (body.image_url || body.end_image_url) delete body.aspect_ratio;
 }
 
 function policyProviderFamily(

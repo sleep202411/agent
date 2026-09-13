@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { CURRENT_CELL } from '../../common/region/current-cell';
+import { OUTPUT_STORAGE_PROVIDER } from './output-storage-policy';
 import { AzureBlobStorageService } from './azure-blob-storage.service';
 import { ImmTranscodeService } from './imm-transcode.service';
 import { AliyunOssStorageService } from './oss-storage.service';
@@ -43,24 +43,13 @@ import { OutputStorageService } from './storage.types';
         oss: AliyunOssStorageService,
         s3: S3CompatibleStorageService,
       ) => {
-        const override = (process.env.OUTPUT_STORAGE_PROVIDER ?? '').trim();
-        if (override === 'azure_blob') return azure;
-        if (override === 'aliyun_oss') return oss;
-        if (override === 's3_compatible') {
-          s3.assertConfigured('OUTPUT_STORAGE_PROVIDER=s3_compatible');
-          return s3;
-        }
-        if (override) {
-          throw new Error(
-            `Unknown OUTPUT_STORAGE_PROVIDER "${override}" (expected azure_blob | aliyun_oss | s3_compatible)`,
-          );
-        }
-        // cn stays OSS; every other cell (com / global / local) writes to R2.
-        // Azure remains available for reads of legacy rows and for emergency
-        // env override.
-        if (CURRENT_CELL === 'cn') return oss;
-        s3.assertConfigured(`${CURRENT_CELL} cell default output storage`);
-        return s3;
+        const storage = {
+          azure_blob: azure,
+          aliyun_oss: oss,
+          s3_compatible: s3,
+        }[OUTPUT_STORAGE_PROVIDER];
+        storage.assertConfigured(`Output storage ${OUTPUT_STORAGE_PROVIDER}`);
+        return storage;
       },
       inject: [
         AzureBlobStorageService,

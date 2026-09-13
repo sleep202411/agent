@@ -6,6 +6,6 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["prisma/seed/update-gpt-image-catalog.ts"],
+  "include": ["prisma/seed/update-model-catalog.ts"],
   "exclude": ["node_modules", "dist", "**/*.spec.ts"]
 }

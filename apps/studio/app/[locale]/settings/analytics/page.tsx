@@ -26,7 +26,7 @@ import {
   type FizzAiJobType,
   type FizzAiJobView,
 } from "@/lib/canvas-authoring/generation-api";
-import { EmptyState, PageHeader, Panel, StatCard, TeamBadge } from "../_components/settings-ui";
+import { EmptyState, PageHeader, Panel, StatCard } from "../_components/settings-ui";
 
 interface WalletLedgerData {
   entries?: WalletLedgerEntry[];
@@ -241,13 +241,13 @@ export default function AnalyticsSettingsPage() {
   // member consumption is admin-only (the server enforces it too).
   const membersQuery = useQuery({
     queryKey: ["settings", "analytics", "members", ws?.id],
-    enabled: Boolean(ws?.id) && ws?.type === "team",
+    enabled: Boolean(ws?.id),
     queryFn: () => listWorkspaceMembers(ws!.id),
     staleTime: 20_000,
   });
   const members = membersQuery.data ?? EMPTY_MEMBERS;
   const selfRole = members.find((member) => member.isSelf)?.role;
-  const canViewMemberUsage = ws?.type === "team" && (selfRole === "owner" || selfRole === "admin");
+  const canViewMemberUsage = selfRole === "owner" || selfRole === "admin";
 
   const projects = projectsQuery.data ?? EMPTY_PROJECTS;
   const dailyAxis = useMemo(
@@ -305,11 +305,7 @@ export default function AnalyticsSettingsPage() {
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-6 py-8">
-      <PageHeader
-        title={t("usageAnalytics")}
-        badge={<TeamBadge label={ws.type === "personal" ? t("personal") : t("team")} />}
-        subtitle={t("usageAnalyticsSubtitle")}
-      />
+      <PageHeader title={t("usageAnalytics")} subtitle={t("usageAnalyticsSubtitle")} />
 
       {hasLoadError && (
         <Panel>

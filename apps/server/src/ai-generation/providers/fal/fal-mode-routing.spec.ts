@@ -133,13 +133,15 @@ describe('FalProviderAdapter submit mode routing', () => {
     },
   } as unknown as FalModelRuntimeConfig;
 
-  function buildAdapter() {
+  function buildAdapter(overrides: Partial<FalModelRuntimeConfig> = {}) {
     const submit = jest.fn().mockResolvedValue({ request_id: 'req-1' });
     const configService = {
       config: { enabled: true, pollDelayMs: 5_000 },
     } as unknown as FalConfigService;
     const catalog = {
-      getRuntimeConfig: jest.fn().mockResolvedValue(runtime),
+      getRuntimeConfig: jest
+        .fn()
+        .mockResolvedValue({ ...runtime, ...overrides }),
     } as unknown as FalCatalogService;
     const client = { submit } as unknown as FalClient;
     return {
@@ -169,6 +171,22 @@ describe('FalProviderAdapter submit mode routing', () => {
     // providerJobId must encode the RESOLVED endpoint so poll decodes it.
     expect(result.providerJobId).toBe(`${T2V_ENDPOINT}::req-1`);
     expect(result.providerEndpoint).toBe(T2V_ENDPOINT);
+  });
+
+  it('rejects prompt-only input for an image-only route before calling fal', async () => {
+    const { adapter, submit } = buildAdapter({
+      modeEndpoints: { image_to_video: I2V_ENDPOINT },
+    });
+    await expect(
+      adapter.startGeneration(
+        'kling-motion',
+        { prompt: 'A Storyboard shot', duration: '10' },
+        {} as ProviderGenerationContext,
+      ),
+    ).rejects.toMatchObject({
+      payload: { code: 'VALIDATION_ERROR', retryable: false },
+    });
+    expect(submit).not.toHaveBeenCalled();
   });
 
   it('routes image_url to the image-to-video endpoint', async () => {

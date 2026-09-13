@@ -169,13 +169,13 @@ describe('compute balance access', () => {
     },
   );
 
-  it('uses the caller’s own wallet in another person’s personal workspace', async () => {
+  it('reads the project workspace pot even when it is another user’s default', async () => {
     const { service, prisma, target } = setup({ personal: true });
     await service.getComputeBalance(user, target);
     expect(prisma.walletAccount.findMany).toHaveBeenCalledWith({
       where: {
         ownerType: 'workspace',
-        ownerId: 'my-personal',
+        ownerId: target,
         currency: 'compute_point',
         balanceKind: 'consumable',
         status: 'active',
@@ -201,7 +201,7 @@ describe('compute balance access', () => {
     await service.getComputeBalance(user);
     expect(prisma.workspaceMember.findFirst).not.toHaveBeenCalled();
     expect(prisma.workspace.findFirst).toHaveBeenCalledWith({
-      where: { ownerUserId: user.userId, type: 'personal', deletedAt: null },
+      where: { defaultForUserId: user.userId, deletedAt: null },
       select: { id: true },
     });
     expect(prisma.walletAccount.findMany).toHaveBeenCalledWith({

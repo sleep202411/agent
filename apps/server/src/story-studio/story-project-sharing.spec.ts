@@ -3,7 +3,6 @@ import {
   StoryProjectMemberRole,
   WorkspaceMemberAccessScope,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { ensureWorkspaceMembershipForStory } from './story-project-membership';
 import { StoryProjectMembersService } from './story-project-members.service';
@@ -15,7 +14,7 @@ const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const OWNER = { userId: 'owner-1' } as never;
 
 function tx(overrides: {
-  workspaceType?: WorkspaceType;
+  defaultForUserId?: string | null;
   workspaceMember?: {
     id: string;
     status: string;
@@ -45,14 +44,14 @@ function tx(overrides: {
       entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
       workspace: {
         findUnique: jest.fn().mockResolvedValue({
-          type: overrides.workspaceType ?? WorkspaceType.team,
+          defaultForUserId: overrides.defaultForUserId ?? null,
           createdAt: new Date('2026-09-13T00:00:00Z'),
         }),
         // The row still carries `type` even though the function stopped reading
         // it — that is exactly what the personal-workspace case pins.
         findFirst: jest.fn().mockResolvedValue({
           id: WORKSPACE_ID,
-          type: overrides.workspaceType ?? WorkspaceType.team,
+          defaultForUserId: overrides.defaultForUserId ?? null,
         }),
       },
       workspaceMember: {
@@ -84,10 +83,10 @@ const entitlements = {
 } as never;
 
 describe('ensureWorkspaceMembershipForStory', () => {
-  it.each([WorkspaceType.personal, WorkspaceType.team])(
+  it.each(['user-1', null])(
     'admits a story editor beyond the %s seat allowance with project-only access',
-    async (workspaceType) => {
-      const t = tx({ workspaceType });
+    async (defaultForUserId) => {
+      const t = tx({ defaultForUserId });
       await ensureWorkspaceMembershipForStory(t.client, {
         workspaceId: WORKSPACE_ID,
         userId: 'editor-29',
@@ -147,8 +146,8 @@ describe('ensureWorkspaceMembershipForStory', () => {
     expect(t.calls.workspaceMemberUpdate).not.toHaveBeenCalled();
   });
 
-  it('enrols a viewer into a personal workspace without consuming a seat', async () => {
-    const t = tx({ workspaceType: WorkspaceType.personal });
+  it('enrols a viewer into a default workspace without consuming a seat', async () => {
+    const t = tx({ defaultForUserId: 'user-1' });
     const result = await ensureWorkspaceMembershipForStory(t.client, {
       workspaceId: WORKSPACE_ID,
       userId: 'guest-1',

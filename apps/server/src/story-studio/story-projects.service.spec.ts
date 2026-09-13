@@ -8,7 +8,6 @@ import {
   StoryDurationPreset,
   StoryFrameProfile,
   StoryProjectMemberRole,
-  StoryProjectBillingMode,
   StoryProjectStatus,
   StoryRevisionSource,
 } from '@prisma/client';
@@ -34,8 +33,6 @@ const SECOND_CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000006';
 const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000007';
 const MEDIA_VARIANT_ID = '0197f4a2-0800-7000-8000-000000000008';
 const SCRIPT_DOCUMENT_ID = '0197f4a2-0800-7000-8000-000000000010';
-/** Someone else's tenant: where a shared project lives, never the invitee's. */
-const OWNER_WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000009';
 const NOW = new Date('2026-07-12T12:00:00.000Z');
 const CINEMATIC_REALISM_SKILL =
   storyVisualStyleSkillBySlug('cinematic-realism')!;
@@ -236,6 +233,7 @@ function summaryProject(overrides: Record<string, unknown> = {}) {
     cover: null,
     draft: draftRow({ content }),
     revisions: [],
+    workspace: { members: [] },
     members: [{ userId: USER.userId, role: StoryProjectMemberRole.owner }],
     referenceSlots: [],
     storyboardSequences: [],
@@ -270,10 +268,17 @@ function serviceWith(prisma: Record<string, unknown>) {
   };
   const permissions = {
     requireProject: jest.fn().mockResolvedValue(access),
+    requireProjectInTransaction: jest.fn().mockResolvedValue(access),
     capabilities: jest.fn().mockReturnValue(access.capabilities),
+    effectiveAccess: jest.fn().mockReturnValue(access),
   };
   const workspaces = {
-    ensurePersonalWorkspace: jest.fn().mockResolvedValue({ id: WORKSPACE_ID }),
+    requireWorkspaceRole: jest
+      .fn()
+      .mockResolvedValue({ role: 'owner', accessScope: 'workspace' }),
+    requireWorkspacePresence: jest
+      .fn()
+      .mockResolvedValue({ role: 'owner', accessScope: 'workspace' }),
   };
   const writeGuard = {
     assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
@@ -284,6 +289,7 @@ function serviceWith(prisma: Record<string, unknown>) {
       permissions as never,
       workspaces as never,
       writeGuard as never,
+      { requireUseAccessById: jest.fn().mockResolvedValue(undefined) } as never,
     ),
     permissions,
     workspaces,
@@ -529,14 +535,14 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.storyProject.updateMany).not.toHaveBeenCalled();
   });
 
-  it('lists every active project membership across workspace boundaries', async () => {
+  it('lists only the selected workspace without requiring direct project membership', async () => {
     const findMany = jest.fn((input: { where: Record<string, unknown> }) => {
       void input;
       return Promise.resolve([
         summaryProject({ id: PROJECT_ID, workspaceId: WORKSPACE_ID }),
         summaryProject({
           id: REVISION_ID,
-          workspaceId: OWNER_WORKSPACE_ID,
+          workspaceId: WORKSPACE_ID,
           members: [
             { userId: USER.userId, role: StoryProjectMemberRole.editor },
           ],
@@ -546,25 +552,51 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service } = serviceWith({ storyProject: { findMany } });
 
     await expect(
-      service.list(USER as never, { status: 'active', limit: 20 }),
+      service.list(USER as never, {
+        workspaceId: WORKSPACE_ID,
+        status: 'active',
+        limit: 20,
+      }),
     ).resolves.toMatchObject({
       items: [
         { id: PROJECT_ID, workspaceId: WORKSPACE_ID },
-        { id: REVISION_ID, workspaceId: OWNER_WORKSPACE_ID },
+        { id: REVISION_ID, workspaceId: WORKSPACE_ID },
       ],
       nextCursor: null,
     });
 
     const where = findMany.mock.calls[0]?.[0].where ?? {};
-    expect(where).not.toHaveProperty('workspaceId');
-    expect(where.members).toEqual({
-      some: {
-        userId: USER.userId,
-        status: 'active',
-        removedAt: null,
+    expect(where).toHaveProperty('workspaceId', WORKSPACE_ID);
+    expect(where).not.toHaveProperty('members');
+  });
+
+  it('limits project-only guests to their direct memberships in the selected workspace', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const { service, workspaces } = serviceWith({ storyProject: { findMany } });
+    workspaces.requireWorkspacePresence.mockResolvedValue({
+      role: 'viewer',
+      accessScope: 'project_only',
+    });
+
+    await service.list(USER as never, {
+      workspaceId: WORKSPACE_ID,
+      status: 'active',
+      limit: 20,
+    });
+
+    expect(workspaces.requireWorkspacePresence).toHaveBeenCalledWith(
+      USER.userId,
+      WORKSPACE_ID,
+    );
+    const calls = findMany.mock.calls as unknown[][];
+    expect(calls[0]?.[0]).toMatchObject({
+      where: {
+        workspaceId: WORKSPACE_ID,
+        members: {
+          some: { userId: USER.userId, status: 'active', removedAt: null },
+        },
       },
     });
-    expect(where).not.toHaveProperty('workspace');
   });
 
   it('creates a unified story draft and a non-null empty video workbench', async () => {
@@ -646,16 +678,21 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const { service, workspaces } = serviceWith(prisma);
 
     const result = await service.create(USER as never, {
+      workspaceId: WORKSPACE_ID,
       title: 'Branching Film Test',
       defaultLocale: 'zh-CN',
       visibility: 'private',
     });
 
-    expect(workspaces.ensurePersonalWorkspace).toHaveBeenCalledWith(USER);
+    expect(workspaces.requireWorkspaceRole).toHaveBeenCalledWith(
+      USER.userId,
+      WORKSPACE_ID,
+      'editor',
+    );
     expect(create).toHaveBeenCalledTimes(1);
     expect(create).toHaveBeenCalledWith({
       data: expect.objectContaining({
-        billingMode: StoryProjectBillingMode.actor,
+        workspaceId: WORKSPACE_ID,
         frameProfile: StoryFrameProfile.landscape_16_9,
       }) as unknown,
     });

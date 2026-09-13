@@ -47,12 +47,13 @@ export const CreateUploadUrlSchema = z.object({
   fileName: z.string().trim().min(1).max(256),
   /** Declared size; pre-checked against the per-kind cap before minting. */
   sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  /** Optional feature linkage, audit-only at issue time. */
+  /** Story/Crew scopes authorize uploads; legacy feature IDs are audit-only. */
   scope: z
     .object({
       projectId: z.union([z.string(), z.number()]).optional(),
       episodeId: z.union([z.string(), z.number()]).optional(),
       crewId: z.string().trim().min(1).max(64).optional(),
+      storyProjectId: z.string().uuid().optional(),
     })
     .optional(),
 });
@@ -93,6 +94,7 @@ export const ConfirmUploadSchema = z.object({
   scope: z
     .object({
       crewId: z.string().trim().min(1).max(64).optional(),
+      storyProjectId: z.string().uuid().optional(),
     })
     .optional(),
 });

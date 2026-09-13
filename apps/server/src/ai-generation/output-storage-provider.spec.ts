@@ -1,50 +1,16 @@
 import { MediaStorageProvider } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { AiGenerationService } from './ai-generation.service';
-import {
-  resolveOutputStorageProvider,
-  STORY_STUDIO_WORKBENCH_SURFACE,
-} from './output-storage-target';
+import { STORY_STUDIO_WORKBENCH_SURFACE } from './output-storage-target';
 import { AiGenerationRepository } from './repository';
 import type { AiJob, AiJobOutput, AiJobType, AiSubmitJobBody } from './types';
 import { AiGenerationWorkerService } from './worker.service';
-
-describe('resolveOutputStorageProvider', () => {
-  it('pins Story Studio footage to the S3-compatible backend', () => {
-    expect(
-      resolveOutputStorageProvider({
-        type: 'video',
-        sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
-      }),
-    ).toBe(MediaStorageProvider.s3_compatible);
-  });
-
-  it('leaves every other submission on the cell default', () => {
-    // Reference images authored on the very same canvas are not footage, and
-    // no other surface is in scope at all.
-    expect(
-      resolveOutputStorageProvider({
-        type: 'image',
-        sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
-      }),
-    ).toBeNull();
-    expect(
-      resolveOutputStorageProvider({
-        type: 'video',
-        sourceSurface: 'fizzstudio-canvas',
-      }),
-    ).toBeNull();
-    expect(
-      resolveOutputStorageProvider({ type: 'video', sourceSurface: undefined }),
-    ).toBeNull();
-  });
-});
 
 describe('AiGenerationService submit-time storage pin', () => {
   it('freezes the S3-compatible backend on the job row it hands the repository', async () => {
     // The column is what the worker reads on every attempt, so the pin has to
     // reach the inserted row — resolving it correctly and dropping it on the
-    // floor would ship the feature dead, with every job row NULL.
+    // floor would ship the feature dead, with the configured provider missing from new jobs.
     const harness = submitHarness('video');
 
     await harness.service.submitJob(
@@ -59,7 +25,7 @@ describe('AiGenerationService submit-time storage pin', () => {
     });
   });
 
-  it('writes NULL for a submission the predicate does not claim', async () => {
+  it('freezes the same configured provider for image jobs', async () => {
     const harness = submitHarness('image');
 
     await harness.service.submitJob(
@@ -67,7 +33,9 @@ describe('AiGenerationService submit-time storage pin', () => {
       submitBody(STORY_STUDIO_WORKBENCH_SURFACE),
     );
 
-    expect(harness.built().outputStorageProvider).toBeNull();
+    expect(harness.built().outputStorageProvider).toBe(
+      MediaStorageProvider.s3_compatible,
+    );
   });
 
   it('freezes trusted retry lineage on the replacement job', async () => {
@@ -154,40 +122,44 @@ describe('AiGenerationWorkerService output storage selection', () => {
     );
   });
 
-  it('sends spooled video bytes to the pinned service, not the bound default', async () => {
-    // Footage is the ONLY thing this feature ever pins, and video takes its own
-    // spool-probe-uploadFromFile branch. A pin honoured on the image branch
-    // alone would leave every real Story Studio output on the cell default.
-    const fallback = storageDouble('azure_blob');
-    const pinned = storageDouble('s3_compatible');
-    const registry = { forProvider: jest.fn(() => pinned) };
-    const store = { createAiOutputAsset: jest.fn(() => 'asset-1') };
-    const worker = workerWith({
-      fallback,
-      registry,
-      store,
-      videoProbe: videoProbeDouble(),
-    });
+  it.each([
+    MediaStorageProvider.s3_compatible,
+    MediaStorageProvider.aliyun_oss,
+  ])(
+    'sends spooled video bytes to the recorded %s provider',
+    async (provider) => {
+      // Video takes its own
+      // spool-probe-uploadFromFile branch. A pin honoured on the image branch
+      // alone would leave every real Story Studio output on the cell default.
+      const fallback = storageDouble('azure_blob');
+      const pinned = storageDouble(provider);
+      const registry = { forProvider: jest.fn(() => pinned) };
+      const store = { createAiOutputAsset: jest.fn(() => 'asset-1') };
+      const worker = workerWith({
+        fallback,
+        registry,
+        store,
+        videoProbe: videoProbeDouble(),
+      });
 
-    await uploadOutputs(
-      worker,
-      { ...jobFixture(MediaStorageProvider.s3_compatible), type: 'video' },
-      [rawVideoOutput()],
-    );
+      await uploadOutputs(worker, { ...jobFixture(provider), type: 'video' }, [
+        rawVideoOutput(),
+      ]);
 
-    expect(registry.forProvider).toHaveBeenCalledWith('s3_compatible');
-    expect(pinned.uploadFromFile).toHaveBeenCalledTimes(1);
-    expect(fallback.uploadFromFile).not.toHaveBeenCalled();
-    expect(pinned.upload).not.toHaveBeenCalled();
-    expect(store.createAiOutputAsset).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        type: 'video',
-        storageProvider: 's3_compatible',
-        bucket: 's3_compatible-bucket',
-      }),
-    );
-  });
+      expect(registry.forProvider).toHaveBeenCalledWith(provider);
+      expect(pinned.uploadFromFile).toHaveBeenCalledTimes(1);
+      expect(fallback.uploadFromFile).not.toHaveBeenCalled();
+      expect(pinned.upload).not.toHaveBeenCalled();
+      expect(store.createAiOutputAsset).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          type: 'video',
+          storageProvider: provider,
+          bucket: `${provider}-bucket`,
+        }),
+      );
+    },
+  );
 
   it('keeps a retried attempt on the same store and object key', async () => {
     // The requeued attempt re-uploads the same bytes. It has to converge on
@@ -450,7 +422,10 @@ function rawOutput() {
   return {
     index: 0,
     type: 'image' as AiJobType,
-    buffer: Buffer.from('provider-image-bytes'),
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=',
+      'base64',
+    ),
     mimeType: 'image/png',
     ext: 'png',
   };

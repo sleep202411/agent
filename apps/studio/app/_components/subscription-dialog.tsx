@@ -99,7 +99,7 @@ export function SubscriptionDialog({
   const isCn = useIsCnSite();
   const currency = isCn ? "CNY" : "USD";
   const { user, signIn } = useAuth();
-  const { workspaces, activeWorkspace, createTeam } = useWorkspace();
+  const { activeWorkspace } = useWorkspace();
   const signedIn = Boolean(user);
   const [billingInterval, setBillingInterval] = useState<BillingInterval>("month");
   const [payingPriceId, setPayingPriceId] = useState<string | null>(null);
@@ -179,26 +179,18 @@ export function SubscriptionDialog({
         signIn();
         return;
       }
-      // Team plans are workspace-scoped. Never silently bill the first team in
-      // the membership list: with multiple teams that can charge the wrong
-      // organization. Use the actively selected team; only auto-create when the
-      // user has no team yet.
+      // Workspace plans belong to the actively selected workspace.
       const isTeamPrice = price.subjectType === "workspace";
 
       setPayingPriceId(price.id);
       try {
         let workspaceId: string | undefined;
         if (isTeamPrice) {
-          if (activeWorkspace?.type === "team") {
-            workspaceId = activeWorkspace.id;
-          } else if (workspaces.some((workspace) => workspace.type === "team")) {
+          if (!activeWorkspace) {
             toast.error(t("toast.teamWorkspaceRequired"));
             return;
-          } else {
-            const defaultName = `${user?.nickName ?? user?.email ?? "My"}'s Team`;
-            const created = await createTeam(defaultName);
-            workspaceId = created.id;
           }
+          workspaceId = activeWorkspace.id;
         }
         const baseUrl = `${window.location.origin}${window.location.pathname}`;
         const result = await createBillingCheckout({
@@ -232,7 +224,7 @@ export function SubscriptionDialog({
         setPayingPriceId(null);
       }
     },
-    [activeWorkspace, createTeam, onOpenChange, signIn, signedIn, t, user, workspaces]
+    [activeWorkspace, onOpenChange, signIn, signedIn, t]
   );
 
   // Resume the checkout a signed-out visitor started: once login lands the

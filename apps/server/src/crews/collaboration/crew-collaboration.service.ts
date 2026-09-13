@@ -11,7 +11,6 @@ import {
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceStatus,
-  WorkspaceType,
   WalletOwnerType,
 } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
@@ -66,7 +65,6 @@ export class CrewCollaborationService {
     if (!workspaceId) {
       const workspace = await tx.workspace.create({
         data: {
-          type: WorkspaceType.team,
           status: WorkspaceStatus.active,
           name: crew.name,
           avatarUrl: crew.logo,

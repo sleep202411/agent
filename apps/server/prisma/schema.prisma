@@ -31,15 +31,8 @@ datasource db {
 // Invariant:
 //   Workspace → Project → ProjectAsset
 //
-// Assets belong to projects. Projects belong to workspaces. A personal
-// project and a team project therefore use the same asset schema; the
-// difference is the workspace owner, governance, wallet, and audit
-// policy around that project.
-
-enum WorkspaceType {
-  personal
-  team
-}
+// Projects belong to workspaces, which own collaboration permissions,
+// compute wallets and audit history.
 
 enum WorkspaceStatus {
   active
@@ -346,14 +339,6 @@ enum WalletCreditGrantStatus {
 enum BillingSubjectType {
   user
   workspace
-}
-
-/// How a Story project chooses the payer for a generation. `actor` charges
-/// the creator who submitted the job; `account` pins the project to one
-/// explicit compute wallet (for a future project/team credit pool).
-enum StoryProjectBillingMode {
-  actor
-  account
 }
 
 enum BillingProductType {
@@ -908,15 +893,14 @@ enum IpUserBlockTargetType {
 
 model Workspace {
   id               String          @id @default(uuid(7)) @db.Uuid
-  type             WorkspaceType
+  /// Stable destination for this user's account credits and initial selection.
+  defaultForUserId  String?         @unique @map("default_for_user_id") @db.VarChar(64)
   status           WorkspaceStatus @default(active)
   name             String          @db.VarChar(120)
   slug             String?         @db.VarChar(80)
   avatarUrl        String?         @map("avatar_url") @db.VarChar(512)
   description      String?         @db.VarChar(500)
-  /// External authenticated user id. For personal workspaces this is
-  /// the owning user; for team workspaces this is the creator/admin who
-  /// initialized the team. No FK to external user tables.
+  /// External authenticated owner id; no FK to external user tables.
   ownerUserId      String          @map("owner_user_id") @db.VarChar(64)
   createdById      String          @map("created_by_id") @db.VarChar(64)
   defaultProjectId String?         @map("default_project_id") @db.Uuid
@@ -950,9 +934,7 @@ model Workspace {
   subscriptions             BillingSubscription[]
   crew                      Crew?                      @relation("CrewWorkspace")
 
-  /// Active personal uniqueness is enforced by partial unique SQL:
-  /// (owner_user_id) WHERE type='personal' AND deleted_at IS NULL.
-  @@index([ownerUserId, type, deletedAt], map: "workspaces_owner_type_idx")
+  @@index([ownerUserId, deletedAt], map: "workspaces_owner_idx")
   @@index([status, updatedAt(sort: Desc)], map: "workspaces_status_recent_idx")
   @@map("workspaces")
 }
@@ -1255,7 +1237,7 @@ model ProjectSkillAudit {
 
   workspace       Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   platformProject PlatformProject?          @relation(fields: [platformProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
-  storyProject    StoryProject?             @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  storyProject    StoryProject?             @relation(fields: [storyProjectId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "project_skill_audits_story_fkey")
   installation    ProjectSkillInstallation? @relation(fields: [installationId], references: [id], onDelete: SetNull)
   skill           SkillCatalogItem          @relation(fields: [skillId], references: [id], onDelete: Restrict)
   version         SkillVersion?             @relation(fields: [versionId], references: [id], onDelete: Restrict)
@@ -2108,7 +2090,6 @@ model WalletAccount {
 
   ledgerEntries WalletLedgerEntry[]
   creditGrants  WalletCreditGrant[]
-  storyProjects StoryProject[]      @relation("StoryProjectBillingAccount")
 
   @@unique([ownerType, ownerId, currency, balanceKind], map: "wallet_accounts_owner_currency_kind_unique")
   @@index([ownerType, ownerId, status, balanceKind], map: "wallet_accounts_owner_status_idx")
@@ -6491,23 +6472,19 @@ model AiJob {
   workspaceId           String?               @map("workspace_id") @db.Uuid
   projectId             String?               @map("project_id") @db.Uuid
   storyProjectId        String?               @map("story_project_id") @db.Uuid
-  /// Immutable payer identity resolved at submission time. New product-plane
-  /// jobs set both fields; legacy rows remain NULL and use the historical
-  /// workspace/actor resolver. Settlement and release follow the recorded
-  /// wallet hold and never re-resolve this identity.
+  /// Immutable payer identity resolved at submission time. The workspace
+  /// cutover backfills historical payers before retiring the old policy.
+  /// Settlement and release follow the recorded wallet hold.
   billingSubjectType    BillingSubjectType?   @map("billing_subject_type")
   billingSubjectId      String?               @map("billing_subject_id") @db.VarChar(64)
   documentId            String?               @map("document_id") @db.Uuid
   documentBlockId       String?               @map("document_block_id") @db.VarChar(128)
   /// UI surface snapshot for ops analysis. Examples: 'art-studio' | 'timeline' | 'batch'.
   sourceSurface         String?               @map("source_surface") @db.VarChar(64)
-  /// Storage backend this job's outputs MUST be written to, decided from the
-  /// submitting surface and frozen here. NULL means the cell-default binding
-  /// (`StorageModule`), which is every surface but Story Studio
-  /// interactive-film footage. Frozen instead of re-read at upload time so a
-  /// retried attempt cannot land in a different store than the first attempt
-  /// and orphan its object. `external_url` is excluded by a CHECK constraint
-  /// in migration SQL — nothing can write there.
+  /// Selected cell storage provider, frozen on every new admission. Historical
+  /// NULL rows use OutputStorageService. Retries retain their original provider
+  /// so output objects cannot be orphaned by a later configuration change.
+  /// A database CHECK excludes external_url from writable providers.
   outputStorageProvider MediaStorageProvider? @map("output_storage_provider")
   status                AiJobStatus
   stage                 AiJobStage
@@ -6592,7 +6569,7 @@ model AiJob {
   workspace                  Workspace?                  @relation(fields: [workspaceId], references: [id])
   project                    PlatformProject?            @relation(fields: [projectId], references: [id])
   storyProject               StoryProject?               @relation(fields: [storyProjectId], references: [id])
-  document                   StudioDocument?             @relation(fields: [documentId, workspaceId], references: [id, workspaceId], onDelete: NoAction)
+  document                   StudioDocument?             @relation(fields: [documentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "ai_jobs_document_workspace_fk")
 
   /// Active-row idempotency is enforced by a partial unique index in
   /// migration SQL: (user_id, model_id, idempotency_key) WHERE deleted_at IS NULL.
@@ -8432,11 +8409,6 @@ model StoryProject {
   coverAssetId               String?                 @map("cover_asset_id") @db.Uuid
   tags                       Json                    @default("[]") @db.JsonB
   sourceIpId                 String?                 @map("source_ip_id") @db.Uuid
-  /// Billing is independent from workspace/storage ownership. Actor-funded is
-  /// the default product policy; account-funded projects may point at one
-  /// explicit compute wallet without changing project authorization.
-  billingMode                StoryProjectBillingMode @default(actor) @map("billing_mode")
-  billingAccountId           String?                 @map("billing_account_id") @db.Uuid
   nextBuildNumber            Int                     @default(1) @map("next_build_number")
   version                    Int                     @default(0)
   createdByUserId            String                  @map("created_by_user_id") @db.VarChar(64)
@@ -8445,7 +8417,6 @@ model StoryProject {
   updatedAt                  DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace               Workspace                         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  billingAccount          WalletAccount?                    @relation("StoryProjectBillingAccount", fields: [billingAccountId], references: [id], onDelete: Restrict)
   cover                   MediaAsset?                       @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
   members                 StoryProjectMember[]
   invites                 StoryProjectInvite[]
@@ -8703,7 +8674,7 @@ model StoryAgentRun {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project                     StoryProject                        @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  project                     StoryProject                        @relation(fields: [storyProjectId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "story_agent_runs_project_scope_fkey")
   chapter                     StoryChapter                        @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Restrict)
   activeWriteState            StoryProjectWriteState?             @relation("StoryProjectActiveAgentRun")
   revertsRun                  StoryAgentRun?                      @relation("StoryAgentRunUndo", fields: [revertsRunId], references: [id], onDelete: Restrict)
@@ -9245,7 +9216,7 @@ model StoryGenerationBatch {
   createdAt                DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  project                     StoryProject                        @relation(fields: [storyProjectId, workspaceId], references: [id, workspaceId], onDelete: Cascade)
+  project                     StoryProject                        @relation(fields: [storyProjectId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "story_generation_batches_project_fkey")
   chapter                     StoryChapter                        @relation(fields: [storyChapterId, storyProjectId], references: [id, storyProjectId], onDelete: Cascade)
   items                       StoryGenerationBatchItem[]
   externalHandoffRegistration AgentOsExternalHandoffRegistration?

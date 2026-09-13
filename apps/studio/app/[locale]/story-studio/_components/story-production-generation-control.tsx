@@ -81,6 +81,8 @@ export function StoryProductionGenerationControl({
   generationOptions,
   allowConcurrent = false,
   onPendingPreviewCountChange,
+  submitGeneration,
+  generationDisabledReason,
 }: {
   scope: GenerationScope;
   target: GenerationTarget;
@@ -106,6 +108,12 @@ export function StoryProductionGenerationControl({
   onPendingPreviewCountChange?: (count: number) => void;
   /** The owning surface can disable paid actions while it lacks an editable target. */
   allowGeneration?: boolean;
+  /** Admit the run with the owning editor's current input snapshot. */
+  submitGeneration?: (
+    submit: (version: number) => Promise<StoryProductionGeneration>
+  ) => Promise<StoryProductionGeneration>;
+  /** Missing inputs disable the action without removing it from the workbench. */
+  generationDisabledReason?: string;
 }) {
   const t = useTranslations("storyStudio.productionGeneration");
   const queryClient = useQueryClient();
@@ -187,15 +195,23 @@ export function StoryProductionGenerationControl({
   const effectiveOptions = generationOptions ?? generationDefaults.options;
   const createMutation = useMutation({
     retry: false,
-    mutationFn: ({ idempotencyKey }: { idempotencyKey: string; requestedOutputCount: number }) =>
-      createGeneration(
-        scope,
-        target,
-        effectiveSelection,
-        effectiveOptions,
-        purpose,
-        idempotencyKey
-      ),
+    mutationFn: async ({
+      idempotencyKey,
+    }: {
+      idempotencyKey: string;
+      requestedOutputCount: number;
+    }) => {
+      const submit = (version: number) =>
+        createGeneration(
+          scope,
+          { ...target, version },
+          effectiveSelection,
+          effectiveOptions,
+          purpose,
+          idempotencyKey
+        );
+      return submitGeneration ? submitGeneration(submit) : submit(target.version);
+    },
     onMutate: ({ idempotencyKey, requestedOutputCount }) => {
       setPendingSubmissions((current) => [...current, { idempotencyKey, requestedOutputCount }]);
     },
@@ -273,10 +289,6 @@ export function StoryProductionGenerationControl({
   useEffect(() => {
     onPendingPreviewCountChange?.(pendingPreviewCount);
   }, [onPendingPreviewCountChange, pendingPreviewCount]);
-  // targetChanged already covers every version drift, including the
-  // "completed at an older target version" regeneration case.
-  const showGenerate =
-    !generation || targetChanged || generation.materialization.status === "completed";
   const actionPending =
     createMutation.isPending ||
     cancelMutation.isPending ||
@@ -300,9 +312,9 @@ export function StoryProductionGenerationControl({
       size={layout === "inline" ? "icon" : "sm"}
       className={layout === "inline" ? "rounded-full" : undefined}
       aria-label={layout === "inline" ? generateLabel : undefined}
-      title={layout === "inline" ? generateLabel : undefined}
+      title={generationDisabledReason ?? (layout === "inline" ? generateLabel : undefined)}
       loading={!allowConcurrent && layout === "stage" && createMutation.isPending}
-      disabled={!allowConcurrent && actionPending}
+      disabled={Boolean(generationDisabledReason) || (!allowConcurrent && actionPending)}
       onClick={() => {
         const request = {
           idempotencyKey: createStoryProductionIdempotencyKey("story-generate"),
@@ -356,14 +368,19 @@ export function StoryProductionGenerationControl({
       <IconRefresh />
       {t("retry")}
     </Button>
-  ) : showGenerate ? (
+  ) : (
     generateAction
-  ) : null;
+  );
 
   if (layout === "inline") {
     return (
       <div className="min-w-0">
         <div className="flex min-h-9 items-center justify-end">{actionButton}</div>
+        {generationDisabledReason && actionButton ? (
+          <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+            {generationDisabledReason}
+          </p>
+        ) : null}
         {errorMessage ? (
           <p className="mt-2 text-[11px] leading-4 text-red-100/88" role="alert">
             {errorMessage}

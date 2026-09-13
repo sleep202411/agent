@@ -1,6 +1,6 @@
 /**
  * Story Studio projects — same root as PC FizzAgent
- * (`POST|GET /aurora/story-projects` with `x-fizz-workspace-id`).
+ * (`POST|GET /aurora/story-projects` with explicit `workspaceId`).
  *
  * Paths omit `/aurora` — `auroraBaseUrl` already ends in `/aurora`.
  * StoryProject ids are sovereign (not PlatformProject / section ids).
@@ -14,7 +14,7 @@ const AURORA = { service: "aurora" as const };
 export type StudioWorkspace = {
   id: string;
   name: string;
-  type?: string;
+  isDefault: boolean;
 };
 
 /** Minimal StoryProject summary for Create / Agent OS (list + workbench). */
@@ -57,6 +57,7 @@ export type StoryCapability =
   | "story.admin";
 
 export type StoryBillingBalance = {
+  workspaceId: string;
   availablePoints: string;
   heldPoints: string;
   totalPoints: string;
@@ -84,15 +85,9 @@ type StoryProjectPage = {
 /** FizzAgent / Story Studio Agent OS mode (PC uses the same). */
 export const AGENT_OS_STORY_WORKBENCH_MODE = "story";
 
-function workspaceHeaders(workspaceId: string): Record<string, string> {
-  const id = workspaceId.trim();
-  if (!id) throw new Error("Story Studio requires an active workspace");
-  return { "x-fizz-workspace-id": id };
-}
-
 export const storyProjectsApi = {
-  ensurePersonalWorkspace(signal?: AbortSignal) {
-    return api.post<{ workspace: StudioWorkspace }>("/workspaces/personal/ensure", {
+  ensureDefaultWorkspace(signal?: AbortSignal) {
+    return api.post<{ workspace: StudioWorkspace }>("/workspaces/default/ensure", {
       ...AURORA,
       data: {},
       signal,
@@ -108,11 +103,11 @@ export const storyProjectsApi = {
     return api.get<StoryProjectPage>("/story-projects", {
       ...AURORA,
       params: {
+        workspaceId,
         status: query?.status ?? "active",
         limit: query?.limit ?? 100,
         cursor: query?.cursor,
       },
-      headers: workspaceHeaders(workspaceId),
       signal,
       timeout: 30_000,
     });
@@ -131,12 +126,12 @@ export const storyProjectsApi = {
     return api.post<StoryWorkbench>("/story-projects", {
       ...AURORA,
       data: {
+        workspaceId,
         title: input.title,
         defaultLocale: input.defaultLocale,
         summary: input.summary ?? null,
         visibility: input.visibility ?? "private",
       },
-      headers: workspaceHeaders(workspaceId),
       signal,
       timeout: 60_000,
     });
@@ -177,26 +172,26 @@ export async function resolveDefaultChapterId(
   return chapterId;
 }
 
-/** Ensure personal workspace, list story projects (does not auto-create). */
+/** Ensure default workspace, list story projects (does not auto-create). */
 export async function loadAgentProjects(signal?: AbortSignal): Promise<{
   workspaceId: string;
   projects: StoryProjectSummary[];
 }> {
-  const { workspace } = await storyProjectsApi.ensurePersonalWorkspace(signal);
+  const { workspace } = await storyProjectsApi.ensureDefaultWorkspace(signal);
   const page = await storyProjectsApi.listStoryProjects(workspace.id, { limit: 100 }, signal);
   return { workspaceId: workspace.id, projects: page.items ?? [] };
 }
 
 /**
  * Create a Story Studio project — same as PC:
- * `POST /aurora/story-projects` + `x-fizz-workspace-id`.
+ * `POST /aurora/story-projects` with `workspaceId` in the body.
  */
 export async function createAgentProject(opts?: {
   title?: string;
   summary?: string | null;
   signal?: AbortSignal;
 }): Promise<{ project: StoryProjectSummary; chapterId: string }> {
-  const { workspace } = await storyProjectsApi.ensurePersonalWorkspace(opts?.signal);
+  const { workspace } = await storyProjectsApi.ensureDefaultWorkspace(opts?.signal);
   const workbench = await storyProjectsApi.createStoryProject(
     workspace.id,
     {

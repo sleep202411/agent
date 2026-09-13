@@ -19,7 +19,6 @@ import {
   ProjectMemberRole,
   Prisma,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { PrismaService } from '../../infra/db/db.module';
@@ -177,7 +176,6 @@ export class CrewProductionService {
       workspaces: memberships.map((membership) => ({
         id: membership.workspace.id,
         name: membership.workspace.name,
-        type: membership.workspace.type,
         projects: membership.workspace.projects.map((project) => {
           const linkedElsewhere =
             project.studioCrew && project.studioCrew.id !== crewId;
@@ -185,14 +183,11 @@ export class CrewProductionService {
             membership.role,
             project.members[0]?.role ?? null,
           );
-          const disabledReason =
-            membership.workspace.type !== WorkspaceType.team
-              ? 'personal_workspace'
-              : linkedElsewhere
-                ? 'already_linked'
-                : !canEdit
-                  ? 'insufficient_permission'
-                  : null;
+          const disabledReason = linkedElsewhere
+            ? 'already_linked'
+            : !canEdit
+              ? 'insufficient_permission'
+              : null;
           return {
             id: project.id,
             name: project.name,
@@ -226,7 +221,7 @@ export class CrewProductionService {
     let linked: {
       id: string;
       name: string;
-      workspace: { id: string; name: string; type: WorkspaceType };
+      workspace: { id: string; name: string };
     } | null;
     try {
       linked = await this.prisma.$transaction(async (tx) => {
@@ -257,7 +252,7 @@ export class CrewProductionService {
         let project: {
           id: string;
           name: string;
-          workspace: { id: string; name: string; type: WorkspaceType };
+          workspace: { id: string; name: string };
         } | null = null;
 
         if (input.projectId) {
@@ -266,19 +261,12 @@ export class CrewProductionService {
             select: {
               id: true,
               name: true,
-              workspace: { select: { id: true, name: true, type: true } },
+              workspace: { select: { id: true, name: true } },
               studioCrew: { select: { id: true, name: true } },
             },
           });
           if (!candidate)
             throw new NotFoundException('Studio project not found.');
-          if (candidate.workspace.type !== WorkspaceType.team) {
-            throw new BadRequestException({
-              code: 'CREW_STUDIO_PROJECT_REQUIRES_TEAM_WORKSPACE',
-              message:
-                'Only projects in a team workspace can be linked to a crew.',
-            });
-          }
           if (candidate.studioCrew && candidate.studioCrew.id !== crewId) {
             throw new ConflictException({
               code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',

@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -50,6 +51,15 @@ import {
 } from './dto';
 import { StoryProjectsService } from './story-projects.service';
 
+// Installed mobile clients send workspace identity in the existing header.
+// Normalize it at the HTTP boundary; service DTOs always require workspaceId.
+const CreateStoryProjectRequestSchema = CreateStoryProjectSchema.extend({
+  workspaceId: CreateStoryProjectSchema.shape.workspaceId.optional(),
+});
+const StoryProjectListRequestSchema = StoryProjectListQuerySchema.extend({
+  workspaceId: StoryProjectListQuerySchema.shape.workspaceId.optional(),
+});
+
 @Controller('story-projects')
 export class StoryProjectsController {
   constructor(private readonly storyProjects: StoryProjectsService) {}
@@ -58,24 +68,42 @@ export class StoryProjectsController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @CurrentUser() user: AuthUser,
-    @Body(new ZodValidationPipe(CreateStoryProjectSchema))
-    body: CreateStoryProjectInput,
+    @Body(new ZodValidationPipe(CreateStoryProjectRequestSchema))
+    body: Omit<CreateStoryProjectInput, 'workspaceId'> & {
+      workspaceId?: string;
+    },
+    @Headers('x-fizz-workspace-id') workspaceHeader?: string,
   ) {
     return {
       code: 200,
-      data: await this.storyProjects.create(user, body),
+      data: await this.storyProjects.create(
+        user,
+        new ZodValidationPipe(CreateStoryProjectSchema).transform({
+          ...body,
+          workspaceId: body.workspaceId ?? workspaceHeader,
+        }),
+      ),
     };
   }
 
   @Get()
   async list(
     @CurrentUser() user: AuthUser,
-    @Query(new ZodValidationPipe(StoryProjectListQuerySchema))
-    query: StoryProjectListQuery,
+    @Query(new ZodValidationPipe(StoryProjectListRequestSchema))
+    query: Omit<StoryProjectListQuery, 'workspaceId'> & {
+      workspaceId?: string;
+    },
+    @Headers('x-fizz-workspace-id') workspaceHeader?: string,
   ) {
     return {
       code: 200,
-      data: await this.storyProjects.list(user, query),
+      data: await this.storyProjects.list(
+        user,
+        new ZodValidationPipe(StoryProjectListQuerySchema).transform({
+          ...query,
+          workspaceId: query.workspaceId ?? workspaceHeader,
+        }),
+      ),
     };
   }
 

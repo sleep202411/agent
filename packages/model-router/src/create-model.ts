@@ -53,6 +53,7 @@ export function createLiteLlmChatModel(input: {
       baseURL: config.baseUrl,
     },
     modelKwargs: {
+      ...(profile.enableThinking !== undefined ? { enable_thinking: profile.enableThinking } : {}),
       /**
        * One tool call per assistant turn.
        *

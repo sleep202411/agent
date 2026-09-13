@@ -165,6 +165,17 @@ export class S3CompatibleStorageService extends OutputStorageService {
     );
   }
 
+  objectLocation(key: string) {
+    this.assertConfigured('Object storage');
+    return {
+      storageProvider: this.providerId,
+      bucket: this.bucket,
+      region: this.region,
+      objectKey: key,
+      externalUrl: null,
+    };
+  }
+
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {
     if (!this.client) {
       throw new Error('S3_* env not configured');

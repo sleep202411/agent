@@ -169,7 +169,7 @@ function makeService() {
   };
   const walletLedger = { postEntry: jest.fn().mockResolvedValue({}) };
   const workspaces = {
-    ensurePersonalWorkspace: jest.fn().mockResolvedValue({ id: 'ws-1' }),
+    ensureDefaultWorkspace: jest.fn().mockResolvedValue({ id: 'ws-1' }),
   };
   const javaUsers = {
     findRecommendationCode: jest.fn().mockResolvedValue(null),

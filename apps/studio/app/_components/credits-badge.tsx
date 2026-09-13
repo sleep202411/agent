@@ -1,5 +1,7 @@
 "use client";
 
+import { useWorkspace } from "./workspace-context";
+
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
@@ -37,7 +39,7 @@ export const computeWalletBalanceQueryKey = ["fizzstudio", "compute-billing", "b
  * after a generation or a recharge) still invalidates every workspace's balance.
  */
 export function computeWalletBalanceKey(workspaceId: string | null | undefined) {
-  return [...computeWalletBalanceQueryKey, workspaceId ?? "personal"] as const;
+  return [...computeWalletBalanceQueryKey, workspaceId ?? null] as const;
 }
 
 async function getComputeWalletBalance(
@@ -60,12 +62,7 @@ async function getComputeWalletBalance(
 
 export function useComputeWalletBalance(enabled = true, explicitWorkspaceId?: string) {
   const { user } = useAuth();
-  // Scopes to the pot the CURRENT USER pays from FOR THE OPEN PROJECT (mirrors
-  // the server payer rule, keyed on the project's workspace): a team project
-  // reads the shared team pot; a personal project reads the caller's own
-  // personal pot — including when collaborating in someone else's personal
-  // project, where reading the host's wallet would 403. Outside any project it
-  // falls back to the global billing workspace.
+  // A project spends from its owning workspace; other surfaces use the active workspace.
   const payerWorkspaceId = useProjectPayerWorkspace()?.id ?? null;
   const workspaceId = explicitWorkspaceId ?? payerWorkspaceId;
   return useQuery({
@@ -120,10 +117,10 @@ export function CreditsBadge({
   const t = useTranslations("shell");
   const locale = useLocale();
   const billingWorkspace = useProjectPayerWorkspace();
-  const isTeam = billingWorkspace?.type === "team";
+  const { setActiveWorkspaceId } = useWorkspace();
   useWalletRealtime();
   const { data, error } = useComputeWalletBalance(Boolean(billingWorkspace));
-  const description = t(isTeam ? "credits.teamHint" : "credits.personalHint");
+  const description = t("credits.workspaceHint");
 
   return (
     <Tooltip>
@@ -131,7 +128,13 @@ export function CreditsBadge({
         <Button
           variant={variant}
           type="button"
-          onClick={onClick ?? (() => openSettings("billing"))}
+          onClick={
+            onClick ??
+            (() => {
+              if (billingWorkspace) setActiveWorkspaceId(billingWorkspace.id);
+              openSettings("billing");
+            })
+          }
           disabled={!billingWorkspace}
           aria-label={t("credits.manage")}
           className={cn(

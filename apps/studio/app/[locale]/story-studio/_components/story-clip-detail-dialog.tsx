@@ -28,9 +28,11 @@ import {
   patchStoryStoryboardClip,
   storyProductionKeys,
   type StoryStoryboardClip,
+  type StoryStoryboardSequence,
 } from "@/lib/story-production-api";
 import { storyApiErrorMessage } from "@/lib/story-projects-api";
 import { StoryPromptComposer, useStoryAssetMentions } from "./story-prompt-composer";
+import { useStoryProductionAutosave } from "./use-story-production-autosave";
 import { useStoryProductionGenerationDefaults } from "./use-story-production-generation-defaults";
 
 /**
@@ -62,66 +64,74 @@ export function StoryClipDetailDialog({
   const defaults = useStoryProductionGenerationDefaults(projectId, clip.kind);
   const models = defaults.models;
   const mentions = useStoryAssetMentions(projectId, chapterId);
-  const savedPrompt = (clip.kind === "image" ? clip.imagePrompt : clip.videoPrompt) ?? "";
-  const [prompt, setPrompt] = useState(savedPrompt);
+
   // null = follow the page-level default until the creator picks explicitly.
   const [modelId, setModelId] = useState<string | null>(null);
   const effectiveModelId = modelId ?? defaults.model?.id ?? null;
-  const promptDirty = prompt.trim() !== savedPrompt;
 
   const invalidateStoryboard = () =>
     queryClient.invalidateQueries({
       queryKey: storyProductionKeys.storyboard(projectId, chapterId),
     });
 
-  const patchPrompt = () =>
-    patchStoryStoryboardClip(
-      projectId,
-      chapterId,
-      sequenceId,
-      clip.id,
-      createStoryProductionIdempotencyKey("story-clip-patch"),
-      {
-        expectedVersion: clip.version,
-        ...(clip.kind === "image"
-          ? { imagePrompt: prompt.trim() }
-          : { videoPrompt: prompt.trim() }),
-      }
-    );
-
-  const saveMutation = useMutation({
-    retry: false,
-    mutationFn: patchPrompt,
-    onSuccess: async () => {
-      toast.success(t("saved"));
-      await invalidateStoryboard();
-    },
-    onError: (error) => toast.error(storyApiErrorMessage(error, t("saveError"))),
-  });
-
-  const generateMutation = useMutation({
-    retry: false,
-    mutationFn: async () => {
-      // A dirty prompt is persisted first so the generation uses exactly what
-      // the creator sees; the patched version fences the create call.
-      let version = clip.version;
-      if (promptDirty) {
-        const patched = await patchPrompt();
-        version = patched.version;
-      }
-      const model = models.find((candidate) => candidate.id === effectiveModelId);
-      return createStoryStoryboardClipGeneration(
+  const { values, changeValues, runWithSavedValues } = useStoryProductionAutosave({
+    initialValues: { prompt: (clip.kind === "image" ? clip.imagePrompt : clip.videoPrompt) ?? "" },
+    persist: async ({ prompt }) => {
+      const key = storyProductionKeys.storyboard(projectId, chapterId);
+      const current =
+        queryClient
+          .getQueryData<StoryStoryboardSequence[]>(key)
+          ?.find((sequence) => sequence.id === sequenceId)
+          ?.clips.find((item) => item.id === clip.id) ?? clip;
+      const savedPrompt =
+        (current.kind === "image" ? current.imagePrompt : current.videoPrompt) ?? "";
+      if (!prompt.trim() || prompt.trim() === savedPrompt) return current.version;
+      const updated = await patchStoryStoryboardClip(
         projectId,
         chapterId,
         sequenceId,
         clip.id,
-        createStoryProductionIdempotencyKey("story-generate"),
+        createStoryProductionIdempotencyKey("story-clip-patch"),
         {
-          expectedVersion: version,
-          ...(model ? { modelId: model.id, schemaVersion: model.schemaVersion } : {}),
+          expectedVersion: current.version,
+          ...(clip.kind === "image"
+            ? { imagePrompt: prompt.trim() }
+            : { videoPrompt: prompt.trim() }),
         }
       );
+      queryClient.setQueryData<StoryStoryboardSequence[]>(key, (sequences) =>
+        sequences?.map((sequence) =>
+          sequence.id === sequenceId
+            ? {
+                ...sequence,
+                clips: sequence.clips.map((item) => (item.id === clip.id ? updated : item)),
+              }
+            : sequence
+        )
+      );
+      return updated.version;
     },
+    onError: (error) => toast.error(storyApiErrorMessage(error, t("saveError"))),
+  });
+  const { prompt } = values;
+
+  const generateMutation = useMutation({
+    retry: false,
+    mutationFn: () =>
+      runWithSavedValues(async (version) => {
+        const model = models.find((candidate) => candidate.id === effectiveModelId);
+        return createStoryStoryboardClipGeneration(
+          projectId,
+          chapterId,
+          sequenceId,
+          clip.id,
+          createStoryProductionIdempotencyKey("story-generate"),
+          {
+            expectedVersion: version,
+            ...(model ? { modelId: model.id, schemaVersion: model.schemaVersion } : {}),
+          }
+        );
+      }),
     onSuccess: async () => {
       toast.success(t("generateStarted"));
       await invalidateStoryboard();
@@ -133,14 +143,13 @@ export function StoryClipDetailDialog({
     },
   });
 
-  const busy = saveMutation.isPending || generateMutation.isPending;
+  const busy = generateMutation.isPending;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(next) => {
         if (busy) return;
-        if (next) setPrompt(savedPrompt);
         onOpenChange(next);
       }}
     >
@@ -165,7 +174,7 @@ export function StoryClipDetailDialog({
             id={`clip-detail-prompt-${clip.id}`}
             value={prompt}
             disabled={busy || !editable}
-            onChange={setPrompt}
+            onChange={(prompt) => changeValues({ prompt })}
             mentions={mentions}
           />
         </Field>
@@ -197,16 +206,7 @@ export function StoryClipDetailDialog({
             <>
               <Button
                 type="button"
-                variant="secondary"
-                disabled={!promptDirty || busy}
-                loading={saveMutation.isPending}
-                onClick={() => saveMutation.mutate()}
-              >
-                {t("save")}
-              </Button>
-              <Button
-                type="button"
-                disabled={busy}
+                disabled={busy || !prompt.trim()}
                 loading={generateMutation.isPending}
                 onClick={() => generateMutation.mutate()}
               >

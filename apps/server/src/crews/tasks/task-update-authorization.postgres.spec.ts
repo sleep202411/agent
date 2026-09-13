@@ -142,7 +142,6 @@ suite('Task update authorization during PostgreSQL waits', () => {
       ) {
         const workspace = await db.workspace.create({
           data: {
-            type: 'team',
             name: 'Canvas lock fixture',
             ownerUserId: ownerId,
             createdById: ownerId,

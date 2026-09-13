@@ -106,6 +106,22 @@ export class AzureBlobStorageService extends OutputStorageService {
     this.client = this.containerClient(this.containerName);
   }
 
+  objectLocation(key: string) {
+    this.assertConfigured('Object storage');
+    return {
+      storageProvider: this.providerId,
+      bucket: this.containerName,
+      region: this.region,
+      objectKey: key,
+      externalUrl: null,
+    };
+  }
+
+  assertConfigured(context: string): void {
+    if (!this.client)
+      throw new Error(`${context} requires AZURE_BLOB_CONNECTION_STRING`);
+  }
+
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {
     if (!this.client) {
       throw new Error('AZURE_BLOB_CONNECTION_STRING not configured');

@@ -185,8 +185,8 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
       label: "算力钱包",
       items: [
         {
-          href: "/billing/team-wallet",
-          label: "团队算力池",
+          href: "/billing/workspace-wallet",
+          label: "工作区积分",
           icon: IconWallet,
           permission: "billing.read",
         },
@@ -434,12 +434,6 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/members/directory",
           label: "用户列表",
           icon: IconUserSearch,
-          permission: "user.read",
-        },
-        {
-          href: "/members/points",
-          label: "积分流水",
-          icon: IconReceipt2,
           permission: "user.read",
         },
         {

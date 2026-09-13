@@ -209,7 +209,7 @@ export function BillingVouchersPanel({
           </>
         }
         title="兑换券"
-        description="批量生成兑换码，用户输入后直接到账算力积分（区别于折扣券）。"
+        description="批量生成算力积分兑换码，兑换后到账用户的默认工作区。"
       />
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -255,7 +255,7 @@ export function BillingVouchersPanel({
             <div>
               <h3 className="text-sm font-semibold text-slate-950">批量生成兑换券</h3>
               <p className="mt-1 text-[12px] text-slate-500">
-                每个码可被一位用户核销一次，到账其个人空间算力积分钱包。
+                每个码可被一位用户核销一次，到账该用户的默认工作区。
               </p>
             </div>
             <IconGift className="size-4 text-slate-400" />

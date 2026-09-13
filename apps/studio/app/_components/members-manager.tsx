@@ -101,7 +101,20 @@ export function MembersManager({ scope, canManage }: { scope: ShareScope; canMan
   const [account, setAccount] = useState("");
   const [role, setRole] = useState<AssignableShareRole>(defaultRoleForScope(scope));
   const [search, setSearch] = useState("");
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: membersKey });
+  const invalidate = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: membersKey }),
+      ...(scope.kind === "story-project" || scope.kind === "workspace"
+        ? [
+            queryClient.invalidateQueries({
+              predicate: ({ queryKey }) =>
+                queryKey[0] === "story-studio" &&
+                (scope.kind === "workspace" || queryKey[2] === scope.id),
+            }),
+          ]
+        : []),
+    ]);
+  };
 
   // Realtime: refresh the roster when membership changes server-side — including
   // a change another admin made. Workspace scope only (project members differ).

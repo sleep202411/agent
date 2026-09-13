@@ -1,13 +1,13 @@
-import { BillingTeamWalletPanel } from "@/components/admin/billing/team-wallet-panel";
+import { BillingWorkspaceWalletPanel } from "@/components/admin/billing/workspace-wallet-panel";
 import { fetchAdminBillingWorkspaces } from "@/lib/admin-billing";
 import { getAdminSession } from "@/lib/admin-session";
 
-export default async function BillingTeamWalletPage() {
+export default async function BillingWorkspaceWalletPage() {
   const session = await getAdminSession();
-  const workspaces = await fetchAdminBillingWorkspaces({ type: "team", limit: "30" });
+  const workspaces = await fetchAdminBillingWorkspaces({ limit: "30" });
 
   return (
-    <BillingTeamWalletPanel
+    <BillingWorkspaceWalletPanel
       siteLabel={session?.site.label ?? "当前站点"}
       databaseLabel={session?.site.databaseLabel ?? "当前站点数据库"}
       canWrite={session?.user.permissions.includes("billing.write") ?? false}
