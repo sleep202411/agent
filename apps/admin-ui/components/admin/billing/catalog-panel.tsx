@@ -439,7 +439,12 @@ function CatalogView({
                 ) : null}
               </div>
               <p className="text-[12px] text-slate-500">
-                {intervalLabel(price.interval)} · {price.subjectType}
+                {intervalLabel(price.interval)} ·{" "}
+                {price.productType === "compute_point_pack"
+                  ? "积分归工作区"
+                  : price.subjectType === "workspace"
+                    ? "工作区"
+                    : "用户"}
               </p>
             </>
           );
@@ -665,6 +670,7 @@ function CreatePriceForm({
     setProductType(value);
     if (value === "community_point_pack") {
       setWalletCurrency("community_point");
+      setSubjectType("user");
       setProvider(defaults.provider);
     } else if (value === "compute_point_pack") {
       setWalletCurrency("compute_point");
@@ -682,6 +688,7 @@ function CreatePriceForm({
       }
     } else {
       setWalletCurrency("");
+      setSubjectType(value === "team_membership_plan" ? "workspace" : "user");
       setProvider(defaults.provider);
     }
   }
@@ -786,17 +793,26 @@ function CreatePriceForm({
             <option value="year">年付</option>
           </Select>
         </FormLabel>
-        <FormLabel label="主体" help="权益归属对象。个人会员/积分通常归用户，团队会员可归工作区。">
-          <Select name="subjectType" value={subjectType} onChange={setSubjectType}>
-            <option value="user">用户</option>
-            <option value="workspace">工作区</option>
-          </Select>
-        </FormLabel>
+        {productType === "compute_point_pack" ? (
+          <FormLabel label="积分归属" help="充值到所选工作区；未指定时到账用户的默认工作区。">
+            {/* Catalog eligibility remains user-scoped; the top-up service resolves
+                the actual workspace payer from the checkout request. */}
+            <input type="hidden" name="subjectType" value="user" />
+            <TextInput value="工作区" readOnly />
+          </FormLabel>
+        ) : (
+          <FormLabel label="权益主体" help="社区积分和用户会员归用户，工作区会员归工作区。">
+            <Select name="subjectType" value={subjectType} onChange={setSubjectType}>
+              <option value="user">用户</option>
+              <option value="workspace">工作区</option>
+            </Select>
+          </FormLabel>
+        )}
       </div>
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
         <div className="flex items-center gap-1.5">
           <p className="text-[12px] font-semibold text-slate-500">履约权益</p>
-          <InfoTip text="支付完成后系统自动发放的权益。社区积分/算力积分进入可消费余额；可提现社区积分只能由创作者收入产生，不允许通过商品或券发放。" />
+          <InfoTip text="支付完成后自动发放权益：算力积分进入工作区余额，社区积分进入用户余额。可提现社区积分只能由创作者收入产生，不允许通过商品或券发放。" />
         </div>
         <div className="mt-2 grid gap-2">
           <Select

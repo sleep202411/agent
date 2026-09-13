@@ -1,15 +1,13 @@
 "use client";
 
-// 用户列表 — 只读检索 Java fizzdragon_client.client_user。搜手机/邮箱/ID/昵称,
-// 分页展示资料 + 余额 + 状态。头部和每行的「加积分」打开弹窗(头部空标识符、
-// 行内预填该用户)。数据经 LegacyMysql 桥(/admin/legacy-points/users),不经 Prisma。
+// User identity lookup; compute balances and adjustments belong to workspaces.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconSearch,
-  IconCoins,
+  IconWallet,
   IconCrown,
-  IconEye,
+  IconUsers,
   IconPencil,
   IconBan,
 } from "@tabler/icons-react";
@@ -22,7 +20,8 @@ import {
   requestEnvelope,
   toErrorMessage,
 } from "./shared";
-import { GrantPointsDialog } from "./grant-points-dialog";
+import Link from "next/link";
+import { adminUiPath } from "@/lib/admin-api";
 import { GrantMembershipDialog } from "./grant-membership-dialog";
 import { ClientUserModerationDialog, type ClientUserTarget } from "./client-user-moderation-dialog";
 import { MemberWorkspacesDrawer } from "./member-workspaces-drawer";
@@ -32,7 +31,6 @@ interface MemberSummary {
   phone: string | null;
   email: string | null;
   nickName: string | null;
-  scoreBalance: number;
   accountStatus: number | null;
   createTime: string | null;
 }
@@ -52,7 +50,13 @@ const ACCOUNT_STATUS_LABEL: Record<number, string> = {
   9: "注销",
 };
 
-export function MemberDirectoryPanel() {
+export function MemberDirectoryPanel({
+  canReadWorkspaces,
+  canWriteBilling,
+}: {
+  canReadWorkspaces: boolean;
+  canWriteBilling: boolean;
+}) {
   const [queryInput, setQueryInput] = useState("");
   const [activeQuery, setActiveQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -61,8 +65,6 @@ export function MemberDirectoryPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [grantOpen, setGrantOpen] = useState(false);
-  const [grantIdentifier, setGrantIdentifier] = useState<string | undefined>(undefined);
   // The row whose detail drawer is open — its workspaces are what decides
   // which pot a top-up should go to.
   const [viewing, setViewing] = useState<MemberSummary | null>(null);
@@ -127,11 +129,6 @@ export function MemberDirectoryPanel() {
     setActiveQuery(queryInput.trim());
   }
 
-  function openGrant(identifier?: string) {
-    setGrantIdentifier(identifier);
-    setGrantOpen(true);
-  }
-
   function openMembership(identifier?: string) {
     setMembershipIdentifier(identifier);
     setMembershipOpen(true);
@@ -144,7 +141,7 @@ export function MemberDirectoryPanel() {
     <div className="space-y-4">
       <PageHeader
         title="用户列表"
-        description="检索 Java 老系统的终端用户(client_user),查看资料与积分余额。仅读取。"
+        description="检索用户资料，查看其参与的工作区。算力积分按工作区管理。"
         actions={
           <div className="flex gap-2">
             <Button
@@ -152,14 +149,19 @@ export function MemberDirectoryPanel() {
               size="sm"
               variant="outline"
               onClick={() => openMembership(undefined)}
+              disabled={!canWriteBilling}
             >
               <IconCrown className="size-4" />
               开通会员
             </Button>
-            <Button type="button" size="sm" onClick={() => openGrant(undefined)}>
-              <IconCoins className="size-4" />
-              加积分
-            </Button>
+            {canReadWorkspaces ? (
+              <Button size="sm" asChild>
+                <Link href={adminUiPath("/billing/workspace-wallet")}>
+                  <IconWallet className="size-4" />
+                  工作区积分
+                </Link>
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -197,7 +199,6 @@ export function MemberDirectoryPanel() {
               <tr className="border-b border-slate-200 text-left text-[12px] text-slate-500">
                 <th className="px-4 py-2 font-medium">昵称</th>
                 <th className="px-4 py-2 font-medium">手机 / 邮箱</th>
-                <th className="px-4 py-2 font-medium">积分余额</th>
                 <th className="px-4 py-2 font-medium">状态</th>
                 <th className="px-4 py-2 font-medium">注册时间</th>
                 <th className="px-4 py-2 font-medium"></th>
@@ -212,7 +213,6 @@ export function MemberDirectoryPanel() {
                       <span className="ml-1 text-[11px] text-slate-400">#{m.userId}</span>
                     </td>
                     <td className="px-4 py-2 text-slate-600">{m.phone || m.email || "—"}</td>
-                    <td className="px-4 py-2 font-medium text-slate-900">{m.scoreBalance}</td>
                     <td className="px-4 py-2 text-slate-600">
                       {m.accountStatus == null
                         ? "—"
@@ -228,28 +228,22 @@ export function MemberDirectoryPanel() {
                           size="xs"
                           variant="outline"
                           onClick={() => setViewing(m)}
+                          disabled={!canReadWorkspaces}
                         >
-                          <IconEye className="size-3.5" />
-                          查看
+                          <IconUsers className="size-3.5" />
+                          工作区
                         </Button>
                         <Button
                           type="button"
                           size="xs"
                           variant="outline"
                           onClick={() => openMembership(m.phone || m.email || undefined)}
+                          disabled={!canWriteBilling}
                         >
                           <IconCrown className="size-3.5" />
                           开通会员
                         </Button>
-                        <Button
-                          type="button"
-                          size="xs"
-                          variant="outline"
-                          onClick={() => openGrant(m.phone || m.email || undefined)}
-                        >
-                          <IconCoins className="size-3.5" />
-                          加积分
-                        </Button>
+
                         <Button
                           type="button"
                           size="xs"
@@ -290,7 +284,7 @@ export function MemberDirectoryPanel() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-[13px] text-slate-400">
+                  <td colSpan={5} className="px-4 py-10 text-center text-[13px] text-slate-400">
                     {loading ? "加载中…" : "无匹配用户"}
                   </td>
                 </tr>
@@ -328,17 +322,11 @@ export function MemberDirectoryPanel() {
         ) : null}
       </section>
 
-      <MemberWorkspacesDrawer member={viewing} onClose={() => setViewing(null)} />
-
-      <GrantPointsDialog
-        open={grantOpen}
-        initialIdentifier={grantIdentifier}
-        onClose={() => setGrantOpen(false)}
-        onGranted={() => {
-          // Keep the dialog open on its success view; just refresh the
-          // list behind it so the granted user's balance updates.
-          void load(activeQuery, page);
-        }}
+      <MemberWorkspacesDrawer
+        key={viewing?.userId ?? "closed"}
+        member={viewing}
+        canWrite={canWriteBilling}
+        onClose={() => setViewing(null)}
       />
 
       <GrantMembershipDialog

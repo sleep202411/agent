@@ -80,7 +80,7 @@ export function BillingCheckInPanel({
           </>
         }
         title="每日签到"
-        description="用户每日签到领取算力积分；连续签到按周期递增，断签重置。"
+        description="每日签到奖励到账用户的默认工作区；连续签到按周期递增，断签重置。"
       />
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -89,7 +89,7 @@ export function BillingCheckInPanel({
           <div>
             <h3 className="text-sm font-semibold text-slate-950">签到配置</h3>
             <p className="mt-1 text-[12px] text-slate-500">
-              到账用户个人空间算力积分钱包；每人每天一次（UTC 自然日）。
+              到账用户的默认工作区；每人每天一次（UTC 自然日）。
             </p>
           </div>
           <IconCalendarCheck className="size-4 text-slate-400" />
