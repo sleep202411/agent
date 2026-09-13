@@ -207,7 +207,15 @@ const databaseUrl =
         service.save(ipId, gameId, user, input()),
       ).rejects.toMatchObject({ status: 404 });
       expect((await service.candidates(ipId, user)).items).toEqual([]);
-      await db.$transaction(async tx => { await tx.storyProjectMember.deleteMany({where:{storyProjectId:gameId,userId:'replacement-owner'}}); await tx.storyProjectMember.update({where:{id:memberId},data:{role:'owner'}}); });
+      await db.$transaction(async (tx) => {
+        await tx.storyProjectMember.deleteMany({
+          where: { storyProjectId: gameId, userId: 'replacement-owner' },
+        });
+        await tx.storyProjectMember.update({
+          where: { id: memberId },
+          data: { role: 'owner' },
+        });
+      });
       await db.ip.update({
         where: { id: ipId },
         data: { createdById: 'another-owner' },
@@ -249,7 +257,9 @@ const databaseUrl =
       expect(await service.resolve(gameId)).toEqual({ ipId: null });
     });
     it('rolls back inserted revisions when final authorization fails', async () => {
-      const original = ips.requireEditableIp.bind(ips);
+      const original = ips.requireEditableIp.bind(
+        ips,
+      ) as IpCommerceService['requireEditableIp'];
       let calls = 0;
       jest.spyOn(ips, 'requireEditableIp').mockImplementation((...args) => {
         calls++;
