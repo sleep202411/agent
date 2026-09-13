@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ForbiddenException } from '@nestjs/common';
+import { IpStageApplicationsService } from './ip-stage-applications';
+import { IpCommerceService } from './ip-commerce.service';
 import { buildPrisma, type PrismaService } from '../infra/db/db.module';
 import type { AdminActor } from '../admin-auth';
 import {
@@ -14,6 +16,7 @@ integration('administrator production stages (local PostgreSQL)', () => {
   let ipId: string;
   let actor: AdminActor;
   let roleId: string;
+  let applications: IpStageApplicationsService;
   const change = {
     stage: 'story_testing' as const,
     expectedVersion: 0,
@@ -28,6 +31,18 @@ integration('administrator production stages (local PostgreSQL)', () => {
       throw new Error('Owned local database required.');
     db = buildPrisma();
     await db.$connect();
+    applications = new IpStageApplicationsService(
+      db as PrismaService,
+      new IpCommerceService(
+        db as PrismaService,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+      ),
+    );
   });
   beforeEach(async () => {
     ipId = randomUUID();
@@ -84,6 +99,66 @@ integration('administrator production stages (local PostgreSQL)', () => {
   });
   afterAll(async () => {
     await db?.$disconnect();
+  });
+
+  it('replays a creator application once and approves its stage atomically', async () => {
+    const owner = { userId: 'production-stage-test' };
+    const input = { id: randomUUID(), ...change };
+    const item = await applications.submit(ipId, owner, input);
+    expect((await applications.submit(ipId, owner, input)).id).toBe(item.id);
+    await expect(
+      applications.submit(ipId, owner, { ...input, id: randomUUID() }),
+    ).rejects.toThrow('awaiting review');
+    await applications.review(ipId, item.id, actor, {
+      decision: 'approved',
+      reason: 'Approved proposal.',
+    });
+    expect(await readProductionStage(db, ipId)).toEqual({
+      stage: 'story_testing',
+      version: 1,
+    });
+    expect((await applications.list(ipId, owner)).items[0].status).toBe(
+      'approved',
+    );
+    await expect(
+      applications.review(ipId, item.id, actor, {
+        decision: 'rejected',
+        reason: 'Late review',
+      }),
+    ).rejects.toThrow('already reviewed');
+  });
+  it('rejects unauthorized applications and stale approvals; permits explicit rejection and resubmission', async () => {
+    const input = { id: randomUUID(), ...change };
+    const owner = { userId: 'production-stage-test' };
+    await expect(
+      applications.submit(ipId, { userId: 'stranger' }, input),
+    ).rejects.toThrow();
+    await applications.submit(ipId, owner, input);
+    await changeProductionStage(db as PrismaService, actor, ipId, {
+      ...change,
+      stage: 'production',
+    });
+    await expect(
+      applications.review(ipId, input.id, actor, {
+        decision: 'approved',
+        reason: 'Stale approval',
+      }),
+    ).rejects.toThrow('Refresh');
+    expect((await applications.list(ipId, owner)).items[0].status).toBe(
+      'pending',
+    );
+    await applications.review(ipId, input.id, actor, {
+      decision: 'rejected',
+      reason: 'Stage changed; please revise.',
+    });
+    const next = await applications.submit(ipId, owner, {
+      ...input,
+      id: randomUUID(),
+      stage: 'released',
+      expectedVersion: 1,
+    });
+    expect(next.status).toBe('pending');
+    expect((await applications.list(ipId, owner)).items).toHaveLength(2);
   });
   it('records evidence and corrections atomically without changing publication', async () => {
     expect(await readProductionStage(db, ipId)).toEqual({

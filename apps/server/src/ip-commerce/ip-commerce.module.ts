@@ -1,3 +1,8 @@
+import {
+  IpStageApplicationsService,
+  IpStageApplicationsController,
+  IpStageApplicationsAdminController,
+} from './ip-stage-applications';
 import { CreatorTrustController } from './creator-trust.controller';
 import { IpProductionEvidenceController } from './ip-production-evidence';
 import { IpProductionStageController } from './ip-production-stage';
@@ -41,6 +46,8 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    IpStageApplicationsController,
+    IpStageApplicationsAdminController,
     IpProductionPublicController,
     IpProductionStageController,
     IpProductionEvidenceController,
@@ -55,6 +62,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorTrustController,
   ],
   providers: [
+    IpStageApplicationsService,
     CrewAuthorizationService,
     IpCrewOriginService,
     IpReleaseLinksService,

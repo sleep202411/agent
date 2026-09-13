@@ -3152,23 +3152,24 @@ model PlatformAuditLog {
 // but each cell owns its own admin users and permissions.
 
 model AdminUser {
-  id                String          @id @default(uuid(7)) @db.Uuid
-  email             String          @unique @db.VarChar(320)
-  displayName       String          @map("display_name") @db.VarChar(120)
-  avatarUrl         String?         @map("avatar_url") @db.VarChar(512)
-  passwordHash      String?         @map("password_hash") @db.VarChar(255)
-  status            AdminUserStatus @default(invited)
-  siteScope         AdminSiteScope  @default(all) @map("site_scope")
-  requireMfa        Boolean         @default(false) @map("require_mfa")
-  mfaSecretHash     String?         @map("mfa_secret_hash") @db.VarChar(255)
-  mfaEnabledAt      DateTime?       @map("mfa_enabled_at") @db.Timestamptz(6)
-  failedLoginCount  Int             @default(0) @map("failed_login_count")
-  lockedUntil       DateTime?       @map("locked_until") @db.Timestamptz(6)
-  lastLoginAt       DateTime?       @map("last_login_at") @db.Timestamptz(6)
-  passwordChangedAt DateTime?       @map("password_changed_at") @db.Timestamptz(6)
-  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  disabledAt        DateTime?       @map("disabled_at") @db.Timestamptz(6)
+  stageReviews      IpStageApplication[]
+  id                String               @id @default(uuid(7)) @db.Uuid
+  email             String               @unique @db.VarChar(320)
+  displayName       String               @map("display_name") @db.VarChar(120)
+  avatarUrl         String?              @map("avatar_url") @db.VarChar(512)
+  passwordHash      String?              @map("password_hash") @db.VarChar(255)
+  status            AdminUserStatus      @default(invited)
+  siteScope         AdminSiteScope       @default(all) @map("site_scope")
+  requireMfa        Boolean              @default(false) @map("require_mfa")
+  mfaSecretHash     String?              @map("mfa_secret_hash") @db.VarChar(255)
+  mfaEnabledAt      DateTime?            @map("mfa_enabled_at") @db.Timestamptz(6)
+  failedLoginCount  Int                  @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?            @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt       DateTime?            @map("last_login_at") @db.Timestamptz(6)
+  passwordChangedAt DateTime?            @map("password_changed_at") @db.Timestamptz(6)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  disabledAt        DateTime?            @map("disabled_at") @db.Timestamptz(6)
 
   roles           AdminUserRole[]
   sessions        AdminSession[]
@@ -3578,44 +3579,45 @@ enum MemberPoolBatchStatus {
 }
 
 model Ip {
+  stageApplications      IpStageApplication[]
   productionStage        IpProductionStage?
   crewOrigin             IpCrewOrigin?
-  releaseLinks           Json                @default("[]") @map("release_links") @db.JsonB
+  releaseLinks           Json                 @default("[]") @map("release_links") @db.JsonB
   publicComments         IpPublicComment[]
-  id                     String              @id @default(uuid(7)) @db.Uuid
+  id                     String               @id @default(uuid(7)) @db.Uuid
   /// Stable public room number, allocated by PostgreSQL for every IP.
-  roomNumber             String              @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
-  status                 IpPublicationStatus @default(draft)
-  listingVisibility      IpListingVisibility @default(private) @map("listing_visibility")
-  ageRating              IpAgeRating         @default(general) @map("age_rating")
-  sourceLocale           String              @default("zh-CN") @map("source_locale") @db.VarChar(16)
-  region                 String?             @map("region") @db.VarChar(16)
-  copyrightOwner         String?             @map("copyright_owner") @db.VarChar(160)
-  rightsSummary          Json                @default("{}") @map("rights_summary") @db.JsonB
-  aiDisclosure           Json                @default("{}") @map("ai_disclosure") @db.JsonB
-  coverAssetId           String?             @map("cover_asset_id") @db.Uuid
-  trailerAssetId         String?             @map("trailer_asset_id") @db.Uuid
-  createdById            String              @map("created_by_id") @db.VarChar(64)
-  updatedById            String?             @map("updated_by_id") @db.VarChar(64)
+  roomNumber             String               @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
+  status                 IpPublicationStatus  @default(draft)
+  listingVisibility      IpListingVisibility  @default(private) @map("listing_visibility")
+  ageRating              IpAgeRating          @default(general) @map("age_rating")
+  sourceLocale           String               @default("zh-CN") @map("source_locale") @db.VarChar(16)
+  region                 String?              @map("region") @db.VarChar(16)
+  copyrightOwner         String?              @map("copyright_owner") @db.VarChar(160)
+  rightsSummary          Json                 @default("{}") @map("rights_summary") @db.JsonB
+  aiDisclosure           Json                 @default("{}") @map("ai_disclosure") @db.JsonB
+  coverAssetId           String?              @map("cover_asset_id") @db.Uuid
+  trailerAssetId         String?              @map("trailer_asset_id") @db.Uuid
+  createdById            String               @map("created_by_id") @db.VarChar(64)
+  updatedById            String?              @map("updated_by_id") @db.VarChar(64)
   /// Per-IP override of the platform-vs-creator revenue split, in basis points
   /// (0..10000) of each sale that goes to the creator pool. NULL inherits the
   /// global default (ip_commerce_settings key `ip.creator_revenue_share_bps`).
-  creatorRevenueShareBps Int?                @map("creator_revenue_share_bps")
+  creatorRevenueShareBps Int?                 @map("creator_revenue_share_bps")
   /// Creator-chosen access policy. `member_free` lets active community members
   /// unlock this IP's content for free; non-members still pay the price rule.
-  accessMode             IpAccessMode        @default(points_priced) @map("access_mode")
+  accessMode             IpAccessMode         @default(points_priced) @map("access_mode")
   /// Per-IP override (basis points, 0..10000) of the creator earn-share counted
   /// for this IP when distributing the monthly member pool. NULL inherits the
   /// global default (ip_commerce_settings key `ip.member_free_bps`).
-  memberFreeBps          Int?                @map("member_free_bps")
-  version                Int                 @default(0)
-  scheduledAt            DateTime?           @map("scheduled_at") @db.Timestamptz(6)
-  publishedAt            DateTime?           @map("published_at") @db.Timestamptz(6)
-  suspendedAt            DateTime?           @map("suspended_at") @db.Timestamptz(6)
-  archivedAt             DateTime?           @map("archived_at") @db.Timestamptz(6)
-  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt              DateTime?           @map("deleted_at") @db.Timestamptz(6)
+  memberFreeBps          Int?                 @map("member_free_bps")
+  version                Int                  @default(0)
+  scheduledAt            DateTime?            @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt            DateTime?            @map("published_at") @db.Timestamptz(6)
+  suspendedAt            DateTime?            @map("suspended_at") @db.Timestamptz(6)
+  archivedAt             DateTime?            @map("archived_at") @db.Timestamptz(6)
+  createdAt              DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?            @map("deleted_at") @db.Timestamptz(6)
 
   coverAsset      MediaAsset?     @relation("IpCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
   trailerAsset    MediaAsset?     @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
@@ -10038,4 +10040,23 @@ model IpProductionStage {
   ip        Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
 
   @@map("ip_production_stages")
+}
+
+model IpStageApplication {
+  id           String     @id @db.Uuid
+  ipId         String     @map("ip_id") @db.Uuid
+  applicantId  String     @map("applicant_id") @db.VarChar(64)
+  targetStage  String     @map("target_stage") @db.VarChar(32)
+  stageVersion Int        @map("stage_version")
+  reason       String     @db.Text
+  status       String     @default("pending") @db.VarChar(16)
+  reviewerId   String?    @map("reviewer_id") @db.Uuid
+  reviewReason String?    @map("review_reason") @db.Text
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt   DateTime?  @map("reviewed_at") @db.Timestamptz(6)
+  ip           Ip         @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  reviewer     AdminUser? @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([ipId, createdAt(sort: Desc)], map: "ip_stage_application_history")
+  @@map("ip_stage_applications")
 }

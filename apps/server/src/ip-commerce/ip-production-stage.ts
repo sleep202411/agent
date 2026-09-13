@@ -45,7 +45,7 @@ export async function readProductionStage(
   return row;
 }
 
-async function assertCurrentAuthority(
+export async function assertCurrentAuthority(
   tx: Prisma.TransactionClient,
   actor: AdminActor,
 ) {
@@ -68,46 +68,46 @@ export async function changeProductionStage(
   ipId: string,
   input: z.infer<typeof ProductionStageChange>,
 ) {
-  return db.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM ips WHERE id=${ipId}::uuid FOR UPDATE /* production-stage */`;
-    // Freeze existing authority rows until commit. Revocations that committed
-    // during the IP wait are seen by the fresh check below.
-    await tx.$queryRaw`SELECT s.id FROM admin_sessions s JOIN admin_users u ON u.id=s.user_id
-      JOIN admin_user_roles ur ON ur.user_id=u.id JOIN admin_role_permissions rp ON rp.role_id=ur.role_id
-      JOIN admin_permissions p ON p.id=rp.permission_id
-      WHERE s.id=${actor.sessionId}::uuid AND u.id=${actor.id}::uuid AND p.key=${ADMIN_PERMISSION_KEYS.IpPublish}
-      FOR SHARE OF s,u,ur,rp,p`;
-    await assertCurrentAuthority(tx, actor);
-    const before = await readProductionStage(tx, ipId);
-    if (before.version !== input.expectedVersion)
-      throw new ConflictException(
-        'Production stage changed. Refresh before reviewing again.',
-      );
-    if (before.stage === input.stage)
-      throw new ConflictException(
-        'The IP is already in this production stage.',
-      );
-    const evidence = await readIpProductionEvidence(tx, ipId);
-    const after = { stage: input.stage, version: before.version + 1 };
-    await tx.$executeRaw`INSERT INTO ip_production_stages(ip_id,stage,version) VALUES (${ipId}::uuid,${after.stage},${after.version})
+  return db.$transaction((tx) =>
+    changeProductionStageTx(tx, actor, ipId, input),
+  );
+}
+
+export async function changeProductionStageTx(
+  tx: Prisma.TransactionClient,
+  actor: AdminActor,
+  ipId: string,
+  input: z.infer<typeof ProductionStageChange>,
+) {
+  await tx.$queryRaw`SELECT id FROM ips WHERE id=${ipId}::uuid FOR UPDATE /* production-stage */`;
+  await lockProductionAuthority(tx, actor);
+  const before = await readProductionStage(tx, ipId);
+  if (before.version !== input.expectedVersion)
+    throw new ConflictException(
+      'Production stage changed. Refresh before reviewing again.',
+    );
+  if (before.stage === input.stage)
+    throw new ConflictException('The IP is already in this production stage.');
+  const evidence = await readIpProductionEvidence(tx, ipId);
+  const after = { stage: input.stage, version: before.version + 1 };
+  await tx.$executeRaw`INSERT INTO ip_production_stages(ip_id,stage,version) VALUES (${ipId}::uuid,${after.stage},${after.version})
       ON CONFLICT(ip_id) DO UPDATE SET stage=EXCLUDED.stage,version=EXCLUDED.version,updated_at=clock_timestamp()`;
-    await tx.adminAuditLog.create({
-      data: {
-        actorUserId: actor.id,
-        actorSessionId: actor.sessionId,
-        siteScope: actor.siteScope,
-        action: 'admin.ip.production_stage',
-        resourceType: 'ip',
-        resourceId: ipId,
-        reason: input.reason,
-        before,
-        after,
-        metadata: { evidence: evidence as unknown as Prisma.InputJsonValue },
-      },
-    });
-    await assertCurrentAuthority(tx, actor);
-    return after;
+  await tx.adminAuditLog.create({
+    data: {
+      actorUserId: actor.id,
+      actorSessionId: actor.sessionId,
+      siteScope: actor.siteScope,
+      action: 'admin.ip.production_stage',
+      resourceType: 'ip',
+      resourceId: ipId,
+      reason: input.reason,
+      before,
+      after,
+      metadata: { evidence: evidence as unknown as Prisma.InputJsonValue },
+    },
   });
+  await assertCurrentAuthority(tx, actor);
+  return after;
 }
 
 const Params = z.object({ ipId: z.string().uuid() });
@@ -136,4 +136,18 @@ export class IpProductionStageController {
       data: await changeProductionStage(this.db, actor, params.ipId, input),
     };
   }
+}
+
+export async function lockProductionAuthority(
+  tx: Prisma.TransactionClient,
+  actor: AdminActor,
+) {
+  // Freeze existing authority rows until commit. Revocations that committed
+  // during the IP wait are seen by the fresh check below.
+  await tx.$queryRaw`SELECT s.id FROM admin_sessions s JOIN admin_users u ON u.id=s.user_id
+      JOIN admin_user_roles ur ON ur.user_id=u.id JOIN admin_role_permissions rp ON rp.role_id=ur.role_id
+      JOIN admin_permissions p ON p.id=rp.permission_id
+      WHERE s.id=${actor.sessionId}::uuid AND u.id=${actor.id}::uuid AND p.key=${ADMIN_PERMISSION_KEYS.IpPublish}
+      FOR SHARE OF s,u,ur,rp,p`;
+  await assertCurrentAuthority(tx, actor);
 }
