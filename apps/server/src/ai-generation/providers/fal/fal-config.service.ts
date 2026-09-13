@@ -30,10 +30,15 @@ export class FalConfigService {
   private readonly value: FalProviderConfig;
 
   constructor() {
+    const enabled = boolEnv(process.env.FAL_ENABLED, false);
+    const apiKey =
+      process.env.FAL_API_KEY?.trim() || process.env.FAL_KEY?.trim() || null;
+    if (enabled && !apiKey) {
+      throw new Error('FAL_ENABLED=true requires FAL_API_KEY.');
+    }
     this.value = {
-      enabled: boolEnv(process.env.FAL_ENABLED, false),
-      apiKey:
-        process.env.FAL_API_KEY?.trim() || process.env.FAL_KEY?.trim() || null,
+      enabled,
+      apiKey,
       queueBaseUrl:
         process.env.FAL_QUEUE_BASE_URL?.replace(/\/+$/, '') ||
         'https://queue.fal.run',

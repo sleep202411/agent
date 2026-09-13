@@ -28,13 +28,20 @@ export class BytePlusConfigService {
   private readonly value: BytePlusProviderConfig;
 
   constructor() {
+    const enabled = boolEnv(process.env.BYTEPLUS_MODELARK_ENABLED, false);
+    const apiKey =
+      process.env.BYTEPLUS_MODELARK_API_KEY?.trim() ||
+      process.env.BYTEPLUS_API_KEY?.trim() ||
+      process.env.ARK_API_KEY?.trim() ||
+      null;
+    if (enabled && !apiKey) {
+      throw new Error(
+        'BYTEPLUS_MODELARK_ENABLED=true requires BYTEPLUS_MODELARK_API_KEY.',
+      );
+    }
     this.value = {
-      enabled: boolEnv(process.env.BYTEPLUS_MODELARK_ENABLED, false),
-      apiKey:
-        process.env.BYTEPLUS_MODELARK_API_KEY?.trim() ||
-        process.env.BYTEPLUS_API_KEY?.trim() ||
-        process.env.ARK_API_KEY?.trim() ||
-        null,
+      enabled,
+      apiKey,
       apiBaseUrl:
         process.env.BYTEPLUS_MODELARK_API_BASE_URL?.replace(/\/+$/, '') ||
         'https://ark.ap-southeast.bytepluses.com/api/v3',

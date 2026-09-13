@@ -115,6 +115,7 @@ else
       secret_has_key fizzdragon-secrets "$key"
     done
     secret_has_key fizzdragon-server-secrets FAL_API_KEY
+    secret_has_key fizzdragon-server-secrets BAILIAN_API_KEY
     secret_has_key fizzdragon-server-secrets MINIMAX_API_KEY
   fi
   if has_service admin-ui; then

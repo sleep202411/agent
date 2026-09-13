@@ -317,7 +317,15 @@ export class FalProviderAdapter implements ProviderAdapter {
     // endpoints. Route per mode, derived from the post-mapping payload shape.
     if (runtime.type === 'video' && runtime.modeEndpoints) {
       const mode = videoGenerationModeFromPayload(payload);
-      return runtime.modeEndpoints[mode] ?? runtime.endpointId;
+      const endpoint = runtime.modeEndpoints[mode];
+      if (!endpoint) {
+        throw falError(
+          'VALIDATION_ERROR',
+          `The selected fal video model does not support ${mode}.`,
+          'Choose a model that supports these inputs or provide the required reference media.',
+        );
+      }
+      return endpoint;
     }
 
     const hasReferenceImages =
