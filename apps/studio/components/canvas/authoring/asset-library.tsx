@@ -16,13 +16,12 @@ import {
   mediaAssetReadinessKeys,
 } from "@/lib/media-asset-readiness";
 import { AssetThumb } from "./asset-library-thumb";
-import { ProjectCrewAssetLibrary } from "./project-crew-asset-library";
 
 export const ASSET_LIBRARY_WIDTH = 320;
 
-type AssetTab = "generated" | "uploaded" | "crew" | (string & {});
+type AssetTab = "generated" | "uploaded" | (string & {});
 
-const BASE_TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" | "crew" }[] = [
+const BASE_TABS: { id: AssetTab; labelKey: "myCreations" | "uploaded" }[] = [
   { id: "generated", labelKey: "myCreations" },
   { id: "uploaded", labelKey: "uploaded" },
 ];
@@ -63,7 +62,6 @@ function EmptyState({
 /**
  * The project's persistent asset library — a slide-in drawer over the canvas.
  * Generated and uploaded tabs read the unified `useProjectAssets` inventory;
- * the crew tab keeps folder navigation in `ProjectCrewAssetLibrary`.
  * Image/video assets expose capability-specific readiness at the MediaAsset
  * layer; the UI only reflects that server state.
  */
@@ -72,14 +70,12 @@ export function AssetLibrary({
   onClose,
   variant = "default",
   description,
-  crewProjectId,
   customTab,
 }: {
   open: boolean;
   onClose: () => void;
   variant?: "default" | "floating";
   description?: string;
-  crewProjectId?: string;
   customTab?: {
     id: string;
     label: string;
@@ -87,25 +83,16 @@ export function AssetLibrary({
   };
 }) {
   const t = useTranslations("canvasNodes");
-  // Same inventory as AssetSelectDialog — canvas graph + (when projectId set) crew.
-  // Generated/uploaded tabs only use canvas-origin rows; crew tab stays separate.
-  const { assets: projectAssets } = useProjectAssets(crewProjectId ?? "");
+  const { assets: projectAssets } = useProjectAssets("");
   const [tab, setTab] = useState<AssetTab>("generated");
   const [query, setQuery] = useState("");
   const tabs = useMemo(() => {
-    const base = crewProjectId
-      ? [...BASE_TABS, { id: "crew" as const, labelKey: "crew" as const }]
-      : BASE_TABS;
-    return customTab ? [...base, { id: customTab.id, label: customTab.label }] : base;
-  }, [crewProjectId, customTab]);
+    return customTab ? [...BASE_TABS, { id: customTab.id, label: customTab.label }] : BASE_TABS;
+  }, [customTab]);
 
-  const canvasAssetCount = useMemo(
-    () => projectAssets.filter((asset) => asset.origin !== "crew").length,
-    [projectAssets]
-  );
+  const canvasAssetCount = projectAssets.length;
 
   const filteredAssets = useMemo(() => {
-    if (tab === "crew") return [];
     const origin = tab === "generated" ? "aiGenerated" : "uploaded";
     const q = query.trim().toLowerCase();
     return projectAssets
@@ -147,8 +134,6 @@ export function AssetLibrary({
   const content =
     customTab && tab === customTab.id ? (
       customTab.render()
-    ) : tab === "crew" && crewProjectId ? (
-      <ProjectCrewAssetLibrary projectId={crewProjectId} query={query} floating={floating} />
     ) : empty ? (
       <EmptyState
         icon={<IconPhoto className={floating ? "size-5" : "size-7 text-white/20"} stroke={1.4} />}

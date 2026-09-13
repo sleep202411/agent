@@ -1868,6 +1868,7 @@
       "nodesModeUnavailable": "说明模式下无法使用节点",
       "nodesEditRequired": "需要编辑权限才能添加节点",
       "assets": "资产",
+      "crewAssets": "剧组资产",
       "skills": "技能",
       "skillsComingSoon": "技能 · 即将推出",
       "activity": "动态",

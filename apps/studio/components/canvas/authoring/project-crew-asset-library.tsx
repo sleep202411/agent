@@ -2,8 +2,16 @@
 
 import { useDeferredValue, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { IconArrowLeft, IconFile, IconFolder, IconLoader2, IconPhoto } from "@tabler/icons-react";
+import {
+  IconArrowLeft,
+  IconFile,
+  IconFolder,
+  IconLoader2,
+  IconPhoto,
+  IconSearch,
+} from "@tabler/icons-react";
 import { useTranslations } from "next-intl";
+import { DrawerPanel } from "@/components/ui/drawer-panel";
 import type { CanvasAsset } from "@/lib/canvas-core/types";
 import {
   getProjectCrewAssetContext,
@@ -16,6 +24,40 @@ import { AssetThumb } from "./asset-library-thumb";
 interface FolderCrumb {
   id: string;
   name: string;
+}
+
+export function ProjectCrewAssetsPanel({
+  projectId,
+  onClose,
+}: {
+  projectId: string;
+  onClose: () => void;
+}) {
+  const t = useTranslations("canvasNodes");
+  const [query, setQuery] = useState("");
+
+  return (
+    <>
+      <DrawerPanel.Header
+        title={t("asset.tab.crew")}
+        icon={<IconFolder className="size-4" stroke={1.8} />}
+        closeLabel={t("asset.close")}
+        onClose={onClose}
+      />
+      <div className="mx-4 my-3 flex h-9 shrink-0 items-center gap-2.5 rounded-full bg-white/[0.055] px-3.5">
+        <IconSearch className="size-4 shrink-0 text-muted-foreground" stroke={1.8} />
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder={t("asset.searchPlaceholder")}
+          className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      <DrawerPanel.Body>
+        <ProjectCrewAssetLibrary projectId={projectId} query={query} floating={false} />
+      </DrawerPanel.Body>
+    </>
+  );
 }
 
 function canvasAsset(node: ProjectCrewAssetNode): CanvasAsset | null {
