@@ -73,6 +73,8 @@ spec:
               value: {{ printf "http://%s:%v" $serverName .Values.server.containerPort | quote }}
             - name: AGENT_OS_OPENAI_BASE_URL
               value: {{ required "agentOs.model.baseUrl is required" $agentOs.model.baseUrl | quote }}
+            - name: AGENT_OS_VIEWER_MODEL_PROFILE
+              value: {{ required "agentOs.model.viewerProfile is required" $agentOs.model.viewerProfile | quote }}
             - name: AGENT_OS_CHECKPOINT_SCHEMA
               value: {{ $agentOs.checkpoint.schema | quote }}
             - name: AGENT_OS_CHECKPOINT_POOL_MAX

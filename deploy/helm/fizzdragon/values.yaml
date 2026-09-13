@@ -552,6 +552,7 @@ agentOs:
   model:
     # Bailian's workspace domain. The key is a Key Vault value, never here.
     baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+    viewerProfile: qwen3.7-plus
   checkpoint:
     schema: agent_os
     # Per-pod budget: saver transactions are short; guard sessions are pinned
