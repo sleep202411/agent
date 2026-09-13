@@ -4,6 +4,7 @@ import { REDIS } from '../redis/redis.module';
 import {
   REALTIME_REVOKE_CHANNEL,
   workspaceRevokeChannels,
+  storyProjectChannel,
 } from './realtime-groups';
 
 /**
@@ -21,6 +22,17 @@ export class RealtimeRevokeService {
   private readonly logger = new Logger(RealtimeRevokeService.name);
 
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
+
+  async revokeStoryProjectAccess(projectId: string): Promise<void> {
+    try {
+      await this.redis.publish(
+        REALTIME_REVOKE_CHANNEL,
+        JSON.stringify({ channels: [storyProjectChannel(projectId)] }),
+      );
+    } catch (error) {
+      this.logger.warn(`Story project revocation failed: ${String(error)}`);
+    }
+  }
 
   /** Kick `userId` (or everyone, when omitted) from the workspace's channels. */
   async revokeWorkspaceAccess(

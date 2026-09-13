@@ -21,7 +21,6 @@ import {
   StudioDocumentType,
   StudioDocumentVersionSource,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import {
@@ -1321,7 +1320,7 @@ async function createFixture(
   });
   const workspace = await prisma.workspace.create({
     data: {
-      type: WorkspaceType.team,
+      defaultForUserId: null,
       name: prefix,
       ownerUserId: userId,
       createdById: userId,

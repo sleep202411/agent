@@ -253,61 +253,7 @@ export type CreateAdminWalletAdjustmentInput = z.infer<
   typeof CreateAdminWalletAdjustmentSchema
 >;
 
-export const CreateAdminUserWalletCreditSchema = z
-  .object({
-    userId: z.string().trim().min(1).max(64),
-    idFormat: z.enum(['public', 'raw']).default('public'),
-    currency: z.literal('compute_point').default('compute_point'),
-    balanceKind: z.literal('consumable').default('consumable'),
-    amount: z.coerce
-      .bigint()
-      .refine((value) => value !== 0n, 'Amount cannot be zero.'),
-    grantType: AdminWalletCreditGrantTypeSchema.default('admin_adjustment'),
-    expiresAt: z.coerce.date().nullable().optional(),
-    reason: z.string().trim().min(1).max(1000),
-    idempotencyKey: z.string().trim().min(8).max(180),
-    metadata: z.record(z.string(), z.unknown()).default({}),
-  })
-  .superRefine((value, ctx) => {
-    if (value.expiresAt && value.expiresAt <= new Date()) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['expiresAt'],
-        message: 'Expiry must be in the future.',
-      });
-    }
-    // Debits (negative) are only legitimate as an admin adjustment — mirrors the
-    // account-level adjustment guard, since this delegates to the same service.
-    if (value.amount < 0n && value.grantType !== 'admin_adjustment') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['grantType'],
-        message: 'Only admin_adjustment may be negative.',
-      });
-    }
-  });
-export type CreateAdminUserWalletCreditInput = z.infer<
-  typeof CreateAdminUserWalletCreditSchema
->;
-
-// Read-only balance lookup for the admin 加积分 dialog — resolve a userId to its
-// current compute_point wallet balance (no grant, no adjustment, no audit).
-export const GetAdminUserWalletCreditQuerySchema = z.object({
-  userId: z.string().trim().min(1).max(64),
-  idFormat: z.enum(['public', 'raw']).default('public'),
-  currency: z.literal('compute_point').default('compute_point'),
-});
-export type GetAdminUserWalletCreditQueryInput = z.infer<
-  typeof GetAdminUserWalletCreditQuerySchema
->;
-
-// ── Admin team/workspace compute credit ─────────────────────────────────────
-// compute_point pots are workspace-owned. The user-credit endpoint above resolves
-// a userId → that user's PERSONAL workspace; it cannot express a team workspace.
-// This targets ANY workspace pot directly by workspaceId — the only way to fund a
-// team pool — and delegates to the same account-level adjustment service, so the
-// same active-account / grant-backed / idempotency guards apply. amount travels as
-// a string so large grants never lose precision through a JS number.
+// Compute credits are adjusted through an explicit workspace ID.
 export const CreateAdminWorkspaceWalletCreditSchema = z
   .object({
     workspaceId: z.string().uuid(),
@@ -329,7 +275,7 @@ export const CreateAdminWorkspaceWalletCreditSchema = z
       });
     }
     // Debits (negative) are only legitimate as an admin adjustment — mirrors the
-    // user-credit + account-adjustment guards (all three share one service).
+    // account-adjustment guard (both share one service).
     if (value.amount < 0n && value.grantType !== 'admin_adjustment') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -342,7 +288,7 @@ export type CreateAdminWorkspaceWalletCreditInput = z.infer<
   typeof CreateAdminWorkspaceWalletCreditSchema
 >;
 
-// Read-only compute_point balance for one workspace pot (team or personal).
+// Read-only compute_point balance for one workspace.
 export const GetAdminWorkspaceWalletCreditQuerySchema = z.object({
   workspaceId: z.string().uuid(),
 });
@@ -350,8 +296,7 @@ export type GetAdminWorkspaceWalletCreditQueryInput = z.infer<
   typeof GetAdminWorkspaceWalletCreditQuerySchema
 >;
 
-// Workspace search powering the admin team-wallet picker. Defaults to team
-// workspaces (the reason this surface exists); `query` matches workspace id,
+// Workspace search powering the admin wallet picker; `query` matches workspace id,
 // name (case-insensitive contains), or ownerUserId (exact).
 export const ListAdminWorkspacesQuerySchema = z.object({
   query: z.string().trim().max(120).optional(),
@@ -362,7 +307,6 @@ export const ListAdminWorkspacesQuerySchema = z.object({
    * carries the user's own role in it.
    */
   relatedUserId: z.string().trim().max(64).optional(),
-  type: z.enum(['team', 'personal', 'all']).default('team'),
   limit: z.coerce.number().int().min(1).max(50).default(20),
 });
 export type ListAdminWorkspacesQueryInput = z.infer<

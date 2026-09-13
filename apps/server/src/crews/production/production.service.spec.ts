@@ -12,7 +12,6 @@ import {
   ProjectMemberRole,
   Prisma,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import {
   CrewProductionDocumentSchema,
@@ -177,7 +176,7 @@ describe('CrewProductionService', () => {
         workspace: {
           id: 'personal-1',
           name: 'Isaac',
-          type: WorkspaceType.personal,
+          defaultForUserId: 'user-1',
           projects: [
             {
               id: 'project-personal',
@@ -197,7 +196,7 @@ describe('CrewProductionService', () => {
         workspace: {
           id: 'team-1',
           name: 'Animation team',
-          type: WorkspaceType.team,
+          defaultForUserId: null,
           projects: [
             {
               id: 'project-team',
@@ -217,8 +216,8 @@ describe('CrewProductionService', () => {
 
     expect(result.workspaces).toHaveLength(2);
     expect(result.workspaces[0].projects[0]).toMatchObject({
-      selectable: false,
-      disabledReason: 'personal_workspace',
+      selectable: true,
+      disabledReason: null,
     });
     expect(result.workspaces[1].projects[0]).toMatchObject({
       selectable: true,
@@ -236,7 +235,7 @@ describe('CrewProductionService', () => {
       workspace: {
         id: 'team-1',
         name: 'Animation team',
-        type: WorkspaceType.team,
+        defaultForUserId: null,
       },
       studioCrew: null,
       productionCrew: { id: 'another-crew' },

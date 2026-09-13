@@ -1,10 +1,9 @@
 /**
  * Output storage abstraction.
  *
- * Today: Azure Blob Storage (intl primary, matches the Foundry side
- * already running on Azure). Tomorrow: a sibling Alibaba OSS impl
- * picked by env so the CN deployment keeps data in-region. Callers
- * never reach for a provider SDK — they go through this interface.
+ * CN writes to Aliyun OSS, international writes to S3-compatible storage.
+ * The selected provider is validated at bootstrap. Existing objects retain
+ * their recorded provider; callers never reach for a provider SDK.
  */
 
 export interface OutputStorageUpload {
@@ -351,6 +350,16 @@ export abstract class OutputStorageService {
   abstract abortMultipartUpload(ref: MultipartUploadRef): Promise<void>;
   /** Stable provider identity for diagnostics and provider-aware orchestration. */
   abstract readonly providerId: StorageProviderId;
+  /** Called only for the selected write provider during bootstrap. */
+  abstract assertConfigured(context: string): void;
+  /** Stable placement for a new object, available before uploading its bytes. */
+  abstract objectLocation(key: string): {
+    storageProvider: StorageProviderId;
+    bucket: string;
+    region: string | null;
+    objectKey: string;
+    externalUrl: null;
+  };
   abstract upload(input: OutputStorageUpload): Promise<OutputStorageResult>;
   /**
    * Upload from a disk spool file. Azure/OSS override with their staged

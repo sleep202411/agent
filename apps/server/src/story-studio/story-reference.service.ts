@@ -262,6 +262,9 @@ export class StoryReferenceService {
         if (!slot) throw referenceSlotNotFound();
         assertSlotVersion(slot.version, input.expectedSlotVersion);
 
+        const [reference] = await tx.$queryRaw<Array<{ allowed: boolean }>>`
+          SELECT story_project_references_media(${projectId}::uuid, ${input.assetId}::uuid) AS allowed
+        `;
         const variant = await tx.mediaAssetVariant.findFirst({
           where: {
             id: input.variantId,
@@ -276,7 +279,9 @@ export class StoryReferenceService {
               },
             },
             asset: {
-              workspaceId: scope.project.workspaceId,
+              ...(reference?.allowed
+                ? {}
+                : { workspaceId: scope.project.workspaceId }),
               kind: MediaAssetKind.image,
               status: MediaAssetStatus.ready,
               moderationStatus: {
@@ -299,7 +304,10 @@ export class StoryReferenceService {
               assetId: input.assetId,
               deletedAt: null,
               job: {
-                workspaceId: scope.project.workspaceId,
+                OR: [
+                  { workspaceId: scope.project.workspaceId },
+                  { storyProjectId: projectId },
+                ],
                 deletedAt: null,
               },
             },

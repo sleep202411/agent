@@ -1,6 +1,8 @@
+import { MediaAccessService } from '../media/media-access.service';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -17,7 +19,6 @@ import {
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
-  StoryProjectBillingMode,
   StoryFrameProfile,
   StoryRevisionSource,
   StudioDocumentType,
@@ -31,7 +32,7 @@ import { rootSchemaFor } from '../documents/document-modes';
 import { ensureStoryScriptDocumentInTransaction } from '../documents/story-script-document';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
-import { WorkspacesService } from '../workspaces';
+import { WorkspacePermissionService } from '../workspaces';
 import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -57,7 +58,6 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
-  type StoryCapability,
   type StoryChapterDto,
   type StoryCanvasLayoutDto,
   type StoryCandidateAssetDto,
@@ -100,6 +100,14 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
     include: {
       placements: true,
       variants: { include: { placements: true } },
+    },
+  },
+  workspace: {
+    select: {
+      members: {
+        where: { status: 'active', accessScope: 'workspace', removedAt: null },
+        select: { userId: true, role: true },
+      },
     },
   },
   draft: true,
@@ -243,22 +251,21 @@ export class StoryProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
-    private readonly workspaces: WorkspacesService,
+    private readonly workspacePermissions: WorkspacePermissionService,
     private readonly writeGuard: StoryProjectWriteGuardService,
+    private readonly mediaAccess: MediaAccessService,
   ) {}
 
   async create(
     user: AuthUser,
     input: CreateStoryProjectInput,
   ): Promise<StoryWorkbenchDto> {
-    // Story projects are personal-first product roots. Workspace remains an
-    // internal storage/media compatibility domain while legacy tables still
-    // require it; the active UI workspace never chooses project ownership or
-    // billing. ensurePersonalWorkspace also guarantees the existing personal
-    // wallet mapping without moving any balance.
-    const personalWorkspace =
-      await this.workspaces.ensurePersonalWorkspace(user);
-    const workspaceId = personalWorkspace.id;
+    const { workspaceId } = input;
+    await this.workspacePermissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      'editor',
+    );
 
     const contentHash = canonicalJsonHash(
       EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -272,7 +279,6 @@ export class StoryProjectsService {
         const project = await tx.storyProject.create({
           data: {
             workspaceId,
-            billingMode: StoryProjectBillingMode.actor,
             // The empty canvas needs a projection shape before the Agent intake
             // runs. This value is provisional: the creator's Q1 answer replaces
             // it atomically with duration + visual direction before authoring.
@@ -401,19 +407,28 @@ export class StoryProjectsService {
     user: AuthUser,
     query: StoryProjectListQuery,
   ): Promise<CursorPageDto<StoryProjectSummaryDto>> {
+    const membership = await this.workspacePermissions.requireWorkspacePresence(
+      user.userId,
+      query.workspaceId,
+    );
     const cursor = query.cursor
       ? decodeCursor<ProjectCursor>(query.cursor, isProjectCursor)
       : null;
     const rows = await this.prisma.storyProject.findMany({
       where: {
         status: query.status,
-        members: {
-          some: {
-            userId: user.userId,
-            status: StoryProjectMemberStatus.active,
-            removedAt: null,
-          },
-        },
+        workspaceId: query.workspaceId,
+        ...(membership.accessScope === 'project_only'
+          ? {
+              members: {
+                some: {
+                  userId: user.userId,
+                  status: StoryProjectMemberStatus.active,
+                  removedAt: null,
+                },
+              },
+            }
+          : {}),
         ...(cursor
           ? {
               OR: [
@@ -1109,21 +1124,31 @@ export class StoryProjectsService {
   ): Promise<StoryCandidateAssetDto> {
     await this.requireProject(user, projectId, 'story.edit');
 
+    // Attaching media shares it with this project's present and future audience.
+    try {
+      await this.mediaAccess.requireUseAccessById(user.userId, mediaAssetId);
+    } catch (error) {
+      if (!(error instanceof ForbiddenException)) throw error;
+      const documents = await this.prisma.studioDocument.findMany({
+        where: { storyProjectId: projectId },
+        select: { id: true, contentSnapshot: true },
+      });
+      const document = documents.find((row) =>
+        JSON.stringify(row.contentSnapshot).includes(mediaAssetId),
+      );
+      if (!document) throw error;
+      await this.mediaAccess.requireUseAccessById(user.userId, mediaAssetId, {
+        documentId: document.id,
+      });
+    }
     const candidate = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      // Deliberately NOT scoped by workspaceId. The id can only reach here from
-      // the project's own canvas, and `requireProject` above already
-      // decided whether the caller may edit that project — re-checking the
-      // asset's workspace is a second lock on a door that is already shut.
-      //
-      // What it did instead was break real work: uploads never recorded a
-      // workspace (the client omits `x-fizz-workspace-id`, so the server stores
-      // null), which equality can never match, so 4,210 uploaded assets could
-      // not be used as candidates and the creator was told their media "must be
-      // ready" — a message about a condition that was already satisfied.
-      //
-      // Recording the workspace on upload is worth fixing on its own terms; it
-      // is not a reason to keep this check.
+      await this.permissions.requireProjectInTransaction(
+        tx,
+        user.userId,
+        projectId,
+        'story.edit',
+      );
       const asset = await tx.mediaAsset.findUnique({
         where: { id: mediaAssetId },
         select: {
@@ -1599,9 +1624,11 @@ export class StoryProjectsService {
     userId: string,
   ): StoryProjectSummaryDto {
     const membership = row.members.find((member) => member.userId === userId);
-    const capabilities = membership
-      ? (this.permissions.capabilities(membership.role) as StoryCapability[])
-      : [];
+    const access = this.permissions.effectiveAccess(
+      membership?.role,
+      row.workspace.members.find((member) => member.userId === userId)?.role,
+    );
+    const capabilities = access?.capabilities ?? [];
     const parsedDraft = row.draft
       ? InteractiveStoryDraftContentSchema.safeParse(row.draft.content)
       : null;
@@ -1631,6 +1658,7 @@ export class StoryProjectsService {
     ).length;
     return {
       id: row.id,
+      canMove: membership?.role === StoryProjectMemberRole.owner,
       workspaceId: row.workspaceId,
       frameProfile: row.frameProfile,
       frameProfileMutable: storyFrameProfileCanChange(row),

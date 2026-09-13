@@ -38,7 +38,10 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "node scripts/ensure-local-database.mjs prisma studio",
     "seed:tv-local": "tsx scripts/seed-tv-local.ts",
-    "test:crew-migrations": "node scripts/verify-crew-migrations.mjs"
+    "test:crew-migrations": "node scripts/verify-crew-migrations.mjs",
+    "test:workspace-migration": "node scripts/verify-workspace-migration.mjs",
+    "test:story-project-move": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-story-project-move.ts",
+    "test:workspace-permissions": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-workspace-permissions.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed/seed.ts"

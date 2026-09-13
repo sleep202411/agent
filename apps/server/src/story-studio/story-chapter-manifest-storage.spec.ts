@@ -1,3 +1,4 @@
+import { S3CompatibleStorageService } from '../infra/storage/s3-storage.service';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { canonicalJsonHash, canonicalJsonString } from './canonical-json';
 import {
@@ -21,8 +22,10 @@ const MANIFEST = {
 const MANIFEST_HASH = canonicalJsonHash(MANIFEST);
 
 function serviceWith(upload = jest.fn(uploadResult)) {
+  const storage = new S3CompatibleStorageService();
+  storage.upload = upload;
   const service = new StoryChapterManifestStorageService(
-    { forProvider: jest.fn(() => ({ upload })) } as never,
+    storage,
     new MediaAssetUrlResolverService(),
   );
   return { service, upload };
@@ -84,8 +87,7 @@ describe('storyChapterManifestKey', () => {
 });
 
 describe('StoryChapterManifestStorageService', () => {
-  const previousBaseUrl = process.env.MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE;
-  const previousBucket = process.env.S3_BUCKET;
+  const previousEnv = { ...process.env };
   const object = {
     projectId: PROJECT_ID,
     buildId: BUILD_ID,
@@ -95,11 +97,14 @@ describe('StoryChapterManifestStorageService', () => {
   beforeEach(() => {
     process.env.MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE = PUBLIC_BASE_URL;
     process.env.S3_BUCKET = 'fizzdragon-media';
+    process.env.S3_REGION = 'auto';
+    process.env.S3_ENDPOINT = 'https://test.r2.cloudflarestorage.com';
+    process.env.S3_ACCESS_KEY_ID = 'test';
+    process.env.S3_ACCESS_KEY_SECRET = 'test';
   });
 
   afterAll(() => {
-    process.env.MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE = previousBaseUrl;
-    process.env.S3_BUCKET = previousBucket;
+    process.env = previousEnv;
   });
 
   it('resolves the public bucket domain, not the storage endpoint', () => {

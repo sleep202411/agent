@@ -3,7 +3,6 @@ import {
   StudioDocumentStatus,
   StudioDocumentType,
   StoryFrameProfile,
-  WorkspaceType,
 } from '@prisma/client';
 import {
   AGENT_OS_CHECKPOINT_EXECUTION_LOCK_SEED,
@@ -515,7 +514,7 @@ describePostgres(
       const actorId = `agent-os-receipt-pg-${suffix}`;
       const workspace = await prisma.workspace.create({
         data: {
-          type: WorkspaceType.team,
+          defaultForUserId: null,
           name: `Receipt integration ${suffix}`,
           ownerUserId: actorId,
           createdById: actorId,

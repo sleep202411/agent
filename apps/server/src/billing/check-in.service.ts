@@ -11,7 +11,6 @@ import {
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
-  WorkspaceType,
   type CheckInConfig,
   type DailyCheckIn,
 } from '@prisma/client';
@@ -162,19 +161,18 @@ export class CheckInService {
         : 1;
     const amount = rewards[(streakDay - 1) % rewards.length];
 
-    // compute_point is workspace-owned -> credits land in the personal-ws pot.
-    const personal = await this.prisma.workspace.findFirst({
+    // compute_point is workspace-owned -> credits land in the default-workspace pot.
+    const defaultWorkspace = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: userId,
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (!personal) {
+    if (!defaultWorkspace) {
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'No personal workspace to receive the credits yet.',
+        code: 'DEFAULT_WORKSPACE_MISSING',
+        msg: 'No default workspace to receive the credits yet.',
       });
     }
 
@@ -187,7 +185,7 @@ export class CheckInService {
           checkInDate: today,
           streakDay,
           amount,
-          workspaceId: personal.id,
+          workspaceId: defaultWorkspace.id,
         },
       });
     } catch (err) {

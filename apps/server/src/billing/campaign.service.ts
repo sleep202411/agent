@@ -13,7 +13,6 @@ import {
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
-  WorkspaceType,
   type CreditCampaign,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
@@ -169,19 +168,18 @@ export class CampaignService {
       });
     }
 
-    // compute_point is workspace-owned -> credits land in the personal-ws pot.
-    const personal = await this.prisma.workspace.findFirst({
+    // compute_point is workspace-owned -> credits land in the default-workspace pot.
+    const defaultWorkspace = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: userId,
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (!personal) {
+    if (!defaultWorkspace) {
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'No personal workspace to receive the credits yet.',
+        code: 'DEFAULT_WORKSPACE_MISSING',
+        msg: 'No default workspace to receive the credits yet.',
       });
     }
 
@@ -201,7 +199,7 @@ export class CampaignService {
             data: {
               campaignId,
               userId,
-              workspaceId: personal.id,
+              workspaceId: defaultWorkspace.id,
               amount: campaign.computeCreditAmount,
             },
           });
@@ -241,14 +239,14 @@ export class CampaignService {
       where: {
         ownerType_ownerId_currency_balanceKind: {
           ownerType: WalletOwnerType.workspace,
-          ownerId: personal.id,
+          ownerId: defaultWorkspace.id,
           currency: WalletCurrencyType.compute_point,
           balanceKind: WalletBalanceKind.consumable,
         },
       },
       create: {
         ownerType: WalletOwnerType.workspace,
-        ownerId: personal.id,
+        ownerId: defaultWorkspace.id,
         currency: WalletCurrencyType.compute_point,
         balanceKind: WalletBalanceKind.consumable,
         status: WalletAccountStatus.active,
@@ -265,7 +263,7 @@ export class CampaignService {
       sourceId: claimId,
       idempotencyKey: `campaign_claim:${claimId}`,
       actorUserId: userId,
-      workspaceId: personal.id,
+      workspaceId: defaultWorkspace.id,
       description: `Campaign "${campaign.name}" claimed`,
       reason: 'campaign_compute_point_credit',
       metadata: { campaignId, campaignName: campaign.name, claimId },
@@ -281,7 +279,7 @@ export class CampaignService {
         grantType: 'compute_credits' as const,
         currency: WalletCurrencyType.compute_point,
         amount: amount.toString(),
-        workspaceId: personal.id,
+        workspaceId: defaultWorkspace.id,
       },
       alreadyClaimed: alreadyClaimed || posted.deduped,
     };

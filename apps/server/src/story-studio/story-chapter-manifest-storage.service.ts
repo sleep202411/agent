@@ -1,8 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { MediaStorageProvider } from '@prisma/client';
 import { type ExperienceRuntimeManifest } from '@repo/shared/experience-runtime';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
-import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
+import { OutputStorageService } from '../infra/storage/storage.types';
 import { canonicalJsonHash, canonicalJsonString } from './canonical-json';
 
 /**
@@ -10,12 +9,8 @@ import { canonicalJsonHash, canonicalJsonString } from './canonical-json';
  * Manifest points at it. Java never sees these bytes — it only stores the URL
  * we hand it — so this object IS the chapter's permanent runtime address.
  *
- * Chapter manifests pin `s3_compatible` explicitly instead of taking the cell
- * default: the cell default is Azure Blob, whose public host is not the R2
- * custom domain the release URLs are meant to live on. This is the same
- * per-unit-of-work provider pin an AI job uses.
+ * Uses the same validated write storage as generation and uploads.
  */
-const CHAPTER_MANIFEST_PROVIDER = MediaStorageProvider.s3_compatible;
 const CHAPTER_MANIFEST_CONTENT_TYPE = 'application/json';
 
 export interface StoryChapterManifestObject {
@@ -53,7 +48,7 @@ export function storyChapterManifestKey(
 @Injectable()
 export class StoryChapterManifestStorageService {
   constructor(
-    private readonly registry: StorageProviderRegistry,
+    private readonly storage: OutputStorageService,
     private readonly urls: MediaAssetUrlResolverService,
   ) {}
 
@@ -64,23 +59,9 @@ export class StoryChapterManifestStorageService {
    * must be a pure function of the Build rather than of an upload response.
    */
   publicUrl(object: StoryChapterManifestObject): string {
-    // Without the public base URL the resolver falls back to an AWS host shape
-    // that does not exist for R2. Publishing that URL would hand Java a
-    // permanently dead manifest address, so refuse instead.
-    if (!process.env.MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE?.trim()) {
-      throw new ServiceUnavailableException({
-        code: 'STORY_CHAPTER_MANIFEST_PUBLIC_URL_UNCONFIGURED',
-        message:
-          'MEDIA_PUBLIC_BASE_URL_S3_COMPATIBLE must name the public bucket domain before a chapter manifest can be published.',
-      });
-    }
-    return this.urls.resolve({
-      storageProvider: CHAPTER_MANIFEST_PROVIDER,
-      bucket: this.requireBucket(),
-      region: null,
-      objectKey: storyChapterManifestKey(object),
-      externalUrl: null,
-    });
+    return this.urls.resolve(
+      this.storage.objectLocation(storyChapterManifestKey(object)),
+    );
   }
 
   /** Where a chapter manifest will live, resolved without any storage call. */
@@ -113,34 +94,11 @@ export class StoryChapterManifestStorageService {
           'The chapter manifest bytes do not hash to the Build runtime hash the key is addressed by.',
       });
     }
-    const storage = this.requireStorage();
-    const result = await storage.upload({
+    const result = await this.storage.upload({
       body: Buffer.from(canonical, 'utf8'),
       key: storyChapterManifestKey(object),
       contentType: CHAPTER_MANIFEST_CONTENT_TYPE,
     });
     return { key: result.storagePath, url, manifestHash };
-  }
-
-  private requireStorage() {
-    const storage = this.registry.forProvider(CHAPTER_MANIFEST_PROVIDER);
-    if (!storage) {
-      throw new ServiceUnavailableException({
-        code: 'STORY_CHAPTER_MANIFEST_STORAGE_UNAVAILABLE',
-        message: 'Chapter manifest storage is not configured.',
-      });
-    }
-    return storage;
-  }
-
-  private requireBucket(): string {
-    const bucket = process.env.S3_BUCKET?.trim();
-    if (!bucket) {
-      throw new ServiceUnavailableException({
-        code: 'STORY_CHAPTER_MANIFEST_STORAGE_UNAVAILABLE',
-        message: 'S3_BUCKET must be configured to publish a chapter manifest.',
-      });
-    }
-    return bucket;
   }
 }

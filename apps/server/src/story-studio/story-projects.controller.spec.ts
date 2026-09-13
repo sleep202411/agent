@@ -6,13 +6,14 @@ const CHAPTER_ID = '0197f4a2-0800-7000-8000-000000000003';
 const MEDIA_ASSET_ID = '0197f4a2-0800-7000-8000-000000000004';
 
 describe('StoryProjectsController list', () => {
-  it('creates a personal-first Story project without a workspace header', async () => {
+  it('creates a Story project in its explicit workspace', async () => {
     const project = { id: PROJECT_ID, title: 'Moving Pictures' };
     const service = {
       create: jest.fn(() => Promise.resolve(project)),
     };
     const controller = new StoryProjectsController(service as never);
     const body = {
+      workspaceId: '0197f4a2-0800-7000-8000-000000000001',
       title: 'Moving Pictures',
       summary: null,
       defaultLocale: 'en-US',
@@ -26,13 +27,17 @@ describe('StoryProjectsController list', () => {
     expect(service.create).toHaveBeenCalledWith(USER, body);
   });
 
-  it('lists every project membership without a workspace header', async () => {
+  it('lists projects in the explicit workspace', async () => {
     const page = { items: [], nextCursor: null };
     const service = {
       list: jest.fn(() => Promise.resolve(page)),
     };
     const controller = new StoryProjectsController(service as never);
-    const query = { status: 'active' as const, limit: 20 };
+    const query = {
+      workspaceId: '0197f4a2-0800-7000-8000-000000000001',
+      status: 'active' as const,
+      limit: 20,
+    };
 
     await expect(controller.list(USER as never, query)).resolves.toEqual({
       code: 200,

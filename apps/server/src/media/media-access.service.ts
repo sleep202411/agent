@@ -306,6 +306,28 @@ export class MediaAccessService {
     });
   }
 
+  private async hasStoryReferenceAccess(
+    userId: string,
+    assetId: string,
+  ): Promise<boolean> {
+    const rows = await this.prisma.$queryRaw<Array<{ allowed: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM story_project_media_references r
+        JOIN story_projects p ON p.id = r.story_project_id
+        JOIN workspaces w ON w.id = p.workspace_id
+        WHERE r.asset_id = ${assetId}::uuid AND p.status = 'active'
+          AND w.status = 'active' AND w.deleted_at IS NULL
+          AND (
+            EXISTS (SELECT 1 FROM story_project_members m WHERE m.story_project_id = p.id
+              AND m.user_id = ${userId} AND m.status = 'active' AND m.removed_at IS NULL)
+            OR EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = w.id
+              AND m.user_id = ${userId} AND m.status = 'active' AND m.removed_at IS NULL AND m.access_scope = 'workspace')
+          )
+      ) AS allowed
+    `;
+    return rows[0]?.allowed === true;
+  }
+
   private async requireAccess(
     userId: string | null | undefined,
     asset: {
@@ -381,6 +403,7 @@ export class MediaAccessService {
       }
     }
     if (await this.hasCharacterReferenceAccess(userId, asset.id)) return;
+    if (await this.hasStoryReferenceAccess(userId, asset.id)) return;
     throw new ForbiddenException({
       code: 'MEDIA_ASSET_ACCESS_DENIED',
       message: 'You do not have access to this media asset.',
