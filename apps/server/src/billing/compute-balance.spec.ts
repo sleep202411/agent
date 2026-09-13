@@ -239,8 +239,8 @@ describe('compute balance access', () => {
 describe('project ledger attribution', () => {
   const projectId = '00000000-0000-4000-8000-000000000001';
   const query = {
-    currency: 'compute_point',
-    balanceKind: 'consumable',
+    currency: 'compute_point' as const,
+    balanceKind: 'consumable' as const,
     limit: 20,
     projectId,
   };

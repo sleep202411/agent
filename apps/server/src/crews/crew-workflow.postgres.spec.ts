@@ -424,6 +424,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         (
           await assets.list(crewId, worker, {
             source: 'all',
+            sort: 'name',
             parentId: delivery.folderId,
           })
         ).items,
@@ -516,6 +517,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         (
           await assets.list(crewId, worker, {
             source: 'all',
+            sort: 'name',
             parentId: delivery.folderId,
           })
         ).items.map((item) => item.id),
@@ -524,6 +526,7 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         (
           await assets.list(crewId, finance, {
             source: 'all',
+            sort: 'name',
             parentId: delivery.folderId,
           })
         ).items.map((item) => item.id),
