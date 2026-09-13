@@ -138,7 +138,6 @@ suite('Studio linking authorization on PostgreSQL', () => {
         await db.workspace.create({
           data: {
             id: workspaceId,
-            type: 'team',
             name: 'Link fixture',
             ownerUserId: ownerId,
             createdById: ownerId,
