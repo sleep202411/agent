@@ -163,6 +163,7 @@ function IncomeSession({
   canCreatePayout: boolean;
   canManagePayout: boolean;
 }) {
+  const expenses = useTranslations("crewExpenses");
   const t = useTranslations("crewIncome");
   const locale = useLocale();
   const [view, setView] = useState<View>("earnings");
@@ -209,6 +210,7 @@ function IncomeSession({
 
   return (
     <div className="mx-auto w-full max-w-[1180px] pb-10">
+      <Link className="mb-3 inline-block text-sm" href={`/crews/${encodeURIComponent(crewId)}/expenses`}>{expenses("title")}</Link>
       <header className="border-b border-white/[0.07] px-1 pb-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>

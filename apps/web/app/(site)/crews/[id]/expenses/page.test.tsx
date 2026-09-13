@@ -1,0 +1,78 @@
+// @vitest-environment jsdom
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { it, expect, vi } from "vitest";
+import Page from "./page";
+import { crewApi } from "@/app/(site)/crews/_hooks/api";
+const state = vi.hoisted(() => ({ account: "a" }));
+vi.mock("next/navigation", () => ({ useParams: () => ({ id: "crew" }) }));
+vi.mock("next/link", () => ({ default: "a" }));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: state.account } }),
+}));
+vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
+vi.mock("@/app/(site)/crews/_hooks/api", () => ({ crewApi: { get: vi.fn(), post: vi.fn() } }));
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+it("retains failed drafts, submits saved identity and resets private edits on account change", async () => {
+  const container = document.createElement("div"),
+    root = createRoot(container),
+    client = new QueryClient();
+  vi.mocked(crewApi.get).mockResolvedValue({ items: [], nextCursor: null });
+  const render = async () =>
+    act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <Page />
+        </QueryClientProvider>
+      )
+    );
+  const button = (text: string) =>
+    [...container.querySelectorAll("button")].find((b) => b.textContent === text)!;
+  const input = (label: string, value: string) =>
+    act(() => {
+      const field = [...container.querySelectorAll("label")]
+        .find((el) => el.textContent?.startsWith(label))!
+        .querySelector("input,textarea")!;
+      const proto =
+        field.tagName === "INPUT" ? HTMLInputElement.prototype : HTMLTextAreaElement.prototype;
+      Object.getOwnPropertyDescriptor(proto, "value")!.set!.call(field, value);
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  try {
+    await render();
+    input("category", "Travel");
+    input("purpose", "Meeting");
+    input("amount", "12.34");
+    vi.mocked(crewApi.post).mockRejectedValueOnce(new Error("Offline"));
+    await act(async () => button("save").click());
+    expect(container.textContent).toContain("Offline");
+    expect(container.querySelector("textarea")!.value).toBe("Meeting");
+    const failed = vi.mocked(crewApi.post).mock.calls[0];
+    const definition = {
+      category: "Travel",
+      purpose: "Meeting",
+      occurredOn: null,
+      currency: "USD",
+      amountMinor: "1234",
+      evidenceNote: "",
+    };
+    vi.mocked(crewApi.post).mockResolvedValueOnce({ id: "saved-id", version: 1, definition });
+    await act(async () => button("save").click());
+    expect(vi.mocked(crewApi.post).mock.calls[1][0]).toBe(failed[0]);
+    vi.mocked(crewApi.post).mockResolvedValueOnce({ status: "pending" });
+    await act(async () => button("submit").click());
+    expect(crewApi.post).toHaveBeenLastCalledWith(
+      "/crews/crew/expense-drafts/saved-id/submit",
+      expect.objectContaining({ body: { expectedVersion: 1 } })
+    );
+    expect(container.querySelector("input")!.disabled).toBe(true);
+    state.account = "b";
+    await render();
+    expect(container.querySelector("input")!.value).toBe("");
+  } finally {
+    act(() => root.unmount());
+    client.clear();
+    state.account = "a";
+  }
+});

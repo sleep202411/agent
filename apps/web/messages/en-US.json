@@ -1,4 +1,28 @@
 {
+  "crewExpenses": {
+    "back": "Back to Crew income",
+    "title": "My expense claims",
+    "note": "Submission requests administrator review. It does not confirm reimbursement or payment. Evidence notes are not uploaded receipts.",
+    "new": "New draft",
+    "unsaved": "Save or discard edits before switching drafts.",
+    "retry": "Retry",
+    "loading": "Loading claims…",
+    "draft": "Draft",
+    "pending": "Awaiting review",
+    "approved": "Approved",
+    "rejected": "Rejected",
+    "more": "Load more",
+    "category": "Category",
+    "purpose": "Purpose",
+    "date": "Expense date",
+    "currency": "Currency",
+    "amount": "Amount",
+    "evidence": "Evidence notes",
+    "invalidAmount": "Enter an amount with at most two decimal places within the supported limit.",
+    "save": "Save draft",
+    "submit": "Submit saved draft",
+    "discard": "Discard edits"
+  },
   "common": {
     "appName": "FizzDragon Studio",
     "loading": "Loading...",

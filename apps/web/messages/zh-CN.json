@@ -1,4 +1,28 @@
 {
+  "crewExpenses": {
+    "back": "返回剧组收入",
+    "title": "我的费用申请",
+    "note": "提交仅请求管理员审核，不代表报销获批或已付款。凭证说明不是已上传收据。",
+    "new": "新建草稿",
+    "unsaved": "切换草稿前请保存或丢弃修改。",
+    "retry": "重试",
+    "loading": "正在加载申请…",
+    "draft": "草稿",
+    "pending": "待审核",
+    "approved": "已批准",
+    "rejected": "已拒绝",
+    "more": "加载更多",
+    "category": "分类",
+    "purpose": "用途",
+    "date": "发生日期",
+    "currency": "币种",
+    "amount": "金额",
+    "evidence": "凭证说明",
+    "invalidAmount": "请输入最多两位小数且在支持范围内的金额。",
+    "save": "保存草稿",
+    "submit": "提交已保存草稿",
+    "discard": "丢弃修改"
+  },
   "common": {
     "appName": "FizzDragon Studio",
     "loading": "加载中...",
