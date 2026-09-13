@@ -3,7 +3,7 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, afterEach, it, expect, vi } from "vitest";
-import { TaskDeliveryFields, useTaskDeliveryTemplate } from "./task-delivery-template";
+import { DeliveryReferencePrices, TaskDeliveryFields, useTaskDeliveryTemplate } from "./task-delivery-template";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 const state = vi.hoisted(() => ({ account: "a" }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -109,4 +109,16 @@ it("captures text and selected file answers and pauses controls during submissio
   await act(async () => root.render(<Form disabled />));
   expect(container.querySelector("textarea")!.disabled).toBe(true);
   expect(container.querySelector('[role="checkbox"]')!.hasAttribute("disabled")).toBe(true);
+});
+
+it("shows separate exact reference amounts and their units without implying compensation", async () => {
+  await act(async () => root.render(<DeliveryReferencePrices definition={{ name: "Reference", fields: [], prices: [
+    { currency: "USD", amountMinor: "999999999999999", unit: "finished minute" },
+    { currency: "CNY", amountMinor: "1", unit: "image" },
+  ] }} />));
+  expect(container.textContent).toContain("USD 9999999999999.99 / finished minute");
+  expect(container.textContent).toContain("CNY 0.01 / image");
+  expect(container.textContent).toContain("referencePriceNote");
+  await act(async () => root.render(<DeliveryReferencePrices definition={{ name: "Unpriced", fields: [], prices: [] }} />));
+  expect(container.textContent).toBe("");
 });

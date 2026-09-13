@@ -9722,6 +9722,8 @@
     "more": "Load more"
   },
   "crewDeliveryTemplate": {
+    "referencePrices": "Reference prices",
+    "referencePriceNote": "Reference only. Agreed task compensation is recorded separately.",
     "title": "Professional delivery template",
     "revision": "Revision",
     "required": "required",

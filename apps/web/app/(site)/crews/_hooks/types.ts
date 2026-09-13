@@ -1044,6 +1044,7 @@ export type CrewDeliveryTemplateDTO = {
   version: number;
   definition: {
     name: string;
+    prices?: { currency: "USD" | "CNY"; amountMinor: string; unit: string }[];
     fields: {
       key: string;
       label: string;

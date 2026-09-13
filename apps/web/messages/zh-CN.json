@@ -9722,6 +9722,8 @@
     "more": "加载更多"
   },
   "crewDeliveryTemplate": {
+    "referencePrices": "参考价格",
+    "referencePriceNote": "仅供参考。任务约定报酬单独记录。",
     "title": "专业交付模板",
     "revision": "版本",
     "required": "必填",

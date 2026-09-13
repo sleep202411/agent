@@ -9722,6 +9722,8 @@
     "more": "載入更多"
   },
   "crewDeliveryTemplate": {
+    "referencePrices": "參考價格",
+    "referencePriceNote": "僅供參考。任務約定報酬另行記錄。",
     "title": "專業交付模板",
     "revision": "版本",
     "required": "必填",

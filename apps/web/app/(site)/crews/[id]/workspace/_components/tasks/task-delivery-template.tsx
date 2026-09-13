@@ -28,6 +28,29 @@ export function useTaskDeliveryTemplate(taskId?: string, enabled = true) {
   return { ...query, accountId: user?.id };
 }
 
+export function DeliveryReferencePrices({
+  definition,
+}: {
+  definition: CrewDeliveryTemplateDTO["definition"];
+}) {
+  const t = useTranslations("crewDeliveryTemplate");
+  if (!definition.prices?.length) return null;
+  return (
+    <aside className="space-y-1 text-xs text-muted-foreground">
+      <p>{t("referencePrices")}</p>
+      {definition.prices.map((price) => {
+        const digits = price.amountMinor.padStart(3, "0");
+        return (
+          <p key={price.currency}>
+            {price.currency} {digits.slice(0, -2)}.{digits.slice(-2)} / {price.unit}
+          </p>
+        );
+      })}
+      <p>{t("referencePriceNote")}</p>
+    </aside>
+  );
+}
+
 export function TaskDeliveryFields({
   template,
   answers,
@@ -47,6 +70,7 @@ export function TaskDeliveryFields({
       <h3 className="text-sm font-medium">
         {template.definition.name} · {t("revision")} {template.version}
       </h3>
+      <DeliveryReferencePrices definition={template.definition} />
       {template.definition.fields.map((field) => (
         <div key={field.key} className="space-y-1 text-sm">
           <p>
@@ -146,6 +170,10 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
   );
   const categories = catalog.data?.pages.flatMap((page) => page.items) ?? [];
   const currentKey = current.data ? `${current.data.categoryId}:${current.data.version}` : "";
+  const selectedDefinition =
+    choice === null
+      ? current.data?.definition
+      : categories.find((row) => `${row.id}:${row.version}` === choice)?.definition;
   async function save() {
     if (active.current || choice === null) return;
     const controller = new AbortController();
@@ -239,6 +267,7 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
           ) : null}
         </>
       ) : null}
+      {selectedDefinition ? <DeliveryReferencePrices definition={selectedDefinition} /> : null}
       {task.submissions
         .filter((submission) => submission.professionalDelivery)
         .map((submission) => {
