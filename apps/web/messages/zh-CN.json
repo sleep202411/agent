@@ -9622,5 +9622,17 @@
     "label": "你的评论",
     "send": "发表评论",
     "signIn": "登录后评论"
+  },
+  "ipReleaseLinks": {
+    "title": "已上线平台",
+    "loading": "正在加载上线链接…",
+    "description": "填写此 IP 已经上线的平台，并提供已发布页面的 HTTPS 链接。",
+    "label": "平台",
+    "url": "已发布页面网址",
+    "remove": "移除",
+    "add": "添加平台",
+    "save": "保存链接",
+    "reload": "重新加载已保存链接",
+    "retry": "重试"
   }
 }

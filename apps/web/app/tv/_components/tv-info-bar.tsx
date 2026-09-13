@@ -1,5 +1,6 @@
 "use client";
 
+import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
 import Link from "next/link";
 import { IconPlayerPlay, IconUser } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -51,6 +52,7 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
         <IconPlayerPlay className="size-4" />
         {t("viewDetail")}
       </Link>
+      <IpReleaseLinks ipId={item.id} />
     </div>
   );
 }

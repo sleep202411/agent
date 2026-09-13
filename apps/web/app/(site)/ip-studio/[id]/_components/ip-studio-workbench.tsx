@@ -1,5 +1,6 @@
 "use client";
 
+import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
 import { useEffect, useRef, useState } from "react";
 import { EPISODE_SOURCE_MAX_BYTES } from "@repo/shared";
 import {
@@ -3034,6 +3035,7 @@ function RightsPanel({ ip, t }: { ip: IpCreatorIp; t: Translate }) {
   return (
     <Section title={t("assetsPanel.rightsTitle")} description={t("assetsPanel.rightsBody")}>
       <RightsGovernanceEditor ip={ip} t={t} />
+      <IpReleaseLinks ipId={ip.id} editable />
     </Section>
   );
 }

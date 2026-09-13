@@ -9622,5 +9622,17 @@
     "label": "Your comment",
     "send": "Post comment",
     "signIn": "Sign in to comment"
+  },
+  "ipReleaseLinks": {
+    "title": "Available on",
+    "loading": "Loading release links…",
+    "description": "List the platforms where this IP has already been released. Add an HTTPS link to its published page.",
+    "label": "Platform",
+    "url": "Published page URL",
+    "remove": "Remove",
+    "add": "Add platform",
+    "save": "Save links",
+    "reload": "Reload saved links",
+    "retry": "Retry"
   }
 }

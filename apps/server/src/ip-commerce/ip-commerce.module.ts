@@ -1,4 +1,8 @@
 import {
+  IpReleaseLinksController,
+  IpReleaseLinksService,
+} from './ip-release-links';
+import {
   IpCommentsController,
   IpCommentsAdminController,
 } from './ip-comments.controller';
@@ -25,6 +29,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    IpReleaseLinksController,
     IpCommentsController,
     IpCommentsAdminController,
     IpCommerceController,
@@ -32,6 +37,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     CreatorEarningsController,
   ],
   providers: [
+    IpReleaseLinksService,
     IpCommentsService,
     IpCommerceService,
     LegacyCnVideoResolverService,

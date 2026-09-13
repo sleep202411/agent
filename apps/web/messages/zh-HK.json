@@ -9622,5 +9622,17 @@
     "label": "你的評論",
     "send": "發表評論",
     "signIn": "登入後評論"
+  },
+  "ipReleaseLinks": {
+    "title": "已上線平台",
+    "loading": "正在載入上線連結…",
+    "description": "填寫此 IP 已經上線的平台，並提供已發布頁面的 HTTPS 連結。",
+    "label": "平台",
+    "url": "已發布頁面網址",
+    "remove": "移除",
+    "add": "新增平台",
+    "save": "儲存連結",
+    "reload": "重新載入已儲存連結",
+    "retry": "重試"
   }
 }

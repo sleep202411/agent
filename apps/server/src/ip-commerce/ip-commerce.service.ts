@@ -502,6 +502,23 @@ export class IpCommerceService {
     };
   }
 
+  async requireEditableIp(
+    user: AuthUser,
+    ipId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const ip = await db.ip.findFirst({
+      where: { id: ipId, deletedAt: null, ...this.ipEditAccessWhere(user) },
+      select: { id: true },
+    });
+    if (!ip)
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    return ip;
+  }
+
   private ipEditAccessWhere(user: AuthUser): Prisma.IpWhereInput {
     return {
       OR: [

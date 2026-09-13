@@ -3578,6 +3578,7 @@ enum MemberPoolBatchStatus {
 }
 
 model Ip {
+  releaseLinks           Json                @default("[]") @map("release_links") @db.JsonB
   publicComments         IpPublicComment[]
   id                     String              @id @default(uuid(7)) @db.Uuid
   /// Stable public room number, allocated by PostgreSQL for every IP.
