@@ -1,5 +1,35 @@
 # Workspace release readiness
 
+## CN project upload release — 2026-09-13
+
+Helm revision 75 was deployed at 18:58 Asia/Shanghai. Server and Studio use
+`40a46957446bb01166ce36e49626cbd422b9a699`, merged and pushed to `develop`.
+Other CN service images and all COM service images are unchanged.
+
+Story uploads now authorize against `story.edit` and derive their workspace
+from the project. Asset cards, timeline media, opening frames and project covers
+send the project scope without requiring workspace membership. Both upload issue
+and confirmation validate project authorization; storage keys are project-scoped.
+Workspace-level uploads retain their existing authorization.
+
+Manual RDS backup `3158249587` completed before applying
+`20260914000000_crew_permission_override_keys`, brought in by the develop merge.
+This migration expands the allowed permission keys without changing business
+records. All 317 migrations are applied; deployment preflight passes.
+
+After merging, 88 backend tests, 177 auth-flow tests and 10 relevant Studio tests
+pass, along with Server/Studio types, scoped lint and both production builds.
+In the deployed Server, `prepareUpload` was checked without a workspace header
+against the actual project owner and three editors: all four were authorized
+and resolved to the project's workspace. The viewer was rejected with
+`STORY_PERMISSION_DENIED` (403). These checks created no upload URL, media object
+or asset row; they do not claim an authenticated browser file-upload test.
+
+Both new Pods are ready with zero restarts. Studio returns HTTP 200; OSS,
+Postgres, Redis and realtime readiness pass. The runtime catalog still has 37
+enabled non-Vertex models, and image-only Kling requires `startFrame`. The build
+ECS is stopped and its temporary SSH rule has been removed.
+
 ## CN follow-up release — 2026-09-13
 
 Helm revision 74 was deployed at 18:22 Asia/Shanghai. Server and Studio use
