@@ -1,8 +1,11 @@
 # Workspace release readiness
 
-## CN follow-up prepared — 2026-09-13
+## CN follow-up release — 2026-09-13
 
-The pending Server/Studio release removes manual prompt saves. Asset and clip
+Helm revision 74 was deployed at 18:22 Asia/Shanghai. Server and Studio use
+`d4290bae99f21a15e1c2103864a458dcefc7036a`; all other service images are unchanged.
+
+The Server/Studio release removes manual prompt saves. Asset and clip
 editors autosave after 400 ms; generation flushes the clicked draft and serializes
 admission against subsequent edits. Failed generation records retain a new-run
 entry point. Image-only fal routes require their input frames before admission.
@@ -16,7 +19,19 @@ viewer also resolve correctly. No membership data was changed.
 Regression coverage includes autosave ordering/error recovery, generation controls,
 provider mode selection, missing credentials and permission-cache refresh. Types
 and scoped lint pass. This release requires no migration or catalog reseed.
-Authenticated production generation has not been exercised for every model.
+Post-release checks confirm both new Pods are ready and the public Studio route
+returns HTTP 200. OSS, Postgres, Redis and realtime readiness pass. The runtime
+catalog remains the same 37 enabled models, with Google Vertex disabled; Kling
+now requires `startFrame`. Read-only requests to fal, Bailian, BytePlus and MiniMax
+returned HTTP 200. In independent processes inside the new Server image, all
+three new startup guards reject enabled providers without credentials.
+
+Provider/mode regressions pass 81 tests, autosave/generation interactions pass
+44, and permission refresh passes 7. Both production builds pass. Browser control
+could not attach to the existing CN tab, so an authenticated production UI flow
+and paid generation on every model are not claimed. No production data was edited
+by the permission checks. The build ECS is stopped and its temporary /32 SSH rule
+has been revoked.
 
 ## CN Bailian credential correction — 2026-09-13
 
@@ -33,8 +48,7 @@ the new instance authenticated with the canonical key (HTTP 200, 165 provider
 models) and returned readiness HTTP 200. No paid generation was submitted.
 
 The follow-up adds Bailian, fal and BytePlus startup credential guards and a CN
-deployment preflight Bailian credential check. These code changes are prepared
-for the next Server release. Existing
+deployment preflight Bailian credential check. These code changes are deployed in revision 74. Existing
 failed job records remain unchanged.
 
 ## CN observation release — 2026-09-13
