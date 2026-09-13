@@ -519,14 +519,39 @@ export class BillingService {
     };
     const accounts = await this.readWalletAccounts(accountWhere);
     if (accounts.length === 0) {
+      if (query.cursor)
+        throw new BadRequestException({
+          code: 'INVALID_LEDGER_CURSOR',
+          msg: 'Ledger cursor is outside the selected scope.',
+        });
       return {
         accounts: [],
         entries: [],
+        nextCursor: null,
       };
     }
 
+    const where = {
+      accountId: { in: accounts.map((account) => account.id) },
+      ...(query.projectId
+        ? { transaction: { projectId: query.projectId } }
+        : {}),
+    };
+    if (
+      query.cursor &&
+      !(await this.prisma.walletLedgerEntry.findFirst({
+        where: { ...where, id: query.cursor },
+        select: { id: true },
+      }))
+    ) {
+      throw new BadRequestException({
+        code: 'INVALID_LEDGER_CURSOR',
+        msg: 'Ledger cursor is outside the selected scope.',
+      });
+    }
     const entries = await this.prisma.walletLedgerEntry.findMany({
-      where: { accountId: { in: accounts.map((account) => account.id) } },
+      where,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       include: {
         transaction: true,
         creditAllocations: {
@@ -547,10 +572,12 @@ export class BillingService {
         },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: query.limit,
+      take: query.limit + 1,
     });
 
     return {
+      nextCursor:
+        entries.length > query.limit ? entries[query.limit - 1].id : null,
       nextExpiry: await this.nextWalletExpiry(accounts),
       accounts: accounts.map((account) => ({
         id: account.id,
@@ -563,7 +590,7 @@ export class BillingService {
         heldBalance: account.heldBalance.toString(),
         updatedAt: account.updatedAt.toISOString(),
       })),
-      entries: entries.map((entry) => {
+      entries: entries.slice(0, query.limit).map((entry) => {
         const metadata = isRecord(entry.transaction.metadata)
           ? entry.transaction.metadata
           : {};
@@ -580,6 +607,11 @@ export class BillingService {
           availableBalanceAfter: entry.availableBalanceAfter.toString(),
           heldBalanceAfter: entry.heldBalanceAfter.toString(),
           reason: entry.reason,
+          projectId: entry.transaction.projectId,
+          workspaceId: entry.transaction.workspaceId,
+          actorUserId: entry.transaction.actorUserId,
+          transactionStatus: entry.transaction.status,
+          postedAt: entry.transaction.postedAt?.toISOString() ?? null,
           sourceType: entry.transaction.sourceType,
           sourceId: entry.transaction.sourceId,
           orderNo: stringAt(metadata, ['orderNo']),

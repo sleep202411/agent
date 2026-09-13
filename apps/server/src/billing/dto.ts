@@ -190,6 +190,8 @@ export type CreateComputePointTopupInput = z.infer<
 >;
 
 export const ListWalletLedgerQuerySchema = z.object({
+  cursor: z.string().uuid().optional(),
+  projectId: z.string().uuid().optional(),
   currency: WalletCurrencyTypeSchema.default('compute_point'),
   balanceKind: WalletBalanceKindSchema.default('consumable'),
   limit: z.coerce.number().int().min(1).max(100).default(20),
