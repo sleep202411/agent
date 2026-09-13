@@ -2736,7 +2736,7 @@
       "cancel": "取消",
       "create": "创建项目",
       "save": "保存",
-      "share": "共创"
+      "share": "分享"
     },
     "errors": {
       "loadProjects": "无法加载项目。",
@@ -2903,8 +2903,6 @@
           "prop": "描述道具的造型、材质与细节；输入 @ 引用已有资产…"
         },
         "model": "模型",
-        "save": "保存",
-        "saved": "已保存。",
         "saveError": "无法保存资产规格。",
         "generate": "生成",
         "generateStarted": "已开始生成。",
@@ -2927,6 +2925,7 @@
         "turnaroundDescription": "AI 视频生成会优先使用三视图作为角色参考。",
         "turnaroundFor": "{name}的三视图",
         "turnaroundNeedsPrimary": "请先生成或上传角色形象图。",
+        "completeDetails": "请先填写资产名称和图片提示词。",
         "turnaroundEmpty": "尚未生成三视图。",
         "turnaroundUpload": "上传三视图",
         "turnaroundDownload": "下载三视图",
@@ -3710,7 +3709,7 @@
       "tidy": {
         "action": "整理画布"
       },
-      "share": "共创",
+      "share": "分享",
       "catalogPanel": {
         "choice": "选择",
         "end": "结局"

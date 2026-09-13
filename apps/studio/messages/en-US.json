@@ -2903,8 +2903,6 @@
           "prop": "Describe the prop’s form, materials, and details. Type @ to reference an existing asset…"
         },
         "model": "Model",
-        "save": "Save",
-        "saved": "Saved.",
         "saveError": "Could not save the Asset Spec.",
         "generate": "Generate",
         "generateStarted": "Generation started.",
@@ -2927,6 +2925,7 @@
         "turnaroundDescription": "AI video generation prioritizes the three-view as its character reference.",
         "turnaroundFor": "Three-view for {name}",
         "turnaroundNeedsPrimary": "Generate or upload the character image first.",
+        "completeDetails": "Enter an asset name and image prompt first.",
         "turnaroundEmpty": "No three-view has been generated yet.",
         "turnaroundUpload": "Upload three-view",
         "turnaroundDownload": "Download three-view",

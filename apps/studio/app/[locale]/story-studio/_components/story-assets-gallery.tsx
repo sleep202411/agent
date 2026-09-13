@@ -162,7 +162,7 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 >
                   {assets.map((asset, index) => (
                     <StoryAssetSpecCard
-                      key={`${asset.id}:${asset.version}`}
+                      key={asset.id}
                       asset={asset}
                       projectId={projectId}
                       chapterId={activeChapterId}

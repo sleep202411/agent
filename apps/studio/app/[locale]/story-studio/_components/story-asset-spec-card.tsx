@@ -53,6 +53,7 @@ import { useStoryCandidateAssets } from "./project-canvas/use-story-candidate-as
 import { StoryPromptComposer, useStoryAssetMentions } from "./story-prompt-composer";
 import { StoryAssetGenerationToolbar } from "./story-asset-generation-toolbar";
 import { StoryProductionGenerationControl } from "./story-production-generation-control";
+import { useStoryProductionAutosave } from "./use-story-production-autosave";
 
 /**
  * One Asset Spec workbench row. Primary media history stays with the editable
@@ -87,11 +88,7 @@ export function StoryAssetSpecCard({
   const [turnaroundPickerOpen, setTurnaroundPickerOpen] = useState(false);
   const [primaryPendingPreviewCount, setPrimaryPendingPreviewCount] = useState(0);
   const [turnaroundPendingPreviewCount, setTurnaroundPendingPreviewCount] = useState(0);
-  const [name, setName] = useState(asset.name);
-  const [prompt, setPrompt] = useState(asset.imagePrompt);
   const canReplaceMedia = allowMediaReplacement && Boolean(workspaceId);
-  const formDirty = name.trim() !== asset.name || prompt.trim() !== asset.imagePrompt;
-  const formValid = name.trim().length > 0 && prompt.trim().length > 0;
   const mediaVersions = [...asset.mediaVersions].sort(
     (left, right) => right.versionNumber - left.versionNumber
   );
@@ -115,42 +112,57 @@ export function StoryAssetSpecCard({
     );
   };
 
-  const saveMutation = useMutation({
-    retry: false,
-    mutationFn: () =>
-      patchStoryAssetSpec(
+  const { values, changeValues, runWithSavedValues } = useStoryProductionAutosave({
+    initialValues: { name: asset.name, imagePrompt: asset.imagePrompt },
+    persist: async ({ name, imagePrompt }) => {
+      const current =
+        queryClient
+          .getQueryData<StoryAssetSpec[]>(storyProductionKeys.assets(projectId, chapterId))
+          ?.find((item) => item.id === asset.id) ?? asset;
+      if (
+        !name.trim() ||
+        !imagePrompt.trim() ||
+        (name.trim() === current.name && imagePrompt.trim() === current.imagePrompt)
+      ) {
+        return current.version;
+      }
+      const updated = await patchStoryAssetSpec(
         projectId,
         chapterId,
         asset.id,
         createStoryProductionIdempotencyKey("story-asset-patch"),
         {
-          expectedVersion: asset.version,
+          expectedVersion: current.version,
           name: name.trim(),
-          imagePrompt: prompt.trim(),
+          imagePrompt: imagePrompt.trim(),
         }
-      ),
-    onSuccess: (updated) => {
+      );
       updateCachedAsset(updated);
-      toast.success(detailT("saved"));
+      return updated.version;
     },
     onError: (error) => toast.error(storyApiErrorMessage(error, detailT("saveError"))),
   });
+  const { name, imagePrompt: prompt } = values;
+  const formValid = name.trim().length > 0 && prompt.trim().length > 0;
 
   const selectVersionMutation = useMutation({
     retry: false,
     mutationFn: (mediaVersion: StoryCreativeMediaVersion) =>
-      patchStoryAssetSpec(
-        projectId,
-        chapterId,
-        asset.id,
-        createStoryProductionIdempotencyKey("story-asset-media-select"),
-        {
-          expectedVersion: asset.version,
-          selectedMediaVersionId: mediaVersion.id,
-        }
-      ),
-    onSuccess: (updated) => {
-      updateCachedAsset(updated);
+      runWithSavedValues(async (version) => {
+        const updated = await patchStoryAssetSpec(
+          projectId,
+          chapterId,
+          asset.id,
+          createStoryProductionIdempotencyKey("story-asset-media-select"),
+          {
+            expectedVersion: version,
+            selectedMediaVersionId: mediaVersion.id,
+          }
+        );
+        updateCachedAsset(updated);
+        return updated;
+      }),
+    onSuccess: () => {
       toast.success(workbenchT("versionSelected"));
     },
     onError: (error) => toast.error(storyApiErrorMessage(error, workbenchT("versionSelectError"))),
@@ -159,12 +171,14 @@ export function StoryAssetSpecCard({
   const archiveMutation = useMutation({
     retry: false,
     mutationFn: () =>
-      archiveStoryAssetSpec(
-        projectId,
-        chapterId,
-        asset.id,
-        createStoryProductionIdempotencyKey("story-asset-archive"),
-        { expectedVersion: asset.version }
+      runWithSavedValues((version) =>
+        archiveStoryAssetSpec(
+          projectId,
+          chapterId,
+          asset.id,
+          createStoryProductionIdempotencyKey("story-asset-archive"),
+          { expectedVersion: version }
+        )
       ),
     onSuccess: async () => {
       queryClient.setQueryData<StoryAssetSpec[]>(
@@ -179,8 +193,8 @@ export function StoryAssetSpecCard({
     onError: (error) => toast.error(storyApiErrorMessage(error, detailT("deleteError"))),
   });
 
-  const busy =
-    saveMutation.isPending || selectVersionMutation.isPending || archiveMutation.isPending;
+  const busy = selectVersionMutation.isPending || archiveMutation.isPending;
+  const generationDisabledReason = !formValid ? workbenchT("completeDetails") : undefined;
 
   const primaryTarget = {
     kind: "asset_spec" as const,
@@ -218,21 +232,8 @@ export function StoryAssetSpecCard({
               maxLength={240}
               disabled={busy || !allowEditing}
               aria-required="true"
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => changeValues({ ...values, name: event.target.value })}
             />
-            {allowEditing && formDirty ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={detailT("save")}
-                disabled={!formValid || busy}
-                loading={saveMutation.isPending}
-                onClick={() => saveMutation.mutate()}
-              >
-                <IconCheck />
-              </Button>
-            ) : null}
             {allowEditing ? (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -281,7 +282,7 @@ export function StoryAssetSpecCard({
             required
             maxLength={12_000}
             placeholder={detailT(`imagePromptPlaceholder.${asset.kind}`)}
-            onChange={setPrompt}
+            onChange={(imagePrompt) => changeValues({ ...values, imagePrompt })}
             mentions={mentions}
             excludeMentionId={asset.id}
           />
@@ -298,7 +299,9 @@ export function StoryAssetSpecCard({
                   purpose="primary"
                   modelSelection={selection}
                   generationOptions={options}
-                  allowGeneration={allowGeneration && !formDirty}
+                  allowGeneration={allowGeneration}
+                  submitGeneration={runWithSavedValues}
+                  generationDisabledReason={generationDisabledReason}
                   allowConcurrent
                   onPendingPreviewCountChange={setPrimaryPendingPreviewCount}
                 />
@@ -414,8 +417,13 @@ export function StoryAssetSpecCard({
                     purpose="turnaround"
                     modelSelection={selection}
                     generationOptions={options}
-                    allowGeneration={
-                      allowGeneration && !formDirty && Boolean(asset.selectedMediaVersion)
+                    allowGeneration={allowGeneration}
+                    submitGeneration={runWithSavedValues}
+                    generationDisabledReason={
+                      generationDisabledReason ??
+                      (!asset.selectedMediaVersion
+                        ? workbenchT("turnaroundNeedsPrimary")
+                        : undefined)
                     }
                     allowConcurrent
                     onPendingPreviewCountChange={setTurnaroundPendingPreviewCount}

@@ -2736,7 +2736,7 @@
       "cancel": "取消",
       "create": "建立專案",
       "save": "儲存",
-      "share": "共創"
+      "share": "分享"
     },
     "errors": {
       "loadProjects": "無法載入專案。",
@@ -2903,8 +2903,6 @@
           "prop": "描述道具的造型、材質與細節；輸入 @ 引用已有資產…"
         },
         "model": "模型",
-        "save": "儲存",
-        "saved": "已儲存。",
         "saveError": "無法儲存資產規格。",
         "generate": "生成",
         "generateStarted": "已開始生成。",
@@ -2927,6 +2925,7 @@
         "turnaroundDescription": "AI 影片生成會優先使用三視圖作為角色參考。",
         "turnaroundFor": "{name}的三視圖",
         "turnaroundNeedsPrimary": "請先生成或上載角色形象圖。",
+        "completeDetails": "請先填寫資產名稱和圖片提示詞。",
         "turnaroundEmpty": "尚未生成三視圖。",
         "turnaroundUpload": "上載三視圖",
         "turnaroundDownload": "下載三視圖",
@@ -3710,7 +3709,7 @@
       "tidy": {
         "action": "整理畫布"
       },
-      "share": "共創",
+      "share": "分享",
       "catalogPanel": {
         "choice": "選擇",
         "end": "結局"
