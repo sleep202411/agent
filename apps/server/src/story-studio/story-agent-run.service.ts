@@ -110,6 +110,16 @@ import {
   type StoryCapability,
 } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
+import {
+  commitStoryChapterGraph,
+  mergeChapterDraftIntoStory,
+  reconcileStoryChapterGraphPartition,
+  StoryChapterNodeOwnershipConflictError,
+  type StoryChapterGraphRepair,
+  type StoryChapterGraphMerge,
+  type StoryChapterGraphRow,
+} from './story-chapter-graph-invariant';
+import { storyAuthoringPublicError } from './story-authoring-public-error';
 import { compileScreenplayToStoryOperations } from './story-authoring-pipeline.service';
 import {
   commitApprovedScreenplay,
@@ -398,17 +408,22 @@ interface CanonicalAuthoringState {
     sourceScriptHash: string | null;
     isFirst: boolean;
   };
+  chapters: StoryChapterGraphRepair['chapters'];
+  chaptersBefore: StoryChapterGraphRow[];
+  partitionRepair: StoryChapterGraphRepair;
   chapterDirectory: Array<{
     id: string;
     title: string;
     entryNodeId: string | null;
   }>;
   draftRow: {
+    storyProjectId: string;
     revision: number;
     schemaVersion: string;
     contentHash: string;
     content: InteractiveStoryDraftContent;
     globalContentHash: string;
+    storedGlobalContent: InteractiveStoryDraftContent;
     globalContent: InteractiveStoryDraftContent;
   };
   layoutRow: {
@@ -2021,6 +2036,43 @@ export class StoryAgentRunService {
     });
   }
 
+  /**
+   * Close an apply whose transaction escaped unexpectedly. The worker calls
+   * this in a fresh transaction, so even a PostgreSQL constraint failure that
+   * aborted the original transaction cannot strand the project write fence.
+   * Ownership and fencing checks make this a no-op after another worker has
+   * reclaimed or completed the run.
+   */
+  async failClaimedApply(
+    runId: string,
+    workerId: string,
+    error: { code: string; detail: string },
+  ): Promise<void> {
+    const transition = await this.prisma.$transaction(async (tx) => {
+      const identity = await tx.storyAgentRun.findUnique({
+        where: { id: runId },
+        select: { storyProjectId: true },
+      });
+      if (!identity) return emptyTransition();
+      const writeState = await this.lockWriteState(tx, identity.storyProjectId);
+      const run = await tx.storyAgentRun.findUnique({
+        where: { id: runId },
+        include: RUN_INCLUDE,
+      });
+      if (
+        !run ||
+        run.status !== StoryAgentRunStatus.applying ||
+        run.leaseOwner !== workerId ||
+        writeState.activeAgentRunId !== run.id ||
+        writeState.fencingToken !== run.fencingToken
+      ) {
+        return emptyTransition();
+      }
+      return this.finishClaimedTerminal(tx, run, 'failed', error);
+    });
+    await this.publishTransition(transition);
+  }
+
   async executeClaimedRun(runId: string, workerId: string): Promise<void> {
     const transition = await this.prisma.$transaction(async (tx) => {
       const writeRows = await tx.$queryRaw<LockedWriteStateRow[]>`
@@ -2412,75 +2464,58 @@ export class StoryAgentRunService {
             detail: `A chapter can contain at most ${STORY_AGENT_MAX_RUN_NODE_IDS} scenes.`,
           });
         }
-        const previousChapterNodeIds = new Set(state.chapter.nodeIds);
-        const otherChapterNodeIds = new Set(
-          state.draftRow.globalContent.graph.nodes.flatMap((node) =>
-            previousChapterNodeIds.has(node.nodeId) ? [] : [node.nodeId],
-          ),
-        );
-        const collision = nextDraft.graph.nodes.find((node) =>
-          otherChapterNodeIds.has(node.nodeId),
-        );
-        if (collision) {
+        let merged: StoryChapterGraphMerge;
+        try {
+          merged = mergeChapterDraftIntoStory({
+            content: state.draftRow.globalContent,
+            chapters: state.chapters,
+            chapterId: state.chapter.id,
+            chapterContent: nextDraft,
+          });
+        } catch (error) {
+          if (!(error instanceof StoryChapterNodeOwnershipConflictError)) {
+            throw error;
+          }
           return this.finishClaimedTerminal(tx, run, 'failed', {
             code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
-            detail: `Scene ${collision.nodeId} already belongs to another chapter.`,
+            detail: error.message,
           });
         }
-        const nextChapterNodeIds = nextDraft.graph.nodes.map(
-          (node) => node.nodeId,
+        const nextChapterNodeIds = merged.nextChapterNodeIds;
+        const mergedGlobalDraft = InteractiveStoryDraftContentSchema.parse(
+          merged.content,
         );
-        const mergedGlobalDraft = InteractiveStoryDraftContentSchema.parse({
-          storyBible: nextDraft.storyBible,
-          graph: {
-            entryNodeId: state.chapter.isFirst
-              ? nextDraft.graph.entryNodeId
-              : state.draftRow.globalContent.graph.entryNodeId,
-            nodes: [
-              ...state.draftRow.globalContent.graph.nodes.filter(
-                (node) => !previousChapterNodeIds.has(node.nodeId),
-              ),
-              ...nextDraft.graph.nodes,
-            ],
-          },
-          productionNotes: nextDraft.productionNotes,
-        });
-        const mergedGlobalDraftHash = canonicalJsonHash(mergedGlobalDraft);
-        const updatedDraft = await tx.storyDraft.updateMany({
-          where: {
+        const committed = await commitStoryChapterGraph(tx, {
+          draft: {
             storyProjectId: run.storyProjectId,
-            revision: state.draftRow.revision,
+            schemaVersion: state.draftRow.schemaVersion,
+            content: state.draftRow.storedGlobalContent,
             contentHash: state.draftRow.globalContentHash,
+            revision: state.draftRow.revision,
           },
-          data: {
-            schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-            content: mergedGlobalDraft as unknown as Prisma.InputJsonObject,
-            contentHash: mergedGlobalDraftHash,
-            revision: { increment: 1 },
-            updatedByUserId: run.confirmedByUserId,
-            updatedBySessionId: null,
-          },
+          chaptersBefore: state.chaptersBefore,
+          partitionRepair: state.partitionRepair,
+          content: mergedGlobalDraft,
+          chapters: merged.chapters,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+          actorUserId: run.confirmedByUserId ?? run.initiatedByUserId,
+          sessionId: null,
+          trigger: 'story_agent_apply',
         });
-        if (updatedDraft.count !== 1) {
+        if (!committed) {
           throw new StoryAgentCasLostError('draft');
         }
-        // Chapter membership must be visible to the database Plot-node guard
-        // before a new node's empty Storyboard timeline is inserted.
-        await tx.storyChapter.update({
-          where: { id: run.storyChapterId },
-          data: {
-            nodeIds: nextChapterNodeIds,
-            entryNodeId: nextDraft.graph.entryNodeId,
-            ...(screenplayLineage
-              ? {
-                  sourceScriptDocumentId: screenplayLineage.documentId,
-                  sourceScriptVersionId: screenplayLineage.versionId,
-                  sourceScriptSequence: screenplayLineage.sequence,
-                  sourceScriptHash: screenplayLineage.hash,
-                }
-              : {}),
-          },
-        });
+        if (screenplayLineage) {
+          await tx.storyChapter.update({
+            where: { id: run.storyChapterId },
+            data: {
+              sourceScriptDocumentId: screenplayLineage.documentId,
+              sourceScriptVersionId: screenplayLineage.versionId,
+              sourceScriptSequence: screenplayLineage.sequence,
+              sourceScriptHash: screenplayLineage.hash,
+            },
+          });
+        }
         // Plot tree and storyboard stay 1:1 on save: nodes removed by this
         // apply archive their sequences immediately.
         await reconcileStoryTimelinesWithDraft(
@@ -3078,6 +3113,24 @@ export class StoryAgentRunService {
             'The current Script has no exact structured source for the next production stage.',
           );
         }
+        if (
+          plannedScreenplay !== null &&
+          (plannedTargetStage === 'assets' ||
+            plannedTargetStage === 'storyboard')
+        ) {
+          // Script prose remains the creative source, while the current
+          // chapter graph is authoritative for Plot identities and routes.
+          // Project them together before downstream inference so a clip added
+          // by JSON import, a human edit, Story Agent, or Agent OS cannot be
+          // silently omitted from Asset/Storyboard planning.
+          plannedScreenplay = {
+            ...plannedScreenplay,
+            screenplay: screenplayForCanonicalChapter(
+              plannedScreenplay.screenplay,
+              lockedState.draftRow.content,
+            ),
+          };
+        }
         const admitted = await tx.storyAgentRun.updateMany({
           where: {
             id: run.id,
@@ -3602,6 +3655,24 @@ export class StoryAgentRunService {
             });
           }
           assertStoryProposalComplexity(proposal);
+          if (isStoryAssetProposal(proposal)) {
+            this.productionPlans!.validateApprovedAssetPlan({
+              assetPlan: proposal.assetPlan,
+              canonicalNodeIds: proposal.screenplay.scenes.map(
+                (scene) => scene.nodeId,
+              ),
+              canonicalCharacterIds: proposal.screenplay.characters.map(
+                (character) => character.id,
+              ),
+            });
+          } else if (isStoryStoryboardProposal(proposal)) {
+            this.productionPlans!.validateApprovedStoryboardPlan({
+              storyboardPlan: proposal.storyboardPlan,
+              assetPlan: proposal.assetPlan,
+              draft: state.draftRow.content,
+              chapterNodeIds: state.chapter.nodeIds,
+            });
+          }
         } catch (error) {
           return invalidAuthoringCompletion(
             errorCode(error, 'STORY_AGENT_STAGE_PROPOSAL_INVALID'),
@@ -4625,7 +4696,16 @@ export class StoryAgentRunService {
         'The stored story draft does not match its canonical content hash.',
       );
     }
-    assertCanonicalChapterPartition(draft.data, project.chapters);
+    const partitionRepair = reconcileStoryChapterGraphPartition({
+      content: draft.data,
+      chapters: project.chapters,
+    });
+    const activeChapters = project.chapters.map((candidate) => {
+      const repaired = partitionRepair.chapters.find(
+        (item) => item.id === candidate.id,
+      );
+      return repaired ? { ...candidate, ...repaired } : candidate;
+    });
     if (canvasLayout.schemaVersion !== STORY_CANVAS_LAYOUT_SCHEMA_VERSION) {
       throw canonicalStateCorrupt(
         'STORY_AGENT_LAYOUT_SCHEMA_UNSUPPORTED',
@@ -4641,13 +4721,16 @@ export class StoryAgentRunService {
         positions.error.message,
       );
     }
-    const chapterNodeIds = jsonStringArray(chapter.nodeIds);
+    const repairedChapter = activeChapters.find(
+      (candidate) => candidate.id === chapter.id,
+    )!;
+    const chapterNodeIds = jsonStringArray(repairedChapter.nodeIds);
     const chapterNodeIdSet = new Set(chapterNodeIds);
     const chapterContent = InteractiveStoryDraftContentSchema.parse({
       ...draft.data,
       graph: {
-        entryNodeId: chapter.entryNodeId,
-        nodes: draft.data.graph.nodes.filter((node) =>
+        entryNodeId: repairedChapter.entryNodeId,
+        nodes: partitionRepair.content.graph.nodes.filter((node) =>
           chapterNodeIdSet.has(node.nodeId),
         ),
       },
@@ -4671,25 +4754,30 @@ export class StoryAgentRunService {
         id: chapter.id,
         title: chapter.title,
         nodeIds: chapterNodeIds,
-        entryNodeId: chapter.entryNodeId,
+        entryNodeId: repairedChapter.entryNodeId,
         sourceScriptDocumentId: chapter.sourceScriptDocumentId,
         sourceScriptVersionId: chapter.sourceScriptVersionId,
         sourceScriptSequence: chapter.sourceScriptSequence,
         sourceScriptHash: chapter.sourceScriptHash,
-        isFirst: project.chapters[0]?.id === chapter.id,
+        isFirst: activeChapters[0]?.id === chapter.id,
       },
-      chapterDirectory: project.chapters.map((candidate) => ({
+      chapters: partitionRepair.chapters,
+      chaptersBefore: project.chapters,
+      partitionRepair,
+      chapterDirectory: activeChapters.map((candidate) => ({
         id: candidate.id,
         title: candidate.title,
         entryNodeId: candidate.entryNodeId,
       })),
       draftRow: {
+        storyProjectId: project.id,
         revision: project.draft.revision,
         schemaVersion: project.draft.schemaVersion,
         contentHash: canonicalJsonHash(chapterContent),
         content: chapterContent,
         globalContentHash: project.draft.contentHash,
-        globalContent: draft.data,
+        storedGlobalContent: draft.data,
+        globalContent: partitionRepair.content,
       },
       layoutRow: {
         revision: canvasLayout.revision,
@@ -5066,7 +5154,7 @@ export class StoryAgentRunService {
       : proposal;
     const error =
       row.errorCode && row.errorDetail
-        ? { code: row.errorCode, detail: row.errorDetail }
+        ? storyAuthoringPublicError(row.errorCode)
         : null;
     if ((row.errorCode === null) !== (row.errorDetail === null)) {
       throw canonicalStateCorrupt(
@@ -5647,55 +5735,6 @@ function jsonStringArray(value: Prisma.JsonValue): string[] {
   return value as string[];
 }
 
-function assertCanonicalChapterPartition(
-  content: InteractiveStoryDraftContent,
-  chapters: Array<{
-    id: string;
-    nodeIds: Prisma.JsonValue;
-    entryNodeId: string | null;
-  }>,
-): void {
-  const graphNodeIds = new Set(content.graph.nodes.map((node) => node.nodeId));
-  const ownerByNodeId = new Map<string, string>();
-  for (const chapter of chapters) {
-    const chapterNodeIds = jsonStringArray(chapter.nodeIds);
-    const localNodeIds = new Set<string>();
-    for (const nodeId of chapterNodeIds) {
-      if (
-        localNodeIds.has(nodeId) ||
-        ownerByNodeId.has(nodeId) ||
-        !graphNodeIds.has(nodeId)
-      ) {
-        throw canonicalStateCorrupt(
-          'STORY_AGENT_CHAPTER_PARTITION_CORRUPT',
-          `Scene ${nodeId} has invalid chapter ownership.`,
-        );
-      }
-      localNodeIds.add(nodeId);
-      ownerByNodeId.set(nodeId, chapter.id);
-    }
-    if (
-      (chapterNodeIds.length === 0 && chapter.entryNodeId !== null) ||
-      (chapterNodeIds.length > 0 &&
-        (!chapter.entryNodeId || !localNodeIds.has(chapter.entryNodeId)))
-    ) {
-      throw canonicalStateCorrupt(
-        'STORY_AGENT_CHAPTER_PARTITION_CORRUPT',
-        `Chapter ${chapter.id} has an invalid entry scene.`,
-      );
-    }
-  }
-  if (
-    ownerByNodeId.size !== graphNodeIds.size ||
-    content.graph.entryNodeId !== (chapters[0]?.entryNodeId ?? null)
-  ) {
-    throw canonicalStateCorrupt(
-      'STORY_AGENT_CHAPTER_PARTITION_CORRUPT',
-      'The story graph does not match its active chapter structure.',
-    );
-  }
-}
-
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort();
 }
@@ -5851,6 +5890,138 @@ function isStoryScriptBasedProposal(
     isStoryStoryboardProposal(proposal) ||
     isStoryNoopProposal(proposal)
   );
+}
+
+/**
+ * Preserve approved Script prose while making current chapter Plot identities
+ * and routes authoritative for downstream planning. Non-video graph nodes are
+ * runtime transitions, so linear world/decision hops collapse to the next clip
+ * and a decision choice is attached to the clip that presents it.
+ */
+export function screenplayForCanonicalChapter(
+  screenplay: StoryScreenplay,
+  draft: InteractiveStoryDraftContent,
+): StoryScreenplay {
+  const graphNodes = new Map(
+    draft.graph.nodes.map((node) => [node.nodeId, node]),
+  );
+  const clipNodes = draft.graph.nodes.filter((node) => node.kind === 'clip');
+  if (clipNodes.length === 0) return screenplay;
+
+  const existingScenes = new Map(
+    screenplay.scenes.map((scene) => [scene.nodeId, scene]),
+  );
+  const failRoute = (detail: string): never => {
+    throw canonicalStateCorrupt(
+      'STORY_AGENT_PLOT_SOURCE_INCOMPLETE',
+      `The current Plot cannot be projected safely for downstream planning: ${detail}`,
+    );
+  };
+  const resolveChoiceTarget = (
+    nextNodeId: string | null,
+    visited: ReadonlySet<string>,
+  ): string => {
+    if (nextNodeId === null) {
+      return failRoute('a choice has no destination.');
+    }
+    let cursor: string | null = nextNodeId;
+    const seen = new Set(visited);
+    while (cursor !== null) {
+      if (seen.has(cursor)) return failRoute('a transition cycle has no clip.');
+      seen.add(cursor);
+      const node = graphNodes.get(cursor);
+      if (!node) return failRoute(`transition target "${cursor}" is missing.`);
+      if (node.kind === 'clip') return node.nodeId;
+      if (node.exit.kind === 'choice') {
+        return failRoute(
+          `choice "${node.exit.decisionId}" is nested behind another choice.`,
+        );
+      }
+      cursor = node.exit.nextNodeId;
+    }
+    return failRoute('a choice route ends before reaching a clip.');
+  };
+  const normalizeChoiceExit = (
+    exit: Extract<
+      InteractiveStoryDraftContent['graph']['nodes'][number]['exit'],
+      { kind: 'choice' }
+    >,
+    visited: ReadonlySet<string>,
+  ): StoryScreenplay['scenes'][number]['exit'] => ({
+    kind: 'choice',
+    decisionId: exit.decisionId,
+    prompt: exit.prompt,
+    choices: exit.choices.map((choice) => ({
+      choiceId: choice.choiceId,
+      label: choice.label,
+      nextNodeId: resolveChoiceTarget(choice.nextNodeId, visited),
+    })),
+  });
+  const normalizeExit = (
+    node: (typeof clipNodes)[number],
+  ): StoryScreenplay['scenes'][number]['exit'] => {
+    if (node.exit.kind === 'choice') {
+      return normalizeChoiceExit(node.exit, new Set([node.nodeId]));
+    }
+    let cursor = node.exit.nextNodeId;
+    const seen = new Set([node.nodeId]);
+    while (cursor !== null) {
+      if (seen.has(cursor)) return failRoute('a transition cycle has no clip.');
+      seen.add(cursor);
+      const next = graphNodes.get(cursor);
+      if (!next) return failRoute(`transition target "${cursor}" is missing.`);
+      if (next.kind === 'clip') {
+        return { kind: 'auto', nextNodeId: next.nodeId };
+      }
+      if (next.exit.kind === 'choice') {
+        return normalizeChoiceExit(next.exit, seen);
+      }
+      cursor = next.exit.nextNodeId;
+    }
+    return { kind: 'auto', nextNodeId: null };
+  };
+
+  const scenes = clipNodes.map((node) => {
+    const existing = existingScenes.get(node.nodeId);
+    const label = node.name?.trim() || existing?.name?.trim() || node.clipKey;
+    const description =
+      node.description?.trim() || existing?.beat.trim() || label;
+    return {
+      nodeId: node.nodeId,
+      clipKey: node.clipKey,
+      ...(node.name !== undefined
+        ? { name: node.name }
+        : existing?.name !== undefined
+          ? { name: existing.name }
+          : {}),
+      heading: existing?.heading ?? label,
+      beat: existing?.beat ?? description.slice(0, 500),
+      action: existing?.action ?? description,
+      dialogue: existing?.dialogue ?? [],
+      exit: normalizeExit(node),
+    };
+  });
+  const sceneIds = new Set(scenes.map((scene) => scene.nodeId));
+  const canonicalEntry =
+    draft.graph.entryNodeId && sceneIds.has(draft.graph.entryNodeId)
+      ? draft.graph.entryNodeId
+      : sceneIds.has(screenplay.entrySceneId)
+        ? screenplay.entrySceneId
+        : scenes[0].nodeId;
+  const unresolvedNodeIds = (screenplay.unresolvedNodeIds ?? []).filter(
+    (nodeId) => {
+      const scene = scenes.find((candidate) => candidate.nodeId === nodeId);
+      return scene?.exit.kind === 'auto' && scene.exit.nextNodeId === null;
+    },
+  );
+  const screenplayBase = { ...screenplay };
+  delete screenplayBase.unresolvedNodeIds;
+  return StoryScreenplaySchema.parse({
+    ...screenplayBase,
+    entrySceneId: canonicalEntry,
+    scenes,
+    ...(unresolvedNodeIds.length > 0 ? { unresolvedNodeIds } : {}),
+  });
 }
 
 // ── Authoring-pipeline stage progress ──────────────────────────────────────

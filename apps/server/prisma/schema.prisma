@@ -4861,32 +4861,32 @@ model Crew {
 
   participationRecords CrewParticipationRecord[]
   peerFeedback         CrewPeerFeedback[]
-  positions           CrewPosition[]
-  members             CrewMember[]
-  ownership           CrewOwnership?
-  applications        CrewApplication[]
-  assetNodes          CrewAssetNode[]
-  invitations         CrewInvitation[]
-  inviteLinks         CrewInviteLink[]
-  tasks               CrewTask[]
-  taskViews           CrewTaskView[]
-  taskCycles          CrewTaskCycle[]
-  taskLabels          CrewTaskLabel[]
-  taskFields          CrewTaskFieldDefinition[]
-  taskWorkflowStates  CrewTaskWorkflowState[]
-  productionPage      CrewProductionPage?
-  productionResources CrewProductionResource[]
-  productionActivity  CrewProductionActivity[]
-  episodes            CrewEpisode[]
-  agreements          CrewAgreement[]
-  earningEntries      CrewEarningEntry[]
-  earningEvents       CrewEarningEvent[]
-  payouts             CrewPayout[]
-  payoutAllocations   CrewPayoutAllocation[]
-  payoutEvents        CrewPayoutEvent[]
-  workspace           Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
-  productionProject   PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
-  studioProject       PlatformProject?          @relation("CrewStudioProject", fields: [studioProjectId], references: [id], onDelete: SetNull)
+  positions            CrewPosition[]
+  members              CrewMember[]
+  ownership            CrewOwnership?
+  applications         CrewApplication[]
+  assetNodes           CrewAssetNode[]
+  invitations          CrewInvitation[]
+  inviteLinks          CrewInviteLink[]
+  tasks                CrewTask[]
+  taskViews            CrewTaskView[]
+  taskCycles           CrewTaskCycle[]
+  taskLabels           CrewTaskLabel[]
+  taskFields           CrewTaskFieldDefinition[]
+  taskWorkflowStates   CrewTaskWorkflowState[]
+  productionPage       CrewProductionPage?
+  productionResources  CrewProductionResource[]
+  productionActivity   CrewProductionActivity[]
+  episodes             CrewEpisode[]
+  agreements           CrewAgreement[]
+  earningEntries       CrewEarningEntry[]
+  earningEvents        CrewEarningEvent[]
+  payouts              CrewPayout[]
+  payoutAllocations    CrewPayoutAllocation[]
+  payoutEvents         CrewPayoutEvent[]
+  workspace            Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
+  productionProject    PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
+  studioProject        PlatformProject?          @relation("CrewStudioProject", fields: [studioProjectId], references: [id], onDelete: SetNull)
 
   @@index([createdByUserId, deletedAt], map: "crews_creator_idx")
   /// Public listing: WHERE listing_status='listed' AND deleted_at IS NULL
@@ -8453,6 +8453,7 @@ model StoryProject {
   generationBatches       StoryGenerationBatch[]
   productionMutations     StoryProductionMutationReceipt[]
   productionPlanSnapshots StoryProductionPlanSnapshot[]
+  chapterGraphRepairs     StoryChapterGraphRepair[]
   agentOsAttachments      AgentOsAttachment[]
   aiJobs                  AiJob[]
   skillState              ProjectSkillState?
@@ -8822,6 +8823,31 @@ model StoryDraft {
   project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
 
   @@map("story_drafts")
+}
+
+/// Immutable evidence for an automatic StoryDraft ↔ StoryChapter projection
+/// repair. The before snapshot makes every ownership decision recoverable;
+/// graph nodes and edges are never deleted or fabricated by the repair.
+model StoryChapterGraphRepair {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  storyProjectId      String   @map("story_project_id") @db.Uuid
+  trigger             String   @db.VarChar(64)
+  repairFingerprint   String   @unique @map("repair_fingerprint") @db.VarChar(64)
+  draftRevisionBefore Int      @map("draft_revision_before")
+  draftRevisionAfter  Int      @map("draft_revision_after")
+  beforeDraft         Json     @map("before_draft") @db.JsonB
+  repairedDraft       Json     @map("repaired_draft") @db.JsonB
+  beforeChapters      Json     @map("before_chapters") @db.JsonB
+  repairedChapters    Json     @map("repaired_chapters") @db.JsonB
+  issues              Json     @db.JsonB
+  decisions           Json     @db.JsonB
+  actorUserId         String?  @map("actor_user_id") @db.VarChar(64)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "story_chapter_graph_repairs_project_recent_idx")
+  @@map("story_chapter_graph_repairs")
 }
 
 /// Project-level curation of durable media produced on the Story content
@@ -9926,18 +9952,19 @@ model CrewUploadReservation {
 /// must never erase or reuse an earlier promise. Assignment ID is deliberately
 /// not a foreign key because reassignment deletes CrewTaskAssignee rows.
 model CrewTaskCommitment {
-  id             String   @id @default(uuid(7)) @db.Uuid
-  taskId         String   @map("task_id") @db.Uuid
-  assignmentId   String   @unique @map("assignment_id") @db.Uuid
-  userId         String   @map("user_id") @db.VarChar(64)
-  status         String   @db.VarChar(20)
-  promisedDueAt  DateTime? @map("promised_due_at") @db.Timestamptz(6)
-  acceptedAt     DateTime? @map("accepted_at") @db.Timestamptz(6)
-  reason         String   @default("") @db.Text
-  releasedAt     DateTime? @map("released_at") @db.Timestamptz(6)
-  handoverNote   String?  @map("handover_note") @db.Text
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  task           CrewTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  id            String    @id @default(uuid(7)) @db.Uuid
+  taskId        String    @map("task_id") @db.Uuid
+  assignmentId  String    @unique @map("assignment_id") @db.Uuid
+  userId        String    @map("user_id") @db.VarChar(64)
+  status        String    @db.VarChar(20)
+  promisedDueAt DateTime? @map("promised_due_at") @db.Timestamptz(6)
+  acceptedAt    DateTime? @map("accepted_at") @db.Timestamptz(6)
+  reason        String    @default("") @db.Text
+  releasedAt    DateTime? @map("released_at") @db.Timestamptz(6)
+  handoverNote  String?   @map("handover_note") @db.Text
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  task          CrewTask  @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
   @@index([taskId, acceptedAt])
   @@index([userId, acceptedAt])
   @@map("crew_task_commitments")
@@ -9946,35 +9973,37 @@ model CrewTaskCommitment {
 /// Project exit requests and completion recognition are retained even when
 /// membership is removed. Completion rewards reference the existing wallet ledger.
 model CrewParticipationRecord {
-  id               String @id @default(uuid(7)) @db.Uuid
-  crewId           String @map("crew_id")
-  userId           String @map("user_id") @db.VarChar(64)
+  id               String    @id @default(uuid(7)) @db.Uuid
+  crewId           String    @map("crew_id")
+  userId           String    @map("user_id") @db.VarChar(64)
   withdrawalAt     DateTime? @map("withdrawal_at") @db.Timestamptz(6)
-  withdrawalReason String? @map("withdrawal_reason") @db.Text
+  withdrawalReason String?   @map("withdrawal_reason") @db.Text
   resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
-  resolvedByUserId  String? @map("resolved_by_user_id") @db.VarChar(64)
-  resolution       String? @db.Text
-  communityPoints Int @default(0) @map("community_points")
+  resolvedByUserId String?   @map("resolved_by_user_id") @db.VarChar(64)
+  resolution       String?   @db.Text
+  communityPoints  Int       @default(0) @map("community_points")
   awardedAt        DateTime? @map("awarded_at") @db.Timestamptz(6)
-  awardedByUserId   String? @map("awarded_by_user_id") @db.VarChar(64)
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  crew             Crew @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  awardedByUserId  String?   @map("awarded_by_user_id") @db.VarChar(64)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew             Crew      @relation(fields: [crewId], references: [id], onDelete: Restrict)
+
   @@unique([crewId, userId])
   @@index([userId, createdAt])
   @@map("crew_participation_records")
 }
 
 model CrewPeerFeedback {
-  id            String @id @default(uuid(7)) @db.Uuid
-  crewId        String @map("crew_id")
-  authorUserId  String @map("author_user_id") @db.VarChar(64)
-  subjectUserId String @map("subject_user_id") @db.VarChar(64)
+  id            String    @id @default(uuid(7)) @db.Uuid
+  crewId        String    @map("crew_id")
+  authorUserId  String    @map("author_user_id") @db.VarChar(64)
+  subjectUserId String    @map("subject_user_id") @db.VarChar(64)
   rating        Int
-  comment       String @db.Text
-  response      String? @db.Text
+  comment       String    @db.Text
+  response      String?   @db.Text
   respondedAt   DateTime? @map("responded_at") @db.Timestamptz(6)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  crew          Crew @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew          Crew      @relation(fields: [crewId], references: [id], onDelete: Restrict)
+
   @@unique([crewId, authorUserId, subjectUserId])
   @@index([subjectUserId, createdAt])
   @@map("crew_peer_feedback")

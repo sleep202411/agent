@@ -918,6 +918,11 @@ function validateAssetPlan(
         );
       }
     }
+    if (asset.kind === 'character' && asset.sourceCharacterId === undefined) {
+      issues.push(
+        `Character asset "${asset.stableKey}" must include sourceCharacterId.`,
+      );
+    }
     if (asset.sourceCharacterId !== undefined) {
       const sourceCharacterId = asset.sourceCharacterId;
       if (!characterIds.has(sourceCharacterId)) {

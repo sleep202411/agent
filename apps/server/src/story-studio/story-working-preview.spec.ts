@@ -50,6 +50,16 @@ function scopedService(
         contentHash,
       }),
     },
+    storyChapter: {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          id: uuidAt(9),
+          rank: 0,
+          nodeIds: draftContent.graph.nodes.map((node) => node.nodeId),
+          entryNodeId: draftContent.graph.entryNodeId,
+        },
+      ]),
+    },
     storyStoryboardSequence: {
       findMany: jest.fn().mockResolvedValue(sequences),
     },
@@ -388,6 +398,27 @@ describe('StoryWorkingPreviewService', () => {
       expect.arrayContaining([expect.objectContaining({ severity: 'error' })]),
     );
     expect(preview.runtime).not.toBeNull();
+  });
+
+  it('strictly rejects a saved Preview whose chapter projection is incomplete', async () => {
+    const draft = buildInteractiveFilmTestBundle().draftContent;
+    const { service, tx } = scopedService(draft);
+    tx.storyChapter.findMany.mockResolvedValue([
+      {
+        id: uuidAt(9),
+        rank: 0,
+        nodeIds: [],
+        entryNodeId: draft.graph.entryNodeId,
+      },
+    ]);
+
+    await expect(
+      service.getWorkingPreview(USER as never, PROJECT_ID),
+    ).rejects.toMatchObject({
+      response: expect.objectContaining({
+        code: 'STORY_CHAPTER_GRAPH_PARTITION_INVALID',
+      }) as unknown,
+    });
   });
 
   it('compiles the current draft and exact video selections to a Preview manifest', async () => {

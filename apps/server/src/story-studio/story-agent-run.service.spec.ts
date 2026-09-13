@@ -25,6 +25,7 @@ import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+  InteractiveStoryDraftContentSchema,
   STORY_CANVAS_LAYOUT_SCHEMA_VERSION,
   type StoryVisualStyle,
 } from './dto';
@@ -34,6 +35,7 @@ import {
 } from '../agent-os-journal/agent-os-run-journal.service';
 import {
   type StoryAgentProposalAuthority,
+  screenplayForCanonicalChapter,
   StoryAgentRunService,
 } from './story-agent-run.service';
 
@@ -85,6 +87,56 @@ const CINEMATIC_REALISM_POLICY = {
   image: { promptSuffix: 'grounded cinematic realism' },
   video: { promptSuffix: 'grounded live-action motion' },
 } as const;
+
+describe('screenplayForCanonicalChapter', () => {
+  it('preserves Script prose and adds Plot clips created through another write path', () => {
+    const draft = InteractiveStoryDraftContentSchema.parse({
+      ...EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+      graph: {
+        entryNodeId: 'opening',
+        nodes: [
+          {
+            kind: 'clip',
+            nodeId: 'opening',
+            clipKey: 'OPENING',
+            name: 'Opening',
+            description: 'The page opens.',
+            interactions: [],
+            exit: { kind: 'auto', nextNodeId: 'clip:scene-30' },
+          },
+          {
+            kind: 'clip',
+            nodeId: 'clip:scene-30',
+            clipKey: 'SCENE_30',
+            name: 'Scene 30',
+            description: 'A newly imported scene.',
+            interactions: [],
+            exit: { kind: 'auto', nextNodeId: null },
+          },
+        ],
+      },
+    });
+
+    const projected = screenplayForCanonicalChapter(
+      LEGACY_APPROVED_SCREENPLAY,
+      draft,
+    );
+
+    expect(projected.scenes.map((scene) => scene.nodeId)).toEqual([
+      'opening',
+      'clip:scene-30',
+    ]);
+    expect(projected.scenes[0]).toMatchObject({
+      action: 'A page turns itself in the dark.',
+      exit: { kind: 'auto', nextNodeId: 'clip:scene-30' },
+    });
+    expect(projected.scenes[1]).toMatchObject({
+      heading: 'Scene 30',
+      beat: 'A newly imported scene.',
+      action: 'A newly imported scene.',
+    });
+  });
+});
 const LEGACY_APPROVED_SCREENPLAY = {
   schemaVersion: 'interactive-screenplay-v1' as const,
   storyLanguage: 'en-US',
@@ -2474,6 +2526,80 @@ describe('StoryAgentRunService', () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  it('releases the project fence when an owned apply transaction rolls back', async () => {
+    const applying = runRow({
+      status: StoryAgentRunStatus.applying,
+      applyingAt: NOW,
+      confirmedByUserId: CONFIRMING_EDITOR.userId,
+      confirmedAt: NOW,
+      fencingToken: 9n,
+      leaseOwner: WORKER_ID,
+      leaseAcquiredAt: NOW,
+      leaseExpiresAt: new Date(NOW.getTime() + 30_000),
+    });
+    const failed = runRow({
+      ...applying,
+      status: StoryAgentRunStatus.failed,
+      completedAt: NOW,
+      fencingToken: null,
+      leaseOwner: null,
+      leaseAcquiredAt: null,
+      leaseExpiresAt: null,
+      errorCode: 'STORY_PRODUCTION_STORYBOARD_INCOMPLETE',
+      errorDetail: 'Missing clip:scene-30.',
+    });
+    const storyAgentRun = {
+      findUnique: jest
+        .fn()
+        .mockResolvedValueOnce({ storyProjectId: PROJECT_ID })
+        .mockResolvedValueOnce(applying),
+      update: jest.fn().mockResolvedValue(failed),
+    };
+    const storyProjectWriteState = {
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    };
+    const tx = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            storyProjectId: PROJECT_ID,
+            activeAgentRunId: RUN_ID,
+            fencingToken: 9n,
+            lockedAt: NOW,
+            lockExpiresAt: new Date(NOW.getTime() + 60_000),
+            databaseNow: NOW,
+          },
+        ])
+        .mockResolvedValueOnce([{ now: NOW }]),
+      storyAgentRun,
+      storyProjectWriteState,
+    };
+    const { service, realtime } = serviceWith(tx);
+
+    await service.failClaimedApply(RUN_ID, WORKER_ID, {
+      code: 'STORY_PRODUCTION_STORYBOARD_INCOMPLETE',
+      detail: 'Missing clip:scene-30.',
+    });
+
+    expect(storyProjectWriteState.updateMany).toHaveBeenCalledWith({
+      where: { storyProjectId: PROJECT_ID, activeAgentRunId: RUN_ID },
+      data: { activeAgentRunId: null, lockedAt: null, lockExpiresAt: null },
+    });
+    expect(storyAgentRun.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: RUN_ID },
+        data: expect.objectContaining({
+          status: StoryAgentRunStatus.failed,
+          fencingToken: null,
+          leaseOwner: null,
+          errorCode: 'STORY_PRODUCTION_STORYBOARD_INCOMPLETE',
+        }),
+      }),
+    );
+    expect(realtime.publishCommitted).toHaveBeenCalledTimes(1);
+  });
+
   it('cancels a drafting run directly, clearing its error and lease', async () => {
     const cancelled = runRow({
       status: StoryAgentRunStatus.cancelled,
@@ -3219,6 +3345,12 @@ function serviceWith(
       ready: false,
     }),
     readCurrentAssetPlanInTransaction: jest.fn().mockResolvedValue(null),
+    validateApprovedAssetPlan: jest.fn(
+      ({ assetPlan }: { assetPlan: unknown }) => assetPlan,
+    ),
+    validateApprovedStoryboardPlan: jest.fn(
+      ({ storyboardPlan }: { storyboardPlan: unknown }) => storyboardPlan,
+    ),
   };
   return {
     service: new StoryAgentRunService(
