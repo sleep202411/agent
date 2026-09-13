@@ -9584,5 +9584,24 @@
     "crew": "Crew",
     "task": "Task",
     "loadMore": "Load more"
+  },
+  "crewPersonalPayouts": {
+    "title": "Payout history",
+    "description": "Recorded settlement history. Pending allocations are not paid money; recorded paid amounts rely on the settlement evidence supplied by finance.",
+    "refresh": "Refresh payouts",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "pending": "Pending payment (net)",
+    "paid": "Recorded paid (net)",
+    "voided": "Voided (net)",
+    "gross": "Gross amount",
+    "empty": "No payout records in this currency.",
+    "withholding": "Withholding",
+    "paidAt": "Paid date",
+    "reference": "Settlement reference",
+    "sources": "Source earnings",
+    "crew": "Crew",
+    "record": "Payout record",
+    "more": "Load more payouts"
   }
 }

@@ -6,6 +6,7 @@ import {
 import {
   CreateCrewPayoutSchema,
   ListCrewPayoutsQuerySchema,
+  ListMyCrewPayoutsQuerySchema,
   PayCrewPayoutSchema,
 } from './payouts.dto';
 import { CrewPayoutsService } from './payouts.service';
@@ -358,5 +359,59 @@ describe('CrewPayoutsService', () => {
         availableAmountMinor: '1000',
       },
     });
+  });
+});
+
+describe('Personal payout history', () => {
+  it('rejects caller-selected users and broader scopes', () => {
+    for (const extra of [{ userId: 'other' }, { scope: 'crew' }])
+      expect(
+        ListMyCrewPayoutsQuerySchema.safeParse({ currency: 'USD', ...extra })
+          .success,
+      ).toBe(false);
+  });
+  it('scopes rows and full totals to the authenticated beneficiary without requiring current membership', async () => {
+    const f = build();
+    f.authorization.requireMembership.mockRejectedValue(
+      new Error('Former member'),
+    );
+    f.prisma.crewPayout.groupBy.mockResolvedValue([
+      {
+        status: 'paid',
+        _count: { _all: 4 },
+        _sum: { amountMinor: 1000n, netAmountMinor: 900n },
+      },
+    ]);
+    const result = await f.service.listMine(
+      MEMBER_USER_ID,
+      ListMyCrewPayoutsQuerySchema.parse({ currency: 'USD' }),
+    );
+    expect(result.summary.byStatus).toEqual([
+      { status: 'paid', count: 4, amountMinor: '1000', netAmountMinor: '900' },
+    ]);
+    for (const mock of [
+      f.prisma.crewPayout.findMany,
+      f.prisma.crewPayout.groupBy,
+    ])
+      expect(mock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: MEMBER_USER_ID, currency: 'USD' },
+        }),
+      );
+    expect(f.authorization.requireMembership).not.toHaveBeenCalled();
+  });
+  it('rejects a cursor outside the current beneficiary scope before fetching rows', async () => {
+    const f = build();
+    f.prisma.crewPayout.findFirst.mockResolvedValue(null);
+    await expect(
+      f.service.listMine(
+        MEMBER_USER_ID,
+        ListMyCrewPayoutsQuerySchema.parse({
+          currency: 'USD',
+          cursor: PAYOUT_ID,
+        }),
+      ),
+    ).rejects.toThrow('cursor');
+    expect(f.prisma.crewPayout.findMany).not.toHaveBeenCalled();
   });
 });

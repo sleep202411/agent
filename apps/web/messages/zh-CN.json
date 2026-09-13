@@ -9584,5 +9584,24 @@
     "crew": "剧组",
     "task": "任务",
     "loadMore": "加载更多"
+  },
+  "crewPersonalPayouts": {
+    "title": "付款记录",
+    "description": "查看已记录的结算历史。待付分配不等于已付款；已付金额以财务提供的结算凭证为依据。",
+    "refresh": "刷新付款记录",
+    "loading": "加载中…",
+    "retry": "重试",
+    "pending": "待付净额",
+    "paid": "已记录付款净额",
+    "voided": "已作废净额",
+    "gross": "总额",
+    "empty": "此币种暂无付款记录。",
+    "withholding": "代扣金额",
+    "paidAt": "付款日期",
+    "reference": "结算凭证编号",
+    "sources": "来源收入",
+    "crew": "剧组",
+    "record": "付款记录",
+    "more": "加载更多付款记录"
   }
 }

@@ -19,6 +19,12 @@ export const ListCrewPayoutsQuerySchema = z.object({
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
+export const ListMyCrewPayoutsQuerySchema = ListCrewPayoutsQuerySchema.omit({
+  scope: true,
+}).strict();
+export type ListMyCrewPayoutsQuery = z.infer<
+  typeof ListMyCrewPayoutsQuerySchema
+>;
 export type ListCrewPayoutsQuery = z.infer<typeof ListCrewPayoutsQuerySchema>;
 
 export const CreateCrewPayoutSchema = z.object({

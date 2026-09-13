@@ -356,6 +356,20 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       ).toMatchObject({ leftAt: null });
       await members.remove(crewId, workerMemberId, owner);
       expect(await authorization.resolve(crewId, worker)).toBeNull();
+      const ownPayouts = await payouts.listMine(worker, {
+        currency: 'USD',
+        limit: 50,
+      });
+      expect(ownPayouts.items.map((item) => item.id)).toContain(payout.id);
+      expect(ownPayouts.summary.byStatus).toContainEqual({
+        status: 'paid',
+        count: 1,
+        amountMinor: '1000',
+        netAmountMinor: '1000',
+      });
+      expect(
+        (await payouts.listMine(finance, { currency: 'USD', limit: 50 })).items,
+      ).toHaveLength(0);
       const ownIncome = await earnings.listMine(worker, {
         currency: 'USD',
         limit: 50,

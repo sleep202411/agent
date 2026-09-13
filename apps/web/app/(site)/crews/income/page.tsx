@@ -1,5 +1,6 @@
 "use client";
 
+import { PayoutHistory } from "./payout-history";
 import { useState } from "react";
 import Link from "next/link";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -148,6 +149,7 @@ export default function PersonalCrewIncome() {
           )}
         </>
       )}
+      {user && !isLoading && <PayoutHistory currency={currency} />}
     </main>
   );
 }
