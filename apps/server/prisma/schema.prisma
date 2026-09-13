@@ -4927,6 +4927,8 @@ model CrewAssetNode {
   mediaAsset           MediaAsset?               @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   favorites            CrewAssetFavorite[]
   grants               CrewAssetGrant[]
+  taskDeliveryAssets   CrewTaskDeliveryAsset[]
+  taskDeliveryFolders  CrewTaskDeliveryFolder[]
   submissionLinks      CrewTaskSubmissionAsset[]
   taskTimelineLinks    CrewTaskTimelineAsset[]
   episodeDeliveries    CrewEpisodeDelivery[]
@@ -5354,6 +5356,7 @@ model CrewTask {
   canvasDocument        StudioDocument?           @relation("CrewTaskCanvasDocument", fields: [canvasDocumentId], references: [id], onDelete: Restrict)
   assignees             CrewTaskAssignee[]
   labels                CrewTaskLabelAssignment[]
+  deliveryFolder        CrewTaskDeliveryFolder?
   submissions           CrewTaskSubmission[]
   earningEntries        CrewEarningEntry[]
   timelineItems         CrewTaskTimelineItem[]
@@ -5733,15 +5736,15 @@ model CrewTaskTimelineAsset {
 
 model CrewTaskAssignee {
   /// Required CNY/USD currency; amounts are integer minor units.
-  currency String @db.VarChar(3)
-  id           String   @id @default(uuid(7)) @db.Uuid
-  crewId       String   @map("crew_id")
-  taskId       String   @map("task_id") @db.Uuid
-  crewMemberId String   @map("crew_member_id")
-  userId       String   @map("user_id") @db.VarChar(64)
+  currency          String   @db.VarChar(3)
+  id                String   @id @default(uuid(7)) @db.Uuid
+  crewId            String   @map("crew_id")
+  taskId            String   @map("task_id") @db.Uuid
+  crewMemberId      String   @map("crew_member_id")
+  userId            String   @map("user_id") @db.VarChar(64)
   /// Compensation in the stated currency, in cents/fen.
   rewardAmountMinor BigInt?  @map("reward_amount_minor")
-  assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  assignedAt        DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
 
   task       CrewTask   @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Cascade)
   crewMember CrewMember @relation(fields: [crewMemberId, crewId, userId], references: [id, crewId, userId], onDelete: Restrict)
@@ -5795,7 +5798,7 @@ model CrewTaskSubmissionAsset {
 /// CNY/USD amounts are integer minor units. CrewPayout records settlement evidence.
 model CrewEarningEntry {
   /// Required CNY/USD currency; amounts are integer minor units.
-  currency String @db.VarChar(3)
+  currency         String                @db.VarChar(3)
   id               String                @id @default(uuid(7)) @db.Uuid
   crewId           String                @map("crew_id")
   crewMemberId     String                @map("crew_member_id")
@@ -5805,7 +5808,7 @@ model CrewEarningEntry {
   agreementId      String?               @map("agreement_id") @db.Uuid
   title            String                @db.VarChar(180)
   description      String?               @db.Text
-  amountMinor     BigInt                @map("amount_minor")
+  amountMinor      BigInt                @map("amount_minor")
   status           CrewEarningStatus     @default(pending)
   idempotencyKey   String                @unique(map: "crew_earning_entries_idempotency_unique") @map("idempotency_key") @db.VarChar(160)
   createdByUserId  String                @map("created_by_user_id") @db.VarChar(64)
@@ -5843,12 +5846,12 @@ model CrewEarningEntry {
 /// anti-double-pay boundary.
 model CrewPayout {
   /// Required CNY/USD currency; amounts are integer minor units.
-  currency String @db.VarChar(3)
+  currency               String            @db.VarChar(3)
   id                     String            @id @default(uuid(7)) @db.Uuid
   crewId                 String            @map("crew_id")
   crewMemberId           String            @map("crew_member_id")
   userId                 String            @map("user_id") @db.VarChar(64)
-  amountMinor           BigInt            @map("amount_minor")
+  amountMinor            BigInt            @map("amount_minor")
   withholdingAmountMinor BigInt            @default(0) @map("withholding_amount_minor")
   netAmountMinor         BigInt            @map("net_amount_minor")
   status                 CrewPayoutStatus  @default(pending)
@@ -5883,12 +5886,12 @@ model CrewPayout {
 /// while the service and database guard ensure active + paid allocations never
 /// exceed the source earning's posted point amount.
 model CrewPayoutAllocation {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  crewId       String   @map("crew_id")
-  payoutId     String   @map("payout_id") @db.Uuid
-  earningId    String   @map("earning_id") @db.Uuid
+  id          String   @id @default(uuid(7)) @db.Uuid
+  crewId      String   @map("crew_id")
+  payoutId    String   @map("payout_id") @db.Uuid
+  earningId   String   @map("earning_id") @db.Uuid
   amountMinor BigInt   @map("amount_minor")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   crew    Crew             @relation(fields: [crewId], references: [id], onDelete: Restrict)
   payout  CrewPayout       @relation(fields: [payoutId, crewId], references: [id, crewId], onDelete: Restrict)
@@ -7857,28 +7860,28 @@ model MediaProcessingJob {
 //   FD-OPC-2605-8K3Q7P
 
 model UserCertificate {
-  id            String     @id @default(uuid(7)) @db.Uuid
+  id             String     @id @default(uuid(7)) @db.Uuid
   /// External auth user id. FK not enforced — orphaned rows
   /// just render as "Unknown user" client-side, matching the crew /
   /// services convention.
-  userId        String     @map("user_id") @db.VarChar(64)
+  userId         String     @map("user_id") @db.VarChar(64)
   /// Human-readable cert number generated by import code. RANDOM is
   /// URL-safe uppercase A-Z/0-9 and must not encode user id / DB id /
   /// name / level.
-  certNo        String     @unique @map("cert_no") @db.VarChar(32)
+  certNo         String     @unique @map("cert_no") @db.VarChar(32)
   /// Explicit admin-reviewed qualification; generic and training certificates confer no Crew access.
-  credentialType String @default("general") @map("credential_type") @db.VarChar(64)
-  title         String     @db.VarChar(128)
-  issuer        String     @default("FizzDragon") @db.VarChar(128)
+  credentialType String     @default("general") @map("credential_type") @db.VarChar(64)
+  title          String     @db.VarChar(128)
+  issuer         String     @default("FizzDragon") @db.VarChar(128)
   /// Final certificate image asset. UserCertificate owns the business
   /// fact; MediaAsset owns storage identity and URL materialization.
-  imageAssetId  String     @map("image_asset_id") @db.Uuid
-  imageAsset    MediaAsset @relation("UserCertificateImage", fields: [imageAssetId], references: [id], onDelete: Restrict)
-  issuedAt      DateTime   @default(now()) @map("issued_at") @db.Timestamptz(6)
-  revokedAt     DateTime?  @map("revoked_at") @db.Timestamptz(6)
-  revokedReason String?    @map("revoked_reason") @db.VarChar(255)
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  imageAssetId   String     @map("image_asset_id") @db.Uuid
+  imageAsset     MediaAsset @relation("UserCertificateImage", fields: [imageAssetId], references: [id], onDelete: Restrict)
+  issuedAt       DateTime   @default(now()) @map("issued_at") @db.Timestamptz(6)
+  revokedAt      DateTime?  @map("revoked_at") @db.Timestamptz(6)
+  revokedReason  String?    @map("revoked_reason") @db.VarChar(255)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   /// Profile cert wall: per-user, hide revoked, newest issued first.
   @@index([userId, revokedAt, issuedAt(sort: Desc)], map: "user_certificates_profile_idx")
@@ -9924,4 +9927,32 @@ model CrewUploadReservation {
 
   @@index([crewId, state, expiresAt], map: "crew_upload_reservations_capacity_idx")
   @@map("crew_upload_reservations")
+}
+
+/// Selected task delivery destination; accepted files are published here on review.
+model CrewTaskDeliveryFolder {
+  taskId          String                  @id @map("task_id") @db.Uuid
+  crewId          String                  @map("crew_id")
+  folderId        String                  @map("folder_id") @db.Uuid
+  createdByUserId String                  @map("created_by_user_id") @db.VarChar(64)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  task            CrewTask                @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Cascade, map: "crew_task_delivery_folder_task_fk")
+  folder          CrewAssetNode           @relation(fields: [folderId, crewId], references: [id, crewId], onDelete: Restrict, map: "crew_task_delivery_folder_node_fk")
+  assets          CrewTaskDeliveryAsset[]
+
+  @@unique([taskId, crewId], map: "crew_task_delivery_folders_task_crew_unique")
+  @@index([folderId], map: "crew_task_delivery_folders_node_idx")
+  @@map("crew_task_delivery_folders")
+}
+
+model CrewTaskDeliveryAsset {
+  taskId      String                 @map("task_id") @db.Uuid
+  crewId      String                 @map("crew_id")
+  assetNodeId String                 @map("asset_node_id") @db.Uuid
+  taskFolder  CrewTaskDeliveryFolder @relation(fields: [taskId, crewId], references: [taskId, crewId], onDelete: Cascade, map: "crew_task_delivery_assets_folder_fk")
+  assetNode   CrewAssetNode          @relation(fields: [assetNodeId, crewId], references: [id, crewId], onDelete: Cascade, map: "crew_task_delivery_assets_node_fk")
+
+  @@id([taskId, assetNodeId])
+  @@index([assetNodeId], map: "crew_task_delivery_assets_node_idx")
+  @@map("crew_task_delivery_assets")
 }

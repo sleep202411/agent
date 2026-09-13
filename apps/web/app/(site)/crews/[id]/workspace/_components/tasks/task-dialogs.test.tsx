@@ -15,7 +15,10 @@ const assetQuery = vi.hoisted(() => ({
 vi.mock("@/app/(site)/crews/_hooks/use-crew", () => ({
   useSubmitCrewTask: () => ({ mutateAsync: submit, isPending: false }),
 }));
-vi.mock("../../_hooks/use-crew-assets", () => ({ useCrewAssets: () => assetQuery }));
+vi.mock("../../_hooks/use-crew-assets", () => ({
+  useCrewAssetFolders: () => ({ data: [] }),
+  useCrewAssets: () => assetQuery,
+}));
 vi.mock("@/src/i18n/i18n", () => ({ useTranslations: () => (key: string) => key }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -116,14 +119,22 @@ it("retains notes and permits retry after a failed submission", async () => {
 
 it("locks the submitted draft and restores editing after failure", async () => {
   let reject!: (error: Error) => void;
-  submit.mockReturnValue(new Promise((_, fail) => { reject = fail; }));
+  submit.mockReturnValue(
+    new Promise((_, fail) => {
+      reject = fail;
+    })
+  );
   render("task-1");
   act(() => fill("Review this output"));
   act(() => document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.click());
   act(clickSubmit);
   expect(document.querySelector("textarea")!.disabled).toBe(true);
   expect(document.querySelector<HTMLButtonElement>('[role="checkbox"]')!.disabled).toBe(true);
-  expect(submit).toHaveBeenCalledWith({ taskId: "task-1", note: "Review this output", assetNodeIds: ["asset-1"] });
+  expect(submit).toHaveBeenCalledWith({
+    taskId: "task-1",
+    note: "Review this output",
+    assetNodeIds: ["asset-1"],
+  });
   await act(async () => reject(new Error("Please retry")));
   expect(document.querySelector("textarea")!.disabled).toBe(false);
   expect(document.querySelector("textarea")!.value).toBe("Review this output");
@@ -140,8 +151,14 @@ it("distinguishes asset loading from an empty result", () => {
 it("keeps loaded attachments and exposes a failed refresh for retry", async () => {
   assetQuery.error = new Error("Asset service unavailable");
   render("task-1");
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Asset service unavailable");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+    "Asset service unavailable"
+  );
   expect(document.body.textContent).toContain("Output");
-  await act(async () => [...document.querySelectorAll("button")].find((button) => button.textContent?.trim() === "retry")!.click());
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent?.trim() === "retry")!
+      .click()
+  );
   expect(assetQuery.refetch).toHaveBeenCalledTimes(1);
 });

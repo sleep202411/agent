@@ -2038,7 +2038,10 @@
       "team": "Team",
       "applySuccess": "Application submitted",
       "applyFail": "Application failed, please try again"
-    }
+    },
+    "myTasksTab": "My tasks",
+    "myCrewsSignIn": "Sign in to view your crews.",
+    "myCrewsEmpty": "You have not founded or joined a crew yet."
   },
   "crewRoles": {
     "director": "Director",
@@ -5500,7 +5503,9 @@
       "approved": "approved the submitted work.",
       "revisionRequested": "requested another revision.",
       "changed": "updated this task."
-    }
+    },
+    "deliveryFolder": "Delivery folder",
+    "automaticDeliveryFolder": "Reuse the task folder, or create one named after this task"
   },
   "crewInvitations": {
     "signIn": "Sign in",
@@ -9546,5 +9551,12 @@
     "retry": "Retry",
     "empty": "No tasks match these filters.",
     "loadMore": "Load more"
+  },
+  "crewDeadline": {
+    "overdue": "Overdue · {{count}} h",
+    "soon": "Due soon · {{count}} h left",
+    "upcoming": "{{count}} h left",
+    "warningWindow": "Highlight deadlines within",
+    "hours": "{{count}} hours"
   }
 }

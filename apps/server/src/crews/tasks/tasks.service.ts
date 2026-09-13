@@ -1,3 +1,7 @@
+import {
+  taskDeliveryFolderTx,
+  publishTaskDeliveryAssetsTx,
+} from './task-delivery-folder';
 import { assertNewCrewCurrency } from '../earnings/ledger-currency';
 import {
   BadRequestException,
@@ -2996,6 +3000,7 @@ export class CrewTasksService {
       });
     }
 
+    let deliveryFolderId: string | undefined;
     const updated = await this.authorizedTaskWrite(
       task.crewId,
       async (tx) => {
@@ -3119,6 +3124,13 @@ export class CrewTasksService {
             },
           });
         }
+        deliveryFolderId = await taskDeliveryFolderTx(
+          tx,
+          this.assetAccess,
+          locked,
+          userId,
+          input.deliveryFolderId,
+        );
         const submission = await tx.crewTaskSubmission.create({
           data: {
             taskId,
@@ -3182,6 +3194,13 @@ export class CrewTasksService {
       'submitted',
       userId,
     );
+    if (deliveryFolderId)
+      await this.conversations.broadcastCrewAssetChange(
+        updated.crewId,
+        deliveryFolderId,
+        'updated',
+        userId,
+      );
     return this.toDtoWithUsage(updated);
   }
 
@@ -3256,6 +3275,13 @@ export class CrewTasksService {
           },
         });
         if (approved) {
+          await publishTaskDeliveryAssetsTx(
+            tx,
+            this.assetAccess,
+            locked,
+            userId,
+            latest.assets.map((asset) => asset.assetNodeId),
+          );
           for (const assignee of locked.assignees.filter(
             (candidate) =>
               candidate.rewardAmountMinor != null &&
@@ -3352,6 +3378,16 @@ export class CrewTasksService {
       'reviewed',
       userId,
     );
+    if (input.decision === 'approve') {
+      for (const asset of task.submissions[0]?.assets ?? []) {
+        await this.conversations.broadcastCrewAssetChange(
+          task.crewId,
+          asset.assetNodeId,
+          'updated',
+          userId,
+        );
+      }
+    }
     return this.toDtoWithUsage(task);
   }
 

@@ -43,10 +43,15 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       const target = new URL(url!);
       if (
         target.hostname !== '127.0.0.1' ||
-        target.port !== '55439' ||
-        target.pathname !== '/task01'
+        !(
+          (target.port === '55439' && target.pathname === '/task01') ||
+          (target.port === '5433' &&
+            target.pathname === '/fizzdragon_outbox_test')
+        )
       ) {
-        throw new Error('Only isolated localhost:55439/task01 is allowed.');
+        throw new Error(
+          'Use an explicitly allowed local Crew fixture database.',
+        );
       }
       db = new PrismaClient({
         adapter: new PrismaPg({ connectionString: url }),
@@ -262,6 +267,18 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
         note: 'First delivery',
         assetNodeIds: [file.id],
       });
+      const [delivery] = await db.$queryRaw<Array<{ folderId: string }>>`
+        SELECT folder_id AS "folderId" FROM crew_task_delivery_folders WHERE task_id = ${task.id}::uuid
+      `;
+      expect(delivery).toBeDefined();
+      expect(
+        (
+          await assets.list(crewId, worker, {
+            source: 'all',
+            parentId: delivery.folderId,
+          })
+        ).items,
+      ).toHaveLength(0);
       await tasks.review(task.id, owner, {
         decision: 'request_revision',
         note: 'Adjust timing',
@@ -277,6 +294,26 @@ const url = process.env.TASK01_TEST_DATABASE_URL;
       await expect(
         tasks.review(task.id, owner, { decision: 'approve', note: '' }),
       ).rejects.toThrow();
+      expect(
+        (
+          await assets.list(crewId, worker, {
+            source: 'all',
+            parentId: delivery.folderId,
+          })
+        ).items.map((item) => item.id),
+      ).toContain(file.id);
+      expect(
+        (
+          await assets.list(crewId, finance, {
+            source: 'all',
+            parentId: delivery.folderId,
+          })
+        ).items.map((item) => item.id),
+      ).not.toContain(file.id);
+      expect(
+        (await db.crewAssetNode.findUniqueOrThrow({ where: { id: file.id } }))
+          .parentId,
+      ).toBe(folder.id);
       const reward = await db.crewEarningEntry.findFirstOrThrow({
         where: { crewId, userId: worker },
       });

@@ -813,17 +813,20 @@ export function useSubmitCrewTask(crewId: string) {
       taskId,
       note,
       assetNodeIds = [],
+      deliveryFolderId,
     }: {
       taskId: string;
       note: string;
       assetNodeIds?: string[];
+      deliveryFolderId?: string;
     }) =>
       crewApi.post<CrewTaskDTO>(`/crew-tasks/${encodeURIComponent(taskId)}/submissions`, {
-        body: { note, assetNodeIds },
+        body: { note, assetNodeIds, ...(deliveryFolderId ? { deliveryFolderId } : {}) },
       }),
     onSuccess: (task, _variables, origin) => {
       if (!origin?.accountUserId) return;
       const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.assets(crewId), accountUserId));
       qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
       qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
       qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));
@@ -857,6 +860,7 @@ export function useReviewCrewTask(crewId: string) {
     onSuccess: (task, _variables, origin) => {
       if (!origin?.accountUserId) return;
       const { accountUserId, crewId } = origin;
+      qc.invalidateQueries(crewAccountQueries(crewKeys.assets(crewId), accountUserId));
       qc.setQueryData([...crewKeys.task(task.id), accountUserId], task);
       qc.invalidateQueries(crewTaskDetailQueries(crewId, task.id, accountUserId));
       qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(crewId), accountUserId));

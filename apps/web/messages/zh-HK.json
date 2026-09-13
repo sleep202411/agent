@@ -2038,7 +2038,10 @@
       "team": "團隊成員",
       "applySuccess": "申請成功",
       "applyFail": "申請失敗，請稍後重試"
-    }
+    },
+    "myTasksTab": "我的任務",
+    "myCrewsSignIn": "登入後查看我的劇組。",
+    "myCrewsEmpty": "你還沒有建立或加入劇組。"
   },
   "crewRoles": {
     "director": "導演",
@@ -5500,7 +5503,9 @@
       "approved": "通過了本次任務交付。",
       "revisionRequested": "要求繼續修改並提交新版本。",
       "changed": "更新了任務。"
-    }
+    },
+    "deliveryFolder": "交付資料夾",
+    "automaticDeliveryFolder": "重用任務資料夾，或按任務名稱建立"
   },
   "crewInvitations": {
     "signIn": "登入",
@@ -9546,5 +9551,12 @@
     "retry": "重試",
     "empty": "沒有符合篩選條件的任務。",
     "loadMore": "載入更多"
+  },
+  "crewDeadline": {
+    "overdue": "已逾期 · {{count}} 小時",
+    "soon": "即將到期 · 剩餘 {{count}} 小時",
+    "upcoming": "剩餘 {{count}} 小時",
+    "warningWindow": "標記此時間內到期的任務",
+    "hours": "{{count}} 小時"
   }
 }

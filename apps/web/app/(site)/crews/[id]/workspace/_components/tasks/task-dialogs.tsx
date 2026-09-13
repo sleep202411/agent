@@ -18,7 +18,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useSubmitCrewTask, type CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
 import { useTranslations } from "@/src/i18n/i18n";
-import { useCrewAssets } from "../../_hooks/use-crew-assets";
+import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
+import { useCrewAssetFolders, useCrewAssets } from "../../_hooks/use-crew-assets";
 
 export function SubmitTaskDialog({
   open,
@@ -38,8 +39,14 @@ export function SubmitTaskDialog({
   const submitTask = useSubmitCrewTask(crewId);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState("");
+  const [deliveryFolderId, setDeliveryFolderId] = useState("");
+  const folders = useCrewAssetFolders(crewId, open);
   const [assetIds, setAssetIds] = useState<string[]>([]);
-  const assetQuery = useCrewAssets(crewId, { source: "recent", sort: "modified", kind: "file" }, open);
+  const assetQuery = useCrewAssets(
+    crewId,
+    { source: "recent", sort: "modified", kind: "file" },
+    open
+  );
   const assets = assetQuery.data?.items ?? [];
 
   const [context, setContext] = useState({ open, crewId, taskId: task?.id });
@@ -48,6 +55,7 @@ export function SubmitTaskDialog({
     setSaving(false);
     setNote("");
     setAssetIds([]);
+    setDeliveryFolderId("");
   }
   const generation = useRef(0);
   const pendingGeneration = useRef<number | null>(null);
@@ -64,6 +72,7 @@ export function SubmitTaskDialog({
       generation.current += 1;
       setNote("");
       setAssetIds([]);
+      setDeliveryFolderId("");
     }
     onOpenChange(next);
   };
@@ -74,7 +83,12 @@ export function SubmitTaskDialog({
     pendingGeneration.current = requestGeneration;
     setSaving(true);
     try {
-      await submitTask.mutateAsync({ taskId: task.id, note, assetNodeIds: assetIds });
+      await submitTask.mutateAsync({
+        taskId: task.id,
+        note,
+        assetNodeIds: assetIds,
+        ...(deliveryFolderId ? { deliveryFolderId } : {}),
+      });
       if (generation.current !== requestGeneration) return;
       toast.success(t("submitted"));
       onSubmitted(task.id);
@@ -84,7 +98,10 @@ export function SubmitTaskDialog({
         toast.error(error instanceof Error ? error.message : t("submitFailed"));
       }
     } finally {
-      if (generation.current === requestGeneration && pendingGeneration.current === requestGeneration) {
+      if (
+        generation.current === requestGeneration &&
+        pendingGeneration.current === requestGeneration
+      ) {
         pendingGeneration.current = null;
         setSaving(false);
       }
@@ -99,6 +116,39 @@ export function SubmitTaskDialog({
           <DialogDescription>{t("submitDescription")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
+          <label className="block space-y-2 text-sm">
+            {t("deliveryFolder")}
+            <NativeSelect
+              aria-label={t("deliveryFolder")}
+              disabled={saving || folders.isLoading}
+              value={deliveryFolderId}
+              onChange={setDeliveryFolderId}
+            >
+              <NativeSelectOption value="">{t("automaticDeliveryFolder")}</NativeSelectOption>
+              {(folders.data ?? [])
+                .filter((folder) =>
+                  ["upload", "edit", "manage"].includes(folder.effectivePermission ?? "")
+                )
+                .map((folder) => (
+                  <NativeSelectOption key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </NativeSelectOption>
+                ))}
+            </NativeSelect>
+          </label>
+          {folders.error ? (
+            <div role="alert" className="text-xs">
+              <p>{folders.error instanceof Error ? folders.error.message : common("loadFailed")}</p>
+              <Button
+                variant="outline"
+                disabled={saving || folders.isFetching}
+                onClick={() => void folders.refetch()}
+              >
+                {common("retry")}
+              </Button>
+            </div>
+          ) : null}
+
           {task?.canvasHref ? (
             <div className="rounded-lg border border-border bg-muted/25 p-3">
               <div className="flex items-center gap-2 text-xs font-medium">
@@ -122,14 +172,27 @@ export function SubmitTaskDialog({
             <p className="mb-2 text-[11px] text-muted-foreground">{t("attachAssets")}</p>
             <div className="max-h-44 space-y-1 overflow-y-auto rounded-lg border border-border p-2">
               {assetQuery.isLoading ? (
-                <p role="status" className="px-2 py-4 text-center text-[11px] text-muted-foreground">
+                <p
+                  role="status"
+                  className="px-2 py-4 text-center text-[11px] text-muted-foreground"
+                >
                   {common("loading")}
                 </p>
               ) : null}
               {assetQuery.error ? (
                 <div role="alert" className="space-y-2 px-2 py-3 text-xs">
-                  <p>{assetQuery.error instanceof Error ? assetQuery.error.message : common("loadFailed")}</p>
-                  <Button variant="outline" color="muted" size="sm" disabled={saving || assetQuery.isFetching} onClick={() => void assetQuery.refetch()}>
+                  <p>
+                    {assetQuery.error instanceof Error
+                      ? assetQuery.error.message
+                      : common("loadFailed")}
+                  </p>
+                  <Button
+                    variant="outline"
+                    color="muted"
+                    size="sm"
+                    disabled={saving || assetQuery.isFetching}
+                    onClick={() => void assetQuery.refetch()}
+                  >
                     {common("retry")}
                   </Button>
                 </div>

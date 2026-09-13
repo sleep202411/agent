@@ -713,6 +713,7 @@ export type UpdateCrewTaskCommentInput = z.infer<
 >;
 
 export const SubmitCrewTaskSchema = z.object({
+  deliveryFolderId: z.string().uuid().optional(),
   note: z.string().trim().max(5000).default(''),
   assetNodeIds: z.array(z.string().uuid()).max(100).default([]),
 });
