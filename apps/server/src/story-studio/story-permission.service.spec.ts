@@ -32,6 +32,7 @@ function fixture() {
         archivedAt: null,
         createdAt: NOW,
         updatedAt: NOW,
+        workspace: { members: [] },
         members: [{ role: StoryProjectMemberRole.owner }],
       }),
     },
@@ -69,16 +70,13 @@ describe('StoryPermissionService project scope', () => {
     });
   });
 
-  it('re-checks only project membership on the authoritative write snapshot', async () => {
+  it('re-checks project and workspace memberships on the authoritative write snapshot', async () => {
     const { service } = fixture();
     const query = jest
-      .fn<
-        Promise<Array<{ storyProjectMemberRole: StoryProjectMemberRole }>>,
-        [TemplateStringsArray, ...unknown[]]
-      >()
-      .mockResolvedValue([
-        { storyProjectMemberRole: StoryProjectMemberRole.owner },
-      ]);
+      .fn()
+      .mockResolvedValueOnce([{ id: PROJECT_ID }])
+      .mockResolvedValueOnce([{ role: StoryProjectMemberRole.owner }])
+      .mockResolvedValueOnce([]);
     const tx = {
       $queryRaw: query,
       storyProject: {
@@ -98,10 +96,12 @@ describe('StoryPermissionService project scope', () => {
       ),
     ).resolves.toMatchObject({ role: StoryProjectMemberRole.owner });
 
-    const sql = query.mock.calls[0]?.[0].join('') ?? '';
+    const sql = query.mock.calls
+      .map(([parts]) => (parts as TemplateStringsArray).join(''))
+      .join('\n');
     expect(sql).toContain('story_project_members');
-    expect(sql).not.toContain('workspace_members');
-    expect(sql).not.toContain('workspaces');
+    expect(sql).toContain('workspace_members');
+    expect(sql).toContain('workspaces');
   });
 });
 
@@ -132,5 +132,67 @@ describe('StoryPermissionService write-lock preflight', () => {
     await service.requireProject(USER_ID, PROJECT_ID, 'story.read');
 
     expect(writeGuard.assertHumanWriteAllowedEarly).not.toHaveBeenCalled();
+  });
+});
+
+describe('combined project and workspace permissions', () => {
+  it.each(['editor', 'admin', 'owner'] as const)(
+    'does not downgrade workspace %s with an old project viewer grant',
+    async (workspaceRole) => {
+      const { service, prisma } = fixture();
+      const project = (await prisma.storyProject.findFirst()) as Record<
+        string,
+        unknown
+      >;
+      prisma.storyProject.findFirst.mockResolvedValueOnce({
+        ...project,
+        members: [{ role: 'viewer' }],
+        workspace: { members: [{ role: workspaceRole }] },
+      } as never);
+      const access = await service.requireProject(
+        USER_ID,
+        PROJECT_ID,
+        'story.edit',
+      );
+      expect(access.capabilities).toContain('story.generate');
+    },
+  );
+
+  it('unions grants without inventing release or ownership powers', () => {
+    const { service } = fixture();
+    const access = service.effectiveAccess('reviewer', 'editor');
+    expect(access?.capabilities).toEqual(
+      expect.arrayContaining(['story.edit', 'story.generate', 'story.review']),
+    );
+    expect(access?.capabilities).not.toContain('story.release');
+    expect(access?.capabilities).not.toContain('story.admin');
+    expect(service.effectiveAccess('viewer', 'viewer')?.capabilities).toEqual([
+      'story.read',
+    ]);
+    expect(service.effectiveAccess(undefined, undefined)).toBeNull();
+  });
+
+  it('unions permissions on the locked mutation snapshot too', async () => {
+    const { service } = fixture();
+    const tx = {
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValueOnce([{ id: PROJECT_ID }])
+        .mockResolvedValueOnce([{ role: 'viewer' }])
+        .mockResolvedValueOnce([{ role: 'editor' }]),
+      storyProject: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: PROJECT_ID, workspaceId: WORKSPACE_ID }),
+      },
+    };
+    await expect(
+      service.requireProjectInTransaction(
+        tx as never,
+        USER_ID,
+        PROJECT_ID,
+        'story.edit',
+      ),
+    ).resolves.toMatchObject({ role: 'editor' });
   });
 });

@@ -181,7 +181,7 @@ async function downloadAndHash(
   return { checksumSha256: hash.digest('hex'), sizeBytes };
 }
 
-async function inspectImage(
+export async function inspectImage(
   filePath: string,
 ): Promise<
   Pick<

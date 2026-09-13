@@ -38,7 +38,7 @@ import {
   type ReserveQueuedJobResult,
 } from './repository';
 import { AiGenerationOutboxService } from './outbox.service';
-import { resolveOutputStorageProvider } from './output-storage-target';
+import { OUTPUT_STORAGE_PROVIDER } from '../infra/storage/output-storage-policy';
 import { ProviderRegistry } from './provider-registry.service';
 import { ProviderCapacityRuntimeService } from './provider-capacity-runtime.service';
 import { AiPromptCompilerService } from './prompt-compiler.service';
@@ -245,9 +245,10 @@ export class AiGenerationService {
     // freezes the wallet quote, and Seedance 2.5 charges reference-video jobs
     // on input-video + output duration; accepting client-claimed duration here
     // would let a caller understate the hold before validation corrected it.
-    const input = await this.validator.applyTrustedMediaFacts(
-      characterExpansion.input,
-    );
+    const input = await this.validator.applyTrustedMediaFacts({
+      ...characterExpansion.input,
+      referenceBindings: characterExpansion.bindings,
+    });
     const referenceBindings = characterExpansion.bindings;
 
     const entitlement = await this.entitlements.resolveForUser(user, {
@@ -381,10 +382,7 @@ export class AiGenerationService {
             sourceSurface: context.sourceSurface,
             // Frozen here, never re-read at upload time, so every attempt of
             // this job writes into the same store.
-            outputStorageProvider: resolveOutputStorageProvider({
-              type: model.type,
-              sourceSurface: context.sourceSurface,
-            }),
+            outputStorageProvider: OUTPUT_STORAGE_PROVIDER,
             status: 'in_queue',
             stage: 'queued',
             input: rawInput,
@@ -1010,7 +1008,7 @@ export class AiGenerationService {
             user,
             document.storyProjectId,
           )))
-        : null;
+        : { type: 'workspace' as const, id: document.workspaceId };
       return {
         workspaceId: document.workspaceId,
         projectId: document.platformProjectId ?? undefined,
@@ -1037,6 +1035,8 @@ export class AiGenerationService {
       }
       return {
         workspaceId: project.workspaceId,
+        billingSubjectType: 'workspace',
+        billingSubjectId: project.workspaceId,
         projectId: project.id,
         sourceSurface,
       };
@@ -1079,25 +1079,28 @@ export class AiGenerationService {
         workspaceId,
         WorkspaceMemberRole.editor,
       );
-      return { workspaceId, sourceSurface };
+      return {
+        workspaceId,
+        billingSubjectType: 'workspace',
+        billingSubjectId: workspaceId,
+        sourceSurface,
+      };
     }
 
-    const workspace = await this.workspaces.ensurePersonalWorkspace(user);
-    return { workspaceId: workspace.id, sourceSurface };
+    const workspace = await this.workspaces.ensureDefaultWorkspace(user);
+    return {
+      workspaceId: workspace.id,
+      billingSubjectType: 'workspace',
+      billingSubjectId: workspace.id,
+      sourceSurface,
+    };
   }
 
   async resolveStoryBillingSubject(
-    user: AuthUser,
+    _user: AuthUser,
     storyProjectId: string,
   ): Promise<{ type: 'user' | 'workspace'; id: string }> {
-    // The product no longer asks the creator to choose a Workspace, but legacy
-    // personal balances still live on the hidden personal-workspace account.
-    // Ensure that compatibility identity exists before freezing it on the job.
-    await this.workspaces.ensurePersonalWorkspace(user);
-    return this.billingWallet.resolveStoryProjectPayer(
-      storyProjectId,
-      user.userId,
-    );
+    return this.billingWallet.resolveStoryProjectPayer(storyProjectId);
   }
 
   async getStoryBillingBalance(user: AuthUser, storyProjectId: string) {
@@ -1109,6 +1112,7 @@ export class AiGenerationService {
     const subject = await this.resolveStoryBillingSubject(user, storyProjectId);
     const balance = await this.billingWallet.getComputeBalance(subject);
     return {
+      workspaceId: subject.id,
       availablePoints: balance.available.toString(),
       heldPoints: balance.held.toString(),
       totalPoints: balance.total.toString(),

@@ -109,48 +109,68 @@ export function createFetchTransport(options: FetchTransportOptions = {}): AuthT
         body = data;
       }
 
-      let response: Response;
-      try {
-        response = await doFetch(url.toString(), {
-          method,
-          headers,
-          body,
-          credentials: "include",
-        });
-      } catch {
-        // Offline, DNS, CORS, aborted — nothing answered at all.
-        throw new AuthTransportError("network");
-      }
+      const controller = new AbortController();
+      const readResponse = async (): Promise<AuthResponse> => {
+        let response: Response;
+        try {
+          response = await doFetch(url.toString(), {
+            method,
+            headers,
+            body,
+            credentials: "include",
+            signal: controller.signal,
+          });
+        } catch {
+          // Offline, DNS, CORS, aborted — nothing answered at all.
+          throw new AuthTransportError("network");
+        }
 
-      // Body first, parse second — `response.json()` collapses two
-      // different failures into one rejection. A connection that drops
-      // after the headers (flaky mobile, a proxy killing an in-flight
-      // response) fails the STREAM, and telling that user "the server
-      // sent something we couldn't read" sends them hunting a server
-      // bug instead of their signal. Reading the text separates them:
-      // only the stream read can fail for network reasons, and only
-      // `JSON.parse` can fail for syntax ones.
-      let raw: string;
-      try {
-        raw = await response.text();
-      } catch {
-        throw new AuthTransportError("network", response.status);
-      }
+        // Body first, parse second — `response.json()` collapses two
+        // different failures into one rejection. A connection that drops
+        // after the headers (flaky mobile, a proxy killing an in-flight
+        // response) fails the STREAM, and telling that user "the server
+        // sent something we couldn't read" sends them hunting a server
+        // bug instead of their signal. Reading the text separates them:
+        // only the stream read can fail for network reasons, and only
+        // `JSON.parse` can fail for syntax ones.
+        let raw: string;
+        try {
+          raw = await response.text();
+        } catch {
+          throw new AuthTransportError("network", response.status);
+        }
 
-      let parsed: unknown;
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          // An nginx/Front Door HTML error page, a 204, an empty body.
+          // Swallowing this used to leave `{ status: 200, body: null }`,
+          // which reads downstream as a business SUCCESS with no token —
+          // i.e. the dialog closing on a signed-out user.
+          throw new AuthTransportError("invalid_response", response.status);
+        }
+        if (!isJsonObject(parsed)) {
+          throw new AuthTransportError("invalid_response", response.status);
+        }
+        return { status: response.status, body: parsed };
+      };
+
+      // Bound the entire exchange, including a stalled body after headers.
+      // Abort the transport and release the caller even if a custom fetch
+      // implementation ignores cancellation. Never automatically resend an OTP.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const deadline = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new AuthTransportError("network"));
+        }, 30_000);
+      });
       try {
-        parsed = JSON.parse(raw);
-      } catch {
-        // An nginx/Front Door HTML error page, a 204, an empty body.
-        // Swallowing this used to leave `{ status: 200, body: null }`,
-        // which reads downstream as a business SUCCESS with no token —
-        // i.e. the dialog closing on a signed-out user.
-        throw new AuthTransportError("invalid_response", response.status);
+        return await Promise.race([readResponse(), deadline]);
+      } finally {
+        clearTimeout(timer);
       }
-      if (!isJsonObject(parsed)) {
-        throw new AuthTransportError("invalid_response", response.status);
-      }
-      return { status: response.status, body: parsed };
     },
   };
 }

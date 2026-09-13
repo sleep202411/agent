@@ -1,0 +1,277 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, expect, it, vi } from "vitest";
+import { crewApi } from "./api";
+import { crewKeys } from "./shared";
+import {
+  useSaveCrewProductionDocument,
+  useReorderCrewEpisode,
+  useCreateCrewProductionActivity,
+  useUpdateCrewProductionProject,
+  useCreateCrewProductionResource,
+  useDeleteCrewProductionResource,
+} from "./use-production";
+
+vi.mock("@/src/hooks/use-user", () => ({ useCurrentUser: () => ({ user: { id: "alice" } }) }));
+vi.mock("./api", () => ({ crewApi: { post: vi.fn(), delete: vi.fn(), patch: vi.fn() } }));
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+let root: Root;
+let client: QueryClient;
+const key = [...crewKeys.productionOverview("crew"), "alice"];
+function mount<T>(hook: () => T) {
+  client = new QueryClient();
+  root = createRoot(document.createElement("div"));
+  let result: T;
+  function Probe() {
+    result = hook();
+    return null;
+  }
+  act(() =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Probe />
+      </QueryClientProvider>
+    )
+  );
+  client.setQueryData(key, { project: { name: "old" }, resources: [{ id: "original" }] });
+  return () => result!;
+}
+afterEach(() => {
+  act(() => root?.unmount());
+  client?.clear();
+  vi.resetAllMocks();
+});
+
+it("a failed resource addition preserves another successful addition and newer overview fields", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.post)
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        })
+    )
+    .mockResolvedValueOnce({ id: "successful" });
+  const hook = mount(() => useCreateCrewProductionResource("crew"));
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync({ kind: "link", url: "https://example.com/a" })
+      .catch((e) => e);
+  });
+  await act(async () => {
+    await hook().mutateAsync({ kind: "link", url: "https://example.com/b" });
+  });
+  client.setQueryData(key, (current: { resources: unknown[] }) => ({
+    ...current,
+    project: { name: "new" },
+  }));
+  await act(async () => {
+    reject(new Error("failed"));
+    await failed;
+  });
+  expect(client.getQueryData(key)).toEqual({
+    project: { name: "new" },
+    resources: [{ id: "original" }, { id: "successful" }],
+  });
+});
+
+it("a failed resource deletion preserves another confirmed deletion and newer overview fields", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.delete)
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, fail) => {
+          reject = fail;
+        })
+    )
+    .mockResolvedValueOnce(undefined);
+  const hook = mount(() => useDeleteCrewProductionResource("crew"));
+  client.setQueryData(key, {
+    project: { name: "old" },
+    resources: [{ id: "original" }, { id: "second" }],
+  });
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync("original")
+      .catch((e) => e);
+  });
+  await act(async () => {
+    await hook().mutateAsync("second");
+  });
+  client.setQueryData(key, (current: { resources: unknown[] }) => ({
+    ...current,
+    project: { name: "new" },
+  }));
+  await act(async () => {
+    reject(new Error("failed"));
+    await failed;
+  });
+  expect(client.getQueryData(key)).toEqual({
+    project: { name: "new" },
+    resources: [{ id: "original" }],
+  });
+});
+
+it("a failed project edit does not restore old resources", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.patch).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      })
+  );
+  const hook = mount(() => useUpdateCrewProductionProject("crew"));
+  client.setQueryData(key, { project: { version: 1 }, resources: [], labels: [] });
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync({ expectedVersion: 1, priority: "high" })
+      .catch((e) => e);
+  });
+  client.setQueryData(key, (current: object) => ({ ...current, resources: [{ id: "new" }] }));
+  await act(async () => {
+    reject(new Error("conflict"));
+    await failed;
+  });
+  expect(client.getQueryData(key)).toEqual({
+    project: { version: 1 },
+    resources: [{ id: "new" }],
+    labels: [],
+  });
+});
+
+it("a delayed project response does not replace a newer confirmed version", async () => {
+  let complete!: (value: unknown) => void;
+  vi.mocked(crewApi.patch).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        complete = resolve;
+      })
+  );
+  const hook = mount(() => useUpdateCrewProductionProject("crew"));
+  client.setQueryData(key, { project: { version: 1 }, resources: [], labels: [] });
+  let pending!: Promise<unknown>;
+  await act(async () => {
+    pending = hook().mutateAsync({ expectedVersion: 1, priority: "high" });
+  });
+  const newer = { project: { version: 3 }, resources: [{ id: "new" }], labels: [{ id: "label" }] };
+  client.setQueryData(key, newer);
+  await act(async () => {
+    complete({ project: { version: 2 }, labels: [] });
+    await pending;
+  });
+  expect(client.getQueryData(key)).toEqual(newer);
+});
+
+it("a failed activity post preserves newer feed and overview results", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.post).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      })
+  );
+  const hook = mount(() => useCreateCrewProductionActivity("crew"));
+  const activityKey = [...crewKeys.productionActivity("crew"), "alice"];
+  client.setQueryData(activityKey, {
+    pages: [{ items: [], nextCursor: null }],
+    pageParams: [undefined],
+  });
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync({ kind: "comment", content: { type: "doc", content: [] } })
+      .catch((e) => e);
+  });
+  const latestFeed = {
+    pages: [{ items: [{ id: "other" }], nextCursor: null }],
+    pageParams: [undefined],
+  };
+  const latestOverview = { project: { name: "new" }, resources: [{ id: "resource" }] };
+  client.setQueryData(activityKey, latestFeed);
+  client.setQueryData(key, latestOverview);
+  await act(async () => {
+    reject(new Error("failed"));
+    await failed;
+  });
+  expect(client.getQueryData(key)).toEqual(latestOverview);
+  expect(client.getQueryData(activityKey)).toEqual(latestFeed);
+});
+
+it("refreshes activity and overview after the server confirms a post", async () => {
+  vi.mocked(crewApi.post).mockResolvedValue({ id: "confirmed" });
+  const hook = mount(() => useCreateCrewProductionActivity("crew"));
+  const activityKey = [...crewKeys.productionActivity("crew"), "alice"];
+  client.setQueryData(activityKey, { pages: [], pageParams: [] });
+  await act(async () => {
+    await hook().mutateAsync({ kind: "comment", content: { type: "doc", content: [] } });
+  });
+  expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+  expect(client.getQueryState(activityKey)?.isInvalidated).toBe(true);
+});
+
+it("a failed reorder preserves episodes received while the request was pending", async () => {
+  let reject!: (error: Error) => void;
+  vi.mocked(crewApi.post).mockImplementationOnce(
+    () =>
+      new Promise((_resolve, fail) => {
+        reject = fail;
+      })
+  );
+  const hook = mount(() => useReorderCrewEpisode("crew"));
+  const episodeKey = [...crewKeys.episodes("crew"), "alice"];
+  client.setQueryData(episodeKey, [{ id: "episode", version: 1 }]);
+  let failed!: Promise<unknown>;
+  await act(async () => {
+    failed = hook()
+      .mutateAsync({
+        episodeId: "episode",
+        expectedVersion: 1,
+        beforeEpisodeId: null,
+        afterEpisodeId: null,
+      })
+      .catch((e) => e);
+  });
+  const latest = [
+    { id: "episode", version: 3 },
+    { id: "new", version: 1 },
+  ];
+  client.setQueryData(episodeKey, latest);
+  await act(async () => {
+    reject(new Error("conflict"));
+    await failed;
+  });
+  expect(client.getQueryData(episodeKey)).toEqual(latest);
+  expect(client.getQueryState(episodeKey)?.isInvalidated).toBe(true);
+});
+
+it.each([2, 4])(
+  "applies document response version %s without overwriting a newer page",
+  async (version) => {
+    let complete!: (value: unknown) => void;
+    vi.mocked(crewApi.patch).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        })
+    );
+    const hook = mount(() => useSaveCrewProductionDocument("crew"));
+    client.setQueryData(key, { page: { version: 1 }, resources: [] });
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = hook().mutateAsync({ expectedVersion: 1, document: { type: "doc", content: [] } });
+    });
+    client.setQueryData(key, { page: { version: 3 }, resources: [{ id: "new" }] });
+    await act(async () => {
+      complete({ version });
+      await pending;
+    });
+    expect(client.getQueryData(key)).toEqual({
+      page: { version: Math.max(version, 3) },
+      resources: [{ id: "new" }],
+    });
+  }
+);

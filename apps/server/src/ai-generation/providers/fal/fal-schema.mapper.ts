@@ -1180,13 +1180,25 @@ function inputSchemaFor(
     };
   }
 
+  const required = pureTransform || multiAngle || outpainting ? [] : ['prompt'];
+  // Require frames only when every supported mode needs them. Mixed text/image
+  // models must remain usable without a frame for text-to-video requests.
+  if (
+    type === 'video' &&
+    generationModes.length > 0 &&
+    generationModes.every(
+      (mode) =>
+        mode === 'image_to_video' || mode === 'first_last_frame_to_video',
+    )
+  ) {
+    required.push('startFrame');
+    if (!imageToVideo) required.push('endFrame');
+  }
+
   return {
     type: 'object',
     properties,
-    // Ops with no main prompt property (pure transforms + multi-angle) must not
-    // list it as required — that would be an invalid schema (required field
-    // absent from properties). Relight keeps the required prompt.
-    required: pureTransform || multiAngle || outpainting ? [] : ['prompt'],
+    required,
     additionalProperties: false,
     // Editing a masked area needs an original image. Reject before wallet hold
     // instead of submitting an invalid GPT edit request to the provider.

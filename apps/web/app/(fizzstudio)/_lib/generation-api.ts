@@ -625,6 +625,11 @@ export async function listFizzAiCatalog(): Promise<FizzAiCatalog> {
 }
 
 export interface FizzAiPointEstimateInput {
+  referenceMedia?: {
+    images?: readonly unknown[];
+    videos?: readonly unknown[];
+    audios?: readonly unknown[];
+  };
   text?: string;
   generateAudio?: boolean;
   /** Video duration as submitted (string enum incl. "auto", or seconds). */
@@ -655,6 +660,7 @@ export function estimateModelSellPoints(
       durationSeconds: input.durationSeconds,
       generateAudio: input.generateAudio,
       referenceImageCount: input.referenceImageCount,
+      referenceMedia: input.referenceMedia,
       resolution: input.resolution,
       hasMask: input.hasMask,
     });

@@ -19,7 +19,6 @@ import {
   ProjectMemberRole,
   Prisma,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { PrismaService } from '../../infra/db/db.module';
@@ -177,7 +176,6 @@ export class CrewProductionService {
       workspaces: memberships.map((membership) => ({
         id: membership.workspace.id,
         name: membership.workspace.name,
-        type: membership.workspace.type,
         projects: membership.workspace.projects.map((project) => {
           const linkedElsewhere =
             project.studioCrew && project.studioCrew.id !== crewId;
@@ -185,14 +183,11 @@ export class CrewProductionService {
             membership.role,
             project.members[0]?.role ?? null,
           );
-          const disabledReason =
-            membership.workspace.type !== WorkspaceType.team
-              ? 'personal_workspace'
-              : linkedElsewhere
-                ? 'already_linked'
-                : !canEdit
-                  ? 'insufficient_permission'
-                  : null;
+          const disabledReason = linkedElsewhere
+            ? 'already_linked'
+            : !canEdit
+              ? 'insufficient_permission'
+              : null;
           return {
             id: project.id,
             name: project.name,
@@ -226,13 +221,30 @@ export class CrewProductionService {
     let linked: {
       id: string;
       name: string;
-      workspace: { id: string; name: string; type: WorkspaceType };
+      workspace: { id: string; name: string };
     } | null;
     try {
       linked = await this.prisma.$transaction(async (tx) => {
         await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-project:${crewId}`})::bigint)
         `;
+        const recheckAuthority = async () => {
+          await this.authorization.require(
+            crewId,
+            userId,
+            'production.manage',
+            tx,
+          );
+          if (input.projectId) {
+            await this.workspacePermissions.requireProjectRole(
+              userId,
+              input.projectId,
+              ProjectMemberRole.editor,
+              tx,
+            );
+          }
+        };
+        await recheckAuthority();
         const crew = await tx.crew.findFirstOrThrow({
           where: { id: crewId, deletedAt: null },
           select: { studioProjectId: true },
@@ -240,7 +252,7 @@ export class CrewProductionService {
         let project: {
           id: string;
           name: string;
-          workspace: { id: string; name: string; type: WorkspaceType };
+          workspace: { id: string; name: string };
         } | null = null;
 
         if (input.projectId) {
@@ -249,19 +261,12 @@ export class CrewProductionService {
             select: {
               id: true,
               name: true,
-              workspace: { select: { id: true, name: true, type: true } },
+              workspace: { select: { id: true, name: true } },
               studioCrew: { select: { id: true, name: true } },
             },
           });
           if (!candidate)
             throw new NotFoundException('Studio project not found.');
-          if (candidate.workspace.type !== WorkspaceType.team) {
-            throw new BadRequestException({
-              code: 'CREW_STUDIO_PROJECT_REQUIRES_TEAM_WORKSPACE',
-              message:
-                'Only projects in a team workspace can be linked to a crew.',
-            });
-          }
           if (candidate.studioCrew && candidate.studioCrew.id !== crewId) {
             throw new ConflictException({
               code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',
@@ -293,6 +298,7 @@ export class CrewProductionService {
             },
           });
         }
+        await recheckAuthority();
         return project;
       });
     } catch (error) {
@@ -1415,7 +1421,14 @@ function projectPeriodEnd(
 function productionLinkTitle(value: string) {
   const url = new URL(value);
   const host = url.hostname.replace(/^www\./i, '');
-  const path = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, '');
+  let decodedPath = url.pathname;
+  try {
+    decodedPath = decodeURIComponent(decodedPath);
+  } catch {
+    // Valid URLs may contain literal percent signs or invalid UTF-8 escapes.
+    // Keep the original path when it cannot be decoded for display.
+  }
+  const path = decodedPath.replace(/^\/+|\/+$/g, '');
   return (path ? `${host}/${path}` : host).slice(0, 180);
 }
 

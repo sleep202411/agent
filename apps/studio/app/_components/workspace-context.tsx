@@ -5,18 +5,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { setApiWorkspaceId } from "@/lib/api";
 import {
-  createTeamWorkspace,
-  ensurePersonalWorkspace,
+  createWorkspace as createWorkspaceRequest,
+  ensureDefaultWorkspace,
   listWorkspaces,
   type WorkspaceRef,
 } from "@/lib/collab/projects-api";
 import { useAuth } from "./auth-provider";
 
 /**
- * Active-workspace context. Lists every workspace the user belongs to
- * (personal + teams), tracks the selected one (persisted to localStorage),
- * and exposes team creation. The projects grid + switcher are scoped to the
- * active workspace, so switching teams re-scopes the whole surface.
+ * Active-workspace context. Lists every workspace the user belongs to,
+ * tracks the selected one (persisted to localStorage),
+ * and exposes workspace creation. The projects grid + switcher are scoped to the
+ * active workspace, so switching workspaces re-scopes the whole surface.
  */
 
 const STORAGE_KEY = "fizz:active-workspace";
@@ -29,7 +29,11 @@ interface WorkspaceContextValue {
   workspaces: WorkspaceRef[];
   activeWorkspace: WorkspaceRef | null;
   setActiveWorkspaceId: (id: string) => void;
-  createTeam: (name: string, description?: string, avatarUrl?: string) => Promise<WorkspaceRef>;
+  createWorkspace: (
+    name: string,
+    description?: string,
+    avatarUrl?: string
+  ) => Promise<WorkspaceRef>;
   refresh: () => void;
   loading: boolean;
 }
@@ -47,45 +51,20 @@ export function useWorkspace(): WorkspaceContextValue {
  * {@link WorkspaceProvider} is app-wide (app/providers.tsx), so this returns the
  * active workspace on every authenticated surface (the canvas included); it
  * returns null only on pre-provider / SSR first paint, where the server falls
- * back to the caller's personal-workspace pot.
+ * back to the caller's default-workspace pot.
  */
 export function useActiveWorkspaceId(): string | null {
   return useContext(WorkspaceContext)?.activeWorkspace?.id ?? null;
 }
 
-/** Active workspace (incl. its `type`) WITHOUT throwing when no provider is
- *  mounted — lets chrome tell a personal pot from a team pot. */
+/** Active workspace, or null when no provider is mounted. */
 export function useActiveWorkspace(): WorkspaceRef | null {
   return useContext(WorkspaceContext)?.activeWorkspace ?? null;
 }
 
-/**
- * The compute pot a caller pays from when acting in `context` — the server's
- * payer rule (billing-wallet `resolvePayerTx`) in one place: a TEAM workspace
- * bills its shared pot; anything else — the user's own personal workspace, or
- * someone else's personal workspace they only collaborate in (`null` context) —
- * bills the caller's OWN personal pot. It never resolves to another user's
- * personal workspace (guests reading a host's wallet 403). Callers pick the
- * context: the active workspace (useBillingWorkspace) or a project's workspace
- * (useProjectPayerWorkspace).
- */
-export function payerWorkspace(
-  context: WorkspaceRef | null | undefined,
-  workspaces: readonly WorkspaceRef[]
-): WorkspaceRef | null {
-  if (context?.type === "team") return context;
-  return workspaces.find((w) => w.type === "personal" && w.role === "owner") ?? null;
-}
-
-/**
- * The pot the CURRENT USER pays from and should see for the GLOBAL context (no
- * project open) — the active workspace decides. Null (no provider / list still
- * loading) is safe: the server treats a missing workspace header as the
- * caller's personal pot.
- */
+/** The active workspace is the payer outside a project. */
 export function useBillingWorkspace(): WorkspaceRef | null {
-  const value = useContext(WorkspaceContext);
-  return payerWorkspace(value?.activeWorkspace ?? null, value?.workspaces ?? []);
+  return useActiveWorkspace();
 }
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
@@ -96,9 +75,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   const { data: loadedWorkspaces = EMPTY_WORKSPACES, isLoading } = useQuery({
     queryKey: [...WORKSPACES_QUERY_KEY, userKey] as const,
-    // Ensure the personal workspace exists, then list all memberships.
+    // Ensure the default workspace exists, then list all memberships.
     queryFn: async () => {
-      await ensurePersonalWorkspace();
+      await ensureDefaultWorkspace();
       return listWorkspaces();
     },
     enabled: Boolean(user),
@@ -125,7 +104,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     if (requestedId) return workspaces.find((w) => w.id === requestedId) ?? null;
     return (
       workspaces.find((w) => w.id === activeId) ??
-      workspaces.find((w) => w.type === "personal") ??
+      workspaces.find((w) => w.isDefault) ??
       workspaces[0]
     );
   }, [workspaces, activeId, requestedId]);
@@ -162,10 +141,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
   }, [queryClient]);
 
-  const createTeam = useCallback(
+  const createWorkspace = useCallback(
     async (name: string, description?: string, avatarUrl?: string) => {
       const trimmed = description?.trim();
-      const workspace = await createTeamWorkspace({
+      const workspace = await createWorkspaceRequest({
         name,
         ...(trimmed ? { description: trimmed } : {}),
         ...(avatarUrl ? { avatarUrl } : {}),
@@ -182,7 +161,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       workspaces,
       activeWorkspace,
       setActiveWorkspaceId,
-      createTeam,
+      createWorkspace,
       refresh,
       loading: authLoading || (Boolean(user) && isLoading),
     }),
@@ -190,7 +169,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       workspaces,
       activeWorkspace,
       setActiveWorkspaceId,
-      createTeam,
+      createWorkspace,
       refresh,
       authLoading,
       user,

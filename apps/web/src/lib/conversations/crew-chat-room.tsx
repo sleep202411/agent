@@ -1,5 +1,7 @@
 "use client";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChatClient, ChatMessageEventType, LogLevel, type Room } from "@ably/chat";
@@ -54,8 +56,11 @@ export function CrewChatRoom({
   children: React.ReactNode;
 }) {
   const qc = useQueryClient();
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id;
 
   useEffect(() => {
+    if (!accountUserId) return;
     let disposed = false;
     const realtime = new Ably.Realtime({
       autoConnect: false,
@@ -78,7 +83,7 @@ export function CrewChatRoom({
     const recover = () => {
       void Promise.all([
         qc.invalidateQueries({
-          queryKey: conversationKeys.messages(conversationId),
+          queryKey: conversationKeys.messages(conversationId, accountUserId),
           exact: true,
         }),
         qc.invalidateQueries({ queryKey: conversationKeys.inbox() }),
@@ -137,7 +142,7 @@ export function CrewChatRoom({
         })
         .finally(() => realtime.close());
     };
-  }, [conversationId, qc]);
+  }, [conversationId, qc, accountUserId]);
 
   return <>{children}</>;
 }

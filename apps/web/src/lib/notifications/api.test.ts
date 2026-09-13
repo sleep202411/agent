@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { listNotifications, markNotificationRead } from "./api";
+import { listNotifications, fetchUnreadCount, markNotificationRead } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -35,4 +35,14 @@ describe("notification requests", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 502 })));
     await expect(listNotifications()).rejects.toThrow(message);
   });
+});
+
+
+it("forwards cancellation to notification list and count transport", async () => {
+  const fetcher = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}")));
+  vi.stubGlobal("fetch", fetcher);
+  const controller = new AbortController();
+  await listNotifications({}, controller.signal);
+  await fetchUnreadCount(controller.signal);
+  for (const call of fetcher.mock.calls) expect(call[1].signal).toBe(controller.signal);
 });

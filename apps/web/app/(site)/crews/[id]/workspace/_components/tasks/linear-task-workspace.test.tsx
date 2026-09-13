@@ -1,4 +1,4 @@
-import { act } from "react";
+import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import en from "@/messages/en-US.json";
@@ -7,7 +7,17 @@ import hk from "@/messages/zh-HK.json";
 import { LinearTaskWorkspace } from "./linear-task-workspace";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const state = vi.hoisted(() => ({ locale: "en-US", layout: "board" }));
+const state = vi.hoisted(() => ({
+  locale: "en-US",
+  layout: "board",
+  account: "alice",
+  failed: false,
+  missing: false,
+  retry: vi.fn(),
+}));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: state.account } }),
+}));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string) => {
     const messages = state.locale === "zh-CN" ? cn : state.locale === "zh-HK" ? hk : en;
@@ -43,7 +53,10 @@ vi.mock("@/app/(site)/crews/_hooks/use-crew", () => {
     }),
     useCrewProductionActivity: () => ({ data: { pages: [] } }),
     useCrewTask: (id: string) => ({
-      data: id ? { id, title: "Selected task", assignees: [] } : undefined,
+      data: id && !state.missing ? { id, title: "Selected task", assignees: [] } : undefined,
+      isError: state.failed,
+      error: state.failed ? new Error("Task refresh unavailable") : null,
+      refetch: state.retry,
     }),
     useCrewTaskSummary: () => ({ data: {} }),
     useCrewTaskProject: () => ({
@@ -91,9 +104,15 @@ vi.mock("./production-project-update", () => ({
   ProductionActivityEntry: () => null,
 }));
 vi.mock("./task-issue-detail", () => ({
-  TaskIssueDetail: ({ onClose }: { onClose: () => void }) => (
-    <button onClick={onClose}>Close task</button>
-  ),
+  TaskIssueDetail: function Detail({ onClose }: { onClose: () => void }) {
+    const [draft, setDraft] = useState("");
+    return (
+      <>
+        <button onClick={onClose}>Close task</button>
+        <button onClick={() => setDraft("Private task draft")}>{draft || "Edit draft"}</button>
+      </>
+    );
+  },
 }));
 vi.mock("./task-project-settings", () => ({ ProjectSettingsDialog: () => null }));
 vi.mock("./task-quick-create", () => ({ TaskQuickCreate: () => null }));
@@ -102,14 +121,22 @@ let root: ReturnType<typeof createRoot>;
 afterEach(() => {
   if (root) act(() => root.unmount());
   document.body.innerHTML = "";
+  vi.unstubAllGlobals();
+  state.account = "alice";
+  state.failed = false;
+  state.missing = false;
+  state.retry.mockClear();
 });
-async function render() {
-  const el = document.createElement("div");
-  document.body.append(el);
-  root = createRoot(el);
+async function render(deeplinkTaskId?: string | null, reuse = false) {
+  if (!reuse) {
+    const el = document.createElement("div");
+    document.body.append(el);
+    root = createRoot(el);
+  }
   await act(async () =>
     root.render(
       <LinearTaskWorkspace
+        deeplinkTaskId={deeplinkTaskId}
         crewId="crew"
         crewName="Test12"
         crewSummary=""
@@ -183,3 +210,84 @@ it.each(["list", "board"])(
     expect(search.value).toBe("search term");
   }
 );
+
+it("keeps a task opened before the initial animation frame", async () => {
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 0;
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+    frames.set(++nextFrame, callback);
+    return nextFrame;
+  });
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    frames.delete(id);
+  });
+  await render();
+  await act(async () => (document.querySelector("[data-layout] button") as HTMLElement).click());
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await act(async () => {
+    const pending = Array.from(frames.values());
+    frames.clear();
+    pending.forEach((callback) => callback(0));
+  });
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+it("follows changed deep links in the same workspace", async () => {
+  await render("task-1");
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+  await render(null, true);
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  await render("task-1", true);
+  expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+});
+
+it("starts fresh drawer state when another account has the same task cached", async () => {
+  await render("task-1");
+  const edit = [...document.querySelectorAll("button")].find(
+    (button) => button.textContent === "Edit draft"
+  )!;
+  await act(async () => edit.click());
+  expect(document.body.textContent).toContain("Private task draft");
+  state.account = "bob";
+  await render("task-1", true);
+  expect(document.body.textContent).not.toContain("Private task draft");
+  expect(document.body.textContent).toContain("Edit draft");
+});
+
+it("keeps unsaved task details mounted after a background refresh fails", async () => {
+  state.locale = "en-US";
+  await render("task-1");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Edit draft")!
+      .click()
+  );
+  state.failed = true;
+  await render("task-1", true);
+  expect(document.body.textContent).toContain("Private task draft");
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Task refresh unavailable");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click()
+  );
+  expect(state.retry).toHaveBeenCalledOnce();
+  state.failed = false;
+  await render("task-1", true);
+  expect(document.body.textContent).toContain("Private task draft");
+});
+
+it("offers a retry when task details fail before any data loads", async () => {
+  state.locale = "en-US";
+  state.failed = true;
+  state.missing = true;
+  await render("task-1");
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe("Task refresh unavailable");
+  expect(document.body.textContent).not.toContain("Edit draft");
+  await act(async () =>
+    [...document.querySelectorAll("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click()
+  );
+  expect(state.retry).toHaveBeenCalledOnce();
+});

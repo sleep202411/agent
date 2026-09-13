@@ -10,6 +10,7 @@ import {
 describe('StoryProject frame profile contract', () => {
   it('creates the project before the Agent asks for its production profile', () => {
     const base = {
+      workspaceId: '0197f4a2-0800-7000-8000-000000000001',
       title: 'Portrait mystery',
       defaultLocale: 'en-US',
     } as const;

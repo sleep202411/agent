@@ -132,6 +132,13 @@ function serviceFixture() {
   const workspacePermissions = {
     requireWorkspaceRole: jest.fn().mockResolvedValue({}),
   };
+  const storyPermissions = {
+    requireProject: jest.fn().mockImplementation((_user, projectId) =>
+      Promise.resolve({
+        project: { id: projectId, workspaceId: WORKSPACE_ID },
+      }),
+    ),
+  };
   const readiness = {
     enqueueAutomaticChecks: jest.fn().mockResolvedValue(undefined),
   };
@@ -204,6 +211,7 @@ function serviceFixture() {
     uploadedImages as never,
     mediaFacts as never,
     storageRegistry as never,
+    storyPermissions as never,
   );
   return {
     service,
@@ -211,6 +219,7 @@ function serviceFixture() {
     prisma,
     createAsset,
     workspacePermissions,
+    storyPermissions,
     readiness,
     tx,
     uploadedImages,
@@ -367,6 +376,93 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
         }),
       }),
     );
+  });
+
+  it('uploads for a project editor without requiring workspace membership', async () => {
+    const f = serviceFixture();
+    f.workspacePermissions.requireWorkspaceRole.mockRejectedValue(
+      new Error('workspace denied'),
+    );
+    const scope = { storyProjectId: ASSET_ID };
+    const issued = await f.service.createUploadUrl(
+      USER_ID,
+      { ...uploadInput(), scope },
+      OTHER_WORKSPACE_ID,
+    );
+    expect(issued.storageKey).toContain(
+      `/workspace-${WORKSPACE_ID}/story-${ASSET_ID}/`,
+    );
+    await f.service.confirmUpload(USER_ID, {
+      kind: 'ai_reference_image',
+      contentType: 'image/png',
+      storageKey: issued.storageKey,
+      scope,
+    });
+    expect(f.workspacePermissions.requireWorkspaceRole).not.toHaveBeenCalled();
+    expect(f.storyPermissions.requireProject).toHaveBeenCalledTimes(2);
+    expect(f.storyPermissions.requireProject).toHaveBeenCalledWith(
+      USER_ID,
+      ASSET_ID,
+      'story.edit',
+    );
+    expect(f.createAsset.mock.calls[0]?.[0]?.data).toMatchObject({
+      workspaceId: WORKSPACE_ID,
+      metadata: { storyProjectId: ASSET_ID },
+    });
+  });
+
+  it('rejects a viewer before issuing storage access', async () => {
+    const f = serviceFixture();
+    f.storyPermissions.requireProject.mockRejectedValue(
+      new Error('project edit denied'),
+    );
+    await expect(
+      f.service.createUploadUrl(USER_ID, {
+        ...uploadInput(),
+        scope: { storyProjectId: ASSET_ID },
+      }),
+    ).rejects.toThrow('project edit denied');
+    expect(f.storage.createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it('rechecks project permission at confirmation', async () => {
+    const f = serviceFixture();
+    const scope = { storyProjectId: ASSET_ID };
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      ...uploadInput(),
+      scope,
+    });
+    f.storyPermissions.requireProject.mockRejectedValue(
+      new Error('project access revoked'),
+    );
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'ai_reference_image',
+        contentType: 'image/png',
+        storageKey: issued.storageKey,
+        scope,
+      }),
+    ).rejects.toThrow('project access revoked');
+    expect(f.storage.headObject).not.toHaveBeenCalled();
+    expect(f.createAsset).not.toHaveBeenCalled();
+  });
+
+  it('does not allow confirmation into a different project in the same workspace', async () => {
+    const f = serviceFixture();
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      ...uploadInput(),
+      scope: { storyProjectId: ASSET_ID },
+    });
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'ai_reference_image',
+        contentType: 'image/png',
+        storageKey: issued.storageKey,
+        scope: { storyProjectId: VARIANT_ID },
+      }),
+    ).rejects.toMatchObject({ response: { code: 'MEDIA_KEY_SCOPE_MISMATCH' } });
+    expect(f.storage.headObject).not.toHaveBeenCalled();
+    expect(f.createAsset).not.toHaveBeenCalled();
   });
 
   it('binds issue and confirm to one workspace and persists that ownership', async () => {

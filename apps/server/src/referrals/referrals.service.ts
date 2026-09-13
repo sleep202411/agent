@@ -1380,7 +1380,7 @@ export class ReferralsService {
     rewardId: string,
   ): Promise<void> {
     if (amount <= 0n) return;
-    const ws = await this.workspaces.ensurePersonalWorkspace({ userId });
+    const ws = await this.workspaces.ensureDefaultWorkspace({ userId });
     const account = await this.prisma.walletAccount.upsert({
       where: {
         ownerType_ownerId_currency_balanceKind: {

@@ -807,10 +807,7 @@ export interface CrewStudioProjectSummaryDTO {
   workspace: { id: string; name: string };
 }
 
-export type CrewStudioProjectDisabledReason =
-  | "personal_workspace"
-  | "already_linked"
-  | "insufficient_permission";
+export type CrewStudioProjectDisabledReason = "already_linked" | "insufficient_permission";
 
 export interface CrewStudioProjectOptionDTO {
   id: string;
@@ -827,7 +824,6 @@ export interface CrewStudioProjectOptionsDTO {
   workspaces: Array<{
     id: string;
     name: string;
-    type: "personal" | "team";
     projects: CrewStudioProjectOptionDTO[];
   }>;
 }
@@ -902,7 +898,6 @@ export interface CrewTaskDraftDTO {
   startDate: string | null;
   dueDate: string | null;
   estimatePoints: number | null;
-  computeBudgetPoints: number | null;
   revisionLimit: number | null;
   cycleId: string | null;
   parentId: string | null;

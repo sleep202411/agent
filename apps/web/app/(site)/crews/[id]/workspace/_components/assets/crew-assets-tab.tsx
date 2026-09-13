@@ -782,7 +782,8 @@ export function CrewAssetsTab({
                 const target = event.currentTarget;
                 if (
                   assetQuery.hasNextPage &&
-                  !assetQuery.isFetchingNextPage &&
+                  !assetQuery.isFetching &&
+                  !assetQuery.isError &&
                   target.scrollHeight - target.scrollTop - target.clientHeight < 240
                 ) {
                   void assetQuery.fetchNextPage();
@@ -791,10 +792,11 @@ export function CrewAssetsTab({
             >
               {assetQuery.isLoading ? (
                 <AssetLoadingState t={t} />
-              ) : assetQuery.isError ? (
+              ) : assetQuery.isError && !assetQuery.data ? (
                 <AssetErrorState
                   error={assetQuery.error}
                   t={t}
+                  pending={assetQuery.isFetching}
                   onRetry={() => void assetQuery.refetch()}
                 />
               ) : viewMode === "list" ? (
@@ -829,14 +831,27 @@ export function CrewAssetsTab({
                   onToggleFavorite={toggleFavorite}
                 />
               )}
+              {assetQuery.isError && assetQuery.data && (
+                <AssetErrorState
+                  compact
+                  pending={assetQuery.isFetching}
+                  error={assetQuery.error}
+                  t={t}
+                  onRetry={() =>
+                    void (assetQuery.isFetchNextPageError
+                      ? assetQuery.fetchNextPage()
+                      : assetQuery.refetch())
+                  }
+                />
+              )}
             </div>
 
             <footer className="flex shrink-0 items-center justify-between border-t border-border/60 px-4 py-3 text-[11px] text-muted-foreground">
               <span>{t("itemCount", { count: filteredItems.length })}</span>
-              {assetQuery.hasNextPage ? (
+              {assetQuery.hasNextPage && !assetQuery.isError ? (
                 <button
                   type="button"
-                  disabled={assetQuery.isFetchingNextPage}
+                  disabled={assetQuery.isFetching}
                   onClick={() => void assetQuery.fetchNextPage()}
                   className="font-semibold text-foreground hover:text-primary disabled:opacity-50"
                 >
@@ -844,9 +859,11 @@ export function CrewAssetsTab({
                 </button>
               ) : (
                 <span>
-                  {assetQuery.isFetching && !assetQuery.isLoading
-                    ? t("syncing")
-                    : t("syncComplete")}
+                  {assetQuery.isError
+                    ? t("loadFailed")
+                    : assetQuery.isFetching && !assetQuery.isLoading
+                      ? t("syncing")
+                      : t("syncComplete")}
                 </span>
               )}
             </footer>
@@ -2093,13 +2110,23 @@ function AssetErrorState({
   error,
   t,
   onRetry,
+  compact = false,
+  pending = false,
 }: {
+  compact?: boolean;
+  pending?: boolean;
   error: unknown;
   t: Translation;
   onRetry: () => void;
 }) {
   return (
-    <div className="flex min-h-[420px] flex-col items-center justify-center px-6 text-center">
+    <div
+      role="alert"
+      className={cn(
+        "flex flex-col items-center justify-center px-6 text-center",
+        compact ? "py-6" : "min-h-[420px]"
+      )}
+    >
       <div className="grid size-12 place-items-center rounded-full bg-destructive/10 text-destructive">
         <IconFile className="size-5" />
       </div>
@@ -2109,6 +2136,7 @@ function AssetErrorState({
       </p>
       <button
         type="button"
+        disabled={pending}
         onClick={onRetry}
         className="mt-4 inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground"
       >

@@ -4,8 +4,8 @@ import { useState } from "react";
 import { useTranslations } from "next-intl";
 import { useBillingWorkspace } from "@/app/_components/workspace-context";
 import { SubscriptionDialog } from "@/app/_components/subscription-dialog";
-import { PageHeader, TeamBadge } from "../_components/settings-ui";
-import { TeamCreditsPanel } from "../_components/team-credits-panel";
+import { PageHeader } from "../_components/settings-ui";
+import { WorkspaceCreditsPanel } from "../_components/workspace-credits-panel";
 import { RedeemVoucherPanel } from "../_components/redeem-voucher-panel";
 import { CampaignsPanel } from "../_components/campaigns-panel";
 import { CheckInCard } from "../_components/check-in-card";
@@ -13,7 +13,7 @@ import { CurrentPlanPanel } from "../_components/current-plan-panel";
 
 /**
  * Plan & Billing — the compute-credit balance + recharge (and, for teams, the
- * shared-pool toggle) are real and wired via {@link TeamCreditsPanel}. Per-user
+ * shared-pool toggle) are real and wired via {@link WorkspaceCreditsPanel}. Per-user
  * membership plans remain in the subscription dialog.
  */
 export default function BillingSettingsPage() {
@@ -27,15 +27,9 @@ export default function BillingSettingsPage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
-      <PageHeader
-        title={t("planAndBilling")}
-        badge={
-          ws ? <TeamBadge label={ws.type === "personal" ? t("personal") : t("team")} /> : undefined
-        }
-        subtitle={t("billingSubtitle")}
-      />
+      <PageHeader title={t("planAndBilling")} subtitle={t("billingSubtitle")} />
 
-      {ws && <TeamCreditsPanel ws={ws} />}
+      {ws && <WorkspaceCreditsPanel ws={ws} />}
 
       <CheckInCard />
 

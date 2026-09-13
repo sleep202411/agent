@@ -15,7 +15,7 @@
  * captures the position-specific extras (not duplicating a full CV).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useTranslations } from "@/src/i18n/i18n";
@@ -37,6 +37,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { allowedCurrenciesForCell, defaultCurrencyForCell } from "@/src/lib/region/cell";
 import {
   CURRENCY_SYMBOLS,
@@ -68,7 +69,13 @@ interface ApplyPositionDialogProps {
   crewName?: string;
 }
 
-export function ApplyPositionDialog({
+export function ApplyPositionDialog(props: ApplyPositionDialogProps) {
+  const { user } = useCurrentUser();
+  if (!props.open) return null;
+  return <ApplicationForm key={JSON.stringify([user?.id, props.crewId, props.positionId])} {...props} />;
+}
+
+function ApplicationForm({
   open,
   onOpenChange,
   crewId,
@@ -89,26 +96,23 @@ export function ApplyPositionDialog({
   const [portfolioUrl, setPortfolioUrl] = useState<string>("");
 
   const apply = useApplyToPosition(crewId, positionId);
-  const submitting = apply.isPending;
+  const [submitting, setSubmitting] = useState(false);
+  const pending = useRef(false);
+  const alive = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   const currencyOptions = useMemo(() => allowedCurrenciesForCell(), []);
   const showCurrencyPicker = currencyOptions.length > 1;
-
-  useEffect(() => {
-    if (open) return;
-    setMessage("");
-    setExpectedAmount("");
-    setExpectedCurrency(defaultCurrencyForCell());
-    setExpectedPeriod("");
-    setAvailableDate("");
-    setYearsExperience("");
-    setPortfolioUrl("");
-  }, [open]);
 
   const messageTrimmed = message.trim();
   const canSubmit = !submitting && messageTrimmed.length > 0;
 
   const handleSubmit = () => {
-    if (!canSubmit) return;
+    if (!alive.current || pending.current || !canSubmit) return;
+    pending.current = true;
+    setSubmitting(true);
     const body: ApplyInput = {
       message: messageTrimmed,
       portfolioUrl: portfolioUrl.trim() || null,
@@ -125,10 +129,12 @@ export function ApplyPositionDialog({
     };
     apply.mutate(body, {
       onSuccess: () => {
+        if (!alive.current) return;
         toast.success(tCrew("applySuccess"));
         onOpenChange(false);
       },
       onError: (err) => {
+        if (!alive.current) return;
         if (err instanceof CrewApiError) {
           const detail =
             typeof err.body === "object" && err.body && "message" in err.body
@@ -138,6 +144,11 @@ export function ApplyPositionDialog({
         } else {
           toast.error(err instanceof Error ? err.message : tCrew("applyFailed"));
         }
+      },
+      onSettled: () => {
+        if (!alive.current) return;
+        pending.current = false;
+        setSubmitting(false);
       },
     });
   };

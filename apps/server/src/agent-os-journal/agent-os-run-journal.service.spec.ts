@@ -1180,6 +1180,117 @@ describe('AgentOsRunJournalService', () => {
     });
   });
 
+  it('restores the actionable generation batch card once after a worker crash', async () => {
+    const fixture = createFixture();
+    const registration =
+      await fixture.tx.agentOsExternalHandoffRegistration.findUnique({
+        where: { externalJobId: EXTERNAL_JOB_ID },
+      });
+    fixture.tx.agentOsExternalHandoffRegistration.findUnique.mockResolvedValue({
+      ...registration!,
+      generationBatchId: EXTERNAL_JOB_ID,
+      sourceToolId: 'story.confirmGenerationBatch',
+    });
+    await fixture.service.upsertSnapshot(
+      input('running', [
+        event(1, 'RunStarted', {
+          turnId: TURN_ID,
+          status: 'running',
+          workspaceType: 'story',
+          modelProfileId: 'qwen-plus',
+        }),
+      ]),
+    );
+    const recovered =
+      await fixture.service.reconcileExternalHandoff(EXTERNAL_JOB_ID);
+    expect(
+      recovered.events.filter((item) => item.type === 'ArtifactCreated'),
+    ).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          artifactId: EXTERNAL_JOB_ID,
+          artifact: {
+            kind: 'story_generation_batch',
+            generationBatchId: EXTERNAL_JOB_ID,
+            storyProjectId: PROJECT_ID,
+            storyChapterId: CHAPTER_ID,
+            schemaVersion: 'story-generation-batch-artifact/v1',
+          },
+        }),
+      }),
+    ]);
+    expect(
+      (await fixture.service.reconcileExternalHandoff(EXTERNAL_JOB_ID)).events,
+    ).toEqual([]);
+  });
+
+  it('does not replay a resolved handoff over a later running turn', async () => {
+    const fixture = createFixture();
+    await fixture.service.upsertSnapshot(
+      input('running', [
+        event(1, 'RunStarted', {
+          turnId: TURN_ID,
+          status: 'running',
+          workspaceType: 'story',
+          modelProfileId: 'qwen-plus',
+        }),
+        event(2, 'ToolCompleted', {
+          turnId: TURN_ID,
+          toolCallId: 'story-author-call-1',
+          toolId: 'story.author',
+          agentHandoff: {
+            kind: 'external_job',
+            jobId: EXTERNAL_JOB_ID,
+            startedMessage: 'Working',
+          },
+        }),
+        event(3, 'RunPaused', {
+          turnId: TURN_ID,
+          status: 'waiting_for_external',
+          externalJobId: EXTERNAL_JOB_ID,
+          toolCallId: 'story-author-call-1',
+          toolId: 'story.author',
+        }),
+        event(4, 'RunResumed', {
+          turnId: TURN_ID,
+          reason: 'external_job_completed',
+          externalJobId: EXTERNAL_JOB_ID,
+        }),
+      ]),
+    );
+    const recovered =
+      await fixture.service.reconcileExternalHandoff(EXTERNAL_JOB_ID);
+    expect(recovered.events).toEqual([]);
+    expect(fixture.state.run?.status).toBe('running');
+    expect(fixture.state.events).toHaveLength(4);
+  });
+
+  it.each([
+    'startExecutionLeaseExpiresAt',
+    'continuationExecutionLeaseExpiresAt',
+  ] as const)('does not recover while a Worker owns %s', async (field) => {
+    const fixture = createFixture();
+    await fixture.service.upsertSnapshot(
+      input('running', [
+        event(1, 'RunStarted', {
+          turnId: TURN_ID,
+          status: 'running',
+          workspaceType: 'story',
+          modelProfileId: 'qwen-plus',
+        }),
+      ]),
+    );
+    fixture.state.run![field] = new Date(fixture.state.now.getTime() + 60_000);
+    expect(
+      (await fixture.service.reconcileExternalHandoff(EXTERNAL_JOB_ID)).events,
+    ).toEqual([]);
+    fixture.state.run![field] = new Date(fixture.state.now.getTime() - 1);
+    expect(
+      (await fixture.service.reconcileExternalHandoff(EXTERNAL_JOB_ID)).snapshot
+        .status,
+    ).toBe('waiting_for_external');
+  });
+
   it('restores the newest bounded tail and keeps the latest waiting interaction after more than the limit', async () => {
     const requestId = '99999999-9999-4999-8999-999999999999';
     const rows = Array.from({ length: 45 }, (_, offset) => {
@@ -2130,6 +2241,7 @@ function createFixture() {
       async ({ where }: { where: { externalJobId: string } }) =>
         where.externalJobId === EXTERNAL_JOB_ID
           ? {
+              generationBatchId: null as string | null,
               externalJobId: EXTERNAL_JOB_ID,
               sourceAgentRunId: RUN_ID,
               sourceAgentTurnId: TURN_ID,
@@ -2142,6 +2254,13 @@ function createFixture() {
     ),
   };
   const transaction = {
+    storyGenerationBatch: {
+      findUniqueOrThrow: jest.fn().mockResolvedValue({
+        id: EXTERNAL_JOB_ID,
+        storyProjectId: PROJECT_ID,
+        storyChapterId: CHAPTER_ID,
+      }),
+    },
     $queryRaw: jest.fn(async (query: { strings?: readonly string[] }) => {
       const sql = query?.strings?.join(' ') ?? '';
       if (sql.includes('pg_try_advisory_xact_lock')) {

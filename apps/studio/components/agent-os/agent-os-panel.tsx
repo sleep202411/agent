@@ -132,6 +132,7 @@ function writeLs(key: string, value: string) {
 }
 
 interface AgentOsPanelProps {
+  canWrite: boolean;
   projectId: string;
   projectKind: "platform" | "story";
   workbenchMode: AgentOsWorkbenchMode;
@@ -169,6 +170,7 @@ export function AgentOsPanel(props: AgentOsPanelProps) {
 }
 
 function AgentOsProjectSession({
+  canWrite,
   projectId,
   projectKind,
   workbenchMode,
@@ -486,6 +488,7 @@ function AgentOsProjectSession({
       : null);
 
   const turnBusy =
+    !canWrite ||
     busy ||
     uploading ||
     state.status === "running" ||
@@ -506,7 +509,7 @@ function AgentOsProjectSession({
     (draft.trim().length > 0 || pendingFiles.some((f) => f.status === "ready"));
 
   const onPickFiles = async (list: FileList | null) => {
-    if (!list?.length) return;
+    if (!canWrite || !list?.length) return;
     const remaining = Math.max(0, MAX_ATTACHMENTS_PER_TURN - pendingFiles.length);
     const selected = Array.from(list);
     if (selected.length > remaining) {
@@ -642,6 +645,7 @@ function AgentOsProjectSession({
     decision: "approve" | "reject",
     responseText?: string
   ): Promise<boolean> => {
+    if (!canWrite) return false;
     const approvalId = state.pendingApproval?.approvalId;
     // Provisional ids are UI-only until ApprovalRequired lands with a real UUID.
     if (!approvalId || approvalId.startsWith("pending:") || !/^[0-9a-f-]{36}$/i.test(approvalId)) {
@@ -673,6 +677,7 @@ function AgentOsProjectSession({
   };
 
   const onResolveUserInput = async (requestId: string, answers: Record<string, string>) => {
+    if (!canWrite) return;
     setBusy(true);
     try {
       await resolveUserInput({ requestId, answers, modelProfileId, permissionMode });
@@ -740,7 +745,7 @@ function AgentOsProjectSession({
   const hostApproval = approval
     ? approvalGate?.({
         approval,
-        busy,
+        busy: busy || !canWrite,
         onResolve: onApprove,
       })
     : null;
@@ -756,7 +761,7 @@ function AgentOsProjectSession({
         <AgentOsUserInputCard
           key={inputRequest.requestId}
           request={inputRequest}
-          busy={busy}
+          busy={busy || !canWrite}
           labels={{
             step: (current, total) => t("userInput.step", { current, total }),
             back: t("userInput.back"),
@@ -787,7 +792,7 @@ function AgentOsProjectSession({
     return (
       <AgentOsApprovalComposer
         approval={approval}
-        busy={busy}
+        busy={busy || !canWrite}
         labels={{
           title: t("approvalRequired"),
           approve: t("approve"),
@@ -967,6 +972,7 @@ function AgentOsProjectSession({
 
           <CopilotComposer
             value={draft}
+            readOnly={!canWrite}
             onChange={setDraft}
             onSubmit={() => void onSend()}
             onStop={() => {
@@ -983,13 +989,15 @@ function AgentOsProjectSession({
             sendDisabled={!canSend}
             canSendWithoutText={pendingFiles.some((file) => file.status === "ready")}
             placeholder={
-              composerPlaceholder ??
-              t(workbenchMode === "story" ? "composerPlaceholderStory" : "composerPlaceholder")
+              !canWrite
+                ? t("readOnlyProject")
+                : (composerPlaceholder ??
+                  t(workbenchMode === "story" ? "composerPlaceholderStory" : "composerPlaceholder"))
             }
             inputLabel={t("message")}
             sendLabel={t("send")}
             stopLabel={t("stop")}
-            stopAvailable={state.pendingExternal?.toolId !== "story.applyProposal"}
+            stopAvailable={canWrite && state.pendingExternal?.toolId !== "story.applyProposal"}
             autoFocus
             focusRequestKey={composerPrefill?.id}
             appearance="fizz-agent"

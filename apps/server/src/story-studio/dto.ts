@@ -222,6 +222,7 @@ export type StoryBuildAssetParams = z.infer<typeof StoryBuildAssetParamsSchema>;
 
 export const StoryProjectListQuerySchema = z
   .object({
+    workspaceId: StoryUuidSchema,
     status: StoryProjectStatusSchema.default('active'),
     cursor: z.string().trim().min(1).max(500).optional(),
     limit: z.coerce.number().int().min(1).max(100).default(20),
@@ -257,6 +258,7 @@ export type StoryBuildListQuery = z.infer<typeof StoryBuildListQuerySchema>;
 
 export const CreateStoryProjectSchema = z
   .object({
+    workspaceId: StoryUuidSchema,
     title: StoryTitleSchema,
     summary: StorySummarySchema.optional(),
     defaultLocale: z.string().trim().min(2).max(16),
@@ -647,6 +649,7 @@ export interface StoryProjectWorkspaceRefDto {
 }
 
 export interface StoryProjectSummaryDto {
+  canMove: boolean;
   id: string;
   workspaceId: string;
   frameProfile: StoryFrameProfile;

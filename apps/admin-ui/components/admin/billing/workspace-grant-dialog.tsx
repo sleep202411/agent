@@ -1,12 +1,7 @@
 "use client";
 
-// WorkspaceGrantDialog — 给一个工作区（团队 / 个人）的算力积分池加 / 扣分。
-// 独立成文件是因为它有两个入口：财务 →「团队算力池」按名称搜到的工作区，以及
-// 用户管理 →「查看」抽屉里该用户参与的每个工作区。两处必须是同一个对话框，
-// 否则幂等策略和文案会各写一份。
-//
-// POST /billing/wallets/workspace-credits（正数加、负数扣，服务端按 admin_adjustment
-// 落账）。amount 走字符串，避免大额经 JS number 丢精度。
+// One adjustment form for workspace search and user-workspace lookup.
+// The workspace id is explicit; retries reuse the same grant intent key.
 
 import { useState } from "react";
 import { IconCircleCheckFilled } from "@tabler/icons-react";
@@ -51,7 +46,7 @@ export function WorkspaceGrantDialog({
 
   const parsedScore = Number(score);
   const scoreValid =
-    /^-?\d+$/.test(score.trim()) && Number.isInteger(parsedScore) && parsedScore !== 0;
+    /^-?\d+$/.test(score.trim()) && Number.isSafeInteger(parsedScore) && parsedScore !== 0;
   const canSubmit = scoreValid && Boolean(note.trim()) && !submitting;
 
   async function submit() {
@@ -91,9 +86,11 @@ export function WorkspaceGrantDialog({
   return (
     <AdminDialog
       open
-      title="团队算力加 / 扣分"
-      description={`${workspace.type === "team" ? "团队" : "个人"}工作区「${workspace.name}」的算力积分池。正数加、负数扣，即时生效并写入审计。`}
-      onClose={onClose}
+      title="调整工作区积分"
+      description={`工作区「${workspace.name}」的算力积分。正数加、负数扣，即时生效并写入审计。`}
+      onClose={() => {
+        if (!submitting) onClose();
+      }}
       footer={
         result ? (
           <>

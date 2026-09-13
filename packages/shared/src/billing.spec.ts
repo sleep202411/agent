@@ -97,3 +97,82 @@ describe("native-audio per-second pricing", () => {
     ).toBe(120);
   });
 });
+
+describe("pooled reference-token pricing", () => {
+  const policy: AiProductPricingPolicy = {
+    mode: "per_second_matrix",
+    version: "h3-max-test",
+    currency: "COMPUTE_POINTS",
+    defaultResolution: "768P",
+    pointsPerSecond: { "768P": 12 },
+    minSeconds: 5,
+    maxSeconds: 15,
+    defaultSeconds: 5,
+    autoQuoteSeconds: 15,
+    referenceTokenPricing: {
+      includedTokens: 4096,
+      pointsPerThousandTokens: 2,
+      imagePixelsPerToken: 1024,
+      videoTokensPerSecond: { "768P": 7460 },
+      audioTokensPerSecond: 80,
+    },
+  };
+  const image = { width: 1024, height: 1024 };
+
+  it("keeps text and keyframe generation at the base rate", () => {
+    expect(estimateProductModelPoints({ policy }).sellPoints).toBe(60);
+    expect(
+      estimateProductModelPoints({ policy, referenceImageCount: 2, referenceMedia: {} }).sellPoints
+    ).toBe(60);
+  });
+  it("pools the free allowance across all reference kinds and rounds charges up", () => {
+    expect(
+      estimateProductModelPoints({ policy, referenceMedia: { images: Array(4).fill(image) } })
+        .sellPoints
+    ).toBe(60);
+    expect(
+      estimateProductModelPoints({ policy, referenceMedia: { images: Array(5).fill(image) } })
+        .sellPoints
+    ).toBe(63);
+    expect(
+      estimateProductModelPoints({
+        policy,
+        referenceMedia: {
+          images: [{ width: 2048, height: 2048 }],
+          audios: [{ durationSeconds: 1 }],
+        },
+      }).sellPoints
+    ).toBe(61);
+  });
+  it("covers fal's mixed-reference example including the reference video", () => {
+    // fal: $0.40 output + $0.70496 references. Product: 60 + 71 points.
+    const result = estimateProductModelPoints({
+      policy,
+      referenceMedia: { images: [image, image], videos: [{ durationSeconds: 5 }] },
+    });
+    expect(result.referenceSurchargePoints).toBe(71);
+    expect(result.sellPoints).toBe(131);
+  });
+  it("charges each output for the reference inputs it consumes", () => {
+    expect(
+      estimateProductModelPoints({
+        policy,
+        numOutputs: 2,
+        referenceMedia: { videos: [{ durationSeconds: 15 }], audios: [{ durationSeconds: 15 }] },
+      }).sellPoints
+    ).toBe(558);
+  });
+  it.each([{ images: [{}] }, { videos: [{ durationSeconds: 0 }] }, { audios: [null] }])(
+    "rejects incomplete reference evidence: %j",
+    (referenceMedia) => {
+      expect(() => estimateProductModelPoints({ policy, referenceMedia })).toThrow(
+        /required for pricing/
+      );
+    }
+  );
+  it("does not silently estimate a metered reference from a count alone", () => {
+    expect(() => estimateProductModelPoints({ policy, referenceImageCount: 1 })).toThrow(
+      /facts are required/
+    );
+  });
+});

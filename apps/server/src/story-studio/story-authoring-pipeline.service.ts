@@ -98,6 +98,7 @@ export interface StoryScriptCompilationResult {
 }
 
 export interface StoryAssetPlanningRequest {
+  modelId?: string;
   screenplay: StoryScreenplay;
   creativeProfile: StoryAgentAuthoringJob['creativeProfile'];
   signal: AbortSignal;
@@ -107,6 +108,7 @@ export interface StoryAssetPlanningRequest {
 }
 
 export interface StoryStoryboardPlanningRequest {
+  modelId?: string;
   screenplay: StoryScreenplay;
   assetPlan: StoryAssetPlan;
   creativeProfile: StoryAgentAuthoringJob['creativeProfile'];
@@ -117,6 +119,7 @@ export interface StoryStoryboardPlanningRequest {
 }
 
 export interface StoryScriptCompilationRequest {
+  modelId?: string;
   /** Exact current creator-visible Script serialization, pinned by its hash. */
   sourceText: string;
   document?: StoryScreenplayDocument;
@@ -150,6 +153,7 @@ export class StoryAuthoringPipelineService {
     const { job, signal } = request;
     if (job.document && job.brief.sourceMode !== 'adapt') {
       return this.extractSource({
+        modelId: job.modelId,
         sourceText: job.document.text,
         title: job.brief.title,
         instructions: job.brief.brief,
@@ -158,7 +162,7 @@ export class StoryAuthoringPipelineService {
         onStage: request.onStage,
       });
     }
-    const model = createStoryAuthoringModel();
+    const model = createStoryAuthoringModel(job.modelId);
     const source = buildSourceBlock(job);
     const projectContext = projectContextBlock(job);
     const creativeProfile = creativeProfileBlock(job.creativeProfile);
@@ -243,7 +247,7 @@ export class StoryAuthoringPipelineService {
   async planAssets(
     request: StoryAssetPlanningRequest,
   ): Promise<StoryAssetPlan> {
-    const model = createStoryAuthoringModel();
+    const model = createStoryAuthoringModel(request.modelId);
     const creativeProfile = creativeProfileBlock(request.creativeProfile);
 
     await request.onStage?.('assets');
@@ -272,7 +276,7 @@ export class StoryAuthoringPipelineService {
   async planStoryboard(
     request: StoryStoryboardPlanningRequest,
   ): Promise<StoryStoryboardPlan> {
-    const model = createStoryAuthoringModel();
+    const model = createStoryAuthoringModel(request.modelId);
     const creativeProfile = creativeProfileBlock(request.creativeProfile);
 
     await request.onStage?.('storyboard');
@@ -339,7 +343,7 @@ export class StoryAuthoringPipelineService {
     const indexedSource = JSON.stringify(
       blocks.map(({ id, text }) => ({ id, text })),
     );
-    const model = createStoryAuthoringModel();
+    const model = createStoryAuthoringModel(request.modelId);
     const requestContext = [
       `Story language: ${request.creativeProfile.storyLanguage}. Fallback title: ${request.title}.`,
       ...(request.instructions

@@ -54,7 +54,10 @@ export class StoryGenerationBatchService {
     chapterId: string,
     idempotencyKey: string,
     input: QuoteStoryAssetGenerationBatchInput,
-    execution?: { dispatchMode?: 'parallel' | 'sequential' },
+    execution?: {
+      dispatchMode?: 'parallel' | 'sequential';
+      experience?: 'mobile_h5';
+    },
   ) {
     const { project } = await this.permissions.requireProject(
       user.userId,
@@ -75,6 +78,7 @@ export class StoryGenerationBatchService {
       chapterId,
       input,
       dispatchMode,
+      ...(execution?.experience ? { experience: execution.experience } : {}),
     });
     const replay = await this.prisma.storyGenerationBatch.findUnique({
       where: {
@@ -92,14 +96,16 @@ export class StoryGenerationBatchService {
     }
 
     const targets = uniqueTargets(input.targets);
-    const preferredSelection = input.modelId
-      ? { modelId: input.modelId, schemaVersion: input.schemaVersion }
-      : await this.resolvePersistedSelection(
-          user,
-          workspaceId,
-          projectId,
-          input.outputKind,
-        );
+    const preferredSelection =
+      input.modelId && execution?.experience !== 'mobile_h5'
+        ? { modelId: input.modelId, schemaVersion: input.schemaVersion }
+        : await this.resolvePersistedSelection(
+            user,
+            workspaceId,
+            projectId,
+            input.outputKind,
+            execution?.experience,
+          );
     const quotes = await mapLimit(targets, QUOTE_CONCURRENCY, (target) =>
       this.generations.quoteAssetGeneration(
         user,
@@ -112,7 +118,11 @@ export class StoryGenerationBatchService {
           modelId: preferredSelection?.modelId,
           schemaVersion: preferredSelection?.schemaVersion,
           outputKind: input.outputKind,
-          options: input.options,
+          options:
+            execution?.experience === 'mobile_h5' &&
+            input.outputKind === 'image'
+              ? { ...input.options, resolution: '1K' }
+              : input.options,
         },
       ),
     );
@@ -193,7 +203,10 @@ export class StoryGenerationBatchService {
     chapterId: string,
     idempotencyKey: string,
     input: QuoteStoryStoryboardGenerationBatchInput,
-    execution?: { dispatchMode?: 'parallel' | 'sequential' },
+    execution?: {
+      dispatchMode?: 'parallel' | 'sequential';
+      experience?: 'mobile_h5';
+    },
   ) {
     const { project } = await this.permissions.requireProject(
       user.userId,
@@ -215,6 +228,7 @@ export class StoryGenerationBatchService {
       targetKind: 'storyboard_clip',
       input,
       dispatchMode,
+      ...(execution?.experience ? { experience: execution.experience } : {}),
     });
     const replay = await this.prisma.storyGenerationBatch.findUnique({
       where: {
@@ -263,8 +277,24 @@ export class StoryGenerationBatchService {
       }
     }
     const [imageSelection, videoSelection] = await Promise.all([
-      this.resolvePersistedSelection(user, workspaceId, projectId, 'image'),
-      this.resolvePersistedSelection(user, workspaceId, projectId, 'video'),
+      rows.some((row) => row.kind === 'image')
+        ? this.resolvePersistedSelection(
+            user,
+            workspaceId,
+            projectId,
+            'image',
+            execution?.experience,
+          )
+        : Promise.resolve(null),
+      rows.some((row) => row.kind !== 'image')
+        ? this.resolvePersistedSelection(
+            user,
+            workspaceId,
+            projectId,
+            'video',
+            execution?.experience,
+          )
+        : Promise.resolve(null),
     ]);
     const quotes = await mapLimit(targets, QUOTE_CONCURRENCY, (target) => {
       const row = rowsById.get(target.id)!;
@@ -281,7 +311,10 @@ export class StoryGenerationBatchService {
           expectedVersion: target.expectedVersion,
           modelId: preferredSelection?.modelId,
           schemaVersion: preferredSelection?.schemaVersion,
-          options: {},
+          options:
+            execution?.experience === 'mobile_h5' && row.kind === 'image'
+              ? { resolution: '1K' }
+              : {},
         },
       );
     });
@@ -807,15 +840,22 @@ export class StoryGenerationBatchService {
     workspaceId: string,
     projectId: string,
     outputKind: 'image' | 'video',
+    experience?: 'mobile_h5',
   ): Promise<{ modelId: string; schemaVersion: string } | null> {
-    const preference = await this.prisma.agentOsModelPreference.findUnique({
-      where: {
-        projectId_actorId: { projectId, actorId: user.userId },
-      },
-      select: { imageModelId: true, videoModelId: true },
-    });
-    const modelId =
-      outputKind === 'image'
+    const mobile = experience === 'mobile_h5';
+    const preference = mobile
+      ? null
+      : await this.prisma.agentOsModelPreference.findUnique({
+          where: {
+            projectId_actorId: { projectId, actorId: user.userId },
+          },
+          select: { imageModelId: true, videoModelId: true },
+        });
+    const modelId = mobile
+      ? outputKind === 'image'
+        ? process.env.AGENT_OS_MOBILE_IMAGE_MODEL?.trim() || 'wan-image-2.7'
+        : process.env.AGENT_OS_MOBILE_VIDEO_MODEL?.trim() || 'minimax-h3-max'
+      : outputKind === 'image'
         ? preference?.imageModelId
         : preference?.videoModelId;
     if (!modelId) return null;
@@ -826,6 +866,12 @@ export class StoryGenerationBatchService {
         candidate.type === outputKind &&
         candidate.enabled,
     );
+    if (mobile && !model) {
+      throw new BadRequestException({
+        code: 'STORY_GENERATION_DEFAULT_MODEL_UNAVAILABLE',
+        message: `The configured mobile ${outputKind} model ${modelId} is unavailable.`,
+      });
+    }
     return model
       ? { modelId: model.id, schemaVersion: model.schemaVersion }
       : null;

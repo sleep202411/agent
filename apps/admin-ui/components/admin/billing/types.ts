@@ -633,15 +633,13 @@ export type AdminBillingPromotionsData = {
   items: BillingPromotionRow[];
 };
 
-// Workspace row + compute_point balance for the team-wallet picker.
-export type AdminWorkspaceType = "team" | "personal";
+// Workspace identity and its compute wallet balance.
 
-export type AdminWorkspaceMemberRole = "owner" | "admin" | "member" | "viewer";
+export type AdminWorkspaceMemberRole = "owner" | "admin" | "editor" | "billing" | "viewer";
 
 export type AdminWorkspaceRow = {
   id: string;
   name: string;
-  type: AdminWorkspaceType;
   status: string;
   ownerUserId: string;
   memberCount: number;

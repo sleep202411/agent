@@ -1,3 +1,4 @@
+import { planSingleModelSeed } from '../../prisma/seed/ai-catalog/seed-catalog';
 import {
   ENTITLEMENT_POLICY_VERSION,
   EntitlementService,
@@ -99,7 +100,7 @@ function routingFor(testModel: AiModelDefinition) {
     findPresetRoute: jest.fn(),
     queuePolicyFor: jest.fn(() => testModel.queue_policy),
     queueNameFor: jest.fn((queueName: string) => queueName),
-    billingPolicyFor: jest.fn(() => freeBillingPolicy),
+    billingPolicyFor: jest.fn(() => testModel.billing_policy),
     presetId: jest.fn(),
     listCampaigns: jest.fn(() => []),
   };
@@ -181,5 +182,77 @@ describe('AiGenerationRoutingService concurrency policy', () => {
     expect(decision.snapshot.policy.concurrency.perTypeRunning).toBe(3);
     expect(decision.snapshot.policy.concurrency.perUserRunning).toBe(3);
     expect(decision.snapshot.policy.concurrency.perUserQueued).toBe(10);
+  });
+});
+
+describe('H3 Max reference pricing at admission', () => {
+  function quote(input: Record<string, unknown>) {
+    const plan = planSingleModelSeed('minimax-h3-max');
+    const { service } = routingFor(
+      model({
+        billing_policy: plan.canonical
+          .billingPolicy as unknown as AiBillingPolicy,
+        input_schema: {
+          type: 'object',
+          properties: {
+            resolution: { type: 'string' },
+            startFrame: { type: 'object', properties: {} },
+            endFrame: { type: 'object', properties: {} },
+            referenceImages: {
+              type: 'array',
+              items: { type: 'object', properties: {} },
+            },
+            referenceVideos: {
+              type: 'array',
+              items: { type: 'object', properties: {} },
+            },
+            referenceAudios: {
+              type: 'array',
+              items: { type: 'object', properties: {} },
+            },
+          },
+        },
+      }),
+    );
+    return service.resolve({
+      entitlement: entitlement(),
+      body: { modelId: 'image-model', input },
+      now: NOW,
+    });
+  }
+  const image = {
+    assetId: 'image-1',
+    url: 'https://cdn.example.com/image.png',
+    referenceBillingFacts: { width: 2048, height: 2048 },
+  };
+  it('counts bindings before prompt compilation and deduplicates their input-array copies', async () => {
+    const result = await quote({
+      duration: '5',
+      resolution: '768P',
+      referenceBindings: [{ ...image, kind: 'image' }],
+      referenceImages: [image],
+      referenceVideos: [
+        { assetId: 'video-1', referenceBillingFacts: { durationSeconds: 5 } },
+      ],
+    });
+    expect(result.snapshot.policy.quota.cost).toBe(135);
+  });
+  it('ignores keyframes in the reference-token meter', async () => {
+    const result = await quote({
+      duration: '5',
+      startFrame: image,
+      endFrame: image,
+    });
+    expect(result.snapshot.policy.quota.cost).toBe(60);
+  });
+  it('rejects unverified media instead of quoting below the provider cost', async () => {
+    await expect(
+      quote({
+        duration: '5',
+        referenceImages: [
+          { ...image, width: 1, height: 1, referenceBillingFacts: null },
+        ],
+      }),
+    ).rejects.toMatchObject({ response: { code: 'MODEL_PRICING_INVALID' } });
   });
 });

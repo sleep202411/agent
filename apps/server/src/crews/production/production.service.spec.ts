@@ -12,7 +12,6 @@ import {
   ProjectMemberRole,
   Prisma,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import {
   CrewProductionDocumentSchema,
@@ -133,6 +132,8 @@ function build() {
     prisma,
     authorization,
     assetAccess,
+    conversations,
+    workspacePermissions,
     service: new CrewProductionService(
       prisma as never,
       authorization as never,
@@ -177,7 +178,7 @@ describe('CrewProductionService', () => {
         workspace: {
           id: 'personal-1',
           name: 'Isaac',
-          type: WorkspaceType.personal,
+          defaultForUserId: 'user-1',
           projects: [
             {
               id: 'project-personal',
@@ -197,7 +198,7 @@ describe('CrewProductionService', () => {
         workspace: {
           id: 'team-1',
           name: 'Animation team',
-          type: WorkspaceType.team,
+          defaultForUserId: null,
           projects: [
             {
               id: 'project-team',
@@ -217,8 +218,8 @@ describe('CrewProductionService', () => {
 
     expect(result.workspaces).toHaveLength(2);
     expect(result.workspaces[0].projects[0]).toMatchObject({
-      selectable: false,
-      disabledReason: 'personal_workspace',
+      selectable: true,
+      disabledReason: null,
     });
     expect(result.workspaces[1].projects[0]).toMatchObject({
       selectable: true,
@@ -236,7 +237,7 @@ describe('CrewProductionService', () => {
       workspace: {
         id: 'team-1',
         name: 'Animation team',
-        type: WorkspaceType.team,
+        defaultForUserId: null,
       },
       studioCrew: null,
       productionCrew: { id: 'another-crew' },
@@ -255,6 +256,46 @@ describe('CrewProductionService', () => {
       id: projectId,
       name: 'Episode canvas',
     });
+  });
+
+  it.each(['crew', 'project'] as const)(
+    'rejects a link when %s authority is withdrawn during admission',
+    async (scope) => {
+      const t = build();
+      const check =
+        scope === 'crew'
+          ? t.authorization.require
+          : t.workspacePermissions.requireProjectRole;
+      check
+        .mockResolvedValueOnce(undefined as never)
+        .mockRejectedValueOnce(new Error('Access revoked'));
+      await expect(
+        t.service.linkStudioProject(CREW_ID, USER_ID, {
+          projectId: '01910d50-4c88-7c78-92d4-16892c06e010',
+        }),
+      ).rejects.toThrow('Access revoked');
+      expect(t.prisma.crew.update).not.toHaveBeenCalled();
+      expect(t.prisma.crewProductionActivity.create).not.toHaveBeenCalled();
+      expect(
+        t.conversations.broadcastCrewTaskProjectChange,
+      ).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects the transaction and suppresses broadcasts if unlink authority changes during its write', async () => {
+    const t = build();
+    t.prisma.crew.findFirstOrThrow.mockResolvedValue({
+      studioProjectId: 'old-project',
+    });
+    t.prisma.crew.update.mockImplementation(() => {
+      t.authorization.require.mockRejectedValue(new Error('Access revoked'));
+    });
+    await expect(
+      t.service.linkStudioProject(CREW_ID, USER_ID, { projectId: null }),
+    ).rejects.toThrow('Access revoked');
+    expect(
+      t.conversations.broadcastCrewTaskProjectChange,
+    ).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -495,6 +536,45 @@ describe('CrewProductionService', () => {
         kind: CrewProductionResourceKind.link,
         title: 'linear.app/project/reference',
         url: 'https://linear.app/project/reference/',
+        assetNodeId: null,
+        createdByUserId: USER_ID,
+      },
+    });
+  });
+
+  it.each([
+    ['100%', '100%'],
+    ['%E0%A4', '%E0%A4'],
+    ['hello%20world', 'hello world'],
+  ])('derives a title for URL path %s', async (path, title) => {
+    const t = build();
+    t.prisma.crewProductionResource.create.mockResolvedValue({
+      id: ASSET_ID,
+    });
+    t.prisma.crewProductionResource.findUniqueOrThrow.mockResolvedValue({
+      id: ASSET_ID,
+      crewId: CREW_ID,
+      kind: CrewProductionResourceKind.link,
+      title: `linear.app/${title}`,
+      url: `https://linear.app/${path}`,
+      assetNodeId: null,
+      createdByUserId: USER_ID,
+      createdAt: new Date('2026-08-02T12:00:00.000Z'),
+      updatedAt: new Date('2026-08-02T12:00:00.000Z'),
+      assetNode: null,
+    });
+
+    await t.service.createResource(CREW_ID, USER_ID, {
+      kind: 'link',
+      url: `https://linear.app/${path}`,
+    });
+
+    expect(t.prisma.crewProductionResource.create).toHaveBeenCalledWith({
+      data: {
+        crewId: CREW_ID,
+        kind: CrewProductionResourceKind.link,
+        title: `linear.app/${title}`,
+        url: `https://linear.app/${path}`,
         assetNodeId: null,
         createdByUserId: USER_ID,
       },

@@ -4047,6 +4047,8 @@
     "reviewDialogAvailable": "{date} 起可入职",
     "reviewDialogApproveSuccess": "已通过申请",
     "reviewDialogRejectSuccess": "已拒绝申请",
+    "reviewDialogApproveFailed": "无法批准申请",
+    "reviewDialogRejectFailed": "无法拒绝申请",
     "closeJob": "关闭招聘",
     "closeJobConfirm": "确定关闭「{name}」招聘？待处理申请将被归档。",
     "closeJobSuccess": "已关闭「{name}」",
@@ -4470,6 +4472,8 @@
     "logEpisodeApproved": "{actor} 完成了本集验收",
     "inviteLinkTabAccount": "按账号",
     "inviteLinkTabLink": "邀请链接",
+    "inviteLinkKindMember": "Crew 成员身份",
+    "inviteLinkKindCommunity": "仅社区聊天",
     "inviteLinkIntro": "任何人打开这个链接都能加入剧组，权限就是你在这里选的。",
     "inviteLinkExpiryLabel": "有效期",
     "inviteLinkExpiryNever": "永不过期",
@@ -5058,13 +5062,10 @@
       "loadingStudioProjects": "正在加载项目…",
       "noStudioProjects": "没有匹配的项目。",
       "unlinkStudioProject": "解除 Studio 项目关联",
-      "teamWorkspace": "团队工作区",
-      "personalWorkspace": "个人工作区",
       "workspaceHasNoProjects": "这个工作区暂无项目。",
       "projectLinkFailed": "无法关联 Studio 项目。",
       "projectOptionsFailed": "无法加载项目。",
       "projectDisabled": {
-        "personal_workspace": "剧组只能关联团队工作区下的项目。",
         "alreadyLinked": "已关联到剧组「{crew}」。",
         "insufficient_permission": "需要项目编辑权限才能关联。"
       },
@@ -5413,7 +5414,7 @@
     "dependencies": "任务依赖",
     "blockedSubmitHint": "请先完成所有前置任务，再提交审核。",
     "budget": "积分预算",
-    "taskLimits": "预算与返修策略",
+    "taskLimits": "返修策略",
     "revisionLimit": "返修上限",
     "revisionUnlimited": "不限",
     "revisionPolicy": "返修轮次",
@@ -5499,6 +5500,8 @@
     }
   },
   "crewInvitations": {
+    "signIn": "登录",
+    "signInRequired": "请登录以查看并回复此 Crew 邀请。",
     "eyebrow": "剧组邀请",
     "invitedTo": "你受邀加入",
     "crew": "剧组",
@@ -7869,6 +7872,9 @@
       "comingSoon": "{label}即将上线。"
     },
     "computeBilling": {
+      "balanceUnavailable": "余额暂不可用",
+      "loadFailed": "无法加载账单信息。",
+      "retry": "重试",
       "openRecharge": "打开算力积分充值",
       "balance": "{amount} 算力积分",
       "balanceLoading": "算力积分",
@@ -7885,8 +7891,8 @@
       "paymentFailed": "支付失败，请重试。",
       "providerUnavailable": "当前支付渠道尚未接入浏览器支付。",
       "successToast": "算力积分已到账。",
-      "completedToast": "充值已完成，余额正在刷新。",
-      "cancelledToast": "充值已取消。"
+      "returnedToast": "已返回充值页面，付款可能仍在确认中。",
+      "cancelledToast": "支付页面已关闭，付款状态可能仍待确认。"
     },
     "billingUsage": {
       "title": "账单",
@@ -8524,8 +8530,8 @@
     "createProjectDescPlaceholder": "这个项目是关于什么的？（可选）",
     "createProjectSubmit": "创建项目",
     "defaultSectionTitle": "第 1 章",
-    "createTeamWorkspace": "创建团队",
-    "createTeamWorkspaceTitle": "创建团队工作区",
+    "createWorkspace": "创建工作区",
+    "createWorkspaceTitle": "创建工作区",
     "workspaceNameLabel": "团队名称",
     "workspaceNamePlaceholder": "例如：FizzDragon 工作室",
     "archiveProject": "归档项目",
@@ -9217,6 +9223,7 @@
     }
   },
   "notifications": {
+    "performedBy": "操作人：{name}",
     "title": "通知",
     "view": "查看",
     "ariaUnread": "通知（{count} 条未读）",
@@ -9283,11 +9290,13 @@
       },
       "taskAssigned": {
         "title": "新任务：{task}",
-        "body": "该任务已分配给你。"
+        "body": "该任务已分配给你。",
+        "bodyWithActor": "{actor} 将此任务指派给你。"
       },
       "taskUpdated": {
         "title": "任务已更新：{task}",
-        "body": "任务信息或参与成员发生了变化。"
+        "body": "任务信息或参与成员发生了变化。",
+        "bodyWithActor": "{actor} 更新了此任务。"
       },
       "taskCommented": {
         "title": "任务有新评论：{task}",
@@ -9377,6 +9386,11 @@
     "valueMembershipBoth": "{days} 天 Studio+社区会员"
   },
   "crewCommunityChat": {
+    "qrAlt": "社区邀请二维码",
+    "scanToJoin": "扫码加入 Crew 社区。",
+    "downloadQr": "下载二维码",
+    "generatingQr": "正在生成二维码…",
+    "qrFailed": "无法生成二维码。",
     "channels": "频道",
     "teamChannel": "团队群聊",
     "communityChannel": "社区群聊",
@@ -9512,5 +9526,25 @@
       "next": "下一页",
       "page": "第 {page} 页"
     }
+  },
+  "crewTaskCenter": {
+    "signInRequired": "登录后查看你的剧组任务。",
+    "signIn": "登录",
+    "unreadCrewNotifications": "{count} 条未读剧组通知",
+    "unreadNotifications": "{count} 条未读任务通知",
+    "title": "任务中心",
+    "description": "集中管理你参与剧组的任务。",
+    "back": "返回剧组",
+    "scope": "范围",
+    "allTasks": "所有可访问任务",
+    "mine": "指派给我",
+    "status": "状态",
+    "active": "未完成任务",
+    "allStatuses": "所有状态",
+    "search": "搜索任务标题",
+    "loading": "正在加载任务…",
+    "retry": "重试",
+    "empty": "没有符合筛选条件的任务。",
+    "loadMore": "加载更多"
   }
 }

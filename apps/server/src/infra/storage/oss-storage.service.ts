@@ -80,6 +80,7 @@ export class AliyunOssStorageService extends OutputStorageService {
   readonly providerId = 'aliyun_oss' as const;
   private readonly logger = new Logger(AliyunOssStorageService.name);
   private readonly client: OSS | null;
+  private readonly missingConfigurationKeys: string[];
   private readonly bucket: string;
   private readonly rawRegion: string;
   private readonly accessKeyId: string;
@@ -100,6 +101,19 @@ export class AliyunOssStorageService extends OutputStorageService {
     const accessKeyId = (process.env.OSS_ACCESS_KEY_ID ?? '').trim();
     const accessKeySecret = (process.env.OSS_ACCESS_KEY_SECRET ?? '').trim();
 
+    this.missingConfigurationKeys = [
+      ['OSS_BUCKET', bucket],
+      ['OSS_REGION', rawRegion],
+      ['OSS_ACCESS_KEY_ID', accessKeyId],
+      ['OSS_ACCESS_KEY_SECRET', accessKeySecret],
+      ['OSS_PUBLIC_BASE_URL', process.env.OSS_PUBLIC_BASE_URL?.trim()],
+      [
+        'MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS',
+        process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS?.trim(),
+      ],
+    ]
+      .filter(([, value]) => !value)
+      .map(([key]) => key as string);
     this.bucket = bucket;
     this.rawRegion = rawRegion;
     this.accessKeyId = accessKeyId;
@@ -146,6 +160,24 @@ export class AliyunOssStorageService extends OutputStorageService {
           authorizationV4: true,
         })
       : null;
+  }
+
+  objectLocation(key: string) {
+    this.assertConfigured('Object storage');
+    return {
+      storageProvider: this.providerId,
+      bucket: this.bucket,
+      region: this.region,
+      objectKey: key,
+      externalUrl: null,
+    };
+  }
+
+  assertConfigured(context: string): void {
+    if (this.missingConfigurationKeys.length)
+      throw new Error(
+        `${context} requires: ${this.missingConfigurationKeys.join(', ')}`,
+      );
   }
 
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {

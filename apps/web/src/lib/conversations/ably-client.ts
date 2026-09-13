@@ -133,6 +133,7 @@ export function openConversationRealtime(
   const channel = realtime.channels.get(conversationChannel(userId));
 
   channel.subscribe(CONVERSATION_REALTIME_EVENT, (message) => {
+    if (closed) return;
     const frame = asFrame(message.data);
     if (!frame) return;
     switch (frame.event) {
@@ -216,7 +217,7 @@ export function openConversationRealtime(
       }
     },
     get isOpen() {
-      return channel.state === "attached";
+      return !closed && channel.state === "attached";
     },
   };
 }

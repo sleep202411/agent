@@ -2,7 +2,6 @@ import {
   ProjectMemberRole,
   StoryProjectMemberRole,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { EntitlementService } from '../entitlements/entitlement.service';
 import {
@@ -22,7 +21,7 @@ const CREATED_BEFORE_CUTOFF = new Date('2026-07-10T09:03:27Z');
 const CREATED_ON_GRACE_DAY = new Date('2026-08-11T18:00:00+08:00');
 
 function txFor(input: {
-  type: WorkspaceType;
+  defaultForUserId: string | null;
   creatorUserIds: string[];
   createdAt?: Date;
 }) {
@@ -34,7 +33,7 @@ function txFor(input: {
     billingMembershipPlan: { findMany: jest.fn().mockResolvedValue([]) },
     workspace: {
       findUnique: jest.fn().mockResolvedValue({
-        type: input.type,
+        defaultForUserId: input.defaultForUserId,
         createdAt: input.createdAt ?? CREATED_AFTER_CUTOFF,
       }),
     },
@@ -48,7 +47,7 @@ describe('creator seat enforcement', () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.personal,
+          defaultForUserId: 'user-1',
           creatorUserIds: ['owner-1'],
         }),
         WORKSPACE_ID,
@@ -62,7 +61,7 @@ describe('creator seat enforcement', () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.personal,
+          defaultForUserId: 'user-1',
           creatorUserIds: ['owner-1'],
         }),
         WORKSPACE_ID,
@@ -82,7 +81,7 @@ describe('creator seat enforcement', () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.personal,
+          defaultForUserId: 'user-1',
           creatorUserIds: ['owner-1'],
           createdAt: CREATED_BEFORE_CUTOFF,
         }),
@@ -98,7 +97,7 @@ describe('creator seat enforcement', () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.personal,
+          defaultForUserId: 'user-1',
           creatorUserIds: ['owner-1'],
           createdAt: CREATED_ON_GRACE_DAY,
         }),
@@ -113,7 +112,7 @@ describe('creator seat enforcement', () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.personal,
+          defaultForUserId: 'user-1',
           creatorUserIds: Array.from({ length: 28 }, (_, i) => `user-${i}`),
           createdAt: CREATED_BEFORE_CUTOFF,
         }),
@@ -133,7 +132,7 @@ describe('creator seat enforcement', () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.team,
+          defaultForUserId: null,
           creatorUserIds: ['owner-1'],
         }),
         WORKSPACE_ID,
@@ -147,7 +146,7 @@ describe('creator seat enforcement', () => {
     await expect(
       assertCreatorSeatAvailable(
         txFor({
-          type: WorkspaceType.team,
+          defaultForUserId: null,
           creatorUserIds: Array.from({ length: 28 }, (_, i) => `user-${i}`),
         }),
         WORKSPACE_ID,

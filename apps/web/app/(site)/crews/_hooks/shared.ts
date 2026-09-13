@@ -1,3 +1,5 @@
+import type { QueryFilters } from "@tanstack/react-query";
+
 /**
  * Crews feature data layer — shared cache keys.
  *
@@ -18,6 +20,7 @@ export const crewKeys = {
   mine: ["crew", "mine"] as const,
   byUser: (userId: string) => ["crew", "by-user", userId] as const,
   assets: (crewId: string) => ["crew", "assets", crewId] as const,
+  taskCenter: ["crew", "task-center"] as const,
   taskProject: (crewId: string) => ["crew", "task-project", crewId] as const,
   tasks: (crewId: string) => ["crew", "tasks", crewId] as const,
   taskView: (crewId: string, input: { viewId: string; query?: string; priority?: string }) =>
@@ -47,3 +50,41 @@ export const crewKeys = {
   assetList: (crewId: string, query: Record<string, unknown>) =>
     ["crew", "assets", crewId, "list", query] as const,
 };
+
+// Task detail keys use task IDs, so select their Crew from the cached DTO.
+export function crewTaskDetailQueries(
+  crewId: string,
+  exceptTaskId?: string,
+  accountUserId?: string | null
+): QueryFilters {
+  return {
+    queryKey: ["crew", "task"],
+    predicate: (query) => {
+      const data = query.state.data;
+      return (
+        query.queryKey.length === 4 &&
+        Boolean(accountUserId) &&
+        query.queryKey.at(-1) === accountUserId &&
+        query.queryKey[2] !== exceptTaskId &&
+        typeof data === "object" &&
+        data !== null &&
+        "crewId" in data &&
+        data.crewId === crewId
+      );
+    },
+  };
+}
+
+/** Private Crew queries use an account suffix; the cross-Crew centre uses an account prefix. */
+export function crewAccountQueries(
+  queryKey: readonly unknown[],
+  accountUserId: string | null | undefined
+): QueryFilters {
+  return {
+    queryKey,
+    predicate: (query) =>
+      Boolean(accountUserId) &&
+      (query.queryKey[1] === "task-center" ? query.queryKey[2] : query.queryKey.at(-1)) ===
+        accountUserId,
+  };
+}

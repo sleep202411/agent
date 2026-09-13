@@ -10,7 +10,7 @@ import { useTranslations } from "next-intl";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MembersManager } from "@/app/_components/members-manager";
 import { useWorkspace } from "@/app/_components/workspace-context";
-import { PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
+import { PageHeader, Panel } from "../_components/settings-ui";
 
 export default function MembersSettingsPage() {
   const project = settingsMemberProject(usePathname());
@@ -30,9 +30,6 @@ function WorkspaceMembers() {
     <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
       <PageHeader
         title={t("members")}
-        badge={
-          ws ? <TeamBadge label={ws.type === "personal" ? t("personal") : t("team")} /> : undefined
-        }
         subtitle={ws ? t("membersSubtitle", { name: ws.name }) : undefined}
       />
 

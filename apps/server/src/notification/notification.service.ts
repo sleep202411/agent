@@ -119,6 +119,35 @@ export class NotificationService {
     };
   }
 
+  async unreadCrews(userId: string) {
+    return this.prisma.$queryRaw<
+      Array<{ crewId: string; count: number }>
+    >(Prisma.sql`
+      SELECT meta->>'crewId' AS "crewId", COUNT(*)::int AS count
+      FROM notifications
+      WHERE user_id = ${userId} AND read_at IS NULL
+        AND type LIKE 'crew.%'
+        AND jsonb_typeof(meta->'crewId') = 'string'
+        AND meta->>'crewId' <> ''
+      GROUP BY meta->>'crewId'
+    `);
+  }
+
+  async unreadCrewTasks(userId: string) {
+    // Aggregate in the database; never infer unread state from a feed page.
+    return this.prisma.$queryRaw<
+      Array<{ taskId: string; count: number }>
+    >(Prisma.sql`
+      SELECT meta->>'taskId' AS "taskId", COUNT(*)::int AS count
+      FROM notifications
+      WHERE user_id = ${userId} AND read_at IS NULL
+        AND type LIKE 'crew.task.%'
+        AND jsonb_typeof(meta->'taskId') = 'string'
+        AND meta->>'taskId' <> ''
+      GROUP BY meta->>'taskId'
+    `);
+  }
+
   async unreadCount(userId: string): Promise<number> {
     return this.prisma.notification.count({
       where: { userId, readAt: null },

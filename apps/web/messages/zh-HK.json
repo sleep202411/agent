@@ -4047,6 +4047,8 @@
     "reviewDialogAvailable": "{date} 起可到職",
     "reviewDialogApproveSuccess": "已通過申請",
     "reviewDialogRejectSuccess": "已拒絕申請",
+    "reviewDialogApproveFailed": "無法批准申請",
+    "reviewDialogRejectFailed": "無法拒絕申請",
     "closeJob": "關閉招聘",
     "closeJobConfirm": "確定關閉「{name}」招聘？待處理申請將被封存。",
     "closeJobSuccess": "已關閉「{name}」",
@@ -4470,6 +4472,8 @@
     "logEpisodeApproved": "{actor} 完成了本集驗收",
     "inviteLinkTabAccount": "按帳號",
     "inviteLinkTabLink": "邀請連結",
+    "inviteLinkKindMember": "Crew 成員身份",
+    "inviteLinkKindCommunity": "僅社區聊天",
     "inviteLinkIntro": "任何人開啟這個連結都能加入劇組，權限就是你在這裡選的。",
     "inviteLinkExpiryLabel": "有效期",
     "inviteLinkExpiryNever": "永不過期",
@@ -5058,13 +5062,10 @@
       "loadingStudioProjects": "正在載入項目…",
       "noStudioProjects": "沒有符合的項目。",
       "unlinkStudioProject": "解除 Studio 項目關聯",
-      "teamWorkspace": "團隊工作區",
-      "personalWorkspace": "個人工作區",
       "workspaceHasNoProjects": "這個工作區暫無項目。",
       "projectLinkFailed": "無法關聯 Studio 項目。",
       "projectOptionsFailed": "無法載入項目。",
       "projectDisabled": {
-        "personal_workspace": "劇組只能關聯團隊工作區下的項目。",
         "alreadyLinked": "已關聯到劇組「{crew}」。",
         "insufficient_permission": "需要項目編輯權限才能關聯。"
       },
@@ -5413,7 +5414,7 @@
     "dependencies": "任務依賴",
     "blockedSubmitHint": "請先完成所有前置任務，再提交審核。",
     "budget": "積分預算",
-    "taskLimits": "預算與返修策略",
+    "taskLimits": "返修策略",
     "revisionLimit": "返修上限",
     "revisionUnlimited": "不限",
     "revisionPolicy": "返修輪次",
@@ -5499,6 +5500,8 @@
     }
   },
   "crewInvitations": {
+    "signIn": "登入",
+    "signInRequired": "請登入以查看並回覆此 Crew 邀請。",
     "eyebrow": "劇組邀請",
     "invitedTo": "你受邀加入",
     "crew": "劇組",
@@ -7869,6 +7872,9 @@
       "comingSoon": "{label}即將上線。"
     },
     "computeBilling": {
+      "balanceUnavailable": "餘額暫不可用",
+      "loadFailed": "無法載入帳單資訊。",
+      "retry": "重試",
       "openRecharge": "打開算力積分充值",
       "balance": "{amount} 算力積分",
       "balanceLoading": "算力積分",
@@ -7885,8 +7891,8 @@
       "paymentFailed": "支付失敗，請重試。",
       "providerUnavailable": "當前支付渠道尚未接入瀏覽器支付。",
       "successToast": "算力積分已到賬。",
-      "completedToast": "充值已完成，餘額正在刷新。",
-      "cancelledToast": "充值已取消。"
+      "returnedToast": "已返回充值頁面，付款可能仍在確認中。",
+      "cancelledToast": "支付頁面已關閉，付款狀態可能仍待確認。"
     },
     "billingUsage": {
       "title": "賬單",
@@ -8524,8 +8530,8 @@
     "createProjectDescPlaceholder": "這個項目是關於什麼的？（可選）",
     "createProjectSubmit": "建立項目",
     "defaultSectionTitle": "第 1 章",
-    "createTeamWorkspace": "建立團隊",
-    "createTeamWorkspaceTitle": "建立團隊工作區",
+    "createWorkspace": "建立工作區",
+    "createWorkspaceTitle": "建立工作區",
     "workspaceNameLabel": "團隊名稱",
     "workspaceNamePlaceholder": "例如：FizzDragon 工作室",
     "archiveProject": "封存項目",
@@ -9217,6 +9223,7 @@
     }
   },
   "notifications": {
+    "performedBy": "操作人：{name}",
     "title": "通知",
     "view": "查看",
     "ariaUnread": "通知（{count} 則未讀）",
@@ -9283,11 +9290,13 @@
       },
       "taskAssigned": {
         "title": "新任務：{task}",
-        "body": "該任務已分配給你。"
+        "body": "該任務已分配給你。",
+        "bodyWithActor": "{actor} 將此任務指派給你。"
       },
       "taskUpdated": {
         "title": "任務已更新：{task}",
-        "body": "任務資料或參與成員已變更。"
+        "body": "任務資料或參與成員已變更。",
+        "bodyWithActor": "{actor} 更新了此任務。"
       },
       "taskCommented": {
         "title": "任務有新留言：{task}",
@@ -9377,6 +9386,11 @@
     "valueMembershipBoth": "{days} 天 Studio+社區會員"
   },
   "crewCommunityChat": {
+    "qrAlt": "社區邀請二維碼",
+    "scanToJoin": "掃碼加入 Crew 社區。",
+    "downloadQr": "下載二維碼",
+    "generatingQr": "正在產生二維碼…",
+    "qrFailed": "無法產生二維碼。",
     "channels": "頻道",
     "teamChannel": "團隊群聊",
     "communityChannel": "社群群聊",
@@ -9512,5 +9526,25 @@
       "next": "下一頁",
       "page": "第 {page} 頁"
     }
+  },
+  "crewTaskCenter": {
+    "signInRequired": "登入後查看你的劇組任務。",
+    "signIn": "登入",
+    "unreadCrewNotifications": "{count} 則未讀劇組通知",
+    "unreadNotifications": "{count} 則未讀任務通知",
+    "title": "任務中心",
+    "description": "集中管理你參與劇組的任務。",
+    "back": "返回劇組",
+    "scope": "範圍",
+    "allTasks": "所有可存取任務",
+    "mine": "指派給我",
+    "status": "狀態",
+    "active": "未完成任務",
+    "allStatuses": "所有狀態",
+    "search": "搜尋任務標題",
+    "loading": "正在載入任務…",
+    "retry": "重試",
+    "empty": "沒有符合篩選條件的任務。",
+    "loadMore": "載入更多"
   }
 }

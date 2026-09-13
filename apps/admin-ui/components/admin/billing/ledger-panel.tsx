@@ -164,9 +164,7 @@ export function BillingLedgerPanel({
       {
         id: "entries",
         header: () => (
-          <ColumnHeader help="具体账户分录和账户余额。余额按账户正常方向计算，不是用户积分余额。">
-            分录
-          </ColumnHeader>
+          <ColumnHeader help="具体账户分录和账户余额。余额按账户正常方向计算。">分录</ColumnHeader>
         ),
         enableSorting: false,
         cell: ({ row }) => {

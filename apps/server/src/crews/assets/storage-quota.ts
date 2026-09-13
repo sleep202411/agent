@@ -8,7 +8,11 @@ export async function lockCrewStorage(tx: Db, crewId: string) {
 }
 
 /** One row per physical asset, including Trash and confirmed unclaimed uploads. */
-export async function crewStorageUsage(tx: Db, crewId: string) {
+export async function crewStorageUsage(
+  tx: Db,
+  crewId: string,
+  excludeReservationKey: string | null = null,
+) {
   const [row] = await tx.$queryRaw<
     Array<{ total: bigint; used: bigint; reserved: bigint; unknown: bigint }>
   >(Prisma.sql`
@@ -21,7 +25,7 @@ export async function crewStorageUsage(tx: Db, crewId: string) {
       FROM media_assets m JOIN ids ON ids.id=m.id WHERE m.deleted_at IS NULL
     )
     SELECT c.storage_limit_bytes AS total, usage.used, usage.unknown,
-      COALESCE((SELECT SUM(r.size_bytes) FROM crew_upload_reservations r WHERE r.crew_id=c.id AND r.state='pending' AND r.expires_at > clock_timestamp()),0)::bigint AS reserved
+      COALESCE((SELECT SUM(r.size_bytes) FROM crew_upload_reservations r WHERE r.crew_id=c.id AND r.state='pending' AND r.expires_at > clock_timestamp() AND (${excludeReservationKey}::text IS NULL OR r.storage_key <> ${excludeReservationKey})),0)::bigint AS reserved
     FROM crews c CROSS JOIN usage WHERE c.id=${crewId}`);
   if (!row) throw new ForbiddenException('Crew not found');
   return {
@@ -64,15 +68,14 @@ export async function completeCrewUpload(
   actualBytes: number,
 ) {
   await lockCrewStorage(tx, crewId);
-  const reservation = await requireCrewReservation(tx, crewId, userId, key);
-  const usage = await crewStorageUsage(tx, crewId);
+  await requireCrewReservation(tx, crewId, userId, key);
+  // Exclude this reservation directly. It may expire between validation and
+  // the usage query, so subtracting its size from that query can grant credit
+  // for bytes that are no longer counted.
+  const usage = await crewStorageUsage(tx, crewId, key);
   if (
     usage.unknownSizeCount ||
-    usage.usedBytes +
-      usage.reservedBytes -
-      Number(reservation.size_bytes) +
-      actualBytes >
-      usage.totalBytes ||
+    usage.usedBytes + usage.reservedBytes + actualBytes > usage.totalBytes ||
     actualBytes > 5 * 1024 ** 3
   )
     throw new ConflictException(

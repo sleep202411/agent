@@ -7,11 +7,12 @@ import {
   formatCrewMoneyInput,
   type CrewLedgerCurrency,
 } from "@/src/lib/crew-money";
+import { TaskReviewForm } from "./task-review-form";
 import { DeleteTaskButton } from "./delete-task-button";
 
 import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
 
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import Link from "next/link";
 import {
   IconArrowUpRight,
@@ -43,7 +44,6 @@ import {
   IconUserCircle,
   IconX,
 } from "@tabler/icons-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
@@ -53,13 +53,11 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  crewKeys,
   useCreateCrewTaskComment,
   useDeleteCrewTaskComment,
   useCrewTaskOptions,
   useCrewEpisodes,
   useCrewTaskProject,
-  useReviewCrewTask,
   useUpdateCrewTask,
   useUpdateCrewTaskComment,
   useCrewTaskTimeline,
@@ -114,23 +112,33 @@ export function TaskIssueDetail({
 }: TaskIssueDetailProps) {
   const t = useTranslations("crewTasks");
   const projectT = useTranslations("crewTaskProject");
-  const qc = useQueryClient();
-  const review = useReviewCrewTask(task.crewId);
   const updateTask = useUpdateCrewTask(task.crewId);
   const timeline = useCrewTaskTimeline(task.id);
   const project = useCrewTaskProject(task.crewId).data;
   const episodes = useCrewEpisodes(task.crewId).data ?? [];
-  const [reviewNote, setReviewNote] = useState("");
   const [editingBrief, setEditingBrief] = useState(false);
   const [draftTitle, setDraftTitle] = useState(task.title);
   const [draftDescription, setDraftDescription] = useState(task.description);
+  const [briefVersion, setBriefVersion] = useState(task.version);
+  const alive = useRef(true);
+  const patchPending = useRef(false);
+  const [patching, setPatching] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
+  const startBriefEdit = () => {
+    if (patchPending.current || !isOwner) return;
+    setDraftTitle(task.title);
+    setDraftDescription(task.description);
+    setBriefVersion(task.version);
+    setEditingBrief(true);
+  };
   const [subtaskOpen, setSubtaskOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const canShowSubmit = canWork && ACTIVE_STATUSES.includes(task.status);
   const unresolvedBlockers = task.blockedBy.filter((blocker) => !blocker.resolved);
   const canSubmit = canShowSubmit && unresolvedBlockers.length === 0;
-  const revisionLimitReached =
-    task.revisionLimit != null && task.revisionRoundsUsed >= task.revisionLimit;
   const timelineItems = useMemo(
     () =>
       (timeline.data?.pages.flatMap((page) => page.items) ?? [])
@@ -141,23 +149,30 @@ export function TaskIssueDetail({
     [timeline.data]
   );
 
-  const quickPatch = async (input: Omit<UpdateCrewTaskInput, "expectedVersion">) => {
+  const quickPatch = async (input: Omit<UpdateCrewTaskInput, "expectedVersion">, expectedVersion = task.version) => {
+    if (!alive.current || patchPending.current || !isOwner) return false;
+    patchPending.current = true;
+    setPatching(true);
     try {
       await updateTask.mutateAsync({
         taskId: task.id,
-        input: { expectedVersion: task.version, ...input },
+        input: { expectedVersion, ...input },
       });
+      if (!alive.current) return false;
       toast.success(t("taskUpdated"));
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
       return false;
+    } finally {
+      patchPending.current = false;
+      if (alive.current) setPatching(false);
     }
   };
 
   const saveBrief = async () => {
     if (!draftTitle.trim()) return;
-    if (await quickPatch({ title: draftTitle.trim(), description: draftDescription.trim() })) {
+    if (await quickPatch({ title: draftTitle.trim(), description: draftDescription.trim() }, briefVersion)) {
       setEditingBrief(false);
     }
   };
@@ -172,17 +187,6 @@ export function TaskIssueDetail({
     }
     if (await quickPatch({ workflowStateId: cancelledState.id })) {
       setCancelConfirmOpen(false);
-    }
-  };
-
-  const decide = async (decision: "approve" | "request_revision") => {
-    try {
-      await review.mutateAsync({ taskId: task.id, decision, note: reviewNote });
-      toast.success(decision === "approve" ? t("approved") : t("revisionRequested"));
-      setReviewNote("");
-      onReviewed(decision);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
     }
   };
 
@@ -243,7 +247,7 @@ export function TaskIssueDetail({
                 <Button
                   size="sm"
                   color="destructive"
-                  loading={updateTask.isPending}
+                  loading={patching}
                   icon={<IconBan />}
                   onClick={() => void cancelTask()}
                 >
@@ -292,6 +296,7 @@ export function TaskIssueDetail({
               {editingBrief ? (
                 <>
                   <input
+                    disabled={patching}
                     value={draftTitle}
                     onChange={(event) => setDraftTitle(event.target.value)}
                     maxLength={180}
@@ -299,6 +304,7 @@ export function TaskIssueDetail({
                     autoFocus
                   />
                   <Textarea
+                    disabled={patching}
                     value={draftDescription}
                     onChange={(event) => setDraftDescription(event.target.value)}
                     placeholder={t("descriptionPlaceholder")}
@@ -310,7 +316,9 @@ export function TaskIssueDetail({
                       size="sm"
                       variant="ghost"
                       color="muted"
+                      disabled={patching}
                       onClick={() => {
+                        if (patchPending.current) return;
                         setDraftTitle(task.title);
                         setDraftDescription(task.description);
                         setEditingBrief(false);
@@ -320,8 +328,8 @@ export function TaskIssueDetail({
                     </Button>
                     <Button
                       size="sm"
-                      disabled={!draftTitle.trim()}
-                      loading={updateTask.isPending}
+                      disabled={patching || !draftTitle.trim()}
+                      loading={patching}
                       onClick={() => void saveBrief()}
                     >
                       {t("saveChanges")}
@@ -332,16 +340,16 @@ export function TaskIssueDetail({
                 <>
                   <button
                     type="button"
-                    disabled={!isOwner}
-                    onClick={() => setEditingBrief(true)}
+                    disabled={!isOwner || patching}
+                    onClick={startBriefEdit}
                     className="block max-w-full text-left text-[24px] font-semibold leading-8 tracking-[-0.025em] text-[#f0f0f2] disabled:cursor-default"
                   >
                     {task.title}
                   </button>
                   <button
                     type="button"
-                    disabled={!isOwner}
-                    onClick={() => setEditingBrief(true)}
+                    disabled={!isOwner || patching}
+                    onClick={startBriefEdit}
                     className="mt-7 block min-h-12 w-full whitespace-pre-wrap text-left text-[13px] leading-6 text-[#b8bac0] disabled:cursor-default"
                   >
                     {task.description || (
@@ -366,12 +374,13 @@ export function TaskIssueDetail({
               <span className="text-[10px] text-[#626873]">{timelineItems.length}</span>
             </div>
 
-            {timeline.isLoading ? (
+            {timeline.isLoading && !timeline.data ? (
               <TimelineState
                 icon={<IconLoader2 className="size-4 animate-spin" />}
                 text={t("timelineLoading")}
               />
-            ) : timeline.isError ? (
+            ) : null}
+            {timeline.isError ? (
               <TimelineState
                 icon={<IconRefresh className="size-4" />}
                 text={
@@ -382,20 +391,23 @@ export function TaskIssueDetail({
                     size="sm"
                     variant="outline"
                     color="muted"
-                    onClick={() => void timeline.refetch()}
+                    disabled={timeline.isFetching}
+                    onClick={() => void (timeline.isFetchNextPageError ? timeline.fetchNextPage() : timeline.refetch())}
                   >
                     {t("retry")}
                   </Button>
                 }
               />
-            ) : (
+            ) : null}
+            {timeline.data ? (
               <div className="relative space-y-3 before:absolute before:bottom-4 before:left-[17px] before:top-3 before:w-px before:bg-white/[0.075]">
-                {timeline.hasNextPage ? (
+                {timeline.hasNextPage && !timeline.isError ? (
                   <div className="relative z-10 flex justify-center pb-2">
                     <Button
                       size="sm"
                       variant="outline"
                       color="muted"
+                      disabled={timeline.isFetching}
                       loading={timeline.isFetchingNextPage}
                       onClick={() => void timeline.fetchNextPage()}
                     >
@@ -418,53 +430,10 @@ export function TaskIssueDetail({
                   )
                 )}
               </div>
-            )}
+            ) : null}
 
             {isOwner && task.status === "submitted" ? (
-              <section className="mt-6 rounded-xl border border-amber-400/20 bg-amber-400/[0.035] p-4">
-                <div className="mb-3 flex items-center gap-2">
-                  <IconClipboardCheck className="size-4 text-amber-300" />
-                  <h3 className="text-[12px] font-semibold text-[#e2e3e6]">
-                    {t("reviewSubmission")}
-                  </h3>
-                </div>
-                <Textarea
-                  value={reviewNote}
-                  onChange={(event) => setReviewNote(event.target.value)}
-                  placeholder={t("reviewNotePlaceholder")}
-                  maxLength={5000}
-                  className="min-h-24 border-white/[0.09] bg-[#090a0d]"
-                />
-                <p
-                  className={cn(
-                    "mt-2 text-[9px] text-[#686e79]",
-                    revisionLimitReached && "text-amber-300"
-                  )}
-                >
-                  {revisionLimitReached
-                    ? t("revisionLimitReached")
-                    : t("revisionInstructionsRequired")}
-                </p>
-                <div className="mt-3 flex justify-end gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    color="muted"
-                    disabled={review.isPending || revisionLimitReached || !reviewNote.trim()}
-                    onClick={() => void decide("request_revision")}
-                  >
-                    {t("requestRevision")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    disabled={review.isPending}
-                    onClick={() => void decide("approve")}
-                    icon={<IconCheck />}
-                  >
-                    {t("approve")}
-                  </Button>
-                </div>
-              </section>
+              <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}
 
             <CommentComposer
@@ -517,12 +486,12 @@ export function TaskIssueDetail({
             </RailRow>
             <RailRow icon={<IconUserCircle className="size-4" />} align="start">
               <AssigneesEditor
-                key={`assignees-${task.version}`}
+
                 task={task}
                 members={members}
                 displays={displays}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>
@@ -531,11 +500,12 @@ export function TaskIssueDetail({
           <RailSection title={t("labels")}>
             <RailRow icon={<IconTag className="size-4" />} align="start">
               <LabelsEditor
-                key={`labels-${task.version}`}
+                version={task.version}
+
                 labels={project?.labels ?? []}
                 selected={task.labels}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>
@@ -583,20 +553,20 @@ export function TaskIssueDetail({
             </RailRow>
             <RailRow icon={<IconClock className="size-4" />} align="start">
               <PlanningEditor
-                key={`planning-${task.version}`}
+
                 task={task}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>
             <RailRow icon={<IconSitemap className="size-4" />} align="start">
               <div className="w-full space-y-2">
                 <TaskRelationshipsEditor
-                  key={`relationships-${task.version}`}
+
                   task={task}
                   editable={isOwner}
-                  pending={updateTask.isPending}
+                  pending={patching}
                   onSave={quickPatch}
                 />
                 {task.children.length > 0 ? (
@@ -650,13 +620,14 @@ export function TaskIssueDetail({
                   <div key={field.id} className="grid grid-cols-[88px_minmax(0,1fr)] gap-3 py-1.5">
                     <span className="text-[10px] text-[#777980]">{field.name}</span>
                     <CustomFieldEditor
-                      key={`${field.id}-${task.version}`}
+                      version={task.version}
+                      key={field.id}
                       field={field}
                       value={value}
                       members={members}
                       displays={displays}
                       editable={isOwner}
-                      pending={updateTask.isPending}
+                      pending={patching}
                       onSave={quickPatch}
                     />
                   </div>
@@ -668,10 +639,10 @@ export function TaskIssueDetail({
           <RailSection title={t("taskInfo")}>
             <RailRow icon={<IconClipboardCheck className="size-4" />} align="start">
               <TaskLimitsEditor
-                key={`limits-${task.version}`}
+
                 task={task}
                 editable={isOwner}
-                pending={updateTask.isPending}
+                pending={patching}
                 onSave={quickPatch}
               />
             </RailRow>
@@ -721,9 +692,6 @@ export function TaskIssueDetail({
           activeView={project.views[0]}
           presetWorkflowStateId={task.workflowStateId}
           parentId={task.id}
-          onCreated={() => {
-            void qc.invalidateQueries({ queryKey: crewKeys.task(task.id) });
-          }}
         />
       ) : null}
     </div>
@@ -748,35 +716,67 @@ function CommentItem({
   const remove = useDeleteCrewTaskComment(task.id);
   const [editing, setEditing] = useState(false);
   const [body, setBody] = useState(item.body ?? "");
+  const [editVersion, setEditVersion] = useState(item.version);
+  const [editMentions, setEditMentions] = useState(item.mentions);
+  const alive = useRef(true);
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const authorName = item.actorUserId
     ? displayNameOf(item.actorUserId, displays)
     : t("systemAssistant");
   const canManage = item.actorUserId === viewerUserId || isOwner;
 
+  const startEditing = () => {
+    if (pending.current || !canManage || item.deletedAt) return;
+    setBody(item.body ?? "");
+    setEditVersion(item.version);
+    setEditMentions(item.mentions);
+    setEditing(true);
+  };
   const save = async () => {
+    if (!alive.current || pending.current || !canManage || item.deletedAt || !body.trim()) return;
+    pending.current = true;
+    setSaving(true);
     try {
       await update.mutateAsync({
         commentId: item.id,
         input: {
-          expectedVersion: item.version,
+          expectedVersion: editVersion,
           body,
-          mentions: item.mentions.filter((mention) => body.includes(`@${mention.label}`)),
+          mentions: editMentions.filter((mention) => body.includes(`@${mention.label}`)),
         },
       });
+      if (!alive.current) return;
       setEditing(false);
       toast.success(t("commentUpdated"));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
+    } finally {
+      pending.current = false;
+      if (alive.current) setSaving(false);
     }
   };
 
   const deleteComment = async () => {
+    if (!alive.current || pending.current || !canManage || item.deletedAt || !confirmDelete) return;
+    pending.current = true;
+    setSaving(true);
     try {
       await remove.mutateAsync(item.id);
-      toast.success(t("commentDeleted"));
+      if (alive.current) {
+        setConfirmDelete(false);
+        toast.success(t("commentDeleted"));
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("actionFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
+    } finally {
+      pending.current = false;
+      if (alive.current) setSaving(false);
     }
   };
 
@@ -793,16 +793,18 @@ function CommentItem({
               {!confirmDelete ? (
                 <>
                   <button
+                    disabled={saving}
                     type="button"
-                    onClick={() => setEditing(true)}
+                    onClick={startEditing}
                     className="rounded p-1.5 text-[#656b76] hover:bg-white/[0.055] hover:text-[#d3d5da]"
                     aria-label={t("editComment")}
                   >
                     <IconEdit className="size-3.5" />
                   </button>
                   <button
+                    disabled={saving}
                     type="button"
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={() => { if (!pending.current) setConfirmDelete(true); }}
                     className="rounded p-1.5 text-[#656b76] hover:bg-red-500/10 hover:text-red-300"
                     aria-label={t("deleteComment")}
                   >
@@ -813,6 +815,7 @@ function CommentItem({
                 <>
                   <span className="mr-1 text-[10px] text-red-300">{t("confirmDelete")}</span>
                   <button
+                    disabled={saving}
                     type="button"
                     className="rounded bg-red-500/15 px-2 py-1 text-[10px] text-red-300"
                     onClick={() => void deleteComment()}
@@ -820,9 +823,10 @@ function CommentItem({
                     {t("delete")}
                   </button>
                   <button
+                    disabled={saving}
                     type="button"
                     className="rounded px-2 py-1 text-[10px] text-[#8e949e]"
-                    onClick={() => setConfirmDelete(false)}
+                    onClick={() => { if (!pending.current) setConfirmDelete(false); }}
                   >
                     {t("cancel")}
                   </button>
@@ -837,6 +841,7 @@ function CommentItem({
           ) : editing ? (
             <div>
               <Textarea
+                disabled={saving}
                 value={body}
                 onChange={(event) => setBody(event.target.value)}
                 className="min-h-24 border-white/[0.08] bg-[#090a0c]"
@@ -844,12 +849,12 @@ function CommentItem({
                 autoFocus
               />
               <div className="mt-2 flex justify-end gap-2">
-                <Button size="sm" variant="ghost" color="muted" onClick={() => setEditing(false)}>
+                <Button size="sm" variant="ghost" color="muted" disabled={saving} onClick={() => { if (!pending.current) setEditing(false); }}>
                   {t("cancel")}
                 </Button>
                 <Button
                   size="sm"
-                  disabled={!body.trim() || update.isPending}
+                  disabled={!body.trim() || saving}
                   onClick={() => void save()}
                 >
                   {t("save")}
@@ -944,18 +949,36 @@ function CommentComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canUpload = assetContext.data?.capabilities.upload === true;
 
-  useEffect(
-    () => () => {
-      for (const mediaAssetId of pendingUploadsRef.current) {
-        void discardPendingCrewAssetUpload(task.crewId, mediaAssetId);
+  const alive = useRef(true);
+  const sending = useRef(false);
+  const uploadingBatch = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const retry = useRef<{ fingerprint: string; key: string } | null>(null);
+  const submittedUploads = useRef(new Set<string>());
+  const uploadController = useRef<AbortController | null>(null);
+  const discard = (mediaAssetId: string) => {
+    void discardPendingCrewAssetUpload(task.crewId, mediaAssetId).catch(() => undefined);
+  };
+  useLayoutEffect(() => {
+    alive.current = true;
+    const uploads = pendingUploadsRef.current;
+    const submitted = submittedUploads.current;
+    return () => {
+      alive.current = false;
+      uploadController.current?.abort();
+      // A lost response does not prove the server rejected these attachments.
+      // Leave attempted submissions to the server's bound/expired upload recovery.
+      for (const id of uploads) {
+        if (!submitted.has(id)) {
+          void discardPendingCrewAssetUpload(task.crewId, id).catch(() => undefined);
+        }
       }
-      pendingUploadsRef.current.clear();
-    },
-    [task.crewId]
-  );
+      uploads.clear();
+    };
+  }, [task.crewId]);
 
   const addMention = (member: CrewMemberDTO) => {
-    if (member.userId === viewerUserId) return;
+    if (!alive.current || sending.current || member.userId === viewerUserId) return;
     const label = displayNameOf(member.userId, displays)
       .replace(/[@\r\n]/g, "")
       .slice(0, 80);
@@ -969,61 +992,77 @@ function CommentComposer({
   };
 
   const uploadFiles = async (files: File[]) => {
-    if (!canUpload || files.length === 0) return;
+    if (!alive.current || sending.current || uploadingBatch.current || !canUpload || files.length === 0) return;
+    uploadingBatch.current = true;
+    const controller = new AbortController();
+    uploadController.current = controller;
     const available = Math.max(0, 10 - attachments.length);
-    for (const file of files.slice(0, available)) {
-      const localKey = `${file.name}:${file.size}:${file.lastModified}`;
-      setUploading((current) => ({ ...current, [localKey]: 0 }));
-      try {
-        const uploaded = await uploadFileViaSignedUrl(file, {
-          kind: "crew_asset_file",
-          scope: { crewId: task.crewId },
-          onProgress: (progress) =>
-            setUploading((current) => ({ ...current, [localKey]: progress })),
-        });
-        pendingUploadsRef.current.add(uploaded.mediaAssetId);
-        setAttachments((current) => [
-          ...current,
-          { source: "upload", mediaAssetId: uploaded.mediaAssetId, name: file.name },
-        ]);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : t("uploadFailed"));
-      } finally {
-        setUploading((current) => {
-          const next = { ...current };
-          delete next[localKey];
-          return next;
-        });
+    try {
+      for (const file of files.slice(0, available)) {
+        if (!alive.current) break;
+        const localKey = `${file.name}:${file.size}:${file.lastModified}`;
+        setUploading((current) => ({ ...current, [localKey]: 0 }));
+        try {
+          const uploaded = await uploadFileViaSignedUrl(file, {
+            kind: "crew_asset_file",
+            scope: { crewId: task.crewId },
+            signal: controller.signal,
+            onProgress: (progress) => {
+              if (alive.current) setUploading((current) => ({ ...current, [localKey]: progress }));
+            },
+          });
+          if (!alive.current) { discard(uploaded.mediaAssetId); break; }
+          pendingUploadsRef.current.add(uploaded.mediaAssetId);
+          setAttachments((current) => [...current, { source: "upload", mediaAssetId: uploaded.mediaAssetId, name: file.name }]);
+        } catch (error) {
+          if (alive.current) toast.error(error instanceof Error ? error.message : t("uploadFailed"));
+        } finally {
+          if (alive.current) setUploading((current) => {
+            const next = { ...current }; delete next[localKey]; return next;
+          });
+        }
       }
+    } finally {
+      uploadingBatch.current = false;
+      uploadController.current = null;
     }
   };
 
   const removeAttachment = (attachment: CrewTaskCommentAttachmentInput) => {
+    if (!alive.current || sending.current || uploadingBatch.current) return;
     setAttachments((current) => current.filter((candidate) => candidate !== attachment));
     if (attachment.source === "upload") {
       pendingUploadsRef.current.delete(attachment.mediaAssetId);
-      void discardPendingCrewAssetUpload(task.crewId, attachment.mediaAssetId);
+      discard(attachment.mediaAssetId);
     }
   };
 
   const send = async () => {
+    if (!alive.current || sending.current || uploadingBatch.current) return;
     const activeMentions = mentions.filter((mention) => body.includes(`@${mention.label}`));
     if (!body.trim() && attachments.length === 0) return;
+    const input = { body, mentions: activeMentions, attachments };
+    const fingerprint = JSON.stringify(input);
+    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: crypto.randomUUID() };
+    sending.current = true;
+    setSaving(true);
+    for (const id of pendingUploadsRef.current) submittedUploads.current.add(id);
     try {
-      await create.mutateAsync({
-        body,
-        mentions: activeMentions,
-        attachments,
-        clientKey: crypto.randomUUID(),
-      });
+      await create.mutateAsync({ ...input, clientKey: retry.current.key });
       pendingUploadsRef.current.clear();
+      submittedUploads.current.clear();
+      retry.current = null;
+      if (!alive.current) return;
       setBody("");
       setMentions([]);
       setAttachments([]);
       setMentionOpen(false);
       setAssetOpen(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("commentFailed"));
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("commentFailed"));
+    } finally {
+      sending.current = false;
+      if (alive.current) setSaving(false);
     }
   };
 
@@ -1049,6 +1088,7 @@ function CommentComposer({
       onDrop={onDrop}
     >
       <Textarea
+        disabled={saving}
         value={body}
         onChange={(event) => setBody(event.target.value)}
         onPaste={onPaste}
@@ -1090,6 +1130,7 @@ function CommentComposer({
                 <span className="max-w-44 truncate">{name}</span>
                 <button
                   type="button"
+                  disabled={saving || Object.keys(uploading).length > 0}
                   onClick={() => removeAttachment(attachment)}
                   className="text-[#6e747e] hover:text-[#dddfe3]"
                   aria-label={t("removeAttachment")}
@@ -1143,13 +1184,11 @@ function CommentComposer({
               <button
                 key={asset.id}
                 type="button"
-                disabled={selected || attachments.length >= 10}
-                onClick={() =>
-                  setAttachments((current) => [
-                    ...current,
-                    { source: "asset", assetNodeId: asset.id },
-                  ])
-                }
+                disabled={saving || Object.keys(uploading).length > 0 || selected || attachments.length >= 10}
+                onClick={() => {
+                  if (!alive.current || sending.current || uploadingBatch.current) return;
+                  setAttachments((current) => current.length >= 10 || current.some(item => item.source === "asset" && item.assetNodeId === asset.id) ? current : [...current, { source: "asset", assetNodeId: asset.id }]);
+                }}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-white/[0.055] disabled:opacity-45"
               >
                 {asset.media?.kind === "image" ? (
@@ -1170,6 +1209,7 @@ function CommentComposer({
       <footer className="flex items-center gap-1 px-3 py-2.5">
         <button
           type="button"
+          disabled={saving}
           onClick={() => {
             setMentionOpen((open) => !open);
             setAssetOpen(false);
@@ -1181,6 +1221,7 @@ function CommentComposer({
         </button>
         <button
           type="button"
+          disabled={saving || Object.keys(uploading).length > 0}
           onClick={() => {
             setAssetOpen((open) => !open);
             setMentionOpen(false);
@@ -1202,7 +1243,7 @@ function CommentComposer({
         />
         <button
           type="button"
-          disabled={!canUpload}
+          disabled={!canUpload || saving || Object.keys(uploading).length > 0}
           onClick={() => fileInputRef.current?.click()}
           className="rounded-md p-2 text-[#777d88] hover:bg-white/[0.055] hover:text-[#d7d9dd] disabled:cursor-not-allowed disabled:opacity-35"
           aria-label={t("uploadFile")}
@@ -1219,14 +1260,14 @@ function CommentComposer({
           type="button"
           aria-label={t("comment")}
           disabled={
-            create.isPending ||
+            saving ||
             Object.keys(uploading).length > 0 ||
             (!body.trim() && attachments.length === 0)
           }
           onClick={() => void send()}
           className="grid size-8 place-items-center rounded-full bg-[#2a2a2f] text-[#c6c7cb] transition-colors hover:bg-[#333338] disabled:bg-[#242428] disabled:text-[#66686e]"
         >
-          {create.isPending ? (
+          {saving ? (
             <IconLoader2 className="size-4 animate-spin" />
           ) : (
             <IconSend className="size-4" />
@@ -1347,7 +1388,36 @@ function TaskReferenceLink({
   );
 }
 
-type TaskPatch = (input: Omit<UpdateCrewTaskInput, "expectedVersion">) => Promise<boolean>;
+type TaskPatch = (input: Omit<UpdateCrewTaskInput, "expectedVersion">, expectedVersion?: number) => Promise<boolean>;
+
+function useTaskPropertySession(version: number, pending: boolean, onSave: TaskPatch, reset: () => void) {
+  const [open, setOpened] = useState(false);
+  const session = useRef({ alive: true, open: false, generation: 0, version, saving: false });
+  useLayoutEffect(() => {
+    const current = session.current;
+    current.alive = true;
+    return () => { current.alive = false; current.generation += 1; };
+  }, []);
+  const setOpen = (next: boolean) => {
+    const current = session.current;
+    if (!current.alive || current.saving || pending || next === current.open) return;
+    current.open = next;
+    current.generation += 1;
+    if (next) { current.version = version; reset(); }
+    setOpened(next);
+  };
+  const saveDraft: TaskPatch = async (input) => {
+    const current = session.current;
+    if (!current.alive || !current.open || current.saving || pending) return false;
+    current.saving = true;
+    const generation = current.generation;
+    try {
+      const saved = await onSave(input, current.version);
+      return saved && current.alive && current.generation === generation;
+    } finally { current.saving = false; }
+  };
+  return { open, setOpen, saveDraft };
+}
 
 const PROPERTY_POPOVER_CLASS =
   "w-80 gap-3 border border-white/[0.1] bg-[#19191c] p-3 text-[#d8dade] shadow-[0_20px_60px_rgba(0,0,0,.55)]";
@@ -1368,7 +1438,7 @@ function AssigneesEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [draft, setDraft] = useState(() =>
     task.assignees.map((assignee) => ({
       userId: assignee.userId,
@@ -1379,6 +1449,7 @@ function AssigneesEditor({
           : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
     }))
   );
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setDraft(task.assignees.map(assignee => ({ userId: assignee.userId, currency: assignee.rewardAmountMinor == null ? CREW_CURRENCY : assignee.currency, rewardAmountMinor: assignee.rewardAmountMinor == null ? "" : formatCrewMoneyInput(String(assignee.rewardAmountMinor)) }))); });
   const invalidReward = draft.some(
     (item) => item.rewardAmountMinor !== "" && parseReward(item.rewardAmountMinor) == null
   );
@@ -1421,7 +1492,7 @@ function AssigneesEditor({
       currency: item.currency,
       rewardAmountMinor: parseReward(item.rewardAmountMinor),
     }));
-    if (await onSave({ assignees })) setOpen(false);
+    if (await saveDraft({ assignees })) setOpen(false);
   };
 
   return (
@@ -1435,6 +1506,7 @@ function AssigneesEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("chooseAssignees")}</p>
         <div className="max-h-64 space-y-1 overflow-y-auto">
           {members.map((member) => {
@@ -1482,18 +1554,21 @@ function AssigneesEditor({
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
 }
 
 function LabelsEditor({
+  version,
   labels,
   selected,
   editable,
   pending,
   onSave,
 }: {
+  version: number;
   labels: CrewTaskLabelDTO[];
   selected: CrewTaskLabelDTO[];
   editable: boolean;
@@ -1501,8 +1576,9 @@ function LabelsEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [ids, setIds] = useState(() => selected.map((label) => label.id));
+  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => { setIds(selected.map(label => label.id)); });
   const summary = selected.length ? (
     <div className="flex flex-wrap gap-1.5">
       {selected.map((label) => (
@@ -1531,6 +1607,7 @@ function LabelsEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("labels")}</p>
         {labels.length ? (
           <div className="max-h-56 space-y-1 overflow-y-auto">
@@ -1560,8 +1637,9 @@ function LabelsEditor({
         <PropertyActions
           pending={pending}
           onCancel={() => setOpen(false)}
-          onSave={() => void onSave({ labelIds: ids }).then((ok) => ok && setOpen(false))}
+          onSave={() => void saveDraft({ labelIds: ids }).then((ok) => ok && setOpen(false))}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
@@ -1579,12 +1657,13 @@ function PlanningEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [startAt, setStartAt] = useState(toDateInput(task.startAt));
   const [dueAt, setDueAt] = useState(toDateInput(task.dueAt));
   const [estimate, setEstimate] = useState(
     task.estimatePoints == null ? "" : String(task.estimatePoints)
   );
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setStartAt(toDateInput(task.startAt)); setDueAt(toDateInput(task.dueAt)); setEstimate(task.estimatePoints == null ? "" : String(task.estimatePoints)); });
   const invalidRange = Boolean(startAt && dueAt && dueAt < startAt);
   const invalidEstimate = !isNullableIntegerInputValid(estimate, 0, 1_000_000);
   const summary = (
@@ -1605,7 +1684,7 @@ function PlanningEditor({
 
   const save = async () => {
     if (invalidRange || invalidEstimate) return;
-    const ok = await onSave({
+    const ok = await saveDraft({
       startAt: dateStartIso(startAt),
       dueAt: dateEndIso(dueAt),
       estimatePoints: parseNullableInteger(estimate, 0, 1_000_000),
@@ -1624,6 +1703,7 @@ function PlanningEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("planning")}</p>
         <div className="grid grid-cols-2 gap-2">
           <PropertyInput label={t("startAt")}>
@@ -1658,6 +1738,7 @@ function PlanningEditor({
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
@@ -1675,14 +1756,15 @@ function TaskRelationshipsEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
+  const [parentId, setParentId] = useState(task.parentId ?? "");
+  const [blockerIds, setBlockerIds] = useState(() => task.blockedBy.map((item) => item.id));
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setParentId(task.parentId ?? ""); setBlockerIds(task.blockedBy.map(item => item.id)); });
   const options = useCrewTaskOptions(
     task.crewId,
     { excludeTaskId: task.id, limit: 100 },
     editable && open
   );
-  const [parentId, setParentId] = useState(task.parentId ?? "");
-  const [blockerIds, setBlockerIds] = useState(() => task.blockedBy.map((item) => item.id));
   const summary = (
     <div className="space-y-1.5">
       <span className="block truncate text-[11px]">
@@ -1708,6 +1790,7 @@ function TaskRelationshipsEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <PropertyInput label={t("parentTask")}>
           <TaskSelect
             value={parentId}
@@ -1751,17 +1834,19 @@ function TaskRelationshipsEditor({
           pending={pending}
           onCancel={() => setOpen(false)}
           onSave={() =>
-            void onSave({ parentId: parentId || null, blockedByTaskIds: blockerIds }).then(
+            void saveDraft({ parentId: parentId || null, blockedByTaskIds: blockerIds }).then(
               (ok) => ok && setOpen(false)
             )
           }
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
 }
 
 function CustomFieldEditor({
+  version,
   field,
   value,
   members,
@@ -1770,6 +1855,7 @@ function CustomFieldEditor({
   pending,
   onSave,
 }: {
+  version: number;
   field: CrewTaskFieldDTO;
   value: CrewTaskDTO["customFieldValues"][number]["value"] | undefined;
   members: CrewMemberDTO[];
@@ -1779,8 +1865,9 @@ function CustomFieldEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
+
   const [draft, setDraft] = useState<CrewTaskCustomValue>(value ?? null);
+  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => { setDraft(value ?? null); });
   const invalidNumber =
     field.type === "number" && draft !== null && draft !== "" && !Number.isFinite(Number(draft));
   const summary = (
@@ -1792,7 +1879,7 @@ function CustomFieldEditor({
 
   const save = async () => {
     const normalized = normalizeCustomFieldDraft(field, draft);
-    if (await onSave({ customFieldValues: [{ fieldId: field.id, value: normalized }] })) {
+    if (await saveDraft({ customFieldValues: [{ fieldId: field.id, value: normalized }] })) {
       setOpen(false);
     }
   };
@@ -1805,6 +1892,7 @@ function CustomFieldEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <div>
           <p className="text-[12px] font-semibold">{field.name}</p>
           {field.description ? (
@@ -1825,6 +1913,7 @@ function CustomFieldEditor({
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
@@ -1922,38 +2011,15 @@ function TaskLimitsEditor({
   onSave: TaskPatch;
 }) {
   const t = useTranslations("crewTasks");
-  const [open, setOpen] = useState(false);
-  const [budget, setBudget] = useState(
-    task.computeBudgetPoints == null ? "" : String(task.computeBudgetPoints)
-  );
+
   const [revisionLimit, setRevisionLimit] = useState(
     task.revisionLimit == null ? "" : String(task.revisionLimit)
   );
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setRevisionLimit(task.revisionLimit == null ? "" : String(task.revisionLimit)); });
   const invalidLimit = revisionLimit !== "" && Number(revisionLimit) < task.revisionRoundsUsed;
-  const invalidBudget = !isNullableIntegerInputValid(budget, 0, 1_000_000_000);
   const invalidRevision = !isNullableIntegerInputValid(revisionLimit, 0, 100);
   const summary = (
     <div className="w-full space-y-2">
-      <div>
-        <span className="block">
-          {task.computeUsedPoints}
-          {task.computeBudgetPoints != null ? ` / ${task.computeBudgetPoints}` : ""}{" "}
-          {t("pointsUnit")}
-        </span>
-        {task.computeBudgetPoints != null ? (
-          <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.07]">
-            <div
-              className="h-full rounded-full bg-[#e12b32]"
-              style={{
-                width: `${Math.min(
-                  100,
-                  (task.computeUsedPoints / Math.max(task.computeBudgetPoints, 1)) * 100
-                )}%`,
-              }}
-            />
-          </div>
-        ) : null}
-      </div>
       <span className="block text-[10px] text-[#777980]">
         {task.revisionLimit == null
           ? t("revisionUnlimitedProgress", { used: task.revisionRoundsUsed })
@@ -1964,9 +2030,8 @@ function TaskLimitsEditor({
   if (!editable) return summary;
 
   const save = async () => {
-    if (invalidLimit || invalidBudget || invalidRevision) return;
-    const ok = await onSave({
-      computeBudgetPoints: parseNullableInteger(budget, 0, 1_000_000_000),
+    if (invalidLimit || invalidRevision) return;
+    const ok = await saveDraft({
       revisionLimit: parseNullableInteger(revisionLimit, 0, 100),
     });
     if (ok) setOpen(false);
@@ -1983,17 +2048,8 @@ function TaskLimitsEditor({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
+        <fieldset disabled={pending} className="contents">
         <p className="text-[12px] font-semibold">{t("taskLimits")}</p>
-        <PropertyInput label={t("budget")}>
-          <Input
-            type="number"
-            min={0}
-            max={1_000_000_000}
-            step={1}
-            value={budget}
-            onChange={(event) => setBudget(event.target.value)}
-          />
-        </PropertyInput>
         <PropertyInput label={t("revisionLimit")}>
           <Input
             type="number"
@@ -2009,15 +2065,16 @@ function TaskLimitsEditor({
           <p className="text-[10px] text-red-300">
             {t("revisionUsedHint", { used: task.revisionRoundsUsed })}
           </p>
-        ) : invalidBudget || invalidRevision ? (
+        ) : invalidRevision ? (
           <p className="text-[10px] text-red-300">{t("invalidNumber")}</p>
         ) : null}
         <PropertyActions
           pending={pending}
-          disabled={invalidLimit || invalidBudget || invalidRevision}
+          disabled={invalidLimit || invalidRevision}
           onCancel={() => setOpen(false)}
           onSave={() => void save()}
         />
+        </fieldset>
       </PopoverContent>
     </Popover>
   );
