@@ -123,13 +123,32 @@ export class EntitlementService {
   }
 
   /**
+   * Temporary open collaboration: all workspaces allow free, unlimited creator
+   * seats until an explicit product decision restores limits. Apply this after
+   * resolving the plan so paid plans cannot reinstate a cap. Keep the purchased
+   * allowance for accounting; permissions, compute and other quotas are separate.
+   */
+  async resolveWorkspaceSeatPolicy(
+    workspaceId: string,
+    opts?: { now?: string; tx?: Prisma.TransactionClient },
+  ): Promise<SeatPolicy> {
+    const policy = await this.resolveBaseWorkspaceSeatPolicy(workspaceId, opts);
+    return {
+      ...policy,
+      maxSeats: null,
+      seatOverageAllowed: true,
+      seatOveragePriceId: null,
+    };
+  }
+
+  /**
    * Resolve a workspace's seat policy from its OWN active team plan — NOT the
    * caller's personal plan (seats belong to the workspace subscription). Falls
    * back to the workspace type's no-plan allowance when there's no active team
    * plan. The most generous active plan wins to be safe across upgrade/overlap
    * windows.
    */
-  async resolveWorkspaceSeatPolicy(
+  private async resolveBaseWorkspaceSeatPolicy(
     workspaceId: string,
     opts?: { now?: string; tx?: Prisma.TransactionClient },
   ): Promise<SeatPolicy> {
