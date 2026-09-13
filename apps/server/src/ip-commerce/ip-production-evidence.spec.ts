@@ -11,9 +11,14 @@ describe('production evidence administrator boundary', () => {
       Reflect.getMetadata(GUARDS_METADATA, IpProductionEvidenceController),
     ).toEqual([AdminAuthGuard, AdminPermissionGuard]);
     const guard = new AdminPermissionGuard(new Reflector());
+    // Use the original decorated function as metadata, without invoking or rebinding it.
+    const handler = Object.getOwnPropertyDescriptor(
+      IpProductionEvidenceController.prototype,
+      'read',
+    )!.value as IpProductionEvidenceController['read'];
     const context = (permissions: string[]) =>
       ({
-        getHandler: () => IpProductionEvidenceController.prototype.read,
+        getHandler: () => handler,
         getClass: () => IpProductionEvidenceController,
         switchToHttp: () => ({
           getRequest: () => ({ admin: { permissions } }),

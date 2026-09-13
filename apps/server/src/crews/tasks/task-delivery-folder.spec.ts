@@ -6,7 +6,9 @@ import {
 const task = { id: 'task', crewId: 'crew', title: 'Final cut' };
 function fixture() {
   const tx = {
-    $executeRaw: jest.fn().mockResolvedValue(1),
+    $executeRaw: jest
+      .fn<Promise<number>, [TemplateStringsArray, ...unknown[]]>()
+      .mockResolvedValue(1),
     $queryRaw: jest.fn().mockResolvedValue([]),
     crewAssetNode: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -90,9 +92,13 @@ it('allocates a distinct folder when another task already uses the same title', 
   const f = fixture();
   f.tx.crewAssetNode.findMany.mockResolvedValue([{ name: 'Final cut' }]);
   await f.prepare();
-  expect(f.tx.crewAssetNode.create).toHaveBeenCalledWith(
-    expect.objectContaining({
-      data: expect.objectContaining({ name: 'Final cut (2)' }),
-    }),
-  );
+  expect(f.tx.crewAssetNode.create).toHaveBeenCalledWith({
+    data: {
+      crewId: 'crew',
+      kind: 'folder',
+      name: 'Final cut (2)',
+      createdByUserId: 'actor',
+      updatedByUserId: 'actor',
+    },
+  });
 });
