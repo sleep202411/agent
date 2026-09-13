@@ -9,6 +9,59 @@ describe('AgentOsWorkerClient', () => {
     global.fetch = originalFetch;
   });
 
+  it('preserves viewing-assistance configuration errors', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: () =>
+        Promise.resolve({
+          error: {
+            code: 'VIEWER_MODEL_NOT_CONFIGURED',
+            message: 'Viewing assistance model is not configured.',
+          },
+        }),
+    });
+    const client = new AgentOsWorkerClient({
+      value: {
+        workerBaseUrl: 'http://127.0.0.1:4301',
+        internalToken: 'test-internal-token-16',
+      },
+    } as AgentOsGatewayConfigService);
+    await expect(
+      client.recommendViewing({}, new AbortController().signal),
+    ).rejects.toMatchObject({
+      response: {
+        code: 'VIEWER_MODEL_NOT_CONFIGURED',
+        message: 'Viewing assistance model is not configured.',
+      },
+    });
+  });
+
+  it('forwards viewing cancellation and validates its response contract', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({ suggestions: [], privateContext: 'invalid' }),
+    });
+    const client = new AgentOsWorkerClient({
+      value: {
+        workerBaseUrl: 'http://127.0.0.1:4301',
+        internalToken: 'test-internal-token-16',
+      },
+    } as AgentOsGatewayConfigService);
+    const abort = new AbortController();
+    await expect(client.recommendViewing({}, abort.signal)).rejects.toThrow();
+    const [url, request] = requireFetchCall(global.fetch);
+    expect(url).toBe('http://127.0.0.1:4301/v1/agent-os/viewer-assistance');
+    expect(request?.headers).toEqual(
+      expect.objectContaining({
+        'x-agent-os-internal-token': 'test-internal-token-16',
+      }),
+    );
+    abort.abort();
+    expect(request?.signal?.aborted).toBe(true);
+  });
+
   it('posts start run to worker', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

@@ -9782,5 +9782,15 @@
     "save": "保存模板",
     "more": "更多分类",
     "unavailableAttachment": "附件不可用"
+  },
+  "viewerAssistance": {
+    "title": "AI 观影建议",
+    "help": "描述你想看的内容。AI 从当前公开目录中推荐，建议可能不准确。",
+    "preference": "你想看什么？",
+    "ask": "询问 AI",
+    "pending": "正在寻找建议…",
+    "cancel": "取消",
+    "timeout": "推荐等待超时，请重试。",
+    "empty": "当前目录没有匹配建议。"
   }
 }

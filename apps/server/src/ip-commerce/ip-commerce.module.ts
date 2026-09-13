@@ -1,3 +1,4 @@
+import { ViewerAssistanceController } from './viewer-assistance.controller';
 import {
   IpStageApplicationsService,
   IpStageApplicationsController,
@@ -46,6 +47,7 @@ import { LegacyCnVideoResolverService } from './legacy-cn-video.service';
     LegacyMysqlModule,
   ],
   controllers: [
+    ViewerAssistanceController,
     IpStageApplicationsController,
     IpStageApplicationsAdminController,
     IpProductionPublicController,

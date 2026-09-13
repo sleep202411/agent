@@ -8,6 +8,7 @@ import type { IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+vi.mock("./viewer-assistance", () => ({ ViewerAssistance: () => null }));
 const harness = vi.hoisted(() => ({
   userId: "viewer-a",
   get: vi.fn(),

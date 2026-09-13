@@ -1,4 +1,5 @@
 "use client";
+import { ViewerAssistance } from "./viewer-assistance";
 
 import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
@@ -89,11 +90,11 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
   const [advancing, setAdvancing] = useState(false);
   const [nextError, setNextError] = useState<string | null>(null);
   const navigationVersion = useRef(0);
-  const searchEpoch = useRef(debouncedSearch);
+  const [searchEpoch, setSearchEpoch] = useState(debouncedSearch);
 
   // New search results replace the channel catalog — jump to the first hit.
-  if (searchEpoch.current !== debouncedSearch) {
-    searchEpoch.current = debouncedSearch;
+  if (searchEpoch !== debouncedSearch) {
+    setSearchEpoch(debouncedSearch);
     if (selectedId !== null) {
       setSelectedId(null);
       setIsPlaying(false);
@@ -249,6 +250,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
           </div>
         )}
       </section>
+      <ViewerAssistance />
       {item && <TvComments ipId={item.id} />}
     </div>
   );

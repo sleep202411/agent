@@ -9782,5 +9782,15 @@
     "save": "Save template",
     "more": "More categories",
     "unavailableAttachment": "Unavailable attachment"
+  },
+  "viewerAssistance": {
+    "title": "AI viewing suggestions",
+    "help": "Describe what you feel like watching. AI suggests from the current public catalog; suggestions may be imperfect.",
+    "preference": "What would you like to watch?",
+    "ask": "Ask AI",
+    "pending": "Finding suggestions…",
+    "cancel": "Cancel",
+    "timeout": "Suggestions took too long. Please retry.",
+    "empty": "No matching suggestions from this catalog."
   }
 }
