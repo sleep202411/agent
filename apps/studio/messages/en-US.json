@@ -1868,6 +1868,7 @@
       "nodesModeUnavailable": "Nodes aren't available in Brief mode",
       "nodesEditRequired": "You need edit access to add nodes",
       "assets": "Assets",
+      "crewAssets": "Crew Assets",
       "skills": "Skills",
       "skillsComingSoon": "Skills · Coming soon",
       "activity": "Activity",

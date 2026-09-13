@@ -283,6 +283,9 @@ export interface CrewTaskAssigneeDTO {
 }
 
 export interface CrewTaskSubmissionDTO {
+  professionalDelivery?:
+    | (CrewDeliveryTemplateDTO & { answers: Record<string, string | string[]> })
+    | null;
   id: string;
   versionNumber: number;
   submittedByUserId: string;
@@ -1031,3 +1034,24 @@ export interface CrewAgreementSigningSession {
   signLink: string;
   expiresAt: string;
 }
+
+export type CrewDeliveryTemplateDTO = {
+  categoryId: string;
+  version: number;
+  definition: {
+    name: string;
+    prices?: { currency: "USD" | "CNY"; amountMinor: string; unit: string }[];
+    fields: {
+      key: string;
+      label: string;
+      instructions: string;
+      type: "text" | "attachment";
+      required: boolean;
+    }[];
+  };
+};
+export type CrewProfessionalDeliveryInput = {
+  categoryId: string;
+  version: number;
+  answers: Record<string, string | string[]>;
+};

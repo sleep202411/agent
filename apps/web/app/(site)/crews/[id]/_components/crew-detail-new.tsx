@@ -24,6 +24,7 @@
  *     no Apply (they're already in)
  */
 
+import { JoinFanCommunity } from "@/app/(site)/crews/_components/join-fan-community";
 import { useMemo, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
@@ -129,6 +130,12 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
         heroVisual={heroVisual}
         tCrew={tCrew}
       />
+
+      {crew.listingStatus === "listed" && (
+        <div className="mx-auto max-w-[1800px] px-6 py-4">
+          <JoinFanCommunity crewId={id} />
+        </div>
+      )}
 
       {/* ─── Stats strip ───────────────────────────── */}
       <div className="bg-card/50">

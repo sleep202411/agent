@@ -19,6 +19,7 @@ import { CrewAuthorizationService } from '../crew-authorization.service';
 import type {
   CreateCrewPayoutInput,
   ListCrewPayoutsQuery,
+  ListMyCrewPayoutsQuery,
   PayCrewPayoutInput,
   VoidCrewPayoutInput,
 } from './payouts.dto';
@@ -59,6 +60,54 @@ export class CrewPayoutsService {
     private readonly authorization: CrewAuthorizationService,
     private readonly notifications: NotificationService,
   ) {}
+
+  // Read only the authenticated beneficiary's settlement records, including
+  // after membership ends. This does not restore access to Crew assets or APIs.
+  async listMine(userId: string, query: ListMyCrewPayoutsQuery) {
+    const where = {
+      userId,
+      currency: query.currency,
+      ...(query.status ? { status: query.status } : {}),
+    } satisfies Prisma.CrewPayoutWhereInput;
+    if (
+      query.cursor &&
+      !(await this.prisma.crewPayout.findFirst({
+        where: { ...where, id: query.cursor },
+        select: { id: true },
+      }))
+    )
+      throw new BadRequestException(
+        'The payout cursor is invalid for the current filters. Restart from the first page.',
+      );
+    const [rows, groups] = await Promise.all([
+      this.prisma.crewPayout.findMany({
+        where,
+        include: payoutInclude,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+        ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
+      }),
+      this.prisma.crewPayout.groupBy({
+        by: ['status'],
+        where,
+        _count: { _all: true },
+        _sum: { amountMinor: true, netAmountMinor: true },
+      }),
+    ]);
+    const items = rows.slice(0, query.limit);
+    return {
+      items: items.map(payoutDto),
+      nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
+      summary: {
+        byStatus: groups.map((group) => ({
+          status: group.status,
+          count: group._count._all,
+          amountMinor: (group._sum.amountMinor ?? 0n).toString(),
+          netAmountMinor: (group._sum.netAmountMinor ?? 0n).toString(),
+        })),
+      },
+    };
+  }
 
   async list(crewId: string, userId: string, query: ListCrewPayoutsQuery) {
     if (query.scope === 'crew') {

@@ -4,7 +4,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 import { crewApi } from "./api";
 import { crewKeys } from "./shared";
-import { useCrewEarnings, useCrewEarningDetail, useApproveCrewEarning } from "./use-earnings";
+import {
+  useCrewEarnings,
+  useMyCrewEarnings,
+  useCrewEarningDetail,
+  useApproveCrewEarning,
+} from "./use-earnings";
 
 const session = vi.hoisted(() => ({ id: "alice" as string | null }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -223,4 +228,25 @@ it("removes confirmed earnings from a pending-only list without removing other e
   expect(client.getQueryData(key)).toMatchObject({
     pages: [{ items: [{ id: "earning-2", status: "pending", version: 1 }] }],
   });
+});
+
+it("cancels abandoned personal income reads and isolates the replacement account", async () => {
+  let signal: AbortSignal | undefined;
+  vi.mocked(crewApi.get).mockImplementation((_path, options) => {
+    signal = options?.signal as AbortSignal;
+    return new Promise(() => {});
+  });
+  const view = mount(() => useMyCrewEarnings("USD"));
+  await settle();
+  const oldSignal = signal;
+  expect(oldSignal?.aborted).toBe(false);
+  session.id = "bob";
+  view.render();
+  await settle();
+  expect(oldSignal?.aborted).toBe(true);
+  expect(view.current().data).toBeUndefined();
+  expect(crewApi.get).toHaveBeenLastCalledWith(
+    "/me/crew-earnings",
+    expect.objectContaining({ query: { currency: "USD", cursor: undefined, limit: 50 } })
+  );
 });

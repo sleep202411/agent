@@ -28,6 +28,7 @@ import {
 } from '../agent-os-journal/agent-os-run-journal.service';
 import { PrismaService } from '../infra/db/db.module';
 import { STORY_AGENT_MAX_AUTHORING_ATTEMPTS } from './story-agent-run.service';
+import { storyAuthoringPublicError } from './story-authoring-public-error';
 
 const DEFAULT_INTERVAL_MS = 1_000;
 const DEFAULT_BATCH_SIZE = 25;
@@ -319,6 +320,7 @@ export class StoryAgentRunContinuationWorkerService
         completionMessage: registration.completionMessage,
         errorCode: run.errorCode,
         errorDetail: run.errorDetail,
+        locale: run.project.defaultLocale,
         // Legacy `failed` rows with a fully authored proposal represent a
         // later apply failure. A stored drafting brief means authoring itself
         // failed and must be reported as such.
@@ -443,6 +445,7 @@ export class StoryAgentRunContinuationWorkerService
               completionMessage: registration.completionMessage,
               errorCode: run.errorCode,
               errorDetail: run.errorDetail,
+              locale: run.sourceApprovalLocale ?? run.project.defaultLocale,
             });
       const handoffDispatch =
         await this.journal.reconcileExternalHandoffInTransaction(tx, run.id);
@@ -680,6 +683,7 @@ function continuationResult(input: {
   completionMessage: string;
   errorCode: string | null;
   errorDetail: string | null;
+  locale: string | null;
   failedMeansCompleted?: boolean;
 }): ContinuationResult {
   if (
@@ -697,14 +701,16 @@ function continuationResult(input: {
     (input.status === StoryAgentRunStatus.authoring_failed &&
       input.authoringAttempts >= STORY_AGENT_MAX_AUTHORING_ATTEMPTS)
   ) {
-    const text =
-      input.errorDetail ??
-      'Story authoring exhausted its retry budget before a reviewable proposal was created.';
+    const publicError = storyAuthoringPublicError(
+      input.errorCode,
+      input.locale ?? 'en-US',
+    );
+    const text = publicError.detail;
     return {
       outcome: 'failed',
       text,
       error: {
-        code: input.errorCode ?? 'STORY_AGENT_AUTHORING_FAILED',
+        code: publicError.code,
         message: text,
         retryable: false,
       },
@@ -761,12 +767,16 @@ function applyContinuationResult(input: {
     input.status === StoryAgentRunStatus.authoring_failed &&
     input.authoringAttempts >= STORY_AGENT_MAX_AUTHORING_ATTEMPTS
   ) {
-    const text = input.errorDetail ?? copy.failed;
+    const publicError = storyAuthoringPublicError(
+      input.errorCode ?? 'STORY_AGENT_APPLY_FAILED',
+      input.locale ?? 'en-US',
+    );
+    const text = publicError.detail;
     return {
       outcome: 'failed',
       text,
       error: {
-        code: input.errorCode ?? 'STORY_AGENT_APPLY_FAILED',
+        code: publicError.code,
         message: text,
         retryable: false,
       },
@@ -775,7 +785,12 @@ function applyContinuationResult(input: {
   const cancelled =
     input.status === StoryAgentRunStatus.cancelled ||
     input.status === StoryAgentRunStatus.stale;
-  const text = input.errorDetail ?? (cancelled ? copy.cancelled : copy.failed);
+  const text = cancelled
+    ? copy.cancelled
+    : storyAuthoringPublicError(
+        input.errorCode ?? 'STORY_AGENT_APPLY_FAILED',
+        input.locale ?? 'en-US',
+      ).detail;
   return {
     outcome: cancelled ? 'cancelled' : 'failed',
     text,

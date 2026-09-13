@@ -1,3 +1,4 @@
+import { joinCrewFanTx } from './fan-community';
 /**
  * Crew CRUD — create / list / detail / update / soft delete.
  *
@@ -425,12 +426,29 @@ export class CrewsService {
   }
 
   /**
-   * Resolve the crew's separate community channel.
-   *
-   * Active crew members may enter directly. Everyone else must already be a
-   * live participant, which is created only by redeeming a community invitation.
-   * No path here creates a CrewMember or exposes the private team channel.
+   * Explicitly join a listed Crew's public fan community. This creates only a
+   * community participant, never a production-team membership.
    */
+  async joinFanCommunity(crewId: string, viewerId: string, recordLike = false) {
+    const conversation = await this.prisma.$transaction(async (tx) => {
+      const joined = await joinCrewFanTx(
+        tx,
+        this.conversations,
+        crewId,
+        viewerId,
+      );
+      if (recordLike) {
+        await tx.$executeRaw`
+          INSERT INTO crew_likes (crew_id, user_id) VALUES (${crewId}, ${viewerId})
+          ON CONFLICT (crew_id, user_id) DO NOTHING
+        `;
+      }
+      return joined;
+    });
+    return { conversationId: conversation.id };
+  }
+
+  /** Existing members, invitation recipients and public fan participants may read the community. */
   async communityConversation(
     crewId: string,
     viewerId: string,

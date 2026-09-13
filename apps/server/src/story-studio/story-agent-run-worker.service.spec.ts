@@ -119,6 +119,7 @@ function harness() {
     recoverOrphanedApplyingRuns: jest.fn().mockResolvedValue(undefined),
     claimApplyingRuns: jest.fn().mockResolvedValue([]),
     executeClaimedRun: jest.fn().mockResolvedValue(undefined),
+    failClaimedApply: jest.fn().mockResolvedValue(undefined),
     claimAuthoringRuns: jest
       .fn()
       .mockResolvedValueOnce([{ id: RUN_ID }])
@@ -165,6 +166,23 @@ function claimedWorkerId(runs: ReturnType<typeof harness>['runs']): string {
 describe('StoryAgentRunWorkerService authoring orchestration', () => {
   beforeEach(() => {
     delete process.env.STORY_AGENT_RUN_WORKER_ENABLED;
+  });
+
+  it('terminalizes an escaped apply failure instead of reclaiming it forever', async () => {
+    const { runs, worker } = harness();
+    runs.claimApplyingRuns.mockResolvedValueOnce([{ id: RUN_ID }]);
+    runs.executeClaimedRun.mockRejectedValueOnce(
+      new Error('Every Plot node requires a Storyboard sequence.'),
+    );
+    runs.claimAuthoringRuns.mockReset().mockResolvedValue([]);
+
+    await worker.drainOnce();
+
+    const workerId: unknown = runs.claimApplyingRuns.mock.calls[0]?.[0];
+    expect(runs.failClaimedApply).toHaveBeenCalledWith(RUN_ID, workerId, {
+      code: 'STORY_AGENT_APPLY_FAILED',
+      detail: 'Every Plot node requires a Storyboard sequence.',
+    });
   });
 
   it('drives a claimed authoring run through the pipeline and completion', async () => {

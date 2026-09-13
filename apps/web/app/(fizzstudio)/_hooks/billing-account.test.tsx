@@ -2,7 +2,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { useComputeWalletLedger, useCreateComputeTopup } from "./use-billing";
+import {
+  useComputeWalletLedger,
+  useCreateComputeTopup,
+  useProjectComputeLedger,
+} from "./use-billing";
 
 const session = vi.hoisted(() => ({ id: "alice" as string | null, read: vi.fn(), write: vi.fn() }));
 vi.mock("@/src/hooks/use-user", () => ({
@@ -134,3 +138,39 @@ it.each(["submit"] as const)(
     expect(session.read).toHaveBeenCalledTimes(1);
   }
 );
+
+it("refreshes the active project ledger after a fulfilled top-up", async () => {
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  root = createRoot(document.createElement("div"));
+  session.read.mockResolvedValue({ accounts: [], entries: [], nextCursor: null });
+  session.write.mockResolvedValue({ order: { status: "fulfilled" } });
+  let topup!: ReturnType<typeof useCreateComputeTopup>;
+  function ProjectProbe() {
+    useProjectComputeLedger("workspace", "project");
+    topup = useCreateComputeTopup();
+    return null;
+  }
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <ProjectProbe />
+      </QueryClientProvider>
+    )
+  );
+  await settle();
+  session.read.mockClear();
+  await act(async () => {
+    await topup.mutateAsync({
+      priceId: "price-1",
+      idempotencyKey: "purchase-1",
+      successUrl: "https://test.invalid/success",
+      backUrl: "https://test.invalid/back",
+    });
+  });
+  await settle();
+  expect(session.read).toHaveBeenCalledTimes(1);
+  expect(session.read).toHaveBeenCalledWith(
+    50,
+    expect.objectContaining({ workspaceId: "workspace", projectId: "project" })
+  );
+});

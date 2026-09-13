@@ -894,7 +894,7 @@ enum IpUserBlockTargetType {
 model Workspace {
   id               String          @id @default(uuid(7)) @db.Uuid
   /// Stable destination for this user's account credits and initial selection.
-  defaultForUserId  String?         @unique @map("default_for_user_id") @db.VarChar(64)
+  defaultForUserId String?         @unique @map("default_for_user_id") @db.VarChar(64)
   status           WorkspaceStatus @default(active)
   name             String          @db.VarChar(120)
   slug             String?         @db.VarChar(80)
@@ -3133,23 +3133,24 @@ model PlatformAuditLog {
 // but each cell owns its own admin users and permissions.
 
 model AdminUser {
-  id                String          @id @default(uuid(7)) @db.Uuid
-  email             String          @unique @db.VarChar(320)
-  displayName       String          @map("display_name") @db.VarChar(120)
-  avatarUrl         String?         @map("avatar_url") @db.VarChar(512)
-  passwordHash      String?         @map("password_hash") @db.VarChar(255)
-  status            AdminUserStatus @default(invited)
-  siteScope         AdminSiteScope  @default(all) @map("site_scope")
-  requireMfa        Boolean         @default(false) @map("require_mfa")
-  mfaSecretHash     String?         @map("mfa_secret_hash") @db.VarChar(255)
-  mfaEnabledAt      DateTime?       @map("mfa_enabled_at") @db.Timestamptz(6)
-  failedLoginCount  Int             @default(0) @map("failed_login_count")
-  lockedUntil       DateTime?       @map("locked_until") @db.Timestamptz(6)
-  lastLoginAt       DateTime?       @map("last_login_at") @db.Timestamptz(6)
-  passwordChangedAt DateTime?       @map("password_changed_at") @db.Timestamptz(6)
-  createdAt         DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt         DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  disabledAt        DateTime?       @map("disabled_at") @db.Timestamptz(6)
+  stageReviews      IpStageApplication[]
+  id                String               @id @default(uuid(7)) @db.Uuid
+  email             String               @unique @db.VarChar(320)
+  displayName       String               @map("display_name") @db.VarChar(120)
+  avatarUrl         String?              @map("avatar_url") @db.VarChar(512)
+  passwordHash      String?              @map("password_hash") @db.VarChar(255)
+  status            AdminUserStatus      @default(invited)
+  siteScope         AdminSiteScope       @default(all) @map("site_scope")
+  requireMfa        Boolean              @default(false) @map("require_mfa")
+  mfaSecretHash     String?              @map("mfa_secret_hash") @db.VarChar(255)
+  mfaEnabledAt      DateTime?            @map("mfa_enabled_at") @db.Timestamptz(6)
+  failedLoginCount  Int                  @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?            @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt       DateTime?            @map("last_login_at") @db.Timestamptz(6)
+  passwordChangedAt DateTime?            @map("password_changed_at") @db.Timestamptz(6)
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  disabledAt        DateTime?            @map("disabled_at") @db.Timestamptz(6)
 
   roles           AdminUserRole[]
   sessions        AdminSession[]
@@ -3559,40 +3560,46 @@ enum MemberPoolBatchStatus {
 }
 
 model Ip {
-  id                     String              @id @default(uuid(7)) @db.Uuid
+  gameAssociations       IpGameAssociationRevision[]
+  stageApplications      IpStageApplication[]
+  productionStage        IpProductionStage?
+  crewOrigin             IpCrewOrigin?
+  releaseLinks           Json                        @default("[]") @map("release_links") @db.JsonB
+  publicComments         IpPublicComment[]
+  id                     String                      @id @default(uuid(7)) @db.Uuid
   /// Stable public room number, allocated by PostgreSQL for every IP.
-  roomNumber             String              @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
-  status                 IpPublicationStatus @default(draft)
-  listingVisibility      IpListingVisibility @default(private) @map("listing_visibility")
-  ageRating              IpAgeRating         @default(general) @map("age_rating")
-  sourceLocale           String              @default("zh-CN") @map("source_locale") @db.VarChar(16)
-  region                 String?             @map("region") @db.VarChar(16)
-  copyrightOwner         String?             @map("copyright_owner") @db.VarChar(160)
-  rightsSummary          Json                @default("{}") @map("rights_summary") @db.JsonB
-  aiDisclosure           Json                @default("{}") @map("ai_disclosure") @db.JsonB
-  coverAssetId           String?             @map("cover_asset_id") @db.Uuid
-  trailerAssetId         String?             @map("trailer_asset_id") @db.Uuid
-  createdById            String              @map("created_by_id") @db.VarChar(64)
-  updatedById            String?             @map("updated_by_id") @db.VarChar(64)
+  roomNumber             String                      @unique(map: "ips_room_number_key") @default(dbgenerated("(nextval('ip_room_number_seq'::regclass))::text")) @map("room_number") @db.VarChar(19)
+  status                 IpPublicationStatus         @default(draft)
+  listingVisibility      IpListingVisibility         @default(private) @map("listing_visibility")
+  ageRating              IpAgeRating                 @default(general) @map("age_rating")
+  sourceLocale           String                      @default("zh-CN") @map("source_locale") @db.VarChar(16)
+  region                 String?                     @map("region") @db.VarChar(16)
+  copyrightOwner         String?                     @map("copyright_owner") @db.VarChar(160)
+  rightsSummary          Json                        @default("{}") @map("rights_summary") @db.JsonB
+  aiDisclosure           Json                        @default("{}") @map("ai_disclosure") @db.JsonB
+  coverAssetId           String?                     @map("cover_asset_id") @db.Uuid
+  trailerAssetId         String?                     @map("trailer_asset_id") @db.Uuid
+  createdById            String                      @map("created_by_id") @db.VarChar(64)
+  updatedById            String?                     @map("updated_by_id") @db.VarChar(64)
   /// Per-IP override of the platform-vs-creator revenue split, in basis points
   /// (0..10000) of each sale that goes to the creator pool. NULL inherits the
   /// global default (ip_commerce_settings key `ip.creator_revenue_share_bps`).
-  creatorRevenueShareBps Int?                @map("creator_revenue_share_bps")
+  creatorRevenueShareBps Int?                        @map("creator_revenue_share_bps")
   /// Creator-chosen access policy. `member_free` lets active community members
   /// unlock this IP's content for free; non-members still pay the price rule.
-  accessMode             IpAccessMode        @default(points_priced) @map("access_mode")
+  accessMode             IpAccessMode                @default(points_priced) @map("access_mode")
   /// Per-IP override (basis points, 0..10000) of the creator earn-share counted
   /// for this IP when distributing the monthly member pool. NULL inherits the
   /// global default (ip_commerce_settings key `ip.member_free_bps`).
-  memberFreeBps          Int?                @map("member_free_bps")
-  version                Int                 @default(0)
-  scheduledAt            DateTime?           @map("scheduled_at") @db.Timestamptz(6)
-  publishedAt            DateTime?           @map("published_at") @db.Timestamptz(6)
-  suspendedAt            DateTime?           @map("suspended_at") @db.Timestamptz(6)
-  archivedAt             DateTime?           @map("archived_at") @db.Timestamptz(6)
-  createdAt              DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt              DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt              DateTime?           @map("deleted_at") @db.Timestamptz(6)
+  memberFreeBps          Int?                        @map("member_free_bps")
+  version                Int                         @default(0)
+  scheduledAt            DateTime?                   @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt            DateTime?                   @map("published_at") @db.Timestamptz(6)
+  suspendedAt            DateTime?                   @map("suspended_at") @db.Timestamptz(6)
+  archivedAt             DateTime?                   @map("archived_at") @db.Timestamptz(6)
+  createdAt              DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt              DateTime?                   @map("deleted_at") @db.Timestamptz(6)
 
   coverAsset      MediaAsset?     @relation("IpCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
   trailerAsset    MediaAsset?     @relation("IpTrailerAsset", fields: [trailerAssetId], references: [id], onDelete: SetNull)
@@ -3761,26 +3768,27 @@ model IpDiscoveryRecommendationLocalization {
 }
 
 model IpEpisode {
-  id              String              @id @default(uuid(7)) @db.Uuid
-  ipId            String              @map("ip_id") @db.Uuid
-  episodeNo       Int                 @map("episode_no")
-  sortOrder       Int                 @default(0) @map("sort_order")
-  status          IpPublicationStatus @default(draft)
-  durationSeconds Int?                @map("duration_seconds")
-  isFreePreview   Boolean             @default(false) @map("is_free_preview")
-  coverAssetId    String?             @map("cover_asset_id") @db.Uuid
-  mediaAssetId    String?             @map("media_asset_id") @db.Uuid
-  trailerAssetId  String?             @map("trailer_asset_id") @db.Uuid
-  createdById     String              @map("created_by_id") @db.VarChar(64)
-  updatedById     String?             @map("updated_by_id") @db.VarChar(64)
-  version         Int                 @default(0)
-  scheduledAt     DateTime?           @map("scheduled_at") @db.Timestamptz(6)
-  publishedAt     DateTime?           @map("published_at") @db.Timestamptz(6)
-  suspendedAt     DateTime?           @map("suspended_at") @db.Timestamptz(6)
-  archivedAt      DateTime?           @map("archived_at") @db.Timestamptz(6)
-  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt       DateTime?           @map("deleted_at") @db.Timestamptz(6)
+  audienceFeedback IpEpisodeFeedback[]
+  id               String              @id @default(uuid(7)) @db.Uuid
+  ipId             String              @map("ip_id") @db.Uuid
+  episodeNo        Int                 @map("episode_no")
+  sortOrder        Int                 @default(0) @map("sort_order")
+  status           IpPublicationStatus @default(draft)
+  durationSeconds  Int?                @map("duration_seconds")
+  isFreePreview    Boolean             @default(false) @map("is_free_preview")
+  coverAssetId     String?             @map("cover_asset_id") @db.Uuid
+  mediaAssetId     String?             @map("media_asset_id") @db.Uuid
+  trailerAssetId   String?             @map("trailer_asset_id") @db.Uuid
+  createdById      String              @map("created_by_id") @db.VarChar(64)
+  updatedById      String?             @map("updated_by_id") @db.VarChar(64)
+  version          Int                 @default(0)
+  scheduledAt      DateTime?           @map("scheduled_at") @db.Timestamptz(6)
+  publishedAt      DateTime?           @map("published_at") @db.Timestamptz(6)
+  suspendedAt      DateTime?           @map("suspended_at") @db.Timestamptz(6)
+  archivedAt       DateTime?           @map("archived_at") @db.Timestamptz(6)
+  createdAt        DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime            @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt        DateTime?           @map("deleted_at") @db.Timestamptz(6)
 
   ip           Ip          @relation(fields: [ipId], references: [id], onDelete: Cascade)
   coverAsset   MediaAsset? @relation("IpEpisodeCoverAsset", fields: [coverAssetId], references: [id], onDelete: SetNull)
@@ -4789,91 +4797,96 @@ enum CrewAgreementArchiveJobStatus {
 }
 
 model Crew {
-  storageLimitBytes   BigInt                  @default(100000000000) @map("storage_limit_bytes")
+  expenseDrafts       CrewExpenseDraftRevision[]
+  originatingIps      IpCrewOrigin[]
+  likes               CrewLike[]
+  storageLimitBytes   BigInt                     @default(100000000000) @map("storage_limit_bytes")
   uploadReservations  CrewUploadReservation[]
-  id                  String                  @id
-  name                String                  @db.VarChar(128)
-  description         String                  @db.Text
+  id                  String                     @id
+  name                String                     @db.VarChar(128)
+  description         String                     @db.Text
   /// Square logo (UI crops to circle). The durable brand asset —
   /// shows up in plaza cards, member chips, notifications, nav.
   /// Visitor-page hero visual comes from `showcaseWorks[0]`; the
   /// logo enlarges into a gradient empty-state when no showcase is
   /// set yet (no separate `cover` asset — by design).
-  logo                String                  @map("logo") @db.VarChar(512)
+  logo                String                     @map("logo") @db.VarChar(512)
   /// Optional one-line hook shown under crew name in hero. ≤140
   /// chars. Owner-curated.
-  tagline             String?                 @db.VarChar(140)
+  tagline             String?                    @db.VarChar(140)
   /// Predefined genre tags from CREW_GENRES in @repo/shared/crew.
   /// E.g. ["animation", "shortform", "documentary"]. Max 5.
-  genres              String[]                @default([])
+  genres              String[]                   @default([])
   /// Predefined style tags from CREW_STYLES in @repo/shared/crew.
   /// E.g. ["2d", "3d", "live_action", "ai_assisted"]. Max 5.
-  styles              String[]                @default([])
+  styles              String[]                   @default([])
   /// External social channels. Shape:
   ///   [{ platform: "bilibili"|"weibo"|..., url: "https://..." }]
   /// Validated server-side against SOCIAL_PLATFORMS. Max 10 entries.
-  socialLinks         Json?                   @map("social_links") @db.JsonB
+  socialLinks         Json?                      @map("social_links") @db.JsonB
   /// Curated work showcase. Shape:
   ///   [{ thumbnailUrl, title, externalUrl?, viewCount? }]
   /// First entry is featured as the visitor-page hero background.
   /// Max 10 entries.
-  showcaseWorks       Json?                   @map("showcase_works") @db.JsonB
+  showcaseWorks       Json?                      @map("showcase_works") @db.JsonB
   /// Immutable creator identity for audit only. Current ownership lives in
   /// CrewOwnership and is never inferred from this field.
-  createdByUserId     String                  @map("created_by_user_id")
+  createdByUserId     String                     @map("created_by_user_id")
   /// User-controlled discovery state. New crews start unlisted; only
   /// listed crews appear in the public Crew Hall.
-  listingStatus       CrewListingStatus       @default(unlisted) @map("listing_status")
+  listingStatus       CrewListingStatus          @default(unlisted) @map("listing_status")
   /// First/most recent time the owner made the crew visible in the hall.
-  listedAt            DateTime?               @map("listed_at") @db.Timestamptz(6)
+  listedAt            DateTime?                  @map("listed_at") @db.Timestamptz(6)
   /// Admin moderation state (post-hoc). `taken_down` hides the crew from every
   /// public surface. Stamped by the acting admin for the audit trail.
-  moderationStatus    CrewModerationStatus    @default(ok) @map("moderation_status")
-  moderatedAt         DateTime?               @map("moderated_at") @db.Timestamptz(6)
-  moderatedByAdminId  String?                 @map("moderated_by_admin_id") @db.Uuid
-  moderationReason    String?                 @map("moderation_reason") @db.VarChar(500)
+  moderationStatus    CrewModerationStatus       @default(ok) @map("moderation_status")
+  moderatedAt         DateTime?                  @map("moderated_at") @db.Timestamptz(6)
+  moderatedByAdminId  String?                    @map("moderated_by_admin_id") @db.Uuid
+  moderationReason    String?                    @map("moderation_reason") @db.VarChar(500)
   /// Team collaboration home. A crew owns exactly one team workspace and
   /// one main production project; task projects branch from this context.
-  workspaceId         String?                 @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
-  productionProjectId String?                 @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
+  workspaceId         String?                    @unique(map: "crews_workspace_unique") @map("workspace_id") @db.Uuid
+  productionProjectId String?                    @unique(map: "crews_production_project_unique") @map("production_project_id") @db.Uuid
   /// User-selected FizzStudio project that consumes this crew's asset library.
   /// This is intentionally separate from productionProjectId: linking an
   /// existing Studio project must never mutate the crew's task/canvas trunk.
-  studioProjectId     String?                 @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
+  studioProjectId     String?                    @unique(map: "crews_studio_project_unique") @map("studio_project_id") @db.Uuid
   /// Optimistic concurrency control. Bumped on every update; readers
   /// supply the version they saw in the WHERE clause via
   /// crewsService.update(id, patch, expectedVersion).
-  version             Int                     @default(0)
-  createdAt           DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
-  deletedAt           DateTime?               @map("deleted_at") @db.Timestamptz(6)
+  version             Int                        @default(0)
+  createdAt           DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt           DateTime?                  @map("deleted_at") @db.Timestamptz(6)
 
-  positions           CrewPosition[]
-  members             CrewMember[]
-  ownership           CrewOwnership?
-  applications        CrewApplication[]
-  assetNodes          CrewAssetNode[]
-  invitations         CrewInvitation[]
-  inviteLinks         CrewInviteLink[]
-  tasks               CrewTask[]
-  taskViews           CrewTaskView[]
-  taskCycles          CrewTaskCycle[]
-  taskLabels          CrewTaskLabel[]
-  taskFields          CrewTaskFieldDefinition[]
-  taskWorkflowStates  CrewTaskWorkflowState[]
-  productionPage      CrewProductionPage?
-  productionResources CrewProductionResource[]
-  productionActivity  CrewProductionActivity[]
-  episodes            CrewEpisode[]
-  agreements          CrewAgreement[]
-  earningEntries      CrewEarningEntry[]
-  earningEvents       CrewEarningEvent[]
-  payouts             CrewPayout[]
-  payoutAllocations   CrewPayoutAllocation[]
-  payoutEvents        CrewPayoutEvent[]
-  workspace           Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
-  productionProject   PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
-  studioProject       PlatformProject?          @relation("CrewStudioProject", fields: [studioProjectId], references: [id], onDelete: SetNull)
+  participationRecords CrewParticipationRecord[]
+  peerFeedback         CrewPeerFeedback[]
+  positions            CrewPosition[]
+  members              CrewMember[]
+  ownership            CrewOwnership?
+  applications         CrewApplication[]
+  assetNodes           CrewAssetNode[]
+  invitations          CrewInvitation[]
+  inviteLinks          CrewInviteLink[]
+  tasks                CrewTask[]
+  taskViews            CrewTaskView[]
+  taskCycles           CrewTaskCycle[]
+  taskLabels           CrewTaskLabel[]
+  taskFields           CrewTaskFieldDefinition[]
+  taskWorkflowStates   CrewTaskWorkflowState[]
+  productionPage       CrewProductionPage?
+  productionResources  CrewProductionResource[]
+  productionActivity   CrewProductionActivity[]
+  episodes             CrewEpisode[]
+  agreements           CrewAgreement[]
+  earningEntries       CrewEarningEntry[]
+  earningEvents        CrewEarningEvent[]
+  payouts              CrewPayout[]
+  payoutAllocations    CrewPayoutAllocation[]
+  payoutEvents         CrewPayoutEvent[]
+  workspace            Workspace?                @relation("CrewWorkspace", fields: [workspaceId], references: [id], onDelete: SetNull)
+  productionProject    PlatformProject?          @relation("CrewProductionProject", fields: [productionProjectId], references: [id], onDelete: SetNull)
+  studioProject        PlatformProject?          @relation("CrewStudioProject", fields: [studioProjectId], references: [id], onDelete: SetNull)
 
   @@index([createdByUserId, deletedAt], map: "crews_creator_idx")
   /// Public listing: WHERE listing_status='listed' AND deleted_at IS NULL
@@ -4908,6 +4921,8 @@ model CrewAssetNode {
   mediaAsset           MediaAsset?               @relation(fields: [mediaAssetId], references: [id], onDelete: Restrict)
   favorites            CrewAssetFavorite[]
   grants               CrewAssetGrant[]
+  taskDeliveryAssets   CrewTaskDeliveryAsset[]
+  taskDeliveryFolders  CrewTaskDeliveryFolder[]
   submissionLinks      CrewTaskSubmissionAsset[]
   taskTimelineLinks    CrewTaskTimelineAsset[]
   episodeDeliveries    CrewEpisodeDelivery[]
@@ -5282,48 +5297,49 @@ model CrewInviteLinkRedemption {
 /// GitHub-Issue-like production unit. Its project/document are the editable
 /// task canvas; submissions point to immutable document versions and assets.
 model CrewTask {
-  id                  String           @id @default(uuid(7)) @db.Uuid
-  crewId              String           @map("crew_id")
-  deletedAt           DateTime?        @map("deleted_at") @db.Timestamptz(6)
-  deletedByUserId     String?          @map("deleted_by_user_id") @db.VarChar(64)
-  parentId            String?          @map("parent_id") @db.Uuid
+  deliveryTemplate    CrewTaskDeliveryTemplate?
+  id                  String                    @id @default(uuid(7)) @db.Uuid
+  crewId              String                    @map("crew_id")
+  deletedAt           DateTime?                 @map("deleted_at") @db.Timestamptz(6)
+  deletedByUserId     String?                   @map("deleted_by_user_id") @db.VarChar(64)
+  parentId            String?                   @map("parent_id") @db.Uuid
   /// Stable human-facing sequence within a crew (for example TASK-42).
   number              Int
-  title               String           @db.VarChar(180)
-  description         String           @default("") @db.Text
+  title               String                    @db.VarChar(180)
+  description         String                    @default("") @db.Text
   /// Product-configurable board column and the only task lifecycle source.
   /// Its semantic drives submission, review and settlement rules; multiple
   /// workflow states may intentionally share one semantic.
-  workflowStateId     String           @map("workflow_state_id") @db.Uuid
-  priority            CrewTaskPriority @default(normal)
-  startAt             DateTime?        @map("start_at") @db.Timestamptz(6)
-  dueAt               DateTime?        @map("due_at") @db.Timestamptz(6)
-  estimatePoints      Int?             @map("estimate_points")
-  computeBudgetPoints Int?             @map("compute_budget_points")
+  workflowStateId     String                    @map("workflow_state_id") @db.Uuid
+  priority            CrewTaskPriority          @default(normal)
+  startAt             DateTime?                 @map("start_at") @db.Timestamptz(6)
+  dueAt               DateTime?                 @map("due_at") @db.Timestamptz(6)
+  estimatePoints      Int?                      @map("estimate_points")
+  computeBudgetPoints Int?                      @map("compute_budget_points")
   /// Optional production agreement: how many revision requests are included.
   /// `null` means unlimited; the used counter advances only on a reviewer's
   /// explicit request for another version.
-  revisionLimit       Int?             @map("revision_limit")
-  revisionRoundsUsed  Int              @default(0) @map("revision_rounds_used")
-  cycleId             String?          @map("cycle_id") @db.Uuid
-  episodeId           String?          @map("episode_id") @db.Uuid
+  revisionLimit       Int?                      @map("revision_limit")
+  revisionRoundsUsed  Int                       @default(0) @map("revision_rounds_used")
+  cycleId             String?                   @map("cycle_id") @db.Uuid
+  episodeId           String?                   @map("episode_id") @db.Uuid
   /// One shared sparse ordering key. Reordering within a board/list group
   /// uses exact decimal midpoints and periodically rebalances under a lock.
-  rank                Decimal          @default(1024) @db.Decimal(36, 18)
+  rank                Decimal                   @default(1024) @db.Decimal(36, 18)
   /// Optimistic concurrency token. Every mutable task-field/assignee write
   /// increments it; clients send the version they edited.
-  version             Int              @default(1)
+  version             Int                       @default(1)
   /// Optional focused Studio branch. Ordinary issues stay lightweight and
   /// acquire a branch only when somebody explicitly starts canvas work.
-  canvasProjectId     String?          @unique(map: "crew_tasks_canvas_project_unique") @map("canvas_project_id") @db.Uuid
-  canvasDocumentId    String?          @unique(map: "crew_tasks_canvas_document_unique") @map("canvas_document_id") @db.Uuid
-  createdByUserId     String           @map("created_by_user_id") @db.VarChar(64)
-  approvedByUserId    String?          @map("approved_by_user_id") @db.VarChar(64)
-  submittedAt         DateTime?        @map("submitted_at") @db.Timestamptz(6)
-  approvedAt          DateTime?        @map("approved_at") @db.Timestamptz(6)
-  cancelledAt         DateTime?        @map("cancelled_at") @db.Timestamptz(6)
-  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt           DateTime         @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  canvasProjectId     String?                   @unique(map: "crew_tasks_canvas_project_unique") @map("canvas_project_id") @db.Uuid
+  canvasDocumentId    String?                   @unique(map: "crew_tasks_canvas_document_unique") @map("canvas_document_id") @db.Uuid
+  createdByUserId     String                    @map("created_by_user_id") @db.VarChar(64)
+  approvedByUserId    String?                   @map("approved_by_user_id") @db.VarChar(64)
+  submittedAt         DateTime?                 @map("submitted_at") @db.Timestamptz(6)
+  approvedAt          DateTime?                 @map("approved_at") @db.Timestamptz(6)
+  cancelledAt         DateTime?                 @map("cancelled_at") @db.Timestamptz(6)
+  createdAt           DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   crew                  Crew                      @relation(fields: [crewId], references: [id], onDelete: Cascade)
   parent                CrewTask?                 @relation("CrewTaskHierarchy", fields: [parentId, crewId], references: [id, crewId], onDelete: Restrict)
@@ -5335,8 +5351,10 @@ model CrewTask {
   canvasDocument        StudioDocument?           @relation("CrewTaskCanvasDocument", fields: [canvasDocumentId], references: [id], onDelete: Restrict)
   assignees             CrewTaskAssignee[]
   labels                CrewTaskLabelAssignment[]
+  deliveryFolder        CrewTaskDeliveryFolder?
   submissions           CrewTaskSubmission[]
   earningEntries        CrewEarningEntry[]
+  commitments           CrewTaskCommitment[]
   timelineItems         CrewTaskTimelineItem[]
   dependenciesAsBlocker CrewTaskDependency[]      @relation("CrewTaskDependencyBlocker")
   dependenciesAsBlocked CrewTaskDependency[]      @relation("CrewTaskDependencyBlocked")
@@ -5714,15 +5732,15 @@ model CrewTaskTimelineAsset {
 
 model CrewTaskAssignee {
   /// Required CNY/USD currency; amounts are integer minor units.
-  currency String @db.VarChar(3)
-  id           String   @id @default(uuid(7)) @db.Uuid
-  crewId       String   @map("crew_id")
-  taskId       String   @map("task_id") @db.Uuid
-  crewMemberId String   @map("crew_member_id")
-  userId       String   @map("user_id") @db.VarChar(64)
+  currency          String   @db.VarChar(3)
+  id                String   @id @default(uuid(7)) @db.Uuid
+  crewId            String   @map("crew_id")
+  taskId            String   @map("task_id") @db.Uuid
+  crewMemberId      String   @map("crew_member_id")
+  userId            String   @map("user_id") @db.VarChar(64)
   /// Compensation in the stated currency, in cents/fen.
   rewardAmountMinor BigInt?  @map("reward_amount_minor")
-  assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  assignedAt        DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
 
   task       CrewTask   @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Cascade)
   crewMember CrewMember @relation(fields: [crewMemberId, crewId, userId], references: [id, crewId, userId], onDelete: Restrict)
@@ -5733,20 +5751,25 @@ model CrewTaskAssignee {
 }
 
 model CrewTaskSubmission {
-  id                  String    @id @default(uuid(7)) @db.Uuid
-  taskId              String    @map("task_id") @db.Uuid
-  versionNumber       Int       @map("version_number")
-  submittedByUserId   String    @map("submitted_by_user_id") @db.VarChar(64)
-  note                String    @default("") @db.Text
-  canvasVersionId     String?   @map("canvas_version_id") @db.Uuid
+  professionalDelivery Json?                   @map("professional_delivery") @db.JsonB
+  trustEntries         CrewCreatorTrustEntry[]
+  trustCorrections     CrewTrustCorrection[]
+  timelinessResult     Json?                   @map("timeliness_result") @db.JsonB
+  timelinessEvidence   Json?                   @map("timeliness_evidence") @db.JsonB
+  id                   String                  @id @default(uuid(7)) @db.Uuid
+  taskId               String                  @map("task_id") @db.Uuid
+  versionNumber        Int                     @map("version_number")
+  submittedByUserId    String                  @map("submitted_by_user_id") @db.VarChar(64)
+  note                 String                  @default("") @db.Text
+  canvasVersionId      String?                 @map("canvas_version_id") @db.Uuid
   /// Immutable version created on the crew's main production canvas by an
   /// approved CRDT merge. Null until this submission is approved.
-  productionVersionId String?   @unique(map: "crew_task_submissions_production_version_unique") @map("production_version_id") @db.Uuid
-  reviewNote          String?   @map("review_note") @db.Text
-  reviewedByUserId    String?   @map("reviewed_by_user_id") @db.VarChar(64)
-  reviewedAt          DateTime? @map("reviewed_at") @db.Timestamptz(6)
-  mergedAt            DateTime? @map("merged_at") @db.Timestamptz(6)
-  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  productionVersionId  String?                 @unique(map: "crew_task_submissions_production_version_unique") @map("production_version_id") @db.Uuid
+  reviewNote           String?                 @map("review_note") @db.Text
+  reviewedByUserId     String?                 @map("reviewed_by_user_id") @db.VarChar(64)
+  reviewedAt           DateTime?               @map("reviewed_at") @db.Timestamptz(6)
+  mergedAt             DateTime?               @map("merged_at") @db.Timestamptz(6)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   task              CrewTask                  @relation(fields: [taskId], references: [id], onDelete: Cascade)
   canvasVersion     StudioDocumentVersion?    @relation("CrewTaskSubmissionCanvasVersion", fields: [canvasVersionId], references: [id], onDelete: Restrict)
@@ -5776,7 +5799,7 @@ model CrewTaskSubmissionAsset {
 /// CNY/USD amounts are integer minor units. CrewPayout records settlement evidence.
 model CrewEarningEntry {
   /// Required CNY/USD currency; amounts are integer minor units.
-  currency String @db.VarChar(3)
+  currency         String                @db.VarChar(3)
   id               String                @id @default(uuid(7)) @db.Uuid
   crewId           String                @map("crew_id")
   crewMemberId     String                @map("crew_member_id")
@@ -5786,7 +5809,7 @@ model CrewEarningEntry {
   agreementId      String?               @map("agreement_id") @db.Uuid
   title            String                @db.VarChar(180)
   description      String?               @db.Text
-  amountMinor     BigInt                @map("amount_minor")
+  amountMinor      BigInt                @map("amount_minor")
   status           CrewEarningStatus     @default(pending)
   idempotencyKey   String                @unique(map: "crew_earning_entries_idempotency_unique") @map("idempotency_key") @db.VarChar(160)
   createdByUserId  String                @map("created_by_user_id") @db.VarChar(64)
@@ -5824,12 +5847,12 @@ model CrewEarningEntry {
 /// anti-double-pay boundary.
 model CrewPayout {
   /// Required CNY/USD currency; amounts are integer minor units.
-  currency String @db.VarChar(3)
+  currency               String            @db.VarChar(3)
   id                     String            @id @default(uuid(7)) @db.Uuid
   crewId                 String            @map("crew_id")
   crewMemberId           String            @map("crew_member_id")
   userId                 String            @map("user_id") @db.VarChar(64)
-  amountMinor           BigInt            @map("amount_minor")
+  amountMinor            BigInt            @map("amount_minor")
   withholdingAmountMinor BigInt            @default(0) @map("withholding_amount_minor")
   netAmountMinor         BigInt            @map("net_amount_minor")
   status                 CrewPayoutStatus  @default(pending)
@@ -5864,12 +5887,12 @@ model CrewPayout {
 /// while the service and database guard ensure active + paid allocations never
 /// exceed the source earning's posted point amount.
 model CrewPayoutAllocation {
-  id           String   @id @default(uuid(7)) @db.Uuid
-  crewId       String   @map("crew_id")
-  payoutId     String   @map("payout_id") @db.Uuid
-  earningId    String   @map("earning_id") @db.Uuid
+  id          String   @id @default(uuid(7)) @db.Uuid
+  crewId      String   @map("crew_id")
+  payoutId    String   @map("payout_id") @db.Uuid
+  earningId   String   @map("earning_id") @db.Uuid
   amountMinor BigInt   @map("amount_minor")
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   crew    Crew             @relation(fields: [crewId], references: [id], onDelete: Restrict)
   payout  CrewPayout       @relation(fields: [payoutId, crewId], references: [id, crewId], onDelete: Restrict)
@@ -7834,28 +7857,28 @@ model MediaProcessingJob {
 //   FD-OPC-2605-8K3Q7P
 
 model UserCertificate {
-  id            String     @id @default(uuid(7)) @db.Uuid
+  id             String     @id @default(uuid(7)) @db.Uuid
   /// External auth user id. FK not enforced — orphaned rows
   /// just render as "Unknown user" client-side, matching the crew /
   /// services convention.
-  userId        String     @map("user_id") @db.VarChar(64)
+  userId         String     @map("user_id") @db.VarChar(64)
   /// Human-readable cert number generated by import code. RANDOM is
   /// URL-safe uppercase A-Z/0-9 and must not encode user id / DB id /
   /// name / level.
-  certNo        String     @unique @map("cert_no") @db.VarChar(32)
+  certNo         String     @unique @map("cert_no") @db.VarChar(32)
   /// Explicit admin-reviewed qualification; generic and training certificates confer no Crew access.
-  credentialType String @default("general") @map("credential_type") @db.VarChar(64)
-  title         String     @db.VarChar(128)
-  issuer        String     @default("FizzDragon") @db.VarChar(128)
+  credentialType String     @default("general") @map("credential_type") @db.VarChar(64)
+  title          String     @db.VarChar(128)
+  issuer         String     @default("FizzDragon") @db.VarChar(128)
   /// Final certificate image asset. UserCertificate owns the business
   /// fact; MediaAsset owns storage identity and URL materialization.
-  imageAssetId  String     @map("image_asset_id") @db.Uuid
-  imageAsset    MediaAsset @relation("UserCertificateImage", fields: [imageAssetId], references: [id], onDelete: Restrict)
-  issuedAt      DateTime   @default(now()) @map("issued_at") @db.Timestamptz(6)
-  revokedAt     DateTime?  @map("revoked_at") @db.Timestamptz(6)
-  revokedReason String?    @map("revoked_reason") @db.VarChar(255)
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  imageAssetId   String     @map("image_asset_id") @db.Uuid
+  imageAsset     MediaAsset @relation("UserCertificateImage", fields: [imageAssetId], references: [id], onDelete: Restrict)
+  issuedAt       DateTime   @default(now()) @map("issued_at") @db.Timestamptz(6)
+  revokedAt      DateTime?  @map("revoked_at") @db.Timestamptz(6)
+  revokedReason  String?    @map("revoked_reason") @db.VarChar(255)
+  createdAt      DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   /// Profile cert wall: per-user, hide revoked, newest issued first.
   @@index([userId, revokedAt, issuedAt(sort: Desc)], map: "user_certificates_profile_idx")
@@ -8373,30 +8396,31 @@ enum WorldModelTravelStatus {
 }
 
 model StoryProject {
-  id                         String                  @id @default(uuid(7)) @db.Uuid
-  workspaceId                String                  @map("workspace_id") @db.Uuid
-  frameProfile               StoryFrameProfile       @map("frame_profile")
-  durationPreset             StoryDurationPreset?    @map("duration_preset")
+  gameAssociations           IpGameAssociationRevision[]
+  id                         String                      @id @default(uuid(7)) @db.Uuid
+  workspaceId                String                      @map("workspace_id") @db.Uuid
+  frameProfile               StoryFrameProfile           @map("frame_profile")
+  durationPreset             StoryDurationPreset?        @map("duration_preset")
   /// Stable catalog slug shown to creators and carried over the wire.
-  visualStyle                String?                 @map("visual_style") @db.VarChar(128)
+  visualStyle                String?                     @map("visual_style") @db.VarChar(128)
   /// Immutable Skill identity pinned when the creative profile is confirmed.
-  visualStyleSkillId         String?                 @map("visual_style_skill_id") @db.Uuid
-  visualStyleSkillVersionId  String?                 @map("visual_style_skill_version_id") @db.Uuid
-  creativeProfileConfirmedAt DateTime?               @map("creative_profile_confirmed_at") @db.Timestamptz(6)
-  status                     StoryProjectStatus      @default(active)
-  visibility                 StoryVisibility         @default(private)
-  title                      String                  @db.VarChar(160)
-  summary                    String?                 @db.Text
-  defaultLocale              String                  @default("en-US") @map("default_locale") @db.VarChar(16)
-  coverAssetId               String?                 @map("cover_asset_id") @db.Uuid
-  tags                       Json                    @default("[]") @db.JsonB
-  sourceIpId                 String?                 @map("source_ip_id") @db.Uuid
-  nextBuildNumber            Int                     @default(1) @map("next_build_number")
-  version                    Int                     @default(0)
-  createdByUserId            String                  @map("created_by_user_id") @db.VarChar(64)
-  archivedAt                 DateTime?               @map("archived_at") @db.Timestamptz(6)
-  createdAt                  DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                  DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  visualStyleSkillId         String?                     @map("visual_style_skill_id") @db.Uuid
+  visualStyleSkillVersionId  String?                     @map("visual_style_skill_version_id") @db.Uuid
+  creativeProfileConfirmedAt DateTime?                   @map("creative_profile_confirmed_at") @db.Timestamptz(6)
+  status                     StoryProjectStatus          @default(active)
+  visibility                 StoryVisibility             @default(private)
+  title                      String                      @db.VarChar(160)
+  summary                    String?                     @db.Text
+  defaultLocale              String                      @default("en-US") @map("default_locale") @db.VarChar(16)
+  coverAssetId               String?                     @map("cover_asset_id") @db.Uuid
+  tags                       Json                        @default("[]") @db.JsonB
+  sourceIpId                 String?                     @map("source_ip_id") @db.Uuid
+  nextBuildNumber            Int                         @default(1) @map("next_build_number")
+  version                    Int                         @default(0)
+  createdByUserId            String                      @map("created_by_user_id") @db.VarChar(64)
+  archivedAt                 DateTime?                   @map("archived_at") @db.Timestamptz(6)
+  createdAt                  DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime                    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace               Workspace                         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   cover                   MediaAsset?                       @relation("StoryProjectCover", fields: [coverAssetId], references: [id], onDelete: SetNull)
@@ -8429,6 +8453,7 @@ model StoryProject {
   generationBatches       StoryGenerationBatch[]
   productionMutations     StoryProductionMutationReceipt[]
   productionPlanSnapshots StoryProductionPlanSnapshot[]
+  chapterGraphRepairs     StoryChapterGraphRepair[]
   agentOsAttachments      AgentOsAttachment[]
   aiJobs                  AiJob[]
   skillState              ProjectSkillState?
@@ -8798,6 +8823,31 @@ model StoryDraft {
   project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
 
   @@map("story_drafts")
+}
+
+/// Immutable evidence for an automatic StoryDraft ↔ StoryChapter projection
+/// repair. The before snapshot makes every ownership decision recoverable;
+/// graph nodes and edges are never deleted or fabricated by the repair.
+model StoryChapterGraphRepair {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  storyProjectId      String   @map("story_project_id") @db.Uuid
+  trigger             String   @db.VarChar(64)
+  repairFingerprint   String   @unique @map("repair_fingerprint") @db.VarChar(64)
+  draftRevisionBefore Int      @map("draft_revision_before")
+  draftRevisionAfter  Int      @map("draft_revision_after")
+  beforeDraft         Json     @map("before_draft") @db.JsonB
+  repairedDraft       Json     @map("repaired_draft") @db.JsonB
+  beforeChapters      Json     @map("before_chapters") @db.JsonB
+  repairedChapters    Json     @map("repaired_chapters") @db.JsonB
+  issues              Json     @db.JsonB
+  decisions           Json     @db.JsonB
+  actorUserId         String?  @map("actor_user_id") @db.VarChar(64)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  project StoryProject @relation(fields: [storyProjectId], references: [id], onDelete: Cascade)
+
+  @@index([storyProjectId, createdAt(sort: Desc)], map: "story_chapter_graph_repairs_project_recent_idx")
+  @@map("story_chapter_graph_repairs")
 }
 
 /// Project-level curation of durable media produced on the Story content
@@ -9466,6 +9516,7 @@ model StoryExperienceDraftRelease {
 /// of silently re-serving the previous chapter set — while re-running the same
 /// candidate converges on this row. Java remains the only publication authority.
 model StoryExperienceGameRelease {
+  gameAssociations    IpGameAssociationRevision[]
   id                  String                           @id @default(uuid(7)) @db.Uuid
   storyProjectId      String                           @map("story_project_id") @db.Uuid
   gameId              String                           @map("game_id") @db.VarChar(160)
@@ -9895,4 +9946,291 @@ model CrewUploadReservation {
 
   @@index([crewId, state, expiresAt], map: "crew_upload_reservations_capacity_idx")
   @@map("crew_upload_reservations")
+}
+
+/// A commitment belongs to one assignment incarnation; removing/readding a user
+/// must never erase or reuse an earlier promise. Assignment ID is deliberately
+/// not a foreign key because reassignment deletes CrewTaskAssignee rows.
+model CrewTaskCommitment {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  taskId        String    @map("task_id") @db.Uuid
+  assignmentId  String    @unique @map("assignment_id") @db.Uuid
+  userId        String    @map("user_id") @db.VarChar(64)
+  status        String    @db.VarChar(20)
+  promisedDueAt DateTime? @map("promised_due_at") @db.Timestamptz(6)
+  acceptedAt    DateTime? @map("accepted_at") @db.Timestamptz(6)
+  reason        String    @default("") @db.Text
+  releasedAt    DateTime? @map("released_at") @db.Timestamptz(6)
+  handoverNote  String?   @map("handover_note") @db.Text
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  task          CrewTask  @relation(fields: [taskId], references: [id], onDelete: Restrict)
+
+  @@index([taskId, acceptedAt])
+  @@index([userId, acceptedAt])
+  @@map("crew_task_commitments")
+}
+
+/// Project exit requests and completion recognition are retained even when
+/// membership is removed. Completion rewards reference the existing wallet ledger.
+model CrewParticipationRecord {
+  id               String    @id @default(uuid(7)) @db.Uuid
+  crewId           String    @map("crew_id")
+  userId           String    @map("user_id") @db.VarChar(64)
+  withdrawalAt     DateTime? @map("withdrawal_at") @db.Timestamptz(6)
+  withdrawalReason String?   @map("withdrawal_reason") @db.Text
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId String?   @map("resolved_by_user_id") @db.VarChar(64)
+  resolution       String?   @db.Text
+  communityPoints  Int       @default(0) @map("community_points")
+  awardedAt        DateTime? @map("awarded_at") @db.Timestamptz(6)
+  awardedByUserId  String?   @map("awarded_by_user_id") @db.VarChar(64)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew             Crew      @relation(fields: [crewId], references: [id], onDelete: Restrict)
+
+  @@unique([crewId, userId])
+  @@index([userId, createdAt])
+  @@map("crew_participation_records")
+}
+
+model CrewPeerFeedback {
+  id            String    @id @default(uuid(7)) @db.Uuid
+  crewId        String    @map("crew_id")
+  authorUserId  String    @map("author_user_id") @db.VarChar(64)
+  subjectUserId String    @map("subject_user_id") @db.VarChar(64)
+  rating        Int
+  comment       String    @db.Text
+  response      String?   @db.Text
+  respondedAt   DateTime? @map("responded_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew          Crew      @relation(fields: [crewId], references: [id], onDelete: Restrict)
+
+  @@unique([crewId, authorUserId, subjectUserId])
+  @@index([subjectUserId, createdAt])
+  @@map("crew_peer_feedback")
+}
+
+/// Selected task delivery destination; accepted files are published here on review.
+model CrewTaskDeliveryFolder {
+  taskId          String                  @id @map("task_id") @db.Uuid
+  crewId          String                  @map("crew_id")
+  folderId        String                  @map("folder_id") @db.Uuid
+  createdByUserId String                  @map("created_by_user_id") @db.VarChar(64)
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+  task            CrewTask                @relation(fields: [taskId, crewId], references: [id, crewId], onDelete: Cascade, map: "crew_task_delivery_folder_task_fk")
+  folder          CrewAssetNode           @relation(fields: [folderId, crewId], references: [id, crewId], onDelete: Restrict, map: "crew_task_delivery_folder_node_fk")
+  assets          CrewTaskDeliveryAsset[]
+
+  @@unique([taskId, crewId], map: "crew_task_delivery_folders_task_crew_unique")
+  @@index([folderId], map: "crew_task_delivery_folders_node_idx")
+  @@map("crew_task_delivery_folders")
+}
+
+model CrewTaskDeliveryAsset {
+  taskId      String                 @map("task_id") @db.Uuid
+  crewId      String                 @map("crew_id")
+  assetNodeId String                 @map("asset_node_id") @db.Uuid
+  taskFolder  CrewTaskDeliveryFolder @relation(fields: [taskId, crewId], references: [taskId, crewId], onDelete: Cascade, map: "crew_task_delivery_assets_folder_fk")
+  assetNode   CrewAssetNode          @relation(fields: [assetNodeId, crewId], references: [id, crewId], onDelete: Cascade, map: "crew_task_delivery_assets_node_fk")
+
+  @@id([taskId, assetNodeId])
+  @@index([assetNodeId], map: "crew_task_delivery_assets_node_idx")
+  @@map("crew_task_delivery_assets")
+}
+
+/// An explicit human Crew like; fan-community joining commits with this record.
+model CrewLike {
+  crewId    String   @map("crew_id")
+  userId    String   @map("user_id") @db.VarChar(64)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew      Crew     @relation(fields: [crewId], references: [id], onDelete: Cascade)
+
+  @@id([crewId, userId])
+  @@index([userId], map: "crew_likes_user_idx")
+  @@map("crew_likes")
+}
+
+model IpPublicComment {
+  id            String    @id @db.Uuid
+  ipId          String    @map("ip_id") @db.Uuid
+  userId        String    @map("user_id") @db.VarChar(64)
+  body          String    @db.VarChar(2000)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  removedAt     DateTime? @map("removed_at") @db.Timestamptz(6)
+  authorName    String?   @map("author_name") @db.VarChar(160)
+  removalActor  String?   @map("removal_actor") @db.VarChar(80)
+  removalReason String?   @map("removal_reason") @db.VarChar(1000)
+  ip            Ip        @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@map("ip_public_comments")
+}
+
+model IpCrewOrigin {
+  ipId       String   @id @map("ip_id") @db.Uuid
+  crewId     String   @map("crew_id")
+  linkedById String   @map("linked_by_id") @db.VarChar(64)
+  linkedAt   DateTime @default(now()) @map("linked_at") @db.Timestamptz(6)
+  ip         Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  crew       Crew     @relation(fields: [crewId], references: [id], onDelete: Restrict)
+
+  @@index([crewId], map: "ip_crew_origins_crew_idx")
+  @@map("ip_crew_origins")
+}
+
+model IpEpisodeFeedback {
+  episodeId String    @map("episode_id") @db.Uuid
+  userId    String    @map("user_id") @db.VarChar(64)
+  value     Int       @db.SmallInt
+  updatedAt DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  episode   IpEpisode @relation(fields: [episodeId], references: [id], onDelete: Cascade)
+
+  @@id([episodeId, userId])
+  @@map("ip_episode_feedback")
+}
+
+model CrewCreatorTrustEntry {
+  appeals      CrewTrustAppeal[]
+  submissionId String             @map("submission_id") @db.Uuid
+  taskId       String             @map("task_id") @db.Uuid
+  userId       String             @map("user_id") @db.VarChar(64)
+  points       Int
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  submission   CrewTaskSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict)
+
+  @@id([taskId, userId])
+  @@index([userId, createdAt(sort: Desc)], map: "crew_creator_trust_user_idx")
+  @@map("crew_creator_trust_entries")
+}
+
+model IpProductionStage {
+  ipId      String   @id @map("ip_id") @db.Uuid
+  stage     String   @db.VarChar(32)
+  version   Int
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  ip        Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@map("ip_production_stages")
+}
+
+model IpStageApplication {
+  id           String     @id @db.Uuid
+  ipId         String     @map("ip_id") @db.Uuid
+  applicantId  String     @map("applicant_id") @db.VarChar(64)
+  targetStage  String     @map("target_stage") @db.VarChar(32)
+  stageVersion Int        @map("stage_version")
+  reason       String     @db.Text
+  status       String     @default("pending") @db.VarChar(16)
+  reviewerId   String?    @map("reviewer_id") @db.Uuid
+  reviewReason String?    @map("review_reason") @db.Text
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt   DateTime?  @map("reviewed_at") @db.Timestamptz(6)
+  ip           Ip         @relation(fields: [ipId], references: [id], onDelete: Cascade)
+  reviewer     AdminUser? @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+
+  @@index([ipId, createdAt(sort: Desc)], map: "ip_stage_application_history")
+  @@map("ip_stage_applications")
+}
+
+/// Immutable category, reference-price and delivery-form revisions.
+model CrewDeliveryCatalogRevision {
+  tasks      CrewTaskDeliveryTemplate[]
+  categoryId String                     @map("category_id") @db.Uuid
+  version    Int
+  definition Json                       @db.JsonB
+  createdBy  String                     @map("created_by") @db.Uuid
+  reason     String                     @db.Text
+  createdAt  DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@id([categoryId, version])
+  @@map("crew_delivery_catalog_revisions")
+}
+
+model CrewTaskDeliveryTemplate {
+  task            CrewTask                    @relation(fields: [taskId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  category        CrewDeliveryCatalogRevision @relation(fields: [categoryId, categoryVersion], references: [categoryId, version], onDelete: NoAction, onUpdate: NoAction)
+  taskId          String                      @id @map("task_id") @db.Uuid
+  categoryId      String                      @map("category_id") @db.Uuid
+  categoryVersion Int                         @map("category_version")
+
+  @@map("crew_task_delivery_templates")
+}
+
+model CrewExpenseDraftRevision {
+  submission     CrewExpenseSubmission?
+  id             String                 @db.Uuid
+  version        Int
+  crewId         String                 @map("crew_id")
+  claimantUserId String                 @map("claimant_user_id") @db.VarChar(64)
+  definition     Json                   @db.JsonB
+  createdAt      DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew           Crew                   @relation(fields: [crewId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([id, version])
+  @@index([claimantUserId, crewId, id, version(sort: Desc)], map: "crew_expense_draft_owner_idx")
+  @@map("crew_expense_draft_revisions")
+}
+
+model CrewExpenseSubmission {
+  draftId      String                   @map("draft_id") @db.Uuid
+  draftVersion Int                      @map("draft_version")
+  status       String                   @default("pending")
+  submittedAt  DateTime                 @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  draft        CrewExpenseDraftRevision @relation(fields: [draftId, draftVersion], references: [id, version], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([draftId, draftVersion])
+  @@map("crew_expense_submissions")
+}
+
+/// Append-only adjudication; original submission/entry evidence is preserved.
+model CrewTrustCorrection {
+  revision     BigInt             @default(autoincrement())
+  submission   CrewTaskSubmission @relation(fields: [submissionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  appeals      CrewTrustAppeal[]
+  id           String             @id @db.Uuid
+  submissionId String             @map("submission_id") @db.Uuid
+  points       Int
+  reviewerId   String             @map("reviewer_id") @db.VarChar(64)
+  reason       String             @db.Text
+  createdAt    DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([submissionId, revision(sort: Desc)], map: "crew_trust_corrections_submission")
+  @@map("crew_trust_corrections")
+}
+
+model CrewTrustAppeal {
+  entry        CrewCreatorTrustEntry @relation(fields: [taskId, userId], references: [taskId, userId], onDelete: Restrict, onUpdate: NoAction)
+  correction   CrewTrustCorrection?  @relation(fields: [correctionId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  id           String                @id @db.Uuid
+  taskId       String                @map("task_id") @db.Uuid
+  userId       String                @map("user_id") @db.VarChar(64)
+  reason       String                @db.Text
+  status       String                @default("pending") @db.VarChar(16)
+  reviewerId   String?               @map("reviewer_id") @db.VarChar(64)
+  reviewReason String?               @map("review_reason") @db.Text
+  correctionId String?               @map("correction_id") @db.Uuid
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewedAt   DateTime?             @map("reviewed_at") @db.Timestamptz(6)
+
+  @@index([taskId, userId, createdAt(sort: Desc), id(sort: Desc)], map: "crew_trust_appeal_history")
+  @@map("crew_trust_appeals")
+}
+
+/// Explicit ownership-verified associations; sourceIpId is never imported.
+model IpGameAssociationRevision {
+  gameId        String                     @map("game_id") @db.Uuid
+  version       Int
+  ipId          String                     @map("ip_id") @db.Uuid
+  releaseId     String                     @map("release_id") @db.Uuid
+  ownerMemberId String                     @map("owner_member_id") @db.Uuid
+  actorId       String                     @map("actor_id") @db.VarChar(64)
+  active        Boolean
+  requestId     String                     @map("request_id") @db.Uuid
+  createdAt     DateTime                   @default(now()) @map("created_at") @db.Timestamptz(6)
+  game          StoryProject               @relation(fields: [gameId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  ip            Ip                         @relation(fields: [ipId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  release       StoryExperienceGameRelease @relation(fields: [releaseId], references: [id], onDelete: Restrict, onUpdate: NoAction)
+
+  @@id([gameId, version])
+  @@unique([gameId, requestId])
+  @@index([ipId, gameId, version(sort: Desc)], map: "ip_game_association_ip")
+  @@map("ip_game_association_revisions")
 }

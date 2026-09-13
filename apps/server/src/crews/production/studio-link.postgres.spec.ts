@@ -1,31 +1,38 @@
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import {
   CREW_PERMISSION_KEYS,
   CREW_OWNER_ONLY_PERMISSIONS,
 } from '@repo/shared';
 import { randomUUID } from 'node:crypto';
-import { buildPrisma, type PrismaService } from '../../infra/db/db.module';
+import type { PrismaService } from '../../infra/db/db.module';
 import { WorkspacePermissionService } from '../../workspaces/workspace-permission.service';
 import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewProductionService } from './production.service';
 
-const suite =
-  process.env.DATABASE_POSTGRES_INTEGRATION === '1' ? describe : describe.skip;
+const databaseUrl =
+  process.env.TASK01_TEST_DATABASE_URL ??
+  (process.env.DATABASE_POSTGRES_INTEGRATION === '1'
+    ? process.env.DATABASE_URL
+    : undefined);
+const suite = databaseUrl ? describe : describe.skip;
 suite('Studio linking authorization on PostgreSQL', () => {
-  let db: ReturnType<typeof buildPrisma>;
+  let db: PrismaClient;
   beforeAll(async () => {
-    const url = new URL(process.env.DATABASE_URL ?? '');
+    const url = new URL(databaseUrl!);
     if (
       !['localhost', '127.0.0.1'].includes(url.hostname) ||
       !(
         (url.port === '5433' && url.pathname === '/fizzdragon_outbox_test') ||
+        (url.port === '55439' && url.pathname === '/task01') ||
         (url.port === '55459' && url.pathname === '/develop_selection_test')
       )
-    ) {
-      throw new Error(
-        'Use an explicitly allowed isolated local Studio-link test database.',
-      );
-    }
-    db = buildPrisma();
+    )
+      throw new Error('Explicitly allowed loopback test database required');
+    db = new PrismaClient({
+      adapter: new PrismaPg({ connectionString: databaseUrl }),
+      transactionOptions: { timeout: 15000 },
+    });
     await db.$connect();
   });
   afterAll(async () => {
@@ -131,7 +138,6 @@ suite('Studio linking authorization on PostgreSQL', () => {
         await db.workspace.create({
           data: {
             id: workspaceId,
-            type: 'team',
             name: 'Link fixture',
             ownerUserId: ownerId,
             createdById: ownerId,

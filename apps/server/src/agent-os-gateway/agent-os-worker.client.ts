@@ -1,3 +1,5 @@
+import { ViewerAssistanceResponseSchema } from '@repo/agent-protocol';
+import { z } from 'zod';
 import {
   Injectable,
   Logger,
@@ -227,6 +229,36 @@ export class AgentOsWorkerClient {
       },
       10_000,
     );
+  }
+
+  async recommendViewing(body: unknown, signal: AbortSignal) {
+    const response = await fetch(
+      `${this.config.value.workerBaseUrl}/v1/agent-os/viewer-assistance`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...this.internalHeaders(),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(35_000)]),
+      },
+    );
+    const json: unknown = await response.json();
+    if (!response.ok) {
+      const failure = z
+        .object({ error: z.object({ code: z.string(), message: z.string() }) })
+        .safeParse(json);
+      throw new ServiceUnavailableException(
+        failure.success
+          ? failure.data.error
+          : {
+              code: 'VIEWER_WORKER_ERROR',
+              message: `Viewing assistance worker returned HTTP ${response.status}`,
+            },
+      );
+    }
+    return ViewerAssistanceResponseSchema.parse(json);
   }
 
   private async postJson(

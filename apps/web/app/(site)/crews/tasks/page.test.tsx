@@ -31,13 +31,15 @@ vi.mock("@/components/ui/native-select", () => ({
     value,
     onChange,
     children,
+    "aria-label": label,
   }: {
     value: string;
     onChange: (value: string) => void;
     children: ReactNode;
+    "aria-label"?: string;
   }) => (
     // eslint-disable-next-line no-restricted-syntax -- Isolate the shared select boundary in this page test.
-    <select value={value} onChange={(event) => onChange(event.target.value)}>
+    <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
       {children}
     </select>
   ),
@@ -119,7 +121,10 @@ it("shows Crew context and localized task links across Crews, and requests the n
 });
 it("uses separate queries for assignment and completion filters", () => {
   render();
-  const selects = document.querySelectorAll("select");
+  const selects = [
+    document.querySelector('select[aria-label="scope"]'),
+    document.querySelector('select[aria-label="status"]'),
+  ] as HTMLSelectElement[];
   act(() => {
     selects[0]!.value = "mine";
     selects[0]!.dispatchEvent(new Event("change", { bubbles: true }));

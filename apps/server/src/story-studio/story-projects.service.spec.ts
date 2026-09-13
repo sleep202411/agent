@@ -282,6 +282,7 @@ function serviceWith(prisma: Record<string, unknown>) {
   };
   const writeGuard = {
     assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
+    tryAcquireDeferredWriteFence: jest.fn().mockResolvedValue(true),
   };
   return {
     service: new StoryProjectsService(
@@ -984,11 +985,16 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const tx = {
       $executeRaw: jest.fn().mockResolvedValue(0),
       storyChapter: {
+        findMany: jest.fn().mockResolvedValue([chapterRow()]),
         count: jest.fn().mockResolvedValue(1),
         aggregate: jest.fn().mockResolvedValue({ _max: { rank: 0 } }),
         create: jest.fn().mockResolvedValue(created),
         findFirst: jest.fn().mockResolvedValue({ title: created.title }),
       },
+      storyDraft: {
+        findUnique: jest.fn().mockResolvedValue(draftRow()),
+      },
+      storyStoryboardSequence: { findMany: jest.fn().mockResolvedValue([]) },
       storyCanvasLayout: { create: jest.fn().mockResolvedValue({}) },
       storyProject: { update: jest.fn().mockResolvedValue({}) },
       studioDocument: {
@@ -1050,9 +1056,14 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     const renamed = chapterRow({ title: 'A New Name' });
     const tx = {
       storyChapter: {
+        findMany: jest.fn().mockResolvedValue([current]),
         findFirst: jest.fn().mockResolvedValue(current),
         update: jest.fn().mockResolvedValue(renamed),
       },
+      storyDraft: {
+        findUnique: jest.fn().mockResolvedValue(draftRow()),
+      },
+      storyStoryboardSequence: { findMany: jest.fn().mockResolvedValue([]) },
       storyProject: { update: jest.fn().mockResolvedValue({}) },
     };
     const { service } = serviceWith({ $transaction: transactionMock(tx) });
@@ -1242,6 +1253,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     ];
     const tx = {
       storyStoryboardSequence: {
+        findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       storyDraft: {
@@ -1298,6 +1310,7 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
         }),
       },
       storyStoryboardSequence: {
+        findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       storyDraft: {
@@ -1517,6 +1530,73 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     // exactly the empty-snapshot hash Build and Preview would compute.
     expect(result.video).toEqual({
       snapshotHash: storyVideoSnapshotHash([]),
+    });
+  });
+
+  it('repairs a legacy chapter projection transactionally on workbench read', async () => {
+    const content = lockableDraft();
+    const invalidChapter = chapterRow({ nodeIds: [], entryNodeId: null });
+    const persistedDraft = draftRow({ content, revision: 4 });
+    const tx = {
+      storyProject: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(summaryProject({ draft: draftRow({ content }) })),
+      },
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue([invalidChapter]),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      storyDraft: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue(persistedDraft),
+      },
+      storyChapterGraphRepair: { upsert: jest.fn().mockResolvedValue({}) },
+      storyStoryboardSequence: { findMany: jest.fn().mockResolvedValue([]) },
+      storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
+      storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
+      studioDocument: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    const result = await service.workbench(USER as never, PROJECT_ID, {});
+
+    expect(result.draft).toMatchObject({ revision: 4, chapterId: CHAPTER_ID });
+    expect(result.chapter).toMatchObject({
+      id: CHAPTER_ID,
+      nodeCount: 1,
+      entryNodeId: 'node.opening',
+    });
+    expect(tx.storyChapter.update).toHaveBeenCalledWith({
+      where: { id: CHAPTER_ID },
+      data: { nodeIds: ['node.opening'], entryNodeId: 'node.opening' },
+    });
+    expect(tx.storyChapterGraphRepair.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps legacy content editable when a rollout-era repair CAS loses', async () => {
+    const content = lockableDraft();
+    const invalidChapter = chapterRow({ nodeIds: [], entryNodeId: null });
+    const tx = {
+      storyProject: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(summaryProject({ draft: draftRow({ content }) })),
+      },
+      storyChapter: { findMany: jest.fn().mockResolvedValue([invalidChapter]) },
+      storyDraft: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
+      storyStoryboardSequence: { findMany: jest.fn().mockResolvedValue([]) },
+      storyReferenceSlot: { findMany: jest.fn().mockResolvedValue([]) },
+      storyBuild: { findFirst: jest.fn().mockResolvedValue(null) },
+      studioDocument: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+
+    await expect(
+      service.workbench(USER as never, PROJECT_ID, {}),
+    ).resolves.toMatchObject({
+      chapter: { id: CHAPTER_ID, nodeCount: 1 },
+      draft: { revision: 3, chapterId: CHAPTER_ID },
     });
   });
 

@@ -1,4 +1,5 @@
 import {
+  HttpException,
   Injectable,
   Logger,
   type OnApplicationBootstrap,
@@ -101,12 +102,25 @@ export class StoryAgentRunWorkerService
           try {
             await this.runs.executeClaimedRun(id, this.workerId);
           } catch (error) {
-            // Keep the database lease intact. A transient process/DB failure is
-            // retried by this or another pod after expiry; deterministic domain
-            // failures are persisted by executeClaimedRun before it returns.
             this.logger.warn(
               `Story Agent run execution escaped run=${id}: ${errorText(error)}`,
             );
+            try {
+              // A rolled-back apply has not changed the approved story. Close
+              // its durable run and release the project fence immediately so a
+              // deterministic validation/constraint failure cannot become an
+              // endless lease-reclaim loop. If PostgreSQL itself is unavailable
+              // this second transaction also fails and the lease remains
+              // reclaimable after expiry, preserving crash recovery.
+              await this.runs.failClaimedApply(id, this.workerId, {
+                code: errorCode(error),
+                detail: errorText(error),
+              });
+            } catch (recoveryError) {
+              this.logger.warn(
+                `Story Agent apply failure could not be persisted run=${id}: ${errorText(recoveryError)}`,
+              );
+            }
           }
         }),
       );
@@ -254,12 +268,17 @@ export class StoryAgentRunWorkerService
         // Lease lost (cancel/supersede/reclaim) or shutdown: another actor
         // owns the outcome now; land nothing.
         if (controller.signal.aborted || this.stopping) return;
+        const diagnostic = errorText(error);
+        const code =
+          error instanceof StoryAuthoringStageError
+            ? error.code
+            : 'STORY_AGENT_AUTHORING_FAILED';
+        this.logger.warn(
+          `Story Agent authoring failed run=${runId} code=${code}: ${diagnostic}`,
+        );
         await this.runs.failAuthoring(runId, this.workerId, {
-          code:
-            error instanceof StoryAuthoringStageError
-              ? error.code
-              : 'STORY_AGENT_AUTHORING_FAILED',
-          detail: errorText(error),
+          code,
+          detail: diagnostic,
         });
         return;
       } finally {
@@ -344,4 +363,15 @@ function errorText(error: unknown): string {
     0,
     4_000,
   );
+}
+
+function errorCode(error: unknown): string {
+  if (error instanceof HttpException) {
+    const response = error.getResponse();
+    if (response && typeof response === 'object' && 'code' in response) {
+      const code = (response as { code?: unknown }).code;
+      if (typeof code === 'string' && code.trim()) return code.slice(0, 96);
+    }
+  }
+  return 'STORY_AGENT_APPLY_FAILED';
 }

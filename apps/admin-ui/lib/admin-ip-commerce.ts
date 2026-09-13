@@ -22,6 +22,22 @@ export type AdminIpLoadResult<T> = {
   error: string | null;
 };
 
+export type IpProductionEvidence = {
+  ipId: string;
+  publicationStatus: string;
+  humanIpLikes: string;
+  episodes: { episodeId: string; episodeNo: number; likes: string; dislikes: string }[];
+};
+
+export async function fetchIpProductionEvidence(
+  ipId: string
+): Promise<AdminIpLoadResult<IpProductionEvidence>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/ips/${encodeURIComponent(ipId)}/production-evidence`,
+    "Production evidence could not be loaded."
+  );
+}
+
 export async function fetchAdminIpOverview(): Promise<AdminIpLoadResult<AdminIpOverviewData>> {
   return fetchAdminIpResource("/ip-commerce/overview", "IP 总览数据加载失败。");
 }
@@ -114,4 +130,30 @@ function toSearch(params: Record<string, string | undefined> | undefined) {
   });
   const search = searchParams.toString();
   return search ? `?${search}` : "";
+}
+
+export async function fetchIpProductionStage(
+  ipId: string
+): Promise<AdminIpLoadResult<{ stage: string; version: number }>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/ips/${encodeURIComponent(ipId)}/production-stage`,
+    "Production stage could not be loaded."
+  );
+}
+
+export type StageApplication = {
+  id: string;
+  stage: string;
+  reason: string;
+  status: string;
+  reviewReason: string | null;
+  applicantId: string;
+};
+export async function fetchIpStageApplications(
+  ipId: string
+): Promise<AdminIpLoadResult<{ items: StageApplication[] }>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/ips/${encodeURIComponent(ipId)}/stage-applications`,
+    "Applications could not be loaded."
+  );
 }

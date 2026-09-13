@@ -144,13 +144,15 @@ function plan(): StoryProductionPlan {
 }
 
 describe('validateProductionPlanAgainstScreenplay', () => {
-  it('accepts a standalone character asset without inventing a Story Bible link', () => {
+  it('requires generated character assets to retain their Script identity', () => {
     const value = plan();
     delete value.assetSpecs[0].sourceCharacterId;
     expect(() => StoryProductionPlanSchema.parse(value)).not.toThrow();
     expect(
       validateProductionPlanAgainstScreenplay(value, screenplay()),
-    ).toEqual([]);
+    ).toContain(
+      'Character asset "asset.character.courier" must include sourceCharacterId.',
+    );
   });
   it('accepts one sequence per Plot node and a cue that only references Plot topology', () => {
     expect(
@@ -235,7 +237,7 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     null as never,
   );
 
-  it('uses the same optional character link when validating an Asset proposal for apply', () => {
+  it('requires the character link before validating an Asset proposal for apply', () => {
     const assetPlan = { assetSpecs: plan().assetSpecs };
     delete assetPlan.assetSpecs[0].sourceCharacterId;
     const input = {
@@ -243,7 +245,9 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
       canonicalNodeIds: ['scene.gate', 'scene.wait', 'scene.run'],
       canonicalCharacterIds: [],
     };
-    expect(service.validateApprovedAssetPlan(input)).toEqual(assetPlan);
+    expect(() => service.validateApprovedAssetPlan(input)).toThrow(
+      BadRequestException,
+    );
     assetPlan.assetSpecs[0].sourceCharacterId = 'missing-character';
     expect(() => service.validateApprovedAssetPlan(input)).toThrow(
       BadRequestException,

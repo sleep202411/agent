@@ -179,6 +179,8 @@ function build() {
     updatedAt: new Date('2026-07-29T10:00:00.000Z'),
   });
   const tx = {
+    crewTaskCommitment: { findFirst: jest.fn().mockResolvedValue(null) },
+    crewParticipationRecord: { findFirst: jest.fn().mockResolvedValue(null) },
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
     crewMember: {
@@ -1117,6 +1119,30 @@ describe('CrewTasksService', () => {
     ).rejects.toThrow('Only a current task assignee can submit this task.');
     expect(t.tx.crewTask.update).not.toHaveBeenCalled();
     expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+  });
+
+  it('blocks a manager submitting work while an assigned creator has withdrawn', async () => {
+    const t = build();
+    const active = task({
+      status: CrewTaskStatus.in_progress,
+      submittedAt: null,
+    });
+    t.prisma.crewTask.findUnique.mockResolvedValue(active);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(active);
+    t.roles.requireMembership.mockResolvedValue({
+      permissions: ['tasks.submit_assigned', 'tasks.manage'],
+    });
+    t.tx.crewTaskCommitment.findFirst.mockResolvedValue({
+      status: 'withdrawn',
+    } as never);
+    await expect(
+      t.service.submit(TASK_ID, OWNER_ID, {
+        note: 'Submitting for the team',
+        assetNodeIds: [],
+      }),
+    ).rejects.toThrow('withdrawal');
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+    expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
   });
 
   it('prevents submission while a blocking task is unresolved', async () => {

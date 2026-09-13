@@ -255,10 +255,11 @@ describe('StoryAgentRunContinuationWorkerService', () => {
       fixture.tx,
       expect.objectContaining({
         outcome: 'failed',
-        text: 'The authored branch points to a missing scene.',
+        text: 'Story generation did not finish. Your approved work is unchanged. Try again.',
         error: {
           code: 'STORY_AGENT_MODEL_OUTPUT_INVALID',
-          message: 'The authored branch points to a missing scene.',
+          message:
+            'Story generation did not finish. Your approved work is unchanged. Try again.',
           retryable: false,
         },
       }),
@@ -288,10 +289,11 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         toolId: 'story.author',
         phase: 'authoring',
         outcome: 'failed',
-        text: 'The structure stage exhausted its attempts.',
+        text: 'A complete story route could not be generated from this source. Your approved work is unchanged. Try again; if it repeats, make the intended transition explicit.',
         error: {
           code: 'STORY_AGENT_STAGE_FAILED',
-          message: 'The structure stage exhausted its attempts.',
+          message:
+            'A complete story route could not be generated from this source. Your approved work is unchanged. Try again; if it repeats, make the intended transition explicit.',
           retryable: false,
         },
       }),
@@ -691,11 +693,11 @@ describe('StoryAgentRunContinuationWorkerService', () => {
         externalJobId: STORY_RUN_ID,
         phase: 'apply',
         outcome: 'failed',
-        text: 'The approved Script could not be compiled into a complete production plan.',
+        text: 'Story generation did not finish. Your approved work is unchanged. Try again.',
         error: {
           code: 'STORY_PRODUCTION_PLAN_INVALID',
           message:
-            'The approved Script could not be compiled into a complete production plan.',
+            'Story generation did not finish. Your approved work is unchanged. Try again.',
           retryable: false,
         },
       }),

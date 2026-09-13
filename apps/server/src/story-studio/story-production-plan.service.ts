@@ -2207,6 +2207,12 @@ export class StoryProductionPlanService {
           throw productionCrossChapter('Asset Spec source', nodeId);
       }
       const sourceCharacterId = asset.sourceCharacterId;
+      if (asset.kind === 'character' && sourceCharacterId === undefined) {
+        throw new BadRequestException({
+          code: 'STORY_PRODUCTION_CHARACTER_SOURCE_REQUIRED',
+          message: `Character Asset Spec ${asset.stableKey} must reference its canonical Script character.`,
+        });
+      }
       if (
         sourceCharacterId !== undefined &&
         !screenplayCharacters.has(sourceCharacterId)

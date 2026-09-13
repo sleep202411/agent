@@ -32,6 +32,7 @@ import {
 } from './story-build-compiler';
 import { resolveStoryCoverUrl } from './story-cover-media';
 import { StoryPermissionService } from './story-permission.service';
+import { assertStoryChapterGraphPartition } from './story-chapter-graph-invariant';
 import {
   chooseStoryboardClipVariant,
   isBrowserSafeMp4Metadata,
@@ -117,9 +118,13 @@ export class StoryWorkingPreviewService {
     projectId: string,
     chapterId: string | undefined,
   ): Promise<StoryWorkingPreviewDto> {
-    const draft = await tx.storyDraft.findUnique({
-      where: { storyProjectId: projectId },
-    });
+    const [draft, chapters] = await Promise.all([
+      tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+      tx.storyChapter.findMany({
+        where: { storyProjectId: projectId, archivedAt: null },
+        orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+      }),
+    ]);
     if (!draft) {
       throw new NotFoundException({
         code: 'STORY_DRAFT_NOT_FOUND',
@@ -155,6 +160,9 @@ export class StoryWorkingPreviewService {
     const draftShape = InteractiveStoryDraftContentSchema.safeParse(
       draft.content,
     );
+    if (draftShape.success) {
+      assertStoryChapterGraphPartition(draftShape.data, chapters);
+    }
     const playableDraft = createPlayableInteractiveStoryDraftContentSchema(
       project.defaultLocale,
       { preserveUnfinishedChoices: true },
@@ -249,14 +257,17 @@ export class StoryWorkingPreviewService {
     const snapshotEntries = prepared.flatMap((item) => item.snapshotEntries);
     const videoSnapshotHash = storyVideoSnapshotHash(snapshotEntries);
     // A chapter owns its own entry scene; the story-level entry belongs to the
-    // first chapter only. An unknown or entry-less chapter falls back to the
-    // whole story rather than failing a play-test.
+    // first chapter only. Preview validates the complete saved projection
+    // before compiling a chapter-scoped subgraph.
     const chapter = chapterId
-      ? await tx.storyChapter.findFirst({
-          where: { id: chapterId, storyProjectId: projectId },
-          select: { entryNodeId: true },
-        })
+      ? chapters.find((candidate) => candidate.id === chapterId)
       : null;
+    if (chapterId && !chapter) {
+      throw new NotFoundException({
+        code: 'STORY_CHAPTER_NOT_FOUND',
+        message: 'The selected Story chapter was not found.',
+      });
+    }
     const chapterScope: StoryBuildScope | null = chapter?.entryNodeId
       ? { kind: 'subgraph', entryNodeId: chapter.entryNodeId }
       : null;

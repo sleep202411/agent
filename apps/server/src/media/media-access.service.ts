@@ -188,6 +188,7 @@ export class MediaAccessService {
     asset: MediaAssetAccessSubject,
     context?: MediaAccessContext,
   ): Promise<void> {
+    requireNonReceiptAsset(asset.metadata);
     if (
       asset.status === MediaAssetStatus.deleted ||
       asset.moderationStatus === MediaAssetModerationStatus.blocked
@@ -287,6 +288,7 @@ export class MediaAccessService {
     query: MediaAssetAccessQueryDto,
   ): Promise<MediaAssetAccessResponseDto> {
     const asset = await this.loadAsset(assetId);
+    requireNonReceiptAsset(asset.metadata);
     if (asset.status === MediaAssetStatus.deleted || asset.deletedAt != null) {
       throw new GoneException({
         code: 'MEDIA_ASSET_UNAVAILABLE',
@@ -515,6 +517,21 @@ export class MediaAccessService {
       url: signed.url,
       expiresAt: signed.expiresAt,
     };
+  }
+}
+
+/** Expense evidence is readable only through its claim/revision authorization. */
+function requireNonReceiptAsset(metadata: Prisma.JsonValue): void {
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    metadata.uploadKind === 'crew_expense_receipt'
+  ) {
+    throw new ForbiddenException({
+      code: 'EXPENSE_RECEIPT_ACCESS_REQUIRED',
+      message: 'Open this receipt through its expense claim.',
+    });
   }
 }
 

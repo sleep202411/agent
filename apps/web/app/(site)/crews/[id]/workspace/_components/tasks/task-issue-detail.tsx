@@ -1,4 +1,7 @@
 "use client";
+import { TaskCommitments } from "@/app/(site)/crews/_components/accountability/task-commitments";
+
+import { TaskDeliveryTemplatePanel } from "./task-delivery-template";
 
 import {
   CREW_CURRENCY,
@@ -366,6 +369,8 @@ export function TaskIssueDetail({
               </p>
             </section>
 
+            <TaskCommitments task={task} canManage={isOwner} />
+
             <div className="mb-5 flex items-center gap-2 border-t border-white/[0.055] pt-7">
               <IconMessage className="size-4 text-[#8c929c]" />
               <h3 className="text-[12px] font-semibold text-[#d7d9de]">
@@ -432,6 +437,7 @@ export function TaskIssueDetail({
               </div>
             ) : null}
 
+            <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
             {isOwner && task.status === "submitted" ? (
               <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}
@@ -2308,6 +2314,10 @@ function renderMentions(body: string, mentions: Array<{ userId: string; label: s
 function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTranslations>) {
   const payload = item.payload;
   switch (item.kind) {
+    case "commitment.accepted": return t("activity.commitmentAccepted");
+    case "commitment.at_risk": return t("activity.commitmentRisk");
+    case "commitment.withdrawn": return t("activity.commitmentWithdrawn");
+    case "commitment.handover": return t("activity.commitmentHandover");
     case "task.created":
       return t("activity.created");
     case "task.updated": {
@@ -2341,6 +2351,7 @@ function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTra
 }
 
 function activityNote(item: CrewTaskTimelineItemDTO) {
+  if (item.kind.startsWith("commitment.")) return typeof item.payload.note === "string" ? item.payload.note : null;
   if (
     item.kind !== "task.submitted" &&
     item.kind !== "task.approved" &&

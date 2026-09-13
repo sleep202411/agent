@@ -1,3 +1,4 @@
+import { TaskDeliveryTemplateInput } from './task-delivery-template';
 import {
   Body,
   Controller,
@@ -482,6 +483,30 @@ export class CrewTasksController {
     await this.tasks.deleteComment(
       parseIdParam(commentId, 'commentId'),
       user.userId,
+    );
+  }
+
+  @Get('crew-tasks/:taskId/delivery-template')
+  getDeliveryTemplate(
+    @Param('taskId') id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.tasks.getDeliveryTemplate(
+      parseIdParam(id, 'taskId'),
+      user.userId,
+    );
+  }
+  @Post('crew-tasks/:taskId/delivery-template')
+  setDeliveryTemplate(
+    @Param('taskId') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(TaskDeliveryTemplateInput))
+    input: z.infer<typeof TaskDeliveryTemplateInput>,
+  ) {
+    return this.tasks.setDeliveryTemplate(
+      parseIdParam(id, 'taskId'),
+      user.userId,
+      input,
     );
   }
 

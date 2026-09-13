@@ -22,7 +22,10 @@ import type {
   WorkspaceTab,
   WorkspaceTabId,
 } from "@/app/(site)/crews/[id]/workspace/_lib/workspace-tabs";
-import { CrewSwitcherRail } from "@/app/(site)/crews/_components/crew-switcher-rail";
+import Link from "next/link";
+import { useLocale } from "@/src/i18n/i18n";
+import { localizePath } from "@/src/i18n/locale-url";
+import type { Locale } from "@/src/i18n/config";
 import { CrewWorkbenchHeader } from "./crew-workbench-header";
 
 const RAIL_ICONS: Record<WorkspaceTabId, typeof IconHome> = {
@@ -60,7 +63,6 @@ export function CrewWorkbenchShell({
   crewId,
   crewLogo,
   crewName,
-  currentCrewHref,
   isOwner,
   onEditCrew,
   onInviteCommunity,
@@ -68,18 +70,14 @@ export function CrewWorkbenchShell({
   onSelectTab,
   showTeamChat,
 }: CrewWorkbenchShellProps) {
+  const locale = useLocale() as Locale;
+  const tCrew = useTranslations("crew");
   const t = useTranslations("workspace");
   const tw = useTranslations("crewWorkbench");
   const tc = useTranslations("crewCommunityChat");
   const hasChat = tabs.some((tab) => tab.id === "chat");
   return (
-    <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)] min-[1152px]:!grid-cols-[180px_220px_minmax(0,1fr)]">
-      <CrewSwitcherRail
-        currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }}
-        currentCrewHref={currentCrewHref}
-        showNames
-      />
-
+    <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[220px_minmax(0,1fr)]">
       <aside
         aria-label={tw("globalNavigation")}
         className="flex min-h-0 flex-col items-stretch border-r border-white/[0.075] bg-[#090a0d] px-1.5 py-2 md:px-2"
@@ -91,6 +89,15 @@ export function CrewWorkbenchShell({
           </span>
         </div>
 
+        <Link
+          href={localizePath("/crews?view=mine", locale)}
+          title={tCrew("myCrewsTitle")}
+          aria-label={tCrew("myCrewsTitle")}
+          className="flex min-h-11 items-center gap-2 px-2 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <IconUsers className="size-5 shrink-0" />
+          <span className="hidden md:inline">{tCrew("myCrewsTitle")}</span>
+        </Link>
         <div className="my-2 h-px bg-white/[0.075]" />
 
         <nav className="flex min-h-0 flex-1 flex-col gap-0.5">

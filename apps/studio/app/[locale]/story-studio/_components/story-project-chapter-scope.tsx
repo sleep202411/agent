@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { IconAlertTriangle, IconLoader2, IconRefresh } from "@tabler/icons-react";
+import { IconLoader2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
 import { useSearchParams } from "next/navigation";
 import { usePathname, useRouter } from "@/i18n/navigation";
-import { Button } from "@/components/ui/button";
-import { getStoryWorkbench, storyApiErrorMessage } from "@/lib/story-projects-api";
+import { getStoryWorkbench } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
 import { resolveStoryChapterId } from "./story-project-chapter-scope-state";
 
@@ -23,7 +21,6 @@ export function StoryProjectChapterScope({
   projectId: string;
   children: React.ReactNode;
 }) {
-  const commonT = useTranslations("common");
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -34,7 +31,7 @@ export function StoryProjectChapterScope({
   const workbenchQuery = useQuery({
     queryKey: ["story-studio", "chapter-scope", projectId],
     queryFn: () => getStoryWorkbench(projectId),
-    retry: false,
+    retry: 2,
   });
   const chapterIds = useMemo(
     () => new Set(workbenchQuery.data?.chapters.map((chapter) => chapter.id) ?? []),
@@ -73,29 +70,9 @@ export function StoryProjectChapterScope({
     [projectId, setActiveChapterId]
   );
 
-  if (workbenchQuery.isError || (!workbenchQuery.isPending && !resolvedChapterId)) {
-    return (
-      <main className="grid h-dvh w-full place-items-center bg-[var(--canvas-background)] px-6 text-center">
-        <div className="max-w-lg">
-          <IconAlertTriangle className="mx-auto size-6 text-white/58" aria-hidden="true" />
-          <p role="alert" className="mt-3 text-sm leading-6 text-white/72">
-            {storyApiErrorMessage(workbenchQuery.error, commonT("error"))}
-          </p>
-          <Button
-            type="button"
-            variant="secondary"
-            className="mt-5"
-            onClick={() => void workbenchQuery.refetch()}
-          >
-            <IconRefresh aria-hidden="true" />
-            {commonT("retry")}
-          </Button>
-        </div>
-      </main>
-    );
-  }
+  if (workbenchQuery.isError) throw workbenchQuery.error;
 
-  if (workbenchQuery.isPending || activeChapterId !== resolvedChapterId) {
+  if (!resolvedChapterId || activeChapterId !== resolvedChapterId) {
     return (
       <main
         aria-busy="true"

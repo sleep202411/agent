@@ -250,6 +250,16 @@ export class CrewAssetsService {
       );
     }
 
+    // Delivery references keep their original ACL; the existing permission filter below
+    // applies to referenced files exactly as it does to ordinary folder children.
+    const deliveryAssets =
+      query.source === 'all' && query.parentId
+        ? await this.prisma.$queryRaw<Array<{ id: string }>>`
+          SELECT a.asset_node_id AS id FROM crew_task_delivery_assets a
+          JOIN crew_task_delivery_folders f ON f.task_id = a.task_id AND f.crew_id = a.crew_id
+          WHERE f.folder_id = ${query.parentId}::uuid AND f.crew_id = ${crewId}
+        `
+        : [];
     const where: Prisma.CrewAssetNodeWhereInput = {
       crewId,
       status:
@@ -264,7 +274,16 @@ export class CrewAssetsService {
             ],
           }
         : {}),
-      ...(query.source === 'all' ? { parentId: query.parentId ?? null } : {}),
+      ...(query.source === 'all'
+        ? {
+            OR: [
+              { parentId: query.parentId ?? null },
+              ...(deliveryAssets.length
+                ? [{ id: { in: deliveryAssets.map((asset) => asset.id) } }]
+                : []),
+            ],
+          }
+        : {}),
       ...(query.source === 'favorites'
         ? { favorites: { some: { userId } } }
         : {}),

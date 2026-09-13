@@ -41,6 +41,7 @@ type ContributorDto = {
 };
 
 type EpisodeDto = {
+  status?: string;
   id: string;
   episodeNo?: number | null;
   title?: string | null;
@@ -214,6 +215,13 @@ function mapDetail(dto: IpDto): IpDetail {
   const episodes: IpEpisode[] = (dto.episodes ?? []).map((episode, index) => ({
     id: episode.id,
     index: index + 1,
+    episodeNo: episode.episodeNo ?? undefined,
+    feedbackEligible:
+      episode.status === "published" &&
+      Number.isInteger(episode.episodeNo) &&
+      episode.episodeNo! >= 1 &&
+      episode.episodeNo! <= 3 &&
+      Boolean(episode.mediaAsset?.url),
     title: episode.title?.trim() || `Episode ${index + 1}`,
     durationLabel: durationLabel(episode.durationSeconds),
     thumbnailUrl: assetUrl(episode.coverAsset),

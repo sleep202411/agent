@@ -1,3 +1,4 @@
+import { ProfessionalDeliveryInput } from './tasks/task-delivery-template';
 /**
  * Zod schemas for every crew controller body. Co-located in one file
  * because each schema is small and they share a few constraints
@@ -713,6 +714,8 @@ export type UpdateCrewTaskCommentInput = z.infer<
 >;
 
 export const SubmitCrewTaskSchema = z.object({
+  professionalDelivery: ProfessionalDeliveryInput.optional(),
+  deliveryFolderId: z.string().uuid().optional(),
   note: z.string().trim().max(5000).default(''),
   assetNodeIds: z.array(z.string().uuid()).max(100).default([]),
 });

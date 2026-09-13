@@ -10,8 +10,10 @@ import {
 } from '@repo/shared';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
+  INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
   type InteractiveStoryDraftContent,
 } from '../../story-studio/interactive-film.schema';
+import { canonicalJsonHash } from '../../story-studio/canonical-json';
 import { executeStoryPatch } from '../../story-studio/story-agent-patch.executor';
 import {
   StoryAgentCapabilityHandler,
@@ -132,6 +134,95 @@ describe('StoryAgentCapabilityHandler', () => {
     expect(handler.supports('story.generation.confirmBatch')).toBe(true);
     expect(handler.supports('characters.upsert')).toBe(false);
     expect(handler.supports('canvas.applyPatch')).toBe(false);
+  });
+
+  it('repairs legacy ownership and commits an Agent OS patch through the shared graph primitive', async () => {
+    const projectId = '0197f4a2-0800-7000-8000-0000000000c5';
+    const chapterId = '0197f4a2-0800-7000-8000-0000000000c7';
+    const content = draft([node('scene.gate')]);
+    const tx = {
+      storyProject: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: projectId,
+          frameProfile: 'landscape_16_9',
+          durationPreset: null,
+          visualStyle: null,
+          defaultLocale: 'en-US',
+          creativeProfileConfirmedAt: null,
+          draft: {
+            schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+            revision: 3,
+            content,
+            contentHash: canonicalJsonHash(content),
+          },
+          chapters: [
+            {
+              id: chapterId,
+              rank: 0,
+              nodeIds: [],
+              entryNodeId: null,
+              canvasLayout: null,
+            },
+          ],
+        }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      storyDraft: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
+      storyChapter: { update: jest.fn().mockResolvedValue({}) },
+      storyChapterGraphRepair: { upsert: jest.fn().mockResolvedValue({}) },
+      storyStoryboardSequence: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({}),
+      },
+    };
+    const prisma = {
+      $transaction: jest.fn(
+        (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
+    };
+    const receipts = {
+      fenceBusinessMutationInTx: jest.fn().mockResolvedValue(undefined),
+      completeSuccessInTx: jest.fn().mockResolvedValue(undefined),
+    };
+    const scoped = new StoryAgentCapabilityHandler(
+      prisma as never,
+      {} as never,
+      { authorizeWrite: jest.fn().mockResolvedValue(undefined) } as never,
+      {
+        acquireAgentOsMutationFence: jest.fn().mockResolvedValue({
+          fencingToken: BigInt(1),
+        }),
+      } as never,
+      {} as never,
+      receipts as never,
+      {} as never,
+      {} as never,
+    );
+
+    await expect(
+      scoped.execute({
+        ...storyboardExecuteInput('story.updateBible', {
+          baseDraftRevision: 3,
+          logline: 'A courier reaches a sealed gate.',
+        }),
+        projectId,
+        workbenchContext: { chapterId },
+      }),
+    ).resolves.toMatchObject({ draftRevision: 4 });
+
+    expect(tx.storyChapter.update).toHaveBeenCalledWith({
+      where: { id: chapterId },
+      data: { nodeIds: ['scene.gate'], entryNodeId: 'scene.gate' },
+    });
+    expect(tx.storyChapterGraphRepair.upsert).toHaveBeenCalledTimes(1);
+    expect(tx.storyStoryboardSequence.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        storyProjectId: projectId,
+        storyChapterId: chapterId,
+        plotNodeId: 'scene.gate',
+      }) as unknown,
+    });
   });
 
   function storyboardExecuteInput(

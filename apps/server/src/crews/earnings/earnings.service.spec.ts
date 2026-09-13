@@ -2,6 +2,7 @@ import { CrewEarningSourceType, CrewEarningStatus } from '@prisma/client';
 import {
   CreateCrewEarningSchema,
   ListCrewEarningsQuerySchema,
+  ListMyCrewEarningsQuerySchema,
 } from './earnings.dto';
 import { CrewEarningsService } from './earnings.service';
 
@@ -422,5 +423,70 @@ describe('CrewEarningsService', () => {
         amountMinor: 5000n,
       },
     });
+  });
+});
+
+describe('Personal cross-Crew earnings', () => {
+  it('rejects caller-selected beneficiaries and crew-wide scope', () => {
+    for (const extra of [
+      { userId: 'someone-else' },
+      { scope: 'crew' },
+      { crewId: 'private' },
+    ]) {
+      expect(
+        ListMyCrewEarningsQuerySchema.safeParse({ currency: 'USD', ...extra })
+          .success,
+      ).toBe(false);
+    }
+  });
+  it('scopes every read and aggregate to the current beneficiary and currency without restoring Crew membership', async () => {
+    const f = build();
+    f.authorization.requireMembership.mockRejectedValue(
+      new Error('Former member'),
+    );
+    await f.service.listMine(
+      MEMBER_USER_ID,
+      ListMyCrewEarningsQuerySchema.parse({
+        currency: 'USD',
+        sourceType: 'task_reward',
+      }),
+    );
+    for (const mock of [
+      f.prisma.crewEarningEntry.findMany,
+      f.prisma.crewEarningEntry.groupBy,
+      f.prisma.crewEarningEntry.aggregate,
+    ]) {
+      for (const [args] of mock.mock.calls as unknown as [
+        { where: Record<string, unknown> },
+      ][]) {
+        expect(
+          args.where.AND ? (args.where.AND as unknown[])[0] : args.where,
+        ).toMatchObject({
+          userId: MEMBER_USER_ID,
+          currency: 'USD',
+          sourceType: 'task_reward',
+        });
+      }
+    }
+    expect(f.authorization.requireMembership).not.toHaveBeenCalled();
+  });
+  it('rejects an out-of-scope cursor before returning records', async () => {
+    const f = build();
+    f.prisma.crewEarningEntry.findFirst.mockResolvedValue(null);
+    await expect(
+      f.service.listMine(
+        MEMBER_USER_ID,
+        ListMyCrewEarningsQuerySchema.parse({
+          currency: 'USD',
+          cursor: EARNING_ID,
+        }),
+      ),
+    ).rejects.toThrow('cursor');
+    expect(f.prisma.crewEarningEntry.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: MEMBER_USER_ID, currency: 'USD', id: EARNING_ID },
+      }),
+    );
+    expect(f.prisma.crewEarningEntry.findMany).not.toHaveBeenCalled();
   });
 });

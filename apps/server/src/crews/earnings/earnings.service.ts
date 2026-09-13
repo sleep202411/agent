@@ -20,6 +20,7 @@ import type {
   CreateCrewEarningInput,
   DecideCrewEarningInput,
   ListCrewEarningsQuery,
+  ListMyCrewEarningsQuery,
   RejectCrewEarningInput,
   ReverseCrewEarningInput,
 } from './earnings.dto';
@@ -65,6 +66,27 @@ export class CrewEarningsService {
       crewId,
       ...(query.scope === 'mine' ? { userId } : {}),
     } satisfies Prisma.CrewEarningEntryWhereInput;
+    return this.readEarnings(scopeWhere, query);
+  }
+
+  // Financial ownership survives Crew departure. This endpoint grants no Crew,
+  // task-detail or asset access and never accepts a caller-selected beneficiary.
+  async listMine(userId: string, query: ListMyCrewEarningsQuery) {
+    return this.readEarnings(
+      {
+        userId,
+        currency: query.currency,
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.sourceType ? { sourceType: query.sourceType } : {}),
+      },
+      query,
+    );
+  }
+
+  private async readEarnings(
+    scopeWhere: Prisma.CrewEarningEntryWhereInput,
+    query: ListMyCrewEarningsQuery,
+  ) {
     const where = {
       ...scopeWhere,
       ...(query.status ? { status: query.status } : {}),
@@ -104,14 +126,13 @@ export class CrewEarningsService {
       }),
       this.prisma.crewEarningEntry.groupBy({
         by: ['sourceType'],
-        where: { ...scopeWhere, status: CrewEarningStatus.posted },
+        where: { AND: [scopeWhere, { status: CrewEarningStatus.posted }] },
         _count: { _all: true },
         _sum: { amountMinor: true },
       }),
       this.prisma.crewEarningEntry.aggregate({
         where: {
-          ...scopeWhere,
-          status: CrewEarningStatus.posted,
+          AND: [scopeWhere, { status: CrewEarningStatus.posted }],
           postedAt: { gte: monthStart },
         },
         _sum: { amountMinor: true },

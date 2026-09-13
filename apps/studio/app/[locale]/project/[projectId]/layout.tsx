@@ -64,6 +64,7 @@ export default function ProjectLayout({
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
@@ -96,6 +97,7 @@ export default function ProjectLayout({
   const leftDrawerOpen =
     (nodesOpen && nodesEnabled) ||
     assetsOpen ||
+    crewAssetsOpen ||
     historyOpen ||
     sectionsOpen ||
     skillsOpen ||
@@ -206,6 +208,7 @@ export default function ProjectLayout({
                     />
                   }
                   panelOpen={leftDrawerOpen}
+                  crewAssetsEnabled
                 />
               </div>
               {projectHeader}
