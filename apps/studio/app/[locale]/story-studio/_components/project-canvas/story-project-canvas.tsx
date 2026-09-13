@@ -1193,12 +1193,12 @@ function StoryProjectCanvasInner({
     onState: (state: StoryCandidateAssetUploadState) => void,
     signal: AbortSignal
   ): Promise<StoryCandidateAsset> => {
-    if (!workspaceId || !canMutateCanvasLayout) {
+    if (!canMutateCanvasLayout) {
       throw new Error(t("production.errors.action"));
     }
     const uploaded = await uploadFileViaSignedUrl(file, {
       kind: "ai_reference_image",
-      workspaceId,
+      scope: { storyProjectId: projectId },
       onProgress: (progress) => onState({ stage: "uploading", progress }),
       signal,
     });

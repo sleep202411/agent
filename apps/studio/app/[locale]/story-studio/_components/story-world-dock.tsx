@@ -44,7 +44,7 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
   const foundationWriter = useStoryProjectUiStore((state) => state.foundationWriter);
 
   const workbenchQuery = useStoryChapterWorkbench(projectId);
-  const { workspaceId, chapterId: activeChapterId } = workbenchQuery;
+  const { chapterId: activeChapterId } = workbenchQuery;
   const workbenchQueryKey = useMemo(
     () => storyChapterWorkbenchQueryKey(projectId, activeChapterId),
     [projectId, activeChapterId]
@@ -185,7 +185,7 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
   // ---- Cover (project-level) --------------------------------------------
   const candidateAssets = useStoryCandidateAssets({ projectId, canEdit });
   const updateProjectCover = async (coverAssetId: string | null) => {
-    if (!workspaceId || !workbench || !canEdit) {
+    if (!workbench || !canEdit) {
       throw new Error(t("production.errors.action"));
     }
     try {
@@ -208,10 +208,10 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
     onState: (state: StoryCandidateAssetUploadState) => void,
     signal: AbortSignal
   ) => {
-    if (!workspaceId || !canEdit) throw new Error(t("production.errors.action"));
+    if (!canEdit) throw new Error(t("production.errors.action"));
     const uploaded = await uploadFileViaSignedUrl(file, {
       kind: "ai_reference_image",
-      workspaceId,
+      scope: { storyProjectId: projectId },
       onProgress: (progress) => onState({ stage: "uploading", progress }),
       signal,
     });

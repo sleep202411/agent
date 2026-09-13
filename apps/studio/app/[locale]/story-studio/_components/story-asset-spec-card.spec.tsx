@@ -170,7 +170,6 @@ describe("StoryAssetSpecCard", () => {
               asset={assetSpec({ kind })}
               projectId="project-1"
               chapterId="chapter-1"
-              workspaceId="workspace-1"
             />
           </QueryClientProvider>
         );

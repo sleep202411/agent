@@ -65,7 +65,6 @@ export function StoryAssetSpecCard({
   chapterId,
   allowEditing = true,
   allowGeneration = true,
-  workspaceId = null,
   allowMediaReplacement = true,
   eagerMedia = false,
 }: {
@@ -74,7 +73,6 @@ export function StoryAssetSpecCard({
   chapterId: string;
   allowEditing?: boolean;
   allowGeneration?: boolean;
-  workspaceId?: string | null;
   allowMediaReplacement?: boolean;
   eagerMedia?: boolean;
 }) {
@@ -88,7 +86,7 @@ export function StoryAssetSpecCard({
   const [turnaroundPickerOpen, setTurnaroundPickerOpen] = useState(false);
   const [primaryPendingPreviewCount, setPrimaryPendingPreviewCount] = useState(0);
   const [turnaroundPendingPreviewCount, setTurnaroundPendingPreviewCount] = useState(0);
-  const canReplaceMedia = allowMediaReplacement && Boolean(workspaceId);
+  const canReplaceMedia = allowMediaReplacement;
   const mediaVersions = [...asset.mediaVersions].sort(
     (left, right) => right.versionNumber - left.versionNumber
   );
@@ -452,23 +450,21 @@ export function StoryAssetSpecCard({
         </section>
       ) : null}
 
-      {assetPickerOpen && workspaceId ? (
+      {assetPickerOpen ? (
         <StoryAssetSpecCardMediaPicker
           asset={asset}
           projectId={projectId}
           chapterId={chapterId}
-          workspaceId={workspaceId}
           open
           purpose="primary"
           onOpenChange={setAssetPickerOpen}
         />
       ) : null}
-      {turnaroundPickerOpen && workspaceId ? (
+      {turnaroundPickerOpen ? (
         <StoryAssetSpecCardMediaPicker
           asset={asset}
           projectId={projectId}
           chapterId={chapterId}
-          workspaceId={workspaceId}
           open
           purpose="turnaround"
           onOpenChange={setTurnaroundPickerOpen}
@@ -620,7 +616,6 @@ function StoryAssetSpecCardMediaPicker({
   asset,
   projectId,
   chapterId,
-  workspaceId,
   open,
   purpose,
   onOpenChange,
@@ -628,7 +623,6 @@ function StoryAssetSpecCardMediaPicker({
   asset: StoryAssetSpec;
   projectId: string;
   chapterId: string;
-  workspaceId: string;
   open: boolean;
   purpose: "primary" | "turnaround";
   onOpenChange: (open: boolean) => void;
@@ -678,8 +672,7 @@ function StoryAssetSpecCardMediaPicker({
   ) => {
     const uploaded = await uploadFileViaSignedUrl(file, {
       kind: "ai_reference_image",
-      workspaceId,
-      scope: { projectId },
+      scope: { storyProjectId: projectId },
       onProgress: (progress) => onState({ stage: "uploading", progress }),
       signal,
     });

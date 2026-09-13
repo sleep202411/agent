@@ -63,9 +63,9 @@ export interface UploadFileOptions {
   /** Called with 0–100 as the PUT streams bytes. */
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
-  /** Workspace ownership scope; required for every Story Studio-owned asset. */
+  /** Direct workspace uploads; Story uploads derive ownership from their project. */
   workspaceId?: string;
-  scope?: { projectId: string };
+  scope?: { storyProjectId: string };
 }
 
 export interface UploadFileResult {
@@ -214,7 +214,10 @@ export async function uploadFileViaSignedUrl(
     throw new DOMException("Upload aborted", "AbortError");
   }
   const contentType = contentTypeForFile(file, opts.contentType);
-  const scopedHeaders = opts.workspaceId ? { "x-fizz-workspace-id": opts.workspaceId } : undefined;
+  const scopedHeaders =
+    !opts.scope?.storyProjectId && opts.workspaceId
+      ? { "x-fizz-workspace-id": opts.workspaceId }
+      : undefined;
   const info = await postJson<SignedUrlResponse>(
     UPLOAD_URL_ENDPOINT,
     {
@@ -243,6 +246,7 @@ export async function uploadFileViaSignedUrl(
     CONFIRM_ENDPOINT,
     {
       storageKey: info.storageKey,
+      ...(opts.scope ? { scope: opts.scope } : {}),
       kind: opts.kind,
       contentType,
     },
