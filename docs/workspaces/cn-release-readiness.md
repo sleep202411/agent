@@ -1,5 +1,42 @@
 # Workspace release readiness
 
+## CN follow-up prepared — 2026-09-13
+
+The pending Server/Studio release removes manual prompt saves. Asset and clip
+editors autosave after 400 ms; generation flushes the clicked draft and serializes
+admission against subsequent edits. Failed generation records retain a new-run
+entry point. Image-only fal routes require their input frames before admission.
+
+Story permission snapshots refresh on window focus and membership mutations.
+Read-only production checks confirmed H (3212) is both project and workspace
+owner of `01a098b6-5d63-70ce-854c-164763d3630c`, with all Story capabilities;
+the screenshot does not establish the logged-in identity. Direct editors and
+viewer also resolve correctly. No membership data was changed.
+
+Regression coverage includes autosave ordering/error recovery, generation controls,
+provider mode selection, missing credentials and permission-cache refresh. Types
+and scoped lint pass. This release requires no migration or catalog reseed.
+Authenticated production generation has not been exercised for every model.
+
+## CN Bailian credential correction — 2026-09-13
+
+After release, a Story generation failed with `BAILIAN_API_KEY unset`. The CN
+Server Secret still supplied the legacy `DASHSCOPE_API_KEY`; the provider client
+requires `BAILIAN_API_KEY`. Catalog assembly and the readiness endpoint did not
+detect this missing credential.
+
+The existing CN credential was validated through the provider's read-only model
+list, then provisioned as `BAILIAN_API_KEY` in `fizzdragon-server-secrets`. The
+legacy SDK variable remains for its existing consumers. No active AI jobs were
+present at the pre-restart check. The Server rolled out with the same image;
+the new instance authenticated with the canonical key (HTTP 200, 165 provider
+models) and returned readiness HTTP 200. No paid generation was submitted.
+
+The follow-up adds Bailian, fal and BytePlus startup credential guards and a CN
+deployment preflight Bailian credential check. These code changes are prepared
+for the next Server release. Existing
+failed job records remain unchanged.
+
 ## CN observation release — 2026-09-13
 
 CN Helm revision 73 was deployed at 17:09 Asia/Shanghai. Server uses
