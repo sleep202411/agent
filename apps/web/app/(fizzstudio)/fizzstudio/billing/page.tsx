@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { IconLoader2, IconReceipt, IconRefresh, IconWallet } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
@@ -17,7 +18,30 @@ import type { FizzProject } from "../../_lib/api";
 type LedgerEntry = ComputeWalletLedgerData["entries"][number];
 
 export default function FizzStudioBillingPage() {
-  const workspaceState = useFizzStudioWorkspace();
+  const params = useSearchParams();
+  const { user } = useCurrentUser();
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const workspace = params.get("workspaceId") ?? "";
+  const project = params.get("projectId") ?? "";
+  const requestedWorkspace = uuid.test(workspace) ? workspace : "";
+  const requestedProject = uuid.test(project) ? project : "";
+  return (
+    <BillingPage
+      key={`${user?.id}:${requestedWorkspace}:${requestedProject}`}
+      requestedWorkspace={requestedWorkspace}
+      requestedProject={requestedProject}
+    />
+  );
+}
+
+function BillingPage({
+  requestedWorkspace,
+  requestedProject,
+}: {
+  requestedWorkspace: string;
+  requestedProject: string;
+}) {
+  const workspaceState = useFizzStudioWorkspace(requestedWorkspace);
   const { user } = useCurrentUser();
 
   return (
@@ -31,16 +55,23 @@ export default function FizzStudioBillingPage() {
       <BillingUsageSurface
         key={`${user?.id}:${workspaceState.workspaceId}`}
         workspaceId={workspaceState.workspaceId}
+        initialProjectId={workspaceState.workspaceId === requestedWorkspace ? requestedProject : ""}
       />
     </FizzStudioShell>
   );
 }
 
-export function BillingUsageSurface({ workspaceId }: { workspaceId: string }) {
+function BillingUsageSurface({
+  workspaceId,
+  initialProjectId = "",
+}: {
+  workspaceId: string;
+  initialProjectId?: string;
+}) {
   const t = useTranslations("fizzStudio.billingUsage");
   const locale = useLocale();
   const { user } = useCurrentUser();
-  const [projectId, setProjectId] = useState("");
+  const [projectId, setProjectId] = useState(initialProjectId);
   const ledger = useProjectComputeLedger(workspaceId, projectId || undefined);
   const projects = useQuery({
     queryKey: ["billing-projects", user?.id, workspaceId],
@@ -87,6 +118,11 @@ export function BillingUsageSurface({ workspaceId }: { workspaceId: string }) {
       <div className="mt-6 space-y-2">
         <NativeSelect aria-label={t("projectFilter")} value={projectId} onChange={setProjectId}>
           <NativeSelectOption value="">{t("allProjects")}</NativeSelectOption>
+          {projectId && !projects.data?.projects.some((project) => project.id === projectId) ? (
+            <NativeSelectOption value={projectId}>
+              {t("projectReference", { value: projectId })}
+            </NativeSelectOption>
+          ) : null}
           {(projects.data?.projects ?? []).map((project) => (
             <NativeSelectOption key={project.id} value={project.id}>
               {project.name}

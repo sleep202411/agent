@@ -5800,6 +5800,7 @@
     "optional": "Optional"
   },
   "crewWorkbench": {
+    "projectUsage": "Studio project usage",
     "header": "Crew header",
     "linkCanvas": "Link Canvas",
     "globalNavigation": "Crew workspace navigation",

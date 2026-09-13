@@ -5800,6 +5800,7 @@
     "optional": "可选"
   },
   "crewWorkbench": {
+    "projectUsage": "Studio 项目消耗",
     "header": "剧组工具栏",
     "linkCanvas": "关联画布",
     "globalNavigation": "剧组工作台导航",
