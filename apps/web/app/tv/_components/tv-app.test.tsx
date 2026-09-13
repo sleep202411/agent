@@ -9,10 +9,14 @@ import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const harness = vi.hoisted(() => ({
+  userId: "viewer-a",
   get: vi.fn(),
   list: vi.fn(),
   discovery: vi.fn(),
   routerPush: vi.fn(),
+}));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: harness.userId } }),
 }));
 vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: (ns: string) => (key: string, values?: { number?: string }) =>
@@ -47,6 +51,7 @@ vi.mock("@/components/ui/native-select", () => ({
     onChange: (v: string) => void;
     children: ReactNode;
   }) => (
+    // eslint-disable-next-line no-restricted-syntax -- Native DOM stand-in for the themed Select in interaction tests.
     <select {...props} value={value} onChange={(e) => onChange(e.target.value)}>
       {children}
     </select>
@@ -116,6 +121,7 @@ describe("TV IP list", () => {
   let observerCallback: IntersectionObserverCallback;
 
   beforeEach(() => {
+    harness.userId = "viewer-a";
     vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
@@ -162,6 +168,49 @@ describe("TV IP list", () => {
       );
     });
   }
+
+  it("cancels catalog and discovery reads when the viewer changes", async () => {
+    harness.list.mockImplementation(() => new Promise(() => {}));
+    harness.discovery.mockImplementation(() => new Promise(() => {}));
+    await render();
+    const oldRequests = harness.get.mock.calls.map(
+      ([, options]) => options as { signal: AbortSignal }
+    );
+    expect(oldRequests.length).toBeGreaterThanOrEqual(2);
+    harness.userId = "viewer-b";
+    harness.list.mockResolvedValue({
+      items: [makeIp("new-ip", "New viewer IP")],
+      nextCursor: null,
+    });
+    harness.discovery.mockResolvedValue({ items: [] });
+    await render();
+    expect(oldRequests.every((request) => request.signal.aborted)).toBe(true);
+    expect(harness.get.mock.calls.length).toBeGreaterThan(oldRequests.length);
+  });
+
+  it("does not reuse the previous viewer's fresh channel cache", async () => {
+    await render();
+    harness.userId = "viewer-b";
+    harness.list.mockResolvedValue({
+      items: [makeIp("new-ip", "New viewer IP")],
+      nextCursor: null,
+    });
+    await render();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(container.textContent).toContain("New viewer IP");
+    expect(container.textContent).not.toContain("First IP");
+  });
+
+  it("reports a recommendation failure while retaining playable catalog channels", async () => {
+    harness.discovery.mockRejectedValue(new Error("Recommendations unavailable"));
+    await render();
+    await waitForText("Recommendations unavailable");
+    expect(container.textContent).toContain("First IP");
+    expect(container.textContent).toContain("Second IP");
+    expect(selected()).toContain("First IP");
+  });
   async function waitForText(text: string) {
     await vi.waitFor(async () => {
       await act(async () => {
@@ -231,6 +280,7 @@ describe("TV IP list", () => {
     await render();
     await waitForText("Second IP");
     expect(harness.get).toHaveBeenCalledWith("/aurora/ip-commerce/ips", {
+      signal: expect.any(AbortSignal),
       params: {
         locale: "en-US",
         cursor: undefined,
@@ -312,7 +362,7 @@ describe("TV IP list", () => {
     await render();
     await waitForText("First IP");
     await act(async () => {
-      queryClient.setQueryData(["tv", "ips", "en-US", ""], {
+      queryClient.setQueryData(["tv", "ips", "en-US", "", harness.userId], {
         pages: [{ items: [...ips].reverse(), nextCursor: null }],
         pageParams: [undefined],
       });
@@ -363,6 +413,7 @@ describe("TV IP list", () => {
     );
     await waitForText("Third IP");
     expect(harness.list).toHaveBeenLastCalledWith({
+      signal: expect.any(AbortSignal),
       params: {
         locale: "en-US",
         cursor: "next",
@@ -372,7 +423,7 @@ describe("TV IP list", () => {
     });
     expect(selected()).toContain("Second IP");
     await act(async () => {
-      queryClient.setQueryData(["tv", "ips", "en-US", ""], {
+      queryClient.setQueryData(["tv", "ips", "en-US", "", harness.userId], {
         pages: [{ items: [...ips].reverse(), nextCursor: null }],
         pageParams: [undefined],
       });

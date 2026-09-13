@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
 import { IconX } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -17,6 +18,7 @@ import { TvInfoBar } from "./tv-info-bar";
 import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
 
 export function TvApp({ embedded = false }: { embedded?: boolean }) {
+  const { user } = useCurrentUser();
   const t = useTranslations("tvGames");
   const tv = useTranslations("tv");
   const locale = useLocale() as Locale;
@@ -47,7 +49,11 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
           <IconX className="size-5" />
         </button>
       )}
-      {mode === "videos" ? <TvVideoApp embedded={embedded} /> : <TvGames />}
+      {mode === "videos" ? (
+        <TvVideoApp key={user?.id ?? "guest"} embedded={embedded} />
+      ) : (
+        <TvGames />
+      )}
     </div>
   );
 }

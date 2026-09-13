@@ -4,29 +4,32 @@ import { useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { api } from "@/src/lib/api";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import type { IpCommerceAsset, IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { useIpCommerceDiscovery } from "@/src/lib/ip-commerce/hooks";
 import { ipPreviewVideoUrl, previewVideoUrl } from "@/src/lib/ip-commerce/preview-video";
 import { prioritizeForYou } from "./prioritize-for-you";
 import type { TvItem } from "./types";
 
-function listTvIps(params: { locale: string; cursor?: string; q?: string }) {
+function listTvIps(params: { locale: string; cursor?: string; q?: string }, signal: AbortSignal) {
   return api.get<{ items: IpCommerceIp[]; nextCursor: string | null }>("/aurora/ip-commerce/ips", {
     params: {
       ...params,
       limit: 20,
     },
+    signal,
   });
 }
 
 export function useTvIps(options?: { q?: string }) {
+  const { user } = useCurrentUser();
   const locale = useLocale();
   const t = useTranslations("tv");
   const q = options?.q?.trim() || undefined;
   const query = useInfiniteQuery({
-    queryKey: ["tv", "ips", locale, q ?? ""],
+    queryKey: ["tv", "ips", locale, q ?? "", user?.id ?? "guest"],
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam }) => listTvIps({ locale, cursor: pageParam, q }),
+    queryFn: ({ pageParam, signal }) => listTvIps({ locale, cursor: pageParam, q }, signal),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 60_000,
   });
@@ -75,6 +78,8 @@ export function useTvIps(options?: { q?: string }) {
     ...query,
     items,
     isLoading: query.isLoading || (!q && discovery.isLoading),
+    isError: query.isError || (!q && discovery.isError),
+    error: query.error ?? (!q ? discovery.error : null),
     fetchNextChannels,
     refetch: () => Promise.all([query.refetch(), !q ? discovery.refetch() : Promise.resolve()]),
   };
