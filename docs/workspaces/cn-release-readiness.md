@@ -40,14 +40,16 @@ queue limits; GPT Image 2 differs in parameters/pricing. The code seed is not an
 authority for existing production overrides: preserve COM's current product
 policies when synchronizing the catalog rather than resetting them to defaults.
 
-The owner authorized sharing COM provider accounts with separate runtime
-identities. CN MiniMax credentials have been provisioned and verified from ACK by querying
-an existing completed task (HTTP 200, succeeded; no new generation). Google Vertex uses the
-same Google project with a dedicated ACK federation, Kubernetes service account
-and Google service account. Run `deploy/setup-cn-vertex.sh` with an authenticated
-Google operator session, then verify token exchange from an ACK pod before
-release. Rerun that setup after ACK signing-key rotation: the cluster's discovery
-URL is private, so Google receives its public JWKS explicitly.
+CN deliberately excludes Google Vertex: the three Veo variants and Gemini Omni
+are not release targets. Its expected catalog after sync is 37 models. Existing
+models delivered through other providers, including Nano Banana via fal, stay
+available. The four additions are GPT Image 2.5 Flare/Sunburst, Seedance 2.5 and
+MiniMax H3.
+
+The provider accounts used by those additions are shared with COM. CN MiniMax
+credentials have been provisioned and verified from ACK by querying an existing
+completed task (HTTP 200, succeeded; no new generation). Google login, federation
+and a Google network exit are not required for this release.
 
 `apps/server/prisma/seed/update-model-catalog.ts` replaces the GPT-only release
 command. It takes explicit model slugs and defaults to offline review. `--apply`
@@ -59,7 +61,7 @@ images include `dist/catalog-update/prisma/seed/update-model-catalog.js`.
 1. Commit and build immutable Server, Studio, Web, Admin UI and Agent OS images.
    CN goes first; COM waits for observation. Do not merge deployment tags to the
    COM GitOps branch during the CN observation release.
-2. Verify provider credentials, OSS readiness and Google federation; compare the
+2. Verify provider credentials and OSS readiness; compare the
    rendered chart to the live release. Take a fresh RDS backup.
 3. Drain Agent runs and generation work, pause admission and stop old Server
    instances before the schema migration. The old Prisma client cannot run after
@@ -73,7 +75,8 @@ images include `dist/catalog-update/prisma/seed/update-model-catalog.js`.
    keep their bootstrap URL and workspace-header contract; the HTTP boundary
    normalizes those requests into the same strict workspace DTOs.
 5. Verify project access, movement, wallet grant/debit, Agent editor/viewer access
-   and OSS-backed outputs. Verify all 41 models and their usable routes on CN.
+   and OSS-backed outputs. Verify the 37 intended models and their usable routes on CN; Google Vertex
+   must remain disabled.
 
 Local verification includes migration wallet/payer preservation, more than 500
 backend regression tests, Studio/Admin checks, browser workspace/move flows and

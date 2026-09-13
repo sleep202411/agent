@@ -25,8 +25,6 @@ image:
   # (fixed password via ResetLoginPassword).
   registry: fizzdragon-registry-vpc.cn-hangzhou.cr.aliyuncs.com/fizzdragon
   pullPolicy: IfNotPresent
-  pullSecrets:
-    - name: acr-pull
 
 ingress:
   enabled: true
@@ -204,14 +202,10 @@ studio:
   tolerations: null
 
 server:
-  # Same Google project, separate ACK federation and runtime identity.
+  # Google Vertex models are not offered in CN. Do not inherit COM's identity
+  # configuration or advertise models that require the Google API path.
   googleVertex:
-    enabled: true
-    kubernetesServiceAccount: fizzdragon-server-vertex
-    workloadIdentityFederation:
-      pool: fizzdragon-ack
-      provider: ack-cn
-      serviceAccountEmail: fizzdragon-cn-vertex@glass-proxy-501907-d2.iam.gserviceaccount.com
+    enabled: false
   replicaCount: 1
   # CN migrations are an explicit, separately approved Job. Never couple
   # irreversible schema/data changes to an ordinary pod rollout.
