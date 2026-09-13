@@ -7,6 +7,7 @@ import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { useTvIps } from "../_hooks/use-tv-ips";
+import { TvGames } from "./tv-games";
 import { TvComments } from "./tv-comments";
 import { TvStage } from "./tv-stage";
 import { TvIpList } from "./tv-ip-list";
@@ -14,6 +15,42 @@ import { TvInfoBar } from "./tv-info-bar";
 import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
 
 export function TvApp({ embedded = false }: { embedded?: boolean }) {
+  const t = useTranslations("tvGames");
+  const tv = useTranslations("tv");
+  const locale = useLocale() as Locale;
+  const router = useRouter();
+  const [mode, setMode] = useState<"videos" | "games">("videos");
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-[#0c0e13] text-white">
+      <div role="group" aria-label={t("catalog")} className="flex shrink-0 gap-3 px-4 py-2">
+        {(["videos", "games"] as const).map((value) => (
+          <button
+            type="button"
+            key={value}
+            aria-pressed={mode === value}
+            onClick={() => setMode(value)}
+            className="min-h-11 rounded-lg px-4 text-white/60 aria-pressed:bg-white/10 aria-pressed:text-white"
+          >
+            {t(value)}
+          </button>
+        ))}
+      </div>
+      {mode === "games" && !embedded && (
+        <button
+          type="button"
+          aria-label={tv("exit")}
+          onClick={() => router.push(localizePath("/ips", locale))}
+          className="absolute right-4 top-4 z-20 flex size-10 items-center justify-center rounded-full bg-black/50 text-white hover:bg-white/20"
+        >
+          <IconX className="size-5" />
+        </button>
+      )}
+      {mode === "videos" ? <TvVideoApp embedded={embedded} /> : <TvGames />}
+    </div>
+  );
+}
+
+function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
   const t = useTranslations("tv");
   const locale = useLocale() as Locale;
   const router = useRouter();
@@ -111,7 +148,7 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   }
 
   return (
-    <div className="flex w-full flex-col overflow-hidden bg-[#0c0e13] px-3 md:h-full md:flex-row md:px-6">
+    <div className="flex w-full flex-col overflow-hidden bg-[#0c0e13] px-3 min-h-0 flex-1 md:flex-row md:px-6">
       <TvIpList
         embedded={embedded}
         items={items}

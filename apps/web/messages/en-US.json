@@ -9649,5 +9649,18 @@
     "join": "Like IP and join fans",
     "retry": "Retry",
     "likeNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it."
+  },
+  "tvGames": {
+    "videos": "Videos",
+    "games": "Games",
+    "catalog": "TV channels",
+    "search": "Search games",
+    "loading": "Loading published games…",
+    "failed": "Some game catalogs could not be loaded. Loaded games remain available.",
+    "retry": "Retry",
+    "empty": "No published games found.",
+    "player": "Game player",
+    "open": "Open full player",
+    "choose": "Choose a published game to play."
   }
 }
