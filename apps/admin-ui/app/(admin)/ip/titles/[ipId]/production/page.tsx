@@ -1,3 +1,6 @@
+import { ProductionStageForm } from "@/components/admin/ip/production-stage-form";
+import { getAdminSession } from "@/lib/admin-session";
+import { fetchIpProductionStage } from "@/lib/admin-ip-commerce";
 import Link from "next/link";
 import { fetchIpProductionEvidence } from "@/lib/admin-ip-commerce";
 
@@ -7,7 +10,11 @@ export default async function IpProductionEvidencePage({
   params: Promise<{ ipId: string }>;
 }) {
   const { ipId } = await params;
-  const { data, error } = await fetchIpProductionEvidence(ipId);
+  const [{ data, error }, stage, session] = await Promise.all([
+    fetchIpProductionEvidence(ipId),
+    fetchIpProductionStage(ipId),
+    getAdminSession(),
+  ]);
   return (
     <main className="space-y-4 p-5">
       <Link href="/ip/titles" className="text-sm underline">
@@ -26,6 +33,15 @@ export default async function IpProductionEvidencePage({
       >
         Refresh evidence
       </a>
+      {stage.error ? <div role="alert">{stage.error}</div> : null}
+      {stage.data && session ? (
+        <ProductionStageForm
+          key={`${session.site.key}:${session.user.id}:${session.session.id}:${ipId}`}
+          ipId={ipId}
+          initial={stage.data}
+          canApprove={session.user.permissions.includes("ip.publish")}
+        />
+      ) : null}
       {data ? (
         <>
           <dl className="grid gap-2 text-sm">

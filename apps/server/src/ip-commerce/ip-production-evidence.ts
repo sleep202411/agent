@@ -6,6 +6,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
 import { Public } from '../auth';
 import { ZodValidationPipe } from '../common/zod.pipe';
@@ -31,7 +32,7 @@ export interface IpProductionEvidence {
 // One statement keeps the IP and episode totals on the same database snapshot.
 // These are explicit IP likes, not inferred Crew fans or automatic eligibility.
 export async function readIpProductionEvidence(
-  db: PrismaService,
+  db: Prisma.TransactionClient,
   ipId: string,
 ): Promise<IpProductionEvidence> {
   const [evidence] = await db.$queryRaw<IpProductionEvidence[]>`

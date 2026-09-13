@@ -3578,6 +3578,7 @@ enum MemberPoolBatchStatus {
 }
 
 model Ip {
+  productionStage        IpProductionStage?
   crewOrigin             IpCrewOrigin?
   releaseLinks           Json                @default("[]") @map("release_links") @db.JsonB
   publicComments         IpPublicComment[]
@@ -10027,4 +10028,14 @@ model CrewCreatorTrustEntry {
   @@id([taskId, userId])
   @@index([userId, createdAt(sort: Desc)], map: "crew_creator_trust_user_idx")
   @@map("crew_creator_trust_entries")
+}
+
+model IpProductionStage {
+  ipId      String   @id @map("ip_id") @db.Uuid
+  stage     String   @db.VarChar(32)
+  version   Int
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  ip        Ip       @relation(fields: [ipId], references: [id], onDelete: Cascade)
+
+  @@map("ip_production_stages")
 }

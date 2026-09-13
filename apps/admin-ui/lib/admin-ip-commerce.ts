@@ -131,3 +131,12 @@ function toSearch(params: Record<string, string | undefined> | undefined) {
   const search = searchParams.toString();
   return search ? `?${search}` : "";
 }
+
+export async function fetchIpProductionStage(
+  ipId: string
+): Promise<AdminIpLoadResult<{ stage: string; version: number }>> {
+  return fetchAdminIpResource(
+    `/ip-commerce/ips/${encodeURIComponent(ipId)}/production-stage`,
+    "Production stage could not be loaded."
+  );
+}
