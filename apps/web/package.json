@@ -10,7 +10,8 @@
     "check-types": "tsc --noEmit",
     "test": "vitest run",
     "test:experience-player": "node --conditions=react-server --import tsx --test \"app/play/_lib/*.test.ts\"",
-    "legacy:sync": "node scripts/sync-legacy.mjs"
+    "legacy:sync": "node scripts/sync-legacy.mjs",
+    "dev:policy-trial": "node scripts/policy-trial/serve.mjs"
   },
   "dependencies": {
     "@ably/chat": "^1.4.0",
@@ -136,6 +137,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5",
+    "vite": "^7.3.2",
     "vitest": "^4.1.4"
   }
 }

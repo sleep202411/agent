@@ -549,4 +549,5 @@ it("loads current revision settings when reopening after cancellation", async ()
   expect((panel.querySelector("input") as HTMLInputElement).value).toBe("5");
 });
 
+vi.mock("@/app/(site)/crews/_components/accountability/task-commitments", () => ({ TaskCommitments: () => null }));
 vi.mock("./task-delivery-template", () => ({ TaskDeliveryTemplatePanel: () => null }));

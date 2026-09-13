@@ -4859,6 +4859,8 @@ model Crew {
   updatedAt           DateTime                   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt           DateTime?                  @map("deleted_at") @db.Timestamptz(6)
 
+  participationRecords CrewParticipationRecord[]
+  peerFeedback         CrewPeerFeedback[]
   positions           CrewPosition[]
   members             CrewMember[]
   ownership           CrewOwnership?
@@ -5352,6 +5354,7 @@ model CrewTask {
   deliveryFolder        CrewTaskDeliveryFolder?
   submissions           CrewTaskSubmission[]
   earningEntries        CrewEarningEntry[]
+  commitments           CrewTaskCommitment[]
   timelineItems         CrewTaskTimelineItem[]
   dependenciesAsBlocker CrewTaskDependency[]      @relation("CrewTaskDependencyBlocker")
   dependenciesAsBlocked CrewTaskDependency[]      @relation("CrewTaskDependencyBlocked")
@@ -9917,6 +9920,64 @@ model CrewUploadReservation {
 
   @@index([crewId, state, expiresAt], map: "crew_upload_reservations_capacity_idx")
   @@map("crew_upload_reservations")
+}
+
+/// A commitment belongs to one assignment incarnation; removing/readding a user
+/// must never erase or reuse an earlier promise. Assignment ID is deliberately
+/// not a foreign key because reassignment deletes CrewTaskAssignee rows.
+model CrewTaskCommitment {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  taskId         String   @map("task_id") @db.Uuid
+  assignmentId   String   @unique @map("assignment_id") @db.Uuid
+  userId         String   @map("user_id") @db.VarChar(64)
+  status         String   @db.VarChar(20)
+  promisedDueAt  DateTime? @map("promised_due_at") @db.Timestamptz(6)
+  acceptedAt     DateTime? @map("accepted_at") @db.Timestamptz(6)
+  reason         String   @default("") @db.Text
+  releasedAt     DateTime? @map("released_at") @db.Timestamptz(6)
+  handoverNote   String?  @map("handover_note") @db.Text
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  task           CrewTask @relation(fields: [taskId], references: [id], onDelete: Restrict)
+  @@index([taskId, acceptedAt])
+  @@index([userId, acceptedAt])
+  @@map("crew_task_commitments")
+}
+
+/// Project exit requests and completion recognition are retained even when
+/// membership is removed. Completion rewards reference the existing wallet ledger.
+model CrewParticipationRecord {
+  id               String @id @default(uuid(7)) @db.Uuid
+  crewId           String @map("crew_id")
+  userId           String @map("user_id") @db.VarChar(64)
+  withdrawalAt     DateTime? @map("withdrawal_at") @db.Timestamptz(6)
+  withdrawalReason String? @map("withdrawal_reason") @db.Text
+  resolvedAt       DateTime? @map("resolved_at") @db.Timestamptz(6)
+  resolvedByUserId  String? @map("resolved_by_user_id") @db.VarChar(64)
+  resolution       String? @db.Text
+  communityPoints Int @default(0) @map("community_points")
+  awardedAt        DateTime? @map("awarded_at") @db.Timestamptz(6)
+  awardedByUserId   String? @map("awarded_by_user_id") @db.VarChar(64)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew             Crew @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  @@unique([crewId, userId])
+  @@index([userId, createdAt])
+  @@map("crew_participation_records")
+}
+
+model CrewPeerFeedback {
+  id            String @id @default(uuid(7)) @db.Uuid
+  crewId        String @map("crew_id")
+  authorUserId  String @map("author_user_id") @db.VarChar(64)
+  subjectUserId String @map("subject_user_id") @db.VarChar(64)
+  rating        Int
+  comment       String @db.Text
+  response      String? @db.Text
+  respondedAt   DateTime? @map("responded_at") @db.Timestamptz(6)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  crew          Crew @relation(fields: [crewId], references: [id], onDelete: Restrict)
+  @@unique([crewId, authorUserId, subjectUserId])
+  @@index([subjectUserId, createdAt])
+  @@map("crew_peer_feedback")
 }
 
 /// Selected task delivery destination; accepted files are published here on review.

@@ -1,3 +1,5 @@
+import { CrewAccountabilityController } from './accountability/accountability.controller';
+import { CrewAccountabilityService } from './accountability/accountability.service';
 import {
   CrewTrustAppealController,
   CrewTrustAppealService,
@@ -87,6 +89,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    CrewAccountabilityController,
     CrewTrustAppealController,
     CrewExpenseReceiptController,
     CrewExpenseReceiptAdminController,
@@ -111,6 +114,7 @@ import { CrewProductionService } from './production/production.service';
     CrewPayoutsController,
   ],
   providers: [
+    CrewAccountabilityService,
     CrewTrustAppealService,
     CrewExpenseReceiptService,
     CrewExpenseDraftService,
