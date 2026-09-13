@@ -1,5 +1,26 @@
 # Workspace release readiness
 
+## CN observation release — 2026-09-13
+
+CN Helm revision 73 was deployed at 17:09 Asia/Shanghai. Server uses
+`96338190a133e4a76fae6cca35ce52574cf11eba`; Studio, Web, Admin UI and Agent OS use
+`d90af4a4afa5a52613eaf52205b9d50de3337224`. COM is unchanged and awaits observation.
+
+Manual RDS backup `3158134887` completed successfully before migration. The three
+workspace migrations completed (316 total); before/after checks confirmed all
+12 Story project identities/scopes and all 2,171 wallet balances were unchanged.
+An in-flight video was allowed to complete and settle before old services stopped.
+
+The live CN Server resolves 37 enabled models after the scoped catalog update and
+COM product-policy sync. Google Vertex remains disabled. Public creator, web and
+admin routes return 200; readiness confirms OSS, Postgres, Redis and realtime.
+This verifies deployment, configuration and catalog assembly, not a paid
+generation on every model or authenticated production UI flows. Local workflow,
+authorization, movement and billing regression evidence remains listed below.
+
+The temporary release-tools Job and build SSH rule were removed; the build ECS
+was stopped. The migration Job retains its backup annotation for release audit.
+
 ## Product contract
 
 Existing projects, content, URLs, owners, direct collaborators and wallet balances
