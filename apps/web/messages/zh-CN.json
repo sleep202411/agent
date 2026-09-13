@@ -4047,6 +4047,8 @@
     "reviewDialogAvailable": "{date} 起可入职",
     "reviewDialogApproveSuccess": "已通过申请",
     "reviewDialogRejectSuccess": "已拒绝申请",
+    "reviewDialogApproveFailed": "无法批准申请",
+    "reviewDialogRejectFailed": "无法拒绝申请",
     "closeJob": "关闭招聘",
     "closeJobConfirm": "确定关闭「{name}」招聘？待处理申请将被归档。",
     "closeJobSuccess": "已关闭「{name}」",

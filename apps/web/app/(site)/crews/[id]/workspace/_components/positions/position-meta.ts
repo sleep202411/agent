@@ -32,6 +32,7 @@ export function experienceKey(level: CrewPositionDTO["experienceLevel"]): string
   if (level === "mid") return "experienceMid";
   if (level === "senior") return "experienceSenior";
   if (level === "lead") return "experienceLead";
+  if (level === "master") return "experienceMaster";
   return "experienceAny";
 }
 
