@@ -123,25 +123,31 @@ export class IpCrewOriginController {
   constructor(private readonly origins: IpCrewOriginService) {}
   @Public()
   @Get('ips/:ipId/crew')
-  publicOrigin(
+  async publicOrigin(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user?: AuthUser,
   ) {
-    return this.origins.publicOrigin(params.ipId, user);
+    return {
+      code: 200,
+      data: await this.origins.publicOrigin(params.ipId, user),
+    };
   }
   @Get('me/ips/:ipId/crew')
-  own(
+  async own(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.origins.own(params.ipId, user);
+    return { code: 200, data: await this.origins.own(params.ipId, user) };
   }
   @Put('me/ips/:ipId/crew')
-  save(
+  async save(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(Save)) input: z.infer<typeof Save>,
   ) {
-    return this.origins.save(params.ipId, user, input);
+    return {
+      code: 200,
+      data: await this.origins.save(params.ipId, user, input),
+    };
   }
 }
