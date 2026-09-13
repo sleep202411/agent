@@ -12,13 +12,13 @@ import { api } from "@/src/lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type WorkspaceType = "personal" | "team";
 export type WorkspaceStatus = "active" | "suspended" | "archived";
 export type WorkspaceMemberRole = "owner" | "admin" | "editor" | "viewer" | "billing";
 
 export interface FizzWorkspace {
   id: string;
-  type: WorkspaceType;
+  isDefault: boolean;
+  accessScope?: "workspace" | "project_only";
   status: WorkspaceStatus;
   name: string;
   slug: string | null;
@@ -57,12 +57,12 @@ export interface FizzProject {
 // ─── Workspace fetchers ───────────────────────────────────────────────────────
 
 /**
- * Idempotent — creates the personal workspace if it doesn't exist yet.
+ * Idempotent — creates the default workspace if it doesn't exist yet.
  * Call once when the user first lands on FizzStudio. Safe to call multiple
  * times; returns the existing workspace if already present.
  */
-export async function ensurePersonalWorkspace(): Promise<FizzWorkspace> {
-  const res = await api.post<{ workspace: FizzWorkspace }>("/aurora/workspaces/personal/ensure");
+export async function ensureDefaultWorkspace(): Promise<FizzWorkspace> {
+  const res = await api.post<{ workspace: FizzWorkspace }>("/aurora/workspaces/default/ensure");
   return res.workspace;
 }
 
@@ -76,13 +76,13 @@ export async function getWorkspace(workspaceId: string): Promise<FizzWorkspace> 
   return res.workspace;
 }
 
-export async function createTeamWorkspace(input: {
+export async function createWorkspace(input: {
   name: string;
   slug?: string;
   description?: string;
   avatarUrl?: string;
 }): Promise<FizzWorkspace> {
-  const res = await api.post<{ workspace: FizzWorkspace }>("/aurora/workspaces/team", {
+  const res = await api.post<{ workspace: FizzWorkspace }>("/aurora/workspaces", {
     data: input,
   });
   return res.workspace;

@@ -29,35 +29,22 @@ const errMsg = (e: unknown, fallback: string) =>
 
 const CAN_MANAGE_BILLING = new Set(["owner", "admin", "billing"]);
 
-/**
- * Compute-credit panel for the active workspace. Every workspace — personal or
- * team — is its own credit pot: the balance shown and the wallet recharged are
- * always this workspace's pot. Personal: the owner funds their own; team:
- * billing-role members fund the shared pot. Recharge via fixed packs or a custom
- * USD amount. Brand-red is used only on the hero recharge CTA.
- */
-export function TeamCreditsPanel({ ws }: { ws: WorkspaceRef }) {
+/** Shared compute credits for the selected workspace. */
+export function WorkspaceCreditsPanel({ ws }: { ws: WorkspaceRef }) {
   const t = useTranslations("settings");
   const tc = useTranslations("common");
   const tw = useTranslations("shell.credits");
-  const isTeam = ws.type === "team";
   const canManageBilling = Boolean(ws.role && CAN_MANAGE_BILLING.has(ws.role));
-  // A personal workspace is funded by its owner; a team requires the billing role.
-  const canRecharge = !isTeam || canManageBilling;
+  const canRecharge = canManageBilling;
 
   const { data: balance, error, refetch, isFetching } = useComputeWalletBalance(true, ws.id);
 
   return (
-    <Panel
-      title={isTeam ? t("teamCredits") : t("credits")}
-      icon={<IconBolt className="size-4 text-muted-foreground" />}
-    >
+    <Panel title={t("credits")} icon={<IconBolt className="size-4 text-muted-foreground" />}>
       <div className="flex flex-col gap-5">
         <div className="flex items-end justify-between gap-4">
           <div>
-            <div className="text-sm text-muted-foreground">
-              {isTeam ? t("sharedTeamBalance") : t("availableBalance")}
-            </div>
+            <div className="text-sm text-muted-foreground">{t("sharedTeamBalance")}</div>
             <div className="mt-1 flex items-center gap-1.5 text-3xl font-semibold tabular-nums">
               <IconBolt className="size-6 text-white/85" stroke={1.8} />
               {balance ? (

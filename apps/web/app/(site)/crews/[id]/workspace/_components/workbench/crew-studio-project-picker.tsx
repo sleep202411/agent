@@ -92,14 +92,7 @@ export function CrewStudioProjectPicker({
                   </CommandGroup>
                 ) : null}
                 {options.data?.workspaces.map((workspace) => (
-                  <CommandGroup
-                    key={workspace.id}
-                    heading={`${workspace.name} · ${t(
-                      workspace.type === "team"
-                        ? "properties.teamWorkspace"
-                        : "properties.personalWorkspace"
-                    )}`}
-                  >
+                  <CommandGroup key={workspace.id} heading={workspace.name}>
                     {workspace.projects.length === 0 ? (
                       <CommandItem disabled value={`${workspace.name} empty`}>
                         <span className="text-muted-foreground">

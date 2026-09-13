@@ -26,7 +26,7 @@ import { LetterAvatar } from "./settings-ui";
  */
 
 /**
- * Same nav for every workspace type: personal workspaces hold members too, and
+ * Same nav for every workspace: default workspaces hold members too, and
  * how many is the server's seat policy to answer, not this list's.
  */
 const TEAM_SUB_NAV = [

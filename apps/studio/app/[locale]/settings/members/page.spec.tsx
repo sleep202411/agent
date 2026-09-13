@@ -9,7 +9,7 @@ import type { WorkspaceRef } from "@/lib/collab/projects-api";
 import MembersSettingsPage from "./page";
 
 /**
- * Reachability pin. The server lets a personal workspace hold members and mint
+ * Reachability pin. The server lets a default workspace hold members and mint
  * invite links, and the seat policy alone caps it — so if this page hides the
  * roster behind `ws.type`, that whole surface is dead code no user can reach.
  * These assert the door is open, not how the roster behaves.
@@ -58,7 +58,7 @@ vi.mock("@/app/_components/members-manager", () => ({
 const PERSONAL: WorkspaceRef = {
   id: "019f7243-20c1-7054-a6fa-0a33da6efef1",
   name: "My workspace",
-  type: "personal",
+  isDefault: true,
   role: "owner",
   defaultProjectId: null,
 };
@@ -113,7 +113,7 @@ describe("MembersSettingsPage", () => {
 
   // Regression pin, not new-behaviour coverage: this passed before the change too.
   it("offers it on a TEAM workspace the same way — type never branches the surface", async () => {
-    workspace.active = { ...PERSONAL, name: "Acme", type: "team" };
+    workspace.active = { ...PERSONAL, name: "Acme", isDefault: false };
     await render();
 
     expect(container.querySelector('[data-testid="members-manager"]')).not.toBeNull();

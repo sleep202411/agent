@@ -85,11 +85,11 @@ describe("current-draft Story production routes", () => {
       nextCursor: null,
     });
 
-    const page = await listStoryProjects({ limit: 100 });
+    const page = await listStoryProjects({ workspaceId: "workspace-1", limit: 100 });
 
     expect(page.items).toHaveLength(1);
     expect(api.get).toHaveBeenCalledWith("/aurora/story-projects", {
-      params: { limit: 100 },
+      params: { workspaceId: "workspace-1", limit: 100 },
       requestScope: "project",
     });
   });
@@ -105,7 +105,7 @@ describe("current-draft Story production routes", () => {
       nextCursor: null,
     });
 
-    await expect(listStoryProjects({ limit: 100 })).rejects.toThrow(
+    await expect(listStoryProjects({ workspaceId: "workspace-1", limit: 100 })).rejects.toThrow(
       "Story Studio API contract is out of date."
     );
   });
@@ -115,6 +115,7 @@ describe("current-draft Story production routes", () => {
 
     await expect(
       createStoryProject({
+        workspaceId: "workspace-1",
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
@@ -123,6 +124,7 @@ describe("current-draft Story production routes", () => {
     ).resolves.toMatchObject({ frameProfile: "landscape_16_9" });
     expect(api.post).toHaveBeenCalledWith("/aurora/story-projects", {
       data: {
+        workspaceId: "workspace-1",
         title: "Moving Pictures",
         summary: null,
         defaultLocale: "en-US",
@@ -241,6 +243,7 @@ describe("current-draft Story production routes", () => {
 
 function storyProject(): StoryProjectSummary {
   return {
+    canMove: true,
     id: "project-film",
     workspaceId: "workspace-1",
     frameProfile: "landscape_16_9",

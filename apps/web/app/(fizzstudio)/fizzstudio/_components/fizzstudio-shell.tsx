@@ -20,7 +20,7 @@ import { setApiWorkspaceId } from "@/src/lib/api";
 import type { Locale } from "@/src/i18n/config";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
-import { useEnsurePersonalWorkspace, useWorkspaces } from "../../_hooks/use-workspace";
+import { useEnsureDefaultWorkspace, useWorkspaces } from "../../_hooks/use-workspace";
 import type { FizzWorkspace } from "../../_lib/api";
 import { ComputeTopupButton } from "./compute-topup-dialog";
 import { FizzStudioSidebar } from "./fizzstudio-sidebar";
@@ -41,7 +41,7 @@ export function useFizzStudioWorkspace(): FizzStudioWorkspaceState {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("");
   const bootstrappedRef = useRef(false);
 
-  const ensureWs = useEnsurePersonalWorkspace();
+  const ensureWs = useEnsureDefaultWorkspace();
   useEffect(() => {
     if (bootstrappedRef.current) return;
     bootstrappedRef.current = true;

@@ -14,7 +14,8 @@ export type WorkspaceRole = "owner" | "admin" | "billing" | "editor" | "viewer";
 export interface WorkspaceRef {
   id: string;
   name: string;
-  type: "personal" | "team";
+  isDefault: boolean;
+  accessScope?: "workspace" | "project_only";
   /** The current user's role in this workspace. */
   role?: WorkspaceRole;
   /** Team icon URL (preset or uploaded); null falls back to a letter avatar. */
@@ -22,7 +23,7 @@ export interface WorkspaceRef {
   defaultProjectId: string | null;
 }
 
-export interface CreateTeamWorkspaceInput {
+export interface CreateWorkspaceInput {
   name: string;
   description?: string;
   avatarUrl?: string;
@@ -91,27 +92,27 @@ export interface ProjectSectionsCollection {
   sections: ProjectSectionRef[];
 }
 
-/** Idempotent — the user's personal workspace, created on first call. */
-export async function ensurePersonalWorkspace(): Promise<WorkspaceRef> {
-  const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces/personal/ensure");
+/** Idempotent — the user's default workspace, created on first call. */
+export async function ensureDefaultWorkspace(): Promise<WorkspaceRef> {
+  const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces/default/ensure");
   return data.workspace;
 }
 
-/** Every workspace the user belongs to (personal + teams), with their role. */
+/** Every workspace the user belongs to, with their role. */
 export async function listWorkspaces(): Promise<WorkspaceRef[]> {
   const data = await api.get<{ workspaces: WorkspaceRef[] }>("/aurora/workspaces");
   return data.workspaces;
 }
 
-/** Create a shared team workspace (the user becomes its owner). */
-export async function createTeamWorkspace(input: CreateTeamWorkspaceInput): Promise<WorkspaceRef> {
-  const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces/team", {
+/** Create a workspace (the user becomes its owner). */
+export async function createWorkspace(input: CreateWorkspaceInput): Promise<WorkspaceRef> {
+  const data = await api.post<{ workspace: WorkspaceRef }>("/aurora/workspaces", {
     data: input,
   });
   return data.workspace;
 }
 
-/** Rename / edit a workspace (team rename, etc.). Returns the updated ref. */
+/** Rename / edit a workspace Returns the updated ref. */
 export async function updateWorkspace(
   workspaceId: string,
   input: { name?: string; description?: string | null }
@@ -122,7 +123,7 @@ export async function updateWorkspace(
   return data.workspace;
 }
 
-/** Soft-delete a team workspace (owner only). */
+/** Soft-delete a workspace (owner only). */
 export async function deleteWorkspace(workspaceId: string): Promise<void> {
   await api.delete(`/aurora/workspaces/${workspaceId}`, { data: {} });
 }

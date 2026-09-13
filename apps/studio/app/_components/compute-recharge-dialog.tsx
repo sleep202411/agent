@@ -64,9 +64,7 @@ export function ComputeRechargeDialog({
   const queryClient = useQueryClient();
   const wallet = useComputeWalletBalance(open);
   const isCn = useIsCnSite();
-  // Recharge targets the pot the user actually pays from (payer-rule mirror):
-  // a team active workspace tops up the shared pot; anywhere else tops up the
-  // caller's OWN personal pot — never a host's pot they happen to be visiting.
+  // Recharge the project workspace, or the active workspace outside a project.
   const billingWorkspace = useProjectPayerWorkspace();
   const sym = isCn ? "¥" : "$";
   const minorPerPoint = isCn ? 7 : 1;
@@ -104,7 +102,6 @@ export function ComputeRechargeDialog({
 
   const canRecharge =
     !billingWorkspace ||
-    billingWorkspace.type !== "team" ||
     Boolean(billingWorkspace.role && CAN_RECHARGE_TEAM_ROLES.has(billingWorkspace.role));
 
   const amountNum = Number(amount);

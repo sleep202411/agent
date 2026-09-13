@@ -116,7 +116,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         | "roles.viewer"
         | "roles.member"
     );
-  const { workspaces, activeWorkspace, setActiveWorkspaceId, createTeam } = useWorkspace();
+  const { workspaces, activeWorkspace, setActiveWorkspaceId, createWorkspace } = useWorkspace();
   const [menuOpen, setMenuOpen] = useState(false);
   const [invitingWorkspace, setInvitingWorkspace] = useState<WorkspaceRef | null>(null);
   const [search, setSearch] = useState("");
@@ -157,11 +157,11 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         teamIcon && typeof window !== "undefined"
           ? `${window.location.origin}${presetUrl(teamIcon)}`
           : undefined;
-      await createTeam(name, teamDescription, avatarUrl);
+      await createWorkspace(name, teamDescription, avatarUrl);
       resetCreate();
       toast.success(t("teamCreated", { name }));
-    } catch {
-      toast.error(t("createTeamFailed"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("createWorkspaceFailed"));
     } finally {
       setBusy(false);
     }
@@ -177,7 +177,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         }}
       >
         <DropdownMenuTrigger
-          aria-label={collapsed ? t("switchTeams") : undefined}
+          aria-label={collapsed ? t("switchWorkspaces") : undefined}
           className={cn(
             buttonVariants({ variant: "secondary" }),
             "relative min-w-0 rounded-[12px] bg-card/95 text-white backdrop-blur-xl hover:bg-accent aria-expanded:bg-accent",
@@ -210,7 +210,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
           }}
         >
           <DropdownMenuLabel className="shrink-0 text-muted-foreground">
-            {t("switchTeams")}
+            {t("switchWorkspaces")}
           </DropdownMenuLabel>
 
           <div className="relative mx-1 mb-2 shrink-0">
@@ -253,22 +253,12 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
                   </span>
                   <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <span>{roleLabel(ws.role ?? "member")}</span>
-                    <span
-                      className={cn(
-                        "rounded-md px-1.5 py-0.5 text-[10px] leading-none font-semibold tracking-wide uppercase",
-                        ws.type === "team"
-                          ? "bg-[#5b9dff]/15 text-[#8fbcff]"
-                          : "bg-[#e0a45c]/15 text-[#f2c98d]"
-                      )}
-                    >
-                      {ws.type === "team" ? t("teamType") : t("personalType")}
-                    </span>
                   </span>
                 </span>
-                {(ws.type === "team" || ws.role === "owner") && (
+                {
                   <span className="flex shrink-0 items-center gap-2">
                     <WorkspaceBalance workspaceId={ws.id} enabled={menuOpen} />
-                    {ws.type === "team" && canManage(ws) && (
+                    {canManage(ws) && (
                       <button
                         type="button"
                         onClick={(event) => {
@@ -284,7 +274,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
                       </button>
                     )}
                   </span>
-                )}
+                }
               </DropdownMenuItem>
             ))}
             {filteredWorkspaces.length === 0 && (
@@ -301,7 +291,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
             className="shrink-0 gap-2 rounded-lg p-2 text-sm"
           >
             <IconPlus className="size-4" />
-            {t("createTeam")}
+            {t("createWorkspace")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -332,7 +322,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
           </DialogClose>
 
           <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-2xl">{t("createTeamTitle")}</DialogTitle>
+            <DialogTitle className="text-2xl">{t("createWorkspaceTitle")}</DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-6 px-6 pb-2 sm:grid-cols-2">
@@ -367,7 +357,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
 
             {/* Form */}
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">{t("createTeamDescription")}</p>
+              <p className="text-sm text-muted-foreground">{t("createWorkspaceDescription")}</p>
 
               <Field label={t("teamName")} htmlFor="team-name">
                 <Input
@@ -441,7 +431,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
               onClick={() => void onCreateTeam()}
               disabled={!teamName.trim() || busy}
             >
-              {t("createTeam")}
+              {t("createWorkspace")}
             </Button>
           </DialogFooter>
         </DialogContent>
