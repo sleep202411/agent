@@ -96,7 +96,7 @@ export function CrewSwitcherRailView({
     <aside
       aria-label={t("crewSwitcherNavigation")}
       className={cn(
-        "hidden min-h-0 flex-col items-center border-r border-white/[0.075] bg-[#07080a] px-2 py-2",
+        "hidden min-h-0 flex-col items-center overflow-y-auto border-r border-white/[0.075] bg-[#07080a] py-2",
         showNames && "min-[1152px]:items-stretch",
         className
       )}
@@ -142,7 +142,7 @@ export function CrewSwitcherRailView({
         )}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-y-auto py-0.5">
+      <div className="flex min-h-12 w-full flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto px-2 py-1">
         {isPending
           ? Array.from({ length: 3 }).map((_, index) => (
               <span

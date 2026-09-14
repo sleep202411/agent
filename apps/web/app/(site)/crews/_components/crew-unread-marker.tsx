@@ -26,7 +26,7 @@ export function CrewUnreadMarker({ crewId }: { crewId: string }) {
       title={label}
       className="absolute -right-1 -top-1 inline-flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] text-primary-foreground"
     >
-      <span aria-hidden="true">{count}</span>
+      <span aria-hidden="true">{count > 99 ? "99+" : count}</span>
     </span>
   );
 }
