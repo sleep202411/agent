@@ -20,6 +20,69 @@ const MESSAGE_ID = "44444444-4444-4444-8444-444444444444";
 const ASSISTANT_MESSAGE_ID = "55555555-5555-4555-8555-555555555555";
 
 describe("LangGraph initial-start recovery", () => {
+  it("terminalizes a deterministic provider rejection instead of retrying the start epoch", async () => {
+    const service = new LangGraphRunService(vi.fn() as never);
+    const internals = serviceInternals(service);
+    internals.persist = vi.fn(async () => ({
+      startExecutionDisposition: "accepted" as const,
+    }));
+    internals.persistUntilAccepted = vi.fn(async () => undefined);
+    internals.runGraphTurn = vi.fn(async () => {
+      throw Object.assign(new Error("400 Input text data may contain inappropriate content."), {
+        status: 400,
+        code: "data_inspection_failed",
+      });
+    });
+
+    await service.beginStart(
+      {
+        ...startInput(),
+        clientSubmissionId: "88888888-8888-4888-8888-888888888888",
+        startExecution: {
+          executionToken: "99999999-9999-4999-8999-999999999999",
+          executionAttemptId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          executionEpoch: 1,
+        },
+      },
+      {
+        status: "running",
+        events: admittedUserJournal().all(),
+        pendingApproval: null,
+        pendingUserInput: null,
+        pendingExternal: null,
+        assistantText: null,
+        projectKind: "story",
+        workbenchMode: "story",
+        workbenchContext: null,
+        skillMountSnapshot: skillSnapshot(),
+        startExecutionPending: true,
+        startExecutionCheckpointId: "checkpoint-before-model-call",
+        startExecutionCheckpointNamespace: "",
+        startExecutionCheckpointThreadId: CONVERSATION_ID,
+        startExecutionCheckpointMessageId: MESSAGE_ID,
+      }
+    );
+    await internals.inflight.get(RUN_ID);
+
+    const snapshot = service.getSnapshot(RUN_ID);
+    expect(snapshot).toMatchObject({
+      status: "failed",
+      errorMessage:
+        "The selected model could not process this content. Revise the content or choose another model, then try again.",
+    });
+    expect(snapshot?.journal.all().at(-1)).toMatchObject({
+      type: "RunFailed",
+      data: {
+        error: {
+          code: "MODEL_CONTENT_REJECTED",
+          retryable: false,
+        },
+      },
+    });
+    expect(JSON.stringify(snapshot?.journal.all())).not.toContain("data_inspection_failed");
+    expect(internals.persistUntilAccepted).toHaveBeenCalledWith(snapshot, "run_failed");
+  });
+
   it("retains the start command after a runtime failure even when an earlier checkpoint exists", async () => {
     const admitted = new EventJournal();
     admitted.append({
@@ -40,7 +103,11 @@ describe("LangGraph initial-start recovery", () => {
     }));
     internals.persistUntilAccepted = vi.fn();
     internals.runGraphTurn = vi.fn(async () => {
-      throw new Error("journal response lost after an external tool result");
+      throw new AgentOsJournalReportError(
+        RUN_ID,
+        400,
+        "journal response lost after an external tool result"
+      );
     });
     const input = {
       ...startInput(),
