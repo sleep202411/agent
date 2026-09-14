@@ -62,6 +62,11 @@ export default function RootLayout() {
                 <Stack.Screen name="account-security" />
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />
+                <Stack.Screen
+                  name="pay/index"
+                  options={{ contentStyle: { backgroundColor: Colors.dark.background } }}
+                />
+                <Stack.Screen name="pay/community" />
                 <Stack.Screen name="delete-account" />
                 <Stack.Screen name="ips" options={detailHeader} />
                 <Stack.Screen name="games" options={detailHeader} />

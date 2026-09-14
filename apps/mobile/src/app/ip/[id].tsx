@@ -10,15 +10,7 @@ import {
   useState,
   type ComponentProps,
 } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  View,
-} from "react-native";
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useVideoPlayer, VideoView } from "expo-video";
 
@@ -34,6 +26,7 @@ import { ThemedView } from "@/components/themed-view";
 import { EmptyState, PosterImage, SectionHeader, Tag } from "@/components/ui";
 import { webBaseUrl } from "@/config";
 import { Spacing } from "@/constants/theme";
+import { promptInsufficientPaywall } from "@/features/paywall";
 import { useScreenActive } from "@/hooks/use-app-active";
 import { invalidateBrowse } from "@/data/browse-refresh";
 import {
@@ -271,6 +264,8 @@ export default function IpDetailScreen() {
     );
   }
 
+  const planFor = (episode: IpEpisode) => resolvePlan(access, episode);
+
   const submitLikeToggle = async () => {
     if (likeBusy) return;
     setLikeBusy(true);
@@ -310,8 +305,6 @@ export default function IpDetailScreen() {
     `${t("ipDetail.episodePrefix")}${episode.index}${t("ipDetail.episodeSuffix")}`;
 
   // Tap action for an episode, against the current access snapshot.
-  const planFor = (episode: IpEpisode) => resolvePlan(access, episode);
-
   const runPurchase = async (plan: Extract<UnlockPlan, { kind: "buy" }>, episode: IpEpisode) => {
     setUnlocking(true);
     try {
@@ -329,9 +322,9 @@ export default function IpDetailScreen() {
       }
     } catch (error) {
       if (isInsufficientBalanceError(error)) {
-        promptTopUpOnWeb();
+        promptCommunityPaywall();
       } else if (isMemberOnlyError(error)) {
-        Alert.alert(t("ipDetail.memberOnlyTitle"), t("ipDetail.memberOnlyBody"));
+        promptCommunityMembership();
       } else if (error instanceof ApiRequestError && error.status === 401) {
         authGate.openLogin({ onAuthenticated: () => void runPurchase(plan, episode) });
       } else {
@@ -349,7 +342,7 @@ export default function IpDetailScreen() {
   ) => {
     // Balance is known and below the price → skip the doomed "unlock" and say so.
     if (balance != null && balanceBelow(balance, plan.points)) {
-      promptTopUpOnWeb();
+      promptCommunityPaywall();
       return;
     }
     const unit = t("ipDetail.pointsUnit");
@@ -372,7 +365,7 @@ export default function IpDetailScreen() {
     balance: string | null
   ) => {
     if (plan.kind === "member") {
-      Alert.alert(t("ipDetail.memberOnlyTitle"), t("ipDetail.memberOnlyBody"));
+      promptCommunityMembership();
       return;
     }
     confirmUnlock(plan, episode, balance);
@@ -468,28 +461,29 @@ export default function IpDetailScreen() {
   };
 
   // The web uses locale-prefixed routes (e.g. /en-US/ips/<id>) against the
-  // region's public origin. Two consumers: the share QR, and the top-up prompt
-  // below.
+  // region's public origin. Share QR and community-point checkout both use it.
   const webIpUrl = `${webBaseUrl}/${locale}/ips/${ip.id}`;
 
-  /**
-   * Community points are only purchasable on the web — there is no in-app
-   * payment surface — so an empty balance sends the user to this work's web
-   * page, where the balance and its top-up dialog live.
-   */
-  const promptTopUpOnWeb = () => {
-    Alert.alert(t("ipDetail.insufficientTitle"), t("ipDetail.insufficientBody"), [
-      { text: t("report.cancel"), style: "cancel" },
-      {
-        text: t("ipDetail.insufficientOpenWeb"),
-        onPress: () => {
-          Linking.openURL(webIpUrl).catch((error: unknown) => {
-            console.warn("[ip-detail] open web top-up failed", error);
-            Alert.alert(t("ipDetail.openWebFailed"));
-          });
-        },
-      },
-    ]);
+  const promptCommunityPaywall = () => {
+    promptInsufficientPaywall({
+      title: t("ipDetail.insufficientTitle"),
+      body: t("ipDetail.insufficientBody"),
+      cancelLabel: t("common.cancel"),
+      buyLabel: t("paywall.buyCredits"),
+      category: "community_points",
+      communityReturnUrl: webIpUrl,
+    });
+  };
+
+  const promptCommunityMembership = () => {
+    promptInsufficientPaywall({
+      title: t("ipDetail.memberOnlyTitle"),
+      body: t("ipDetail.memberOnlyBody"),
+      cancelLabel: t("common.cancel"),
+      buyLabel: t("paywall.buyMembership"),
+      category: "community_membership",
+      communityReturnUrl: webIpUrl,
+    });
   };
 
   const creator = ip.creators[0];
