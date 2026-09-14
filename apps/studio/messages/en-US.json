@@ -1220,6 +1220,8 @@
     "undo": "Undo",
     "redo": "Redo",
     "openError": "Couldn't open this canvas — check the link or your access.",
+    "dropToAdd": "Drop to add on the canvas",
+    "unsupportedDrop": "Only JPEG, PNG, WebP, MP4, MOV, MP3, and WAV can be placed on the canvas.",
     "emptyReadOnly": "This canvas is empty.",
     "activityLog": "Activity",
     "connection": {

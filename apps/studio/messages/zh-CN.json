@@ -1220,6 +1220,8 @@
     "undo": "撤销",
     "redo": "重做",
     "openError": "无法打开此画布 — 请检查链接或你的访问权限。",
+    "dropToAdd": "拖放到画布上添加",
+    "unsupportedDrop": "画布仅支持 JPEG、PNG、WebP、MP4、MOV、MP3、WAV。",
     "emptyReadOnly": "此画布为空。",
     "activityLog": "动态",
     "connection": {

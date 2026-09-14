@@ -1220,6 +1220,8 @@
     "undo": "復原",
     "redo": "重做",
     "openError": "無法開啟此畫布 — 請檢查連結或你的存取權限。",
+    "dropToAdd": "拖放到畫布上新增",
+    "unsupportedDrop": "畫布僅支援 JPEG、PNG、WebP、MP4、MOV、MP3、WAV。",
     "emptyReadOnly": "此畫布為空。",
     "activityLog": "動態",
     "connection": {
