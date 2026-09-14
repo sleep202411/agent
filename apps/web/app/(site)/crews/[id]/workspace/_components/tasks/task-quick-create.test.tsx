@@ -553,20 +553,38 @@ describe("TaskQuickCreate", () => {
 });
 
 it("submits a manually selected assignee and preserves it after server rejection", async () => {
-  state.create.mockRejectedValueOnce(new Error("Every assignee must be an active crew member."))
+  state.create
+    .mockRejectedValueOnce(new Error("Every assignee must be an active crew member."))
     .mockResolvedValueOnce({ id: "task-created" });
   renderQuickCreate();
-  act(() => fill(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!, "Assigned task"));
+  act(() =>
+    fill(
+      document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!,
+      "Assigned task"
+    )
+  );
   const trigger = document.querySelector<HTMLButtonElement>('[aria-label="Assignees"]');
   expect(trigger).not.toBeNull();
-  await act(async () => trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })));
-  const option = [...document.querySelectorAll('[role="option"]')].find((element) => element.textContent?.includes("Isaac"));
+  await act(async () =>
+    trigger!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }))
+  );
+  const option = [...document.querySelectorAll('[role="option"]')].find((element) =>
+    element.textContent?.includes("Isaac")
+  );
   expect(option).toBeDefined();
-  await act(async () => option!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+  await act(async () =>
+    option!.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))
+  );
   await act(async () => click(exactButton("Create")));
-  expect(state.create).toHaveBeenLastCalledWith(expect.objectContaining({ assignees: [expect.objectContaining({ userId: "member-1" })] }));
-  expect(document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value).toBe("Assigned task");
+  expect(state.create).toHaveBeenLastCalledWith(
+    expect.objectContaining({ assignees: [expect.objectContaining({ userId: "member-1" })] })
+  );
+  expect(
+    document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Task title"]')!.value
+  ).toBe("Assigned task");
   await act(async () => click(exactButton("Create")));
   expect(state.create).toHaveBeenCalledTimes(2);
-  expect(state.create.mock.calls[1]![0].assignees).toEqual(state.create.mock.calls[0]![0].assignees);
+  expect(state.create.mock.calls[1]![0].assignees).toEqual(
+    state.create.mock.calls[0]![0].assignees
+  );
 });

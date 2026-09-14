@@ -14,6 +14,7 @@ import { AnimatedSplashOverlay } from "@/components/animated-icon";
 import { ConsentGate } from "@/components/consent-gate";
 import { MobileAppFrame } from "@/components/mobile-app-frame";
 import { Colors } from "@/constants/theme";
+import { APP_STACK_ORIENTATION, PLAY_ROUTE_SCREEN_OPTIONS } from "@/hooks/play-orientation";
 
 // Anchor deep links (e.g. a shared /ip/<id>) on top of the tab shell so the
 // native back button always has somewhere to return to.
@@ -48,7 +49,7 @@ export default function RootLayout() {
               <Stack
                 screenOptions={{
                   headerShown: false,
-                  orientation: "portrait_up",
+                  orientation: APP_STACK_ORIENTATION,
                 }}
               >
                 <Stack.Screen name="(tabs)" />
@@ -61,6 +62,11 @@ export default function RootLayout() {
                 <Stack.Screen name="account-security" />
                 <Stack.Screen name="bind-invite" />
                 <Stack.Screen name="referrals" />
+                <Stack.Screen
+                  name="pay/index"
+                  options={{ contentStyle: { backgroundColor: Colors.dark.background } }}
+                />
+                <Stack.Screen name="pay/community" />
                 <Stack.Screen name="delete-account" />
                 <Stack.Screen name="ips" options={detailHeader} />
                 <Stack.Screen name="games" options={detailHeader} />
@@ -68,22 +74,14 @@ export default function RootLayout() {
                   name="play/interactive-film/[gameId]"
                   options={{
                     ...detailHeader,
-                    orientation: "landscape",
-                    animation: "fade",
-                    headerBackButtonMenuEnabled: false,
-                    gestureEnabled: false,
-                    fullScreenGestureEnabled: false,
+                    ...PLAY_ROUTE_SCREEN_OPTIONS,
                   }}
                 />
                 <Stack.Screen
                   name="play/story-preview/[projectId]"
                   options={{
                     ...detailHeader,
-                    orientation: "landscape",
-                    animation: "fade",
-                    headerBackButtonMenuEnabled: false,
-                    gestureEnabled: false,
-                    fullScreenGestureEnabled: false,
+                    ...PLAY_ROUTE_SCREEN_OPTIONS,
                   }}
                 />
                 <Stack.Screen name="ip/[id]" options={detailHeader} />

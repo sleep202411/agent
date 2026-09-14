@@ -79,7 +79,13 @@ interface PositionDetailSheetProps {
 export function PositionDetailSheet(props: PositionDetailSheetProps) {
   const { user } = useCurrentUser();
   if (!props.position) return null;
-  return <PositionDetailSession key={JSON.stringify([user?.id, props.crewId, props.position.id])} {...props} position={props.position} />;
+  return (
+    <PositionDetailSession
+      key={JSON.stringify([user?.id, props.crewId, props.position.id])}
+      {...props}
+      position={props.position}
+    />
+  );
 }
 
 function PositionDetailSession({
@@ -116,7 +122,9 @@ function PositionDetailSession({
   const [busy, setBusy] = useState(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const begin = () => {
     if (!alive.current || pendingAction.current || !canManage) return false;
@@ -156,7 +164,9 @@ function PositionDetailSession({
           toast.success(isFrozen ? t("unfreezeSuccess") : t("closeJobSuccess", { name: label }));
           setConfirmFreeze(false);
         },
-        onError: (err) => { if (alive.current) surfaceErr(err, t("closeJobFailed")); },
+        onError: (err) => {
+          if (alive.current) surfaceErr(err, t("closeJobFailed"));
+        },
       }
     );
   };
@@ -172,7 +182,9 @@ function PositionDetailSession({
         setConfirmDelete(false);
         onOpenChange(false);
       },
-      onError: (err) => { if (alive.current) surfaceErr(err, t("positionDeleteFailed")); },
+      onError: (err) => {
+        if (alive.current) surfaceErr(err, t("positionDeleteFailed"));
+      },
     });
   };
 
@@ -275,9 +287,23 @@ function PositionDetailSession({
                 defaultExpanded
               >
                 {applicationInbox.isError ? (
-                  <div role="alert" className="mb-3 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-300">
+                  <div
+                    role="alert"
+                    className="mb-3 rounded-lg border border-rose-400/30 bg-rose-400/10 px-3 py-2 text-xs text-rose-300"
+                  >
                     <p>{surfaceMessage(applicationInbox.error, t("applicantsLoadFailed"))}</p>
-                    <Button type="button" variant="outline" color="muted" size="sm" disabled={applicationInbox.isFetching} onClick={() => void (applicationInbox.isFetchNextPageError ? applicationInbox.fetchNextPage() : applicationInbox.refetch())}>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      color="muted"
+                      size="sm"
+                      disabled={applicationInbox.isFetching}
+                      onClick={() =>
+                        void (applicationInbox.isFetchNextPageError
+                          ? applicationInbox.fetchNextPage()
+                          : applicationInbox.refetch())
+                      }
+                    >
                       {tc("retry")}
                     </Button>
                   </div>
@@ -354,7 +380,9 @@ function PositionDetailSession({
                   variant="ghost"
                   color="destructive"
                   size="sm"
-                  onClick={() => { if (!pendingAction.current) setConfirmDelete(true); }}
+                  onClick={() => {
+                    if (!pendingAction.current) setConfirmDelete(true);
+                  }}
                   disabled={busy}
                 >
                   <IconTrash className="size-3.5" />
@@ -366,7 +394,9 @@ function PositionDetailSession({
                     variant="outline"
                     color="muted"
                     size="sm"
-                    onClick={() => { if (!pendingAction.current) setEditOpen(true); }}
+                    onClick={() => {
+                      if (!pendingAction.current) setEditOpen(true);
+                    }}
                     disabled={busy}
                   >
                     <IconPencil className="size-3.5" />
@@ -390,7 +420,9 @@ function PositionDetailSession({
                       variant="outline"
                       color="muted"
                       size="sm"
-                      onClick={() => { if (!pendingAction.current) setConfirmFreeze(true); }}
+                      onClick={() => {
+                        if (!pendingAction.current) setConfirmFreeze(true);
+                      }}
                       disabled={busy}
                     >
                       <IconLock className="size-3.5" />
@@ -419,16 +451,19 @@ function PositionDetailSession({
       ) : null}
 
       {/* Confirm freeze */}
-      <AlertDialog open={canManage && confirmFreeze} onOpenChange={next => { if (!pendingAction.current) setConfirmFreeze(next); }}>
+      <AlertDialog
+        open={canManage && confirmFreeze}
+        onOpenChange={(next) => {
+          if (!pendingAction.current) setConfirmFreeze(next);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("closeJob")}</AlertDialogTitle>
             <AlertDialogDescription>{t("closeJobConfirm", { name: label })}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>
-              {tc("cancel")}
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>{tc("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               variant="solid"
               color="destructive"
@@ -446,7 +481,12 @@ function PositionDetailSession({
       </AlertDialog>
 
       {/* Confirm delete */}
-      <AlertDialog open={canManage && confirmDelete} onOpenChange={next => { if (!pendingAction.current) setConfirmDelete(next); }}>
+      <AlertDialog
+        open={canManage && confirmDelete}
+        onOpenChange={(next) => {
+          if (!pendingAction.current) setConfirmDelete(next);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{t("positionDeleteTitle")}</AlertDialogTitle>
@@ -457,9 +497,7 @@ function PositionDetailSession({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>
-              {tc("cancel")}
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={busy}>{tc("cancel")}</AlertDialogCancel>
             <AlertDialogAction
               variant="solid"
               color="destructive"
@@ -630,16 +668,29 @@ function ApplicantRow({
   const [busy, setBusy] = useState(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const decide = (decision: "approve" | "reject") => {
-    if (!alive.current || pending.current || !canReview || kind !== "pending" || applicant.status !== "pending") return;
+    if (
+      !alive.current ||
+      pending.current ||
+      !canReview ||
+      kind !== "pending" ||
+      applicant.status !== "pending"
+    )
+      return;
     pending.current = true;
     setBusy(true);
     const mutation = decision === "approve" ? approve : reject;
     mutation.mutate(applicant.id, {
       onError: (error) => {
-        if (alive.current) surfaceErr(error, t(decision === "approve" ? "reviewDialogApproveFailed" : "reviewDialogRejectFailed"));
+        if (alive.current)
+          surfaceErr(
+            error,
+            t(decision === "approve" ? "reviewDialogApproveFailed" : "reviewDialogRejectFailed")
+          );
       },
       onSettled: () => {
         if (!alive.current) return;

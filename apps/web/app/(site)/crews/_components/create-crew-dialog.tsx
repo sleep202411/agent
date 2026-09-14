@@ -80,10 +80,19 @@ interface CreateCrewDialogProps {
 
 export function CreateCrewDialog(props: CreateCrewDialogProps) {
   const { user, isLoading } = useCurrentUser();
-  return <CrewDialogSession key={user?.id ?? "anonymous"} {...props} accountId={user?.id ?? null} accountLoading={isLoading} />;
+  return (
+    <CrewDialogSession
+      key={user?.id ?? "anonymous"}
+      {...props}
+      accountId={user?.id ?? null}
+      accountLoading={isLoading}
+    />
+  );
 }
 
-function CrewDialogSession(props: CreateCrewDialogProps & { accountId: string | null; accountLoading: boolean }) {
+function CrewDialogSession(
+  props: CreateCrewDialogProps & { accountId: string | null; accountLoading: boolean }
+) {
   const t = useTranslations("crew.creationRequirements");
   const eligibility = useQuery({
     queryKey: ["crew-creation-eligibility", props.accountId],
@@ -148,7 +157,9 @@ function CrewFormDialog({
   const operation = useRef<"save" | "upload" | null>(null);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const finishSave = () => {
     if (!alive.current) return;
@@ -203,7 +214,8 @@ function CrewFormDialog({
 
   // ─── Submit ─────────────────────────────────────────
   const handleSubmit = () => {
-    if (!alive.current || operation.current || !name.trim() || !description.trim() || !logoPath) return;
+    if (!alive.current || operation.current || !name.trim() || !description.trim() || !logoPath)
+      return;
     operation.current = "save";
     setCreating(true);
 
@@ -221,7 +233,9 @@ function CrewFormDialog({
             onOpenChange(false);
             toast.success(t("updateSuccess"));
           },
-          onError: (err) => { if (alive.current) reportError(err, "updateFailed"); },
+          onError: (err) => {
+            if (alive.current) reportError(err, "updateFailed");
+          },
           onSettled: finishSave,
         }
       );

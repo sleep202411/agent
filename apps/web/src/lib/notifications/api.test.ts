@@ -37,7 +37,6 @@ describe("notification requests", () => {
   });
 });
 
-
 it("forwards cancellation to notification list and count transport", async () => {
   const fetcher = vi.fn().mockImplementation(() => Promise.resolve(new Response("{}")));
   vi.stubGlobal("fetch", fetcher);

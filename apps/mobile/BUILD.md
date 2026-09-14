@@ -13,21 +13,21 @@ Output → `$FD_OUT_DIR` (default `~/Desktop/FizzDragon-builds/`), named
 
 ## What gets built
 
-| region | platform | variant                | identifier                 | store            | signing                                |
-| ------ | -------- | ---------------------- | -------------------------- | ---------------- | -------------------------------------- |
-| global | android  | `global.aab`           | `com.fizzdragon`           | Google Play      | `android-global-googleplay` upload key |
-| global | android  | `global-transsion.apk` | `com.fizzdragon`           | 传音 PalmStore   | same Google Play upload key            |
-| global | ios      | `global.ipa`           | `com.fizzdragon.app`       | App Store (intl) | manual, team `273BAZ5UTL` + profile    |
-| cn     | android  | `cn-huawei.apk`        | `cn.fizzdragon`            | 华为             | `android-cn` 沸腾繁星 key              |
-| cn     | android  | `cn-xiaomi.apk`        | **`cn.feiteng.fizzspace`** | 小米             | `android-cn` 沸腾繁星 key              |
-| cn     | ios      | `cn-ios.ipa`           | `cn.fizzspaceapp`          | App Store (中国) | automatic, team `H5FAJB56F4`           |
+| region | platform | variant                | identifier             | store            | signing                                |
+| ------ | -------- | ---------------------- | ---------------------- | ---------------- | -------------------------------------- |
+| global | android  | `global.aab`           | `com.fizzdragon`       | Google Play      | `android-global-googleplay` upload key |
+| global | android  | `global-transsion.apk` | `com.fizzdragon`       | 传音 PalmStore   | same Google Play upload key            |
+| global | ios      | `global.ipa`           | `com.fizzdragon.app`   | App Store (intl) | manual, team `273BAZ5UTL` + profile    |
+| cn     | android  | `cn.apk`               | `cn.feiteng.fizzspace` | 华为 + 小米      | `android-cn` 沸腾繁星 key              |
+| cn     | ios      | `cn-ios.ipa`           | `cn.fizzspaceapp`      | App Store (中国) | automatic, team `H5FAJB56F4`           |
 
 > **Global Android emits both formats from one prebuild:** `.aab` for Play and
 > `.apk` for Transsion (and any other APK-only store). Same package + keystore.
 >
-> **CN Android is dual-package and must NOT be merged.** 华为 认证 is on
-> `cn.fizzdragon`; 小米 软著 is bound to the legacy `cn.feiteng.fizzspace`. Both
-> are signed with the same `android-cn` key. See `app/signing/README.md`.
+> **CN Android is one package.** 华为 and 小米 listings are both
+> `cn.feiteng.fizzspace`, signed with the same `android-cn` key. Upload the
+> same APK to both stores. Do not ship `cn.fizzdragon` — that identifier is
+> retired. See `app/signing/README.md`.
 
 ## Prerequisites (one-time)
 
@@ -52,9 +52,24 @@ Output → `$FD_OUT_DIR` (default `~/Desktop/FizzDragon-builds/`), named
      both `…-global.aab` (Play) and `…-global-transsion.apk` (传音).
    - Cloud APK (传音, same signing as local once EAS credentials match):  
      `npx eas-cli build --profile production-global-apk --platform android`
+   - Cloud CN APK (华为 + 小米, same package):  
+     `npx eas-cli build --profile production-cn --platform android`
 3. Upload each artifact to its store. For **iOS**, App Store Connect pulls the icon
    from the build; for **Android**, also upload a **512×512 PNG** app icon
    (generate from `assets/images/icon.png`: `sips -z 512 512 …`).
+
+## Native pay SDKs (RevenueCat + WeChat)
+
+`react-native-purchases` and `expo-wechat` are native modules. Metro JS updates
+do not pick them up — rebuild the binary after install or plugin changes:
+
+- iOS / Play: `npx eas-cli build --profile development-global --platform ios|android`
+- CN Android WeChat: `npx eas-cli build --profile development-cn --platform android`
+
+Dev / preview still mock checkout. Production uses Apple IAP or Play Billing
+through RevenueCat, and WeChat Pay on the CN Android package only. Bake public
+keys (`EXPO_PUBLIC_REVENUECAT_*`, `EXPO_PUBLIC_WECHAT_APP_ID`) into the release
+env; never put RevenueCat secrets or WeChat merchant certs in the app.
 
 ## How signing/config stays correct (the footguns this fixes)
 

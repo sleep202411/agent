@@ -13,7 +13,11 @@ vi.mock("@/components/user-avatar", () => ({
   UserAvatar: ({ name }: { name: string }) => <span role="img" aria-label={name} />,
 }));
 vi.mock("@/app/(site)/crews/_components/task-unread-marker", () => ({
-  TaskUnreadMarker: ({ taskId }: { taskId: string }) => <span role="status" data-task-id={taskId}>2 unread</span>,
+  TaskUnreadMarker: ({ taskId }: { taskId: string }) => (
+    <span role="status" data-task-id={taskId}>
+      2 unread
+    </span>
+  ),
 }));
 let root: ReturnType<typeof createRoot>;
 afterEach(() => {
@@ -119,7 +123,6 @@ it.each(["zh-CN", "zh-HK"])(
     );
   }
 );
-
 
 it.each(["list", "board"])("shows the task unread marker in %s", async (layout) => {
   const props = propsFor(layout);

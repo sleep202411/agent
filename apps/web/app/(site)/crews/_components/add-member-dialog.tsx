@@ -103,7 +103,9 @@ function MemberInvitationForm({
   const alive = useRef(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const lookupCurrent = queryInput.trim() === debouncedQuery.trim();
   const agreementCapability = useCrewAgreements(crewId, open, "all", 1);
@@ -244,7 +246,9 @@ function MemberInvitationForm({
                   disabled={submitting}
                   autoFocus
                 />
-                {lookupCurrent ? <LookupPreview state={lookup} contact={debouncedQuery} t={t} /> : null}
+                {lookupCurrent ? (
+                  <LookupPreview state={lookup} contact={debouncedQuery} t={t} />
+                ) : null}
               </Field>
 
               {canGrantPolicies ? (

@@ -72,7 +72,9 @@ interface MemberCardProps {
 
 export function MemberCard(props: MemberCardProps) {
   const { user } = useCurrentUser();
-  return <MemberCardSession key={JSON.stringify([user?.id, props.crewId, props.member.id])} {...props} />;
+  return (
+    <MemberCardSession key={JSON.stringify([user?.id, props.crewId, props.member.id])} {...props} />
+  );
 }
 
 function MemberCardSession({
@@ -93,7 +95,9 @@ function MemberCardSession({
   const [saving, setSaving] = useState(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const isCrewOwner = member.isOwner;
   const lookup = displays.get(member.userId);
@@ -117,7 +121,15 @@ function MemberCardSession({
   const accessPreset = accessPresetForPolicyKeys(member.policyKeys);
 
   const handleAccessPresetChange = (value: string) => {
-    if (!alive.current || pending.current || !canManagePermissions || isCrewOwner || !isCrewAccessPreset(value) || value === accessPreset) return;
+    if (
+      !alive.current ||
+      pending.current ||
+      !canManagePermissions ||
+      isCrewOwner ||
+      !isCrewAccessPreset(value) ||
+      value === accessPreset
+    )
+      return;
     pending.current = true;
     setSaving(true);
     const policyKeys = policyKeysForAccessPreset(value);
@@ -127,8 +139,12 @@ function MemberCardSession({
         input: { policyKeys, expectedVersion: member.version },
       },
       {
-        onSuccess: () => { if (alive.current) toast.success(t("memberAccessUpdated")); },
-        onError: (err) => { if (alive.current) surfaceErr(err, t("memberAccessUpdateFailed")); },
+        onSuccess: () => {
+          if (alive.current) toast.success(t("memberAccessUpdated"));
+        },
+        onError: (err) => {
+          if (alive.current) surfaceErr(err, t("memberAccessUpdateFailed"));
+        },
         onSettled: () => {
           if (!alive.current) return;
           pending.current = false;
@@ -244,7 +260,9 @@ function MemberCardSession({
                 variant="ghost"
                 size="icon-xs"
                 disabled={saving}
-                onClick={() => { if (!pending.current) onAskTransfer(member.userId, displayName); }}
+                onClick={() => {
+                  if (!pending.current) onAskTransfer(member.userId, displayName);
+                }}
                 aria-label={t("transferOwner")}
                 title={t("transferOwner")}
               >
@@ -258,7 +276,9 @@ function MemberCardSession({
                 size="icon-xs"
                 color="destructive"
                 disabled={saving}
-                onClick={() => { if (!pending.current) onAskRemove(member.id, displayName); }}
+                onClick={() => {
+                  if (!pending.current) onAskRemove(member.id, displayName);
+                }}
                 aria-label={t("removeMember")}
                 title={t("removeMember")}
               >
