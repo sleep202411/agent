@@ -56,11 +56,14 @@ export default function CrewsPage() {
   }, [user, myCrews.data]);
   const requestedView = searchParams.get("view");
   const view: ViewMode =
-    requestedView === "positions" || requestedView === "mine" ? requestedView : "crews";
+    requestedView === "positions" || requestedView === "crews" || requestedView === "mine"
+      ? requestedView
+      : user
+        ? "mine"
+        : "crews";
   const setView = (next: ViewMode) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "crews") params.delete("view");
-    else params.set("view", next);
+    params.set("view", next);
     const qs = params.toString();
     router.replace(qs ? `?${qs}` : "?", { scroll: false });
   };
@@ -124,6 +127,12 @@ export default function CrewsPage() {
           {/* Tabs — crews vs positions. URL state via `?view=positions`
               so refreshes / shared links keep the same surface. */}
           <div className="mb-6 flex flex-wrap items-center gap-2 border-b border-border">
+            <PlazaTab
+              label={tCrew("myCrewsTitle")}
+              icon={IconUsers}
+              active={view === "mine"}
+              onClick={() => setView("mine")}
+            />
             <Link
               href={localizePath("/crews/tasks", locale)}
               className="inline-flex min-h-11 items-center gap-2 px-4 py-3 text-sm font-semibold text-muted-foreground hover:text-foreground"
@@ -137,12 +146,6 @@ export default function CrewsPage() {
             >
               {tCrew("myIncomeTab")}
             </Link>
-            <PlazaTab
-              label={tCrew("myCrewsTitle")}
-              icon={IconUsers}
-              active={view === "mine"}
-              onClick={() => setView("mine")}
-            />
             <PlazaTab
               label={tCrew("allCrewsTitle")}
               icon={IconUsers}
