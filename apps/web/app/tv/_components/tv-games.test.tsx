@@ -64,6 +64,14 @@ it("retains the available catalog when the other fails and launches only its pla
   expect(host.querySelector("iframe")?.getAttribute("src")).toBe(
     "/en-US/play/text-game/tg_1234567890123456"
   );
+  expect(host.querySelector("aside")).toBeNull();
+  expect(host.querySelector("iframe")?.title).toBe("player");
+  const back = Array.from(host.querySelectorAll("button")).find(
+    (b) => b.textContent === "backToGames"
+  )!;
+  await act(async () => back.click());
+  expect(host.querySelector("aside")).not.toBeNull();
+  expect(host.querySelector("iframe")).toBeNull();
   expect(state.get.mock.calls.every(([url]) => String(url).startsWith("/api/player/"))).toBe(true);
 });
 it("cancels abandoned catalogs and does not carry selection into another account", async () => {
