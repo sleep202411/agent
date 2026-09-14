@@ -103,6 +103,45 @@ describe('StoryProjectsController installed mobile clients', () => {
   );
 });
 
+describe('StoryProjectsController plot import', () => {
+  it('imports a plot into the chapter', async () => {
+    const result = {
+      draft: { revision: 4 },
+      importedNodeIds: ['import:ns:opening'],
+    };
+    const service = {
+      importPlot: jest.fn(() => Promise.resolve(result)),
+    };
+    const controller = new StoryProjectsController(service as never);
+    const body = {
+      expectedRevision: 3,
+      schemaVersion: 'interactive-story-draft-v1',
+      content: { graph: { entryNodeId: null, nodes: [] } },
+      sessionId: 'session-1',
+      locale: 'en-US',
+      mode: 'append' as const,
+      plot: { entryNodeId: 'opening', assets: [], nodes: [] },
+    };
+
+    await expect(
+      controller.importChapterPlot(
+        USER as never,
+        {
+          projectId: PROJECT_ID,
+          chapterId: CHAPTER_ID,
+        },
+        body as never,
+      ),
+    ).resolves.toEqual({ code: 200, data: result });
+    expect(service.importPlot).toHaveBeenCalledWith(
+      USER,
+      PROJECT_ID,
+      body,
+      CHAPTER_ID,
+    );
+  });
+});
+
 describe('StoryProjectsController chapters', () => {
   it('creates a chapter inside the tenant-scoped project', async () => {
     const chapter = {

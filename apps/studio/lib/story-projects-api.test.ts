@@ -31,6 +31,7 @@ import {
   getStoryWorkingPreview,
   listStoryProjects,
   putStoryCanvasLayout,
+  importStoryPlot,
   removeStoryCandidateAsset,
   storyApiErrorMessage,
   updateStoryChapter,
@@ -178,6 +179,47 @@ describe("current-draft Story production routes", () => {
         data: expect.objectContaining({
           expectedRevision: 7,
           sessionId: "session-1",
+        }),
+      })
+    );
+  });
+
+  it("posts a plot import with the current chapter draft and parsed plot", async () => {
+    const draft = { revision: 8, content: { graph: { nodes: [] } } };
+    vi.mocked(api.post).mockResolvedValueOnce({
+      draft,
+      importedNodeIds: ["import:ns:opening"],
+    });
+    const plot = {
+      entryNodeId: "opening",
+      assets: [],
+      nodes: [{ id: "opening", type: "scene" as const, title: "Opening", next: null }],
+    };
+
+    await expect(
+      importStoryPlot("project-1", "chapter-1", {
+        expectedRevision: 7,
+        content: {
+          storyBible: { logline: "", synopsis: "", characters: [] },
+          graph: { entryNodeId: null, nodes: [] },
+          productionNotes: [],
+        },
+        sessionId: "session-1",
+        locale: "en-US",
+        mode: "append",
+        plot: plot as never,
+      })
+    ).resolves.toEqual({ draft, importedNodeIds: ["import:ns:opening"] });
+
+    expect(api.post).toHaveBeenCalledWith(
+      "/aurora/story-projects/project-1/chapters/chapter-1/plot-import",
+      expect.objectContaining({
+        requestScope: "project",
+        data: expect.objectContaining({
+          expectedRevision: 7,
+          sessionId: "session-1",
+          locale: "en-US",
+          mode: "append",
         }),
       })
     );

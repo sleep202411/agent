@@ -375,6 +375,7 @@ export function ModelSettings({
   onChange,
   hideQuickFields = false,
   lockedFields,
+  presentation = "popover",
 }: {
   model: FizzAiModel | undefined;
   settings: ModelSettings;
@@ -385,6 +386,8 @@ export function ModelSettings({
   /** Fields taken over by the active omni task type (edit/extend locks) —
    *  hidden here too; the composer forces their value to auto. */
   lockedFields?: ReadonlySet<string>;
+  /** Floating composer panel vs in-flow inspector (same fields, no chrome). */
+  presentation?: "popover" | "inline";
 }) {
   const t = useTranslations("canvasControls");
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -428,28 +431,39 @@ export function ModelSettings({
 
   const set = (name: string, value: string | number | boolean) =>
     onChange({ ...settings, [name]: value });
+  const inline = presentation === "inline";
+  if (inline && !model) return null;
+  if (inline && !sizeField && basicFields.length === 0 && advancedFields.length === 0) {
+    return null;
+  }
 
   return (
     <div
-      role="dialog"
+      role={inline ? undefined : "dialog"}
       aria-label={model?.name ?? t("settings.title")}
       data-canvas-scroll-owner="y"
-      className="nodrag nowheel absolute bottom-full left-0 z-50 mb-2 max-h-[460px] w-[440px] origin-bottom overflow-y-auto rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] p-4 shadow-2xl shadow-black/60 backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95"
+      className={
+        inline
+          ? "space-y-4"
+          : "nodrag nowheel absolute bottom-full left-0 z-50 mb-2 max-h-[460px] w-[440px] origin-bottom overflow-y-auto rounded-2xl border border-white/[0.06] bg-[oklch(0.235_0_0_/_0.95)] p-4 shadow-2xl shadow-black/60 backdrop-blur-2xl duration-150 animate-in fade-in-0 zoom-in-95"
+      }
     >
-      <div className="flex items-center justify-between">
-        <span className="text-base font-semibold">{model?.name ?? t("settings.title")}</span>
-        {cost != null && (
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <IconBolt className="size-3.5" stroke={1.8} />
-            {cost}
-          </span>
-        )}
-      </div>
+      {inline ? null : (
+        <div className="flex items-center justify-between">
+          <span className="text-base font-semibold">{model?.name ?? t("settings.title")}</span>
+          {cost != null && (
+            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+              <IconBolt className="size-3.5" stroke={1.8} />
+              {cost}
+            </span>
+          )}
+        </div>
+      )}
 
       {!model && <p className="mt-3 text-sm text-muted-foreground">{t("settings.selectModel")}</p>}
 
       {sizeField && (
-        <div className="mt-3">
+        <div className={inline ? undefined : "mt-3"}>
           <div className="mb-2 text-sm text-muted-foreground">{fieldLabel(sizeField)}</div>
           <SizeGrid
             field={sizeField}
@@ -462,7 +476,7 @@ export function ModelSettings({
       )}
 
       {basicFields.map((field) => (
-        <div key={field.name} className="mt-4">
+        <div key={field.name} className={inline ? undefined : "mt-4"}>
           <Field
             field={field}
             value={scalar(field.name) ?? field.default}

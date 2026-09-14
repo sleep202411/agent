@@ -81,7 +81,7 @@ export interface ShellInset {
 }
 
 const ProjectContext = createContext<ProjectContextValue | null>(null);
-const DEFAULT_UPLOAD_KINDS = ["image", "video"] as const;
+const DEFAULT_UPLOAD_KINDS = ["image", "video", "audio"] as const;
 
 /** Provides the project identity + the caller's role to every mode editor.
  *
