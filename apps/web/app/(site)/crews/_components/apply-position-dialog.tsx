@@ -72,7 +72,9 @@ interface ApplyPositionDialogProps {
 export function ApplyPositionDialog(props: ApplyPositionDialogProps) {
   const { user } = useCurrentUser();
   if (!props.open) return null;
-  return <ApplicationForm key={JSON.stringify([user?.id, props.crewId, props.positionId])} {...props} />;
+  return (
+    <ApplicationForm key={JSON.stringify([user?.id, props.crewId, props.positionId])} {...props} />
+  );
 }
 
 function ApplicationForm({
@@ -101,7 +103,9 @@ function ApplicationForm({
   const alive = useRef(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const currencyOptions = useMemo(() => allowedCurrenciesForCell(), []);
   const showCurrencyPicker = currencyOptions.length > 1;

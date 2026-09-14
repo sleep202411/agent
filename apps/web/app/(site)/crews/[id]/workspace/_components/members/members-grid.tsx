@@ -130,7 +130,9 @@ function MembersGridSession({
   const [pendingRevocations, setPendingRevocations] = useState<ReadonlySet<string>>(new Set());
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const revoke = async (id: string) => {
     if (!alive.current || !canInvite || revoking.current.has(id)) return;
@@ -140,7 +142,8 @@ function MembersGridSession({
       await revokeInvitation.mutateAsync(id);
       if (alive.current) toast.success(t("invitationRevoked"));
     } catch (error) {
-      if (alive.current) toast.error(error instanceof Error ? error.message : t("invitationRevokeFailed"));
+      if (alive.current)
+        toast.error(error instanceof Error ? error.message : t("invitationRevokeFailed"));
     } finally {
       if (alive.current) {
         revoking.current.delete(id);
@@ -202,11 +205,12 @@ function MembersGridSession({
             </h3>
           </div>
           {invitations.isError ? (
-            <div role="alert" className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+            <div
+              role="alert"
+              className="flex min-h-16 items-center justify-between gap-4 px-4 py-3"
+            >
               <p className="text-xs text-destructive">
-                {invitations.error instanceof Error
-                  ? invitations.error.message
-                  : tc("loadFailed")}
+                {invitations.error instanceof Error ? invitations.error.message : tc("loadFailed")}
               </p>
               <Button
                 type="button"
@@ -214,7 +218,11 @@ function MembersGridSession({
                 variant="ghost"
                 color="muted"
                 disabled={invitations.isFetching}
-                onClick={() => void (invitations.isFetchNextPageError ? invitations.fetchNextPage() : invitations.refetch())}
+                onClick={() =>
+                  void (invitations.isFetchNextPageError
+                    ? invitations.fetchNextPage()
+                    : invitations.refetch())
+                }
               >
                 {tc("retry")}
               </Button>
@@ -268,9 +276,7 @@ function MembersGridSession({
                       size="sm"
                       variant="ghost"
                       color="muted"
-                      disabled={
-                        pendingRevocations.has(invitation.id)
-                      }
+                      disabled={pendingRevocations.has(invitation.id)}
                       onClick={() => void revoke(invitation.id)}
                       icon={
                         pendingRevocations.has(invitation.id) ? (
@@ -335,7 +341,10 @@ function MembersGridSession({
                   canManage={canManageMembers}
                   canManagePermissions={canManagePermissions}
                   canTransferOwnership={canTransferOwnership}
-                  onAskRemove={(memberId, name) => { setPendingTransfer(null); setPendingRemove({ memberId, name }); }}
+                  onAskRemove={(memberId, name) => {
+                    setPendingTransfer(null);
+                    setPendingRemove({ memberId, name });
+                  }}
                   onAskTransfer={(userId, name) => {
                     setPendingRemove(null);
                     setPendingTransfer({ userId, name });
@@ -360,17 +369,44 @@ function MembersGridSession({
       />
 
       {pendingRemove ? (
-        <MemberDecision key={`remove:${pendingRemove.memberId}`} crewId={crewId} kind="remove" id={pendingRemove.memberId} name={pendingRemove.name} allowed={canManageMembers} onClose={() => setPendingRemove(null)} />
+        <MemberDecision
+          key={`remove:${pendingRemove.memberId}`}
+          crewId={crewId}
+          kind="remove"
+          id={pendingRemove.memberId}
+          name={pendingRemove.name}
+          allowed={canManageMembers}
+          onClose={() => setPendingRemove(null)}
+        />
       ) : pendingTransfer ? (
-        <MemberDecision key={`transfer:${pendingTransfer.userId}`} crewId={crewId} kind="transfer" id={pendingTransfer.userId} name={pendingTransfer.name} allowed={canTransferOwnership} onClose={() => setPendingTransfer(null)} />
+        <MemberDecision
+          key={`transfer:${pendingTransfer.userId}`}
+          crewId={crewId}
+          kind="transfer"
+          id={pendingTransfer.userId}
+          name={pendingTransfer.name}
+          allowed={canTransferOwnership}
+          onClose={() => setPendingTransfer(null)}
+        />
       ) : null}
-
     </div>
   );
 }
 
-function MemberDecision({ crewId, kind, id, name, allowed, onClose }: {
-  crewId: string; kind: "remove" | "transfer"; id: string; name: string; allowed: boolean; onClose: () => void;
+function MemberDecision({
+  crewId,
+  kind,
+  id,
+  name,
+  allowed,
+  onClose,
+}: {
+  crewId: string;
+  kind: "remove" | "transfer";
+  id: string;
+  name: string;
+  allowed: boolean;
+  onClose: () => void;
 }) {
   const t = useTranslations("workspace");
   const tc = useTranslationsCommon("common");
@@ -382,7 +418,9 @@ function MemberDecision({ crewId, kind, id, name, allowed, onClose }: {
   const alive = useRef(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const submit = () => {
     if (!alive.current || pending.current || !allowed) return;
@@ -391,7 +429,9 @@ function MemberDecision({ crewId, kind, id, name, allowed, onClose }: {
     const handlers = {
       onSuccess: () => {
         if (!alive.current) return;
-        toast.success(t(kind === "remove" ? "removeMemberSuccess" : "transferOwnerSuccess", { name }));
+        toast.success(
+          t(kind === "remove" ? "removeMemberSuccess" : "transferOwnerSuccess", { name })
+        );
         onClose();
       },
       onError: (error: unknown) => {
@@ -399,7 +439,11 @@ function MemberDecision({ crewId, kind, id, name, allowed, onClose }: {
         if (error instanceof CrewApiError) {
           toast.error(`HTTP ${error.status}`, { description: error.message, duration: 8000 });
         } else {
-          toast.error(error instanceof Error ? error.message : t(kind === "remove" ? "removeMemberFailed" : "transferOwnerFailed"));
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : t(kind === "remove" ? "removeMemberFailed" : "transferOwnerFailed")
+          );
         }
       },
       onSettled: () => {
@@ -412,11 +456,20 @@ function MemberDecision({ crewId, kind, id, name, allowed, onClose }: {
     else transfer.mutate({ toUserId: id, removeOldOwner: leave }, handlers);
   };
   return (
-    <AlertDialog open onOpenChange={next => { if (!next && !pending.current) onClose(); }}>
+    <AlertDialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !pending.current) onClose();
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t(kind === "remove" ? "removeMember" : "transferOwner")}</AlertDialogTitle>
-          <AlertDialogDescription>{t(kind === "remove" ? "removeMemberConfirm" : "transferOwnerConfirm", { name })}</AlertDialogDescription>
+          <AlertDialogTitle>
+            {t(kind === "remove" ? "removeMember" : "transferOwner")}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t(kind === "remove" ? "removeMemberConfirm" : "transferOwnerConfirm", { name })}
+          </AlertDialogDescription>
         </AlertDialogHeader>
         {kind === "transfer" ? (
           <label className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-sm text-foreground">
@@ -426,7 +479,15 @@ function MemberDecision({ crewId, kind, id, name, allowed, onClose }: {
         ) : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>{tc("cancel")}</AlertDialogCancel>
-          <AlertDialogAction variant="solid" color={kind === "remove" ? "destructive" : "primary"} disabled={busy || !allowed} onClick={event => { event.preventDefault(); submit(); }}>
+          <AlertDialogAction
+            variant="solid"
+            color={kind === "remove" ? "destructive" : "primary"}
+            disabled={busy || !allowed}
+            onClick={(event) => {
+              event.preventDefault();
+              submit();
+            }}
+          >
             {busy ? <IconLoader2 className="size-4 animate-spin" /> : null}
             {tc("confirm")}
           </AlertDialogAction>

@@ -12,12 +12,13 @@ import IconWallet from "@tabler/icons-react-native/icons/IconWallet";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useLayoutEffect, useMemo, useState, type ComponentType } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Colors, Spacing } from "@/constants/theme";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
 import { navigateToStoryPreview } from "@/features/experience-player";
+import { promptInsufficientPaywall } from "@/features/paywall";
 import { useTranslations, type MessageKey } from "@/i18n";
 
 import {
@@ -230,6 +231,20 @@ function BatchBody({
     failure?.code === "INSUFFICIENT_UNEXPIRED_COMPUTE_POINTS";
   const firstUnfinished = ordered.find((item) => item.status !== "completed");
   const canCancelBatch = batch.canCancel && CANCELLABLE.has(batch.status);
+  const promptedBatchRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!insufficientBalance) return;
+    if (promptedBatchRef.current === batch.id) return;
+    promptedBatchRef.current = batch.id;
+    promptInsufficientPaywall({
+      title: t("agent.generation.recovery.balanceTitle"),
+      body: t("agent.credits.insufficientBody"),
+      cancelLabel: t("common.cancel"),
+      buyLabel: t("paywall.buyCredits"),
+      category: "compute_points",
+    });
+  }, [batch.id, insufficientBalance, t]);
 
   const itemLabel = (item: StoryGenerationBatchItem): string => {
     if (batch.status === "blocked" && item.id === firstUnfinished?.id) {

@@ -66,7 +66,8 @@ export function useNotificationFeed(pageSize = 30, filter: NotificationFilter = 
   return useInfiniteQuery({
     queryKey: [...notificationKeys.feed, user?.id ?? null, pageSize, filter] as const,
     enabled: Boolean(user?.id),
-    queryFn: ({ pageParam, signal }) => listNotifications({ limit: pageSize, cursor: pageParam, filter }, signal),
+    queryFn: ({ pageParam, signal }) =>
+      listNotifications({ limit: pageSize, cursor: pageParam, filter }, signal),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
     refetchInterval: UNREAD_COUNT_POLL_MS,
@@ -79,11 +80,18 @@ function useNotificationRefresh<TVariables = void>() {
   const scope = useRef<string | null>(null);
   useLayoutEffect(() => {
     scope.current = user?.id ?? null;
-    return () => { scope.current = null; };
+    return () => {
+      scope.current = null;
+    };
   }, [user?.id]);
   return {
-    onError: (error: Error, _variables: TVariables, origin: { accountUserId: string | null } | undefined) => {
-      if (origin?.accountUserId && scope.current === origin.accountUserId) toast.error(error.message);
+    onError: (
+      error: Error,
+      _variables: TVariables,
+      origin: { accountUserId: string | null } | undefined
+    ) => {
+      if (origin?.accountUserId && scope.current === origin.accountUserId)
+        toast.error(error.message);
     },
     onMutate: () => ({ accountUserId: user?.id ?? null }),
     onSuccess: (

@@ -40,6 +40,11 @@ type AuthedWebViewProps = {
   path: string;
   /** Native header title. */
   title: string;
+  /**
+   * When true (default), the WebView UA marks `FizzDragonApp` so apps/web
+   * drops its nav/footer. Set false for a full “网页版” page (credits chip).
+   */
+  nativeShell?: boolean;
 };
 
 /** Cookie values must not smuggle attribute separators into the header. */
@@ -47,7 +52,7 @@ function sanitizeCookieValue(value: string): string {
   return value.replace(/[;,\s]/g, "");
 }
 
-export function AuthedWebView({ path, title }: AuthedWebViewProps) {
+export function AuthedWebView({ path, title, nativeShell = true }: AuthedWebViewProps) {
   const auth = useAuth();
   const authGate = useAuthGate();
   const locale = useLocale();
@@ -152,9 +157,9 @@ export function AuthedWebView({ path, title }: AuthedWebViewProps) {
         ref={webViewRef}
         source={{ uri, headers: { Cookie: cookie } }}
         injectedJavaScriptBeforeContentLoaded={bootstrapScript}
-        // Appended to the WebView UA; apps/web's (site) layout keys off this
-        // marker to drop its header/footer chrome inside the app shell.
-        applicationNameForUserAgent="FizzDragonApp"
+        // Default: mark FizzDragonApp so apps/web drops its nav/footer.
+        // `nativeShell={false}` keeps full site chrome (e.g. credits recharge).
+        applicationNameForUserAgent={nativeShell ? "FizzDragonApp" : undefined}
         sharedCookiesEnabled
         thirdPartyCookiesEnabled={false}
         pullToRefreshEnabled

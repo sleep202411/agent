@@ -169,7 +169,15 @@ function AgreementSession({
   };
 
   const create = async () => {
-    if (!canCreate || !memberUserId || !signerName.trim() || !signerEmail.trim() || !title.trim() || !begin("create")) return;
+    if (
+      !canCreate ||
+      !memberUserId ||
+      !signerName.trim() ||
+      !signerEmail.trim() ||
+      !title.trim() ||
+      !begin("create")
+    )
+      return;
     try {
       await createAgreement.mutateAsync({
         memberUserId,
@@ -187,7 +195,12 @@ function AgreementSession({
     }
   };
 
-  const runAgreementAction = async (id: string, action: () => Promise<unknown>, success: string, failure: string) => {
+  const runAgreementAction = async (
+    id: string,
+    action: () => Promise<unknown>,
+    success: string,
+    failure: string
+  ) => {
     if (!begin(id)) return;
     try {
       await action();
@@ -278,7 +291,11 @@ function AgreementSession({
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field>
                     <FieldLabel required>{t("signerName")}</FieldLabel>
-                    <Input disabled={creating} value={signerName} onChange={(e) => setSignerName(e.target.value)} />
+                    <Input
+                      disabled={creating}
+                      value={signerName}
+                      onChange={(e) => setSignerName(e.target.value)}
+                    />
                   </Field>
                   <Field>
                     <FieldLabel required>{t("signerEmail")}</FieldLabel>
@@ -314,13 +331,7 @@ function AgreementSession({
                     !title.trim()
                   }
                   onClick={() => void create()}
-                  icon={
-                    creating ? (
-                      <IconLoader2 className="animate-spin" />
-                    ) : (
-                      <IconSignature />
-                    )
-                  }
+                  icon={creating ? <IconLoader2 className="animate-spin" /> : <IconSignature />}
                 >
                   {creating ? t("queueing") : t("queueWithBoldSign")}
                 </Button>
@@ -364,7 +375,11 @@ function AgreementSession({
                 color="muted"
                 className="mt-3"
                 disabled={agreements.isFetching}
-                onClick={() => void (agreements.isFetchNextPageError ? agreements.fetchNextPage() : agreements.refetch())}
+                onClick={() =>
+                  void (agreements.isFetchNextPageError
+                    ? agreements.fetchNextPage()
+                    : agreements.refetch())
+                }
               >
                 {tc("retry")}
               </Button>
@@ -437,7 +452,14 @@ function AgreementSession({
                             variant="ghost"
                             color="warning"
                             disabled={busy}
-                            onClick={() => void runAgreementAction(agreement.id, () => retrySend.mutateAsync(agreement.id), "sendRetrying", "sendRetryFailed")}
+                            onClick={() =>
+                              void runAgreementAction(
+                                agreement.id,
+                                () => retrySend.mutateAsync(agreement.id),
+                                "sendRetrying",
+                                "sendRetryFailed"
+                              )
+                            }
                             icon={
                               retryingSend ? (
                                 <IconLoader2 className="animate-spin" />
@@ -456,7 +478,14 @@ function AgreementSession({
                             variant="ghost"
                             color="warning"
                             disabled={busy}
-                            onClick={() => void runAgreementAction(agreement.id, () => retryArchive.mutateAsync(agreement.id), "archiveRetrying", "archiveRetryFailed")}
+                            onClick={() =>
+                              void runAgreementAction(
+                                agreement.id,
+                                () => retryArchive.mutateAsync(agreement.id),
+                                "archiveRetrying",
+                                "archiveRetryFailed"
+                              )
+                            }
                             icon={
                               retrying ? <IconLoader2 className="animate-spin" /> : <IconArchive />
                             }
@@ -471,7 +500,14 @@ function AgreementSession({
                             variant="ghost"
                             color="muted"
                             disabled={busy}
-                            onClick={() => void runAgreementAction(agreement.id, () => syncAgreement.mutateAsync(agreement.id), "synced", "syncFailed")}
+                            onClick={() =>
+                              void runAgreementAction(
+                                agreement.id,
+                                () => syncAgreement.mutateAsync(agreement.id),
+                                "synced",
+                                "syncFailed"
+                              )
+                            }
                             icon={
                               syncing ? <IconLoader2 className="animate-spin" /> : <IconRefresh />
                             }

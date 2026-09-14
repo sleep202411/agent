@@ -96,23 +96,35 @@ it.each([false, true])(
   }
 );
 
-it.each([false, true])("refreshes originating task caches after settlement (switched=%s)", async (switched) => {
-  const view = mount(useAccountabilityAction);
-  const alice = ["crew", "task", "task", "alice"];
-  const bob = ["crew", "task", "task", "bob"];
-  for (const key of [alice, bob]) client.setQueryData(key, { version: 1 });
-  client.setQueryData(["user", "info"], { id: "alice" });
-  let finish!: (value: unknown) => void;
-  session.post.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
-  view.render();
-  let pending!: Promise<unknown>;
-  await act(async () => { pending = view.current().mutateAsync({ path: "/crew-tasks/task/commitments" }); });
-  if (switched) {
-    session.account = "bob";
-    client.setQueryData(["user", "info"], { id: "bob" });
+it.each([false, true])(
+  "refreshes originating task caches after settlement (switched=%s)",
+  async (switched) => {
+    const view = mount(useAccountabilityAction);
+    const alice = ["crew", "task", "task", "alice"];
+    const bob = ["crew", "task", "task", "bob"];
+    for (const key of [alice, bob]) client.setQueryData(key, { version: 1 });
+    client.setQueryData(["user", "info"], { id: "alice" });
+    let finish!: (value: unknown) => void;
+    session.post.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      })
+    );
     view.render();
+    let pending!: Promise<unknown>;
+    await act(async () => {
+      pending = view.current().mutateAsync({ path: "/crew-tasks/task/commitments" });
+    });
+    if (switched) {
+      session.account = "bob";
+      client.setQueryData(["user", "info"], { id: "bob" });
+      view.render();
+    }
+    await act(async () => {
+      finish({});
+      await pending;
+    });
+    expect(client.getQueryState(alice)?.isInvalidated).toBe(true);
+    expect(client.getQueryState(bob)?.isInvalidated).toBe(false);
   }
-  await act(async () => { finish({}); await pending; });
-  expect(client.getQueryState(alice)?.isInvalidated).toBe(true);
-  expect(client.getQueryState(bob)?.isInvalidated).toBe(false);
-});
+);

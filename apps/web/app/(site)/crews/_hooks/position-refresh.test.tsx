@@ -87,13 +87,11 @@ it.each(["create", "update", "delete"])(
     await act(async () => {
       pending =
         operation === "create"
-          ? view
-              .current()
-              .create.mutateAsync({
-                positionType: "director",
-                description: "Opening",
-                targetCount: 1,
-              })
+          ? view.current().create.mutateAsync({
+              positionType: "director",
+              description: "Opening",
+              targetCount: 1,
+            })
           : operation === "update"
             ? view.current().update.mutateAsync({ positionId: "position", status: "frozen" })
             : view.current().remove.mutateAsync("position");

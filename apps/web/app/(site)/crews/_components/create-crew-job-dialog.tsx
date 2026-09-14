@@ -110,15 +110,15 @@ const SALARY_PERIOD_OPTIONS: { value: SalaryPeriod; key: string }[] = [
 export function CreateCrewJobDialog(props: PublishPositionDialogProps) {
   const { user } = useCurrentUser();
   if (!props.open) return null;
-  return <PositionForm key={JSON.stringify([user?.id, props.crewId, props.editingPosition?.id])} {...props} />;
+  return (
+    <PositionForm
+      key={JSON.stringify([user?.id, props.crewId, props.editingPosition?.id])}
+      {...props}
+    />
+  );
 }
 
-function PositionForm({
-  open,
-  onOpenChange,
-  crewId,
-  editingPosition,
-}: PublishPositionDialogProps) {
+function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPositionDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const presetPositions = useTranslatedPresetPositions();
@@ -132,30 +132,50 @@ function PositionForm({
   const [positionType, setPositionType] = useState<string>(editingPosition?.positionType ?? "");
   const [description, setDescription] = useState(editingPosition?.description ?? "");
   const [count, setCount] = useState<string>(String(editingPosition?.targetCount ?? 1));
-  const [requiredSkills, setRequiredSkills] = useState<string[]>(editingPosition?.requiredSkills ?? []);
+  const [requiredSkills, setRequiredSkills] = useState<string[]>(
+    editingPosition?.requiredSkills ?? []
+  );
 
   // ─── Step 2: Employment ────────────
   const [workMode, setWorkMode] = useState<WorkMode>(editingPosition?.workMode ?? "remote");
   const [location, setLocation] = useState<string>(editingPosition?.location ?? "");
-  const [employmentType, setEmploymentType] = useState<EmploymentType>(editingPosition?.employmentType ?? "project_based");
-  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(editingPosition?.experienceLevel ?? "any");
+  const [employmentType, setEmploymentType] = useState<EmploymentType>(
+    editingPosition?.employmentType ?? "project_based"
+  );
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(
+    editingPosition?.experienceLevel ?? "any"
+  );
 
   // ─── Step 3: Salary + Tenure + Lifecycle ────
-  const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>((editingPosition?.salary.period ?? "month") as SalaryPeriod);
-  const [salaryCurrency, setSalaryCurrency] = useState<CurrencyCode>((editingPosition?.salary.currency ?? defaultCurrencyForCell()) as CurrencyCode);
+  const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>(
+    (editingPosition?.salary.period ?? "month") as SalaryPeriod
+  );
+  const [salaryCurrency, setSalaryCurrency] = useState<CurrencyCode>(
+    (editingPosition?.salary.currency ?? defaultCurrencyForCell()) as CurrencyCode
+  );
   const [salaryMin, setSalaryMin] = useState<string>(() => {
     const amount = editingPosition?.salary.minAmount;
-    return amount == null ? "" : String(ZERO_DECIMAL_CURRENCIES.has(salaryCurrency) ? amount : amount / 100);
+    return amount == null
+      ? ""
+      : String(ZERO_DECIMAL_CURRENCIES.has(salaryCurrency) ? amount : amount / 100);
   });
   const [salaryMax, setSalaryMax] = useState<string>(() => {
     const amount = editingPosition?.salary.maxAmount;
-    return amount == null ? "" : String(ZERO_DECIMAL_CURRENCIES.has(salaryCurrency) ? amount : amount / 100);
+    return amount == null
+      ? ""
+      : String(ZERO_DECIMAL_CURRENCIES.has(salaryCurrency) ? amount : amount / 100);
   });
-  const [salaryNegotiable, setSalaryNegotiable] = useState<boolean>(editingPosition?.salary.negotiable ?? false);
+  const [salaryNegotiable, setSalaryNegotiable] = useState<boolean>(
+    editingPosition?.salary.negotiable ?? false
+  );
   // Empty string means "long-term / open-ended" — the wire field
   // becomes NULL. Same convention for revenue share.
-  const [durationMonths, setDurationMonths] = useState<string>(editingPosition?.durationMonths == null ? "" : String(editingPosition.durationMonths));
-  const [revenueSharePercent, setRevenueSharePercent] = useState<string>(editingPosition?.revenueSharePercent == null ? "" : String(editingPosition.revenueSharePercent));
+  const [durationMonths, setDurationMonths] = useState<string>(
+    editingPosition?.durationMonths == null ? "" : String(editingPosition.durationMonths)
+  );
+  const [revenueSharePercent, setRevenueSharePercent] = useState<string>(
+    editingPosition?.revenueSharePercent == null ? "" : String(editingPosition.revenueSharePercent)
+  );
   const [closeDate, setCloseDate] = useState<string>(editingPosition?.closeDate ?? "");
 
   const create = useCreatePosition(crewId);
@@ -165,7 +185,9 @@ function PositionForm({
   const alive = useRef(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
 
   // Pending-application banner: only relevant in edit mode, only when

@@ -1,25 +1,15 @@
 import { useFocusEffect, useNavigation } from "expo-router";
 import { usePreventRemove } from "expo-router/build/react-navigation/core/usePreventRemove";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { Dimensions, Platform, type LayoutChangeEvent } from "react-native";
 
-/**
- * Stack `orientation` is the mask iOS asks (play = landscape, everything else
- * portrait_up). It does not reliably call `requestGeometryUpdate` on this
- * Expo / Dev Client stack, so play still needs one `lockAsync` to actually
- * rotate. Never issue a second lock while that animation is running.
- */
+import { windowMatchesTarget } from "./play-orientation";
+
 const ORIENTATION_WAIT_TIMEOUT_MS = 1_200;
 const POST_REMOUNT_SETTLE_MS = 320;
 const ORIENTATION_POLL_MS = 50;
 
 type OrientationTarget = "portrait" | "landscape";
-
-const LOCK_FOR: Record<OrientationTarget, ScreenOrientation.OrientationLock> = {
-  portrait: ScreenOrientation.OrientationLock.PORTRAIT_UP,
-  landscape: ScreenOrientation.OrientationLock.LANDSCAPE,
-};
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,7 +30,7 @@ function nextFrames(count: number): Promise<void> {
 
 function windowMatches(target: OrientationTarget): boolean {
   const { width, height } = Dimensions.get("window");
-  return target === "portrait" ? height >= width : width > height;
+  return windowMatchesTarget(width, height, target);
 }
 
 async function waitForWindow(target: OrientationTarget, timeoutMs: number): Promise<boolean> {
@@ -50,56 +40,6 @@ async function waitForWindow(target: OrientationTarget, timeoutMs: number): Prom
     if (Date.now() >= deadline) return windowMatches(target);
     await delay(ORIENTATION_POLL_MS);
   }
-}
-
-type OrientationRequest = {
-  target: OrientationTarget;
-  reason: string;
-  cancelled: boolean;
-};
-
-let activeRequest: OrientationRequest | null = null;
-let activeRun: Promise<boolean> | null = null;
-let requestChain: Promise<unknown> = Promise.resolve();
-
-function applyOrientation(target: OrientationTarget, reason: string): Promise<boolean> {
-  if (Platform.OS === "web") return Promise.resolve(true);
-
-  if (activeRequest && !activeRequest.cancelled && activeRequest.target === target && activeRun) {
-    return activeRun;
-  }
-
-  if (activeRequest) activeRequest.cancelled = true;
-  const request: OrientationRequest = { target, reason, cancelled: false };
-  activeRequest = request;
-  const run = requestChain.then(() => runOrientationRequest(request));
-  activeRun = run;
-  requestChain = run.catch(() => undefined);
-  return run;
-}
-
-async function runOrientationRequest(request: OrientationRequest): Promise<boolean> {
-  if (request.cancelled) return false;
-  if (windowMatches(request.target)) return true;
-  try {
-    await ScreenOrientation.lockAsync(LOCK_FOR[request.target]);
-  } catch (error: unknown) {
-    console.warn(`[orientation] ${request.reason} failed`, error);
-    return false;
-  }
-  if (request.cancelled) return false;
-  const matched = await waitForWindow(request.target, ORIENTATION_WAIT_TIMEOUT_MS);
-  if (matched) return true;
-  if (request.target === "landscape") {
-    console.warn(
-      `[orientation] ${request.reason} slow; lock held — waiting on layout, not re-locking`
-    );
-    return true;
-  }
-  console.warn(
-    `[orientation] ${request.reason} did not settle within ${ORIENTATION_WAIT_TIMEOUT_MS}ms`
-  );
-  return false;
 }
 
 function createStore<T>(initial: T) {
@@ -137,10 +77,6 @@ function remountTabs() {
   tabsRemountStore.set(tabsRemountStore.get() + 1);
 }
 
-/**
- * Drive play rotation with one lockAsync after the landscape screen is focused.
- * The stack `orientation` option is still the mask Alert / other VCs see.
- */
 export function usePlayScreenOrientation() {
   const navigation = useNavigation();
   const [awaitStageLandscape, setAwaitStageLandscape] = useState(Platform.OS !== "web");
@@ -172,11 +108,9 @@ export function usePlayScreenOrientation() {
           setAwaitStageLandscape(false);
           return;
         }
-        // Two frames so RNScreens has applied this screen's landscape mask
-        // before lockAsync asks iOS to rotate into it.
-        await nextFrames(2);
+        await nextFrames(1);
         if (!isActive()) return;
-        const rotated = await applyOrientation("landscape", "play landscape");
+        const rotated = await waitForWindow("landscape", ORIENTATION_WAIT_TIMEOUT_MS);
         if (rotated) rotatedRef.current = true;
         if (!isActive()) return;
         setAwaitStageLandscape(rotated);
@@ -208,7 +142,6 @@ export function usePlayScreenOrientation() {
         navigation.setOptions({ animation: "none" });
         navigation.dispatch(data.action);
         await nextFrames(2);
-        await applyOrientation("portrait", "play exit portrait");
         await waitForWindow("portrait", ORIENTATION_WAIT_TIMEOUT_MS);
         if (rotated) {
           remountTabs();

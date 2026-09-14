@@ -5,9 +5,7 @@ import IconCloudOff from "@tabler/icons-react-native/icons/IconCloudOff";
 import IconCloudUpload from "@tabler/icons-react-native/icons/IconCloudUpload";
 import IconLoader2 from "@tabler/icons-react-native/icons/IconLoader2";
 import { useState } from "react";
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from "react-native";
-
-import { appEnv } from "@/config";
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import {
   offlineInteractiveFilm,
   prepareInteractiveFilmRelease,
@@ -16,7 +14,8 @@ import {
 } from "@/features/agent/api/interactive-film-publication-api";
 import { fillMessageTemplate } from "@/features/agent/api/story-production-api";
 import { useStoryChapterContext } from "@/features/agent/context/story-chapter-context";
-import { useLocale, useTranslations, type MessageKey } from "@/i18n";
+import { openPaywall } from "@/features/paywall";
+import { useTranslations, type MessageKey } from "@/i18n";
 
 function formatPoints(value: string | undefined): string {
   if (!value || !/^\d+$/.test(value)) return "—";
@@ -63,29 +62,14 @@ function submitActionKey(
 /** Compute credits chip — shared by chat and script/assets headers. */
 export function StoryCreditsButton() {
   const t = useTranslations();
-  const locale = useLocale();
   const { billingBalance } = useStoryChapterContext();
-  const billingUrl = `${appEnv.api.studioBaseUrl.replace(/\/+$/, "")}/${locale}/settings/billing`;
 
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={t("agent.credits.manage")}
       hitSlop={6}
-      onPress={() => {
-        Alert.alert(t("agent.credits.title"), t("agent.credits.insufficientBody"), [
-          { text: t("report.cancel"), style: "cancel" },
-          {
-            text: t("ipDetail.insufficientOpenWeb"),
-            onPress: () => {
-              Linking.openURL(billingUrl).catch((error: unknown) => {
-                console.warn("[story-project-header] open web billing failed", error);
-                Alert.alert(t("ipDetail.openWebFailed"));
-              });
-            },
-          },
-        ]);
-      }}
+      onPress={() => openPaywall({ category: "compute_points" })}
       style={({ pressed }) => [styles.creditsButton, pressed && styles.pressed]}
     >
       <View style={styles.creditsChrome}>

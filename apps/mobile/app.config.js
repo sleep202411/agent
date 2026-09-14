@@ -162,6 +162,44 @@ function getScheme(region, variant) {
   return scheme;
 }
 
+const WECHAT_PROGUARD_RULES = [
+  "-keep class com.tencent.mm.opensdk.** {",
+  "    *;",
+  "}",
+  "",
+  "-keep class com.tencent.wxop.** {",
+  "    *;",
+  "}",
+  "",
+  "-keep class com.tencent.mm.sdk.** {",
+  "    *;",
+  "}",
+  "",
+].join("\n");
+
+function getUrlSchemes(region, variant) {
+  const appScheme = getScheme(region, variant);
+  const wechatAppId = readOptionalEnv("EXPO_PUBLIC_WECHAT_APP_ID");
+  if (wechatAppId && /^wx[a-zA-Z0-9]+$/.test(wechatAppId)) {
+    return [appScheme, wechatAppId];
+  }
+  return appScheme;
+}
+
+function wechatAssociatedDomain() {
+  const raw = readOptionalEnv("EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK");
+  if (!raw) return undefined;
+
+  try {
+    const host = raw.includes("://")
+      ? new URL(raw).host
+      : raw.replace(/^\/+|\/+$/g, "").split("/")[0];
+    return host ? `applinks:${host}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function readSlug() {
   const slug = readOptionalEnv("FD_EXPO_SLUG") || "fizzdragon";
 
@@ -176,6 +214,8 @@ module.exports = ({ config }) => {
   const appRegion = readEnum("FD_APP_REGION", APP_REGIONS, "global");
   const appVariant = readEnum("APP_VARIANT", APP_VARIANTS, "development");
   const defaults = REGION_DEFAULTS[appRegion];
+
+  const wechatApplink = wechatAssociatedDomain();
 
   const appEnv = {
     appRegion,
@@ -220,10 +260,10 @@ module.exports = ({ config }) => {
     owner: "fizzdragon",
     name: getDisplayName(appRegion, appVariant),
     slug: readSlug(),
-    version: "2.2.0",
+    version: "2.3.0",
     orientation: "default",
     icon: "./assets/images/icon.png",
-    scheme: getScheme(appRegion, appVariant),
+    scheme: getUrlSchemes(appRegion, appVariant),
     userInterfaceStyle: "dark",
     backgroundColor: THEME_COLORS.canvas,
     primaryColor: THEME_COLORS.brand,
@@ -235,17 +275,18 @@ module.exports = ({ config }) => {
       // its own adaptiveIcon below (Xiaomi et al. DO need a safe-zone margin).
       icon: "./assets/images/ios-icon.png",
       bundleIdentifier: readIdentifier(appRegion, appVariant, "ios"),
-      buildNumber: "78",
+      buildNumber: "79",
       // iPhone-only: no iPad/universal build (UIDeviceFamily=[1]). The 1.0
       // rejection was reviewed on an iPad Air; we do not claim tablet support.
       supportsTablet: false,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
+      ...(wechatApplink ? { associatedDomains: [wechatApplink] } : {}),
     },
     android: {
       ...config.android,
       package: readIdentifier(appRegion, appVariant, "android"),
-      versionCode: 78,
+      versionCode: 79,
       userInterfaceStyle: "dark",
       backgroundColor: THEME_COLORS.canvas,
       adaptiveIcon: {
@@ -315,6 +356,20 @@ module.exports = ({ config }) => {
           imageWidth: 220,
         },
       ],
+      [
+        "expo-build-properties",
+        {
+          android: {
+            extraProguardRules: WECHAT_PROGUARD_RULES,
+          },
+        },
+      ],
+      [
+        "expo-wechat",
+        {
+          enablePay: appRegion === "cn",
+        },
+      ],
       // Re-applies the Android RELEASE signingConfig on every prebuild (the Expo
       // template otherwise signs release with the debug key → store rejection).
       "./plugins/withAndroidReleaseSigning",
@@ -333,6 +388,12 @@ module.exports = ({ config }) => {
     extra: {
       ...config.extra,
       appEnv,
+      paywall: {
+        revenueCatAppleApiKey: readOptionalEnv("EXPO_PUBLIC_REVENUECAT_APPLE_API_KEY") || "",
+        revenueCatGoogleApiKey: readOptionalEnv("EXPO_PUBLIC_REVENUECAT_GOOGLE_API_KEY") || "",
+        wechatAppId: readOptionalEnv("EXPO_PUBLIC_WECHAT_APP_ID") || "",
+        wechatUniversalLink: readOptionalEnv("EXPO_PUBLIC_WECHAT_UNIVERSAL_LINK") || "",
+      },
       eas: {
         ...config.extra?.eas,
         projectId: "00e1e0f0-54fd-4242-86ca-1580d53f90f0",

@@ -281,4 +281,6 @@ it.each(["en-US", "zh-CN", "zh-HK"])("formats invitation expiry in %s", async (l
   expect(host.textContent).toContain(expected);
 });
 
-vi.mock("@/app/(site)/crews/_components/accountability/project-accountability", () => ({ ProjectAccountability: () => null }));
+vi.mock("@/app/(site)/crews/_components/accountability/project-accountability", () => ({
+  ProjectAccountability: () => null,
+}));

@@ -655,7 +655,10 @@ function IpDetailDrawer({
           {error ? <ErrorBanner message={error} /> : null}
           {ip ? (
             <div className="space-y-4">
-              <Link href={`/ip/titles/${encodeURIComponent(ip.id)}/production`} className="inline-block text-sm underline">
+              <Link
+                href={`/ip/titles/${encodeURIComponent(ip.id)}/production`}
+                className="inline-block text-sm underline"
+              >
                 Production review evidence
               </Link>
               <section className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-2">

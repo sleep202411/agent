@@ -8,7 +8,7 @@
 #
 # Produces signed, store-ready artifacts in $FD_OUT_DIR named
 #   FizzDragon-<version>-<build>-<variant>.{aab,apk,ipa}
-# where variant ∈ {global, global-transsion, cn-ios, cn-huawei, cn-xiaomi}.
+# where variant ∈ {global, global-transsion, cn, cn-ios}.
 #
 # Signing secrets + material paths come from a GITIGNORED env file
 # (apps/mobile/env.release.local — see env.release.example). Named without the
@@ -18,10 +18,10 @@
 # wired via FIZZDRAGON_UPLOAD_* gradle props, passed below per region).
 #
 # Version + build number come from app.config.js (single source of truth).
-# CN Android is DUAL-package: 华为 = cn.fizzdragon, 小米 = cn.feiteng.fizzspace
-# (软著 bound to the feiteng package; do NOT merge — see app/signing/README.md).
-# Global Android produces BOTH Google Play (.aab) and Transsion PalmStore (.apk)
-# from one prebuild (same package + upload keystore).
+# CN Android is one package: 华为 + 小米 = cn.feiteng.fizzspace (eas.json
+# production-cn). cn.fizzdragon is retired. Global Android produces BOTH
+# Google Play (.aab) and Transsion PalmStore (.apk) from one prebuild
+# (same package + upload keystore).
 # ============================================================================
 set -euo pipefail
 
@@ -76,7 +76,6 @@ prebuild() { # region platform androidPackage
   export FD_GLOBAL_IOS_BUNDLE_IDENTIFIER="${FD_GLOBAL_IOS_BUNDLE_IDENTIFIER:-com.fizzdragon.app}"
   export FD_GLOBAL_ANDROID_PACKAGE="${FD_GLOBAL_ANDROID_PACKAGE:-com.fizzdragon}"
   export FD_CN_IOS_BUNDLE_IDENTIFIER="${FD_CN_IOS_BUNDLE_IDENTIFIER:-cn.fizzspaceapp}"
-  # the per-build android package (cn has two; global has one)
   [ "$region" = cn ] && export FD_CN_ANDROID_PACKAGE="$pkg" || export FD_GLOBAL_ANDROID_PACKAGE="$pkg"
   echo "  [$(date +%T)] prebuild $region/$platform pkg=$pkg"
   npx expo prebuild --platform "$platform" --clean --no-install >/tmp/fd-prebuild-$region-$platform.log 2>&1
@@ -157,9 +156,9 @@ run_global_android() {
   gradle_release global            "$pkg" "$ks" "$sp" "$al" "$kp" bundleRelease   aab app/build/outputs/bundle/release/app-release.aab
   gradle_release global-transsion  "$pkg" "$ks" "$sp" "$al" "$kp" assembleRelease apk app/build/outputs/apk/release/app-release.apk
 }
-run_cn_android()     {
-  build_android cn-huawei cn "${FD_CN_HUAWEI_PACKAGE:-cn.fizzdragon}"        "$FD_CN_KEYSTORE" "$FD_CN_STORE_PASS" "$FD_CN_KEY_ALIAS" "$FD_CN_KEY_PASS" assembleRelease apk app/build/outputs/apk/release/app-release.apk
-  build_android cn-xiaomi cn "${FD_CN_XIAOMI_PACKAGE:-cn.feiteng.fizzspace}" "$FD_CN_KEYSTORE" "$FD_CN_STORE_PASS" "$FD_CN_KEY_ALIAS" "$FD_CN_KEY_PASS" assembleRelease apk app/build/outputs/apk/release/app-release.apk
+run_cn_android() {
+  local pkg="${FD_CN_ANDROID_PACKAGE:-${FD_CN_XIAOMI_PACKAGE:-cn.feiteng.fizzspace}}"
+  build_android cn cn "$pkg" "$FD_CN_KEYSTORE" "$FD_CN_STORE_PASS" "$FD_CN_KEY_ALIAS" "$FD_CN_KEY_PASS" assembleRelease apk app/build/outputs/apk/release/app-release.apk
 }
 run_global_ios() { build_ios global  global "${FD_GLOBAL_IOS_BUNDLE_IDENTIFIER:-com.fizzdragon.app}" Manual    "$FD_IOS_GLOBAL_TEAM" "$FD_IOS_GLOBAL_PROFILE"; }
 run_cn_ios()     { build_ios cn-ios  cn     "${FD_CN_IOS_BUNDLE_IDENTIFIER:-cn.fizzspaceapp}"        Automatic "$FD_IOS_CN_TEAM"; }

@@ -15,7 +15,14 @@ import { DeleteTaskButton } from "./delete-task-button";
 
 import { isCrewTaskOverdue } from "@/app/(site)/crews/_lib/task-dates";
 
-import { useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import {
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+} from "react";
 import Link from "next/link";
 import {
   IconArrowUpRight,
@@ -128,7 +135,9 @@ export function TaskIssueDetail({
   const [patching, setPatching] = useState(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const startBriefEdit = () => {
     if (patchPending.current || !isOwner) return;
@@ -152,7 +161,10 @@ export function TaskIssueDetail({
     [timeline.data]
   );
 
-  const quickPatch = async (input: Omit<UpdateCrewTaskInput, "expectedVersion">, expectedVersion = task.version) => {
+  const quickPatch = async (
+    input: Omit<UpdateCrewTaskInput, "expectedVersion">,
+    expectedVersion = task.version
+  ) => {
     if (!alive.current || patchPending.current || !isOwner) return false;
     patchPending.current = true;
     setPatching(true);
@@ -175,7 +187,12 @@ export function TaskIssueDetail({
 
   const saveBrief = async () => {
     if (!draftTitle.trim()) return;
-    if (await quickPatch({ title: draftTitle.trim(), description: draftDescription.trim() }, briefVersion)) {
+    if (
+      await quickPatch(
+        { title: draftTitle.trim(), description: draftDescription.trim() },
+        briefVersion
+      )
+    ) {
       setEditingBrief(false);
     }
   };
@@ -398,7 +415,11 @@ export function TaskIssueDetail({
                     variant="outline"
                     color="muted"
                     disabled={timeline.isFetching}
-                    onClick={() => void (timeline.isFetchNextPageError ? timeline.fetchNextPage() : timeline.refetch())}
+                    onClick={() =>
+                      void (timeline.isFetchNextPageError
+                        ? timeline.fetchNextPage()
+                        : timeline.refetch())
+                    }
                   >
                     {t("retry")}
                   </Button>
@@ -492,7 +513,6 @@ export function TaskIssueDetail({
             </RailRow>
             <RailRow icon={<IconUserCircle className="size-4" />} align="start">
               <AssigneesEditor
-
                 task={task}
                 members={members}
                 displays={displays}
@@ -507,7 +527,6 @@ export function TaskIssueDetail({
             <RailRow icon={<IconTag className="size-4" />} align="start">
               <LabelsEditor
                 version={task.version}
-
                 labels={project?.labels ?? []}
                 selected={task.labels}
                 editable={isOwner}
@@ -559,7 +578,6 @@ export function TaskIssueDetail({
             </RailRow>
             <RailRow icon={<IconClock className="size-4" />} align="start">
               <PlanningEditor
-
                 task={task}
                 editable={isOwner}
                 pending={patching}
@@ -569,7 +587,6 @@ export function TaskIssueDetail({
             <RailRow icon={<IconSitemap className="size-4" />} align="start">
               <div className="w-full space-y-2">
                 <TaskRelationshipsEditor
-
                   task={task}
                   editable={isOwner}
                   pending={patching}
@@ -645,7 +662,6 @@ export function TaskIssueDetail({
           <RailSection title={t("taskInfo")}>
             <RailRow icon={<IconClipboardCheck className="size-4" />} align="start">
               <TaskLimitsEditor
-
                 task={task}
                 editable={isOwner}
                 pending={patching}
@@ -729,7 +745,9 @@ function CommentItem({
   const [saving, setSaving] = useState(false);
   useLayoutEffect(() => {
     alive.current = true;
-    return () => { alive.current = false; };
+    return () => {
+      alive.current = false;
+    };
   }, []);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const authorName = item.actorUserId
@@ -810,7 +828,9 @@ function CommentItem({
                   <button
                     disabled={saving}
                     type="button"
-                    onClick={() => { if (!pending.current) setConfirmDelete(true); }}
+                    onClick={() => {
+                      if (!pending.current) setConfirmDelete(true);
+                    }}
                     className="rounded p-1.5 text-[#656b76] hover:bg-red-500/10 hover:text-red-300"
                     aria-label={t("deleteComment")}
                   >
@@ -832,7 +852,9 @@ function CommentItem({
                     disabled={saving}
                     type="button"
                     className="rounded px-2 py-1 text-[10px] text-[#8e949e]"
-                    onClick={() => { if (!pending.current) setConfirmDelete(false); }}
+                    onClick={() => {
+                      if (!pending.current) setConfirmDelete(false);
+                    }}
                   >
                     {t("cancel")}
                   </button>
@@ -855,14 +877,18 @@ function CommentItem({
                 autoFocus
               />
               <div className="mt-2 flex justify-end gap-2">
-                <Button size="sm" variant="ghost" color="muted" disabled={saving} onClick={() => { if (!pending.current) setEditing(false); }}>
-                  {t("cancel")}
-                </Button>
                 <Button
                   size="sm"
-                  disabled={!body.trim() || saving}
-                  onClick={() => void save()}
+                  variant="ghost"
+                  color="muted"
+                  disabled={saving}
+                  onClick={() => {
+                    if (!pending.current) setEditing(false);
+                  }}
                 >
+                  {t("cancel")}
+                </Button>
+                <Button size="sm" disabled={!body.trim() || saving} onClick={() => void save()}>
                   {t("save")}
                 </Button>
               </div>
@@ -998,7 +1024,14 @@ function CommentComposer({
   };
 
   const uploadFiles = async (files: File[]) => {
-    if (!alive.current || sending.current || uploadingBatch.current || !canUpload || files.length === 0) return;
+    if (
+      !alive.current ||
+      sending.current ||
+      uploadingBatch.current ||
+      !canUpload ||
+      files.length === 0
+    )
+      return;
     uploadingBatch.current = true;
     const controller = new AbortController();
     uploadController.current = controller;
@@ -1017,15 +1050,25 @@ function CommentComposer({
               if (alive.current) setUploading((current) => ({ ...current, [localKey]: progress }));
             },
           });
-          if (!alive.current) { discard(uploaded.mediaAssetId); break; }
+          if (!alive.current) {
+            discard(uploaded.mediaAssetId);
+            break;
+          }
           pendingUploadsRef.current.add(uploaded.mediaAssetId);
-          setAttachments((current) => [...current, { source: "upload", mediaAssetId: uploaded.mediaAssetId, name: file.name }]);
+          setAttachments((current) => [
+            ...current,
+            { source: "upload", mediaAssetId: uploaded.mediaAssetId, name: file.name },
+          ]);
         } catch (error) {
-          if (alive.current) toast.error(error instanceof Error ? error.message : t("uploadFailed"));
+          if (alive.current)
+            toast.error(error instanceof Error ? error.message : t("uploadFailed"));
         } finally {
-          if (alive.current) setUploading((current) => {
-            const next = { ...current }; delete next[localKey]; return next;
-          });
+          if (alive.current)
+            setUploading((current) => {
+              const next = { ...current };
+              delete next[localKey];
+              return next;
+            });
         }
       }
     } finally {
@@ -1049,7 +1092,8 @@ function CommentComposer({
     if (!body.trim() && attachments.length === 0) return;
     const input = { body, mentions: activeMentions, attachments };
     const fingerprint = JSON.stringify(input);
-    if (retry.current?.fingerprint !== fingerprint) retry.current = { fingerprint, key: crypto.randomUUID() };
+    if (retry.current?.fingerprint !== fingerprint)
+      retry.current = { fingerprint, key: crypto.randomUUID() };
     sending.current = true;
     setSaving(true);
     for (const id of pendingUploadsRef.current) submittedUploads.current.add(id);
@@ -1190,10 +1234,20 @@ function CommentComposer({
               <button
                 key={asset.id}
                 type="button"
-                disabled={saving || Object.keys(uploading).length > 0 || selected || attachments.length >= 10}
+                disabled={
+                  saving ||
+                  Object.keys(uploading).length > 0 ||
+                  selected ||
+                  attachments.length >= 10
+                }
                 onClick={() => {
                   if (!alive.current || sending.current || uploadingBatch.current) return;
-                  setAttachments((current) => current.length >= 10 || current.some(item => item.source === "asset" && item.assetNodeId === asset.id) ? current : [...current, { source: "asset", assetNodeId: asset.id }]);
+                  setAttachments((current) =>
+                    current.length >= 10 ||
+                    current.some((item) => item.source === "asset" && item.assetNodeId === asset.id)
+                      ? current
+                      : [...current, { source: "asset", assetNodeId: asset.id }]
+                  );
                 }}
                 className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left hover:bg-white/[0.055] disabled:opacity-45"
               >
@@ -1394,22 +1448,36 @@ function TaskReferenceLink({
   );
 }
 
-type TaskPatch = (input: Omit<UpdateCrewTaskInput, "expectedVersion">, expectedVersion?: number) => Promise<boolean>;
+type TaskPatch = (
+  input: Omit<UpdateCrewTaskInput, "expectedVersion">,
+  expectedVersion?: number
+) => Promise<boolean>;
 
-function useTaskPropertySession(version: number, pending: boolean, onSave: TaskPatch, reset: () => void) {
+function useTaskPropertySession(
+  version: number,
+  pending: boolean,
+  onSave: TaskPatch,
+  reset: () => void
+) {
   const [open, setOpened] = useState(false);
   const session = useRef({ alive: true, open: false, generation: 0, version, saving: false });
   useLayoutEffect(() => {
     const current = session.current;
     current.alive = true;
-    return () => { current.alive = false; current.generation += 1; };
+    return () => {
+      current.alive = false;
+      current.generation += 1;
+    };
   }, []);
   const setOpen = (next: boolean) => {
     const current = session.current;
     if (!current.alive || current.saving || pending || next === current.open) return;
     current.open = next;
     current.generation += 1;
-    if (next) { current.version = version; reset(); }
+    if (next) {
+      current.version = version;
+      reset();
+    }
     setOpened(next);
   };
   const saveDraft: TaskPatch = async (input) => {
@@ -1420,7 +1488,9 @@ function useTaskPropertySession(version: number, pending: boolean, onSave: TaskP
     try {
       const saved = await onSave(input, current.version);
       return saved && current.alive && current.generation === generation;
-    } finally { current.saving = false; }
+    } finally {
+      current.saving = false;
+    }
   };
   return { open, setOpen, saveDraft };
 }
@@ -1455,7 +1525,18 @@ function AssigneesEditor({
           : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
     }))
   );
-  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setDraft(task.assignees.map(assignee => ({ userId: assignee.userId, currency: assignee.rewardAmountMinor == null ? CREW_CURRENCY : assignee.currency, rewardAmountMinor: assignee.rewardAmountMinor == null ? "" : formatCrewMoneyInput(String(assignee.rewardAmountMinor)) }))); });
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
+    setDraft(
+      task.assignees.map((assignee) => ({
+        userId: assignee.userId,
+        currency: assignee.rewardAmountMinor == null ? CREW_CURRENCY : assignee.currency,
+        rewardAmountMinor:
+          assignee.rewardAmountMinor == null
+            ? ""
+            : formatCrewMoneyInput(String(assignee.rewardAmountMinor)),
+      }))
+    );
+  });
   const invalidReward = draft.some(
     (item) => item.rewardAmountMinor !== "" && parseReward(item.rewardAmountMinor) == null
   );
@@ -1513,53 +1594,53 @@ function AssigneesEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
-        <p className="text-[12px] font-semibold">{t("chooseAssignees")}</p>
-        <div className="max-h-64 space-y-1 overflow-y-auto">
-          {members.map((member) => {
-            const selected = draft.find((item) => item.userId === member.userId);
-            return (
-              <div
-                key={member.id}
-                className="grid min-h-9 grid-cols-[16px_minmax(0,1fr)_104px] items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
-              >
-                <Checkbox
-                  checked={Boolean(selected)}
-                  onCheckedChange={() => toggleMember(member.userId)}
-                  aria-label={displayNameOf(member.userId, displays)}
-                />
-                <span className="truncate text-[11px]">
-                  {displayNameOf(member.userId, displays)}
-                </span>
-                <Input
-                  type="number"
-                  min={0.01}
-                  max={100_000_000}
-                  step={0.01}
-                  disabled={!selected}
-                  value={selected?.rewardAmountMinor ?? ""}
-                  onChange={(event) =>
-                    setDraft((current) =>
-                      current.map((item) =>
-                        item.userId === member.userId
-                          ? { ...item, rewardAmountMinor: event.target.value }
-                          : item
+          <p className="text-[12px] font-semibold">{t("chooseAssignees")}</p>
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {members.map((member) => {
+              const selected = draft.find((item) => item.userId === member.userId);
+              return (
+                <div
+                  key={member.id}
+                  className="grid min-h-9 grid-cols-[16px_minmax(0,1fr)_104px] items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
+                >
+                  <Checkbox
+                    checked={Boolean(selected)}
+                    onCheckedChange={() => toggleMember(member.userId)}
+                    aria-label={displayNameOf(member.userId, displays)}
+                  />
+                  <span className="truncate text-[11px]">
+                    {displayNameOf(member.userId, displays)}
+                  </span>
+                  <Input
+                    type="number"
+                    min={0.01}
+                    max={100_000_000}
+                    step={0.01}
+                    disabled={!selected}
+                    value={selected?.rewardAmountMinor ?? ""}
+                    onChange={(event) =>
+                      setDraft((current) =>
+                        current.map((item) =>
+                          item.userId === member.userId
+                            ? { ...item, rewardAmountMinor: event.target.value }
+                            : item
+                        )
                       )
-                    )
-                  }
-                  aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
-                  placeholder={selected?.currency ?? CREW_CURRENCY}
-                  className="h-7 text-[10px]"
-                />
-              </div>
-            );
-          })}
-        </div>
-        <PropertyActions
-          pending={pending}
-          disabled={invalidReward}
-          onCancel={() => setOpen(false)}
-          onSave={() => void save()}
-        />
+                    }
+                    aria-label={`${t("reward")} (${selected?.currency ?? CREW_CURRENCY})`}
+                    placeholder={selected?.currency ?? CREW_CURRENCY}
+                    className="h-7 text-[10px]"
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <PropertyActions
+            pending={pending}
+            disabled={invalidReward}
+            onCancel={() => setOpen(false)}
+            onSave={() => void save()}
+          />
         </fieldset>
       </PopoverContent>
     </Popover>
@@ -1584,7 +1665,9 @@ function LabelsEditor({
   const t = useTranslations("crewTasks");
 
   const [ids, setIds] = useState(() => selected.map((label) => label.id));
-  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => { setIds(selected.map(label => label.id)); });
+  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => {
+    setIds(selected.map((label) => label.id));
+  });
   const summary = selected.length ? (
     <div className="flex flex-wrap gap-1.5">
       {selected.map((label) => (
@@ -1614,37 +1697,37 @@ function LabelsEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
-        <p className="text-[12px] font-semibold">{t("labels")}</p>
-        {labels.length ? (
-          <div className="max-h-56 space-y-1 overflow-y-auto">
-            {labels.map((label) => (
-              <label
-                key={label.id}
-                className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
-              >
-                <Checkbox
-                  checked={ids.includes(label.id)}
-                  onCheckedChange={() =>
-                    setIds((current) =>
-                      current.includes(label.id)
-                        ? current.filter((id) => id !== label.id)
-                        : [...current, label.id]
-                    )
-                  }
-                />
-                <span className="size-2 rounded-full" style={{ backgroundColor: label.color }} />
-                <span className="text-[11px]">{label.name}</span>
-              </label>
-            ))}
-          </div>
-        ) : (
-          <p className="py-5 text-center text-[10px] text-[#777d87]">{t("noLabels")}</p>
-        )}
-        <PropertyActions
-          pending={pending}
-          onCancel={() => setOpen(false)}
-          onSave={() => void saveDraft({ labelIds: ids }).then((ok) => ok && setOpen(false))}
-        />
+          <p className="text-[12px] font-semibold">{t("labels")}</p>
+          {labels.length ? (
+            <div className="max-h-56 space-y-1 overflow-y-auto">
+              {labels.map((label) => (
+                <label
+                  key={label.id}
+                  className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
+                >
+                  <Checkbox
+                    checked={ids.includes(label.id)}
+                    onCheckedChange={() =>
+                      setIds((current) =>
+                        current.includes(label.id)
+                          ? current.filter((id) => id !== label.id)
+                          : [...current, label.id]
+                      )
+                    }
+                  />
+                  <span className="size-2 rounded-full" style={{ backgroundColor: label.color }} />
+                  <span className="text-[11px]">{label.name}</span>
+                </label>
+              ))}
+            </div>
+          ) : (
+            <p className="py-5 text-center text-[10px] text-[#777d87]">{t("noLabels")}</p>
+          )}
+          <PropertyActions
+            pending={pending}
+            onCancel={() => setOpen(false)}
+            onSave={() => void saveDraft({ labelIds: ids }).then((ok) => ok && setOpen(false))}
+          />
         </fieldset>
       </PopoverContent>
     </Popover>
@@ -1669,7 +1752,11 @@ function PlanningEditor({
   const [estimate, setEstimate] = useState(
     task.estimatePoints == null ? "" : String(task.estimatePoints)
   );
-  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setStartAt(toDateInput(task.startAt)); setDueAt(toDateInput(task.dueAt)); setEstimate(task.estimatePoints == null ? "" : String(task.estimatePoints)); });
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
+    setStartAt(toDateInput(task.startAt));
+    setDueAt(toDateInput(task.dueAt));
+    setEstimate(task.estimatePoints == null ? "" : String(task.estimatePoints));
+  });
   const invalidRange = Boolean(startAt && dueAt && dueAt < startAt);
   const invalidEstimate = !isNullableIntegerInputValid(estimate, 0, 1_000_000);
   const summary = (
@@ -1710,40 +1797,40 @@ function PlanningEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
-        <p className="text-[12px] font-semibold">{t("planning")}</p>
-        <div className="grid grid-cols-2 gap-2">
-          <PropertyInput label={t("startAt")}>
+          <p className="text-[12px] font-semibold">{t("planning")}</p>
+          <div className="grid grid-cols-2 gap-2">
+            <PropertyInput label={t("startAt")}>
+              <Input
+                type="date"
+                value={startAt}
+                onChange={(event) => setStartAt(event.target.value)}
+              />
+            </PropertyInput>
+            <PropertyInput label={t("due")}>
+              <Input type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
+            </PropertyInput>
+          </div>
+          <PropertyInput label={t("estimate")}>
             <Input
-              type="date"
-              value={startAt}
-              onChange={(event) => setStartAt(event.target.value)}
+              type="number"
+              min={0}
+              max={1_000_000}
+              step={1}
+              value={estimate}
+              onChange={(event) => setEstimate(event.target.value)}
             />
           </PropertyInput>
-          <PropertyInput label={t("due")}>
-            <Input type="date" value={dueAt} onChange={(event) => setDueAt(event.target.value)} />
-          </PropertyInput>
-        </div>
-        <PropertyInput label={t("estimate")}>
-          <Input
-            type="number"
-            min={0}
-            max={1_000_000}
-            step={1}
-            value={estimate}
-            onChange={(event) => setEstimate(event.target.value)}
+          {invalidRange ? (
+            <p className="text-[10px] text-red-300">{t("invalidDateRange")}</p>
+          ) : invalidEstimate ? (
+            <p className="text-[10px] text-red-300">{t("invalidNumber")}</p>
+          ) : null}
+          <PropertyActions
+            pending={pending}
+            disabled={invalidRange || invalidEstimate}
+            onCancel={() => setOpen(false)}
+            onSave={() => void save()}
           />
-        </PropertyInput>
-        {invalidRange ? (
-          <p className="text-[10px] text-red-300">{t("invalidDateRange")}</p>
-        ) : invalidEstimate ? (
-          <p className="text-[10px] text-red-300">{t("invalidNumber")}</p>
-        ) : null}
-        <PropertyActions
-          pending={pending}
-          disabled={invalidRange || invalidEstimate}
-          onCancel={() => setOpen(false)}
-          onSave={() => void save()}
-        />
         </fieldset>
       </PopoverContent>
     </Popover>
@@ -1765,7 +1852,10 @@ function TaskRelationshipsEditor({
 
   const [parentId, setParentId] = useState(task.parentId ?? "");
   const [blockerIds, setBlockerIds] = useState(() => task.blockedBy.map((item) => item.id));
-  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setParentId(task.parentId ?? ""); setBlockerIds(task.blockedBy.map(item => item.id)); });
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
+    setParentId(task.parentId ?? "");
+    setBlockerIds(task.blockedBy.map((item) => item.id));
+  });
   const options = useCrewTaskOptions(
     task.crewId,
     { excludeTaskId: task.id, limit: 100 },
@@ -1797,54 +1887,54 @@ function TaskRelationshipsEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
-        <PropertyInput label={t("parentTask")}>
-          <TaskSelect
-            value={parentId}
-            onValueChange={setParentId}
-            ariaLabel={t("parentTask")}
-            className="h-9"
-            options={[
-              { value: "", label: t("noParentTask") },
-              ...options.data.map((option) => ({
-                value: option.id,
-                label: `TASK ${option.number} · ${option.title}`,
-              })),
-            ]}
-          />
-        </PropertyInput>
-        <div>
-          <p className="mb-1.5 text-[10px] text-[#858991]">{t("blockedBy")}</p>
-          <div className="max-h-44 space-y-1 overflow-y-auto">
-            {options.data.map((option) => (
-              <label
-                key={option.id}
-                className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
-              >
-                <Checkbox
-                  checked={blockerIds.includes(option.id)}
-                  onCheckedChange={() =>
-                    setBlockerIds((current) =>
-                      current.includes(option.id)
-                        ? current.filter((id) => id !== option.id)
-                        : [...current, option.id]
-                    )
-                  }
-                />
-                <span className="font-mono text-[9px] text-[#777d87]">TASK {option.number}</span>
-                <span className="min-w-0 flex-1 truncate text-[11px]">{option.title}</span>
-              </label>
-            ))}
+          <PropertyInput label={t("parentTask")}>
+            <TaskSelect
+              value={parentId}
+              onValueChange={setParentId}
+              ariaLabel={t("parentTask")}
+              className="h-9"
+              options={[
+                { value: "", label: t("noParentTask") },
+                ...options.data.map((option) => ({
+                  value: option.id,
+                  label: `TASK ${option.number} · ${option.title}`,
+                })),
+              ]}
+            />
+          </PropertyInput>
+          <div>
+            <p className="mb-1.5 text-[10px] text-[#858991]">{t("blockedBy")}</p>
+            <div className="max-h-44 space-y-1 overflow-y-auto">
+              {options.data.map((option) => (
+                <label
+                  key={option.id}
+                  className="flex min-h-8 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-white/[0.045]"
+                >
+                  <Checkbox
+                    checked={blockerIds.includes(option.id)}
+                    onCheckedChange={() =>
+                      setBlockerIds((current) =>
+                        current.includes(option.id)
+                          ? current.filter((id) => id !== option.id)
+                          : [...current, option.id]
+                      )
+                    }
+                  />
+                  <span className="font-mono text-[9px] text-[#777d87]">TASK {option.number}</span>
+                  <span className="min-w-0 flex-1 truncate text-[11px]">{option.title}</span>
+                </label>
+              ))}
+            </div>
           </div>
-        </div>
-        <PropertyActions
-          pending={pending}
-          onCancel={() => setOpen(false)}
-          onSave={() =>
-            void saveDraft({ parentId: parentId || null, blockedByTaskIds: blockerIds }).then(
-              (ok) => ok && setOpen(false)
-            )
-          }
-        />
+          <PropertyActions
+            pending={pending}
+            onCancel={() => setOpen(false)}
+            onSave={() =>
+              void saveDraft({ parentId: parentId || null, blockedByTaskIds: blockerIds }).then(
+                (ok) => ok && setOpen(false)
+              )
+            }
+          />
         </fieldset>
       </PopoverContent>
     </Popover>
@@ -1873,7 +1963,9 @@ function CustomFieldEditor({
   const t = useTranslations("crewTasks");
 
   const [draft, setDraft] = useState<CrewTaskCustomValue>(value ?? null);
-  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => { setDraft(value ?? null); });
+  const { open, setOpen, saveDraft } = useTaskPropertySession(version, pending, onSave, () => {
+    setDraft(value ?? null);
+  });
   const invalidNumber =
     field.type === "number" && draft !== null && draft !== "" && !Number.isFinite(Number(draft));
   const summary = (
@@ -1899,26 +1991,26 @@ function CustomFieldEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
-        <div>
-          <p className="text-[12px] font-semibold">{field.name}</p>
-          {field.description ? (
-            <p className="mt-1 text-[10px] leading-4 text-[#858991]">{field.description}</p>
-          ) : null}
-        </div>
-        <CustomFieldControl
-          field={field}
-          value={draft}
-          members={members}
-          displays={displays}
-          onChange={setDraft}
-        />
-        {invalidNumber ? <p className="text-[10px] text-red-300">{t("invalidNumber")}</p> : null}
-        <PropertyActions
-          pending={pending}
-          disabled={invalidNumber}
-          onCancel={() => setOpen(false)}
-          onSave={() => void save()}
-        />
+          <div>
+            <p className="text-[12px] font-semibold">{field.name}</p>
+            {field.description ? (
+              <p className="mt-1 text-[10px] leading-4 text-[#858991]">{field.description}</p>
+            ) : null}
+          </div>
+          <CustomFieldControl
+            field={field}
+            value={draft}
+            members={members}
+            displays={displays}
+            onChange={setDraft}
+          />
+          {invalidNumber ? <p className="text-[10px] text-red-300">{t("invalidNumber")}</p> : null}
+          <PropertyActions
+            pending={pending}
+            disabled={invalidNumber}
+            onCancel={() => setOpen(false)}
+            onSave={() => void save()}
+          />
         </fieldset>
       </PopoverContent>
     </Popover>
@@ -2021,7 +2113,9 @@ function TaskLimitsEditor({
   const [revisionLimit, setRevisionLimit] = useState(
     task.revisionLimit == null ? "" : String(task.revisionLimit)
   );
-  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => { setRevisionLimit(task.revisionLimit == null ? "" : String(task.revisionLimit)); });
+  const { open, setOpen, saveDraft } = useTaskPropertySession(task.version, pending, onSave, () => {
+    setRevisionLimit(task.revisionLimit == null ? "" : String(task.revisionLimit));
+  });
   const invalidLimit = revisionLimit !== "" && Number(revisionLimit) < task.revisionRoundsUsed;
   const invalidRevision = !isNullableIntegerInputValid(revisionLimit, 0, 100);
   const summary = (
@@ -2055,31 +2149,31 @@ function TaskLimitsEditor({
       </PopoverTrigger>
       <PopoverContent align="end" className={PROPERTY_POPOVER_CLASS}>
         <fieldset disabled={pending} className="contents">
-        <p className="text-[12px] font-semibold">{t("taskLimits")}</p>
-        <PropertyInput label={t("revisionLimit")}>
-          <Input
-            type="number"
-            min={task.revisionRoundsUsed}
-            max={100}
-            step={1}
-            value={revisionLimit}
-            onChange={(event) => setRevisionLimit(event.target.value)}
-            placeholder={t("revisionUnlimited")}
+          <p className="text-[12px] font-semibold">{t("taskLimits")}</p>
+          <PropertyInput label={t("revisionLimit")}>
+            <Input
+              type="number"
+              min={task.revisionRoundsUsed}
+              max={100}
+              step={1}
+              value={revisionLimit}
+              onChange={(event) => setRevisionLimit(event.target.value)}
+              placeholder={t("revisionUnlimited")}
+            />
+          </PropertyInput>
+          {invalidLimit ? (
+            <p className="text-[10px] text-red-300">
+              {t("revisionUsedHint", { used: task.revisionRoundsUsed })}
+            </p>
+          ) : invalidRevision ? (
+            <p className="text-[10px] text-red-300">{t("invalidNumber")}</p>
+          ) : null}
+          <PropertyActions
+            pending={pending}
+            disabled={invalidLimit || invalidRevision}
+            onCancel={() => setOpen(false)}
+            onSave={() => void save()}
           />
-        </PropertyInput>
-        {invalidLimit ? (
-          <p className="text-[10px] text-red-300">
-            {t("revisionUsedHint", { used: task.revisionRoundsUsed })}
-          </p>
-        ) : invalidRevision ? (
-          <p className="text-[10px] text-red-300">{t("invalidNumber")}</p>
-        ) : null}
-        <PropertyActions
-          pending={pending}
-          disabled={invalidLimit || invalidRevision}
-          onCancel={() => setOpen(false)}
-          onSave={() => void save()}
-        />
         </fieldset>
       </PopoverContent>
     </Popover>
@@ -2314,10 +2408,14 @@ function renderMentions(body: string, mentions: Array<{ userId: string; label: s
 function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTranslations>) {
   const payload = item.payload;
   switch (item.kind) {
-    case "commitment.accepted": return t("activity.commitmentAccepted");
-    case "commitment.at_risk": return t("activity.commitmentRisk");
-    case "commitment.withdrawn": return t("activity.commitmentWithdrawn");
-    case "commitment.handover": return t("activity.commitmentHandover");
+    case "commitment.accepted":
+      return t("activity.commitmentAccepted");
+    case "commitment.at_risk":
+      return t("activity.commitmentRisk");
+    case "commitment.withdrawn":
+      return t("activity.commitmentWithdrawn");
+    case "commitment.handover":
+      return t("activity.commitmentHandover");
     case "task.created":
       return t("activity.created");
     case "task.updated": {
@@ -2351,7 +2449,8 @@ function activityText(item: CrewTaskTimelineItemDTO, t: ReturnType<typeof useTra
 }
 
 function activityNote(item: CrewTaskTimelineItemDTO) {
-  if (item.kind.startsWith("commitment.")) return typeof item.payload.note === "string" ? item.payload.note : null;
+  if (item.kind.startsWith("commitment."))
+    return typeof item.payload.note === "string" ? item.payload.note : null;
   if (
     item.kind !== "task.submitted" &&
     item.kind !== "task.approved" &&

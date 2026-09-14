@@ -14,6 +14,8 @@ import { fetchMyCrews } from "@/data/crew-api";
 import { fetchCommunityPointBalance, fetchMyIps, type MyIp } from "@/data/ip-api";
 import { fetchMyWorks, type MyWork } from "@/data/mine-api";
 import type { CrewSummary } from "@/data/types";
+import { openPaywall } from "@/features/paywall";
+import { fetchComputeWalletBalance } from "@/features/paywall/lib/compute-wallet";
 import { useTheme } from "@/hooks/use-theme";
 import { useLocale, useTranslations } from "@/i18n";
 
@@ -84,22 +86,47 @@ export default function MineScreen() {
   const [works, setWorks] = useState<MyWork[]>();
   const [ips, setIps] = useState<MyIp[]>();
   const [crews, setCrews] = useState<CrewSummary[]>();
-  // Spendable community-points balance (whole points, string); undefined until loaded.
+  // Spendable balances (whole points, string); undefined until loaded.
   const [pointsBalance, setPointsBalance] = useState<string>();
+  const [computeBalance, setComputeBalance] = useState<string>();
   const [loadedFor, setLoadedFor] = useState<string>();
+
+  useFocusEffect(
+    useCallback(() => {
+      if (auth.status !== "authenticated") return;
+      let active = true;
+      void Promise.all([fetchCommunityPointBalance(), fetchComputeWalletBalance()]).then(
+        ([community, compute]) => {
+          if (!active) return;
+          setPointsBalance(community);
+          setComputeBalance(compute ?? undefined);
+        }
+      );
+      return () => {
+        active = false;
+      };
+    }, [auth.status])
+  );
 
   useEffect(() => {
     // Personal collections are user-scoped — only fetch once signed in, so a
     // guest never fires (and 401s) these requests.
     if (!authOwnerKey) return;
     let active = true;
-    void Promise.all([fetchMyWorks(), fetchMyIps(), fetchMyCrews(), fetchCommunityPointBalance()])
-      .then(([nextWorks, nextIps, nextCrews, nextBalance]) => {
+    void Promise.all([
+      fetchMyWorks(),
+      fetchMyIps(),
+      fetchMyCrews(),
+      fetchCommunityPointBalance(),
+      fetchComputeWalletBalance(),
+    ])
+      .then(([nextWorks, nextIps, nextCrews, nextBalance, nextCompute]) => {
         if (!active) return;
         setWorks(nextWorks);
         setIps(nextIps);
         setCrews(nextCrews);
         setPointsBalance(nextBalance);
+        setComputeBalance(nextCompute ?? undefined);
         setLoadedFor(authOwnerKey);
       })
       .catch(() => {
@@ -315,18 +342,46 @@ export default function MineScreen() {
                       {accountMeta}
                     </ThemedText>
                   ) : null}
-                  {pointsBalance != null ? (
-                    <View style={[styles.pointsPill, { backgroundColor: `${theme.brand}22` }]}>
-                      <SymbolView
-                        name={{ ios: "circlebadge.2.fill", android: "toll", web: "toll" }}
-                        size={12}
-                        tintColor={theme.brand}
-                      />
-                      <ThemedText type="code" style={{ color: theme.brand }}>
-                        {`${t("mine.pointsLabel")} ${formatPoints(pointsBalance, locale)}`}
-                      </ThemedText>
-                    </View>
-                  ) : null}
+                  <View style={styles.walletRow}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t("mine.rechargeCommunity")}
+                      onPress={() => openPaywall({ category: "community_points" })}
+                      style={({ pressed }) => (pressed ? styles.pressed : null)}
+                    >
+                      <View style={[styles.pointsPill, { backgroundColor: `${theme.brand}22` }]}>
+                        <SymbolView
+                          name={{ ios: "circlebadge.2.fill", android: "toll", web: "toll" }}
+                          size={12}
+                          tintColor={theme.brand}
+                        />
+                        <ThemedText type="code" style={{ color: theme.brand }}>
+                          {`${t("mine.pointsLabel")} ${
+                            pointsBalance == null ? "—" : formatPoints(pointsBalance, locale)
+                          }`}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t("mine.rechargeCompute")}
+                      onPress={() => openPaywall({ category: "compute_points" })}
+                      style={({ pressed }) => (pressed ? styles.pressed : null)}
+                    >
+                      <View style={[styles.pointsPill, { backgroundColor: `${theme.brand}22` }]}>
+                        <SymbolView
+                          name={{ ios: "bolt.fill", android: "bolt", web: "bolt" }}
+                          size={12}
+                          tintColor={theme.brand}
+                        />
+                        <ThemedText type="code" style={{ color: theme.brand }}>
+                          {`${t("mine.computePointsLabel")} ${
+                            computeBalance == null ? "—" : formatPoints(computeBalance, locale)
+                          }`}
+                        </ThemedText>
+                      </View>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
             </View>
@@ -532,14 +587,19 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.7)",
   },
   pointsPill: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
     alignItems: "center",
+    borderRadius: 12,
+    flexDirection: "row",
     gap: Spacing.half,
-    marginTop: Spacing.half,
     height: 24,
     paddingHorizontal: Spacing.two,
-    borderRadius: 12,
+  },
+  walletRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.two,
+    marginTop: Spacing.half,
   },
   tabBar: {
     borderBottomWidth: 1,
