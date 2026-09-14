@@ -9719,7 +9719,7 @@
     "soon": "Due soon · {{count}} h left",
     "upcoming": "{{count}} h left",
     "warningWindow": "Highlight deadlines within",
-    "hours": "{{count}} hours"
+    "hours": "{count} hours"
   },
   "crewPersonalIncome": {
     "title": "My income",

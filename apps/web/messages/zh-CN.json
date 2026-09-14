@@ -9719,7 +9719,7 @@
     "soon": "即将到期 · 剩余 {{count}} 小时",
     "upcoming": "剩余 {{count}} 小时",
     "warningWindow": "标记此时间内到期的任务",
-    "hours": "{{count}} 小时"
+    "hours": "{count} 小时"
   },
   "crewPersonalIncome": {
     "title": "我的收入",
