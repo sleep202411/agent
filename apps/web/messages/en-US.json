@@ -9958,5 +9958,12 @@
     "retry": "Retry",
     "more": "Load more",
     "viewIp": "View this game's IP"
+  },
+  "coursePlayerControls": {
+    "mute": "Mute",
+    "unmute": "Unmute",
+    "options": "More options",
+    "speed": "Playback speed",
+    "normal": "Normal (1×)"
   }
 }
