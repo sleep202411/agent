@@ -9816,6 +9816,7 @@
     "likeNotice": "若此 IP 已關聯劇組，讚好會加入其公開粉絲社區。取消讚好不會退出社區。"
   },
   "tvGames": {
+    "backToGames": "返回遊戲列表",
     "videos": "影片",
     "games": "遊戲",
     "catalog": "TV 頻道",

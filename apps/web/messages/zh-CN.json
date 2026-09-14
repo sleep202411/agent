@@ -9816,6 +9816,7 @@
     "likeNotice": "若此 IP 已关联剧组，点赞会加入其公开粉丝社区。取消点赞不会退出社区。"
   },
   "tvGames": {
+    "backToGames": "返回游戏列表",
     "videos": "视频",
     "games": "游戏",
     "catalog": "TV 频道",

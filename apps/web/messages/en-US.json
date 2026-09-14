@@ -9816,6 +9816,7 @@
     "likeNotice": "If this IP has a linked Crew, liking joins its public fan community. Unliking does not leave it."
   },
   "tvGames": {
+    "backToGames": "Back to games",
     "videos": "Videos",
     "games": "Games",
     "catalog": "TV channels",
