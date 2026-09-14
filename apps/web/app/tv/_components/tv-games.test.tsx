@@ -88,3 +88,45 @@ it("cancels abandoned catalogs and does not carry selection into another account
   expect(signals.slice(0, 2).every((signal) => signal.aborted)).toBe(true);
   expect(host.querySelector("iframe")).toBeNull();
 });
+
+it("shows interactive films before text adventures and opens the film route", async () => {
+  state.get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.endsWith("/games")
+        ? [
+            {
+              gameId: "film-one",
+              title: "Interactive story",
+              currentVersion: "v1",
+              updatedAt: "2026-09-15T10:00:00Z",
+              status: "published",
+              offlineAt: null,
+            },
+          ]
+        : [
+            {
+              gameId: "tg_1234567890123456",
+              name: "Text story",
+              posterUrl: null,
+              synopsis: null,
+              status: "published",
+            },
+          ]
+    )
+  );
+  await mount();
+  const rows = Array.from(host.querySelectorAll("button[aria-pressed]"));
+  expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+    "Interactive story",
+    "Text story",
+  ]);
+  expect(Array.from(host.querySelectorAll("h3")).map((h) => h.textContent)).toEqual([
+    "films.title",
+    "textGames.title",
+  ]);
+  await act(async () => (rows[0] as HTMLButtonElement).click());
+  expect(host.querySelector("iframe")?.getAttribute("src")).toBe(
+    "/en-US/play/interactive-film/film-one"
+  );
+  expect(host.querySelector("aside")).not.toBeNull();
+});

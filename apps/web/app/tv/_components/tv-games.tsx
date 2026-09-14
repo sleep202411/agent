@@ -1,6 +1,6 @@
 "use client";
 import { IconDeviceGamepad, IconSearch } from "@tabler/icons-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import Link from "next/link";
 import { api } from "@/src/lib/api";
@@ -18,11 +18,12 @@ export function TvGames() {
 }
 function GameCatalog({ account }: { account: string }) {
   const t = useTranslations("tvGames");
+  const catalogText = useTranslations("games");
   const locale = useLocale() as Locale;
   const [selected, setSelected] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const queries = useQueries({
-    queries: (["text-game", "interactive-film"] as TvGameKind[]).map((kind) => ({
+    queries: (["interactive-film", "text-game"] as TvGameKind[]).map((kind) => ({
       queryKey: ["tv-games", account, kind],
       queryFn: async ({ signal }: { signal: AbortSignal }) =>
         parseTvGames(
@@ -85,21 +86,31 @@ function GameCatalog({ account }: { account: string }) {
             {!queries.some((query) => query.isPending || query.isError) && !filtered.length && (
               <p>{t("empty")}</p>
             )}
-            {filtered.map((entry) => (
-              <button
-                type="button"
-                key={entry.id}
-                aria-pressed={game?.id === entry.id}
-                onClick={() => setSelected(entry.id)}
-                aria-label={entry.title}
-                title={entry.title}
-                className="flex min-h-16 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-white/80 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white aria-pressed:bg-white/[0.08] aria-pressed:text-white"
-              >
-                <GameCover key={`${entry.id}:${entry.coverUrl ?? ""}`} url={entry.coverUrl} />
-                <span className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium leading-5">
-                  {entry.title}
-                </span>
-              </button>
+            {filtered.map((entry, index) => (
+              <Fragment key={entry.id}>
+                {(index === 0 ||
+                  filtered[index - 1]?.id.split(":")[0] !== entry.id.split(":")[0]) && (
+                  <h3 className="px-3 pb-1 pt-3 text-xs font-semibold text-white/50">
+                    {catalogText(
+                      entry.id.startsWith("interactive-film:") ? "films.title" : "textGames.title"
+                    )}
+                  </h3>
+                )}
+                <button
+                  type="button"
+                  key={entry.id}
+                  aria-pressed={game?.id === entry.id}
+                  onClick={() => setSelected(entry.id)}
+                  aria-label={entry.title}
+                  title={entry.title}
+                  className="flex min-h-16 w-full items-center gap-3 rounded-md px-3 py-2 text-left text-white/80 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white aria-pressed:bg-white/[0.08] aria-pressed:text-white"
+                >
+                  <GameCover key={`${entry.id}:${entry.coverUrl ?? ""}`} url={entry.coverUrl} />
+                  <span className="min-w-0 flex-1 line-clamp-2 break-words text-sm font-medium leading-5">
+                    {entry.title}
+                  </span>
+                </button>
+              </Fragment>
             ))}
           </div>
         </aside>
