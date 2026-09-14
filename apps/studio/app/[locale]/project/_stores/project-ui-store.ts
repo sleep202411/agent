@@ -7,8 +7,8 @@ import type { AddNodeAction } from "@/components/canvas/add-node-menu";
  *
  * Owned by Zustand (not Context) so any component can read/write without
  * Provider plumbing. Mutual exclusion lives in the actions themselves:
- *   openAssets() clears selectedShotId
- *   selectShot() clears assetsOpen
+ *   opening any library clears the active shot drawer and sibling panels
+ *   selecting a shot clears both asset libraries
  * No effect-racing, no setLeftDrawer, no two components fighting.
  *
  * Data layer (catalog, canvas connection, graph, generation) stays in Context
@@ -18,6 +18,8 @@ interface ProjectUIState {
   // ── Left drawer (single instance, mutually exclusive) ──────────────────
   /** Asset library panel open. */
   assetsOpen: boolean;
+  /** Crew drive asset browser open. */
+  crewAssetsOpen: boolean;
   /** Canvas node catalog panel open. */
   nodesOpen: boolean;
   /** Project activity feed panel open. */
@@ -45,6 +47,8 @@ interface ProjectUIState {
   /** Open asset library; closes any open shot drawer (mutually exclusive). */
   openAssets: () => void;
   closeAssets: () => void;
+  openCrewAssets: () => void;
+  closeCrewAssets: () => void;
   openNodes: () => void;
   closeNodes: () => void;
   requestNodeInsert: (action: AddNodeAction) => void;
@@ -68,6 +72,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
   devtools(
     (set) => ({
       assetsOpen: false,
+      crewAssetsOpen: false,
       nodesOpen: false,
       sectionsOpen: false,
       skillsOpen: false,
@@ -82,6 +87,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
       openAssets: () =>
         set({
           assetsOpen: true,
+          crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           sectionsOpen: false,
@@ -90,10 +96,23 @@ export const useProjectUIStore = create<ProjectUIState>()(
           selectedShotId: null,
         }),
       closeAssets: () => set({ assetsOpen: false }),
+      openCrewAssets: () =>
+        set({
+          crewAssetsOpen: true,
+          assetsOpen: false,
+          nodesOpen: false,
+          historyOpen: false,
+          sectionsOpen: false,
+          skillsOpen: false,
+          selectedSkillId: null,
+          selectedShotId: null,
+        }),
+      closeCrewAssets: () => set({ crewAssetsOpen: false }),
       openNodes: () =>
         set({
           nodesOpen: true,
           assetsOpen: false,
+          crewAssetsOpen: false,
           historyOpen: false,
           sectionsOpen: false,
           skillsOpen: false,
@@ -116,6 +135,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
         set((state) => ({
           sectionsOpen: !state.sectionsOpen,
           assetsOpen: false,
+          crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           skillsOpen: false,
@@ -128,6 +148,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           skillsOpen: true,
           selectedSkillId: skillId ?? null,
           assetsOpen: false,
+          crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           sectionsOpen: false,
@@ -138,6 +159,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           skillsOpen: !state.skillsOpen,
           selectedSkillId: null,
           assetsOpen: false,
+          crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           sectionsOpen: false,
@@ -150,6 +172,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
           selectedShotId: id,
           selectedSlot: slot,
           assetsOpen: false,
+          crewAssetsOpen: false,
           nodesOpen: false,
           historyOpen: false,
           sectionsOpen: false,
@@ -163,6 +186,7 @@ export const useProjectUIStore = create<ProjectUIState>()(
         set((state) => ({
           historyOpen: !state.historyOpen,
           assetsOpen: false,
+          crewAssetsOpen: false,
           nodesOpen: false,
           sectionsOpen: false,
           skillsOpen: false,

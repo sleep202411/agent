@@ -65,7 +65,7 @@ vi.mock("@/app/_components/auth-provider", () => ({
 
 const TEST_WORKSPACE = {
   id: "019f7243-20c1-7054-a6fa-0a33da6efef1",
-  type: "personal",
+  isDefault: true,
   role: "owner",
 } as const;
 

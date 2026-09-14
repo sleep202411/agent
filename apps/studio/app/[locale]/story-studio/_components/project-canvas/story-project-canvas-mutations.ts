@@ -1,16 +1,17 @@
 import type {
   InteractiveStoryDraftContent,
   StoryClipGraphNode,
+  StoryDecisionGraphNode,
   StoryGraphChoice,
   StoryGraphNode,
   StoryWorldGraphNode,
 } from "@/lib/story-projects-api";
 
 type ClipGraphNode = StoryClipGraphNode;
-type FlowGraphNode = StoryGraphNode & {
+type FlowGraphNode = (StoryClipGraphNode | StoryWorldGraphNode) & {
   exit: { kind: "auto"; nextNodeId: string | null };
 };
-type ChoiceClipNode = ClipGraphNode & {
+type ChoiceClipNode = (ClipGraphNode | StoryDecisionGraphNode) & {
   exit: Extract<ClipGraphNode["exit"], { kind: "choice" }>;
 };
 
@@ -27,7 +28,6 @@ export type StoryDraftMutationErrorCode =
   | "INVALID_STABLE_ID"
   | "INVALID_CLIP_KEY"
   | "INVALID_LOCALE"
-  | "INVALID_MEDIA_ASSET_ID"
   | "NODE_NOT_FOUND"
   | "CLIP_NOT_FOUND"
   | "CHOICE_NOT_FOUND"
@@ -114,6 +114,59 @@ export function createWorldNode(
   return { content: appendGraphNode(content, created), created };
 }
 
+/** Decisions and unfinished options are saved independently of their connections. */
+export function createDecisionNode(
+  content: InteractiveStoryDraftContent,
+  locale: string,
+  options: { nodeId?: string; labels?: string[] } = {}
+): StoryNodeCreationResult<StoryDecisionGraphNode> {
+  const nodeId = options.nodeId
+    ? assertAvailableNodeId(content, options.nodeId)
+    : allocateStableId(
+        content.graph.nodes.map((node) => node.nodeId),
+        "decision:choice"
+      );
+  const created: StoryDecisionGraphNode = {
+    kind: "decision",
+    nodeId,
+    exit: {
+      kind: "choice",
+      decisionId: allocateStableId(
+        content.graph.nodes.flatMap((node) =>
+          node.exit.kind === "choice" ? [node.exit.decisionId] : []
+        ),
+        nodeId
+      ),
+      prompt: { [assertLocale(locale)]: "" },
+      choices: (options.labels ?? ["Option 1", "Option 2"]).map((label, index) => ({
+        choiceId: `option:${index + 1}`,
+        label: { [assertLocale(locale)]: label },
+        nextNodeId: null,
+      })),
+    },
+  };
+  return { content: appendGraphNode(content, created), created };
+}
+
+/** Upgrade attached decisions without discarding any authored copy or target. */
+export function materializeStoryDecisionNodes(
+  content: InteractiveStoryDraftContent
+): InteractiveStoryDraftContent {
+  const ids = content.graph.nodes.map((node) => node.nodeId);
+  let changed = false;
+  const nodes = content.graph.nodes.flatMap((node): StoryGraphNode[] => {
+    if (node.kind !== "clip" || node.exit.kind !== "choice") return [node];
+    changed = true;
+    const nodeId = allocateStableId(ids, `decision:${node.nodeId}`.slice(0, MAX_STABLE_ID_LENGTH));
+    ids.push(nodeId);
+    return [
+      { ...node, exit: { kind: "auto", nextNodeId: nodeId } },
+      { kind: "decision", nodeId, exit: node.exit },
+    ];
+  });
+  return changed ? { ...content, graph: { ...content.graph, nodes } } : content;
+}
+
 /** Updates human-facing clip metadata without changing its stable machine key. */
 export function updateStoryClipMeta(
   content: InteractiveStoryDraftContent,
@@ -150,25 +203,6 @@ export function replaceStoryNodeInteractions(
   return replaceGraphNode(content, sourceNodeId, { ...source, interactions });
 }
 
-export function duplicateClipNode(
-  content: InteractiveStoryDraftContent,
-  sourceNodeId: string,
-  options: CreateClipNodeOptions = {}
-): StoryNodeCreationResult<ClipGraphNode> {
-  const source = requireClip(content, sourceNodeId);
-  const result = createClipNode(content, options);
-  const created: ClipGraphNode = {
-    ...source,
-    nodeId: result.created.nodeId,
-    clipKey: result.created.clipKey,
-    exit: { kind: "auto", nextNodeId: null },
-  };
-  return {
-    content: replaceGraphNode(result.content, created.nodeId, created),
-    created,
-  };
-}
-
 export function setEntryNode(
   content: InteractiveStoryDraftContent,
   nodeId: string | null
@@ -183,43 +217,14 @@ export function deleteGraphNode(
   content: InteractiveStoryDraftContent,
   nodeId: string
 ): InteractiveStoryDraftContent {
+  content = materializeStoryDecisionNodes(content);
   const deletedIndex = content.graph.nodes.findIndex((node) => node.nodeId === nodeId);
   if (deletedIndex < 0) throw error("NODE_NOT_FOUND", `Unknown graph node ${nodeId}.`);
   const nodes = content.graph.nodes
     .filter((node) => node.nodeId !== nodeId)
     .map((node) => removeNodeReferences(node, nodeId));
-  const entryNodeId =
-    content.graph.entryNodeId === nodeId
-      ? (nodes[Math.min(deletedIndex, nodes.length - 1)]?.nodeId ?? null)
-      : content.graph.entryNodeId;
+  const entryNodeId = content.graph.entryNodeId === nodeId ? null : content.graph.entryNodeId;
   return { ...content, graph: { entryNodeId, nodes } };
-}
-
-export function convertSceneExitToChoice(
-  content: InteractiveStoryDraftContent,
-  sourceNodeId: string,
-  locale: string,
-  options: { decisionId?: string } = {}
-): InteractiveStoryDraftContent {
-  const source = requireClip(content, sourceNodeId);
-  if (source.exit.kind === "choice" && !options.decisionId) return content;
-  const decisionId = options.decisionId
-    ? assertStableId(options.decisionId)
-    : allocateStableId(
-        content.graph.nodes.flatMap((node) =>
-          node.exit.kind === "choice" ? [node.exit.decisionId] : []
-        ),
-        `decision:${content.graph.nodes.indexOf(source) + 1}`
-      );
-  return replaceGraphNode(content, sourceNodeId, {
-    ...source,
-    exit: {
-      kind: "choice",
-      decisionId,
-      prompt: { [assertLocale(locale)]: "" },
-      choices: [],
-    },
-  });
 }
 
 export function convertExitToAuto(
@@ -257,13 +262,15 @@ export interface AddChoiceOptionOptions {
 export function addChoiceOption(
   content: InteractiveStoryDraftContent,
   sourceNodeId: string,
-  targetNodeId: string,
+  targetNodeId: string | null,
   locale: string,
   options: AddChoiceOptionOptions = {}
 ): StoryNodeCreationResult<StoryGraphChoice> {
   const source = requireChoiceClip(content, sourceNodeId);
-  if (options.allowExternalTarget) assertStableId(targetNodeId);
-  else requireTargetNode(content, targetNodeId);
+  if (targetNodeId !== null) {
+    if (options.allowExternalTarget) assertStableId(targetNodeId);
+    else requireTargetNode(content, targetNodeId);
+  }
   if (source.exit.choices.length >= MAX_CHOICES) {
     throw error("CHOICE_LIMIT_REACHED", `Choice ${source.exit.decisionId} is full.`);
   }
@@ -361,7 +368,14 @@ export function disconnectChoiceTarget(
   sourceNodeId: string,
   choiceId: string
 ): InteractiveStoryDraftContent {
-  return removeChoiceOption(content, sourceNodeId, choiceId);
+  const source = requireChoiceClip(content, sourceNodeId);
+  requireChoice(source, choiceId);
+  return replaceChoiceExit(content, source, {
+    ...source.exit,
+    choices: source.exit.choices.map((choice) =>
+      choice.choiceId === choiceId ? { ...choice, nextNodeId: null } : choice
+    ),
+  });
 }
 
 export function connectSceneContinuation(
@@ -470,11 +484,12 @@ function removeNodeReferences(node: StoryGraphNode, deletedNodeId: string): Stor
       exit: node.exit.nextNodeId === deletedNodeId ? { kind: "auto", nextNodeId: null } : node.exit,
     };
   }
-  const interactions = node.interactions.map((interaction) => ({
+  const interactions = (node.kind === "clip" ? node.interactions : []).map((interaction) => ({
     ...interaction,
     outcomes: removeDeletedInteractionTargets(interaction.outcomes, deletedNodeId),
   }));
   if (node.exit.kind === "auto") {
+    if (node.kind !== "clip") return node;
     return {
       ...node,
       interactions,
@@ -483,10 +498,12 @@ function removeNodeReferences(node: StoryGraphNode, deletedNodeId: string): Stor
   }
   return {
     ...node,
-    interactions,
+    ...(node.kind === "clip" ? { interactions } : {}),
     exit: {
       ...node.exit,
-      choices: node.exit.choices.filter((choice) => choice.nextNodeId !== deletedNodeId),
+      choices: node.exit.choices.map((choice) =>
+        choice.nextNodeId === deletedNodeId ? { ...choice, nextNodeId: null } : choice
+      ),
     },
   };
 }
@@ -565,8 +582,8 @@ function requireFlowNode(content: InteractiveStoryDraftContent, nodeId: string):
 }
 
 function requireChoiceClip(content: InteractiveStoryDraftContent, nodeId: string): ChoiceClipNode {
-  const node = requireClip(content, nodeId);
-  if (node.exit.kind !== "choice") {
+  const node = content.graph.nodes.find((candidate) => candidate.nodeId === nodeId);
+  if (!node || node.exit.kind !== "choice") {
     throw error("SOURCE_EXIT_KIND_MISMATCH", `Clip ${nodeId} is not a choice.`);
   }
   return node as ChoiceClipNode;

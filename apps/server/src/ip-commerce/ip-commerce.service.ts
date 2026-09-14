@@ -1,3 +1,6 @@
+import { ConversationsService } from '../conversations/conversations.service';
+import { joinCrewFanTx } from '../crews/fan-community';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import {
   BadRequestException,
   ConflictException,
@@ -56,12 +59,18 @@ import { createHash, randomUUID } from 'crypto';
 import { decodeUserId, encodeUserId } from '@repo/shared';
 import { regionLabel as sharedRegionLabel } from '@repo/shared/regions';
 import type { AuthUser } from '../auth';
+import { hasFreeIpWatchPass } from '../integrations/java/user-level-gates';
 import {
   applyMemberDiscount,
   clampBps,
   computeRevenueSplit,
 } from './revenue-split';
 import { formatSettlementPeriod } from './member-pool';
+import {
+  encodePublicIpRankCursor,
+  publicIpRankQuery,
+  type PublicIpRankRow,
+} from './ip-plaza-ranking';
 import { PrismaService } from '../infra/db/db.module';
 import { OutputStorageService } from '../infra/storage/storage.types';
 import {
@@ -131,16 +140,9 @@ const PUBLIC_EPISODE_STATUSES: IpPublicationStatus[] = [
   IpPublicationStatus.published,
 ];
 const DEFAULT_IP_LOCALE = 'zh-CN';
-const IP_COMMERCE_DETAIL_MOCK_ID = '00000000-0000-4000-8000-000000000001';
 const PUBLIC_LOCALIZATION_STATUSES: IpLocalizationStatus[] = [
   IpLocalizationStatus.published,
 ];
-const IP_LIST_RANK_WEIGHTS = {
-  view: 1,
-  like: 5,
-  collection: 8,
-} as const;
-const IP_LIST_NULL_PUBLISHED_AT = new Date(0);
 
 // (a)-policy: content (localization / episode) created or edited on a
 // publicly-live IP (status `published`) goes live immediately instead of being
@@ -305,17 +307,6 @@ export interface IpEngagementStats {
   agentLikeCount: number;
   viewerHasLiked: boolean;
 }
-
-type PublicIpRankRow = {
-  id: string;
-};
-
-type PublicIpRankCursor = {
-  id: string;
-  rankScore: bigint;
-  sortPublishedAt: Date;
-  createdAt: Date;
-};
 
 type ViewerBlockLists = {
   blockedIpIds: string[];
@@ -484,6 +475,7 @@ export class IpCommerceService {
     private readonly legacyCnVideo: LegacyCnVideoResolverService,
     private readonly entitlements: EntitlementService,
     private readonly legacyMysql: LegacyMysqlService,
+    private readonly conversations: ConversationsService,
   ) {}
 
   /**
@@ -511,6 +503,23 @@ export class IpCommerceService {
         avatar: row.avatar ? String(row.avatar) : null,
       })),
     };
+  }
+
+  async requireEditableIp(
+    user: AuthUser,
+    ipId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const ip = await db.ip.findFirst({
+      where: { id: ipId, deletedAt: null, ...this.ipEditAccessWhere(user) },
+      select: { id: true },
+    });
+    if (!ip)
+      throw new NotFoundException({
+        code: 'IP_NOT_FOUND',
+        msg: 'IP not found.',
+      });
+    return ip;
   }
 
   private ipEditAccessWhere(user: AuthUser): Prisma.IpWhereInput {
@@ -903,7 +912,24 @@ export class IpCommerceService {
       });
     }
 
+    if (input.ipId !== undefined && input.ipId !== existing.ipId) {
+      const ip = await this.prisma.ip.findFirst({
+        where: { id: input.ipId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!ip) {
+        throw new NotFoundException({
+          code: 'IP_NOT_FOUND',
+          msg: 'IP not found.',
+        });
+      }
+    }
+
     const nextStatus = input.status ?? existing.status;
+    const nextIpId = input.ipId ?? existing.ipId;
+    const nextPlacementKey =
+      (input.placementKey as IpDiscoveryPlacementKey | undefined) ??
+      existing.placementKey;
     const nextImageAssetId =
       input.imageAssetId !== undefined
         ? input.imageAssetId
@@ -941,10 +967,10 @@ export class IpCommerceService {
             select: { title: true },
           });
         const heroFallback =
-          existing.placementKey === IpDiscoveryPlacementKey.ip_plaza_hero
-            ? await this.resolveIpHeroFallback(tx, existing.ipId)
+          nextPlacementKey === IpDiscoveryPlacementKey.ip_plaza_hero
+            ? await this.resolveIpHeroFallback(tx, nextIpId)
             : { ipCoverReady: false, ipHasTitle: false };
-        assertDiscoveryEnablement(existing.placementKey, nextStatus, {
+        assertDiscoveryEnablement(nextPlacementKey, nextStatus, {
           imageAssetId: nextImageAssetId,
           localizations,
           ipCoverReady: heroFallback.ipCoverReady,
@@ -955,6 +981,12 @@ export class IpCommerceService {
       return tx.ipDiscoveryRecommendation.update({
         where: { id: recommendationId },
         data: {
+          ...(input.placementKey !== undefined
+            ? {
+                placementKey: input.placementKey as IpDiscoveryPlacementKey,
+              }
+            : {}),
+          ...(input.ipId !== undefined ? { ipId: input.ipId } : {}),
           ...(input.status !== undefined
             ? {
                 status: input.status as IpDiscoveryRecommendationStatus,
@@ -990,6 +1022,31 @@ export class IpCommerceService {
         rec,
         input.localizations?.[0]?.locale,
       ),
+    };
+  }
+
+  async deleteAdminDiscovery(user: AuthUser, recommendationId: string) {
+    const existing = await this.prisma.ipDiscoveryRecommendation.findUnique({
+      where: { id: recommendationId },
+      select: { id: true, placementKey: true, ipId: true },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
+        msg: 'Discovery recommendation not found.',
+      });
+    }
+
+    await this.prisma.ipDiscoveryRecommendation.delete({
+      where: { id: recommendationId },
+    });
+
+    return {
+      deleted: true,
+      id: existing.id,
+      placementKey: existing.placementKey,
+      ipId: existing.ipId,
+      deletedById: user.userId,
     };
   }
 
@@ -1136,12 +1193,12 @@ export class IpCommerceService {
 
   async getCreatorIp(
     user: AuthUser,
-    ipId: string,
+    ipReference: string,
     query: { locale?: string } = {},
   ) {
     const ip = await this.prisma.ip.findFirst({
       where: {
-        id: ipId,
+        ...ipIdentityWhere(ipReference),
         deletedAt: null,
         ...this.ipEditAccessWhere(user),
       },
@@ -2338,9 +2395,9 @@ export class IpCommerceService {
    *
    * The bytes are uploaded direct-to-storage by the client via the stateless
    * SAS pipeline (`/aurora/media/upload-url` → PUT → `/aurora/media/confirm`),
-   * which is what mints the active MediaAsset. This endpoint does NOT proxy
-   * the file — it only references an asset the caller just confirmed (so 2GB
-   * episode videos never hit the nginx body limit). The public return shape
+   * or the episode multipart pipeline, which mints the active MediaAsset.
+   * This endpoint only references that confirmed asset; even 35 GB episode
+   * videos never pass through the nginx request body. The public return shape
    * `{ asset, ipAsset }` is preserved so the episode-create flow that consumes
    * `asset.id` as videoAssetId/coverAssetId is unchanged.
    */
@@ -2381,7 +2438,10 @@ export class IpCommerceService {
     }
     // Defence-in-depth: the SAS pipeline already caps per-kind size, but
     // re-assert against the IP per-kind cap on the HEAD-verified size.
-    const limit = IP_MEDIA_UPLOAD_LIMITS[kind];
+    const limit =
+      kind === MediaAssetKind.video && query.purpose === 'episode_media'
+        ? EPISODE_SOURCE_MAX_BYTES
+        : IP_MEDIA_UPLOAD_LIMITS[kind];
     if (mediaAsset.sizeBytes !== null && mediaAsset.sizeBytes > BigInt(limit)) {
       throw new BadRequestException({
         code: 'IP_MEDIA_FILE_TOO_LARGE',
@@ -3471,6 +3531,14 @@ export class IpCommerceService {
       }
 
       await syncIpLocalizationStatusForPublication(tx, ip.id, nextStatus);
+      // Episodes created while the IP was still draft stay `draft` until this
+      // handoff — creators cannot publish them themselves. Mirror IP
+      // localization sync so the first (pre-review) episode goes live with the IP.
+      await syncIpEpisodeStatusForPublication(tx, ip.id, nextStatus, {
+        now,
+        scheduledAt:
+          nextStatus === IpPublicationStatus.scheduled ? scheduledAt : null,
+      });
       await settleIpReviewSubmissionsForPublication(tx, {
         ipId: ip.id,
         reviewerId: user.userId,
@@ -3683,11 +3751,32 @@ export class IpCommerceService {
   ) {
     const now = new Date();
     let changed = false;
+    let conversationId: string | null = null;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`ip:like:${ipId}:${actor.userId}`})::bigint)
       `;
+      await tx.$queryRaw`SELECT id FROM ips WHERE id = ${ipId}::uuid FOR UPDATE`;
+      await this.ensurePublicEngagementTarget(
+        actor.actorKind === IpEngagementActorKind.human ? viewer : undefined,
+        ipId,
+        tx,
+      );
+      if (actor.actorKind === IpEngagementActorKind.human) {
+        const [origin] = await tx.$queryRaw<
+          { crewId: string }[]
+        >`SELECT crew_id AS "crewId" FROM ip_crew_origins WHERE ip_id = ${ipId}::uuid`;
+        if (origin)
+          conversationId = (
+            await joinCrewFanTx(
+              tx,
+              this.conversations,
+              origin.crewId,
+              actor.userId,
+            )
+          ).id;
+      }
       const existing = await tx.ipLike.findUnique({
         where: { ipId_userId: { ipId, userId: actor.userId } },
       });
@@ -3727,6 +3816,7 @@ export class IpCommerceService {
 
     return {
       liked: true,
+      conversationId,
       changed,
       engagement: publicIpEngagementDto(
         await this.engagementStatsForIp(ipId, viewer),
@@ -3822,63 +3912,25 @@ export class IpCommerceService {
   }
 
   private async rankedPublicIpIds(query: ListIpsQuery, user?: AuthUser) {
-    const [viewerBlocks, cursor] = await Promise.all([
-      this.viewerBlockLists(user),
-      this.publicIpRankCursor(query.cursor),
-    ]);
-    const rows = await this.prisma.$queryRaw<PublicIpRankRow[]>(Prisma.sql`
-      SELECT ip.id::text AS id
-      FROM ips ip
-      LEFT JOIN ip_engagement_aggregates engagement ON engagement.ip_id = ip.id
-      LEFT JOIN (
-        SELECT ip_id, COUNT(*)::bigint AS collection_count
-        FROM ip_collection_items
-        WHERE target_type::text = 'ip'
-          AND status::text = 'active'
-          AND removed_at IS NULL
-        GROUP BY ip_id
-      ) collections ON collections.ip_id = ip.id
-      WHERE ${publicIpRankBaseFilterSql(query, viewerBlocks)}
-      ${publicIpRankSeekSql(cursor)}
-      ORDER BY
-        ${publicIpRankScoreSql()} DESC,
-        COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) DESC,
-        ip.created_at DESC,
-        ip.id DESC
-      LIMIT ${query.limit + 1}
-    `);
-    const ids = rows.map((row) => row.id);
-    const pageIds = ids.slice(0, query.limit);
+    const viewerBlocks = await this.viewerBlockLists(user);
+    const rows = await this.prisma.$queryRaw<PublicIpRankRow[]>(
+      publicIpRankQuery(
+        publicIpRankBaseFilterSql(query, viewerBlocks),
+        query.limit,
+        query.cursor,
+      ),
+    );
+    const page = rows.slice(0, query.limit);
+    const last = page.at(-1);
     return {
-      pageIds,
-      nextCursor: ids.length > query.limit ? (pageIds.at(-1) ?? null) : null,
+      pageIds: page.map((row) => row.id),
+      // Preserve the boundary as it was shown. Re-reading the last IP would
+      // move it when its engagement changes, or restart pagination if deleted.
+      nextCursor:
+        rows.length > query.limit && last
+          ? encodePublicIpRankCursor(last)
+          : null,
     };
-  }
-
-  private async publicIpRankCursor(
-    cursor: string | undefined,
-  ): Promise<PublicIpRankCursor | null> {
-    if (!cursor) return null;
-    const rows = await this.prisma.$queryRaw<PublicIpRankCursor[]>(Prisma.sql`
-      SELECT
-        ip.id::text AS id,
-        ${publicIpRankScoreSql()} AS "rankScore",
-        COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) AS "sortPublishedAt",
-        ip.created_at AS "createdAt"
-      FROM ips ip
-      LEFT JOIN ip_engagement_aggregates engagement ON engagement.ip_id = ip.id
-      LEFT JOIN (
-        SELECT ip_id, COUNT(*)::bigint AS collection_count
-        FROM ip_collection_items
-        WHERE target_type::text = 'ip'
-          AND status::text = 'active'
-          AND removed_at IS NULL
-        GROUP BY ip_id
-      ) collections ON collections.ip_id = ip.id
-      WHERE ip.id = ${cursor}::uuid
-      LIMIT 1
-    `);
-    return rows[0] ?? null;
   }
 
   /**
@@ -4111,18 +4163,14 @@ export class IpCommerceService {
   }
 
   async getPublicIp(
-    ipId: string,
+    ipReference: string,
     user?: AuthUser,
     query: { locale?: string } = {},
   ) {
-    if (isIpCommerceDetailMockId(ipId)) {
-      return { ip: mockPublicIpDto(ipId, query.locale) };
-    }
-
     const viewerBlockWhere = await this.viewerBlockWhere(user);
     const ip = await this.prisma.ip.findFirst({
       where: {
-        id: ipId,
+        ...ipIdentityWhere(ipReference),
         deletedAt: null,
         status: { in: PUBLIC_IP_STATUSES },
         listingVisibility: { in: ['public', 'unlisted'] },
@@ -4149,7 +4197,7 @@ export class IpCommerceService {
       ? await this.prisma.ipContentEntitlement.findMany({
           where: {
             userId: user.userId,
-            ipId,
+            ipId: ip.id,
             status: IpEntitlementStatus.active,
             ...currentOrPendingEntitlementWhere(now),
           },
@@ -4164,9 +4212,11 @@ export class IpCommerceService {
     const isCreator = !!user && ip.createdById === user.userId;
     const hasEditGrant = await this.hasActiveIpEditGrant(user, ip.id);
     const hasManagementAccess = isCreator || hasEditGrant;
+    const freeWatchPass = hasFreeIpWatchPass(user?.levelIds);
     const mediaAccess = {
       ipOwned:
         hasManagementAccess ||
+        freeWatchPass ||
         activeEntitlements.some(
           (entitlement) =>
             entitlement.targetType === IpTargetType.ip &&
@@ -4256,6 +4306,7 @@ export class IpCommerceService {
     const isCreator = !!user && ip.createdById === user.userId;
     const hasEditGrant = await this.hasActiveIpEditGrant(user, ip.id);
     const hasManagementAccess = isCreator || hasEditGrant;
+    const freeWatchPass = hasFreeIpWatchPass(user?.levelIds);
     const pendingIpEntitlement = entitlements.find(
       (entitlement) =>
         entitlement.targetType === IpTargetType.ip &&
@@ -4309,6 +4360,7 @@ export class IpCommerceService {
 
     const ipAccessState = resolveIpAccessState({
       hasManagementAccess,
+      hasFreeWatchPass: freeWatchPass,
       hasIpEntitlement: Boolean(ipEntitlement),
       hasPendingIpEntitlement: Boolean(pendingIpEntitlement),
       accessMode: ip.accessMode,
@@ -4338,6 +4390,7 @@ export class IpCommerceService {
         const episodePrice = selectActivePrice(episode.priceRules, now);
         const episodeAccessState = resolveEpisodeAccessState({
           hasManagementAccess,
+          hasFreeWatchPass: freeWatchPass,
           hasIpEntitlement: Boolean(ipEntitlement),
           hasEpisodeEntitlement: ownedEpisodeIds.has(episode.id),
           hasPendingIpEntitlement: Boolean(pendingIpEntitlement),
@@ -4676,6 +4729,16 @@ export class IpCommerceService {
 
   async purchaseContent(user: AuthUser, input: CreateIpPurchaseInput) {
     const now = new Date();
+    // Certified free-watch holders (Java user_level id=12) never spend points.
+    // Return an owned-style no-op so a stale client purchase CTA cannot debit.
+    if (hasFreeIpWatchPass(user.levelIds)) {
+      return {
+        alreadyProcessed: false,
+        alreadyOwned: true,
+        order: null,
+        entitlements: [],
+      };
+    }
     const defaultRevenueShareBps =
       await this.getCreatorRevenueShareDefaultBps();
     // Membership status resolved once, before the tx — drives the member discount
@@ -5358,9 +5421,12 @@ export class IpCommerceService {
 
   private async viewerBlockWhere(
     user?: AuthUser,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<Prisma.IpWhereInput> {
-    const { blockedIpIds, blockedCreatorIds } =
-      await this.viewerBlockLists(user);
+    const { blockedIpIds, blockedCreatorIds } = await this.viewerBlockLists(
+      user,
+      db,
+    );
     const not: Prisma.IpWhereInput[] = [];
     if (blockedIpIds.length > 0) {
       not.push({ id: { in: blockedIpIds } });
@@ -5371,9 +5437,12 @@ export class IpCommerceService {
     return not.length > 0 ? { NOT: not } : {};
   }
 
-  private async viewerBlockLists(user?: AuthUser): Promise<ViewerBlockLists> {
+  private async viewerBlockLists(
+    user?: AuthUser,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<ViewerBlockLists> {
     if (!user) return { blockedIpIds: [], blockedCreatorIds: [] };
-    const blocks = await this.prisma.ipUserContentBlock.findMany({
+    const blocks = await db.ipUserContentBlock.findMany({
       where: {
         userId: user.userId,
         unblockedAt: null,
@@ -5399,12 +5468,13 @@ export class IpCommerceService {
     return IpEngagementActorKind.human;
   }
 
-  private async ensurePublicEngagementTarget(
+  async ensurePublicEngagementTarget(
     user: AuthUser | undefined,
     ipId: string,
+    db: Prisma.TransactionClient = this.prisma,
   ) {
-    const viewerBlockWhere = await this.viewerBlockWhere(user);
-    const ip = await this.prisma.ip.findFirst({
+    const viewerBlockWhere = await this.viewerBlockWhere(user, db);
+    const ip = await db.ip.findFirst({
       where: {
         id: ipId,
         deletedAt: null,
@@ -5920,6 +5990,8 @@ export function isEntitlementActiveForAccess(
 
 export function resolveIpAccessState(input: {
   hasManagementAccess: boolean;
+  /** Java certification level free-watch pass (view unlock only). */
+  hasFreeWatchPass?: boolean;
   hasIpEntitlement: boolean;
   hasPendingIpEntitlement: boolean;
   accessMode: IpAccessMode;
@@ -5935,7 +6007,11 @@ export function resolveIpAccessState(input: {
     | 'member_free'
     | 'member_locked';
 } {
-  if (input.hasManagementAccess || input.hasIpEntitlement) {
+  if (
+    input.hasManagementAccess ||
+    input.hasFreeWatchPass ||
+    input.hasIpEntitlement
+  ) {
     return { owned: true, access: 'owned' };
   }
   if (input.hasPendingIpEntitlement) {
@@ -5952,6 +6028,7 @@ export function resolveIpAccessState(input: {
 
 export function resolveEpisodeAccessState(input: {
   hasManagementAccess: boolean;
+  hasFreeWatchPass?: boolean;
   hasIpEntitlement: boolean;
   hasEpisodeEntitlement: boolean;
   hasPendingIpEntitlement: boolean;
@@ -5975,7 +6052,11 @@ export function resolveEpisodeAccessState(input: {
     | 'member_free'
     | 'member_locked';
 } {
-  if (input.hasManagementAccess || input.hasIpEntitlement) {
+  if (
+    input.hasManagementAccess ||
+    input.hasFreeWatchPass ||
+    input.hasIpEntitlement
+  ) {
     return { owned: true, access: 'owned_ip' };
   }
   if (input.hasEpisodeEntitlement) {
@@ -6381,6 +6462,12 @@ async function creditWithdrawableCommunityPointTx(
   });
 }
 
+function ipIdentityWhere(reference: string): Prisma.IpWhereInput {
+  return /^\d+$/.test(reference)
+    ? { roomNumber: reference }
+    : { id: reference };
+}
+
 function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
   const search = query.q?.trim();
   return {
@@ -6393,6 +6480,7 @@ function adminIpWhere(query: ListAdminIpsQuery): Prisma.IpWhereInput {
     ...(search
       ? {
           OR: [
+            { roomNumber: search },
             {
               localizations: {
                 some: {
@@ -6668,7 +6756,8 @@ function publicIpRankBaseFilterSql(
         const pattern = likeContainsPattern(searchNeedle);
         return Prisma.sql`
         AND (
-          COALESCE(ip.copyright_owner, '') ILIKE ${pattern} ESCAPE '\\'
+          ip.room_number = ${searchNeedle}
+          OR COALESCE(ip.copyright_owner, '') ILIKE ${pattern} ESCAPE '\\'
           OR EXISTS (
             SELECT 1
             FROM ip_localizations search_localization
@@ -6726,40 +6815,6 @@ function publicIpRankBaseFilterSql(
 /** Escape `\`, `%`, `_` so user input is treated as a literal ILIKE substring. */
 function likeContainsPattern(raw: string): string {
   return `%${raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
-}
-
-function publicIpRankSeekSql(cursor: PublicIpRankCursor | null): Prisma.Sql {
-  if (!cursor) return Prisma.empty;
-  return Prisma.sql`
-    AND (
-      ${publicIpRankScoreSql()} < ${cursor.rankScore}::bigint
-      OR (
-        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
-        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) < ${cursor.sortPublishedAt}
-      )
-      OR (
-        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
-        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) = ${cursor.sortPublishedAt}
-        AND ip.created_at < ${cursor.createdAt}
-      )
-      OR (
-        ${publicIpRankScoreSql()} = ${cursor.rankScore}::bigint
-        AND COALESCE(ip.published_at, ${IP_LIST_NULL_PUBLISHED_AT}) = ${cursor.sortPublishedAt}
-        AND ip.created_at = ${cursor.createdAt}
-        AND ip.id::text < ${cursor.id}
-      )
-    )
-  `;
-}
-
-function publicIpRankScoreSql(): Prisma.Sql {
-  return Prisma.sql`
-    (
-      COALESCE(engagement.total_view_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.view}::bigint
-      + COALESCE(engagement.total_like_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.like}::bigint
-      + COALESCE(collections.collection_count, 0)::bigint * ${IP_LIST_RANK_WEIGHTS.collection}::bigint
-    )::bigint
-  `;
 }
 
 function ipTaxonomyFilterWhere(
@@ -7462,6 +7517,7 @@ function ipReferenceDto(
   ip:
     | {
         id: string;
+        roomNumber: string;
         sourceLocale: string;
         status: IpPublicationStatus;
         listingVisibility: IpListingVisibility;
@@ -7475,6 +7531,7 @@ function ipReferenceDto(
   const copy = selectIpLocalization(ip, requestedLocale, false);
   return {
     id: ip.id,
+    roomNumber: ip.roomNumber,
     title: copy.value?.title ?? ip.id,
     status: ip.status,
     listingVisibility: ip.listingVisibility,
@@ -7525,6 +7582,7 @@ function adminIpSummaryDto(
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
+    roomNumber: title.roomNumber,
     slug: copy.value?.slug ?? null,
     title: copy.value?.title ?? title.id,
     subtitle: copy.value?.subtitle ?? null,
@@ -7584,6 +7642,7 @@ function creatorIpSummaryDto(
   const taxonomy = taxonomyBundleDto(title, requestedLocale);
   return {
     id: title.id,
+    roomNumber: title.roomNumber,
     title: copy.value?.title ?? title.id,
     summary: copy.value?.summary ?? '',
     description: copy.value?.description ?? null,
@@ -7810,6 +7869,7 @@ function adminReviewDto(
     submittedAt: Date;
     ip: {
       id: string;
+      roomNumber: string;
       sourceLocale: string;
       status: IpPublicationStatus;
       listingVisibility: IpListingVisibility;
@@ -7858,6 +7918,7 @@ function adminReportDto(
     resolvedAt: Date | null;
     ip?: {
       id: string;
+      roomNumber: string;
       sourceLocale: string;
       status: IpPublicationStatus;
       listingVisibility: IpListingVisibility;
@@ -7940,6 +8001,83 @@ async function syncIpLocalizationStatusForPublication(
       status: localizationStatus,
     },
   });
+}
+
+/** In-flight episode statuses that should follow the IP when admin publishes.
+ *  Intentionally excludes `hidden` / `suspended` / `archived` (operator or
+ *  creator chose to keep them off) and already-live `published` / `scheduled`. */
+const EPISODE_STATUSES_PROMOTED_ON_IP_PUBLICATION: IpPublicationStatus[] = [
+  IpPublicationStatus.draft,
+  IpPublicationStatus.submitted,
+  IpPublicationStatus.in_review,
+  IpPublicationStatus.changes_requested,
+  IpPublicationStatus.approved,
+];
+
+export function episodeStatusForIpPublication(
+  ipStatus: IpPublicationStatus,
+): IpPublicationStatus | null {
+  if (ipStatus === IpPublicationStatus.published) {
+    return IpPublicationStatus.published;
+  }
+  if (ipStatus === IpPublicationStatus.scheduled) {
+    return IpPublicationStatus.scheduled;
+  }
+  if (ipStatus === IpPublicationStatus.approved) {
+    return IpPublicationStatus.approved;
+  }
+  return null;
+}
+
+async function syncIpEpisodeStatusForPublication(
+  tx: Prisma.TransactionClient,
+  ipId: string,
+  status: IpPublicationStatus,
+  opts: { now: Date; scheduledAt: Date | null },
+) {
+  const nextEpisodeStatus = episodeStatusForIpPublication(status);
+  if (!nextEpisodeStatus) return;
+
+  const localizationStatus =
+    nextEpisodeStatus === IpPublicationStatus.published ||
+    nextEpisodeStatus === IpPublicationStatus.scheduled
+      ? IpLocalizationStatus.published
+      : IpLocalizationStatus.approved;
+
+  const episodes = await tx.ipEpisode.findMany({
+    where: {
+      ipId,
+      deletedAt: null,
+      status: { in: EPISODE_STATUSES_PROMOTED_ON_IP_PUBLICATION },
+    },
+    select: { id: true, publishedAt: true },
+  });
+  if (episodes.length === 0) return;
+
+  const episodeIds = episodes.map((episode) => episode.id);
+  await tx.ipEpisodeLocalization.updateMany({
+    where: {
+      episodeId: { in: episodeIds },
+      archivedAt: null,
+    },
+    data: { status: localizationStatus },
+  });
+
+  for (const episode of episodes) {
+    await tx.ipEpisode.update({
+      where: { id: episode.id },
+      data: {
+        status: nextEpisodeStatus,
+        ...(nextEpisodeStatus === IpPublicationStatus.published
+          ? { publishedAt: episode.publishedAt ?? opts.now }
+          : {}),
+        ...(nextEpisodeStatus === IpPublicationStatus.scheduled
+          ? { scheduledAt: opts.scheduledAt }
+          : {}),
+        version: { increment: 1 },
+      },
+    });
+  }
 }
 
 async function settleIpReviewSubmissionsForPublication(
@@ -8216,6 +8354,7 @@ function ipDto(
   const publicEngagement = publicIpEngagementDto(engagement);
   return {
     id: title.id,
+    roomNumber: title.roomNumber,
     slug: copy.value?.slug ?? null,
     status: title.status,
     listingVisibility: title.listingVisibility,
@@ -8308,335 +8447,6 @@ function ipDto(
       };
     }),
   };
-}
-
-function isIpCommerceDetailMockId(ipId: string) {
-  return (
-    process.env.NODE_ENV !== 'production' && ipId === IP_COMMERCE_DETAIL_MOCK_ID
-  );
-}
-
-function mockPublicIpDto(ipId: string, requestedLocale?: string | null) {
-  const locale = normalizeLocale(requestedLocale);
-  const isZh = locale.startsWith('zh');
-  const copy = isZh
-    ? {
-        title: '霓虹记忆档案',
-        subtitle: '记忆可以交易、租赁和被盗取的垂直城市。',
-        summary:
-          '失忆信使沿着一张被污染的记忆地图穿过垂直城市，追查一座 AI 档案馆里隐藏的人类承诺。',
-        description:
-          '这是一个面向连续内容、互动分支和商业化扩展的 IP 样例：短剧集推进主线谜团，互动节点让观众决定下一段要追回的记忆，后续可以扩展角色支线、游戏化体验和社区任务。',
-        campaignName: '上线体验价',
-        episodeTitles: [
-          '试播集：记忆收据',
-          '选择节点：保留还是出售第一段记忆',
-          '档案室 7',
-          '世界规则剪辑',
-        ],
-        episodeSummaries: [
-          '信使醒来后发现自己持有一张不属于她的记忆收据，以及一个本不该存在的名字。',
-          '第一处分支让观众选择保留一段痛苦记忆，或将它卖掉以进入塔城上层。',
-          '一间锁住的档案室展示同一段童年场景的三个互相冲突版本。',
-          '紧凑说明记忆经济、阵营、世界规则和后续扩展钩子。',
-        ],
-        genres: ['科幻', '悬疑'],
-        owner: 'FizzDragon Originals',
-      }
-    : {
-        title: 'Neon Memory Archive',
-        subtitle:
-          'A vertical city where memories can be traded, rented, and stolen.',
-        summary:
-          'An amnesiac courier follows a corrupted memory map through a vertical city, uncovering the human promise hidden inside an AI archive.',
-        description:
-          'This sample IP is structured for continuous content, interactive branches, and commercial expansion: short episodes introduce the main mystery, choice nodes let viewers decide which memory to recover next, and later seasons can expand into character spin-offs, gamified experiences, and community missions.',
-        campaignName: 'Launch access',
-        episodeTitles: [
-          'Pilot: The Memory Receipt',
-          'Choice Node: Keep or Sell the First Memory',
-          'Archive Room 7',
-          'World Rules Cut',
-        ],
-        episodeSummaries: [
-          'A courier wakes up with a receipt for a memory she never bought and a name that should not exist.',
-          'The first branch asks viewers to keep a painful memory or sell it for access to the tower.',
-          'A locked archive shows the same childhood scene from three incompatible perspectives.',
-          'A compact worldbuilding episode explains the memory economy, factions, and expansion hooks.',
-        ],
-        genres: ['Sci-fi', 'Mystery'],
-        owner: 'FizzDragon Originals',
-      };
-
-  const localization = mockLocalizationMeta(locale);
-  const publishedAt = '2026-05-18T10:00:00.000Z';
-  const genreCodes = ['sci_fi', 'mystery'];
-  const taxonomy = {
-    genres: genreCodes.map((code, index) =>
-      mockTaxonomyTerm('genre', code, copy.genres[index] ?? code, localization),
-    ),
-    tags: [],
-  };
-
-  return {
-    id: ipId,
-    slug: 'mock-neon-memory-archive',
-    status: IpPublicationStatus.published,
-    listingVisibility: IpListingVisibility.public,
-    ageRating: 'teen',
-    title: copy.title,
-    subtitle: copy.subtitle,
-    summary: copy.summary,
-    description: copy.description,
-    sourceLocale: locale,
-    localization,
-    genres: copy.genres,
-    tags: [],
-    genreCodes,
-    tagCodes: [],
-    taxonomy,
-    copyrightOwner: copy.owner,
-    rightsSummary: { source: 'mock', license: 'sample_preview' },
-    aiDisclosure: { generatedVisuals: true, generatedCopy: false },
-    coverAsset: mockIpAsset(
-      '00000000-0000-4000-8000-000000000011',
-      'cover',
-      mockSvgDataUri({
-        title: isZh ? '档案' : 'Archive',
-        subtitle: copy.title,
-        from: '#111827',
-        via: '#1f2937',
-        to: '#450a0a',
-        accent: '#f97316',
-      }),
-      900,
-      900,
-    ),
-    trailerAsset: null,
-    publishedAt,
-    scheduledAt: null,
-    viewCount: 0,
-    likeCount: 0,
-    collectionCount: 0,
-    viewerHasLiked: false,
-    engagement: publicIpEngagementDto(emptyIpEngagementStats()),
-    price: {
-      id: '00000000-0000-4000-8000-000000000101',
-      targetType: IpTargetType.ip,
-      currency: WalletCurrencyType.community_point,
-      amount: '129',
-      originalAmount: '199',
-      campaignId: '00000000-0000-4000-8000-000000000201',
-      startsAt: '2026-05-01T00:00:00.000Z',
-      endsAt: '2026-06-30T23:59:59.000Z',
-      unlocksAt: null,
-      maxPerUser: 1,
-    },
-    campaigns: [
-      {
-        id: '00000000-0000-4000-8000-000000000201',
-        campaignType: 'launch',
-        status: IpCampaignStatus.active,
-        code: 'MEMORY30',
-        name: copy.campaignName,
-        localization,
-        startsAt: '2026-05-01T00:00:00.000Z',
-        endsAt: '2026-06-30T23:59:59.000Z',
-        unlocksAt: null,
-      },
-    ],
-    episodes: copy.episodeTitles.map((title, index) =>
-      mockEpisodeDto({
-        id: `00000000-0000-4000-8000-00000000030${index + 1}`,
-        episodeNo: index + 1,
-        title,
-        summary: copy.episodeSummaries[index] ?? '',
-        durationSeconds: [780, 960, 880, 620][index] ?? 720,
-        isFreePreview: index === 0 || index === 3,
-        publishedAt:
-          [
-            publishedAt,
-            '2026-05-25T10:00:00.000Z',
-            '2026-06-01T10:00:00.000Z',
-            '2026-06-08T10:00:00.000Z',
-          ][index] ?? publishedAt,
-        localization,
-        palette: [
-          ['#0f172a', '#4c1d95', '#ef4444'],
-          ['#111827', '#0f766e', '#f97316'],
-          ['#020617', '#1d4ed8', '#e11d48'],
-          ['#18181b', '#7f1d1d', '#facc15'],
-        ][index] as [string, string, string],
-      }),
-    ),
-  };
-}
-
-function mockEpisodeDto({
-  id,
-  episodeNo,
-  title,
-  summary,
-  durationSeconds,
-  isFreePreview,
-  publishedAt,
-  localization,
-  palette,
-}: {
-  id: string;
-  episodeNo: number;
-  title: string;
-  summary: string;
-  durationSeconds: number;
-  isFreePreview: boolean;
-  publishedAt: string;
-  localization: ReturnType<typeof mockLocalizationMeta>;
-  palette: [string, string, string];
-}) {
-  return {
-    id,
-    episodeNo,
-    sortOrder: episodeNo,
-    status: IpPublicationStatus.published,
-    title,
-    subtitle: null,
-    summary,
-    localization,
-    durationSeconds,
-    isFreePreview,
-    coverAsset: mockIpAsset(
-      id.replace(/30(\d)$/, '40$1'),
-      'episode_cover',
-      mockSvgDataUri({
-        title: `EP ${episodeNo}`,
-        subtitle: title,
-        from: palette[0],
-        via: palette[1],
-        to: palette[2],
-        accent: '#ef232a',
-      }),
-      1280,
-      720,
-    ),
-    trailerAsset: null,
-    scheduledAt: null,
-    publishedAt,
-    price: isFreePreview
-      ? null
-      : {
-          id: id.replace(/30(\d)$/, '50$1'),
-          targetType: IpTargetType.episode,
-          currency: WalletCurrencyType.community_point,
-          amount: '39',
-          originalAmount: null,
-          campaignId: null,
-          startsAt: null,
-          endsAt: null,
-          unlocksAt: null,
-          maxPerUser: 1,
-        },
-  };
-}
-
-function mockLocalizationMeta(locale: string) {
-  return {
-    requestedLocale: locale,
-    locale,
-    sourceLocale: locale,
-    isFallback: false,
-    availableLocales: [locale],
-    status: IpLocalizationStatus.published,
-  };
-}
-
-function mockTaxonomyTerm(
-  type: 'genre' | 'tag',
-  code: string,
-  label: string,
-  localization: ReturnType<typeof mockLocalizationMeta>,
-) {
-  return {
-    id: `mock-${type}-${code}`,
-    type,
-    code,
-    label,
-    description: null,
-    aliases: [],
-    localization,
-  };
-}
-
-function mockIpAsset(
-  id: string,
-  kind: string,
-  externalUrl: string,
-  width: number,
-  height: number,
-) {
-  return {
-    id,
-    kind,
-    storageProvider: 'mock',
-    bucket: null,
-    region: null,
-    objectKey: null,
-    externalUrl,
-    contentType: 'image/svg+xml',
-    width,
-    height,
-    durationSeconds: null,
-  };
-}
-
-function mockSvgDataUri({
-  title,
-  subtitle,
-  from,
-  via,
-  to,
-  accent,
-}: {
-  title: string;
-  subtitle: string;
-  from: string;
-  via: string;
-  to: string;
-  accent: string;
-}) {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
-      <defs>
-        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stop-color="${from}" />
-          <stop offset="52%" stop-color="${via}" />
-          <stop offset="100%" stop-color="${to}" />
-        </linearGradient>
-        <radialGradient id="glow" cx="68%" cy="34%" r="48%">
-          <stop offset="0%" stop-color="${accent}" stop-opacity="0.78" />
-          <stop offset="100%" stop-color="${accent}" stop-opacity="0" />
-        </radialGradient>
-      </defs>
-      <rect width="1600" height="900" fill="url(#bg)" />
-      <rect width="1600" height="900" fill="url(#glow)" />
-      <g opacity="0.22">
-        <path d="M0 640 C240 560 380 780 610 655 C830 535 900 250 1160 360 C1360 445 1420 240 1600 290 L1600 900 L0 900 Z" fill="#fff" />
-        <path d="M-80 250 C180 130 390 330 610 210 C880 60 1070 170 1260 90 C1430 20 1540 80 1680 40" stroke="#fff" stroke-width="12" fill="none" stroke-linecap="round" />
-      </g>
-      <g font-family="Inter, Arial, sans-serif" fill="#fff">
-        <text x="86" y="690" font-size="76" font-weight="800">${escapeSvg(title)}</text>
-        <text x="92" y="752" font-size="30" font-weight="600" opacity="0.72">${escapeSvg(subtitle)}</text>
-      </g>
-    </svg>
-  `;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-function escapeSvg(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }
 
 function selectActivePrice<

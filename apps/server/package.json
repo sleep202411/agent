@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "prisma generate && nest build",
+    "build": "prisma generate && nest build && tsc -p tsconfig.catalog-update.json",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "cross-env PORT=4399 nest start",
     "prestart:dev": "npm run build -w @repo/shared && npm run build -w @repo/agent-policy && npm run build -w @repo/agent-tools && npm run build -w @repo/agent-capabilities && npm run build -w @repo/agent-protocol && npm run build -w @repo/agent-skills",
@@ -16,6 +16,7 @@
     "admin:create-user": "tsx scripts/admin-create-user.ts",
     "media:backfill-original-placements": "tsx scripts/backfill-media-original-placements.ts",
     "storyboard:repair-identities": "tsx scripts/repair-storyboard-node-identities.ts",
+    "story:repair-chapter-graphs": "tsx scripts/repair-story-chapter-graphs.ts",
     "seed:ai-image": "tsx prisma/seed/seed.ts",
     "seed:membership": "tsx prisma/seed/seed-membership.ts",
     "lint": "eslint \"{src,scripts,apps,libs,test}/**/*.ts\" --fix",
@@ -37,7 +38,11 @@
     "db:migrate": "node scripts/ensure-local-database.mjs prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "node scripts/ensure-local-database.mjs prisma studio",
-    "seed:tv-local": "tsx scripts/seed-tv-local.ts"
+    "seed:tv-local": "tsx scripts/seed-tv-local.ts",
+    "test:crew-migrations": "node scripts/verify-crew-migrations.mjs",
+    "test:workspace-migration": "node scripts/verify-workspace-migration.mjs",
+    "test:story-project-move": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-story-project-move.ts",
+    "test:workspace-permissions": "cross-env TSX_TSCONFIG_PATH=tsconfig.json node --import tsx scripts/verify-workspace-permissions.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed/seed.ts"
@@ -117,7 +122,8 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "@electric-sql/pglite": "0.4.1"
   },
   "jest": {
     "moduleFileExtensions": [
@@ -155,6 +161,7 @@
     "roots": [
       "<rootDir>",
       "<rootDir>/../prisma/seed"
-    ]
+    ],
+    "maxWorkers": 2
   }
 }

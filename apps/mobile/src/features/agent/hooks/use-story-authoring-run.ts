@@ -21,10 +21,15 @@ export function useStoryAuthoringRun(
   const [run, setRun] = useState<StoryAgentRunDto | null>(null);
   const projectOk = isAgentOsId(projectId);
   const chapterOk = isAgentOsId(chapterId);
+  const identity = `${projectId}:${chapterId}`;
+  const [previousIdentity, setPreviousIdentity] = useState(identity);
+  if (previousIdentity !== identity) {
+    setPreviousIdentity(identity);
+    setRun(null);
+  }
 
   useEffect(() => {
     if (!projectOk || !chapterOk) {
-      setRun(null);
       return;
     }
 
@@ -61,10 +66,15 @@ export function useStoryAgentRunById(
   const [run, setRun] = useState<StoryAgentRunDto | null>(null);
   const projectOk = isAgentOsId(projectId);
   const runOk = isAgentOsId(runId);
+  const identity = `${projectId}:${runId}`;
+  const [previousIdentity, setPreviousIdentity] = useState(identity);
+  if (previousIdentity !== identity) {
+    setPreviousIdentity(identity);
+    setRun(null);
+  }
 
   useEffect(() => {
     if (!projectOk || !runOk || !runId) {
-      setRun(null);
       return;
     }
     let cancelled = false;

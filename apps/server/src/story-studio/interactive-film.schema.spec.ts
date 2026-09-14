@@ -1,3 +1,4 @@
+import { PutStoryDraftSchema } from './dto';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
   InteractiveStoryDraftContentSchema,
@@ -62,6 +63,44 @@ function filmDraft(): InteractiveStoryDraftContent {
 }
 
 describe('interactive film draft contract', () => {
+  it('only accepts Community Points prices on story nodes', () => {
+    const draft = filmDraft();
+    const node = draft.graph.nodes[0];
+    if (node.kind !== 'clip') throw new Error('Expected clip');
+    node.communityPointPrice = 30;
+    expect(
+      InteractiveStoryDraftContentSchema.parse(draft).graph.nodes[0],
+    ).toMatchObject({ communityPointPrice: 30 });
+    for (const price of [-1, 1.5, 2_147_483_648]) {
+      node.communityPointPrice = price;
+      expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
+        false,
+      );
+    }
+    node.communityPointPrice = 30;
+    if (node.exit.kind !== 'choice') throw new Error('Expected choice');
+    Object.assign(node.exit.choices[0], { communityPointPrice: 20 });
+    expect(InteractiveStoryDraftContentSchema.safeParse(draft).success).toBe(
+      false,
+    );
+    expect(
+      InteractiveStoryDraftContentSchema.safeParse({
+        ...filmDraft(),
+        graph: {
+          entryNodeId: 'decision',
+          nodes: [
+            {
+              kind: 'decision',
+              nodeId: 'decision',
+              communityPointPrice: 20,
+              exit: node.exit,
+            },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it('accepts only fully identified film clips and natural terminal exits', () => {
     expect(
       InteractiveStoryDraftContentSchema.safeParse(filmDraft()).success,
@@ -379,5 +418,46 @@ describe('interactive film draft contract', () => {
     expect(
       InteractiveStoryDraftContentSchema.safeParse(withBranchAt(1_200)).success,
     ).toBe(false);
+  });
+});
+
+describe('editable decision contract', () => {
+  it('accepts disconnected choices but rejects runtime-only auto decisions on draft writes', () => {
+    const content = filmDraft();
+    content.graph.nodes.push({
+      kind: 'decision',
+      nodeId: 'D',
+      exit: { kind: 'choice', decisionId: 'D', prompt: {}, choices: [] },
+    });
+    const request = {
+      expectedRevision: 0,
+      schemaVersion: 'interactive-story-draft-v1',
+      content,
+      sessionId: 'test',
+    };
+    expect(PutStoryDraftSchema.safeParse(request).success).toBe(true);
+    const runtimeOnly = {
+      ...request,
+      content: {
+        ...content,
+        graph: {
+          ...content.graph,
+          nodes: [
+            ...content.graph.nodes.slice(0, -1),
+            {
+              kind: 'decision',
+              nodeId: 'D',
+              exit: { kind: 'auto', nextNodeId: null },
+            },
+          ],
+        },
+      },
+    };
+    expect(PutStoryDraftSchema.safeParse(runtimeOnly).success).toBe(false);
+    expect(
+      createPlayableInteractiveStoryDraftContentSchema('en-US').safeParse(
+        content,
+      ).success,
+    ).toBe(true);
   });
 });

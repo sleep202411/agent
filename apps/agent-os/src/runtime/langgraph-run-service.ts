@@ -40,6 +40,10 @@ import {
   type ContinuationExecutionProof,
   type StartExecutionProof,
 } from "./journal-reporter.js";
+import {
+  classifyTerminalExecutionFailure,
+  type TerminalExecutionFailure,
+} from "./execution-failure.js";
 
 export interface StartLangGraphRunInput {
   runId: string;
@@ -1204,6 +1208,18 @@ export class LangGraphRunService {
         }
         return;
       }
+      if (
+        await this.failIfTerminalExecutionError({
+          runId: input.runId,
+          conversationId: input.conversationId,
+          sessionId: input.sessionId,
+          turnId,
+          journal,
+          error,
+        })
+      ) {
+        return;
+      }
       const liveBeforeFailure = this.snapshots.get(input.runId);
       if (liveBeforeFailure?.startExecution) {
         // A caught Worker/runtime failure is not a checkpointed graph outcome.
@@ -1753,12 +1769,24 @@ export class LangGraphRunService {
       expectedContinuationExecutionOwnerId: continuationExecution.executionOwnerId,
       continuationCommand: command,
       externalResultContinuation: command.kind === "external_result",
-    }).catch((error) => {
+    }).catch(async (error) => {
       if (
         isContinuationExecutionFenceError(error) ||
         isContinuationExecutionSupersededError(error) ||
         isCheckpointExecutionSupersededError(error) ||
         isAbortError(error)
+      ) {
+        return;
+      }
+      if (
+        await this.failIfTerminalExecutionError({
+          runId: command.runId,
+          conversationId: command.conversationId,
+          sessionId: input.sessionId,
+          turnId: command.turnId,
+          journal,
+          error,
+        })
       ) {
         return;
       }
@@ -2605,9 +2633,8 @@ export class LangGraphRunService {
               expectedStartExecutionOwnerId,
               expectedContinuationExecutionOwnerId
             );
-            // A provider should emit end before the next model call. Close a
-            // dangling segment defensively so message ids never span calls.
-            completeMessage("stop");
+            // A retried model call supersedes its interrupted visible fragment.
+            completeMessage("superseded");
             continue;
           }
           if (event.event === "on_chat_model_stream") {
@@ -2626,9 +2653,9 @@ export class LangGraphRunService {
             continue;
           }
           if (event.event === "on_chat_model_end") {
-            if (!activeMessage) {
-              const completeText = chunkText(event.data?.output);
-              if (completeText) appendMessageText(completeText);
+            const completeText = chunkText(event.data?.output);
+            if (completeText && (!activeMessage || completeText.startsWith(activeMessage.text))) {
+              appendMessageText(completeText.slice(activeMessage?.text.length ?? 0));
             }
             completeMessage(modelOutputHasToolCalls(event.data?.output) ? "tool_call" : "stop");
             await this.captureLatestStartCheckpoint(
@@ -3004,6 +3031,81 @@ export class LangGraphRunService {
     });
     snapshot.assistantText = active.text;
     snapshot.activeMessage = undefined;
+  }
+
+  private async failExecution(input: {
+    runId: string;
+    conversationId: string;
+    sessionId: string;
+    turnId: string;
+    journal: EventJournal;
+    failure: TerminalExecutionFailure;
+    cause: unknown;
+  }): Promise<void> {
+    const current = this.snapshots.get(input.runId);
+    if (!current || TERMINAL_STATUSES.has(current.status)) return;
+
+    process.stderr.write(
+      `${JSON.stringify({
+        level: "error",
+        msg: "agent-os.execution_terminal_failure",
+        runId: input.runId,
+        conversationId: input.conversationId,
+        turnId: input.turnId,
+        code: input.failure.code,
+        error:
+          input.cause instanceof Error
+            ? `${input.cause.name}: ${input.cause.message}`
+            : String(input.cause),
+      })}\n`
+    );
+
+    this.completeOpenMessage(input.runId, "failed");
+    input.journal.append({
+      sessionId: input.sessionId,
+      runId: input.runId,
+      conversationId: input.conversationId,
+      type: "RunFailed",
+      data: {
+        turnId: input.turnId,
+        status: "failed",
+        error: input.failure,
+      },
+    });
+    const failed: LangGraphRunSnapshot = {
+      ...current,
+      activeTurnId: input.turnId,
+      status: "failed",
+      journal: input.journal,
+      pendingApproval: undefined,
+      pendingUserInput: undefined,
+      pendingExternal: undefined,
+      errorMessage: input.failure.message,
+    };
+    this.snapshots.set(input.runId, failed);
+    await this.persistUntilAccepted(failed, "run_failed");
+  }
+
+  private async failIfTerminalExecutionError(input: {
+    runId: string;
+    conversationId: string;
+    sessionId: string;
+    turnId: string;
+    journal: EventJournal;
+    error: unknown;
+  }): Promise<boolean> {
+    // A Gateway report error describes durability, not the model/tool outcome.
+    // Keep its fenced command recoverable even if the HTTP status resembles a
+    // permanent provider rejection.
+    if (input.error instanceof AgentOsJournalReportError) return false;
+    const failure = classifyTerminalExecutionFailure(input.error);
+    if (!failure) return false;
+    await this.failExecution({
+      ...input,
+      failure,
+      cause: input.error,
+    });
+    return true;
   }
 
   private createJournal(): EventJournal {

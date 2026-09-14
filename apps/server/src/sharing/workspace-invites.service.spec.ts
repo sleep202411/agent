@@ -1,8 +1,4 @@
-import {
-  WorkspaceInviteStatus,
-  WorkspaceMemberRole,
-  WorkspaceType,
-} from '@prisma/client';
+import { WorkspaceInviteStatus, WorkspaceMemberRole } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { WorkspaceInvitesService } from './workspace-invites.service';
 
@@ -23,7 +19,7 @@ function build() {
       findFirst: jest.fn().mockResolvedValue({
         id: WORKSPACE_ID,
         name: 'My workspace',
-        type: WorkspaceType.personal,
+        defaultForUserId: 'user-1',
       }),
     },
     workspaceInvite: { create: inviteCreate },
@@ -45,7 +41,7 @@ function build() {
 }
 
 describe('WorkspaceInvitesService.create', () => {
-  it('mints a link for a personal workspace', async () => {
+  it('mints a link for a default workspace', async () => {
     const t = build();
 
     const result = await t.service.create(WORKSPACE_ID, ACTOR, {

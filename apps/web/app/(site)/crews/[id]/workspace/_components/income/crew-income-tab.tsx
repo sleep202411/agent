@@ -1,6 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import {
+  CREW_CURRENCY,
+  formatCrewMoney,
+  parseCrewMoney,
+  formatCrewMoneyInput,
+  type CrewLedgerCurrency,
+} from "@/src/lib/crew-money";
 import Link from "next/link";
 import {
   IconArrowBackUp,
@@ -24,7 +32,6 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { CREW_POINTS_PER_USD } from "@repo/shared";
 
 import {
   useApproveCrewEarning,
@@ -66,12 +73,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserAvatar } from "@/components/user-avatar";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
 
-type View = "points" | "payouts";
+type View = "earnings" | "payouts";
 type Scope = "mine" | "crew";
 type EarningFilter = "all" | CrewEarningStatus;
 type PayoutFilter = "all" | CrewPayoutStatus;
@@ -91,9 +97,52 @@ const PAYOUT_METHODS: CrewPayoutMethod[] = [
   "paypal",
   "other",
 ];
-const MAX_SIGNED_BIGINT = 9_223_372_036_854_775_807n;
 
-export function CrewIncomeTab({
+export function CrewIncomeTab(props: Parameters<typeof IncomeSession>[0]) {
+  const { user } = useCurrentUser();
+  return <IncomeSession key={JSON.stringify([user?.id, props.crewId])} {...props} />;
+}
+function useIncomeSession() {
+  const active = useRef(true);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
+  return active;
+}
+function useIncomeAction() {
+  const active = useIncomeSession();
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  const retry = useRef<{ fingerprint: string; key: string } | null>(null);
+  return {
+    active,
+    busy,
+    begin: () => {
+      if (!active.current || pending.current) return false;
+      pending.current = true;
+      setBusy(true);
+      return true;
+    },
+    finish: () => {
+      pending.current = false;
+      if (active.current) setBusy(false);
+    },
+    key: (input: unknown) => {
+      const fingerprint = JSON.stringify(input);
+      if (retry.current?.fingerprint !== fingerprint)
+        retry.current = { fingerprint, key: crypto.randomUUID() };
+      return retry.current.key;
+    },
+    confirmed: () => {
+      retry.current = null;
+    },
+  };
+}
+
+function IncomeSession({
   crewId,
   crewName,
   members,
@@ -114,9 +163,10 @@ export function CrewIncomeTab({
   canCreatePayout: boolean;
   canManagePayout: boolean;
 }) {
+  const expenses = useTranslations("crewExpenses");
   const t = useTranslations("crewIncome");
   const locale = useLocale();
-  const [view, setView] = useState<View>("points");
+  const [view, setView] = useState<View>("earnings");
   const [scope, setScope] = useState<Scope>("mine");
   const effectiveScope = canViewCrewLedger ? scope : "mine";
   const [earningFilter, setEarningFilter] = useState<EarningFilter>("all");
@@ -137,14 +187,16 @@ export function CrewIncomeTab({
   const earnings = useCrewEarnings(
     crewId,
     {
+      currency: CREW_CURRENCY,
       scope: effectiveScope,
       status: earningFilter === "all" ? undefined : earningFilter,
     },
-    view === "points"
+    view === "earnings"
   );
   const payouts = useCrewPayouts(
     crewId,
     {
+      currency: CREW_CURRENCY,
       scope: effectiveScope,
       status: payoutFilter === "all" ? undefined : payoutFilter,
     },
@@ -158,6 +210,12 @@ export function CrewIncomeTab({
 
   return (
     <div className="mx-auto w-full max-w-[1180px] pb-10">
+      <Link
+        className="mb-3 inline-block text-sm"
+        href={`/crews/${encodeURIComponent(crewId)}/expenses`}
+      >
+        {expenses("title")}
+      </Link>
       <header className="border-b border-white/[0.07] px-1 pb-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
@@ -181,7 +239,7 @@ export function CrewIncomeTab({
                 </Segment>
               </Segmented>
             ) : null}
-            {view === "points" && canCreateEarning ? (
+            {view === "earnings" && canCreateEarning ? (
               <Button size="sm" icon={<IconPlus />} onClick={() => setCreateEarningOpen(true)}>
                 {t("create.action")}
               </Button>
@@ -194,8 +252,8 @@ export function CrewIncomeTab({
           </div>
         </div>
         <nav className="mt-5 flex gap-5" aria-label={t("viewLabel")}>
-          <ViewTab active={view === "points"} onClick={() => setView("points")}>
-            <IconCoins /> {t("views.points")}
+          <ViewTab active={view === "earnings"} onClick={() => setView("earnings")}>
+            <IconCoins /> {t("views.earnings")}
           </ViewTab>
           <ViewTab active={view === "payouts"} onClick={() => setView("payouts")}>
             <IconCash /> {t("views.payouts")}
@@ -203,8 +261,8 @@ export function CrewIncomeTab({
         </nav>
       </header>
 
-      {view === "points" ? (
-        <PointsLedger
+      {view === "earnings" ? (
+        <EarningsLedger
           crewId={crewId}
           query={earnings}
           scope={effectiveScope}
@@ -231,32 +289,43 @@ export function CrewIncomeTab({
         />
       )}
 
-      <CreateEarningDialog
-        open={createEarningOpen}
-        onOpenChange={setCreateEarningOpen}
-        crewId={crewId}
-        members={members}
-        displays={displays}
-      />
-      <CreatePayoutDialog
-        open={createPayoutOpen}
-        onOpenChange={setCreatePayoutOpen}
-        crewId={crewId}
-        members={members}
-        displays={displays}
-        locale={locale}
-      />
-      <EarningDecisionDialog
-        value={earningDecision}
-        onOpenChange={(open) => !open && setEarningDecision(null)}
-        crewId={crewId}
-      />
-      <PayoutActionDialog
-        value={payoutAction}
-        onOpenChange={(open) => !open && setPayoutAction(null)}
-        crewId={crewId}
-        locale={locale}
-      />
+      {createEarningOpen && canCreateEarning ? (
+        <CreateEarningDialog
+          open={createEarningOpen}
+          onOpenChange={setCreateEarningOpen}
+          crewId={crewId}
+          members={members}
+          displays={displays}
+        />
+      ) : null}
+      {createPayoutOpen && canCreatePayout ? (
+        <CreatePayoutDialog
+          open={createPayoutOpen}
+          onOpenChange={setCreatePayoutOpen}
+          crewId={crewId}
+          members={members}
+          displays={displays}
+          locale={locale}
+        />
+      ) : null}
+      {earningDecision &&
+      (earningDecision.kind === "reverse" ? canReverseEarning : canApproveEarning) ? (
+        <EarningDecisionDialog
+          key={JSON.stringify([earningDecision.kind, earningDecision.earning.id])}
+          value={earningDecision}
+          onOpenChange={(open) => !open && setEarningDecision(null)}
+          crewId={crewId}
+        />
+      ) : null}
+      {payoutAction && canManagePayout ? (
+        <PayoutActionDialog
+          key={JSON.stringify([payoutAction.kind, payoutAction.payout.id])}
+          value={payoutAction}
+          onOpenChange={(open) => !open && setPayoutAction(null)}
+          crewId={crewId}
+          locale={locale}
+        />
+      ) : null}
       <EarningDetailDialog
         earning={earningDetail}
         onOpenChange={(open) => !open && setEarningDetail(null)}
@@ -271,7 +340,7 @@ export function CrewIncomeTab({
   );
 }
 
-function PointsLedger({
+function EarningsLedger({
   crewId,
   query,
   scope,
@@ -297,47 +366,69 @@ function PointsLedger({
   onDecision: (kind: "reject" | "reverse", earning: CrewEarningEntryDTO) => void;
 }) {
   const t = useTranslations("crewIncome");
+  const action = useIncomeAction();
+  const { active } = action;
   const approve = useApproveCrewEarning(crewId);
   const summary = query.summary;
   const approveEntry = async (earning: CrewEarningEntryDTO) => {
+    if (!canApprove || earning.status !== "pending") return;
+    if (!action.begin()) return;
     try {
       await approve.mutateAsync({ earningId: earning.id, expectedVersion: earning.version });
+      if (!active.current) return;
       toast.success(t("messages.approved"));
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
     <section className="pt-5">
       <div className="grid border-y border-white/[0.065] sm:grid-cols-3">
         <Metric
-          label={t("metrics.confirmedPoints")}
+          label={t("metrics.confirmedAmount")}
           value={
-            <PointAmount value={summary?.byStatus.posted.pointsAmount ?? "0"} locale={locale} />
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={summary?.byStatus.posted.amountMinor ?? "0"}
+              locale={locale}
+            />
           }
         />
         <Metric
-          label={t("metrics.pendingPoints")}
+          label={t("metrics.pendingAmount")}
           value={
-            <PointAmount value={summary?.byStatus.pending.pointsAmount ?? "0"} locale={locale} />
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={summary?.byStatus.pending.amountMinor ?? "0"}
+              locale={locale}
+            />
           }
         />
         <Metric
-          label={t("metrics.monthPoints")}
-          value={<PointAmount value={summary?.postedThisMonthPoints ?? "0"} locale={locale} />}
+          label={t("metrics.monthAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={summary?.postedThisMonthAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
       </div>
       <LedgerHeader
-        title={t("points.history")}
-        description={t("points.historyDescription")}
+        title={t("earnings.history")}
+        description={t("earnings.historyDescription")}
         values={["all", "pending", "posted", "rejected", "reversed"]}
         value={filter}
         onChange={(value) => setFilter(value as EarningFilter)}
       />
       <ResultState
         query={query}
-        emptyTitle={t("points.emptyTitle")}
-        emptyDescription={t("points.emptyDescription")}
+        emptyTitle={t("earnings.emptyTitle")}
+        emptyDescription={t("earnings.emptyDescription")}
       >
         <div className="divide-y divide-white/[0.055] border-t border-white/[0.055]">
           {query.data.map((earning) => (
@@ -379,8 +470,9 @@ function PointsLedger({
                 {formatDate(earning.createdAt, locale)}
               </time>
               <div className="flex items-center justify-between gap-2 md:justify-end">
-                <PointAmount
-                  value={earning.pointsAmount}
+                <MoneyAmount
+                  currency={earning.currency}
+                  value={earning.amountMinor}
                   locale={locale}
                   className="font-mono text-[11px] font-semibold text-[#e8e9ec]"
                 />
@@ -405,7 +497,7 @@ function PointsLedger({
                     <button
                       type="button"
                       className="grid size-7 place-items-center rounded-md text-emerald-300 transition-colors hover:bg-emerald-400/[0.08] [&_svg]:size-3.5"
-                      disabled={approve.isPending}
+                      disabled={action.busy}
                       onClick={() => void approveEntry(earning)}
                       aria-label={t("actions.approve")}
                     >
@@ -458,16 +550,34 @@ function PayoutLedger({
     <section className="pt-5">
       <div className="grid border-y border-white/[0.065] sm:grid-cols-3">
         <Metric
-          label={t("metrics.availablePoints")}
-          value={<PointAmount value={query.summary?.availablePoints ?? "0"} locale={locale} />}
+          label={t("metrics.availableAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={query.summary?.availableAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
         <Metric
-          label={t("metrics.reservedPoints")}
-          value={<PointAmount value={query.summary?.reservedPoints ?? "0"} locale={locale} />}
+          label={t("metrics.reservedAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={query.summary?.reservedAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
         <Metric
-          label={t("metrics.paidPoints")}
-          value={<PointAmount value={query.summary?.paidPoints ?? "0"} locale={locale} />}
+          label={t("metrics.paidAmount")}
+          value={
+            <MoneyAmount
+              currency={CREW_CURRENCY}
+              value={query.summary?.paidAmountMinor ?? "0"}
+              locale={locale}
+            />
+          }
         />
       </div>
       <LedgerHeader
@@ -502,14 +612,18 @@ function PayoutLedger({
                     {scope === "crew" ? displayNameOf(payout.userId, displays) : t("payout.record")}
                   </p>
                   <p className="mt-1 text-[9px] text-[#676d77]">
-                    <PointAmount value={payout.pointsAmount} locale={locale} /> ·{" "}
-                    {formatDate(payout.createdAt, locale)}
+                    <MoneyAmount
+                      currency={payout.currency}
+                      value={payout.amountMinor}
+                      locale={locale}
+                    />{" "}
+                    · {formatDate(payout.createdAt, locale)}
                   </p>
                 </div>
               </div>
               <PayoutStatusBadge status={payout.status} />
               <span className="font-mono text-[11px] font-semibold text-[#e8e9ec]">
-                {formatUsd(payout.netAmountMinor, locale)}
+                {formatCrewMoney(payout.netAmountMinor, locale, payout.currency)}
               </span>
               <div className="flex items-center justify-end gap-1">
                 <button
@@ -560,37 +674,46 @@ function CreateEarningDialog({
   displays: ReturnType<typeof useUserDisplays>;
 }) {
   const t = useTranslations("crewIncome");
+  const action = useIncomeAction();
+  const { active } = action;
   const create = useCreateCrewEarning(crewId);
   const [memberId, setMemberId] = useState("");
   const [sourceType, setSourceType] = useState<ManualSource>("milestone_bonus");
   const [title, setTitle] = useState("");
-  const [points, setPoints] = useState("");
+  const [amountInput, setAmountInput] = useState("");
   const [description, setDescription] = useState("");
-  const parsedPoints = parsePoints(points);
+  const amountMinor = parseCrewMoney(amountInput);
+  const parsedAmount = amountMinor && BigInt(amountMinor) > 0n ? amountMinor : null;
   const close = (value: boolean) => {
     if (!value) {
       setMemberId("");
       setTitle("");
-      setPoints("");
+      setAmountInput("");
       setDescription("");
     }
     onOpenChange(value);
   };
   const submit = async () => {
-    if (!memberId || !title.trim() || !parsedPoints) return;
+    if (!memberId || !title.trim() || !parsedAmount) return;
+    if (!action.begin()) return;
     try {
-      await create.mutateAsync({
+      const input = {
         crewMemberId: memberId,
         sourceType,
         title: title.trim(),
         description: description.trim() || undefined,
-        pointsAmount: parsedPoints,
-        idempotencyKey: crypto.randomUUID(),
-      });
+        amountMinor: parsedAmount,
+      };
+      await create.mutateAsync({ ...input, idempotencyKey: action.key(input) });
+      action.confirmed();
+      if (!active.current) return;
       toast.success(t("messages.created"));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.createFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -601,64 +724,66 @@ function CreateEarningDialog({
           <DialogDescription>{t("create.description")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          <MemberSelect
-            value={memberId}
-            onChange={setMemberId}
-            members={members}
-            displays={displays}
-            label={t("create.member")}
-          />
-          <Field label={t("create.source")}>
-            <Select
-              value={sourceType}
-              onValueChange={(value) => setSourceType(value as ManualSource)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {MANUAL_SOURCES.map((source) => (
-                  <SelectItem key={source} value={source}>
-                    {t(`sources.${source}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field label={t("create.titleLabel")}>
-            <Input
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-              placeholder={t("create.titlePlaceholder")}
-              maxLength={180}
+          <fieldset disabled={action.busy} className="contents">
+            <MemberSelect
+              value={memberId}
+              onChange={setMemberId}
+              members={members}
+              displays={displays}
+              label={t("create.member")}
             />
-          </Field>
-          <Field label={t("create.points")}>
-            <Input
-              value={points}
-              onChange={(event) => setPoints(event.target.value)}
-              inputMode="numeric"
-              placeholder="0"
-              aria-invalid={Boolean(points) && !parsedPoints}
-            />
-          </Field>
-          <Field label={t("create.note")} optional>
-            <Textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder={t("create.notePlaceholder")}
-              maxLength={10_000}
-            />
-          </Field>
-          <p className="text-[10px] leading-5 text-[#767c86]">{t("create.pendingNotice")}</p>
+            <Field label={t("create.source")}>
+              <Select
+                value={sourceType}
+                onValueChange={(value) => setSourceType(value as ManualSource)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MANUAL_SOURCES.map((source) => (
+                    <SelectItem key={source} value={source}>
+                      {t(`sources.${source}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label={t("create.titleLabel")}>
+              <Input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder={t("create.titlePlaceholder")}
+                maxLength={180}
+              />
+            </Field>
+            <Field label={`${t("create.amount")} (${CREW_CURRENCY})`}>
+              <Input
+                value={amountInput}
+                onChange={(event) => setAmountInput(event.target.value)}
+                inputMode="decimal"
+                placeholder="0"
+                aria-invalid={Boolean(amountInput) && !parsedAmount}
+              />
+            </Field>
+            <Field label={t("create.note")} optional>
+              <Textarea
+                value={description}
+                onChange={(event) => setDescription(event.target.value)}
+                placeholder={t("create.notePlaceholder")}
+                maxLength={10_000}
+              />
+            </Field>
+            <p className="text-[10px] leading-5 text-[#767c86]">{t("create.pendingNotice")}</p>
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
           <Button
-            loading={create.isPending}
-            disabled={!memberId || !title.trim() || !parsedPoints}
+            loading={action.busy}
+            disabled={!memberId || !title.trim() || !parsedAmount}
             onClick={() => void submit()}
           >
             {t("create.submit")}
@@ -685,44 +810,54 @@ function CreatePayoutDialog({
   locale: string;
 }) {
   const t = useTranslations("crewIncome");
+  const action = useIncomeAction();
+  const { active } = action;
   const create = useCreateCrewPayout(crewId);
   const [memberId, setMemberId] = useState("");
-  const [points, setPoints] = useState("");
+  const [amountInput, setAmountInput] = useState("");
   const [withholding, setWithholding] = useState("0");
   const [note, setNote] = useState("");
-  const parsedPoints = parsePoints(points);
-  const grossMinor = parsedPoints;
-  const withholdingMinor = parseMoney(withholding, 2);
+  const amountMinor = parseCrewMoney(amountInput);
+  const parsedAmount = amountMinor && BigInt(amountMinor) > 0n ? amountMinor : null;
+  const grossMinor = parsedAmount;
+  const withholdingMinor = parseCrewMoney(withholding);
   const netMinor =
     grossMinor != null && withholdingMinor != null
       ? BigInt(grossMinor) - BigInt(withholdingMinor)
       : null;
   const valid = Boolean(
-    memberId && parsedPoints && withholdingMinor != null && netMinor && netMinor > 0n
+    memberId && parsedAmount && withholdingMinor != null && netMinor && netMinor > 0n
   );
   const close = (nextOpen: boolean) => {
     if (!nextOpen) {
       setMemberId("");
-      setPoints("");
+      setAmountInput("");
       setWithholding("0");
       setNote("");
     }
     onOpenChange(nextOpen);
   };
   const submit = async () => {
-    if (!valid || !parsedPoints || withholdingMinor == null) return;
+    if (!valid || !parsedAmount || withholdingMinor == null) return;
+    if (!action.begin()) return;
     try {
-      await create.mutateAsync({
+      const input = {
         crewMemberId: memberId,
-        pointsAmount: parsedPoints,
+        amountMinor: parsedAmount,
+        currency: CREW_CURRENCY,
         withholdingAmountMinor: withholdingMinor,
         note: note.trim() || undefined,
-        idempotencyKey: crypto.randomUUID(),
-      });
+      };
+      await create.mutateAsync({ ...input, idempotencyKey: action.key(input) });
+      action.confirmed();
+      if (!active.current) return;
       toast.success(t("payout.messages.created"));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("payout.messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -733,53 +868,57 @@ function CreatePayoutDialog({
           <DialogDescription>{t("payout.create.description")}</DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          <MemberSelect
-            value={memberId}
-            onChange={setMemberId}
-            members={members}
-            displays={displays}
-            label={t("payout.create.member")}
-          />
-          <Field label={t("payout.create.points")}>
-            <Input
-              value={points}
-              onChange={(event) => setPoints(event.target.value)}
-              inputMode="numeric"
-              placeholder="0"
+          <fieldset disabled={action.busy} className="contents">
+            <MemberSelect
+              value={memberId}
+              onChange={setMemberId}
+              members={members}
+              displays={displays}
+              label={t("payout.create.member")}
             />
-          </Field>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label={t("payout.create.gross")}>
-              <Input value={grossMinor ? formatUsdInput(grossMinor) : ""} readOnly />
-            </Field>
-            <Field label={t("payout.create.withholding")}>
+            <Field label={`${t("payout.create.amount")} (${CREW_CURRENCY})`}>
               <Input
-                value={withholding}
-                onChange={(event) => setWithholding(event.target.value)}
+                value={amountInput}
+                onChange={(event) => setAmountInput(event.target.value)}
                 inputMode="decimal"
+                placeholder="0"
               />
             </Field>
-          </div>
-          <div className="flex items-center justify-between border-y border-white/[0.07] py-3">
-            <span className="text-[11px] text-[#878d97]">{t("payout.create.net")}</span>
-            <strong className="font-mono text-[15px] text-[#f0f1f3]">
-              {netMinor && netMinor > 0n ? formatUsd(netMinor.toString(), locale) : "—"}
-            </strong>
-          </div>
-          <Field label={t("payout.create.note")} optional>
-            <Textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              maxLength={10_000}
-            />
-          </Field>
-          <p className="text-[10px] leading-5 text-[#767c86]">{t("payout.create.notice")}</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label={t("payout.create.gross")}>
+                <Input value={grossMinor ? formatCrewMoneyInput(grossMinor) : ""} readOnly />
+              </Field>
+              <Field label={t("payout.create.withholding")}>
+                <Input
+                  value={withholding}
+                  onChange={(event) => setWithholding(event.target.value)}
+                  inputMode="decimal"
+                />
+              </Field>
+            </div>
+            <div className="flex items-center justify-between border-y border-white/[0.07] py-3">
+              <span className="text-[11px] text-[#878d97]">{t("payout.create.net")}</span>
+              <strong className="font-mono text-[15px] text-[#f0f1f3]">
+                {netMinor && netMinor > 0n
+                  ? formatCrewMoney(netMinor.toString(), locale, CREW_CURRENCY)
+                  : "—"}
+              </strong>
+            </div>
+            <Field label={t("payout.create.note")} optional>
+              <Textarea
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                maxLength={10_000}
+              />
+            </Field>
+            <p className="text-[10px] leading-5 text-[#767c86]">{t("payout.create.notice")}</p>
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
-          <Button loading={create.isPending} disabled={!valid} onClick={() => void submit()}>
+          <Button loading={action.busy} disabled={!valid} onClick={() => void submit()}>
             {t("payout.create.submit")}
           </Button>
         </DialogFooter>
@@ -798,6 +937,8 @@ function EarningDecisionDialog({
   crewId: string;
 }) {
   const t = useTranslations("crewIncome");
+  const action = useIncomeAction();
+  const { active } = action;
   const reject = useRejectCrewEarning(crewId);
   const reverse = useReverseCrewEarning(crewId);
   const [reason, setReason] = useState("");
@@ -808,16 +949,21 @@ function EarningDecisionDialog({
   };
   const submit = async () => {
     if (!value || !reason.trim()) return;
+    if (!action.begin()) return;
     try {
       await mutation.mutateAsync({
         earningId: value.earning.id,
         expectedVersion: value.earning.version,
         reason: reason.trim(),
       });
+      if (!active.current) return;
       toast.success(t(`messages.${value.kind === "reverse" ? "reversed" : "rejected"}`));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -834,22 +980,20 @@ function EarningDecisionDialog({
           </DialogDescription>
         </DialogHeader>
         <DialogBody>
-          <Textarea
-            autoFocus
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            placeholder={t("decision.reasonPlaceholder")}
-          />
+          <fieldset disabled={action.busy} className="contents">
+            <Textarea
+              autoFocus
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder={t("decision.reasonPlaceholder")}
+            />
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
-          <Button
-            loading={mutation.isPending}
-            disabled={!reason.trim()}
-            onClick={() => void submit()}
-          >
+          <Button loading={action.busy} disabled={!reason.trim()} onClick={() => void submit()}>
             {t(value?.kind === "reverse" ? "actions.confirmReverse" : "actions.confirmReject")}
           </Button>
         </DialogFooter>
@@ -870,6 +1014,8 @@ function PayoutActionDialog({
   locale: string;
 }) {
   const t = useTranslations("crewIncome");
+  const action = useIncomeAction();
+  const { active } = action;
   const pay = usePayCrewPayout(crewId);
   const voidPayout = useVoidCrewPayout(crewId);
   const [method, setMethod] = useState<CrewPayoutMethod>("bank_transfer");
@@ -889,6 +1035,7 @@ function PayoutActionDialog({
   const valid = value?.kind === "pay" ? Boolean(reference.trim()) : Boolean(reason.trim());
   const submit = async () => {
     if (!value || !valid) return;
+    if (!action.begin()) return;
     try {
       await mutation.mutateAsync({
         payoutId: value.payout.id,
@@ -898,10 +1045,14 @@ function PayoutActionDialog({
         paymentProofUrl: proof.trim() || undefined,
         reason: reason.trim() || undefined,
       });
+      if (!active.current) return;
       toast.success(t(`payout.messages.${value.kind}`));
       close(false);
     } catch (error) {
+      if (!active.current) return;
       toast.error(error instanceof Error ? error.message : t("payout.messages.actionFailed"));
+    } finally {
+      action.finish();
     }
   };
   return (
@@ -912,54 +1063,64 @@ function PayoutActionDialog({
           <DialogDescription>
             {value
               ? t(`payout.dialog.${value.kind}.description`, {
-                  points: formatPointsText(value.payout.pointsAmount, locale, t("pointsUnit")),
-                  amount: formatUsd(value.payout.netAmountMinor, locale),
+                  grossAmount: formatCrewMoney(
+                    value.payout.amountMinor,
+                    locale,
+                    value.payout.currency
+                  ),
+                  amount: formatCrewMoney(
+                    value.payout.netAmountMinor,
+                    locale,
+                    value.payout.currency
+                  ),
                 })
               : ""}
           </DialogDescription>
         </DialogHeader>
         <DialogBody className="space-y-4">
-          {value?.kind === "pay" ? (
-            <>
-              <Field label={t("payout.dialog.method")}>
-                <Select
-                  value={method}
-                  onValueChange={(next) => setMethod(next as CrewPayoutMethod)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PAYOUT_METHODS.map((item) => (
-                      <SelectItem key={item} value={item}>
-                        {t(`payout.methods.${item}`)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <fieldset disabled={action.busy} className="contents">
+            {value?.kind === "pay" ? (
+              <>
+                <Field label={t("payout.dialog.method")}>
+                  <Select
+                    value={method}
+                    onValueChange={(next) => setMethod(next as CrewPayoutMethod)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYOUT_METHODS.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {t(`payout.methods.${item}`)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
+                <Field label={t("payout.dialog.reference")}>
+                  <Input value={reference} onChange={(event) => setReference(event.target.value)} />
+                </Field>
+                <Field label={t("payout.dialog.proof")} optional>
+                  <Input
+                    value={proof}
+                    onChange={(event) => setProof(event.target.value)}
+                    type="url"
+                  />
+                </Field>
+              </>
+            ) : value?.kind === "void" ? (
+              <Field label={t("payout.dialog.reason")}>
+                <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
               </Field>
-              <Field label={t("payout.dialog.reference")}>
-                <Input value={reference} onChange={(event) => setReference(event.target.value)} />
-              </Field>
-              <Field label={t("payout.dialog.proof")} optional>
-                <Input
-                  value={proof}
-                  onChange={(event) => setProof(event.target.value)}
-                  type="url"
-                />
-              </Field>
-            </>
-          ) : value?.kind === "void" ? (
-            <Field label={t("payout.dialog.reason")}>
-              <Textarea value={reason} onChange={(event) => setReason(event.target.value)} />
-            </Field>
-          ) : null}
+            ) : null}
+          </fieldset>
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" color="muted" onClick={() => close(false)}>
             {t("actions.cancel")}
           </Button>
-          <Button loading={mutation.isPending} disabled={!valid} onClick={() => void submit()}>
+          <Button loading={action.busy} disabled={!valid} onClick={() => void submit()}>
             {t(`payout.dialog.${value?.kind ?? "pay"}.submit`)}
           </Button>
         </DialogFooter>
@@ -990,7 +1151,9 @@ function EarningDetailDialog({
       {record ? (
         <>
           <DetailHero
-            value={<PointAmount value={record.pointsAmount} locale={locale} />}
+            value={
+              <MoneyAmount currency={record.currency} value={record.amountMinor} locale={locale} />
+            }
             status={<StatusBadge status={record.status} />}
           />
           <DetailFacts
@@ -1042,14 +1205,22 @@ function PayoutDetailDialog({
       {record ? (
         <>
           <DetailHero
-            value={formatUsd(record.netAmountMinor, locale)}
-            subtitle={<PointAmount value={record.pointsAmount} locale={locale} />}
+            value={formatCrewMoney(record.netAmountMinor, locale, record.currency)}
+            subtitle={
+              <MoneyAmount currency={record.currency} value={record.amountMinor} locale={locale} />
+            }
             status={<PayoutStatusBadge status={record.status} />}
           />
           <DetailFacts
             facts={[
-              [t("payout.detail.gross"), formatUsd(record.pointsAmount, locale)],
-              [t("payout.detail.withholding"), formatUsd(record.withholdingAmountMinor, locale)],
+              [
+                t("payout.detail.gross"),
+                formatCrewMoney(record.amountMinor, locale, record.currency),
+              ],
+              [
+                t("payout.detail.withholding"),
+                formatCrewMoney(record.withholdingAmountMinor, locale, record.currency),
+              ],
               [t("detail.recorded"), formatDateTime(record.createdAt, locale)],
               ...(record.paymentReference
                 ? [[t("payout.detail.reference"), record.paymentReference]]
@@ -1068,8 +1239,9 @@ function PayoutDetailDialog({
                   className="flex items-center justify-between gap-3 py-2 text-[10px]"
                 >
                   <span className="truncate text-[#bfc3ca]">{allocation.earning.title}</span>
-                  <PointAmount
-                    value={allocation.pointsAmount}
+                  <MoneyAmount
+                    currency={record.currency}
+                    value={allocation.amountMinor}
                     locale={locale}
                     className="font-mono text-[#e4e6e9]"
                   />
@@ -1220,6 +1392,8 @@ function ResultState({
     refetch: () => unknown;
     hasNextPage?: boolean;
     isFetchingNextPage?: boolean;
+    isFetching?: boolean;
+    isFetchNextPageError?: boolean;
     fetchNextPage: () => unknown;
   };
   emptyTitle: string;
@@ -1227,31 +1401,32 @@ function ResultState({
   children: React.ReactNode;
 }) {
   const t = useTranslations("crewIncome");
-  if (query.isLoading)
+  if (query.isLoading && !query.data.length)
     return (
       <div className="flex min-h-56 items-center justify-center gap-2 text-[11px] text-[#777d87]">
         <IconLoader2 className="size-4 animate-spin" />
         {t("loading")}
       </div>
     );
-  if (query.isError)
-    return (
-      <div className="flex min-h-56 flex-col items-center justify-center text-center">
-        <p className="text-[11px] text-[#a5aab2]">
-          {query.error instanceof Error ? query.error.message : t("loadFailed")}
-        </p>
-        <Button
-          size="sm"
-          variant="ghost"
-          color="muted"
-          className="mt-3"
-          icon={<IconRefresh />}
-          onClick={() => void query.refetch()}
-        >
-          {t("retry")}
-        </Button>
-      </div>
-    );
+  const error = query.isError ? (
+    <div role="alert" className="flex min-h-32 flex-col items-center justify-center text-center">
+      <p className="text-[11px] text-[#a5aab2]">
+        {query.error instanceof Error ? query.error.message : t("loadFailed")}
+      </p>
+      <Button
+        size="sm"
+        variant="ghost"
+        color="muted"
+        className="mt-3"
+        icon={<IconRefresh />}
+        disabled={query.isFetching}
+        onClick={() => void (query.isFetchNextPageError ? query.fetchNextPage() : query.refetch())}
+      >
+        {t("retry")}
+      </Button>
+    </div>
+  ) : null;
+  if (error && !query.data.length) return error;
   if (!query.data.length)
     return (
       <div className="flex min-h-56 flex-col items-center justify-center px-6 text-center">
@@ -1262,13 +1437,15 @@ function ResultState({
     );
   return (
     <>
+      {error}
       {children}
-      {query.hasNextPage ? (
+      {query.hasNextPage && !query.isError ? (
         <div className="flex justify-center py-4">
           <Button
             size="sm"
             variant="ghost"
             color="muted"
+            disabled={query.isFetching}
             loading={query.isFetchingNextPage}
             onClick={() => void query.fetchNextPage()}
           >
@@ -1444,80 +1621,18 @@ function SourceIcon({ source }: { source: CrewEarningSourceType }) {
   return <Icon className="size-3 shrink-0" />;
 }
 
-function parsePoints(value: string) {
-  const normalized = value.trim();
-  if (!/^[1-9]\d*$/.test(normalized)) return null;
-  const points = BigInt(normalized);
-  return points <= MAX_SIGNED_BIGINT ? points.toString() : null;
-}
-function parseMoney(value: string, decimals: number) {
-  const normalized = value.trim();
-  const pattern = decimals === 0 ? /^(?:0|[1-9]\d*)$/ : /^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/;
-  if (!pattern.test(normalized)) return null;
-  const [whole, fraction = ""] = normalized.split(".");
-  const scale = 10n ** BigInt(decimals);
-  const minor = BigInt(whole) * scale + BigInt(fraction.padEnd(decimals, "0") || "0");
-  return minor <= MAX_SIGNED_BIGINT ? minor.toString() : null;
-}
-function PointAmount({
+function MoneyAmount({
   value,
+  currency,
   locale,
   className,
 }: {
   value: string;
+  currency: CrewLedgerCurrency;
   locale: string;
   className?: string;
 }) {
-  const t = useTranslations("crewIncome");
-  const display = formatPointsText(value, locale, t("pointsUnit"));
-  const referenceValue = formatPointReferenceValue(value, locale);
-  const referenceBenchmark = formatPointReferenceValue(String(CREW_POINTS_PER_USD), locale);
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          tabIndex={0}
-          className={cn(
-            "cursor-help decoration-white/35 underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/35",
-            className
-          )}
-        >
-          {display}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-72 leading-5">
-        {t("pointsValueTooltip", {
-          points: display,
-          amount: referenceValue,
-          benchmark: referenceBenchmark,
-        })}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-function formatPointsText(value: string, locale: string, unit: string) {
-  return `${BigInt(value).toLocaleString(locale)} ${unit}`;
-}
-function formatPointReferenceValue(value: string, locale: string) {
-  return formatUsd(value, locale);
-}
-function formatUsd(value: string, locale: string) {
-  const amount = BigInt(value);
-  const divisor = 100n;
-  const major = amount / divisor;
-  const fraction = amount < 0n ? -(amount % divisor) : amount % divisor;
-  if (amount <= BigInt(Number.MAX_SAFE_INTEGER) && amount >= BigInt(Number.MIN_SAFE_INTEGER))
-    return new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(
-      Number(amount) / Number(divisor)
-    );
-  return `USD ${major.toLocaleString(locale)}.${fraction.toString().padStart(2, "0")}`;
-}
-function formatUsdInput(value: string) {
-  const amount = BigInt(value);
-  const divisor = 100n;
-  const major = amount / divisor;
-  const fraction = (amount % divisor).toString().padStart(2, "0");
-  return `${major.toString()}.${fraction}`;
+  return <span className={className}>{formatCrewMoney(value, locale, currency)}</span>;
 }
 function formatDate(value: string, locale: string) {
   return new Intl.DateTimeFormat(locale, {

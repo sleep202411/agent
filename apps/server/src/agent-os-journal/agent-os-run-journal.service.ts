@@ -212,6 +212,15 @@ type ExternalResultInput = {
   phase: 'authoring' | 'apply';
   text: string;
   outcome: 'completed' | 'failed' | 'cancelled';
+  /** Auto-applied stages still leave a durable artifact in the transcript. */
+  storyArtifact?: Pick<
+    StoryProposalReadyInput,
+    | 'storyProjectId'
+    | 'storyChapterId'
+    | 'workspaceId'
+    | 'stage'
+    | 'schemaVersion'
+  >;
   storyContinuation?: {
     locale: 'en-US' | 'zh-CN' | 'zh-HK';
     plan: StoryProductionContinuationPlan;
@@ -1746,6 +1755,29 @@ export class AgentOsRunJournalService {
     if (durableEvents.length === 0) {
       throw new AgentOsContinuationNotReadyError(run.id, 'empty_journal');
     }
+    // A completed handoff remains registered for audit/replay, but can never
+    // take ownership again while a later continuation is running.
+    if (
+      durableEvents.some(
+        (event) =>
+          event.type === 'RunResumed' &&
+          stringField(event.data, 'externalJobId') === externalJobId &&
+          stringField(event.data, 'reason')?.startsWith('external_job_'),
+      )
+    ) {
+      return { events: [], snapshot: toRealtimeSnapshot(run) };
+    }
+    // Recheck under the run lock: the sweep may have raced a lease renewal.
+    const now = await databaseNow(tx);
+    if (
+      (run.startExecutionLeaseExpiresAt &&
+        run.startExecutionLeaseExpiresAt > now) ||
+      (run.continuationExecutionLeaseExpiresAt &&
+        run.continuationExecutionLeaseExpiresAt > now)
+    ) {
+      return { events: [], snapshot: toRealtimeSnapshot(run) };
+    }
+
     const sourceTurnSeen = durableEvents.some(
       (event) =>
         stringField(event.data, 'turnId') === registration.sourceAgentTurnId,
@@ -1783,10 +1815,7 @@ export class AgentOsRunJournalService {
       }
     }
 
-    const [clock] = await tx.$queryRaw<Array<{ now: Date }>>(
-      Prisma.sql`SELECT NOW() AS "now"`,
-    );
-    const timestamp = (clock?.now ?? new Date()).toISOString();
+    const timestamp = now.toISOString();
     const eventSeed = `agent-os:external-registration:${externalJobId}`;
     const sessionId = `agent-os:v1:conversation:${run.conversationId}`;
     let sequence = run.lastSequence;
@@ -1818,6 +1847,37 @@ export class AgentOsRunJournalService {
             kind: 'external_job',
             jobId: registration.externalJobId,
             startedMessage: registration.startedMessage,
+          },
+        }),
+      );
+    }
+
+    // Recovery must restore the actionable batch card as well as RunPaused.
+    // Progress and balance stay in the domain; the journal stores only its identity.
+    if (
+      registration.generationBatchId &&
+      !durableEvents.some(
+        (event) =>
+          event.type === 'ArtifactCreated' &&
+          stringField(event.data, 'artifactId') ===
+            registration.generationBatchId,
+      )
+    ) {
+      const batch = await tx.storyGenerationBatch.findUniqueOrThrow({
+        where: { id: registration.generationBatchId },
+        select: { id: true, storyProjectId: true, storyChapterId: true },
+      });
+      events.push(
+        next('generation-batch', 'ArtifactCreated', {
+          status: 'active',
+          turnId: registration.sourceAgentTurnId,
+          artifactId: batch.id,
+          artifact: {
+            kind: 'story_generation_batch',
+            generationBatchId: batch.id,
+            storyProjectId: batch.storyProjectId,
+            storyChapterId: batch.storyChapterId,
+            schemaVersion: 'story-generation-batch-artifact/v1',
           },
         }),
       );
@@ -2763,6 +2823,30 @@ export class AgentOsRunJournalService {
       ...(input.phase === 'apply' && input.toolId === 'story.applyProposal'
         ? [
             next('artifact-updated', 'ArtifactUpdated', {
+              turnId: input.turnId,
+              artifactId: input.externalJobId,
+              status:
+                input.outcome === 'completed'
+                  ? 'applied'
+                  : input.outcome === 'cancelled'
+                    ? 'cancelled'
+                    : 'failed',
+            }),
+          ]
+        : []),
+      ...(input.phase === 'apply' && input.storyArtifact
+        ? [
+            next('artifact-created', 'ArtifactCreated', {
+              turnId: input.turnId,
+              artifactId: input.externalJobId,
+              artifact: {
+                kind: 'story_stage_proposal',
+                storyAgentRunId: input.externalJobId,
+                ...input.storyArtifact,
+              },
+              status: 'active',
+            }),
+            next('artifact-auto-applied', 'ArtifactUpdated', {
               turnId: input.turnId,
               artifactId: input.externalJobId,
               status:

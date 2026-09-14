@@ -67,6 +67,15 @@ import {
   type StoryGenerationBatchAgentHandoffInput,
 } from '../../story-studio/story-generation-batch.service';
 import { StoryProjectWriteGuardService } from '../../story-studio/story-project-write-guard.service';
+import {
+  commitStoryChapterGraph,
+  mergeChapterDraftIntoStory,
+  reconcileStoryChapterGraphPartition,
+  StoryChapterNodeOwnershipConflictError,
+  type StoryChapterGraphMerge,
+  type StoryChapterGraphRepair,
+  type StoryChapterGraphRow,
+} from '../../story-studio/story-chapter-graph-invariant';
 import { reconcileStoryTimelinesWithDraft } from '../../story-studio/story-timeline-reconcile';
 import { AgentOsProjectContextService } from '../agent-os-project-context.service';
 import { AgentOsToolExecutionReceiptService } from '../agent-os-tool-execution-receipt.service';
@@ -352,6 +361,13 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             title: args.title,
             summary: args.summary,
             brief: args.brief,
+            ...(args.sourceMode ? { sourceMode: args.sourceMode } : {}),
+            ...(args.sourceAttachmentId
+              ? { sourceAttachmentId: args.sourceAttachmentId }
+              : {}),
+            ...(args.regenerateStage
+              ? { regenerateStage: args.regenerateStage }
+              : {}),
             idempotencyKey: input.idempotencyKey,
             conversationId: input.conversationId,
             sourceAgentRunId: input.runId,
@@ -361,6 +377,9 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
             sourceCompletionMessage: args.completionMessage,
             sourceContinuationPlan: {
               continueThrough,
+              ...(args.regenerateStage
+                ? { regenerateStage: args.regenerateStage }
+                : {}),
               title: args.title,
               summary: args.summary,
               brief: args.brief,
@@ -450,7 +469,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           },
           args.dispatchMode === 'sequential' ||
             input.workbenchContext?.experience === 'mobile_h5'
-            ? { dispatchMode: 'sequential' }
+            ? {
+                dispatchMode: 'sequential',
+                ...(input.workbenchContext?.experience === 'mobile_h5'
+                  ? { experience: 'mobile_h5' as const }
+                  : {}),
+              }
             : undefined,
         );
       }
@@ -508,7 +532,12 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
           },
           args.dispatchMode === 'sequential' ||
             input.workbenchContext?.experience === 'mobile_h5'
-            ? { dispatchMode: 'sequential' }
+            ? {
+                dispatchMode: 'sequential',
+                ...(input.workbenchContext?.experience === 'mobile_h5'
+                  ? { experience: 'mobile_h5' as const }
+                  : {}),
+              }
             : undefined,
         );
       }
@@ -1073,71 +1102,50 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         });
       }
 
-      const previousChapterNodeIds = new Set(state.chapter.nodeIds);
-      const otherChapterNodeIds = new Set(
-        state.globalContent.graph.nodes.flatMap((node) =>
-          previousChapterNodeIds.has(node.nodeId) ? [] : [node.nodeId],
-        ),
-      );
-      const collision = patched.draft.graph.nodes.find((node) =>
-        otherChapterNodeIds.has(node.nodeId),
-      );
-      if (collision) {
+      let merged: StoryChapterGraphMerge;
+      try {
+        merged = mergeChapterDraftIntoStory({
+          content: state.globalContent,
+          chapters: state.chapters,
+          chapterId: state.chapter.id,
+          chapterContent: patched.draft,
+        });
+      } catch (error) {
+        if (!(error instanceof StoryChapterNodeOwnershipConflictError))
+          throw error;
         throw new UnprocessableEntityException({
           code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
-          message: `Scene ${collision.nodeId} belongs to another chapter.`,
-          nodeId: collision.nodeId,
+          message: error.message,
+          nodeId: error.nodeId,
         });
       }
-
-      const nextNodeIds = patched.draft.graph.nodes.map((node) => node.nodeId);
-      const mergedGlobalDraft = InteractiveStoryDraftContentSchema.parse({
-        storyBible: patched.draft.storyBible,
-        graph: {
-          entryNodeId: state.chapter.isFirst
-            ? patched.draft.graph.entryNodeId
-            : state.globalContent.graph.entryNodeId,
-          nodes: [
-            ...state.globalContent.graph.nodes.filter(
-              (node) => !previousChapterNodeIds.has(node.nodeId),
-            ),
-            ...patched.draft.graph.nodes,
-          ],
-        },
-        productionNotes: patched.draft.productionNotes,
-      });
-      const nextGlobalHash = canonicalJsonHash(mergedGlobalDraft);
-      const updatedDraft = await tx.storyDraft.updateMany({
-        where: {
+      const nextNodeIds = merged.nextChapterNodeIds;
+      const mergedGlobalDraft = InteractiveStoryDraftContentSchema.parse(
+        merged.content,
+      );
+      const committed = await commitStoryChapterGraph(tx, {
+        draft: {
           storyProjectId: input.projectId,
-          revision: state.revision,
-          contentHash: state.globalContentHash,
-        },
-        data: {
           schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
-          content: mergedGlobalDraft as unknown as Prisma.InputJsonObject,
-          contentHash: nextGlobalHash,
-          revision: { increment: 1 },
-          updatedByUserId: input.actorId,
-          updatedBySessionId: null,
+          content: state.storedGlobalContent,
+          contentHash: state.globalContentHash,
+          revision: state.revision,
         },
+        chaptersBefore: state.chaptersBefore,
+        partitionRepair: state.partitionRepair,
+        content: mergedGlobalDraft,
+        chapters: merged.chapters,
+        schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+        actorUserId: input.actorId,
+        sessionId: null,
+        trigger: 'agent_os_patch',
       });
-      if (updatedDraft.count !== 1) {
+      if (!committed) {
         throw new ConflictException({
           code: 'STORY_CAS_LOST',
           message: 'Story draft changed concurrently. Read it again and retry.',
         });
       }
-
-      // Chapter membership must be visible to the database Plot-node guard
-      // before a new node's empty Storyboard timeline is inserted.
-      await tx.storyChapter.update({
-        where: { id: state.chapter.id },
-        data: {
-          nodeIds: nextNodeIds,
-          entryNodeId: patched.draft.graph.entryNodeId,
-        },
-      });
 
       // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
       // their sequences immediately, undone deletions revive them.
@@ -1248,13 +1256,20 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
         message: 'Stored draft hash mismatch.',
       });
     }
-    const chapterNodeIds = jsonStringArray(chapter.nodeIds);
+    const partitionRepair = reconcileStoryChapterGraphPartition({
+      content: globalContent,
+      chapters: project.chapters,
+    });
+    const repairedChapter = partitionRepair.chapters.find(
+      (candidate) => candidate.id === chapter.id,
+    )!;
+    const chapterNodeIds = repairedChapter.nodeIds;
     const chapterNodeSet = new Set(chapterNodeIds);
     const content = InteractiveStoryDraftContentSchema.parse({
       ...globalContent,
       graph: {
-        entryNodeId: chapter.entryNodeId,
-        nodes: globalContent.graph.nodes.filter((node) =>
+        entryNodeId: repairedChapter.entryNodeId,
+        nodes: partitionRepair.content.graph.nodes.filter((node) =>
           chapterNodeSet.has(node.nodeId),
         ),
       },
@@ -1265,7 +1280,11 @@ export class StoryAgentCapabilityHandler implements AgentOsCapabilityHandler {
       chapterContentHash: canonicalJsonHash(content),
       globalContentHash: project.draft.contentHash,
       content,
-      globalContent,
+      storedGlobalContent: globalContent,
+      globalContent: partitionRepair.content,
+      chapters: partitionRepair.chapters,
+      chaptersBefore: project.chapters,
+      partitionRepair,
       layout,
       layoutRow: chapter.canvasLayout
         ? { revision: chapter.canvasLayout.revision }
@@ -1294,7 +1313,11 @@ interface StoryDraftState {
   chapterContentHash: string;
   globalContentHash: string;
   content: InteractiveStoryDraftContent;
+  storedGlobalContent: InteractiveStoryDraftContent;
   globalContent: InteractiveStoryDraftContent;
+  chapters: StoryChapterGraphRepair['chapters'];
+  chaptersBefore: StoryChapterGraphRow[];
+  partitionRepair: StoryChapterGraphRepair;
   layout: StoryAgentCanvasLayoutSnapshot;
   layoutRow: { revision: number } | null;
   chapter: { id: string; isFirst: boolean; nodeIds: string[] };
@@ -1694,7 +1717,9 @@ function targetsOf(node: StoryNode): string[] {
       ? node.exit.nextNodeId
         ? [node.exit.nextNodeId]
         : []
-      : node.exit.choices.map((choice) => choice.nextNodeId);
+      : node.exit.choices.flatMap((choice) =>
+          choice.nextNodeId ? [choice.nextNodeId] : [],
+        );
   const interactionTargets =
     node.kind === 'clip'
       ? node.interactions.flatMap((interaction) =>
@@ -1745,11 +1770,6 @@ function requireOpenAutoExit(node: StoryNode): void {
     message: `Scene ${node.nodeId} already has an outgoing path. Choose an open ending or refactor the graph explicitly.`,
     nodeId: node.nodeId,
   });
-}
-
-function jsonStringArray(value: Prisma.JsonValue): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is string => typeof item === 'string');
 }
 
 function storyContinuationLocale(

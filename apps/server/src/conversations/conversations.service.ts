@@ -1942,10 +1942,7 @@ export class ConversationsService {
     }
 
     const rows = await this.prisma.crewTask.findMany({
-      where: {
-        crewId,
-        id: { in: [...unique.keys()] },
-      },
+      where: { deletedAt: null, crewId, id: { in: [...unique.keys()] } },
       select: {
         id: true,
         crewId: true,

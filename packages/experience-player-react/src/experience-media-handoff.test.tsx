@@ -25,6 +25,8 @@ import type { ExperiencePlayerVideoCopy } from "./experience-player-copy";
  */
 vi.mock("@vidstack/react", async () => {
   const { createElement, useImperativeHandle, useRef } = await import("react");
+  const { VideoProviderLoader } =
+    await vi.importActual<typeof import("@vidstack/react")>("@vidstack/react");
 
   function StubMediaPlayer({
     ref,
@@ -67,6 +69,7 @@ vi.mock("@vidstack/react", async () => {
   }
 
   return {
+    VideoProviderLoader,
     MediaPlayer: StubMediaPlayer,
     MediaProvider: ({ children }: { children?: React.ReactNode }) =>
       createElement("div", null, children),

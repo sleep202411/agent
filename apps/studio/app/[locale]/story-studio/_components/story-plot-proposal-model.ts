@@ -9,6 +9,7 @@ import { storyAuthoringProposalReview } from "./story-authoring-proposal";
 
 export type StoryPlotPreviewNodeData = StoryCanvasNodeData & {
   isEntry: boolean;
+  unresolved: boolean;
 };
 
 export type StoryPlotPreviewNode = Node<StoryPlotPreviewNodeData, "storyPlotPreview">;
@@ -74,6 +75,7 @@ export function buildStoryPlotPreviewModel(
     data: {
       ...node.data,
       isEntry: node.id === proposal.screenplay.entrySceneId,
+      unresolved: proposal.screenplay.unresolvedNodeIds?.includes(node.id) ?? false,
     },
   }));
   const edges = canvas.edges.map<StoryPlotPreviewEdge>((edge) => {

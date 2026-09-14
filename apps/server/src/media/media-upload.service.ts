@@ -1,3 +1,10 @@
+import {
+  reserveCrewUpload,
+  completeCrewUpload,
+  cancelCrewUpload,
+  lockCrewStorage,
+  requireCrewReservation,
+} from '../crews/assets/storage-quota';
 /**
  * Direct-to-storage upload pipeline — server side.
  *
@@ -38,6 +45,7 @@
  */
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -70,6 +78,7 @@ import {
   StorageObjectNotFoundError,
   StorageObjectSizeMismatchError,
   type HeadObjectResult,
+  type StorageObjectRef,
 } from '../infra/storage/storage.types';
 import { MediaAssetUrlResolverService } from '../infra/storage/media-asset-url-resolver.service';
 import { StorageProviderRegistry } from '../infra/storage/storage-provider-registry.service';
@@ -80,12 +89,10 @@ import type {
   CreateUploadUrlResponseDto,
 } from './dto';
 import type { UploadKind } from './dto';
-import {
-  EPISODE_VIDEO_MAX_BYTES,
-  STORY_CLIP_VIDEO_CONTENT_TYPE,
-  STORY_CLIP_VIDEO_MAX_BYTES,
-} from './media-upload.policy';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
+import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
 import { WorkspacePermissionService } from '../workspaces';
+import { StoryPermissionService } from '../story-studio/story-permission.service';
 import {
   UploadedImageProbeService,
   type UploadedImageProbeResult,
@@ -121,6 +128,7 @@ const MiB = 1024 * 1024;
 
 const UPLOAD_KIND_LABEL = {
   episode_video: 'Episode video',
+  episode_source_video: 'Episode source video',
   episode_cover: 'Episode cover image',
   ip_banner: 'IP banner',
   news_cover: 'News cover image',
@@ -163,10 +171,6 @@ const VIDEO_CONTENT_TYPES: Record<string, string> = {
   'video/mp4': 'mp4',
   'video/quicktime': 'mov',
   'video/webm': 'webm',
-};
-
-const STORY_VIDEO_CONTENT_TYPES: Record<string, string> = {
-  [STORY_CLIP_VIDEO_CONTENT_TYPE]: 'mp4',
 };
 
 const CREW_ASSET_CONTENT_TYPES: Record<string, string> = {
@@ -221,6 +225,13 @@ const REFERENCE_AUDIO_CONTENT_TYPES: Record<string, string> = {
 };
 
 const UPLOAD_KIND_POLICY: Record<UploadKind, UploadKindPolicy> = {
+  episode_source_video: {
+    contentTypes: VIDEO_CONTENT_TYPES,
+    maxBytes: EPISODE_SOURCE_MAX_BYTES,
+    assetKind: MediaAssetKind.video,
+    ttlSeconds: 900,
+    keySegment: 'episode-source-video',
+  },
   episode_video: {
     contentTypes: VIDEO_CONTENT_TYPES,
     maxBytes: EPISODE_VIDEO_MAX_BYTES,
@@ -337,6 +348,7 @@ export class MediaUploadService {
     private readonly uploadedImages: UploadedImageProbeService,
     private readonly mediaFacts: MediaAssetFactsService,
     private readonly storageRegistry: StorageProviderRegistry,
+    private readonly storyPermissions: StoryPermissionService,
   ) {}
 
   /**
@@ -378,25 +390,18 @@ export class MediaUploadService {
     }
   }
 
-  /**
-   * Issue a signed upload URL. Generic kinds are stateless and return their
-   * permanent key. Story clips delegate to the durable staging-session flow
-   * and return a staging key that is never made ready directly.
-   *
-   * Calling twice is harmless: each call mints a distinct uuid'd key. Generic
-   * abandoned keys never become DB rows; Story abandoned sessions are expired
-   * and reclaimed by their worker.
-   */
-  async createUploadUrl(
+  /** Validate scope, type and size before allocating a storage key. */
+  async prepareUpload(
     userId: string,
     input: CreateUploadUrlInputDto,
     workspaceId?: string,
-  ): Promise<CreateUploadUrlResponseDto> {
+  ) {
     const uploadScope = await this.requireUploadScope(
       userId,
       input.kind,
       input.scope?.crewId,
       workspaceId,
+      input.scope?.storyProjectId,
     );
     const policy = UPLOAD_KIND_POLICY[input.kind];
     const storage = this.storageForUpload(input.kind);
@@ -429,6 +434,29 @@ export class MediaUploadService {
       ext,
     );
 
+    return {
+      storage,
+      storageKey,
+      policy,
+      workspaceId: uploadScope.workspaceId,
+    };
+  }
+
+  async createUploadUrl(
+    userId: string,
+    input: CreateUploadUrlInputDto,
+    workspaceId?: string,
+  ): Promise<CreateUploadUrlResponseDto> {
+    if (input.kind === 'episode_source_video') {
+      throw new BadRequestException(
+        'Episode source videos require multipart upload',
+      );
+    }
+    const { storage, storageKey, policy } = await this.prepareUpload(
+      userId,
+      input,
+      workspaceId,
+    );
     // 4. Mint the signed URL. No DB write, so no transaction — if the
     //    provider is down this throws ServiceUnavailable and nothing was
     //    persisted (there's nothing to roll back).
@@ -436,7 +464,8 @@ export class MediaUploadService {
       const signed = await storage.createUploadUrl({
         storageKey,
         contentType: input.contentType,
-        maxBytes: policy.maxBytes,
+        maxBytes:
+          input.kind === 'crew_asset_file' ? input.sizeBytes : policy.maxBytes,
         expiresInSeconds: policy.ttlSeconds,
       });
 
@@ -449,6 +478,27 @@ export class MediaUploadService {
         });
       }
 
+      if (input.kind === 'crew_asset_file') {
+        const expiresAt = new Date(signed.expiresAt);
+        if (
+          !Number.isFinite(expiresAt.getTime()) ||
+          expiresAt.getTime() <= Date.now()
+        )
+          throw new ServiceUnavailableException(
+            'Storage returned an expired upload URL',
+          );
+        await this.prisma.$transaction((tx) =>
+          reserveCrewUpload(
+            tx,
+            input.scope!.crewId!,
+            userId,
+            storageKey,
+            input.sizeBytes,
+            expiresAt,
+          ),
+        );
+      }
+
       return {
         uploadUrl: signed.url,
         method: signed.method,
@@ -458,10 +508,15 @@ export class MediaUploadService {
         expiresAt: signed.expiresAt,
       };
     } catch (err) {
+      if (input.kind === 'crew_asset_file')
+        await this.prisma.$transaction((tx) =>
+          cancelCrewUpload(tx, input.scope!.crewId!, userId, storageKey),
+        );
       // Provider-down / unconfigured surfaces as ServiceUnavailable; let it
       // through unchanged so the client sees a 503 with a clear code.
       if (err instanceof ServiceUnavailableException) throw err;
       if (
+        err instanceof ConflictException ||
         err instanceof BadRequestException ||
         err instanceof PayloadTooLargeException
       ) {
@@ -477,6 +532,17 @@ export class MediaUploadService {
         message: 'media storage is temporarily unavailable',
       });
     }
+  }
+
+  async cancelUpload(userId: string, input: ConfirmUploadInputDto) {
+    if (input.kind !== 'crew_asset_file' || !input.scope?.crewId)
+      throw new BadRequestException('Crew upload scope required');
+    // Ownership is checked in the reservation row; cancellation remains possible
+    // even when membership was revoked during the upload.
+    await this.prisma.$transaction((tx) =>
+      cancelCrewUpload(tx, input.scope!.crewId!, userId, input.storageKey),
+    );
+    return { cancelled: true };
   }
 
   /**
@@ -501,9 +567,50 @@ export class MediaUploadService {
       input.kind,
       input.scope?.crewId,
       workspaceId,
+      input.scope?.storyProjectId,
     );
     const policy = UPLOAD_KIND_POLICY[input.kind];
-    const storage = this.storageForUpload(input.kind);
+    let storage = this.storageForUpload(input.kind);
+    let sourceLocation: StorageObjectRef | undefined;
+    if (input.kind === 'episode_source_video') {
+      const session = await this.prisma.episodeUpload.findUnique({
+        where: { storageKey: input.storageKey },
+      });
+      if (
+        !session ||
+        session.userId !== userId ||
+        session.workspaceId !== uploadScope.workspaceId ||
+        !['uploaded', 'completed'].includes(session.status) ||
+        !session.bucket
+      ) {
+        throw new BadRequestException('Episode upload has not been completed');
+      }
+      const pinned = this.storageRegistry.forProvider(session.provider);
+      if (!pinned)
+        throw new ServiceUnavailableException(
+          'Episode upload storage is unavailable',
+        );
+      storage = pinned;
+      sourceLocation = {
+        storageKey: session.storageKey,
+        bucket: session.bucket,
+        region: session.region,
+      };
+      const head = await storage.headStoredObject(sourceLocation);
+      if (
+        !head.exists ||
+        head.sizeBytes !== Number(session.sizeBytes) ||
+        head.contentType !== session.contentType
+      ) {
+        throw new BadRequestException(
+          'Uploaded video size or content type does not match the upload session',
+        );
+      }
+    }
+    const serializeConfirmation =
+      Boolean(policy.verifiedImageFinalKeySegment) ||
+      input.kind === 'episode_source_video' ||
+      input.kind === 'crew_asset_file';
     const storageKey = input.storageKey;
 
     // 1. Ownership: the key MUST sit under this user's scope for this kind.
@@ -528,7 +635,9 @@ export class MediaUploadService {
     // a later PUT that overwrites the bytes we just inspected.
     const persistedStorageKey = policy.verifiedImageFinalKeySegment
       ? verifiedImageFinalKey(storageKey, policy)
-      : storageKey;
+      : input.kind === 'crew_asset_file'
+        ? storageKey.replace('/crew-asset-file/', '/crew-asset-final/')
+        : storageKey;
 
     // 2. Idempotency: if a live asset already exists for this exact key,
     //    return it. Confirm is safe to call twice (double-click, retry); we
@@ -601,6 +710,13 @@ export class MediaUploadService {
       };
     }
 
+    if (input.kind === 'crew_asset_file')
+      await requireCrewReservation(
+        this.prisma,
+        input.scope!.crewId!,
+        userId,
+        storageKey,
+      );
     let truth = policy.verifiedImageFinalKeySegment
       ? await this.finalizeVerifiedImage(
           userId,
@@ -615,7 +731,12 @@ export class MediaUploadService {
           storageKey,
           input.contentType,
           storage,
+          sourceLocation,
         );
+    if (input.kind === 'crew_asset_file') {
+      if (truth.sizeBytes == null || truth.sizeBytes > CREW_ASSET_MAX_BYTES)
+        throw mediaFileTooLargeError(input.kind, CREW_ASSET_MAX_BYTES);
+    }
     const confirmedAssetKind =
       input.kind === 'crew_asset_file'
         ? mediaKindFromContentType(truth.contentType)
@@ -643,21 +764,126 @@ export class MediaUploadService {
     // 5. Write the ACTIVE asset. sizeBytes + contentType come from the HEAD
     //    (storage truth), never the client. createdByUserId + status power
     //    the future quota query and lifecycle.
-    const { asset, variantId } = await this.prisma.$transaction(async (tx) => {
-      if (policy.verifiedImageFinalKeySegment) {
-        // `media_assets.object_key` is indexed but intentionally not globally
-        // unique across all import paths. Serialize this exact final identity,
-        // then re-read under the lock so two confirm requests converge onto one
-        // asset without a check-then-create race.
-        await tx.$executeRaw`
+    const { asset, variantId } = await this.prisma.$transaction(
+      async (tx) => {
+        if (input.kind === 'crew_asset_file')
+          await lockCrewStorage(tx, input.scope!.crewId!);
+        if (serializeConfirmation) {
+          // `media_assets.object_key` is indexed but intentionally not globally
+          // unique across all import paths. Serialize this exact final identity,
+          // then re-read under the lock so two confirm requests converge onto one
+          // asset without a check-then-create race.
+          await tx.$executeRaw`
           SELECT pg_advisory_xact_lock(
             hashtext(${`media-verified-image-confirm:${persistedStorageKey}`})::bigint
           )
         `;
-      }
-      const converged = policy.verifiedImageFinalKeySegment
-        ? await tx.mediaAsset.findFirst({
-            where: { objectKey: persistedStorageKey, deletedAt: null },
+        }
+        const converged = serializeConfirmation
+          ? await tx.mediaAsset.findFirst({
+              where: { objectKey: persistedStorageKey, deletedAt: null },
+              select: {
+                id: true,
+                storageProvider: true,
+                bucket: true,
+                region: true,
+                objectKey: true,
+                externalUrl: true,
+                contentType: true,
+                sizeBytes: true,
+                width: true,
+                height: true,
+                durationSeconds: true,
+                checksumSha256: true,
+                workspaceId: true,
+                metadata: true,
+                status: true,
+              },
+            })
+          : null;
+        if (
+          converged &&
+          !this.assetMatchesUploadScope(converged, uploadScope)
+        ) {
+          throw new ForbiddenException({
+            code: 'MEDIA_ASSET_SCOPE_MISMATCH',
+            message: 'the existing media asset belongs to a different scope',
+          });
+        }
+        if (converged && policy.verifiedImageFinalKeySegment)
+          assertReadyVerifiedImageLedger(converged);
+        if (!converged && input.kind === 'crew_asset_file') {
+          await completeCrewUpload(
+            tx,
+            input.scope!.crewId!,
+            userId,
+            storageKey,
+            Number(truth.sizeBytes!),
+          );
+          const promoted = await storage.promoteObject({
+            source: { storageKey, bucket: truth.bucket!, region: truth.region },
+            destination: {
+              storageKey: persistedStorageKey,
+              bucket: truth.bucket!,
+              region: truth.region,
+            },
+            expectedSizeBytes: Number(truth.sizeBytes),
+            contentType: truth.contentType,
+          });
+          if (
+            promoted.storageKey !== persistedStorageKey ||
+            promoted.bucket !== truth.bucket ||
+            promoted.region !== truth.region ||
+            promoted.provider !== prismaProviderToId(truth.storageProvider) ||
+            promoted.sizeBytes !== Number(truth.sizeBytes) ||
+            promoted.contentType !== truth.contentType
+          )
+            throw new ServiceUnavailableException(
+              'Crew storage promotion returned a different object identity',
+            );
+          truth = { ...truth, objectKey: persistedStorageKey };
+        }
+        const created =
+          converged ??
+          (await tx.mediaAsset.create({
+            data: {
+              kind: confirmedAssetKind,
+              storageProvider: truth.storageProvider,
+              bucket: truth.bucket,
+              region: truth.region,
+              objectKey: truth.objectKey,
+              contentType: truth.contentType,
+              sizeBytes: truth.sizeBytes,
+              width: truth.width,
+              height: truth.height,
+              durationSeconds: truth.durationSeconds,
+              checksumSha256: truth.checksumSha256,
+              // Direct-to-storage uploads are private until a save links them to
+              // a public feature row; the read-side resolves URLs from identity
+              // regardless of this flag, so this is just intent.
+              visibility: MediaAssetVisibility.private,
+              // `ready` is this schema's ACTIVE/usable state (what certificates +
+              // ip-commerce write and what the read side gates on). The asset is
+              // born active here — the old `uploading` pre-create state, the only
+              // thing that ever produced orphans, is no longer written at all.
+              status: MediaAssetStatus.ready,
+              source: MediaAssetSource.user_upload,
+              createdByUserId: userId,
+              workspaceId: uploadScope.workspaceId,
+              metadata: {
+                uploadKind: input.kind,
+                ...(uploadScope.storyProjectId
+                  ? { storyProjectId: uploadScope.storyProjectId }
+                  : {}),
+                ...(uploadScope.crewId ? { crewId: uploadScope.crewId } : {}),
+                ...(policy.verifiedImageFinalKeySegment
+                  ? {
+                      storagePhase: 'immutable_final',
+                      inspectedBy: 'server_byte_probe',
+                    }
+                  : {}),
+              },
+            },
             select: {
               id: true,
               storageProvider: true,
@@ -672,100 +898,39 @@ export class MediaUploadService {
               durationSeconds: true,
               checksumSha256: true,
               workspaceId: true,
-              metadata: true,
               status: true,
             },
-          })
-        : null;
-      if (converged && !this.assetMatchesUploadScope(converged, uploadScope)) {
-        throw new ForbiddenException({
-          code: 'MEDIA_ASSET_SCOPE_MISMATCH',
-          message: 'the existing media asset belongs to a different scope',
-        });
-      }
-      if (converged) assertReadyVerifiedImageLedger(converged);
-      const created =
-        converged ??
-        (await tx.mediaAsset.create({
-          data: {
-            kind: confirmedAssetKind,
-            storageProvider: truth.storageProvider,
-            bucket: truth.bucket,
-            region: truth.region,
-            objectKey: truth.objectKey,
-            contentType: truth.contentType,
-            sizeBytes: truth.sizeBytes,
-            width: truth.width,
-            height: truth.height,
-            durationSeconds: truth.durationSeconds,
-            checksumSha256: truth.checksumSha256,
-            // Direct-to-storage uploads are private until a save links them to
-            // a public feature row; the read-side resolves URLs from identity
-            // regardless of this flag, so this is just intent.
-            visibility: MediaAssetVisibility.private,
-            // `ready` is this schema's ACTIVE/usable state (what certificates +
-            // ip-commerce write and what the read side gates on). The asset is
-            // born active here — the old `uploading` pre-create state, the only
-            // thing that ever produced orphans, is no longer written at all.
-            status: MediaAssetStatus.ready,
-            source: MediaAssetSource.user_upload,
-            createdByUserId: userId,
-            workspaceId: uploadScope.workspaceId,
-            metadata: policy.verifiedImageFinalKeySegment
+          }));
+        const original = await ensureOriginalMediaPlacement(tx, {
+          assetId: created.id,
+          storageProvider: created.storageProvider,
+          bucket: created.bucket,
+          region: created.region,
+          objectKey: created.objectKey,
+          externalUrl: created.externalUrl,
+          contentType: created.contentType,
+          sizeBytes: created.sizeBytes,
+          width: created.width,
+          height: created.height,
+          durationSeconds: created.durationSeconds,
+          checksumSha256: created.checksumSha256,
+          metadata: {
+            source: 'direct_upload',
+            uploadKind: input.kind,
+            ...(policy.verifiedImageFinalKeySegment
               ? {
-                  uploadKind: input.kind,
-                  ...(uploadScope.crewId ? { crewId: uploadScope.crewId } : {}),
                   storagePhase: 'immutable_final',
                   inspectedBy: 'server_byte_probe',
                 }
-              : {
-                  uploadKind: input.kind,
-                  ...(uploadScope.crewId ? { crewId: uploadScope.crewId } : {}),
-                },
+              : {}),
           },
-          select: {
-            id: true,
-            storageProvider: true,
-            bucket: true,
-            region: true,
-            objectKey: true,
-            externalUrl: true,
-            contentType: true,
-            sizeBytes: true,
-            width: true,
-            height: true,
-            durationSeconds: true,
-            checksumSha256: true,
-            workspaceId: true,
-            status: true,
-          },
-        }));
-      const original = await ensureOriginalMediaPlacement(tx, {
-        assetId: created.id,
-        storageProvider: created.storageProvider,
-        bucket: created.bucket,
-        region: created.region,
-        objectKey: created.objectKey,
-        externalUrl: created.externalUrl,
-        contentType: created.contentType,
-        sizeBytes: created.sizeBytes,
-        width: created.width,
-        height: created.height,
-        durationSeconds: created.durationSeconds,
-        checksumSha256: created.checksumSha256,
-        metadata: {
-          source: 'direct_upload',
-          uploadKind: input.kind,
-          ...(policy.verifiedImageFinalKeySegment
-            ? {
-                storagePhase: 'immutable_final',
-                inspectedBy: 'server_byte_probe',
-              }
-            : {}),
-        },
-      });
-      return { asset: created, variantId: original.variantId };
-    });
+        });
+        return { asset: created, variantId: original.variantId };
+      },
+      input.kind === 'crew_asset_file'
+        ? { timeout: 120000, maxWait: 10000 }
+        : undefined,
+    );
 
     // CN videos: kick off the ABR-HLS transcode now that the asset is active.
     // Only fires for video on aliyun_oss; everything else plays the mp4.
@@ -791,18 +956,22 @@ export class MediaUploadService {
     storageKey: string,
     requestedContentType: string,
     storage: OutputStorageService = this.storage,
+    sourceLocation?: StorageObjectRef,
   ): Promise<ConfirmedUploadTruth> {
-    const head = await this.headUploadObject(userId, storageKey, storage);
+    const head = sourceLocation
+      ? await storage.headStoredObject(sourceLocation)
+      : await this.headUploadObject(userId, storageKey, storage);
     if (!head.exists) throw mediaObjectNotFound();
 
     // Generic objects retain their signed permanent key. Their cache metadata
     // is provider bookkeeping, not validation, and remains best-effort.
     try {
-      await storage.setCacheControl(
-        storageKey,
-        IMMUTABLE_STORAGE_CACHE_CONTROL,
-        head.contentType ?? requestedContentType,
-      );
+      if (!sourceLocation)
+        await storage.setCacheControl(
+          storageKey,
+          IMMUTABLE_STORAGE_CACHE_CONTROL,
+          head.contentType ?? requestedContentType,
+        );
     } catch (err) {
       this.logger.warn(
         `confirmUpload setCacheControl failed key=${storageKey}: ${
@@ -971,10 +1140,9 @@ export class MediaUploadService {
   }
 
   /**
-   * Generic uploads are either explicitly workspace-owned or explicitly
-   * personal. Encoding that choice into the signed object key binds issue and
-   * confirm without a mutable upload-session row. A caller cannot issue under
-   * one workspace and confirm the same bytes under another.
+   * Bind upload issue and confirmation to the same owner and scope without an
+   * upload-session row. Story uploads derive their workspace from the project
+   * and include its identity, so confirmation cannot switch projects.
    */
   private buildUploadScopePrefix(
     keySegment: string,
@@ -989,7 +1157,31 @@ export class MediaUploadService {
     kind: UploadKind,
     crewId: string | undefined,
     workspaceHeader: string | undefined,
+    storyProjectId?: string,
   ): Promise<UploadScope> {
+    if (storyProjectId) {
+      if (
+        crewId !== undefined ||
+        kind === 'crew_asset_file' ||
+        kind === 'episode_source_video'
+      ) {
+        throw new BadRequestException({
+          code: 'MEDIA_SCOPE_CONFLICT',
+          message: 'This upload kind cannot declare scope.storyProjectId',
+        });
+      }
+      const { project } = await this.storyPermissions.requireProject(
+        userId,
+        storyProjectId,
+        'story.edit',
+      );
+      return {
+        workspaceId: project.workspaceId,
+        crewId: null,
+        storyProjectId: project.id,
+        keyScope: `workspace-${project.workspaceId}/story-${project.id}`,
+      };
+    }
     if (kind === 'crew_asset_file') {
       if (!crewId) {
         throw new BadRequestException({
@@ -1070,6 +1262,7 @@ export class MediaUploadService {
       asset.metadata && typeof asset.metadata === 'object'
         ? (asset.metadata as Record<string, unknown>)
         : {};
+    if (metadata.storyProjectId !== scope.storyProjectId) return false;
     return scope.crewId
       ? metadata.crewId === scope.crewId
       : metadata.crewId === undefined;
@@ -1112,6 +1305,7 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface UploadScope {
+  storyProjectId?: string;
   workspaceId: string | null;
   crewId: string | null;
   keyScope: string;

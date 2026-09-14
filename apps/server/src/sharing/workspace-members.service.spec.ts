@@ -3,7 +3,6 @@ import {
   WorkspaceMemberAccessScope,
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
-  WorkspaceType,
 } from '@prisma/client';
 import type { AuthUser } from '../auth';
 import { EntitlementService } from '../entitlements/entitlement.service';
@@ -15,7 +14,7 @@ const COOKIE = 'satoken=abc';
 
 /**
  * The seat policy is resolved by the REAL EntitlementService here: what these
- * cover is that a personal workspace reaches the seat gate at all, and that the
+ * cover is that a default workspace reaches the seat gate at all, and that the
  * gate is the only thing that can refuse it.
  */
 function build() {
@@ -34,7 +33,7 @@ function build() {
     entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
     billingMembershipPlan: { findMany: jest.fn().mockResolvedValue([]) },
     workspace: {
-      findUnique: jest.fn().mockResolvedValue({ type: WorkspaceType.personal }),
+      findUnique: jest.fn().mockResolvedValue({ defaultForUserId: 'user-1' }),
     },
     workspaceMember: {
       create: memberCreate,
@@ -51,7 +50,7 @@ function build() {
       findFirst: jest.fn().mockResolvedValue({
         id: WORKSPACE_ID,
         name: 'My workspace',
-        type: WorkspaceType.personal,
+        defaultForUserId: 'user-1',
         ownerUserId: ACTOR.userId,
       }),
     },
@@ -92,7 +91,7 @@ function build() {
   };
 }
 
-describe('WorkspaceMembersService.add on a personal workspace', () => {
+describe('WorkspaceMembersService.add on a default workspace', () => {
   it('adds a viewer without consuming a creator seat', async () => {
     const t = build();
     const input = { account: 'guest@example.com', role: 'viewer' } as const;
@@ -113,20 +112,21 @@ describe('WorkspaceMembersService.add on a personal workspace', () => {
     expect(t.audit.record).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a second creator in a no-plan personal workspace', async () => {
+  it('adds a second creator in a no-plan workspace during open collaboration', async () => {
     const t = build();
     const input = { account: 'guest@example.com', role: 'editor' } as const;
 
     await expect(
       t.service.add(WORKSPACE_ID, ACTOR, COOKIE, input),
-    ).rejects.toMatchObject({
-      response: {
-        code: 'WORKSPACE_CREATOR_SEAT_LIMIT_REACHED',
-        includedSeats: 1,
-      },
-    });
-    expect(t.memberCreate).not.toHaveBeenCalled();
-    expect(t.audit.record).not.toHaveBeenCalled();
+    ).resolves.toMatchObject({ memberId: 'wm-new', userId: 'guest-1' });
+    expect(t.memberCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          role: WorkspaceMemberRole.editor,
+        }) as unknown,
+      }),
+    );
+    expect(t.audit.record).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -174,9 +174,9 @@ describe('WorkspaceMembersService.remove', () => {
             action: 'role_changed',
             member: expect.objectContaining({
               role: WorkspaceMemberRole.viewer,
-            }),
-          }),
-        }),
+            }) as unknown,
+          }) as unknown,
+        }) as unknown,
       }),
     );
     expect(t.realtime.revokeWorkspaceAccess).toHaveBeenCalledWith(

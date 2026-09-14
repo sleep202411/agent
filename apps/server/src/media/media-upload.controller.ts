@@ -64,6 +64,16 @@ export class MediaUploadController {
     return this.svc.createUploadUrl(user.userId, body, workspaceHeader);
   }
 
+  @Post('cancel-upload')
+  @HttpCode(HttpStatus.OK)
+  cancelUpload(
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(ConfirmUploadSchema))
+    body: ConfirmUploadInputDto,
+  ) {
+    return this.svc.cancelUpload(user.userId, body);
+  }
+
   @Post('confirm')
   @HttpCode(HttpStatus.OK)
   async confirmUpload(
@@ -72,7 +82,13 @@ export class MediaUploadController {
     @Body(new ZodValidationPipe(ConfirmUploadSchema))
     body: ConfirmUploadInputDto,
   ): Promise<ConfirmUploadResponseDto> {
-    return this.svc.confirmUpload(user.userId, body, workspaceHeader);
+    try {
+      return await this.svc.confirmUpload(user.userId, body, workspaceHeader);
+    } catch (error) {
+      if (body.kind === 'crew_asset_file')
+        await this.svc.cancelUpload(user.userId, body);
+      throw error;
+    }
   }
 
   @Post('asset-readiness/status')
@@ -86,6 +102,7 @@ export class MediaUploadController {
       user.userId,
       body.capability,
       body.assetIds,
+      { documentId: body.documentId },
     );
     return { assets };
   }
@@ -103,6 +120,7 @@ export class MediaUploadController {
       user.userId,
       params.assetId,
       body.capability,
+      { documentId: body.documentId },
     );
     return { asset };
   }

@@ -40,6 +40,8 @@ const PUBLIC_PATTERNS: RegExp[] = [
   // The page itself prompts for sign-in before it will let anyone join.
   /^\/crew-invite\/[^/]+(\/|$)/,
   /^\/ips(\/|$)/,
+  // Room-number detail links are public; keep nested management paths gated.
+  /^\/ip\/[^/]+\/?$/,
   // TV consumes the same public IP catalog as the plaza.
   /^\/tv\/?$/,
   // Keep the frozen Jinling interactive-film showcase public. Published

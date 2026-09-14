@@ -16,9 +16,21 @@ import type { NotificationDTO } from "@repo/shared/notifications";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+vi.mock("@/app/(site)/crews/_hooks/use-users", () => ({
+  useUserDisplays: () => new Map([["actor-1", { nickname: "Isaac" }]]),
+}));
+
 const nav = vi.hoisted(() => ({ push: vi.fn() }));
 const i18n = vi.hoisted(() => ({ locale: "en-US" }));
-const dataHooks = vi.hoisted(() => ({ feed: vi.fn(), read: vi.fn() }));
+const dataHooks = vi.hoisted(() => ({
+  feed: vi.fn(),
+  read: vi.fn(),
+  next: vi.fn(),
+  nextError: false,
+  refreshError: false,
+  loaded: true,
+  refetch: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: nav.push }),
@@ -29,7 +41,11 @@ vi.mock("@/src/i18n/i18n", () => ({
   useTranslations: () => (key: string, vars?: Record<string, string | number>) =>
     Object.entries(vars ?? {}).reduce(
       (value, [name, replacement]) => value.replaceAll(`{${name}}`, String(replacement)),
-      key
+      key.endsWith("bodyWithActor")
+        ? "Changed by {actor}"
+        : key === "performedBy"
+          ? "By {name}"
+          : key
     ),
 }));
 
@@ -54,11 +70,15 @@ vi.mock("@/src/lib/notifications", async () => {
     useNotificationFeed: (size: number, filter: string) => {
       dataHooks.feed(size, filter);
       return {
-        data: { pages: [{ items: [ITEM] }] },
+        data: dataHooks.loaded ? { pages: [{ items: [ITEM] }] } : undefined,
         isLoading: false,
-        hasNextPage: false,
+        isError: dataHooks.nextError || dataHooks.refreshError,
+        isFetchNextPageError: dataHooks.nextError,
+        error: dataHooks.nextError || dataHooks.refreshError ? new Error("Page unavailable") : null,
+        refetch: dataHooks.refetch,
+        hasNextPage: dataHooks.nextError,
         isFetchingNextPage: false,
-        fetchNextPage: vi.fn(),
+        fetchNextPage: dataHooks.next,
       };
     },
     useUnreadCount: () => ({ data: 1 }),
@@ -81,6 +101,11 @@ function rowButton(): HTMLButtonElement {
 }
 
 beforeEach(() => {
+  dataHooks.nextError = false;
+  dataHooks.refreshError = false;
+  dataHooks.loaded = true;
+  dataHooks.refetch.mockClear();
+  dataHooks.next.mockClear();
   nav.push.mockClear();
   dataHooks.read.mockClear();
   dataHooks.feed.mockClear();
@@ -125,4 +150,68 @@ it("opening an unread notification marks its own id as read", () => {
   act(() => root.render(<NotificationsFeed />));
   act(() => rowButton().click());
   expect(dataHooks.read).toHaveBeenCalledWith(ITEM.id);
+});
+
+it("shows the resolved actor name for a task notification", () => {
+  const original = ITEM.meta;
+  ITEM.meta = { ...original, actorUserId: "actor-1", taskTitle: "Storyboard" };
+  try {
+    act(() => root.render(<NotificationsFeed />));
+    expect(container.textContent).toContain("Changed by Isaac");
+  } finally {
+    ITEM.meta = original;
+  }
+});
+
+it("identifies a comment author while preserving the comment text", () => {
+  const original = { ...ITEM };
+  ITEM.type = "crew.task.commented";
+  ITEM.meta = {
+    actorUserId: "actor-1",
+    taskTitle: "Storyboard",
+    commentBody: "Please revise the final frame",
+  };
+  try {
+    act(() => root.render(<NotificationsFeed />));
+    expect(container.textContent).toContain("By Isaac");
+    expect(container.textContent).toContain("Please revise the final frame");
+  } finally {
+    Object.assign(ITEM, original);
+  }
+});
+
+it("keeps loaded notifications visible when pagination fails and retries that page", () => {
+  dataHooks.nextError = true;
+  act(() => root.render(<NotificationsFeed />));
+  expect(rowButton()).toBeDefined();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Page unavailable");
+  const retry = [...container.querySelectorAll("button")].find(
+    (item) => item.textContent === "retry"
+  );
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(dataHooks.next).toHaveBeenCalledOnce();
+});
+
+it("preserves loaded notifications after a background refresh fails and retries the refresh", () => {
+  dataHooks.refreshError = true;
+  act(() => root.render(<NotificationsFeed />));
+  expect(rowButton()).toBeDefined();
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Page unavailable");
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "retry");
+  expect(retry).toBeDefined();
+  act(() => retry!.click());
+  expect(dataHooks.refetch).toHaveBeenCalledOnce();
+  expect(dataHooks.next).not.toHaveBeenCalled();
+});
+
+it("retains initial-load error recovery when no notifications have loaded", () => {
+  dataHooks.refreshError = true;
+  dataHooks.loaded = false;
+  act(() => root.render(<NotificationsFeed />));
+  expect(container.textContent).not.toContain(ITEM.title);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Page unavailable");
+  const retry = [...container.querySelectorAll("button")].find((b) => b.textContent === "retry");
+  act(() => retry!.click());
+  expect(dataHooks.refetch).toHaveBeenCalledOnce();
 });

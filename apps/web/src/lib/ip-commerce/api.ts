@@ -1,5 +1,9 @@
 import { api } from "@/src/lib/api";
 import { uploadFileViaSignedUrl } from "@/src/lib/media-upload";
+import {
+  uploadEpisodeVideo,
+  type EpisodeUploadStage,
+} from "@/app/(site)/ip-studio/_lib/episode-upload";
 
 export type IpTargetType = "ip" | "episode";
 export type IpCommerceAccess =
@@ -125,6 +129,7 @@ export interface IpEngagementMutationResult {
 
 export interface IpCommerceIp {
   id: string;
+  roomNumber: string;
   slug: string | null;
   status: string;
   listingVisibility: string;
@@ -183,6 +188,7 @@ export interface IpCommerceIp {
 
 export interface IpCreatorIp {
   id: string;
+  roomNumber: string;
   title: string;
   summary: string;
   description: string | null;
@@ -377,40 +383,6 @@ export interface IpCreatorCommerceOverview {
   };
   recentOrders: IpCreatorCommerceOrder[];
   recentEntitlements: IpCreatorCommerceEntitlement[];
-}
-
-export type IpCreatorRevenueEntryType = "revenue_share" | "refund_reversal" | "manual_adjustment";
-
-export type IpCreatorRevenueEntryStatus = "pending" | "posted" | "voided";
-
-export interface IpCreatorRevenueEntry {
-  id: string;
-  ip: {
-    id: string;
-    title: string;
-    status: string;
-    listingVisibility: string;
-    localization?: IpCommerceLocalizationMeta;
-  } | null;
-  orderNo: string | null;
-  entryType: IpCreatorRevenueEntryType;
-  status: IpCreatorRevenueEntryStatus;
-  amount: string;
-  /** Sale total this credit came from. The true sale fraction is
-   *  amount / sourceAmount; `poolShareBps` is only the share of the creator
-   *  pool, NOT of the whole sale. */
-  sourceAmount: string | null;
-  poolShareBps: number | null;
-  createdAt: string;
-}
-
-export interface IpCreatorRevenue {
-  currency: "community_point";
-  withdrawableBalance: string;
-  lifetimeEarned: string;
-  note: string;
-  entries: IpCreatorRevenueEntry[];
-  nextCursor: string | null;
 }
 
 export type IpContributorRole =
@@ -649,6 +621,7 @@ export interface UploadIpMediaInput {
   onProgress?: (percent: number) => void;
   /** Abort the in-flight direct-to-storage upload. */
   signal?: AbortSignal;
+  onStage?: (stage: EpisodeUploadStage) => void;
 }
 
 export interface DeleteIpAssetInput {
@@ -744,6 +717,7 @@ export interface IpCommerceDiscoveryItem {
   ipId: string;
   ip: {
     id: string;
+    roomNumber: string;
     title: string;
     status: string;
     listingVisibility: string;
@@ -761,12 +735,16 @@ export interface IpCommerceDiscoveryItem {
   ipCard: IpCommerceIp | null;
 }
 
-export function listIpCommerceDiscovery(params: {
-  placementKey: IpDiscoveryPlacementKey;
-  locale?: string;
-}) {
+export function listIpCommerceDiscovery(
+  params: {
+    placementKey: IpDiscoveryPlacementKey;
+    locale?: string;
+  },
+  signal?: AbortSignal
+) {
   return api.get<{ items: IpCommerceDiscoveryItem[] }>("/aurora/ip-commerce/discovery", {
     params,
+    signal,
   });
 }
 
@@ -866,10 +844,6 @@ export function transferIpOwner(input: TransferIpOwnerInput) {
   );
 }
 
-export function getMyCreatorRevenue(params?: { locale?: string; cursor?: string; limit?: number }) {
-  return api.get<IpCreatorRevenue>("/aurora/ip-commerce/me/revenue", { params });
-}
-
 export function listMyIpCommerceIpAssets(
   ipId: string,
   params?: { purpose?: IpCommerceLibraryAsset["purpose"] }
@@ -941,11 +915,20 @@ function mapToUploadKind(input: UploadIpMediaInput): string {
  * coverAssetId`).
  */
 export async function uploadIpCommerceMedia(input: UploadIpMediaInput) {
-  const { mediaAssetId } = await uploadFileViaSignedUrl(input.file, {
-    kind: mapToUploadKind(input),
-    onProgress: input.onProgress,
-    signal: input.signal,
-  });
+  const { mediaAssetId } =
+    input.purpose === "episode_media" && input.kind === "video"
+      ? await uploadEpisodeVideo(input.file, {
+          scopeKey: input.ipId,
+          signal: input.signal ?? new AbortController().signal,
+          onProgress: input.onProgress,
+          onStage: input.onStage,
+        })
+      : await uploadFileViaSignedUrl(input.file, {
+          kind: mapToUploadKind(input),
+          onProgress: input.onProgress,
+          signal: input.signal,
+        });
+  input.signal?.throwIfAborted();
 
   const params = new URLSearchParams({
     kind: input.kind,
@@ -1085,10 +1068,13 @@ export async function searchIpCommerceUsers(query: string): Promise<IpUserSearch
   return Array.isArray(res.users) ? res.users : [];
 }
 
-export function getIpCommerceIp(ipId: string, params?: { locale?: string }) {
-  return api.get<{ ip: IpCommerceIp }>(`/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}`, {
-    params,
-  });
+export function getIpCommerceIp(ipReference: string, params?: { locale?: string }) {
+  return api.get<{ ip: IpCommerceIp }>(
+    `/aurora/ip-commerce/ips/${encodeURIComponent(ipReference)}`,
+    {
+      params,
+    }
+  );
 }
 
 export function getIpAccess(ipId: string, params?: { episodeIds?: string[]; locale?: string }) {

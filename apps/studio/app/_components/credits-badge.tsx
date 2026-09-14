@@ -1,24 +1,26 @@
 "use client";
 
+import { useWorkspace } from "./workspace-context";
+
 import { useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
-import { IconBolt } from "@tabler/icons-react";
+import { useLocale, useTranslations } from "next-intl";
+import { IconBolt, IconInfoCircle } from "@tabler/icons-react";
 import { api } from "@/lib/api";
 import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import { getAssetsRealtimeKernel } from "@/lib/canvas-authoring/assets-realtime-kernel";
 import { openSettings } from "@/lib/settings-hash";
 import { cn } from "@/lib/utils";
 import { GlassRim } from "@/components/ui/glass-rim";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "./auth-provider";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
-interface WalletLedgerData {
-  accounts?: Array<{
-    status: string;
-    availableBalance: string;
-    heldBalance?: string;
-  }>;
-  nextExpiry?: { amount: string; expiresAt: string } | null;
+interface ComputeBalanceData {
+  available: string;
+  held: string;
+  total: string;
+  nextExpiry: { amount: string; expiresAt: string } | null;
 }
 
 export interface ComputeWalletBalance {
@@ -37,51 +39,32 @@ export const computeWalletBalanceQueryKey = ["fizzstudio", "compute-billing", "b
  * after a generation or a recharge) still invalidates every workspace's balance.
  */
 export function computeWalletBalanceKey(workspaceId: string | null | undefined) {
-  return [...computeWalletBalanceQueryKey, workspaceId ?? "personal"] as const;
-}
-
-function bigintFromString(value: string | undefined): bigint {
-  if (!value || !/^-?\d+$/.test(value)) return BigInt(0);
-  return BigInt(value);
+  return [...computeWalletBalanceQueryKey, workspaceId ?? null] as const;
 }
 
 async function getComputeWalletBalance(
   workspaceId: string | null | undefined
 ): Promise<ComputeWalletBalance> {
-  const data = await api.get<WalletLedgerData>("/aurora/billing/wallet-ledger", {
-    params: { currency: "compute_point", balanceKind: "consumable", limit: 1 },
-    // Scope the read to the active workspace's compute pot (every workspace owns
-    // its own); with no active workspace the server reads the personal pot.
+  const data = await api.get<ComputeBalanceData>("/aurora/billing/compute-balance", {
+    // Never inherit another tab's active workspace while the payer resolves.
+    requestScope: "user",
     headers: workspaceId ? { "x-fizz-workspace-id": workspaceId } : undefined,
   });
-  const active = (data.accounts ?? []).filter((account) => account.status === "active");
-  const available = active.reduce(
-    (sum, account) => sum + bigintFromString(account.availableBalance),
-    BigInt(0)
-  );
-  const held = active.reduce(
-    (sum, account) => sum + bigintFromString(account.heldBalance),
-    BigInt(0)
-  );
-  const nextExpiry =
-    data.nextExpiry && /^\d+$/.test(data.nextExpiry.amount)
-      ? {
-          amount: BigInt(data.nextExpiry.amount),
-          expiresAt: data.nextExpiry.expiresAt,
-        }
-      : null;
-  return { available, held, total: available + held, nextExpiry };
+  return {
+    available: BigInt(data.available),
+    held: BigInt(data.held),
+    total: BigInt(data.total),
+    nextExpiry: data.nextExpiry
+      ? { amount: BigInt(data.nextExpiry.amount), expiresAt: data.nextExpiry.expiresAt }
+      : null,
+  };
 }
 
-export function useComputeWalletBalance(enabled = true) {
+export function useComputeWalletBalance(enabled = true, explicitWorkspaceId?: string) {
   const { user } = useAuth();
-  // Scopes to the pot the CURRENT USER pays from FOR THE OPEN PROJECT (mirrors
-  // the server payer rule, keyed on the project's workspace): a team project
-  // reads the shared team pot; a personal project reads the caller's own
-  // personal pot — including when collaborating in someone else's personal
-  // project, where reading the host's wallet would 403. Outside any project it
-  // falls back to the global billing workspace.
-  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
+  // A project spends from its owning workspace; other surfaces use the active workspace.
+  const payerWorkspaceId = useProjectPayerWorkspace()?.id ?? null;
+  const workspaceId = explicitWorkspaceId ?? payerWorkspaceId;
   return useQuery({
     queryKey: computeWalletBalanceKey(workspaceId),
     queryFn: () => getComputeWalletBalance(workspaceId),
@@ -89,7 +72,7 @@ export function useComputeWalletBalance(enabled = true) {
     // No interval poll: wallet_changed realtime pushes drive updates (see
     // useWalletRealtime). refetchOnWindowFocus stays as a cheap missed-push backstop.
     refetchOnWindowFocus: true,
-    enabled: enabled && Boolean(user),
+    enabled: enabled && Boolean(user) && Boolean(workspaceId),
   });
 }
 
@@ -122,44 +105,76 @@ function useWalletRealtime() {
 }
 
 /** Compute-credits balance pill (header + canvas chrome). */
-export function CreditsBadge({ className }: { className?: string }) {
+export function CreditsBadge({
+  className,
+  onClick,
+  variant = "ghost",
+}: {
+  className?: string;
+  onClick?: () => void;
+  variant?: "ghost" | "secondary";
+}) {
   const t = useTranslations("shell");
-  // Tag the pill "team" only when the pot funding this context is a real TEAM
-  // pot — i.e. the open project lives in a team workspace (or, outside a
-  // project, a team workspace is active). Keyed on the same payer resolution as
-  // the balance so the tag and the number never disagree.
-  const isTeam = useProjectPayerWorkspace()?.type === "team";
+  const locale = useLocale();
+  const billingWorkspace = useProjectPayerWorkspace();
+  const { setActiveWorkspaceId } = useWorkspace();
   useWalletRealtime();
-  const { data } = useComputeWalletBalance();
-  const title =
-    data != null
-      ? t("credits.tooltipDetailed", {
-          available: data.available.toLocaleString(),
-          held: data.held.toLocaleString(),
-          total: data.total.toLocaleString(),
-        })
-      : t("credits.tooltip");
+  const { data, error } = useComputeWalletBalance(Boolean(billingWorkspace));
+  const description = t("credits.workspaceHint");
 
   return (
-    <button
-      type="button"
-      onClick={() => openSettings("billing")}
-      aria-label={t("credits.manage")}
-      title={title}
-      className={cn(
-        className ??
-          "flex h-9 items-center gap-1.5 rounded-full bg-white/[0.06] px-3.5 text-sm font-medium tabular-nums",
-        "relative backdrop-blur-md backdrop-saturate-150 transition-colors hover:bg-white/[0.1] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
-      )}
-    >
-      <GlassRim />
-      {isTeam && (
-        <span className="rounded-full bg-white/10 px-1.5 py-px text-[10px] font-medium leading-tight text-white/70">
-          {t("credits.teamTag")}
-        </span>
-      )}
-      <IconBolt className="size-4 text-white/85" stroke={1.8} />
-      {data != null ? data.available.toLocaleString() : "—"}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant={variant}
+          type="button"
+          onClick={
+            onClick ??
+            (() => {
+              if (billingWorkspace) setActiveWorkspaceId(billingWorkspace.id);
+              openSettings("billing");
+            })
+          }
+          disabled={!billingWorkspace}
+          aria-label={t("credits.manage")}
+          className={cn(
+            "relative h-9 gap-1.5 rounded-full text-sm tabular-nums backdrop-blur-md backdrop-saturate-150",
+            variant === "ghost" && "bg-white/[0.06] hover:bg-white/[0.1]",
+            className
+          )}
+        >
+          {variant === "ghost" && <GlassRim />}
+          <IconBolt className="size-4 shrink-0" stroke={1.8} aria-hidden />
+          {data != null ? (
+            data.available.toLocaleString(locale)
+          ) : error ? (
+            t("credits.unavailable")
+          ) : (
+            <span className="h-3 w-8 animate-pulse rounded bg-white/10" />
+          )}
+          <IconInfoCircle className="size-3.5 shrink-0 opacity-70" stroke={1.8} aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent
+        side="bottom"
+        sideOffset={8}
+        className="block max-w-64 space-y-1 leading-relaxed"
+      >
+        <p>{description}</p>
+        {error ? (
+          <p>{error.message}</p>
+        ) : (
+          data != null && (
+            <p className="text-muted-foreground">
+              {t("credits.tooltipDetailed", {
+                available: data.available.toLocaleString(locale),
+                held: data.held.toLocaleString(locale),
+                total: data.total.toLocaleString(locale),
+              })}
+            </p>
+          )
+        )}
+      </TooltipContent>
+    </Tooltip>
   );
 }

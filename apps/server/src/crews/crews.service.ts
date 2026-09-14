@@ -1,3 +1,4 @@
+import { joinCrewFanTx } from './fan-community';
 /**
  * Crew CRUD — create / list / detail / update / soft delete.
  *
@@ -23,9 +24,11 @@
  * whose participants are subscribers, not crew members.
  */
 import { randomUUID } from 'node:crypto';
+import { releaseRecruitedPositions } from './recruitment-capacity';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -39,6 +42,8 @@ import {
   type Message as PrismaMessage,
 } from '@prisma/client';
 import type { ConversationDTO } from '@repo/shared/conversation';
+import type { AuthUser } from '../auth';
+import { hasCrewCreatePass } from '../integrations/java/user-level-gates';
 import {
   ConversationsService,
   crewCommunityLookupKey,
@@ -81,7 +86,19 @@ export class CrewsService {
     private readonly collaboration: CrewCollaborationService,
   ) {}
 
-  async create(creatorUserId: string, input: CreateCrewInput) {
+  creationEligibility(user: AuthUser) {
+    return { eligible: hasCrewCreatePass(user.levelIds) };
+  }
+
+  async create(creator: AuthUser, input: CreateCrewInput) {
+    // Java user_level id=13 is the sole create gate (Nest producer cert dropped).
+    if (!hasCrewCreatePass(creator.levelIds)) {
+      throw new ForbiddenException({
+        code: 'CREW_LEVEL_REQUIRED',
+        message: 'Java certification level 13 is required to create a Crew.',
+      });
+    }
+    const creatorUserId = creator.userId;
     const crew = await this.prisma.$transaction(async (tx) => {
       const productionPlan = createDefaultProductionPlan(
         input.productionTemplateLocale,
@@ -181,35 +198,6 @@ export class CrewsService {
         },
       });
 
-      const initialTasks = productionPlan.tasks.map((task, index) => ({
-        id: randomUUID(),
-        crewId: c.id,
-        number: index + 1,
-        title: task.title,
-        description: task.description,
-        workflowStateId: workflowStateIds.get('open')!,
-        priority: 'normal' as const,
-        episodeId,
-        rank: (index + 1) * 1024,
-        createdByUserId: creatorUserId,
-      }));
-      await tx.crewTask.createMany({ data: initialTasks });
-      await tx.crewTaskDependency.createMany({
-        data: initialTasks.slice(1).map((task, index) => ({
-          crewId: c.id,
-          blockingTaskId: initialTasks[index].id,
-          blockedTaskId: task.id,
-          createdByUserId: creatorUserId,
-        })),
-      });
-      await tx.crewTaskTimelineItem.createMany({
-        data: initialTasks.map((task) => ({
-          taskId: task.id,
-          kind: 'task.created',
-          actorUserId: creatorUserId,
-          payload: { title: task.title, template: true },
-        })),
-      });
       // One crew, one group chat — opened with the crew so there is
       // never a window where a member exists without a thread to talk
       // in. No `crew.member.joined` system message here on purpose:
@@ -438,12 +426,29 @@ export class CrewsService {
   }
 
   /**
-   * Resolve the crew's separate community channel.
-   *
-   * Active crew members may enter directly. Everyone else must already be a
-   * live participant, which is created only by redeeming a community invitation.
-   * No path here creates a CrewMember or exposes the private team channel.
+   * Explicitly join a listed Crew's public fan community. This creates only a
+   * community participant, never a production-team membership.
    */
+  async joinFanCommunity(crewId: string, viewerId: string, recordLike = false) {
+    const conversation = await this.prisma.$transaction(async (tx) => {
+      const joined = await joinCrewFanTx(
+        tx,
+        this.conversations,
+        crewId,
+        viewerId,
+      );
+      if (recordLike) {
+        await tx.$executeRaw`
+          INSERT INTO crew_likes (crew_id, user_id) VALUES (${crewId}, ${viewerId})
+          ON CONFLICT (crew_id, user_id) DO NOTHING
+        `;
+      }
+      return joined;
+    });
+    return { conversationId: conversation.id };
+  }
+
+  /** Existing members, invitation recipients and public fan participants may read the community. */
   async communityConversation(
     crewId: string,
     viewerId: string,
@@ -690,9 +695,24 @@ export class CrewsService {
       `;
       const lockedOwner = await tx.crewOwnership.findUnique({
         where: { crewId },
-        include: { member: true },
+        include: {
+          member: {
+            include: { positions: { select: { sourcePositionId: true } } },
+          },
+        },
       });
       if (!lockedOwner) throw new NotFoundException('Crew owner not found');
+      if (
+        opts.actor.type === 'member' &&
+        lockedOwner.member.userId !== opts.actor.userId
+      ) {
+        throw new ForbiddenException(
+          'Crew ownership changed; only the current owner can transfer it.',
+        );
+      }
+      if (lockedOwner.member.userId === target) {
+        throw new ConflictException('Target user is already the crew owner.');
+      }
 
       let targetMember = await tx.crewMember.findFirst({
         where: {
@@ -734,6 +754,13 @@ export class CrewsService {
         targetWasCreated = true;
       }
 
+      if (opts.removeOldOwner) {
+        await releaseRecruitedPositions(
+          tx,
+          crewId,
+          lockedOwner.member.positions.map((p) => p.sourcePositionId),
+        );
+      }
       const conversation = await this.conversations.openCrewConversation(
         crewId,
         tx,

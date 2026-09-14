@@ -76,7 +76,7 @@ describe('Java points bridge compatibility contract', () => {
         }),
     };
     const workspaces = {
-      ensurePersonalWorkspace: jest
+      ensureDefaultWorkspace: jest
         .fn()
         .mockResolvedValue({ id: 'workspace-1' }),
     };
@@ -128,7 +128,7 @@ describe('Java points bridge compatibility contract', () => {
     const service = new InternalPointsService(
       prisma as never,
       walletLedger as never,
-      { ensurePersonalWorkspace: jest.fn() } as never,
+      { ensureDefaultWorkspace: jest.fn() } as never,
     );
 
     const result = await service.grantCommunity({
@@ -146,7 +146,7 @@ describe('Java points bridge compatibility contract', () => {
           ownerType: 'user',
           ownerId: '10086',
           currency: 'community_point',
-        }),
+        }) as unknown,
       }),
     );
     // The server key MUST embed the userId — the ledger idempotency_key is
@@ -173,7 +173,7 @@ describe('Java points bridge compatibility contract', () => {
     const service = new InternalPointsService(
       prisma as never,
       walletLedger as never,
-      { ensurePersonalWorkspace: jest.fn() } as never,
+      { ensureDefaultWorkspace: jest.fn() } as never,
     );
 
     await expect(
@@ -185,7 +185,9 @@ describe('Java points bridge compatibility contract', () => {
         expiresAt: undefined,
       }),
     ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'AMOUNT_EXCEEDS_CAP' }),
+      response: expect.objectContaining({
+        code: 'AMOUNT_EXCEEDS_CAP',
+      }) as unknown,
     });
     expect(prisma.walletAccount.upsert).not.toHaveBeenCalled();
     expect(walletLedger.postEntry).not.toHaveBeenCalled();

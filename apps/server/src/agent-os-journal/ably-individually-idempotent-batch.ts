@@ -1,6 +1,9 @@
 import type { AblyRestClient } from '../infra/realtime/ably-token-credentials';
+import { setTimeout as delay } from 'node:timers/promises';
 
-export const ABLY_INDIVIDUAL_BATCH_SPEC_LIMIT = 100;
+// Each BatchSpec counts separately against Ably's per-channel publish limit.
+export const ABLY_INDIVIDUAL_BATCH_SPEC_LIMIT = 20;
+const CHANNEL_PUBLISHES_PER_SECOND = 40;
 
 /**
  * Ably's default limits are 64 KiB per BatchSpec's messages and 2 MiB for the
@@ -52,6 +55,7 @@ export async function publishIndividuallyIdempotentAblyBatch(
   ably: Pick<AblyRestClient, 'batchPublish'>,
   channel: string,
   messages: readonly IndividuallyIdempotentAblyMessage[],
+  onPublished?: (ids: readonly string[]) => Promise<void>,
 ): Promise<void> {
   if (messages.length === 0) {
     throw new Error('Agent OS Ably batch must contain at least one message');
@@ -65,16 +69,28 @@ export async function publishIndividuallyIdempotentAblyBatch(
 
   const batches = chunkIndividuallyIdempotentAblySpecs(channel, messages);
   for (const batch of batches) {
+    // The outbox's conversation lease serializes publishes across all pods.
+    await delay(
+      Math.ceil((batch.length * 1_000) / CHANNEL_PUBLISHES_PER_SECOND),
+    );
     const results = await ably.batchPublish(batch);
-    if (
-      !Array.isArray(results) ||
-      results.length !== batch.length ||
-      results.some(
-        (result) => result.failureCount !== 0 || result.successCount !== 1,
-      )
-    ) {
+    if (!Array.isArray(results) || results.length !== batch.length) {
       throw new Error(
-        `Agent OS Ably batch acknowledgement mismatch expected=${batch.length}`,
+        `Agent OS Ably batch acknowledgement mismatch expected=${batch.length} received=${Array.isArray(results) ? results.length : 'non-array'}`,
+      );
+    }
+    const publishedIds = batch.flatMap((spec, index) =>
+      results[index]?.failureCount === 0 && results[index]?.successCount === 1
+        ? [spec.messages[0].id]
+        : [],
+    );
+    if (publishedIds.length > 0) await onPublished?.(publishedIds);
+    const failed = results.filter(
+      (result) => result.failureCount !== 0 || result.successCount !== 1,
+    );
+    if (failed.length > 0) {
+      throw new Error(
+        `Agent OS Ably batch publish failed: ${JSON.stringify(failed).slice(0, 2_000)}`,
       );
     }
   }

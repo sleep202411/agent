@@ -24,6 +24,7 @@
  *     no Apply (they're already in)
  */
 
+import { JoinFanCommunity } from "@/app/(site)/crews/_components/join-fan-community";
 import { useMemo, useState } from "react";
 import { encodeUserId } from "@/src/lib/user-id-codec";
 import Link from "next/link";
@@ -129,6 +130,12 @@ export function CrewDetail({ crew }: { crew: CrewDTO }) {
         heroVisual={heroVisual}
         tCrew={tCrew}
       />
+
+      {crew.listingStatus === "listed" && (
+        <div className="mx-auto max-w-[1800px] px-6 py-4">
+          <JoinFanCommunity crewId={id} />
+        </div>
+      )}
 
       {/* ─── Stats strip ───────────────────────────── */}
       <div className="bg-card/50">
@@ -333,7 +340,7 @@ function TeamRow({
 }) {
   const translatePosition = useTranslatePositionValue();
   const lookup = displays.get(member.userId);
-  const displayName = lookup?.nickname?.trim() || `User ${member.userId}`;
+  const displayName = lookup?.nickname?.trim() || `${t("unnamedUser")} ${member.userId}`;
   const initial = displayName.charAt(0).toUpperCase();
   const primaryPosition =
     member.positions.find((position) => position.isPrimary) ?? member.positions[0];
@@ -372,9 +379,14 @@ function TeamRow({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1">
           <span className="truncate text-sm font-medium text-foreground">{displayName}</span>
-          {owner ? <IconCrown className="size-3 shrink-0 text-primary" aria-label="Owner" /> : null}
+          {owner ? (
+            <IconCrown className="size-3 shrink-0 text-primary" aria-label={t("memberRoleOwner")} />
+          ) : null}
           {member.policyKeys.includes("finance") ? (
-            <IconCoin className="size-3 shrink-0 text-amber-400" aria-label="Finance" />
+            <IconCoin
+              className="size-3 shrink-0 text-amber-400"
+              aria-label={t("memberFinanceBadge")}
+            />
           ) : null}
         </div>
         <div className="truncate text-[11px] text-muted-foreground">{role}</div>

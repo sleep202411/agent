@@ -3,7 +3,7 @@
 // C 端用户处置弹窗 — 编辑资料 / 屏蔽。动作经 admin-ui 路由处理器 → Java 官方
 // 管理端接口(X-Admin-Api-Token 只在服务端)。屏蔽会 account_status=5 + 强制下线。
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AdminDialog, TextInput, mutateEnvelope, toErrorMessage } from "./shared";
 
@@ -32,14 +32,16 @@ export function ClientUserModerationDialog({
   const [error, setError] = useState<string | null>(null);
 
   // Reset the form whenever a new target/mode opens.
-  useEffect(() => {
-    if (!open) return;
+  const resetKey = `${mode}:${user?.userId}:${open}`;
+  const [previousResetKey, setPreviousResetKey] = useState("");
+  if (previousResetKey !== resetKey) {
+    setPreviousResetKey(resetKey);
     setNickName(user?.nickName ?? "");
     setContact("");
     setDescription("");
     setReason("");
     setError(null);
-  }, [open, user]);
+  }
 
   if (!open || !user) return null;
 

@@ -17,7 +17,6 @@ import {
   CharacterEnrollmentSessionStatus,
   CharacterKind,
   CharacterStatus,
-  WorkspaceType,
   type Prisma,
   type StudioCharacter,
 } from '@prisma/client';
@@ -490,23 +489,19 @@ export class CharacterEnrollmentService {
     return character;
   }
 
-  /** Personal-workspace assertion for real_person create (⟦R5⟧). */
-  async requirePersonalWorkspace(
+  /** Default workspace assertion for account-scoped likeness enrollment. */
+  async requireDefaultWorkspace(
     user: AuthUser,
     workspaceId: string,
   ): Promise<void> {
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: workspaceId, deletedAt: null },
-      select: { type: true, ownerUserId: true },
+      select: { defaultForUserId: true },
     });
-    if (
-      workspace?.type !== WorkspaceType.personal ||
-      workspace.ownerUserId !== user.userId
-    ) {
+    if (workspace?.defaultForUserId !== user.userId) {
       throw new BadRequestException({
-        code: 'REAL_PERSON_PERSONAL_ONLY',
-        message:
-          'A likeness can only be enrolled into your personal library (v1).',
+        code: 'REAL_PERSON_DEFAULT_WORKSPACE_REQUIRED',
+        message: 'Enroll your likeness in your default workspace.',
       });
     }
   }

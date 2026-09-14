@@ -61,6 +61,15 @@ export class AgentOsExternalHandoffReconcilerService
         WHERE run."status" = 'running'
           AND registration."created_at" <= NOW() - (${RECOVERY_GRACE_MS} * INTERVAL '1 millisecond')
           AND run."updated_at" <= NOW() - (${RECOVERY_GRACE_MS} * INTERVAL '1 millisecond')
+          AND (run."start_execution_lease_expires_at" IS NULL OR run."start_execution_lease_expires_at" <= NOW())
+          AND (run."continuation_execution_lease_expires_at" IS NULL OR run."continuation_execution_lease_expires_at" <= NOW())
+          AND NOT EXISTS (
+            SELECT 1 FROM "agent_os_run_events" AS resolved
+            WHERE resolved."run_id" = run."id"
+              AND resolved."type" = 'RunResumed'
+              AND resolved."data"->>'externalJobId' = registration."external_job_id"::text
+              AND resolved."data"->>'reason' LIKE 'external_job_%'
+          )
         ORDER BY registration."created_at" ASC, registration."external_job_id" ASC
         LIMIT ${BATCH_SIZE}
       `);

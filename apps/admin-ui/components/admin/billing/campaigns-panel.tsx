@@ -241,7 +241,7 @@ export function BillingCampaignsPanel({
           </>
         }
         title="免费活动"
-        description="限时免费领取算力积分活动，用户在有效期内每人可领取一次。"
+        description="限时领取工作区算力积分，到账用户的默认工作区；每人限领一次。"
       />
       {error ? <ErrorBanner message={error} /> : null}
 
@@ -287,7 +287,7 @@ export function BillingCampaignsPanel({
             <div>
               <h3 className="text-sm font-semibold text-slate-950">新建免费活动</h3>
               <p className="mt-1 text-[12px] text-slate-500">
-                到账用户个人空间算力积分钱包；每人限领一次，可设总名额上限。
+                到账用户的默认工作区；每人限领一次，可设总名额上限。
               </p>
             </div>
             <IconConfetti className="size-4 text-slate-400" />
@@ -297,7 +297,7 @@ export function BillingCampaignsPanel({
               <TextInput name="name" required placeholder="新用户福利" />
             </FormLabel>
             <div className="grid grid-cols-2 gap-2">
-              <FormLabel label="面额（算力积分）" help="每位用户领取到账的算力积分数量。">
+              <FormLabel label="面额（算力积分）" help="每次领取发放到默认工作区的积分数量。">
                 <TextInput
                   name="computeCreditAmount"
                   required

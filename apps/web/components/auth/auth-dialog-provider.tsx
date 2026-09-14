@@ -47,6 +47,7 @@ import {
   type AuthTranslate,
   type AuthTranslationKey,
 } from "@repo/auth-flow";
+import { CallingCodeInput } from "./calling-code-input";
 import enUS from "@/messages/en-US.json";
 
 import { env } from "@/src/env";
@@ -370,6 +371,13 @@ export function AuthDialogProvider({ children }: { children: React.ReactNode }) 
       </Suspense>
       {children}
       <AuthDialog
+        renderSignInIdentifier={(props) => (
+          <CallingCodeInput
+            {...props}
+            codeLabel={raw("callingCode")}
+            placeholder={raw("callingCodeIdentifierPlaceholder")}
+          />
+        )}
         key={sessionKey}
         open={isOpen}
         onOpenChange={handleOpenChange}

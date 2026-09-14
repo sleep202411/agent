@@ -11,7 +11,6 @@ import {
   WorkspaceMemberRole,
   WorkspaceMemberStatus,
   WorkspaceStatus,
-  WorkspaceType,
   WalletOwnerType,
 } from '@prisma/client';
 import { PrismaService } from '../../infra/db/db.module';
@@ -66,7 +65,6 @@ export class CrewCollaborationService {
     if (!workspaceId) {
       const workspace = await tx.workspace.create({
         data: {
-          type: WorkspaceType.team,
           status: WorkspaceStatus.active,
           name: crew.name,
           avatarUrl: crew.logo,
@@ -200,7 +198,11 @@ export class CrewCollaborationService {
     userId: string,
     grantedById: string,
     db: Db = this.prisma,
-  ) {
+  ): Promise<void> {
+    if (db === this.prisma)
+      return this.prisma.$transaction((tx) =>
+        this.addCrewMemberAccess(crewId, userId, grantedById, tx),
+      );
     const crew = await db.crew.findUnique({
       where: { id: crewId },
       select: { workspaceId: true },
@@ -224,11 +226,17 @@ export class CrewCollaborationService {
     crewId: string,
     userId: string,
     db: Db = this.prisma,
-  ) {
+  ): Promise<void> {
+    if (db === this.prisma)
+      return this.prisma.$transaction((tx) =>
+        this.removeCrewMemberAccess(crewId, userId, tx),
+      );
     const crew = await db.crew.findUnique({
       where: { id: crewId },
       select: { workspaceId: true },
     });
+    if (crew?.workspaceId)
+      await this.lockWorkspaceProjects(db, crew.workspaceId);
     await db.crewAssetGrant.deleteMany({
       where: { userId, node: { crewId } },
     });
@@ -269,13 +277,24 @@ export class CrewCollaborationService {
     incomingOwnerId: string,
     removeOutgoingOwner: boolean,
     db: Db = this.prisma,
-  ) {
+  ): Promise<void> {
+    if (db === this.prisma)
+      return this.prisma.$transaction((tx) =>
+        this.transferCrewOwnershipAccess(
+          crewId,
+          outgoingOwnerId,
+          incomingOwnerId,
+          removeOutgoingOwner,
+          tx,
+        ),
+      );
     const crew = await db.crew.findUnique({
       where: { id: crewId },
       select: { workspaceId: true, productionProjectId: true },
     });
     if (!crew?.workspaceId) return;
 
+    await this.lockWorkspaceProjects(db, crew.workspaceId);
     const now = new Date();
     await db.workspace.update({
       where: { id: crew.workspaceId },
@@ -351,6 +370,11 @@ export class CrewCollaborationService {
     }
   }
 
+  /** Serialize authorization projections with document/project writers. */
+  private async lockWorkspaceProjects(db: Db, workspaceId: string) {
+    await db.$queryRaw`SELECT id FROM platform_projects WHERE workspace_id = ${workspaceId}::uuid ORDER BY id FOR UPDATE`;
+  }
+
   private async upsertWorkspaceMember(
     workspaceId: string,
     userId: string,
@@ -358,6 +382,7 @@ export class CrewCollaborationService {
     invitedById: string,
     db: Db,
   ) {
+    await this.lockWorkspaceProjects(db, workspaceId);
     const current = await db.workspaceMember.findFirst({
       where: { workspaceId, userId, removedAt: null },
     });

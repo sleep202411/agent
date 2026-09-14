@@ -1,3 +1,4 @@
+import { ProfessionalDeliveryInput } from './tasks/task-delivery-template';
 /**
  * Zod schemas for every crew controller body. Co-located in one file
  * because each schema is small and they share a few constraints
@@ -464,9 +465,10 @@ export type ListCrewAgreementsQuery = z.infer<
 
 const TaskAssigneeSchema = z.object({
   userId: z.string().trim().min(1).max(64),
-  /// Crew-local compensation points. Task approval posts them to the immutable
-  /// earning ledger; a later finance payout snapshots the real-cash quote.
-  rewardPoints: z
+  /// Integer minor units for CNY/USD.
+  /// Task approval copies the amount and currency unchanged to the immutable ledger.
+  currency: z.enum(['CNY', 'USD']),
+  rewardAmountMinor: z
     .number()
     .int()
     .min(1)
@@ -569,7 +571,6 @@ export interface CrewTaskDraft {
   startDate: string | null;
   dueDate: string | null;
   estimatePoints: number | null;
-  computeBudgetPoints: number | null;
   revisionLimit: number | null;
   cycleId: string | null;
   parentId: string | null;
@@ -713,6 +714,8 @@ export type UpdateCrewTaskCommentInput = z.infer<
 >;
 
 export const SubmitCrewTaskSchema = z.object({
+  professionalDelivery: ProfessionalDeliveryInput.optional(),
+  deliveryFolderId: z.string().uuid().optional(),
   note: z.string().trim().max(5000).default(''),
   assetNodeIds: z.array(z.string().uuid()).max(100).default([]),
 });

@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { buildStoryPlotPreviewModel, type StoryPlotPreviewNode } from "./story-plot-proposal-model";
+import { StorySourceReviewNotes } from "./story-source-review-notes";
 
 const STATUS_ICONS = {
   proposed: IconClock,
@@ -84,6 +85,7 @@ export function StoryPlotProposalCard({
         </div>
 
         <p className="line-clamp-2 text-sm leading-6 text-white/72">{proposal.summary}</p>
+        <StorySourceReviewNotes notes={proposal.screenplay.reviewNotes} />
 
         <dl className="grid grid-cols-3 divide-x divide-white/[0.07] rounded-xl bg-white/[0.04] py-2.5">
           <Metric value={model.metrics.nodes} label={t("metrics.nodes")} />
@@ -189,7 +191,10 @@ function StoryPlotProposalCanvas({
 function StoryPlotPreviewNodeCard({ data }: NodeProps<StoryPlotPreviewNode>) {
   const t = useTranslations("storyStudio.authoringRun.plotCard");
   const isEnding =
-    data.kind !== "decision" && data.exitKind === "auto" && !data.continuationTargetNodeId;
+    !data.unresolved &&
+    data.kind !== "decision" &&
+    data.exitKind === "auto" &&
+    !data.continuationTargetNodeId;
 
   return (
     <article
@@ -217,6 +222,9 @@ function StoryPlotPreviewNodeCard({ data }: NodeProps<StoryPlotPreviewNode>) {
             <span className="rounded-md bg-white/[0.08] px-1.5 py-0.5 text-[9px] font-semibold text-white/66">
               {t("ending")}
             </span>
+          ) : null}
+          {data.unresolved ? (
+            <span className="text-[9px] text-white/66">{t("unresolved")}</span>
           ) : null}
         </div>
         <h3 className="mt-1.5 truncate text-sm font-semibold text-white/92">{data.title}</h3>

@@ -3,26 +3,30 @@ import {
   StoryProjectMemberRole,
   WorkspaceMemberAccessScope,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { ensureWorkspaceMembershipForStory } from './story-project-membership';
 import { StoryProjectMembersService } from './story-project-members.service';
 import { STORY_ROLE_MAP } from './story-project-sharing.dto';
+import { EntitlementService } from '../entitlements/entitlement.service';
 
 const WORKSPACE_ID = '0197f4a2-0800-7000-8000-000000000001';
 const PROJECT_ID = '0197f4a2-0800-7000-8000-000000000002';
 const OWNER = { userId: 'owner-1' } as never;
 
 function tx(overrides: {
-  workspaceType?: WorkspaceType;
+  defaultForUserId?: string | null;
   workspaceMember?: {
     id: string;
     status: string;
     removedAt: Date | null;
   } | null;
 }) {
-  const workspaceMemberCreate = jest.fn().mockResolvedValue({ id: 'wm-new' });
-  const workspaceMemberUpdate = jest.fn().mockResolvedValue({ id: 'wm-old' });
+  const workspaceMemberCreate = jest
+    .fn<Promise<{ id: string }>, [{ data: Record<string, unknown> }]>()
+    .mockResolvedValue({ id: 'wm-new' });
+  const workspaceMemberUpdate = jest
+    .fn<Promise<{ id: string }>, [{ data: Record<string, unknown> }]>()
+    .mockResolvedValue({ id: 'wm-old' });
   const workspaceMemberCount = jest.fn().mockResolvedValue(1);
   return {
     calls: {
@@ -32,12 +36,22 @@ function tx(overrides: {
     },
     client: {
       $executeRaw: jest.fn().mockResolvedValue(0),
+      $queryRaw: jest
+        .fn()
+        .mockResolvedValue(
+          Array.from({ length: 28 }, (_, i) => ({ user_id: `existing-${i}` })),
+        ),
+      entitlementGrant: { findMany: jest.fn().mockResolvedValue([]) },
       workspace: {
+        findUnique: jest.fn().mockResolvedValue({
+          defaultForUserId: overrides.defaultForUserId ?? null,
+          createdAt: new Date('2026-09-13T00:00:00Z'),
+        }),
         // The row still carries `type` even though the function stopped reading
         // it — that is exactly what the personal-workspace case pins.
         findFirst: jest.fn().mockResolvedValue({
           id: WORKSPACE_ID,
-          type: overrides.workspaceType ?? WorkspaceType.team,
+          defaultForUserId: overrides.defaultForUserId ?? null,
         }),
       },
       workspaceMember: {
@@ -69,6 +83,28 @@ const entitlements = {
 } as never;
 
 describe('ensureWorkspaceMembershipForStory', () => {
+  it.each(['user-1', null])(
+    'admits a story editor beyond the %s seat allowance with project-only access',
+    async (defaultForUserId) => {
+      const t = tx({ defaultForUserId });
+      await ensureWorkspaceMembershipForStory(t.client, {
+        workspaceId: WORKSPACE_ID,
+        userId: 'editor-29',
+        actorUserId: 'owner-1',
+        role: StoryProjectMemberRole.editor,
+        entitlements: new EntitlementService({} as never),
+        allowReactivatingRemoved: true,
+      });
+      expect(t.calls.workspaceMemberCreate.mock.calls[0][0].data).toMatchObject(
+        {
+          userId: 'editor-29',
+          role: WorkspaceMemberRole.viewer,
+          accessScope: WorkspaceMemberAccessScope.project_only,
+        },
+      );
+    },
+  );
+
   it('enrols a brand-new collaborator as a workspace viewer', async () => {
     const t = tx({});
     const result = await ensureWorkspaceMembershipForStory(t.client, {
@@ -110,8 +146,8 @@ describe('ensureWorkspaceMembershipForStory', () => {
     expect(t.calls.workspaceMemberUpdate).not.toHaveBeenCalled();
   });
 
-  it('enrols a viewer into a personal workspace without consuming a seat', async () => {
-    const t = tx({ workspaceType: WorkspaceType.personal });
+  it('enrols a viewer into a default workspace without consuming a seat', async () => {
+    const t = tx({ defaultForUserId: 'user-1' });
     const result = await ensureWorkspaceMembershipForStory(t.client, {
       workspaceId: WORKSPACE_ID,
       userId: 'guest-1',

@@ -1338,6 +1338,8 @@ describe('run-scoped authorization', () => {
     expect(worker.startRun).toHaveBeenCalledWith(
       expect.objectContaining({
         projectKind: 'story',
+        modelProfileId:
+          process.env.AGENT_OS_MOBILE_CHAT_MODEL || 'qwen3.7-flash',
         workbenchMode: 'story',
         workbenchContext: {
           chapterId: '11111111-1111-4111-8111-111111111111',

@@ -44,11 +44,10 @@ import {
   CreateAdminBillingPriceSchema,
   CreateAdminBillingPromotionSchema,
   CreateAdminBillingRefundSchema,
-  CreateAdminUserWalletCreditSchema,
-  GetAdminUserWalletCreditQuerySchema,
   CreateAdminWorkspaceWalletCreditSchema,
   GetAdminWorkspaceWalletCreditQuerySchema,
   ListAdminWorkspacesQuerySchema,
+  ListAdminComputeMemberUsageQuerySchema,
   IgnoreAdminBillingProviderEventSchema,
   QuoteAdminBillingRefundSchema,
   UpdateAdminMembershipPlanSchema,
@@ -73,11 +72,10 @@ import {
   type CreateAdminBillingPriceInput,
   type CreateAdminBillingPromotionInput,
   type CreateAdminBillingRefundInput,
-  type CreateAdminUserWalletCreditInput,
-  type GetAdminUserWalletCreditQueryInput,
   type CreateAdminWorkspaceWalletCreditInput,
   type GetAdminWorkspaceWalletCreditQueryInput,
   type ListAdminWorkspacesQueryInput,
+  type ListAdminComputeMemberUsageQuery,
   type IgnoreAdminBillingProviderEventInput,
   type ListAdminMembershipPlansQuery,
   type ListAdminBillingLedgerJournalsQuery,
@@ -138,51 +136,6 @@ export class BillingAdminController {
   }
 
   @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
-  @Post('wallets/user-credits')
-  async createUserWalletCredit(
-    @CurrentAdmin() admin: AdminActor,
-    @Body(new ZodValidationPipe(CreateAdminUserWalletCreditSchema))
-    body: CreateAdminUserWalletCreditInput,
-    @Req() request: Request,
-  ) {
-    const data = await this.billing.createAdminUserWalletCredit(admin.id, body);
-    await this.audit(
-      admin,
-      request,
-      'admin.billing.wallet.user_credit',
-      'wallet_account',
-      data.account.id,
-      {
-        inputUserId: body.userId,
-        idFormat: body.idFormat,
-        resolvedUserId: data.account.ownerId,
-        amount: body.amount.toString(),
-        currency: body.currency,
-        balanceKind: body.balanceKind,
-        grantType: body.grantType,
-        expiresAt: body.expiresAt?.toISOString() ?? null,
-        reason: body.reason,
-        idempotencyKey: body.idempotencyKey,
-      },
-    );
-    return { code: 200, data };
-  }
-
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
-  @Get('wallets/user-credits')
-  async getUserWalletCredit(
-    @Query(new ZodValidationPipe(GetAdminUserWalletCreditQuerySchema))
-    query: GetAdminUserWalletCreditQueryInput,
-  ) {
-    return {
-      code: 200,
-      data: await this.billing.getAdminUserWalletBalance(query),
-    };
-  }
-
-  // Credit/debit a TEAM (or any) workspace compute_point pot directly — the only
-  // path that can fund a team pool (user-credits redirects compute→personal ws).
-  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingWrite)
   @Post('wallets/workspace-credits')
   async createWorkspaceWalletCredit(
     @CurrentAdmin() admin: AdminActor,
@@ -233,6 +186,18 @@ export class BillingAdminController {
     return {
       code: 200,
       data: await this.billing.listAdminWorkspaces(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('usage/member-compute')
+  async listComputeMemberUsage(
+    @Query(new ZodValidationPipe(ListAdminComputeMemberUsageQuerySchema))
+    query: ListAdminComputeMemberUsageQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminComputeMemberUsage(query),
     };
   }
 

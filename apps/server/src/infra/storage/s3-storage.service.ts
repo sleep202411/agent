@@ -1,3 +1,4 @@
+import { requirePrivateUploadTarget } from './private-upload-target';
 /**
  * S3-compatible implementation of OutputStorageService — built for
  * Cloudflare R2.
@@ -35,6 +36,11 @@ import {
 } from '@nestjs/common';
 import {
   CopyObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  ListPartsCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -57,6 +63,9 @@ import {
   type CreateUploadUrlInput,
   type CreateUploadUrlResult,
   type HeadObjectResult,
+  type MultipartUploadRef,
+  type StoredUploadPart,
+  type UploadPartUrl,
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
@@ -84,6 +93,9 @@ export class S3CompatibleStorageService extends OutputStorageService {
   private readonly logger = new Logger(S3CompatibleStorageService.name);
   private readonly client: S3Client | null;
   private readonly bucket: string;
+  private readonly privateUploadTarget = (
+    process.env.S3_PRIVATE_BUCKET ?? ''
+  ).trim();
   private readonly quarantineBucket: string;
   private readonly region: string | null;
   private readonly endpoint: string;
@@ -153,6 +165,17 @@ export class S3CompatibleStorageService extends OutputStorageService {
     );
   }
 
+  objectLocation(key: string) {
+    this.assertConfigured('Object storage');
+    return {
+      storageProvider: this.providerId,
+      bucket: this.bucket,
+      region: this.region,
+      objectKey: key,
+      externalUrl: null,
+    };
+  }
+
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {
     if (!this.client) {
       throw new Error('S3_* env not configured');
@@ -211,8 +234,125 @@ export class S3CompatibleStorageService extends OutputStorageService {
     };
   }
 
+  async beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef> {
+    const result = await this.requireClient().send(
+      new CreateMultipartUploadCommand({
+        Bucket: this.bucket,
+        Key: storageKey,
+        ContentType: contentType,
+        CacheControl: IMMUTABLE_STORAGE_CACHE_CONTROL,
+      }),
+    );
+    if (!result.UploadId)
+      throw new Error('Storage did not return an upload ID');
+    return {
+      storageKey,
+      uploadId: result.UploadId,
+      bucket: this.bucket,
+      region: this.region,
+    };
+  }
+
+  async listUploadParts(ref: MultipartUploadRef): Promise<StoredUploadPart[]> {
+    const parts: StoredUploadPart[] = [];
+    let marker: string | undefined;
+    do {
+      const result = await this.requireClient().send(
+        new ListPartsCommand({
+          Bucket: ref.bucket,
+          Key: ref.storageKey,
+          UploadId: ref.uploadId,
+          PartNumberMarker: marker,
+          MaxParts: 1000,
+        }),
+      );
+      for (const part of result.Parts ?? []) {
+        if (!part.PartNumber || !part.ETag || part.Size == null)
+          throw new Error('Invalid stored upload part');
+        parts.push({
+          number: part.PartNumber,
+          etag: part.ETag,
+          sizeBytes: part.Size,
+        });
+      }
+      marker = result.IsTruncated ? result.NextPartNumberMarker : undefined;
+      if (result.IsTruncated && !marker)
+        throw new Error('Missing storage pagination marker');
+    } while (marker);
+    return parts;
+  }
+
+  async signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl> {
+    const url = await getSignedUrl(
+      this.requireClient(),
+      new UploadPartCommand({
+        Bucket: ref.bucket,
+        Key: ref.storageKey,
+        UploadId: ref.uploadId,
+        PartNumber: number,
+      }),
+      { expiresIn: 900 },
+    );
+    return { url, headers: {} };
+  }
+
+  async completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+  ): Promise<void> {
+    await this.requireClient().send(
+      new CompleteMultipartUploadCommand({
+        Bucket: ref.bucket,
+        Key: ref.storageKey,
+        UploadId: ref.uploadId,
+        MultipartUpload: {
+          Parts: parts.map((p) => ({ PartNumber: p.number, ETag: p.etag })),
+        },
+      }),
+    );
+  }
+
+  async abortMultipartUpload(ref: MultipartUploadRef): Promise<void> {
+    try {
+      await this.requireClient().send(
+        new AbortMultipartUploadCommand({
+          Bucket: ref.bucket,
+          Key: ref.storageKey,
+          UploadId: ref.uploadId,
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'NoSuchUpload'))
+        throw error;
+    }
+  }
+
   async createUploadUrl(
     input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    return this.signUploadUrl(input, this.bucket);
+  }
+
+  async createPrivateUploadUrl(
+    input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    const target = requirePrivateUploadTarget(
+      'S3_PRIVATE_BUCKET',
+      this.privateUploadTarget,
+      [this.bucket, this.quarantineBucket],
+    );
+    return this.signUploadUrl(input, target);
+  }
+
+  private async signUploadUrl(
+    input: CreateUploadUrlInput,
+    target: string,
   ): Promise<CreateUploadUrlResult> {
     const client = this.requireClient();
     const ttl = input.expiresInSeconds ?? DEFAULT_UPLOAD_URL_TTL_SECONDS;
@@ -224,7 +364,7 @@ export class S3CompatibleStorageService extends OutputStorageService {
     const url = await getSignedUrl(
       client,
       new PutObjectCommand({
-        Bucket: this.bucket,
+        Bucket: target,
         Key: input.storageKey,
         ContentType: input.contentType,
       }),
@@ -243,7 +383,7 @@ export class S3CompatibleStorageService extends OutputStorageService {
       headers: { 'Content-Type': input.contentType },
       storageKey: input.storageKey,
       provider: 's3_compatible',
-      bucket: this.bucket,
+      bucket: target,
       region: this.region,
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
     };

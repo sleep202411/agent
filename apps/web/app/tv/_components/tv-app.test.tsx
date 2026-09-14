@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act } from "react";
+import { act, StrictMode, type ReactNode } from "react";
+import videojs from "video.js";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,31 +8,79 @@ import type { IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const harness = vi.hoisted(() => ({ get: vi.fn(), routerPush: vi.fn() }));
+vi.mock("./tv-right-rail", () => ({ TvRightRail: () => null }));
+const harness = vi.hoisted(() => ({
+  userId: "viewer-a",
+  get: vi.fn(),
+  list: vi.fn(),
+  discovery: vi.fn(),
+  routerPush: vi.fn(),
+}));
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: harness.userId } }),
+}));
 vi.mock("@/src/i18n/i18n", () => ({
-  useTranslations: (ns: string) => (key: string) => `${ns}.${key}`,
+  useTranslations: (ns: string) => (key: string, values?: { number?: string }) =>
+    key === "roomNumber" ? `Room ${values?.number}` : `${ns}.${key}`,
   useLocale: () => "en-US",
 }));
 vi.mock("@/src/i18n/locale-url", () => ({ localizePath: (path: string) => path }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: harness.routerPush }) }));
-vi.mock("@/src/lib/api", () => ({ api: { get: harness.get } }));
+vi.mock("@/src/lib/api", () => ({
+  api: {
+    get: (path: string, config?: unknown) => {
+      harness.get(path, config);
+      if (String(path).includes("/discovery")) return harness.discovery();
+      return harness.list(config);
+    },
+  },
+}));
+vi.mock("@/app/(site)/ips/_components/ip-release-links", () => ({ IpReleaseLinks: () => null }));
+vi.mock("@/app/(site)/ips/_components/ip-production-stage", () => ({
+  IpProductionStage: () => null,
+}));
+vi.mock("@/app/(site)/ips/_components/ip-crew-origin", () => ({ IpCrewOrigin: () => null }));
+vi.mock("@/components/ui/native-select", () => ({
+  NativeSelect: ({
+    value,
+    onChange,
+    children,
+    ...props
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    children: ReactNode;
+  }) => (
+    // eslint-disable-next-line no-restricted-syntax -- Native DOM stand-in for the themed Select in interaction tests.
+    <select {...props} value={value} onChange={(e) => onChange(e.target.value)}>
+      {children}
+    </select>
+  ),
+  NativeSelectOption: ({ children, ...props }: { children: ReactNode; value: string }) => (
+    <option {...props}>{children}</option>
+  ),
+}));
+vi.mock("@/app/(site)/ips/_components/episode-feedback", () => ({
+  EpisodeFeedback: ({ episodeId }: { episodeId: string }) => <div data-feedback={episodeId} />,
+}));
 function makeIp(id: string, title: string): IpCommerceIp {
-  const asset = (url: string) => ({
+  const asset = (url: string, kind: "image" | "video") => ({
     id: `${id}-${url}`,
-    kind: "image",
-    storageProvider: "oss",
+    kind,
+    storageProvider: "external_url",
     bucket: null,
     region: null,
     objectKey: null,
     externalUrl: url,
-    url: null,
-    contentType: "image/jpeg",
+    url,
+    contentType: kind === "video" ? "video/mp4" : "image/jpeg",
     width: 1600,
     height: 900,
     durationSeconds: null,
   });
   return {
     id,
+    roomNumber: `10000${id.split("-").at(-1)}`,
     slug: null,
     status: "published",
     listingVisibility: "public",
@@ -53,8 +102,8 @@ function makeIp(id: string, title: string): IpCommerceIp {
     contributors: [],
     rightsSummary: {},
     aiDisclosure: {},
-    coverAsset: asset(`https://cdn.test/${id}.jpg`),
-    trailerAsset: asset(`https://cdn.test/${id}.mp4`),
+    coverAsset: asset(`https://cdn.test/${id}.jpg`, "image"),
+    trailerAsset: asset(`https://cdn.test/${id}.mp4`, "video"),
     publishedAt: null,
     scheduledAt: null,
     price: null,
@@ -69,17 +118,31 @@ describe("TV IP list", () => {
   let queryClient: QueryClient;
   const ips = [makeIp("ip-1", "First IP"), makeIp("ip-2", "Second IP")];
 
+  let observerCallback: IntersectionObserverCallback;
+
   beforeEach(() => {
+    harness.userId = "viewer-a";
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
     vi.stubGlobal(
       "IntersectionObserver",
       class {
-        observe() {}
+        constructor(callback: IntersectionObserverCallback) {
+          observerCallback = callback;
+        }
+        observe(target: Element) {
+          observerCallback(
+            [{ isIntersecting: true, target } as IntersectionObserverEntry],
+            this as unknown as IntersectionObserver
+          );
+        }
         disconnect() {}
       }
     );
-    harness.get.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
+    harness.get.mockReset();
+    harness.list.mockReset().mockResolvedValue({ items: ips, nextCursor: null });
+    harness.discovery.mockReset().mockResolvedValue({ items: [] });
     harness.routerPush.mockClear();
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement("div");
@@ -98,11 +161,56 @@ describe("TV IP list", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={queryClient}>
-          <TvApp embedded={embedded} />
+          <StrictMode>
+            <TvApp embedded={embedded} />
+          </StrictMode>
         </QueryClientProvider>
       );
     });
   }
+
+  it("cancels catalog and discovery reads when the viewer changes", async () => {
+    harness.list.mockImplementation(() => new Promise(() => {}));
+    harness.discovery.mockImplementation(() => new Promise(() => {}));
+    await render();
+    const oldRequests = harness.get.mock.calls.map(
+      ([, options]) => options as { signal: AbortSignal }
+    );
+    expect(oldRequests.length).toBeGreaterThanOrEqual(2);
+    harness.userId = "viewer-b";
+    harness.list.mockResolvedValue({
+      items: [makeIp("new-ip", "New viewer IP")],
+      nextCursor: null,
+    });
+    harness.discovery.mockResolvedValue({ items: [] });
+    await render();
+    expect(oldRequests.every((request) => request.signal.aborted)).toBe(true);
+    expect(harness.get.mock.calls.length).toBeGreaterThan(oldRequests.length);
+  });
+
+  it("does not reuse the previous viewer's fresh channel cache", async () => {
+    await render();
+    harness.userId = "viewer-b";
+    harness.list.mockResolvedValue({
+      items: [makeIp("new-ip", "New viewer IP")],
+      nextCursor: null,
+    });
+    await render();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(container.textContent).toContain("New viewer IP");
+    expect(container.textContent).not.toContain("First IP");
+  });
+
+  it("reports a recommendation failure while retaining playable catalog channels", async () => {
+    harness.discovery.mockRejectedValue(new Error("Recommendations unavailable"));
+    await render();
+    await waitForText("Recommendations unavailable");
+    expect(container.textContent).toContain("First IP");
+    expect(container.textContent).toContain("Second IP");
+    expect(selected()).toContain("First IP");
+  });
   async function waitForText(text: string) {
     await vi.waitFor(async () => {
       await act(async () => {
@@ -118,27 +226,100 @@ describe("TV IP list", () => {
     expect(button).not.toBeNull();
     act(() => button!.click());
   }
+  const player = () => videojs.getPlayer(container.querySelector(".video-js")!.id)!;
+  async function waitForSource(id: string) {
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(player().currentSrc()).toContain(`${id}.mp4`);
+    });
+  }
   const selected = () =>
     container.querySelector('nav button[aria-current="true"]')?.getAttribute("aria-label");
 
+  it("selects only authorized full episodes and clears feedback on another channel", async () => {
+    const first = makeIp("ip-1", "First IP");
+    const media = { ...first.trailerAsset!, url: "https://cdn.test/episode-one.mp4" };
+    first.episodes = [
+      {
+        id: "episode-1",
+        episodeNo: 1,
+        title: "First episode",
+        status: "published",
+        mediaAsset: media,
+      },
+      {
+        id: "locked",
+        episodeNo: 2,
+        title: "Locked",
+        status: "published",
+        mediaAsset: null,
+        trailerAsset: media,
+      },
+    ] as typeof first.episodes;
+    harness.list.mockResolvedValue({ items: [first, ips[1]], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="tv.episodeSelector"]'
+    )!;
+    expect(select.textContent).toContain("First episode");
+    expect(select.textContent).not.toContain("Locked");
+    await act(async () => {
+      select.value = "episode-1";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await waitForSource("episode-one");
+    expect(container.querySelector('[data-feedback="episode-1"]')).not.toBeNull();
+    clickIp("Second IP");
+    await waitForSource("ip-2");
+    expect(container.querySelector("[data-feedback]")).toBeNull();
+  });
   it("opens the first channel and allows manual selection", async () => {
     await render();
     await waitForText("Second IP");
     expect(harness.get).toHaveBeenCalledWith("/aurora/ip-commerce/ips", {
-      params: { locale: "en-US", cursor: undefined, limit: 20 },
+      signal: expect.any(AbortSignal),
+      params: {
+        locale: "en-US",
+        cursor: undefined,
+        q: undefined,
+        limit: 20,
+      },
     });
     expect(container.querySelectorAll("nav button")).toHaveLength(2);
     expect(selected()).toContain("First IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-1.mp4");
+    await waitForSource("ip-1");
     clickIp("Second IP");
     expect(selected()).toContain("Second IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-2.mp4");
+    await waitForSource("ip-2");
     clickIp("First IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-1.mp4");
+    await waitForSource("ip-1");
   });
 
-  it("shows genres consistently and marks only playable channels with a video icon", async () => {
-    harness.get.mockResolvedValue({
+  it("leads the catalog with IP Plaza For you placements", async () => {
+    const featured = makeIp("ip-featured", "Featured IP");
+    harness.discovery.mockResolvedValue({
+      items: [{ ipCard: featured, sortOrder: 0 }],
+    });
+    harness.list.mockResolvedValue({ items: ips, nextCursor: null });
+    await render();
+    await waitForText("Featured IP");
+    expect(selected()).toContain("Featured IP");
+    expect(selected()).toContain("tv.hot");
+    const labels = [...container.querySelectorAll("nav button")].map((button) =>
+      button.getAttribute("aria-label")
+    );
+    expect(labels[0]).toContain("Featured IP");
+    expect(labels[0]).toContain("tv.hot");
+    expect(labels[1]).toContain("First IP");
+    expect(container.querySelector('nav [aria-label="tv.hot"]')).not.toBeNull();
+    await waitForSource("ip-featured");
+  });
+
+  it("keeps poster-only IPs out of TV while retaining playable channels and genres", async () => {
+    harness.list.mockResolvedValue({
       items: [
         { ...ips[0], subtitle: "A marketing tagline", copyrightOwner: "First creator" },
         { ...ips[1], genres: [], subtitle: "Another tagline", trailerAsset: null },
@@ -146,24 +327,42 @@ describe("TV IP list", () => {
       nextCursor: null,
     });
     await render();
-    await waitForText("Second IP");
+    await waitForSource("ip-1");
     const list = container.querySelector("nav")!;
     expect(list.textContent).toContain("Sci-Fi");
     expect(list.textContent).not.toContain("tv.uncategorized");
-    expect(list.querySelector('button[aria-label="Second IP"]')?.textContent).toBe("Second IP");
+    expect(list.querySelector('button[aria-label^="Second IP,"]')).toBeNull();
     expect(list.textContent).not.toContain("tagline");
     expect(list.textContent).not.toContain("creator");
     expect(list.querySelectorAll('[role="img"][aria-label="tv.hasVideo"]')).toHaveLength(1);
-    clickIp("Second IP");
-    expect(container.querySelector("video")).toBeNull();
-    expect(container.querySelector("section img")?.getAttribute("src")).toContain("ip-2.jpg");
   });
+
+  it.each([false, true])(
+    "shows stable room numbers in the list and selected IP (embedded=%s)",
+    async (embedded) => {
+      const roomNumber = "9223372036854775807";
+      harness.list.mockResolvedValue({
+        items: [{ ...ips[0], roomNumber }, ips[1]],
+        nextCursor: null,
+      });
+      await render(embedded);
+      await waitForText("Second IP");
+      const list = container.querySelector("nav")!;
+      expect(list.textContent).toContain(`Room ${roomNumber}`);
+      expect(list.textContent).toContain("Room 100002");
+      expect(selected()).toContain(`Room ${roomNumber}`);
+      expect(container.querySelector(`a[href="/ip/${roomNumber}"]`)).not.toBeNull();
+      clickIp("Second IP");
+      expect(container.textContent?.match(/Room 100002/g)).toHaveLength(2);
+      expect(container.querySelector('a[href="/ip/100002"]')).not.toBeNull();
+    }
+  );
 
   it("keeps the initial channel when refreshed results change order", async () => {
     await render();
     await waitForText("First IP");
     await act(async () => {
-      queryClient.setQueryData(["tv", "ips", "en-US"], {
+      queryClient.setQueryData(["tv", "ips", "en-US", "", harness.userId], {
         pages: [{ items: [...ips].reverse(), nextCursor: null }],
         pageParams: [undefined],
       });
@@ -181,13 +380,12 @@ describe("TV IP list", () => {
     expect(container.querySelector("nav[data-lenis-prevent]")).not.toBeNull();
   });
 
-  it("does not switch IPs after playback ends, scrolling, keys, or elapsed time", async () => {
+  it("does not switch IPs from scrolling, unrelated keys, or elapsed time", async () => {
     await render();
     await waitForText("First IP");
     clickIp("First IP");
     vi.useFakeTimers();
     act(() => {
-      container.querySelector("video")!.dispatchEvent(new Event("ended", { bubbles: true }));
       container
         .querySelector("section")!
         .dispatchEvent(new WheelEvent("wheel", { deltaY: 500, bubbles: true }));
@@ -202,7 +400,7 @@ describe("TV IP list", () => {
   });
 
   it("preserves selection when loading another page or refreshing reordered results", async () => {
-    harness.get
+    harness.list
       .mockResolvedValueOnce({ items: ips, nextCursor: "next" })
       .mockResolvedValueOnce({ items: [makeIp("ip-3", "Third IP")], nextCursor: null });
     await render();
@@ -214,12 +412,18 @@ describe("TV IP list", () => {
         .click()
     );
     await waitForText("Third IP");
-    expect(harness.get).toHaveBeenLastCalledWith("/aurora/ip-commerce/ips", {
-      params: { locale: "en-US", cursor: "next", limit: 20 },
+    expect(harness.list).toHaveBeenLastCalledWith({
+      signal: expect.any(AbortSignal),
+      params: {
+        locale: "en-US",
+        cursor: "next",
+        q: undefined,
+        limit: 20,
+      },
     });
     expect(selected()).toContain("Second IP");
     await act(async () => {
-      queryClient.setQueryData(["tv", "ips", "en-US"], {
+      queryClient.setQueryData(["tv", "ips", "en-US", "", harness.userId], {
         pages: [{ items: [...ips].reverse(), nextCursor: null }],
         pageParams: [undefined],
       });
@@ -232,47 +436,217 @@ describe("TV IP list", () => {
     await render();
     await waitForText("First IP");
     clickIp("First IP");
-    act(() => {
-      container.querySelector("video")!.dispatchEvent(new Event("error"));
-    });
-    act(() => container.querySelector("section img")!.dispatchEvent(new Event("error")));
-    expect(container.querySelector("section img")).toBeNull();
-    expect(container.textContent).toContain("tv.videoUnavailable");
+    await waitForSource("ip-1");
+    vi.spyOn(videojs.log, "error").mockImplementation(() => {});
+    act(() => player().error("CDN request failed"));
+    act(() => container.querySelector("section img.size-full")!.dispatchEvent(new Event("error")));
+    expect(container.querySelector("section img.size-full")).toBeNull();
+    expect(container.textContent).toContain("CDN request failed");
     expect(selected()).toContain("First IP");
     clickIp("Second IP");
-    expect(container.querySelector("video")?.getAttribute("src")).toContain("ip-2.mp4");
-    expect(container.textContent).not.toContain("tv.videoUnavailable");
+    await waitForSource("ip-2");
+    expect(container.textContent).not.toContain("CDN request failed");
   });
 
-  it("keeps native mute and pause state across a catalog refresh", async () => {
+  it("keeps the custom player, mute and pause state across a catalog refresh", async () => {
     await render();
     await waitForText("First IP");
     clickIp("First IP");
+    await waitForSource("ip-1");
     const video = container.querySelector("video")!;
-    expect(video.controls).toBe(true);
+    const instance = player();
+    expect(video.controls).toBe(false);
+    expect(container.querySelectorAll(".vjs-control-bar button")).toHaveLength(2);
+    expect(container.querySelector(".vjs-play-control")).not.toBeNull();
+    expect(container.querySelector(".vjs-volume-panel")).not.toBeNull();
+    expect(container.querySelector(".vjs-progress-control, .vjs-fullscreen-control")).toBeNull();
     act(() => {
-      video.muted = false;
-      video.dispatchEvent(new Event("volumechange"));
+      player().muted(false);
+      player().volume(0.4);
+      player().pause();
     });
     await act(async () => {
-      await queryClient.invalidateQueries({ queryKey: ["tv", "ips", "en-US"] });
+      await queryClient.invalidateQueries({ queryKey: ["tv", "ips", "en-US", ""] });
     });
     expect(container.querySelector("video")).toBe(video);
-    expect(video.muted).toBe(false);
-    expect(video.paused).toBe(true);
-    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+    expect(player()).toBe(instance);
+    expect(player().muted()).toBe(false);
+    expect(player().volume()).toBeCloseTo(0.4);
+    expect(player().paused()).toBe(true);
+  });
+
+  it("advances to the next playable channel on ended and stops at the catalog end", async () => {
+    harness.list.mockResolvedValue({
+      items: [ips[0], { ...ips[1], trailerAsset: null }, makeIp("ip-3", "Third IP")],
+      nextCursor: null,
+    });
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-3");
+    expect(selected()).toContain("Third IP");
+    expect(player()).toBe(instance);
+    act(() => player().trigger("ended"));
+    expect(selected()).toContain("Third IP");
+    clickIp("First IP");
+    await waitForSource("ip-1");
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-3");
+  });
+
+  it("loads through cover-only pages when advancing beyond the current page", async () => {
+    harness.list
+      .mockReset()
+      .mockResolvedValueOnce({ items: [ips[0]], nextCursor: "page-2" })
+      .mockResolvedValueOnce({ items: [{ ...ips[1], trailerAsset: null }], nextCursor: "page-3" })
+      .mockResolvedValueOnce({ items: [makeIp("ip-3", "Third IP")], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-3");
+    expect(selected()).toContain("Third IP");
+    expect(harness.list).toHaveBeenCalledTimes(3);
+    expect(container.textContent).not.toContain("tv.loadingChannel");
+  });
+
+  it("does not let a late next-page response override a manual selection", async () => {
+    let resolvePage!: (value: unknown) => void;
+    harness.list
+      .mockReset()
+      .mockResolvedValueOnce({ items: ips, nextCursor: "page-2" })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePage = resolve;
+          })
+      );
+    await render();
+    await waitForSource("ip-1");
+    clickIp("Second IP");
+    await waitForSource("ip-2");
+    act(() => player().trigger("ended"));
+    expect(container.textContent).toContain("tv.loadingChannel");
+    clickIp("First IP");
+    await act(async () => {
+      resolvePage({ items: [makeIp("ip-3", "Third IP")], nextCursor: null });
+    });
+    await waitForText("Third IP");
+    expect(selected()).toContain("First IP");
+    await waitForSource("ip-1");
+  });
+
+  it("surfaces a next-page failure and lets the viewer retry without losing the channel", async () => {
+    harness.list
+      .mockReset()
+      .mockResolvedValueOnce({ items: [ips[0]], nextCursor: "page-2" })
+      .mockRejectedValueOnce(new Error("Catalog page unavailable"))
+      .mockResolvedValueOnce({ items: [ips[1]], nextCursor: null });
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("ended"));
+    await waitForText("Catalog page unavailable");
+    expect(selected()).toContain("First IP");
+    act(() => container.querySelector<HTMLButtonElement>('section [role="alert"] button')!.click());
+    await waitForSource("ip-2");
+    expect(container.textContent).not.toContain("Catalog page unavailable");
+  });
+
+  it("preserves volume and mute when switching past an excluded poster-only IP", async () => {
+    harness.list.mockResolvedValue({
+      items: [ips[0], { ...ips[1], trailerAsset: null }, makeIp("ip-3", "Third IP")],
+      nextCursor: null,
+    });
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    act(() => {
+      player().muted(false);
+      player().volume(0.3);
+    });
+    expect(container.querySelector('button[aria-label^="Second IP,"]')).toBeNull();
+    clickIp("Third IP");
+    await waitForSource("ip-3");
+    expect(player()).toBe(instance);
+    expect(player().muted()).toBe(false);
+    expect(player().volume()).toBeCloseTo(0.3);
+  });
+
+  it("reflects playback state and pauses offscreen without advancing", async () => {
+    await render();
+    await waitForSource("ip-1");
+    act(() => player().trigger("playing"));
+    expect(container.querySelector('nav [aria-label="tv.nowPlaying"]')).not.toBeNull();
+    act(() => player().trigger("waiting"));
+    expect(container.querySelector('nav [aria-label="tv.nowPlaying"]')).toBeNull();
+    const pause = vi.spyOn(player(), "pause");
+    act(() =>
+      observerCallback(
+        [{ isIntersecting: false } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+    );
+    expect(pause).toHaveBeenCalled();
+    act(() => player().trigger("ended"));
+    expect(selected()).toContain("First IP");
+    act(() =>
+      observerCallback(
+        [{ isIntersecting: true } as IntersectionObserverEntry],
+        {} as IntersectionObserver
+      )
+    );
+    act(() => player().trigger("ended"));
+    await waitForSource("ip-2");
+  });
+
+  it("retries a failed source on the same player", async () => {
+    await render();
+    await waitForSource("ip-1");
+    const instance = player();
+    const setSource = vi.spyOn(instance, "src");
+    vi.spyOn(videojs.log, "error").mockImplementation(() => {});
+    act(() => player().error("Preview temporarily unavailable"));
+    expect(container.textContent).toContain("Preview temporarily unavailable");
+    act(() =>
+      container.querySelector<HTMLButtonElement>('section [role="status"] button')!.click()
+    );
+    await waitForSource("ip-1");
+    expect(player()).toBe(instance);
+    expect(setSource).toHaveBeenCalledWith({ src: "https://cdn.test/ip-1.mp4", type: "video/mp4" });
+    expect(container.textContent).not.toContain("Preview temporarily unavailable");
   });
 
   it("shows an empty list without inventing an aggregate channel", async () => {
-    harness.get.mockResolvedValue({ items: [], nextCursor: null });
+    harness.list.mockResolvedValue({ items: [], nextCursor: null });
     await render();
     await waitForText("tv.noIps");
     expect(container.querySelectorAll("nav button")).toHaveLength(0);
     expect(container.querySelector("video")).toBeNull();
   });
 
+  it("searches by room number or name through the shared catalog API", async () => {
+    await render();
+    await waitForText("First IP");
+    const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+    expect(input.getAttribute("placeholder")).toBe("tv.searchPlaceholder");
+    await act(async () => {
+      const proto = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value");
+      proto?.set?.call(input, "100001");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "100001" }));
+      await new Promise((resolve) => setTimeout(resolve, 350));
+    });
+    expect(harness.get).toHaveBeenCalledWith(
+      "/aurora/ip-commerce/ips",
+      expect.objectContaining({
+        params: expect.objectContaining({
+          q: "100001",
+        }),
+      })
+    );
+  });
+
   it("shows upstream errors and retries the list request", async () => {
-    harness.get.mockRejectedValueOnce(new Error("Catalog temporarily unavailable"));
+    harness.list.mockRejectedValueOnce(new Error("Catalog temporarily unavailable"));
     await render();
     await waitForText("Catalog temporarily unavailable");
     act(() =>

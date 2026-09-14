@@ -39,7 +39,11 @@ import {
   createConversationRecoveryCoordinator,
   conversationKeys,
 } from "@/app/(site)/creators/_hooks/use-conversations";
-import { crewKeys } from "@/app/(site)/crews/_hooks/shared";
+import {
+  crewKeys,
+  crewTaskDetailQueries,
+  crewAccountQueries,
+} from "@/app/(site)/crews/_hooks/shared";
 import { crewConversationKey } from "@/app/(site)/crews/[id]/workspace/_hooks/use-crew-conversation";
 
 export function ConversationsProvider({ children }: { children: React.ReactNode }) {
@@ -66,7 +70,8 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
     userIdRef.current = uid;
 
     clientRef.current?.close();
-    const recovery = createConversationRecoveryCoordinator(qc);
+    let active = true;
+    const recovery = createConversationRecoveryCoordinator(qc, uid);
     clientRef.current = openConversationRealtime(uid, {
       onMessage: (data) => {
         // Do not patch a realtime frame directly over an in-flight
@@ -85,7 +90,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
           typeof window !== "undefined" &&
           window.location.pathname.endsWith(`/messages/${data.conversationId}`);
         const timelineQuery = qc.getQueryCache().find({
-          queryKey: conversationKeys.messages(data.conversationId),
+          queryKey: conversationKeys.messages(data.conversationId, uid),
           exact: true,
         });
         const timelineVisible =
@@ -98,7 +103,7 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         if (onInboxConversation || timelineVisible) return;
 
         const detail = qc.getQueryData<ConversationDTO>(
-          conversationKeys.detail(data.conversationId)
+          conversationKeys.detail(data.conversationId, uid)
         );
         const preview =
           data.message.type === "text"
@@ -111,35 +116,49 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         toast(preview, {
           action: {
             label: t("toastOpen"),
-            onClick: () => router.push(localizePath(`/messages/${data.conversationId}`, locale)),
+            onClick: () => {
+              if (active) router.push(localizePath(`/messages/${data.conversationId}`, locale));
+            },
           },
         });
       },
       onReadAdvanced: () => {
         // The other side's "read" advanced; inbox row may render a
         // read indicator in the future, so invalidate cheaply.
-        qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
+        qc.invalidateQueries({
+          queryKey: conversationKeys.inbox(),
+          predicate: (query) => query.queryKey[3] === uid,
+        });
       },
       onContextChanged: (data) => {
         qc.invalidateQueries({
-          queryKey: conversationKeys.detail(data.conversationId),
+          queryKey: conversationKeys.detail(data.conversationId, uid),
         });
-        qc.invalidateQueries({ queryKey: conversationKeys.inbox() });
+        qc.invalidateQueries({
+          queryKey: conversationKeys.inbox(),
+          predicate: (query) => query.queryKey[3] === uid,
+        });
       },
       onCrewTaskChanged: (data) => {
-        qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.task(data.taskId) });
-        qc.invalidateQueries({ queryKey: crewKeys.taskTimeline(data.taskId) });
-        qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, uid));
+        qc.invalidateQueries(crewTaskDetailQueries(data.crewId, data.taskId, uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskSummary(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskActivity(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.task(data.taskId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskTimeline(data.taskId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(data.crewId), uid));
         if (data.action === "reviewed") {
-          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "mine") });
-          qc.invalidateQueries({ queryKey: crewKeys.earnings(data.crewId, "crew") });
+          qc.invalidateQueries(crewAccountQueries(crewKeys.earnings(data.crewId, "mine"), uid));
+          qc.invalidateQueries(crewAccountQueries(crewKeys.earnings(data.crewId, "crew"), uid));
         }
       },
       onCrewTaskProjectChanged: (data) => {
-        qc.invalidateQueries({ queryKey: crewKeys.taskProject(data.crewId) });
-        qc.invalidateQueries({ queryKey: crewKeys.tasks(data.crewId) });
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskCenter, uid));
+        qc.invalidateQueries(crewTaskDetailQueries(data.crewId, undefined, uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.taskProject(data.crewId), uid));
+        qc.invalidateQueries(crewAccountQueries(crewKeys.tasks(data.crewId), uid));
         if (
           data.resource === "production_document" ||
           data.resource === "production_project" ||
@@ -148,10 +167,10 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
           data.resource === "episode" ||
           data.resource === "delivery"
         ) {
-          qc.invalidateQueries({ queryKey: crewKeys.productionOverview(data.crewId) });
-          qc.invalidateQueries({ queryKey: crewKeys.episodes(data.crewId) });
+          qc.invalidateQueries(crewAccountQueries(crewKeys.productionOverview(data.crewId), uid));
+          qc.invalidateQueries(crewAccountQueries(crewKeys.episodes(data.crewId), uid));
           if (data.resource === "production_activity") {
-            qc.invalidateQueries({ queryKey: crewKeys.productionActivity(data.crewId) });
+            qc.invalidateQueries(crewAccountQueries(crewKeys.productionActivity(data.crewId), uid));
           }
         }
       },
@@ -159,11 +178,16 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         qc.invalidateQueries({ queryKey: crewKeys.assets(data.crewId) });
       },
       onNotification: (notification) => {
-        qc.invalidateQueries({ queryKey: notificationKeys.all });
+        qc.invalidateQueries({
+          queryKey: notificationKeys.all,
+          predicate: (query) => query.queryKey[2] === uid,
+        });
         const crewId =
           typeof notification.meta?.crewId === "string" ? notification.meta.crewId : null;
         if (crewId) {
           if (notification.type === "crew.application.submitted") {
+            qc.invalidateQueries({ queryKey: [...crewKeys.detail(crewId), uid] });
+            qc.invalidateQueries({ queryKey: [...crewKeys.mine, uid] });
             qc.invalidateQueries({ queryKey: crewKeys.applications(crewId) });
             qc.invalidateQueries({ queryKey: crewKeys.positions(crewId) });
           }
@@ -214,10 +238,18 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
             ? {
                 label: notificationT("view"),
                 onClick: () => {
+                  if (!active) return;
                   if (!notification.readAt) {
                     void markNotificationRead(notification.id)
-                      .then(() => qc.invalidateQueries({ queryKey: notificationKeys.all }))
-                      .catch((error: Error) => toast.error(error.message));
+                      .then(() =>
+                        qc.invalidateQueries({
+                          queryKey: notificationKeys.all,
+                          predicate: (query) => query.queryKey[2] === uid,
+                        })
+                      )
+                      .catch((error: Error) => {
+                        if (active) toast.error(error.message);
+                      });
                   }
                   if (href.startsWith("/")) router.push(href);
                   else window.location.assign(href);
@@ -234,11 +266,15 @@ export function ConversationsProvider({ children }: { children: React.ReactNode 
         // realtime frame.
         void recovery.recoverAll();
         qc.invalidateQueries({ queryKey: crewKeys.all });
-        qc.invalidateQueries({ queryKey: notificationKeys.all });
+        qc.invalidateQueries({
+          queryKey: notificationKeys.all,
+          predicate: (query) => query.queryKey[2] === uid,
+        });
       },
     });
 
     return () => {
+      active = false;
       recovery.dispose();
       clientRef.current?.close();
       clientRef.current = null;

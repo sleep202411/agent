@@ -12,6 +12,7 @@ import {
   IconRoute,
   IconSparkles,
   IconUser,
+  IconWallet,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
@@ -31,6 +32,9 @@ import {
 } from "@/lib/story-projects-api";
 import { StoryReferencePack } from "./story-reference-pack";
 
+import { useSiteRegion } from "@/app/_components/region-provider";
+import { getWebBaseUrl } from "@/lib/web-base";
+
 type WorkbenchStage = "overview" | "story" | "references";
 
 const STAGES: Array<{ id: WorkbenchStage; icon: typeof IconBook2 }> = [
@@ -43,9 +47,11 @@ const STORY_REFERENCE_API_CONNECTED = true;
 export function StoryProjectWorkbench({
   projectId,
   stage,
+  earningsWebBase,
 }: {
   projectId: string;
   stage: WorkbenchStage;
+  earningsWebBase?: string;
 }) {
   const t = useTranslations("storyStudio");
   const workbenchQuery = useQuery({
@@ -91,7 +97,11 @@ export function StoryProjectWorkbench({
   return (
     <main className="min-h-[calc(100vh-64px)] w-full px-6 py-6 lg:px-8">
       <div className="mx-auto w-full max-w-[1680px]">
-        <WorkbenchHeader workbench={authoringWorkbench} />
+        <WorkbenchHeader
+          workbench={authoringWorkbench}
+          earningsWebBase={earningsWebBase}
+          showEarnings={stage === "overview"}
+        />
         <StageNavigation projectId={projectId} activeStage={stage} />
         <div className="mt-6">
           {stage === "overview" ? <OverviewStage workbench={authoringWorkbench} /> : null}
@@ -110,8 +120,23 @@ export function StoryProjectWorkbench({
   );
 }
 
-function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
+function WorkbenchHeader({
+  workbench,
+  earningsWebBase,
+  showEarnings,
+}: {
+  workbench: StoryWorkbench;
+  earningsWebBase?: string;
+  showEarnings: boolean;
+}) {
   const t = useTranslations("storyStudio");
+  const locale = useLocale();
+  const region = useSiteRegion();
+  const earningsUrl = new URL(
+    `/${locale}/profile/earnings`,
+    earningsWebBase || getWebBaseUrl(region)
+  );
+  earningsUrl.searchParams.set("work", `story:${workbench.project.id}`);
   return (
     <header className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
       <div className="min-w-0">
@@ -137,6 +162,14 @@ function WorkbenchHeader({ workbench }: { workbench: StoryWorkbench }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2 text-[11px] text-white/64">
+        {showEarnings ? (
+          <Button variant="ghost" size="sm" asChild>
+            <a href={earningsUrl.toString()}>
+              <IconWallet className="size-3.5" />
+              {t("workbench.viewEarnings")}
+            </a>
+          </Button>
+        ) : null}
         <span className="rounded-full bg-white/[0.05] px-3 py-1.5">
           {t(`visibility.${workbench.project.visibility}`)}
         </span>
@@ -531,15 +564,15 @@ interface AuthoredDecision {
   options: Array<{
     id: string;
     label: Record<string, string>;
-    nextNodeId: string;
+    nextNodeId: string | null;
   }>;
 }
 
 function collectDecisions(content: InteractiveStoryDraftContent): AuthoredDecision[] {
   const decisions = new Map<string, AuthoredDecision>();
   for (const node of content.graph.nodes) {
-    if (node.kind !== "clip" || node.exit.kind !== "choice") continue;
-    const sourceLabel = node.name?.trim() || node.clipKey;
+    if (node.kind === "world" || node.exit.kind !== "choice") continue;
+    const sourceLabel = node.kind === "clip" ? node.name?.trim() || node.clipKey : node.nodeId;
     const existing = decisions.get(node.exit.decisionId);
     if (existing) {
       existing.sourceSceneLabels.push(sourceLabel);

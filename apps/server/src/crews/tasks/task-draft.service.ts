@@ -22,7 +22,6 @@ const ModelTaskDraftSchema = z.object({
   startDate: z.string().nullable(),
   dueDate: z.string().nullable(),
   estimatePoints: z.number().int().nullable(),
-  computeBudgetPoints: z.number().int().nullable(),
   revisionLimit: z.number().int().nullable(),
   cycleId: z.string().nullable(),
   parentTaskNumber: z.number().int().nullable(),
@@ -60,7 +59,7 @@ export class CrewTaskDraftService {
         select: { userId: true },
       }),
       this.prisma.crewTask.findMany({
-        where: { crewId, cancelledAt: null },
+        where: { deletedAt: null, crewId, cancelledAt: null },
         orderBy: [{ updatedAt: 'desc' }, { number: 'desc' }],
         take: MAX_TASK_CONTEXT,
         select: { id: true, number: true, title: true },
@@ -155,11 +154,6 @@ export class CrewTaskDraftService {
       startDate,
       dueDate,
       estimatePoints: boundedInteger(modelDraft.estimatePoints, 0, 1_000_000),
-      computeBudgetPoints: boundedInteger(
-        modelDraft.computeBudgetPoints,
-        0,
-        1_000_000_000,
-      ),
       revisionLimit: boundedInteger(modelDraft.revisionLimit, 0, 100),
       cycleId:
         modelDraft.cycleId && cycleIds.has(modelDraft.cycleId)

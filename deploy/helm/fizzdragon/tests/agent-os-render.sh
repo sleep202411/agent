@@ -33,6 +33,10 @@ ok "all three probes target /health"
 grep -q 'value: "0.0.0.0"' <<<"$agent_os" || fail "AGENT_OS_BIND_ADDRESS must be set explicitly"
 ok "binds 0.0.0.0 explicitly"
 
+grep -A1 'name: AGENT_OS_VIEWER_MODEL_PROFILE' <<<"$agent_os" | grep -q 'value: "qwen3.7-plus"' ||
+  fail "viewing assistance must select a configured model profile"
+ok "viewing assistance uses an explicit shipped model profile"
+
 # ── both directions of the link are derived, never literal ───────────────────
 grep -q 'value: "http://fizzdragon-server:3001"' <<<"$agent_os" ||
   fail "AGENT_OS_DOMAIN_URL must resolve to the rendered server Service"
@@ -73,6 +77,8 @@ expect_fail "networkPolicy disabled" \
   --set agentOs.networkPolicy.enabled=false
 expect_fail "a mutable image tag" \
   --set agentOs.image.tag=latest
+expect_fail "an empty viewing assistance model profile" \
+  --set agentOs.model.viewerProfile=
 
 # ── DNS is the first egress rule; without it tools fail as provider flakes ───
 policy="$(helm template fizzdragon "$CHART" -s templates/agent-os-networkpolicy.yaml)"

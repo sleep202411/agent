@@ -1,4 +1,10 @@
+import { DocumentsModule } from '../documents/documents.module';
+import { RealtimeRevokeModule } from '../infra/realtime/realtime-revoke.module';
+import { StoryProjectMoveController } from './story-project-move.controller';
+import { StoryProjectMoveService } from './story-project-move.service';
 import { Module } from '@nestjs/common';
+import { StoryCommunityAccessService } from './story-community-access.service';
+import { StoryCommunityAccessController } from './story-community-access.controller';
 import { WorkspacesModule } from '../workspaces/workspaces.module';
 import { StorageModule } from '../infra/storage/storage.module';
 import { MediaModule } from '../media/media.module';
@@ -17,6 +23,8 @@ import { StoryAgentRunModule } from './story-agent-run.module';
 
 @Module({
   imports: [
+    DocumentsModule,
+    RealtimeRevokeModule,
     WorkspacesModule,
     StoryAccessModule,
     StorageModule,
@@ -24,12 +32,16 @@ import { StoryAgentRunModule } from './story-agent-run.module';
     StoryAgentRunModule,
   ],
   controllers: [
+    StoryProjectMoveController,
+    StoryCommunityAccessController,
     StoryProjectsController,
     StoryReferenceController,
     StoryBuildController,
     StoryWorkingPreviewController,
   ],
   providers: [
+    StoryProjectMoveService,
+    StoryCommunityAccessService,
     StoryProjectsService,
     StoryReferenceService,
     StoryBuildService,

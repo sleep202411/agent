@@ -44,7 +44,6 @@ import {
   type CrewPositionDTO,
 } from "@/app/(site)/crews/_hooks/use-crew";
 import { CrewApiError } from "@/app/(site)/crews/_hooks/api";
-import { DevIdentitySwitcher } from "@/app/(site)/crews/_components/dev-identity-switcher";
 import { useCrewPermissions } from "@/app/(site)/crews/_hooks/use-crew-permissions";
 import { AddCrewMemberDialog } from "@/app/(site)/crews/_components/add-member-dialog";
 import { CommunityInviteDialog } from "@/app/(site)/crews/_components/community-invite-dialog";
@@ -177,11 +176,6 @@ export default function CrewWorkspacePage() {
   const { data: crewDetail, isLoading: detailLoading } = detailQuery;
   const { data: members = [], isLoading: membersLoading } = membersQuery;
   const { data: positions = [] } = useCrewPositions(id);
-  // Permission gating goes through useCrewPermissions so DevIdentitySwitcher
-  // works in dev (without it the workspace gates on the real Java
-  // satoken user id, which doesn't match the server-side AUTH_DISABLED
-  // fallback user 'dev' that owns rows created locally). Production
-  // users still resolve from `useUserInfo` inside the hook.
   const viewer = useCrewPermissions(id);
   // 群聊 is members-only (doc §7). The roster decides that, so the tab
   // set is not knowable until `useCrewMembers` resolves — the page
@@ -337,12 +331,9 @@ export default function CrewWorkspacePage() {
   }
 
   const isChat = activeTab === "chat";
-  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.labelKey ?? "tabOverview";
 
   return (
     <CrewTransfersProvider crewId={id}>
-      <DevIdentitySwitcher />
-
       <CrewWorkbenchShell
         activeChatChannel={requestedCommunityChannel ? "community" : "team"}
         activeTab={activeTab}
@@ -368,12 +359,7 @@ export default function CrewWorkspacePage() {
             onSelectedAssetChange={handleSelectedAssetChange}
           />
         ) : (
-          <StandardWorkspaceSurface
-            title={t(activeTabLabel)}
-            description={crewDetail.description}
-            isChat={isChat}
-            isTaskWorkspace={activeTab === "tasks"}
-          >
+          <StandardWorkspaceSurface isChat={isChat} isTaskWorkspace={activeTab === "tasks"}>
             {activeTab === "chat" ? (
               <CrewChatTab crewId={id} channel={requestedCommunityChannel ? "community" : "team"} />
             ) : null}
@@ -501,7 +487,6 @@ const COMMUNITY_WORKSPACE_TABS = [
  * and basic crew information. Internal team navigation is never mounted.
  */
 function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
-  const t = useTranslations("workspace");
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -520,7 +505,6 @@ function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
 
   return (
     <>
-      <DevIdentitySwitcher />
       <CrewWorkbenchShell
         activeChatChannel="community"
         activeTab={activeTab}
@@ -534,12 +518,7 @@ function CommunityWorkspace({ crew }: { crew: CrewDTO }) {
         onSelectTab={selectTab}
         showTeamChat={false}
       >
-        <StandardWorkspaceSurface
-          title={t(activeTab === "chat" ? "tabChat" : "tabOverview")}
-          description={crew.tagline || crew.description}
-          isChat={activeTab === "chat"}
-          isTaskWorkspace={false}
-        >
+        <StandardWorkspaceSurface isChat={activeTab === "chat"} isTaskWorkspace={false}>
           {activeTab === "chat" ? <CrewChatTab crewId={crew.id} channel="community" /> : null}
           {activeTab === "overview" ? <CommunityCrewBasicInfo crew={crew} /> : null}
         </StandardWorkspaceSurface>
@@ -570,38 +549,24 @@ function CommunityCrewBasicInfo({ crew }: { crew: CrewDTO }) {
 }
 
 function StandardWorkspaceSurface({
-  title,
-  description,
   isChat,
   isTaskWorkspace,
   children,
 }: {
-  title: string;
-  description?: string | null;
   isChat: boolean;
   isTaskWorkspace: boolean;
   children: ReactNode;
 }) {
   if (isChat || isTaskWorkspace) {
     return (
-      <div className="h-dvh min-h-0 overflow-hidden bg-[#090a0c]">
+      <div className="h-full min-h-0 overflow-hidden bg-[#090a0c]">
         <div className="h-full min-h-0 w-full">{children}</div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col bg-[#090a0c]">
-      <header className="flex h-[58px] shrink-0 items-center border-b border-white/[0.075] px-5">
-        <div className="min-w-0">
-          <h1 className="truncate text-[13px] font-semibold tracking-[-0.01em] text-[#eceef2]">
-            {title}
-          </h1>
-          {description ? (
-            <p className="mt-0.5 max-w-xl truncate text-[10px] text-[#686e78]">{description}</p>
-          ) : null}
-        </div>
-      </header>
+    <div className="flex h-full min-h-0 flex-col bg-[#090a0c]">
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="mx-auto w-full max-w-[1480px]">{children}</div>
       </div>
@@ -625,7 +590,6 @@ function WorkspaceState({
       className="flex min-h-[calc(100dvh-4rem)] items-center justify-center bg-background px-6 py-16"
       aria-labelledby="workspace-state-title"
     >
-      <DevIdentitySwitcher />
       <div className="flex max-w-md flex-col items-center text-center">
         <div
           className="mb-5 grid size-12 place-items-center rounded-full bg-muted"

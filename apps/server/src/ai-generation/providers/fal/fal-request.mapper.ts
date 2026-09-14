@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { falError } from './fal-error.mapper';
 import type { FalModelRuntimeConfig } from './fal.types';
 
 const logger = new Logger('FalRequestMapper');
@@ -18,10 +19,11 @@ type FalRequestNormalizer = (
 ) => void;
 
 const NORMALIZERS_BY_FAMILY: Record<string, FalRequestNormalizer> = {
-  'gpt-image': normalizeGptImage2Request,
+  'gpt-image': normalizeGptImageRequest,
   seedream: normalizeSeedreamRequest,
   'qwen-image-2.0': normalizeQwenImageRequest,
   'flux-2': normalizeFluxImageRequest,
+  'minimax-h3-max': normalizeH3MaxRequest,
 };
 
 export function mapFalProviderRequest(
@@ -47,6 +49,50 @@ export function mapFalProviderRequest(
   const family = policyProviderFamily(config) ?? endpointFamilyFallback(config);
   if (family) NORMALIZERS_BY_FAMILY[family]?.(config, input, body);
   return body;
+}
+
+function normalizeH3MaxRequest(
+  _config: FalModelRuntimeConfig,
+  input: Record<string, unknown>,
+  body: Record<string, unknown>,
+): void {
+  // Official H3 Max OpenAPI requires an integer duration and expansion mode.
+  body.duration = Number(body.duration ?? 5);
+  if (
+    !Number.isInteger(body.duration) ||
+    Number(body.duration) < 5 ||
+    Number(body.duration) > 15
+  ) {
+    throw falError(
+      'VALIDATION_ERROR',
+      'H3 Max duration must be an integer between 5 and 15 seconds.',
+      'H3 Max duration must be an integer between 5 and 15 seconds.',
+    );
+  }
+  body.resolution = input.resolution ?? '768P';
+  body.prompt_expansion_mode = 'balanced';
+  body.enable_safety_checker = true;
+  body.sync_mode = false;
+  for (const kind of ['image', 'video', 'audio']) {
+    const key = `${kind}_urls`;
+    if (Array.isArray(body[key]) && body[key].length > 0) {
+      body[`reference_${key}`] = body[key];
+    }
+    delete body[key];
+  }
+  const referenceCount = ['image', 'video', 'audio'].reduce((count, kind) => {
+    const values = body[`reference_${kind}_urls`];
+    return count + (Array.isArray(values) ? values.length : 0);
+  }, 0);
+  if (referenceCount > 0 && (body.image_url || body.end_image_url)) {
+    throw falError(
+      'VALIDATION_ERROR',
+      'H3 Max cannot mix keyframes with reference media.',
+      'H3 Max cannot mix keyframes with reference media.',
+    );
+  }
+  // Image-to-video derives its canvas from the keyframe, not aspect_ratio.
+  if (body.image_url || body.end_image_url) delete body.aspect_ratio;
 }
 
 function policyProviderFamily(
@@ -79,7 +125,7 @@ function endpointFamilyFallback(
   return undefined;
 }
 
-function normalizeGptImage2Request(
+function normalizeGptImageRequest(
   config: FalModelRuntimeConfig,
   input: Record<string, unknown>,
   body: Record<string, unknown>,
@@ -210,7 +256,7 @@ function transformValue(value: unknown, transform = 'identity'): unknown {
   // First url of a (possibly single-element) reference array → a single
   // `image_url` string, for models that take one reference image (hunyuan).
   if (transform === 'mediaFirstUrl') {
-    const first = Array.isArray(value) ? value[0] : value;
+    const first: unknown = Array.isArray(value) ? value[0] : value;
     if (typeof first === 'string') return first.trim() ? first : undefined;
     if (first && typeof first === 'object' && 'url' in first) {
       const url = (first as { url?: unknown }).url;
@@ -252,17 +298,24 @@ function dimensionsFromImageSize(
     width = height * aspect;
   }
 
+  // GPT Image requires at least 655,360 pixels, including 1K widescreen.
+  // Quantize within the area bounds: nearest rounding alone can push a 4K
+  // square above the provider maximum of 8,294,400 pixels.
+  const minPixels = 655_360;
   const pixels = width * height;
-  if (pixels > maxPixels) {
-    const scale = Math.sqrt(maxPixels / pixels);
-    width *= scale;
-    height *= scale;
+  const scale = Math.sqrt(
+    Math.min(maxPixels, Math.max(minPixels, pixels)) / pixels,
+  );
+  width = roundToMultiple(width * scale, 16);
+  height = roundToMultiple(height * scale, 16);
+  while (width * height < minPixels || width * height > maxPixels) {
+    const delta = width * height < minPixels ? 16 : -16;
+    const widthError = Math.abs(Math.log((width + delta) / height / aspect));
+    const heightError = Math.abs(Math.log(width / (height + delta) / aspect));
+    if (widthError < heightError) width += delta;
+    else height += delta;
   }
-
-  return {
-    width: clampFalDimension(roundToMultiple(width, 16)),
-    height: clampFalDimension(roundToMultiple(height, 16)),
-  };
+  return { width, height };
 }
 
 function aspectRatioForImageSize(imageSize: string): number | undefined {
@@ -347,10 +400,6 @@ function explicitAspectRatio(value: string): number | undefined {
 
 function roundToMultiple(value: number, multiple: number): number {
   return Math.max(multiple, Math.round(value / multiple) * multiple);
-}
-
-function clampFalDimension(value: number): number {
-  return Math.min(3840, Math.max(16, value));
 }
 
 function clampSeedreamDimension(value: number): number {

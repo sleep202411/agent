@@ -42,6 +42,7 @@ function serviceWith(prisma: Record<string, unknown>) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
 }
 
@@ -118,6 +119,7 @@ describe('current entitlement subscription binding', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await expect(
@@ -133,7 +135,7 @@ describe('current entitlement subscription binding', () => {
           subjectType: BillingSubjectType.workspace,
           subjectId: 'workspace-1',
           planKey: 'team',
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -161,6 +163,7 @@ describe('current entitlement subscription binding', () => {
       {} as never,
       {} as never,
       { resolveForUser: jest.fn().mockResolvedValue(entitlement) } as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

@@ -25,6 +25,7 @@ import { z } from 'zod';
 
 export const UploadKindSchema = z.enum([
   'episode_video',
+  'episode_source_video',
   'episode_cover',
   'ip_banner',
   'news_cover',
@@ -46,12 +47,13 @@ export const CreateUploadUrlSchema = z.object({
   fileName: z.string().trim().min(1).max(256),
   /** Declared size; pre-checked against the per-kind cap before minting. */
   sizeBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  /** Optional feature linkage, audit-only at issue time. */
+  /** Story/Crew scopes authorize uploads; legacy feature IDs are audit-only. */
   scope: z
     .object({
       projectId: z.union([z.string(), z.number()]).optional(),
       episodeId: z.union([z.string(), z.number()]).optional(),
       crewId: z.string().trim().min(1).max(64).optional(),
+      storyProjectId: z.string().uuid().optional(),
     })
     .optional(),
 });
@@ -92,6 +94,7 @@ export const ConfirmUploadSchema = z.object({
   scope: z
     .object({
       crewId: z.string().trim().min(1).max(64).optional(),
+      storyProjectId: z.string().uuid().optional(),
     })
     .optional(),
 });
@@ -119,6 +122,7 @@ const MediaAssetReadinessCapabilitySchema = z.enum(
 
 export const MediaAssetReadinessStatusRequestSchema = z.object({
   capability: MediaAssetReadinessCapabilitySchema,
+  documentId: z.string().uuid().optional(),
   assetIds: z.array(z.string().uuid()).max(100),
 });
 export type MediaAssetReadinessStatusRequestDto = z.infer<
@@ -131,6 +135,7 @@ export interface MediaAssetReadinessStatusResponseDto {
 
 export const MediaAssetReadinessCheckRequestSchema = z.object({
   capability: MediaAssetReadinessCapabilitySchema,
+  documentId: z.string().uuid().optional(),
 });
 export type MediaAssetReadinessCheckRequestDto = z.infer<
   typeof MediaAssetReadinessCheckRequestSchema

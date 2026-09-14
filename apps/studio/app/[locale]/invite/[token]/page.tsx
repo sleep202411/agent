@@ -3,13 +3,13 @@
 import { use, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconAlertTriangle, IconLink, IconLoader2, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ApiRequestError } from "@/lib/api";
 import { useAuth } from "@/app/_components/auth-provider";
-import { ACTIVE_WORKSPACE_STORAGE_KEY } from "@/app/_components/workspace-context";
+import { useWorkspace, WORKSPACES_QUERY_KEY } from "@/app/_components/workspace-context";
 import {
   acceptInvite,
   previewInvite,
@@ -30,10 +30,13 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
   const t = useTranslations("invite");
   const tc = useTranslations("common");
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { setActiveWorkspaceId } = useWorkspace();
   const { user, loading: authLoading, signIn } = useAuth();
 
   const previewQ = useQuery<InvitePreview, ApiRequestError>({
-    queryKey: ["invite-preview", token],
+    queryKey: ["invite-preview", token, user?.id ?? null],
+    enabled: !authLoading && Boolean(user),
     queryFn: () => previewInvite(token),
     retry: false,
   });
@@ -42,7 +45,6 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
   const acceptMut = useMutation({
     mutationFn: () => acceptInvite(token),
     onSuccess: (result: AcceptedInvite) => {
-      setJoining(true); // keep the button busy through navigation
       toast.success(
         result.scope === "workspace"
           ? t("joinedTeam")
@@ -50,22 +52,26 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
             ? t("joinedStory")
             : t("joinedProject")
       );
-      if (result.scope === "workspace") {
-        try {
-          localStorage.setItem(ACTIVE_WORKSPACE_STORAGE_KEY, result.workspaceId);
-        } catch {
-          /* ignore */
-        }
-        router.replace("/canvas");
-      } else if (result.scope === "story-project") {
-        // A story invite lands on the story it granted, not the canvas home.
-        router.replace(`/story-studio/projects/${result.storyProjectId}/canvas`);
-      } else {
-        router.replace(`/project/${result.projectId}`);
-      }
+      enterTarget(result);
     },
     onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : t("acceptFailed")),
   });
+
+  function enterTarget(result: AcceptedInvite) {
+    setJoining(true);
+    void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    void queryClient.invalidateQueries({ queryKey: ["home-recent-projects"] });
+    setActiveWorkspaceId(result.workspaceId);
+    if (result.scope === "workspace") {
+      router.replace(`/canvas?ws=${encodeURIComponent(result.workspaceId)}`);
+    } else if (result.scope === "story-project") {
+      router.replace(
+        `/story-studio/projects/${result.storyProjectId}/canvas?ws=${encodeURIComponent(result.workspaceId)}`
+      );
+    } else {
+      router.replace(`/project/${result.projectId}?ws=${encodeURIComponent(result.workspaceId)}`);
+    }
+  }
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-4">
@@ -90,21 +96,21 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
       );
     }
 
+    if (!user) {
+      return (
+        <Shell
+          icon={<IconUsers className="size-6" />}
+          title={t("signInTitle")}
+          body={t("signInBody")}
+        >
+          <Button className="w-full" onClick={signIn}>
+            {t("signIn")}
+          </Button>
+        </Shell>
+      );
+    }
+
     if (previewQ.isError) {
-      // Not signed in → the api client already raised the login dialog.
-      if (!user) {
-        return (
-          <Shell
-            icon={<IconUsers className="size-6" />}
-            title={t("signInTitle")}
-            body={t("signInBody")}
-          >
-            <Button className="w-full" onClick={signIn}>
-              {t("signIn")}
-            </Button>
-          </Shell>
-        );
-      }
       return (
         <Shell
           icon={<IconAlertTriangle className="size-6" />}
@@ -120,6 +126,22 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
 
     const preview = previewQ.data;
     if (!preview) return null;
+
+    const existingAccess = preview.existingAccess;
+    if (existingAccess) {
+      return (
+        <Shell
+          icon={<IconUsers className="size-6" />}
+          title={t("alreadyJoinedTitle")}
+          body={t("alreadyJoinedBody", { name: existingAccess.targetName })}
+        >
+          <Button className="w-full" disabled={joining} onClick={() => enterTarget(existingAccess)}>
+            {joining ? <IconLoader2 className="size-4 animate-spin" /> : null}
+            {t(existingAccess.scope === "workspace" ? "enterWorkspace" : "enterProject")}
+          </Button>
+        </Shell>
+      );
+    }
 
     if (preview.status !== "pending") {
       const copy =

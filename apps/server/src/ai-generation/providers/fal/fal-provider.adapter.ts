@@ -317,11 +317,34 @@ export class FalProviderAdapter implements ProviderAdapter {
     // endpoints. Route per mode, derived from the post-mapping payload shape.
     if (runtime.type === 'video' && runtime.modeEndpoints) {
       const mode = videoGenerationModeFromPayload(payload);
-      return runtime.modeEndpoints[mode] ?? runtime.endpointId;
+      const endpoint = runtime.modeEndpoints[mode];
+      if (!endpoint) {
+        throw falError(
+          'VALIDATION_ERROR',
+          `The selected fal video model does not support ${mode}.`,
+          'Choose a model that supports these inputs or provide the required reference media.',
+        );
+      }
+      return endpoint;
     }
 
     const hasReferenceImages =
       Array.isArray(payload.image_urls) && payload.image_urls.length > 0;
+    // Canonicals with distinct image endpoints declare their route per mode.
+    // Single-endpoint legacy models still use their /edit conventions below.
+    if (
+      runtime.type === 'image' &&
+      runtime.modeEndpoints &&
+      new Set(Object.values(runtime.modeEndpoints)).size > 1
+    ) {
+      const mode = payload.mask_url
+        ? 'inpainting'
+        : hasReferenceImages
+          ? 'image_to_image'
+          : 'text_to_image';
+      const endpoint = runtime.modeEndpoints[mode];
+      if (endpoint) return endpoint;
+    }
     if (!hasReferenceImages) return runtime.endpointId;
 
     if (runtime.endpointId === 'openai/gpt-image-2')
@@ -716,6 +739,9 @@ export function videoGenerationModeFromPayload(
   payload: Record<string, unknown>,
 ): AiGenerationMode {
   if (
+    hasItems(payload.reference_image_urls) ||
+    hasItems(payload.reference_video_urls) ||
+    hasItems(payload.reference_audio_urls) ||
     hasItems(payload.image_urls) ||
     hasItems(payload.video_urls) ||
     hasItems(payload.audio_urls)

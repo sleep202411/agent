@@ -1,3 +1,4 @@
+import { requirePrivateUploadTarget } from './private-upload-target';
 /**
  * Alibaba OSS implementation of OutputStorageService.
  *
@@ -37,6 +38,9 @@ import {
   type CreateUploadUrlInput,
   type CreateUploadUrlResult,
   type HeadObjectResult,
+  type MultipartUploadRef,
+  type StoredUploadPart,
+  type UploadPartUrl,
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
@@ -77,7 +81,11 @@ export class AliyunOssStorageService extends OutputStorageService {
   readonly providerId = 'aliyun_oss' as const;
   private readonly logger = new Logger(AliyunOssStorageService.name);
   private readonly client: OSS | null;
+  private readonly missingConfigurationKeys: string[];
   private readonly bucket: string;
+  private readonly privateUploadTarget = (
+    process.env.OSS_PRIVATE_BUCKET ?? ''
+  ).trim();
   private readonly rawRegion: string;
   private readonly accessKeyId: string;
   private readonly accessKeySecret: string;
@@ -97,6 +105,19 @@ export class AliyunOssStorageService extends OutputStorageService {
     const accessKeyId = (process.env.OSS_ACCESS_KEY_ID ?? '').trim();
     const accessKeySecret = (process.env.OSS_ACCESS_KEY_SECRET ?? '').trim();
 
+    this.missingConfigurationKeys = [
+      ['OSS_BUCKET', bucket],
+      ['OSS_REGION', rawRegion],
+      ['OSS_ACCESS_KEY_ID', accessKeyId],
+      ['OSS_ACCESS_KEY_SECRET', accessKeySecret],
+      ['OSS_PUBLIC_BASE_URL', process.env.OSS_PUBLIC_BASE_URL?.trim()],
+      [
+        'MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS',
+        process.env.MEDIA_PUBLIC_BASE_URL_ALIYUN_OSS?.trim(),
+      ],
+    ]
+      .filter(([, value]) => !value)
+      .map(([key]) => key as string);
     this.bucket = bucket;
     this.rawRegion = rawRegion;
     this.accessKeyId = accessKeyId;
@@ -143,6 +164,24 @@ export class AliyunOssStorageService extends OutputStorageService {
           authorizationV4: true,
         })
       : null;
+  }
+
+  objectLocation(key: string) {
+    this.assertConfigured('Object storage');
+    return {
+      storageProvider: this.providerId,
+      bucket: this.bucket,
+      region: this.region,
+      objectKey: key,
+      externalUrl: null,
+    };
+  }
+
+  assertConfigured(context: string): void {
+    if (this.missingConfigurationKeys.length)
+      throw new Error(
+        `${context} requires: ${this.missingConfigurationKeys.join(', ')}`,
+      );
   }
 
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {
@@ -201,8 +240,129 @@ export class AliyunOssStorageService extends OutputStorageService {
     };
   }
 
+  async beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef> {
+    const result = await this.clientForBucket(this.bucket).initMultipartUpload(
+      storageKey,
+      {
+        mime: contentType,
+        headers: { 'Cache-Control': IMMUTABLE_STORAGE_CACHE_CONTROL },
+      },
+    );
+    if (!result.uploadId)
+      throw new Error('Storage did not return an upload ID');
+    return {
+      storageKey,
+      uploadId: result.uploadId,
+      bucket: this.bucket,
+      region: this.region,
+    };
+  }
+
+  async listUploadParts(ref: MultipartUploadRef): Promise<StoredUploadPart[]> {
+    const parts: StoredUploadPart[] = [];
+    let marker = 0;
+    for (;;) {
+      const result = await this.clientForBucket(
+        ref.bucket,
+        ref.region,
+      ).listParts(ref.storageKey, ref.uploadId, {
+        'max-parts': 1000,
+        'part-number-marker': marker,
+        'encoding-type': 'url',
+      });
+      // ali-oss returns raw XML values (including a single object instead of an
+      // array for one part); its declaration incorrectly calls Size `size`.
+      const entries: unknown[] = Array.isArray(result.parts)
+        ? result.parts
+        : [result.parts];
+      for (const entry of entries) {
+        const p = entry as {
+          PartNumber?: unknown;
+          ETag?: unknown;
+          Size?: unknown;
+        };
+        const number = Number(p.PartNumber);
+        const sizeBytes = Number(p.Size);
+        if (
+          !Number.isInteger(number) ||
+          number < 1 ||
+          !Number.isSafeInteger(sizeBytes) ||
+          sizeBytes < 1 ||
+          typeof p.ETag !== 'string'
+        ) {
+          throw new Error('Invalid stored upload part');
+        }
+        parts.push({ number, sizeBytes, etag: p.ETag });
+      }
+      if (String(result.isTruncated) !== 'true') return parts;
+      const next = Number(result.nextPartNumberMarker);
+      if (!Number.isInteger(next) || next <= marker)
+        throw new Error('Invalid storage pagination marker');
+      marker = next;
+    }
+  }
+
+  async signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl> {
+    const url = await this.browserSigner(ref.bucket, ref.region).signatureUrlV4(
+      'PUT',
+      900,
+      {
+        queries: { uploadId: ref.uploadId, partNumber: String(number) },
+      },
+      ref.storageKey,
+    );
+    return { url, headers: {} };
+  }
+
+  async completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+  ): Promise<void> {
+    await this.clientForBucket(ref.bucket, ref.region).completeMultipartUpload(
+      ref.storageKey,
+      ref.uploadId,
+      parts.map((p) => ({ number: p.number, etag: p.etag })),
+    );
+  }
+
+  async abortMultipartUpload(ref: MultipartUploadRef): Promise<void> {
+    try {
+      await this.clientForBucket(ref.bucket, ref.region).abortMultipartUpload(
+        ref.storageKey,
+        ref.uploadId,
+      );
+    } catch (error) {
+      if (!(error instanceof Error && error.name === 'NoSuchUploadError'))
+        throw error;
+    }
+  }
+
   async createUploadUrl(
     input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    return this.signUploadUrl(input, this.bucket);
+  }
+
+  async createPrivateUploadUrl(
+    input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    const target = requirePrivateUploadTarget(
+      'OSS_PRIVATE_BUCKET',
+      this.privateUploadTarget,
+      [this.bucket, ''],
+    );
+    return this.signUploadUrl(input, target);
+  }
+
+  private async signUploadUrl(
+    input: CreateUploadUrlInput,
+    target: string,
   ): Promise<CreateUploadUrlResult> {
     if (!this.client) {
       throw new ServiceUnavailableException(
@@ -213,7 +373,7 @@ export class AliyunOssStorageService extends OutputStorageService {
     // V4 presigned PUT. Signing Content-Type means the browser MUST send
     // the identical value (uploads.ts already does). Region is persisted
     // in the bare form so the read resolver re-builds the host correctly.
-    const url = await this.browserSigner(this.bucket).signatureUrlV4(
+    const url = await this.browserSigner(target).signatureUrlV4(
       'PUT',
       ttl,
       { headers: { 'Content-Type': input.contentType } },
@@ -226,7 +386,7 @@ export class AliyunOssStorageService extends OutputStorageService {
       headers: { 'Content-Type': input.contentType },
       storageKey: input.storageKey,
       provider: 'aliyun_oss',
-      bucket: this.bucket,
+      bucket: target,
       region: this.region,
       expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
     };

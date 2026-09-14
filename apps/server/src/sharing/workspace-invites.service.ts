@@ -45,7 +45,11 @@ import {
   type InvitePreviewDTO,
   type ShareInviteDTO,
 } from './mappers';
-import { effectiveInviteStatus, isUniqueViolation } from './util';
+import {
+  effectiveInviteStatus,
+  isUniqueViolation,
+  existingInviteAccess,
+} from './util';
 
 const ROLE_MAP: Record<AssignableRole, WorkspaceMemberRole> = {
   admin: WorkspaceMemberRole.admin,
@@ -163,12 +167,28 @@ export class WorkspaceInvitesService {
 
   async preview(
     invite: NonNullable<Awaited<ReturnType<this['findByHash']>>>,
+    user: AuthUser,
   ): Promise<InvitePreviewDTO> {
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: invite.workspaceId, deletedAt: null },
       select: { name: true },
     });
+    const existingAccess = workspace
+      ? await existingInviteAccess(async () => {
+          await this.permissions.requireWorkspaceRole(
+            user.userId,
+            invite.workspaceId,
+            WorkspaceMemberRole.viewer,
+          );
+          return {
+            scope: 'workspace' as const,
+            workspaceId: invite.workspaceId,
+            targetName: workspace.name,
+          };
+        })
+      : null;
     return {
+      existingAccess,
       scope: 'workspace',
       targetName: workspace?.name ?? 'a team',
       role: invite.role,

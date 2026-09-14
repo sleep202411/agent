@@ -24,6 +24,17 @@ describe('AuthGuard', () => {
     delete process.env.AUTH_DISABLED;
   });
 
+  it('ignores the removed AUTH_DISABLED bypass', async () => {
+    process.env.AUTH_DISABLED = 'true';
+    const guard = new AuthGuard(
+      { validateToken: jest.fn() } as never,
+      { getAllAndOverride: () => false } as never,
+    );
+    await expect(guard.canActivate(context)).rejects.toBeInstanceOf(
+      UnauthorizedException,
+    );
+  });
+
   it('does not send a service bearer JWT through end-user validation', async () => {
     request.headers.authorization = 'Bearer service.jwt.signature';
     const validateToken = jest.fn();

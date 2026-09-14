@@ -1,6 +1,8 @@
+import { MediaAccessService } from '../media/media-access.service';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   NotFoundException,
@@ -17,7 +19,6 @@ import {
   StoryProjectMemberRole,
   StoryProjectMemberStatus,
   StoryProjectStatus,
-  StoryProjectBillingMode,
   StoryFrameProfile,
   StoryRevisionSource,
   StudioDocumentType,
@@ -31,7 +32,7 @@ import { rootSchemaFor } from '../documents/document-modes';
 import { ensureStoryScriptDocumentInTransaction } from '../documents/story-script-document';
 import { PrismaService } from '../infra/db/db.module';
 import { resolveMediaPublicUrl } from '../infra/storage/media-asset-url-resolver.service';
-import { WorkspacesService } from '../workspaces';
+import { WorkspacePermissionService } from '../workspaces';
 import { canonicalJsonHash } from './canonical-json';
 import {
   EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -48,7 +49,6 @@ import {
   type CreateStoryChapterInput,
   type CreateStoryProjectInput,
   type CursorPageDto,
-  type InteractiveStoryDraftContent,
   type StoryBuildDiagnosticDto,
   type StoryBuildSummaryDto,
   type LockStoryRevisionInput,
@@ -57,7 +57,6 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
-  type StoryCapability,
   type StoryChapterDto,
   type StoryCanvasLayoutDto,
   type StoryCandidateAssetDto,
@@ -82,6 +81,14 @@ import {
 } from './story-permission.service';
 import { StoryProjectWriteGuardService } from './story-project-write-guard.service';
 import { reconcileStoryTimelinesWithDraft } from './story-timeline-reconcile';
+import {
+  commitStoryChapterGraph,
+  mergeChapterDraftIntoStory,
+  persistStoryChapterGraphRepair,
+  reconcileStoryChapterGraphPartition,
+  StoryChapterNodeOwnershipConflictError,
+  type StoryChapterGraphMerge,
+} from './story-chapter-graph-invariant';
 
 const PROJECT_NOT_FOUND = {
   code: 'STORY_PROJECT_NOT_FOUND',
@@ -100,6 +107,14 @@ const PROJECT_SUMMARY_INCLUDE = Prisma.validator<Prisma.StoryProjectInclude>()({
     include: {
       placements: true,
       variants: { include: { placements: true } },
+    },
+  },
+  workspace: {
+    select: {
+      members: {
+        where: { status: 'active', accessScope: 'workspace', removedAt: null },
+        select: { userId: true, role: true },
+      },
     },
   },
   draft: true,
@@ -243,22 +258,21 @@ export class StoryProjectsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly permissions: StoryPermissionService,
-    private readonly workspaces: WorkspacesService,
+    private readonly workspacePermissions: WorkspacePermissionService,
     private readonly writeGuard: StoryProjectWriteGuardService,
+    private readonly mediaAccess: MediaAccessService,
   ) {}
 
   async create(
     user: AuthUser,
     input: CreateStoryProjectInput,
   ): Promise<StoryWorkbenchDto> {
-    // Story projects are personal-first product roots. Workspace remains an
-    // internal storage/media compatibility domain while legacy tables still
-    // require it; the active UI workspace never chooses project ownership or
-    // billing. ensurePersonalWorkspace also guarantees the existing personal
-    // wallet mapping without moving any balance.
-    const personalWorkspace =
-      await this.workspaces.ensurePersonalWorkspace(user);
-    const workspaceId = personalWorkspace.id;
+    const { workspaceId } = input;
+    await this.workspacePermissions.requireWorkspaceRole(
+      user.userId,
+      workspaceId,
+      'editor',
+    );
 
     const contentHash = canonicalJsonHash(
       EMPTY_INTERACTIVE_STORY_DRAFT_CONTENT,
@@ -272,7 +286,6 @@ export class StoryProjectsService {
         const project = await tx.storyProject.create({
           data: {
             workspaceId,
-            billingMode: StoryProjectBillingMode.actor,
             // The empty canvas needs a projection shape before the Agent intake
             // runs. This value is provisional: the creator's Q1 answer replaces
             // it atomically with duration + visual direction before authoring.
@@ -401,19 +414,28 @@ export class StoryProjectsService {
     user: AuthUser,
     query: StoryProjectListQuery,
   ): Promise<CursorPageDto<StoryProjectSummaryDto>> {
+    const membership = await this.workspacePermissions.requireWorkspacePresence(
+      user.userId,
+      query.workspaceId,
+    );
     const cursor = query.cursor
       ? decodeCursor<ProjectCursor>(query.cursor, isProjectCursor)
       : null;
     const rows = await this.prisma.storyProject.findMany({
       where: {
         status: query.status,
-        members: {
-          some: {
-            userId: user.userId,
-            status: StoryProjectMemberStatus.active,
-            removedAt: null,
-          },
-        },
+        workspaceId: query.workspaceId,
+        ...(membership.accessScope === 'project_only'
+          ? {
+              members: {
+                some: {
+                  userId: user.userId,
+                  status: StoryProjectMemberStatus.active,
+                  removedAt: null,
+                },
+              },
+            }
+          : {}),
         ...(cursor
           ? {
               OR: [
@@ -628,6 +650,12 @@ export class StoryProjectsService {
     const workspaceId = access.project.workspaceId;
     const chapter = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      await this.ensureChapterGraphInvariant(
+        tx,
+        projectId,
+        user.userId,
+        'chapter_create',
+      );
       const [count, latest] = await Promise.all([
         tx.storyChapter.count({
           where: { storyProjectId: projectId, archivedAt: null },
@@ -690,6 +718,12 @@ export class StoryProjectsService {
     await this.requireProject(user, projectId, 'story.edit');
     const chapter = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      await this.ensureChapterGraphInvariant(
+        tx,
+        projectId,
+        user.userId,
+        'chapter_patch',
+      );
       await this.loadActiveChapter(projectId, chapterId, tx);
       const saved = await tx.storyChapter.update({
         where: { id: chapterId },
@@ -712,6 +746,12 @@ export class StoryProjectsService {
     await this.requireProject(user, projectId, 'story.edit');
     const reordered = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      await this.ensureChapterGraphInvariant(
+        tx,
+        projectId,
+        user.userId,
+        'chapter_reorder',
+      );
       const projectClaim = await tx.storyProject.updateMany({
         where: {
           id: projectId,
@@ -801,6 +841,12 @@ export class StoryProjectsService {
     await this.requireProject(user, projectId, 'story.edit');
     const archived = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
+      await this.ensureChapterGraphInvariant(
+        tx,
+        projectId,
+        user.userId,
+        'chapter_archive',
+      );
       const chapters = await tx.storyChapter.findMany({
         where: { storyProjectId: projectId, archivedAt: null },
         orderBy: [{ rank: 'asc' }, { id: 'asc' }],
@@ -897,43 +943,32 @@ export class StoryProjectsService {
         current.content,
         'STORY_DRAFT_CORRUPT',
       );
-      assertActiveChapterGraphPartition(currentContent, chapters);
-      const previousChapterNodeIds = new Set(stringArray(chapter.nodeIds));
-      const nextChapterNodeIds = input.content.graph.nodes.map(
-        (node) => node.nodeId,
-      );
-      const otherChapterNodeIds = new Set(
-        chapters.flatMap((candidate) =>
-          candidate.id === chapter.id ? [] : stringArray(candidate.nodeIds),
-        ),
-      );
-      const collision = nextChapterNodeIds.find((nodeId) =>
-        otherChapterNodeIds.has(nodeId),
-      );
-      if (collision) {
-        throw new BadRequestException({
-          code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
-          message: `Scene ${collision} already belongs to another chapter.`,
-          nodeId: collision,
-        });
-      }
-
-      const mergedContent = InteractiveStoryDraftContentSchema.parse({
-        storyBible: input.content.storyBible,
-        graph: {
-          entryNodeId:
-            chapters[0]?.id === chapter.id
-              ? input.content.graph.entryNodeId
-              : currentContent.graph.entryNodeId,
-          nodes: [
-            ...currentContent.graph.nodes.filter(
-              (node) => !previousChapterNodeIds.has(node.nodeId),
-            ),
-            ...input.content.graph.nodes,
-          ],
-        },
-        productionNotes: input.content.productionNotes,
+      const repaired = reconcileStoryChapterGraphPartition({
+        content: currentContent,
+        chapters,
       });
+      let merged: StoryChapterGraphMerge;
+      try {
+        merged = mergeChapterDraftIntoStory({
+          content: repaired.content,
+          chapters: repaired.chapters,
+          chapterId,
+          chapterContent: input.content,
+        });
+      } catch (error) {
+        if (error instanceof StoryChapterNodeOwnershipConflictError) {
+          throw new BadRequestException({
+            code: 'STORY_CHAPTER_NODE_OWNERSHIP_CONFLICT',
+            message: error.message,
+            nodeId: error.nodeId,
+          });
+        }
+        throw error;
+      }
+      const mergedContent = InteractiveStoryDraftContentSchema.parse(
+        merged.content,
+      );
+      const nextChapterNodeIds = merged.nextChapterNodeIds;
       const contentHash = canonicalJsonHash(mergedContent);
       const membershipUnchanged = arraysEqual(
         stringArray(chapter.nodeIds),
@@ -945,38 +980,25 @@ export class StoryProjectsService {
       if (
         current.schemaVersion === input.schemaVersion &&
         current.contentHash === contentHash &&
+        !repaired.changed &&
         membershipUnchanged &&
         chapter.entryNodeId === input.content.graph.entryNodeId
       ) {
         return { draft: current, chapter };
       }
 
-      const claimed = await tx.storyDraft.updateMany({
-        where: {
-          storyProjectId: projectId,
-          revision: input.expectedRevision,
-        },
-        data: {
-          schemaVersion: input.schemaVersion,
-          content: mergedContent as Prisma.InputJsonObject,
-          contentHash,
-          revision: { increment: 1 },
-          updatedByUserId: user.userId,
-          updatedBySessionId: input.sessionId,
-        },
+      const committed = await commitStoryChapterGraph(tx, {
+        draft: current,
+        chaptersBefore: chapters,
+        partitionRepair: repaired,
+        content: mergedContent,
+        chapters: merged.chapters,
+        schemaVersion: input.schemaVersion,
+        actorUserId: user.userId,
+        sessionId: input.sessionId,
+        trigger: 'draft_save',
       });
-      if (claimed.count !== 1) return null;
-
-      // The database Plot-node guard reads both the canonical draft and the
-      // chapter membership. Update the membership before materializing a new
-      // empty timeline; the transaction still rolls both writes back together.
-      await tx.storyChapter.update({
-        where: { id: chapter.id },
-        data: {
-          nodeIds: nextChapterNodeIds,
-          entryNodeId: input.content.graph.entryNodeId,
-        },
-      });
+      if (!committed) return null;
 
       // Plot tree and storyboard stay 1:1 on save: deleted nodes archive
       // their sequences immediately, undone deletions revive them.
@@ -1109,21 +1131,31 @@ export class StoryProjectsService {
   ): Promise<StoryCandidateAssetDto> {
     await this.requireProject(user, projectId, 'story.edit');
 
+    // Attaching media shares it with this project's present and future audience.
+    try {
+      await this.mediaAccess.requireUseAccessById(user.userId, mediaAssetId);
+    } catch (error) {
+      if (!(error instanceof ForbiddenException)) throw error;
+      const documents = await this.prisma.studioDocument.findMany({
+        where: { storyProjectId: projectId },
+        select: { id: true, contentSnapshot: true },
+      });
+      const document = documents.find((row) =>
+        JSON.stringify(row.contentSnapshot).includes(mediaAssetId),
+      );
+      if (!document) throw error;
+      await this.mediaAccess.requireUseAccessById(user.userId, mediaAssetId, {
+        documentId: document.id,
+      });
+    }
     const candidate = await this.prisma.$transaction(async (tx) => {
       await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-      // Deliberately NOT scoped by workspaceId. The id can only reach here from
-      // the project's own canvas, and `requireProject` above already
-      // decided whether the caller may edit that project — re-checking the
-      // asset's workspace is a second lock on a door that is already shut.
-      //
-      // What it did instead was break real work: uploads never recorded a
-      // workspace (the client omits `x-fizz-workspace-id`, so the server stores
-      // null), which equality can never match, so 4,210 uploaded assets could
-      // not be used as candidates and the creator was told their media "must be
-      // ready" — a message about a condition that was already satisfied.
-      //
-      // Recording the workspace on upload is worth fixing on its own terms; it
-      // is not a reason to keep this check.
+      await this.permissions.requireProjectInTransaction(
+        tx,
+        user.userId,
+        projectId,
+        'story.edit',
+      );
       const asset = await tx.mediaAsset.findUnique({
         where: { id: mediaAssetId },
         select: {
@@ -1274,7 +1306,7 @@ export class StoryProjectsService {
         const result = await this.prisma.$transaction(
           async (tx) => {
             await this.writeGuard.assertHumanWriteAllowed(tx, projectId);
-            const [draft, chapters] = await Promise.all([
+            const [storedDraft, chapters] = await Promise.all([
               tx.storyDraft.findUnique({
                 where: { storyProjectId: projectId },
               }),
@@ -1286,10 +1318,11 @@ export class StoryProjectsService {
                 orderBy: [{ rank: 'asc' }, { id: 'asc' }],
               }),
             ]);
-            if (!draft) return { kind: 'missing' } as const;
-            if (draft.revision !== input.expectedDraftRevision) {
-              return { kind: 'conflict', draft } as const;
+            if (!storedDraft) return { kind: 'missing' } as const;
+            if (storedDraft.revision !== input.expectedDraftRevision) {
+              return { kind: 'conflict', draft: storedDraft } as const;
             }
+            let draft = storedDraft;
             if (
               draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION
             ) {
@@ -1310,11 +1343,31 @@ export class StoryProjectsService {
               draft.content,
               'STORY_DRAFT_CORRUPT',
             );
-            assertActiveChapterGraphPartition(canonicalContent, chapters);
+            const repaired = reconcileStoryChapterGraphPartition({
+              content: canonicalContent,
+              chapters,
+            });
+            if (repaired.changed) {
+              const persisted = await persistStoryChapterGraphRepair(tx, {
+                draft,
+                chapters,
+                repaired,
+                trigger: 'revision_lock',
+                actorUserId: user.userId,
+              });
+              if (!persisted) {
+                throw new ConflictException({
+                  code: 'DRAFT_REVISION_CONFLICT',
+                  message:
+                    'The story changed while its chapter structure was being repaired. Refresh once.',
+                });
+              }
+              draft = persisted;
+            }
 
             const lockable = createLockableInteractiveStoryDraftContentSchema(
               access.project.defaultLocale,
-            ).safeParse(draft.content);
+            ).safeParse(repaired.content);
             if (!lockable.success) {
               throw new UnprocessableEntityException({
                 code: 'STORY_REVISION_NOT_LOCKABLE',
@@ -1412,6 +1465,10 @@ export class StoryProjectsService {
       latestBuild,
     } = await this.prisma.$transaction(
       async (tx) => {
+        const mayRepair = await this.writeGuard.tryAcquireDeferredWriteFence(
+          tx,
+          projectId,
+        );
         const [project, chapters, sequences, references, latestBuild] =
           await Promise.all([
             this.loadProjectSummary(projectId, tx),
@@ -1439,8 +1496,9 @@ export class StoryProjectsService {
               orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
             }),
           ]);
-        const draft = project.draft;
-        if (!draft) throwDraftNotFound();
+        const storedDraft = project.draft;
+        if (!storedDraft) throwDraftNotFound();
+        let draft = storedDraft;
         const chapter = query.chapterId
           ? chapters.find((candidate) => candidate.id === query.chapterId)
           : chapters[0];
@@ -1459,15 +1517,51 @@ export class StoryProjectsService {
         if (draft.schemaVersion !== INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION) {
           throw unsupportedStorySchema('draft', draft.schemaVersion);
         }
-        const projectContent = parseDraftContent(
+        let projectContent = parseDraftContent(
           draft.content,
           'STORY_DRAFT_CORRUPT',
         );
-        assertActiveChapterGraphPartition(projectContent, chapters);
-        return {
-          project,
+        let activeChapters = chapters;
+        const repaired = reconcileStoryChapterGraphPartition({
+          content: projectContent,
           chapters,
-          chapter,
+          evidence: sequences.map((sequence) => ({
+            nodeId: sequence.plotNodeId,
+            chapterId: sequence.storyChapterId,
+            source: 'storyboard' as const,
+          })),
+        });
+        if (repaired.changed) {
+          activeChapters = chapters.map((row) => {
+            const normalized = repaired.chapters.find(
+              (candidate) => candidate.id === row.id,
+            );
+            return normalized ? { ...row, ...normalized } : row;
+          });
+          projectContent = repaired.content;
+          if (mayRepair) {
+            const persisted = await persistStoryChapterGraphRepair(tx, {
+              draft,
+              chapters,
+              repaired,
+              trigger: 'workbench_read',
+              actorUserId: user.userId,
+            });
+            // A legacy writer that did not use the project fence can still
+            // win this CAS during rollout. Keep the repaired in-memory
+            // projection usable for this request; the next canonical read
+            // retries persistence against the new head.
+            if (persisted) draft = persisted;
+          }
+        }
+        const activeChapter = activeChapters.find(
+          (candidate) => candidate.id === chapter.id,
+        );
+        if (!activeChapter) throwChapterNotFound();
+        return {
+          project: { ...project, draft },
+          chapters: activeChapters,
+          chapter: activeChapter,
           draft,
           script: storyScriptFreshness(chapter, scriptDocument),
           video: projectStoryVideoWorkbench(projectContent, sequences),
@@ -1504,6 +1598,53 @@ export class StoryProjectsService {
       capability,
       options,
     );
+  }
+
+  private async ensureChapterGraphInvariant(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    actorUserId: string,
+    trigger: string,
+  ): Promise<void> {
+    const [draft, chapters, sequences] = await Promise.all([
+      tx.storyDraft.findUnique({ where: { storyProjectId: projectId } }),
+      tx.storyChapter.findMany({
+        where: { storyProjectId: projectId, archivedAt: null },
+        orderBy: [{ rank: 'asc' }, { id: 'asc' }],
+      }),
+      tx.storyStoryboardSequence.findMany({
+        where: {
+          storyProjectId: projectId,
+          status: { not: StoryProductionSpecStatus.archived },
+        },
+        select: { plotNodeId: true, storyChapterId: true },
+      }),
+    ]);
+    if (!draft) throwDraftNotFound();
+    const content = parseDraftContent(draft.content, 'STORY_DRAFT_CORRUPT');
+    const repaired = reconcileStoryChapterGraphPartition({
+      content,
+      chapters,
+      evidence: sequences.map((sequence) => ({
+        nodeId: sequence.plotNodeId,
+        chapterId: sequence.storyChapterId,
+        source: 'storyboard' as const,
+      })),
+    });
+    if (!repaired.changed) return;
+    const persisted = await persistStoryChapterGraphRepair(tx, {
+      draft,
+      chapters,
+      repaired,
+      trigger,
+      actorUserId,
+    });
+    if (!persisted) {
+      throw new ConflictException({
+        code: 'DRAFT_REVISION_CONFLICT',
+        message: 'The story changed concurrently. Read it again and retry.',
+      });
+    }
   }
 
   private async loadActiveChapter(
@@ -1599,9 +1740,11 @@ export class StoryProjectsService {
     userId: string,
   ): StoryProjectSummaryDto {
     const membership = row.members.find((member) => member.userId === userId);
-    const capabilities = membership
-      ? (this.permissions.capabilities(membership.role) as StoryCapability[])
-      : [];
+    const access = this.permissions.effectiveAccess(
+      membership?.role,
+      row.workspace.members.find((member) => member.userId === userId)?.role,
+    );
+    const capabilities = access?.capabilities ?? [];
     const parsedDraft = row.draft
       ? InteractiveStoryDraftContentSchema.safeParse(row.draft.content)
       : null;
@@ -1631,6 +1774,7 @@ export class StoryProjectsService {
     ).length;
     return {
       id: row.id,
+      canMove: membership?.role === StoryProjectMemberRole.owner,
       workspaceId: row.workspaceId,
       frameProfile: row.frameProfile,
       frameProfileMutable: storyFrameProfileCanChange(row),
@@ -2088,74 +2232,6 @@ function stringArray(value: Prisma.JsonValue): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
     : [];
-}
-
-function assertActiveChapterGraphPartition(
-  content: InteractiveStoryDraftContent,
-  chapters: Array<{
-    id: string;
-    nodeIds: Prisma.JsonValue;
-    entryNodeId: string | null;
-  }>,
-): void {
-  const issues: string[] = [];
-  const graphNodeIds = new Set(content.graph.nodes.map((node) => node.nodeId));
-  const ownerByNodeId = new Map<string, string>();
-
-  if (chapters.length === 0) issues.push('The project has no active chapter.');
-  for (const chapter of chapters) {
-    const nodeIds = stringArray(chapter.nodeIds);
-    if (
-      !Array.isArray(chapter.nodeIds) ||
-      nodeIds.length !== chapter.nodeIds.length
-    ) {
-      issues.push(`Chapter ${chapter.id} has invalid scene membership data.`);
-    }
-    const localNodeIds = new Set<string>();
-    for (const nodeId of nodeIds) {
-      if (localNodeIds.has(nodeId)) {
-        issues.push(
-          `Scene ${nodeId} is repeated inside chapter ${chapter.id}.`,
-        );
-      }
-      localNodeIds.add(nodeId);
-      const owner = ownerByNodeId.get(nodeId);
-      if (owner && owner !== chapter.id) {
-        issues.push(
-          `Scene ${nodeId} belongs to both ${owner} and ${chapter.id}.`,
-        );
-      } else {
-        ownerByNodeId.set(nodeId, chapter.id);
-      }
-      if (!graphNodeIds.has(nodeId)) {
-        issues.push(`Chapter ${chapter.id} owns missing scene ${nodeId}.`);
-      }
-    }
-    if (
-      (nodeIds.length === 0 && chapter.entryNodeId !== null) ||
-      (nodeIds.length > 0 &&
-        (!chapter.entryNodeId || !localNodeIds.has(chapter.entryNodeId)))
-    ) {
-      issues.push(`Chapter ${chapter.id} has an invalid entry scene.`);
-    }
-  }
-
-  for (const nodeId of graphNodeIds) {
-    if (!ownerByNodeId.has(nodeId)) {
-      issues.push(`Scene ${nodeId} does not belong to an active chapter.`);
-    }
-  }
-  if (chapters[0] && content.graph.entryNodeId !== chapters[0].entryNodeId) {
-    issues.push('The project entry scene does not match its first chapter.');
-  }
-  if (issues.length > 0) {
-    throw new ConflictException({
-      code: 'STORY_CHAPTER_GRAPH_PARTITION_INVALID',
-      message:
-        'The story graph and chapter structure are inconsistent. Repair the chapter structure before continuing.',
-      issues: issues.slice(0, 50),
-    });
-  }
 }
 
 function jsonRecordOrNull(

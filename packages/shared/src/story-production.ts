@@ -42,20 +42,13 @@ export const StoryAssetSpecPlanItemSchema = z
     /** Optional motion treatment when this logical asset is rendered as video. */
     videoPrompt: z.string().trim().min(1).max(12_000).optional(),
     negativePrompt: z.string().trim().min(1).max(4_000).optional(),
-    /** Canonical Story Bible character id when this is a character spec. */
+    /** Optional link to a Story Bible character; standalone character assets are valid. */
     sourceCharacterId: StoryProductionStableKeySchema.optional(),
     /** Plot node relevance hints. Manual chapter assets may begin unattached. */
     sourceNodeIds: z.array(StoryProductionStableKeySchema).max(200),
   })
   .strict()
   .superRefine((asset, context) => {
-    if (asset.kind === "character" && asset.sourceCharacterId === undefined) {
-      context.addIssue({
-        code: "custom",
-        path: ["sourceCharacterId"],
-        message: "Character Asset Specs must reference their canonical Story Bible character.",
-      });
-    }
     if (asset.kind !== "character" && asset.sourceCharacterId !== undefined) {
       context.addIssue({
         code: "custom",

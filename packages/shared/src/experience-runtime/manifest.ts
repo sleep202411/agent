@@ -262,6 +262,32 @@ export const ExperienceRuntimeManifestSchema = ExperienceRuntimeManifestBaseSche
       context
     );
 
+    const accessPrices = new Map<string, number>();
+    manifest.graph.nodes.forEach((node, index) => {
+      const requirements = [
+        node.access,
+        ...node.eventBindings.flatMap((binding) => binding.routes.map((route) => route.access)),
+      ];
+      for (const access of requirements) {
+        if (!access) continue;
+        if (!manifest.compatibility.requiredCapabilities.includes("commerce.community-points"))
+          context.addIssue({
+            code: "custom",
+            path: ["graph", "nodes", index],
+            message: "Paid content requires commerce.community-points capability",
+          });
+        if (
+          accessPrices.has(access.key) &&
+          accessPrices.get(access.key) !== access.communityPointPrice
+        )
+          context.addIssue({
+            code: "custom",
+            path: ["graph", "nodes", index],
+            message: `Conflicting prices for ${access.key}`,
+          });
+        accessPrices.set(access.key, access.communityPointPrice);
+      }
+    });
     const requiredCapabilities = new Set<string>();
     manifest.compatibility.requiredCapabilities.forEach((capability, index) => {
       if (requiredCapabilities.has(capability)) {

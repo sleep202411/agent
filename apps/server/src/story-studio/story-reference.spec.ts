@@ -193,6 +193,7 @@ describe('StoryReferenceService', () => {
   it('takes the project write fence before mutating reference slots', async () => {
     const createMany = jest.fn();
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
       storyReferenceSlot: { createMany },
     };
     const prisma = { $transaction: transactionMock(tx) };
@@ -251,6 +252,7 @@ describe('StoryReferenceService', () => {
       },
     );
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
       $executeRaw: jest.fn().mockResolvedValue(0),
       storyReferenceVersion: {
         findUnique: jest.fn().mockResolvedValue(null),
@@ -345,6 +347,7 @@ describe('StoryReferenceService', () => {
 
   it('rejects an asset/variant pair that does not satisfy the exact scope', async () => {
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
       $executeRaw: jest.fn().mockResolvedValue(0),
       storyReferenceVersion: { findUnique: jest.fn().mockResolvedValue(null) },
       storyReferenceSlot: {
@@ -445,6 +448,7 @@ describe('StoryReferenceService', () => {
       createdAt: NOW,
     };
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
       $executeRaw: jest.fn().mockResolvedValue(0),
       storyReferenceVersion: {
         findFirst: jest.fn().mockResolvedValue(current),
@@ -509,6 +513,7 @@ describe('StoryReferenceService', () => {
       versions: [approvedVersion],
     });
     const tx = {
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
       $executeRaw: jest.fn().mockResolvedValue(0),
       storyReferenceSlot: {
         findFirst: jest.fn().mockResolvedValue(referenceSlot({ version: 2 })),

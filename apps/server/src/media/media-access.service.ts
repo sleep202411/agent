@@ -188,6 +188,7 @@ export class MediaAccessService {
     asset: MediaAssetAccessSubject,
     context?: MediaAccessContext,
   ): Promise<void> {
+    requireNonReceiptAsset(asset.metadata);
     if (
       asset.status === MediaAssetStatus.deleted ||
       asset.moderationStatus === MediaAssetModerationStatus.blocked
@@ -287,6 +288,7 @@ export class MediaAccessService {
     query: MediaAssetAccessQueryDto,
   ): Promise<MediaAssetAccessResponseDto> {
     const asset = await this.loadAsset(assetId);
+    requireNonReceiptAsset(asset.metadata);
     if (asset.status === MediaAssetStatus.deleted || asset.deletedAt != null) {
       throw new GoneException({
         code: 'MEDIA_ASSET_UNAVAILABLE',
@@ -304,6 +306,28 @@ export class MediaAccessService {
       cacheControl: ADMIN_READ_CACHE_CONTROL,
       expiresInSeconds: ADMIN_READ_URL_TTL_SECONDS,
     });
+  }
+
+  private async hasStoryReferenceAccess(
+    userId: string,
+    assetId: string,
+  ): Promise<boolean> {
+    const rows = await this.prisma.$queryRaw<Array<{ allowed: boolean }>>`
+      SELECT EXISTS (
+        SELECT 1 FROM story_project_media_references r
+        JOIN story_projects p ON p.id = r.story_project_id
+        JOIN workspaces w ON w.id = p.workspace_id
+        WHERE r.asset_id = ${assetId}::uuid AND p.status = 'active'
+          AND w.status = 'active' AND w.deleted_at IS NULL
+          AND (
+            EXISTS (SELECT 1 FROM story_project_members m WHERE m.story_project_id = p.id
+              AND m.user_id = ${userId} AND m.status = 'active' AND m.removed_at IS NULL)
+            OR EXISTS (SELECT 1 FROM workspace_members m WHERE m.workspace_id = w.id
+              AND m.user_id = ${userId} AND m.status = 'active' AND m.removed_at IS NULL AND m.access_scope = 'workspace')
+          )
+      ) AS allowed
+    `;
+    return rows[0]?.allowed === true;
   }
 
   private async requireAccess(
@@ -381,6 +405,7 @@ export class MediaAccessService {
       }
     }
     if (await this.hasCharacterReferenceAccess(userId, asset.id)) return;
+    if (await this.hasStoryReferenceAccess(userId, asset.id)) return;
     throw new ForbiddenException({
       code: 'MEDIA_ASSET_ACCESS_DENIED',
       message: 'You do not have access to this media asset.',
@@ -492,6 +517,21 @@ export class MediaAccessService {
       url: signed.url,
       expiresAt: signed.expiresAt,
     };
+  }
+}
+
+/** Expense evidence is readable only through its claim/revision authorization. */
+function requireNonReceiptAsset(metadata: Prisma.JsonValue): void {
+  if (
+    metadata &&
+    typeof metadata === 'object' &&
+    !Array.isArray(metadata) &&
+    metadata.uploadKind === 'crew_expense_receipt'
+  ) {
+    throw new ForbiddenException({
+      code: 'EXPENSE_RECEIPT_ACCESS_REQUIRED',
+      message: 'Open this receipt through its expense claim.',
+    });
   }
 }
 

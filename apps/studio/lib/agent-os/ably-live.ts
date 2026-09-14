@@ -214,13 +214,16 @@ export function isAgentOsAblyResyncPointer(value: unknown): value is AgentOsAbly
     !Number.isInteger(pointer.sequence) ||
     Number(pointer.sequence) < 1 ||
     !Number.isInteger(pointer.afterSequence) ||
-    Number(pointer.afterSequence) !== Number(pointer.sequence) - 1
+    Number(pointer.afterSequence) < 0 ||
+    (pointer.kind === "event_backlog"
+      ? Number(pointer.afterSequence) >= Number(pointer.sequence)
+      : Number(pointer.afterSequence) !== Number(pointer.sequence) - 1)
   ) {
     return false;
   }
   if (pointer.kind === "snapshot_oversized") return true;
   return (
-    pointer.kind === "event_oversized" &&
+    (pointer.kind === "event_oversized" || pointer.kind === "event_backlog") &&
     typeof pointer.eventId === "string" &&
     pointer.eventId.length > 0
   );

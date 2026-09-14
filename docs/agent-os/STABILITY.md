@@ -100,7 +100,9 @@ follow-up.
     outbox. Studio advances its replay cursor only across contiguous sequence
     numbers and repairs pointer, event, snapshot, and Ably continuity-loss gaps
     over HTTP. Conversation reconciliation precedes per-run repair so a run
-    missed entirely in another tab is still discovered.
+    missed entirely in another tab is still discovered. Publish pacing counts
+    individual BatchSpecs, and partial acknowledgements retire only confirmed
+    messages. Backlogs use one range pointer and the same HTTP replay path.
 23. **Approved stages advance one artifact at a time.** A Script proposal is
     authored against an exact collaborative Script head and persists one
     canonical review document. View all and Script consume those same ordered
@@ -111,7 +113,11 @@ follow-up.
     Later explicit runs propose Plot, Asset Specs, and Storyboard in order, each
     pinned to exact upstream fingerprints and each writing only its own artifact.
     A changed head fails stale; a manually edited Script may be read to propose
-    downstream structure but must never be rewritten as a side effect.
+    downstream structure but must never be rewritten as a side effect. Use the
+    exact current Script snapshot even when an old chapter approval pointer is
+    absent. Explicit `regenerateStage` survives prerequisite stages and is
+    consumed once that stage is applied. Standalone character Asset Specs may
+    omit a Story Bible link; supplied links must resolve to a real character.
 24. **Plan conflicts are explicit and recoverable.** Reconciliation persists
     an immutable, chapter-scoped pending plan for creator-edited Asset Specs or
     Storyboard sequences. Only a version-checked keep-current or use-latest
@@ -131,6 +137,15 @@ follow-up.
     cross-device replay therefore reconstruct the same content, while only the
     composer decision control is ephemeral. Pre-Artifact Story journals recover
     the same reference deterministically from `story.applyProposal` correlation.
+
+28. **Stream closure is not model completion.** A missing provider finish reason
+    fails the model call. The interactive graph retries that model node once,
+    preserving completed tool writes; interrupted text is superseded. Output
+    limits, policy rejection, and exhausted retries are failures, never success.
+29. **Uploaded source text reaches authoring directly.** `story.author` accepts
+    `sourceAttachmentId` from the turn or `script.readSection`. The Server loads
+    the complete ready attachment from the authorized Story project; the short
+    brief is instructions, not a transport for pasted script sections.
 
 ## Phase 1 acceptance (must automate)
 

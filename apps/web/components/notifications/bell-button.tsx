@@ -1,5 +1,7 @@
 "use client";
 
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+
 /**
  * BellButton — top-nav bell with unread badge and recent-items dropdown.
  *
@@ -60,6 +62,14 @@ export function BellButton({ variant = "header" }: BellButtonProps) {
   const markAll = useMarkAllRead();
 
   const items = list?.items ?? [];
+  const actors = useUserDisplays(
+    items.flatMap((item) =>
+      item.type.startsWith("crew.task.") && typeof item.meta?.actorUserId === "string"
+        ? [item.meta.actorUserId]
+        : []
+    )
+  );
+
   const hasUnread = unreadCount > 0;
 
   const badge = useMemo(() => {
@@ -148,6 +158,11 @@ export function BellButton({ variant = "header" }: BellButtonProps) {
           ) : (
             items.map((n) => (
               <NotificationRow
+                actorName={
+                  typeof n.meta?.actorUserId === "string"
+                    ? actors.get(n.meta.actorUserId)?.nickname
+                    : undefined
+                }
                 key={n.id}
                 item={n}
                 locale={locale}
@@ -175,17 +190,19 @@ export function BellButton({ variant = "header" }: BellButtonProps) {
 }
 
 function NotificationRow({
+  actorName,
   item,
   locale,
   onClick,
 }: {
+  actorName?: string | null;
   item: NotificationDTO;
   locale: Locale;
   onClick: () => void;
 }) {
   const unread = !item.readAt;
   const t = useTranslations("notifications");
-  const content = notificationContent(item, locale, t);
+  const content = notificationContent(item, locale, t, actorName);
   return (
     <button
       type="button"
@@ -211,6 +228,14 @@ function NotificationRow({
         >
           {content.title}
         </span>
+        {actorName?.trim() &&
+        item.type.startsWith("crew.task.") &&
+        item.type !== "crew.task.assigned" &&
+        item.type !== "crew.task.updated" ? (
+          <span className="text-xs text-muted-foreground">
+            {t("performedBy", { name: actorName.trim() })}
+          </span>
+        ) : null}
         <span className="line-clamp-2 text-xs text-muted-foreground">{content.body}</span>
         <span className="text-[11px] text-muted-foreground/80">
           {formatAgo(item.createdAt, locale)}

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { NotificationDTO } from "@repo/shared/notifications";
+import enUS from "@/messages/en-US.json";
+import zhCN from "@/messages/zh-CN.json";
+import zhHK from "@/messages/zh-HK.json";
 import { notificationContent } from "./content";
 
 const translate = (key: string, values?: Record<string, string | number | Date>) =>
@@ -9,14 +12,14 @@ const translate = (key: string, values?: Record<string, string | number | Date>)
       "events.taskSubmitted.title": "任务已提交：{task}",
       "events.taskSubmitted.body": "提交版本 v{version} 正在等待审核。",
       "events.taskRevisionRequested.title": "任务需要修改：{task}",
-      "events.earning.posted.title": "积分已确认：{title}",
-      "events.earning.posted.body": "{points} 已计入你的剧组积分账本。",
-      "events.earning.rejected.title": "积分记录已驳回：{title}",
-      "events.earning.rejected.body": "{points} 未计入你的剧组积分账本。",
-      "events.earning.reversed.title": "积分已冲回：{title}",
-      "events.earning.reversed.body": "{points} 已从你的剧组积分账本扣回。",
+      "events.earning.posted.title": "收益已确认：{title}",
+      "events.earning.posted.body": "{amount} 已计入你的剧组收益账本。",
+      "events.earning.rejected.title": "收益记录已驳回：{title}",
+      "events.earning.rejected.body": "{amount} 未计入你的剧组收益账本。",
+      "events.earning.reversed.title": "收益已冲回：{title}",
+      "events.earning.reversed.body": "{amount} 已从你的剧组收益账本扣回。",
       "events.payout.paid.title": "资金已发放",
-      "events.payout.paid.body": "{points} 对应的 {amount} 已完成发放。",
+      "events.payout.paid.body": "总额 {grossAmount}，实付 {amount}。",
     }[key] ?? key
   );
 
@@ -70,54 +73,56 @@ describe("notificationContent", () => {
     });
   });
 
-  it("localizes confirmed crew points without inventing a cash value", () => {
+  it("localizes an earning in its recorded currency", () => {
     expect(
       notificationContent(
         row("crew.earning.posted", {
+          currency: "USD",
           earningTitle: "第一幕分镜奖金",
-          pointsAmount: "1250",
+          amountMinor: "1250",
         }),
         "zh-CN",
         translate
       )
     ).toEqual({
-      title: "积分已确认：第一幕分镜奖金",
-      body: "1,250 pts 已计入你的剧组积分账本。",
+      title: "收益已确认：第一幕分镜奖金",
+      body: "US$12.50 已计入你的剧组收益账本。",
     });
   });
 
-  it("keeps bigint point amounts precise in localized notifications", () => {
+  it("keeps bigint minor-unit amounts precise in localized notifications", () => {
     expect(
       notificationContent(
         row("crew.earning.posted", {
+          currency: "USD",
           earningTitle: "长期收益分成",
-          pointsAmount: "9223372036854775807",
+          amountMinor: "9223372036854775807",
         }),
         "en-US",
         translate
       ).body
-    ).toBe("9,223,372,036,854,775,807 pts 已计入你的剧组积分账本。");
+    ).toBe("USD 92,233,720,368,547,758.07 已计入你的剧组收益账本。");
   });
 
   it.each([
-    ["crew.earning.rejected", "积分记录已驳回：合同尾款", "800 pts 未计入你的剧组积分账本。"],
-    ["crew.earning.reversed", "积分已冲回：合同尾款", "800 pts 已从你的剧组积分账本扣回。"],
+    ["crew.earning.rejected", "收益记录已驳回：合同尾款", "US$8.00 未计入你的剧组收益账本。"],
+    ["crew.earning.reversed", "收益已冲回：合同尾款", "US$8.00 已从你的剧组收益账本扣回。"],
   ])("localizes %s from semantic metadata", (type, title, body) => {
     expect(
       notificationContent(
-        row(type, { earningTitle: "合同尾款", pointsAmount: "800" }),
+        row(type, { currency: "USD", earningTitle: "合同尾款", amountMinor: "800" }),
         "zh-CN",
         translate
       )
     ).toEqual({ title, body });
   });
 
-  it("renders cash only for a concrete payout event", () => {
+  it("renders gross and net payout amounts", () => {
     expect(
       notificationContent(
         row("crew.payout.paid", {
-          pointsAmount: "2500",
-          netAmountMinor: "88000",
+          amountMinor: "2500",
+          netAmountMinor: "2000",
           currency: "CNY",
         }),
         "zh-CN",
@@ -125,7 +130,7 @@ describe("notificationContent", () => {
       )
     ).toEqual({
       title: "资金已发放",
-      body: "2,500 pts 对应的 ¥880.00 已完成发放。",
+      body: "总额 ¥25.00，实付 ¥20.00。",
     });
   });
 
@@ -137,3 +142,79 @@ describe("notificationContent", () => {
     });
   });
 });
+
+it.each([
+  ["en-US", enUS],
+  ["zh-CN", zhCN],
+  ["zh-HK", zhHK],
+] as const)(
+  "renders actual monetary translations without old point placeholders in %s",
+  (locale, catalog) => {
+    const t = (key: string, values?: Record<string, string | number | Date>) => {
+      const template = key
+        .split(".")
+        .reduce<unknown>(
+          (value, part) => (value as Record<string, unknown>)[part],
+          catalog.notifications
+        ) as string;
+      return Object.entries(values ?? {}).reduce(
+        (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)),
+        template
+      );
+    };
+    for (const type of [
+      "crew.earning.posted",
+      "crew.earning.rejected",
+      "crew.earning.reversed",
+      "crew.payout.scheduled",
+      "crew.payout.paid",
+      "crew.payout.voided",
+    ]) {
+      const result = notificationContent(
+        row(type, {
+          earningTitle: "Test",
+          currency: "USD",
+          amountMinor: "1029",
+          netAmountMinor: "900",
+        }),
+        locale,
+        t
+      );
+      expect(result.title + result.body).not.toMatch(/points|pts|积分|積分|\{\w+\}/i);
+      expect(result.body).toContain("10.29");
+    }
+  }
+);
+
+it.each([
+  ["en-US", enUS],
+  ["zh-CN", zhCN],
+  ["zh-HK", zhHK],
+] as const)(
+  "includes the actor name in assignment and update messages in %s",
+  (locale, catalog) => {
+    for (const [type, key] of [
+      ["crew.task.assigned", "taskAssigned"],
+      ["crew.task.updated", "taskUpdated"],
+    ] as const) {
+      const t = (path: string, values?: Record<string, string | number | Date>) => {
+        const text = path.endsWith("bodyWithActor")
+          ? catalog.notifications.events[key].bodyWithActor
+          : path;
+        return text.replace("{actor}", String(values?.actor ?? ""));
+      };
+      const result = notificationContent(
+        row(type, { taskTitle: "Storyboard" }),
+        locale,
+        t,
+        "Isaac"
+      );
+      expect(result.body).toBe(
+        catalog.notifications.events[key].bodyWithActor.replace("{actor}", "Isaac")
+      );
+      expect(notificationContent(row(type, { taskTitle: "Storyboard" }), locale, t, " ").body).toBe(
+        `events.${key}.body`
+      );
+    }
+  }
+);

@@ -7,6 +7,7 @@ import {
   IconArrowLeft,
   IconBlocks,
   IconBook2,
+  IconFolder,
   IconHistory,
   IconLibraryPhoto,
   IconPuzzle,
@@ -43,11 +44,13 @@ export function ProjectSidebar({
   activeMode,
   panel,
   panelOpen,
+  crewAssetsEnabled = false,
   backHref = "/projects",
 }: {
   activeMode: string;
   panel: ReactNode;
   panelOpen: boolean;
+  crewAssetsEnabled?: boolean;
   backHref?: string;
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -56,11 +59,14 @@ export function ProjectSidebar({
   const t = useTranslations("project");
   const tShell = useTranslations("shell");
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
   const skillsOpen = useProjectUIStore((s) => s.skillsOpen);
   const openAssets = useProjectUIStore((s) => s.openAssets);
   const closeAssets = useProjectUIStore((s) => s.closeAssets);
+  const openCrewAssets = useProjectUIStore((s) => s.openCrewAssets);
+  const closeCrewAssets = useProjectUIStore((s) => s.closeCrewAssets);
   const openNodes = useProjectUIStore((s) => s.openNodes);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
@@ -129,6 +135,18 @@ export function ProjectSidebar({
       disabledReason: undefined,
       onClick: () => (assetsOpen ? closeAssets() : openAssets()),
     },
+    ...(crewAssetsEnabled
+      ? [
+          {
+            icon: IconFolder,
+            iconClassName: undefined,
+            label: t("sidebar.crewAssets"),
+            active: crewAssetsOpen,
+            disabledReason: undefined,
+            onClick: () => (crewAssetsOpen ? closeCrewAssets() : openCrewAssets()),
+          },
+        ]
+      : []),
     {
       icon: IconPuzzle,
       iconClassName: "text-brand-yellow",
@@ -213,17 +231,15 @@ export function ProjectSidebar({
         </nav>
 
         <div className="flex shrink-0 flex-col items-center gap-1 px-3 pt-2 pb-4">
-          {canManage ? (
-            <button
-              type="button"
-              onClick={openShare}
-              aria-label={t("sidebar.members")}
-              title={t("sidebar.members")}
-              className="flex size-9 items-center justify-center rounded-lg text-white/90 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none"
-            >
-              <IconUsersGroup className="size-[19px]" stroke={1.45} />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={openShare}
+            aria-label={t("sidebar.members")}
+            title={t("sidebar.members")}
+            className="flex size-9 items-center justify-center rounded-lg text-white/90 transition-colors hover:bg-white/[0.08] hover:text-white focus-visible:ring-2 focus-visible:ring-white/30 focus-visible:outline-none"
+          >
+            <IconUsersGroup className="size-[19px]" stroke={1.45} />
+          </button>
           <span className="flex size-9 items-center justify-center rounded-lg text-white/90">
             <ConnectionSignal status={connectionStatus} rtt={rtt} />
           </span>

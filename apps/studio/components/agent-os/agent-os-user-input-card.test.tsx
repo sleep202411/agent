@@ -70,6 +70,7 @@ describe("AgentOsUserInputCard", () => {
             submit: "Submit",
             submitting: "Submitting",
           }}
+          resolveProfileQuestion={() => ({ header: "Unused header", question: "Unused question" })}
           onSubmit={onSubmit}
         />
       );
@@ -107,6 +108,7 @@ describe("AgentOsUserInputCard", () => {
     expect(secondRadios.every((radio) => !radio.checked)).toBe(true);
     expect(document.activeElement).toBe(host.querySelector("legend"));
     expect(host.textContent).toContain("Story language");
+    expect(host.textContent).not.toContain("Unused header");
   });
 
   it("renders the complete Story visual-style catalog as unselected portrait covers", async () => {
@@ -142,6 +144,10 @@ describe("AgentOsUserInputCard", () => {
             submitting: "Submitting",
           }}
           resolveProfileOptionLabel={(_questionId, value) => `Localized ${value}`}
+          resolveProfileQuestion={() => ({
+            header: "Localized visual style",
+            question: "Localized visual style question",
+          })}
           onSubmit={onSubmit}
         />
       );
@@ -167,6 +173,9 @@ describe("AgentOsUserInputCard", () => {
     );
     const radios = Array.from(host.querySelectorAll<HTMLInputElement>("input[type='radio']"));
     expect(host.textContent).toContain("Localized cinematic-realism");
+    expect(host.querySelector("legend")?.textContent).toContain("Localized visual style");
+    expect(host.textContent).toContain("Localized visual style question");
+    expect(host.textContent).not.toContain("Choose a visual direction.");
     expect(radios.every((radio) => !radio.checked)).toBe(true);
     expect(
       radios.every((radio) => !radio.closest("label")?.className.includes("active:translate-y-px"))

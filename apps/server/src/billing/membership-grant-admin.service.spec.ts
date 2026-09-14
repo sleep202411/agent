@@ -7,7 +7,6 @@ import {
   BillingSubjectType,
   EntitlementGrantStatus,
   WorkspaceStatus,
-  WorkspaceType,
   type EntitlementGrant,
 } from '@prisma/client';
 import { MembershipGrantAdminService } from './membership-grant-admin.service';
@@ -134,7 +133,7 @@ describe('MembershipGrantAdminService', () => {
 
     it('grants a team plan to an active team workspace', async () => {
       prisma.workspace.findFirst.mockResolvedValue({
-        type: WorkspaceType.team,
+        defaultForUserId: null,
         status: WorkspaceStatus.active,
       });
       entitlements.grantComplimentary.mockResolvedValue(
@@ -162,10 +161,10 @@ describe('MembershipGrantAdminService', () => {
       );
     });
 
-    it('rejects a team plan target that is not a team workspace', async () => {
+    it('rejects a plan target that is suspended', async () => {
       prisma.workspace.findFirst.mockResolvedValue({
-        type: WorkspaceType.personal,
-        status: WorkspaceStatus.active,
+        defaultForUserId: 'user-1',
+        status: WorkspaceStatus.suspended,
       });
 
       await expect(

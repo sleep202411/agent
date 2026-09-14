@@ -25,21 +25,31 @@ export default function GamesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string>();
 
-  const load = useCallback(async () => {
-    setError(undefined);
-    try {
-      const next = await listPublishedInteractiveFilms({ page: 1, pageSize: 50 });
-      setGames(next);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : t("games.loadError"));
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [t]);
+  const load = useCallback(
+    (signal?: AbortSignal) => {
+      return listPublishedInteractiveFilms({ page: 1, pageSize: 50 })
+        .then((next) => {
+          if (signal?.aborted) return;
+          setGames(next);
+          setError(undefined);
+        })
+        .catch((loadError: unknown) => {
+          if (signal?.aborted) return;
+          setError(loadError instanceof Error ? loadError.message : t("games.loadError"));
+        })
+        .finally(() => {
+          if (signal?.aborted) return;
+          setLoading(false);
+          setRefreshing(false);
+        });
+    },
+    [t]
+  );
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   // Same chrome as `ips.tsx`: transparent native back + page title below it.

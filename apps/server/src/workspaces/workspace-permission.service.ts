@@ -12,9 +12,15 @@ import {
   WorkspaceMemberStatus,
   WorkspaceStatus,
   type PlatformProject,
+  type Prisma,
   type WorkspaceMember,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
+
+type PermissionDb = Pick<
+  Prisma.TransactionClient,
+  'platformProject' | 'projectMember' | 'workspaceMember'
+>;
 
 const WORKSPACE_ROLE_RANK: Record<WorkspaceMemberRole, number> = {
   [WorkspaceMemberRole.owner]: 100,
@@ -56,8 +62,9 @@ export class WorkspacePermissionService {
     userId: string,
     workspaceId: string,
     minimumRole: WorkspaceMemberRole,
+    db: PermissionDb = this.prisma,
   ): Promise<WorkspaceMember> {
-    const membership = await this.prisma.workspaceMember.findFirst({
+    const membership = await db.workspaceMember.findFirst({
       where: {
         workspaceId,
         userId,
@@ -77,7 +84,9 @@ export class WorkspacePermissionService {
       });
     }
     if (
-      WORKSPACE_ROLE_RANK[membership.role] < WORKSPACE_ROLE_RANK[minimumRole]
+      WORKSPACE_ROLE_RANK[membership.role] < WORKSPACE_ROLE_RANK[minimumRole] ||
+      (minimumRole === WorkspaceMemberRole.editor &&
+        membership.role === WorkspaceMemberRole.billing)
     ) {
       throw new ForbiddenException({
         code: 'WORKSPACE_PERMISSION_DENIED',
@@ -120,8 +129,9 @@ export class WorkspacePermissionService {
     userId: string,
     projectId: string,
     minimumRole: ProjectMemberRole,
+    db: PermissionDb = this.prisma,
   ): Promise<PlatformProject> {
-    const project = await this.prisma.platformProject.findFirst({
+    const project = await db.platformProject.findFirst({
       where: {
         id: projectId,
         status: PlatformProjectStatus.active,
@@ -135,7 +145,7 @@ export class WorkspacePermissionService {
       });
     }
 
-    const projectMember = await this.prisma.projectMember.findFirst({
+    const projectMember = await db.projectMember.findFirst({
       where: {
         projectId,
         userId,
@@ -154,6 +164,7 @@ export class WorkspacePermissionService {
       userId,
       project.workspaceId,
       WorkspaceMemberRole.viewer,
+      db,
     );
     const effectiveRole = WORKSPACE_TO_PROJECT_ROLE[workspaceMember.role];
     if (PROJECT_ROLE_RANK[effectiveRole] < PROJECT_ROLE_RANK[minimumRole]) {

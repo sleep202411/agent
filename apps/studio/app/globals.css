@@ -541,3 +541,19 @@ button:disabled,
     animation: none !important;
   }
 }
+
+/* Selected story wires show flow direction while keeping the ordinary hit area. */
+.react-flow__edge.story-flow-edge-selected .react-flow__edge-path {
+  stroke-dasharray: 8 6;
+  animation: story-wire-direction 800ms linear infinite;
+}
+@keyframes story-wire-direction {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.story-flow-edge-selected .react-flow__edge-path {
+    animation: none;
+  }
+}

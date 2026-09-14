@@ -122,7 +122,12 @@ const GENERATION_RESPONSE_INCLUDE =
 
 const REFERENCE_MEDIA_VERSION_INCLUDE =
   Prisma.validator<Prisma.StoryAssetMediaVersionInclude>()({
-    mediaAsset: { include: { placements: true } },
+    mediaAsset: {
+      include: {
+        placements: true,
+        variants: { where: { variantKey: 'original', deletedAt: null } },
+      },
+    },
   });
 
 const CLIP_TARGET_INCLUDE =
@@ -137,6 +142,7 @@ const CLIP_TARGET_INCLUDE =
       },
     },
     assetBindings: {
+      where: { status: { not: StoryProductionSpecStatus.archived } },
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
       include: {
         assetSpec: {
@@ -1643,6 +1649,8 @@ export class StoryProductionGenerationService
       if (ofKind.length > 0) {
         input[field] = ofKind.map((reference) => ({
           url: reference.binding.url,
+          width: reference.width,
+          height: reference.height,
           assetId: reference.binding.assetId,
           refId: reference.binding.refId,
           label: reference.binding.label,
@@ -1689,7 +1697,12 @@ export class StoryProductionGenerationService
       }
       if (seenAssets.has(asset.id)) continue;
       seenAssets.add(asset.id);
+      const durationMs = asset.variants?.[0]?.durationMs;
+      const durationSeconds =
+        durationMs != null ? durationMs / 1000 : asset.durationSeconds;
       references.push({
+        width: asset.width,
+        height: asset.height,
         bindingId: reference.bindingId,
         binding: {
           refId: reference.refId,
@@ -1699,9 +1712,7 @@ export class StoryProductionGenerationService
           order: reference.rank,
           url,
           assetId: asset.id,
-          ...(asset.durationSeconds !== null
-            ? { durationSeconds: asset.durationSeconds }
-            : {}),
+          ...(durationSeconds != null ? { durationSeconds } : {}),
           ...(asset.sizeBytes !== null
             ? { bytes: safeBigIntNumber(asset.sizeBytes) }
             : {}),
@@ -2439,6 +2450,8 @@ export class StoryProductionGenerationService
 }
 
 interface ProviderReference {
+  width?: number | null;
+  height?: number | null;
   bindingId: string;
   binding: AiSubmitReferenceBinding & {
     kind: 'image' | 'video';
@@ -3053,6 +3066,17 @@ function estimateGenerationPoints(
     duration: durationValue(aiInput.duration),
     durationSeconds: finiteNumber(aiInput.durationSeconds),
     text: optionalString(aiInput.prompt),
+    referenceMedia: {
+      images: Array.isArray(aiInput.referenceImages)
+        ? aiInput.referenceImages
+        : [],
+      videos: Array.isArray(aiInput.referenceVideos)
+        ? aiInput.referenceVideos
+        : [],
+      audios: Array.isArray(aiInput.referenceAudios)
+        ? aiInput.referenceAudios
+        : [],
+    },
     referenceImageCount: arraySize(aiInput.referenceImages),
     referenceVideoSeconds: mediaDurationSeconds(aiInput.referenceVideos),
     generateAudio:

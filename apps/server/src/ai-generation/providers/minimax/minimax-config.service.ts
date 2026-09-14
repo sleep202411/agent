@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 
 const boolEnv = (value: string | undefined, fallback = false): boolean => {
   if (value == null || value.trim() === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  throw new Error('MINIMAX_ENABLED must be a boolean value.');
 };
 
 const numberEnv = (
@@ -40,9 +43,12 @@ export class MiniMaxConfigService {
       process.env.MINIMAX_API_KEY?.trim() ||
       process.env.MINIMAX_VIDEO_API_KEY?.trim() ||
       null;
+    const enabled = boolEnv(process.env.MINIMAX_ENABLED, Boolean(apiKey));
+    if (enabled && !apiKey) {
+      throw new Error('MINIMAX_ENABLED=true requires MINIMAX_API_KEY.');
+    }
     this.value = {
-      // Enabled when explicitly on, or when a key is present (local ergonomics).
-      enabled: boolEnv(process.env.MINIMAX_ENABLED, Boolean(apiKey)),
+      enabled,
       apiKey,
       apiBaseUrl:
         process.env.MINIMAX_API_BASE_URL?.replace(/\/+$/, '') ||

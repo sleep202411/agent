@@ -32,38 +32,47 @@ export default function AgentScriptScreen() {
     loading: chapterLoading,
     error: chapterError,
   } = useStoryChapterContext();
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [markdown, setMarkdown] = useState("");
 
+  const resourceKey = `${projectId}:${chapterId}`;
+  const [previousResourceKey, setPreviousResourceKey] = useState(resourceKey);
+  if (previousResourceKey !== resourceKey) {
+    setPreviousResourceKey(resourceKey);
+    setLoading(true);
+    setError(undefined);
+  }
+
   const loadScript = useCallback(
-    async (opts?: { refresh?: boolean }) => {
+    (signal?: AbortSignal) => {
       if (!chapterId) return;
-      if (opts?.refresh) setRefreshing(true);
-      else setLoading(true);
-      setError(undefined);
-      try {
-        const document = await loadStoryScriptSnapshot(projectId, chapterId);
-        setMarkdown(
-          scriptDocumentToMarkdown({
-            contentSnapshot: document.contentSnapshot,
-          })
-        );
-      } catch (err) {
-        setMarkdown("");
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
+      return loadStoryScriptSnapshot(projectId, chapterId, signal)
+        .then((result) => {
+          if (signal?.aborted) return;
+          setMarkdown(scriptDocumentToMarkdown({ contentSnapshot: result.contentSnapshot }));
+          setError(undefined);
+        })
+        .catch((err: unknown) => {
+          if (signal?.aborted) return;
+          setMarkdown("");
+          setError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (signal?.aborted) return;
+          setLoading(false);
+          setRefreshing(false);
+        });
     },
     [chapterId, projectId]
   );
 
   useEffect(() => {
     if (!chapterId || chapterLoading) return;
-    void loadScript();
+    const controller = new AbortController();
+    void loadScript(controller.signal);
+    return () => controller.abort();
   }, [chapterId, chapterLoading, loadScript]);
 
   const topPad = STORY_HEADER_CONTENT_GAP;
@@ -79,7 +88,10 @@ export default function AgentScriptScreen() {
           chapterId ? (
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => void loadScript({ refresh: true })}
+              onRefresh={() => {
+                setRefreshing(true);
+                void loadScript();
+              }}
               tintColor={theme.brand}
             />
           ) : undefined

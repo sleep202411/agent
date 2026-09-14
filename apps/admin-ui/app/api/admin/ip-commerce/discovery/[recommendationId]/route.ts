@@ -28,3 +28,23 @@ export async function PATCH(
     return adminUnavailableResponse();
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ recommendationId: string }> }
+) {
+  try {
+    const { recommendationId } = await context.params;
+    const upstream = await fetch(
+      adminUrlForRequest(request, `/ip-commerce/discovery/${encodeURIComponent(recommendationId)}`),
+      {
+        method: "DELETE",
+        headers: adminForwardHeaders(request),
+        cache: "no-store",
+      }
+    );
+    return relayAdminResponse(upstream);
+  } catch {
+    return adminUnavailableResponse();
+  }
+}

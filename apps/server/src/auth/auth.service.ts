@@ -8,6 +8,7 @@ import {
 } from 'node:http';
 import { get as httpsGet } from 'node:https';
 import { describeUnknown, isRecord, scalarString } from '../common/values';
+import { parseJavaLevelIds } from '../integrations/java/user-level-gates';
 import type { AuthUser } from './auth.types';
 
 type JavaAuthResponse = {
@@ -15,6 +16,8 @@ type JavaAuthResponse = {
   code?: number | string;
   data?: Record<string, unknown>;
   info?: Record<string, unknown>;
+  /** Sibling of `info` — certification level rows for the session user. */
+  level?: unknown;
   msg?: unknown;
   message?: unknown;
 };
@@ -114,8 +117,16 @@ export class AuthService {
   /**
    * Validate a session cookie and return the authenticated user.
    * Returns null if the token is invalid or expired.
+   *
+   * Pass `{ bypassCache: true }` when the caller needs a live Java snapshot
+   * of mutable fields (e.g. `levelIds` after an admin grants AI 制片人).
+   * Re-login works around the same staleness because a new satoken misses
+   * the previous cache entry; eligibility / create must not require that.
    */
-  async validateToken(cookie: string): Promise<AuthUser | null> {
+  async validateToken(
+    cookie: string,
+    options?: { bypassCache?: boolean },
+  ): Promise<AuthUser | null> {
     if (!cookie) return null;
 
     // A browser can carry MULTIPLE `satoken` cookies for fizzdragon.com — the
@@ -140,15 +151,19 @@ export class AuthService {
         ? satokenValues.map((value) => credentialCandidate(`satoken=${value}`))
         : [credentialCandidate(cookie)];
 
+    const bypassCache = options?.bypassCache === true;
+
     // Search every candidate before doing I/O. If a stale duplicate appears
     // first, a later known-good token must still keep the request local.
-    for (const candidate of candidates) {
-      const cached = this.cachedUser(candidate.cacheKey);
-      if (cached) return cached;
+    if (!bypassCache) {
+      for (const candidate of candidates) {
+        const cached = this.cachedUser(candidate.cacheKey);
+        if (cached) return cached;
+      }
     }
 
     for (const candidate of candidates) {
-      const user = await this.validateCandidate(candidate);
+      const user = await this.validateCandidate(candidate, bypassCache);
       if (!user) continue;
       if (satokenValues.length > 1) {
         this.logger.log(
@@ -173,16 +188,21 @@ export class AuthService {
     return cached.user;
   }
 
-  private async validateCandidate(candidate: {
-    cookie: string;
-    cacheKey: string;
-    fingerprint: string;
-  }): Promise<AuthUser | null> {
-    const cached = this.cachedUser(candidate.cacheKey);
-    if (cached) return cached;
+  private async validateCandidate(
+    candidate: {
+      cookie: string;
+      cacheKey: string;
+      fingerprint: string;
+    },
+    bypassCache = false,
+  ): Promise<AuthUser | null> {
+    if (!bypassCache) {
+      const cached = this.cachedUser(candidate.cacheKey);
+      if (cached) return cached;
 
-    const existing = this.inFlight.get(candidate.cacheKey);
-    if (existing) return existing;
+      const existing = this.inFlight.get(candidate.cacheKey);
+      if (existing) return existing;
+    }
 
     const validation = this.validateSatoken(
       candidate.cookie,
@@ -206,7 +226,9 @@ export class AuthService {
           this.inFlight.delete(candidate.cacheKey);
         }
       });
-    this.inFlight.set(candidate.cacheKey, validation);
+    if (!bypassCache) {
+      this.inFlight.set(candidate.cacheKey, validation);
+    }
     return validation;
   }
 
@@ -259,6 +281,8 @@ export class AuthService {
         email: scalarString(data.email),
         phone: scalarString(data.phone),
         headImg: scalarString(data.headImg),
+        // `level` is a sibling of `info` on the Java envelope, not nested inside it.
+        levelIds: parseJavaLevelIds(body.level),
       };
 
       if (!user.userId) {

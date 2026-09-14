@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 
@@ -26,8 +27,7 @@ export class AgentOsGatewayConfigService {
   readonly value: AgentOsGatewayConfig;
 
   constructor() {
-    const raw =
-      process.env.AGENT_OS_WORKER_URL?.trim() || 'http://127.0.0.1:4301';
+    const raw = requiredEnv('AGENT_OS_WORKER_URL');
     const internalToken = process.env.AGENT_OS_INTERNAL_TOKEN?.trim();
     if (!internalToken || internalToken.length < 16) {
       throw new Error(

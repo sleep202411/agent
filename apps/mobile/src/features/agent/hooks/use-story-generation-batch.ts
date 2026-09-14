@@ -41,58 +41,60 @@ export function useStoryGenerationBatch(
   const [tick, setTick] = useState(0);
   const ok = isAgentOsId(projectId) && isAgentOsId(chapterId) && isAgentOsId(batchId);
 
+  const identity = `${projectId}:${chapterId}:${batchId}`;
+  const [previousIdentity, setPreviousIdentity] = useState(identity);
+  if (previousIdentity !== identity) {
+    setPreviousIdentity(identity);
+    setBatch(null);
+    setAssets([]);
+    setStoryboard([]);
+    setLoading(ok);
+    setError(null);
+    setActionError(null);
+  }
+
   const load = useCallback(
     async (signal?: AbortSignal) => {
       if (!ok) return;
-      try {
-        const next = await storyProductionApi.getGenerationBatch(
-          projectId,
-          chapterId,
-          batchId,
-          signal
-        );
-        if (signal?.aborted) return;
-        setBatch(next);
-        setError(null);
-        if (
-          storyGenerationBatchHasPendingItems(next) ||
-          next.status === "queued" ||
-          next.status === "running"
-        ) {
-          setActionError(null);
-        }
-        const kind = next.items[0]?.targetKind;
-        if (kind === "asset_spec") {
-          const rows = await storyProductionApi.listAssetSpecs(projectId, chapterId, signal);
+      return storyProductionApi
+        .getGenerationBatch(projectId, chapterId, batchId, signal)
+        .then(async (next) => {
           if (signal?.aborted) return;
-          setAssets(rows);
-          setStoryboard([]);
-        } else if (kind === "storyboard_clip") {
-          const sequences = await storyProductionApi.getStoryboard(projectId, chapterId, signal);
+          setBatch(next);
+          setError(null);
+          if (
+            storyGenerationBatchHasPendingItems(next) ||
+            next.status === "queued" ||
+            next.status === "running"
+          ) {
+            setActionError(null);
+          }
+          const kind = next.items[0]?.targetKind;
+          if (kind === "asset_spec") {
+            const rows = await storyProductionApi.listAssetSpecs(projectId, chapterId, signal);
+            if (signal?.aborted) return;
+            setAssets(rows);
+            setStoryboard([]);
+          } else if (kind === "storyboard_clip") {
+            const sequences = await storyProductionApi.getStoryboard(projectId, chapterId, signal);
+            if (signal?.aborted) return;
+            setStoryboard(sequences);
+            setAssets([]);
+          }
+        })
+        .catch((err: unknown) => {
           if (signal?.aborted) return;
-          setStoryboard(sequences);
-          setAssets([]);
-        }
-      } catch (err) {
-        if (signal?.aborted) return;
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        if (!signal?.aborted) setLoading(false);
-      }
+          setError(err instanceof Error ? err.message : String(err));
+        })
+        .finally(() => {
+          if (!signal?.aborted) setLoading(false);
+        });
     },
     [batchId, chapterId, ok, projectId]
   );
 
   useEffect(() => {
-    if (!ok) {
-      setBatch(null);
-      setAssets([]);
-      setStoryboard([]);
-      setLoading(false);
-      setError(null);
-      setActionError(null);
-      return;
-    }
+    if (!ok) return;
     const ac = new AbortController();
     void load(ac.signal);
     return () => ac.abort();
@@ -132,7 +134,7 @@ export function useStoryGenerationBatch(
     batch,
     assets,
     storyboard,
-    loading,
+    loading: ok && loading,
     error,
     actionError,
     mutating,

@@ -37,7 +37,6 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
   WalletTransactionStatus,
-  WorkspaceType,
   WorkspaceStatus,
   WorkspaceMemberRole,
   type BillingOrder,
@@ -87,11 +86,10 @@ import type {
   CreateAdminMembershipPlanInput,
   CreateAdminBillingPromotionInput,
   CreateAdminBillingRefundInput,
-  CreateAdminUserWalletCreditInput,
-  GetAdminUserWalletCreditQueryInput,
   CreateAdminWorkspaceWalletCreditInput,
   GetAdminWorkspaceWalletCreditQueryInput,
   ListAdminWorkspacesQueryInput,
+  ListAdminComputeMemberUsageQuery,
   CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
@@ -127,6 +125,7 @@ import {
 } from './membership-generation-estimates';
 import { BillingLedgerService } from './billing-ledger.service';
 import { AppLovinConversionService } from './applovin-conversion.service';
+import { LegacyPointsService } from '../legacy-points/legacy-points.service';
 
 type PriceWithItem = BillingPrice & { item: BillingCatalogItem };
 type PriceWithProviderBindings = PriceWithItem & {
@@ -310,6 +309,7 @@ export class BillingService {
     private readonly referrals: ReferralsService,
     private readonly appLovinConversion: AppLovinConversionService,
     private readonly wechatPay: WechatPayProvider,
+    private readonly legacyPoints: LegacyPointsService,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -413,6 +413,84 @@ export class BillingService {
     };
   }
 
+  /** Balance-only read: project collaborators may see the team's shared pot.
+   * Ledger details and recharge retain their existing role checks. */
+  async getComputeBalance(user: AuthUser, workspaceId?: string | null) {
+    let scope: { ownerType: WalletOwnerType; ownerId: string };
+    if (workspaceId) {
+      // Project invitations already maintain an active workspace roster entry.
+      // Presence accepts project_only without granting workspace-wide access.
+      await this.permissions.requireWorkspacePresence(user.userId, workspaceId);
+      scope = { ownerType: WalletOwnerType.workspace, ownerId: workspaceId };
+    } else {
+      scope = await this.walletLedgerScope(
+        user,
+        WalletCurrencyType.compute_point,
+      );
+    }
+    const accounts = await this.readWalletAccounts({
+      ...scope,
+      currency: WalletCurrencyType.compute_point,
+      balanceKind: WalletBalanceKind.consumable,
+      status: WalletAccountStatus.active,
+    });
+    const available = accounts.reduce(
+      (sum, account) => sum + account.availableBalance,
+      0n,
+    );
+    const held = accounts.reduce(
+      (sum, account) => sum + account.heldBalance,
+      0n,
+    );
+    return {
+      available: available.toString(),
+      held: held.toString(),
+      total: (available + held).toString(),
+      nextExpiry: await this.nextWalletExpiry(accounts),
+    };
+  }
+
+  private async readWalletAccounts(where: Prisma.WalletAccountWhereInput) {
+    let accounts = await this.prisma.walletAccount.findMany({
+      where,
+      orderBy: [{ createdAt: 'asc' }],
+    });
+    let swept = false;
+    for (const account of accounts) {
+      const { expired } = await this.walletLedger.expireLapsedGrants(
+        account.id,
+      );
+      if (expired > 0n) swept = true;
+    }
+    if (swept) {
+      accounts = await this.prisma.walletAccount.findMany({
+        where,
+        orderBy: [{ createdAt: 'asc' }],
+      });
+    }
+    return accounts;
+  }
+
+  private async nextWalletExpiry(accounts: WalletAccount[]) {
+    if (accounts.length === 0) return null;
+    const grant = await this.prisma.walletCreditGrant.findFirst({
+      where: {
+        accountId: { in: accounts.map((account) => account.id) },
+        status: WalletCreditGrantStatus.active,
+        availableAmount: { gt: 0n },
+        expiresAt: { not: null },
+      },
+      orderBy: { expiresAt: 'asc' },
+      select: { availableAmount: true, expiresAt: true },
+    });
+    return grant
+      ? {
+          amount: grant.availableAmount.toString(),
+          expiresAt: grant.expiresAt!.toISOString(),
+        }
+      : null;
+  }
+
   async listWalletLedger(
     user: AuthUser,
     query: ListWalletLedgerQuery,
@@ -429,34 +507,41 @@ export class BillingService {
       currency: query.currency as WalletCurrencyType,
       balanceKind: query.balanceKind as WalletBalanceKind,
     };
-    let accounts = await this.prisma.walletAccount.findMany({
-      where: accountWhere,
-      orderBy: [{ createdAt: 'asc' }],
-    });
-    // Sweep lapsed credit grants so the displayed balance is honest (the spend
-    // path already refuses expired grants; this reflects expiry on the balance).
-    let swept = false;
-    for (const account of accounts) {
-      const { expired } = await this.walletLedger.expireLapsedGrants(
-        account.id,
-      );
-      if (expired > 0n) swept = true;
-    }
-    if (swept) {
-      accounts = await this.prisma.walletAccount.findMany({
-        where: accountWhere,
-        orderBy: [{ createdAt: 'asc' }],
-      });
-    }
+    const accounts = await this.readWalletAccounts(accountWhere);
     if (accounts.length === 0) {
+      if (query.cursor)
+        throw new BadRequestException({
+          code: 'INVALID_LEDGER_CURSOR',
+          msg: 'Ledger cursor is outside the selected scope.',
+        });
       return {
         accounts: [],
         entries: [],
+        nextCursor: null,
       };
     }
 
+    const where = {
+      accountId: { in: accounts.map((account) => account.id) },
+      ...(query.projectId
+        ? { transaction: { projectId: query.projectId } }
+        : {}),
+    };
+    if (
+      query.cursor &&
+      !(await this.prisma.walletLedgerEntry.findFirst({
+        where: { ...where, id: query.cursor },
+        select: { id: true },
+      }))
+    ) {
+      throw new BadRequestException({
+        code: 'INVALID_LEDGER_CURSOR',
+        msg: 'Ledger cursor is outside the selected scope.',
+      });
+    }
     const entries = await this.prisma.walletLedgerEntry.findMany({
-      where: { accountId: { in: accounts.map((account) => account.id) } },
+      where,
+      ...(query.cursor ? { cursor: { id: query.cursor }, skip: 1 } : {}),
       include: {
         transaction: true,
         creditAllocations: {
@@ -477,28 +562,13 @@ export class BillingService {
         },
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: query.limit,
-    });
-
-    // The next credit grant to expire (for surfacing "X credits expire on DATE").
-    const nextExpiringGrant = await this.prisma.walletCreditGrant.findFirst({
-      where: {
-        accountId: { in: accounts.map((account) => account.id) },
-        status: WalletCreditGrantStatus.active,
-        availableAmount: { gt: 0n },
-        expiresAt: { not: null },
-      },
-      orderBy: { expiresAt: 'asc' },
-      select: { availableAmount: true, expiresAt: true },
+      take: query.limit + 1,
     });
 
     return {
-      nextExpiry: nextExpiringGrant
-        ? {
-            amount: nextExpiringGrant.availableAmount.toString(),
-            expiresAt: nextExpiringGrant.expiresAt!.toISOString(),
-          }
-        : null,
+      nextCursor:
+        entries.length > query.limit ? entries[query.limit - 1].id : null,
+      nextExpiry: await this.nextWalletExpiry(accounts),
       accounts: accounts.map((account) => ({
         id: account.id,
         ownerType: account.ownerType,
@@ -510,7 +580,7 @@ export class BillingService {
         heldBalance: account.heldBalance.toString(),
         updatedAt: account.updatedAt.toISOString(),
       })),
-      entries: entries.map((entry) => {
+      entries: entries.slice(0, query.limit).map((entry) => {
         const metadata = isRecord(entry.transaction.metadata)
           ? entry.transaction.metadata
           : {};
@@ -527,6 +597,11 @@ export class BillingService {
           availableBalanceAfter: entry.availableBalanceAfter.toString(),
           heldBalanceAfter: entry.heldBalanceAfter.toString(),
           reason: entry.reason,
+          projectId: entry.transaction.projectId,
+          workspaceId: entry.transaction.workspaceId,
+          actorUserId: entry.transaction.actorUserId,
+          transactionStatus: entry.transaction.status,
+          postedAt: entry.transaction.postedAt?.toISOString() ?? null,
           sourceType: entry.transaction.sourceType,
           sourceId: entry.transaction.sourceId,
           orderNo: stringAt(metadata, ['orderNo']),
@@ -626,7 +701,7 @@ export class BillingService {
     if (!workspaceId) {
       throw new BadRequestException({
         code: 'WORKSPACE_REQUIRED',
-        msg: 'Member usage is only available for a team workspace.',
+        msg: 'Choose a workspace to view member usage.',
       });
     }
     // Per-member consumption is sensitive — restrict to workspace admins/owners.
@@ -750,6 +825,225 @@ export class BillingService {
     };
   }
 
+  /**
+   * Admin cross-workspace compute usage: person × workspace pot consumption
+   * over the last N days. Joins workspace + legacy user identity for display.
+   */
+  async listAdminComputeMemberUsage(query: ListAdminComputeMemberUsageQuery) {
+    let rawActorUserId: string | null = null;
+    if (query.userId?.trim()) {
+      rawActorUserId = decodeUserId(query.userId.trim());
+    } else if (query.userQuery?.trim()) {
+      try {
+        const matched = await this.legacyPoints.findUser(
+          query.userQuery.trim(),
+        );
+        if (!matched) {
+          return {
+            rangeDays: query.days,
+            workspaceKind: query.workspaceKind,
+            workspaceId: query.workspaceId ?? null,
+            totalCredits: '0',
+            memberCount: 0,
+            workspaceCount: 0,
+            members: [],
+          };
+        }
+        rawActorUserId = decodeUserId(matched.userId);
+      } catch (err) {
+        // Legacy MySQL is optional locally; without it phone/email lookup is
+        // unavailable — fail the filter loudly so ops know why it's empty.
+        this.logger.warn(
+          `legacy user lookup unavailable: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        throw new BadRequestException({
+          code: 'LEGACY_MYSQL_UNAVAILABLE',
+          msg: 'Phone/email user lookup needs LEGACY_MYSQL_ENABLED and credentials. Use userId instead, or configure the MySQL bridge.',
+        });
+      }
+    }
+
+    const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
+    const workspaceIdFilter = query.workspaceId
+      ? Prisma.sql`AND a.owner_id = ${query.workspaceId}::uuid`
+      : Prisma.empty;
+    const actorFilter = rawActorUserId
+      ? Prisma.sql`AND t.actor_user_id = ${rawActorUserId}`
+      : Prisma.empty;
+    const kindFilter =
+      query.workspaceKind === 'personal'
+        ? Prisma.sql`AND w.default_for_user_id IS NOT NULL`
+        : query.workspaceKind === 'shared'
+          ? Prisma.sql`AND w.default_for_user_id IS NULL`
+          : Prisma.empty;
+    // Cap raw pairs so a busy window cannot blow memory before rollup.
+    const pairLimit = Math.min(query.limit * 20, 2000);
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        actorUserId: string | null;
+        workspaceId: string;
+        credits: bigint;
+        jobs: bigint;
+      }>
+    >(Prisma.sql`
+      SELECT t.actor_user_id AS "actorUserId",
+             a.owner_id AS "workspaceId",
+             SUM(e.amount)::bigint AS credits,
+             COUNT(*)::bigint AS jobs
+      FROM wallet_ledger_entries e
+      JOIN wallet_transactions t ON t.id = e.transaction_id
+      JOIN wallet_accounts a ON a.id = e.account_id
+      JOIN workspaces w ON w.id = a.owner_id AND w.deleted_at IS NULL
+      WHERE a.owner_type = 'workspace'
+        AND a.currency = 'compute_point'
+        AND a.balance_kind = 'consumable'
+        AND e.entry_type::text IN ('settle', 'debit')
+        AND e.created_at >= ${from}
+        ${workspaceIdFilter}
+        ${actorFilter}
+        ${kindFilter}
+      GROUP BY t.actor_user_id, a.owner_id
+      ORDER BY credits DESC
+      LIMIT ${pairLimit}
+    `);
+
+    if (rows.length === 0) {
+      return {
+        rangeDays: query.days,
+        workspaceKind: query.workspaceKind,
+        workspaceId: query.workspaceId ?? null,
+        totalCredits: '0',
+        memberCount: 0,
+        workspaceCount: 0,
+        members: [],
+      };
+    }
+
+    const workspaceIds = [...new Set(rows.map((row) => row.workspaceId))];
+    const workspaces = await this.prisma.workspace.findMany({
+      where: { id: { in: workspaceIds } },
+      select: {
+        id: true,
+        name: true,
+        defaultForUserId: true,
+        status: true,
+      },
+    });
+    const workspaceById = new Map(workspaces.map((ws) => [ws.id, ws]));
+
+    const rawUserIds = [
+      ...new Set(
+        rows
+          .map((row) => row.actorUserId)
+          .filter((id): id is string => Boolean(id && id !== 'unknown')),
+      ),
+    ];
+    let legacyByRawId = new Map<
+      string,
+      Awaited<ReturnType<LegacyPointsService['findUsersByIds']>>[number]
+    >();
+    try {
+      const legacyUsers = await this.legacyPoints.findUsersByIds(rawUserIds);
+      legacyByRawId = new Map(
+        legacyUsers.map((user) => [decodeUserId(user.userId), user]),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `legacy user identity resolve skipped: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    type WorkspaceAgg = {
+      workspaceId: string;
+      credits: bigint;
+      jobs: number;
+    };
+    type MemberAgg = {
+      rawUserId: string;
+      totalCredits: bigint;
+      totalJobs: number;
+      workspaces: WorkspaceAgg[];
+    };
+    const byMember = new Map<string, MemberAgg>();
+    for (const row of rows) {
+      const rawUserId = row.actorUserId ?? 'unknown';
+      let member = byMember.get(rawUserId);
+      if (!member) {
+        member = {
+          rawUserId,
+          totalCredits: 0n,
+          totalJobs: 0,
+          workspaces: [],
+        };
+        byMember.set(rawUserId, member);
+      }
+      const jobs = Number(row.jobs);
+      member.totalCredits += row.credits;
+      member.totalJobs += jobs;
+      member.workspaces.push({
+        workspaceId: row.workspaceId,
+        credits: row.credits,
+        jobs,
+      });
+    }
+
+    const members = [...byMember.values()]
+      .sort((a, b) => (b.totalCredits > a.totalCredits ? 1 : -1))
+      .slice(0, query.limit)
+      .map((member) => {
+        const legacy =
+          member.rawUserId === 'unknown'
+            ? null
+            : (legacyByRawId.get(member.rawUserId) ?? null);
+        return {
+          userId:
+            member.rawUserId === 'unknown'
+              ? 'unknown'
+              : encodeUserId(member.rawUserId),
+          nickName: legacy?.nickName ?? null,
+          phone: legacy?.phone ?? null,
+          email: legacy?.email ?? null,
+          totalCredits: member.totalCredits.toString(),
+          totalJobs: member.totalJobs,
+          workspaces: member.workspaces
+            .sort((a, b) => (b.credits > a.credits ? 1 : -1))
+            .map((ws) => {
+              const meta = workspaceById.get(ws.workspaceId);
+              return {
+                workspaceId: ws.workspaceId,
+                workspaceName: meta?.name ?? ws.workspaceId,
+                workspaceStatus: meta?.status ?? null,
+                isPersonal: Boolean(meta?.defaultForUserId),
+                credits: ws.credits.toString(),
+                jobs: ws.jobs,
+              };
+            }),
+        };
+      });
+
+    let totalCredits = 0n;
+    const workspaceSet = new Set<string>();
+    for (const member of members) {
+      totalCredits += BigInt(member.totalCredits);
+      for (const ws of member.workspaces) workspaceSet.add(ws.workspaceId);
+    }
+
+    return {
+      rangeDays: query.days,
+      workspaceKind: query.workspaceKind,
+      workspaceId: query.workspaceId ?? null,
+      totalCredits: totalCredits.toString(),
+      memberCount: members.length,
+      workspaceCount: workspaceSet.size,
+      members,
+    };
+  }
+
   private async walletLedgerScope(
     user: AuthUser,
     currency: WalletCurrencyType,
@@ -763,7 +1057,7 @@ export class BillingService {
 
     // compute_point is uniformly workspace-owned: every member may READ a
     // workspace's balance (viewer); with no workspace in context, fall back to the
-    // caller's personal-workspace pot. Recharge stays billing-role gated at its own
+    // caller's default-workspace pot. Recharge stays billing-role gated at its own
     // call site (resolveTopupSubject).
     if (workspaceId) {
       const membership = await this.permissions.requireWorkspaceRole(
@@ -777,20 +1071,23 @@ export class BillingService {
       };
     }
 
-    const personal = await this.prisma.workspace.findFirst({
+    const defaultWorkspace = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: user.userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: user.userId,
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (personal) {
-      return { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
+    if (defaultWorkspace) {
+      return {
+        ownerType: WalletOwnerType.workspace,
+        ownerId: defaultWorkspace.id,
+      };
     }
-    // No personal workspace yet → no compute pot; an owner that yields an empty
-    // balance rather than throwing.
-    return { ownerType: WalletOwnerType.user, ownerId: user.userId };
+    throw new ConflictException({
+      code: 'DEFAULT_WORKSPACE_REQUIRED',
+      msg: 'Open the studio to initialize your default workspace.',
+    });
   }
 
   async listMembershipPlans(query: ListMembershipPlansQuery) {
@@ -1441,168 +1738,13 @@ export class BillingService {
     return this.getAdminWalletAccountDetail(account.id);
   }
 
-  async createAdminUserWalletCredit(
-    adminId: string,
-    input: CreateAdminUserWalletCreditInput,
-  ) {
-    const inputUserId = input.userId.trim();
-    const resolvedUserId =
-      input.idFormat === 'raw' ? inputUserId : decodeUserId(inputUserId);
-    if (!/^\d{1,18}$/.test(resolvedUserId)) {
-      throw new BadRequestException({
-        code: 'INVALID_USER_ID',
-        msg: 'User id must resolve to a numeric Java user id.',
-      });
-    }
-
-    // compute_point is workspace-owned, so an admin compute grant lands in the
-    // user's personal-workspace pot (the wallet they read from + spend); only
-    // community_point stays user-owned.
-    const currency = input.currency as WalletCurrencyType;
-    let owner: { ownerType: WalletOwnerType; ownerId: string };
-    if (currency === WalletCurrencyType.compute_point) {
-      const personal = await this.prisma.workspace.findFirst({
-        where: {
-          ownerUserId: resolvedUserId,
-          type: WorkspaceType.personal,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      if (!personal) {
-        throw new ConflictException({
-          code: 'PERSONAL_WORKSPACE_MISSING',
-          msg: 'User has no personal workspace yet; cannot grant compute points.',
-        });
-      }
-      owner = { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
-    } else {
-      owner = { ownerType: WalletOwnerType.user, ownerId: resolvedUserId };
-    }
-
-    const account = await this.prisma.walletAccount.upsert({
-      where: {
-        ownerType_ownerId_currency_balanceKind: {
-          ownerType: owner.ownerType,
-          ownerId: owner.ownerId,
-          currency,
-          balanceKind: WalletBalanceKind.consumable,
-        },
-      },
-      create: {
-        ownerType: owner.ownerType,
-        ownerId: owner.ownerId,
-        currency,
-        balanceKind: WalletBalanceKind.consumable,
-        status: WalletAccountStatus.active,
-      },
-      update: {},
-    });
-
-    return this.createAdminWalletAdjustment(adminId, account.id, {
-      amount: input.amount,
-      grantType: input.grantType,
-      expiresAt: input.expiresAt,
-      reason: input.reason,
-      idempotencyKey: input.idempotencyKey,
-      metadata: {
-        ...input.metadata,
-        inputUserId,
-        idFormat: input.idFormat,
-        resolvedUserId,
-        inputWasDecoded:
-          input.idFormat !== 'raw' && inputUserId !== resolvedUserId,
-        balanceKind: input.balanceKind,
-      },
-    });
-  }
-
-  /**
-   * Read-only compute_point balance for a userId — powers the admin 加积分
-   * dialog's "current balance" line. Mirrors createAdminUserWalletCredit's
-   * resolution (compute_point lives in the user's personal-workspace pot) but
-   * does NOT upsert / adjust / audit: it only reads. Returns "0" + hasWallet
-   * false when the workspace or wallet doesn't exist yet.
-   */
-  async getAdminUserWalletBalance(input: GetAdminUserWalletCreditQueryInput) {
-    const inputUserId = input.userId.trim();
-    const resolvedUserId =
-      input.idFormat === 'raw' ? inputUserId : decodeUserId(inputUserId);
-    if (!/^\d{1,18}$/.test(resolvedUserId)) {
-      throw new BadRequestException({
-        code: 'INVALID_USER_ID',
-        msg: 'User id must resolve to a numeric Java user id.',
-      });
-    }
-
-    const currency = input.currency as WalletCurrencyType;
-    const balanceKind = WalletBalanceKind.consumable;
-    let owner: { ownerType: WalletOwnerType; ownerId: string } | null = null;
-    if (currency === WalletCurrencyType.compute_point) {
-      const personal = await this.prisma.workspace.findFirst({
-        where: {
-          ownerUserId: resolvedUserId,
-          type: WorkspaceType.personal,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      if (personal) {
-        owner = { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
-      }
-    } else {
-      owner = { ownerType: WalletOwnerType.user, ownerId: resolvedUserId };
-    }
-
-    let account = owner
-      ? await this.prisma.walletAccount.findUnique({
-          where: {
-            ownerType_ownerId_currency_balanceKind: {
-              ownerType: owner.ownerType,
-              ownerId: owner.ownerId,
-              currency,
-              balanceKind,
-            },
-          },
-          select: { id: true, availableBalance: true },
-        })
-      : null;
-    // Sweep lapsed credit grants so the reported balance excludes expired
-    // credits (grant-backed accounts only; best-effort).
-    if (account && isGrantBackedCurrencyKind(currency, balanceKind)) {
-      await this.walletLedger
-        .expireLapsedGrants(account.id)
-        .catch(() => undefined);
-      account = await this.prisma.walletAccount.findUnique({
-        where: { id: account.id },
-        select: { id: true, availableBalance: true },
-      });
-    }
-
-    return {
-      resolvedUserId,
-      currency,
-      balanceKind,
-      availableBalance: account ? account.availableBalance.toString() : '0',
-      hasWallet: Boolean(account),
-    };
-  }
-
-  /**
-   * Credit (or debit) a WORKSPACE's compute_point pot directly by workspaceId —
-   * the only admin path that can fund a TEAM workspace. Ensures the pot exists
-   * (workspaces always own exactly one compute_point/consumable account) and
-   * routes through createAdminWalletAdjustment, which owns the grant / balance /
-   * idempotency / audit semantics. Rejects deleted or non-active workspaces so
-   * funds never land in an unreachable pot.
-   */
   async createAdminWorkspaceWalletCredit(
     adminId: string,
     input: CreateAdminWorkspaceWalletCreditInput,
   ) {
     const workspace = await this.prisma.workspace.findFirst({
       where: { id: input.workspaceId, deletedAt: null },
-      select: { id: true, name: true, type: true, status: true },
+      select: { id: true, name: true, status: true },
     });
     if (!workspace) {
       throw new NotFoundException({
@@ -1647,14 +1789,12 @@ export class BillingService {
         subject: 'workspace',
         workspaceId: workspace.id,
         workspaceName: workspace.name,
-        workspaceType: workspace.type,
       },
     });
   }
 
   /**
-   * Read-only compute_point balance for a single workspace pot (team or
-   * personal). Sweeps lapsed grants first so the number excludes expired credits.
+   * Read-only compute_point balance for a workspace. Sweeps lapsed grants first so the number excludes expired credits.
    */
   async getAdminWorkspaceWalletBalance(
     input: GetAdminWorkspaceWalletCreditQueryInput,
@@ -1664,7 +1804,6 @@ export class BillingService {
       select: {
         id: true,
         name: true,
-        type: true,
         status: true,
         ownerUserId: true,
       },
@@ -1707,7 +1846,6 @@ export class BillingService {
       workspace: {
         id: workspace.id,
         name: workspace.name,
-        type: workspace.type,
         status: workspace.status,
         ownerUserId: workspace.ownerUserId,
       },
@@ -1719,17 +1857,12 @@ export class BillingService {
   }
 
   /**
-   * Search workspaces for the admin team-wallet picker. Defaults to team
-   * workspaces; `query` matches id / name (case-insensitive) / ownerUserId.
+   * Search all workspaces for the admin wallet picker; `query` matches id / name (case-insensitive) / ownerUserId.
    * Returns each workspace's current compute_point balance so the operator can
    * pick the right pot without a second round-trip.
    */
   async listAdminWorkspaces(input: ListAdminWorkspacesQueryInput) {
     const where: Prisma.WorkspaceWhereInput = { deletedAt: null };
-    if (input.type !== 'all') {
-      where.type =
-        input.type === 'team' ? WorkspaceType.team : WorkspaceType.personal;
-    }
     const query = input.query?.trim();
     if (query) {
       // ownerUserId is stored raw; the operator may type the raw id, or paste
@@ -1780,11 +1913,12 @@ export class BillingService {
       select: {
         id: true,
         name: true,
-        type: true,
         status: true,
         ownerUserId: true,
         createdAt: true,
-        _count: { select: { members: true } },
+        _count: {
+          select: { members: { where: { status: 'active', removedAt: null } } },
+        },
         // Only that user's own membership row, so each workspace can say what
         // they are in it (owner / admin / member).
         ...(rawRelatedUserId
@@ -1800,14 +1934,11 @@ export class BillingService {
     });
 
     const accounts = workspaces.length
-      ? await this.prisma.walletAccount.findMany({
-          where: {
-            ownerType: WalletOwnerType.workspace,
-            ownerId: { in: workspaces.map((workspace) => workspace.id) },
-            currency: WalletCurrencyType.compute_point,
-            balanceKind: WalletBalanceKind.consumable,
-          },
-          select: { ownerId: true, availableBalance: true, heldBalance: true },
+      ? await this.readWalletAccounts({
+          ownerType: WalletOwnerType.workspace,
+          ownerId: { in: workspaces.map((workspace) => workspace.id) },
+          currency: WalletCurrencyType.compute_point,
+          balanceKind: WalletBalanceKind.consumable,
         })
       : [];
     const balanceByWorkspace = new Map(
@@ -1822,7 +1953,6 @@ export class BillingService {
         return {
           id: workspace.id,
           name: workspace.name,
-          type: workspace.type,
           status: workspace.status,
           // Encoded public id — the raw owner id stays server-side.
           ownerUserId: encodeUserId(workspace.ownerUserId),
@@ -3471,7 +3601,7 @@ export class BillingService {
     }
     const { order, promotionReservation } = txResult;
 
-    if (order.amountMinor === 0n || devSkipPaymentEnabled()) {
+    if (order.amountMinor === 0n) {
       await this.prisma.$transaction((tx) =>
         this.markOrderPaidAndFulfill(tx, order, new Date(), null, null, {
           internalPromotionCheckout: true,
@@ -3591,7 +3721,7 @@ export class BillingService {
     // The arbitrary-amount recharge funds either the community wallet (default,
     // user-only) or the compute wallet (which may target a team workspace). Each
     // currency has its own hidden anchor SKU + order type; the workspace is only
-    // honored for compute (community recharge stays personal).
+    // honored for compute (community recharge stays user-owned).
     const isCompute = input.currency === WalletCurrencyType.compute_point;
     const anchorCode = isCompute
       ? COMPUTE_RECHARGE_ITEM_CODE
@@ -3781,28 +3911,6 @@ export class BillingService {
       );
     }
 
-    // Dev-only: fulfill internally so the recharge → credit loop works without a
-    // live payment provider. Disabled in production (fails closed).
-    if (devSkipPaymentEnabled()) {
-      await this.prisma.$transaction((tx) =>
-        this.markOrderPaidAndFulfill(tx, order, new Date(), null, null, {
-          devSkipPayment: true,
-        }),
-      );
-      const fulfilledOrder = await this.prisma.billingOrder.findUniqueOrThrow({
-        where: { id: order.id },
-        include: {
-          paymentIntents: { orderBy: { createdAt: 'desc' }, take: 1 },
-        },
-      });
-      return {
-        order: this.orderDto(fulfilledOrder),
-        paymentIntent: null,
-        shopperCountry: country,
-        env: sdkEnv,
-      };
-    }
-
     const failOrder = async (err: unknown, fallback: string) => {
       await this.prisma.billingOrder.update({
         where: { id: order.id },
@@ -3944,7 +4052,7 @@ export class BillingService {
     }
 
     // Authz: workspace subscriptions need the workspace billing role (same as
-    // buying); personal subscriptions are cancelable only by their owner.
+    // buying); user subscriptions are cancelable only by their owner.
     if (subscription.subjectType === BillingSubjectType.workspace) {
       if (!subscription.workspaceId) {
         throw new ConflictException({
@@ -5375,7 +5483,7 @@ export class BillingService {
    * Resolve the wallet account owner for an order's credit / refund-reversal.
    * compute_point is workspace-owned, so a user-subject order (individual
    * membership, legacy top-up, or a compute pack bought via generic checkout)
-   * credits/reverses the buyer's PERSONAL-workspace pot — the wallet they read
+   * credits/reverses the buyer's default-workspace pot — the wallet they read
    * from and spend — never a dead user-owned account. community_point stays
    * user-owned. A workspace-subject order uses its workspace directly. Single
    * chokepoint so every fulfillment/refund path stays consistent with
@@ -5391,20 +5499,22 @@ export class BillingService {
     }
     if (currency === WalletCurrencyType.compute_point) {
       // user-subject order → subjectId is the buyer's userId.
-      const personal = await tx.workspace.findFirst({
+      const defaultWorkspace = await tx.workspace.findFirst({
         where: {
-          ownerUserId: order.subjectId,
-          type: WorkspaceType.personal,
+          defaultForUserId: order.subjectId,
           deletedAt: null,
         },
         select: { id: true },
       });
-      if (personal) {
-        return { ownerType: WalletOwnerType.workspace, ownerId: personal.id };
+      if (defaultWorkspace) {
+        return {
+          ownerType: WalletOwnerType.workspace,
+          ownerId: defaultWorkspace.id,
+        };
       }
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'Cannot place compute credit: the order owner has no personal workspace.',
+        code: 'DEFAULT_WORKSPACE_MISSING',
+        msg: 'Cannot place compute credit: the order owner has no default workspace.',
       });
     }
     return { ownerType: WalletOwnerType.user, ownerId: order.subjectId };
@@ -6852,7 +6962,7 @@ export class BillingService {
   ): Promise<string | null> {
     if (plan.includedComputeCredits <= 0n) return null;
     // compute_point is workspace-owned: an individual (user-subject) membership's
-    // included credits land in the buyer's personal-workspace pot, not a dead
+    // included credits land in the buyer's default-workspace pot, not a dead
     // user-owned account.
     const owner = await this.resolveOrderWalletOwnerTx(
       tx,
@@ -7107,7 +7217,7 @@ export class BillingService {
     if (!grantCurrency || !grantPerUnit) {
       return null;
     }
-    // Route compute_point grants to the workspace pot (the buyer's personal
+    // Route compute_point grants to the workspace pot (the buyer's default
     // workspace for a user-subject order); community_point stays user-owned.
     const owner = await this.resolveOrderWalletOwnerTx(
       tx,
@@ -7365,11 +7475,9 @@ export class BillingService {
   /**
    * Resolve the wallet owner for a top-up / recharge order. Unlike
    * {@link resolveCheckoutSubject} this is driven by the REQUEST (an optional
-   * workspaceId), not the price subject — a compute_point pack is a user-subject
-   * catalog SKU that can fund either the caller's own wallet or, when a
-   * workspaceId is supplied, a team's shared wallet. Crediting a team requires
-   * the billing role; the fulfillment path keys the wallet credit off the
-   * resulting order.subjectType.
+   * workspaceId), not the price subject. Compute credits fund the explicitly
+   * selected workspace (billing role required), or the caller's default
+   * workspace. Fulfillment uses the resulting workspace order subject.
    */
   private async resolveTopupSubject(
     user: AuthUser,
@@ -7382,7 +7490,7 @@ export class BillingService {
     // compute_point is uniformly workspace-owned, so every top-up funds a
     // workspace pot — the one its members read from and spend against. An explicit
     // workspace requires the billing role; with none, fund the caller's own
-    // personal-workspace pot (they own it, so no extra gate). The fulfillment
+    // default-workspace pot (they own it, so no extra gate). The fulfillment
     // routes the grant off order.subjectType === workspace.
     if (workspaceId) {
       await this.permissions.requireWorkspaceRole(
@@ -7396,24 +7504,23 @@ export class BillingService {
         workspaceId,
       };
     }
-    const personal = await this.prisma.workspace.findFirst({
+    const defaultWorkspace = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: user.userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: user.userId,
         deletedAt: null,
       },
       select: { id: true },
     });
-    if (!personal) {
+    if (!defaultWorkspace) {
       throw new ConflictException({
-        code: 'PERSONAL_WORKSPACE_MISSING',
-        msg: 'No personal workspace to fund. Open the studio once to initialize it.',
+        code: 'DEFAULT_WORKSPACE_MISSING',
+        msg: 'No default workspace to fund. Open the studio once to initialize it.',
       });
     }
     return {
       subjectType: BillingSubjectType.workspace,
-      subjectId: personal.id,
-      workspaceId: personal.id,
+      subjectId: defaultWorkspace.id,
+      workspaceId: defaultWorkspace.id,
     };
   }
 
@@ -8925,20 +9032,6 @@ function isUniqueConstraintViolation(error: unknown): boolean {
   );
 }
 
-/**
- * Dev-only escape hatch: when set (and NOT in production), a top-up / recharge
- * order is fulfilled INTERNALLY instead of going to the payment provider — so the
- * full recharge → credit → balance loop is exercisable locally without Airwallex.
- * Fails CLOSED in production: NODE_ENV==='production' disables it regardless of the
- * flag, so it can never skip a real charge in prod.
- */
-function devSkipPaymentEnabled(): boolean {
-  return (
-    process.env.NODE_ENV !== 'production' &&
-    /^(true|1|yes)$/i.test(process.env.BILLING_DEV_SKIP_PAYMENT ?? '')
-  );
-}
-
 // The browser Airwallex SDK env must match the server's API base (demo <-> demo,
 // prod <-> prod) or the client_secret won't validate at redirect. Derive it from
 // the same env var the provider uses so the two can never diverge.
@@ -9069,13 +9162,5 @@ function allowedReturnOrigins(): Set<string> {
   origins.add('https://fizzdragon.com');
   origins.add('https://studio.fizzdragon.com');
   origins.add('https://fizzdragon.fizzspace.cn');
-  if (process.env.NODE_ENV !== 'production') {
-    origins.add('http://localhost:9527');
-    origins.add('http://127.0.0.1:9527');
-    origins.add('http://localhost:3000');
-    origins.add('http://127.0.0.1:3000');
-    origins.add('http://localhost:9540');
-    origins.add('http://127.0.0.1:9540');
-  }
   return origins;
 }

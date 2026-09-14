@@ -47,6 +47,7 @@ describe('BillingService membership plan benefits admin', () => {
       undefined as never,
       undefined as never,
       undefined as never,
+      undefined as never,
     );
   });
 

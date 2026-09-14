@@ -135,7 +135,10 @@ export class VideoPosterService {
   }
 }
 
-export function extractVideoPoster(source: string): Promise<Buffer> {
+export function extractVideoPoster(
+  source: string,
+  firstFrame = false,
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     execFile(
       process.env.MEDIA_FFMPEG_PATH?.trim() || 'ffmpeg',
@@ -153,7 +156,9 @@ export function extractVideoPoster(source: string): Promise<Buffer> {
         '-frames:v',
         '1',
         '-vf',
-        'scale=480:480:force_original_aspect_ratio=decrease,thumbnail=12',
+        firstFrame
+          ? 'scale=960:960:force_original_aspect_ratio=decrease'
+          : 'scale=480:480:force_original_aspect_ratio=decrease,thumbnail=12',
         '-filter_threads',
         '1',
         '-threads',

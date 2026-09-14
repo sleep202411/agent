@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   IconAlertTriangle,
   IconBook2,
@@ -216,6 +217,16 @@ export function IpTitlesPanel({
         },
       },
       {
+        accessorKey: "roomNumber",
+        header: "Room number",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <span className="select-text font-mono text-xs tabular-nums text-slate-600">
+            {row.original.roomNumber}
+          </span>
+        ),
+      },
+      {
         accessorKey: "status",
         header: "状态",
         cell: ({ row }) => {
@@ -362,7 +373,7 @@ export function IpTitlesPanel({
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 className="h-9 w-full pl-9"
-                placeholder="搜索标题、slug、简介"
+                placeholder="Search title, room number, slug or summary"
               />
             </label>
             <Select
@@ -620,7 +631,7 @@ function IpDetailDrawer({
             </SheetTitle>
             {ip ? (
               <p className="mt-1 text-[12px] text-slate-500">
-                {ip.id} · v{ip.version}
+                Room {ip.roomNumber} · {ip.id} · v{ip.version}
               </p>
             ) : null}
           </div>
@@ -644,6 +655,12 @@ function IpDetailDrawer({
           {error ? <ErrorBanner message={error} /> : null}
           {ip ? (
             <div className="space-y-4">
+              <Link
+                href={`/ip/titles/${encodeURIComponent(ip.id)}/production`}
+                className="inline-block text-sm underline"
+              >
+                Production review evidence
+              </Link>
               <section className="grid gap-3 rounded-xl border border-slate-200 p-4 md:grid-cols-2">
                 <DetailCell label="状态" value={statusLabel(ip.status)} />
                 <DetailCell label="可见性" value={visibilityLabel(ip.listingVisibility)} />

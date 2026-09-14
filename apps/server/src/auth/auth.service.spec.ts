@@ -22,11 +22,13 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
         },
         'validateSatoken',
       )
-      .mockImplementation(async (satokenCookie: string) => {
+      .mockImplementation((satokenCookie: string) => {
         calls.push(satokenCookie);
-        return satokenCookie.includes('FRESH')
-          ? ({ userId: '42', nickName: 'Fresh' } as AuthUser)
-          : null;
+        return Promise.resolve(
+          satokenCookie.includes('FRESH')
+            ? ({ userId: '42', nickName: 'Fresh' } as AuthUser)
+            : null,
+        );
       });
   });
 
@@ -55,6 +57,12 @@ describe('AuthService.validateToken — multi-satoken (stale-cookie tolerance)',
     await svc.validateToken('satoken=FRESH');
     await svc.validateToken('satoken=FRESH');
     expect(calls).toEqual(['satoken=FRESH']);
+  });
+
+  it('bypassCache re-fetches Java so levelIds are not stale', async () => {
+    await svc.validateToken('satoken=FRESH');
+    await svc.validateToken('satoken=FRESH', { bypassCache: true });
+    expect(calls).toEqual(['satoken=FRESH', 'satoken=FRESH']);
   });
 
   it('reuses a valid token across cookie reordering and unrelated cookies', async () => {

@@ -30,7 +30,11 @@ const resolve = (
       // resolveAutomaticPromotionTx delegates to this.findBestAutomaticPromotion;
       // the prototype is a sufficient `this` since neither method uses instance state.
     }
-  ).resolveAutomaticPromotionTx.call(BillingService.prototype, tx, input);
+  ).resolveAutomaticPromotionTx.call(
+    BillingService.prototype,
+    tx,
+    input,
+  ) as ReturnType<typeof resolve>;
 
 function promo(overrides: Partial<AnyPromotion> = {}): AnyPromotion {
   return {

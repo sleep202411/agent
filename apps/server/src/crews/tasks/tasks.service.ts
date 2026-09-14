@@ -1,4 +1,20 @@
 import {
+  readTaskDeliveryTemplate,
+  validateProfessionalDelivery,
+  TaskDeliveryTemplateInput,
+} from './task-delivery-template';
+import type { z } from 'zod';
+import {
+  captureTaskTimelinessTx,
+  recordApprovedTaskTimelinessTx,
+  postApprovedTaskTrustTx,
+} from './task-timeliness';
+import {
+  taskDeliveryFolderTx,
+  publishTaskDeliveryAssetsTx,
+} from './task-delivery-folder';
+import { assertNewCrewCurrency } from '../earnings/ledger-currency';
+import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
@@ -56,6 +72,7 @@ import type {
   CreateCrewTaskWorkflowStateInput,
   ListCrewTaskOptionsQuery,
   ListCrewTasksQuery,
+  CrewTaskCenterQuery,
   ReorderCrewTaskInput,
   ReorderCrewTaskWorkflowStatesInput,
   UpdateCrewTaskCycleInput,
@@ -85,6 +102,7 @@ const taskInclude = {
   workflowState: true,
   parent: { select: taskReferenceSelect },
   children: {
+    where: { deletedAt: null },
     select: taskReferenceSelect,
     orderBy: [{ rank: 'asc' as const }, { id: 'asc' as const }],
   },
@@ -112,10 +130,12 @@ const taskInclude = {
     orderBy: { versionNumber: 'desc' as const },
   },
   dependenciesAsBlocked: {
+    where: { blockingTask: { deletedAt: null } },
     include: { blockingTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
   dependenciesAsBlocker: {
+    where: { blockedTask: { deletedAt: null } },
     include: { blockedTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
@@ -127,6 +147,7 @@ const taskCardInclude = {
   workflowState: true,
   parent: { select: taskReferenceSelect },
   children: {
+    where: { deletedAt: null },
     select: taskReferenceSelect,
     orderBy: [{ rank: 'asc' as const }, { id: 'asc' as const }],
   },
@@ -137,10 +158,12 @@ const taskCardInclude = {
   labels: { include: { label: true } },
   assignees: { orderBy: { assignedAt: 'asc' as const } },
   dependenciesAsBlocked: {
+    where: { blockingTask: { deletedAt: null } },
     include: { blockingTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
   dependenciesAsBlocker: {
+    where: { blockedTask: { deletedAt: null } },
     include: { blockedTask: { select: taskReferenceSelect } },
     orderBy: { createdAt: 'asc' as const },
   },
@@ -226,7 +249,9 @@ export class CrewTasksService {
       }),
       this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
-        include: { _count: { select: { tasks: true } } },
+        include: {
+          _count: { select: { tasks: { where: { deletedAt: null } } } },
+        },
         orderBy: [
           { archived: 'asc' },
           { position: 'asc' },
@@ -243,6 +268,180 @@ export class CrewTasksService {
     };
   }
 
+  private async requireActiveTaskTx(
+    tx: Prisma.TransactionClient,
+    taskId: string,
+  ): Promise<TaskRow> {
+    try {
+      return await tx.crewTask.findUniqueOrThrow({
+        where: { id: taskId, deletedAt: null },
+        include: taskInclude,
+      });
+    } catch (error) {
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2025'
+      ) {
+        throw new NotFoundException('Task not found.');
+      }
+      throw error;
+    }
+  }
+
+  private async lockTaskWrites(tx: Prisma.TransactionClient, crewId: string) {
+    // Always acquired before operation-specific locks, including review/reward posting.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:task-writes:${crewId}`}, 0))`;
+  }
+
+  private async authorizedTaskWrite<T>(
+    crewId: string,
+    authorize: (tx: Prisma.TransactionClient) => Promise<void>,
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
+      await authorize(tx);
+      const result = await write(tx);
+      await authorize(tx);
+      return result;
+    });
+  }
+
+  private async manageTaskWrite<T>(
+    crewId: string,
+    userId: string,
+    write: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
+      await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+      const result = await write(tx);
+      // Any row wait in the operation may outlive the initiating permission.
+      await this.authorization.require(crewId, userId, 'tasks.manage', tx);
+      return result;
+    });
+  }
+
+  async delete(
+    taskId: string,
+    userId: string,
+    expectedVersion: number,
+  ): Promise<void> {
+    const current = await this.requireTask(taskId);
+    await this.authorization.require(current.crewId, userId, 'tasks.manage');
+    const affected = await this.manageTaskWrite(
+      current.crewId,
+      userId,
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.crewId);
+        await this.authorization.require(
+          current.crewId,
+          userId,
+          'tasks.manage',
+          tx,
+        );
+        const task = await tx.crewTask.findUnique({
+          where: { id: taskId, deletedAt: null },
+        });
+        if (!task) throw new NotFoundException('Task not found.');
+        if (task.version !== expectedVersion) {
+          throw new ConflictException({
+            code: 'CREW_TASK_VERSION_CONFLICT',
+            message: 'This task changed. Refresh before deleting it.',
+          });
+        }
+        let parentId: string | null = null;
+        let cursor = task.parentId;
+        const visited = new Set([taskId]);
+        while (cursor) {
+          if (visited.has(cursor))
+            throw new ConflictException('Task hierarchy contains a cycle.');
+          visited.add(cursor);
+          const parent = await tx.crewTask.findFirst({
+            where: { id: cursor, crewId: task.crewId },
+          });
+          if (!parent)
+            throw new ConflictException(
+              'Task hierarchy contains a missing parent.',
+            );
+          if (!parent.deletedAt && parentId === null) parentId = parent.id;
+          cursor = parent.parentId;
+        }
+        const children = await tx.crewTask.findMany({
+          where: { crewId: task.crewId, parentId: taskId, deletedAt: null },
+          select: { id: true },
+        });
+        for (const child of children) {
+          await this.assertTaskStructure(
+            tx,
+            task.crewId,
+            child.id,
+            parentId,
+            [],
+          );
+          await tx.crewTask.update({
+            where: { id: child.id },
+            data: { parentId, version: { increment: 1 } },
+          });
+          await this.writeActivity(tx, child.id, 'task.reparented', userId, {
+            previousParentId: taskId,
+            parentId,
+            reason: 'parent_deleted',
+          });
+        }
+        // Edges are retained as evidence; active relation queries exclude deleted endpoints.
+        const edges = await tx.crewTaskDependency.findMany({
+          where: {
+            crewId: task.crewId,
+            OR: [{ blockingTaskId: taskId }, { blockedTaskId: taskId }],
+          },
+        });
+        const affectedIds = [
+          ...new Set(
+            edges.flatMap((edge) => [edge.blockedTaskId, edge.blockingTaskId]),
+          ),
+        ].filter((id) => id !== taskId);
+        if (affectedIds.length)
+          await tx.crewTask.updateMany({
+            where: { id: { in: affectedIds }, deletedAt: null },
+            data: { version: { increment: 1 } },
+          });
+        await tx.crewTask.update({
+          where: { id: taskId, version: expectedVersion, deletedAt: null },
+          data: {
+            deletedAt: new Date(),
+            deletedByUserId: userId,
+            version: { increment: 1 },
+          },
+        });
+        await this.writeActivity(tx, taskId, 'task.deleted', userId, {
+          previousParentId: task.parentId,
+          childIds: children.map((child) => child.id),
+          newParentId: parentId,
+          affectedDependencyTaskIds: affectedIds,
+        });
+        return [
+          ...new Set([
+            taskId,
+            ...children.map((child) => child.id),
+            ...affectedIds,
+            ...(parentId ? [parentId] : []),
+          ]),
+        ];
+      },
+    );
+    await Promise.all(
+      affected.map((id) =>
+        this.conversations.broadcastCrewTaskChange(
+          current.crewId,
+          id,
+          'updated',
+          userId,
+        ),
+      ),
+    );
+  }
+
   async createView(
     crewId: string,
     userId: string,
@@ -253,22 +452,24 @@ export class CrewTasksService {
       where: { crewId },
       _max: { position: true },
     });
-    const view = await this.prisma.crewTaskView.create({
-      data: {
-        crewId,
-        name: input.name,
-        layout: input.layout,
-        groupBy: input.groupBy === 'none' ? null : input.groupBy,
-        filters: input.filters,
-        sorts: input.sorts,
-        visibleFields: input.visibleFields,
-        completedMode: input.completedMode,
-        showSubIssues: input.showSubIssues,
-        showEmptyGroups: input.showEmptyGroups,
-        position: (last._max.position ?? -1) + 1,
-        createdByUserId: userId,
-      },
-    });
+    const view = await this.manageTaskWrite(crewId, userId, (tx) =>
+      tx.crewTaskView.create({
+        data: {
+          crewId,
+          name: input.name,
+          layout: input.layout,
+          groupBy: input.groupBy === 'none' ? null : input.groupBy,
+          filters: input.filters,
+          sorts: input.sorts,
+          visibleFields: input.visibleFields,
+          completedMode: input.completedMode,
+          showSubIssues: input.showSubIssues,
+          showEmptyGroups: input.showEmptyGroups,
+          position: (last._max.position ?? -1) + 1,
+          createdByUserId: userId,
+        },
+      }),
+    );
     await this.conversations.broadcastCrewTaskProjectChange(
       crewId,
       'view',
@@ -289,28 +490,30 @@ export class CrewTasksService {
     });
     if (!current) throw new NotFoundException('Task view not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    const result = await this.prisma.crewTaskView.updateMany({
-      where: {
-        id: viewId,
-        updatedAt: new Date(input.expectedUpdatedAt),
-      },
-      data: {
-        name: input.name,
-        layout: input.layout,
-        groupBy:
-          input.groupBy === undefined
-            ? undefined
-            : input.groupBy === 'none'
-              ? null
-              : input.groupBy,
-        filters: input.filters,
-        sorts: input.sorts,
-        visibleFields: input.visibleFields,
-        completedMode: input.completedMode,
-        showSubIssues: input.showSubIssues,
-        showEmptyGroups: input.showEmptyGroups,
-      },
-    });
+    const result = await this.manageTaskWrite(current.crewId, userId, (tx) =>
+      tx.crewTaskView.updateMany({
+        where: {
+          id: viewId,
+          updatedAt: new Date(input.expectedUpdatedAt),
+        },
+        data: {
+          name: input.name,
+          layout: input.layout,
+          groupBy:
+            input.groupBy === undefined
+              ? undefined
+              : input.groupBy === 'none'
+                ? null
+                : input.groupBy,
+          filters: input.filters,
+          sorts: input.sorts,
+          visibleFields: input.visibleFields,
+          completedMode: input.completedMode,
+          showSubIssues: input.showSubIssues,
+          showEmptyGroups: input.showEmptyGroups,
+        },
+      }),
+    );
     if (result.count !== 1) {
       throw new ConflictException({
         code: 'CREW_TASK_VIEW_CONFLICT',
@@ -342,7 +545,9 @@ export class CrewTasksService {
         message: 'Built-in planning views cannot be deleted.',
       });
     }
-    await this.prisma.crewTaskView.delete({ where: { id: viewId } });
+    await this.manageTaskWrite(view.crewId, userId, (tx) =>
+      tx.crewTaskView.delete({ where: { id: viewId } }),
+    );
     await this.conversations.broadcastCrewTaskProjectChange(
       view.crewId,
       'view',
@@ -359,7 +564,8 @@ export class CrewTasksService {
   ) {
     await this.authorization.require(crewId, userId, 'tasks.manage');
     await this.ensureDefaultWorkflowStates(crewId, userId);
-    const state = await this.prisma.$transaction(async (tx) => {
+    const state = await this.manageTaskWrite(crewId, userId, async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${crewId}`})::bigint)
       `;
@@ -448,137 +654,142 @@ export class CrewTasksService {
     if (!current)
       throw new NotFoundException('Task workflow column not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    const state = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
+    const state = await this.manageTaskWrite(
+      current.crewId,
+      userId,
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.crewId);
+        await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${current.crewId}`})::bigint)
       `;
-      const locked = await tx.crewTaskWorkflowState.findUniqueOrThrow({
-        where: { id: stateId },
-      });
-      if (locked.version !== input.expectedVersion) {
-        throw new ConflictException({
-          code: 'CREW_TASK_WORKFLOW_CONFLICT',
-          message: 'This workflow column changed while you were editing it.',
-          expectedVersion: input.expectedVersion,
-          currentVersion: locked.version,
+        const locked = await tx.crewTaskWorkflowState.findUniqueOrThrow({
+          where: { id: stateId },
         });
-      }
-      if (
-        input.name &&
-        input.name.toLowerCase() !== locked.name.toLowerCase()
-      ) {
-        const duplicate = await tx.crewTaskWorkflowState.findFirst({
-          where: {
-            crewId: locked.crewId,
-            id: { not: stateId },
-            name: { equals: input.name, mode: 'insensitive' },
-          },
-          select: { id: true },
-        });
-        if (duplicate) {
+        if (locked.version !== input.expectedVersion) {
           throw new ConflictException({
-            code: 'CREW_TASK_WORKFLOW_NAME_CONFLICT',
-            message: 'A workflow column with this name already exists.',
+            code: 'CREW_TASK_WORKFLOW_CONFLICT',
+            message: 'This workflow column changed while you were editing it.',
+            expectedVersion: input.expectedVersion,
+            currentVersion: locked.version,
           });
         }
-      }
-      if (input.archived === true && !locked.archived) {
-        const activeCount = await tx.crewTaskWorkflowState.count({
-          where: { crewId: locked.crewId, archived: false },
-        });
-        if (activeCount <= 1) {
-          throw new ConflictException({
-            message: 'A workflow must keep at least one active column.',
-          });
-        }
-        const taskCount = await tx.crewTask.count({
-          where: { workflowStateId: stateId },
-        });
-        if (taskCount > 0) {
-          if (!input.replacementStateId) {
-            throw new ConflictException({
-              code: 'CREW_TASK_WORKFLOW_STATE_IN_USE',
-              message:
-                'Choose another column for existing tasks before archiving this column.',
-              taskCount,
-            });
-          }
-          if (input.replacementStateId === stateId) {
-            throw new BadRequestException({
-              message: 'The replacement must be a different workflow column.',
-            });
-          }
-          const replacement = await tx.crewTaskWorkflowState.findFirst({
+        if (
+          input.name &&
+          input.name.toLowerCase() !== locked.name.toLowerCase()
+        ) {
+          const duplicate = await tx.crewTaskWorkflowState.findFirst({
             where: {
-              id: input.replacementStateId,
+              crewId: locked.crewId,
+              id: { not: stateId },
+              name: { equals: input.name, mode: 'insensitive' },
+            },
+            select: { id: true },
+          });
+          if (duplicate) {
+            throw new ConflictException({
+              code: 'CREW_TASK_WORKFLOW_NAME_CONFLICT',
+              message: 'A workflow column with this name already exists.',
+            });
+          }
+        }
+        if (input.archived === true && !locked.archived) {
+          const activeCount = await tx.crewTaskWorkflowState.count({
+            where: { crewId: locked.crewId, archived: false },
+          });
+          if (activeCount <= 1) {
+            throw new ConflictException({
+              message: 'A workflow must keep at least one active column.',
+            });
+          }
+          const taskCount = await tx.crewTask.count({
+            where: { deletedAt: null, workflowStateId: stateId },
+          });
+          if (taskCount > 0) {
+            if (!input.replacementStateId) {
+              throw new ConflictException({
+                code: 'CREW_TASK_WORKFLOW_STATE_IN_USE',
+                message:
+                  'Choose another column for existing tasks before archiving this column.',
+                taskCount,
+              });
+            }
+            if (input.replacementStateId === stateId) {
+              throw new BadRequestException({
+                message: 'The replacement must be a different workflow column.',
+              });
+            }
+            const replacement = await tx.crewTaskWorkflowState.findFirst({
+              where: {
+                id: input.replacementStateId,
+                crewId: locked.crewId,
+                archived: false,
+              },
+            });
+            if (!replacement) {
+              throw new BadRequestException({
+                message: 'The replacement workflow column is unavailable.',
+              });
+            }
+            if (replacement.semantic !== locked.semantic) {
+              throw new ConflictException({
+                code: 'CREW_TASK_WORKFLOW_SEMANTIC_MISMATCH',
+                message:
+                  'Existing tasks can only be moved to a column with the same workflow behavior.',
+              });
+            }
+            await tx.crewTask.updateMany({
+              where: { deletedAt: null, workflowStateId: stateId },
+              data: {
+                workflowStateId: replacement.id,
+                version: { increment: 1 },
+              },
+            });
+          }
+        }
+        if (input.archived === false && locked.archived) {
+          const activeCount = await tx.crewTaskWorkflowState.count({
+            where: { crewId: locked.crewId, archived: false },
+          });
+          if (activeCount >= MAX_ACTIVE_WORKFLOW_STATES) {
+            throw new ConflictException({
+              code: 'CREW_TASK_WORKFLOW_LIMIT',
+              message: `A task workflow can contain up to ${MAX_ACTIVE_WORKFLOW_STATES} active columns.`,
+            });
+          }
+        }
+        const restoredPosition =
+          input.archived === false && locked.archived
+            ? ((
+                await tx.crewTaskWorkflowState.aggregate({
+                  where: { crewId: locked.crewId, archived: false },
+                  _max: { position: true },
+                })
+              )._max.position ?? -1)
+            : undefined;
+        const updated = await tx.crewTaskWorkflowState.update({
+          where: { id: stateId },
+          data: {
+            name: input.name,
+            color: input.color?.toUpperCase(),
+            archived: input.archived,
+            position:
+              restoredPosition === undefined ? undefined : restoredPosition + 1,
+            version: { increment: 1 },
+          },
+        });
+        if (input.archived === true && !locked.archived) {
+          await tx.crewTaskWorkflowState.updateMany({
+            where: {
               crewId: locked.crewId,
               archived: false,
+              position: { gt: locked.position },
             },
-          });
-          if (!replacement) {
-            throw new BadRequestException({
-              message: 'The replacement workflow column is unavailable.',
-            });
-          }
-          if (replacement.semantic !== locked.semantic) {
-            throw new ConflictException({
-              code: 'CREW_TASK_WORKFLOW_SEMANTIC_MISMATCH',
-              message:
-                'Existing tasks can only be moved to a column with the same workflow behavior.',
-            });
-          }
-          await tx.crewTask.updateMany({
-            where: { workflowStateId: stateId },
-            data: {
-              workflowStateId: replacement.id,
-              version: { increment: 1 },
-            },
+            data: { position: { decrement: 1 }, version: { increment: 1 } },
           });
         }
-      }
-      if (input.archived === false && locked.archived) {
-        const activeCount = await tx.crewTaskWorkflowState.count({
-          where: { crewId: locked.crewId, archived: false },
-        });
-        if (activeCount >= MAX_ACTIVE_WORKFLOW_STATES) {
-          throw new ConflictException({
-            code: 'CREW_TASK_WORKFLOW_LIMIT',
-            message: `A task workflow can contain up to ${MAX_ACTIVE_WORKFLOW_STATES} active columns.`,
-          });
-        }
-      }
-      const restoredPosition =
-        input.archived === false && locked.archived
-          ? ((
-              await tx.crewTaskWorkflowState.aggregate({
-                where: { crewId: locked.crewId, archived: false },
-                _max: { position: true },
-              })
-            )._max.position ?? -1)
-          : undefined;
-      const updated = await tx.crewTaskWorkflowState.update({
-        where: { id: stateId },
-        data: {
-          name: input.name,
-          color: input.color?.toUpperCase(),
-          archived: input.archived,
-          position:
-            restoredPosition === undefined ? undefined : restoredPosition + 1,
-          version: { increment: 1 },
-        },
-      });
-      if (input.archived === true && !locked.archived) {
-        await tx.crewTaskWorkflowState.updateMany({
-          where: {
-            crewId: locked.crewId,
-            archived: false,
-            position: { gt: locked.position },
-          },
-          data: { position: { decrement: 1 }, version: { increment: 1 } },
-        });
-      }
-      return updated;
-    });
+        return updated;
+      },
+    );
     await this.conversations.broadcastCrewTaskProjectChange(
       current.crewId,
       'workflow',
@@ -595,7 +806,8 @@ export class CrewTasksService {
     input: ReorderCrewTaskWorkflowStatesInput,
   ) {
     await this.authorization.require(crewId, userId, 'tasks.manage');
-    const states = await this.prisma.$transaction(async (tx) => {
+    const states = await this.manageTaskWrite(crewId, userId, async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${crewId}`})::bigint)
       `;
@@ -654,7 +866,8 @@ export class CrewTasksService {
     if (!current)
       throw new NotFoundException('Task workflow column not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    await this.prisma.$transaction(async (tx) => {
+    await this.manageTaskWrite(current.crewId, userId, async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-workflow:${current.crewId}`})::bigint)
       `;
@@ -709,7 +922,8 @@ export class CrewTasksService {
     input: CreateCrewTaskCycleInput,
   ) {
     await this.authorization.require(crewId, userId, 'tasks.manage');
-    const cycle = await this.prisma.$transaction(async (tx) => {
+    const cycle = await this.manageTaskWrite(crewId, userId, async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${crewId}`})::bigint)
       `;
@@ -749,56 +963,63 @@ export class CrewTasksService {
     });
     if (!current) throw new NotFoundException('Task cycle not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    const cycle = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
+    const cycle = await this.manageTaskWrite(
+      current.crewId,
+      userId,
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.crewId);
+        await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${current.crewId}`})::bigint)
       `;
-      const locked = await tx.crewTaskCycle.findUniqueOrThrow({
-        where: { id: cycleId },
-      });
-      if (
-        locked.updatedAt.getTime() !==
-        new Date(input.expectedUpdatedAt).getTime()
-      ) {
-        throw new ConflictException({
-          code: 'CREW_TASK_CYCLE_CONFLICT',
-          message:
-            'This production cycle changed while you were editing it. Reload the latest settings.',
+        const locked = await tx.crewTaskCycle.findUniqueOrThrow({
+          where: { id: cycleId },
         });
-      }
-      const startAt = input.startAt ? new Date(input.startAt) : locked.startAt;
-      const endAt = input.endAt ? new Date(input.endAt) : locked.endAt;
-      if (endAt <= startAt) {
-        throw new BadRequestException({
-          message: 'Cycle end must be after its start.',
-        });
-      }
-      if (input.status === 'active') {
-        const another = await tx.crewTaskCycle.findFirst({
-          where: {
-            crewId: locked.crewId,
-            status: 'active',
-            id: { not: cycleId },
-          },
-          select: { id: true, name: true },
-        });
-        if (another) {
+        if (
+          locked.updatedAt.getTime() !==
+          new Date(input.expectedUpdatedAt).getTime()
+        ) {
           throw new ConflictException({
-            message: `Complete the active cycle "${another.name}" before starting another.`,
+            code: 'CREW_TASK_CYCLE_CONFLICT',
+            message:
+              'This production cycle changed while you were editing it. Reload the latest settings.',
           });
         }
-      }
-      return tx.crewTaskCycle.update({
-        where: { id: cycleId },
-        data: {
-          name: input.name,
-          goal: input.goal,
-          status: input.status,
-          startAt: input.startAt ? startAt : undefined,
-          endAt: input.endAt ? endAt : undefined,
-        },
-      });
-    });
+        const startAt = input.startAt
+          ? new Date(input.startAt)
+          : locked.startAt;
+        const endAt = input.endAt ? new Date(input.endAt) : locked.endAt;
+        if (endAt <= startAt) {
+          throw new BadRequestException({
+            message: 'Cycle end must be after its start.',
+          });
+        }
+        if (input.status === 'active') {
+          const another = await tx.crewTaskCycle.findFirst({
+            where: {
+              crewId: locked.crewId,
+              status: 'active',
+              id: { not: cycleId },
+            },
+            select: { id: true, name: true },
+          });
+          if (another) {
+            throw new ConflictException({
+              message: `Complete the active cycle "${another.name}" before starting another.`,
+            });
+          }
+        }
+        return tx.crewTaskCycle.update({
+          where: { id: cycleId },
+          data: {
+            name: input.name,
+            goal: input.goal,
+            status: input.status,
+            startAt: input.startAt ? startAt : undefined,
+            endAt: input.endAt ? endAt : undefined,
+          },
+        });
+      },
+    );
     await this.conversations.broadcastCrewTaskProjectChange(
       current.crewId,
       'cycle',
@@ -816,7 +1037,8 @@ export class CrewTasksService {
     if (!current) throw new NotFoundException('Task cycle not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.manageTaskWrite(current.crewId, userId, async (tx) => {
+      await this.lockTaskWrites(tx, current.crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-cycle:${current.crewId}`})::bigint)
       `;
@@ -859,15 +1081,17 @@ export class CrewTasksService {
   ) {
     await this.authorization.require(crewId, userId, 'tasks.manage');
     try {
-      const label = await this.prisma.crewTaskLabel.create({
-        data: {
-          crewId,
-          name: input.name,
-          color: input.color.toLowerCase(),
-          description: input.description,
-          createdByUserId: userId,
-        },
-      });
+      const label = await this.manageTaskWrite(crewId, userId, (tx) =>
+        tx.crewTaskLabel.create({
+          data: {
+            crewId,
+            name: input.name,
+            color: input.color.toLowerCase(),
+            description: input.description,
+            createdByUserId: userId,
+          },
+        }),
+      );
       await this.conversations.broadcastCrewTaskProjectChange(
         crewId,
         'label',
@@ -894,17 +1118,19 @@ export class CrewTasksService {
 
     let result: { count: number };
     try {
-      result = await this.prisma.crewTaskLabel.updateMany({
-        where: {
-          id: labelId,
-          updatedAt: new Date(input.expectedUpdatedAt),
-        },
-        data: {
-          name: input.name,
-          color: input.color?.toLowerCase(),
-          description: input.description,
-        },
-      });
+      result = await this.manageTaskWrite(current.crewId, userId, (tx) =>
+        tx.crewTaskLabel.updateMany({
+          where: {
+            id: labelId,
+            updatedAt: new Date(input.expectedUpdatedAt),
+          },
+          data: {
+            name: input.name,
+            color: input.color?.toLowerCase(),
+            description: input.description,
+          },
+        }),
+      );
     } catch (error) {
       throw mapTaskLabelWriteError(error);
     }
@@ -934,9 +1160,11 @@ export class CrewTasksService {
     });
     if (!current) throw new NotFoundException('Task label not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    await this.prisma.crewTaskLabel.delete({
-      where: { id: labelId },
-    });
+    await this.manageTaskWrite(current.crewId, userId, (tx) =>
+      tx.crewTaskLabel.delete({
+        where: { id: labelId },
+      }),
+    );
     await this.conversations.broadcastCrewTaskProjectChange(
       current.crewId,
       'label',
@@ -956,18 +1184,20 @@ export class CrewTasksService {
       where: { crewId },
       _max: { position: true },
     });
-    const field = await this.prisma.crewTaskFieldDefinition.create({
-      data: {
-        crewId,
-        name: input.name,
-        description: input.description,
-        type: input.type,
-        options: input.options,
-        required: input.required,
-        position: (last._max.position ?? -1) + 1,
-        createdByUserId: userId,
-      },
-    });
+    const field = await this.manageTaskWrite(crewId, userId, (tx) =>
+      tx.crewTaskFieldDefinition.create({
+        data: {
+          crewId,
+          name: input.name,
+          description: input.description,
+          type: input.type,
+          options: input.options,
+          required: input.required,
+          position: (last._max.position ?? -1) + 1,
+          createdByUserId: userId,
+        },
+      }),
+    );
     await this.conversations.broadcastCrewTaskProjectChange(
       crewId,
       'field',
@@ -1026,15 +1256,17 @@ export class CrewTasksService {
         });
       }
     }
-    const result = await this.prisma.crewTaskFieldDefinition.updateMany({
-      where: { id: fieldId, updatedAt: new Date(input.expectedUpdatedAt) },
-      data: {
-        name: input.name,
-        description: input.description,
-        options: input.options,
-        required: input.required,
-      },
-    });
+    const result = await this.manageTaskWrite(current.crewId, userId, (tx) =>
+      tx.crewTaskFieldDefinition.updateMany({
+        where: { id: fieldId, updatedAt: new Date(input.expectedUpdatedAt) },
+        data: {
+          name: input.name,
+          description: input.description,
+          options: input.options,
+          required: input.required,
+        },
+      }),
+    );
     if (result.count !== 1) {
       throw new ConflictException({
         code: 'CREW_TASK_FIELD_CONFLICT',
@@ -1061,9 +1293,11 @@ export class CrewTasksService {
     });
     if (!current) throw new NotFoundException('Custom field not found.');
     await this.authorization.require(current.crewId, userId, 'tasks.manage');
-    await this.prisma.crewTaskFieldDefinition.delete({
-      where: { id: fieldId },
-    });
+    await this.manageTaskWrite(current.crewId, userId, (tx) =>
+      tx.crewTaskFieldDefinition.delete({
+        where: { id: fieldId },
+      }),
+    );
     await this.conversations.broadcastCrewTaskProjectChange(
       current.crewId,
       'field',
@@ -1083,12 +1317,13 @@ export class CrewTasksService {
     if (taskIds.length !== input.taskIds.length) {
       throw new BadRequestException({ message: 'Task ids must be unique.' });
     }
-    await this.prisma.$transaction(async (tx) => {
+    await this.manageTaskWrite(crewId, userId, async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-batch:${crewId}`})::bigint)
       `;
       const count = await tx.crewTask.count({
-        where: { crewId, id: { in: taskIds } },
+        where: { deletedAt: null, crewId, id: { in: taskIds } },
       });
       if (count !== taskIds.length) {
         throw new BadRequestException({
@@ -1100,7 +1335,7 @@ export class CrewTasksService {
         ...(input.removeLabelIds ?? []),
       ]);
       await tx.crewTask.updateMany({
-        where: { crewId, id: { in: taskIds } },
+        where: { deletedAt: null, crewId, id: { in: taskIds } },
         data: {
           priority: input.priority,
           cycleId: input.cycleId,
@@ -1125,7 +1360,7 @@ export class CrewTasksService {
       }
     });
     const tasks = await this.prisma.crewTask.findMany({
-      where: { crewId, id: { in: taskIds } },
+      where: { deletedAt: null, crewId, id: { in: taskIds } },
       include: taskInclude,
       orderBy: [{ rank: 'asc' }, { id: 'asc' }],
     });
@@ -1155,138 +1390,155 @@ export class CrewTasksService {
           'Review, completed, and cancelled work must use their workflow actions.',
       });
     }
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
+    const updated = await this.manageTaskWrite(
+      current.crewId,
+      userId,
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.crewId);
+        await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-rank:${current.crewId}`})::bigint)
       `;
-      const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
-        include: taskCardInclude,
-      });
-      if (locked.version !== input.expectedVersion) {
-        throw new ConflictException({
-          code: 'CREW_TASK_VERSION_CONFLICT',
-          message: 'This task changed before it could be moved.',
-          expectedVersion: input.expectedVersion,
-          currentVersion: locked.version,
+        const locked = await tx.crewTask.findUniqueOrThrow({
+          where: { deletedAt: null, id: taskId },
+          include: taskCardInclude,
         });
-      }
-      await this.assertPlanningReferences(tx, locked.crewId, input.cycleId, []);
-      const targetWorkflowState = input.workflowStateId
-        ? await tx.crewTaskWorkflowState.findFirst({
-            where: {
-              id: input.workflowStateId,
-              crewId: locked.crewId,
-              archived: false,
-            },
-          })
-        : locked.workflowState;
-      if (!targetWorkflowState) {
-        throw new BadRequestException({
-          message: 'The destination workflow column is unavailable.',
-        });
-      }
-      if (!MANUALLY_MOVABLE_TASK_STATUSES.has(targetWorkflowState.semantic)) {
-        throw new ConflictException({
-          message:
-            'Review, completed, and cancelled workflow columns can only be entered through their workflow actions.',
-        });
-      }
-      const targetCycleId =
-        input.cycleId === undefined ? locked.cycleId : input.cycleId;
-      const anchors = [input.beforeTaskId, input.afterTaskId].filter(
-        (id): id is string => id != null && id !== taskId,
-      );
-      const anchorRows = anchors.length
-        ? await tx.crewTask.findMany({
-            where: { crewId: locked.crewId, id: { in: anchors } },
-            select: {
-              id: true,
-              rank: true,
-              workflowStateId: true,
-              cycleId: true,
-              version: true,
-            },
-          })
-        : [];
-      if (anchorRows.length !== anchors.length) {
-        throw new ConflictException({
-          code: 'CREW_TASK_REORDER_CONFLICT',
-          message: 'One or more reorder anchors are unavailable.',
-        });
-      }
-      const byId = new Map(anchorRows.map((row) => [row.id, row]));
-      const previous = input.beforeTaskId
-        ? byId.get(input.beforeTaskId)
-        : undefined;
-      const next = input.afterTaskId ? byId.get(input.afterTaskId) : undefined;
-      // Rank is the shared ordering key for a workflow column. A board can show
-      // tasks from multiple cycles, so a neighbouring card from another cycle
-      // is still a valid ordering anchor and must not silently reassign the
-      // moved task's cycle.
-      const anchorsMatchTarget = anchorRows.every(
-        (anchor) => anchor.workflowStateId === targetWorkflowState.id,
-      );
-      const anchorsMatchVersion =
-        (previous?.version ?? null) === input.beforeTaskVersion &&
-        (next?.version ?? null) === input.afterTaskVersion;
-      if (!anchorsMatchTarget || !anchorsMatchVersion) {
-        throw new ConflictException({
-          code: 'CREW_TASK_REORDER_CONFLICT',
-          message:
-            'The destination changed while this task was being moved. Refresh and try again.',
-        });
-      }
-      let rank: Prisma.Decimal;
-      if (previous && next) {
-        if (previous.rank.greaterThanOrEqualTo(next.rank)) {
+        if (locked.version !== input.expectedVersion) {
           throw new ConflictException({
-            code: 'CREW_TASK_REORDER_CONFLICT',
-            message: 'Reorder anchors are not in ascending order.',
+            code: 'CREW_TASK_VERSION_CONFLICT',
+            message: 'This task changed before it could be moved.',
+            expectedVersion: input.expectedVersion,
+            currentVersion: locked.version,
           });
         }
-      }
-      const occupiedDestination = await tx.crewTask.count({
-        where: {
-          crewId: locked.crewId,
-          id: { notIn: [taskId, ...anchors] },
-          workflowStateId: targetWorkflowState.id,
-          ...(previous && next
-            ? { rank: { gte: previous.rank, lte: next.rank } }
-            : previous
-              ? { rank: { gte: previous.rank } }
-              : next
-                ? { rank: { lte: next.rank } }
-                : {}),
-        },
-      });
-      if (occupiedDestination > 0) {
-        throw new ConflictException({
-          code: 'CREW_TASK_REORDER_CONFLICT',
-          message:
-            'The destination changed while this task was being moved. Refresh and try again.',
+        await this.assertPlanningReferences(
+          tx,
+          locked.crewId,
+          input.cycleId,
+          [],
+        );
+        const targetWorkflowState = input.workflowStateId
+          ? await tx.crewTaskWorkflowState.findFirst({
+              where: {
+                id: input.workflowStateId,
+                crewId: locked.crewId,
+                archived: false,
+              },
+            })
+          : locked.workflowState;
+        if (!targetWorkflowState) {
+          throw new BadRequestException({
+            message: 'The destination workflow column is unavailable.',
+          });
+        }
+        if (!MANUALLY_MOVABLE_TASK_STATUSES.has(targetWorkflowState.semantic)) {
+          throw new ConflictException({
+            message:
+              'Review, completed, and cancelled workflow columns can only be entered through their workflow actions.',
+          });
+        }
+        const targetCycleId =
+          input.cycleId === undefined ? locked.cycleId : input.cycleId;
+        const anchors = [input.beforeTaskId, input.afterTaskId].filter(
+          (id): id is string => id != null && id !== taskId,
+        );
+        const anchorRows = anchors.length
+          ? await tx.crewTask.findMany({
+              where: {
+                deletedAt: null,
+                crewId: locked.crewId,
+                id: { in: anchors },
+              },
+              select: {
+                id: true,
+                rank: true,
+                workflowStateId: true,
+                cycleId: true,
+                version: true,
+              },
+            })
+          : [];
+        if (anchorRows.length !== anchors.length) {
+          throw new ConflictException({
+            code: 'CREW_TASK_REORDER_CONFLICT',
+            message: 'One or more reorder anchors are unavailable.',
+          });
+        }
+        const byId = new Map(anchorRows.map((row) => [row.id, row]));
+        const previous = input.beforeTaskId
+          ? byId.get(input.beforeTaskId)
+          : undefined;
+        const next = input.afterTaskId
+          ? byId.get(input.afterTaskId)
+          : undefined;
+        // Rank is the shared ordering key for a workflow column. A board can show
+        // tasks from multiple cycles, so a neighbouring card from another cycle
+        // is still a valid ordering anchor and must not silently reassign the
+        // moved task's cycle.
+        const anchorsMatchTarget = anchorRows.every(
+          (anchor) => anchor.workflowStateId === targetWorkflowState.id,
+        );
+        const anchorsMatchVersion =
+          (previous?.version ?? null) === input.beforeTaskVersion &&
+          (next?.version ?? null) === input.afterTaskVersion;
+        if (!anchorsMatchTarget || !anchorsMatchVersion) {
+          throw new ConflictException({
+            code: 'CREW_TASK_REORDER_CONFLICT',
+            message:
+              'The destination changed while this task was being moved. Refresh and try again.',
+          });
+        }
+        let rank: Prisma.Decimal;
+        if (previous && next) {
+          if (previous.rank.greaterThanOrEqualTo(next.rank)) {
+            throw new ConflictException({
+              code: 'CREW_TASK_REORDER_CONFLICT',
+              message: 'Reorder anchors are not in ascending order.',
+            });
+          }
+        }
+        const occupiedDestination = await tx.crewTask.count({
+          where: {
+            deletedAt: null,
+            crewId: locked.crewId,
+            id: { notIn: [taskId, ...anchors] },
+            workflowStateId: targetWorkflowState.id,
+            ...(previous && next
+              ? { rank: { gte: previous.rank, lte: next.rank } }
+              : previous
+                ? { rank: { gte: previous.rank } }
+                : next
+                  ? { rank: { lte: next.rank } }
+                  : {}),
+          },
         });
-      }
-      if (previous && next) {
-        rank = previous.rank.plus(next.rank).dividedBy(2);
-      } else if (previous) {
-        rank = previous.rank.plus(1024);
-      } else if (next) {
-        rank = next.rank.dividedBy(2);
-      } else {
-        rank = new Prisma.Decimal(1024);
-      }
-      return tx.crewTask.update({
-        where: { id: taskId },
-        data: {
-          rank,
-          workflowStateId: targetWorkflowState.id,
-          cycleId: targetCycleId,
-          version: { increment: 1 },
-        },
-        include: taskInclude,
-      });
-    });
+        if (occupiedDestination > 0) {
+          throw new ConflictException({
+            code: 'CREW_TASK_REORDER_CONFLICT',
+            message:
+              'The destination changed while this task was being moved. Refresh and try again.',
+          });
+        }
+        if (previous && next) {
+          rank = previous.rank.plus(next.rank).dividedBy(2);
+        } else if (previous) {
+          rank = previous.rank.plus(1024);
+        } else if (next) {
+          rank = next.rank.dividedBy(2);
+        } else {
+          rank = new Prisma.Decimal(1024);
+        }
+        return tx.crewTask.update({
+          where: { deletedAt: null, id: taskId },
+          data: {
+            rank,
+            workflowStateId: targetWorkflowState.id,
+            cycleId: targetCycleId,
+            version: { increment: 1 },
+          },
+          include: taskInclude,
+        });
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       updated.crewId,
       updated.id,
@@ -1294,6 +1546,71 @@ export class CrewTasksService {
       userId,
     );
     return this.toDtoWithUsage(updated);
+  }
+
+  async listCenter(userId: string, query: CrewTaskCenterQuery) {
+    const memberships = await this.prisma.crewMember.findMany({
+      where: { userId, status: 'active', crew: { deletedAt: null } },
+      select: { crewId: true },
+    });
+    const crewIds: string[] = [];
+    for (const { crewId } of memberships) {
+      try {
+        const access = await this.authorization.resolve(crewId, userId);
+        if (access?.permissions.includes('tasks.view')) crewIds.push(crewId);
+      } catch (error) {
+        // A Crew can be deleted after the membership scan. Omit that Crew;
+        // unavailable authorization infrastructure must still fail the read.
+        if (!(error instanceof NotFoundException)) throw error;
+      }
+    }
+    if (!crewIds.length) return { items: [], nextCursor: null };
+    const rows = await this.prisma.crewTask.findMany({
+      where: {
+        deletedAt: null,
+        crewId: { in: crewIds },
+        crew: {
+          deletedAt: null,
+          members: { some: { userId, status: 'active' } },
+        },
+        ...(query.scope === 'mine' ? { assignees: { some: { userId } } } : {}),
+        ...(query.status === 'active'
+          ? {
+              workflowState: {
+                semantic: {
+                  notIn: [CrewTaskStatus.approved, CrewTaskStatus.cancelled],
+                },
+              },
+            }
+          : {}),
+        ...(query.query
+          ? { title: { contains: query.query, mode: 'insensitive' as const } }
+          : {}),
+        ...(query.cursor ? { id: { lt: query.cursor } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: query.limit + 1,
+      select: {
+        id: true,
+        title: true,
+        number: true,
+        workflowState: {
+          select: { semantic: true, name: true, systemKey: true },
+        },
+        priority: true,
+        dueAt: true,
+        crew: { select: { id: true, name: true } },
+      },
+    });
+    const more = rows.length > query.limit;
+    const items = rows
+      .slice(0, query.limit)
+      .map(({ workflowState, ...task }) => ({
+        ...task,
+        workflowState,
+        status: workflowState.semantic,
+      }));
+    return { items, nextCursor: more ? items.at(-1)!.id : null };
   }
 
   async list(crewId: string, userId: string, query: ListCrewTasksQuery) {
@@ -1357,6 +1674,7 @@ export class CrewTasksService {
     const normalized = query.query?.trim();
     const rows = await this.prisma.crewTask.findMany({
       where: {
+        deletedAt: null,
         crewId,
         ...(query.excludeTaskId ? { id: { not: query.excludeTaskId } } : {}),
         ...(query.activeOnly
@@ -1409,10 +1727,14 @@ export class CrewTasksService {
     const [statusGroups, myActive] = await Promise.all([
       this.prisma.crewTaskWorkflowState.findMany({
         where: { crewId },
-        select: { semantic: true, _count: { select: { tasks: true } } },
+        select: {
+          semantic: true,
+          _count: { select: { tasks: { where: { deletedAt: null } } } },
+        },
       }),
       this.prisma.crewTask.count({
         where: {
+          deletedAt: null,
           crewId,
           workflowState: {
             semantic: {
@@ -1512,7 +1834,8 @@ export class CrewTasksService {
       });
     }
 
-    const task = await this.prisma.$transaction(async (tx) => {
+    const task = await this.manageTaskWrite(crewId, userId, async (tx) => {
+      await this.lockTaskWrites(tx, crewId);
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-create:${crewId}`})::bigint)
       `;
@@ -1579,6 +1902,9 @@ export class CrewTasksService {
         });
       }
 
+      for (const assignee of input.assignees) {
+        assertNewCrewCurrency(assignee.currency);
+      }
       const created = await tx.crewTask.create({
         data: {
           crewId,
@@ -1600,18 +1926,26 @@ export class CrewTasksService {
           ),
           createdByUserId: userId,
           labels: {
-            create: input.labelIds.map((labelId) => ({ crewId, labelId })),
+            create: input.labelIds.map(
+              (labelId) =>
+                ({
+                  labelId,
+                }) satisfies Prisma.CrewTaskLabelAssignmentUncheckedCreateWithoutTaskInput,
+            ),
           },
           assignees: {
-            create: input.assignees.map((assignee) => ({
-              crewId,
-              crewMemberId: memberByUser.get(assignee.userId)!.id,
-              userId: assignee.userId,
-              rewardPoints:
-                assignee.rewardPoints == null
-                  ? null
-                  : BigInt(assignee.rewardPoints),
-            })),
+            create: input.assignees.map(
+              (assignee) =>
+                ({
+                  crewMemberId: memberByUser.get(assignee.userId)!.id,
+                  userId: assignee.userId,
+                  currency: assignee.currency,
+                  rewardAmountMinor:
+                    assignee.rewardAmountMinor == null
+                      ? null
+                      : BigInt(assignee.rewardAmountMinor),
+                }) satisfies Prisma.CrewTaskAssigneeUncheckedCreateWithoutTaskInput,
+            ),
           },
           dependenciesAsBlocked: {
             create: input.blockedByTaskIds.map((blockingTaskId) => ({
@@ -1646,6 +1980,7 @@ export class CrewTasksService {
               crewId,
               taskId: created.id,
               taskTitle: created.title,
+              actorUserId: userId,
               deeplink: `/crews/${crewId}/workspace?tab=tasks&task=${created.id}`,
             },
             idempotencyKey: `crew.task.assigned:${created.id}:${assigneeId}`,
@@ -1688,459 +2023,503 @@ export class CrewTasksService {
       });
     }
 
-    const task = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
+    const task = await this.manageTaskWrite(
+      current.crewId,
+      userId,
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.crewId);
+        await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-update:${taskId}`})::bigint)
       `;
-      const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
-        include: taskInclude,
-      });
-      if (locked.version !== input.expectedVersion) {
-        throw new ConflictException({
-          code: 'CREW_TASK_VERSION_CONFLICT',
-          message:
-            'This task changed while you were editing it. Refresh and review the latest version before saving again.',
-          expectedVersion: input.expectedVersion,
-          currentVersion: locked.version,
-        });
-      }
-      if (
-        locked.workflowState.semantic === CrewTaskStatus.approved ||
-        locked.workflowState.semantic === CrewTaskStatus.cancelled
-      ) {
-        throw new ConflictException({
-          message: 'Completed or cancelled tasks cannot be edited.',
-        });
-      }
-      if (
-        input.workflowStateId &&
-        locked.workflowState.semantic === CrewTaskStatus.submitted
-      ) {
-        throw new ConflictException({
-          message: 'Review the current submission before changing its status.',
-        });
-      }
-      const nextWorkflowState = input.workflowStateId
-        ? await tx.crewTaskWorkflowState.findFirst({
-            where: {
-              id: input.workflowStateId,
-              crewId: locked.crewId,
-              archived: false,
-            },
-          })
-        : null;
-      if (input.workflowStateId && !nextWorkflowState) {
-        throw new BadRequestException({
-          message: 'The selected workflow column is unavailable.',
-        });
-      }
-      if (
-        nextWorkflowState &&
-        nextWorkflowState.semantic !== CrewTaskStatus.cancelled &&
-        !MANUALLY_MOVABLE_TASK_STATUSES.has(nextWorkflowState.semantic)
-      ) {
-        throw new ConflictException({
-          message:
-            'Review and completed workflow columns can only be entered through their workflow actions.',
-        });
-      }
-      await this.assertPlanningReferences(
-        tx,
-        locked.crewId,
-        input.cycleId,
-        input.labelIds ?? [],
-        input.episodeId,
-      );
-      const nextParentId =
-        input.parentId === undefined ? locked.parentId : input.parentId;
-      const nextBlockedByTaskIds =
-        input.blockedByTaskIds ??
-        locked.dependenciesAsBlocked.map(
-          (dependency) => dependency.blockingTaskId,
-        );
-      await this.assertTaskStructure(
-        tx,
-        locked.crewId,
-        taskId,
-        nextParentId,
-        nextBlockedByTaskIds,
-      );
-      const customFieldValues = input.customFieldValues
-        ? await this.validateCustomFieldValues(
-            tx,
-            locked.crewId,
-            taskId,
-            input.customFieldValues,
-          )
-        : null;
-      const nextStartAt =
-        input.startAt === undefined
-          ? locked.startAt
-          : input.startAt
-            ? new Date(input.startAt)
-            : null;
-      const nextDueAt =
-        input.dueAt === undefined
-          ? locked.dueAt
-          : input.dueAt
-            ? new Date(input.dueAt)
-            : null;
-      if (nextStartAt && nextDueAt && nextDueAt < nextStartAt) {
-        throw new BadRequestException({
-          message: 'Task due date must be on or after its start date.',
-        });
-      }
+        const locked = await this.requireActiveTaskTx(tx, taskId);
+        // Membership projections and canvas metadata share the document writer's
+        // project boundary. Acquire it before changing either projection.
+        if (
+          locked.canvasProjectId &&
+          (input.assignees !== undefined ||
+            input.title !== undefined ||
+            input.description !== undefined)
+        ) {
+          await tx.$queryRaw`SELECT id FROM platform_projects WHERE id = ${locked.canvasProjectId}::uuid FOR UPDATE`;
+        }
 
-      const previousAssigneeIds = new Set(
-        locked.assignees.map((assignee) => assignee.userId),
-      );
-      const addedAssigneeIds: string[] = [];
-      const removedAssigneeIds: string[] = [];
-      if (uniqueAssigneeIds) {
-        const crewMembers = await tx.crewMember.findMany({
-          where: {
-            crewId: locked.crewId,
-            status: 'active',
-            userId: { in: uniqueAssigneeIds },
-          },
-        });
-        const memberByUser = new Map(
-          crewMembers.map((member) => [member.userId, member]),
+        await this.authorization.require(
+          locked.crewId,
+          userId,
+          'tasks.manage',
+          tx,
         );
-        const missing = uniqueAssigneeIds.filter(
-          (userId) => !memberByUser.has(userId),
-        );
-        if (missing.length > 0) {
-          throw new BadRequestException({
-            message: 'Every assignee must be an active crew member.',
-            userIds: missing,
+        if (locked.version !== input.expectedVersion) {
+          throw new ConflictException({
+            code: 'CREW_TASK_VERSION_CONFLICT',
+            message:
+              'This task changed while you were editing it. Refresh and review the latest version before saving again.',
+            expectedVersion: input.expectedVersion,
+            currentVersion: locked.version,
           });
         }
-        const nextAssigneeIds = new Set(uniqueAssigneeIds);
-        addedAssigneeIds.push(
-          ...uniqueAssigneeIds.filter(
-            (assigneeId) => !previousAssigneeIds.has(assigneeId),
-          ),
-        );
-        removedAssigneeIds.push(
-          ...[...previousAssigneeIds].filter(
-            (assigneeId) => !nextAssigneeIds.has(assigneeId),
-          ),
-        );
-
-        await tx.crewTaskAssignee.deleteMany({
-          where: { taskId, userId: { in: removedAssigneeIds } },
-        });
-        for (const assignee of input.assignees!) {
-          const existing = locked.assignees.find(
-            (candidate) => candidate.userId === assignee.userId,
-          );
-          const rewardPoints =
-            assignee.rewardPoints == null
-              ? null
-              : BigInt(assignee.rewardPoints);
-          if (existing) {
-            await tx.crewTaskAssignee.update({
-              where: { id: existing.id },
-              data: {
-                rewardPoints,
-              },
-            });
-          } else {
-            await tx.crewTaskAssignee.create({
-              data: {
+        if (
+          locked.workflowState.semantic === CrewTaskStatus.approved ||
+          locked.workflowState.semantic === CrewTaskStatus.cancelled
+        ) {
+          throw new ConflictException({
+            message: 'Completed or cancelled tasks cannot be edited.',
+          });
+        }
+        if (
+          input.workflowStateId &&
+          locked.workflowState.semantic === CrewTaskStatus.submitted
+        ) {
+          throw new ConflictException({
+            message:
+              'Review the current submission before changing its status.',
+          });
+        }
+        const nextWorkflowState = input.workflowStateId
+          ? await tx.crewTaskWorkflowState.findFirst({
+              where: {
+                id: input.workflowStateId,
                 crewId: locked.crewId,
-                taskId,
-                crewMemberId: memberByUser.get(assignee.userId)!.id,
-                userId: assignee.userId,
-                rewardPoints,
+                archived: false,
               },
-            });
-          }
+            })
+          : null;
+        if (input.workflowStateId && !nextWorkflowState) {
+          throw new BadRequestException({
+            message: 'The selected workflow column is unavailable.',
+          });
+        }
+        if (
+          nextWorkflowState &&
+          nextWorkflowState.semantic !== CrewTaskStatus.cancelled &&
+          !MANUALLY_MOVABLE_TASK_STATUSES.has(nextWorkflowState.semantic)
+        ) {
+          throw new ConflictException({
+            message:
+              'Review and completed workflow columns can only be entered through their workflow actions.',
+          });
+        }
+        await this.assertPlanningReferences(
+          tx,
+          locked.crewId,
+          input.cycleId,
+          input.labelIds ?? [],
+          input.episodeId,
+        );
+        const nextParentId =
+          input.parentId === undefined ? locked.parentId : input.parentId;
+        const nextBlockedByTaskIds =
+          input.blockedByTaskIds ??
+          locked.dependenciesAsBlocked.map(
+            (dependency) => dependency.blockingTaskId,
+          );
+        await this.assertTaskStructure(
+          tx,
+          locked.crewId,
+          taskId,
+          nextParentId,
+          nextBlockedByTaskIds,
+        );
+        const customFieldValues = input.customFieldValues
+          ? await this.validateCustomFieldValues(
+              tx,
+              locked.crewId,
+              taskId,
+              input.customFieldValues,
+            )
+          : null;
+        const nextStartAt =
+          input.startAt === undefined
+            ? locked.startAt
+            : input.startAt
+              ? new Date(input.startAt)
+              : null;
+        const nextDueAt =
+          input.dueAt === undefined
+            ? locked.dueAt
+            : input.dueAt
+              ? new Date(input.dueAt)
+              : null;
+        if (nextStartAt && nextDueAt && nextDueAt < nextStartAt) {
+          throw new BadRequestException({
+            message: 'Task due date must be on or after its start date.',
+          });
         }
 
-        if (locked.canvasProjectId) {
-          for (const assigneeId of addedAssigneeIds) {
-            const activeProjectMember = await tx.projectMember.findFirst({
-              where: {
-                projectId: locked.canvasProjectId,
-                userId: assigneeId,
-                removedAt: null,
-              },
+        const previousAssigneeIds = new Set(
+          locked.assignees.map((assignee) => assignee.userId),
+        );
+        const addedAssigneeIds: string[] = [];
+        const removedAssigneeIds: string[] = [];
+        if (uniqueAssigneeIds) {
+          const crewMembers = await tx.crewMember.findMany({
+            where: {
+              crewId: locked.crewId,
+              status: 'active',
+              userId: { in: uniqueAssigneeIds },
+            },
+          });
+          const memberByUser = new Map(
+            crewMembers.map((member) => [member.userId, member]),
+          );
+          const missing = uniqueAssigneeIds.filter(
+            (userId) => !memberByUser.has(userId),
+          );
+          if (missing.length > 0) {
+            throw new BadRequestException({
+              message: 'Every assignee must be an active crew member.',
+              userIds: missing,
             });
-            if (!activeProjectMember) {
-              await tx.projectMember.create({
+          }
+          const nextAssigneeIds = new Set(uniqueAssigneeIds);
+          addedAssigneeIds.push(
+            ...uniqueAssigneeIds.filter(
+              (assigneeId) => !previousAssigneeIds.has(assigneeId),
+            ),
+          );
+          removedAssigneeIds.push(
+            ...[...previousAssigneeIds].filter(
+              (assigneeId) => !nextAssigneeIds.has(assigneeId),
+            ),
+          );
+
+          await tx.crewTaskAssignee.deleteMany({
+            where: { taskId, userId: { in: removedAssigneeIds } },
+          });
+          for (const assignee of input.assignees!) {
+            const existing = locked.assignees.find(
+              (candidate) => candidate.userId === assignee.userId,
+            );
+            if (
+              !existing ||
+              existing.rewardAmountMinor == null ||
+              existing.currency !== assignee.currency
+            ) {
+              assertNewCrewCurrency(assignee.currency);
+            }
+            const rewardAmountMinor =
+              assignee.rewardAmountMinor == null
+                ? null
+                : BigInt(assignee.rewardAmountMinor);
+            if (existing) {
+              await tx.crewTaskAssignee.update({
+                where: { id: existing.id },
                 data: {
-                  projectId: locked.canvasProjectId,
-                  userId: assigneeId,
-                  role: ProjectMemberRole.editor,
-                  status: ProjectMemberStatus.active,
-                  grantedById: userId,
+                  rewardAmountMinor,
+                  currency: assignee.currency,
+                },
+              });
+            } else {
+              await tx.crewTaskAssignee.create({
+                data: {
+                  crewId: locked.crewId,
+                  taskId,
+                  crewMemberId: memberByUser.get(assignee.userId)!.id,
+                  userId: assignee.userId,
+                  currency: assignee.currency,
+                  rewardAmountMinor,
                 },
               });
             }
           }
-        }
-        const removableProjectUsers = removedAssigneeIds.filter(
-          (assigneeId) =>
-            assigneeId !== locked.createdByUserId &&
-            assigneeId !== crewOwnerUserId(locked.crew),
-        );
-        if (locked.canvasProjectId && removableProjectUsers.length > 0) {
-          await tx.projectMember.updateMany({
-            where: {
-              projectId: locked.canvasProjectId,
-              userId: { in: removableProjectUsers },
-              removedAt: null,
-              role: ProjectMemberRole.editor,
-            },
-            data: {
-              status: ProjectMemberStatus.removed,
-              removedAt: new Date(),
-            },
-          });
-        }
-      }
 
-      if (
-        locked.canvasProjectId &&
-        locked.canvasDocumentId &&
-        (input.title !== undefined || input.description !== undefined)
-      ) {
-        await Promise.all([
-          tx.platformProject.update({
-            where: { id: locked.canvasProjectId },
-            data: {
-              name: input.title,
-              description: input.description,
-            },
-          }),
-          tx.studioDocument.update({
-            where: { id: locked.canvasDocumentId },
-            data: {
-              title: input.title,
-              updatedById: userId,
-              version: { increment: 1 },
-            },
-          }),
-        ]);
-      }
-      if (input.labelIds) {
-        await tx.crewTaskLabelAssignment.deleteMany({ where: { taskId } });
-        if (input.labelIds.length > 0) {
-          await tx.crewTaskLabelAssignment.createMany({
-            data: input.labelIds.map((labelId) => ({
-              crewId: locked.crewId,
-              taskId,
-              labelId,
-            })),
-          });
+          if (locked.canvasProjectId) {
+            for (const assigneeId of addedAssigneeIds) {
+              const activeProjectMember = await tx.projectMember.findFirst({
+                where: {
+                  projectId: locked.canvasProjectId,
+                  userId: assigneeId,
+                  removedAt: null,
+                },
+              });
+              if (!activeProjectMember) {
+                await tx.projectMember.create({
+                  data: {
+                    projectId: locked.canvasProjectId,
+                    userId: assigneeId,
+                    role: ProjectMemberRole.editor,
+                    status: ProjectMemberStatus.active,
+                    grantedById: userId,
+                  },
+                });
+              }
+            }
+          }
+          const removableProjectUsers = removedAssigneeIds.filter(
+            (assigneeId) =>
+              assigneeId !== locked.createdByUserId &&
+              assigneeId !== crewOwnerUserId(locked.crew),
+          );
+          if (locked.canvasProjectId && removableProjectUsers.length > 0) {
+            await tx.projectMember.updateMany({
+              where: {
+                projectId: locked.canvasProjectId,
+                userId: { in: removableProjectUsers },
+                removedAt: null,
+                role: ProjectMemberRole.editor,
+              },
+              data: {
+                status: ProjectMemberStatus.removed,
+                removedAt: new Date(),
+              },
+            });
+          }
         }
-      }
-      if (input.blockedByTaskIds) {
-        await tx.crewTaskDependency.deleteMany({
-          where: { crewId: locked.crewId, blockedTaskId: taskId },
-        });
-        if (input.blockedByTaskIds.length > 0) {
-          await tx.crewTaskDependency.createMany({
-            data: input.blockedByTaskIds.map((blockingTaskId) => ({
-              crewId: locked.crewId,
-              blockingTaskId,
-              blockedTaskId: taskId,
-              createdByUserId: userId,
-            })),
-          });
+
+        if (
+          locked.canvasProjectId &&
+          locked.canvasDocumentId &&
+          (input.title !== undefined || input.description !== undefined)
+        ) {
+          await Promise.all([
+            tx.platformProject.update({
+              where: { id: locked.canvasProjectId },
+              data: {
+                name: input.title,
+                description: input.description,
+              },
+            }),
+            tx.studioDocument.update({
+              where: { id: locked.canvasDocumentId },
+              data: {
+                title: input.title,
+                updatedById: userId,
+                version: { increment: 1 },
+              },
+            }),
+          ]);
         }
-      }
-      if (customFieldValues) {
-        if (customFieldValues.removals.length > 0) {
-          await tx.crewTaskFieldValue.deleteMany({
-            where: {
-              taskId,
-              fieldId: { in: customFieldValues.removals },
-            },
-          });
+        if (input.labelIds) {
+          await tx.crewTaskLabelAssignment.deleteMany({ where: { taskId } });
+          if (input.labelIds.length > 0) {
+            await tx.crewTaskLabelAssignment.createMany({
+              data: input.labelIds.map((labelId) => ({
+                crewId: locked.crewId,
+                taskId,
+                labelId,
+              })),
+            });
+          }
         }
-        for (const fieldValue of customFieldValues.upserts) {
-          await tx.crewTaskFieldValue.upsert({
-            where: {
-              taskId_fieldId: {
+        if (input.blockedByTaskIds) {
+          await tx.crewTaskDependency.deleteMany({
+            where: { crewId: locked.crewId, blockedTaskId: taskId },
+          });
+          if (input.blockedByTaskIds.length > 0) {
+            await tx.crewTaskDependency.createMany({
+              data: input.blockedByTaskIds.map((blockingTaskId) => ({
+                crewId: locked.crewId,
+                blockingTaskId,
+                blockedTaskId: taskId,
+                createdByUserId: userId,
+              })),
+            });
+          }
+        }
+        if (customFieldValues) {
+          if (customFieldValues.removals.length > 0) {
+            await tx.crewTaskFieldValue.deleteMany({
+              where: {
+                taskId,
+                fieldId: { in: customFieldValues.removals },
+              },
+            });
+          }
+          for (const fieldValue of customFieldValues.upserts) {
+            await tx.crewTaskFieldValue.upsert({
+              where: {
+                taskId_fieldId: {
+                  taskId,
+                  fieldId: fieldValue.fieldId,
+                },
+              },
+              create: {
+                crewId: locked.crewId,
                 taskId,
                 fieldId: fieldValue.fieldId,
+                value: fieldValue.value,
+                updatedByUserId: userId,
               },
-            },
-            create: {
-              crewId: locked.crewId,
-              taskId,
+              update: {
+                value: fieldValue.value,
+                updatedByUserId: userId,
+              },
+            });
+          }
+        }
+
+        const changedFields: Record<string, { from: unknown; to: unknown }> =
+          {};
+        const recordChange = (field: string, from: unknown, to: unknown) => {
+          if (to !== undefined && !changeValuesEqual(from, to))
+            changedFields[field] = { from, to };
+        };
+        recordChange('title', locked.title, input.title);
+        recordChange('description', locked.description, input.description);
+        recordChange('priority', locked.priority, input.priority);
+        recordChange(
+          'startAt',
+          locked.startAt?.toISOString() ?? null,
+          input.startAt,
+        );
+        recordChange('dueAt', locked.dueAt?.toISOString() ?? null, input.dueAt);
+        recordChange(
+          'estimatePoints',
+          locked.estimatePoints,
+          input.estimatePoints,
+        );
+        recordChange(
+          'computeBudgetPoints',
+          locked.computeBudgetPoints,
+          input.computeBudgetPoints,
+        );
+        recordChange(
+          'revisionLimit',
+          locked.revisionLimit,
+          input.revisionLimit,
+        );
+        recordChange('cycleId', locked.cycleId, input.cycleId);
+        recordChange('episodeId', locked.episodeId, input.episodeId);
+        recordChange('parentId', locked.parentId, input.parentId);
+        recordChange(
+          'blockedByTaskIds',
+          locked.dependenciesAsBlocked
+            .map((dependency) => dependency.blockingTaskId)
+            .sort(),
+          input.blockedByTaskIds?.slice().sort(),
+        );
+        recordChange(
+          'customFieldValues',
+          locked.customFieldValues
+            .map((fieldValue) => ({
               fieldId: fieldValue.fieldId,
               value: fieldValue.value,
-              updatedByUserId: userId,
-            },
-            update: {
-              value: fieldValue.value,
-              updatedByUserId: userId,
-            },
+            }))
+            .sort((left, right) => left.fieldId.localeCompare(right.fieldId)),
+          input.customFieldValues
+            ?.slice()
+            .sort((left, right) => left.fieldId.localeCompare(right.fieldId)),
+        );
+        recordChange(
+          'labelIds',
+          locked.labels.map((assignment) => assignment.labelId).sort(),
+          input.labelIds?.slice().sort(),
+        );
+        recordChange(
+          'workflowStateId',
+          locked.workflowStateId,
+          input.workflowStateId,
+        );
+        if (
+          input.revisionLimit != null &&
+          input.revisionLimit < locked.revisionRoundsUsed
+        ) {
+          throw new BadRequestException({
+            code: 'CREW_TASK_REVISION_LIMIT_BELOW_USAGE',
+            message: `The revision limit cannot be lower than the ${locked.revisionRoundsUsed} rounds already used.`,
+            revisionRoundsUsed: locked.revisionRoundsUsed,
           });
         }
-      }
 
-      const changedFields: Record<string, { from: unknown; to: unknown }> = {};
-      const recordChange = (field: string, from: unknown, to: unknown) => {
-        if (to !== undefined && !changeValuesEqual(from, to))
-          changedFields[field] = { from, to };
-      };
-      recordChange('title', locked.title, input.title);
-      recordChange('description', locked.description, input.description);
-      recordChange('priority', locked.priority, input.priority);
-      recordChange(
-        'startAt',
-        locked.startAt?.toISOString() ?? null,
-        input.startAt,
-      );
-      recordChange('dueAt', locked.dueAt?.toISOString() ?? null, input.dueAt);
-      recordChange(
-        'estimatePoints',
-        locked.estimatePoints,
-        input.estimatePoints,
-      );
-      recordChange(
-        'computeBudgetPoints',
-        locked.computeBudgetPoints,
-        input.computeBudgetPoints,
-      );
-      recordChange('revisionLimit', locked.revisionLimit, input.revisionLimit);
-      recordChange('cycleId', locked.cycleId, input.cycleId);
-      recordChange('episodeId', locked.episodeId, input.episodeId);
-      recordChange('parentId', locked.parentId, input.parentId);
-      recordChange(
-        'blockedByTaskIds',
-        locked.dependenciesAsBlocked
-          .map((dependency) => dependency.blockingTaskId)
-          .sort(),
-        input.blockedByTaskIds?.slice().sort(),
-      );
-      recordChange(
-        'customFieldValues',
-        locked.customFieldValues
-          .map((fieldValue) => ({
-            fieldId: fieldValue.fieldId,
-            value: fieldValue.value,
-          }))
-          .sort((left, right) => left.fieldId.localeCompare(right.fieldId)),
-        input.customFieldValues
-          ?.slice()
-          .sort((left, right) => left.fieldId.localeCompare(right.fieldId)),
-      );
-      recordChange(
-        'labelIds',
-        locked.labels.map((assignment) => assignment.labelId).sort(),
-        input.labelIds?.slice().sort(),
-      );
-      recordChange(
-        'workflowStateId',
-        locked.workflowStateId,
-        input.workflowStateId,
-      );
-      if (
-        input.revisionLimit != null &&
-        input.revisionLimit < locked.revisionRoundsUsed
-      ) {
-        throw new BadRequestException({
-          code: 'CREW_TASK_REVISION_LIMIT_BELOW_USAGE',
-          message: `The revision limit cannot be lower than the ${locked.revisionRoundsUsed} rounds already used.`,
-          revisionRoundsUsed: locked.revisionRoundsUsed,
-        });
-      }
-
-      const updated = await tx.crewTask.update({
-        where: { id: taskId },
-        data: {
-          title: input.title,
-          description: input.description,
-          priority: input.priority,
-          startAt:
-            input.startAt === undefined
-              ? undefined
-              : input.startAt
-                ? new Date(input.startAt)
-                : null,
-          dueAt:
-            input.dueAt === undefined
-              ? undefined
-              : input.dueAt
-                ? new Date(input.dueAt)
-                : null,
-          estimatePoints: input.estimatePoints,
-          computeBudgetPoints: input.computeBudgetPoints,
-          revisionLimit: input.revisionLimit,
-          cycleId: input.cycleId,
-          episodeId: input.episodeId,
-          parentId: input.parentId,
-          workflowStateId: nextWorkflowState?.id,
-          cancelledAt:
-            nextWorkflowState?.semantic === CrewTaskStatus.cancelled
-              ? new Date()
-              : nextWorkflowState
-                ? null
-                : undefined,
-          version: { increment: 1 },
-        },
-        include: taskInclude,
-      });
-      await this.writeActivity(tx, taskId, 'task.updated', userId, {
-        changedFields,
-        addedAssigneeUserIds: addedAssigneeIds,
-        removedAssigneeUserIds: removedAssigneeIds,
-      });
-
-      for (const assigneeId of addedAssigneeIds) {
-        await this.notifications.send(
-          {
-            userId: assigneeId,
-            type: 'crew.task.assigned',
-            title: `New task: ${updated.title}`,
-            body: 'You were assigned to this task.',
-            meta: {
-              crewId: updated.crewId,
-              taskId,
-              taskTitle: updated.title,
-              deeplink: `/crews/${updated.crewId}/workspace?tab=tasks&task=${taskId}`,
-            },
-            idempotencyKey: `crew.task.assigned:${taskId}:${updated.version}:${assigneeId}`,
+        const updated = await tx.crewTask.update({
+          where: { deletedAt: null, id: taskId },
+          data: {
+            title: input.title,
+            description: input.description,
+            priority: input.priority,
+            startAt:
+              input.startAt === undefined
+                ? undefined
+                : input.startAt
+                  ? new Date(input.startAt)
+                  : null,
+            dueAt:
+              input.dueAt === undefined
+                ? undefined
+                : input.dueAt
+                  ? new Date(input.dueAt)
+                  : null,
+            estimatePoints: input.estimatePoints,
+            computeBudgetPoints: input.computeBudgetPoints,
+            revisionLimit: input.revisionLimit,
+            cycleId: input.cycleId,
+            episodeId: input.episodeId,
+            parentId: input.parentId,
+            workflowStateId: nextWorkflowState?.id,
+            cancelledAt:
+              nextWorkflowState?.semantic === CrewTaskStatus.cancelled
+                ? new Date()
+                : nextWorkflowState
+                  ? null
+                  : undefined,
+            version: { increment: 1 },
           },
-          tx,
-        );
-      }
-      const changed = Object.keys(changedFields).length > 0;
-      if (changed || addedAssigneeIds.length || removedAssigneeIds.length) {
-        const participantIds = new Set([
-          crewOwnerUserId(updated.crew),
-          ...updated.assignees.map((assignee) => assignee.userId),
-        ]);
-        participantIds.delete(userId);
-        for (const participantId of participantIds) {
-          if (addedAssigneeIds.includes(participantId)) continue;
+          include: taskInclude,
+        });
+        await this.writeActivity(tx, taskId, 'task.updated', userId, {
+          changedFields,
+          addedAssigneeUserIds: addedAssigneeIds,
+          removedAssigneeUserIds: removedAssigneeIds,
+        });
+
+        for (const assigneeId of addedAssigneeIds) {
           await this.notifications.send(
             {
-              userId: participantId,
-              type: 'crew.task.updated',
-              title: `Task updated: ${updated.title}`,
-              body: 'Task details or participants changed.',
+              userId: assigneeId,
+              type: 'crew.task.assigned',
+              title: `New task: ${updated.title}`,
+              body: 'You were assigned to this task.',
               meta: {
                 crewId: updated.crewId,
                 taskId,
                 taskTitle: updated.title,
+                actorUserId: userId,
                 deeplink: `/crews/${updated.crewId}/workspace?tab=tasks&task=${taskId}`,
               },
-              idempotencyKey: `crew.task.updated:${taskId}:${updated.version}:${participantId}`,
+              idempotencyKey: `crew.task.assigned:${taskId}:${updated.version}:${assigneeId}`,
             },
             tx,
           );
         }
-      }
-      return updated;
-    });
+        const changed = Object.keys(changedFields).length > 0;
+        if (changed || addedAssigneeIds.length || removedAssigneeIds.length) {
+          const participantIds = new Set([
+            crewOwnerUserId(updated.crew),
+            ...updated.assignees.map((assignee) => assignee.userId),
+          ]);
+          participantIds.delete(userId);
+          for (const participantId of participantIds) {
+            if (addedAssigneeIds.includes(participantId)) continue;
+            await this.notifications.send(
+              {
+                userId: participantId,
+                type: 'crew.task.updated',
+                title: `Task updated: ${updated.title}`,
+                body: 'Task details or participants changed.',
+                meta: {
+                  crewId: updated.crewId,
+                  taskId,
+                  taskTitle: updated.title,
+                  actorUserId: userId,
+                  deeplink: `/crews/${updated.crewId}/workspace?tab=tasks&task=${taskId}`,
+                },
+                idempotencyKey: `crew.task.updated:${taskId}:${updated.version}:${participantId}`,
+              },
+              tx,
+            );
+          }
+        }
+        // Linked canvas, task and activity writes may have waited on other rows.
+        // Losing authority during those waits must roll back this whole update.
+        await this.authorization.require(
+          locked.crewId,
+          userId,
+          'tasks.manage',
+          tx,
+        );
+        return updated;
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       task.crewId,
       task.id,
@@ -2250,140 +2629,157 @@ export class CrewTasksService {
   ) {
     const task = await this.requireTask(taskId);
     await this.authorization.require(task.crewId, userId, 'tasks.comment');
-    const created = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(
+    const created = await this.authorizedTaskWrite(
+      task.crewId,
+      async (tx) => {
+        await this.authorization.require(
+          task.crewId,
+          userId,
+          'tasks.comment',
+          tx,
+        );
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, task.crewId);
+        await tx.crewTask.findUniqueOrThrow({
+          where: { id: task.id, deletedAt: null },
+        });
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(
           hashtextextended(
             ${`crew-task-comment:${taskId}:${userId}:${input.clientKey}`},
             0
           )
         )`,
-      );
-      const existing = await tx.crewTaskTimelineItem.findFirst({
-        where: { taskId, actorUserId: userId, clientKey: input.clientKey },
-        include: timelineInclude,
-      });
-      if (existing) {
-        this.assertCommentReplay(existing, input);
-        return { row: existing, created: false };
-      }
+        );
+        const existing = await tx.crewTaskTimelineItem.findFirst({
+          where: { taskId, actorUserId: userId, clientKey: input.clientKey },
+          include: timelineInclude,
+        });
+        if (existing) {
+          this.assertCommentReplay(existing, input);
+          return { row: existing, created: false };
+        }
 
-      await this.assertValidMentions(
-        tx,
-        task.crewId,
-        userId,
-        input.body,
-        input.mentions,
-      );
-      if (input.replyToId) {
-        const reply = await tx.crewTaskTimelineItem.findFirst({
-          where: {
-            id: input.replyToId,
+        await this.assertValidMentions(
+          tx,
+          task.crewId,
+          userId,
+          input.body,
+          input.mentions,
+        );
+        if (input.replyToId) {
+          const reply = await tx.crewTaskTimelineItem.findFirst({
+            where: {
+              id: input.replyToId,
+              taskId,
+              kind: 'comment',
+              deletedAt: null,
+            },
+            select: { id: true },
+          });
+          if (!reply) {
+            throw new BadRequestException({
+              message: 'The comment you are replying to is unavailable.',
+            });
+          }
+        }
+
+        const assetNodeIds = await this.claimCommentAttachments(
+          tx,
+          task.crewId,
+          userId,
+          input.attachments,
+        );
+        const row = await tx.crewTaskTimelineItem.create({
+          data: {
             taskId,
             kind: 'comment',
+            actorUserId: userId,
+            body: input.body,
+            mentions: input.mentions as unknown as Prisma.InputJsonValue,
+            replyToId: input.replyToId ?? null,
+            clientKey: input.clientKey,
+            attachments: {
+              create: assetNodeIds.map((assetNodeId, position) => ({
+                assetNodeId,
+                position,
+              })),
+            },
+          },
+          include: timelineInclude,
+        });
+
+        const mentionedIds = new Set(
+          input.mentions.map((mention) => mention.userId),
+        );
+        for (const mentionedUserId of mentionedIds) {
+          await this.notifications.send(
+            {
+              userId: mentionedUserId,
+              type: 'crew.task.mentioned',
+              title: `Mentioned in: ${task.title}`,
+              body: input.body || 'You were mentioned with an attachment.',
+              meta: {
+                crewId: task.crewId,
+                taskId,
+                taskTitle: task.title,
+                actorUserId: userId,
+                commentBody: input.body || null,
+                hasAttachments: input.attachments.length > 0,
+                timelineItemId: row.id,
+                deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
+              },
+              idempotencyKey: `crew.task.mentioned:${row.id}:${mentionedUserId}`,
+            },
+            tx,
+          );
+        }
+        const participantIds = new Set([
+          crewOwnerUserId(task.crew),
+          task.createdByUserId,
+          ...task.assignees.map((assignee) => assignee.userId),
+        ]);
+        const previousCommenters = await tx.crewTaskTimelineItem.findMany({
+          where: {
+            taskId,
+            kind: 'comment',
+            actorUserId: { not: null },
             deletedAt: null,
           },
-          select: { id: true },
+          distinct: ['actorUserId'],
+          select: { actorUserId: true },
         });
-        if (!reply) {
-          throw new BadRequestException({
-            message: 'The comment you are replying to is unavailable.',
-          });
+        previousCommenters.forEach(({ actorUserId }) => {
+          if (actorUserId) participantIds.add(actorUserId);
+        });
+        participantIds.delete(userId);
+        for (const participantId of participantIds) {
+          if (mentionedIds.has(participantId)) continue;
+          await this.notifications.send(
+            {
+              userId: participantId,
+              type: 'crew.task.commented',
+              title: `New comment: ${task.title}`,
+              body: input.body || 'A file was added to the task discussion.',
+              meta: {
+                crewId: task.crewId,
+                taskId,
+                taskTitle: task.title,
+                actorUserId: userId,
+                commentBody: input.body || null,
+                hasAttachments: input.attachments.length > 0,
+                timelineItemId: row.id,
+                deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
+              },
+              idempotencyKey: `crew.task.commented:${row.id}:${participantId}`,
+            },
+            tx,
+          );
         }
-      }
-
-      const assetNodeIds = await this.claimCommentAttachments(
-        tx,
-        task.crewId,
-        userId,
-        input.attachments,
-      );
-      const row = await tx.crewTaskTimelineItem.create({
-        data: {
-          taskId,
-          kind: 'comment',
-          actorUserId: userId,
-          body: input.body,
-          mentions: input.mentions as unknown as Prisma.InputJsonValue,
-          replyToId: input.replyToId ?? null,
-          clientKey: input.clientKey,
-          attachments: {
-            create: assetNodeIds.map((assetNodeId, position) => ({
-              assetNodeId,
-              position,
-            })),
-          },
-        },
-        include: timelineInclude,
-      });
-
-      const mentionedIds = new Set(
-        input.mentions.map((mention) => mention.userId),
-      );
-      for (const mentionedUserId of mentionedIds) {
-        await this.notifications.send(
-          {
-            userId: mentionedUserId,
-            type: 'crew.task.mentioned',
-            title: `Mentioned in: ${task.title}`,
-            body: input.body || 'You were mentioned with an attachment.',
-            meta: {
-              crewId: task.crewId,
-              taskId,
-              taskTitle: task.title,
-              commentBody: input.body || null,
-              hasAttachments: input.attachments.length > 0,
-              timelineItemId: row.id,
-              deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
-            },
-            idempotencyKey: `crew.task.mentioned:${row.id}:${mentionedUserId}`,
-          },
-          tx,
-        );
-      }
-      const participantIds = new Set([
-        crewOwnerUserId(task.crew),
-        task.createdByUserId,
-        ...task.assignees.map((assignee) => assignee.userId),
-      ]);
-      const previousCommenters = await tx.crewTaskTimelineItem.findMany({
-        where: {
-          taskId,
-          kind: 'comment',
-          actorUserId: { not: null },
-          deletedAt: null,
-        },
-        distinct: ['actorUserId'],
-        select: { actorUserId: true },
-      });
-      previousCommenters.forEach(({ actorUserId }) => {
-        if (actorUserId) participantIds.add(actorUserId);
-      });
-      participantIds.delete(userId);
-      for (const participantId of participantIds) {
-        if (mentionedIds.has(participantId)) continue;
-        await this.notifications.send(
-          {
-            userId: participantId,
-            type: 'crew.task.commented',
-            title: `New comment: ${task.title}`,
-            body: input.body || 'A file was added to the task discussion.',
-            meta: {
-              crewId: task.crewId,
-              taskId,
-              taskTitle: task.title,
-              commentBody: input.body || null,
-              hasAttachments: input.attachments.length > 0,
-              timelineItemId: row.id,
-              deeplink: `/crews/${task.crewId}/workspace?tab=tasks&task=${taskId}&comment=${row.id}`,
-            },
-            idempotencyKey: `crew.task.commented:${row.id}:${participantId}`,
-          },
-          tx,
-        );
-      }
-      return { row, created: true };
-    });
+        return { row, created: true };
+      },
+    );
     if (created.created) {
       await this.conversations.broadcastCrewTaskChange(
         task.crewId,
@@ -2404,7 +2800,12 @@ export class CrewTasksService {
       where: { id: commentId },
       include: { task: true },
     });
-    if (!current || current.kind !== 'comment' || current.deletedAt) {
+    if (
+      !current ||
+      current.task.deletedAt ||
+      current.kind !== 'comment' ||
+      current.deletedAt
+    ) {
       throw new NotFoundException('Task comment not found.');
     }
     const context = await this.authorization.require(
@@ -2421,70 +2822,94 @@ export class CrewTasksService {
           'Only the author or a crew administrator can edit this comment.',
       });
     }
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw(
-        Prisma.sql`SELECT pg_advisory_xact_lock(
-          hashtextextended(${`crew-task-comment-edit:${commentId}`}, 0)
-        )`,
-      );
-      await this.assertValidMentions(
-        tx,
-        current.task.crewId,
-        userId,
-        input.body,
-        input.mentions,
-      );
-      const result = await tx.crewTaskTimelineItem.updateMany({
-        where: {
-          id: commentId,
-          version: input.expectedVersion,
-          deletedAt: null,
-          kind: 'comment',
-        },
-        data: {
-          body: input.body,
-          mentions: input.mentions as unknown as Prisma.InputJsonValue,
-          editedAt: new Date(),
-          version: { increment: 1 },
-        },
-      });
-      if (result.count !== 1) {
-        throw new ConflictException({
-          code: 'CREW_TASK_COMMENT_VERSION_CONFLICT',
-          message:
-            'This comment changed while you were editing it. Refresh before saving again.',
-        });
-      }
-      const row = await tx.crewTaskTimelineItem.findUniqueOrThrow({
-        where: { id: commentId },
-        include: timelineInclude,
-      });
-      const previousMentionIds = new Set(
-        parseMentions(current.mentions).map((mention) => mention.userId),
-      );
-      for (const mention of input.mentions) {
-        if (previousMentionIds.has(mention.userId)) continue;
-        await this.notifications.send(
-          {
-            userId: mention.userId,
-            type: 'crew.task.mentioned',
-            title: `Mentioned in: ${current.task.title}`,
-            body: input.body,
-            meta: {
-              crewId: current.task.crewId,
-              taskId: current.taskId,
-              taskTitle: current.task.title,
-              commentBody: input.body || null,
-              timelineItemId: commentId,
-              deeplink: `/crews/${current.task.crewId}/workspace?tab=tasks&task=${current.taskId}&comment=${commentId}`,
-            },
-            idempotencyKey: `crew.task.mentioned:${commentId}:${row.version}:${mention.userId}`,
-          },
+    const updated = await this.authorizedTaskWrite(
+      current.task.crewId,
+      async (tx) => {
+        const context = await this.authorization.require(
+          current.task.crewId,
+          userId,
+          'tasks.comment',
           tx,
         );
-      }
-      return row;
-    });
+        if (
+          current.actorUserId !== userId &&
+          !context.permissions.includes('tasks.manage')
+        )
+          throw new ForbiddenException({
+            message:
+              'Only the author or a crew administrator can change this comment.',
+          });
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.task.crewId);
+        await tx.crewTask.findUniqueOrThrow({
+          where: { id: current.taskId, deletedAt: null },
+        });
+        await tx.$executeRaw(
+          Prisma.sql`SELECT pg_advisory_xact_lock(
+          hashtextextended(${`crew-task-comment-edit:${commentId}`}, 0)
+        )`,
+        );
+        await this.assertValidMentions(
+          tx,
+          current.task.crewId,
+          userId,
+          input.body,
+          input.mentions,
+        );
+        const result = await tx.crewTaskTimelineItem.updateMany({
+          where: {
+            id: commentId,
+            version: input.expectedVersion,
+            deletedAt: null,
+            kind: 'comment',
+          },
+          data: {
+            body: input.body,
+            mentions: input.mentions as unknown as Prisma.InputJsonValue,
+            editedAt: new Date(),
+            version: { increment: 1 },
+          },
+        });
+        if (result.count !== 1) {
+          throw new ConflictException({
+            code: 'CREW_TASK_COMMENT_VERSION_CONFLICT',
+            message:
+              'This comment changed while you were editing it. Refresh before saving again.',
+          });
+        }
+        const row = await tx.crewTaskTimelineItem.findUniqueOrThrow({
+          where: { id: commentId },
+          include: timelineInclude,
+        });
+        const previousMentionIds = new Set(
+          parseMentions(current.mentions).map((mention) => mention.userId),
+        );
+        for (const mention of input.mentions) {
+          if (previousMentionIds.has(mention.userId)) continue;
+          await this.notifications.send(
+            {
+              userId: mention.userId,
+              type: 'crew.task.mentioned',
+              title: `Mentioned in: ${current.task.title}`,
+              body: input.body,
+              meta: {
+                crewId: current.task.crewId,
+                taskId: current.taskId,
+                taskTitle: current.task.title,
+                actorUserId: userId,
+                commentBody: input.body || null,
+                timelineItemId: commentId,
+                deeplink: `/crews/${current.task.crewId}/workspace?tab=tasks&task=${current.taskId}&comment=${commentId}`,
+              },
+              idempotencyKey: `crew.task.mentioned:${commentId}:${row.version}:${mention.userId}`,
+            },
+            tx,
+          );
+        }
+        return row;
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       current.task.crewId,
       current.taskId,
@@ -2499,7 +2924,12 @@ export class CrewTasksService {
       where: { id: commentId },
       include: { task: true },
     });
-    if (!current || current.kind !== 'comment' || current.deletedAt) {
+    if (
+      !current ||
+      current.task.deletedAt ||
+      current.kind !== 'comment' ||
+      current.deletedAt
+    ) {
       throw new NotFoundException('Task comment not found.');
     }
     const context = await this.authorization.require(
@@ -2516,24 +2946,125 @@ export class CrewTasksService {
           'Only the author or a crew administrator can delete this comment.',
       });
     }
-    await this.prisma.crewTaskTimelineItem.update({
-      where: { id: commentId },
-      data: {
-        body: null,
-        mentions: [],
-        payload: {
-          deletedByUserId: userId,
-        },
-        deletedAt: new Date(),
-        version: { increment: 1 },
+    await this.authorizedTaskWrite(
+      current.task.crewId,
+      async (tx) => {
+        const context = await this.authorization.require(
+          current.task.crewId,
+          userId,
+          'tasks.comment',
+          tx,
+        );
+        if (
+          current.actorUserId !== userId &&
+          !context.permissions.includes('tasks.manage')
+        )
+          throw new ForbiddenException({
+            message:
+              'Only the author or a crew administrator can change this comment.',
+          });
       },
-    });
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.task.crewId);
+        await tx.crewTask.findUniqueOrThrow({
+          where: { id: current.taskId, deletedAt: null },
+        });
+        await tx.crewTaskTimelineItem.update({
+          where: { id: commentId },
+          data: {
+            body: null,
+            mentions: [],
+            payload: {
+              deletedByUserId: userId,
+            },
+            deletedAt: new Date(),
+            version: { increment: 1 },
+          },
+        });
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       current.task.crewId,
       current.taskId,
       'commented',
       userId,
     );
+  }
+
+  async getDeliveryTemplate(taskId: string, userId: string) {
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.view');
+    return this.prisma.$transaction(async (tx) => {
+      await this.authorization.require(task.crewId, userId, 'tasks.view', tx);
+      await this.requireActiveTaskTx(tx, taskId);
+      return readTaskDeliveryTemplate(tx, taskId);
+    });
+  }
+
+  async setDeliveryTemplate(
+    taskId: string,
+    userId: string,
+    input: z.infer<typeof TaskDeliveryTemplateInput>,
+  ) {
+    const task = await this.requireTask(taskId);
+    await this.authorization.require(task.crewId, userId, 'tasks.manage');
+    const result = await this.manageTaskWrite(
+      task.crewId,
+      userId,
+      async (tx) => {
+        const current = await this.requireActiveTaskTx(tx, taskId);
+        if (current.version !== input.expectedVersion)
+          throw new ConflictException(
+            'Task changed. Refresh before changing its delivery template.',
+          );
+        if (!ACCEPTING_TASK_STATUSES.has(current.workflowState.semantic))
+          throw new ConflictException(
+            'The task is not accepting delivery-template changes.',
+          );
+        const before = await readTaskDeliveryTemplate(tx, taskId);
+        if (input.category) {
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`crew:delivery-catalog:${input.category.id}`},0))`;
+          const [latest] = await tx.$queryRaw<
+            Array<{ version: number; status: string }>
+          >`SELECT version, definition->>'status' AS status FROM crew_delivery_catalog_revisions WHERE category_id=${input.category.id}::uuid ORDER BY version DESC LIMIT 1`;
+          if (
+            !latest ||
+            latest.version !== input.category.version ||
+            latest.status !== 'active'
+          )
+            throw new ConflictException(
+              'Choose the current active delivery category.',
+            );
+          await tx.$executeRaw`INSERT INTO crew_task_delivery_templates(task_id,category_id,category_version) VALUES (${taskId}::uuid,${input.category.id}::uuid,${input.category.version}) ON CONFLICT(task_id) DO UPDATE SET category_id=EXCLUDED.category_id,category_version=EXCLUDED.category_version`;
+        } else {
+          await tx.$executeRaw`DELETE FROM crew_task_delivery_templates WHERE task_id=${taskId}::uuid`;
+        }
+        await tx.crewTask.update({
+          where: { id: taskId },
+          data: { version: { increment: 1 } },
+        });
+        await this.writeActivity(
+          tx,
+          taskId,
+          'task.delivery_template.changed',
+          userId,
+          {
+            before: before
+              ? { id: before.categoryId, version: before.version }
+              : null,
+            after: input.category,
+          },
+        );
+        return readTaskDeliveryTemplate(tx, taskId);
+      },
+    );
+    await this.conversations.broadcastCrewTaskChange(
+      task.crewId,
+      taskId,
+      'updated',
+      userId,
+    );
+    return result;
   }
 
   async submit(taskId: string, userId: string, input: SubmitCrewTaskInput) {
@@ -2556,158 +3087,239 @@ export class CrewTasksService {
       });
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
+    let deliveryFolderId: string | undefined;
+    const updated = await this.authorizedTaskWrite(
+      task.crewId,
+      async (tx) => {
+        const currentTask = await this.requireActiveTaskTx(tx, taskId);
+        const context = await this.authorization.requireMembership(
+          currentTask.crewId,
+          userId,
+          tx,
+        );
+        if (
+          !context.permissions.includes('tasks.submit_assigned') ||
+          (!currentTask.assignees.some((a) => a.userId === userId) &&
+            !context.permissions.includes('tasks.manage'))
+        )
+          throw new ForbiddenException({
+            message: 'Only a current task assignee can submit this task.',
+          });
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, task.crewId);
+        await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:task-submit:${taskId}`})::bigint)
       `;
-      const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
-        include: taskInclude,
-      });
-      if (!ACCEPTING_TASK_STATUSES.has(locked.workflowState.semantic)) {
-        throw new ConflictException({
-          message: 'This task is not accepting submissions.',
-        });
-      }
-      const unresolvedBlockers = locked.dependenciesAsBlocked
-        .map((dependency) => dependency.blockingTask)
-        .filter(
-          (blocker) =>
-            blocker.workflowState.semantic !== CrewTaskStatus.approved &&
-            blocker.workflowState.semantic !== CrewTaskStatus.cancelled,
+        const locked = await this.requireActiveTaskTx(tx, taskId);
+        const currentContext = await this.authorization.requireMembership(
+          locked.crewId,
+          userId,
+          tx,
         );
-      if (unresolvedBlockers.length > 0) {
-        throw new ConflictException({
-          code: 'CREW_TASK_BLOCKED',
-          message:
-            'Complete every blocking task before submitting this work for review.',
-          blockers: unresolvedBlockers.map(taskReferenceDto),
-        });
-      }
-      if (input.assetNodeIds.length > 0) {
-        const count = await tx.crewAssetNode.count({
-          where: {
-            id: { in: input.assetNodeIds },
-            crewId: locked.crewId,
-            status: 'active',
-            kind: 'file',
-          },
-        });
-        if (count !== new Set(input.assetNodeIds).size) {
-          throw new BadRequestException({
-            message: 'One or more submitted assets are unavailable.',
+        if (
+          !currentContext.permissions.includes('tasks.submit_assigned') ||
+          (!locked.assignees.some((a) => a.userId === userId) &&
+            !currentContext.permissions.includes('tasks.manage'))
+        ) {
+          throw new ForbiddenException({
+            message: 'Only a current task assignee can submit this task.',
           });
         }
-        await this.assetAccess.requireNodesPermission(
-          locked.crewId,
-          input.assetNodeIds,
-          userId,
-          CrewAssetPermission.view,
-          tx,
-        );
-      }
 
-      let canvasVersionId: string | null = null;
-      if (locked.canvasDocumentId) {
-        const document = await this.materializeCanvasDocumentTx(
-          tx,
-          locked.canvasDocumentId,
-        );
-        const latestDocumentVersion = await tx.studioDocumentVersion.findFirst({
-          where: { documentId: document.id },
-          orderBy: { versionNumber: 'desc' },
-        });
-        const canvasVersion = await tx.studioDocumentVersion.create({
-          data: {
-            documentId: document.id,
-            versionNumber: (latestDocumentVersion?.versionNumber ?? 0) + 1,
-            schemaVersion: document.schemaVersion,
-            sequence: document.currentSequence,
-            title: document.title,
-            label: `Task submission v${locked.submissions.length + 1}`,
-            source: StudioDocumentVersionSource.manual,
-            sourceId: taskId,
-            snapshot: document.contentSnapshot as Prisma.InputJsonValue,
-            crdtState: document.crdtState,
-            metadata: {
-              reason: 'crew_task_submission',
-              taskId,
-              documentSequence: document.currentSequence,
-            },
-            createdById: userId,
+        if (!ACCEPTING_TASK_STATUSES.has(locked.workflowState.semantic)) {
+          throw new ConflictException({
+            message: 'This task is not accepting submissions.',
+          });
+        }
+        // A manager submitting on behalf of the team must not bypass another
+        // assignee's withdrawal and accidentally approve that person's reward.
+        const commitment = await tx.crewTaskCommitment.findFirst({
+          where: {
+            assignmentId: { in: locked.assignees.map((a) => a.id) },
+            status: 'withdrawn',
           },
         });
-        canvasVersionId = canvasVersion.id;
-        await tx.studioDocument.update({
-          where: { id: document.id },
+        const participation = await tx.crewParticipationRecord.findFirst({
+          where: {
+            crewId: locked.crewId,
+            userId: { in: [userId, ...locked.assignees.map((a) => a.userId)] },
+            withdrawalAt: { not: null },
+          },
+        });
+        if (commitment?.status === 'withdrawn' || participation?.withdrawalAt) {
+          throw new ConflictException(
+            'A withdrawal is recorded. Arrange a handover with the leader before further work.',
+          );
+        }
+        const unresolvedBlockers = locked.dependenciesAsBlocked
+          .map((dependency) => dependency.blockingTask)
+          .filter(
+            (blocker) =>
+              blocker.workflowState.semantic !== CrewTaskStatus.approved &&
+              blocker.workflowState.semantic !== CrewTaskStatus.cancelled,
+          );
+        if (unresolvedBlockers.length > 0) {
+          throw new ConflictException({
+            code: 'CREW_TASK_BLOCKED',
+            message:
+              'Complete every blocking task before submitting this work for review.',
+            blockers: unresolvedBlockers.map(taskReferenceDto),
+          });
+        }
+        if (input.assetNodeIds.length > 0) {
+          const count = await tx.crewAssetNode.count({
+            where: {
+              id: { in: input.assetNodeIds },
+              crewId: locked.crewId,
+              status: 'active',
+              kind: 'file',
+            },
+          });
+          if (count !== new Set(input.assetNodeIds).size) {
+            throw new BadRequestException({
+              message: 'One or more submitted assets are unavailable.',
+            });
+          }
+          await this.assetAccess.requireNodesPermission(
+            locked.crewId,
+            input.assetNodeIds,
+            userId,
+            CrewAssetPermission.view,
+            tx,
+          );
+        }
+
+        const professionalDelivery = validateProfessionalDelivery(
+          await readTaskDeliveryTemplate(tx, taskId),
+          input.professionalDelivery,
+          input.assetNodeIds,
+        );
+        let canvasVersionId: string | null = null;
+        if (locked.canvasDocumentId) {
+          const document = await this.materializeCanvasDocumentTx(
+            tx,
+            locked.canvasDocumentId,
+          );
+          const latestDocumentVersion =
+            await tx.studioDocumentVersion.findFirst({
+              where: { documentId: document.id },
+              orderBy: { versionNumber: 'desc' },
+            });
+          const canvasVersion = await tx.studioDocumentVersion.create({
+            data: {
+              documentId: document.id,
+              versionNumber: (latestDocumentVersion?.versionNumber ?? 0) + 1,
+              schemaVersion: document.schemaVersion,
+              sequence: document.currentSequence,
+              title: document.title,
+              label: `Task submission v${locked.submissions.length + 1}`,
+              source: StudioDocumentVersionSource.manual,
+              sourceId: taskId,
+              snapshot: document.contentSnapshot as Prisma.InputJsonValue,
+              crdtState: document.crdtState,
+              metadata: {
+                reason: 'crew_task_submission',
+                taskId,
+                documentSequence: document.currentSequence,
+              },
+              createdById: userId,
+            },
+          });
+          canvasVersionId = canvasVersion.id;
+          await tx.studioDocument.update({
+            where: { id: document.id },
+            data: {
+              currentVersionId: canvasVersion.id,
+              updatedById: userId,
+              version: { increment: 1 },
+            },
+          });
+        }
+        deliveryFolderId = await taskDeliveryFolderTx(
+          tx,
+          this.assetAccess,
+          locked,
+          userId,
+          input.deliveryFolderId,
+        );
+        const submission = await tx.crewTaskSubmission.create({
           data: {
-            currentVersionId: canvasVersion.id,
-            updatedById: userId,
+            taskId,
+            versionNumber: locked.submissions.length + 1,
+            submittedByUserId: userId,
+            note: input.note,
+            canvasVersionId,
+            ...(professionalDelivery ? { professionalDelivery } : {}),
+            assets: {
+              create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
+                assetNodeId,
+              })),
+            },
+          },
+        });
+        await captureTaskTimelinessTx(
+          tx,
+          submission.id,
+          locked.dueAt,
+          locked.assignees,
+        );
+        const reviewState = await this.requireSystemWorkflowState(
+          tx,
+          locked.crewId,
+          CrewTaskStatus.submitted,
+          userId,
+        );
+        const result = await tx.crewTask.update({
+          where: { deletedAt: null, id: taskId },
+          data: {
+            workflowStateId: reviewState.id,
+            submittedAt: new Date(),
             version: { increment: 1 },
           },
+          include: taskInclude,
         });
-      }
-      const submission = await tx.crewTaskSubmission.create({
-        data: {
-          taskId,
-          versionNumber: locked.submissions.length + 1,
-          submittedByUserId: userId,
+        await this.writeActivity(tx, taskId, 'task.submitted', userId, {
+          submissionId: submission.id,
+          versionNumber: submission.versionNumber,
           note: input.note,
-          canvasVersionId,
-          assets: {
-            create: [...new Set(input.assetNodeIds)].map((assetNodeId) => ({
-              assetNodeId,
-            })),
+          assetNodeIds: [...new Set(input.assetNodeIds)],
+        });
+        await this.notifications.send(
+          {
+            userId: crewOwnerUserId(locked.crew),
+            type: 'crew.task.submitted',
+            title: `Task submitted: ${locked.title}`,
+            body: `Submission v${submission.versionNumber} is ready for review.`,
+            meta: {
+              crewId: locked.crewId,
+              taskId,
+              taskTitle: locked.title,
+              actorUserId: userId,
+              submissionId: submission.id,
+              submissionVersion: submission.versionNumber,
+              deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
+            },
+            idempotencyKey: `crew.task.submitted:${submission.id}`,
           },
-        },
-      });
-      const reviewState = await this.requireSystemWorkflowState(
-        tx,
-        locked.crewId,
-        CrewTaskStatus.submitted,
-        userId,
-      );
-      const result = await tx.crewTask.update({
-        where: { id: taskId },
-        data: {
-          workflowStateId: reviewState.id,
-          submittedAt: new Date(),
-          version: { increment: 1 },
-        },
-        include: taskInclude,
-      });
-      await this.writeActivity(tx, taskId, 'task.submitted', userId, {
-        submissionId: submission.id,
-        versionNumber: submission.versionNumber,
-        note: input.note,
-        assetNodeIds: [...new Set(input.assetNodeIds)],
-      });
-      await this.notifications.send(
-        {
-          userId: crewOwnerUserId(locked.crew),
-          type: 'crew.task.submitted',
-          title: `Task submitted: ${locked.title}`,
-          body: `Submission v${submission.versionNumber} is ready for review.`,
-          meta: {
-            crewId: locked.crewId,
-            taskId,
-            taskTitle: locked.title,
-            submissionId: submission.id,
-            submissionVersion: submission.versionNumber,
-            deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
-          },
-          idempotencyKey: `crew.task.submitted:${submission.id}`,
-        },
-        tx,
-      );
-      return result;
-    });
+          tx,
+        );
+        return result;
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       updated.crewId,
       updated.id,
       'submitted',
       userId,
     );
+    if (deliveryFolderId)
+      await this.conversations.broadcastCrewAssetChange(
+        updated.crewId,
+        deliveryFolderId,
+        'updated',
+        userId,
+      );
     return this.toDtoWithUsage(updated);
   }
 
@@ -2715,151 +3327,188 @@ export class CrewTasksService {
     const current = await this.requireTask(taskId);
     await this.authorization.require(current.crewId, userId, 'tasks.review');
 
-    const task = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`
-        SELECT pg_advisory_xact_lock(hashtext(${`crew:task-review:${taskId}`})::bigint)
-      `;
-      const locked = await tx.crewTask.findUniqueOrThrow({
-        where: { id: taskId },
-        include: taskInclude,
-      });
-      if (locked.workflowState.semantic !== CrewTaskStatus.submitted) {
-        throw new ConflictException({
-          message: 'Only a submitted task can be reviewed.',
-        });
-      }
-      const latest = locked.submissions[0];
-      if (!latest) {
-        throw new ConflictException({ message: 'No submission to review.' });
-      }
-      const now = new Date();
-      const approved = input.decision === 'approve';
-      if (
-        !approved &&
-        locked.revisionLimit != null &&
-        locked.revisionRoundsUsed >= locked.revisionLimit
-      ) {
-        throw new ConflictException({
-          code: 'CREW_TASK_REVISION_LIMIT_REACHED',
-          message:
-            'This task has used every included revision round. Increase the revision limit or approve the current submission.',
-          revisionLimit: locked.revisionLimit,
-          revisionRoundsUsed: locked.revisionRoundsUsed,
-        });
-      }
-      const productionVersion =
-        approved && latest.canvasVersion
-          ? await this.mergeSubmissionIntoProductionTx(
-              tx,
-              locked,
-              latest,
-              userId,
-              now,
-            )
-          : null;
-      await tx.crewTaskSubmission.update({
-        where: { id: latest.id },
-        data: {
-          reviewNote: input.note,
-          reviewedByUserId: userId,
-          reviewedAt: now,
-          productionVersionId: productionVersion?.id ?? null,
-          mergedAt: productionVersion ? now : null,
-        },
-      });
-      if (approved) {
-        for (const assignee of locked.assignees.filter(
-          (candidate) =>
-            candidate.rewardPoints != null && candidate.rewardPoints > 0n,
-        )) {
-          await this.earnings.postTaskRewardTx(tx, {
-            crewId: locked.crewId,
-            taskId,
-            taskNumber: locked.number,
-            taskTitle: locked.title,
-            crewMemberId: assignee.crewMemberId,
-            userId: assignee.userId,
-            pointsAmount: assignee.rewardPoints!,
-            approvedByUserId: userId,
-          });
-        }
-      }
-      const targetSemantic = approved
-        ? CrewTaskStatus.approved
-        : CrewTaskStatus.revision_requested;
-      const targetWorkflowState = await this.requireSystemWorkflowState(
-        tx,
-        locked.crewId,
-        targetSemantic,
-        userId,
-      );
-      const updated = await tx.crewTask.update({
-        where: { id: taskId },
-        data: approved
-          ? {
-              workflowStateId: targetWorkflowState.id,
-              approvedAt: now,
-              approvedByUserId: userId,
-              version: { increment: 1 },
-            }
-          : {
-              workflowStateId: targetWorkflowState.id,
-              submittedAt: null,
-              revisionRoundsUsed: { increment: 1 },
-              version: { increment: 1 },
-            },
-        include: taskInclude,
-      });
-      await this.writeActivity(
-        tx,
-        taskId,
-        approved ? 'task.approved' : 'task.revision_requested',
-        userId,
-        {
-          submissionId: latest.id,
-          versionNumber: latest.versionNumber,
-          note: input.note,
-          revisionRound: approved ? undefined : locked.revisionRoundsUsed + 1,
-          revisionLimit: locked.revisionLimit,
-          productionVersionId: productionVersion?.id,
-        },
-      );
-      for (const assignee of locked.assignees) {
-        await this.notifications.send(
-          {
-            userId: assignee.userId,
-            type: approved
-              ? 'crew.task.approved'
-              : 'crew.task.revision_requested',
-            title: approved
-              ? `Task approved: ${locked.title}`
-              : `Revision requested: ${locked.title}`,
-            body:
-              input.note ||
-              (approved
-                ? 'Your work was approved.'
-                : 'Open the task canvas and submit a new version.'),
-            meta: {
-              crewId: locked.crewId,
-              taskId,
-              taskTitle: locked.title,
-              reviewNote: input.note || null,
-              decision: approved ? 'approved' : 'revision_requested',
-              deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
-            },
-            idempotencyKey: `crew.task.reviewed:${latest.id}:${assignee.userId}`,
-          },
+    const task = await this.authorizedTaskWrite(
+      current.crewId,
+      async (tx) => {
+        await this.authorization.require(
+          current.crewId,
+          userId,
+          'tasks.review',
           tx,
         );
-      }
-      return updated;
-    });
+      },
+      async (tx) => {
+        await this.lockTaskWrites(tx, current.crewId);
+        await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtext(${`crew:task-review:${taskId}`})::bigint)
+      `;
+        const locked = await this.requireActiveTaskTx(tx, taskId);
+        await this.authorization.require(
+          locked.crewId,
+          userId,
+          'tasks.review',
+          tx,
+        );
+        if (locked.workflowState.semantic !== CrewTaskStatus.submitted) {
+          throw new ConflictException({
+            message: 'Only a submitted task can be reviewed.',
+          });
+        }
+        const latest = locked.submissions[0];
+        if (!latest) {
+          throw new ConflictException({ message: 'No submission to review.' });
+        }
+        const now = new Date();
+        const approved = input.decision === 'approve';
+        if (
+          !approved &&
+          locked.revisionLimit != null &&
+          locked.revisionRoundsUsed >= locked.revisionLimit
+        ) {
+          throw new ConflictException({
+            code: 'CREW_TASK_REVISION_LIMIT_REACHED',
+            message:
+              'This task has used every included revision round. Increase the revision limit or approve the current submission.',
+            revisionLimit: locked.revisionLimit,
+            revisionRoundsUsed: locked.revisionRoundsUsed,
+          });
+        }
+        const productionVersion =
+          approved && latest.canvasVersion
+            ? await this.mergeSubmissionIntoProductionTx(
+                tx,
+                locked,
+                latest,
+                userId,
+                now,
+              )
+            : null;
+        await tx.crewTaskSubmission.update({
+          where: { id: latest.id },
+          data: {
+            reviewNote: input.note,
+            reviewedByUserId: userId,
+            reviewedAt: now,
+            productionVersionId: productionVersion?.id ?? null,
+            mergedAt: productionVersion ? now : null,
+          },
+        });
+        if (approved) {
+          await recordApprovedTaskTimelinessTx(tx, latest.id, userId);
+          await postApprovedTaskTrustTx(tx, latest.id);
+          await publishTaskDeliveryAssetsTx(
+            tx,
+            this.assetAccess,
+            locked,
+            userId,
+            latest.assets.map((asset) => asset.assetNodeId),
+          );
+          for (const assignee of locked.assignees.filter(
+            (candidate) =>
+              candidate.rewardAmountMinor != null &&
+              candidate.rewardAmountMinor > 0n,
+          )) {
+            await this.earnings.postTaskRewardTx(tx, {
+              crewId: locked.crewId,
+              taskId,
+              taskNumber: locked.number,
+              taskTitle: locked.title,
+              crewMemberId: assignee.crewMemberId,
+              userId: assignee.userId,
+              amountMinor: assignee.rewardAmountMinor!,
+              currency: assignee.currency,
+              approvedByUserId: userId,
+            });
+          }
+        }
+        const targetSemantic = approved
+          ? CrewTaskStatus.approved
+          : CrewTaskStatus.revision_requested;
+        const targetWorkflowState = await this.requireSystemWorkflowState(
+          tx,
+          locked.crewId,
+          targetSemantic,
+          userId,
+        );
+        const updated = await tx.crewTask.update({
+          where: { deletedAt: null, id: taskId },
+          data: approved
+            ? {
+                workflowStateId: targetWorkflowState.id,
+                approvedAt: now,
+                approvedByUserId: userId,
+                version: { increment: 1 },
+              }
+            : {
+                workflowStateId: targetWorkflowState.id,
+                submittedAt: null,
+                revisionRoundsUsed: { increment: 1 },
+                version: { increment: 1 },
+              },
+          include: taskInclude,
+        });
+        await this.writeActivity(
+          tx,
+          taskId,
+          approved ? 'task.approved' : 'task.revision_requested',
+          userId,
+          {
+            submissionId: latest.id,
+            versionNumber: latest.versionNumber,
+            note: input.note,
+            revisionRound: approved ? undefined : locked.revisionRoundsUsed + 1,
+            revisionLimit: locked.revisionLimit,
+            productionVersionId: productionVersion?.id,
+          },
+        );
+        for (const assignee of locked.assignees) {
+          await this.notifications.send(
+            {
+              userId: assignee.userId,
+              type: approved
+                ? 'crew.task.approved'
+                : 'crew.task.revision_requested',
+              title: approved
+                ? `Task approved: ${locked.title}`
+                : `Revision requested: ${locked.title}`,
+              body:
+                input.note ||
+                (approved
+                  ? 'Your work was approved.'
+                  : 'Open the task canvas and submit a new version.'),
+              meta: {
+                crewId: locked.crewId,
+                taskId,
+                taskTitle: locked.title,
+                actorUserId: userId,
+                reviewNote: input.note || null,
+                decision: approved ? 'approved' : 'revision_requested',
+                deeplink: `/crews/${locked.crewId}/workspace?tab=tasks&task=${taskId}`,
+              },
+              idempotencyKey: `crew.task.reviewed:${latest.id}:${assignee.userId}`,
+            },
+            tx,
+          );
+        }
+        return updated;
+      },
+    );
     await this.conversations.broadcastCrewTaskChange(
       task.crewId,
       task.id,
       'reviewed',
       userId,
     );
+    if (input.decision === 'approve') {
+      for (const asset of task.submissions[0]?.assets ?? []) {
+        await this.conversations.broadcastCrewAssetChange(
+          task.crewId,
+          asset.assetNodeId,
+          'updated',
+          userId,
+        );
+      }
+    }
     return this.toDtoWithUsage(task);
   }
 
@@ -3474,7 +4123,11 @@ export class CrewTasksService {
     const references = [...uniqueBlockers, ...(parentId ? [parentId] : [])];
     if (references.length > 0) {
       const count = await tx.crewTask.count({
-        where: { crewId, id: { in: [...new Set(references)] } },
+        where: {
+          deletedAt: null,
+          crewId,
+          id: { in: [...new Set(references)] },
+        },
       });
       if (count !== new Set(references).size) {
         throw new BadRequestException({
@@ -3502,7 +4155,7 @@ export class CrewTasksService {
         visited.add(cursor);
         const row: { parentId: string | null } | null =
           await tx.crewTask.findFirst({
-            where: { id: cursor, crewId },
+            where: { deletedAt: null, id: cursor, crewId },
             select: { parentId: true },
           });
         cursor = row?.parentId ?? null;
@@ -3514,6 +4167,8 @@ export class CrewTasksService {
         where: {
           crewId,
           blockedTaskId: { not: taskId },
+          blockedTask: { deletedAt: null },
+          blockingTask: { deletedAt: null },
         },
         select: { blockingTaskId: true, blockedTaskId: true },
       });
@@ -3712,10 +4367,10 @@ export class CrewTasksService {
 
   private async requireTask(taskId: string): Promise<TaskRow> {
     const task = await this.prisma.crewTask.findUnique({
-      where: { id: taskId },
+      where: { deletedAt: null, id: taskId },
       include: taskInclude,
     });
-    if (!task) throw new NotFoundException('Task not found.');
+    if (!task || task.deletedAt) throw new NotFoundException('Task not found.');
     return task;
   }
 
@@ -3740,7 +4395,7 @@ function taskViewWhere(
   query: ListCrewTasksQuery,
 ): Prisma.CrewTaskWhereInput {
   const filters = CrewTaskViewFiltersSchema.parse(rawFilters);
-  const clauses: Prisma.CrewTaskWhereInput[] = [];
+  const clauses: Prisma.CrewTaskWhereInput[] = [{ deletedAt: null }];
   if (completedMode === 'hidden') {
     clauses.push({
       workflowState: {
@@ -3863,6 +4518,7 @@ function taskDto(task: TaskRow, computeUsedPoints: number) {
       versionNumber: submission.versionNumber,
       submittedByUserId: submission.submittedByUserId,
       note: submission.note,
+      professionalDelivery: submission.professionalDelivery ?? null,
       canvasVersionId: submission.canvasVersionId,
       productionVersionId: submission.productionVersionId,
       reviewNote: submission.reviewNote,
@@ -3960,8 +4616,11 @@ function taskCardDto(task: TaskCardRow, computeUsedPoints: number) {
       id: assignee.id,
       userId: assignee.userId,
       crewMemberId: assignee.crewMemberId,
-      rewardPoints:
-        assignee.rewardPoints == null ? null : Number(assignee.rewardPoints),
+      currency: assignee.currency,
+      rewardAmountMinor:
+        assignee.rewardAmountMinor == null
+          ? null
+          : Number(assignee.rewardAmountMinor),
       assignedAt: assignee.assignedAt.toISOString(),
     })),
   };

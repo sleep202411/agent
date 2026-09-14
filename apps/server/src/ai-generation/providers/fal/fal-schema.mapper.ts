@@ -256,7 +256,9 @@ function inputSchemaFor(
       type: 'string',
       title: 'Prompt',
       minLength: 1,
-      maxLength: imageMode ? 4000 : 2000,
+      maxLength:
+        numberFromPolicy(parameterPolicy, 'promptMaxLength') ??
+        (imageMode ? 4000 : 2000),
       'x-ui': {
         control: 'textarea',
         group: 'prompt',
@@ -426,6 +428,27 @@ function inputSchemaFor(
           importance: 'secondary',
         },
         'x-provider': { parameter: 'num_images', omitIfDefault: true },
+      };
+    }
+
+    const backgroundOptions = stringArrayFromPolicy(
+      parameterPolicy,
+      'backgroundOptions',
+    );
+    if (backgroundOptions.length > 0) {
+      properties.background = {
+        type: 'string',
+        title: 'Background',
+        default:
+          stringFromPolicy(parameterPolicy, 'defaultBackground') ?? 'auto',
+        enum: backgroundOptions,
+        'x-ui': {
+          control: 'select',
+          group: 'advanced',
+          order: 85,
+          importance: 'advanced',
+        },
+        'x-provider': { parameter: 'background', omitIfDefault: true },
       };
     }
 
@@ -1157,14 +1180,42 @@ function inputSchemaFor(
     };
   }
 
+  const required = pureTransform || multiAngle || outpainting ? [] : ['prompt'];
+  // Require frames only when every supported mode needs them. Mixed text/image
+  // models must remain usable without a frame for text-to-video requests.
+  if (
+    type === 'video' &&
+    generationModes.length > 0 &&
+    generationModes.every(
+      (mode) =>
+        mode === 'image_to_video' || mode === 'first_last_frame_to_video',
+    )
+  ) {
+    required.push('startFrame');
+    if (!imageToVideo) required.push('endFrame');
+  }
+
   return {
     type: 'object',
     properties,
-    // Ops with no main prompt property (pure transforms + multi-angle) must not
-    // list it as required — that would be an invalid schema (required field
-    // absent from properties). Relight keeps the required prompt.
-    required: pureTransform || multiAngle || outpainting ? [] : ['prompt'],
+    required,
     additionalProperties: false,
+    // Editing a masked area needs an original image. Reject before wallet hold
+    // instead of submitting an invalid GPT edit request to the provider.
+    ...(properties.maskImage &&
+    stringFromPolicy(parameterPolicy, 'providerFamily') === 'gpt-image'
+      ? {
+          'x-rules': [
+            {
+              id: 'gpt-mask-requires-image',
+              when: { field: 'maskImage', operator: 'exists' as const },
+              effect: 'require' as const,
+              fields: ['referenceImages'],
+              message: 'A mask requires at least one reference image.',
+            },
+          ],
+        }
+      : {}),
     'x-ui': {
       groups: [
         { id: 'prompt', title: 'Prompt', order: 10 },
@@ -1214,6 +1265,7 @@ function outputSchemaFor(type: AiJobType): AiOutputSchema {
 function capabilityMatrixFor(
   type: AiJobType,
   generationModes: AiGenerationMode[],
+  parameterPolicy?: AiJsonValue,
 ): AiCapabilityMatrix {
   // Ops that take an image and NO required prompt are image-only — the
   // `image_to` substring check below would otherwise mis-tag them as text
@@ -1228,6 +1280,10 @@ function capabilityMatrixFor(
     relight ||
     generationModes.includes('outpainting') ||
     generationModes.some((mode) => mode.includes('image_to'));
+  const variationOptions = numberArrayFromPolicy(
+    parameterPolicy,
+    'variationOptions',
+  );
   return {
     source: 'internal',
     inputModalities: imageInput
@@ -1275,8 +1331,13 @@ function capabilityMatrixFor(
       providerUrlOutput: true,
     },
     limits: {
-      maxOutputs: type === 'video' ? 1 : 4,
-      maxPromptCharacters: type === 'video' ? 2000 : 4000,
+      maxOutputs:
+        type === 'video'
+          ? 1
+          : Math.max(1, ...(variationOptions.length ? variationOptions : [4])),
+      maxPromptCharacters:
+        numberFromPolicy(parameterPolicy, 'promptMaxLength') ??
+        (type === 'video' ? 2000 : 4000),
     },
   };
 }
@@ -1395,6 +1456,7 @@ export function toAiModelDefinition(
   const capabilityMatrix = capabilityMatrixFor(
     config.type,
     config.generationModes,
+    config.parameterPolicy,
   );
   return {
     id: `fal/${config.endpointId}`,

@@ -1,5 +1,10 @@
 import { CrewTaskPriority, CrewTaskStatus, Prisma } from '@prisma/client';
-import { BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import * as Y from 'yjs';
 import {
   ListCrewTaskOptionsQuerySchema,
@@ -116,7 +121,8 @@ function task(overrides: Record<string, unknown> = {}) {
         taskId: TASK_ID,
         crewMemberId: 'crew-member-1',
         userId: ASSIGNEE_ID,
-        rewardPoints: 120000n,
+        currency: 'USD',
+        rewardAmountMinor: 120000n as bigint | null,
         assignedAt: new Date('2026-07-29T09:00:00.000Z'),
       },
     ],
@@ -173,7 +179,20 @@ function build() {
     updatedAt: new Date('2026-07-29T10:00:00.000Z'),
   });
   const tx = {
+    crewTaskCommitment: { findFirst: jest.fn().mockResolvedValue(null) },
+    crewParticipationRecord: { findFirst: jest.fn().mockResolvedValue(null) },
+    $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
+    crewMember: {
+      findMany: jest
+        .fn()
+        .mockResolvedValue([{ id: 'crew-member-1', userId: ASSIGNEE_ID }]),
+    },
+    crewTaskAssignee: {
+      deleteMany: jest.fn(),
+      update: jest.fn(),
+      create: jest.fn(),
+    },
     crewTaskSubmission: {
       update: jest.fn().mockResolvedValue({}),
     },
@@ -289,6 +308,7 @@ function build() {
     },
   };
   const prisma = {
+    crewMember: { findMany: jest.fn().mockResolvedValue([]) },
     crewTask: {
       findUnique: jest.fn().mockResolvedValue(current),
       findMany: jest.fn(),
@@ -325,6 +345,8 @@ function build() {
       callback(tx),
     ),
   };
+  // Transactional and direct reads share the same label fixture.
+  Object.assign(tx, { crewTaskLabel: prisma.crewTaskLabel });
   const roles = {
     require: jest.fn().mockResolvedValue('admin'),
     requireMembership: jest.fn().mockResolvedValue({
@@ -365,6 +387,150 @@ function build() {
 }
 
 describe('CrewTasksService', () => {
+  it.each([
+    [null, 'USD', 1000, 'USD'],
+    [1000n, 'CNY', 1000, 'USD'],
+    [1000n, 'CNY', 1200, 'CNY'],
+  ] as const)(
+    'saves reward and currency together (%s %s → %s %s)',
+    async (before, previousCurrency, amount, currency) => {
+      const t = build();
+      const current = task();
+      current.assignees[0] = {
+        ...current.assignees[0],
+        rewardAmountMinor: before,
+        currency: previousCurrency,
+      };
+      t.prisma.crewTask.findUnique.mockResolvedValue(current);
+      t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+      t.tx.crewTask.update.mockResolvedValue(current);
+      await t.service.update(TASK_ID, OWNER_ID, {
+        expectedVersion: 1,
+        assignees: [
+          { userId: ASSIGNEE_ID, rewardAmountMinor: amount, currency },
+        ],
+      });
+      expect(t.tx.crewTaskAssignee.update).toHaveBeenCalledWith({
+        where: { id: 'assignee-1' },
+        data: { rewardAmountMinor: BigInt(amount), currency },
+      });
+    },
+  );
+
+  it('records the actor in task update notifications', async () => {
+    const t = build();
+    const current = { ...task(), canvasProjectId: null };
+    t.prisma.crewTask.findUnique.mockResolvedValue(current);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(current);
+    t.tx.crewTask.update.mockResolvedValue({
+      ...current,
+      title: 'Revised brief',
+      version: 2,
+    });
+    await t.service.update(TASK_ID, OWNER_ID, {
+      expectedVersion: 1,
+      title: 'Revised brief',
+    });
+    expect(t.notifications.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'crew.task.updated',
+        meta: expect.objectContaining({
+          actorUserId: OWNER_ID,
+          taskTitle: 'Revised brief',
+        }) as unknown,
+      }),
+      t.tx,
+    );
+  });
+
+  it('limits the center to authorized Crews and applies assignment and cursor filters', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([
+      { crewId: 'allowed' },
+      { crewId: 'denied' },
+    ]);
+    t.roles.resolve
+      .mockResolvedValueOnce({ permissions: ['tasks.view'] })
+      .mockResolvedValueOnce({ permissions: [] });
+    t.prisma.crewTask.findMany.mockResolvedValue([
+      {
+        id: 'page-end',
+        workflowState: { semantic: 'open', name: 'Planning', systemKey: null },
+      },
+      { id: 'next', workflowState: { semantic: 'open' } },
+    ]);
+    const result = await t.service.listCenter(ASSIGNEE_ID, {
+      scope: 'mine',
+      status: 'active',
+      limit: 1,
+      cursor: TASK_ID,
+      query: 'review',
+    });
+    expect(result).toEqual({
+      items: [
+        {
+          id: 'page-end',
+          status: 'open',
+          workflowState: {
+            semantic: 'open',
+            name: 'Planning',
+            systemKey: null,
+          },
+        },
+      ],
+      nextCursor: 'page-end',
+    });
+    expect(t.prisma.crewTask.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          crewId: { in: ['allowed'] },
+          workflowState: { semantic: { notIn: ['approved', 'cancelled'] } },
+          title: { contains: 'review', mode: 'insensitive' },
+          crew: {
+            deletedAt: null,
+            members: { some: { userId: ASSIGNEE_ID, status: 'active' } },
+          },
+          assignees: { some: { userId: ASSIGNEE_ID } },
+          id: { lt: TASK_ID },
+          deletedAt: null,
+        }) as unknown,
+        take: 2,
+      }),
+    );
+  });
+
+  it('omits a concurrently deleted Crew but propagates authorization failures', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'deleted' }]);
+    t.roles.resolve.mockRejectedValueOnce(
+      new NotFoundException('Crew not found'),
+    );
+    const query = { scope: 'all' as const, status: 'all' as const, limit: 30 };
+    await expect(t.service.listCenter(ASSIGNEE_ID, query)).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    });
+    expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
+    t.roles.resolve.mockRejectedValueOnce(new Error('Database unavailable'));
+    await expect(t.service.listCenter(ASSIGNEE_ID, query)).rejects.toThrow(
+      'Database unavailable',
+    );
+  });
+
+  it('does not query tasks when no Crew grants task access', async () => {
+    const t = build();
+    t.prisma.crewMember.findMany.mockResolvedValue([{ crewId: 'denied' }]);
+    t.roles.resolve.mockResolvedValue({ permissions: [] });
+    await expect(
+      t.service.listCenter(ASSIGNEE_ID, {
+        scope: 'all',
+        status: 'all',
+        limit: 30,
+      }),
+    ).resolves.toEqual({ items: [], nextCursor: null });
+    expect(t.prisma.crewTask.findMany).not.toHaveBeenCalled();
+  });
+
   it('updates a production cycle only from the expected revision', async () => {
     const t = build();
     const cycle = {
@@ -835,6 +1001,7 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTask.count).toHaveBeenCalledWith({
       where: {
         crewId: CREW_ID,
+        deletedAt: null,
         id: { notIn: [TASK_ID, beforeId] },
         workflowStateId: WORKFLOW_STATE_IDS.in_progress,
         rank: { gte: new Prisma.Decimal(2048) },
@@ -850,7 +1017,7 @@ describe('CrewTasksService', () => {
         rank: Prisma.Decimal;
       };
     };
-    expect(updateInput.where).toEqual({ id: TASK_ID });
+    expect(updateInput.where).toEqual({ id: TASK_ID, deletedAt: null });
     expect(updateInput.data).toMatchObject({
       workflowStateId: WORKFLOW_STATE_IDS.in_progress,
       cycleId: current.cycleId,
@@ -933,6 +1100,51 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTask.update).not.toHaveBeenCalled();
   });
 
+  it('rejects a former assignee after reassignment while their submission waited for the task lock', async () => {
+    const t = build();
+    const original = task({
+      status: CrewTaskStatus.in_progress,
+      submittedAt: null,
+    });
+    t.prisma.crewTask.findUnique.mockResolvedValue(original);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue({
+      ...original,
+      assignees: [],
+    });
+    await expect(
+      t.service.submit(TASK_ID, ASSIGNEE_ID, {
+        note: 'Late submission',
+        assetNodeIds: [],
+      }),
+    ).rejects.toThrow('Only a current task assignee can submit this task.');
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+    expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+  });
+
+  it('blocks a manager submitting work while an assigned creator has withdrawn', async () => {
+    const t = build();
+    const active = task({
+      status: CrewTaskStatus.in_progress,
+      submittedAt: null,
+    });
+    t.prisma.crewTask.findUnique.mockResolvedValue(active);
+    t.tx.crewTask.findUniqueOrThrow.mockResolvedValue(active);
+    t.roles.requireMembership.mockResolvedValue({
+      permissions: ['tasks.submit_assigned', 'tasks.manage'],
+    });
+    t.tx.crewTaskCommitment.findFirst.mockResolvedValue({
+      status: 'withdrawn',
+    } as never);
+    await expect(
+      t.service.submit(TASK_ID, OWNER_ID, {
+        note: 'Submitting for the team',
+        assetNodeIds: [],
+      }),
+    ).rejects.toThrow('withdrawal');
+    expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+    expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+  });
+
   it('prevents submission while a blocking task is unresolved', async () => {
     const t = build();
     const blockerId = '01910d50-4c88-7c78-92d4-16892c06a099';
@@ -995,6 +1207,44 @@ describe('CrewTasksService', () => {
     expect(t.tx.crewTaskTimelineItem.create).not.toHaveBeenCalled();
   });
 
+  it.each(['approve', 'request_revision'] as const)(
+    'rejects %s when review permission is revoked while waiting for the task lock',
+    async (decision) => {
+      const t = build();
+      t.tx.$executeRaw.mockImplementationOnce(() => {
+        t.roles.require.mockRejectedValue(
+          new ForbiddenException('Permission revoked'),
+        );
+        return Promise.resolve(1);
+      });
+      await expect(
+        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(t.tx.crewTaskSubmission.update).not.toHaveBeenCalled();
+      expect(t.tx.crewTask.update).not.toHaveBeenCalled();
+      expect(t.earnings.postTaskRewardTx).not.toHaveBeenCalled();
+      expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['approve', 'request_revision'] as const)(
+    'rejects %s after permission is withdrawn during notification writes',
+    async (decision) => {
+      const t = build();
+      t.notifications.send.mockImplementation(() => {
+        t.roles.require.mockRejectedValue(
+          new ForbiddenException('Permission revoked'),
+        );
+        return Promise.resolve({});
+      });
+      await expect(
+        t.service.review(TASK_ID, OWNER_ID, { decision, note: 'Review' }),
+      ).rejects.toThrow('Permission revoked');
+      expect(t.tx.crewTask.update).toHaveBeenCalled();
+      expect(t.conversations.broadcastCrewTaskChange).not.toHaveBeenCalled();
+    },
+  );
+
   it('posts an approved task reward through the immutable earnings ledger', async () => {
     const t = build();
 
@@ -1015,13 +1265,14 @@ describe('CrewTasksService', () => {
       'tasks.review',
     );
     expect(t.earnings.postTaskRewardTx).toHaveBeenCalledWith(t.tx, {
+      currency: 'USD',
       crewId: CREW_ID,
       taskId: TASK_ID,
       taskNumber: 10,
       taskTitle: 'Finish SC.010 storyboard',
       crewMemberId: 'crew-member-1',
       userId: ASSIGNEE_ID,
-      pointsAmount: 120000n,
+      amountMinor: 120000n,
       approvedByUserId: OWNER_ID,
     });
     const operationCreateCalls = t.tx.studioDocumentOperation.create.mock
@@ -1081,6 +1332,7 @@ describe('CrewTasksService', () => {
       expect.objectContaining({
         userId: ASSIGNEE_ID,
         type: 'crew.task.approved',
+        meta: expect.objectContaining({ actorUserId: OWNER_ID }) as unknown,
       }),
       t.tx,
     );

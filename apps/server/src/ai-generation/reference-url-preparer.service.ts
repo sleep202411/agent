@@ -10,7 +10,8 @@ import { ReferencePreparationError } from './provider-adapter';
  * Canvas documents intentionally persist both `assetId` and a display URL.
  * The URL is only a cache: storage migrations, CDN changes, and takedowns can
  * make it stale while a document is still open. Provider requests therefore
- * resolve every HTTP(S) media reference from `assetId` on every attempt.
+ * resolve every media reference from `assetId` on every attempt, regardless
+ * of its display URL.
  * Provider-native schemes such as `asset://` remain untouched for the owning
  * adapter to validate and prepare.
  */
@@ -94,7 +95,9 @@ function rewriteValue(
   rewrite: (reference: Record<string, unknown>) => Record<string, unknown>,
 ): unknown {
   if (Array.isArray(value)) {
-    return value.map((item) => (isRecord(item) ? rewrite(item) : item));
+    return value.map((item: unknown) =>
+      isRecord(item) ? rewrite(item) : item,
+    );
   }
   return isRecord(value) ? rewrite(value) : value;
 }
@@ -105,14 +108,9 @@ function asReferenceList(value: unknown): Record<string, unknown>[] {
 }
 
 function shouldResolveUrl(value: unknown): boolean {
-  if (value == null || value === '') return true;
-  if (typeof value !== 'string') return false;
-  try {
-    const protocol = new URL(value).protocol;
-    return protocol === 'http:' || protocol === 'https:';
-  } catch {
-    return false;
-  }
+  // ModelArk owns asset:// identities. All other display URLs are just caches
+  // when a MediaAsset ID is present, including relative and blob previews.
+  return !(typeof value === 'string' && value.startsWith('asset://'));
 }
 
 function unavailableReference(

@@ -27,7 +27,7 @@ export const env = {
   STATIC_BASE_URL: process.env.NEXT_PUBLIC_STATIC_BASE_URL ?? "https://static.fizzspace.cn",
   /** Default cover used when a work has no banner / the banner 404s. */
   DEFAULT_COVER_URL: `${process.env.NEXT_PUBLIC_STATIC_BASE_URL ?? "https://static.fizzspace.cn"}/static/bg/default_bg.png`,
-  SITE_REGION: process.env.NEXT_PUBLIC_SITE_REGION ?? "global",
+  SITE_REGION: required("NEXT_PUBLIC_SITE_REGION", process.env.NEXT_PUBLIC_SITE_REGION),
   PARENT_ORIGIN: process.env.NEXT_PUBLIC_PARENT_ORIGIN ?? "",
   /** Dedicated Studio host. Required for project and notification links. */
   STUDIO_HOST: required("NEXT_PUBLIC_STUDIO_HOST", process.env.NEXT_PUBLIC_STUDIO_HOST),

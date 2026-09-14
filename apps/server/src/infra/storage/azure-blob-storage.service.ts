@@ -1,3 +1,4 @@
+import { requirePrivateUploadTarget } from './private-upload-target';
 /**
  * Azure Blob implementation of OutputStorageService.
  *
@@ -16,6 +17,7 @@
  * AZURE_WEB_PUBSUB_CONNECTION_STRING). When we move to managed
  * identity end-to-end, swap here in one place.
  */
+import { randomUUID } from 'node:crypto';
 import {
   Injectable,
   Logger,
@@ -38,6 +40,9 @@ import {
   type CreateUploadUrlInput,
   type CreateUploadUrlResult,
   type HeadObjectResult,
+  type MultipartUploadRef,
+  type StoredUploadPart,
+  type UploadPartUrl,
   type OutputStorageResult,
   type OutputStorageUpload,
   type OutputStorageUploadFromFile,
@@ -65,6 +70,9 @@ export class AzureBlobStorageService extends OutputStorageService {
   private readonly client: ContainerClient | null;
   private readonly publicBaseUrl: string | null;
   private readonly containerName: string;
+  private readonly privateUploadTarget = (
+    process.env.AZURE_BLOB_PRIVATE_CONTAINER ?? ''
+  ).trim();
   /** Private container that takendown blobs are moved into (Azure has no
    *  per-blob ACL). Defaults to `${container}-quarantine`. Created on demand. */
   private readonly quarantineContainer: string;
@@ -96,6 +104,22 @@ export class AzureBlobStorageService extends OutputStorageService {
     const service = BlobServiceClient.fromConnectionString(cs);
     this.service = service;
     this.client = this.containerClient(this.containerName);
+  }
+
+  objectLocation(key: string) {
+    this.assertConfigured('Object storage');
+    return {
+      storageProvider: this.providerId,
+      bucket: this.containerName,
+      region: this.region,
+      objectKey: key,
+      externalUrl: null,
+    };
+  }
+
+  assertConfigured(context: string): void {
+    if (!this.client)
+      throw new Error(`${context} requires AZURE_BLOB_CONNECTION_STRING`);
   }
 
   async upload(input: OutputStorageUpload): Promise<OutputStorageResult> {
@@ -161,8 +185,118 @@ export class AzureBlobStorageService extends OutputStorageService {
     };
   }
 
+  async beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef> {
+    if (!this.client)
+      throw new ServiceUnavailableException(
+        'azure_blob storage is not configured',
+      );
+    // An empty blob makes the uncommitted block list queryable before part one.
+    await this.client
+      .getBlockBlobClient(storageKey)
+      .uploadData(Buffer.alloc(0), {
+        blobHTTPHeaders: { blobContentType: contentType },
+      });
+    return {
+      storageKey,
+      uploadId: randomUUID(),
+      bucket: this.containerName,
+      region: this.region,
+    };
+  }
+
+  private uploadBlockId(ref: MultipartUploadRef, number: number): string {
+    return Buffer.from(
+      `${ref.uploadId}:${String(number).padStart(6, '0')}`,
+    ).toString('base64');
+  }
+
+  async listUploadParts(ref: MultipartUploadRef): Promise<StoredUploadPart[]> {
+    const result = await this.containerClient(ref.bucket)
+      .getBlockBlobClient(ref.storageKey)
+      .getBlockList('uncommitted');
+    return (result.uncommittedBlocks ?? []).map((block) => {
+      const raw = Buffer.from(block.name, 'base64').toString();
+      const number = Number(raw.slice(ref.uploadId.length + 1));
+      if (
+        !raw.startsWith(`${ref.uploadId}:`) ||
+        !Number.isInteger(number) ||
+        number < 1
+      )
+        throw new Error('Invalid stored upload block');
+      return { number, sizeBytes: block.size, etag: block.name };
+    });
+  }
+
+  async signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl> {
+    const block = this.containerClient(ref.bucket).getBlockBlobClient(
+      ref.storageKey,
+    );
+    const url = new URL(
+      await block.generateSasUrl({
+        permissions: BlobSASPermissions.parse('w'),
+        expiresOn: new Date(Date.now() + 900_000),
+        startsOn: new Date(Date.now() - SAS_CLOCK_SKEW_MS),
+      }),
+    );
+    url.searchParams.set('comp', 'block');
+    url.searchParams.set('blockid', this.uploadBlockId(ref, number));
+    return { url: url.toString(), headers: {} };
+  }
+
+  async completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+    contentType: string,
+  ): Promise<void> {
+    await this.containerClient(ref.bucket)
+      .getBlockBlobClient(ref.storageKey)
+      .commitBlockList(
+        parts.map((p) => this.uploadBlockId(ref, p.number)),
+        {
+          blobHTTPHeaders: {
+            blobContentType: contentType,
+            blobCacheControl: IMMUTABLE_STORAGE_CACHE_CONTROL,
+          },
+        },
+      );
+  }
+
+  async abortMultipartUpload(ref: MultipartUploadRef): Promise<void> {
+    // Azure has no AbortMultipartUpload. Committing an empty list discards all
+    // uncommitted blocks, then delete removes the temporary empty object.
+    const block = this.containerClient(ref.bucket).getBlockBlobClient(
+      ref.storageKey,
+    );
+    await block.commitBlockList([]);
+    await block.deleteIfExists();
+  }
+
   async createUploadUrl(
     input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    return this.signUploadUrl(input, this.containerName);
+  }
+
+  async createPrivateUploadUrl(
+    input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    const target = requirePrivateUploadTarget(
+      'AZURE_BLOB_PRIVATE_CONTAINER',
+      this.privateUploadTarget,
+      [this.containerName, this.quarantineContainer],
+    );
+    return this.signUploadUrl(input, target);
+  }
+
+  private async signUploadUrl(
+    input: CreateUploadUrlInput,
+    target: string,
   ): Promise<CreateUploadUrlResult> {
     if (!this.client) {
       throw new ServiceUnavailableException(
@@ -171,7 +305,9 @@ export class AzureBlobStorageService extends OutputStorageService {
     }
     const ttl = input.expiresInSeconds ?? DEFAULT_UPLOAD_URL_TTL_SECONDS;
     const expiresOn = new Date(Date.now() + ttl * 1000);
-    const block = this.client.getBlockBlobClient(input.storageKey);
+    const block = this.containerClient(target).getBlockBlobClient(
+      input.storageKey,
+    );
     // Write-SAS via the SDK. The signing credential is the
     // StorageSharedKeyCredential already parsed from the connection
     // string by BlobServiceClient.fromConnectionString — no new env var.
@@ -201,7 +337,7 @@ export class AzureBlobStorageService extends OutputStorageService {
       },
       storageKey: input.storageKey,
       provider: 'azure_blob',
-      bucket: this.containerName,
+      bucket: target,
       region: this.region,
       expiresAt: expiresOn.toISOString(),
     };

@@ -6,6 +6,7 @@ import {
   MediaAssetKind,
   MediaAssetStatus,
   MediaStorageProvider,
+  Prisma,
 } from '@prisma/client';
 import { CrewAssetsService } from './assets.service';
 
@@ -93,6 +94,11 @@ function build() {
     delete: jest.fn().mockResolvedValue(assetNode()),
   };
   const prisma = {
+    $queryRaw: jest
+      .fn()
+      .mockResolvedValue([
+        { total: 100000000000n, used: 0n, reserved: 0n, unknown: 0n },
+      ]),
     platformProject: {
       findUnique: jest.fn().mockResolvedValue({
         productionCrew: null,
@@ -179,7 +185,13 @@ function build() {
       .fn()
       .mockResolvedValue(CrewAssetPermission.edit),
   };
-  const selectedStorage = { isHealthy: jest.fn().mockResolvedValue(true) };
+  const selectedStorage = {
+    isHealthy: jest.fn().mockResolvedValue(true),
+    headObject: jest
+      .fn()
+      .mockResolvedValue({ exists: true, bucket: 'test', region: 'auto' }),
+    deleteObject: jest.fn().mockResolvedValue(undefined),
+  };
   const storageRegistry = {
     forProvider: jest.fn().mockReturnValue(selectedStorage),
   };
@@ -457,7 +469,7 @@ describe('CrewAssetsService', () => {
     const [createArgs] = t.prisma.crewAssetNode.create.mock
       .calls[0] as unknown as [{ data: { name: string } }];
     expect(createArgs.data.name).toBe('concept (2).png');
-    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    expect(t.prisma.$executeRaw).toHaveBeenCalledTimes(3);
   });
 
   it('reclaims an unclaimed composer upload from storage and the media ledger', async () => {
@@ -570,6 +582,78 @@ describe('CrewAssetsService', () => {
     expect(t.prisma.crewAssetNode.update).not.toHaveBeenCalled();
   });
 
+  it('checks source edit and destination upload permissions before moving', async () => {
+    const t = build();
+    t.access.requireContainerPermission.mockRejectedValueOnce(
+      new Error('Destination denied'),
+    );
+    await expect(
+      t.service.update(CREW_ID, USER_ID, NODE_ID, {
+        parentId: FOLDER_ID,
+        expectedUpdatedAt: '2026-07-29T09:00:00.000Z',
+      }),
+    ).rejects.toThrow('Destination denied');
+    expect(t.access.requireNodePermission).toHaveBeenCalledWith(
+      CREW_ID,
+      NODE_ID,
+      USER_ID,
+      CrewAssetPermission.edit,
+      t.prisma,
+    );
+    expect(t.access.requireContainerPermission).toHaveBeenCalledWith(
+      CREW_ID,
+      FOLDER_ID,
+      USER_ID,
+      CrewAssetPermission.upload,
+      t.prisma,
+    );
+    expect(t.prisma.crewAssetNode.updateMany).not.toHaveBeenCalled();
+  });
+  it('reports a move name conflict without replacing the destination asset', async () => {
+    const t = build();
+    t.prisma.crewAssetNode.updateMany.mockRejectedValueOnce(
+      new Prisma.PrismaClientKnownRequestError('duplicate', {
+        code: 'P2002',
+        clientVersion: '7',
+      }),
+    );
+    await expect(
+      t.service.update(CREW_ID, USER_ID, NODE_ID, {
+        parentId: FOLDER_ID,
+        expectedUpdatedAt: '2026-07-29T09:00:00.000Z',
+      }),
+    ).rejects.toThrow();
+    expect(t.prisma.crewAssetNode.delete).not.toHaveBeenCalled();
+    expect(t.conversations.broadcastCrewAssetChange).not.toHaveBeenCalled();
+  });
+  it('cleans expired staging but preserves a confirmed final asset', async () => {
+    const t = build();
+    t.prisma.$queryRaw.mockResolvedValueOnce([
+      { storage_key: 'media/global/crew-asset-file/a.png', crew_id: CREW_ID },
+    ]);
+    await t.service.cleanupUploadReservations();
+    expect(t.selectedStorage.deleteObject).toHaveBeenCalledTimes(1);
+    expect(t.selectedStorage.deleteObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storageKey: 'media/global/crew-asset-file/a.png',
+      }),
+    );
+  });
+  it('cleans staging and orphan final bytes after an expired failed upload', async () => {
+    const t = build();
+    t.prisma.$queryRaw.mockResolvedValueOnce([
+      { storage_key: 'media/global/crew-asset-file/a.png', crew_id: CREW_ID },
+    ]);
+    t.prisma.mediaAsset.findFirst.mockResolvedValueOnce(null);
+    await t.service.cleanupUploadReservations();
+    expect(t.selectedStorage.deleteObject).toHaveBeenCalledTimes(2);
+    expect(t.selectedStorage.deleteObject).toHaveBeenCalledWith(
+      expect.objectContaining({
+        storageKey: 'media/global/crew-asset-final/a.png',
+      }),
+    );
+  });
+
   it('updates asset metadata with optimistic concurrency and broadcasts it', async () => {
     const t = build();
 
@@ -582,6 +666,7 @@ describe('CrewAssetsService', () => {
       where: {
         id: NODE_ID,
         crewId: CREW_ID,
+        status: CrewAssetNodeStatus.active,
         updatedAt: new Date('2026-07-29T09:00:00.000Z'),
       },
       data: {

@@ -6,7 +6,7 @@
  * Responsibilities:
  *   - Display the active workspace (name + avatar)
  *   - Let the user switch between all their workspaces
- *   - Create a new team workspace
+ *   - Create a new workspace
  *
  * The active workspace is lifted to the parent via `onSwitch` so the
  * projects section can react immediately without a prop-drilling chain.
@@ -37,7 +37,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useCreateTeamWorkspace, useWorkspaces } from "../../_hooks/use-workspace";
+import { useCreateWorkspace, useWorkspaces } from "../../_hooks/use-workspace";
 import type { FizzWorkspace } from "../../_lib/api";
 
 // ─── Colour palette for workspace avatars ────────────────────────────────────
@@ -91,7 +91,7 @@ function WorkspaceAvatar({
 
 // ─── Create dialog ─────────────────────────────────────────────────────────────
 
-function CreateTeamDialog({
+function CreateWorkspaceDialog({
   open,
   onOpenChange,
   onCreated,
@@ -104,7 +104,7 @@ function CreateTeamDialog({
   const tc = useTranslations("common");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const create = useCreateTeamWorkspace();
+  const create = useCreateWorkspace();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,7 +124,7 @@ function CreateTeamDialog({
       <DialogContent className="sm:max-w-md">
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>{t("createTeamWorkspaceTitle")}</DialogTitle>
+            <DialogTitle>{t("createWorkspaceTitle")}</DialogTitle>
           </DialogHeader>
           <DialogBody className="space-y-4">
             <div className="space-y-1.5">
@@ -166,7 +166,7 @@ function CreateTeamDialog({
               {tc("cancel")}
             </Button>
             <Button type="submit" disabled={!name.trim()} loading={create.isPending}>
-              {t("createTeamWorkspace")}
+              {t("createWorkspace")}
             </Button>
           </DialogFooter>
         </form>
@@ -317,7 +317,11 @@ export function WorkspaceSwitcher({ activeWorkspaceId, onSwitch }: WorkspaceSwit
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <CreateTeamDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={handleCreated} />
+      <CreateWorkspaceDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
+      />
     </>
   );
 }

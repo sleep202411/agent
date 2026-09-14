@@ -36,7 +36,10 @@ export class InvitesController {
   ) {}
 
   @Get('preview')
-  async preview(@Query('token') token: string | undefined) {
+  async preview(
+    @Query('token') token: string | undefined,
+    @CurrentUser() user: AuthUser,
+  ) {
     if (!token || token.trim().length < 8) {
       throw new BadRequestException({
         code: 'INVALID_TOKEN',
@@ -45,13 +48,17 @@ export class InvitesController {
     }
     const tokenHash = hashInviteToken(token);
     const ws = await this.workspaceInvites.findByHash(tokenHash);
-    if (ws) return { code: 200, data: await this.workspaceInvites.preview(ws) };
+    if (ws)
+      return { code: 200, data: await this.workspaceInvites.preview(ws, user) };
     const proj = await this.projectInvites.findByHash(tokenHash);
     if (proj)
-      return { code: 200, data: await this.projectInvites.preview(proj) };
+      return { code: 200, data: await this.projectInvites.preview(proj, user) };
     const story = await this.storyProjectInvites.findByHash(tokenHash);
     if (story)
-      return { code: 200, data: await this.storyProjectInvites.preview(story) };
+      return {
+        code: 200,
+        data: await this.storyProjectInvites.preview(story, user),
+      };
     const crew = await this.crewInviteLinks.findByHash(tokenHash);
     if (crew)
       return { code: 200, data: await this.crewInviteLinks.preview(crew) };

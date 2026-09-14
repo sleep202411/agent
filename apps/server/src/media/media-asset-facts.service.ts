@@ -13,7 +13,7 @@
  * - When the wait queue is full we shed load with 503 backpressure rather than
  *   melting the node; already-probed assets and pure text jobs are unaffected.
  * - Duration probe never spools the object onto local disk — episode videos
- *   are allowed up to EPISODE_VIDEO_MAX_BYTES (2 GiB); a full download would
+ *   are allowed up to EPISODE_SOURCE_MAX_BYTES (35 GiB); a full download would
  *   exhaust tmp under concurrent confirms.
  */
 import {
@@ -26,7 +26,7 @@ import { MediaAssetKind, MediaStorageProvider } from '@prisma/client';
 import { execFile } from 'node:child_process';
 import { PrismaService } from '../infra/db/db.module';
 import { MediaStorageAccessService } from '../infra/storage/media-storage-access.service';
-import { EPISODE_VIDEO_MAX_BYTES } from './media-upload.policy';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 
 /** Signed URL must outlive remote seeks on large MP4s (moov-at-end). */
 const SIGNED_READ_TTL_SECONDS = 30 * 60;
@@ -35,9 +35,9 @@ const FFPROBE_TIMEOUT_MS = 5 * 60 * 1000;
 const FFPROBE_MAX_OUTPUT_BYTES = 256 * 1024;
 /**
  * Hard ceiling — must cover the largest video/audio upload contract
- * (`episode_video`). Larger objects are rejected before ffprobe runs.
+ * (`episode_source_video`). Larger objects are rejected before ffprobe runs.
  */
-const MAX_PROBE_BYTES = EPISODE_VIDEO_MAX_BYTES;
+const MAX_PROBE_BYTES = EPISODE_SOURCE_MAX_BYTES;
 
 /**
  * Simultaneous ffprobe operations per Node process.
@@ -70,6 +70,8 @@ export interface DurationProbeAsset {
 
 /** Authoritative media facts for one asset. `null` means genuinely unknown. */
 export interface MediaAssetFacts {
+  width?: number | null;
+  height?: number | null;
   durationSeconds: number | null;
   bytes: number | null;
 }
@@ -141,14 +143,26 @@ export class MediaAssetFactsService {
         contentType: true,
         sizeBytes: true,
         durationSeconds: true,
+        variants: {
+          where: { variantKey: 'original', deletedAt: null },
+          select: { durationMs: true },
+        },
+        width: true,
+        height: true,
       },
     });
 
     const pending: Array<DurationProbeAsset & { id: string }> = [];
     for (const row of rows) {
-      const stored = storedDuration(row.durationSeconds);
+      const stored = storedDuration(
+        row.variants?.[0]?.durationMs == null
+          ? row.durationSeconds
+          : row.variants[0].durationMs / 1000,
+      );
       out.set(row.id, {
         durationSeconds: stored,
+        width: row.width,
+        height: row.height,
         bytes: row.sizeBytes == null ? null : Number(row.sizeBytes),
       });
       if (stored == null && DURATION_KINDS.has(row.kind)) pending.push(row);
@@ -205,9 +219,19 @@ export class MediaAssetFactsService {
       // Re-read under the slot: another worker may have persisted duration.
       const fresh = await this.prisma.mediaAsset.findFirst({
         where: { id: row.id, deletedAt: null },
-        select: { durationSeconds: true },
+        select: {
+          durationSeconds: true,
+          variants: {
+            where: { variantKey: 'original', deletedAt: null },
+            select: { durationMs: true },
+          },
+        },
       });
-      const stored = storedDuration(fresh?.durationSeconds ?? null);
+      const stored = storedDuration(
+        fresh?.variants?.[0]?.durationMs == null
+          ? (fresh?.durationSeconds ?? null)
+          : fresh.variants[0].durationMs / 1000,
+      );
       if (stored != null) return stored;
       return this.probeAndPersist(row);
     }).finally(() => {
@@ -224,7 +248,15 @@ export class MediaAssetFactsService {
     const seconds = await this.probeFromStorage(row);
     await this.prisma.mediaAsset.update({
       where: { id: row.id },
-      data: { durationSeconds: seconds },
+      data: {
+        durationSeconds: Math.round(seconds),
+        variants: {
+          updateMany: {
+            where: { variantKey: 'original', deletedAt: null },
+            data: { durationMs: Math.ceil(seconds * 1000) },
+          },
+        },
+      },
     });
     return seconds;
   }

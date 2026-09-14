@@ -1,4 +1,5 @@
 import type {
+  ExperienceAccessRequirement,
   ExperienceCondition,
   ExperienceEventBinding,
   ExperienceGraphNode,
@@ -16,6 +17,23 @@ import {
   resolveExperienceAudioPlayback,
   type ExperienceDeterministicRuntimeState,
 } from "./audio-runtime.js";
+
+export class ExperienceAccessRequiredError extends Error {
+  readonly code = "EXPERIENCE_ACCESS_REQUIRED";
+  events: ExperienceRuntimeEvent[] = [];
+  constructor(readonly requirement: ExperienceAccessRequirement) {
+    super("Community Points unlock required.");
+    this.name = "ExperienceAccessRequiredError";
+  }
+}
+export type ExperienceAccessCheck = (requirement: ExperienceAccessRequirement) => boolean;
+
+function requireAccess(
+  access: ExperienceAccessRequirement | undefined,
+  canAccess?: ExperienceAccessCheck
+) {
+  if (access && !canAccess?.(access)) throw new ExperienceAccessRequiredError(access);
+}
 
 export interface ExperienceRuntimeEvent {
   type: string;
@@ -195,7 +213,8 @@ export function restoreExperienceRuntime(
 export function dispatchExperienceEvent(
   manifest: ExperienceRuntimeManifest,
   currentState: ExperienceRuntimeState,
-  event: ExperienceRuntimeEvent
+  event: ExperienceRuntimeEvent,
+  canAccess?: ExperienceAccessCheck
 ): ExperienceDispatchResult {
   if (currentState.status === "completed") {
     return { state: currentState, handled: false, effects: [] };
@@ -209,6 +228,7 @@ export function dispatchExperienceEvent(
       `Current scene ${currentState.currentSceneId} is absent from the manifest`
     );
   }
+  requireAccess(node.access, canAccess);
   const matchingBindings = node.eventBindings.filter((binding) => selectorMatches(binding, event));
   if (matchingBindings.length > 1) {
     throw new ExperienceRuntimeInvariantError(
@@ -232,10 +252,11 @@ export function dispatchExperienceEvent(
     };
   }
 
+  requireAccess(route.access, canAccess);
   const state = cloneRuntimeState(currentState);
   const effects: ExperienceRuntimeEffect[] = [];
   for (const action of route.actions) {
-    applyAction(manifest, node, state, event, action, effects);
+    applyAction(manifest, node, state, event, action, effects, canAccess);
   }
   return {
     state,
@@ -255,7 +276,7 @@ export function runExperienceEventQueue(
   manifest: ExperienceRuntimeManifest,
   currentState: ExperienceRuntimeState,
   initialEvents: readonly ExperienceRuntimeEvent[],
-  options: { maxProcessedEvents?: number } = {}
+  options: { maxProcessedEvents?: number; canAccess?: ExperienceAccessCheck } = {}
 ): ExperienceEventQueueResult {
   const maxProcessedEvents = options.maxProcessedEvents ?? 256;
   if (!Number.isInteger(maxProcessedEvents) || maxProcessedEvents <= 0) {
@@ -274,7 +295,7 @@ export function runExperienceEventQueue(
     }
     const event = pending.shift() as ExperienceRuntimeEvent;
     processedEventCount += 1;
-    const result = dispatchExperienceEvent(manifest, state, event);
+    const result = dispatchExperienceEvent(manifest, state, event, options.canAccess);
     state = result.state;
     result.effects.forEach((effect) => {
       if (effect.kind === "event.emit") {
@@ -369,7 +390,8 @@ function applyAction(
   state: ExperienceRuntimeState,
   event: ExperienceRuntimeEvent,
   action: ExperienceRuntimeAction,
-  effects: ExperienceRuntimeEffect[]
+  effects: ExperienceRuntimeEffect[],
+  canAccess?: ExperienceAccessCheck
 ): void {
   switch (action.kind) {
     case "state.set": {
@@ -396,6 +418,10 @@ function applyAction(
       return;
     }
     case "scene.goto": {
+      requireAccess(
+        manifest.graph.nodes.find((candidate) => candidate.sceneId === action.sceneId)?.access,
+        canAccess
+      );
       const fromSceneId = state.currentSceneId;
       state.currentSceneId = action.sceneId;
       state.values.scene = createInitialStateBucket(manifest.stateDefinitions, "scene");

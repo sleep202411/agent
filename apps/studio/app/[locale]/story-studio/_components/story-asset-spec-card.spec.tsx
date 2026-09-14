@@ -4,8 +4,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StoryAssetSpec } from "@/lib/story-production-api";
+import { storyProductionKeys, type StoryAssetSpec } from "@/lib/story-production-api";
 import { StoryAssetSpecCard } from "./story-asset-spec-card";
+
+const mocks = vi.hoisted(() => ({ patch: vi.fn(), prepared: vi.fn() }));
+
+vi.mock("@/lib/story-production-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/story-production-api")>()),
+  patchStoryAssetSpec: mocks.patch,
+}));
 
 vi.mock("next-intl", () => ({
   useTranslations: () => (key: string) => key,
@@ -13,9 +20,15 @@ vi.mock("next-intl", () => ({
 
 vi.mock("./story-prompt-composer", () => ({
   useStoryAssetMentions: () => [],
-  StoryPromptComposer: ({ id, value }: { id: string; value: string }) => (
-    <textarea id={id} value={value} readOnly />
-  ),
+  StoryPromptComposer: ({
+    id,
+    value,
+    onChange,
+  }: {
+    id: string;
+    value: string;
+    onChange: (value: string) => void;
+  }) => <textarea id={id} value={value} onChange={(event) => onChange(event.target.value)} />,
 }));
 
 vi.mock("./story-asset-generation-toolbar", () => ({
@@ -27,9 +40,29 @@ vi.mock("./story-asset-generation-toolbar", () => ({
 }));
 
 vi.mock("./story-production-generation-control", () => ({
-  StoryProductionGenerationControl: ({ purpose = "primary" }: { purpose?: string }) => (
-    <button type="button">generate:{purpose}</button>
-  ),
+  StoryProductionGenerationControl: ({
+    purpose = "primary",
+    allowGeneration,
+    generationDisabledReason,
+    submitGeneration,
+  }: {
+    purpose?: string;
+    allowGeneration?: boolean;
+    generationDisabledReason?: string;
+    submitGeneration: (submit: (version: number) => Promise<unknown>) => Promise<unknown>;
+  }) =>
+    allowGeneration ? (
+      <button
+        type="button"
+        disabled={Boolean(generationDisabledReason)}
+        title={generationDisabledReason}
+        onClick={() => {
+          void submitGeneration(async (version) => mocks.prepared(version));
+        }}
+      >
+        generate:{purpose}
+      </button>
+    ) : null,
 }));
 
 describe("StoryAssetSpecCard", () => {
@@ -37,10 +70,88 @@ describe("StoryAssetSpecCard", () => {
   let root: Root;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+  });
+
+  it("saves an edited prompt once before concurrent generations and reuses the persisted version", async () => {
+    const asset = assetSpec();
+    const client = new QueryClient();
+    client.setQueryData(storyProductionKeys.assets("project-1", "chapter-1"), [asset]);
+    let finishSave!: (value: StoryAssetSpec) => void;
+    mocks.patch.mockReturnValue(
+      new Promise<StoryAssetSpec>((resolve) => {
+        finishSave = resolve;
+      })
+    );
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryAssetSpecCard asset={asset} projectId="project-1" chapterId="chapter-1" />
+        </QueryClientProvider>
+      );
+    });
+    const input = container.querySelector<HTMLTextAreaElement>("textarea")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+        input,
+        "A small kitten"
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const generate = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "generate:primary"
+    )!;
+    expect(generate.disabled).toBe(false);
+    expect(container.querySelector('button[aria-label="save"]')).toBeNull();
+    await act(async () => {
+      generate.click();
+      generate.click();
+    });
+    expect(mocks.patch).toHaveBeenCalledOnce();
+    expect(mocks.patch).toHaveBeenCalledWith(
+      "project-1",
+      "chapter-1",
+      "asset-1",
+      expect.any(String),
+      {
+        expectedVersion: 1,
+        name: "Hero",
+        imagePrompt: "A small kitten",
+      }
+    );
+    expect(mocks.prepared).not.toHaveBeenCalled();
+    await act(async () => {
+      finishSave({ ...asset, imagePrompt: "A small kitten", version: 2 });
+    });
+    expect(mocks.prepared.mock.calls).toEqual([[2], [2]]);
+    // Even before the parent projection rerenders, the cache holds the saved version.
+    await act(async () => {
+      generate.click();
+    });
+    expect(mocks.patch).toHaveBeenCalledOnce();
+    expect(mocks.prepared).toHaveBeenLastCalledWith(2);
+    client.clear();
+  });
+
+  it("keeps the three-view action visible but disabled until a character image exists", async () => {
+    const client = new QueryClient();
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <StoryAssetSpecCard asset={assetSpec()} projectId="project-1" chapterId="chapter-1" />
+        </QueryClientProvider>
+      );
+    });
+    const generate = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "generate:turnaround"
+    );
+    expect(generate?.disabled).toBe(true);
+    expect(generate?.title).toBe("turnaroundNeedsPrimary");
+    client.clear();
   });
 
   afterEach(async () => {
@@ -59,7 +170,6 @@ describe("StoryAssetSpecCard", () => {
               asset={assetSpec({ kind })}
               projectId="project-1"
               chapterId="chapter-1"
-              workspaceId="workspace-1"
             />
           </QueryClientProvider>
         );
@@ -83,6 +193,7 @@ describe("StoryAssetSpecCard", () => {
       );
       expect(text).not.toContain("Lead character");
       expect(text).not.toContain("advancedSettings");
+      expect(container.querySelector('button[aria-label="save"]')).toBeNull();
       const uploadButton = container.querySelector<HTMLButtonElement>(
         'button[aria-label="uploadImage"]'
       );

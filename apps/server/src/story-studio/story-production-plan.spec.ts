@@ -144,6 +144,16 @@ function plan(): StoryProductionPlan {
 }
 
 describe('validateProductionPlanAgainstScreenplay', () => {
+  it('requires generated character assets to retain their Script identity', () => {
+    const value = plan();
+    delete value.assetSpecs[0].sourceCharacterId;
+    expect(() => StoryProductionPlanSchema.parse(value)).not.toThrow();
+    expect(
+      validateProductionPlanAgainstScreenplay(value, screenplay()),
+    ).toContain(
+      'Character asset "asset.character.courier" must include sourceCharacterId.',
+    );
+  });
   it('accepts one sequence per Plot node and a cue that only references Plot topology', () => {
     expect(
       validateProductionPlanAgainstScreenplay(plan(), screenplay()),
@@ -226,6 +236,56 @@ describe('StoryProductionPlanService canonical Plot coverage', () => {
     null as never,
     null as never,
   );
+
+  it('requires the character link before validating an Asset proposal for apply', () => {
+    const assetPlan = { assetSpecs: plan().assetSpecs };
+    delete assetPlan.assetSpecs[0].sourceCharacterId;
+    const input = {
+      assetPlan,
+      canonicalNodeIds: ['scene.gate', 'scene.wait', 'scene.run'],
+      canonicalCharacterIds: [],
+    };
+    expect(() => service.validateApprovedAssetPlan(input)).toThrow(
+      BadRequestException,
+    );
+    assetPlan.assetSpecs[0].sourceCharacterId = 'missing-character';
+    expect(() => service.validateApprovedAssetPlan(input)).toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('reads a manual character through the same asset contract used by storyboard planning', async () => {
+    const manual = {
+      stableKey: 'manual.character.test',
+      kind: 'character',
+      name: 'Test',
+      description: null,
+      imagePrompt: 'A courier.',
+      videoPrompt: null,
+      negativePrompt: null,
+      sourceCharacterId: null,
+      sourceNodeIds: [],
+    };
+    const tx = {
+      storyAssetSpec: { findMany: jest.fn().mockResolvedValue([manual]) },
+      storyChapter: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const result = await service.readCurrentAssetPlanInTransaction(
+      tx as never,
+      'project-1',
+      'chapter-1',
+    );
+    expect(result?.assetSpecs).toEqual([
+      {
+        stableKey: manual.stableKey,
+        kind: 'character',
+        name: 'Test',
+        description: 'Test',
+        imagePrompt: 'A courier.',
+        sourceNodeIds: [],
+      },
+    ]);
+  });
 
   function chapterDraft(source: StoryScreenplay) {
     return {

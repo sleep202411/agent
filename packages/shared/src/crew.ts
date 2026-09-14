@@ -219,13 +219,6 @@ export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
  *  JPY is the main one in our whitelist. CNY/USD/EUR are 100x scaled. */
 export const ZERO_DECIMAL_CURRENCIES = new Set<CurrencyCode>(["JPY"]);
 
-/**
- * Crew contribution points have a permanent accounting value:
- * 100 points = USD 1, therefore one point is exactly one USD cent.
- * This is a domain invariant, not deployment configuration.
- */
-export const CREW_POINTS_PER_USD = 100 as const;
-
 // ─── Crew taxonomy ─────────────────────────────────────
 
 /** Top-level format of what the crew makes. Max 5 per crew. */

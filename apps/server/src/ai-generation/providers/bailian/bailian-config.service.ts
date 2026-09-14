@@ -39,6 +39,11 @@ export class BailianConfigService {
   private readonly value: BailianProviderConfig;
 
   constructor() {
+    const enabled = boolEnv(process.env.BAILIAN_ENABLED, false);
+    const apiKey = process.env.BAILIAN_API_KEY?.trim() || null;
+    if (enabled && !apiKey) {
+      throw new Error('BAILIAN_ENABLED=true requires BAILIAN_API_KEY.');
+    }
     const region =
       process.env.BAILIAN_REGION?.trim() ||
       process.env.DASHSCOPE_REGION?.trim() ||
@@ -49,7 +54,7 @@ export class BailianConfigService {
       null;
 
     this.value = {
-      enabled: boolEnv(process.env.BAILIAN_ENABLED, false),
+      enabled,
       disableDataInspection: boolEnv(
         process.env.BAILIAN_DISABLE_DATA_INSPECTION,
         true,
@@ -57,7 +62,7 @@ export class BailianConfigService {
       // One name for the provider's credential. DASHSCOPE_API_KEY still exists
       // in this repo, but only where a third-party library demands it (Mastra's
       // alibaba-cn provider) — it is not ours to read here.
-      apiKey: process.env.BAILIAN_API_KEY?.trim() || null,
+      apiKey,
       region,
       workspaceId,
       apiBaseUrl:

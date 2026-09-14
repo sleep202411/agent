@@ -8,7 +8,7 @@
  *   DATABASE_URL=... tsx scripts/ip-3lang-perlocale.ts [--write] [--limit 10] [--owner 15] [-c 12]
  */
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { config as loadDotenv } from 'dotenv';
 import { BlobServiceClient } from '@azure/storage-blob';
@@ -64,7 +64,7 @@ async function falJson(
   url: string,
   init: RequestInit,
   a = 0,
-): Promise<{ json: any; headers: Headers }> {
+): Promise<{ json: FalResponse; headers: Headers }> {
   try {
     const res = await fetch(url, {
       ...init,
@@ -80,7 +80,10 @@ async function falJson(
       return falJson(url, init, a + 1);
     }
     if (!res.ok) throw new Error(`fal ${res.status}: ${text.slice(0, 160)}`);
-    return { json: text ? JSON.parse(text) : null, headers: res.headers };
+    return {
+      json: text ? (JSON.parse(text) as FalResponse) : {},
+      headers: res.headers,
+    };
   } catch (e) {
     if (a < 3) {
       await sleep(1000 * (a + 1) ** 2);
@@ -185,7 +188,7 @@ async function main() {
       const loc = byLocale.get(locale);
       if (!loc || loc.coverAssetId) return; // missing localization or already has per-locale cover
       try {
-        let gen;
+        let gen: Awaited<ReturnType<typeof genPoster>>;
         try {
           gen = await genPoster(
             buildPrompt(
@@ -265,3 +268,11 @@ main().catch((e) => {
   console.error(e instanceof Error ? e.stack : e);
   process.exitCode = 1;
 });
+
+interface FalResponse {
+  request_id?: string;
+  requestId?: string;
+  status?: string;
+  images?: (string | { url?: string })[];
+  image?: { url?: string };
+}

@@ -1,8 +1,12 @@
 "use client";
 
+import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
+import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
+import { IpProductionStage } from "@/app/(site)/ips/_components/ip-production-stage";
 import Link from "next/link";
 import { IconPlayerPlay, IconUser } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import type { TvItem } from "../_hooks/types";
@@ -23,6 +27,9 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
       <div className="min-w-0 flex-[1_1_20rem] space-y-2">
         <h1 className="text-xl font-semibold leading-tight text-white sm:text-2xl">{item.title}</h1>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span className="text-xs tabular-nums text-white/50">
+            {t("roomNumber", { number: item.roomNumber })}
+          </span>
           {item.subtitle && <span className="text-white/50">{item.subtitle}</span>}
           <span className="flex items-center gap-1.5">
             <span className="flex size-6 items-center justify-center rounded-full bg-white/10">
@@ -41,12 +48,15 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
         )}
       </div>
       <Link
-        href={localizePath(`/ips/${item.id}`, locale)}
+        href={localizePath(ipRoomPath(item.roomNumber), locale)}
         className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-white/90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
       >
         <IconPlayerPlay className="size-4" />
         {t("viewDetail")}
       </Link>
+      <IpCrewOrigin ipId={item.id} />
+      <IpReleaseLinks ipId={item.id} />
+      <IpProductionStage ipId={item.id} />
     </div>
   );
 }

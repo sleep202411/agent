@@ -28,7 +28,6 @@ import { AgentApprovalCard } from "@/features/agent/components/agent-approval-ca
 import { AgentComposer } from "@/features/agent/components/agent-composer";
 import { AgentPermissionMenu } from "@/features/agent/components/agent-permission-menu";
 import { AgentSkillsMenu } from "@/features/agent/components/agent-skills-menu";
-import { AgentOsModelSettingsSheet } from "@/features/agent/components/agent-os-model-settings-sheet";
 import { AgentMessageList } from "@/features/agent/components/agent-message-list";
 import { AgentUserInputCard } from "@/features/agent/components/agent-user-input-card";
 import { StoryAuthoringDecision } from "@/features/agent/components/story-authoring-decision";
@@ -89,7 +88,6 @@ export default function AgentChatScreen() {
   const projectOk = isAgentOsId(projectId);
 
   const [draft, setDraft] = useState(prefillDraft);
-  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const live = useAgentOsSession({
     projectId: projectOk ? projectId : "",
     workbenchMode,
@@ -99,10 +97,11 @@ export default function AgentChatScreen() {
   const pendingInput = live.session.pendingUserInput;
   const pendingApproval = live.session.pendingApproval;
 
-  useEffect(() => {
-    if (!prefillDraft) return;
-    setDraft(prefillDraft);
-  }, [prefillDraft]);
+  const [previousPrefill, setPreviousPrefill] = useState(prefillDraft);
+  if (previousPrefill !== prefillDraft) {
+    setPreviousPrefill(prefillDraft);
+    if (prefillDraft) setDraft(prefillDraft);
+  }
 
   useEffect(() => {
     if (!projectOk || !isAuthenticated) return;
@@ -391,11 +390,6 @@ export default function AgentChatScreen() {
               stopAccessibilityLabel={t("agent.stop")}
               sendDisabled={composerLocked || composerTurn.uploading}
               canSendWithoutText={composerTurn.canSendWithoutText}
-              modelProfileId={live.session.modelProfileId ?? live.models[0]?.id ?? undefined}
-              modelOptions={live.models}
-              onOpenModelSettings={() => setModelSettingsOpen(true)}
-              modelMenuLabel={t("agent.modelSettings.open")}
-              modelMenuDisabled={composerLocked}
               nativeID={AGENT_INPUT_NATIVE_ID}
               attachmentBar={
                 <View style={styles.composerExtras}>
@@ -485,24 +479,6 @@ export default function AgentChatScreen() {
           </View>
         </KeyboardStickyView>
       </KeyboardGestureArea>
-
-      <AgentOsModelSettingsSheet
-        projectId={projectId}
-        chatModels={live.models}
-        initialPreferences={live.modelPreferences}
-        visible={modelSettingsOpen}
-        disabled={composerLocked}
-        onClose={() => setModelSettingsOpen(false)}
-        onSaved={(preferences) => {
-          live.setModelPreferences(preferences);
-          const preferred = preferences.chatModelProfileId;
-          const next =
-            preferred && live.models.some((model) => model.id === preferred)
-              ? preferred
-              : (live.models[0]?.id ?? "");
-          if (next) live.setModelProfileId(next);
-        }}
-      />
     </ThemedView>
   );
 }

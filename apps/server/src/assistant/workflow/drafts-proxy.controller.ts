@@ -1,3 +1,4 @@
+import { requiredEnv } from '../../common/required-env';
 /**
  * Proxies GET /drafts/:runId from frontend to Mastra. Same pattern as
  * WorkflowProxyController — we forward auth context via `x-storyos-context`.
@@ -26,17 +27,14 @@ export class DraftsProxyController {
   private readonly logger = new Logger(DraftsProxyController.name);
 
   private get mastraUrl(): string {
-    return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
-      /\/$/,
-      '',
-    );
+    return requiredEnv('MASTRA_URL').replace(/\/$/, '');
   }
 
-  private async buildContextHeaders(
+  private buildContextHeaders(
     user: AuthUser,
     projectId: string,
     req: Request,
-  ): Promise<Record<string, string>> {
+  ): Record<string, string> {
     const context = {
       userId: user.userId,
       projectId,
@@ -68,7 +66,7 @@ export class DraftsProxyController {
       : '';
     const url = `${this.mastraUrl}/drafts/${encodeURIComponent(runId)}${qs}`;
 
-    const headers = await this.buildContextHeaders(user, projectId, req);
+    const headers = this.buildContextHeaders(user, projectId, req);
 
     let upstream: globalThis.Response;
     try {
@@ -120,7 +118,7 @@ export class DraftsProxyController {
       runId,
     )}/${encodeURIComponent(clientRefId)}`;
     const headers = {
-      ...(await this.buildContextHeaders(user, projectId, req)),
+      ...this.buildContextHeaders(user, projectId, req),
       'Content-Type': 'application/json',
     };
 

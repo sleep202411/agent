@@ -1,5 +1,7 @@
 "use client";
 
+import { useUserDisplays } from "@/app/(site)/crews/_hooks/use-users";
+
 /**
  * Notification tab in the message center.
  *
@@ -50,6 +52,14 @@ export function NotificationsFeed() {
     const pages = feed.data?.pages ?? [];
     return pages.flatMap((p) => p.items);
   }, [feed.data]);
+
+  const actors = useUserDisplays(
+    items.flatMap((item) =>
+      item.type.startsWith("crew.task.") && typeof item.meta?.actorUserId === "string"
+        ? [item.meta.actorUserId]
+        : []
+    )
+  );
 
   const grouped = useMemo(
     () =>
@@ -114,7 +124,7 @@ export function NotificationsFeed() {
 
       {feed.isLoading ? (
         <FeedSkeleton />
-      ) : feed.isError ? (
+      ) : feed.isError && items.length === 0 ? (
         <div
           role="alert"
           className="flex flex-col items-center gap-3 rounded-2xl bg-destructive/10 px-6 py-12 text-center"
@@ -142,13 +152,40 @@ export function NotificationsFeed() {
               <ul className="overflow-hidden rounded-2xl bg-card/40">
                 {rows.map((n, i) => (
                   <li key={n.id} className={cn(i > 0 && "border-t border-border")}>
-                    <FeedRow item={n} locale={locale} onClick={() => handleClick(n)} />
+                    <FeedRow
+                      actorName={
+                        typeof n.meta?.actorUserId === "string"
+                          ? actors.get(n.meta.actorUserId)?.nickname
+                          : undefined
+                      }
+                      item={n}
+                      locale={locale}
+                      onClick={() => handleClick(n)}
+                    />
                   </li>
                 ))}
               </ul>
             </section>
           ))}
 
+          {feed.isError && (
+            <div role="alert" className="space-y-3">
+              <p className="text-sm text-destructive">
+                {feed.error instanceof Error ? feed.error.message : t("loadErrorFallback")}
+              </p>
+              {!feed.isFetchNextPageError && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={feed.isFetching}
+                  onClick={() => void feed.refetch()}
+                >
+                  {t("retry")}
+                </Button>
+              )}
+            </div>
+          )}
           {feed.hasNextPage && (
             <div className="flex justify-center pt-2">
               <Button
@@ -158,7 +195,11 @@ export function NotificationsFeed() {
                 disabled={feed.isFetchingNextPage}
                 onClick={() => feed.fetchNextPage()}
               >
-                {feed.isFetchingNextPage ? t("loading") : t("loadMore")}
+                {feed.isFetchingNextPage
+                  ? t("loading")
+                  : feed.isFetchNextPageError
+                    ? t("retry")
+                    : t("loadMore")}
               </Button>
             </div>
           )}
@@ -169,17 +210,19 @@ export function NotificationsFeed() {
 }
 
 function FeedRow({
+  actorName,
   item,
   locale,
   onClick,
 }: {
+  actorName?: string | null;
   item: NotificationDTO;
   locale: Locale;
   onClick: () => void;
 }) {
   const unread = !item.readAt;
   const t = useTranslations("notifications");
-  const content = notificationContent(item, locale, t);
+  const content = notificationContent(item, locale, t, actorName);
   return (
     <button
       type="button"
@@ -202,6 +245,14 @@ function FeedRow({
         >
           {content.title}
         </span>
+        {actorName?.trim() &&
+        item.type.startsWith("crew.task.") &&
+        item.type !== "crew.task.assigned" &&
+        item.type !== "crew.task.updated" ? (
+          <span className="text-xs text-muted-foreground">
+            {t("performedBy", { name: actorName.trim() })}
+          </span>
+        ) : null}
         <span className="text-sm text-muted-foreground">{content.body}</span>
         <span className="text-xs text-muted-foreground/80">
           {formatTime(item.createdAt, locale)}

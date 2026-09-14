@@ -19,7 +19,8 @@ export interface NotificationContent {
 export function notificationContent(
   item: NotificationDTO,
   locale: Locale,
-  t: Translate
+  t: Translate,
+  actorName?: string | null
 ): NotificationContent {
   const fallback = { title: item.title, body: item.body };
   const crewName = metaString(item, "crewName");
@@ -98,14 +99,18 @@ export function notificationContent(
       return taskTitle
         ? {
             title: t("events.taskAssigned.title", { task: taskTitle }),
-            body: t("events.taskAssigned.body"),
+            body: actorName?.trim()
+              ? t("events.taskAssigned.bodyWithActor", { actor: actorName.trim() })
+              : t("events.taskAssigned.body"),
           }
         : fallback;
     case "crew.task.updated":
       return taskTitle
         ? {
             title: t("events.taskUpdated.title", { task: taskTitle }),
-            body: t("events.taskUpdated.body"),
+            body: actorName?.trim()
+              ? t("events.taskUpdated.bodyWithActor", { actor: actorName.trim() })
+              : t("events.taskUpdated.body"),
           }
         : fallback;
     case "crew.task.commented":
@@ -157,28 +162,30 @@ export function notificationContent(
     case "crew.earning.rejected":
     case "crew.earning.reversed": {
       const earningTitle = metaString(item, "earningTitle");
-      const points = formatPoints(metaString(item, "pointsAmount"), locale);
-      if (!earningTitle || !points) return fallback;
+      const unit = metaString(item, "currency");
+      const grossAmount = formatMinorCurrency(metaString(item, "amountMinor"), unit, locale);
+      if (!earningTitle || !grossAmount) return fallback;
       const outcome = item.type.slice("crew.earning.".length) as "posted" | "rejected" | "reversed";
       return {
         title: t(`events.earning.${outcome}.title`, { title: earningTitle }),
-        body: t(`events.earning.${outcome}.body`, { points }),
+        body: t(`events.earning.${outcome}.body`, { amount: grossAmount }),
       };
     }
     case "crew.payout.scheduled":
     case "crew.payout.paid":
     case "crew.payout.voided": {
-      const points = formatPoints(metaString(item, "pointsAmount"), locale);
+      const unit = metaString(item, "currency");
+      const grossAmount = formatMinorCurrency(metaString(item, "amountMinor"), unit, locale);
       const amount = formatMinorCurrency(
         metaString(item, "netAmountMinor"),
         metaString(item, "currency"),
         locale
       );
-      if (!points || !amount) return fallback;
+      if (!grossAmount || !amount) return fallback;
       const outcome = item.type.slice("crew.payout.".length) as "scheduled" | "paid" | "voided";
       return {
         title: t(`events.payout.${outcome}.title`),
-        body: t(`events.payout.${outcome}.body`, { points, amount }),
+        body: t(`events.payout.${outcome}.body`, { grossAmount, amount }),
       };
     }
     default:
@@ -234,15 +241,6 @@ function formatMinorCurrency(
       style: "currency",
       currency,
     }).format(Number(amount) / 100);
-  } catch {
-    return null;
-  }
-}
-
-function formatPoints(pointsAmount: string | null, locale: Locale): string | null {
-  if (!pointsAmount || !/^\d+$/.test(pointsAmount)) return null;
-  try {
-    return `${BigInt(pointsAmount).toLocaleString(locale)} pts`;
   } catch {
     return null;
   }

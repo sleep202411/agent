@@ -7,6 +7,7 @@ import {
   type ProjectSkillResolutionSnapshot,
 } from "@repo/agent-skills";
 import type { DomainPort } from "@repo/agent-tools";
+import { createLiteLlmChatModel } from "@repo/model-router";
 
 import { InMemoryStoryDomain } from "./in-memory-domain.js";
 import { HttpDomainPort } from "./http-domain-port.js";
@@ -132,6 +133,96 @@ async function executeAdmittedContinuation(
 }
 
 describe("LangGraph golden path: script → characters", () => {
+  it.each(["recovered", "exhausted", "length"])(
+    "handles %s model output without repeating a completed write",
+    async (outcome) => {
+      let calls = 0;
+      globalThis.fetch = vi.fn(async () => {
+        calls += 1;
+        const delta =
+          calls === 1
+            ? {
+                role: "assistant",
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "stored-once",
+                    type: "function",
+                    function: {
+                      name: "script_store",
+                      arguments: JSON.stringify({ text: "A courier crosses the city." }),
+                    },
+                  },
+                ],
+              }
+            : {
+                role: "assistant",
+                content: calls === 2 ? "I will read and" : "The script is saved.",
+              };
+        const chunk = (value: unknown, finish: string | null) =>
+          JSON.stringify({
+            id: `model-${calls}`,
+            object: "chat.completion.chunk",
+            model: "qwen3.7-plus",
+            created: 1,
+            choices: [{ index: 0, delta: value, finish_reason: finish }],
+          });
+        const body =
+          `data: ${chunk(delta, null)}\n\n` +
+          (calls >= 2 && (outcome === "exhausted" || (calls === 2 && outcome === "recovered"))
+            ? ""
+            : `data: ${chunk({}, calls === 1 ? "tool_calls" : outcome === "length" ? "length" : "stop")}\n\n`) +
+          "data: [DONE]\n\n";
+        return new Response(body, { headers: { "content-type": "text/event-stream" } });
+      });
+      const execute = vi.fn(async () => ({
+        ok: true as const,
+        data: { attachmentId: ATTACHMENT, sectionCount: 1 },
+      }));
+      const result = await new LangGraphRunService().start({
+        runId: crypto.randomUUID(),
+        conversationId: CONVERSATION,
+        projectId: PROJECT,
+        projectKind: "story",
+        actorId: "user-1",
+        sessionId: `agent-os:v1:conversation:${CONVERSATION}`,
+        message: "Save this script",
+        modelProfileId: "qwen3.7-plus",
+        workbenchMode: "story",
+        workbenchContext: { chapterId: crypto.randomUUID() },
+        skillMountSnapshot: emptySkillMountSnapshot("story", "story"),
+        model: createLiteLlmChatModel({
+          profileId: "qwen3.7-plus",
+          config: { baseUrl: "http://model.test/v1", apiKey: "test-only" },
+        }),
+        domain: { execute },
+        checkpointer: new MemorySaver(),
+        permissionMode: "full",
+      });
+      expect(calls).toBe(outcome === "length" ? 2 : 3);
+      expect(execute).toHaveBeenCalledTimes(1);
+      if (outcome !== "recovered") {
+        expect(result.status).toBe("failed");
+        expect(result.journal.all().some((event) => event.type === "RunCompleted")).toBe(false);
+        expect(result.journal.all().some((event) => event.type === "RunFailed")).toBe(true);
+        return;
+      }
+      expect(result.status).toBe("completed");
+      expect(result.assistantText).toBe("The script is saved.");
+      expect(
+        result.journal
+          .all()
+          .filter((event) => event.type === "MessageCompleted")
+          .map((event) => event.data)
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ text: "I will read and", finishReason: "superseded" }),
+          expect.objectContaining({ text: "The script is saved.", finishReason: "stop" }),
+        ])
+      );
+    }
+  );
+
   it("pauses for Agent-requested structured input and resumes the same run", async () => {
     let receiptPolls = 0;
     globalThis.fetch = vi.fn(async () => {

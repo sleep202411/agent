@@ -11,6 +11,7 @@ import {
 } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
+import { ipRoomPath } from "@/src/lib/ip-commerce/urls";
 import { localizePath } from "@/src/i18n/locale-url";
 import type { Locale } from "@/src/i18n/config";
 import { cn } from "@/lib/utils";
@@ -168,7 +169,7 @@ export function IPCinematicHero({
             )}
             <div className="mt-6 flex items-center gap-3">
               <Link
-                href={localizePath(`/ips/${slide.id}`, locale)}
+                href={localizePath(ipRoomPath(slide.roomNumber), locale)}
                 className="group/cta relative inline-flex items-center gap-2 overflow-hidden rounded-full border border-white/30 bg-white/10 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/30 backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 hover:border-white/50 hover:bg-white/20 hover:shadow-white/10"
               >
                 <span
@@ -181,7 +182,7 @@ export function IPCinematicHero({
               <button
                 type="button"
                 onClick={async () => {
-                  const url = `${window.location.origin}${localizePath(`/ips/${slide.id}`, locale)}`;
+                  const url = `${window.location.origin}${localizePath(ipRoomPath(slide.roomNumber), locale)}`;
                   try {
                     await navigator.clipboard.writeText(url);
                     toast.success(t("shareCopied"));
@@ -243,7 +244,7 @@ function RailOnly({
         {rail.map((item) => (
           <Link
             key={item.id}
-            href={localizePath(`/ips/${item.id}`, locale)}
+            href={localizePath(ipRoomPath(item.roomNumber), locale)}
             className="group block w-64 shrink-0 sm:w-72"
           >
             <div className="relative aspect-video overflow-hidden rounded-xl bg-muted">

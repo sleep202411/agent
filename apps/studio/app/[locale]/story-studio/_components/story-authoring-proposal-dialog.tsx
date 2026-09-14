@@ -41,6 +41,7 @@ import {
   type StoryReviewableProposal,
 } from "./story-authoring-proposal";
 import { StoryScreenplayDocumentView } from "./story-screenplay-document-view";
+import { StorySourceReviewNotes } from "./story-source-review-notes";
 
 export function StoryAuthoringProposalDialog({
   open,
@@ -154,7 +155,16 @@ export function StoryAuthoringProposalContent({
     : null;
 
   if (screenplayDocument) {
-    return <StoryScreenplayDocumentView document={screenplayDocument} embedded={embedded} />;
+    return (
+      <>
+        <div className="px-5">
+          <StorySourceReviewNotes
+            notes={isStoryScreenplayProposal(proposal) ? proposal.screenplay.reviewNotes : []}
+          />
+        </div>
+        <StoryScreenplayDocumentView document={screenplayDocument} embedded={embedded} />
+      </>
+    );
   }
   if (isStoryAssetProposal(proposal)) {
     return (

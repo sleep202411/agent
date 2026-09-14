@@ -9,7 +9,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-// Credit/debit a team (or any) workspace compute_point pot by workspaceId.
+// Credit/debit a workspace compute_point pot by workspaceId.
 export async function POST(request: NextRequest) {
   try {
     const upstream = await fetch(
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 }
 
 // Read-only: resolve ?workspaceId= to the workspace pot's current compute_point
-// balance for the team-wallet panel's balance line.
+// balance for the workspace-wallet panel's balance line.
 export async function GET(request: NextRequest) {
   try {
     const upstream = await fetch(

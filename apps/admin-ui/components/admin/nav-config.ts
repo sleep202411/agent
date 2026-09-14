@@ -37,6 +37,7 @@ import {
   IconUserPlus,
   IconUsersGroup,
   IconUserSearch,
+  IconBadge,
   IconVersions,
   IconWallet,
   IconWriting,
@@ -184,9 +185,15 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
       label: "算力钱包",
       items: [
         {
-          href: "/billing/team-wallet",
-          label: "团队算力池",
+          href: "/billing/workspace-wallet",
+          label: "工作区积分",
           icon: IconWallet,
+          permission: "billing.read",
+        },
+        {
+          href: "/billing/usage",
+          label: "成员消耗",
+          icon: IconReportMoney,
           permission: "billing.read",
         },
       ],
@@ -436,10 +443,17 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           permission: "user.read",
         },
         {
-          href: "/members/points",
-          label: "积分流水",
-          icon: IconReceipt2,
-          permission: "user.read",
+          // Java `/api/admin/user-levels` — ungated like news/courses until a
+          // dedicated permission is registered.
+          href: "/members/user-levels",
+          label: "认证等级",
+          icon: IconBadge,
+        },
+        {
+          // Java `/api/admin/user-level-applications` — same ungated stance.
+          href: "/members/user-level-applications",
+          label: "等级申请",
+          icon: IconChecklist,
         },
       ],
     },
@@ -458,6 +472,18 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           href: "/crews/positions",
           label: "岗位管理",
           icon: IconBriefcase,
+          permission: "crew.manage",
+        },
+        {
+          href: "/crews/expenses",
+          label: "Expense submissions",
+          icon: IconChecklist,
+          permission: "crew.manage",
+        },
+        {
+          href: "/crews/delivery-catalog",
+          label: "Delivery catalog",
+          icon: IconChecklist,
           permission: "crew.manage",
         },
       ],

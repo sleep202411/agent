@@ -1,11 +1,12 @@
 "use client";
+import { ProjectAccountability } from "@/app/(site)/crews/_components/accountability/project-accountability";
 
 /**
  * Members tab content. Ownership, production positions and access policies
  * are independent concerns; each action is gated by its atomic permission.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   IconClock,
   IconSignature,
@@ -15,7 +16,8 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { toast } from "sonner";
-import { useTranslations } from "@/src/i18n/i18n";
+import { useCurrentUser } from "@/src/hooks/use-user";
+import { useTranslations, useLocale } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -56,7 +58,12 @@ interface MembersGridProps {
   onAgreementsClose?: () => void;
 }
 
-export function MembersGrid({
+export function MembersGrid(props: MembersGridProps) {
+  const { user } = useCurrentUser();
+  return <MembersGridSession key={JSON.stringify([user?.id, props.crewId])} {...props} />;
+}
+
+function MembersGridSession({
   crewId,
   members,
   canInvite,
@@ -71,9 +78,8 @@ export function MembersGrid({
 }: MembersGridProps) {
   const t = useTranslations("workspace");
   const ta = useTranslations("crewAgreements");
+  const locale = useLocale();
   const tc = useTranslationsCommon("common");
-  const removeMember = useRemoveMember(crewId);
-  const transferOwner = useTransferCrewOwner(crewId);
   const invitations = useCrewInvitations(crewId, canInvite);
   const revokeInvitation = useRevokeCrewInvitation(crewId);
   const [pendingRemove, setPendingRemove] = useState<{ memberId: string; name: string } | null>(
@@ -82,9 +88,6 @@ export function MembersGrid({
   const [pendingTransfer, setPendingTransfer] = useState<{ userId: string; name: string } | null>(
     null
   );
-  // Whether the outgoing owner leaves the crew after handing off (default:
-  // stay on as a normal member).
-  const [transferLeave, setTransferLeave] = useState(false);
   const [agreementsOpen, setAgreementsOpen] = useState(() => Boolean(initialAgreementId));
 
   // A notification can add ?agreement= while the member tab is already
@@ -122,57 +125,36 @@ export function MembersGrid({
   );
   const displays = useUserDisplays(memberIds);
 
-  const handleTransfer = () => {
-    if (!pendingTransfer) return;
-    const { userId, name } = pendingTransfer;
-    transferOwner.mutate(
-      { toUserId: userId, removeOldOwner: transferLeave },
-      {
-        onSuccess: () => {
-          toast.success(t("transferOwnerSuccess", { name }));
-          setPendingTransfer(null);
-          setTransferLeave(false);
-        },
-        onError: (err) => {
-          if (err instanceof CrewApiError) {
-            const detail =
-              typeof err.body === "object" && err.body && "message" in err.body
-                ? String((err.body as { message: unknown }).message)
-                : err.message;
-            toast.error(`HTTP ${err.status}`, { description: detail, duration: 8000 });
-          } else {
-            toast.error(err instanceof Error ? err.message : t("transferOwnerFailed"));
-          }
-        },
+  const alive = useRef(false);
+  const revoking = useRef(new Set<string>());
+  const [pendingRevocations, setPendingRevocations] = useState<ReadonlySet<string>>(new Set());
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const revoke = async (id: string) => {
+    if (!alive.current || !canInvite || revoking.current.has(id)) return;
+    revoking.current.add(id);
+    setPendingRevocations(new Set(revoking.current));
+    try {
+      await revokeInvitation.mutateAsync(id);
+      if (alive.current) toast.success(t("invitationRevoked"));
+    } catch (error) {
+      if (alive.current)
+        toast.error(error instanceof Error ? error.message : t("invitationRevokeFailed"));
+    } finally {
+      if (alive.current) {
+        revoking.current.delete(id);
+        setPendingRevocations(new Set(revoking.current));
       }
-    );
-  };
-
-  const handleRemove = () => {
-    if (!pendingRemove) return;
-    const { memberId, name } = pendingRemove;
-    removeMember.mutate(memberId, {
-      onSuccess: () => {
-        toast.success(t("removeMemberSuccess", { name }));
-        setPendingRemove(null);
-      },
-      onError: (err) => {
-        if (err instanceof CrewApiError) {
-          const detail =
-            typeof err.body === "object" && err.body && "message" in err.body
-              ? String((err.body as { message: unknown }).message)
-              : err.message;
-          toast.error(`HTTP ${err.status}`, { description: detail, duration: 8000 });
-        } else {
-          toast.error(err instanceof Error ? err.message : t("removeMemberFailed"));
-        }
-        setPendingRemove(null);
-      },
-    });
+    }
   };
 
   return (
     <div className="space-y-5">
+      <ProjectAccountability crewId={crewId} members={members} />
       {/* This is a toolbar, not a second page title: the workspace header
           already establishes "Member management" above the scroll pane. */}
       <section className="flex flex-col gap-4 rounded-xl bg-white/[0.025] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
@@ -222,26 +204,33 @@ export function MembersGrid({
               {t("pendingInvitations")} · {invitations.total}
             </h3>
           </div>
-          {invitations.isLoading ? (
-            <div className="flex h-14 items-center justify-center">
-              <IconLoader2 className="size-4 animate-spin text-white/35" />
-            </div>
-          ) : invitations.isError ? (
-            <div className="flex min-h-16 items-center justify-between gap-4 px-4 py-3">
+          {invitations.isError ? (
+            <div
+              role="alert"
+              className="flex min-h-16 items-center justify-between gap-4 px-4 py-3"
+            >
               <p className="text-xs text-destructive">
-                {invitations.error instanceof Error
-                  ? invitations.error.message
-                  : t("invitationRevokeFailed")}
+                {invitations.error instanceof Error ? invitations.error.message : tc("loadFailed")}
               </p>
               <Button
                 type="button"
                 size="sm"
                 variant="ghost"
                 color="muted"
-                onClick={() => void invitations.refetch()}
+                disabled={invitations.isFetching}
+                onClick={() =>
+                  void (invitations.isFetchNextPageError
+                    ? invitations.fetchNextPage()
+                    : invitations.refetch())
+                }
               >
                 {tc("retry")}
               </Button>
+            </div>
+          ) : null}
+          {invitations.isLoading && pendingInvitations.length === 0 ? (
+            <div className="flex h-14 items-center justify-center">
+              <IconLoader2 className="size-4 animate-spin text-white/35" />
             </div>
           ) : (
             <>
@@ -274,7 +263,7 @@ export function MembersGrid({
                           ].join(" + ")}{" "}
                           ·{" "}
                           {t("invitationExpires", {
-                            date: new Intl.DateTimeFormat(undefined, {
+                            date: new Intl.DateTimeFormat(locale, {
                               month: "short",
                               day: "numeric",
                             }).format(new Date(invitation.expiresAt)),
@@ -287,21 +276,10 @@ export function MembersGrid({
                       size="sm"
                       variant="ghost"
                       color="muted"
-                      disabled={
-                        revokeInvitation.isPending && revokeInvitation.variables === invitation.id
-                      }
-                      onClick={() =>
-                        revokeInvitation.mutate(invitation.id, {
-                          onSuccess: () => toast.success(t("invitationRevoked")),
-                          onError: (error) =>
-                            toast.error(
-                              error instanceof Error ? error.message : t("invitationRevokeFailed")
-                            ),
-                        })
-                      }
+                      disabled={pendingRevocations.has(invitation.id)}
+                      onClick={() => void revoke(invitation.id)}
                       icon={
-                        revokeInvitation.isPending &&
-                        revokeInvitation.variables === invitation.id ? (
+                        pendingRevocations.has(invitation.id) ? (
                           <IconLoader2 className="animate-spin" />
                         ) : (
                           <IconX />
@@ -313,14 +291,14 @@ export function MembersGrid({
                   </div>
                 ))}
               </div>
-              {invitations.hasNextPage ? (
+              {invitations.hasNextPage && !invitations.isError ? (
                 <div className="border-t border-white/[0.06] px-4 py-2.5 text-center">
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
                     color="muted"
-                    disabled={invitations.isFetchingNextPage}
+                    disabled={invitations.isFetching}
                     onClick={() => void invitations.fetchNextPage()}
                     icon={
                       invitations.isFetchingNextPage ? (
@@ -363,9 +341,12 @@ export function MembersGrid({
                   canManage={canManageMembers}
                   canManagePermissions={canManagePermissions}
                   canTransferOwnership={canTransferOwnership}
-                  onAskRemove={(memberId, name) => setPendingRemove({ memberId, name })}
+                  onAskRemove={(memberId, name) => {
+                    setPendingTransfer(null);
+                    setPendingRemove({ memberId, name });
+                  }}
                   onAskTransfer={(userId, name) => {
-                    setTransferLeave(false);
+                    setPendingRemove(null);
                     setPendingTransfer({ userId, name });
                   }}
                 />
@@ -387,78 +368,132 @@ export function MembersGrid({
         }}
       />
 
-      {/* Remove confirmation */}
-      <AlertDialog
-        open={pendingRemove !== null}
-        onOpenChange={(v) => {
-          if (!v) setPendingRemove(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("removeMember")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingRemove ? t("removeMemberConfirm", { name: pendingRemove.name }) : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={removeMember.isPending}>{tc("cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="solid"
-              color="destructive"
-              disabled={removeMember.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                handleRemove();
-              }}
-            >
-              {removeMember.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
-              {tc("confirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {pendingRemove ? (
+        <MemberDecision
+          key={`remove:${pendingRemove.memberId}`}
+          crewId={crewId}
+          kind="remove"
+          id={pendingRemove.memberId}
+          name={pendingRemove.name}
+          allowed={canManageMembers}
+          onClose={() => setPendingRemove(null)}
+        />
+      ) : pendingTransfer ? (
+        <MemberDecision
+          key={`transfer:${pendingTransfer.userId}`}
+          crewId={crewId}
+          kind="transfer"
+          id={pendingTransfer.userId}
+          name={pendingTransfer.name}
+          allowed={canTransferOwnership}
+          onClose={() => setPendingTransfer(null)}
+        />
+      ) : null}
+    </div>
+  );
+}
 
-      {/* Transfer-ownership confirmation */}
-      <AlertDialog
-        open={pendingTransfer !== null}
-        onOpenChange={(v) => {
-          if (!v && !transferOwner.isPending) setPendingTransfer(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("transferOwner")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingTransfer ? t("transferOwnerConfirm", { name: pendingTransfer.name }) : ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
+function MemberDecision({
+  crewId,
+  kind,
+  id,
+  name,
+  allowed,
+  onClose,
+}: {
+  crewId: string;
+  kind: "remove" | "transfer";
+  id: string;
+  name: string;
+  allowed: boolean;
+  onClose: () => void;
+}) {
+  const t = useTranslations("workspace");
+  const tc = useTranslationsCommon("common");
+  const remove = useRemoveMember(crewId);
+  const transfer = useTransferCrewOwner(crewId);
+  const [leave, setLeave] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const alive = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const submit = () => {
+    if (!alive.current || pending.current || !allowed) return;
+    pending.current = true;
+    setBusy(true);
+    const handlers = {
+      onSuccess: () => {
+        if (!alive.current) return;
+        toast.success(
+          t(kind === "remove" ? "removeMemberSuccess" : "transferOwnerSuccess", { name })
+        );
+        onClose();
+      },
+      onError: (error: unknown) => {
+        if (!alive.current) return;
+        if (error instanceof CrewApiError) {
+          toast.error(`HTTP ${error.status}`, { description: error.message, duration: 8000 });
+        } else {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : t(kind === "remove" ? "removeMemberFailed" : "transferOwnerFailed")
+          );
+        }
+      },
+      onSettled: () => {
+        if (!alive.current) return;
+        pending.current = false;
+        setBusy(false);
+      },
+    };
+    if (kind === "remove") remove.mutate(id, handlers);
+    else transfer.mutate({ toUserId: id, removeOldOwner: leave }, handlers);
+  };
+  return (
+    <AlertDialog
+      open
+      onOpenChange={(next) => {
+        if (!next && !pending.current) onClose();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            {t(kind === "remove" ? "removeMember" : "transferOwner")}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            {t(kind === "remove" ? "removeMemberConfirm" : "transferOwnerConfirm", { name })}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {kind === "transfer" ? (
           <label className="flex items-center justify-between gap-3 rounded-lg bg-card px-3 py-2 text-sm text-foreground">
             {t("transferOwnerLeaveLabel")}
-            <SwitchControl
-              value={transferLeave}
-              onChange={setTransferLeave}
-              disabled={transferOwner.isPending}
-            />
+            <SwitchControl value={leave} onChange={setLeave} disabled={busy} />
           </label>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={transferOwner.isPending}>{tc("cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              variant="solid"
-              color="primary"
-              disabled={transferOwner.isPending}
-              onClick={(e) => {
-                e.preventDefault();
-                handleTransfer();
-              }}
-            >
-              {transferOwner.isPending ? <IconLoader2 className="size-4 animate-spin" /> : null}
-              {tc("confirm")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
+        ) : null}
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={busy}>{tc("cancel")}</AlertDialogCancel>
+          <AlertDialogAction
+            variant="solid"
+            color={kind === "remove" ? "destructive" : "primary"}
+            disabled={busy || !allowed}
+            onClick={(event) => {
+              event.preventDefault();
+              submit();
+            }}
+          >
+            {busy ? <IconLoader2 className="size-4 animate-spin" /> : null}
+            {tc("confirm")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

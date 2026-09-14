@@ -1,3 +1,4 @@
+import { TaskDeliveryTemplateInput } from './task-delivery-template';
 import {
   Body,
   Controller,
@@ -9,11 +10,14 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { CurrentUser } from '../../auth';
 import type { AuthUser } from '../../auth';
 import { parseIdParam } from '../../common/params';
 import { ZodValidationPipe } from '../../common/zod.pipe';
+import { z } from 'zod';
 import {
   CreateCrewTaskSchema,
   type CreateCrewTaskInput,
@@ -32,6 +36,10 @@ import {
   UpdateCrewTaskCommentSchema,
   type UpdateCrewTaskCommentInput,
 } from '../dto';
+import {
+  CrewTaskCenterQuerySchema,
+  type CrewTaskCenterQuery,
+} from './project-dto';
 import { CrewTasksService } from './tasks.service';
 import {
   BatchUpdateCrewTasksSchema,
@@ -73,6 +81,15 @@ export class CrewTasksController {
     private readonly tasks: CrewTasksService,
     private readonly taskDrafts: CrewTaskDraftService,
   ) {}
+
+  @Get('crew-task-center')
+  taskCenter(
+    @CurrentUser() user: AuthUser,
+    @Query(new ZodValidationPipe(CrewTaskCenterQuerySchema))
+    query: CrewTaskCenterQuery,
+  ) {
+    return this.tasks.listCenter(user.userId, query);
+  }
 
   @Get('crews/:crewId/task-project')
   project(@Param('crewId') crewId: string, @CurrentUser() user: AuthUser) {
@@ -383,6 +400,25 @@ export class CrewTasksController {
     return this.tasks.update(parseIdParam(taskId, 'taskId'), user.userId, body);
   }
 
+  @Delete('crew-tasks/:taskId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  deleteTask(
+    @Param('taskId') taskId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(
+      new ZodValidationPipe(
+        z.strictObject({ expectedVersion: z.int().positive() }),
+      ),
+    )
+    body: { expectedVersion: number },
+  ) {
+    return this.tasks.delete(
+      parseIdParam(taskId, 'taskId'),
+      user.userId,
+      body.expectedVersion,
+    );
+  }
+
   @Post('crew-tasks/:taskId/reorder')
   reorder(
     @Param('taskId') taskId: string,
@@ -449,6 +485,33 @@ export class CrewTasksController {
     await this.tasks.deleteComment(
       parseIdParam(commentId, 'commentId'),
       user.userId,
+    );
+  }
+
+  @Get('crew-tasks/:taskId/delivery-template')
+  async getDeliveryTemplate(
+    @Param('taskId') id: string,
+    @CurrentUser() user: AuthUser,
+    @Res() response: Response,
+  ) {
+    // Nest sends a bare null as an empty response; this endpoint promises JSON.
+    const template = await this.tasks.getDeliveryTemplate(
+      parseIdParam(id, 'taskId'),
+      user.userId,
+    );
+    response.json(template);
+  }
+  @Post('crew-tasks/:taskId/delivery-template')
+  setDeliveryTemplate(
+    @Param('taskId') id: string,
+    @CurrentUser() user: AuthUser,
+    @Body(new ZodValidationPipe(TaskDeliveryTemplateInput))
+    input: z.infer<typeof TaskDeliveryTemplateInput>,
+  ) {
+    return this.tasks.setDeliveryTemplate(
+      parseIdParam(id, 'taskId'),
+      user.userId,
+      input,
     );
   }
 

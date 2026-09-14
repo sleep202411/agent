@@ -31,10 +31,10 @@ async function main() {
     !['postgres:', 'postgresql:'].includes(target.protocol) ||
     !['localhost', '127.0.0.1', '[::1]'].includes(target.hostname) ||
     target.port !== '5433' ||
-    target.pathname !== '/fizzdragon'
+    !/^\/fizzdragon(?:_[a-z0-9_]+)?$/.test(target.pathname)
   ) {
     throw new Error(
-      'TV fixtures only support the local fizzdragon database on port 5433.',
+      'TV fixtures require a local fizzdragon development database on port 5433.',
     );
   }
 
@@ -173,8 +173,8 @@ async function main() {
               subtitle: ['Local demo', '本地演示', '本地示範'][localeIndex],
               summary: [
                 'A local preview made from FizzDragon artwork for testing browsing and playback.',
-                '使用气泡龙现有画面制作的本地预览，用于体验列表浏览与播放。',
-                '使用氣泡龍現有畫面製作的本地預覽，用於體驗列表瀏覽與播放。',
+                '使用 FizzDragon 现有画面制作的本地预览，用于体验列表浏览与播放。',
+                '使用 FizzDragon 現有畫面製作的本地預覽，用於體驗列表瀏覽與播放。',
               ][localeIndex],
               description: null,
               publishedAt,

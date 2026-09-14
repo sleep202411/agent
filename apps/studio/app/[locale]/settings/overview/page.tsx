@@ -22,7 +22,7 @@ import { useWorkspace } from "@/app/_components/workspace-context";
 import { useComputeWalletBalance } from "@/app/_components/credits-badge";
 import { listWorkspaceMembers } from "@/lib/collab/sharing-api";
 import { deleteWorkspace, updateWorkspace, type WorkspaceRef } from "@/lib/collab/projects-api";
-import { LetterAvatar, PageHeader, Panel, TeamBadge } from "../_components/settings-ui";
+import { LetterAvatar, PageHeader, Panel } from "../_components/settings-ui";
 
 const errMsg = (e: unknown, fallback: string) =>
   e instanceof ApiRequestError ? e.message : fallback;
@@ -42,16 +42,12 @@ export default function OverviewSettingsPage() {
     );
   }
 
-  const isTeam = ws.type === "team";
   const canManage = ws.role === "owner" || ws.role === "admin";
   const isOwner = ws.role === "owner";
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-6 py-8">
-      <PageHeader
-        title={t("overview")}
-        badge={<TeamBadge label={isTeam ? t("team") : t("personal")} />}
-      />
+      <PageHeader title={t("overview")} />
 
       <Panel>
         <div className="flex items-center gap-4">
@@ -59,20 +55,20 @@ export default function OverviewSettingsPage() {
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-base font-medium">{ws.name}</span>
             <span className="text-sm text-muted-foreground">
-              {isTeam ? t("team") : t("personal")}
+              {t("workspace")}
               {ws.role ? ` · ${t(`role.${ws.role}`)}` : ""}
             </span>
           </div>
         </div>
       </Panel>
 
-      <TeamNamePanel key={ws.id} ws={ws} editable={isTeam && canManage} />
+      <TeamNamePanel key={ws.id} ws={ws} editable={canManage} />
 
-      {isTeam && <MembersPanel ws={ws} canManage={canManage} />}
+      <MembersPanel ws={ws} canManage={canManage} />
 
-      <CreditsSummaryPanel isTeam={isTeam} />
+      <CreditsSummaryPanel />
 
-      {isTeam && isOwner && <DangerZone ws={ws} />}
+      {!ws.isDefault && isOwner && <DangerZone ws={ws} />}
     </main>
   );
 }
@@ -99,7 +95,7 @@ function TeamNamePanel({ ws, editable }: { ws: WorkspaceRef; editable: boolean }
   });
 
   return (
-    <Panel title={ws.type === "team" ? t("teamName") : t("workspaceName")}>
+    <Panel title={t("workspaceName")}>
       <form
         className="flex items-center gap-2"
         onSubmit={(e) => {
@@ -171,25 +167,20 @@ function MembersPanel({ ws, canManage }: { ws: WorkspaceRef; canManage: boolean 
   );
 }
 
-function CreditsSummaryPanel({ isTeam }: { isTeam: boolean }) {
+function CreditsSummaryPanel() {
   const t = useTranslations("settings");
   const router = useRouter();
   const { data: balance } = useComputeWalletBalance();
 
   return (
-    <Panel
-      title={isTeam ? t("teamCredits") : t("credits")}
-      icon={<IconBolt className="size-4 text-muted-foreground" />}
-    >
+    <Panel title={t("credits")} icon={<IconBolt className="size-4 text-muted-foreground" />}>
       <div className="flex items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-1.5 text-2xl font-semibold tabular-nums">
             <IconBolt className="size-5 text-white/85" stroke={1.8} />
             {balance ? balance.available.toLocaleString() : "—"}
           </div>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            {isTeam ? t("sharedTeamBalancePool") : t("availableCredits")}
-          </div>
+          <div className="mt-0.5 text-xs text-muted-foreground">{t("sharedTeamBalancePool")}</div>
         </div>
         <Button
           variant="secondary"
@@ -214,8 +205,8 @@ function DangerZone({ ws }: { ws: WorkspaceRef }) {
   const deleteMut = useMutation({
     mutationFn: () => deleteWorkspace(ws.id),
     onSuccess: () => {
-      const personal = workspaces.find((w) => w.type === "personal");
-      if (personal) setActiveWorkspaceId(personal.id);
+      const next = workspaces.find((w) => w.isDefault);
+      if (next) setActiveWorkspaceId(next.id);
       refresh();
       void queryClient.invalidateQueries({ queryKey: ["fizzstudio", "workspaces"] });
       toast.success(t("teamDeleted", { name: ws.name }));

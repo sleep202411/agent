@@ -43,11 +43,15 @@ describe("agent capability registry", () => {
     expect(() => requireModeDefinition("story", "canvas")).toThrow();
   });
 
-  it("asks only for missing creative-profile decisions while the profile is unconfirmed", () => {
+  it("delegates missing desktop profile questions to the canonical runtime form", () => {
     const instructions = requireModeDefinition("story", "story").instructions;
-    expect(instructions).toMatch(/ONLY (?:the|these) missing\s+questions/);
-    expect(instructions).toContain("story_language (zh-CN / zh-HK / en-US)");
-    expect(instructions).toContain("If none are missing, do not call");
+    expect(instructions).toContain('formId="story_creative_profile"');
+    expect(instructions).toContain("request_user_input.knownValues");
+    expect(instructions).toMatch(/OMIT questions: the runtime constructs every\s+missing question/);
+    expect(instructions).toMatch(
+      /If all four fields are explicitly\s+known, skip the question and call story_confirmCreativeProfile directly/
+    );
+    expect(instructions).toMatch(/needs it on desktop/);
     expect(instructions).toMatch(/never ask the\s+creator to confirm them again/);
     expect(instructions).toContain("call request_user_input exactly ONCE");
   });

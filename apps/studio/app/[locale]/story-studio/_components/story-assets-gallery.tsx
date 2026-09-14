@@ -63,7 +63,6 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
   // governs what FizzAgent may derive automatically; it must never lock the
   // manual media workbench.
   const generationAllowed = canEdit;
-  const mediaReplacementAllowed = Boolean(canEdit && workbenchQuery.workspaceId);
   return (
     <main aria-busy={loading} className="flex h-full min-w-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -162,14 +161,13 @@ export function StoryAssetsGallery({ projectId }: { projectId: string }) {
                 >
                   {assets.map((asset, index) => (
                     <StoryAssetSpecCard
-                      key={`${asset.id}:${asset.version}`}
+                      key={asset.id}
                       asset={asset}
                       projectId={projectId}
                       chapterId={activeChapterId}
                       allowEditing={canEdit}
                       allowGeneration={generationAllowed}
-                      workspaceId={workbenchQuery.workspaceId}
-                      allowMediaReplacement={mediaReplacementAllowed}
+                      allowMediaReplacement={canEdit}
                       eagerMedia={index < 4}
                     />
                   ))}

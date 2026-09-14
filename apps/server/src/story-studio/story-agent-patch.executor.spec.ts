@@ -47,6 +47,49 @@ function operation(
 }
 
 describe('executeStoryPatch', () => {
+  it('atomically executes a long compiled screenplay while keeping public patches bounded', () => {
+    const operations: StoryPatchOperation[] = Array.from(
+      { length: 136 },
+      (_, index) => ({
+        operationId: `0197f4a2-0800-7000-8000-${String(index).padStart(12, '0')}`,
+        summary: 'Write a compiled scene.',
+        kind: 'story_graph.put_node',
+        payload: {
+          intent: 'create',
+          node: {
+            kind: 'clip',
+            nodeId: `scene_${index}`,
+            clipKey: `SCENE_${index}`,
+            interactions: [],
+            exit: {
+              kind: 'auto',
+              nextNodeId: index < 135 ? `scene_${index + 1}` : null,
+            },
+          },
+        },
+      }),
+    );
+    const input = { draft: draft(), layout: { nodePositions: {} }, operations };
+    expect(() => executeStoryPatch(input)).toThrow();
+    const result = executeStoryPatch({ ...input, compiledScreenplay: true });
+    expect(result.createdNodeIds).toHaveLength(136);
+    expect(result.draft.graph.nodes).toHaveLength(137);
+    expect(input.draft.graph.nodes).toHaveLength(1);
+
+    const invalid = structuredClone(operations);
+    const first = invalid[0];
+    if (first.kind !== 'story_graph.put_node') throw new Error('Expected node');
+    first.payload.node.exit = { kind: 'auto', nextNodeId: 'missing' };
+    expect(() =>
+      executeStoryPatch({
+        ...input,
+        operations: invalid,
+        compiledScreenplay: true,
+      }),
+    ).toThrow(StoryPatchExecutionError);
+    expect(input.draft.graph.nodes).toHaveLength(1);
+  });
+
   it('creates, wires, and reorders film clips deterministically', () => {
     const result = executeStoryPatch({
       draft: draft(),
@@ -100,7 +143,7 @@ describe('executeStoryPatch', () => {
     expect(result.draftChanged).toBe(true);
   });
 
-  it('removes references and orphaned canvas positions with a deleted clip', () => {
+  it('disconnects a deleted clip while preserving option text and ids', () => {
     const current = draft();
     current.graph.nodes.push({
       kind: 'clip',
@@ -136,7 +179,11 @@ describe('executeStoryPatch', () => {
     expect(result.draft.graph.nodes).toHaveLength(1);
     expect(result.draft.graph.nodes[0]?.exit).toMatchObject({
       kind: 'choice',
-      choices: [],
+      decisionId: 'gate',
+      prompt: { 'en-US': 'Enter?' },
+      choices: [
+        { choiceId: 'yes', label: { 'en-US': 'Yes' }, nextNodeId: null },
+      ],
     });
     expect(result.layout.nodePositions).not.toHaveProperty('inside');
   });

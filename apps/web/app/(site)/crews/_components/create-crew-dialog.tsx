@@ -19,7 +19,8 @@
  * showcaseWorks are edited in the workspace 基本信息 tab (Phase B).
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconLoader2, IconPhoto } from "@tabler/icons-react";
 import { toast } from "sonner";
@@ -34,14 +35,23 @@ import {
   DialogContent,
   DialogFooter,
   DialogHero,
+  DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { uploadBanner } from "@/src/services/user";
 import { env } from "@/src/env";
 import { cn } from "@/lib/utils";
-import { CrewApiError, useCreateCrew, useUpdateCrew } from "@/app/(site)/crews/_hooks/use-crew";
+import {
+  crewApi,
+  CrewApiError,
+  useCreateCrew,
+  useUpdateCrew,
+} from "@/app/(site)/crews/_hooks/use-crew";
+import { CrewEligibilityNotice } from "./crew-eligibility-notice";
 
 // Hero image — same static CDN we use for `<CreateIPDialog>`. Replace
 // when product gives a crew-specific illustration.
@@ -68,20 +78,73 @@ interface CreateCrewDialogProps {
   initial?: CrewFormInitial | null;
 }
 
-export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDialogProps) {
+export function CreateCrewDialog(props: CreateCrewDialogProps) {
+  const { user, isLoading } = useCurrentUser();
+  return (
+    <CrewDialogSession
+      key={user?.id ?? "anonymous"}
+      {...props}
+      accountId={user?.id ?? null}
+      accountLoading={isLoading}
+    />
+  );
+}
+
+function CrewDialogSession(
+  props: CreateCrewDialogProps & { accountId: string | null; accountLoading: boolean }
+) {
+  const t = useTranslations("crew.creationRequirements");
+  const eligibility = useQuery({
+    queryKey: ["crew-creation-eligibility", props.accountId],
+    queryFn: () => crewApi.get<{ eligible: boolean }>("/crews/creation-eligibility"),
+    enabled: props.open && !props.initial && !props.accountLoading,
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  if (!props.open) return null;
+  if (props.initial) return <CrewFormDialog key={props.initial.id} {...props} />;
+  if (eligibility.isPending || eligibility.isFetching || eligibility.isError) {
+    return (
+      <Dialog open={props.open} onOpenChange={props.onOpenChange}>
+        <DialogContent>
+          <DialogTitle>{t("title")}</DialogTitle>
+          <DialogDescription>
+            {eligibility.isError ? eligibility.error.message : t("checking")}
+          </DialogDescription>
+          {eligibility.isError && (
+            <Button onClick={() => void eligibility.refetch()}>{t("retry")}</Button>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+  if (eligibility.data?.eligible !== true)
+    return <CrewEligibilityNotice open={props.open} onOpenChange={props.onOpenChange} />;
+  return <CrewFormDialog {...props} onCertificationRequired={() => void eligibility.refetch()} />;
+}
+
+function CrewFormDialog({
+  open,
+  onOpenChange,
+  initial,
+  onCertificationRequired,
+}: CreateCrewDialogProps & { onCertificationRequired?: () => void }) {
   const t = useTranslations("crew");
   const tc = useTranslations("common");
   const router = useRouter();
   const locale = useLocale() as Locale;
 
   const isEdit = !!initial;
+  const [requirementsOpen, setRequirementsOpen] = useState(false);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+  const [name, setName] = useState(initial?.name ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
   // Backend persists a relative OSS key in `logo`; we keep both the
   // raw key (sent on submit) and rely on env.BANNER_BASE_URL to render
   // the local preview.
-  const [logoPath, setLogoPath] = useState("");
+  const [logoPath, setLogoPath] = useState(initial?.logo ?? "");
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -89,43 +152,45 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
   const update = useUpdateCrew();
   // Kept named `creating` in body so the existing JSX still reads
   // naturally — in edit mode this just means "update in flight".
-  const creating = create.isPending || update.isPending;
-
-  // Reset / prefill on open. Edit mode hydrates from `initial`; close
-  // clears so a previous failed attempt doesn't leak into the next open.
-  useEffect(() => {
-    if (!open) {
-      setName("");
-      setDescription("");
-      setLogoPath("");
-      setUploadingLogo(false);
-      return;
-    }
-    if (initial) {
-      setName(initial.name ?? "");
-      setDescription(initial.description ?? "");
-      setLogoPath(initial.logo ?? "");
-    }
-  }, [open, initial]);
+  const [creating, setCreating] = useState(false);
+  const alive = useRef(false);
+  const operation = useRef<"save" | "upload" | null>(null);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const finishSave = () => {
+    if (!alive.current) return;
+    operation.current = null;
+    setCreating(false);
+  };
 
   // ─── Logo upload (image) ──────────────────────────
   const handleLogoFile = async (file: File) => {
+    if (!alive.current || operation.current) return;
     if (!file.type.startsWith("image/")) {
       toast.error(t("createLogoImageOnly"));
       return;
     }
+    operation.current = "upload";
     setUploadingLogo(true);
     try {
       const path = await uploadBanner(file);
+      if (!alive.current) return;
       if (typeof path !== "string" || path.length === 0) {
         throw new Error("upload returned empty path");
       }
       setLogoPath(path);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
-      toast.error(msg || t("createLogoUploadFailed"));
+      if (alive.current) toast.error(msg || t("createLogoUploadFailed"));
     } finally {
-      setUploadingLogo(false);
+      if (alive.current) {
+        operation.current = null;
+        setUploadingLogo(false);
+      }
     }
   };
 
@@ -149,7 +214,10 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
 
   // ─── Submit ─────────────────────────────────────────
   const handleSubmit = () => {
-    if (!name.trim() || !description.trim() || !logoPath || creating) return;
+    if (!alive.current || operation.current || !name.trim() || !description.trim() || !logoPath)
+      return;
+    operation.current = "save";
+    setCreating(true);
 
     if (isEdit && initial) {
       update.mutate(
@@ -161,10 +229,14 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
         },
         {
           onSuccess: () => {
+            if (!alive.current) return;
             onOpenChange(false);
             toast.success(t("updateSuccess"));
           },
-          onError: (err) => reportError(err, "updateFailed"),
+          onError: (err) => {
+            if (alive.current) reportError(err, "updateFailed");
+          },
+          onSettled: finishSave,
         }
       );
       return;
@@ -179,15 +251,28 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
       },
       {
         onSuccess: (crew) => {
+          if (!alive.current) return;
           posthog.capture("crew_created", { crew_id: crew.id });
           onOpenChange(false);
           toast.success(t("createSuccess"));
           router.push(localizePath(`/crews/${crew.id}/workspace`, locale));
         },
         onError: (err) => {
+          if (!alive.current) return;
+          if (
+            err instanceof CrewApiError &&
+            err.status === 403 &&
+            ((err.body as { code?: string } | null)?.code === "CREW_LEVEL_REQUIRED" ||
+              (err.body as { code?: string } | null)?.code ===
+                "CREW_PRODUCER_CERTIFICATION_REQUIRED")
+          ) {
+            onCertificationRequired?.();
+            return;
+          }
           posthog.captureException(err);
           reportError(err, "createFailed");
         },
+        onSettled: finishSave,
       }
     );
   };
@@ -203,6 +288,21 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
         />
 
         <DialogBody>
+          {!isEdit && (
+            <>
+              <button
+                type="button"
+                className="mb-4 text-sm underline underline-offset-4 focus-visible:outline focus-visible:outline-2"
+                onClick={() => setRequirementsOpen(true)}
+              >
+                {t("creationRequirements.title")}
+              </button>
+              <CrewEligibilityNotice
+                open={open && requirementsOpen}
+                onOpenChange={setRequirementsOpen}
+              />
+            </>
+          )}
           <FieldGroup>
             {/* Logo first, centered, no label — it IS the identity
                 anchor of the form. Avatar-style picker matches the
@@ -211,7 +311,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
               <button
                 type="button"
                 onClick={() => logoInputRef.current?.click()}
-                disabled={uploadingLogo}
+                disabled={uploadingLogo || creating}
                 className={cn(
                   "relative flex size-28 items-center justify-center overflow-hidden rounded-full border border-dashed border-border bg-muted/30 transition-colors hover:border-primary/50",
                   uploadingLogo && "cursor-wait opacity-60"
@@ -252,6 +352,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
             <Field>
               <FieldLabel required>{t("createNameLabel")}</FieldLabel>
               <Input
+                disabled={creating}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t("createNamePlaceholder")}
@@ -266,6 +367,7 @@ export function CreateCrewDialog({ open, onOpenChange, initial }: CreateCrewDial
                 // submit button out of the dialog. Auto-grow stops at
                 // max-h and the textarea's own scrollbar takes over.
                 className="max-h-40 overflow-y-auto"
+                disabled={creating}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={t("createDescriptionPlaceholder")}

@@ -98,13 +98,40 @@ export async function requestEnvelope<T>(url: string, init?: RequestInit): Promi
   const payload = (await response.json().catch(() => null)) as {
     code?: number;
     msg?: string;
-    message?: string;
+    message?: string | { message?: string; issues?: Array<{ path?: string; message?: string }> };
+    issues?: Array<{ path?: string; message?: string }>;
     data?: T;
   } | null;
   if (!response.ok || payload?.code !== 200) {
-    throw new Error(payload?.msg ?? payload?.message ?? `请求失败：${response.status}`);
+    throw new Error(formatAdminError(payload, response.status));
   }
   return payload.data as T;
+}
+
+function formatAdminError(
+  payload: {
+    msg?: string;
+    message?: string | { message?: string; issues?: Array<{ path?: string; message?: string }> };
+    issues?: Array<{ path?: string; message?: string }>;
+  } | null,
+  status: number
+) {
+  const nested = payload?.message && typeof payload.message === "object" ? payload.message : null;
+  const issues = payload?.issues ?? nested?.issues ?? [];
+  const issueText = issues
+    .map((issue) => {
+      const path = issue.path?.trim();
+      const message = issue.message?.trim();
+      if (path && message) return `${path}: ${message}`;
+      return message || path || "";
+    })
+    .filter(Boolean)
+    .join("；");
+  const headline =
+    payload?.msg ??
+    (typeof payload?.message === "string" ? payload.message : nested?.message) ??
+    `请求失败：${status}`;
+  return issueText ? `${headline}（${issueText}）` : headline;
 }
 
 export function toErrorMessage(error: unknown) {

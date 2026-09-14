@@ -128,12 +128,7 @@ describe("StoryAssetSpecCard media replacement", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <StoryAssetSpecCard
-            asset={asset}
-            projectId="project-1"
-            chapterId="chapter-1"
-            workspaceId="workspace-1"
-          />
+          <StoryAssetSpecCard asset={asset} projectId="project-1" chapterId="chapter-1" />
         </QueryClientProvider>
       );
     });
@@ -159,8 +154,7 @@ describe("StoryAssetSpecCard media replacement", () => {
       file,
       expect.objectContaining({
         kind: "ai_reference_image",
-        workspaceId: "workspace-1",
-        scope: { projectId: "project-1" },
+        scope: { storyProjectId: "project-1" },
       })
     );
     expect(mocks.addCandidate).toHaveBeenCalledWith("project-1", candidate.asset.id);

@@ -46,8 +46,67 @@ function allowCrewAssetAccess() {
 }
 
 describe('MediaAccessService', () => {
+  it.each(['user-1', 'user-2', null])(
+    'rejects receipt media access for %s before canvas or visibility grants',
+    async (userId) => {
+      const asset = readyAsset({
+        visibility: MediaAssetVisibility.public,
+        metadata: { uploadKind: 'crew_expense_receipt', draftId: 'draft' },
+      });
+      const prisma = {
+        mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
+      };
+      const storage = { createReadUrl: jest.fn() };
+      const documentAccess = {
+        requireDocument: jest
+          .fn()
+          .mockResolvedValue({ contentSnapshot: { assetId: asset.id } }),
+      };
+      const service = new MediaAccessService(
+        prisma as never,
+        storage as never,
+        {} as never,
+        allowCrewAssetAccess() as never,
+        documentAccess as never,
+      );
+      await expect(
+        service.issueBrowserAccessUrl(userId, asset.id, {
+          variantKey: 'original',
+          documentId: 'document',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+      expect(documentAccess.requireDocument).not.toHaveBeenCalled();
+      expect(storage.createReadUrl).not.toHaveBeenCalled();
+    },
+  );
+
+  it('rejects generic administrator receipt access before signing', async () => {
+    const prisma = {
+      mediaAsset: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue(
+            readyAsset({ metadata: { uploadKind: 'crew_expense_receipt' } }),
+          ),
+      },
+    };
+    const storage = { createReadUrl: jest.fn() };
+    const service = new MediaAccessService(
+      prisma as never,
+      storage as never,
+      {} as never,
+      allowCrewAssetAccess() as never,
+      {} as never,
+    );
+    await expect(
+      service.issueAdminAccessUrl('receipt', { variantKey: 'original' }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(storage.createReadUrl).not.toHaveBeenCalled();
+  });
+
   it('issues an access URL for the owner', async () => {
     const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
       mediaAsset: { findFirst: jest.fn().mockResolvedValue(readyAsset()) },
     };
     const storageAccess = {
@@ -107,6 +166,7 @@ describe('MediaAccessService', () => {
     };
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -134,7 +194,9 @@ describe('MediaAccessService', () => {
         variantKey: 'original',
       }),
     ).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'MEDIA_ASSET_ACCESS_DENIED' }),
+      response: expect.objectContaining({
+        code: 'MEDIA_ASSET_ACCESS_DENIED',
+      }) as unknown,
     });
     expect(crewAssetAccess.requireNodePermission).toHaveBeenCalledWith(
       'crew-1',
@@ -155,6 +217,7 @@ describe('MediaAccessService', () => {
     const crewAssetAccess = allowCrewAssetAccess();
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -203,6 +266,7 @@ describe('MediaAccessService', () => {
     const crewAssetAccess = allowCrewAssetAccess();
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -254,6 +318,7 @@ describe('MediaAccessService', () => {
     const crewAssetAccess = allowCrewAssetAccess();
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -289,6 +354,7 @@ describe('MediaAccessService', () => {
 
   it('rejects blocked assets before resolving a URL', async () => {
     const prisma = {
+      $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
       mediaAsset: {
         findFirst: jest.fn().mockResolvedValue(
           readyAsset({
@@ -315,6 +381,7 @@ describe('MediaAccessService', () => {
   it('rejects private assets for non-owner users without workspace access', async () => {
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -351,6 +418,7 @@ describe('MediaAccessService', () => {
       .mockResolvedValue({ id: 'character-media-1' });
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -408,6 +476,7 @@ describe('MediaAccessService', () => {
     const requireWorkspaceRole = jest.fn();
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -479,6 +548,7 @@ describe('MediaAccessService', () => {
       .mockResolvedValue(null);
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -530,6 +600,7 @@ describe('MediaAccessService', () => {
       .mockResolvedValue(null);
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -565,6 +636,7 @@ describe('MediaAccessService', () => {
   it('still rejects non-members when the asset has no cast grant', async () => {
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -609,6 +681,7 @@ describe('MediaAccessService', () => {
     };
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest
             .fn()
@@ -639,6 +712,7 @@ describe('MediaAccessService', () => {
   it('requires authentication for anonymous reads of private assets', async () => {
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: { findFirst: jest.fn().mockResolvedValue(readyAsset()) },
       } as never,
       { createReadUrl: jest.fn() } as never,
@@ -661,6 +735,7 @@ describe('MediaAccessService', () => {
   it('returns not found when the requested variant cannot be resolved', async () => {
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: { findFirst: jest.fn().mockResolvedValue(readyAsset()) },
       } as never,
       { createReadUrl: jest.fn() } as never,
@@ -688,6 +763,7 @@ describe('MediaAccessService', () => {
     };
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -733,6 +809,7 @@ describe('MediaAccessService', () => {
     };
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -792,6 +869,7 @@ describe('MediaAccessService', () => {
     };
     const service = new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             readyAsset({
@@ -842,6 +920,7 @@ describe('MediaAccessService canvas-context grant', () => {
   function denyingBase() {
     return {
       prisma: {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: {
           findFirst: jest.fn().mockResolvedValue(
             // Someone else's personal-private asset: every direct grant fails.
@@ -959,6 +1038,7 @@ describe('MediaAccessService pre-broadcast moderation gate', () => {
   function makeService(asset: Record<string, unknown>) {
     return new MediaAccessService(
       {
+        $queryRaw: jest.fn().mockResolvedValue([{ allowed: false }]),
         mediaAsset: { findFirst: jest.fn().mockResolvedValue(asset) },
       } as never,
       {

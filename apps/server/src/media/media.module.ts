@@ -23,6 +23,8 @@ import { MediaProcessingWorkerService } from './media-processing-worker.service'
 import { MediaUploadController } from './media-upload.controller';
 import { MediaAssetFactsService } from './media-asset-facts.service';
 import { MediaUploadService } from './media-upload.service';
+import { EpisodeUploadController } from './episode-upload.controller';
+import { EpisodeUploadService } from './episode-upload.service';
 import { PlayableVideoProbeService } from './playable-video-probe.service';
 import { PlayableAudioProbeService } from './playable-audio-probe.service';
 import { UploadedImageProbeService } from './uploaded-image-probe.service';
@@ -53,11 +55,13 @@ import { VideoPosterService } from './video-poster.service';
     DocumentsModule,
   ],
   controllers: [
+    EpisodeUploadController,
     MediaUploadController,
     MediaAccessController,
     AdminMediaController,
   ],
   providers: [
+    EpisodeUploadService,
     MediaUploadService,
     MediaAssetFactsService,
     MediaAssetReadinessService,

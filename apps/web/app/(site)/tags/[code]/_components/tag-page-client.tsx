@@ -250,6 +250,7 @@ function toPlazaProject(ip: IpCommerceIp, t: ReturnType<typeof useTranslations>)
   const primaryGenre = ip.genres[0] ?? "";
   return {
     id: ip.id,
+    roomNumber: ip.roomNumber,
     name: ip.title || t("detailUntitled"),
     subtitle: ip.subtitle || primaryGenre,
     description: ip.summary || ip.description || "",

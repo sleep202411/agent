@@ -1,0 +1,37 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { useProjectUIStore } from "./project-ui-store";
+
+describe("project UI drawer state", () => {
+  beforeEach(() => {
+    useProjectUIStore.setState({
+      assetsOpen: false,
+      crewAssetsOpen: false,
+      nodesOpen: false,
+      historyOpen: false,
+      sectionsOpen: false,
+      skillsOpen: false,
+      selectedSkillId: null,
+      selectedShotId: null,
+    });
+  });
+
+  it("treats project assets and crew assets as separate, mutually exclusive panels", () => {
+    useProjectUIStore.getState().openAssets();
+    expect(useProjectUIStore.getState()).toMatchObject({
+      assetsOpen: true,
+      crewAssetsOpen: false,
+    });
+
+    useProjectUIStore.getState().openCrewAssets();
+    expect(useProjectUIStore.getState()).toMatchObject({
+      assetsOpen: false,
+      crewAssetsOpen: true,
+    });
+
+    useProjectUIStore.getState().openNodes();
+    expect(useProjectUIStore.getState()).toMatchObject({
+      nodesOpen: true,
+      crewAssetsOpen: false,
+    });
+  });
+});

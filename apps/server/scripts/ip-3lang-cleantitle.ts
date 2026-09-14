@@ -58,7 +58,9 @@ async function cleanTitle(
     choices?: { message?: { content?: string } }[];
   };
   const c = body.choices?.[0]?.message?.content ?? '{}';
-  return JSON.parse(c.slice(c.indexOf('{'), c.lastIndexOf('}') + 1));
+  return JSON.parse(c.slice(c.indexOf('{'), c.lastIndexOf('}') + 1)) as Awaited<
+    ReturnType<typeof cleanTitle>
+  >;
 }
 
 async function main() {
@@ -73,7 +75,7 @@ async function main() {
 
   const RESULTS = resolve(OUT, 'results-cleantitle.json');
   const done: string[] = existsSync(RESULTS)
-    ? JSON.parse(readFileSync(RESULTS, 'utf-8'))
+    ? (JSON.parse(readFileSync(RESULTS, 'utf-8')) as string[])
     : [];
   const doneSet = new Set(done);
   const todo = plan.filter((p) => !doneSet.has(p.ipId));

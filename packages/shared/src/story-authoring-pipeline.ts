@@ -112,6 +112,35 @@ export const StoryBranchPlanSchema = z
   .strict();
 export type StoryBranchPlan = z.infer<typeof StoryBranchPlanSchema>;
 
+/** Constrain generated exits to the topology already chosen by the skeleton. */
+export function storyBranchPlanSchemaForSkeleton(
+  skeleton: StorySkeleton
+): z.ZodType<StoryBranchPlan> {
+  const branches = skeleton.nodes.map((node) => {
+    const base = { nodeId: z.literal(node.id) };
+    if (node.nextIds.length === 0) {
+      return z.object({ ...base, kind: z.literal("auto"), nextNodeId: z.null() }).strict();
+    }
+    const target = z.enum(node.nextIds as [string, ...string[]]);
+    return z.discriminatedUnion("kind", [
+      z.object({ ...base, kind: z.literal("auto"), nextNodeId: target }).strict(),
+      z
+        .object({
+          ...base,
+          kind: z.literal("choice"),
+          decisionId: StoryAgentStableIdSchema,
+          prompt: StoryAgentLocalizedTextSchema,
+          choices: z
+            .array(StoryBranchChoiceSchema.extend({ nextNodeId: target }))
+            .min(2)
+            .max(6),
+        })
+        .strict(),
+    ]);
+  });
+  return z.object({ branches: z.array(z.union(branches)).length(skeleton.nodes.length) }).strict();
+}
+
 // ── Stage 4 · 场景撰写师 ──────────────────────────────────────────────────
 // Per-clip editorial copy. It cannot introduce ids or graph edges.
 

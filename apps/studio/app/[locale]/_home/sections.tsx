@@ -278,7 +278,7 @@ const MODELS: {
     badges: [{ key: "models.badges.new", kind: "new" }],
   },
   {
-    name: "Seedance 2.0",
+    name: "Seedance 2.5",
     img: `${MODEL_CDN}/production/cm3po9yyf0003oh0c2iyt8ajy/image/1754894158793-1e7ef687-c3c1-4f44-8b06-d044a8121f66.svg`,
     descKey: "models.descriptions.seedance",
     badges: [{ key: "models.badges.new", kind: "new" }],

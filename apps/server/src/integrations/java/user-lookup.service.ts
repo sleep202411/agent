@@ -78,9 +78,7 @@ export class JavaUserLookupService {
   /**
    * Resolve a phone OR email to a profile via Java. Returns null on
    * not-found, throws on upstream failure. `cookie` is the viewer's
-   * raw cookie string (carries satoken); pass "" only when you're
-   * sure the dev `AUTH_DISABLED` path doesn't matter — Java will
-   * reject with 302 "Not logged in!".
+   * raw cookie string (carries satoken). Java rejects unauthenticated calls.
    */
   async findByContact(
     account: string,

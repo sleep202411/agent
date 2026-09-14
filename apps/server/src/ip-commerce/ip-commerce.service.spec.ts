@@ -1,7 +1,8 @@
 import { ConflictException } from '@nestjs/common';
-import { IpAccessMode } from '@prisma/client';
+import { IpAccessMode, IpPublicationStatus } from '@prisma/client';
 import {
   assertIpPurchaserAllowed,
+  episodeStatusForIpPublication,
   isEntitlementActiveForAccess,
   resolveEpisodeAccessState,
   resolveIpAccessState,
@@ -38,6 +39,39 @@ describe('IP commerce purchase guards', () => {
   });
 });
 
+describe('episodeStatusForIpPublication', () => {
+  it('promotes draft episodes when the IP is published or scheduled', () => {
+    expect(episodeStatusForIpPublication(IpPublicationStatus.published)).toBe(
+      IpPublicationStatus.published,
+    );
+    expect(episodeStatusForIpPublication(IpPublicationStatus.scheduled)).toBe(
+      IpPublicationStatus.scheduled,
+    );
+    expect(episodeStatusForIpPublication(IpPublicationStatus.approved)).toBe(
+      IpPublicationStatus.approved,
+    );
+  });
+
+  it('does not promote episodes for non-live admin publication states', () => {
+    expect(episodeStatusForIpPublication(IpPublicationStatus.draft)).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.submitted),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.in_review),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.changes_requested),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.hidden),
+    ).toBeNull();
+    expect(
+      episodeStatusForIpPublication(IpPublicationStatus.suspended),
+    ).toBeNull();
+  });
+});
+
 describe('IP commerce management access', () => {
   it('treats an IP manager as owning their IP even without an entitlement', () => {
     expect(
@@ -56,6 +90,38 @@ describe('IP commerce management access', () => {
     expect(
       resolveEpisodeAccessState({
         hasManagementAccess: true,
+        hasIpEntitlement: false,
+        hasEpisodeEntitlement: false,
+        hasPendingIpEntitlement: false,
+        hasPendingEpisodeEntitlement: false,
+        isFreePreview: false,
+        accessMode: IpAccessMode.points_priced,
+        isMember: false,
+        hasEpisodePrice: true,
+        hasIpPrice: true,
+      }),
+    ).toEqual({ owned: true, access: 'owned_ip' });
+  });
+
+  it('treats free-watch certification as owning paid IP content', () => {
+    expect(
+      resolveIpAccessState({
+        hasManagementAccess: false,
+        hasFreeWatchPass: true,
+        hasIpEntitlement: false,
+        hasPendingIpEntitlement: false,
+        accessMode: IpAccessMode.points_priced,
+        isMember: false,
+        hasIpPrice: true,
+      }),
+    ).toEqual({ owned: true, access: 'owned' });
+  });
+
+  it('treats free-watch certification as owning paid episodes', () => {
+    expect(
+      resolveEpisodeAccessState({
+        hasManagementAccess: false,
+        hasFreeWatchPass: true,
         hasIpEntitlement: false,
         hasEpisodeEntitlement: false,
         hasPendingIpEntitlement: false,

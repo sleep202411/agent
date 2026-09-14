@@ -1,4 +1,5 @@
 "use client";
+import { useProjectContext } from "@/app/[locale]/project/_components/project-context";
 
 import {
   Component,
@@ -63,6 +64,7 @@ export default function ProjectLayout({
   const closeCopilot = useProjectUIStore((s) => s.closeCopilot);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
@@ -95,6 +97,7 @@ export default function ProjectLayout({
   const leftDrawerOpen =
     (nodesOpen && nodesEnabled) ||
     assetsOpen ||
+    crewAssetsOpen ||
     historyOpen ||
     sectionsOpen ||
     skillsOpen ||
@@ -205,6 +208,7 @@ export default function ProjectLayout({
                     />
                   }
                   panelOpen={leftDrawerOpen}
+                  crewAssetsEnabled
                 />
               </div>
               {projectHeader}
@@ -222,7 +226,7 @@ export default function ProjectLayout({
           />
         </div>
 
-        {canManage && (
+        {role != null && (
           <ShareDialog
             scope={{ kind: "project", id: projectId, name: name || t("thisProject") }}
             canManage={canManage}
@@ -409,12 +413,14 @@ function SectionAgentPanel({
   open: boolean;
   onClose: () => void;
 }) {
+  const { canEdit } = useProjectContext();
   const { activeSection } = useProjectSections();
   const workbenchMode = agentOsWorkbenchModeFromStudioMode(activeMode);
   const isSectionMode = workbenchMode === "canvas" || workbenchMode === "storyboard";
   if (isSectionMode && !activeSection) return null;
   return (
     <AgentOsPanel
+      canWrite={canEdit}
       className="p-0"
       projectId={projectId}
       projectKind="platform"

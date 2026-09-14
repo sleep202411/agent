@@ -1,10 +1,13 @@
 "use client";
 
+import { TaskUnreadMarker } from "@/app/(site)/crews/_components/task-unread-marker";
+
+import { TaskDeadline } from "@/app/(site)/crews/_components/task-deadline";
+
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   IconAntennaBars1,
   IconAntennaBars5,
-  IconCalendar,
   IconCheck,
   IconChevronDown,
   IconCircle,
@@ -16,7 +19,6 @@ import {
   IconPlus,
   IconSubtask,
   IconUrgent,
-  IconUserCircle,
 } from "@tabler/icons-react";
 import {
   DndContext,
@@ -197,13 +199,11 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
   const t = useTranslations("crewTaskProject");
   const displayProperties = new Set(props.view.visibleFields);
   const selected = props.selectedIds.has(task.id);
-  const assignee = task.assignees[0];
-  const assigneeDisplay = assignee ? props.displays.get(assignee.userId) : null;
 
   return (
     <div
       className={cn(
-        "group grid h-10 grid-cols-[32px_20px_68px_minmax(260px,1fr)_auto] items-center border-b border-white/[0.05] px-3 transition-colors hover:bg-white/[0.028]",
+        "group grid min-h-10 grid-cols-[32px_20px_68px_minmax(260px,1fr)_auto] items-center border-b border-white/[0.05] px-3 transition-colors hover:bg-white/[0.028]",
         selected && "bg-[#e52227]/[0.045]"
       )}
     >
@@ -221,9 +221,10 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
       <button
         type="button"
         onClick={() => props.onOpenTask(task.id)}
-        className="min-w-0 truncate pr-4 text-left text-[11px] font-medium text-[#d9dce1]"
+        className="flex min-w-0 items-center pr-4 text-left text-[11px] font-medium text-[#d9dce1]"
       >
-        {task.title}
+        <span className="truncate">{task.title}</span>
+        <TaskUnreadMarker taskId={task.id} />
       </button>
       <div className="flex items-center gap-3 pr-2 text-[10px] text-[#656c77]">
         {displayProperties.has("subtasks") && task.subtaskProgress.total > 0 ? (
@@ -244,19 +245,16 @@ function IssueRow({ task, props }: { task: CrewTaskListItemDTO; props: TaskProje
             ))
           : null}
         {displayProperties.has("priority") ? <PriorityMark priority={task.priority} /> : null}
-        {displayProperties.has("dueAt") && task.dueAt ? (
-          <span className={cn("inline-flex items-center gap-1", isOverdue(task) && "text-red-300")}>
-            <IconCalendar className="size-3.5" />
-            {shortDate(task.dueAt)}
+        {displayProperties.has("cycle") && task.cycle ? (
+          <span className="max-w-40 truncate" title={`${t("filterCycle")}: ${task.cycle.name}`}>
+            {task.cycle.name}
           </span>
         ) : null}
-        {displayProperties.has("assignees") && assignee ? (
-          <UserAvatar
-            src={assigneeDisplay?.avatar}
-            seed={assignee.userId}
-            name={displayNameOf(assignee.userId, props.displays)}
-            size={20}
-          />
+        {displayProperties.has("dueAt") && task.dueAt ? (
+          <TaskDeadline dueAt={task.dueAt} status={task.status} />
+        ) : null}
+        {displayProperties.has("assignees") ? (
+          <TaskAssignees task={task} displays={props.displays} />
         ) : null}
       </div>
     </div>
@@ -520,8 +518,6 @@ function BoardCard({
   });
   const properties = new Set(props.view.visibleFields);
   const state = props.workflowStates.find((item) => item.id === stateId);
-  const assignee = task.assignees[0];
-  const assigneeDisplay = assignee ? props.displays.get(assignee.userId) : null;
 
   return (
     <button
@@ -541,27 +537,18 @@ function BoardCard({
         <span className="ml-1 block text-[12px] leading-[14.5px] font-[450] tracking-[-0.24px] text-[#929299]">
           TASK-{task.number}
         </span>
-        <span className="absolute top-0 right-0 grid size-[18px] place-items-center text-[#85858d]">
-          {properties.has("assignees") && assignee ? (
-            <UserAvatar
-              src={assigneeDisplay?.avatar}
-              seed={assignee.userId}
-              name={displayNameOf(assignee.userId, props.displays)}
-              size={18}
-            />
-          ) : (
-            <IconUserCircle className="size-[18px]" stroke={1.65} aria-hidden="true" />
-          )}
-        </span>
         <span className="mt-[6px] flex h-4 min-w-0 items-center gap-1.5 pl-1 pr-6">
           <StatusMark state={state} className="size-3.5 shrink-0" />
           <span className="block min-w-0 truncate text-[13px] leading-4 font-medium tracking-[-0.13px] text-white">
             {task.title}
           </span>
+          <TaskUnreadMarker taskId={task.id} />
         </span>
       </div>
 
-      <div className="mt-[10px] flex h-6 min-w-0 items-center gap-1.5 overflow-hidden">
+      {properties.has("assignees") ? <TaskAssignees task={task} displays={props.displays} /> : null}
+
+      <div className="mt-[10px] flex min-h-6 min-w-0 flex-wrap items-center gap-1.5">
         {properties.has("priority") ? <CardPriorityProperty priority={task.priority} /> : null}
         {properties.has("labels") && task.labels.length > 0
           ? task.labels.slice(0, 3).map((label) => (
@@ -574,16 +561,16 @@ function BoardCard({
               </span>
             ))
           : null}
-        {properties.has("dueAt") && task.dueAt ? (
+        {properties.has("cycle") && task.cycle ? (
           <span
-            className={cn(
-              "inline-flex h-6 shrink-0 items-center gap-1 rounded-full bg-white/[0.055] px-2 text-[10px] font-[450] text-[#929299]",
-              isOverdue(task) && "text-red-300"
-            )}
+            className="inline-block h-6 max-w-40 shrink-0 truncate rounded-full bg-white/[0.055] px-2 py-1 text-[10px] text-[#929299]"
+            title={`${t("filterCycle")}: ${task.cycle.name}`}
           >
-            <IconCalendar className="size-3.5" />
-            {shortDate(task.dueAt, locale)}
+            {task.cycle.name}
           </span>
+        ) : null}
+        {properties.has("dueAt") && task.dueAt ? (
+          <TaskDeadline dueAt={task.dueAt} status={task.status} />
         ) : null}
       </div>
 
@@ -756,17 +743,36 @@ function workflowStateLabel(
       : state.name;
 }
 
-function isOverdue(task: CrewTaskListItemDTO) {
-  return Boolean(
-    task.dueAt &&
-    new Date(task.dueAt).getTime() < Date.now() &&
-    task.status !== "approved" &&
-    task.status !== "cancelled"
-  );
-}
-
 function shortDate(value: string, locale?: string) {
   return new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(
     new Date(value)
+  );
+}
+
+function TaskAssignees({
+  task,
+  displays,
+}: Pick<TaskProjectViewProps, "displays"> & { task: TaskProjectViewProps["tasks"][number] }) {
+  return (
+    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      {task.assignees.map((assignee) => {
+        const name = displayNameOf(assignee.userId, displays);
+        return (
+          <span
+            key={assignee.userId}
+            className="inline-flex min-w-0 items-center gap-1.5"
+            title={name}
+          >
+            <UserAvatar
+              src={displays.get(assignee.userId)?.avatar}
+              seed={assignee.userId}
+              name={name}
+              size={20}
+            />
+            <span className="max-w-32 truncate text-[11px] text-[#a5aab2]">{name}</span>
+          </span>
+        );
+      })}
+    </span>
   );
 }

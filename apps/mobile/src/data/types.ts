@@ -16,6 +16,8 @@ export interface Person {
 }
 
 export interface IpEpisode {
+  episodeNo?: number;
+  feedbackEligible?: boolean;
   id: string;
   index: number;
   title: string;

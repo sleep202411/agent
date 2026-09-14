@@ -10,11 +10,13 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
+  IconTrash,
   IconUpload,
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Combobox,
   ComboboxContent,
@@ -66,6 +68,7 @@ type LocaleCopy = {
 
 type IpOption = {
   id: string;
+  roomNumber: string;
   title: string;
   status: string;
 };
@@ -75,6 +78,7 @@ type RecommendationItem = {
   placementKey: PlacementKey;
   ipId: string;
   ipTitle: string;
+  ipRoomNumber: string;
   sortOrder: number;
   status: RecommendationStatus;
   startsAt: string;
@@ -117,6 +121,7 @@ const EMPTY_DRAFT: RecommendationDraft = {
   placementKey: "ip_plaza_hero",
   ipId: "",
   ipTitle: "",
+  ipRoomNumber: "",
   sortOrder: 1,
   status: "draft",
   startsAt: "",
@@ -149,11 +154,14 @@ export function IpDiscoveryPanel({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMode, setDrawerMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingIpId, setEditingIpId] = useState<string | null>(null);
+  const [editingPlacementKey, setEditingPlacementKey] = useState<PlacementKey | null>(null);
   const [localeTab, setLocaleTab] = useState<LocaleCode>("en-US");
   const [draft, setDraft] = useState<RecommendationDraft>(EMPTY_DRAFT);
   const [statusNow, setStatusNow] = useState(() => new Date());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
 
   useEffect(() => {
@@ -168,7 +176,7 @@ export function IpDiscoveryPanel({
       .filter((item) => placementFilter === "all" || item.placementKey === placementFilter)
       .filter((item) =>
         needle
-          ? `${item.ipTitle} ${item.ipId} ${placementLabel(item.placementKey)}`
+          ? `${item.ipTitle} ${item.ipRoomNumber} ${item.ipId} ${placementLabel(item.placementKey)}`
               .toLowerCase()
               .includes(needle)
           : true
@@ -196,6 +204,8 @@ export function IpDiscoveryPanel({
   function openCreateDrawer() {
     setDrawerMode("create");
     setEditingId(null);
+    setEditingIpId(null);
+    setEditingPlacementKey(null);
     const placementKey = placementFilter === "all" ? "ip_plaza_hero" : placementFilter;
     setDraft(
       normalizeDraftForPlacement({
@@ -212,6 +222,8 @@ export function IpDiscoveryPanel({
   function openEditDrawer(item: RecommendationItem) {
     setDrawerMode("edit");
     setEditingId(item.id);
+    setEditingIpId(item.ipId);
+    setEditingPlacementKey(item.placementKey);
     setDraft(toDraft(item));
     setLocaleTab("en-US");
     setDrawerOpen(true);
@@ -229,15 +241,22 @@ export function IpDiscoveryPanel({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             placementKey: normalized.placementKey,
-            ipId: normalized.ipId,
             ...payload,
           }),
         });
       } else if (editingId) {
+        // Only send mutable identity fields when they change — older servers
+        // reject unrecognized keys under .strict().
+        const { ipId, ...rest } = payload;
+        const body: Record<string, unknown> = { ...rest };
+        if (editingIpId && ipId && ipId !== editingIpId) body.ipId = ipId;
+        if (editingPlacementKey && normalized.placementKey !== editingPlacementKey) {
+          body.placementKey = normalized.placementKey;
+        }
         await requestEnvelope(`/api/admin/ip-commerce/discovery/${encodeURIComponent(editingId)}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(body),
         });
       }
       setDrawerOpen(false);
@@ -246,6 +265,22 @@ export function IpDiscoveryPanel({
       setError(toErrorMessage(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteRecommendation(item: RecommendationItem) {
+    setDeletingId(item.id);
+    setError(null);
+    try {
+      await requestEnvelope(`/api/admin/ip-commerce/discovery/${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+      });
+      if (editingId === item.id) setDrawerOpen(false);
+      await refresh();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -357,7 +392,9 @@ export function IpDiscoveryPanel({
                       <p className="max-w-[220px] truncate font-medium text-slate-950">
                         {item.ipTitle}
                       </p>
-                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">{item.ipId}</p>
+                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                        Room {item.ipRoomNumber}
+                      </p>
                     </TableCell>
                     <TableCell>
                       <StatusPill tone={statusTone(displayStatus)}>
@@ -380,15 +417,36 @@ export function IpDiscoveryPanel({
                       <p className="text-[11px] text-slate-500">{formatDate(item.updatedAt)}</p>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={() => openEditDrawer(item)}
-                      >
-                        <IconEdit className="size-3.5" />
-                        编辑
-                      </Button>
+                      <div className="inline-flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => openEditDrawer(item)}
+                        >
+                          <IconEdit className="size-3.5" />
+                          编辑
+                        </Button>
+                        <ConfirmDialog
+                          title="删除推荐位？"
+                          description={`确认删除「${placementLabel(item.placementKey)} · ${item.ipTitle || item.ipId}」？删除后不可恢复；如只需下线，请改状态为暂停或归档。`}
+                          confirmLabel="永久删除"
+                          destructive
+                          onConfirm={() => deleteRecommendation(item)}
+                          trigger={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              type="button"
+                              disabled={deletingId === item.id}
+                              aria-label="删除"
+                            >
+                              <IconTrash className="size-3.5" />
+                              删除
+                            </Button>
+                          }
+                        />
+                      </div>
                     </TableCell>
                   </tr>
                 );
@@ -492,7 +550,14 @@ function RecommendationDrawer({
                   {(id) => (
                     <Select
                       value={draft.placementKey}
-                      onValueChange={(value) => patchDraft({ placementKey: value as PlacementKey })}
+                      onValueChange={(value) => {
+                        onDraftChange(
+                          normalizeDraftForPlacement({
+                            ...draft,
+                            placementKey: value as PlacementKey,
+                          })
+                        );
+                      }}
                     >
                       <SelectTrigger id={id} className="w-full">
                         <SelectValue />
@@ -538,7 +603,18 @@ function RecommendationDrawer({
                   <IpCombobox
                     ipId={draft.ipId}
                     ipTitle={draft.ipTitle}
-                    onChange={(option) => patchDraft({ ipId: option.id, ipTitle: option.title })}
+                    ipRoomNumber={draft.ipRoomNumber}
+                    onChange={(option) =>
+                      patchDraft(
+                        option
+                          ? {
+                              ipId: option.id,
+                              ipTitle: option.title,
+                              ipRoomNumber: option.roomNumber,
+                            }
+                          : { ipId: "", ipTitle: "", ipRoomNumber: "" }
+                      )
+                    }
                   />
                 </Field>
                 <Field label="排序" tooltip="同一位置内的展示顺序,数字越小越靠前。">
@@ -849,11 +925,13 @@ function AssetUploadField({
 function IpCombobox({
   ipId,
   ipTitle,
+  ipRoomNumber,
   onChange,
 }: {
   ipId: string;
   ipTitle: string;
-  onChange: (option: IpOption) => void;
+  ipRoomNumber: string;
+  onChange: (option: IpOption | null) => void;
 }) {
   const [options, setOptions] = useState<IpOption[]>([]);
   const [search, setSearch] = useState("");
@@ -867,7 +945,12 @@ function IpCombobox({
         .then((data) => {
           if (cancelled) return;
           setOptions(
-            data.items.map((row) => ({ id: row.id, title: row.title, status: row.status }))
+            data.items.map((row) => ({
+              id: row.id,
+              roomNumber: row.roomNumber,
+              title: row.title,
+              status: row.status,
+            }))
           );
         })
         .catch(() => {
@@ -882,7 +965,9 @@ function IpCombobox({
 
   const selectedIp =
     options.find((option) => option.id === ipId) ??
-    (ipId ? { id: ipId, title: ipTitle || ipId, status: "当前值" } : null);
+    (ipId
+      ? { id: ipId, roomNumber: ipRoomNumber, title: ipTitle || ipId, status: "当前值" }
+      : null);
   const items =
     selectedIp && !options.some((option) => option.id === selectedIp.id)
       ? [selectedIp, ...options]
@@ -894,15 +979,16 @@ function IpCombobox({
         items={items}
         value={selectedIp}
         onValueChange={(option) => {
-          if (option) onChange(option);
+          onChange(option ?? null);
+          if (!option) setSearch("");
         }}
         onInputValueChange={(value: string) => setSearch(value)}
-        itemToStringLabel={(option) => `${option.id} · ${option.title}`}
+        itemToStringLabel={(option) => `${option.roomNumber} · ${option.title}`}
         itemToStringValue={(option) => option.id}
         isItemEqualToValue={(item, value) => item.id === value.id}
         autoHighlight
       >
-        <ComboboxInput placeholder="搜索 IP ID / 标题" />
+        <ComboboxInput placeholder="搜索房间号或标题" />
         <ComboboxContent>
           <ComboboxEmpty>未找到 IP</ComboboxEmpty>
           <ComboboxList>
@@ -910,7 +996,7 @@ function IpCombobox({
               <ComboboxItem key={option.id} value={option}>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-slate-950">{option.title}</p>
-                  <p className="font-mono text-[11px] text-slate-500">{option.id}</p>
+                  <p className="font-mono text-[11px] text-slate-500">Room {option.roomNumber}</p>
                 </div>
                 <span className="shrink-0 rounded-md border border-slate-200 px-1.5 py-0.5 text-[11px] text-slate-500">
                   {option.status}
@@ -1226,6 +1312,7 @@ function toDraft(item: RecommendationItem): RecommendationDraft {
     placementKey: item.placementKey,
     ipId: item.ipId,
     ipTitle: item.ipTitle,
+    ipRoomNumber: item.ipRoomNumber,
     sortOrder: item.sortOrder,
     status: item.status,
     startsAt: item.startsAt,
@@ -1270,6 +1357,7 @@ function rowToItem(row: IpDiscoveryRecommendationRow): RecommendationItem {
     placementKey: row.placementKey,
     ipId: row.ipId,
     ipTitle: row.ip?.title ?? row.ipId,
+    ipRoomNumber: row.ip?.roomNumber ?? "",
     sortOrder: row.sortOrder,
     status: row.status,
     startsAt: datetimeLocalValue(row.startsAt),
@@ -1308,9 +1396,10 @@ function draftToPayload(draft: RecommendationDraft) {
       })
     : [];
 
-  // Mutable fields shared by create + update. (placementKey/ipId are added only
-  // on create — the update endpoint is strict and rejects them.)
+  // Shared create/update body. `ipId` is mutable on edit so ops can rebind a
+  // placement without deleting and recreating the row.
   return {
+    ipId: draft.ipId,
     status: draft.status,
     sortOrder: draft.sortOrder,
     startsAt: draft.startsAt ? new Date(draft.startsAt).toISOString() : null,

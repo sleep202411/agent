@@ -62,7 +62,9 @@
     "eslint-config-expo": "~57.0.0",
     "prettier-plugin-tailwindcss": "^0.5.14",
     "tailwindcss": "^3.4.19",
-    "typescript": "~6.0.3"
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.4",
+    "jsdom": "^28.1.0"
   },
   "scripts": {
     "expo": "node ./scripts/expo-workspace.js",
@@ -78,7 +80,9 @@
     "lint": "node ./scripts/expo-workspace.js lint",
     "build:release": "bash ./scripts/build-release.sh",
     "build:release:cn": "bash ./scripts/build-release.sh cn all",
-    "build:release:global": "bash ./scripts/build-release.sh global all"
+    "build:release:global": "bash ./scripts/build-release.sh global all",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
   },
   "private": true
 }

@@ -8,16 +8,10 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { IS_PUBLIC_KEY, SKIP_END_USER_AUTH_KEY } from './auth.decorator';
-import type { AuthenticatedRequest, AuthUser } from './auth.types';
+import type { AuthenticatedRequest } from './auth.types';
 
 type GuardRequest = Request &
   Partial<Pick<AuthenticatedRequest, 'user' | 'rawCookie'>>;
-
-const DEV_USER: AuthUser = {
-  userId: 'dev',
-  userName: 'dev',
-  nickName: 'Developer',
-};
 
 /**
  * Global NestJS guard that validates the session cookie on every request.
@@ -31,7 +25,6 @@ const DEV_USER: AuthUser = {
  * attach `request.user` when a valid cookie is present. Public crew
  * endpoints use that optional user to decide whether to expose owner-only
  * state such as frozen positions.
- * Set AUTH_DISABLED=true to skip auth in local dev (user info API unreachable).
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -61,23 +54,6 @@ export class AuthGuard implements CanActivate {
       context.getHandler(),
       context.getClass(),
     ]);
-
-    // Dev mode still prefers a real browser session when one exists. This lets
-    // local studio/admin flows exercise the same user-scoped wallet data as
-    // production, while retaining the dev fallback when Java auth is unavailable.
-    if (process.env.AUTH_DISABLED === 'true') {
-      if (cookie) {
-        const user = await this.authService.validateToken(cookie);
-        if (user) {
-          request.user = user;
-          request.rawCookie = cookie;
-          return true;
-        }
-      }
-      request.user = DEV_USER;
-      request.rawCookie = cookie ?? '';
-      return true;
-    }
 
     if (!cookie) {
       if (isPublic) return true;

@@ -13,6 +13,69 @@ const NEXT_RUN_ID = "55555555-5555-4555-8555-555555555555";
 const BATCH_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaab";
 
 describe("durable Story production continuation", () => {
+  it.each([
+    ["plot", "current"],
+    ["assets", "current"],
+    ["assets", "missing"],
+  ] as const)(
+    "consumes regeneration after %s (storyboard=%s)",
+    async (completedStage, storyboard) => {
+      const observed: Array<{ toolId: string; input: unknown }> = [];
+      const domain: DomainPort = {
+        async execute(toolId, input) {
+          observed.push({ toolId, input });
+          if (toolId === "story.read")
+            return {
+              ok: true,
+              data: storyReadResult({ assets: "current", plot: "current", storyboard }),
+            };
+          return {
+            ok: true,
+            data: {
+              runId: NEXT_RUN_ID,
+              status: "authoring",
+              agentHandoff: {
+                kind: "external_job",
+                jobId: NEXT_RUN_ID,
+                startedMessage: "Drafting",
+              },
+            },
+          };
+        },
+      };
+      const base = continuationRuntime(domain);
+      const graph = createAgentOsGraph({
+        model: fakeModel(),
+        projectKind: "story",
+        workbenchMode: "story",
+        checkpointer: new MemorySaver(),
+        runtime: {
+          ...base,
+          storyContinuation: {
+            ...base.storyContinuation,
+            completedStage,
+            plan: { ...base.storyContinuation.plan, regenerateStage: "assets" },
+          },
+        },
+      });
+      await graph.invoke(
+        { messages: [new HumanMessage("Approved")] },
+        { configurable: { thread_id: `regenerate-after-${completedStage}` } }
+      );
+      if (completedStage === "plot") {
+        expect(observed[1]).toMatchObject({
+          toolId: "story.author",
+          input: { regenerateStage: "assets" },
+        });
+      } else if (storyboard === "missing") {
+        expect(observed[1]?.toolId).toBe("story.author");
+        expect(observed[1]?.input).not.toHaveProperty("regenerateStage");
+      } else {
+        expect(observed.map(({ toolId }) => toolId)).toEqual(["story.read"]);
+      }
+    }
+  );
+
   it("reads canonical state and starts exactly one next proposal inside the saved scope", async () => {
     const observed: Array<{ toolId: string; input: unknown }> = [];
     const domain: DomainPort = {

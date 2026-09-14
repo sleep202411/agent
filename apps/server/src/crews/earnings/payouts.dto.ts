@@ -1,6 +1,6 @@
 import { CrewPayoutMethod, CrewPayoutStatus } from '@prisma/client';
 import { z } from 'zod';
-import { positivePointAmount } from './earnings.dto';
+import { positiveAmountMinor } from './earnings.dto';
 
 const MAX_SIGNED_BIGINT = 9_223_372_036_854_775_807n;
 const nonNegativeMinorUnits = z
@@ -13,16 +13,24 @@ const nonNegativeMinorUnits = z
     },
   );
 export const ListCrewPayoutsQuerySchema = z.object({
+  currency: z.enum(['CNY', 'USD']),
   scope: z.enum(['mine', 'crew']).default('mine'),
   status: z.nativeEnum(CrewPayoutStatus).optional(),
   cursor: z.string().uuid().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
+export const ListMyCrewPayoutsQuerySchema = ListCrewPayoutsQuerySchema.omit({
+  scope: true,
+}).strict();
+export type ListMyCrewPayoutsQuery = z.infer<
+  typeof ListMyCrewPayoutsQuerySchema
+>;
 export type ListCrewPayoutsQuery = z.infer<typeof ListCrewPayoutsQuerySchema>;
 
 export const CreateCrewPayoutSchema = z.object({
   crewMemberId: z.string().trim().min(1),
-  pointsAmount: positivePointAmount,
+  currency: z.enum(['CNY', 'USD']),
+  amountMinor: positiveAmountMinor,
   withholdingAmountMinor: nonNegativeMinorUnits.default('0'),
   note: z.string().trim().max(10_000).optional(),
   idempotencyKey: z.string().trim().min(8).max(80),

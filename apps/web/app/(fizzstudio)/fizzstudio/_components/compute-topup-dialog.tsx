@@ -1,5 +1,6 @@
 "use client";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -45,11 +46,20 @@ export function ComputeTopupButton({ variant }: { variant: "enterprise" | "studi
   const wallet = useComputeWalletLedger();
   const balance = availableComputeBalance(wallet.data);
   const returnStatus = searchParams.get("computeTopup");
+  const { user } = useCurrentUser();
+  const handledReturn = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!returnStatus) return;
+    if (!returnStatus) {
+      handledReturn.current = null;
+      return;
+    }
+    if (!user?.id) return;
+    const identity = `${pathname}?${searchParams.toString()}`;
+    if (handledReturn.current === identity) return;
+    handledReturn.current = identity;
     if (returnStatus === "success") {
-      toast.success(t("computeBilling.completedToast"));
+      toast.info(t("computeBilling.returnedToast"));
       void wallet.refetch();
     } else if (returnStatus === "cancelled") {
       toast.info(t("computeBilling.cancelledToast"));
@@ -58,13 +68,17 @@ export function ComputeTopupButton({ variant }: { variant: "enterprise" | "studi
     const next = new URLSearchParams(searchParams.toString());
     next.delete("computeTopup");
     const query = next.toString();
-    router.replace(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+    router.replace(`${pathname}${query ? `?${query}` : ""}${window.location.hash}`, {
+      scroll: false,
+    });
     // searchParams intentionally stays in deps so repeated provider returns are handled.
-  }, [pathname, returnStatus, router, searchParams, t, wallet]);
+  }, [pathname, returnStatus, router, searchParams, t, wallet, user?.id]);
 
   const label = wallet.isLoading
     ? t("computeBilling.balanceLoading")
-    : t("computeBilling.balance", { amount: formatInteger(balance) });
+    : wallet.isError && !wallet.data
+      ? t("computeBilling.balanceUnavailable")
+      : t("computeBilling.balance", { amount: formatInteger(balance) });
 
   return (
     <>
@@ -97,6 +111,13 @@ function ComputeTopupDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { user } = useCurrentUser();
+  const pathname = usePathname();
+  if (!open || !user?.id) return null;
+  return <ComputeTopupSession key={`${user.id}:${pathname}`} onOpenChange={onOpenChange} />;
+}
+
+function ComputeTopupSession({ onOpenChange }: { onOpenChange: (open: boolean) => void }) {
   const t = useTranslations("fizzStudio");
   const locale = useLocale();
   const catalog = useComputeTopupCatalog();
@@ -104,6 +125,15 @@ function ComputeTopupDialog({
   const createTopup = useCreateComputeTopup();
   const [selectedPriceId, setSelectedPriceId] = useState("");
   const idemRef = useRef<IdempotencyState | null>(null);
+  const active = useRef(false);
+  const pending = useRef(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
 
   const prices = useMemo(() => catalog.data?.prices ?? [], [catalog.data?.prices]);
   const selectedPrice = useMemo(
@@ -113,15 +143,19 @@ function ComputeTopupDialog({
   const balance = availableComputeBalance(wallet.data);
 
   async function handleSubmit() {
-    if (!selectedPrice || !catalog.data) return;
-    const sig = selectedPrice.id;
+    if (!active.current || pending.current || !selectedPrice || !catalog.data) return;
+    pending.current = true;
+    setBusy(true);
+    const sig = `${catalog.data.provider}:${selectedPrice.id}`;
     if (!idemRef.current || idemRef.current.sig !== sig) {
       idemRef.current = { sig, key: crypto.randomUUID() };
     }
 
-    const base = `${window.location.origin}${window.location.pathname}`;
-    const successUrl = `${base}?computeTopup=success`;
-    const backUrl = `${base}?computeTopup=cancelled`;
+    const returnUrl = new URL(window.location.href);
+    returnUrl.searchParams.set("computeTopup", "success");
+    const successUrl = returnUrl.toString();
+    returnUrl.searchParams.set("computeTopup", "cancelled");
+    const backUrl = returnUrl.toString();
 
     try {
       const result = await createTopup.mutateAsync({
@@ -132,6 +166,7 @@ function ComputeTopupDialog({
         backUrl,
       });
 
+      if (!active.current) return;
       if (result.order.status === "fulfilled" && !result.paymentIntent) {
         toast.success(t("computeBilling.successToast"));
         onOpenChange(false);
@@ -146,9 +181,10 @@ function ComputeTopupDialog({
 
       if (result.order.provider === "airwallex" && pi?.providerPaymentIntentId && pi.clientSecret) {
         const { init } = await import("@airwallex/components-sdk");
+        if (!active.current) return;
         const aw = await init({ env: result.env, enabledElements: ["payments"] });
+        if (!active.current) return;
         if (!aw.payments) {
-          idemRef.current = null;
           toast.error(t("computeBilling.paymentFailed"));
           return;
         }
@@ -165,10 +201,9 @@ function ComputeTopupDialog({
         return;
       }
 
-      idemRef.current = null;
       toast.error(t("computeBilling.providerUnavailable"));
     } catch (error) {
-      idemRef.current = null;
+      if (!active.current) return;
       const message =
         error instanceof ApiRequestError
           ? error.message
@@ -176,13 +211,24 @@ function ComputeTopupDialog({
             ? error.message
             : t("computeBilling.paymentFailed");
       toast.error(message);
+    } finally {
+      if (active.current) {
+        pending.current = false;
+        setBusy(false);
+      }
     }
   }
 
-  const canSubmit = Boolean(selectedPrice) && !catalog.isLoading && !createTopup.isPending;
+  const canSubmit =
+    Boolean(selectedPrice) &&
+    !catalog.isLoading &&
+    !catalog.isError &&
+    !catalog.isFetching &&
+    !createTopup.isPending &&
+    !busy;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[calc(100vh-2rem)] overflow-hidden rounded-[8px] border border-white/10 bg-[#151516] text-white shadow-2xl sm:max-w-[720px]">
         <DialogHeader className="border-white/10 px-5 py-4">
           <DialogTitle className="text-lg font-semibold tracking-normal text-white">
@@ -200,7 +246,9 @@ function ComputeTopupDialog({
                   {t("computeBilling.availableBalance")}
                 </p>
                 <p className="mt-0.5 truncate text-2xl font-semibold tracking-normal text-white">
-                  {formatInteger(balance)}
+                  {wallet.isError && !wallet.data
+                    ? t("computeBilling.balanceUnavailable")
+                    : formatInteger(balance)}
                 </p>
               </div>
             </div>
@@ -213,11 +261,43 @@ function ComputeTopupDialog({
             ) : null}
           </div>
 
+          {wallet.isError && (
+            <div role="alert" className="mt-3 text-sm text-white/80">
+              <p>
+                {wallet.error instanceof Error
+                  ? wallet.error.message
+                  : t("computeBilling.loadFailed")}
+              </p>
+              <Button
+                variant="outline"
+                disabled={wallet.isFetching}
+                onClick={() => void wallet.refetch()}
+              >
+                {t("computeBilling.retry")}
+              </Button>
+            </div>
+          )}
+          {catalog.isError && (
+            <div role="alert" className="mt-3 text-sm text-white/80">
+              <p>
+                {catalog.error instanceof Error
+                  ? catalog.error.message
+                  : t("computeBilling.loadFailed")}
+              </p>
+              <Button
+                variant="outline"
+                disabled={catalog.isFetching}
+                onClick={() => void catalog.refetch()}
+              >
+                {t("computeBilling.retry")}
+              </Button>
+            </div>
+          )}
           {catalog.isLoading ? (
             <div className="grid min-h-[220px] place-items-center rounded-[8px] border border-white/10 bg-white/[0.03] text-white/60">
               <IconLoader2 className="size-5 animate-spin" />
             </div>
-          ) : prices.length === 0 ? (
+          ) : catalog.isError && prices.length === 0 ? null : prices.length === 0 ? (
             <div className="rounded-[8px] border border-white/10 bg-white/[0.03] px-4 py-8 text-center">
               <p className="text-sm font-semibold text-white">{t("computeBilling.emptyTitle")}</p>
               <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-white/58">
@@ -232,7 +312,9 @@ function ComputeTopupDialog({
                   price={price}
                   locale={locale}
                   selected={price.id === selectedPrice?.id}
-                  onSelect={() => setSelectedPriceId(price.id)}
+                  onSelect={() => {
+                    if (!pending.current) setSelectedPriceId(price.id);
+                  }}
                 />
               ))}
             </div>

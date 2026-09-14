@@ -21,7 +21,6 @@ import {
   StudioDocumentType,
   StudioDocumentVersionSource,
   WorkspaceMemberRole,
-  WorkspaceType,
 } from '@prisma/client';
 import { storyVisualStyleSkillBySlug } from '@repo/shared';
 import {
@@ -515,7 +514,172 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     expect(aiGeneration.submitJob).toHaveBeenCalledTimes(1);
   });
 
-  it('allows current Asset and Storyboard rows to generate when approved upstream lineage is stale', async () => {
+  it('saves clip prompt mentions and sends their media references, then removes them on edit', async () => {
+    const fixture = await createFixture(prisma, workspaceIds);
+    await prisma.storyStoryboardClipAssetBinding.deleteMany({
+      where: { storyboardClipId: fixture.clipId },
+    });
+    const reference = await createCompletedAssetGeneration(
+      prisma,
+      fixture,
+      'prompt-reference',
+    );
+    const gateway = acceptingGenerationGateway(prisma, fixture);
+    const generation = materializationService(prisma, fixture, true, gateway);
+    await generation.onAiGenerationCompleted({
+      id: reference.job.id,
+      sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
+    } as AiJob);
+    const plans = editablePlanService(prisma, fixture);
+    const user = { userId: fixture.userId } as never;
+    const prompt = `Follow @${fixture.assetStableKey} through the gate.`;
+    const patched = await plans.patchClip(
+      user,
+      fixture.projectId,
+      fixture.chapterId,
+      fixture.sequenceId,
+      fixture.clipId,
+      `${fixture.prefix}:mention-add`,
+      { expectedVersion: 0, videoPrompt: prompt },
+    );
+    expect(patched.videoPrompt).toBe(prompt);
+    expect(patched.assetBindings).toHaveLength(1);
+    expect(patched.assetBindings[0]).toMatchObject({
+      assetSpecId: fixture.assetSpecId,
+      mode: StoryStoryboardBindingMode.follow_selected,
+      resolvedMediaVersion: { mediaAssetId: reference.output.assetId },
+    });
+    const submit = (version: number, key: string) =>
+      generation.createStoryboardClipGeneration(
+        user,
+        fixture.projectId,
+        fixture.chapterId,
+        fixture.sequenceId,
+        fixture.clipId,
+        `${fixture.prefix}:${key}`,
+        {
+          expectedVersion: version,
+          modelId: 'fake-video',
+          schemaVersion: 'test-v1',
+          options: {},
+        },
+      );
+    await submit(patched.version, 'mention-generate');
+    expect(gateway.submitJob.mock.calls[0][1]).toMatchObject({
+      referenceBindings: [{ assetId: reference.output.assetId }],
+      promptDocument: {
+        nodes: [
+          { type: 'text', text: 'Follow ' },
+          { type: 'asset_ref', refId: patched.assetBindings[0].id },
+          { type: 'text', text: ' through the gate.' },
+        ],
+      },
+    });
+    const cleared = await plans.patchClip(
+      user,
+      fixture.projectId,
+      fixture.chapterId,
+      fixture.sequenceId,
+      fixture.clipId,
+      `${fixture.prefix}:mention-remove`,
+      { expectedVersion: patched.version, videoPrompt: 'An empty gate.' },
+    );
+    expect(cleared.assetBindings).toEqual([]);
+    await submit(cleared.version, 'mention-cleared-generate');
+    expect(gateway.submitJob.mock.calls[1][1]).toMatchObject({
+      referenceBindings: [],
+      promptDocument: { nodes: [{ type: 'text', text: 'An empty gate.' }] },
+    });
+  });
+
+  it('preserves a pinned clip reference while editing its prompt and deduplicates repeated mentions', async () => {
+    const fixture = await createFixture(prisma, workspaceIds);
+    const reference = await createCompletedAssetGeneration(
+      prisma,
+      fixture,
+      'pinned-prompt-reference',
+    );
+    await materializationService(prisma, fixture).onAiGenerationCompleted({
+      id: reference.job.id,
+      sourceSurface: STORY_STUDIO_WORKBENCH_SURFACE,
+    } as AiJob);
+    const asset = await prisma.storyAssetSpec.findUniqueOrThrow({
+      where: { id: fixture.assetSpecId },
+    });
+    await prisma.storyStoryboardClipAssetBinding.update({
+      where: { id: fixture.bindingId },
+      data: {
+        role: 'reference',
+        mode: StoryStoryboardBindingMode.pinned,
+        pinnedMediaVersionId: asset.selectedMediaVersionId,
+      },
+    });
+    const patched = await editablePlanService(prisma, fixture).patchClip(
+      { userId: fixture.userId } as never,
+      fixture.projectId,
+      fixture.chapterId,
+      fixture.sequenceId,
+      fixture.clipId,
+      `${fixture.prefix}:mention-pinned`,
+      {
+        expectedVersion: 0,
+        videoPrompt: `Follow @${fixture.assetStableKey}. Close up on @${fixture.assetStableKey}.`,
+      },
+    );
+    expect(patched.assetBindings).toHaveLength(1);
+    expect(patched.assetBindings[0]).toMatchObject({
+      id: fixture.bindingId,
+      mode: StoryStoryboardBindingMode.pinned,
+      pinnedMediaVersionId: asset.selectedMediaVersionId,
+      required: true,
+    });
+  });
+
+  it('rejects unavailable clip mentions and rolls bindings back when the clip version conflicts', async () => {
+    const fixture = await createFixture(prisma, workspaceIds);
+    const foreign = await createFixture(prisma, workspaceIds);
+    const plans = editablePlanService(prisma, fixture);
+    const patch = (key: string, prompt: string, expectedVersion = 0) =>
+      plans.patchClip(
+        { userId: fixture.userId } as never,
+        fixture.projectId,
+        fixture.chapterId,
+        fixture.sequenceId,
+        fixture.clipId,
+        `${fixture.prefix}:${key}`,
+        { expectedVersion, videoPrompt: prompt },
+      );
+    for (const [index, stableKey] of [
+      'missing.asset',
+      foreign.assetStableKey,
+    ].entries()) {
+      await expect(
+        patch(`unavailable-${index}`, `Follow @${stableKey}.`),
+      ).rejects.toMatchObject({
+        response: { code: 'STORYBOARD_CLIP_ASSET_NOT_FOUND' },
+      });
+    }
+    await expect(
+      patch('conflicting-version', `Follow @${fixture.assetStableKey}.`, 99),
+    ).rejects.toMatchObject({
+      response: { code: 'STORY_PRODUCTION_VERSION_CONFLICT' },
+    });
+    expect(
+      await prisma.storyStoryboardClip.findUniqueOrThrow({
+        where: { id: fixture.clipId },
+      }),
+    ).toMatchObject({
+      version: 0,
+      videoPrompt: 'A cinematic seven-second shot.',
+    });
+    expect(
+      await prisma.storyStoryboardClipAssetBinding.findMany({
+        where: { storyboardClipId: fixture.clipId },
+      }),
+    ).toMatchObject([{ id: fixture.bindingId, role: 'character' }]);
+  });
+
+  it('keeps current Asset and Storyboard specs ready and generatable after Script edits', async () => {
     const fixture = await createFixture(prisma, workspaceIds);
     const reference = await createCompletedAssetGeneration(
       prisma,
@@ -557,9 +721,10 @@ describePostgres('Story production generation PostgreSQL integration', () => {
     expect(asset.status).toBe(StoryProductionSpecStatus.current);
     expect(sequence.status).toBe(StoryProductionSpecStatus.current);
     expect(productionState).toMatchObject({
+      script: { status: 'current' },
       assets: { status: 'current' },
       storyboard: { status: 'current' },
-      ready: false,
+      ready: true,
     });
 
     await expect(
@@ -1155,7 +1320,7 @@ async function createFixture(
   });
   const workspace = await prisma.workspace.create({
     data: {
-      type: WorkspaceType.team,
+      defaultForUserId: null,
       name: prefix,
       ownerUserId: userId,
       createdById: userId,
@@ -1750,6 +1915,24 @@ function assetTargetSnapshot(
   };
 }
 
+function editablePlanService(
+  prisma: ReturnType<typeof buildPrisma>,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+) {
+  return new StoryProductionPlanService(
+    prisma as unknown as PrismaService,
+    {
+      requireProject: jest
+        .fn()
+        .mockResolvedValue({ project: { workspaceId: fixture.workspaceId } }),
+      requireProjectInTransaction: jest.fn().mockResolvedValue(undefined),
+    } as never,
+    {
+      assertHumanWriteAllowed: jest.fn().mockResolvedValue(undefined),
+    } as never,
+  );
+}
+
 function materializationService(
   prisma: ReturnType<typeof buildPrisma>,
   fixture: Awaited<ReturnType<typeof createFixture>>,
@@ -1916,6 +2099,9 @@ async function cleanupFixtures(
   await prisma.storyStoryboardClip.updateMany({
     where: { project: { workspaceId: { in: ids } } },
     data: { selectedMediaVersionId: null },
+  });
+  await prisma.storyStoryboardClipAssetBinding.deleteMany({
+    where: { project: { workspaceId: { in: ids } } },
   });
   await prisma.storyAssetMediaVersion.deleteMany({
     where: { project: { workspaceId: { in: ids } } },

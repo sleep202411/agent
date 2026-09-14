@@ -15,6 +15,7 @@ import type {
   AdminBillingPricesData,
   AdminBillingPromotionsData,
   AdminBillingWorkspacesData,
+  AdminComputeMemberUsageData,
   AdminBillingVouchersData,
   AdminBillingCampaignsData,
   CheckInConfigData,
@@ -59,6 +60,15 @@ export async function fetchAdminBillingWorkspaces(
   return fetchAdminBillingResource(
     `/billing/workspaces${toSearch(searchParams)}`,
     "工作区数据加载失败。"
+  );
+}
+
+export async function fetchAdminComputeMemberUsage(
+  searchParams?: Record<string, string | undefined>
+): Promise<AdminBillingLoadResult<AdminComputeMemberUsageData>> {
+  return fetchAdminBillingResource(
+    `/billing/usage/member-compute${toSearch(searchParams)}`,
+    "成员积分消耗数据加载失败。"
   );
 }
 

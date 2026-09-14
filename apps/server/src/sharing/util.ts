@@ -1,3 +1,5 @@
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+
 /** Prisma unique-constraint violation (raced concurrent insert). */
 export function isUniqueViolation(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
@@ -21,4 +23,20 @@ export function effectiveInviteStatus<S extends string>(
     return 'expired';
   }
   return invite.status;
+}
+
+/** Link expiry does not revoke existing membership; only current access matters. */
+export async function existingInviteAccess<T>(
+  read: () => Promise<T>,
+): Promise<T | null> {
+  try {
+    return await read();
+  } catch (error) {
+    if (
+      error instanceof ForbiddenException ||
+      error instanceof NotFoundException
+    )
+      return null;
+    throw error;
+  }
 }

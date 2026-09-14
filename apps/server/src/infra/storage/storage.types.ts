@@ -1,10 +1,9 @@
 /**
  * Output storage abstraction.
  *
- * Today: Azure Blob Storage (intl primary, matches the Foundry side
- * already running on Azure). Tomorrow: a sibling Alibaba OSS impl
- * picked by env so the CN deployment keeps data in-region. Callers
- * never reach for a provider SDK — they go through this interface.
+ * CN writes to Aliyun OSS, international writes to S3-compatible storage.
+ * The selected provider is validated at bootstrap. Existing objects retain
+ * their recorded provider; callers never reach for a provider SDK.
  */
 
 export interface OutputStorageUpload {
@@ -61,6 +60,25 @@ export interface OutputStorageResult {
  * mapping table. Adding a provider = add the enum value here + in Prisma.
  */
 export type StorageProviderId = 'azure_blob' | 'aliyun_oss' | 's3_compatible';
+
+/** Provider-owned multipart state. Never accept this identity from a browser. */
+export interface MultipartUploadRef {
+  storageKey: string;
+  uploadId: string;
+  bucket: string;
+  region: string | null;
+}
+
+export interface StoredUploadPart {
+  number: number;
+  sizeBytes: number;
+  etag: string;
+}
+
+export interface UploadPartUrl {
+  url: string;
+  headers: Record<string, string>;
+}
 
 export const IMMUTABLE_STORAGE_CACHE_CONTROL =
   'public, max-age=31536000, immutable';
@@ -313,8 +331,35 @@ export interface RestrictObjectResult {
 }
 
 export abstract class OutputStorageService {
+  abstract beginMultipartUpload(
+    storageKey: string,
+    contentType: string,
+  ): Promise<MultipartUploadRef>;
+  abstract listUploadParts(
+    ref: MultipartUploadRef,
+  ): Promise<StoredUploadPart[]>;
+  abstract signUploadPart(
+    ref: MultipartUploadRef,
+    number: number,
+  ): Promise<UploadPartUrl>;
+  abstract completeMultipartUpload(
+    ref: MultipartUploadRef,
+    parts: StoredUploadPart[],
+    contentType: string,
+  ): Promise<void>;
+  abstract abortMultipartUpload(ref: MultipartUploadRef): Promise<void>;
   /** Stable provider identity for diagnostics and provider-aware orchestration. */
   abstract readonly providerId: StorageProviderId;
+  /** Called only for the selected write provider during bootstrap. */
+  abstract assertConfigured(context: string): void;
+  /** Stable placement for a new object, available before uploading its bytes. */
+  abstract objectLocation(key: string): {
+    storageProvider: StorageProviderId;
+    bucket: string;
+    region: string | null;
+    objectKey: string;
+    externalUrl: null;
+  };
   abstract upload(input: OutputStorageUpload): Promise<OutputStorageResult>;
   /**
    * Upload from a disk spool file. Azure/OSS override with their staged
@@ -345,6 +390,19 @@ export abstract class OutputStorageService {
   abstract createUploadUrl(
     input: CreateUploadUrlInput,
   ): Promise<CreateUploadUrlResult>;
+  /** Sign directly into an explicitly configured private destination. No public-media fallback.
+   * Deployment must disable anonymous access/CDN publication for this destination.
+   * Domain callers still enforce ownership, limits, finalization and retention.
+   */
+  createPrivateUploadUrl(
+    _input: CreateUploadUrlInput,
+  ): Promise<CreateUploadUrlResult> {
+    void _input;
+    return Promise.reject(
+      new Error('Private uploads are not supported by this storage provider'),
+    );
+  }
+
   /**
    * Mint a short-lived, read-only URL. Product surfaces should call this only
    * after domain access checks have passed; storage providers do not know

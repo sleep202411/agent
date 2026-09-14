@@ -295,7 +295,7 @@ web:
   replicaCount: 1
   image:
     repository: fizzdragon-web
-    tag: dd82f21efbcd23ab9ce7b8062bed20cf02f28285
+    tag: 2da4e5d473ca5ef73d6a9102c3a7b10758e048c9
   containerPort: 3000
   env:
     SERVER_URL: http://fizzdragon-server:3001
@@ -321,7 +321,7 @@ studio:
   replicaCount: 1
   image:
     repository: fizzdragon-studio
-    tag: d9ffa24ec2ca9c2bde32a27115ef089a302aab56
+    tag: 535f65d5e84094add907bb29468443cbd1446c27
   containerPort: 3000
   env:
     AURORA_PROXY_TARGET: http://fizzdragon-server:3001
@@ -347,7 +347,7 @@ adminUi:
   replicaCount: 1
   image:
     repository: fizzdragon-admin-ui
-    tag: af29866a487298b1435c974cb34ddc238cd773d0
+    tag: 535f65d5e84094add907bb29468443cbd1446c27
   containerPort: 3000
   readinessPath: /login
   livenessPath: /login
@@ -394,7 +394,7 @@ server:
   # Graceful drain window: the preStop sleep deregisters the pod from the Service,
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
-  migrateOnStart: true
+  migrateOnStart: false
   migrationJob:
     enabled: false
     revision: ""
@@ -402,7 +402,7 @@ server:
     ttlSecondsAfterFinished: 86400
   image:
     repository: fizzdragon-server
-    tag: 0fcaaf4a91b5f7a9bdb063438400cf9961ce0aa3
+    tag: 2da4e5d473ca5ef73d6a9102c3a7b10758e048c9
   containerPort: 3001
   # Cloudflare R2 credentials, created with `kubectl create secret generic
   # fizzdragon-r2` rather than projected from Key Vault. Mounted optional, so this
@@ -425,6 +425,7 @@ server:
       serviceAccountEmail: fizzdragon-agent-platform@glass-proxy-501907-d2.iam.gserviceaccount.com
   env:
     # Required public web origin for invitation links (CN overrides explicitly).
+    NEXT_PUBLIC_SITE_REGION: global
     REFERRAL_INVITE_BASE_URL: https://fizzdragon.com
     # Required region-owned base for relative legacy Java project cover keys.
     # Never default this in code: an omitted value must fail the server at boot
@@ -543,7 +544,7 @@ agentOs:
   replicaCount: 1
   image:
     repository: fizzdragon-agent-os
-    tag: fe6082440d65f9ba59000e048b7bc83f5e13c2d4
+    tag: 59a4366128433ab03e482f7e52ef5d21bf6d3ba9
   containerPort: 4301
   # Covers the preStop drain only — the process installs no SIGTERM handler, so
   # a longer window buys nothing.
@@ -551,6 +552,7 @@ agentOs:
   model:
     # Bailian's workspace domain. The key is a Key Vault value, never here.
     baseUrl: https://llm-5bmlxd1jjvyn71k0.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1
+    viewerProfile: qwen3.7-plus
   checkpoint:
     schema: agent_os
     # Per-pod budget: saver transactions are short; guard sessions are pinned

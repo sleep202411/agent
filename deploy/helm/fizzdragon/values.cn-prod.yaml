@@ -202,9 +202,8 @@ studio:
   tolerations: null
 
 server:
-  # Google Vertex is intentionally unavailable in the CN cell. This explicit
-  # override prevents the production-com WIF configuration from inheriting
-  # into ACK, where the Azure-bound K8s identity path does not exist.
+  # Google Vertex models are not offered in CN. Do not inherit COM's identity
+  # configuration or advertise models that require the Google API path.
   googleVertex:
     enabled: false
   replicaCount: 1
@@ -230,13 +229,10 @@ server:
     PROJECT_SKILL_PREVIEW_BASE_URL: https://media.fizzspace.cn/product-skills/previews/v1
     # Mirrors prod-cn .env (2026-06-10).
     AI_PROVIDER: deepseek
-    # Happy Oyster is enabled only in the global cell until the CN deployment
-    # has its own supported control plane and FAL_API_KEY provisioning.
-    WORLD_MODEL_HAPPY_OYSTER_ENABLED: "false"
-    # No MiniMax credential is provisioned in the CN cell. Keep the provider
-    # explicitly off instead of inheriting the .com=true flag and presenting a
-    # model binding that can only fail at runtime.
-    MINIMAX_ENABLED: "false"
+    # Provider credentials are provisioned separately; both gates fail at boot
+    # if their required key is absent.
+    WORLD_MODEL_HAPPY_OYSTER_ENABLED: "true"
+    MINIMAX_ENABLED: "true"
     # Remove .com-only storage endpoints and analytics identifiers. Existing CN
     # rows live in the separate CN database and are OSS-backed.
     S3_ENDPOINT: null

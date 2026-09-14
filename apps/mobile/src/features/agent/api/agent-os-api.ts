@@ -159,23 +159,6 @@ export interface AgentOsModelProfile {
   hint?: string;
 }
 
-export interface AgentOsModelPreferences {
-  projectId: string;
-  projectKind: "platform" | "story";
-  chatModelProfileId: string | null;
-  imageModelId: string | null;
-  videoModelId: string | null;
-  version: number;
-  updatedAt: string | null;
-}
-
-export interface AgentOsModelPreferencesUpdate {
-  expectedVersion: number;
-  chatModelProfileId: string | null;
-  imageModelId: string | null;
-  videoModelId: string | null;
-}
-
 export interface AgentOsAttachmentSummary {
   id: string;
   filename: string;
@@ -250,24 +233,13 @@ const AURORA = { service: "aurora" as const };
 
 export const agentOsApi = {
   listModels(signal?: AbortSignal) {
-    return api.get<{ models: AgentOsModelProfile[] }>(`${AGENT_OS}/models`, {
-      ...AURORA,
-      signal,
-      timeout: 20_000,
-    });
-  },
-
-  getModelPreferences(projectId: string, signal?: AbortSignal) {
-    return api.get<AgentOsModelPreferences>(
-      `${AGENT_OS}/projects/${encodeURIComponent(projectId)}/model-preferences`,
-      { ...AURORA, signal, timeout: 20_000 }
-    );
-  },
-
-  updateModelPreferences(projectId: string, input: AgentOsModelPreferencesUpdate) {
-    return api.post<AgentOsModelPreferences>(
-      `${AGENT_OS}/projects/${encodeURIComponent(projectId)}/model-preferences`,
-      { ...AURORA, data: input, timeout: 30_000 }
+    return api.get<{ models: AgentOsModelProfile[]; mobileDefaultModelProfileId: string }>(
+      `${AGENT_OS}/models`,
+      {
+        ...AURORA,
+        signal,
+        timeout: 20_000,
+      }
     );
   },
 

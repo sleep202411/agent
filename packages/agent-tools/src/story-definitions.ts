@@ -16,6 +16,35 @@ import type { ToolDefinition } from "./types.js";
 import { AgentExternalJobHandoffSchema } from "./handoff.js";
 import { StoryCreativeProfileLanguageSchema } from "./story-creative-profile.js";
 
+// Read the canonical graph, whose choice exits are expanded into decision
+// nodes. The clip-only authoring schema remains the write contract.
+const StoryReadGraphNodeSchema = z.discriminatedUnion("kind", [
+  StoryAgentGraphNodeSchema,
+  z
+    .object({
+      kind: z.literal("decision"),
+      nodeId: StoryAgentStableIdSchema,
+      exit: StoryAgentGraphNodeSchema.shape.exit,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("world"),
+      nodeId: StoryAgentStableIdSchema,
+      worldId: z.string().uuid().nullable(),
+      name: z.string().trim().max(120).optional(),
+      entryInstruction: z.string().trim().max(4_000).optional(),
+      maxExperienceSeconds: z.union([z.literal(60), z.literal(90), z.literal(120)]),
+      exit: z
+        .object({
+          kind: z.literal("auto"),
+          nextNodeId: StoryAgentStableIdSchema.nullable(),
+        })
+        .strict(),
+    })
+    .strict(),
+]);
+
 const StorySceneDraftSchema = z
   .object({
     nodeId: StoryAgentStableIdSchema,
@@ -115,11 +144,15 @@ export type StoryProductionTargetStage = z.infer<typeof StoryProductionTargetSta
 export const StoryProductionContinuationPlanSchema = z
   .object({
     continueThrough: StoryProductionTargetStageSchema,
+    /** Pending explicit re-authoring intent, consumed once that stage is applied. */
+    regenerateStage: z.enum(["plot", "assets", "storyboard"]).optional(),
     title: z.string().trim().min(1).max(160),
     summary: z.string().trim().min(1).max(4_000),
     brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
     /** Presentation context only; this does not authorize paid generation. */
     experience: z.literal("mobile_h5").optional(),
+    /** Server-owned desktop grant, captured from the authenticated Agent run. */
+    autoApplyTextStages: z.boolean().optional(),
     /**
      * Server-owned H5 policy. A creator's Continue decision on the Plot Tree
      * authorizes the logical Asset Specs to be persisted without manufacturing
@@ -554,6 +587,12 @@ export const StoryAuthorInputSchema = z
     brief: z.string().trim().min(1).max(STORY_AGENT_BRIEF_MAX_CHARS),
     /** Furthest independently reviewable stage authorized by this request. */
     continueThrough: StoryProductionTargetStageSchema,
+    /** Full source from script.readSection or the current turn attachment list. */
+    sourceAttachmentId: z.string().uuid().optional(),
+    /** Uploaded complete scripts are preserved by default. Adapt only an outline or an explicitly requested rewrite. */
+    sourceMode: z.enum(["preserve", "adapt"]).optional(),
+    /** Only for an explicit request to redo existing specifications, never for media generation. */
+    regenerateStage: z.enum(["plot", "assets", "storyboard"]).optional(),
     /** Natural acknowledgement shown as soon as durable planning starts; never claims success. */
     startedMessage: z.string().trim().min(1).max(2_000),
     /**
@@ -727,7 +766,7 @@ export const STORY_AGENT_OS_TOOLS = [
         }),
         graph: z.object({
           entryNodeId: StoryAgentStableIdSchema.nullable(),
-          nodes: z.array(StoryAgentGraphNodeSchema),
+          nodes: z.array(StoryReadGraphNodeSchema),
         }),
         productionNotes: z.array(z.string()),
         productionState: StoryProductionStateSchema,
@@ -883,11 +922,11 @@ export const STORY_AGENT_OS_TOOLS = [
   {
     id: "story.author",
     description:
-      "Hand an explicit Story creation or continue-production request to the Server-side canonical next-stage planner. Never call for greetings, casual conversation, capability questions, unrelated requests, or merely because Story mode is open. Call story.read first. The Server reuses every valid chapter stage and selects exactly one next artifact in Script -> Plot -> Asset Specs -> Storyboard order. Set continueThrough once to the furthest stage authorized by the creator: broad create/complete/adapt/continue-production requests normally select storyboard, while an explicit stage-only request selects that stage. The durable workflow re-reads canonical state and advances through this scope after each successful apply; it never asks the model to infer the old intent again. Only when no valid Script exists may the Server author a screenplay proposal, asking for missing project-profile values first when necessary. A Plot proposal compiles the approved Script into the single canonical Plot topology. An Asset Specs artifact derives stably referenceable logical specs from that approved Plot and its Script interpretation. A Storyboard proposal creates one Storyboard sequence per Plot node with one or more ordered clips and consumes the approved Asset Specs. On desktop, Script, Plot, Asset Specs, and Storyboard each remain a separate creator approval boundary, and the creator uses Generate later. On the trusted mobile_h5 surface, Script and Plot remain Continue/Don't continue boundaries; choosing Continue on Plot authorizes the Server to prepare and persist Asset Specs without a second Asset confirmation, then quote, confirm, and generate every current asset image sequentially with per-item compute-point billing. Storyboard remains a separate Continue/Don't continue boundary; choosing Continue on Storyboard authorizes its clips to generate sequentially in story order with per-item billing. The model must not call paid generation tools itself. This tool itself never generates media directly; the authoritative Server continuation owns auto-apply, quoting, billing, ordering, failure-stop, and resume semantics. For a narrow edit to an existing Plot, use the fine-grained story.* tools instead. Provide a specific startedMessage that acknowledges work without claiming success. completionMessage must name only the artifact selected by canonical state and must not claim it was already applied. If the Server-selected stage is not exposed, use neutral handoff copy rather than predicting it. Runs asynchronously and returns a durable external-job handoff.",
+      "Hand an explicit Story creation or continue-production request to the Server-side canonical next-stage planner. Never call for greetings, casual conversation, capability questions, unrelated requests, or merely because Story mode is open. Call story.read first. For an uploaded source script, pass its sourceAttachmentId so the Server can read the complete text, without copying sections into the brief. Complete uploaded screenplays are extracted faithfully by default (sourceMode=preserve); use sourceMode=adapt only for an outline that requires expansion or an explicit rewrite request. Clarify ambiguous intent before choosing adapt. For an explicit request to redo existing Plot, Asset Specs, or Storyboard Specs, set regenerateStage to that stage. Omit it for ordinary continuation and for media rendering requests. The Server reuses every other valid chapter stage and selects exactly one next artifact in Script -> Plot -> Asset Specs -> Storyboard order. Set continueThrough once to the furthest stage authorized by the creator: broad create/complete/adapt/continue-production requests normally select storyboard, while an explicit stage-only request selects that stage. The durable workflow re-reads canonical state and advances through this scope after each successful apply; it never asks the model to infer the old intent again. Only when no valid Script exists may the Server author a screenplay proposal, asking for missing project-profile values first when necessary. A Plot proposal compiles the approved Script into the single canonical Plot topology. An Asset Specs artifact derives stably referenceable logical specs from that approved Plot and its Script interpretation. A Storyboard proposal creates one Storyboard sequence per Plot node with one or more ordered clips and consumes the approved Asset Specs. On desktop, ask and smart modes require a separate creator approval for each Script, Plot, Asset Specs, and Storyboard stage. Full access lets the Server automatically validate and persist these text stages within the original continueThrough scope, stopping on failure. The Server derives this grant from the authenticated run; the model cannot grant it. The creator uses Generate later for media, which retains its critical confirmation. On the trusted mobile_h5 surface, Script and Plot remain Continue/Don't continue boundaries; choosing Continue on Plot authorizes the Server to prepare and persist Asset Specs without a second Asset confirmation, then quote, confirm, and generate every current asset image sequentially with per-item compute-point billing. Storyboard remains a separate Continue/Don't continue boundary; choosing Continue on Storyboard authorizes its clips to generate sequentially in story order with per-item billing. The model must not call paid generation tools itself. This tool itself never generates media directly; the authoritative Server continuation owns auto-apply, quoting, billing, ordering, failure-stop, and resume semantics. For a narrow edit to an existing Plot, use the fine-grained story.* tools instead. Provide a specific startedMessage that acknowledges work without claiming success. completionMessage must name only the artifact selected by canonical state and must not claim it was already applied. If the Server-selected stage is not exposed, use neutral handoff copy rather than predicting it. Runs asynchronously and returns a durable external-job handoff.",
     kind: "command",
     // Reversible at the Agent tool boundary: this durably schedules the Server
     // plan and never starts paid media generation. The stage-specific
-    // creator-facing proposal is the only write gate for this run.
+    // proposal uses creator approval or the authenticated Full-access text grant.
     risk: "reversible",
     inputSchema: StoryAuthorInputSchema,
     outputSchema: StoryAuthorOutputSchema,

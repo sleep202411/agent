@@ -15,6 +15,7 @@ import { CrewsService } from './crews.service';
 const CREW_ID = 'crew-1';
 const CONVERSATION_ID = 'conv-crew-1';
 const FOUNDER = 'u-founder';
+const FOUNDER_USER = { userId: FOUNDER, levelIds: [13] as number[] };
 const SUCCESSOR = 'u-successor';
 const OWNER_ACTOR = {
   actor: { type: 'member' as const, userId: FOUNDER },
@@ -75,6 +76,7 @@ function build(
   };
 
   const tx = {
+    $queryRaw: jest.fn(),
     crew: {
       create: jest.fn((args: { data: Record<string, unknown> }) => {
         void args;
@@ -102,6 +104,7 @@ function build(
         member: {
           id: members[ownerUserId]?.id ?? 'm-founder',
           userId: ownerUserId,
+          positions: [],
         },
       }),
       update: jest.fn().mockResolvedValue({}),
@@ -208,10 +211,10 @@ function build(
 }
 
 describe('CrewsService.create — the crew chat is born with the crew', () => {
-  it('creates a localized production template and records its provenance atomically', async () => {
+  it('creates the localized production foundation without automatic tasks', async () => {
     const t = build();
 
-    await t.service.create(FOUNDER, {
+    await t.service.create(FOUNDER_USER, {
       ...CREATE_INPUT,
       productionTemplateLocale: 'zh-CN',
     } as never);
@@ -248,39 +251,15 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
       title: '第 1 集',
     });
 
-    const taskCreateMock = t.tx.crewTask.createMany as jest.MockedFunction<
-      (args: {
-        data: Array<{ number: number; episodeId: string }>;
-      }) => Promise<unknown>
-    >;
-    const taskCreate = taskCreateMock.mock.calls[0]?.[0];
-    const taskRows = taskCreate?.data ?? [];
-    expect(taskRows).toHaveLength(6);
-    expect(taskRows.map((task: { number: number }) => task.number)).toEqual([
-      1, 2, 3, 4, 5, 6,
-    ]);
-    expect(
-      new Set(taskRows.map((task: { episodeId: string }) => task.episodeId))
-        .size,
-    ).toBe(1);
-    const dependencyCreateMock = t.tx.crewTaskDependency
-      .createMany as jest.MockedFunction<
-      (args: { data: unknown[] }) => Promise<unknown>
-    >;
-    const timelineCreateMock = t.tx.crewTaskTimelineItem
-      .createMany as jest.MockedFunction<
-      (args: { data: unknown[] }) => Promise<unknown>
-    >;
-    const dependencyCreate = dependencyCreateMock.mock.calls[0]?.[0];
-    const timelineCreate = timelineCreateMock.mock.calls[0]?.[0];
-    expect(dependencyCreate?.data).toHaveLength(5);
-    expect(timelineCreate?.data).toHaveLength(6);
+    expect(t.tx.crewTask.createMany).not.toHaveBeenCalled();
+    expect(t.tx.crewTaskDependency.createMany).not.toHaveBeenCalled();
+    expect(t.tx.crewTaskTimelineItem.createMany).not.toHaveBeenCalled();
   });
 
   it('opens the crew conversation and joins the founder inside the create tx', async () => {
     const t = build();
 
-    await t.service.create(FOUNDER, CREATE_INPUT as never);
+    await t.service.create(FOUNDER_USER, CREATE_INPUT as never);
 
     expect(t.conversations.openCrewConversation).toHaveBeenCalledWith(
       CREW_ID,
@@ -294,7 +273,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
   it('stays silent — the founder joining their own new empty chat is not an event', async () => {
     const t = build();
 
-    await t.service.create(FOUNDER, CREATE_INPUT as never);
+    await t.service.create(FOUNDER_USER, CREATE_INPUT as never);
 
     expect(t.systemCalls).toEqual([]);
   });
@@ -311,7 +290,7 @@ describe('CrewsService.create — the crew chat is born with the crew', () => {
     );
 
     await expect(
-      t.service.create(FOUNDER, CREATE_INPUT as never),
+      t.service.create(FOUNDER_USER, CREATE_INPUT as never),
     ).rejects.toThrow('redis is on fire');
   });
 });
@@ -449,5 +428,25 @@ describe('CrewsService.transferOwnership — which branch moves the chat', () =>
       true,
       t.tx,
     );
+  });
+});
+
+describe('Crew create level gate', () => {
+  it('denies creation before any Crew write when level 13 is missing', async () => {
+    const t = build();
+    await expect(
+      t.service.create(
+        { userId: FOUNDER, levelIds: [] },
+        CREATE_INPUT as never,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_LEVEL_REQUIRED' },
+    });
+    expect(t.tx.crew.create).not.toHaveBeenCalled();
+  });
+  it('allows creation when level 13 is present', async () => {
+    const t = build();
+    await t.service.create(FOUNDER_USER, CREATE_INPUT as never);
+    expect(t.tx.crew.create).toHaveBeenCalled();
   });
 });

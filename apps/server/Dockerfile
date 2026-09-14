@@ -3,7 +3,8 @@ FROM node:24.18.1-alpine AS base
 # ─── Stage 1: Prune monorepo ──────────────────────────────
 FROM base AS pruner
 ARG NPM_REGISTRY=https://registry.npmjs.org
-RUN npm install -g turbo@^2 --registry="$NPM_REGISTRY"
+# Pin turbo: floating ^2 once pulled 2.10.x in ACR and made prune harder to reason about.
+RUN npm install -g turbo@2.9.5 --registry="$NPM_REGISTRY"
 WORKDIR /app
 COPY . .
 RUN turbo prune server --docker
@@ -99,6 +100,10 @@ RUN chown -R nestjs:nodejs \
     /app/apps/server/prisma.config.ts
 
 USER nestjs
+
+# Verify the scoped catalog updater works with production-only dependencies and
+# compiled files. Dry-run constructs a plan without opening a DB connection.
+RUN node apps/server/dist/catalog-update/prisma/seed/update-model-catalog.js --dry-run gpt-image-2 > /dev/null
 
 # Validate package metadata, entry points and transitive imports as the same
 # unprivileged user that runs the service. A root-only file-existence check

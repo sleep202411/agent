@@ -3,7 +3,10 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExperienceThemeConfig } from "@repo/shared/experience-runtime";
+import type {
+  ExperienceRuntimeManifest,
+  ExperienceThemeConfig,
+} from "@repo/shared/experience-runtime";
 import { ExperiencePlayer } from "./experience-player";
 import type { ExperiencePlayerCopy } from "./experience-player-copy";
 
@@ -282,6 +285,112 @@ describe("ExperiencePlayer scene media handoff", () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
+
+  it.each([
+    { orientation: "portrait" as const, width: 1162, height: 981 },
+    { orientation: "landscape" as const, width: 390, height: 844 },
+  ])(
+    "keeps $orientation choices outside cropped media and follows the selected route",
+    async ({ orientation, width, height }) => {
+      vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        right: width,
+        bottom: height,
+        width,
+        height,
+        toJSON: () => ({}),
+      });
+      const manifest: ExperienceRuntimeManifest = sceneHandoffManifest();
+      for (const asset of manifest.assets) {
+        if (asset.kind !== "video") continue;
+        for (const variant of asset.variants) {
+          variant.orientation = orientation;
+          variant.width = orientation === "portrait" ? 1080 : 1920;
+          variant.height = orientation === "portrait" ? 1920 : 1080;
+        }
+      }
+      manifest.compatibility.requiredCapabilities.push("core.choice");
+      manifest.rendererRequirements.push({
+        rendererId: "core.choice",
+        apiVersion: "1.0.0",
+        configSchemaVersion: "1.0.0",
+        requiredCapabilities: ["core.choice"],
+        outcomes: [{ outcomeType: "choice-selected" }],
+        commands: [{ commandType: "open" }],
+      });
+      const scene = manifest.graph.nodes[0];
+      if (!scene || scene.kind !== "scene") throw new Error("First scene missing");
+      scene.renderers.push({
+        instanceId: "choice.first",
+        rendererId: "core.choice",
+        layer: 100,
+        bindings: {},
+        config: {
+          decisionId: "decision.first",
+          prompt: localized("Choose"),
+          initiallyOpen: false,
+          choices: [{ choiceId: "next", label: localized("Next scene") }],
+        },
+      });
+      scene.eventBindings[0]!.routes[0]!.actions = [
+        {
+          kind: "renderer.command",
+          instanceId: "choice.first",
+          commandType: "open",
+          payload: {},
+        },
+      ];
+      scene.eventBindings.push({
+        bindingId: "choice.next",
+        on: { type: "renderer.outcome", sourceId: "choice.first", qualifierId: "choice-selected" },
+        routes: [{ routeId: "next", actions: [{ kind: "scene.goto", sceneId: "scene.second" }] }],
+      });
+      await act(async () => {
+        root.render(
+          <ExperiencePlayer
+            runtime={manifest}
+            locale="en-US"
+            copy={copy}
+            frameProfile={orientation}
+            loadTheme={() => Promise.resolve(theme)}
+          />
+        );
+      });
+      const start = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === copy.start
+      );
+      if (!start) throw new Error("Start missing");
+      expect(start.closest("[data-experience-media-stage]")).toBeNull();
+      await act(async () => {
+        start.click();
+      });
+      expect(container.textContent).not.toContain("Next scene");
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(STILL_MS);
+      });
+      const option = [...container.querySelectorAll("button")].find(
+        (button) => button.textContent === "Next scene"
+      );
+      if (!option) throw new Error("Choice missing after media ended");
+      const media = container.querySelector<HTMLElement>("[data-experience-media-stage]")!;
+      expect(media.style.transform).toContain(
+        orientation === "landscape" ? "rotate(90deg)" : "translate(-50%, -50%)"
+      );
+      expect(Number.parseFloat(media.style.height)).toBeGreaterThan(
+        orientation === "portrait" ? height : width
+      );
+      expect(option.closest("[data-experience-media-stage]")).toBeNull();
+      expect(option.closest("[data-experience-viewport-overlay]")).not.toBeNull();
+      await act(async () => {
+        option.click();
+      });
+      expect(container.querySelector('img[src="/second.png"]')).not.toBeNull();
+      expect(container.textContent).not.toContain("Next scene");
+    }
+  );
 
   it("keeps the opening still timer alive when the video slot moves to a new scene", async () => {
     await act(async () => {

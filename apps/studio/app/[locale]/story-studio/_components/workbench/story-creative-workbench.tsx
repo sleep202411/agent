@@ -281,6 +281,7 @@ function StoryWorkbenchShell({
         </div>
 
         <AgentOsPanel
+          canWrite={canEdit}
           projectId={projectId}
           projectKind="story"
           workbenchMode="story"

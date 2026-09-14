@@ -7,7 +7,6 @@ import {
   WalletCurrencyType,
   WalletLedgerEntryType,
   WalletOwnerType,
-  WorkspaceType,
   type WalletAccount,
 } from '@prisma/client';
 import { PrismaService } from '../infra/db/db.module';
@@ -33,7 +32,7 @@ function isUniqueViolation(err: unknown): boolean {
  * The Java <-> PG points bridge for the lazy per-user migration. Java keeps the
  * old MySQL balance for un-migrated users; it calls `migrate` (once per user) to
  * move that user onto the PG compute_point wallet, then routes that user's
- * deduct/grant here. Everything maps to the user's personal-workspace pot
+ * deduct/grant here. Everything maps to the user's default-workspace pot
  * (compute_point is workspace-owned) and is idempotent.
  */
 @Injectable()
@@ -47,7 +46,7 @@ export class InternalPointsService {
   /** Ingest the user's Java balance into PG exactly once; idempotent per user. */
   async migrate(input: MigratePointsInput) {
     const { userId } = input;
-    const workspaceId = await this.personalWorkspaceId(userId);
+    const workspaceId = await this.defaultWorkspaceId(userId);
 
     const existing = await this.prisma.pointsMigration.findUnique({
       where: { userId },
@@ -129,7 +128,7 @@ export class InternalPointsService {
 
   /** Direct spend from a migrated user's wallet (FIFO grant consumption). */
   async deduct(input: DeductPointsInput) {
-    const workspaceId = await this.personalWorkspaceId(input.userId);
+    const workspaceId = await this.defaultWorkspaceId(input.userId);
     const account = await this.account(workspaceId);
     const amount = BigInt(input.amount);
     // postEntry enforces sufficient balance (INSUFFICIENT_WALLET_BALANCE) and
@@ -159,7 +158,7 @@ export class InternalPointsService {
 
   /** Credit a migrated user's wallet (post-migration bonuses/refunds). */
   async grant(input: GrantPointsInput) {
-    const workspaceId = await this.personalWorkspaceId(input.userId);
+    const workspaceId = await this.defaultWorkspaceId(input.userId);
     const account = await this.account(workspaceId);
     const amount = BigInt(input.amount);
     const posted = await this.walletLedger.postEntry({
@@ -192,7 +191,7 @@ export class InternalPointsService {
 
   /** Campaign community-point grant (promo codes redeemed on the Java side).
    *  community_point is user-owned — never a workspace pot — so this posts to
-   *  the user's own consumable account; no personal-workspace provisioning. */
+   *  the user's own consumable account; no default-workspace provisioning. */
   async grantCommunity(input: CommunityGrantInput) {
     if (input.amount > COMMUNITY_GRANT_MAX_AMOUNT) {
       throw new BadRequestException({
@@ -239,8 +238,7 @@ export class InternalPointsService {
   async getBalance(userId: string) {
     const ws = await this.prisma.workspace.findFirst({
       where: {
-        ownerUserId: userId,
-        type: WorkspaceType.personal,
+        defaultForUserId: userId,
         deletedAt: null,
       },
       select: { id: true },
@@ -258,12 +256,12 @@ export class InternalPointsService {
 
   // --- helpers -------------------------------------------------------------
 
-  private async personalWorkspaceId(userId: string): Promise<string> {
-    // Auto-provision the personal workspace if missing — pure legacy users who've
+  private async defaultWorkspaceId(userId: string): Promise<string> {
+    // Auto-provision the default workspace if missing — pure legacy users who've
     // never used the new platform don't have one yet, and we don't want migration
     // to fail on that. Idempotent + advisory-locked; reuses the canonical
     // workspace + owner-member upsert.
-    const workspace = await this.workspaces.ensurePersonalWorkspace({ userId });
+    const workspace = await this.workspaces.ensureDefaultWorkspace({ userId });
     return workspace.id;
   }
 

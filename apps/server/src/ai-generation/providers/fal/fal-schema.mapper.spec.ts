@@ -417,12 +417,13 @@ describe('fal-schema.mapper — outpainting (expand)', () => {
 });
 
 describe('fal-schema.mapper — kling motion-brush i2v', () => {
-  it('requires a prompt, binds the start frame, and exposes the motion params', () => {
+  it('requires a prompt and start frame, and exposes the motion params', () => {
     const { inputSchema } = klingMotionConfig();
 
     // Kling i2v requires a prompt.
     expect(inputSchema.properties.prompt).toBeDefined();
     expect(inputSchema.required).toContain('prompt');
+    expect(inputSchema.required).toContain('startFrame');
     // Start frame → image_url; motion-brush dynamic masks; duration 5/10.
     expect(inputSchema.properties.startFrame).toBeDefined();
     expect(inputSchema.properties.dynamicMasks).toMatchObject({
@@ -433,6 +434,26 @@ describe('fal-schema.mapper — kling motion-brush i2v', () => {
       enum: ['5', '10'],
     });
   });
+
+  it.each([
+    [['text_to_video', 'image_to_video'], ['prompt']],
+    [['first_last_frame_to_video'], ['prompt', 'startFrame', 'endFrame']],
+    [
+      ['image_to_video', 'first_last_frame_to_video'],
+      ['prompt', 'startFrame'],
+    ],
+  ])(
+    'requires only media shared by every supported mode: %j',
+    (modes, required) => {
+      const config = createFalModelConfig({
+        ...baseArgs,
+        endpointId: 'test/video',
+        type: 'video',
+        generationModes: modes,
+      });
+      expect(config.inputSchema.required).toEqual(required);
+    },
+  );
 
   it('binds start frame → image_url and dynamic masks → dynamic_masks', () => {
     const { providerInputMap } = klingMotionConfig();

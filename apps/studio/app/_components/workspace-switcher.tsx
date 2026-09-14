@@ -1,9 +1,17 @@
 "use client";
 
-import { useState } from "react";
-import { useTranslations } from "next-intl";
-import { openSettings } from "@/lib/settings-hash";
-import { IconChevronDown, IconPlus, IconUpload, IconUserPlus, IconX } from "@tabler/icons-react";
+import { useRef, useState } from "react";
+import { useLocale, useTranslations } from "next-intl";
+import { ShareDialog } from "./share-dialog";
+import {
+  IconBolt,
+  IconChevronDown,
+  IconPlus,
+  IconSearch,
+  IconUpload,
+  IconUserPlus,
+  IconX,
+} from "@tabler/icons-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -22,13 +30,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Field, FIELD_BUTTON, FIELD_CONTROL, FIELD_CONTROL_TEXTAREA } from "@/components/ui/field";
-import { GlassRim } from "@/components/ui/glass-rim";
 import type { WorkspaceRef } from "@/lib/collab/projects-api";
 import { useWorkspace } from "./workspace-context";
+import { useComputeWalletBalance } from "./credits-badge";
 
 const canManage = (ws: WorkspaceRef) => ws.role === "owner" || ws.role === "admin";
 
@@ -46,10 +54,16 @@ function WsAvatar({
   size: string;
   fallbackClassName?: string;
 }) {
-  if (ws.avatarUrl) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (ws.avatarUrl && ws.avatarUrl !== failedUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element -- icon URL (preset/uploaded)
-      <img src={ws.avatarUrl} alt="" className={cn("shrink-0 rounded-full object-cover", size)} />
+      <img
+        src={ws.avatarUrl}
+        alt=""
+        className={cn("shrink-0 rounded-full object-cover", size)}
+        onError={() => setFailedUrl(ws.avatarUrl ?? null)}
+      />
     );
   }
   return (
@@ -61,6 +75,31 @@ function WsAvatar({
       )}
     >
       {ws.name[0]?.toUpperCase()}
+    </span>
+  );
+}
+
+/** Each row reads its own wallet, independently of the open project's payer. */
+function WorkspaceBalance({ workspaceId, enabled }: { workspaceId: string; enabled: boolean }) {
+  const t = useTranslations("workspace");
+  const locale = useLocale();
+  const { data, isError, error } = useComputeWalletBalance(enabled, workspaceId);
+  const amount = data?.available.toLocaleString(locale);
+  const label = isError
+    ? error.message || t("balanceUnavailable")
+    : amount != null
+      ? t("availableCredits", { amount })
+      : t("balanceLoading");
+  return (
+    <span
+      className="flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium tabular-nums text-muted-foreground"
+      title={label}
+      aria-label={label}
+    >
+      <IconBolt className="size-3.5" stroke={1.8} aria-hidden />
+      {isError
+        ? t("balanceUnavailable")
+        : (amount ?? <span className="h-3 w-10 animate-pulse rounded bg-white/10" />)}
     </span>
   );
 }
@@ -77,7 +116,14 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         | "roles.viewer"
         | "roles.member"
     );
-  const { workspaces, activeWorkspace, setActiveWorkspaceId, createTeam } = useWorkspace();
+  const { workspaces, activeWorkspace, setActiveWorkspaceId, createWorkspace } = useWorkspace();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [invitingWorkspace, setInvitingWorkspace] = useState<WorkspaceRef | null>(null);
+  const [search, setSearch] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const query = search.trim().toLocaleLowerCase();
+  const filteredWorkspaces = workspaces.filter((ws) => ws.name.toLocaleLowerCase().includes(query));
   const [creating, setCreating] = useState(false);
   const [teamName, setTeamName] = useState("");
   const [teamDescription, setTeamDescription] = useState("");
@@ -111,11 +157,11 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
         teamIcon && typeof window !== "undefined"
           ? `${window.location.origin}${presetUrl(teamIcon)}`
           : undefined;
-      await createTeam(name, teamDescription, avatarUrl);
+      await createWorkspace(name, teamDescription, avatarUrl);
       resetCreate();
       toast.success(t("teamCreated", { name }));
-    } catch {
-      toast.error(t("createTeamFailed"));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("createWorkspaceFailed"));
     } finally {
       setBusy(false);
     }
@@ -123,96 +169,141 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
 
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu
+        open={menuOpen}
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          if (!open) setSearch("");
+        }}
+      >
         <DropdownMenuTrigger
-          aria-label={collapsed ? t("switchTeams") : undefined}
+          aria-label={collapsed ? t("switchWorkspaces") : undefined}
           className={cn(
-            "relative flex min-w-0 items-center rounded-[14px] bg-white/[0.09] backdrop-blur-xl backdrop-saturate-150 outline-none transition-[background-color,box-shadow] hover:bg-white/[0.14] focus-visible:ring-2 focus-visible:ring-white/35 data-[state=open]:bg-white/[0.14]",
-            collapsed
-              ? "size-10 justify-center"
-              : "h-10 w-full gap-2 py-1.5 pr-3 pl-1.5 shadow-[0_10px_30px_rgb(0_0_0/0.18)]"
+            buttonVariants({ variant: "secondary" }),
+            "relative min-w-0 rounded-[12px] bg-card/95 text-white backdrop-blur-xl hover:bg-accent aria-expanded:bg-accent",
+            collapsed ? "size-10 justify-center" : "h-8 w-full gap-2 px-2.5 py-0"
           )}
         >
-          <GlassRim />
           <WsAvatar
             ws={activeWorkspace}
-            size={collapsed ? "size-7" : "size-6"}
-            fallbackClassName="bg-[#744717] text-[12px] text-white"
+            size={collapsed ? "size-7" : "size-5"}
+            fallbackClassName="bg-white/10 text-[11px] text-white/80"
           />
           {collapsed ? null : (
             <>
-              <span className="min-w-0 flex-1 truncate text-left text-[14px] leading-5 font-semibold text-white">
+              <span className="min-w-0 flex-1 truncate text-left text-[14px] leading-5 font-semibold">
                 {activeWorkspace.name}
               </span>
-              <IconChevronDown className="size-4 shrink-0 text-white/80" stroke={2} />
+              <IconChevronDown className="size-4 shrink-0 opacity-80" stroke={2} />
             </>
           )}
         </DropdownMenuTrigger>
 
-        <DropdownMenuContent align="start" sideOffset={8} className="w-80">
-          <DropdownMenuLabel className="text-muted-foreground">
-            {t("switchTeams")}
+        <DropdownMenuContent
+          align="start"
+          sideOffset={8}
+          className="flex max-h-[min(28rem,var(--radix-dropdown-menu-content-available-height))] w-[min(26rem,calc(100vw-1rem))] flex-col overflow-hidden"
+          onFocus={(event) => {
+            if (event.target !== event.currentTarget) return;
+            event.preventDefault();
+            searchRef.current?.focus();
+          }}
+        >
+          <DropdownMenuLabel className="shrink-0 text-muted-foreground">
+            {t("switchWorkspaces")}
           </DropdownMenuLabel>
 
-          {workspaces.map((ws) => (
-            <DropdownMenuItem
-              key={ws.id}
-              className="gap-3 rounded-lg p-2"
-              data-active={ws.id === activeWorkspace.id}
-              onSelect={() => setActiveWorkspaceId(ws.id)}
-            >
-              <WsAvatar ws={ws} size="size-9" />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-sm font-medium text-foreground">
-                  {ws.name}
-                  {ws.id === activeWorkspace.id && (
-                    <span className="text-muted-foreground"> ·&nbsp;{t("current")}</span>
-                  )}
-                </span>
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span>{roleLabel(ws.role ?? "member")}</span>
-                  <span
-                    className={cn(
-                      "rounded-md px-1.5 py-0.5 text-[10px] leading-none font-semibold tracking-wide uppercase",
-                      ws.type === "team"
-                        ? "bg-[#5b9dff]/15 text-[#8fbcff]"
-                        : "bg-[#e0a45c]/15 text-[#f2c98d]"
+          <div className="relative mx-1 mb-2 shrink-0">
+            <IconSearch
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+            />
+            <Input
+              ref={searchRef}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t("searchPlaceholder")}
+              aria-label={t("searchPlaceholder")}
+              className="h-9 pl-9"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") return;
+                event.stopPropagation();
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  listRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
+                }
+              }}
+            />
+          </div>
+          <div ref={listRef} className="min-h-0 overflow-y-auto overscroll-contain">
+            {filteredWorkspaces.map((ws) => (
+              <DropdownMenuItem
+                key={ws.id}
+                className="gap-3 rounded-lg p-2"
+                data-active={ws.id === activeWorkspace.id}
+                onSelect={() => setActiveWorkspaceId(ws.id)}
+              >
+                <WsAvatar ws={ws} size="size-9" />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm font-medium text-foreground">
+                    {ws.name}
+                    {ws.id === activeWorkspace.id && (
+                      <span className="text-muted-foreground"> ·&nbsp;{t("current")}</span>
                     )}
-                  >
-                    {ws.type === "team" ? t("teamType") : t("personalType")}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <span>{roleLabel(ws.role ?? "member")}</span>
                   </span>
                 </span>
-              </span>
-              {ws.type === "team" && canManage(ws) && (
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    event.preventDefault();
-                    setActiveWorkspaceId(ws.id);
-                    openSettings("members");
-                  }}
-                  className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
-                >
-                  <IconUserPlus className="size-3.5" />
-                  {t("invite")}
-                </button>
-              )}
-            </DropdownMenuItem>
-          ))}
+                {
+                  <span className="flex shrink-0 items-center gap-2">
+                    <WorkspaceBalance workspaceId={ws.id} enabled={menuOpen} />
+                    {canManage(ws) && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          event.preventDefault();
+                          setMenuOpen(false);
+                          setInvitingWorkspace(ws);
+                        }}
+                        className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-white/[0.06] px-2.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.1] hover:text-white"
+                      >
+                        <IconUserPlus className="size-3.5" />
+                        {t("invite")}
+                      </button>
+                    )}
+                  </span>
+                }
+              </DropdownMenuItem>
+            ))}
+            {filteredWorkspaces.length === 0 && (
+              <p role="status" className="px-3 py-6 text-center text-sm text-muted-foreground">
+                {t("noSearchResults")}
+              </p>
+            )}
+          </div>
 
-          <DropdownMenuSeparator />
+          <DropdownMenuSeparator className="shrink-0" />
 
           <DropdownMenuItem
             onSelect={() => setCreating(true)}
-            className="gap-2 rounded-lg p-2 text-sm"
+            className="shrink-0 gap-2 rounded-lg p-2 text-sm"
           >
             <IconPlus className="size-4" />
-            {t("createTeam")}
+            {t("createWorkspace")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
+      {invitingWorkspace && (
+        <ShareDialog
+          scope={{ kind: "workspace", id: invitingWorkspace.id, name: invitingWorkspace.name }}
+          canManage={canManage(invitingWorkspace)}
+          open
+          onOpenChange={(open) => !open && setInvitingWorkspace(null)}
+        />
+      )}
       <Dialog
         open={creating}
         onOpenChange={(open) => {
@@ -231,7 +322,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
           </DialogClose>
 
           <DialogHeader className="px-6 pt-6 pb-4">
-            <DialogTitle className="text-2xl">{t("createTeamTitle")}</DialogTitle>
+            <DialogTitle className="text-2xl">{t("createWorkspaceTitle")}</DialogTitle>
           </DialogHeader>
 
           <div className="grid gap-6 px-6 pb-2 sm:grid-cols-2">
@@ -266,7 +357,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
 
             {/* Form */}
             <div className="flex flex-col gap-4">
-              <p className="text-sm text-muted-foreground">{t("createTeamDescription")}</p>
+              <p className="text-sm text-muted-foreground">{t("createWorkspaceDescription")}</p>
 
               <Field label={t("teamName")} htmlFor="team-name">
                 <Input
@@ -340,7 +431,7 @@ export function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }
               onClick={() => void onCreateTeam()}
               disabled={!teamName.trim() || busy}
             >
-              {t("createTeam")}
+              {t("createWorkspace")}
             </Button>
           </DialogFooter>
         </DialogContent>

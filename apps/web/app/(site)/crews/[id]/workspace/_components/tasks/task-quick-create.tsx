@@ -1,5 +1,7 @@
 "use client";
 
+import { CREW_CURRENCY } from "@/src/lib/crew-money";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   IconAdjustmentsHorizontal,
@@ -69,8 +71,13 @@ export function TaskQuickCreate({
   const create = useCreateCrewTask(crewId);
   const episodes = useCrewEpisodes(crewId);
   const draftTask = useDraftCrewTask(crewId);
+  const { reset: resetCreate } = create;
+  const { reset: resetDraft } = draftTask;
   const displays = useUserDisplays(members.map((member) => member.userId));
   const titleRef = useRef<HTMLTextAreaElement>(null);
+  // Keyboard events can arrive before mutation pending state has rendered.
+  const operationInFlight = useRef(false);
+  const draftRevision = useRef(0);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<CrewTaskPriority>("normal");
@@ -83,6 +90,31 @@ export function TaskQuickCreate({
   const [createMore, setCreateMore] = useState(false);
   const [draft, setDraft] = useState<CrewTaskDraftDTO | null>(null);
   const [expanded, setExpanded] = useState(false);
+
+  const [context, setContext] = useState({ open, crewId, parentId });
+  if (context.open !== open || context.crewId !== crewId || context.parentId !== parentId) {
+    setContext({ open, crewId, parentId });
+    setTitle("");
+    setDescription("");
+    setPriority("normal");
+    setWorkflowStateId(null);
+    setAssigneeUserId("");
+    setLabelIds([]);
+    setCycleId(null);
+    setEpisodeId(null);
+    setDueDate("");
+    setDraft(null);
+  }
+  const session = useRef(0);
+  useEffect(() => {
+    session.current += 1;
+    operationInFlight.current = false;
+    resetCreate();
+    resetDraft();
+    return () => {
+      session.current += 1;
+    };
+  }, [open, crewId, parentId, resetCreate, resetDraft]);
 
   const activeCycle = project.cycles.find((cycle) => cycle.status === "active") ?? null;
   const defaultCycleId = useMemo(() => {
@@ -140,6 +172,7 @@ export function TaskQuickCreate({
   }, [onOpenChange]);
 
   const reset = () => {
+    draftRevision.current += 1;
     setTitle("");
     setDescription("");
     setPriority("normal");
@@ -160,8 +193,12 @@ export function TaskQuickCreate({
   };
 
   const generateDraft = async () => {
+    if (!open || operationInFlight.current || create.isPending || draftTask.isPending) return;
     const prompt = [title.trim(), description.trim()].filter(Boolean).join("\n\n");
     if (!prompt) return;
+    operationInFlight.current = true;
+    const requestedSession = session.current;
+    const requestedRevision = draftRevision.current;
     try {
       const next = await draftTask.mutateAsync({
         prompt,
@@ -172,6 +209,8 @@ export function TaskQuickCreate({
           displayName: displayNameOf(member.userId, displays),
         })),
       });
+      if (session.current !== requestedSession || draftRevision.current !== requestedRevision)
+        return;
       setDraft(next);
       setTitle(next.title);
       setDescription(next.description);
@@ -180,35 +219,42 @@ export function TaskQuickCreate({
       setCycleId(next.cycleId ?? defaultCycleId);
       setDueDate(next.dueDate ?? "");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("draftFailed"));
+      if (session.current === requestedSession) {
+        toast.error(error instanceof Error ? error.message : t("draftFailed"));
+      }
+    } finally {
+      if (session.current === requestedSession) operationInFlight.current = false;
     }
   };
 
   const submit = async () => {
+    if (!open || operationInFlight.current || create.isPending || draftTask.isPending) return;
     const nextTitle = title.trim();
     if (!nextTitle) {
       titleRef.current?.focus();
       return;
     }
     if (!resolvedWorkflowStateId) return;
+    operationInFlight.current = true;
+    const requestedSession = session.current;
     try {
       const task = await create.mutateAsync({
         title: nextTitle,
         description: description.trim(),
         workflowStateId: resolvedWorkflowStateId,
         priority,
-        dueAt: dateEndIso(dueDate || draft?.dueDate || null),
+        dueAt: dateEndIso(dueDate || null),
         startAt: dateStartIso(draft?.startDate ?? null),
         estimatePoints: draft?.estimatePoints ?? null,
-        computeBudgetPoints: draft?.computeBudgetPoints ?? null,
         revisionLimit: draft?.revisionLimit ?? null,
         cycleId: resolvedCycleId || null,
         episodeId,
         parentId: parentId ?? draft?.parentId ?? null,
         blockedByTaskIds: draft?.blockedByTaskIds ?? [],
         labelIds,
-        assignees: assigneeUserId ? [{ userId: assigneeUserId }] : [],
+        assignees: assigneeUserId ? [{ userId: assigneeUserId, currency: CREW_CURRENCY }] : [],
       });
+      if (session.current !== requestedSession) return;
       toast.success(t("created"));
       onCreated?.(task);
       if (createMore) {
@@ -218,7 +264,11 @@ export function TaskQuickCreate({
         setOpen(false);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("createFailed"));
+      if (session.current === requestedSession) {
+        toast.error(error instanceof Error ? error.message : t("createFailed"));
+      }
+    } finally {
+      if (session.current === requestedSession) operationInFlight.current = false;
     }
   };
 
@@ -275,6 +325,7 @@ export function TaskQuickCreate({
             ref={titleRef}
             value={title}
             onChange={(event) => {
+              draftRevision.current += 1;
               setTitle(event.target.value);
               setDraft(null);
             }}
@@ -293,6 +344,7 @@ export function TaskQuickCreate({
           <textarea
             value={description}
             onChange={(event) => {
+              draftRevision.current += 1;
               setDescription(event.target.value);
               setDraft(null);
             }}
@@ -322,7 +374,10 @@ export function TaskQuickCreate({
               value={priority}
               label={priority === "normal" ? t("priorityLabel") : t(`priority.${priority}`)}
               ariaLabel={t("priorityLabel")}
-              onChange={(value) => setPriority(value as CrewTaskPriority)}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                setPriority(value as CrewTaskPriority);
+              }}
               options={(["urgent", "high", "normal", "low"] as const).map((value) => ({
                 value,
                 label: t(`priority.${value}`),
@@ -335,7 +390,10 @@ export function TaskQuickCreate({
                 assigneeUserId ? displayNameOf(assigneeUserId, displays) : t("chooseAssignees")
               }
               ariaLabel={t("chooseAssignees")}
-              onChange={setAssigneeUserId}
+              onChange={(value) => {
+                draftRevision.current += 1;
+                setAssigneeUserId(value);
+              }}
               options={[
                 { value: "", label: t("unassigned") },
                 ...members.map((member) => ({
@@ -386,8 +444,14 @@ export function TaskQuickCreate({
               draft={draft}
               canGenerate={Boolean(title.trim()) && !create.isPending}
               generating={draftTask.isPending}
-              onCycleChange={setCycleId}
-              onDueDateChange={setDueDate}
+              onCycleChange={(value) => {
+                draftRevision.current += 1;
+                setCycleId(value);
+              }}
+              onDueDateChange={(value) => {
+                draftRevision.current += 1;
+                setDueDate(value);
+              }}
               onGenerate={() => void generateDraft()}
             />
           </div>
@@ -622,7 +686,11 @@ function workflowStateLabel(
   state: CrewTaskProjectDTO["workflowStates"][number],
   t: ReturnType<typeof useTranslations>
 ) {
-  return state.systemKey === "backlog" ? t("backlog") : t(`status.${state.semantic}`);
+  return state.systemKey === "backlog"
+    ? t("backlog")
+    : state.systemKey
+      ? t(`status.${state.systemKey}`)
+      : state.name;
 }
 
 function dateStartIso(value: string | null): string | null {

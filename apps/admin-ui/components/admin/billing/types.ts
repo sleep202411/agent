@@ -633,15 +633,13 @@ export type AdminBillingPromotionsData = {
   items: BillingPromotionRow[];
 };
 
-// Workspace row + compute_point balance for the team-wallet picker.
-export type AdminWorkspaceType = "team" | "personal";
+// Workspace identity and its compute wallet balance.
 
-export type AdminWorkspaceMemberRole = "owner" | "admin" | "member" | "viewer";
+export type AdminWorkspaceMemberRole = "owner" | "admin" | "editor" | "billing" | "viewer";
 
 export type AdminWorkspaceRow = {
   id: string;
   name: string;
-  type: AdminWorkspaceType;
   status: string;
   ownerUserId: string;
   memberCount: number;
@@ -656,6 +654,35 @@ export type AdminWorkspaceRow = {
 
 export type AdminBillingWorkspacesData = {
   items: AdminWorkspaceRow[];
+};
+
+export type AdminComputeMemberUsageWorkspace = {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceStatus: string | null;
+  isPersonal: boolean;
+  credits: string;
+  jobs: number;
+};
+
+export type AdminComputeMemberUsageMember = {
+  userId: string;
+  nickName: string | null;
+  phone: string | null;
+  email: string | null;
+  totalCredits: string;
+  totalJobs: number;
+  workspaces: AdminComputeMemberUsageWorkspace[];
+};
+
+export type AdminComputeMemberUsageData = {
+  rangeDays: number;
+  workspaceKind: "personal" | "shared" | "all";
+  workspaceId: string | null;
+  totalCredits: string;
+  memberCount: number;
+  workspaceCount: number;
+  members: AdminComputeMemberUsageMember[];
 };
 
 export type VoucherStatus = "active" | "redeemed" | "void" | "expired";

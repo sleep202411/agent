@@ -1,3 +1,5 @@
+import { assertNewCrewCurrency, formatLedgerAmount } from './ledger-currency';
+import { lockMemberPayouts } from './ledger-lock';
 import {
   BadRequestException,
   ConflictException,
@@ -18,6 +20,7 @@ import type {
   CreateCrewEarningInput,
   DecideCrewEarningInput,
   ListCrewEarningsQuery,
+  ListMyCrewEarningsQuery,
   RejectCrewEarningInput,
   ReverseCrewEarningInput,
 } from './earnings.dto';
@@ -39,7 +42,8 @@ export interface PostTaskRewardInput {
   taskTitle: string;
   crewMemberId: string;
   userId: string;
-  pointsAmount: bigint;
+  amountMinor: bigint;
+  currency: string;
   approvedByUserId: string;
 }
 
@@ -58,9 +62,31 @@ export class CrewEarningsService {
       await this.authorization.requireMembership(crewId, userId);
     }
     const scopeWhere = {
+      currency: query.currency,
       crewId,
       ...(query.scope === 'mine' ? { userId } : {}),
     } satisfies Prisma.CrewEarningEntryWhereInput;
+    return this.readEarnings(scopeWhere, query);
+  }
+
+  // Financial ownership survives Crew departure. This endpoint grants no Crew,
+  // task-detail or asset access and never accepts a caller-selected beneficiary.
+  async listMine(userId: string, query: ListMyCrewEarningsQuery) {
+    return this.readEarnings(
+      {
+        userId,
+        currency: query.currency,
+        ...(query.status ? { status: query.status } : {}),
+        ...(query.sourceType ? { sourceType: query.sourceType } : {}),
+      },
+      query,
+    );
+  }
+
+  private async readEarnings(
+    scopeWhere: Prisma.CrewEarningEntryWhereInput,
+    query: ListMyCrewEarningsQuery,
+  ) {
     const where = {
       ...scopeWhere,
       ...(query.status ? { status: query.status } : {}),
@@ -76,7 +102,7 @@ export class CrewEarningsService {
         throw new BadRequestException({
           code: 'CREW_EARNING_CURSOR_INVALID',
           message:
-            'The point-entry cursor is invalid for the current filters. Restart from the first page.',
+            'The earning cursor is invalid for the current filters. Restart from the first page.',
         });
       }
     }
@@ -96,34 +122,33 @@ export class CrewEarningsService {
         by: ['status'],
         where: scopeWhere,
         _count: { _all: true },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
       this.prisma.crewEarningEntry.groupBy({
         by: ['sourceType'],
-        where: { ...scopeWhere, status: CrewEarningStatus.posted },
+        where: { AND: [scopeWhere, { status: CrewEarningStatus.posted }] },
         _count: { _all: true },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
       this.prisma.crewEarningEntry.aggregate({
         where: {
-          ...scopeWhere,
-          status: CrewEarningStatus.posted,
+          AND: [scopeWhere, { status: CrewEarningStatus.posted }],
           postedAt: { gte: monthStart },
         },
-        _sum: { pointsAmount: true },
+        _sum: { amountMinor: true },
       }),
     ]);
     const items = rows.slice(0, query.limit);
     const byStatus = Object.fromEntries(
       Object.values(CrewEarningStatus).map((status) => [
         status,
-        { count: 0, pointsAmount: '0' },
+        { count: 0, amountMinor: '0' },
       ]),
-    ) as Record<CrewEarningStatus, { count: number; pointsAmount: string }>;
+    ) as Record<CrewEarningStatus, { count: number; amountMinor: string }>;
     for (const group of statusGroups) {
       byStatus[group.status] = {
         count: group._count._all,
-        pointsAmount: (group._sum.pointsAmount ?? 0n).toString(),
+        amountMinor: (group._sum.amountMinor ?? 0n).toString(),
       };
     }
 
@@ -132,11 +157,13 @@ export class CrewEarningsService {
       nextCursor: rows.length > query.limit ? (items.at(-1)?.id ?? null) : null,
       summary: {
         byStatus,
-        postedThisMonthPoints: (monthPosted._sum.pointsAmount ?? 0n).toString(),
+        postedThisMonthAmountMinor: (
+          monthPosted._sum.amountMinor ?? 0n
+        ).toString(),
         postedBySource: sourceGroups.map((group) => ({
           sourceType: group.sourceType,
           count: group._count._all,
-          pointsAmount: (group._sum.pointsAmount ?? 0n).toString(),
+          amountMinor: (group._sum.amountMinor ?? 0n).toString(),
         })),
       },
     };
@@ -144,6 +171,7 @@ export class CrewEarningsService {
 
   async create(crewId: string, userId: string, input: CreateCrewEarningInput) {
     await this.authorization.require(crewId, userId, 'finance.earnings.create');
+    assertNewCrewCurrency(input.currency);
     const member = await this.prisma.crewMember.findFirst({
       where: {
         id: input.crewMemberId,
@@ -169,7 +197,7 @@ export class CrewEarningsService {
         });
       }
     }
-    const amount = BigInt(input.pointsAmount);
+    const amount = BigInt(input.amountMinor);
     const idempotencyKey = `crew-earning-manual:${crewId}:${userId}:${input.idempotencyKey}`;
     const created = await this.prisma.$transaction(async (tx) => {
       const existing = await tx.crewEarningEntry.findUnique({
@@ -186,7 +214,8 @@ export class CrewEarningsService {
           agreementId: input.agreementId,
           title: input.title,
           description: input.description || null,
-          pointsAmount: amount,
+          amountMinor: amount,
+          currency: input.currency,
           status: CrewEarningStatus.pending,
           idempotencyKey,
           createdByUserId: userId,
@@ -316,6 +345,9 @@ export class CrewEarningsService {
       'finance.earnings.reverse',
     );
     const result = await this.prisma.$transaction(async (tx) => {
+      // Match payout creation's lock before checking for allocations. The
+      // earning lock alone cannot prevent a payout reserving this balance.
+      await lockMemberPayouts(tx, current.crewId, current.userId);
       await lockEarning(tx, earningId);
       const locked = await tx.crewEarningEntry.findUniqueOrThrow({
         where: { id: earningId },
@@ -336,7 +368,7 @@ export class CrewEarningsService {
         throw new ConflictException({
           code: 'CREW_EARNING_ALREADY_ALLOCATED',
           message:
-            'This point entry is reserved by or included in a payout and cannot be reversed.',
+            'This earning is reserved by or included in a payout and cannot be reversed.',
         });
       }
       const updated = await tx.crewEarningEntry.update({
@@ -376,7 +408,8 @@ export class CrewEarningsService {
         sourceType: CrewEarningSourceType.task_reward,
         taskId: input.taskId,
         title: `TASK-${input.taskNumber} ${input.taskTitle}`,
-        pointsAmount: input.pointsAmount,
+        amountMinor: input.amountMinor,
+        currency: input.currency,
         status: CrewEarningStatus.posted,
         idempotencyKey,
         createdByUserId: input.approvedByUserId,
@@ -401,7 +434,7 @@ export class CrewEarningsService {
       where: { id },
       include: earningInclude,
     });
-    if (!earning) throw new NotFoundException('Crew point entry not found.');
+    if (!earning) throw new NotFoundException('Crew earning not found.');
     return earning;
   }
 
@@ -433,14 +466,15 @@ export class CrewEarningsService {
       {
         userId: earning.userId,
         type: `crew.earning.${outcome}`,
-        title: `Crew points ${outcome}: ${earning.title}`,
-        body: `${earning.pointsAmount.toLocaleString('en-US')} points · ${outcome}`,
+        title: `Crew earning ${outcome}: ${earning.title}`,
+        body: `${formatLedgerAmount(earning.amountMinor, earning.currency)} · ${outcome}`,
         meta: {
           crewId: earning.crewId,
           earningId: earning.id,
           earningTitle: earning.title,
           sourceType: earning.sourceType,
-          pointsAmount: earning.pointsAmount.toString(),
+          currency: earning.currency,
+          amountMinor: earning.amountMinor.toString(),
           deeplink: `/crews/${earning.crewId}/workspace?tab=income`,
         },
         idempotencyKey: `crew.earning.${outcome}:${earning.id}`,
@@ -460,7 +494,7 @@ function requireVersion(earning: CrewEarningEntry, expectedVersion: number) {
   if (earning.version !== expectedVersion) {
     throw new ConflictException({
       code: 'CREW_EARNING_VERSION_CONFLICT',
-      message: 'The point entry changed. Refresh and try again.',
+      message: 'The earning changed. Refresh and try again.',
       expectedVersion,
       currentVersion: earning.version,
     });
@@ -481,7 +515,8 @@ function earningSnapshot(earning: CrewEarningEntry) {
     id: earning.id,
     status: earning.status,
     sourceType: earning.sourceType,
-    pointsAmount: earning.pointsAmount.toString(),
+    currency: earning.currency,
+    amountMinor: earning.amountMinor.toString(),
     version: earning.version,
     rejectionReason: earning.rejectionReason,
     reversalReason: earning.reversalReason,
@@ -499,7 +534,8 @@ function earningDto(earning: EarningWithRelations) {
     agreement: earning.agreement,
     title: earning.title,
     description: earning.description,
-    pointsAmount: earning.pointsAmount.toString(),
+    currency: earning.currency,
+    amountMinor: earning.amountMinor.toString(),
     status: earning.status,
     createdByUserId: earning.createdByUserId,
     approvedByUserId: earning.approvedByUserId,

@@ -26,44 +26,56 @@ function makeService(
 ) {
   const tx = {
     characterConsentRecord: {
-      create: jest.fn(async () => ({ id: 'consent-1' })),
+      create: jest.fn(() => Promise.resolve({ id: 'consent-1' })),
     },
     characterProjectGrant: {
-      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
-        id: 'grant-1',
-        status: 'active',
-        createdAt: new Date('2026-07-02T00:00:00Z'),
-        revokedAt: null,
-        ...data,
-      })),
-      findMany: jest.fn(async () => opts.activeGrantsForCharacter ?? []),
-      findFirst: jest.fn(
-        async () => (opts.activeGrantsForCharacter ?? [])[0] ?? null,
+      create: jest.fn(({ data }: { data: Record<string, unknown> }) =>
+        Promise.resolve({
+          id: 'grant-1',
+          status: 'active',
+          createdAt: new Date('2026-07-02T00:00:00Z'),
+          revokedAt: null,
+          ...data,
+        }),
       ),
-      update: jest.fn(async () => ({})),
+      findMany: jest.fn(() =>
+        Promise.resolve(opts.activeGrantsForCharacter ?? []),
+      ),
+      findFirst: jest.fn(() =>
+        Promise.resolve((opts.activeGrantsForCharacter ?? [])[0] ?? null),
+      ),
+      update: jest.fn(() => Promise.resolve({})),
     },
   };
   const prisma = {
     studioCharacter: {
-      findFirst: jest.fn(async () =>
-        opts.character === undefined ? CHARACTER : opts.character,
+      findFirst: jest.fn(() =>
+        Promise.resolve(
+          opts.character === undefined ? CHARACTER : opts.character,
+        ),
       ),
     },
     platformProject: {
-      findFirst: jest.fn(async () =>
-        opts.project === undefined
-          ? { id: 'proj-a', name: 'Project A' }
-          : opts.project,
+      findFirst: jest.fn(() =>
+        Promise.resolve(
+          opts.project === undefined
+            ? { id: 'proj-a', name: 'Project A' }
+            : opts.project,
+        ),
       ),
     },
     projectMember: {
-      findFirst: jest.fn(async () => (opts.isEditor ? { id: 'pm-1' } : null)),
+      findFirst: jest.fn(() =>
+        Promise.resolve(opts.isEditor ? { id: 'pm-1' } : null),
+      ),
     },
     characterProjectGrant: {
-      findFirst: jest.fn(async () => opts.existingGrant ?? null),
-      findMany: jest.fn(async () => []),
+      findFirst: jest.fn(() => Promise.resolve(opts.existingGrant ?? null)),
+      findMany: jest.fn(() => Promise.resolve([])),
     },
-    $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
+    $transaction: jest.fn((fn: (t: typeof tx) => unknown) =>
+      Promise.resolve().then(() => fn(tx)),
+    ),
   };
   const featureFlags = {
     config: {
@@ -71,10 +83,12 @@ function makeService(
       realPersonEnabled: opts.realPersonEnabled ?? true,
     },
   };
-  const jobCanceller = { cancelJobsForCharacter: jest.fn(async () => 0) };
+  const jobCanceller = {
+    cancelJobsForCharacter: jest.fn(() => Promise.resolve(0)),
+  };
   const likenessOutputs = {
-    listForCharacter: jest.fn(async () => []),
-    takedownForCharacter: jest.fn(async () => 0),
+    listForCharacter: jest.fn(() => Promise.resolve([])),
+    takedownForCharacter: jest.fn(() => Promise.resolve(0)),
   };
   // The service resolves both ports lazily via ModuleRef.get(token); route by
   // the token's description so each getter gets the right stub.
@@ -108,7 +122,7 @@ describe('CharacterGrantService.grantProject', () => {
         data: expect.objectContaining({
           type: 'consent_granted',
           scopeProjectId: 'proj-a',
-        }),
+        }) as unknown,
       }),
     );
   });
@@ -165,7 +179,7 @@ describe('CharacterGrantService.revokeProjectGrant', () => {
     await service.revokeProjectGrant(SUBJECT as never, 'char-1', 'proj-a');
     expect(tx.characterProjectGrant.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ status: 'revoked' }),
+        data: expect.objectContaining({ status: 'revoked' }) as unknown,
       }),
     );
     expect(tx.characterConsentRecord.create).toHaveBeenCalledWith(
@@ -173,7 +187,7 @@ describe('CharacterGrantService.revokeProjectGrant', () => {
         data: expect.objectContaining({
           type: 'revocation',
           scopeProjectId: 'proj-a',
-        }),
+        }) as unknown,
       }),
     );
     // Prompt cleanup — scoped to the project.

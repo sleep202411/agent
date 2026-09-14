@@ -5,7 +5,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { toast } from "sonner";
 import { CrewAssetsTab } from "./crew-assets-tab";
+import { CrewWorkbenchHeader } from "../workbench/crew-workbench-header";
 import { CrewTransfersProvider } from "@/app/(site)/crews/[id]/workspace/_components/transfers/crew-transfer-center";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -16,6 +18,7 @@ vi.mock("@/src/i18n/i18n", async () => {
     Record<string, string>
   >;
   return {
+    useLocale: () => "en-US",
     useTranslations: (namespace: string) => (key: string, vars?: Record<string, string | number>) =>
       Object.entries(vars ?? {}).reduce<string>(
         (copy, [name, value]) => copy.replaceAll(`{${name}}`, String(value)),
@@ -23,6 +26,10 @@ vi.mock("@/src/i18n/i18n", async () => {
       ),
   };
 });
+
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: "user-1" }, isLoading: false }),
+}));
 
 vi.mock("sonner", () => ({
   toast: {
@@ -90,6 +97,9 @@ let root: Root | null = null;
 let container: HTMLElement | null = null;
 let requests: Array<{ url: string; method: string; body?: unknown }> = [];
 let storageAvailable = true;
+let paginated = false;
+let nextPageFails = false;
+let assetListFails = false;
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -98,6 +108,11 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
     ...init,
   });
 }
+
+let canLink = true;
+let linkFails = false;
+let bulkMove = false;
+let movedSecond = false;
 
 function installFetch() {
   vi.stubGlobal(
@@ -110,6 +125,34 @@ function installFetch() {
         method,
         body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
       });
+      if (method === "GET" && url.endsWith("/production-overview")) {
+        return jsonResponse({ studioProject: null, capabilities: { manage: canLink } });
+      }
+      if (method === "GET" && url.endsWith("/studio-project-options")) {
+        return jsonResponse({
+          workspaces: [
+            {
+              id: "ws-1",
+              name: "Studio",
+              type: "team",
+              projects: [
+                { id: "project-1", name: "Film Canvas", selectable: true, selected: false },
+              ],
+            },
+          ],
+        });
+      }
+      if (method === "PATCH" && url.endsWith("/studio-project")) {
+        return linkFails
+          ? jsonResponse({ message: "Project access changed" }, { status: 403 })
+          : jsonResponse({
+              studioProject: {
+                id: "project-1",
+                name: "Film Canvas",
+                workspace: { id: "ws-1", name: "Studio" },
+              },
+            });
+      }
       if (method === "GET" && url.includes("/users/by-ids")) {
         return jsonResponse({
           users: [{ userId: "user-1", nickname: "Lin Mo" }],
@@ -120,6 +163,13 @@ function installFetch() {
           cell: "global",
           provider: "s3_compatible",
           storageAvailable,
+          storageUsage: {
+            usedBytes: 2e9,
+            totalBytes: 100e9,
+            remainingBytes: 97e9,
+            reservedBytes: 1e9,
+            unknownSizeCount: 0,
+          },
           maxUploadBytes: 5 * 1024 * 1024 * 1024,
           accessModel: "hierarchical_acl",
           role: "admin",
@@ -133,6 +183,9 @@ function installFetch() {
             deleteForever: true,
           },
         });
+      }
+      if (method === "GET" && url.endsWith("/assets/nodes/folder-1")) {
+        return jsonResponse({ node: ROOT_ITEMS[0], path: [] });
       }
       if (method === "GET" && url.endsWith("/assets/nodes/file-1")) {
         return jsonResponse({
@@ -155,12 +208,44 @@ function installFetch() {
       if (method === "GET" && url.endsWith("/members")) {
         return jsonResponse([]);
       }
+      if (method === "PATCH" && url.includes("/assets/")) {
+        if (url.endsWith("/file-1"))
+          return jsonResponse({ message: "Name already exists" }, { status: 409 });
+        movedSecond = true;
+        return jsonResponse({
+          ...ROOT_ITEMS[1],
+          id: "file-2",
+          name: "second.png",
+          parentId: "folder-1",
+        });
+      }
+      if (method === "GET" && url.endsWith("/assets/folders")) return jsonResponse([ROOT_ITEMS[0]]);
       if (method === "GET" && url.includes("/assets")) {
+        if (assetListFails)
+          return jsonResponse({ message: "Refresh unavailable" }, { status: 503 });
+        if (url.includes("cursor=")) {
+          return nextPageFails
+            ? jsonResponse({ message: "Next page unavailable" }, { status: 503 })
+            : jsonResponse({
+                items: [{ ...ROOT_ITEMS[1], id: "last", name: "last.png" }],
+                nextCursor: null,
+                source: "all",
+                parentId: null,
+              });
+        }
         const inFolder = url.includes("parentId=folder-1");
         return jsonResponse({
-          items: inFolder ? [] : ROOT_ITEMS,
+          items: inFolder
+            ? []
+            : [
+                ...ROOT_ITEMS,
+                ...(bulkMove && !movedSecond
+                  ? [{ ...ROOT_ITEMS[1], id: "file-2", name: "second.png" }]
+                  : []),
+              ],
           parentId: inFolder ? "folder-1" : null,
           source: "all",
+          nextCursor: paginated ? "file-1" : null,
         });
       }
       if (method === "POST" && url.endsWith("/assets/folders")) {
@@ -191,6 +276,12 @@ async function render(initialAssetId?: string) {
     root!.render(
       <QueryClientProvider client={queryClient}>
         <CrewTransfersProvider crewId="crew_1">
+          <CrewWorkbenchHeader
+            crewId="crew_1"
+            crewName="Night Shift"
+            pageTitle="Assets"
+            showProductionActions
+          />
           <CrewAssetsTab crewId="crew_1" initialAssetId={initialAssetId} />
         </CrewTransfersProvider>
       </QueryClientProvider>
@@ -199,6 +290,7 @@ async function render(initialAssetId?: string) {
   await act(async () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
+  return queryClient;
 }
 
 function byText(selector: string, text: string): HTMLElement {
@@ -219,10 +311,27 @@ beforeEach(() => {
   document.body.innerHTML = "";
   requests = [];
   storageAvailable = true;
+  paginated = false;
+  nextPageFails = false;
+  assetListFails = false;
+  canLink = true;
+  linkFails = false;
+  HTMLElement.prototype.scrollIntoView = vi.fn();
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  );
   installFetch();
 });
 
 afterEach(() => {
+  bulkMove = false;
+  movedSecond = false;
+  vi.clearAllMocks();
   act(() => root?.unmount());
   container?.remove();
   root = null;
@@ -231,6 +340,35 @@ afterEach(() => {
 });
 
 describe("crew asset center", () => {
+  it("shows used, total, remaining and reserved storage", async () => {
+    await render();
+    expect(document.body.textContent).toContain("2.00 GB used of 100.00 GB");
+    expect(document.body.textContent).toContain("97.00 GB available");
+    expect(document.body.textContent).toContain("1.00 GB reserved for uploads");
+  });
+  it("waits for every bulk move and lists failed files while reporting successes", async () => {
+    bulkMove = true;
+    await render();
+    await click(
+      document.querySelector<HTMLInputElement>('input[aria-label="Select concept.png"]')!
+    );
+    await click(document.querySelector<HTMLInputElement>('input[aria-label="Select second.png"]')!);
+    await click(document.querySelector<HTMLButtonElement>('button[aria-label="Move"]')!);
+    const form = document.querySelector('[data-slot="dialog-content"] form')!;
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(requests.filter((r) => r.method === "PATCH")).toHaveLength(2);
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "concept.png: Name already exists"
+    );
+    expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("1"));
+    expect(
+      requests.filter((r) => r.method === "GET" && r.url.includes("/assets?")).length
+    ).toBeGreaterThan(1);
+  });
+
   it("loads real asset data and opens a file in the right preview region", async () => {
     await render();
 
@@ -389,4 +527,98 @@ describe("crew asset center", () => {
       requests.some((request) => request.method === "DELETE" && request.url.endsWith("/permanent"))
     ).toBe(false);
   });
+});
+
+describe("Link Canvas", () => {
+  it("links a canvas from the shared header and updates the linked project", async () => {
+    await render();
+    const trigger = byText("button", "Link Canvas");
+    const header = document.querySelector('header[aria-label="Crew header"]');
+    expect(header?.contains(trigger)).toBe(true);
+    expect(header?.contains(byText("button", "New folder"))).toBe(false);
+    expect(document.querySelectorAll('button[aria-label="Link Canvas"]')).toHaveLength(1);
+    await click(trigger);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    await click(byText("span", "Film Canvas"));
+    expect(requests).toContainEqual(
+      expect.objectContaining({ method: "PATCH", body: { projectId: "project-1" } })
+    );
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(trigger.textContent).toBe("Film Canvas");
+    });
+  });
+  it("keeps the action disabled without Overview management permission", async () => {
+    canLink = false;
+    await render();
+    expect((byText("button", "Link Canvas") as HTMLButtonElement).disabled).toBe(true);
+    expect(requests.some((r) => r.url.endsWith("/studio-project-options"))).toBe(false);
+  });
+  it("keeps the picker open and reports a rejected link", async () => {
+    linkFails = true;
+    await render();
+    await click(byText("button", "Link Canvas"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    await click(byText("span", "Film Canvas"));
+    const { toast } = await import("sonner");
+    expect(toast.error).toHaveBeenCalledWith("Project access changed");
+    expect(byText("span", "Film Canvas")).toBeTruthy();
+  });
+});
+
+it("retains assets and pauses scrolling after a next-page failure, then retries that page", async () => {
+  paginated = true;
+  nextPageFails = true;
+  await render();
+  const scroller = container!.querySelector<HTMLElement>(".relative.overflow-auto")!;
+  await act(async () => {
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).toContain("Next page unavailable");
+  const count = requests.filter((request) => request.url.includes("cursor=")).length;
+  await act(async () => {
+    scroller.dispatchEvent(new Event("scroll", { bubbles: true }));
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(requests.filter((request) => request.url.includes("cursor="))).toHaveLength(count);
+  expect(document.body.textContent).toContain("concept.png");
+  nextPageFails = false;
+  await click(byText("button", "Retry"));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).toContain("last.png");
+  expect(requests.filter((request) => request.url.includes("cursor="))).toHaveLength(count + 1);
+});
+
+it("retains loaded assets after a refresh failure and recovers with refresh retry", async () => {
+  const client = await render();
+  assetListFails = true;
+  await act(async () => {
+    await client.invalidateQueries({ queryKey: ["crew", "assets", "crew_1", "list"] });
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).toContain("Refresh unavailable");
+  expect(document.body.textContent).toContain("concept.png");
+  assetListFails = false;
+  await click(byText("button", "Retry"));
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  });
+  expect(document.body.textContent).not.toContain("Refresh unavailable");
+  expect(document.body.textContent).toContain("concept.png");
 });

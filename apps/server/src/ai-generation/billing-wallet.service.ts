@@ -6,7 +6,6 @@ import {
 import {
   BillingSubjectType,
   Prisma,
-  StoryProjectBillingMode,
   WalletAccountStatus,
   WalletBalanceKind,
   WalletCreditGrantStatus,
@@ -14,7 +13,6 @@ import {
   WalletLedgerEntryType,
   WalletOwnerType,
   WalletTransactionStatus,
-  WorkspaceType,
   type WalletAccount,
   type WalletCreditGrant,
 } from '@prisma/client';
@@ -41,7 +39,7 @@ type WalletTx = Prisma.TransactionClient;
 type Payer = {
   ownerType: WalletOwnerType;
   ownerId: string;
-  billingScope: 'user' | 'workspace_team';
+  billingScope: 'user' | 'workspace';
 };
 type CreditGrantSnapshot = Pick<
   WalletCreditGrant,
@@ -73,20 +71,13 @@ export class AiGenerationBillingWalletService {
     private readonly walletLedger: WalletLedgerService,
   ) {}
 
-  /**
-   * Resolve the product billing policy to the exact wallet owner that must be
-   * frozen on a new AI job. Actor-funded Story projects intentionally map the
-   * creator to their existing personal-workspace wallet until the wallet-ledger
-   * migration moves those balances to user-owned accounts. This compatibility
-   * mapping is internal; project access and UI workspace state never take part.
-   */
+  /** New Story generations are funded by the project's home workspace. */
   async resolveStoryProjectPayer(
     storyProjectId: string,
-    actorUserId: string,
-  ): Promise<{ type: 'user' | 'workspace'; id: string }> {
+  ): Promise<{ type: 'workspace'; id: string }> {
     const project = await this.prisma.storyProject.findUnique({
       where: { id: storyProjectId },
-      select: { billingMode: true, billingAccountId: true },
+      select: { workspaceId: true },
     });
     if (!project) {
       throw new ServiceUnavailableException({
@@ -94,39 +85,7 @@ export class AiGenerationBillingWalletService {
         msg: 'Story project billing policy is unavailable.',
       });
     }
-
-    if (project.billingMode === StoryProjectBillingMode.actor) {
-      const personal = await this.prisma.workspace.findFirst({
-        where: {
-          ownerUserId: actorUserId,
-          type: WorkspaceType.personal,
-          deletedAt: null,
-        },
-        select: { id: true },
-      });
-      return personal
-        ? { type: 'workspace', id: personal.id }
-        : { type: 'user', id: actorUserId };
-    }
-
-    const account = project.billingAccountId
-      ? await this.prisma.walletAccount.findFirst({
-          where: {
-            id: project.billingAccountId,
-            currency: WalletCurrencyType.compute_point,
-            balanceKind: WalletBalanceKind.consumable,
-            status: WalletAccountStatus.active,
-          },
-          select: { ownerType: true, ownerId: true },
-        })
-      : null;
-    if (!account) {
-      throw new ServiceUnavailableException({
-        code: 'STORY_BILLING_ACCOUNT_UNAVAILABLE',
-        msg: 'The Story project billing account is unavailable.',
-      });
-    }
-    return { type: account.ownerType, id: account.ownerId };
+    return { type: 'workspace', id: project.workspaceId };
   }
 
   /**
@@ -192,7 +151,7 @@ export class AiGenerationBillingWalletService {
     if (amount <= 0n) return;
 
     const tx = args.tx;
-    const payer = await resolvePayerTx(tx, args.job);
+    const payer = resolvePayer(args.job);
     const account = await tx.walletAccount.upsert({
       where: {
         ownerType_ownerId_currency_balanceKind: {
@@ -439,10 +398,7 @@ export class AiGenerationBillingWalletService {
   }
 }
 
-async function resolvePayerTx(
-  tx: WalletTx,
-  job: ChargeableJob,
-): Promise<Payer> {
+function resolvePayer(job: ChargeableJob): Payer {
   if (job.billingSubjectType && job.billingSubjectId) {
     return {
       ownerType:
@@ -452,53 +408,23 @@ async function resolvePayerTx(
       ownerId: job.billingSubjectId,
       billingScope:
         job.billingSubjectType === BillingSubjectType.workspace
-          ? 'workspace_team'
+          ? 'workspace'
           : 'user',
     };
   }
 
-  // job.workspaceId is the job's ACCESS scope (the project's home workspace) —
-  // it must not double as the payer. Team pots are shared on purpose: a job
-  // that runs in a TEAM workspace charges that team's pot. A job that runs in
-  // a PERSONAL workspace charges the ACTOR's own personal pot — an invited
-  // collaborator in someone else's personal project spends their own credits,
-  // never the host's (for the owner both resolve to the same pot). Settle and
-  // release never re-resolve the payer — they follow the job's recorded hold —
-  // so in-flight jobs are unaffected by this rule.
-  if (job.workspaceId) {
-    const workspace = await tx.workspace.findUnique({
-      where: { id: job.workspaceId },
-      select: { id: true, type: true },
+  // Already admitted jobs retain their recorded payer above. New jobs must
+  // carry their resolved workspace; never silently spend the actor's wallet.
+  if (!job.workspaceId) {
+    throw new ServiceUnavailableException({
+      code: 'GENERATION_WORKSPACE_REQUIRED',
+      msg: 'A workspace is required to fund this generation.',
     });
-    if (workspace?.type === WorkspaceType.team) {
-      return {
-        ownerType: WalletOwnerType.workspace,
-        ownerId: workspace.id,
-        billingScope: 'workspace_team',
-      };
-    }
-  }
-  // Personal host (or no workspace on the job): charge the actor's own
-  // personal-workspace pot.
-  const personal = await tx.workspace.findFirst({
-    where: {
-      ownerUserId: job.userId,
-      type: WorkspaceType.personal,
-      deletedAt: null,
-    },
-    select: { id: true },
-  });
-  if (personal) {
-    return {
-      ownerType: WalletOwnerType.workspace,
-      ownerId: personal.id,
-      billingScope: 'user',
-    };
   }
   return {
-    ownerType: WalletOwnerType.user,
-    ownerId: job.userId,
-    billingScope: 'user',
+    ownerType: WalletOwnerType.workspace,
+    ownerId: job.workspaceId,
+    billingScope: 'workspace',
   };
 }
 

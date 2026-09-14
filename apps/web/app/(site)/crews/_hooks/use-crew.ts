@@ -197,6 +197,7 @@ export {
   useCreateCrewTask,
   useDraftCrewTask,
   useUpdateCrewTask,
+  useDeleteCrewTask,
   useCreateCrewTaskComment,
   useUpdateCrewTaskComment,
   useDeleteCrewTaskComment,

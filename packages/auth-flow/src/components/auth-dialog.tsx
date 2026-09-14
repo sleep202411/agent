@@ -9,7 +9,14 @@
  * files (see `keys.ts`); nothing here is a user-facing string.
  */
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type InputHTMLAttributes,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { authErrorTranslationKey, type AuthError } from "../errors";
@@ -42,7 +49,15 @@ import {
   cx,
 } from "./primitives";
 
+export type IdentifierInputRenderer = (
+  props: Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> & {
+    onValueChange: (value: string) => void;
+  }
+) => ReactNode;
+
 export interface AuthDialogProps {
+  /** Optional host input UI, used only for sign-in (never password reset). */
+  renderSignInIdentifier?: IdentifierInputRenderer;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Host app's translator, typed against the package's key union. */
@@ -90,6 +105,7 @@ export function AuthDialog({
   onEvent,
   brand,
   legal,
+  renderSignInIdentifier,
 }: AuthDialogProps) {
   const flow = useAuthFlow({
     transport,
@@ -193,7 +209,15 @@ export function AuthDialog({
         </div>
 
         <div className="mt-7">
-          <StepBody flow={flow} t={t} errorId={errorId} resolveAvatarUrl={resolveAvatarUrl} />
+          <StepBody
+            renderSignInIdentifier={
+              flow.state.mode === "signin" ? renderSignInIdentifier : undefined
+            }
+            flow={flow}
+            t={t}
+            errorId={errorId}
+            resolveAvatarUrl={resolveAvatarUrl}
+          />
         </div>
 
         {legal ? (
@@ -237,6 +261,7 @@ function stepCopy(step: AuthStep, mode: AuthMode): StepCopy {
 }
 
 function StepBody({
+  renderSignInIdentifier,
   flow,
   t,
   errorId,
@@ -246,6 +271,7 @@ function StepBody({
   t: AuthTranslate;
   errorId: string;
   resolveAvatarUrl?: (path: string) => string;
+  renderSignInIdentifier?: IdentifierInputRenderer;
 }) {
   const { state, actions, can } = flow;
   const error = state.error ? <FlowError error={state.error} t={t} id={errorId} /> : null;
@@ -262,6 +288,7 @@ function StepBody({
           }}
         >
           <IdentifierField
+            renderInput={renderSignInIdentifier}
             id="auth-identifier"
             t={t}
             autoFocus
@@ -349,7 +376,12 @@ function StepBody({
 
     case "password":
       return (
-        <PasswordStep flow={flow} t={t} errorId={errorId}>
+        <PasswordStep
+          renderSignInIdentifier={renderSignInIdentifier}
+          flow={flow}
+          t={t}
+          errorId={errorId}
+        >
           {error}
         </PasswordStep>
       );
@@ -462,6 +494,7 @@ function StepBody({
  * whether the completed value is a phone number or email on submit.
  */
 function IdentifierField({
+  renderInput,
   id,
   t,
   value,
@@ -472,6 +505,7 @@ function IdentifierField({
   hint,
   autoFocus,
 }: {
+  renderInput?: IdentifierInputRenderer;
   id: string;
   t: AuthTranslate;
   value: string;
@@ -482,30 +516,37 @@ function IdentifierField({
   hint?: ReactNode;
   autoFocus?: boolean;
 }) {
+  const inputProps: InputHTMLAttributes<HTMLInputElement> = {
+    id,
+    type: "text",
+    autoFocus,
+    autoComplete: "username",
+    "aria-describedby": describedBy,
+    "aria-invalid": invalid || undefined,
+    placeholder: t("identifierPlaceholder"),
+    value,
+    disabled,
+    onChange: (event) => onChange(event.target.value),
+  };
   return (
     <Field label={t("identifierLabel")} htmlFor={id} hint={hint}>
-      <TextInput
-        id={id}
-        type="text"
-        autoFocus={autoFocus}
-        autoComplete="username"
-        aria-describedby={describedBy}
-        aria-invalid={invalid || undefined}
-        placeholder={t("identifierPlaceholder")}
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      {renderInput ? (
+        renderInput({ ...inputProps, onValueChange: onChange })
+      ) : (
+        <TextInput {...inputProps} />
+      )}
     </Field>
   );
 }
 
 function PasswordStep({
+  renderSignInIdentifier,
   flow,
   t,
   errorId,
   children,
 }: {
+  renderSignInIdentifier?: IdentifierInputRenderer;
   flow: AuthFlowController;
   t: AuthTranslate;
   errorId: string;
@@ -523,6 +564,7 @@ function PasswordStep({
       }}
     >
       <IdentifierField
+        renderInput={renderSignInIdentifier}
         id="auth-password-identifier"
         t={t}
         value={state.identifier}

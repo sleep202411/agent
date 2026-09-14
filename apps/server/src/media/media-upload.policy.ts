@@ -2,9 +2,8 @@ const MiB = 1024 * 1024;
 const GiB = 1024 * MiB;
 
 /**
- * Long-form episode source video. Direct-to-storage PUT; duration is measured
- * via signed-URL ffprobe (see MediaAssetFactsService) so confirm does not
- * spool the object onto the API pod.
+ * Single-PUT video uploads (including trailers). Episode sources use the
+ * separate 35 GiB multipart contract in @repo/shared.
  */
 export const EPISODE_VIDEO_MAX_BYTES = 2 * GiB;
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { crewApi } from "@/app/(site)/crews/_hooks/api";
 import { crewKeys } from "@/app/(site)/crews/_hooks/shared";
 
@@ -68,6 +69,13 @@ export interface CrewAssetContextDTO {
   provider: "s3_compatible" | "aliyun_oss";
   storageAvailable: boolean;
   maxUploadBytes: number;
+  storageUsage: {
+    usedBytes: number;
+    totalBytes: number;
+    remainingBytes: number;
+    reservedBytes: number;
+    unknownSizeCount: number;
+  };
   accessModel: "hierarchical_acl";
   role: "admin" | "finance" | "member";
   capabilities: {
@@ -82,17 +90,20 @@ export interface CrewAssetContextDTO {
 }
 
 export function useCrewAssetContext(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: crewKeys.assetContext(crewId),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.assetContext(crewId), user?.id ?? null],
+    enabled: enabled && Boolean(user) && Boolean(crewId),
     queryFn: () =>
       crewApi.get<CrewAssetContextDTO>(`/crews/${encodeURIComponent(crewId)}/assets/context`),
     retry: false,
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
 }
 
 export function useCrewAssets(crewId: string, query: AssetListQuery, enabled: boolean) {
+  const { user } = useCurrentUser();
   const wireQuery = {
     parentId: query.parentId,
     source: query.source,
@@ -101,8 +112,8 @@ export function useCrewAssets(crewId: string, query: AssetListQuery, enabled: bo
     sort: query.sort,
   };
   const result = useInfiniteQuery({
-    queryKey: crewKeys.assetList(crewId, wireQuery),
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.assetList(crewId, wireQuery), user?.id ?? null],
+    enabled: enabled && Boolean(user) && Boolean(crewId),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       crewApi.get<CrewAssetListResponse>(`/crews/${encodeURIComponent(crewId)}/assets`, {
@@ -127,9 +138,10 @@ export function useCrewAssets(crewId: string, query: AssetListQuery, enabled: bo
 }
 
 export function useCrewAssetFolders(crewId: string, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: [...crewKeys.assets(crewId), "folders"],
-    enabled: enabled && Boolean(crewId),
+    queryKey: [...crewKeys.assets(crewId), "folders", user?.id ?? null],
+    enabled: enabled && Boolean(user) && Boolean(crewId),
     queryFn: () =>
       crewApi.get<CrewAssetFolderDTO[]>(`/crews/${encodeURIComponent(crewId)}/assets/folders`),
     retry: false,
@@ -137,9 +149,10 @@ export function useCrewAssetFolders(crewId: string, enabled = true) {
 }
 
 export function useCrewAssetLocation(crewId: string, nodeId: string | null, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: [...crewKeys.assets(crewId), "node", nodeId],
-    enabled: enabled && Boolean(crewId) && Boolean(nodeId),
+    queryKey: [...crewKeys.assets(crewId), "node", nodeId, user?.id ?? null],
+    enabled: enabled && Boolean(user) && Boolean(crewId) && Boolean(nodeId),
     queryFn: () =>
       crewApi.get<CrewAssetLocationDTO>(
         `/crews/${encodeURIComponent(crewId)}/assets/nodes/${encodeURIComponent(nodeId!)}`
@@ -187,9 +200,10 @@ export interface CrewAssetPermissionEventDTO {
 }
 
 export function useCrewAssetPermissions(crewId: string, nodeId: string | null, enabled = true) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: [...crewKeys.assets(crewId), "permissions", nodeId],
-    enabled: enabled && Boolean(crewId) && Boolean(nodeId),
+    queryKey: [...crewKeys.assets(crewId), "permissions", nodeId, user?.id ?? null],
+    enabled: enabled && Boolean(user) && Boolean(crewId) && Boolean(nodeId),
     queryFn: () =>
       crewApi.get<CrewAssetPermissionsDTO>(
         `/crews/${encodeURIComponent(crewId)}/assets/${encodeURIComponent(nodeId!)}/permissions`
@@ -203,9 +217,10 @@ export function useCrewAssetPermissionEvents(
   nodeId: string | null,
   enabled = true
 ) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: [...crewKeys.assets(crewId), "permissions", nodeId, "events"],
-    enabled: enabled && Boolean(crewId) && Boolean(nodeId),
+    queryKey: [...crewKeys.assets(crewId), "permissions", nodeId, "events", user?.id ?? null],
+    enabled: enabled && Boolean(user) && Boolean(crewId) && Boolean(nodeId),
     queryFn: () =>
       crewApi.get<CrewAssetPermissionEventDTO[]>(
         `/crews/${encodeURIComponent(crewId)}/assets/${encodeURIComponent(nodeId!)}/permissions/events`
@@ -219,10 +234,17 @@ function useAssetMutation<TInput, TOutput>(
   mutationFn: (input: TInput) => Promise<TOutput>
 ) {
   const queryClient = useQueryClient();
+  const { user } = useCurrentUser();
+  const accountUserId = user?.id ?? null;
   return useMutation({
     mutationFn,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: crewKeys.assets(crewId) });
+    onMutate: () => ({ crewId, accountUserId }),
+    onSettled: (_data, _error, _variables, context) => {
+      if (!context?.accountUserId) return;
+      queryClient.invalidateQueries({
+        queryKey: crewKeys.assets(context.crewId),
+        predicate: (query) => query.queryKey.at(-1) === context.accountUserId,
+      });
     },
   });
 }

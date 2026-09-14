@@ -15,9 +15,10 @@
  * full whitelist, defaults to USD).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { IconCheck, IconHelpCircle, IconLoader2 } from "@tabler/icons-react";
 import { toast } from "sonner";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useTranslations } from "@/src/i18n/i18n";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,12 +107,18 @@ const SALARY_PERIOD_OPTIONS: { value: SalaryPeriod; key: string }[] = [
   { value: "project", key: "salaryPeriodProject" },
 ];
 
-export function CreateCrewJobDialog({
-  open,
-  onOpenChange,
-  crewId,
-  editingPosition,
-}: PublishPositionDialogProps) {
+export function CreateCrewJobDialog(props: PublishPositionDialogProps) {
+  const { user } = useCurrentUser();
+  if (!props.open) return null;
+  return (
+    <PositionForm
+      key={JSON.stringify([user?.id, props.crewId, props.editingPosition?.id])}
+      {...props}
+    />
+  );
+}
+
+function PositionForm({ open, onOpenChange, crewId, editingPosition }: PublishPositionDialogProps) {
   const t = useTranslations("workspace");
   const tc = useTranslations("common");
   const presetPositions = useTranslatedPresetPositions();
@@ -122,32 +129,66 @@ export function CreateCrewJobDialog({
   const [step, setStep] = useState<StepId>(1);
 
   // ─── Step 1: Basic ──────────────────
-  const [positionType, setPositionType] = useState<string>("");
-  const [description, setDescription] = useState("");
-  const [count, setCount] = useState<string>("1");
-  const [requiredSkills, setRequiredSkills] = useState<string[]>([]);
+  const [positionType, setPositionType] = useState<string>(editingPosition?.positionType ?? "");
+  const [description, setDescription] = useState(editingPosition?.description ?? "");
+  const [count, setCount] = useState<string>(String(editingPosition?.targetCount ?? 1));
+  const [requiredSkills, setRequiredSkills] = useState<string[]>(
+    editingPosition?.requiredSkills ?? []
+  );
 
   // ─── Step 2: Employment ────────────
-  const [workMode, setWorkMode] = useState<WorkMode>("remote");
-  const [location, setLocation] = useState<string>("");
-  const [employmentType, setEmploymentType] = useState<EmploymentType>("project_based");
-  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("any");
+  const [workMode, setWorkMode] = useState<WorkMode>(editingPosition?.workMode ?? "remote");
+  const [location, setLocation] = useState<string>(editingPosition?.location ?? "");
+  const [employmentType, setEmploymentType] = useState<EmploymentType>(
+    editingPosition?.employmentType ?? "project_based"
+  );
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(
+    editingPosition?.experienceLevel ?? "any"
+  );
 
   // ─── Step 3: Salary + Tenure + Lifecycle ────
-  const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>("month");
-  const [salaryCurrency, setSalaryCurrency] = useState<CurrencyCode>(defaultCurrencyForCell());
-  const [salaryMin, setSalaryMin] = useState<string>("");
-  const [salaryMax, setSalaryMax] = useState<string>("");
-  const [salaryNegotiable, setSalaryNegotiable] = useState<boolean>(false);
+  const [salaryPeriod, setSalaryPeriod] = useState<SalaryPeriod>(
+    (editingPosition?.salary.period ?? "month") as SalaryPeriod
+  );
+  const [salaryCurrency, setSalaryCurrency] = useState<CurrencyCode>(
+    (editingPosition?.salary.currency ?? defaultCurrencyForCell()) as CurrencyCode
+  );
+  const [salaryMin, setSalaryMin] = useState<string>(() => {
+    const amount = editingPosition?.salary.minAmount;
+    return amount == null
+      ? ""
+      : String(ZERO_DECIMAL_CURRENCIES.has(salaryCurrency) ? amount : amount / 100);
+  });
+  const [salaryMax, setSalaryMax] = useState<string>(() => {
+    const amount = editingPosition?.salary.maxAmount;
+    return amount == null
+      ? ""
+      : String(ZERO_DECIMAL_CURRENCIES.has(salaryCurrency) ? amount : amount / 100);
+  });
+  const [salaryNegotiable, setSalaryNegotiable] = useState<boolean>(
+    editingPosition?.salary.negotiable ?? false
+  );
   // Empty string means "long-term / open-ended" — the wire field
   // becomes NULL. Same convention for revenue share.
-  const [durationMonths, setDurationMonths] = useState<string>("");
-  const [revenueSharePercent, setRevenueSharePercent] = useState<string>("");
-  const [closeDate, setCloseDate] = useState<string>("");
+  const [durationMonths, setDurationMonths] = useState<string>(
+    editingPosition?.durationMonths == null ? "" : String(editingPosition.durationMonths)
+  );
+  const [revenueSharePercent, setRevenueSharePercent] = useState<string>(
+    editingPosition?.revenueSharePercent == null ? "" : String(editingPosition.revenueSharePercent)
+  );
+  const [closeDate, setCloseDate] = useState<string>(editingPosition?.closeDate ?? "");
 
   const create = useCreatePosition(crewId);
   const update = useUpdatePosition(crewId);
-  const submitting = create.isPending || update.isPending;
+  const [submitting, setSubmitting] = useState(false);
+  const pending = useRef(false);
+  const alive = useRef(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   // Pending-application banner: only relevant in edit mode, only when
   // the owner is about to change material terms. Fetched once per
@@ -157,68 +198,6 @@ export function CreateCrewJobDialog({
     positionId: editingPosition?.id,
   });
   const pendingApplicantCount = applications.summary?.pending ?? 0;
-
-  // Reset form whenever the dialog is closed OR the editingPosition
-  // identity changes (covers "open dialog from position A → close
-  // without saving → re-open from position B" so state doesn't leak).
-  useEffect(() => {
-    if (open) return;
-    setStep(1);
-    setPositionType("");
-    setDescription("");
-    setCount("1");
-    setRequiredSkills([]);
-    setWorkMode("remote");
-    setLocation("");
-    setEmploymentType("project_based");
-    setExperienceLevel("any");
-    setSalaryPeriod("month");
-    setSalaryCurrency(defaultCurrencyForCell());
-    setSalaryMin("");
-    setSalaryMax("");
-    setSalaryNegotiable(false);
-    setDurationMonths("");
-    setRevenueSharePercent("");
-    setCloseDate("");
-  }, [open]);
-
-  // Prefill from `editingPosition` when entering edit mode. Runs on
-  // dialog open + when the underlying position identity changes
-  // (rare, but harmless re-fill). Salary amounts are stored as
-  // smallest-currency-unit on the wire; divide by 100 for display
-  // unless the currency is zero-decimal (JPY etc) where the integer
-  // IS the displayed value.
-  useEffect(() => {
-    if (!open || !editingPosition) return;
-    const p = editingPosition;
-    setPositionType(p.positionType);
-    setDescription(p.description);
-    setCount(String(p.targetCount));
-    setRequiredSkills(p.requiredSkills);
-    setWorkMode(p.workMode);
-    setLocation(p.location ?? "");
-    setEmploymentType(p.employmentType);
-    setExperienceLevel(p.experienceLevel);
-    setSalaryPeriod((p.salary.period ?? "month") as SalaryPeriod);
-    const ccy = (p.salary.currency ?? defaultCurrencyForCell()) as CurrencyCode;
-    setSalaryCurrency(ccy);
-    const isZeroDecimal = ZERO_DECIMAL_CURRENCIES.has(ccy);
-    setSalaryMin(
-      p.salary.minAmount != null
-        ? String(isZeroDecimal ? p.salary.minAmount : p.salary.minAmount / 100)
-        : ""
-    );
-    setSalaryMax(
-      p.salary.maxAmount != null
-        ? String(isZeroDecimal ? p.salary.maxAmount : p.salary.maxAmount / 100)
-        : ""
-    );
-    setSalaryNegotiable(p.salary.negotiable);
-    setDurationMonths(p.durationMonths != null ? String(p.durationMonths) : "");
-    setRevenueSharePercent(p.revenueSharePercent != null ? String(p.revenueSharePercent) : "");
-    setCloseDate(p.closeDate ?? "");
-    setStep(1);
-  }, [open, editingPosition]);
 
   // ─── Per-step validation ──────────
   const parsedCount = Number.parseInt(count, 10);
@@ -286,6 +265,7 @@ export function CreateCrewJobDialog({
   });
 
   const surfaceError = (err: unknown, fallbackKey: string) => {
+    if (!alive.current) return;
     if (err instanceof CrewApiError) {
       const detail =
         typeof err.body === "object" && err.body && "message" in err.body
@@ -298,7 +278,14 @@ export function CreateCrewJobDialog({
   };
 
   const handleSubmit = () => {
-    if (!step3Valid || submitting) return;
+    if (!alive.current || pending.current || !step1Valid || !step2Valid || !step3Valid) return;
+    pending.current = true;
+    setSubmitting(true);
+    const onSettled = () => {
+      if (!alive.current) return;
+      pending.current = false;
+      setSubmitting(false);
+    };
     const body = buildBody();
     if (isEdit && editingPosition) {
       const patch: UpdatePositionInput & { positionId: string } = {
@@ -306,7 +293,9 @@ export function CreateCrewJobDialog({
         positionId: editingPosition.id,
       };
       update.mutate(patch, {
+        onSettled,
         onSuccess: () => {
+          if (!alive.current) return;
           toast.success(t("editJobSuccess"));
           onOpenChange(false);
         },
@@ -314,7 +303,9 @@ export function CreateCrewJobDialog({
       });
     } else {
       create.mutate(body, {
+        onSettled,
         onSuccess: () => {
+          if (!alive.current) return;
           toast.success(t("createJobSuccess"));
           onOpenChange(false);
         },
@@ -347,7 +338,7 @@ export function CreateCrewJobDialog({
 
           <Stepper
             step={step}
-            onJump={(s) => stepReachable(s) && setStep(s)}
+            onJump={(s) => !submitting && stepReachable(s) && setStep(s)}
             labels={[t("createJobStep1Label"), t("createJobStep2Label"), t("createJobStep3Label")]}
           />
 

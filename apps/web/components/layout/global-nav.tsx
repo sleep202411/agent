@@ -37,8 +37,6 @@ import {
   IconX,
 } from "@tabler/icons-react";
 import { useInbox } from "@/app/(site)/creators/_hooks/use-conversations";
-import { useMyCrews } from "@/app/(site)/crews/_hooks/use-crew";
-import { shouldShowCrewSwitcherRail } from "@/app/(site)/crews/_components/crew-switcher-rail";
 import { cn } from "@/lib/utils";
 import styles from "./global-nav.module.css";
 
@@ -75,18 +73,6 @@ export function GlobalNav() {
   const locale = useLocale() as Locale;
 
   const { user } = useCurrentUser();
-  const isCrewHall = normalizedPathname === "/crews";
-  const myCrews = useMyCrews(Boolean(user && isCrewHall));
-  const myCrewCount = (myCrews.data?.founded.length ?? 0) + (myCrews.data?.joined.length ?? 0);
-  const hasDesktopCrewRail = Boolean(
-    user &&
-    isCrewHall &&
-    shouldShowCrewSwitcherRail({
-      crewCount: myCrewCount,
-      isPending: myCrews.isPending,
-      isError: myCrews.isError,
-    })
-  );
   const logout = useLogout();
   // "Get started" opens the sign-in dialog over whatever the visitor is
   // reading instead of navigating to /login and losing the page. The
@@ -209,7 +195,7 @@ export function GlobalNav() {
   return (
     <header
       ref={headerRef}
-      className={navCx("fd-secret-header", hasDesktopCrewRail && "fd-secret-header-with-page-rail")}
+      className={navCx("fd-secret-header")}
       data-mobile-open={mobileOpen ? "true" : "false"}
       style={{ opacity: 0 }}
     >
@@ -267,20 +253,6 @@ export function GlobalNav() {
                 </li>
               );
             })}
-            <li
-              className={navCx("fd-secret-nav-item")}
-              onMouseEnter={() => setHoveredNavIndex(navItems.length)}
-              onMouseLeave={() => setHoveredNavIndex(null)}
-              onFocus={() => setHoveredNavIndex(navItems.length)}
-              onBlur={() => setHoveredNavIndex(null)}
-            >
-              <AppDownloadMenu
-                triggerRef={(node) => {
-                  navLinkRefs.current[navItems.length] = node;
-                }}
-                className={navCx("fd-secret-nav-link")}
-              />
-            </li>
             <span
               className={navCx("fd-secret-nav-marker", navMarker.visible && "is-visible")}
               style={{ "--fd-secret-marker-x": `${navMarker.x}px` } as CSSProperties}
@@ -291,6 +263,10 @@ export function GlobalNav() {
       </nav>
 
       <div className={navCx("fd-secret-right-cluster hidden md:flex js-header-cta")}>
+        <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
+          <span className={navCx("fd-secret-glass-effect")} aria-hidden />
+          <AppDownloadMenu className={navCx("fd-secret-glass-content fd-secret-cta")} />
+        </span>
         <span className={navCx("fd-secret-glass-wrapper fd-secret-cta-shell")}>
           <span className={navCx("fd-secret-glass-effect")} aria-hidden />
           <Link

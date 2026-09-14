@@ -163,29 +163,93 @@ The production order is **Script → Plot → Asset Specs → Storyboard Specs**
 Each `story.author` call advances at most one stage. Agent OS reads the canonical
 production state, skips stages that are already current, and creates one
 independently reviewable proposal for the earliest missing or stale stage.
-Approving a stage never grants permission for the next stage. The first
+In ask/smart mode, approving a stage never grants permission to apply the next stage. The first
 `story.author` call resolves the creator's request once into a durable
-`continueThrough` boundary. After every approved artifact commits, the same
+`continueThrough` boundary. After every authorized artifact commits, the same
 Agent run re-reads canonical state; the workflow starts the earliest missing or
 stale stage inside that saved boundary, or stops when the boundary is current.
 A broad create/complete/adapt request may therefore prepare the next proposal
 automatically; a stage-scoped request stops at its named boundary.
-Every automatically prepared proposal is still a new Story run with a separate
-approval boundary.
+Each stage is a new Story run. Ask/smart mode retains a separate approval
+boundary; Full access applies the validated text stage automatically.
 
 The creator-facing narrative source of truth is the **Script**, not a
 graph-shaped proposal. When a project has no Script, Agent OS derives a complete
 screenplay from the user's prompt and any attached source material. Missing
 creative profile fields are collected through the ordinary Question surface;
-known fields are not asked again. The resulting screenplay is presented through
-the Draft approval surface before any canonical write.
+known fields are not asked again. For the fixed creative-profile form, the
+model supplies only explicit known values; the runtime constructs the missing
+questions and full option catalogs, and the client owns their localized copy.
+In ask/smart mode, the resulting screenplay is presented through
+the Draft approval surface before any canonical write. Full access instead
+persists a validated screenplay and records its applied artifact.
+
+Complete uploaded screenplays default to faithful extraction (`sourceMode:
+preserve`). The model selects source ranges and graph structure; code copies
+the original passages into each node's `description`, including dialogue.
+Every source block belongs to an exact narrative segment. A small partition
+call proposes additional starts; code inserts explicit outcome, named-ending,
+numbered-scene and interlude/epilogue boundaries, deduplicates starts, and
+splits oversized passages. The model cannot exclude narrative as context.
+Scene ids and ranges are then fixed before routing. Batches of at most eight
+scenes refer to the same complete source catalog, with at most four batches
+running concurrently. Each response requires every assigned scene and limits
+route targets to that catalog. A failed batch cancels and drains its siblings.
+Shared schema references keep provider requests compact. The authoring transport
+explicitly sends `json_schema.strict=true` (the installed Alibaba SDK omits it). Creator revision
+instructions are forwarded to partitioning, scene planning and fidelity auditing. Before
+wiring, windows of 48 source blocks receive a dense boundary review: every
+unassigned block requires an explicit routing category, with neighboring
+context supplied. This prevents a sparse outline from swallowing common
+dialogue into the last alternative or merging a gesture with a later choice.
+Explicit option quotes must route through their own response before any
+continuation. Literal ending names are fixed in the batch schema. Shared
+annotations comparing alternatives and their following passage are separate
+source boundaries. Display-only menu labels and separators remain in their
+owning passage. Global validation checks ending coverage, reachability of
+every narrative segment (including intended unresolved routes), and all-ending
+epilogue paths. Failed connectivity triggers a bounded repair with the complete
+graph in context; it can patch exits and rule notes only, preserving source
+identities, ranges, and metadata. Independent audit scopes of at most 24 nodes
+check the full graph with at most four calls running concurrently. Every scope
+receives the complete topology and source, but compares only its assigned actual
+scene fields. Per-scope checks and a final combined coverage check reject omitted,
+duplicate and out-of-scope route assessments. A failed scope cancels and drains
+its siblings.
+Choice labels are original excerpts; a unique quote can resolve a mistaken
+source index, but ambiguous matches fail validation. A separate fidelity audit
+must cover every proposed connection and cite valid source block ranges.
+Evidence text is read directly from those ranges, never recopied by the model, with
+bounded repair and visible failure when checks do not pass. Model review is
+additional evidence, not a guarantee of semantic accuracy. Ask/smart mode
+requires creator review before Apply; Full access follows the text-stage grant
+described below.
+Only an outline needing expansion or an explicit rewrite request uses
+`sourceMode: adapt` and the creative scene-writing pipeline.
+
+Partition, boundary review, and scene-batch calls have two-minute timeouts;
+full-graph routing repair and the fidelity audit have five minutes. All share the durable fifteen-minute authoring budget and
+bounded retries. Exhausting
+the authoring budget reports an execution failure, clears running progress,
+and closes the Agent run as failed; it is not a missed creator approval.
+Completed proposals retain their separate 24-hour review window.
+Transport retries retain the last rejected answer and its validation findings;
+a connection failure does not replace structural repair context.
+
+Rules not executable by this extraction path (for example trust thresholds)
+remain in the source and appear as review notes. Dependent routes remain
+unresolved, with their destination scenes retained; they are not invented
+player choices or unconditional links. This does not add condition execution
+to the player. Plot Tree and Storyboard display the same canonical node
+description. Extraction also retains existing production notes.
 
 That approval surface renders one persisted, versioned screenplay document.
 It does not add review-only metrics, character cards, scene ids, or a second
 summary. The blocks shown in “View all” are the exact blocks written to the
 chapter Script after approval. Scene/branch/ending structure remains an
 internal compiler companion to that document, not a second creator-facing
-artifact.
+artifact. Source-rule warnings are shown separately from the document, so
+they cannot be mistaken for original screenplay text.
 
 Script Apply is one durable stage transaction:
 
@@ -198,9 +262,18 @@ Script Apply is one durable stage transaction:
    checkpoint so the deterministic stage workflow can compare canonical state
    with the saved `continueThrough` boundary.
 
-On desktop, Plot, Asset Specs, and Storyboard each use the same proposal-ready →
-approval → stage-apply lifecycle in a separately audited Story run. Plot Apply
-writes only the canonical branching topology compiled from the exact approved
+On desktop in ask/smart mode, Plot, Asset Specs, and Storyboard each use the
+same proposal-ready → approval → stage-apply lifecycle in a separately audited
+Story run. Full access also covers Script and automatically applies validated
+text stages within the original `continueThrough` scope. The Server captures
+this grant from the authenticated Agent run when accepting each handoff; model
+arguments cannot elevate permissions. Each apply retains canonical validation,
+project locking, revision checks, atomic persistence, and failure-stop behavior.
+The transcript records the applied artifact without a synthetic user approval.
+Existing pending proposals keep their original approval boundary. Full access
+does not remove critical confirmation for paid media or change mobile H5 policy.
+
+Plot Apply writes only the canonical branching topology compiled from the exact approved
 Script. Asset Apply writes only referenceable logical specifications derived
 from that Plot and its Script interpretation (possibly an intentionally empty
 set) and generates no media. Storyboard Apply writes only sequences, clips,

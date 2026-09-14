@@ -28,6 +28,7 @@ import {
 } from "@/app/_components/credits-badge";
 import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
 import {
+  ReferenceInputError,
   buildReferenceInputForMode,
   buildPromptDocument,
   buildPromptReferenceBindingsForMode,
@@ -245,6 +246,17 @@ function generationCost(model: FizzAiCatalog["models"][number], data: GenNodeDat
         typeof settings.durationSeconds === "number" ? settings.durationSeconds : undefined,
       generateAudio:
         typeof settings.generateAudio === "boolean" ? settings.generateAudio : undefined,
+      referenceMedia: {
+        images: refFields
+          .filter((field) => field.kind === "image" && field.field === "referenceImages")
+          .flatMap((field) => data.references?.[field.field] ?? []),
+        videos: refFields
+          .filter((field) => field.kind === "video")
+          .flatMap((field) => data.references?.[field.field] ?? []),
+        audios: refFields
+          .filter((field) => field.kind === "audio")
+          .flatMap((field) => data.references?.[field.field] ?? []),
+      },
       referenceImageCount: uploadedReferenceCount || undefined,
       referenceVideoSeconds: referenceVideoSeconds || undefined,
     })?.sellPoints ?? null
@@ -1041,6 +1053,12 @@ export function CanvasGenerationProvider({
             schemaVersion: model.schemaVersion,
           },
           data.generation
+        );
+      } catch (error) {
+        toast.error(
+          error instanceof ReferenceInputError
+            ? t(error.messageKey)
+            : normalizeFizzAiError(error, t("generationFailed"))
         );
       } finally {
         submittingNodes.current.delete(nodeId);

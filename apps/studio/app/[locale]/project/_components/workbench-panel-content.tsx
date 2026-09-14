@@ -7,6 +7,7 @@ import {
   STORYBOARD_ADD_NODE_ACTIONS,
 } from "@/components/canvas/add-node-menu";
 import { AssetLibrary } from "@/components/canvas/authoring/asset-library";
+import { ProjectCrewAssetsPanel } from "@/components/canvas/authoring/project-crew-asset-library";
 import { NodesPanel } from "@/components/canvas/nodes-panel";
 import { CanvasHistory } from "@/app/[locale]/canvas/_components/canvas-history";
 import { ProjectSkillsPanel } from "./project-skills-panel";
@@ -50,12 +51,14 @@ export function WorkbenchPanelContent({
 }) {
   const nodesOpen = useProjectUIStore((s) => s.nodesOpen);
   const assetsOpen = useProjectUIStore((s) => s.assetsOpen);
+  const crewAssetsOpen = useProjectUIStore((s) => s.crewAssetsOpen);
   const historyOpen = useProjectUIStore((s) => s.historyOpen);
   const sectionsOpen = useProjectUIStore((s) => s.sectionsOpen);
   const skillsOpen = useProjectUIStore((s) => s.skillsOpen);
   const closeNodes = useProjectUIStore((s) => s.closeNodes);
   const requestNodeInsert = useProjectUIStore((s) => s.requestNodeInsert);
   const closeAssets = useProjectUIStore((s) => s.closeAssets);
+  const closeCrewAssets = useProjectUIStore((s) => s.closeCrewAssets);
   const closeHistory = useProjectUIStore((s) => s.closeHistory);
   const selectedShotId = useProjectUIStore((s) => s.selectedShotId);
   const selectedSlot = useProjectUIStore((s) => s.selectedSlot);
@@ -65,7 +68,10 @@ export function WorkbenchPanelContent({
 
   const drawerActions = useMemo<ShotPictureDrawerActions>(
     () => ({
-      onGenerate: (shotId, modality) => storyboard.createPictureSource(shotId, modality),
+      // Forward the drawer form seed (prompt / model / settings). Dropping it
+      // created blank generation cards and the "Write a prompt first" toast
+      // even when the sidebar prompt field was filled.
+      onGenerate: storyboard.createPictureSource,
       onUpload: storyboard.uploadPictureSource,
       onAttach: storyboard.attachSource,
       onDetach: storyboard.detachPicture,
@@ -83,15 +89,17 @@ export function WorkbenchPanelContent({
       ? "nodes"
       : assetsOpen
         ? "assets"
-        : historyOpen
-          ? "activity"
-          : sectionsOpen && sectionsPanel
-            ? "sections"
-            : skillsOpen
-              ? "skills"
-              : selectedShotId && selectedRow
-                ? "shot"
-                : null;
+        : crewAssetsOpen && crewProjectId
+          ? "crew-assets"
+          : historyOpen
+            ? "activity"
+            : sectionsOpen && sectionsPanel
+              ? "sections"
+              : skillsOpen
+                ? "skills"
+                : selectedShotId && selectedRow
+                  ? "shot"
+                  : null;
 
   // Keep the previous body mounted during the rail's close animation.
   const [lastPanel, setLastPanel] = useState(activePanel);
@@ -119,9 +127,10 @@ export function WorkbenchPanelContent({
     return <NodesPanel actions={nodeActions} onAction={handleNodeAction} onClose={closeNodes} />;
   }
   if (renderedPanel === "assets") {
-    return (
-      <AssetLibrary open onClose={closeAssets} crewProjectId={crewProjectId} customTab={assetTab} />
-    );
+    return <AssetLibrary open onClose={closeAssets} customTab={assetTab} />;
+  }
+  if (renderedPanel === "crew-assets" && crewProjectId) {
+    return <ProjectCrewAssetsPanel projectId={crewProjectId} onClose={closeCrewAssets} />;
   }
   if (renderedPanel === "activity") {
     return <CanvasHistory documentId={documentId} provider={provider} onClose={closeHistory} />;

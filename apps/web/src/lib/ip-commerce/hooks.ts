@@ -1,6 +1,13 @@
 "use client";
+import { useCurrentUser } from "@/src/hooks/use-user";
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type Query,
+} from "@tanstack/react-query";
 import {
   blockIpContent,
   createIpCommerceContributor,
@@ -12,7 +19,6 @@ import {
   getIpCommerceIp,
   getMyIpCommerceIp,
   getMyIpCommerceOverview,
-  getMyCreatorRevenue,
   getIpCommerceWallet,
   getIpAccess,
   grantIpEditAccess,
@@ -107,9 +113,6 @@ export const ipCommerceKeys = {
     ["ip-commerce", "me", "ips", ipId, "assets", params ?? {}] as const,
   myIpContributors: (ipId: string) => ["ip-commerce", "me", "ips", ipId, "contributors"] as const,
   myIpAcl: (ipId: string) => ["ip-commerce", "me", "ips", ipId, "acl"] as const,
-  creatorRevenueRoot: ["ip-commerce", "me", "revenue"] as const,
-  creatorRevenue: (params?: { locale?: string; cursor?: string; limit?: number }) =>
-    ["ip-commerce", "me", "revenue", params ?? {}] as const,
   ipAccess: (ipId: string, params?: { episodeIds?: readonly string[]; locale?: string }) =>
     [
       "ip-commerce",
@@ -199,10 +202,14 @@ export function useIpCommerceDiscovery(params: {
   locale?: string;
   enabled?: boolean;
 }) {
+  const { user } = useCurrentUser();
   return useQuery({
-    queryKey: ipCommerceKeys.discovery(params.placementKey, params.locale),
-    queryFn: () =>
-      listIpCommerceDiscovery({ placementKey: params.placementKey, locale: params.locale }),
+    queryKey: [
+      ...ipCommerceKeys.discovery(params.placementKey, params.locale),
+      user?.id ?? "guest",
+    ],
+    queryFn: ({ signal }) =>
+      listIpCommerceDiscovery({ placementKey: params.placementKey, locale: params.locale }, signal),
     staleTime: 60_000,
     enabled: params.enabled ?? true,
   });
@@ -309,13 +316,21 @@ function patchIpEngagement(
   };
 }
 
+function publicIpQueryFilter(ipId: string) {
+  return {
+    queryKey: ["ip-commerce", "ips"],
+    predicate: (query: Query) => {
+      const data = query.state.data as { ip?: { id: string } } | undefined;
+      return query.queryKey[2] === ipId || data?.ip?.id === ipId;
+    },
+  };
+}
+
 function usePatchIpEngagementCache() {
   const qc = useQueryClient();
   return (ipId: string, engagement: IpEngagementMutationResult["engagement"]) => {
-    qc.setQueriesData<{ ip: IpCommerceIp }>(
-      { queryKey: ["ip-commerce", "ips", ipId] },
-      (current) =>
-        current?.ip ? { ...current, ip: patchIpEngagement(current.ip, engagement) } : current
+    qc.setQueriesData<{ ip: IpCommerceIp }>(publicIpQueryFilter(ipId), (current) =>
+      current?.ip ? { ...current, ip: patchIpEngagement(current.ip, engagement) } : current
     );
   };
 }
@@ -339,7 +354,7 @@ export function useToggleIpEngagementLike() {
       input.viewerHasLiked ? unlikeIpContent(input.ipId) : likeIpContent(input.ipId),
     onSuccess: async (result, input) => {
       patchCache(input.ipId, result.engagement);
-      await qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] });
+      await qc.invalidateQueries(publicIpQueryFilter(input.ipId));
     },
   });
 }
@@ -354,35 +369,6 @@ export function useMyIpCommerceOverview(
     enabled: Boolean(ipId),
     staleTime: 30_000,
   });
-}
-
-export function useCreatorRevenue(
-  enabled = true,
-  params?: { locale?: string; cursor?: string; limit?: number }
-) {
-  return useQuery({
-    queryKey: ipCommerceKeys.creatorRevenue(params),
-    queryFn: () => getMyCreatorRevenue(params),
-    enabled,
-    staleTime: 30_000,
-  });
-}
-
-/**
- * Creator withdrawable balance. There is no wallet endpoint for the
- * withdrawable balance kind — it is derived from the creator-revenue
- * summary, which the server owns. Mirrors useCommunityPointBalance's shape.
- */
-export function useCreatorWithdrawableBalance(
-  enabled = true,
-  params?: { locale?: string; cursor?: string; limit?: number }
-) {
-  const query = useCreatorRevenue(enabled, params);
-  return {
-    ...query,
-    withdrawableBalance: query.data?.withdrawableBalance ?? "0",
-    lifetimeEarned: query.data?.lifetimeEarned ?? "0",
-  };
 }
 
 export function useMyIpCommerceAssets(
@@ -542,7 +528,7 @@ function invalidateIpAclCaches(qc: ReturnType<typeof useQueryClient>, ipId: stri
     qc.invalidateQueries({ queryKey: ipCommerceKeys.myIpsRoot }),
     qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", ipId] }),
     qc.invalidateQueries({ queryKey: ["ip-commerce", "ip-access", ipId] }),
-    qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", ipId] }),
+    qc.invalidateQueries(publicIpQueryFilter(ipId)),
   ]);
 }
 
@@ -700,7 +686,7 @@ export function useSaveIpCommerceCollection() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ipCommerceKeys.collectionRoot }),
-        qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),
+        qc.invalidateQueries(publicIpQueryFilter(input.ipId)),
       ]);
     },
   });
@@ -713,7 +699,7 @@ export function useRemoveIpCommerceCollection() {
     onSuccess: async (_result, input) => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ipCommerceKeys.collectionRoot }),
-        qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),
+        qc.invalidateQueries(publicIpQueryFilter(input.ipId)),
       ]);
     },
   });
@@ -731,10 +717,10 @@ export function usePurchaseIpContent() {
         qc.invalidateQueries({ queryKey: ["ip-commerce", "me", "ips", input.ipId, "commerce"] }),
         // A creator who buys their own (or a co-owned) IP earns revenue share —
         // refresh the withdrawable balance + history so the numbers stay live.
-        qc.invalidateQueries({ queryKey: ipCommerceKeys.creatorRevenueRoot }),
+        qc.invalidateQueries({ queryKey: ["creator-earnings"] }),
         // Public detail carries the (now entitlement-gated) episode media URLs —
         // refetch so just-unlocked content becomes playable without a reload.
-        qc.invalidateQueries({ queryKey: ["ip-commerce", "ips", input.ipId] }),
+        qc.invalidateQueries(publicIpQueryFilter(input.ipId)),
       ]);
     },
   });

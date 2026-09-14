@@ -44,6 +44,26 @@ describe('WorkspacePermissionService project fallback', () => {
     });
   });
 
+  it('does not let a billing member create projects or generate at workspace scope', async () => {
+    const { service } = serviceWithWorkspaceRole(WorkspaceMemberRole.billing);
+    await expect(
+      service.requireWorkspaceRole(
+        'user-1',
+        PROJECT.workspaceId,
+        WorkspaceMemberRole.editor,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'WORKSPACE_PERMISSION_DENIED' },
+    });
+    await expect(
+      service.requireWorkspaceRole(
+        'user-1',
+        PROJECT.workspaceId,
+        WorkspaceMemberRole.billing,
+      ),
+    ).resolves.toMatchObject({ role: WorkspaceMemberRole.billing });
+  });
+
   it('still lets billing members read workspace projects', async () => {
     const { service } = serviceWithWorkspaceRole(WorkspaceMemberRole.billing);
 
@@ -66,5 +86,27 @@ describe('WorkspacePermissionService project fallback', () => {
         ProjectMemberRole.editor,
       ),
     ).resolves.toEqual(PROJECT);
+  });
+});
+
+describe('transaction-scoped project permission', () => {
+  it('uses the transaction for project and workspace fallback reads', async () => {
+    const outer = serviceWithWorkspaceRole(WorkspaceMemberRole.owner);
+    const tx = serviceWithWorkspaceRole(WorkspaceMemberRole.viewer).prisma;
+    await expect(
+      outer.service.requireProjectRole(
+        'user-1',
+        PROJECT.id,
+        ProjectMemberRole.editor,
+        tx as never,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'PROJECT_PERMISSION_DENIED' },
+    });
+    expect(tx.platformProject.findFirst).toHaveBeenCalled();
+    expect(tx.projectMember.findFirst).toHaveBeenCalled();
+    expect(tx.workspaceMember.findFirst).toHaveBeenCalled();
+    expect(outer.prisma.platformProject.findFirst).not.toHaveBeenCalled();
+    expect(outer.prisma.workspaceMember.findFirst).not.toHaveBeenCalled();
   });
 });

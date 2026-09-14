@@ -4,7 +4,6 @@ import {
   BillingSubjectType,
   BillingSubscriptionStatus,
   EntitlementGrantStatus,
-  WorkspaceType,
   type BillingMembershipPlan,
   type EntitlementGrant,
   type Prisma,
@@ -28,13 +27,7 @@ import {
   type MembershipBenefits,
 } from './membership-benefits';
 import type { QuotaPlanProfile, QuotaProfile } from '../quota/quota.types';
-import {
-  DEFAULT_TEAM_SEAT_POLICY,
-  LEGACY_PERSONAL_WORKSPACE_CUTOFF,
-  LEGACY_PERSONAL_WORKSPACE_SEAT_POLICY,
-  PERSONAL_WORKSPACE_SEAT_POLICY,
-  type SeatPolicy,
-} from './seat-policy';
+import { DEFAULT_WORKSPACE_SEAT_POLICY, type SeatPolicy } from './seat-policy';
 
 /**
  * Plan key for the community membership (社区会员) — a SEPARATE access axis from
@@ -123,13 +116,32 @@ export class EntitlementService {
   }
 
   /**
+   * Temporary open collaboration: all workspaces allow free, unlimited creator
+   * seats until an explicit product decision restores limits. Apply this after
+   * resolving the plan so paid plans cannot reinstate a cap. Keep the purchased
+   * allowance for accounting; permissions, compute and other quotas are separate.
+   */
+  async resolveWorkspaceSeatPolicy(
+    workspaceId: string,
+    opts?: { now?: string; tx?: Prisma.TransactionClient },
+  ): Promise<SeatPolicy> {
+    const policy = await this.resolveBaseWorkspaceSeatPolicy(workspaceId, opts);
+    return {
+      ...policy,
+      maxSeats: null,
+      seatOverageAllowed: true,
+      seatOveragePriceId: null,
+    };
+  }
+
+  /**
    * Resolve a workspace's seat policy from its OWN active team plan — NOT the
    * caller's personal plan (seats belong to the workspace subscription). Falls
-   * back to the workspace type's no-plan allowance when there's no active team
+   * back to the shared no-plan allowance when there's no active team
    * plan. The most generous active plan wins to be safe across upgrade/overlap
    * windows.
    */
-  async resolveWorkspaceSeatPolicy(
+  private async resolveBaseWorkspaceSeatPolicy(
     workspaceId: string,
     opts?: { now?: string; tx?: Prisma.TransactionClient },
   ): Promise<SeatPolicy> {
@@ -148,7 +160,7 @@ export class EntitlementService {
       orderBy: [{ startsAt: 'desc' }, { createdAt: 'desc' }],
       take: 5,
     });
-    if (grants.length === 0) return this.noPlanSeatPolicy(db, workspaceId);
+    if (grants.length === 0) return DEFAULT_WORKSPACE_SEAT_POLICY;
 
     const plans = await db.billingMembershipPlan.findMany({
       where: {
@@ -157,7 +169,7 @@ export class EntitlementService {
         archivedAt: null,
       },
     });
-    if (plans.length === 0) return this.noPlanSeatPolicy(db, workspaceId);
+    if (plans.length === 0) return DEFAULT_WORKSPACE_SEAT_POLICY;
 
     const best = plans.reduce((a, b) =>
       b.includedSeats > a.includedSeats ? b : a,
@@ -168,33 +180,6 @@ export class EntitlementService {
       maxSeats: best.maxSeats,
       seatOverageAllowed: best.seatOverageAllowed,
     };
-  }
-
-  /**
-   * Seat allowance for a workspace whose plan cannot answer: it holds no active
-   * grant, or its grants name no active plan row. Personal workspaces never buy a
-   * plan, so they land here permanently and get their own allowance. Teams land
-   * here too and routinely — creating one is ungated, so a team that never
-   * subscribed is as common as one whose plan lapsed. Read lazily on the caller's
-   * client so a workspace WITH a plan still costs the same two queries.
-   */
-  private async noPlanSeatPolicy(
-    db: PrismaService | Prisma.TransactionClient,
-    workspaceId: string,
-  ): Promise<SeatPolicy> {
-    const workspace = await db.workspace.findUnique({
-      where: { id: workspaceId },
-      select: { type: true, createdAt: true },
-    });
-    if (workspace?.type !== WorkspaceType.personal) {
-      return DEFAULT_TEAM_SEAT_POLICY;
-    }
-    // Personal workspaces from before teams were usable keep collaborating —
-    // see LEGACY_PERSONAL_WORKSPACE_CUTOFF for why this exists and why it is a
-    // fixed instant rather than a rolling window.
-    return workspace.createdAt < LEGACY_PERSONAL_WORKSPACE_CUTOFF
-      ? LEGACY_PERSONAL_WORKSPACE_SEAT_POLICY
-      : PERSONAL_WORKSPACE_SEAT_POLICY;
   }
 
   requiredPlan(input: string | null | undefined): EntitlementPlanKey | null {
@@ -675,9 +660,7 @@ export class EntitlementService {
   }
 
   private defaultPlanForRuntime(): EntitlementPlanKey {
-    // Must be a plan key with a real plan row, or auth-disabled local runs
-    // silently resolve free benefits and nothing looks wrong.
-    return process.env.AUTH_DISABLED === 'true' ? 'pro' : 'free';
+    return 'free';
   }
 
   /**

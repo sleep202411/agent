@@ -133,8 +133,7 @@ function resolveDuration(input: Record<string, unknown>): number {
 
 /** 768P | 2K — accept common studio aliases. */
 function resolveResolution(input: Record<string, unknown>): '768P' | '2K' {
-  const raw = String(input.resolution ?? '2K')
-    .trim()
+  const raw = stringifyOption(input.resolution ?? '2K')
     .toUpperCase()
     .replace(/\s+/g, '');
   if (raw === '768P' || raw === '768' || raw === '720P' || raw === '720') {
@@ -166,9 +165,9 @@ function resolveRatio(
   input: Record<string, unknown>,
   mode: { hasFrame: boolean; hasReference: boolean },
 ): string | null {
-  const raw = String(input.aspectRatio ?? input.ratio ?? '')
-    .trim()
-    .toLowerCase();
+  const raw = stringifyOption(
+    input.aspectRatio ?? input.ratio ?? '',
+  ).toLowerCase();
   const isAdaptive = !raw || raw === 'adaptive' || raw === 'auto';
 
   if (mode.hasFrame) {
@@ -229,4 +228,8 @@ function referenceUrls(value: unknown): string[] {
   return value
     .map((entry) => mediaUrl(entry))
     .filter((url): url is string => Boolean(url));
+}
+
+function stringifyOption(value: unknown): string {
+  return String(value).trim();
 }

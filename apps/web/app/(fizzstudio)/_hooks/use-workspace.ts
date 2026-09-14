@@ -2,9 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  createTeamWorkspace,
+  createWorkspace,
   deleteWorkspace,
-  ensurePersonalWorkspace,
+  ensureDefaultWorkspace,
   getWorkspace,
   listWorkspaces,
   updateWorkspace,
@@ -23,14 +23,14 @@ export const workspaceKeys = {
 
 /**
  * Bootstrap hook — call on FizzStudio page mount.
- * Idempotent POST: creates the personal workspace if not yet present,
+ * Idempotent POST: creates the default workspace if not yet present,
  * then populates the workspace list cache so useWorkspaces() resolves
  * immediately without a second round-trip.
  */
-export function useEnsurePersonalWorkspace() {
+export function useEnsureDefaultWorkspace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ensurePersonalWorkspace,
+    mutationFn: ensureDefaultWorkspace,
     onSuccess: (workspace) => {
       // Seed the list cache so useWorkspaces() has data instantly
       qc.setQueryData<FizzWorkspace[]>(workspaceKeys.list(), (prev) => {
@@ -62,10 +62,10 @@ export function useWorkspace(workspaceId: string) {
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
 
-export function useCreateTeamWorkspace() {
+export function useCreateWorkspace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: createTeamWorkspace,
+    mutationFn: createWorkspace,
     onSuccess: (workspace) => {
       qc.setQueryData<FizzWorkspace[]>(workspaceKeys.list(), (prev = []) => [...prev, workspace]);
     },

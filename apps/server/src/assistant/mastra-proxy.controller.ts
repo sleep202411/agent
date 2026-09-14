@@ -1,3 +1,4 @@
+import { requiredEnv } from '../common/required-env';
 import {
   Body,
   Controller,
@@ -79,10 +80,7 @@ export class MastraProxyController {
   ) {}
 
   private get mastraUrl() {
-    return (process.env.MASTRA_URL ?? 'http://localhost:4111').replace(
-      /\/$/,
-      '',
-    );
+    return requiredEnv('MASTRA_URL').replace(/\/$/, '');
   }
 
   @Post('submit-message-to-agent')

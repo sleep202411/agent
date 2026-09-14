@@ -35,6 +35,7 @@ const SWEEP_INTERVAL_MS = 2_000;
 const LEASE_DURATION_MS = 30_000;
 const LEASE_RENEW_INTERVAL_MS = 10_000;
 const EVENT_BATCH_SIZE = 500;
+const LIVE_EVENT_BATCH_LIMIT = 20;
 const SWEEP_CONVERSATION_CONCURRENCY = 4;
 
 type TransactionClient = Prisma.TransactionClient;
@@ -250,36 +251,66 @@ export class AgentOsRealtimeOutboxService
           );
         }
         const channelName = agentOsConversationChannel(claim.conversationId);
+        const markPublished = async (ids: readonly string[]) => {
+          const marked = await this.withOwnedConversation(
+            claim,
+            async (tx, now) =>
+              tx.agentOsRunEvent.updateMany({
+                where: {
+                  id: { in: [...ids] },
+                  realtimePublishedAt: null,
+                },
+                data: {
+                  realtimePublishedAt: now,
+                  realtimePublishLastError: null,
+                },
+              }),
+          );
+          if (!marked.owned) {
+            throw new ConversationLeaseLostError(claim.conversationId);
+          }
+          if (marked.value.count !== ids.length) {
+            throw new Error(
+              `Agent OS realtime event acknowledgement count mismatch run=${runId}`,
+            );
+          }
+        };
         await this.withLeaseHeartbeat(claim, async () => {
-          await publishIndividuallyIdempotentAblyBatch(
-            this.ably,
-            channelName,
-            events.map((event) => realtimeEventMessage(channelName, event)),
-          );
+          if (events.length > LIVE_EVENT_BATCH_LIMIT) {
+            const first = events[0];
+            const last = events[events.length - 1];
+            await publishIndividuallyIdempotentAblyBatch(
+              this.ably,
+              channelName,
+              [
+                checkedResyncMessage(channelName, `resync:backlog:${last.id}`, {
+                  version: 1,
+                  kind: 'event_backlog',
+                  runId,
+                  conversationId: claim.conversationId,
+                  sequence: last.sequence,
+                  afterSequence: Math.max(0, first.sequence - 1),
+                  eventId: last.id,
+                }),
+              ],
+            );
+            await markPublished(attemptedIds);
+          } else {
+            const messages = events.map((event) =>
+              realtimeEventMessage(channelName, event),
+            );
+            const eventIdByMessageId = new Map(
+              messages.map((message, index) => [message.id, events[index].id]),
+            );
+            await publishIndividuallyIdempotentAblyBatch(
+              this.ably,
+              channelName,
+              messages,
+              (ids) =>
+                markPublished(ids.map((id) => eventIdByMessageId.get(id)!)),
+            );
+          }
         });
-
-        const marked = await this.withOwnedConversation(
-          claim,
-          async (tx, now) =>
-            tx.agentOsRunEvent.updateMany({
-              where: {
-                id: { in: attemptedIds },
-                realtimePublishedAt: null,
-              },
-              data: {
-                realtimePublishedAt: now,
-                realtimePublishLastError: null,
-              },
-            }),
-        );
-        if (!marked.owned) {
-          throw new ConversationLeaseLostError(claim.conversationId);
-        }
-        if (marked.value.count !== attemptedIds.length) {
-          throw new Error(
-            `Agent OS realtime event acknowledgement count mismatch run=${runId}`,
-          );
-        }
         onAttemptedIds([]);
       }
 

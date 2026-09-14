@@ -8,6 +8,7 @@ import {
   WorkspaceMemberRole,
 } from '@prisma/client';
 import { crewAssetStorageProviderForCell } from '../infra/storage/crew-asset-storage-policy';
+import { EPISODE_SOURCE_MAX_BYTES } from '@repo/shared';
 import { MediaUploadService } from './media-upload.service';
 
 const USER_ID = 'user-1';
@@ -34,7 +35,7 @@ function serviceFixture() {
         headers: { 'Content-Type': 'image/png' },
         storageKey,
         provider: 'azure_blob' as const,
-        expiresAt: '2026-07-17T13:00:00.000Z',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
       }),
     ),
     headObject: jest.fn((key: string) =>
@@ -90,6 +91,15 @@ function serviceFixture() {
   );
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
+    $queryRaw: jest.fn().mockResolvedValue([
+      {
+        total: 100000000000n,
+        used: 0n,
+        reserved: 1024n,
+        unknown: 0n,
+        size_bytes: 1024n,
+      },
+    ]),
     mediaAsset: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: createAsset,
@@ -97,12 +107,17 @@ function serviceFixture() {
     mediaAssetVariant: {
       upsert: jest.fn().mockResolvedValue({ id: VARIANT_ID }),
     },
+    mediaProcessingJob: {
+      upsert: jest.fn().mockResolvedValue({ id: 'poster-job-1' }),
+    },
     mediaObjectPlacement: {
       findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn().mockResolvedValue({ id: 'placement-1' }),
     },
   };
   const prisma = {
+    $queryRaw: jest.fn().mockResolvedValue([{ size_bytes: 1024n }]),
+    episodeUpload: { findUnique: jest.fn().mockResolvedValue(null) },
     mediaAsset: { findFirst: jest.fn().mockResolvedValue(null) },
     crew: {
       findFirst: jest.fn().mockResolvedValue({ id: 'crew-1' }),
@@ -116,6 +131,13 @@ function serviceFixture() {
   };
   const workspacePermissions = {
     requireWorkspaceRole: jest.fn().mockResolvedValue({}),
+  };
+  const storyPermissions = {
+    requireProject: jest.fn().mockImplementation((_user, projectId) =>
+      Promise.resolve({
+        project: { id: projectId, workspaceId: WORKSPACE_ID },
+      }),
+    ),
   };
   const readiness = {
     enqueueAutomaticChecks: jest.fn().mockResolvedValue(undefined),
@@ -132,6 +154,31 @@ function serviceFixture() {
   };
   const r2Storage = {
     ...storage,
+    promoteObject: jest.fn(
+      ({
+        destination,
+        expectedSizeBytes,
+        contentType,
+      }: {
+        destination: { storageKey: string; bucket: string; region: string };
+        expectedSizeBytes: number;
+        contentType: string;
+      }) =>
+        Promise.resolve({
+          ...destination,
+          provider: 's3_compatible' as const,
+          sizeBytes: expectedSizeBytes,
+          contentType,
+        }),
+    ),
+    headStoredObject: jest.fn().mockResolvedValue({
+      exists: true,
+      provider: 's3_compatible',
+      bucket: 'media',
+      region: 'auto',
+      contentType: 'video/mp4',
+      sizeBytes: 1024,
+    }),
     createUploadUrl: jest.fn(({ storageKey }: { storageKey: string }) =>
       Promise.resolve({
         url: 'https://r2.example.com/signed',
@@ -139,7 +186,7 @@ function serviceFixture() {
         headers: { 'Content-Type': 'image/png' },
         storageKey,
         provider: 's3_compatible' as const,
-        expiresAt: '2026-07-17T13:00:00.000Z',
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
       }),
     ),
   };
@@ -164,6 +211,7 @@ function serviceFixture() {
     uploadedImages as never,
     mediaFacts as never,
     storageRegistry as never,
+    storyPermissions as never,
   );
   return {
     service,
@@ -171,6 +219,7 @@ function serviceFixture() {
     prisma,
     createAsset,
     workspacePermissions,
+    storyPermissions,
     readiness,
     tx,
     uploadedImages,
@@ -180,6 +229,37 @@ function serviceFixture() {
 }
 
 describe('MediaUploadService workspace-scoped generic uploads', () => {
+  it('allows 35 GiB only for episode sources and rejects one byte over', async () => {
+    const { service } = serviceFixture();
+    const source = {
+      kind: 'episode_source_video' as const,
+      contentType: 'video/mp4',
+      fileName: 'episode.mp4',
+      sizeBytes: EPISODE_SOURCE_MAX_BYTES,
+    };
+    await expect(service.prepareUpload(USER_ID, source)).resolves.toMatchObject(
+      {
+        policy: { maxBytes: EPISODE_SOURCE_MAX_BYTES },
+      },
+    );
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        sizeBytes: EPISODE_SOURCE_MAX_BYTES + 1,
+      }),
+    ).rejects.toThrow();
+    await expect(service.createUploadUrl(USER_ID, source)).rejects.toThrow(
+      'Episode source videos require multipart upload',
+    );
+    await expect(
+      service.prepareUpload(USER_ID, {
+        ...source,
+        kind: 'episode_video',
+        sizeBytes: 2 * 1024 ** 3 + 1,
+      }),
+    ).rejects.toThrow();
+  });
+
   it('pins crew storage to R2 globally and Alibaba OSS in the CN cell', () => {
     expect(crewAssetStorageProviderForCell('global')).toBe(
       MediaStorageProvider.s3_compatible,
@@ -190,6 +270,48 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     expect(crewAssetStorageProviderForCell('cn')).toBe(
       MediaStorageProvider.aliyun_oss,
     );
+  });
+
+  it('rejects Crew quota admission without returning a signed URL or creating an asset', async () => {
+    const f = serviceFixture();
+    f.tx.$queryRaw.mockResolvedValue([
+      { total: 100n, used: 100n, reserved: 0n, unknown: 0n, size_bytes: 0n },
+    ]);
+    await expect(
+      f.service.createUploadUrl(USER_ID, {
+        kind: 'crew_asset_file',
+        contentType: 'image/png',
+        fileName: 'a.png',
+        sizeBytes: 1,
+        scope: { crewId: 'crew-1' },
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_STORAGE_QUOTA_EXCEEDED' },
+    });
+    expect(f.createAsset).not.toHaveBeenCalled();
+  });
+  it('rejects cancelled Crew confirmation before copying or creating an asset', async () => {
+    const f = serviceFixture();
+    const { storageKey } = await f.service.prepareUpload(USER_ID, {
+      kind: 'crew_asset_file',
+      contentType: 'image/png',
+      fileName: 'a.png',
+      sizeBytes: 1,
+      scope: { crewId: 'crew-1' },
+    });
+    f.prisma.$queryRaw.mockResolvedValue([]);
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'crew_asset_file',
+        contentType: 'image/png',
+        storageKey,
+        scope: { crewId: 'crew-1' },
+      }),
+    ).rejects.toMatchObject({
+      response: { code: 'CREW_UPLOAD_RESERVATION_EXPIRED' },
+    });
+    expect(f.r2Storage.promoteObject).not.toHaveBeenCalled();
+    expect(f.createAsset).not.toHaveBeenCalled();
   });
 
   it('routes global crew asset uploads to Cloudflare R2 with a crew-bound key', async () => {
@@ -246,6 +368,7 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           kind: MediaAssetKind.image,
+          objectKey: expect.stringContaining('/crew-asset-final/'),
           metadata: {
             uploadKind: 'crew_asset_file',
             crewId: 'crew-1',
@@ -253,6 +376,93 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
         }),
       }),
     );
+  });
+
+  it('uploads for a project editor without requiring workspace membership', async () => {
+    const f = serviceFixture();
+    f.workspacePermissions.requireWorkspaceRole.mockRejectedValue(
+      new Error('workspace denied'),
+    );
+    const scope = { storyProjectId: ASSET_ID };
+    const issued = await f.service.createUploadUrl(
+      USER_ID,
+      { ...uploadInput(), scope },
+      OTHER_WORKSPACE_ID,
+    );
+    expect(issued.storageKey).toContain(
+      `/workspace-${WORKSPACE_ID}/story-${ASSET_ID}/`,
+    );
+    await f.service.confirmUpload(USER_ID, {
+      kind: 'ai_reference_image',
+      contentType: 'image/png',
+      storageKey: issued.storageKey,
+      scope,
+    });
+    expect(f.workspacePermissions.requireWorkspaceRole).not.toHaveBeenCalled();
+    expect(f.storyPermissions.requireProject).toHaveBeenCalledTimes(2);
+    expect(f.storyPermissions.requireProject).toHaveBeenCalledWith(
+      USER_ID,
+      ASSET_ID,
+      'story.edit',
+    );
+    expect(f.createAsset.mock.calls[0]?.[0]?.data).toMatchObject({
+      workspaceId: WORKSPACE_ID,
+      metadata: { storyProjectId: ASSET_ID },
+    });
+  });
+
+  it('rejects a viewer before issuing storage access', async () => {
+    const f = serviceFixture();
+    f.storyPermissions.requireProject.mockRejectedValue(
+      new Error('project edit denied'),
+    );
+    await expect(
+      f.service.createUploadUrl(USER_ID, {
+        ...uploadInput(),
+        scope: { storyProjectId: ASSET_ID },
+      }),
+    ).rejects.toThrow('project edit denied');
+    expect(f.storage.createUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it('rechecks project permission at confirmation', async () => {
+    const f = serviceFixture();
+    const scope = { storyProjectId: ASSET_ID };
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      ...uploadInput(),
+      scope,
+    });
+    f.storyPermissions.requireProject.mockRejectedValue(
+      new Error('project access revoked'),
+    );
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'ai_reference_image',
+        contentType: 'image/png',
+        storageKey: issued.storageKey,
+        scope,
+      }),
+    ).rejects.toThrow('project access revoked');
+    expect(f.storage.headObject).not.toHaveBeenCalled();
+    expect(f.createAsset).not.toHaveBeenCalled();
+  });
+
+  it('does not allow confirmation into a different project in the same workspace', async () => {
+    const f = serviceFixture();
+    const issued = await f.service.createUploadUrl(USER_ID, {
+      ...uploadInput(),
+      scope: { storyProjectId: ASSET_ID },
+    });
+    await expect(
+      f.service.confirmUpload(USER_ID, {
+        kind: 'ai_reference_image',
+        contentType: 'image/png',
+        storageKey: issued.storageKey,
+        scope: { storyProjectId: VARIANT_ID },
+      }),
+    ).rejects.toMatchObject({ response: { code: 'MEDIA_KEY_SCOPE_MISMATCH' } });
+    expect(f.storage.headObject).not.toHaveBeenCalled();
+    expect(f.createAsset).not.toHaveBeenCalled();
   });
 
   it('binds issue and confirm to one workspace and persists that ownership', async () => {
@@ -484,6 +694,55 @@ describe('MediaUploadService workspace-scoped generic uploads', () => {
     expect(fixture.tx.$executeRaw).toHaveBeenCalledTimes(1);
     expect(fixture.createAsset).not.toHaveBeenCalled();
     expect(fixture.tx.mediaAssetVariant.upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a video committed by another confirmation without image validation', async () => {
+    const fixture = serviceFixture();
+    const { storageKey } = await fixture.service.prepareUpload(USER_ID, {
+      kind: 'episode_source_video',
+      contentType: 'video/mp4',
+      fileName: 'episode.mp4',
+      sizeBytes: 1024,
+    });
+    fixture.prisma.episodeUpload.findUnique.mockResolvedValue({
+      userId: USER_ID,
+      workspaceId: null,
+      status: 'uploaded',
+      storageKey,
+      provider: MediaStorageProvider.s3_compatible,
+      bucket: 'media',
+      region: 'auto',
+      sizeBytes: 1024n,
+      contentType: 'video/mp4',
+    });
+    // The first lookup misses; another request commits before this transaction.
+    fixture.tx.mediaAsset.findFirst.mockResolvedValue({
+      id: ASSET_ID,
+      storageProvider: MediaStorageProvider.s3_compatible,
+      bucket: 'media',
+      region: 'auto',
+      objectKey: storageKey,
+      externalUrl: null,
+      contentType: 'video/mp4',
+      sizeBytes: 1024n,
+      width: null,
+      height: null,
+      durationSeconds: 8.5,
+      checksumSha256: null,
+      workspaceId: null,
+      status: MediaAssetStatus.ready,
+    });
+
+    await expect(
+      fixture.service.confirmUpload(USER_ID, {
+        kind: 'episode_source_video',
+        contentType: 'video/mp4',
+        storageKey,
+      }),
+    ).resolves.toMatchObject({ mediaAssetId: ASSET_ID, storageKey });
+    expect(fixture.tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(fixture.createAsset).not.toHaveBeenCalled();
+    expect(fixture.uploadedImages.probe).not.toHaveBeenCalled();
   });
 
   it('enforces the byte cap from storage HEAD before promotion', async () => {

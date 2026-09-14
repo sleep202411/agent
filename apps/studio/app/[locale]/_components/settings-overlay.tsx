@@ -10,6 +10,8 @@ import {
   IconSettings,
   IconUsers,
 } from "@tabler/icons-react";
+import { usePathname } from "@/i18n/navigation";
+import { settingsMemberProject } from "@/lib/settings-member-scope";
 import { cn } from "@/lib/utils";
 import {
   openSettings,
@@ -108,6 +110,7 @@ const TEAM_SUB_NAV = [
 function OverlaySidebar({ active }: { active: SettingsSection | null }) {
   const t = useTranslations("settings");
   const { activeWorkspace } = useWorkspace();
+  const project = settingsMemberProject(usePathname());
   const { user } = useAuth();
   const accountName = user?.nickName || user?.email || user?.phone || t("account");
 
@@ -129,19 +132,32 @@ function OverlaySidebar({ active }: { active: SettingsSection | null }) {
           </NavItem>
         </Group>
 
+        {project ? (
+          <Group title={t("projectSettings")}>
+            <NavItem
+              section="members"
+              active={active === "members"}
+              leading={<IconUsers className="size-4" stroke={1.8} />}
+            >
+              {t("projectMembers")}
+            </NavItem>
+          </Group>
+        ) : null}
         {activeWorkspace ? (
           <Group title={t("groupTeamsSettings")}>
             <div className="flex flex-col gap-0.5">
-              {TEAM_SUB_NAV.map(({ section, labelKey, Icon }) => (
-                <NavItem
-                  key={section}
-                  section={section}
-                  active={active === section}
-                  leading={<Icon className="size-4" stroke={1.8} />}
-                >
-                  {t(labelKey)}
-                </NavItem>
-              ))}
+              {TEAM_SUB_NAV.filter((item) => !project || item.section !== "members").map(
+                ({ section, labelKey, Icon }) => (
+                  <NavItem
+                    key={section}
+                    section={section}
+                    active={active === section}
+                    leading={<Icon className="size-4" stroke={1.8} />}
+                  >
+                    {t(labelKey)}
+                  </NavItem>
+                )
+              )}
             </div>
           </Group>
         ) : null}

@@ -25,6 +25,14 @@ export const STORY_PATCH_COMPLEXITY_LIMITS = {
   arrayItems: 5_000,
 } as const;
 
+/** Full chapter proposals contain every scene and shot, unlike localized patches. */
+export const STORY_AUTHORING_COMPLEXITY_LIMITS = {
+  serializedBytes: 4 * 1024 * 1024,
+  nestingDepth: 64,
+  containers: 25_000,
+  arrayItems: 50_000,
+} as const;
+
 export interface StoryPatchComplexityStats {
   serializedBytes: number;
   nestingDepth: number;
@@ -78,6 +86,30 @@ export class StoryPatchPreflightError extends Error {
  * JavaScript call stack.
  */
 export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexityStats {
+  return assertStoryJsonComplexity(value, STORY_PATCH_COMPLEXITY_LIMITS);
+}
+
+/** Bound typed chapter proposals before parsing; patches retain their smaller budget. */
+export function assertStoryProposalComplexity(value: unknown): StoryPatchComplexityStats {
+  const version =
+    value !== null && typeof value === "object" && "schemaVersion" in value
+      ? value.schemaVersion
+      : undefined;
+  const isAuthoring =
+    version === STORY_SCREENPLAY_PROPOSAL_SCHEMA_VERSION ||
+    version === STORY_PLOT_PROPOSAL_SCHEMA_VERSION ||
+    version === STORY_ASSET_PROPOSAL_SCHEMA_VERSION ||
+    version === STORY_STORYBOARD_PROPOSAL_SCHEMA_VERSION;
+  return assertStoryJsonComplexity(
+    value,
+    isAuthoring ? STORY_AUTHORING_COMPLEXITY_LIMITS : STORY_PATCH_COMPLEXITY_LIMITS
+  );
+}
+
+function assertStoryJsonComplexity(
+  value: unknown,
+  limits: Readonly<StoryPatchComplexityStats>
+): StoryPatchComplexityStats {
   const stats: StoryPatchComplexityStats = {
     serializedBytes: 0,
     nestingDepth: 0,
@@ -94,18 +126,18 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
   while (stack.length > 0) {
     const current = stack.pop()!;
     stats.nestingDepth = Math.max(stats.nestingDepth, current.depth);
-    assertComplexityLimit("nestingDepth", stats.nestingDepth, current.path);
+    assertComplexityLimit("nestingDepth", stats.nestingDepth, current.path, limits);
 
     if (current.value === null) {
-      addSerializedBytes(stats, 4, current.path);
+      addSerializedBytes(stats, 4, current.path, limits);
       continue;
     }
     if (typeof current.value === "string") {
-      addSerializedBytes(stats, jsonStringBytes(current.value), current.path);
+      addSerializedBytes(stats, jsonStringBytes(current.value), current.path, limits);
       continue;
     }
     if (typeof current.value === "boolean") {
-      addSerializedBytes(stats, current.value ? 4 : 5, current.path);
+      addSerializedBytes(stats, current.value ? 4 : 5, current.path, limits);
       continue;
     }
     if (typeof current.value === "number") {
@@ -115,7 +147,8 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
       addSerializedBytes(
         stats,
         jsonStringBytes(Object.is(current.value, -0) ? 0 : current.value),
-        current.path
+        current.path,
+        limits
       );
       continue;
     }
@@ -127,12 +160,12 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
     }
     seen.add(current.value);
     stats.containers += 1;
-    assertComplexityLimit("containers", stats.containers, current.path);
+    assertComplexityLimit("containers", stats.containers, current.path, limits);
 
     if (Array.isArray(current.value)) {
       stats.arrayItems += current.value.length;
-      assertComplexityLimit("arrayItems", stats.arrayItems, current.path);
-      addSerializedBytes(stats, 2 + Math.max(0, current.value.length - 1), current.path);
+      assertComplexityLimit("arrayItems", stats.arrayItems, current.path, limits);
+      addSerializedBytes(stats, 2 + Math.max(0, current.value.length - 1), current.path, limits);
       for (let index = current.value.length - 1; index >= 0; index -= 1) {
         stack.push({
           value: current.value[index],
@@ -149,14 +182,14 @@ export function assertStoryPatchComplexity(value: unknown): StoryPatchComplexity
     }
     const record = current.value as Record<string, unknown>;
     const keys = Object.keys(record);
-    addSerializedBytes(stats, 2 + Math.max(0, keys.length - 1), current.path);
+    addSerializedBytes(stats, 2 + Math.max(0, keys.length - 1), current.path, limits);
     for (let index = keys.length - 1; index >= 0; index -= 1) {
       const key = keys[index];
       const child = record[key];
       if (child === undefined) {
         throw invalidJson(`${current.path}.${key}`, "Undefined values are not allowed.");
       }
-      addSerializedBytes(stats, jsonStringBytes(key) + 1, current.path);
+      addSerializedBytes(stats, jsonStringBytes(key) + 1, current.path, limits);
       stack.push({
         value: child,
         path: `${current.path}.${key}`,
@@ -184,9 +217,10 @@ function addStoryPatchPreflightIssue(value: unknown, context: z.RefinementCtx): 
 function assertComplexityLimit(
   metric: StoryPatchComplexityMetric,
   actual: number,
-  path: string
+  path: string,
+  limits: Readonly<StoryPatchComplexityStats>
 ): void {
-  const maximum = STORY_PATCH_COMPLEXITY_LIMITS[metric];
+  const maximum = limits[metric];
   if (actual <= maximum) return;
   throw new StoryPatchPreflightError({
     code: "STORY_PATCH_INPUT_TOO_COMPLEX",
@@ -198,9 +232,14 @@ function assertComplexityLimit(
   });
 }
 
-function addSerializedBytes(stats: StoryPatchComplexityStats, bytes: number, path: string): void {
+function addSerializedBytes(
+  stats: StoryPatchComplexityStats,
+  bytes: number,
+  path: string,
+  limits: Readonly<StoryPatchComplexityStats>
+): void {
   stats.serializedBytes += bytes;
-  assertComplexityLimit("serializedBytes", stats.serializedBytes, path);
+  assertComplexityLimit("serializedBytes", stats.serializedBytes, path, limits);
 }
 
 function jsonStringBytes(value: string | number): number {
@@ -349,11 +388,11 @@ export type StoryAgentHotspotInteraction = z.infer<typeof StoryAgentHotspotInter
  * A clip node's editorial labels.
  *
  * Declared rather than inlined so the projection-fidelity guard can name them:
- * `.trim()` is a rewrite the JSON Schema projection cannot carry, and every
- * such schema is acknowledged by identity in STORY_PATCH_PROJECTION_GAPS.
+ * Name trimming is acknowledged in STORY_PATCH_PROJECTION_GAPS. Description
+ * preserves source whitespace and has no normalization step.
  */
 const StoryAgentNodeNameSchema = z.string().trim().max(120);
-const StoryAgentNodeDescriptionSchema = z.string().trim().max(4_000);
+const StoryAgentNodeDescriptionSchema = z.string().max(4_000);
 
 export const StoryAgentGraphNodeSchema = z
   .object({
@@ -700,13 +739,6 @@ export const STORY_PATCH_PROJECTION_GAPS: readonly StoryPatchProjectionGap[] = [
       "`.trim()` before max(120) only. Trimming can never lengthen a string, so " +
       "every value the manifest's maxLength admits still satisfies zod.",
   },
-  {
-    schema: StoryAgentNodeDescriptionSchema,
-    check: "overwrite",
-    reason:
-      "`.trim()` before max(4000) only. Same length-only argument as " +
-      "StoryAgentNodeNameSchema.",
-  },
 ];
 
 /**
@@ -1051,6 +1083,12 @@ export const StoryPatchBriefSchema = z
      * document text by this id and drafts the skeleton FROM the document.
      */
     documentId: z.uuid().optional(),
+    /** Agent OS attachment containing the full uploaded source text. */
+    sourceAttachmentId: z.uuid().optional(),
+    /** Preserve a supplied screenplay unless the creator explicitly asks for adaptation. */
+    sourceMode: z.enum(["preserve", "adapt"]).optional(),
+    /** Explicitly re-author this existing downstream stage; omitted for ordinary continuation. */
+    regenerateStage: z.enum(["plot", "assets", "storyboard"]).optional(),
   })
   .strict();
 export type StoryPatchBrief = z.infer<typeof StoryPatchBriefSchema>;
@@ -1079,7 +1117,7 @@ export const StoryScreenplaySceneSchema = z
     name: z.string().trim().max(120).optional(),
     heading: z.string().trim().min(1).max(240),
     beat: z.string().trim().min(1).max(500),
-    action: z.string().trim().min(1).max(12_000),
+    action: z.string().min(1).max(12_000).regex(/\S/),
     dialogue: z.array(StoryScreenplayDialogueLineSchema).max(120),
     exit: StoryAgentGraphNodeSchema.shape.exit,
   })
@@ -1092,6 +1130,12 @@ export const StoryScreenplaySchema = z
     title: z.string().trim().min(1).max(160),
     logline: z.string().trim().min(1).max(1_000),
     synopsis: z.string().trim().min(1).max(20_000),
+    /** In preserved scripts, scene.action is an exact source passage, including dialogue. */
+    sourceMode: z.literal("preserved").optional(),
+    /** Source rules retained for review but not implemented by the current player. */
+    reviewNotes: z.array(z.string().min(1).max(2_000)).max(200).optional(),
+    /** These stops are unresolved routes, not authored endings. */
+    unresolvedNodeIds: z.array(StoryAgentStableIdSchema).max(200).optional(),
     characters: z.array(StoryAgentCharacterSchema).max(100),
     entrySceneId: StoryAgentStableIdSchema,
     scenes: z.array(StoryScreenplaySceneSchema).min(1).max(200),
@@ -1099,6 +1143,17 @@ export const StoryScreenplaySchema = z
   .strict()
   .superRefine((screenplay, context) => {
     const ids = new Set(screenplay.scenes.map((scene) => scene.nodeId));
+    (screenplay.unresolvedNodeIds ?? []).forEach((nodeId, index) => {
+      const scene = screenplay.scenes.find((item) => item.nodeId === nodeId);
+      if (!scene || scene.exit.kind !== "auto" || scene.exit.nextNodeId !== null) {
+        context.addIssue({
+          code: "custom",
+          path: ["unresolvedNodeIds", index],
+          message:
+            "An unresolved route must reference an existing scene without an executable exit.",
+        });
+      }
+    });
     if (!ids.has(screenplay.entrySceneId)) {
       context.addIssue({
         code: "custom",
@@ -1137,13 +1192,13 @@ export const StoryScreenplayDocumentBlockSchema = z.discriminatedUnion("kind", [
     .object({
       kind: z.literal("heading"),
       level: z.union([z.literal(1), z.literal(2), z.literal(3)]),
-      text: z.string().trim().min(1).max(12_000),
+      text: z.string().min(1).max(12_000).regex(/\S/),
     })
     .strict(),
   z
     .object({
       kind: z.literal("paragraph"),
-      text: z.string().trim().min(1).max(12_000),
+      text: z.string().min(1).max(12_000).regex(/\S/),
     })
     .strict(),
 ]);

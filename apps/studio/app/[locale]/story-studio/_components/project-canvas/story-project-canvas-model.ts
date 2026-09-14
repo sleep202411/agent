@@ -14,9 +14,10 @@ type StoryCanvasNodeKind = "clip" | "world" | "decision";
 type StoryCanvasExitKind = "auto" | "choice";
 
 export interface StoryCanvasChoiceData {
+  communityPointPrice?: number;
   choiceId: string;
   label: string;
-  targetNodeId: string;
+  targetNodeId: string | null;
   targetTitle: string | null;
 }
 
@@ -39,11 +40,14 @@ export interface StoryCanvasInteractionOutcomeData {
 }
 
 export interface StoryCanvasNodeData extends Record<string, unknown> {
+  communityPointPrice?: number;
   kind: StoryCanvasNodeKind;
   title: string;
+  /** Canonical plot description, shared with the storyboard. */
+  description?: string;
   eyebrow: string;
   nodeId: string;
-  /** Canonical scene whose completion presents this derived decision node. */
+  /** Canonical node that owns the decision; legacy projections use their scene id. */
   sourceNodeId?: string;
   decisionId?: string;
   clipKey?: string;
@@ -102,9 +106,8 @@ const DEFAULT_COPY: StoryCanvasCopy = {
 };
 
 /**
- * A decision is canonical data on a scene exit, but it is a first-class canvas
- * element. Its deterministic projection id lets layout survive reloads without
- * creating a second persistence model for the same runtime decision.
+ * Stable canvas id for legacy choices attached to a clip. Standalone decision
+ * nodes use their own canonical node id instead.
  */
 export function storyDecisionCanvasNodeId(sourceNodeId: string): string {
   return `__decision__:${sourceNodeId}`;
@@ -125,6 +128,10 @@ export function buildStoryCanvasModel(
   const frameAspectRatioOf = (profile: StoryFrameProfile): "16:9" | "9:16" =>
     profile === "portrait_9_16" ? "9:16" : "16:9";
   const graphNodesById = new Map(content.graph.nodes.map((node) => [node.nodeId, node]));
+  const destinationPrice = (nodeId: string | null) => {
+    const target = graphNodesById.get(nodeId ?? "");
+    return target && target.kind !== "decision" ? target.communityPointPrice : undefined;
+  };
   const clipOrdinalsByNodeId = new Map<string, number>();
   let nextClipOrdinal = 0;
   content.graph.nodes.forEach((node) => {
@@ -136,6 +143,37 @@ export function buildStoryCanvasModel(
 
   const projections: CanvasProjection[] = content.graph.nodes.flatMap<CanvasProjection>(
     (node, index) => {
+      if (node.kind === "decision") {
+        return [
+          {
+            id: node.nodeId,
+            order: index * 10,
+            data: {
+              kind: "decision",
+              title: copy.decision,
+              eyebrow: copy.decision,
+              nodeId: node.nodeId,
+              sourceNodeId: node.nodeId,
+              decisionId: node.exit.decisionId,
+              exitKind: "choice",
+              summary: localizedDraftText(node.exit.prompt, locale),
+              choices: node.exit.choices.map((choice) => ({
+                choiceId: choice.choiceId,
+                communityPointPrice: destinationPrice(choice.nextNodeId),
+                label: localizedDraftText(choice.label, locale),
+                targetNodeId: choice.nextNodeId,
+                targetTitle: choice.nextNodeId
+                  ? graphNodeDisplayTitle(
+                      graphNodesById.get(choice.nextNodeId ?? ""),
+                      copy.clip,
+                      clipOrdinalsByNodeId.get(choice.nextNodeId ?? "")
+                    )
+                  : null,
+              })),
+            },
+          },
+        ];
+      }
       if (node.kind === "world") {
         const worldOrdinal = content.graph.nodes
           .slice(0, index + 1)
@@ -150,6 +188,7 @@ export function buildStoryCanvasModel(
               title: node.name?.trim() || world?.name?.trim() || `${copy.world} ${worldOrdinal}`,
               eyebrow: `${copy.world} ${String(worldOrdinal).padStart(2, "0")}`,
               nodeId: node.nodeId,
+              communityPointPrice: node.communityPointPrice,
               worldId: node.worldId,
               world,
               worldEntryInstruction: node.entryInstruction,
@@ -165,12 +204,13 @@ export function buildStoryCanvasModel(
         node.exit.kind === "choice"
           ? node.exit.choices.map((choice) => ({
               choiceId: choice.choiceId,
-              label: localizedText(choice.label, locale, ""),
+              communityPointPrice: destinationPrice(choice.nextNodeId),
+              label: localizedDraftText(choice.label, locale),
               targetNodeId: choice.nextNodeId,
               targetTitle: graphNodeDisplayTitle(
-                graphNodesById.get(choice.nextNodeId),
+                graphNodesById.get(choice.nextNodeId ?? ""),
                 copy.clip,
-                clipOrdinalsByNodeId.get(choice.nextNodeId)
+                clipOrdinalsByNodeId.get(choice.nextNodeId ?? "")
               ),
             }))
           : undefined;
@@ -200,8 +240,10 @@ export function buildStoryCanvasModel(
         data: {
           kind: "clip",
           title: node.name?.trim() || `${copy.clip} ${clipOrdinal}`,
+          description: node.description,
           eyebrow: `${copy.clip} ${String(clipOrdinal).padStart(2, "0")}`,
           nodeId: node.nodeId,
+          communityPointPrice: node.communityPointPrice,
           clipKey: node.clipKey,
           // A choice scene completes into a derived Decision node. Keeping the
           // scene itself automatic makes the visual grammar unambiguous:
@@ -233,7 +275,7 @@ export function buildStoryCanvasModel(
             decisionId: choiceExit.decisionId,
             exitKind: "choice",
             choices,
-            summary: localizedText(choiceExit.prompt, locale, ""),
+            summary: localizedDraftText(choiceExit.prompt, locale),
           },
         },
       ];
@@ -285,7 +327,7 @@ function buildConnections(
       });
       continue;
     }
-    for (const interaction of node.interactions) {
+    for (const interaction of node.kind === "clip" ? node.interactions : []) {
       for (const [outcome, action] of interactionOutcomeEntries(interaction.outcomes)) {
         if (action.kind !== "goto" || !graphNodesById.has(action.nodeId)) continue;
         connections.push({
@@ -325,24 +367,26 @@ function buildConnections(
     }
 
     if (node.exit.kind === "choice") {
-      const decisionNodeId = storyDecisionCanvasNodeId(node.nodeId);
-      connections.push({
-        order: order++,
-        edge: {
-          id: `decision:${node.nodeId}:${node.exit.decisionId}`,
-          source: node.nodeId,
-          target: decisionNodeId,
-          sourceHandle: "completion",
-          targetHandle: "in",
-          data: {
-            kind: "decision",
-            sourceNodeId: node.nodeId,
-            decisionId: node.exit.decisionId,
+      const decisionNodeId =
+        node.kind === "decision" ? node.nodeId : storyDecisionCanvasNodeId(node.nodeId);
+      if (node.kind === "clip")
+        connections.push({
+          order: order++,
+          edge: {
+            id: `decision:${node.nodeId}:${node.exit.decisionId}`,
+            source: node.nodeId,
+            target: decisionNodeId,
+            sourceHandle: "completion",
+            targetHandle: "in",
+            data: {
+              kind: "decision",
+              sourceNodeId: node.nodeId,
+              decisionId: node.exit.decisionId,
+            },
           },
-        },
-      });
+        });
       for (const choice of node.exit.choices) {
-        if (!graphNodesById.has(choice.nextNodeId)) continue;
+        if (!choice.nextNodeId || !graphNodesById.has(choice.nextNodeId)) continue;
         connections.push({
           order: order++,
           edge: {
@@ -351,7 +395,7 @@ function buildConnections(
             target: choice.nextNodeId,
             sourceHandle: `choice:${choice.choiceId}`,
             targetHandle: "in",
-            label: localizedText(choice.label, locale, ""),
+            label: localizedDraftText(choice.label, locale),
             data: {
               kind: "choice",
               sourceNodeId: node.nodeId,
@@ -480,6 +524,11 @@ export function estimateStoryNodeHeight(data: StoryCanvasNodeData): number {
   return canvasNodeGeometry({ type: "storyCanvas", data }).estimatedHeight;
 }
 
+/** Authoring must preserve empty values and whitespace in the active locale. */
+function localizedDraftText(text: Record<string, string> | undefined, locale: string): string {
+  return text?.[locale] ?? localizedText(text, locale, "");
+}
+
 export function localizedText(
   text: Record<string, string> | undefined,
   locale: string,
@@ -515,6 +564,7 @@ function graphNodeDisplayTitle(
   clipOrdinal?: number
 ): string | null {
   if (!node) return null;
+  if (node.kind === "decision") return "Player choice";
   if (node.kind === "world") return node.name?.trim() || node.nodeId;
   return node.name?.trim() || (clipOrdinal ? `${clipLabel} ${clipOrdinal}` : node.clipKey);
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ExperienceAccessRequirementSchema } from "./access.js";
 import {
   ExperienceEventTypeSchema,
   ExperienceStableIdSchema,
@@ -111,6 +112,7 @@ export const ExperienceEventSelectorSchema = z
 export const ExperienceEventRouteSchema = z
   .object({
     routeId: ExperienceStableIdSchema,
+    access: ExperienceAccessRequirementSchema.optional(),
     when: ExperienceConditionSchema.optional(),
     actions: z.array(ExperienceRuntimeActionSchema).min(1),
   })

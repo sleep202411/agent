@@ -46,7 +46,7 @@ export function removeWorldExperienceNodes(
   const nodes = content.graph.nodes.flatMap<StoryGraphNode>((node) => {
     if (node.kind === "world") return [];
 
-    const interactions = node.interactions.map((interaction) => {
+    const interactions = (node.kind === "clip" ? node.interactions : []).map((interaction) => {
       const resolveAction = (action: StoryInteractionAction): StoryInteractionAction => {
         if (action.kind !== "goto") return action;
         const targetNodeId = resolveActiveTarget(action.nodeId);
@@ -67,6 +67,7 @@ export function removeWorldExperienceNodes(
     });
 
     if (node.exit.kind === "auto") {
+      if (node.kind !== "clip") return [node];
       return [
         {
           ...node,
@@ -79,12 +80,12 @@ export function removeWorldExperienceNodes(
     return [
       {
         ...node,
-        interactions,
+        ...(node.kind === "clip" ? { interactions } : {}),
         exit: {
           ...node.exit,
-          choices: node.exit.choices.flatMap((choice) => {
+          choices: node.exit.choices.map((choice) => {
             const targetNodeId = resolveActiveTarget(choice.nextNodeId);
-            return targetNodeId ? [{ ...choice, nextNodeId: targetNodeId }] : [];
+            return { ...choice, nextNodeId: targetNodeId };
           }),
         },
       },

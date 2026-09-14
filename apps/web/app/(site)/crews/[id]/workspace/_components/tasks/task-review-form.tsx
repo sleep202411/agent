@@ -1,0 +1,93 @@
+"use client";
+import { useLayoutEffect, useRef, useState } from "react";
+import { IconCheck, IconClipboardCheck } from "@tabler/icons-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { useTranslations } from "@/src/i18n/i18n";
+import { useReviewCrewTask, type CrewTaskDTO } from "@/app/(site)/crews/_hooks/use-crew";
+import { useCurrentUser } from "@/src/hooks/use-user";
+interface Props {
+  task: CrewTaskDTO;
+  onReviewed: (decision: "approve" | "request_revision") => void;
+}
+export function TaskReviewForm(props: Props) {
+  const { user } = useCurrentUser();
+  return (
+    <ReviewSession key={JSON.stringify([user?.id, props.task.crewId, props.task.id])} {...props} />
+  );
+}
+function ReviewSession({ task, onReviewed }: Props) {
+  const t = useTranslations("crewTasks");
+  const review = useReviewCrewTask(task.crewId);
+  const [reviewNote, setReviewNote] = useState("");
+  const revisionLimitReached =
+    task.revisionLimit != null && task.revisionRoundsUsed >= task.revisionLimit;
+  const alive = useRef(true);
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
+  useLayoutEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  const decide = async (decision: "approve" | "request_revision") => {
+    if (!alive.current || pending.current || task.status !== "submitted") return;
+    if (decision === "request_revision" && (revisionLimitReached || !reviewNote.trim())) return;
+    pending.current = true;
+    setSaving(true);
+    try {
+      await review.mutateAsync({ taskId: task.id, decision, note: reviewNote });
+      if (!alive.current) return;
+      toast.success(decision === "approve" ? t("approved") : t("revisionRequested"));
+      setReviewNote("");
+      onReviewed(decision);
+    } catch (error) {
+      if (alive.current) toast.error(error instanceof Error ? error.message : t("actionFailed"));
+    } finally {
+      pending.current = false;
+      if (alive.current) setSaving(false);
+    }
+  };
+
+  return (
+    <section className="mt-6 rounded-xl border border-amber-400/20 bg-amber-400/[0.035] p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <IconClipboardCheck className="size-4 text-amber-300" />
+        <h3 className="text-[12px] font-semibold text-[#e2e3e6]">{t("reviewSubmission")}</h3>
+      </div>
+      <Textarea
+        disabled={saving}
+        value={reviewNote}
+        onChange={(event) => setReviewNote(event.target.value)}
+        placeholder={t("reviewNotePlaceholder")}
+        maxLength={5000}
+        className="min-h-24 border-white/[0.09] bg-[#090a0d]"
+      />
+      <p className={cn("mt-2 text-[9px] text-[#686e79]", revisionLimitReached && "text-amber-300")}>
+        {revisionLimitReached ? t("revisionLimitReached") : t("revisionInstructionsRequired")}
+      </p>
+      <div className="mt-3 flex justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          color="muted"
+          disabled={saving || revisionLimitReached || !reviewNote.trim()}
+          onClick={() => void decide("request_revision")}
+        >
+          {t("requestRevision")}
+        </Button>
+        <Button
+          size="sm"
+          disabled={saving}
+          onClick={() => void decide("approve")}
+          icon={<IconCheck />}
+        >
+          {t("approve")}
+        </Button>
+      </div>
+    </section>
+  );
+}
