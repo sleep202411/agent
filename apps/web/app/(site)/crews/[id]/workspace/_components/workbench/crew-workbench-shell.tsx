@@ -22,6 +22,7 @@ import type {
   WorkspaceTab,
   WorkspaceTabId,
 } from "@/app/(site)/crews/[id]/workspace/_lib/workspace-tabs";
+import { CrewSwitcherRail } from "@/app/(site)/crews/_components/crew-switcher-rail";
 import Link from "next/link";
 import { useLocale } from "@/src/i18n/i18n";
 import { localizePath } from "@/src/i18n/locale-url";
@@ -63,6 +64,7 @@ export function CrewWorkbenchShell({
   crewId,
   crewLogo,
   crewName,
+  currentCrewHref,
   isOwner,
   onEditCrew,
   onInviteCommunity,
@@ -77,7 +79,11 @@ export function CrewWorkbenchShell({
   const tc = useTranslations("crewCommunityChat");
   const hasChat = tabs.some((tab) => tab.id === "chat");
   return (
-    <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[220px_minmax(0,1fr)]">
+    <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)]">
+      <CrewSwitcherRail
+        currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }}
+        currentCrewHref={currentCrewHref}
+      />
       <aside
         aria-label={tw("globalNavigation")}
         className="flex min-h-0 flex-col items-stretch border-r border-white/[0.075] bg-[#090a0d] px-1.5 py-2 md:px-2"

@@ -204,25 +204,30 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
     }
   }
   return (
-    <section className="space-y-2 py-3 text-sm">
-      <h3 className="font-medium">{t("title")}</h3>
+    <section className="space-y-3 border-t border-white/[0.055] py-5 text-[13px] text-[#b8bac0]">
+      <h3 className="text-xs font-semibold text-[#d7d9de]">{t("title")}</h3>
       {current.isPending ? (
         <p role="status">{t("loading")}</p>
-      ) : (
+      ) : !current.isError ? (
         <p>
           {current.data
             ? `${current.data.definition.name} · ${t("revision")} ${current.data.version}`
             : t("none")}
         </p>
-      )}
+      ) : null}
       {current.error || catalog.error || error ? (
-        <div role="alert">
-          {error ?? current.error?.message ?? catalog.error?.message}
+        <div role="alert" className="space-y-2">
+          <p className="break-words text-[#e85b60]">
+            {error ?? current.error?.message ?? catalog.error?.message}
+          </p>
           <Button
+            size="sm"
+            variant="outline"
+            color="muted"
             disabled={pending}
             onClick={() => {
               void current.refetch();
-              void catalog.refetch();
+              if (canManage) void catalog.refetch();
               refreshTask();
             }}
           >
@@ -230,11 +235,20 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
           </Button>
         </div>
       ) : null}
-      {canManage && !["submitted", "approved", "cancelled"].includes(task.status) ? (
-        <>
+      {canManage &&
+      !["submitted", "approved", "cancelled"].includes(task.status) &&
+      (categories.length > 0 || current.data) ? (
+        <div className="flex flex-wrap items-center gap-2">
           <NativeSelect
+            className="min-w-0 flex-1 basis-52"
             aria-label={t("title")}
-            disabled={pending || current.isPending || catalog.isPending}
+            disabled={
+              pending ||
+              current.isPending ||
+              catalog.isPending ||
+              current.isError ||
+              catalog.isError
+            }
             value={choice ?? currentKey}
             onChange={setChoice}
           >
@@ -252,20 +266,26 @@ function TemplatePanel({ task, canManage }: { task: CrewTaskDTO; canManage: bool
             ))}
           </NativeSelect>
           <Button
-            disabled={pending || choice === null || current.isError}
+            size="sm"
+            variant="outline"
+            color="muted"
+            disabled={pending || choice === null || current.isError || catalog.isError}
             onClick={() => void save()}
           >
             {t("save")}
           </Button>
           {catalog.hasNextPage ? (
             <Button
+              size="sm"
+              variant="ghost"
+              color="muted"
               disabled={pending || catalog.isFetching}
               onClick={() => void catalog.fetchNextPage({ cancelRefetch: false })}
             >
               {t("more")}
             </Button>
           ) : null}
-        </>
+        </div>
       ) : null}
       {selectedDefinition ? <DeliveryReferencePrices definition={selectedDefinition} /> : null}
       {task.submissions

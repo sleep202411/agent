@@ -68,10 +68,11 @@ export default function CrewTaskCenter() {
         <h1 className="text-2xl font-semibold">{t("title")}</h1>
         <p className="text-sm text-muted-foreground">{t("description")}</p>
       </header>
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="space-y-1 text-sm">
+      <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.5fr)]">
+        <label className="flex min-w-0 flex-col gap-2 text-sm text-muted-foreground">
           {deadlineT("warningWindow")}
           <NativeSelect
+            className="data-[size=default]:h-11 sm:data-[size=default]:h-10"
             value={String(warningHours)}
             onChange={(value) => setWarningHours(Number(value))}
             aria-label={deadlineT("warningWindow")}
@@ -83,10 +84,10 @@ export default function CrewTaskCenter() {
             ))}
           </NativeSelect>
         </label>
-        <label className="space-y-1 text-sm">
+        <label className="flex min-w-0 flex-col gap-2 text-sm text-muted-foreground">
           {t("scope")}
           <NativeSelect
-            className="block rounded-md bg-secondary p-2"
+            className="data-[size=default]:h-11 sm:data-[size=default]:h-10"
             value={scope}
             aria-label={t("scope")}
             onChange={setScope}
@@ -95,10 +96,10 @@ export default function CrewTaskCenter() {
             <NativeSelectOption value="mine">{t("mine")}</NativeSelectOption>
           </NativeSelect>
         </label>
-        <label className="space-y-1 text-sm">
+        <label className="flex min-w-0 flex-col gap-2 text-sm text-muted-foreground">
           {t("status")}
           <NativeSelect
-            className="block rounded-md bg-secondary p-2"
+            className="data-[size=default]:h-11 sm:data-[size=default]:h-10"
             value={status}
             aria-label={t("status")}
             onChange={setStatus}
@@ -108,7 +109,7 @@ export default function CrewTaskCenter() {
           </NativeSelect>
         </label>
         <Input
-          className="w-full sm:w-72"
+          className="h-11 w-full sm:h-10"
           aria-label={t("search")}
           placeholder={t("search")}
           maxLength={180}

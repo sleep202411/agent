@@ -370,6 +370,7 @@ export function TaskIssueDetail({
             </section>
 
             <TaskCommitments task={task} canManage={isOwner} />
+            <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
 
             <div className="mb-5 flex items-center gap-2 border-t border-white/[0.055] pt-7">
               <IconMessage className="size-4 text-[#8c929c]" />
@@ -437,7 +438,6 @@ export function TaskIssueDetail({
               </div>
             ) : null}
 
-            <TaskDeliveryTemplatePanel task={task} canManage={isOwner} />
             {isOwner && task.status === "submitted" ? (
               <TaskReviewForm task={task} onReviewed={onReviewed} />
             ) : null}

@@ -10,7 +10,9 @@ import {
   Patch,
   Post,
   Query,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { CurrentUser } from '../../auth';
 import type { AuthUser } from '../../auth';
 import { parseIdParam } from '../../common/params';
@@ -487,14 +489,17 @@ export class CrewTasksController {
   }
 
   @Get('crew-tasks/:taskId/delivery-template')
-  getDeliveryTemplate(
+  async getDeliveryTemplate(
     @Param('taskId') id: string,
     @CurrentUser() user: AuthUser,
+    @Res() response: Response,
   ) {
-    return this.tasks.getDeliveryTemplate(
+    // Nest sends a bare null as an empty response; this endpoint promises JSON.
+    const template = await this.tasks.getDeliveryTemplate(
       parseIdParam(id, 'taskId'),
       user.userId,
     );
+    response.json(template);
   }
   @Post('crew-tasks/:taskId/delivery-template')
   setDeliveryTemplate(
