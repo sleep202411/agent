@@ -39,3 +39,21 @@ describe("published TV games", () => {
     expect(() => parseTvGames("text-game", [{ ...row, gameId: "../ip" }])).toThrow();
   });
 });
+
+it("retains catalog artwork and rejects unsafe image URLs", () => {
+  expect(
+    parseTvGames("interactive-film", [{ ...film, coverUrl: "https://example.com/cover.jpg" }])[0]
+      ?.coverUrl
+  ).toBe("https://example.com/cover.jpg");
+  const row = {
+    gameId: "tg_1234567890123456",
+    name: "Story",
+    posterUrl: "https://example.com/poster.jpg",
+    synopsis: null,
+    status: "published",
+  };
+  expect(parseTvGames("text-game", [row])[0]?.coverUrl).toBe(row.posterUrl);
+  expect(
+    parseTvGames("text-game", [{ ...row, posterUrl: "javascript:alert(1)" }])[0]?.coverUrl
+  ).toBeUndefined();
+});

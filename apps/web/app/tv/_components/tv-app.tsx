@@ -25,14 +25,14 @@ export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const [mode, setMode] = useState<"videos" | "games">("videos");
   return (
     <div className="flex min-h-full min-w-0 max-w-full flex-col lg:h-full lg:min-h-0 bg-[#0c0e13] text-white">
-      <div role="group" aria-label={t("catalog")} className="flex shrink-0 gap-3 px-4 py-2">
+      <div role="group" aria-label={t("catalog")} className="flex shrink-0 gap-1 px-4 py-2">
         {(["videos", "games"] as const).map((value) => (
           <button
             type="button"
             key={value}
             aria-pressed={mode === value}
             onClick={() => setMode(value)}
-            className="min-h-11 rounded-lg px-4 text-white/60 aria-pressed:bg-white/10 aria-pressed:text-white"
+            className="min-h-11 rounded-full px-3 text-sm font-medium leading-5 text-white/60 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white aria-pressed:bg-white/10 aria-pressed:text-white"
           >
             {t(value)}
           </button>
