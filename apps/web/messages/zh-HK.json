@@ -9958,5 +9958,12 @@
     "retry": "重試",
     "more": "載入更多",
     "viewIp": "查看此遊戲的 IP"
+  },
+  "coursePlayerControls": {
+    "mute": "靜音",
+    "unmute": "取消靜音",
+    "options": "更多選項",
+    "speed": "播放速度",
+    "normal": "正常（1×）"
   }
 }
