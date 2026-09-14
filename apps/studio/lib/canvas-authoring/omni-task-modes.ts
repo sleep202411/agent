@@ -1,3 +1,5 @@
+import type { ModelSettings } from "./generation-api";
+
 /**
  * Omni-reference task types surfaced as first-class mode-menu entries.
  *
@@ -79,4 +81,25 @@ export function lockedSettingFields(taskType: string | undefined): ReadonlySet<s
   if (taskType === "edit") return new Set(["aspectRatio", "duration"]);
   if (taskType === "extend") return new Set(["aspectRatio"]);
   return new Set<string>();
+}
+
+/**
+ * Mode-menu selection, including the UI-only omni sub-intent entries.
+ * `multimodal_to_video::edit` maps to mode + task type and forces the
+ * ModelArk-locked knobs to auto. Any non-composite selection (including
+ * plain Omni Reference) resets the task type to auto.
+ */
+export function applyOmniModeSelection(
+  menuValue: string,
+  settings: ModelSettings
+): { mode: string; settings: ModelSettings } {
+  const parsed = isOmniTaskModeValue(menuValue) ? splitOmniTaskModeValue(menuValue) : null;
+  const taskType = parsed?.taskType ?? "auto";
+  const mode = parsed?.mode ?? menuValue;
+  const next: ModelSettings = { ...settings, [OMNI_TASK_TYPE_FIELD]: taskType };
+  if (taskType === "edit" || taskType === "extend") {
+    next.aspectRatio = "auto";
+    if (taskType === "edit") next.duration = "auto";
+  }
+  return { mode, settings: next };
 }
