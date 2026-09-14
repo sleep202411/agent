@@ -2464,6 +2464,27 @@
     "confirmRemoveEdge": "Delete this connection?"
   },
   "storyStudio": {
+    "projectAccess": {
+      "authentication": {
+        "title": "Sign in to open this project",
+        "description": "Your session may have expired. Sign in with the account that was granted access to this project."
+      },
+      "forbidden": {
+        "title": "You don't have access to this project",
+        "description": "Ask the project owner or the person who invited you to grant this account access."
+      },
+      "unavailable": {
+        "title": "This project isn't available to you",
+        "description": "It may have been deleted, or this account hasn't been granted access. Ask the project owner or the person who invited you to check your access."
+      },
+      "unexpected": {
+        "title": "This project couldn't load",
+        "description": "A temporary problem prevented the project from opening. Try again, or return to your projects."
+      },
+      "signIn": "Sign in",
+      "back": "Back to projects",
+      "retry": "Try again"
+    },
     "authoringRun": {
       "sourceReviewNotes": "Script rules and production notes ({count})",
       "title": {

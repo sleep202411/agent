@@ -5,9 +5,15 @@ import { IconLoader2 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import { usePathname, useRouter } from "@/i18n/navigation";
+import { useAuth } from "@/app/_components/auth-provider";
 import { getStoryWorkbench } from "@/lib/story-projects-api";
 import { useStoryProjectUiStore } from "../_stores/story-project-ui-store";
+import {
+  shouldRetryStoryProjectAccess,
+  storyProjectAccessFailure,
+} from "./story-project-access-error";
 import { resolveStoryChapterId } from "./story-project-chapter-scope-state";
+import { StoryProjectLoadState } from "./story-project-load-state";
 
 /**
  * Makes the active chapter a route-level invariant for the whole project shell.
@@ -24,6 +30,7 @@ export function StoryProjectChapterScope({
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
+  const { signIn } = useAuth();
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
   const setActiveChapterId = useStoryProjectUiStore((state) => state.setActiveChapterId);
   const requestedChapterId = searchParams.get("chapter");
@@ -31,7 +38,7 @@ export function StoryProjectChapterScope({
   const workbenchQuery = useQuery({
     queryKey: ["story-studio", "chapter-scope", projectId],
     queryFn: () => getStoryWorkbench(projectId),
-    retry: 2,
+    retry: shouldRetryStoryProjectAccess,
   });
   const chapterIds = useMemo(
     () => new Set(workbenchQuery.data?.chapters.map((chapter) => chapter.id) ?? []),
@@ -70,7 +77,19 @@ export function StoryProjectChapterScope({
     [projectId, setActiveChapterId]
   );
 
-  if (workbenchQuery.isError) throw workbenchQuery.error;
+  if (workbenchQuery.isError) {
+    const accessFailure = storyProjectAccessFailure(workbenchQuery.error);
+    if (accessFailure) {
+      return (
+        <StoryProjectLoadState
+          kind={accessFailure}
+          onRetry={() => void workbenchQuery.refetch()}
+          onSignIn={signIn}
+        />
+      );
+    }
+    throw workbenchQuery.error;
+  }
 
   if (!resolvedChapterId || activeChapterId !== resolvedChapterId) {
     return (
