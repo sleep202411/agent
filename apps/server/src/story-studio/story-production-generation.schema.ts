@@ -27,6 +27,11 @@ const RESERVED_OPTION_KEYS = new Set([
   'audioreference',
 ]);
 
+/** Catalog knobs whose names contain "reference" but are not media locators.
+ *  Seedance 2.5's omni task type is a mode setting, same field the canvas
+ *  composer writes into the job input. */
+const ALLOWED_REFERENCE_NAMED_OPTION_KEYS = new Set(['omnireferencetasktype']);
+
 const GenerationOptionScalarSchema = z.union([
   z.boolean(),
   z.number().finite(),
@@ -49,6 +54,7 @@ export const StoryGenerationOptionsSchema = z
   .superRefine((options, context) => {
     for (const [key, value] of Object.entries(options)) {
       const canonicalKey = key.replaceAll(/[_-]/g, '').toLowerCase();
+      if (ALLOWED_REFERENCE_NAMED_OPTION_KEYS.has(canonicalKey)) continue;
       if (
         RESERVED_OPTION_KEYS.has(canonicalKey) ||
         canonicalKey.includes('reference') ||

@@ -170,7 +170,10 @@ export function MediaAuthoringCanvas({
     screenToFlowPosition,
     acceptedFileTypes,
     uploadContextValue,
+    fileDragActive,
+    onDragEnter,
     onDragOver,
+    onDragLeave,
     onDrop,
     onPickFiles,
     onDoubleClick,
@@ -248,7 +251,9 @@ export function MediaAuthoringCanvas({
               groupingState.draggingGroupId && "cursor-grabbing",
               className
             )}
+            onDragEnter={onDragEnter}
             onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
             onDrop={onDrop}
             onDoubleClick={onDoubleClick}
             onPointerDownCapture={groupingState.containerHandlers.onPointerDownCapture}
@@ -446,6 +451,13 @@ export function MediaAuthoringCanvas({
             {nodes.length === 0 && !addMenu
               ? renderEmptyState?.({ openAddMenu: openAddMenuAtCenter })
               : null}
+            {fileDragActive ? (
+              <div className="pointer-events-none absolute inset-0 z-40 grid place-items-center bg-black/45">
+                <p className="rounded-2xl bg-popover/95 px-4 py-2 text-sm text-white shadow-md">
+                  {t("dropToAdd")}
+                </p>
+              </div>
+            ) : null}
             {loadingOverlay}
             {renderErrorOverlay?.(nodes)}
           </div>

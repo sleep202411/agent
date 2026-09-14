@@ -96,6 +96,15 @@ describe('Story production generation command schemas', () => {
     ).toEqual({ durationSeconds: 7 });
   });
 
+  it('accepts Seedance omni task type as a model knob', () => {
+    expect(
+      CreateStoryStoryboardClipGenerationSchema.parse({
+        ...base,
+        options: { omniReferenceTaskType: 'edit', duration: 'auto' },
+      }).options,
+    ).toEqual({ omniReferenceTaskType: 'edit', duration: 'auto' });
+  });
+
   it('rejects a media URL even when hidden under an unknown option name', () => {
     expect(() =>
       CreateStoryAssetGenerationSchema.parse({

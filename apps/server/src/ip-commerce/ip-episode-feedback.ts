@@ -93,18 +93,29 @@ export class IpEpisodeFeedbackController {
   constructor(private readonly feedback: IpEpisodeFeedbackService) {}
   @Public()
   @Get()
-  read(
+  async read(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user?: AuthUser,
   ) {
-    return this.feedback.read(params.ipId, params.episodeId, user);
+    return {
+      code: 200,
+      data: await this.feedback.read(params.ipId, params.episodeId, user),
+    };
   }
   @Put()
-  vote(
+  async vote(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(Vote)) body: z.infer<typeof Vote>,
   ) {
-    return this.feedback.vote(params.ipId, params.episodeId, user, body.value);
+    return {
+      code: 200,
+      data: await this.feedback.vote(
+        params.ipId,
+        params.episodeId,
+        user,
+        body.value,
+      ),
+    };
   }
 }

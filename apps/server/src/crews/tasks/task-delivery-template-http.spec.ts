@@ -33,7 +33,7 @@ describe('task delivery template HTTP contract', () => {
 
   it('serializes no template as JSON null, not an empty successful body', async () => {
     getDeliveryTemplate.mockResolvedValue(null);
-    const response = await request(app.getHttpServer<Server>())
+    const response = await request(app.getHttpServer() as Server)
       .get('/crew-tasks/task-1/delivery-template')
       .expect(200);
     expect(response.headers['content-type']).toMatch(/application\/json/);
@@ -47,7 +47,7 @@ describe('task delivery template HTTP contract', () => {
       definition: { name: 'Film delivery', fields: [] },
     };
     getDeliveryTemplate.mockResolvedValue(template);
-    const response = await request(app.getHttpServer<Server>())
+    const response = await request(app.getHttpServer() as Server)
       .get('/crew-tasks/task-1/delivery-template')
       .expect(200);
     expect(response.body).toEqual(template);
@@ -56,7 +56,7 @@ describe('task delivery template HTTP contract', () => {
     getDeliveryTemplate.mockRejectedValue(
       new ForbiddenException('Crew access required'),
     );
-    const response = await request(app.getHttpServer<Server>())
+    const response = await request(app.getHttpServer() as Server)
       .get('/crew-tasks/task-1/delivery-template')
       .expect(403);
     expect(response.body).toMatchObject({ message: 'Crew access required' });

@@ -1,5 +1,10 @@
 import { api, ApiRequestError } from "@/lib/api";
 import { STORY_VISUAL_STYLE_SKILL_SLUGS, type StoryVisualStyleSkillSlug } from "@repo/shared";
+import {
+  StoryPlotImportError,
+  type StoryPlotImport,
+  type StoryPlotImportMode,
+} from "@/lib/story-plot-import";
 
 /**
  * Product Story Studio client.
@@ -697,6 +702,50 @@ export async function putStoryDraft(
       ...request,
     }
   );
+}
+
+export async function importStoryPlot(
+  projectId: string,
+  chapterId: string,
+  input: {
+    expectedRevision: number;
+    content: InteractiveStoryDraftContent;
+    sessionId: string;
+    locale: string;
+    mode: StoryPlotImportMode;
+    plot: StoryPlotImport;
+  }
+): Promise<{ draft: StoryDraft; importedNodeIds: string[] }> {
+  const value = await api.post<unknown>(
+    `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/plot-import`,
+    {
+      data: { schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION, ...input },
+      requestScope: "project",
+    }
+  );
+  if (!value || typeof value !== "object") {
+    throw new Error("Story Studio API returned an invalid plot import.");
+  }
+  const record = value as { draft?: StoryDraft; importedNodeIds?: unknown };
+  if (
+    !record.draft ||
+    !Array.isArray(record.importedNodeIds) ||
+    !record.importedNodeIds.every((id) => typeof id === "string")
+  ) {
+    throw new Error("Story Studio API returned an invalid plot import.");
+  }
+  return { draft: record.draft, importedNodeIds: record.importedNodeIds };
+}
+
+export function storyPlotImportError(error: unknown): StoryPlotImportError | null {
+  if (error instanceof StoryPlotImportError) return error;
+  if (!(error instanceof ApiRequestError)) return null;
+  const body = storyApiErrorBody(error);
+  if (body?.code !== "STORY_PLOT_IMPORT_INVALID") return null;
+  const importCode = body.importCode;
+  const path = typeof body.path === "string" ? body.path : "$";
+  if (typeof importCode !== "string") return null;
+  return new StoryPlotImportError(importCode as StoryPlotImportError["code"], path);
 }
 
 export async function createStoryBuild(

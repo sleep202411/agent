@@ -98,7 +98,9 @@ import {
   getStoryWorkbench,
   putStoryCanvasLayout,
   putStoryDraft,
+  importStoryPlot,
   storyApiErrorMessage,
+  storyPlotImportError,
   type CanvasLayoutRevisionConflict,
   type DraftRevisionConflict,
   type InteractiveStoryDraftContent,
@@ -210,10 +212,11 @@ import {
 import { StoryDraftSnapshotCoordinator } from "./story-draft-snapshot-coordinator";
 import { StoryPlotImportDialog } from "./story-plot-import-dialog";
 import {
-  applyStoryPlotImport,
+  MAX_PLOT_IMPORT_CHAPTER_NODES,
+  StoryPlotImportError,
   type StoryPlotImport,
   type StoryPlotImportMode,
-} from "./story-plot-import";
+} from "@/lib/story-plot-import";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error" | "conflict";
 type PersistDraftOptions = {
@@ -1958,40 +1961,108 @@ function StoryProjectCanvasInner({
     );
   };
 
-  const importPlot = (plot: StoryPlotImport, mode: StoryPlotImportMode) => {
+  const importPlot = async (plot: StoryPlotImport, mode: StoryPlotImportMode) => {
     const current = latestContentRef.current;
-    if (!current || !mutationBarrier.permits("content")) {
+    if (!current || !resolvedChapterId || !mutationBarrier.permits("content")) {
       throw new Error(t("plotImport.errors.locked"));
     }
-    const imported = applyStoryPlotImport(current, plot, authoringLocale, mode);
-    const importedModel = buildStoryCanvasModel(
-      {
-        ...current,
-        graph: { entryNodeId: imported.entryNodeId, nodes: imported.importedNodes },
-      },
-      authoringLocale
-    );
-    // Appended groups sit below existing nodes; replacements use the normal origin.
-    const top = Math.min(...importedModel.nodes.map((node) => node.position.y));
-    const bottom =
-      mode === "append" && canvasNodesRef.current.length
-        ? Math.max(
-            ...canvasNodesRef.current.map(
-              (node) => node.position.y + canvasNodeGeometry(node).estimatedHeight
-            )
-          ) + 160
-        : top;
-    if (!commitContent(imported.content)) throw new Error(t("plotImport.errors.locked"));
-    importedModel.nodes.forEach((node) => {
-      pendingNodePositionsRef.current.set(node.id, {
-        x: node.position.x,
-        y: node.position.y - top + bottom,
+    if (saveDebounceTimerRef.current !== null) {
+      window.clearTimeout(saveDebounceTimerRef.current);
+      saveDebounceTimerRef.current = null;
+    }
+    queuedContentRef.current = null;
+    while (saveInFlightRef.current) await waitForSaveToSettle();
+    const latest = latestContentRef.current;
+    if (!latest || conflictRef.current || !mutationBarrier.permits("content")) {
+      throw new Error(t("plotImport.errors.locked"));
+    }
+    const retained = mode === "replace" ? 0 : latest.graph.nodes.length;
+    if (retained + plot.nodes.length > MAX_PLOT_IMPORT_CHAPTER_NODES) {
+      throw new StoryPlotImportError("capacity", "$.nodes");
+    }
+    setSaveState("saving");
+    setSaveError(null);
+    try {
+      const saved = await importStoryPlot(projectId, resolvedChapterId, {
+        expectedRevision: revisionRef.current,
+        content: latest,
+        sessionId,
+        locale: authoringLocale,
+        mode,
+        plot,
       });
-    });
-    persistLayoutWithPendingPositions(imported.content);
-    hasFittedInitialCanvasRef.current = false;
-    setGraphError(null);
-    toast.success(t(mode === "replace" ? "plotImport.replaced" : "plotImport.added"));
+      const snapshot = readHistorySnapshot(latest);
+      if (snapshot) {
+        history.capture(snapshot);
+        refreshHistoryState();
+      }
+      const adopted = applyActiveStoryCanvasCapabilities(
+        materializeStoryDecisionNodes(migrateLegacyStoryHotspotIds(saved.draft.content))
+      );
+      const importedNodes = adopted.graph.nodes.filter((node) =>
+        saved.importedNodeIds.includes(node.nodeId)
+      );
+      const importedModel = buildStoryCanvasModel(
+        {
+          ...adopted,
+          graph: {
+            entryNodeId: importedNodes[0]?.nodeId ?? adopted.graph.entryNodeId,
+            nodes: importedNodes,
+          },
+        },
+        authoringLocale
+      );
+      if (importedModel.nodes.length > 0) {
+        const top = Math.min(...importedModel.nodes.map((node) => node.position.y));
+        const bottom =
+          mode === "append" && canvasNodesRef.current.length
+            ? Math.max(
+                ...canvasNodesRef.current.map(
+                  (node) => node.position.y + canvasNodeGeometry(node).estimatedHeight
+                )
+              ) + 160
+            : top;
+        importedModel.nodes.forEach((node) => {
+          pendingNodePositionsRef.current.set(node.id, {
+            x: node.position.x,
+            y: node.position.y - top + bottom,
+          });
+        });
+      }
+      revisionRef.current = saved.draft.revision;
+      savedSignatureRef.current = canonicalJsonString(adopted);
+      latestContentRef.current = adopted;
+      recoveryContentRef.current = null;
+      setDraftRevision(saved.draft.revision);
+      setContent(adopted);
+      setSaveState("saved");
+      cacheSavedDraft(saved.draft);
+      void queryClient.invalidateQueries({
+        queryKey: storyProductionKeys.assets(projectId, resolvedChapterId),
+      });
+      persistLayoutWithPendingPositions(adopted);
+      hasFittedInitialCanvasRef.current = false;
+      setGraphError(null);
+      toast.success(t(mode === "replace" ? "plotImport.replaced" : "plotImport.added"));
+    } catch (error) {
+      const importError = storyPlotImportError(error);
+      const nextConflict = draftRevisionConflict(error);
+      if (nextConflict) {
+        conflictRef.current = nextConflict;
+        queuedContentRef.current = null;
+        setConflict(nextConflict);
+        setSaveState("conflict");
+        throw new Error(t("plotImport.errors.locked"));
+      }
+      const latestAfterFailure = latestContentRef.current;
+      setSaveState(
+        latestAfterFailure && canonicalJsonString(latestAfterFailure) !== savedSignatureRef.current
+          ? "dirty"
+          : "saved"
+      );
+      if (importError) throw importError;
+      throw new Error(storyApiErrorMessage(error, t("plotImport.errors.locked")));
+    }
   };
 
   const connectStoryNodes = (connection: Connection) => {

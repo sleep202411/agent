@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 
-export const CREW_PRODUCTION_TEMPLATE_VERSION = 3;
+export const CREW_PRODUCTION_TEMPLATE_VERSION = 4;
 
 export type CrewProductionTemplateLocale = 'en-US' | 'zh-CN' | 'zh-HK';
 
@@ -22,7 +22,6 @@ const TEMPLATE_COPY: Record<
       planned: string;
       noDelivery: string;
     };
-    tasks: Array<{ title: string; description: string }>;
     delivery: string;
     deliveryItems: string[];
     risks: string;
@@ -46,38 +45,6 @@ const TEMPLATE_COPY: Record<
       planned: 'Planned',
       noDelivery: 'No delivery',
     },
-    tasks: [
-      {
-        title: 'Lock creative direction and script',
-        description:
-          'Confirm the premise, audience, structure, and production-ready script.',
-      },
-      {
-        title: 'Complete shot list and storyboard',
-        description:
-          'Break the script into shots and define the visual continuity.',
-      },
-      {
-        title: 'Prepare production plan',
-        description:
-          'Confirm assets, contributors, schedule, technical requirements, and review owners.',
-      },
-      {
-        title: 'Produce picture, audio, and assets',
-        description:
-          'Create and organize the production-ready source materials.',
-      },
-      {
-        title: 'Complete edit and post-production',
-        description:
-          'Finish editing, compositing, sound, subtitles, and quality control.',
-      },
-      {
-        title: 'Review and deliver the final cut',
-        description:
-          'Resolve review notes and submit the approved master to the episode.',
-      },
-    ],
     delivery: 'Delivery standard',
     deliveryItems: [
       'Define format, resolution, aspect ratio, and duration',
@@ -103,32 +70,6 @@ const TEMPLATE_COPY: Record<
       planned: '计划中',
       noDelivery: '暂无交付',
     },
-    tasks: [
-      {
-        title: '确定创作方向与剧本',
-        description: '确认核心创意、目标受众、故事结构与可执行剧本。',
-      },
-      {
-        title: '完成镜头表与分镜',
-        description: '将剧本拆解为镜头，并确定视觉连续性。',
-      },
-      {
-        title: '制定制作计划',
-        description: '确认素材、成员、排期、技术要求与审核负责人。',
-      },
-      {
-        title: '完成画面、声音与素材制作',
-        description: '制作并整理可用于成片的源素材。',
-      },
-      {
-        title: '完成剪辑与后期',
-        description: '完成剪辑、合成、声音、字幕与质量检查。',
-      },
-      {
-        title: '审核并交付最终成片',
-        description: '解决审核意见，并向本集提交通过审核的最终版本。',
-      },
-    ],
     delivery: '交付标准',
     deliveryItems: [
       '明确格式、分辨率、画幅与时长',
@@ -153,32 +94,6 @@ const TEMPLATE_COPY: Record<
       planned: '計劃中',
       noDelivery: '暫無交付',
     },
-    tasks: [
-      {
-        title: '確定創作方向與劇本',
-        description: '確認核心創意、目標受眾、故事結構與可執行劇本。',
-      },
-      {
-        title: '完成鏡頭表與分鏡',
-        description: '將劇本拆解為鏡頭，並確定視覺連續性。',
-      },
-      {
-        title: '制定製作計劃',
-        description: '確認素材、成員、排期、技術要求與審核負責人。',
-      },
-      {
-        title: '完成畫面、聲音與素材製作',
-        description: '製作並整理可用於成片的源素材。',
-      },
-      {
-        title: '完成剪輯與後期',
-        description: '完成剪輯、合成、聲音、字幕與品質檢查。',
-      },
-      {
-        title: '審核並交付最終成片',
-        description: '解決審核意見，並向本集提交通過審核的最終版本。',
-      },
-    ],
     delivery: '交付標準',
     deliveryItems: [
       '明確格式、解像度、畫幅與時長',
@@ -217,7 +132,7 @@ export function createDefaultProductionDocument(
           '1',
           copy.episodeTitle,
           copy.episodeTable.planned,
-          `0/${copy.tasks.length}`,
+          '0',
           copy.episodeTable.noDelivery,
         ],
       ),
@@ -238,7 +153,6 @@ export function createDefaultProductionPlan(
       title: copy.episodeTitle,
       synopsis: copy.episodeSynopsis,
     },
-    tasks: copy.tasks,
   };
 }
 

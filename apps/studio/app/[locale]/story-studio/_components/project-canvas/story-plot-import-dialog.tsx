@@ -20,7 +20,7 @@ import {
   StoryPlotImportError,
   type StoryPlotImport,
   type StoryPlotImportMode,
-} from "./story-plot-import";
+} from "@/lib/story-plot-import";
 
 export function StoryPlotImportDialog({
   disabled,
@@ -29,7 +29,7 @@ export function StoryPlotImportDialog({
 }: {
   disabled: boolean;
   hasNodes: boolean;
-  onImport: (plot: StoryPlotImport, mode: StoryPlotImportMode) => void;
+  onImport: (plot: StoryPlotImport, mode: StoryPlotImportMode) => void | Promise<void>;
 }) {
   const t = useTranslations("storyStudio.canvas.plotImport");
   const locale = useLocale();
@@ -37,6 +37,7 @@ export function StoryPlotImportDialog({
   const [selection, setSelection] = useState<{ name: string; plot: StoryPlotImport } | null>(null);
   const [replace, setReplace] = useState(false);
   const [reading, setReading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -48,6 +49,7 @@ export function StoryPlotImportDialog({
   const changeOpen = (next: boolean) => {
     readVersion.current++;
     setReading(false);
+    setImporting(false);
     setSelection(null);
     setReplace(false);
     setError(null);
@@ -133,7 +135,7 @@ export function StoryPlotImportDialog({
               if (!event.dataTransfer.types.includes("Files")) return;
               event.preventDefault();
               event.stopPropagation();
-              if (reading || disabled) return;
+              if (reading || importing || disabled) return;
               dragDepth.current++;
               setDragging(true);
             }}
@@ -146,14 +148,14 @@ export function StoryPlotImportDialog({
             onDragOver={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              event.dataTransfer.dropEffect = reading || disabled ? "none" : "copy";
+              event.dataTransfer.dropEffect = reading || importing || disabled ? "none" : "copy";
             }}
             onDrop={(event) => {
               event.preventDefault();
               event.stopPropagation();
               dragDepth.current = 0;
               setDragging(false);
-              if (reading || disabled) return;
+              if (reading || importing || disabled) return;
               const files = Array.from(event.dataTransfer.files);
               if (!files.length) return;
               if (files.length !== 1 || !files[0]!.name.toLowerCase().endsWith(".json")) {
@@ -167,11 +169,11 @@ export function StoryPlotImportDialog({
             <button
               type="button"
               aria-label={t("choose")}
-              disabled={reading || disabled}
+              disabled={reading || importing || disabled}
               onClick={() => inputRef.current?.click()}
               className={cn(
                 "flex min-h-36 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed px-5 py-6 text-center transition-colors focus-visible:ring-2 focus-visible:ring-brand-blue focus-visible:outline-none disabled:opacity-50",
-                dragging && !reading && !disabled
+                dragging && !reading && !importing && !disabled
                   ? "border-brand-blue bg-muted"
                   : "border-border bg-input/20 hover:bg-input/30"
               )}
@@ -186,6 +188,12 @@ export function StoryPlotImportDialog({
                       scenes: selection.plot.nodes.filter((node) => node.type === "scene").length,
                       decisions: selection.plot.nodes.filter((node) => node.type === "decision")
                         .length,
+                      assets: selection.plot.assets.length,
+                      clips: selection.plot.nodes.reduce(
+                        (count, node) =>
+                          count + (node.type === "scene" ? node.storyboard.clips.length : 0),
+                        0
+                      ),
                     })
                   : t("limits")}
               </span>
@@ -203,7 +211,7 @@ export function StoryPlotImportDialog({
               <input
                 type="checkbox"
                 checked={replace}
-                disabled={disabled}
+                disabled={disabled || importing}
                 onChange={(event) => setReplace(event.currentTarget.checked)}
                 className="size-4 shrink-0 accent-primary"
               />
@@ -215,24 +223,30 @@ export function StoryPlotImportDialog({
           </p>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => changeOpen(false)}>
+          <Button variant="ghost" disabled={importing} onClick={() => changeOpen(false)}>
             {t("cancel")}
           </Button>
           <Button
-            disabled={!selection || reading || disabled}
+            disabled={!selection || reading || importing || disabled}
             onClick={() => {
-              if (!selection || disabled || submitted.current) return;
+              if (!selection || disabled || importing || submitted.current) return;
               submitted.current = true;
-              try {
-                onImport(selection.plot, hasNodes && replace ? "replace" : "append");
-                changeOpen(false);
-              } catch (cause) {
-                submitted.current = false;
-                showError(cause);
-              }
+              setImporting(true);
+              const plot = selection.plot;
+              const mode: StoryPlotImportMode = hasNodes && replace ? "replace" : "append";
+              void Promise.resolve()
+                .then(() => onImport(plot, mode))
+                .then(() => {
+                  changeOpen(false);
+                })
+                .catch((cause: unknown) => {
+                  submitted.current = false;
+                  setImporting(false);
+                  showError(cause);
+                });
             }}
           >
-            {t("confirm")}
+            {importing ? t("importing") : t("confirm")}
           </Button>
         </DialogFooter>
       </DialogContent>

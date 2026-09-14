@@ -9816,6 +9816,7 @@
     "likeNotice": "若此 IP 已關聯劇組，讚好會加入其公開粉絲社區。取消讚好不會退出社區。"
   },
   "tvGames": {
+    "backToGames": "返回遊戲列表",
     "videos": "影片",
     "games": "遊戲",
     "catalog": "TV 頻道",
@@ -9958,5 +9959,12 @@
     "retry": "重試",
     "more": "載入更多",
     "viewIp": "查看此遊戲的 IP"
+  },
+  "coursePlayerControls": {
+    "mute": "靜音",
+    "unmute": "取消靜音",
+    "options": "更多選項",
+    "speed": "播放速度",
+    "normal": "正常（1×）"
   }
 }

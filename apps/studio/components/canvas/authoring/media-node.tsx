@@ -91,7 +91,7 @@ function MediaAssetNodeComponent({
         )}
       </div>
       <div className={cn("relative rounded-xl bg-card", selected && "ring-2 ring-ring")}>
-        <PortPlus type="source" id="output" side="right" dataType={kind} />
+        {upload ? null : <PortPlus type="source" id="output" side="right" dataType={kind} />}
         <CanvasNodeToolbar nodeId={id} visible={selected ?? false}>
           <CanvasMediaToolbarActions
             media={
@@ -142,7 +142,9 @@ function MediaAssetNodeComponent({
               <IconAudioWaveform className="size-5 shrink-0" stroke={1.7} />
               <span className="truncate text-sm">{title}</span>
             </div>
-            <audio src={src} controls className="nodrag h-8 w-full [color-scheme:dark]" />
+            {uploading || failed ? null : (
+              <audio src={src} controls className="nodrag h-8 w-full [color-scheme:dark]" />
+            )}
           </div>
         )}
         {kind === "video" && !upload ? (
@@ -154,20 +156,20 @@ function MediaAssetNodeComponent({
         ) : null}
         {uploading ? (
           <>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/50">
+            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/80">
               <IconLoader2 className="size-6 animate-spin text-white/55" stroke={1.8} />
-              <p className="text-xs text-white/58">
+              <p className="text-xs text-white/70">
                 {t("image.uploading", { progress: upload.progress })}
               </p>
             </div>
             <div
-              className="absolute bottom-0 left-0 h-0.5 bg-white/70 transition-[width] duration-300"
+              className="absolute bottom-0 left-0 z-10 h-0.5 bg-white/70 transition-[width] duration-300"
               style={{ width: `${Math.min(100, Math.max(0, upload.progress))}%` }}
             />
           </>
         ) : null}
         {failed ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/60 px-4 text-center">
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-xl bg-black/80 px-4 text-center">
             <IconAlertTriangle className="size-6 text-destructive" stroke={1.6} />
             <p className="line-clamp-2 text-xs text-white/58">{upload.error}</p>
             <button
