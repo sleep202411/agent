@@ -24,6 +24,7 @@ import {
   type ExperiencePlayerCopy,
 } from "@/features/experience-player";
 import { usePlayScreenOrientation } from "@/hooks/use-screen-orientation";
+import { PLAY_ROUTE_SCREEN_OPTIONS } from "@/hooks/play-orientation";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 
@@ -212,11 +213,7 @@ export default function PlayGameScreen() {
           headerTitle: "",
           headerTintColor: "#FFFFFF",
           headerBackButtonDisplayMode: "minimal",
-          // Required with usePreventRemove on native-stack (see RN screens / RN nav docs).
-          headerBackButtonMenuEnabled: false,
-          gestureEnabled: false,
-          fullScreenGestureEnabled: false,
-          orientation: "landscape",
+          ...PLAY_ROUTE_SCREEN_OPTIONS,
           // Explicit undefined, not an omitted key: options merge, so a missing
           // `headerRight` would leave the previous one mounted.
           headerRight: shareReady ? headerRight : undefined,

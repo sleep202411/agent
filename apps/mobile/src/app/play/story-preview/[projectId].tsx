@@ -25,6 +25,7 @@ import {
   type ExperiencePlayerCopy,
 } from "@/features/experience-player";
 import { usePlayScreenOrientation } from "@/hooks/use-screen-orientation";
+import { PLAY_ROUTE_SCREEN_OPTIONS } from "@/hooks/play-orientation";
 import { useLocale, useTranslations } from "@/i18n";
 import { ApiRequestError } from "@/lib/api-client";
 
@@ -161,10 +162,7 @@ export default function StoryPreviewScreen() {
           headerTitle: "",
           headerTintColor: "#FFFFFF",
           headerBackButtonDisplayMode: "minimal",
-          headerBackButtonMenuEnabled: false,
-          gestureEnabled: false,
-          fullScreenGestureEnabled: false,
-          orientation: "landscape",
+          ...PLAY_ROUTE_SCREEN_OPTIONS,
           headerRight: refreshReady ? headerRight : undefined,
         }}
       />
