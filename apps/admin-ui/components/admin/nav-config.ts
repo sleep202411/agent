@@ -190,6 +190,12 @@ export const MODULE_NAV: Record<string, ModuleNavGroup[]> = {
           icon: IconWallet,
           permission: "billing.read",
         },
+        {
+          href: "/billing/usage",
+          label: "成员消耗",
+          icon: IconReportMoney,
+          permission: "billing.read",
+        },
       ],
     },
     {

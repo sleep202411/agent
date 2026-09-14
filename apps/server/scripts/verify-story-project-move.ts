@@ -44,6 +44,7 @@ async function main() {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   const media = new MediaAccessService(
     p,

@@ -656,6 +656,35 @@ export type AdminBillingWorkspacesData = {
   items: AdminWorkspaceRow[];
 };
 
+export type AdminComputeMemberUsageWorkspace = {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceStatus: string | null;
+  isPersonal: boolean;
+  credits: string;
+  jobs: number;
+};
+
+export type AdminComputeMemberUsageMember = {
+  userId: string;
+  nickName: string | null;
+  phone: string | null;
+  email: string | null;
+  totalCredits: string;
+  totalJobs: number;
+  workspaces: AdminComputeMemberUsageWorkspace[];
+};
+
+export type AdminComputeMemberUsageData = {
+  rangeDays: number;
+  workspaceKind: "personal" | "shared" | "all";
+  workspaceId: string | null;
+  totalCredits: string;
+  memberCount: number;
+  workspaceCount: number;
+  members: AdminComputeMemberUsageMember[];
+};
+
 export type VoucherStatus = "active" | "redeemed" | "void" | "expired";
 export type VoucherGrantType = "compute_credits";
 

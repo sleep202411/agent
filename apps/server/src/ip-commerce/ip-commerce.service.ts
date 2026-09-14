@@ -927,6 +927,9 @@ export class IpCommerceService {
 
     const nextStatus = input.status ?? existing.status;
     const nextIpId = input.ipId ?? existing.ipId;
+    const nextPlacementKey =
+      (input.placementKey as IpDiscoveryPlacementKey | undefined) ??
+      existing.placementKey;
     const nextImageAssetId =
       input.imageAssetId !== undefined
         ? input.imageAssetId
@@ -964,10 +967,10 @@ export class IpCommerceService {
             select: { title: true },
           });
         const heroFallback =
-          existing.placementKey === IpDiscoveryPlacementKey.ip_plaza_hero
+          nextPlacementKey === IpDiscoveryPlacementKey.ip_plaza_hero
             ? await this.resolveIpHeroFallback(tx, nextIpId)
             : { ipCoverReady: false, ipHasTitle: false };
-        assertDiscoveryEnablement(existing.placementKey, nextStatus, {
+        assertDiscoveryEnablement(nextPlacementKey, nextStatus, {
           imageAssetId: nextImageAssetId,
           localizations,
           ipCoverReady: heroFallback.ipCoverReady,
@@ -978,6 +981,11 @@ export class IpCommerceService {
       return tx.ipDiscoveryRecommendation.update({
         where: { id: recommendationId },
         data: {
+          ...(input.placementKey !== undefined
+            ? {
+                placementKey: input.placementKey as IpDiscoveryPlacementKey,
+              }
+            : {}),
           ...(input.ipId !== undefined ? { ipId: input.ipId } : {}),
           ...(input.status !== undefined
             ? {
@@ -1014,6 +1022,31 @@ export class IpCommerceService {
         rec,
         input.localizations?.[0]?.locale,
       ),
+    };
+  }
+
+  async deleteAdminDiscovery(user: AuthUser, recommendationId: string) {
+    const existing = await this.prisma.ipDiscoveryRecommendation.findUnique({
+      where: { id: recommendationId },
+      select: { id: true, placementKey: true, ipId: true },
+    });
+    if (!existing) {
+      throw new NotFoundException({
+        code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
+        msg: 'Discovery recommendation not found.',
+      });
+    }
+
+    await this.prisma.ipDiscoveryRecommendation.delete({
+      where: { id: recommendationId },
+    });
+
+    return {
+      deleted: true,
+      id: existing.id,
+      placementKey: existing.placementKey,
+      ipId: existing.ipId,
+      deletedById: user.userId,
     };
   }
 

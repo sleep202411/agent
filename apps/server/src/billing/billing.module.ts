@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AdminAuthModule } from '../admin-auth';
 import { EntitlementsModule } from '../entitlements';
+import { LegacyPointsModule } from '../legacy-points/legacy-points.module';
 import { ReferralsModule } from '../referrals/referrals.module';
 import { WorkspacesModule } from '../workspaces';
 import { BillingAdminController } from './billing-admin.controller';
@@ -22,6 +23,7 @@ import { CheckInService } from './check-in.service';
     WorkspacesModule,
     EntitlementsModule,
     ReferralsModule,
+    LegacyPointsModule,
   ],
   controllers: [BillingController, BillingAdminController],
   providers: [

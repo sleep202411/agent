@@ -315,6 +315,32 @@ export type ListAdminWorkspacesQueryInput = z.infer<
   typeof ListAdminWorkspacesQuerySchema
 >;
 
+/**
+ * Cross-workspace compute consumption for ops: who spent how much from which
+ * workspace pot over the last N days. Results are person × workspace pairs,
+ * rolled up per member and sorted by credits desc.
+ */
+export const ListAdminComputeMemberUsageQuerySchema = z.object({
+  days: z.coerce.number().int().min(1).max(90).default(30),
+  /**
+   * personal = default-for-user pot; shared = every other workspace;
+   * all = no kind filter.
+   */
+  workspaceKind: z.enum(['personal', 'shared', 'all']).default('all'),
+  workspaceId: z.string().uuid().optional(),
+  /** Raw or encoded Java client user id. */
+  userId: z.string().trim().min(1).max(64).optional(),
+  /**
+   * Phone / email — resolved through the legacy user bridge before filtering.
+   * Ignored when `userId` is set.
+   */
+  userQuery: z.string().trim().min(1).max(120).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(100),
+});
+export type ListAdminComputeMemberUsageQuery = z.infer<
+  typeof ListAdminComputeMemberUsageQuerySchema
+>;
+
 export const ListAdminBillingPricesQuerySchema = z.object({
   productType: BillingProductTypeSchema.optional(),
   provider: AdminPaymentProviderSchema.optional(),

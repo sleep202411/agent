@@ -47,6 +47,7 @@ import {
   CreateAdminWorkspaceWalletCreditSchema,
   GetAdminWorkspaceWalletCreditQuerySchema,
   ListAdminWorkspacesQuerySchema,
+  ListAdminComputeMemberUsageQuerySchema,
   IgnoreAdminBillingProviderEventSchema,
   QuoteAdminBillingRefundSchema,
   UpdateAdminMembershipPlanSchema,
@@ -74,6 +75,7 @@ import {
   type CreateAdminWorkspaceWalletCreditInput,
   type GetAdminWorkspaceWalletCreditQueryInput,
   type ListAdminWorkspacesQueryInput,
+  type ListAdminComputeMemberUsageQuery,
   type IgnoreAdminBillingProviderEventInput,
   type ListAdminMembershipPlansQuery,
   type ListAdminBillingLedgerJournalsQuery,
@@ -184,6 +186,18 @@ export class BillingAdminController {
     return {
       code: 200,
       data: await this.billing.listAdminWorkspaces(query),
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.BillingRead)
+  @Get('usage/member-compute')
+  async listComputeMemberUsage(
+    @Query(new ZodValidationPipe(ListAdminComputeMemberUsageQuerySchema))
+    query: ListAdminComputeMemberUsageQuery,
+  ) {
+    return {
+      code: 200,
+      data: await this.billing.listAdminComputeMemberUsage(query),
     };
   }
 

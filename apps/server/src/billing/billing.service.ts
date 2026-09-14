@@ -89,6 +89,7 @@ import type {
   CreateAdminWorkspaceWalletCreditInput,
   GetAdminWorkspaceWalletCreditQueryInput,
   ListAdminWorkspacesQueryInput,
+  ListAdminComputeMemberUsageQuery,
   CreateAdminWalletAdjustmentInput,
   ListAdminBillingOrdersQuery,
   ListAdminBillingProviderEventsQuery,
@@ -124,6 +125,7 @@ import {
 } from './membership-generation-estimates';
 import { BillingLedgerService } from './billing-ledger.service';
 import { AppLovinConversionService } from './applovin-conversion.service';
+import { LegacyPointsService } from '../legacy-points/legacy-points.service';
 
 type PriceWithItem = BillingPrice & { item: BillingCatalogItem };
 type PriceWithProviderBindings = PriceWithItem & {
@@ -307,6 +309,7 @@ export class BillingService {
     private readonly referrals: ReferralsService,
     private readonly appLovinConversion: AppLovinConversionService,
     private readonly wechatPay: WechatPayProvider,
+    private readonly legacyPoints: LegacyPointsService,
   ) {}
 
   async listPrices(query: ListBillingPricesQuery) {
@@ -818,6 +821,225 @@ export class BillingService {
     return {
       rangeDays: query.days,
       projectId: query.projectId ?? null,
+      members,
+    };
+  }
+
+  /**
+   * Admin cross-workspace compute usage: person × workspace pot consumption
+   * over the last N days. Joins workspace + legacy user identity for display.
+   */
+  async listAdminComputeMemberUsage(query: ListAdminComputeMemberUsageQuery) {
+    let rawActorUserId: string | null = null;
+    if (query.userId?.trim()) {
+      rawActorUserId = decodeUserId(query.userId.trim());
+    } else if (query.userQuery?.trim()) {
+      try {
+        const matched = await this.legacyPoints.findUser(
+          query.userQuery.trim(),
+        );
+        if (!matched) {
+          return {
+            rangeDays: query.days,
+            workspaceKind: query.workspaceKind,
+            workspaceId: query.workspaceId ?? null,
+            totalCredits: '0',
+            memberCount: 0,
+            workspaceCount: 0,
+            members: [],
+          };
+        }
+        rawActorUserId = decodeUserId(matched.userId);
+      } catch (err) {
+        // Legacy MySQL is optional locally; without it phone/email lookup is
+        // unavailable — fail the filter loudly so ops know why it's empty.
+        this.logger.warn(
+          `legacy user lookup unavailable: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+        throw new BadRequestException({
+          code: 'LEGACY_MYSQL_UNAVAILABLE',
+          msg: 'Phone/email user lookup needs LEGACY_MYSQL_ENABLED and credentials. Use userId instead, or configure the MySQL bridge.',
+        });
+      }
+    }
+
+    const from = new Date(Date.now() - query.days * 24 * 60 * 60 * 1000);
+    const workspaceIdFilter = query.workspaceId
+      ? Prisma.sql`AND a.owner_id = ${query.workspaceId}::uuid`
+      : Prisma.empty;
+    const actorFilter = rawActorUserId
+      ? Prisma.sql`AND t.actor_user_id = ${rawActorUserId}`
+      : Prisma.empty;
+    const kindFilter =
+      query.workspaceKind === 'personal'
+        ? Prisma.sql`AND w.default_for_user_id IS NOT NULL`
+        : query.workspaceKind === 'shared'
+          ? Prisma.sql`AND w.default_for_user_id IS NULL`
+          : Prisma.empty;
+    // Cap raw pairs so a busy window cannot blow memory before rollup.
+    const pairLimit = Math.min(query.limit * 20, 2000);
+
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        actorUserId: string | null;
+        workspaceId: string;
+        credits: bigint;
+        jobs: bigint;
+      }>
+    >(Prisma.sql`
+      SELECT t.actor_user_id AS "actorUserId",
+             a.owner_id AS "workspaceId",
+             SUM(e.amount)::bigint AS credits,
+             COUNT(*)::bigint AS jobs
+      FROM wallet_ledger_entries e
+      JOIN wallet_transactions t ON t.id = e.transaction_id
+      JOIN wallet_accounts a ON a.id = e.account_id
+      JOIN workspaces w ON w.id = a.owner_id AND w.deleted_at IS NULL
+      WHERE a.owner_type = 'workspace'
+        AND a.currency = 'compute_point'
+        AND a.balance_kind = 'consumable'
+        AND e.entry_type::text IN ('settle', 'debit')
+        AND e.created_at >= ${from}
+        ${workspaceIdFilter}
+        ${actorFilter}
+        ${kindFilter}
+      GROUP BY t.actor_user_id, a.owner_id
+      ORDER BY credits DESC
+      LIMIT ${pairLimit}
+    `);
+
+    if (rows.length === 0) {
+      return {
+        rangeDays: query.days,
+        workspaceKind: query.workspaceKind,
+        workspaceId: query.workspaceId ?? null,
+        totalCredits: '0',
+        memberCount: 0,
+        workspaceCount: 0,
+        members: [],
+      };
+    }
+
+    const workspaceIds = [...new Set(rows.map((row) => row.workspaceId))];
+    const workspaces = await this.prisma.workspace.findMany({
+      where: { id: { in: workspaceIds } },
+      select: {
+        id: true,
+        name: true,
+        defaultForUserId: true,
+        status: true,
+      },
+    });
+    const workspaceById = new Map(workspaces.map((ws) => [ws.id, ws]));
+
+    const rawUserIds = [
+      ...new Set(
+        rows
+          .map((row) => row.actorUserId)
+          .filter((id): id is string => Boolean(id && id !== 'unknown')),
+      ),
+    ];
+    let legacyByRawId = new Map<
+      string,
+      Awaited<ReturnType<LegacyPointsService['findUsersByIds']>>[number]
+    >();
+    try {
+      const legacyUsers = await this.legacyPoints.findUsersByIds(rawUserIds);
+      legacyByRawId = new Map(
+        legacyUsers.map((user) => [decodeUserId(user.userId), user]),
+      );
+    } catch (err) {
+      this.logger.warn(
+        `legacy user identity resolve skipped: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
+
+    type WorkspaceAgg = {
+      workspaceId: string;
+      credits: bigint;
+      jobs: number;
+    };
+    type MemberAgg = {
+      rawUserId: string;
+      totalCredits: bigint;
+      totalJobs: number;
+      workspaces: WorkspaceAgg[];
+    };
+    const byMember = new Map<string, MemberAgg>();
+    for (const row of rows) {
+      const rawUserId = row.actorUserId ?? 'unknown';
+      let member = byMember.get(rawUserId);
+      if (!member) {
+        member = {
+          rawUserId,
+          totalCredits: 0n,
+          totalJobs: 0,
+          workspaces: [],
+        };
+        byMember.set(rawUserId, member);
+      }
+      const jobs = Number(row.jobs);
+      member.totalCredits += row.credits;
+      member.totalJobs += jobs;
+      member.workspaces.push({
+        workspaceId: row.workspaceId,
+        credits: row.credits,
+        jobs,
+      });
+    }
+
+    const members = [...byMember.values()]
+      .sort((a, b) => (b.totalCredits > a.totalCredits ? 1 : -1))
+      .slice(0, query.limit)
+      .map((member) => {
+        const legacy =
+          member.rawUserId === 'unknown'
+            ? null
+            : (legacyByRawId.get(member.rawUserId) ?? null);
+        return {
+          userId:
+            member.rawUserId === 'unknown'
+              ? 'unknown'
+              : encodeUserId(member.rawUserId),
+          nickName: legacy?.nickName ?? null,
+          phone: legacy?.phone ?? null,
+          email: legacy?.email ?? null,
+          totalCredits: member.totalCredits.toString(),
+          totalJobs: member.totalJobs,
+          workspaces: member.workspaces
+            .sort((a, b) => (b.credits > a.credits ? 1 : -1))
+            .map((ws) => {
+              const meta = workspaceById.get(ws.workspaceId);
+              return {
+                workspaceId: ws.workspaceId,
+                workspaceName: meta?.name ?? ws.workspaceId,
+                workspaceStatus: meta?.status ?? null,
+                isPersonal: Boolean(meta?.defaultForUserId),
+                credits: ws.credits.toString(),
+                jobs: ws.jobs,
+              };
+            }),
+        };
+      });
+
+    let totalCredits = 0n;
+    const workspaceSet = new Set<string>();
+    for (const member of members) {
+      totalCredits += BigInt(member.totalCredits);
+      for (const ws of member.workspaces) workspaceSet.add(ws.workspaceId);
+    }
+
+    return {
+      rangeDays: query.days,
+      workspaceKind: query.workspaceKind,
+      workspaceId: query.workspaceId ?? null,
+      totalCredits: totalCredits.toString(),
+      memberCount: members.length,
+      workspaceCount: workspaceSet.size,
       members,
     };
   }

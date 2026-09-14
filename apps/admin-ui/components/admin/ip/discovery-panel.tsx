@@ -10,11 +10,13 @@ import {
   IconPlus,
   IconRefresh,
   IconSearch,
+  IconTrash,
   IconUpload,
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Combobox,
   ComboboxContent,
@@ -153,11 +155,13 @@ export function IpDiscoveryPanel({
   const [drawerMode, setDrawerMode] = useState<"create" | "edit">("create");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingIpId, setEditingIpId] = useState<string | null>(null);
+  const [editingPlacementKey, setEditingPlacementKey] = useState<PlacementKey | null>(null);
   const [localeTab, setLocaleTab] = useState<LocaleCode>("en-US");
   const [draft, setDraft] = useState<RecommendationDraft>(EMPTY_DRAFT);
   const [statusNow, setStatusNow] = useState(() => new Date());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(initialError);
 
   useEffect(() => {
@@ -201,6 +205,7 @@ export function IpDiscoveryPanel({
     setDrawerMode("create");
     setEditingId(null);
     setEditingIpId(null);
+    setEditingPlacementKey(null);
     const placementKey = placementFilter === "all" ? "ip_plaza_hero" : placementFilter;
     setDraft(
       normalizeDraftForPlacement({
@@ -218,6 +223,7 @@ export function IpDiscoveryPanel({
     setDrawerMode("edit");
     setEditingId(item.id);
     setEditingIpId(item.ipId);
+    setEditingPlacementKey(item.placementKey);
     setDraft(toDraft(item));
     setLocaleTab("en-US");
     setDrawerOpen(true);
@@ -239,11 +245,14 @@ export function IpDiscoveryPanel({
           }),
         });
       } else if (editingId) {
-        // Only send ipId when rebinding. Production Nest still uses a strict
-        // update schema that rejects unrecognized `ipId` until that change is
-        // deployed — omitting an unchanged ipId keeps other field edits working.
+        // Only send mutable identity fields when they change — older servers
+        // reject unrecognized keys under .strict().
         const { ipId, ...rest } = payload;
-        const body = editingIpId && ipId && ipId !== editingIpId ? { ...rest, ipId } : rest;
+        const body: Record<string, unknown> = { ...rest };
+        if (editingIpId && ipId && ipId !== editingIpId) body.ipId = ipId;
+        if (editingPlacementKey && normalized.placementKey !== editingPlacementKey) {
+          body.placementKey = normalized.placementKey;
+        }
         await requestEnvelope(`/api/admin/ip-commerce/discovery/${encodeURIComponent(editingId)}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
@@ -256,6 +265,22 @@ export function IpDiscoveryPanel({
       setError(toErrorMessage(err));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteRecommendation(item: RecommendationItem) {
+    setDeletingId(item.id);
+    setError(null);
+    try {
+      await requestEnvelope(`/api/admin/ip-commerce/discovery/${encodeURIComponent(item.id)}`, {
+        method: "DELETE",
+      });
+      if (editingId === item.id) setDrawerOpen(false);
+      await refresh();
+    } catch (err) {
+      setError(toErrorMessage(err));
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -392,15 +417,36 @@ export function IpDiscoveryPanel({
                       <p className="text-[11px] text-slate-500">{formatDate(item.updatedAt)}</p>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={() => openEditDrawer(item)}
-                      >
-                        <IconEdit className="size-3.5" />
-                        编辑
-                      </Button>
+                      <div className="inline-flex items-center gap-1.5">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          type="button"
+                          onClick={() => openEditDrawer(item)}
+                        >
+                          <IconEdit className="size-3.5" />
+                          编辑
+                        </Button>
+                        <ConfirmDialog
+                          title="删除推荐位？"
+                          description={`确认删除「${placementLabel(item.placementKey)} · ${item.ipTitle || item.ipId}」？删除后不可恢复；如只需下线，请改状态为暂停或归档。`}
+                          confirmLabel="永久删除"
+                          destructive
+                          onConfirm={() => deleteRecommendation(item)}
+                          trigger={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              type="button"
+                              disabled={deletingId === item.id}
+                              aria-label="删除"
+                            >
+                              <IconTrash className="size-3.5" />
+                              删除
+                            </Button>
+                          }
+                        />
+                      </div>
                     </TableCell>
                   </tr>
                 );
@@ -504,7 +550,14 @@ function RecommendationDrawer({
                   {(id) => (
                     <Select
                       value={draft.placementKey}
-                      onValueChange={(value) => patchDraft({ placementKey: value as PlacementKey })}
+                      onValueChange={(value) => {
+                        onDraftChange(
+                          normalizeDraftForPlacement({
+                            ...draft,
+                            placementKey: value as PlacementKey,
+                          })
+                        );
+                      }}
                     >
                       <SelectTrigger id={id} className="w-full">
                         <SelectValue />

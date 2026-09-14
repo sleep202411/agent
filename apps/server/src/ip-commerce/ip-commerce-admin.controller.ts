@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -352,9 +353,43 @@ export class IpCommerceAdminController {
       resourceType: 'ip_discovery_recommendation',
       resourceId: params.recommendationId,
       metadata: {
+        placementKey: body.placementKey ?? null,
+        ipId: body.ipId ?? null,
         status: body.status ?? null,
         sortOrder: body.sortOrder ?? null,
         localizationCount: body.localizations?.length ?? null,
+      },
+      context: {
+        ipAddress: request.ip,
+        userAgent: headerValue(request.headers['user-agent']),
+      },
+    });
+    return {
+      code: 200,
+      data,
+    };
+  }
+
+  @RequireAdminPermissions(ADMIN_PERMISSION_KEYS.IpModerate)
+  @Delete('discovery/:recommendationId')
+  async deleteDiscovery(
+    @CurrentAdmin() admin: AdminActor,
+    @Param(new ZodValidationPipe(AdminIpDiscoveryParamsSchema))
+    params: AdminIpDiscoveryParams,
+    @Req() request: Request,
+  ) {
+    const data = await this.ipCommerce.deleteAdminDiscovery(
+      adminToAuthUser(admin),
+      params.recommendationId,
+    );
+    await this.adminAuth.writeAudit({
+      actor: admin,
+      action: 'admin.ip.discovery.delete',
+      resourceType: 'ip_discovery_recommendation',
+      resourceId: params.recommendationId,
+      metadata: {
+        placementKey: data.placementKey,
+        ipId: data.ipId,
       },
       context: {
         ipAddress: request.ip,
