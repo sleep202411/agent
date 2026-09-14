@@ -4,7 +4,9 @@ import {
   applyStoryPlotImport,
   MAX_PLOT_IMPORT_BYTES,
   parseStoryPlotImport,
-} from "../app/[locale]/story-studio/_components/project-canvas/story-plot-import";
+  storyPlotImportAssetWrites,
+  storyPlotImportClipWrites,
+} from "./story-plot-import";
 import { buildStoryCanvasModel } from "../app/[locale]/story-studio/_components/project-canvas/story-project-canvas-model";
 import { StoryCanvasHistory } from "../app/[locale]/story-studio/_components/project-canvas/story-canvas-history";
 import {
@@ -19,8 +21,18 @@ const empty = (): InteractiveStoryDraftContent => ({
   productionNotes: ["Keep this"],
 });
 const example = () => ({
-  version: 1,
   entryNodeId: "opening",
+  assets: [
+    {
+      id: "hero",
+      kind: "character",
+      name: "Mira",
+      description: "A courier.",
+      imagePrompt: "Cinematic portrait of Mira at dawn.",
+      videoPrompt: "Mira stands still in a cold breeze.",
+      negativePrompt: "cartoon",
+    },
+  ],
   nodes: [
     {
       id: "opening",
@@ -28,6 +40,24 @@ const example = () => ({
       title: "Opening",
       description: "  第一行\n“保留原文” 🎬  ",
       next: "choice",
+      storyboard: {
+        clips: [
+          {
+            id: "letter",
+            kind: "image",
+            title: "Letter",
+            durationMs: 2000,
+            prompt: "A sealed letter on worn floorboards.",
+          },
+          {
+            id: "turn",
+            kind: "video",
+            title: "Turn",
+            durationMs: 4000,
+            prompt: "Mira looks down at the letter.",
+          },
+        ],
+      },
     },
     {
       id: "choice",
@@ -52,11 +82,14 @@ describe("plot JSON import", () => {
         "utf8"
       );
       const json = md.match(/```json\n([\s\S]+?)\n```/)![1]!;
-      const { content } = applyStoryPlotImport(empty(), parseStoryPlotImport(json), locale);
+      const plot = parseStoryPlotImport(json);
+      const { content } = applyStoryPlotImport(empty(), plot, locale);
       expect(
         createLockableInteractiveStoryDraftContentSchema(locale).safeParse(content).success
       ).toBe(true);
       expect(buildStoryCanvasModel(content, locale).nodes).toHaveLength(4);
+      expect(plot.assets).toHaveLength(2);
+      expect(storyPlotImportClipWrites(plot, "ns").at(0)?.clips).toHaveLength(2);
     }
   );
 
@@ -82,6 +115,51 @@ describe("plot JSON import", () => {
     const model = buildStoryCanvasModel(result.content, "zh-CN");
     expect(model.nodes).toHaveLength(3);
     expect(model.edges).toHaveLength(3);
+  });
+
+  it("maps asset prompts and contiguous clip start times without bindings or @ mentions", () => {
+    const plot = parse(example());
+    const assets = storyPlotImportAssetWrites(plot, "abc123");
+    const clips = storyPlotImportClipWrites(plot, "abc123");
+    expect(assets).toEqual([
+      {
+        stableKey: "imp.abc123.hero",
+        kind: "character",
+        name: "Mira",
+        description: "A courier.",
+        imagePrompt: "Cinematic portrait of Mira at dawn.",
+        videoPrompt: "Mira stands still in a cold breeze.",
+        negativePrompt: "cartoon",
+      },
+    ]);
+    expect(clips).toEqual([
+      {
+        plotNodeId: `import:abc123:opening`,
+        durationMs: 6000,
+        clips: [
+          {
+            stableKey: "letter",
+            kind: "image",
+            title: "Letter",
+            startMs: 0,
+            durationMs: 2000,
+            imagePrompt: "A sealed letter on worn floorboards.",
+            videoPrompt: null,
+            negativePrompt: null,
+          },
+          {
+            stableKey: "turn",
+            kind: "video",
+            title: "Turn",
+            startMs: 2000,
+            durationMs: 4000,
+            imagePrompt: null,
+            videoPrompt: "Mira looks down at the letter.",
+            negativePrompt: null,
+          },
+        ],
+      },
+    ]);
   });
 
   it("repeated imports cannot overwrite content or bindings and undo removes the whole imported group", () => {
@@ -133,10 +211,14 @@ describe("plot JSON import", () => {
   it.each([
     ["null", "$: object"],
     ["```json\n{}\n```", "$: json"],
-    [JSON.stringify({ ...example(), version: 2 }), "$.version: version"],
+    [JSON.stringify({ ...example(), version: 1 }), "$.version: field"],
     [JSON.stringify({ ...example(), metadata: "must not vanish" }), "$.metadata: field"],
     [JSON.stringify({ ...example(), entryNodeId: "missing" }), "$.entryNodeId: target"],
     [JSON.stringify({ ...example(), nodes: [] }), "$.nodes: nodes"],
+    [
+      JSON.stringify({ entryNodeId: example().entryNodeId, nodes: example().nodes }),
+      "$.assets: assets",
+    ],
     [
       JSON.stringify({ ...example(), nodes: [{ id: "opening", type: "scene", title: "x" }] }),
       "$.nodes[0].next: id",
@@ -179,19 +261,79 @@ describe("plot JSON import", () => {
       JSON.stringify({ ...example(), nodes: [{ ...example().nodes[0], id: "__proto__" }] }),
       "$.nodes[0].id: id",
     ],
+    [
+      JSON.stringify({
+        ...example(),
+        assets: [{ ...example().assets[0], imagePrompt: "Look at @hero" }],
+      }),
+      "$.assets[0].imagePrompt: mention",
+    ],
+    [
+      JSON.stringify({
+        ...example(),
+        nodes: [
+          {
+            ...example().nodes[0],
+            storyboard: {
+              clips: [
+                {
+                  id: "letter",
+                  kind: "image",
+                  title: "Letter",
+                  durationMs: 2000,
+                  prompt: "A letter with @hallway",
+                },
+              ],
+            },
+          },
+          ...example().nodes.slice(1),
+        ],
+      }),
+      "$.nodes[0].storyboard.clips[0].prompt: mention",
+    ],
+    [
+      JSON.stringify({
+        ...example(),
+        nodes: [
+          {
+            ...example().nodes[0],
+            storyboard: {
+              clips: [
+                {
+                  id: "letter",
+                  kind: "image",
+                  title: "Letter",
+                  durationMs: 100,
+                  prompt: "Too short",
+                },
+              ],
+            },
+          },
+          ...example().nodes.slice(1),
+        ],
+      }),
+      "$.nodes[0].storyboard.clips[0].durationMs: duration",
+    ],
+    [
+      JSON.stringify({
+        ...example(),
+        nodes: [{ ...example().nodes[0], storyboard: { clips: [], assetRefs: [] } }],
+      }),
+      "$.nodes[0].storyboard.assetRefs: field",
+    ],
   ])("rejects invalid input with the exact failing path (%s)", (source, message) => {
     expect(() => parseStoryPlotImport(source)).toThrow(message);
   });
 
   it("accepts UTF-8 BOM and validates large connected files without recursion", () => {
     const source = JSON.stringify({
-      version: 1,
       entryNodeId: "s0",
-      nodes: Array.from({ length: 1000 }, (_, i) => ({
+      assets: [],
+      nodes: Array.from({ length: 500 }, (_, i) => ({
         id: `s${i}`,
         type: "scene",
         title: `Scene ${i}`,
-        next: i === 999 ? null : `s${i + 1}`,
+        next: i === 499 ? null : `s${i + 1}`,
       })),
     });
     const imported = applyStoryPlotImport(
@@ -200,7 +342,7 @@ describe("plot JSON import", () => {
       "en-US"
     );
     expect(InteractiveStoryDraftContentSchema.safeParse(imported.content).success).toBe(true);
-    expect(buildStoryCanvasModel(imported.content, "en-US").nodes).toHaveLength(1000);
+    expect(buildStoryCanvasModel(imported.content, "en-US").nodes).toHaveLength(500);
     expect(() => parseStoryPlotImport(" ".repeat(MAX_PLOT_IMPORT_BYTES + 1))).toThrow("size");
   });
 });

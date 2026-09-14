@@ -24,6 +24,7 @@ import {
   PatchStoryChapterSchema,
   PutStoryCanvasLayoutSchema,
   PutStoryDraftSchema,
+  ImportStoryPlotSchema,
   StoryProjectIdParamsSchema,
   StoryChapterParamsSchema,
   StoryCandidateAssetParamsSchema,
@@ -40,6 +41,7 @@ import {
   type PatchStoryChapterInput,
   type PutStoryCanvasLayoutInput,
   type PutStoryDraftInput,
+  type ImportStoryPlotInput,
   type StoryProjectIdParams,
   type StoryChapterParams,
   type StoryCandidateAssetParams,
@@ -190,6 +192,25 @@ export class StoryProjectsController {
     return {
       code: 200,
       data: await this.storyProjects.putDraft(
+        user,
+        params.projectId,
+        body,
+        params.chapterId,
+      ),
+    };
+  }
+
+  @Post(':projectId/chapters/:chapterId/plot-import')
+  async importChapterPlot(
+    @CurrentUser() user: AuthUser,
+    @Param(new ZodValidationPipe(StoryChapterParamsSchema))
+    params: StoryChapterParams,
+    @Body(new ZodValidationPipe(ImportStoryPlotSchema))
+    body: ImportStoryPlotInput,
+  ) {
+    return {
+      code: 200,
+      data: await this.storyProjects.importPlot(
         user,
         params.projectId,
         body,

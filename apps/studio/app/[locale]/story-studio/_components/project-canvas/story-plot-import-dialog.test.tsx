@@ -7,8 +7,8 @@ import messages from "@/messages/en-US.json";
 import { StoryPlotImportDialog } from "./story-plot-import-dialog";
 
 const valid = JSON.stringify({
-  version: 1,
   entryNodeId: "start",
+  assets: [],
   nodes: [{ id: "start", type: "scene", title: "Opening", next: null }],
 });
 function button(label: string) {
@@ -25,6 +25,13 @@ async function choose(source: string | Promise<string>, size = 100) {
     value: [{ name: "plot.json", size, text: () => Promise.resolve(source) }],
   });
   await act(async () => input.dispatchEvent(new Event("change", { bubbles: true })));
+}
+
+async function settle() {
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+  });
 }
 
 async function dragFiles(type: string, names = ["plot.json"], target?: Element) {
@@ -72,12 +79,13 @@ describe("plot import dialog", () => {
     );
     expect(button("Import plot tree").disabled).toBe(true);
     await choose(valid);
-    expect(document.body.textContent).toContain("1 scenes · 0 decisions");
+    expect(document.body.textContent).toContain("1 scenes · 0 decisions · 0 assets · 0 clips");
     expect(onImport).not.toHaveBeenCalled();
     await act(async () => {
       button("Import plot tree").click();
       button("Import plot tree").click();
     });
+    await settle();
     expect(onImport).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
@@ -87,6 +95,7 @@ describe("plot import dialog", () => {
     expect(checkbox.checked).toBe(false);
     await choose(valid);
     await act(async () => button("Import plot tree").click());
+    await settle();
     expect(onImport).toHaveBeenCalledWith(expect.any(Object), "append");
   });
   it("imports in replacement mode only when checked, and resets it on reopening", async () => {
@@ -97,6 +106,7 @@ describe("plot import dialog", () => {
     expect(document.body.textContent).toContain("Replaces this chapter’s nodes and connections");
     await choose(valid);
     await act(async () => button("Import plot tree").click());
+    await settle();
     expect(onImport).toHaveBeenCalledWith(expect.any(Object), "replace");
     await act(async () => button("Import JSON").click());
     expect(document.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
@@ -129,7 +139,7 @@ describe("plot import dialog", () => {
     expect(document.body.textContent).toContain("Drop to select this file");
     expect((await dragFiles("drop")).defaultPrevented).toBe(true);
     expect(document.body.textContent).toContain("plot.json");
-    expect(document.body.textContent).toContain("1 scenes · 0 decisions");
+    expect(document.body.textContent).toContain("1 scenes · 0 decisions · 0 assets · 0 clips");
     expect(button("Import plot tree").disabled).toBe(false);
     expect(onImport).not.toHaveBeenCalled();
   });
@@ -175,6 +185,7 @@ describe("plot import dialog", () => {
       throw new Error("The chapter changed.");
     });
     await act(async () => button("Import plot tree").click());
+    await settle();
     expect(document.querySelector('[role="alert"]')?.textContent).toBe("The chapter changed.");
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(button("Import plot tree").disabled).toBe(false);

@@ -1287,6 +1287,174 @@ describe('StoryProjectsService unified-story authoring boundary', () => {
     expect(tx.storyDraft.updateMany).not.toHaveBeenCalled();
   });
 
+  it('imports assets and storyboard clips in the same draft transaction', async () => {
+    const current = draftRow();
+    const createdSequences: Array<{ id: string; plotNodeId: string }> = [];
+    let persistedContent = current.content;
+    const savedChapter = chapterRow({
+      nodeIds: ['node.opening'],
+    });
+    const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(undefined),
+      storyDraft: {
+        findUnique: jest.fn().mockImplementation(() =>
+          Promise.resolve(
+            draftRow({
+              content: persistedContent,
+              revision: persistedContent === current.content ? 3 : 4,
+            }),
+          ),
+        ),
+        updateMany: jest
+          .fn()
+          .mockImplementation(({ data }: { data: { content: unknown } }) => {
+            persistedContent = data.content as InteractiveStoryDraftContent;
+            return Promise.resolve({ count: 1 });
+          }),
+      },
+      storyStoryboardSequence: {
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+        findMany: jest
+          .fn()
+          .mockImplementation(
+            ({ where }: { where: { plotNodeId?: { in?: string[] } } }) => {
+              const ids = where.plotNodeId?.in;
+              if (!ids) {
+                return Promise.resolve([
+                  {
+                    id: 'sequence-opening',
+                    storyChapterId: CHAPTER_ID,
+                    plotNodeId: 'node.opening',
+                    status: 'current',
+                  },
+                ]);
+              }
+              return Promise.resolve(
+                createdSequences.filter((row) => ids.includes(row.plotNodeId)),
+              );
+            },
+          ),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }: { data: { plotNodeId: string } }) => {
+            const row = {
+              id: `sequence-${createdSequences.length}`,
+              plotNodeId: data.plotNodeId,
+            };
+            createdSequences.push(row);
+            return Promise.resolve(row);
+          }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      storyStoryboardClip: {
+        create: jest.fn().mockResolvedValue({ id: 'clip-1' }),
+      },
+      storyAssetSpec: {
+        count: jest.fn().mockResolvedValue(0),
+        create: jest.fn().mockResolvedValue({ id: 'asset-1' }),
+      },
+      storyChapter: {
+        findMany: jest.fn().mockResolvedValue([chapterRow()]),
+        update: jest.fn().mockResolvedValue(savedChapter),
+        findUnique: jest.fn().mockResolvedValue(savedChapter),
+      },
+      storyProject: { update: jest.fn().mockResolvedValue({}) },
+    };
+    const { service } = serviceWith({ $transaction: transactionMock(tx) });
+    const plot = {
+      entryNodeId: 'opening',
+      assets: [
+        {
+          id: 'hero',
+          kind: 'character',
+          name: 'Mira',
+          imagePrompt: 'Cinematic portrait of Mira at dawn.',
+        },
+      ],
+      nodes: [
+        {
+          id: 'opening',
+          type: 'scene',
+          title: 'Opening',
+          next: null,
+          storyboard: {
+            clips: [
+              {
+                id: 'letter',
+                kind: 'image',
+                title: 'Letter',
+                durationMs: 2000,
+                prompt: 'A sealed letter on worn floorboards.',
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    const result = await service.importPlot(
+      USER as never,
+      PROJECT_ID,
+      {
+        expectedRevision: 3,
+        schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+        content: lockableDraft(),
+        sessionId: 'import-save',
+        locale: 'en-US',
+        mode: 'append',
+        plot,
+      },
+      CHAPTER_ID,
+    );
+
+    expect(result.importedNodeIds).toHaveLength(1);
+    expect(tx.storyAssetSpec.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        name: 'Mira',
+        imagePrompt: 'Cinematic portrait of Mira at dawn.',
+        userModifiedByUserId: USER.userId,
+      }) as unknown,
+    });
+    expect(tx.storyStoryboardClip.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        stableKey: 'letter',
+        title: 'Letter',
+        startMs: 0,
+        durationMs: 2000,
+        imagePrompt: 'A sealed letter on worn floorboards.',
+        videoPrompt: null,
+        userModifiedByUserId: USER.userId,
+      }) as unknown,
+    });
+    expect(tx.storyStoryboardSequence.update).toHaveBeenCalledWith({
+      where: { id: expect.stringMatching(/^sequence-\d+$/) as unknown },
+      data: expect.objectContaining({ durationMs: 2000 }) as unknown,
+    });
+  });
+
+  it('rejects an invalid plot before opening a draft transaction', async () => {
+    const prisma = { $transaction: jest.fn() };
+    const { service } = serviceWith(prisma);
+
+    await expect(
+      service.importPlot(
+        USER as never,
+        PROJECT_ID,
+        {
+          expectedRevision: 3,
+          schemaVersion: INTERACTIVE_STORY_DRAFT_SCHEMA_VERSION,
+          content: lockableDraft(),
+          sessionId: 'import-save',
+          locale: 'en-US',
+          mode: 'append',
+          plot: { version: 1, entryNodeId: 'opening', nodes: [] },
+        },
+        CHAPTER_ID,
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('moves the project entry to the next chapter when the empty first chapter is archived', async () => {
     const secondNode = multiChapterDraft().graph.nodes[1];
     const content: InteractiveStoryDraftContent = {
