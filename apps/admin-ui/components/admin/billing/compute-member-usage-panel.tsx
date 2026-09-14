@@ -3,7 +3,7 @@
 // Cross-workspace compute consumption: who spent how much from which
 // workspace pot. Backed by GET /billing/usage/member-compute.
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -59,6 +59,7 @@ export function BillingComputeMemberUsagePanel({
   const [workspaceId, setWorkspaceId] = useState("");
   const [userQuery, setUserQuery] = useState("");
   const [data, setData] = useState<AdminComputeMemberUsageData>(initialData ?? emptyUsage);
+  const [previousInitialData, setPreviousInitialData] = useState(initialData);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -100,10 +101,12 @@ export function BillingComputeMemberUsagePanel({
     }
   }
 
-  useEffect(() => {
-    // Keep client state aligned when the server re-renders with fresh props.
+  // Reconcile a new server snapshot before children render, preserving local
+  // filters and refresh results when the incoming snapshot has not changed.
+  if (initialData !== previousInitialData) {
+    setPreviousInitialData(initialData);
     if (initialData) setData(initialData);
-  }, [initialData]);
+  }
 
   const maxCredits = useMemo(() => {
     return data.members.reduce((max, row) => {
@@ -148,10 +151,9 @@ export function BillingComputeMemberUsagePanel({
         <Metric
           label="消耗积分"
           value={formatInteger(data.totalCredits)}
-          helper={`近 ${data.rangeDays} 天`}
         />
-        <Metric label="有消耗成员" value={data.memberCount} helper="按 actor 去重" />
-        <Metric label="涉及工作区" value={data.workspaceCount} helper="被扣过的池" />
+        <Metric label="有消耗成员" value={data.memberCount} />
+        <Metric label="涉及工作区" value={data.workspaceCount} />
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
