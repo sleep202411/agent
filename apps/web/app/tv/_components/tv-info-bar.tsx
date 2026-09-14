@@ -1,8 +1,5 @@
 "use client";
 
-import { IpCrewOrigin } from "@/app/(site)/ips/_components/ip-crew-origin";
-import { IpReleaseLinks } from "@/app/(site)/ips/_components/ip-release-links";
-import { IpProductionStage } from "@/app/(site)/ips/_components/ip-production-stage";
 import Link from "next/link";
 import { IconPlayerPlay, IconUser } from "@tabler/icons-react";
 import { useLocale, useTranslations } from "@/src/i18n/i18n";
@@ -22,7 +19,7 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
   return (
     <div
       data-lenis-prevent
-      className="flex shrink-0 flex-wrap items-center gap-x-8 gap-y-4 px-1 pb-4 pt-4 md:max-h-[40%] md:overflow-y-auto md:px-8 md:pb-6"
+      className="flex shrink-0 flex-wrap items-center gap-x-8 gap-y-4 px-1 pb-4 pt-4 lg:max-h-[40%] lg:overflow-y-auto lg:px-8 lg:pb-6"
     >
       <div className="min-w-0 flex-[1_1_20rem] space-y-2">
         <h1 className="text-xl font-semibold leading-tight text-white sm:text-2xl">{item.title}</h1>
@@ -54,9 +51,6 @@ export function TvInfoBar({ item }: TvInfoBarProps) {
         <IconPlayerPlay className="size-4" />
         {t("viewDetail")}
       </Link>
-      <IpCrewOrigin ipId={item.id} />
-      <IpReleaseLinks ipId={item.id} />
-      <IpProductionStage ipId={item.id} />
     </div>
   );
 }
