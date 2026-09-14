@@ -2464,6 +2464,27 @@
     "confirmRemoveEdge": "刪除這條連線？"
   },
   "storyStudio": {
+    "projectAccess": {
+      "authentication": {
+        "title": "登入後開啟此專案",
+        "description": "登入狀態可能已失效。請使用已獲得此專案權限的帳號重新登入。"
+      },
+      "forbidden": {
+        "title": "你沒有此專案的存取權限",
+        "description": "請聯絡專案擁有者或邀請人，為目前帳號開通存取權限。"
+      },
+      "unavailable": {
+        "title": "你目前無法存取此專案",
+        "description": "專案可能已被刪除，或目前帳號尚未獲得權限。請聯絡專案擁有者或邀請人確認存取權限。"
+      },
+      "unexpected": {
+        "title": "無法載入此專案",
+        "description": "專案暫時無法開啟。請重試，或返回專案列表。"
+      },
+      "signIn": "登入",
+      "back": "返回專案列表",
+      "retry": "重試"
+    },
     "authoringRun": {
       "sourceReviewNotes": "劇本規則與製作備註（{count}）",
       "title": {

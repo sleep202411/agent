@@ -2464,6 +2464,27 @@
     "confirmRemoveEdge": "删除这条连线？"
   },
   "storyStudio": {
+    "projectAccess": {
+      "authentication": {
+        "title": "登录后打开此项目",
+        "description": "登录状态可能已失效。请使用已获得此项目权限的账号重新登录。"
+      },
+      "forbidden": {
+        "title": "你没有此项目的访问权限",
+        "description": "请联系项目所有者或邀请人，为当前账号开通访问权限。"
+      },
+      "unavailable": {
+        "title": "你当前无法访问此项目",
+        "description": "项目可能已被删除，或当前账号尚未获得权限。请联系项目所有者或邀请人确认访问权限。"
+      },
+      "unexpected": {
+        "title": "无法加载此项目",
+        "description": "项目暂时无法打开。请重试，或返回项目列表。"
+      },
+      "signIn": "登录",
+      "back": "返回项目列表",
+      "retry": "重试"
+    },
     "authoringRun": {
       "sourceReviewNotes": "剧本规则与制作备注（{count}）",
       "title": {
