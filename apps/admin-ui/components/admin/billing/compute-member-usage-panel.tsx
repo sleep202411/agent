@@ -109,7 +109,7 @@ export function BillingComputeMemberUsagePanel({
     return data.members.reduce((max, row) => {
       const credits = BigInt(row.totalCredits || "0");
       return credits > max ? credits : max;
-    }, 0n);
+    }, BigInt(0));
   }, [data.members]);
 
   function toggle(userId: string) {
@@ -271,7 +271,7 @@ function MemberRow({
   onToggle: () => void;
 }) {
   const credits = BigInt(member.totalCredits || "0");
-  const ratio = maxCredits > 0n ? Number((credits * 1000n) / maxCredits) / 10 : 0;
+  const ratio = maxCredits > BigInt(0) ? Number((credits * BigInt(1000)) / maxCredits) / 10 : 0;
   const title =
     member.nickName?.trim() ||
     member.phone ||
@@ -316,7 +316,7 @@ function MemberRow({
           <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
             <div
               className="h-full rounded-full bg-slate-900/80"
-              style={{ width: `${Math.max(ratio, credits > 0n ? 2 : 0)}%` }}
+              style={{ width: `${Math.max(ratio, credits > BigInt(0) ? 2 : 0)}%` }}
             />
           </div>
           <span className="w-10 text-right text-[11px] tabular-nums text-slate-500">
