@@ -23,12 +23,20 @@ beforeEach(async () => {
   document.body.append(box);
   root = createRoot(box);
   await act(async () => root.render(<ViewerAssistance />));
+  await expand();
 });
 afterEach(async () => {
   await act(async () => root.unmount());
   vi.useRealTimers();
   box.remove();
 });
+async function expand() {
+  const toggle = box.querySelector('button[aria-expanded="false"]');
+  if (!toggle) return;
+  await act(async () => {
+    (toggle as HTMLButtonElement).click();
+  });
+}
 it("releases a stalled request and permits a replacement after timeout", async () => {
   vi.useFakeTimers();
   vi.mocked(api.post).mockImplementationOnce(() => new Promise(() => {}) as never);
@@ -39,18 +47,17 @@ it("releases a stalled request and permits a replacement after timeout", async (
   expect(options.signal?.aborted).toBe(true);
   expect(box.textContent).toContain("timeout");
   expect(box.querySelector("input")!.disabled).toBe(false);
+  expect(box.querySelector("input")!.value).toBe("");
   vi.mocked(api.post).mockResolvedValueOnce({ suggestions: [] });
+  await input();
   await submit();
   expect(api.post).toHaveBeenCalledTimes(2);
   expect(box.textContent).toContain("empty");
 });
-async function input() {
+async function input(value = "calm story") {
   await act(async () => {
     const field = box.querySelector("input")!;
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      field,
-      "calm story"
-    );
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(field, value);
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
 }
@@ -61,14 +68,15 @@ async function submit() {
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
   });
 }
-it("preserves failed preferences and renders retry results as AI suggestions", async () => {
+it("keeps failed asks in chat and renders retry results as AI suggestions", async () => {
   vi.mocked(api.post)
     .mockRejectedValueOnce(new Error("Try again"))
     .mockResolvedValueOnce({ suggestions: [{ id: "one", title: "Journey", reason: "Quiet" }] });
   await input();
   await submit();
   expect(box.textContent).toContain("Try again");
-  expect(box.querySelector("input")!.value).toBe("calm story");
+  expect(box.textContent).toContain("calm story");
+  await input("calm story");
   await submit();
   expect(box.querySelector("a")!.getAttribute("href")).toBe("/en-US/ips/one");
   expect(box.textContent).toContain("Quiet");
@@ -89,6 +97,7 @@ it("prevents overlap and discards responses from a previous account", async () =
   state.id = "bob";
   await act(async () => root.render(<ViewerAssistance />));
   expect(options.signal?.aborted).toBe(true);
+  await expand();
   await act(async () =>
     finish({ suggestions: [{ id: "one", title: "Old result", reason: "Old" }] })
   );

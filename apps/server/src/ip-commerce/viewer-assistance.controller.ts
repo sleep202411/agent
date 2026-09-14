@@ -61,7 +61,7 @@ export class ViewerAssistanceController {
         title: row.title.slice(0, 240),
         summary: row.summary.slice(0, 1500),
       }));
-      if (!candidates.length) return { suggestions: [] };
+      if (!candidates.length) return { code: 200, data: { suggestions: [] } };
       const reply = await worker.recommendViewing(
         { ...input, candidates },
         controller.signal,
@@ -79,10 +79,15 @@ export class ViewerAssistanceController {
         refreshed.items.filter(hasPreview).map((row) => [row.id, row]),
       );
       return {
-        suggestions: reply.suggestions.flatMap((row) => {
-          const ip = current.get(row.id);
-          return ip ? [{ id: ip.id, title: ip.title, reason: row.reason }] : [];
-        }),
+        code: 200,
+        data: {
+          suggestions: reply.suggestions.flatMap((row) => {
+            const ip = current.get(row.id);
+            return ip
+              ? [{ id: ip.id, title: ip.title, reason: row.reason }]
+              : [];
+          }),
+        },
       };
     } finally {
       clearTimeout(timeout);

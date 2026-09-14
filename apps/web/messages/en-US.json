@@ -9481,6 +9481,8 @@
     "listTitle": "Channels",
     "collapseList": "Collapse channels",
     "expandList": "Expand channels",
+    "collapseRail": "Collapse sidebar",
+    "expandRail": "Expand sidebar",
     "noIps": "No IPs available.",
     "noSearchResults": "No matching rooms.",
     "searchLabel": "Search channels",
@@ -9772,6 +9774,8 @@
   },
   "tvComments": {
     "title": "Comments",
+    "expand": "Expand comments",
+    "collapse": "Collapse comments",
     "refresh": "Refresh",
     "retry": "Retry",
     "loading": "Loading comments…",
@@ -9898,6 +9902,8 @@
   },
   "viewerAssistance": {
     "title": "AI viewing suggestions",
+    "expand": "Expand AI suggestions",
+    "collapse": "Collapse AI suggestions",
     "help": "Describe what you feel like watching. AI suggests from the current public catalog; suggestions may be imperfect.",
     "preference": "What would you like to watch?",
     "ask": "Ask AI",

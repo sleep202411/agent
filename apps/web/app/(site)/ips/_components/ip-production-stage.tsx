@@ -12,7 +12,7 @@ export function IpProductionStage({ ipId }: { ipId: string }) {
     queryFn: ({ signal }) =>
       api.get<{ stage: "testing" | "story_testing" | "production" | "released" }>(
         `/aurora/ip-commerce/ips/${encodeURIComponent(ipId)}/production-stage`,
-        { signal, raw: true }
+        { signal }
       ),
     retry: false,
   });

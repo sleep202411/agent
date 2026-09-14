@@ -27,7 +27,7 @@ function LinksPanel({ ipId, editable }: { ipId: string; editable: boolean }) {
     const controller = new AbortController();
     operation.current = controller;
     api
-      .get<Result>(path, { signal: controller.signal, raw: true })
+      .get<Result>(path, { signal: controller.signal })
       .then((value) => {
         if (!controller.signal.aborted) {
           setResult(value);
@@ -59,10 +59,9 @@ function LinksPanel({ ipId, editable }: { ipId: string; editable: boolean }) {
       const value = save
         ? await api.put<Result>(path, {
             signal: controller.signal,
-            raw: true,
             data: { links, expectedVersion: result?.version },
           })
-        : await api.get<Result>(path, { signal: controller.signal, raw: true });
+        : await api.get<Result>(path, { signal: controller.signal });
       if (!controller.signal.aborted) {
         setResult(value);
         setLinks(value.links);

@@ -1,6 +1,4 @@
 "use client";
-import { ViewerAssistance } from "./viewer-assistance";
-
 import { useEffect, useRef, useState } from "react";
 import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
@@ -12,11 +10,11 @@ import { useTvIps } from "../_hooks/use-tv-ips";
 import { EpisodeFeedback } from "@/app/(site)/ips/_components/episode-feedback";
 import { NativeSelect, NativeSelectOption } from "@/components/ui/native-select";
 import { TvGames } from "./tv-games";
-import { TvComments } from "./tv-comments";
 import { TvStage } from "./tv-stage";
 import { TvIpList } from "./tv-ip-list";
 import { TvInfoBar } from "./tv-info-bar";
 import { TvEmptyState, TvErrorState, TvLoadingState } from "./tv-empty";
+import { TvRightRail } from "./tv-right-rail";
 
 export function TvApp({ embedded = false }: { embedded?: boolean }) {
   const { user } = useCurrentUser();
@@ -250,8 +248,7 @@ function TvVideoApp({ embedded = false }: { embedded?: boolean }) {
           </div>
         )}
       </section>
-      <ViewerAssistance />
-      {item && <TvComments ipId={item.id} />}
+      <TvRightRail ipId={item?.id ?? null} />
     </div>
   );
 }

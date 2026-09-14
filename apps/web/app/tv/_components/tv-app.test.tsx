@@ -8,7 +8,7 @@ import type { IpCommerceIp } from "@/src/lib/ip-commerce/api";
 import { TvApp } from "./tv-app";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-vi.mock("./viewer-assistance", () => ({ ViewerAssistance: () => null }));
+vi.mock("./tv-right-rail", () => ({ TvRightRail: () => null }));
 const harness = vi.hoisted(() => ({
   userId: "viewer-a",
   get: vi.fn(),
@@ -40,7 +40,6 @@ vi.mock("@/app/(site)/ips/_components/ip-production-stage", () => ({
   IpProductionStage: () => null,
 }));
 vi.mock("@/app/(site)/ips/_components/ip-crew-origin", () => ({ IpCrewOrigin: () => null }));
-vi.mock("./tv-comments", () => ({ TvComments: () => null }));
 vi.mock("@/components/ui/native-select", () => ({
   NativeSelect: ({
     value,

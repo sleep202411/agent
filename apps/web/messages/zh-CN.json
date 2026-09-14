@@ -9481,6 +9481,8 @@
     "listTitle": "频道列表",
     "collapseList": "收起频道列表",
     "expandList": "展开频道列表",
+    "collapseRail": "收起侧栏",
+    "expandRail": "展开侧栏",
     "noIps": "暂无 IP 作品",
     "noSearchResults": "没有匹配的房间",
     "searchLabel": "搜索频道",
@@ -9772,6 +9774,8 @@
   },
   "tvComments": {
     "title": "评论",
+    "expand": "展开评论",
+    "collapse": "收起评论",
     "refresh": "刷新",
     "retry": "重试",
     "loading": "正在加载评论…",
@@ -9898,6 +9902,8 @@
   },
   "viewerAssistance": {
     "title": "AI 观影建议",
+    "expand": "展开 AI 观影建议",
+    "collapse": "收起 AI 观影建议",
     "help": "描述你想看的内容。AI 从当前公开目录中推荐，建议可能不准确。",
     "preference": "你想看什么？",
     "ask": "询问 AI",

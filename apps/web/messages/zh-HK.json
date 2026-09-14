@@ -9481,6 +9481,8 @@
     "listTitle": "頻道列表",
     "collapseList": "收起頻道列表",
     "expandList": "展開頻道列表",
+    "collapseRail": "收起側欄",
+    "expandRail": "展開側欄",
     "noIps": "暫無 IP 作品",
     "noSearchResults": "沒有符合的房間",
     "searchLabel": "搜尋頻道",
@@ -9772,6 +9774,8 @@
   },
   "tvComments": {
     "title": "評論",
+    "expand": "展開評論",
+    "collapse": "收起評論",
     "refresh": "重新整理",
     "retry": "重試",
     "loading": "正在載入評論…",
@@ -9898,6 +9902,8 @@
   },
   "viewerAssistance": {
     "title": "AI 觀影建議",
+    "expand": "展開 AI 觀影建議",
+    "collapse": "收起 AI 觀影建議",
     "help": "描述你想看的內容。AI 從目前公開目錄中推薦，建議可能不準確。",
     "preference": "你想看甚麼？",
     "ask": "詢問 AI",

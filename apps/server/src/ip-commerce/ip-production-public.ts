@@ -23,7 +23,7 @@ export class IpProductionPublicController {
       async (tx) => {
         await this.ips.ensurePublicEngagementTarget(user, params.ipId, tx);
         const state = await readProductionStage(tx, params.ipId);
-        return { stage: state.stage };
+        return { code: 200, data: { stage: state.stage } };
       },
       { isolationLevel: 'RepeatableRead' },
     );

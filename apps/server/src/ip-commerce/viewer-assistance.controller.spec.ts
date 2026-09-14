@@ -41,7 +41,8 @@ it('sends only public candidate fields and excludes poster-only entries', async 
     items: [ip, { ...ip, id: 'poster', trailerAsset: null }],
   });
   expect(await f.run()).toEqual({
-    suggestions: [{ id, title: 'Journey', reason: 'Calm' }],
+    code: 200,
+    data: { suggestions: [{ id, title: 'Journey', reason: 'Calm' }] },
   });
   expect(f.worker.recommendViewing).toHaveBeenCalledWith(
     {
@@ -60,7 +61,7 @@ it('removes withdrawn or blocked entries after the model wait', async () => {
   f.ips.listPublicIps
     .mockResolvedValueOnce({ items: [ip] })
     .mockResolvedValueOnce({ items: [] });
-  expect(await f.run()).toEqual({ suggestions: [] });
+  expect(await f.run()).toEqual({ code: 200, data: { suggestions: [] } });
 });
 it('rejects invented model IDs rather than looking them up', async () => {
   const f = fixture();

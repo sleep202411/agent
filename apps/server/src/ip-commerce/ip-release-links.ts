@@ -95,25 +95,25 @@ export class IpReleaseLinksController {
   constructor(private readonly links: IpReleaseLinksService) {}
   @Public()
   @Get('ips/:ipId/release-links')
-  publicList(
+  async publicList(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user?: AuthUser,
   ) {
-    return this.links.publicList(params.ipId, user);
+    return { code: 200, data: await this.links.publicList(params.ipId, user) };
   }
   @Get('me/ips/:ipId/release-links')
-  ownList(
+  async ownList(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.links.ownList(params.ipId, user);
+    return { code: 200, data: await this.links.ownList(params.ipId, user) };
   }
   @Put('me/ips/:ipId/release-links')
-  save(
+  async save(
     @Param(new ZodValidationPipe(Params)) params: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(Save)) input: z.infer<typeof Save>,
   ) {
-    return this.links.save(params.ipId, user, input);
+    return { code: 200, data: await this.links.save(params.ipId, user, input) };
   }
 }
