@@ -288,18 +288,16 @@ export class ReferralsService {
       data.inviteeBenefitMinor =
         primary && primary.payoutType === 'cash' ? primary.amountMinor : 0n;
     }
-    await this.prisma.referralProgram.update({
-      where: { key: PROGRAM_KEY },
-      data,
+    return this.prisma.$transaction(async (tx) => {
+      await tx.referralProgram.update({
+        where: { key: PROGRAM_KEY },
+        data,
+      });
+      return this.loadAdminConfig(tx);
     });
-    return this.loadAdminConfig();
   }
 
   async createMilestone(input: CreateReferralMilestoneInput) {
-    const program = await this.prisma.referralProgram.findUniqueOrThrow({
-      where: { key: PROGRAM_KEY },
-      select: { id: true },
-    });
     // The bundle (items) is the source of truth; mirror its primary item into
     // the legacy payout columns so single-reward clients (shipped mobile) work.
     const items = resolveTierItems(input);
@@ -308,27 +306,33 @@ export class ReferralsService {
     }
     await this.assertBundlePayable(items);
     const legacy = legacyColumnsFromItems(items);
-    await this.prisma.referralMilestoneConfig.create({
-      data: {
-        programId: program.id,
-        inviteeThreshold: input.inviteeThreshold,
-        payoutType: legacy.payoutType,
-        rewardMinor: legacy.rewardMinor,
-        payoutDays: legacy.payoutDays,
-        title: input.title,
-        detail: input.detail,
-        rank: input.rank,
-        items: {
-          create: items.map((it) => ({
-            payoutType: it.payoutType,
-            amountMinor: it.amountMinor,
-            days: it.days,
-            rank: it.rank,
-          })),
+    return this.prisma.$transaction(async (tx) => {
+      const program = await tx.referralProgram.findUniqueOrThrow({
+        where: { key: PROGRAM_KEY },
+        select: { id: true },
+      });
+      await tx.referralMilestoneConfig.create({
+        data: {
+          programId: program.id,
+          inviteeThreshold: input.inviteeThreshold,
+          payoutType: legacy.payoutType,
+          rewardMinor: legacy.rewardMinor,
+          payoutDays: legacy.payoutDays,
+          title: input.title,
+          detail: input.detail,
+          rank: input.rank,
+          items: {
+            create: items.map((it) => ({
+              payoutType: it.payoutType,
+              amountMinor: it.amountMinor,
+              days: it.days,
+              rank: it.rank,
+            })),
+          },
         },
-      },
+      });
+      return this.loadAdminConfig(tx);
     });
-    return this.loadAdminConfig();
   }
 
   async updateMilestone(id: string, input: UpdateReferralMilestoneInput) {
@@ -358,8 +362,10 @@ export class ReferralsService {
         })),
       };
     }
-    await this.prisma.referralMilestoneConfig.update({ where: { id }, data });
-    return this.loadAdminConfig();
+    return this.prisma.$transaction(async (tx) => {
+      await tx.referralMilestoneConfig.update({ where: { id }, data });
+      return this.loadAdminConfig(tx);
+    });
   }
 
   /**
@@ -390,15 +396,17 @@ export class ReferralsService {
   }
 
   async archiveMilestone(id: string) {
-    await this.prisma.referralMilestoneConfig.update({
-      where: { id },
-      data: { archivedAt: new Date() },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.referralMilestoneConfig.update({
+        where: { id },
+        data: { archivedAt: new Date() },
+      });
+      return this.loadAdminConfig(tx);
     });
-    return this.loadAdminConfig();
   }
 
-  private async loadAdminConfig() {
-    const program = await this.prisma.referralProgram.findUnique({
+  private async loadAdminConfig(tx: Prisma.TransactionClient = this.prisma) {
+    const program = await tx.referralProgram.findUnique({
       where: { key: PROGRAM_KEY },
       include: {
         milestones: {

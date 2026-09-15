@@ -198,6 +198,10 @@ function makeService() {
     findUnique: prisma.referralReward.findUnique,
     updateMany: prisma.referralReward.updateMany,
   });
+  Object.assign(tx, {
+    referralProgram: prisma.referralProgram,
+    referralMilestoneConfig: prisma.referralMilestoneConfig,
+  });
   const legacy = {
     queryOne: jest.fn(),
     query: jest.fn().mockResolvedValue([]),
