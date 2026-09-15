@@ -14,8 +14,16 @@ import {
 vi.mock("@/app/_components/auth-provider", () => ({
   useAuth: () => ({ user: { id: shared.userId } }),
 }));
-const shared = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn(), userId: "review-user" }));
-vi.mock("@/lib/collab/project-crew-assets-api", () => ({ listAllProjectCrewAssets: shared.list }));
+const shared = vi.hoisted(() => ({
+  list: vi.fn(),
+  add: vi.fn(),
+  context: vi.fn(),
+  userId: "review-user",
+}));
+vi.mock("@/lib/collab/project-crew-assets-api", () => ({
+  listAllProjectCrewAssets: shared.list,
+  getProjectCrewAssetContext: shared.context,
+}));
 vi.mock("@/lib/story-projects-api", async (original) => ({
   ...(await original<object>()),
   addStoryCandidateAsset: shared.add,
@@ -96,11 +104,17 @@ const otherVideoCandidate = candidate({
 describe("StoryCandidateAssetPickerDialog", () => {
   let container: HTMLDivElement;
   let root: Root;
+  let client: QueryClient;
 
   beforeEach(() => {
     shared.userId = "review-user";
     shared.list.mockReset();
+    shared.context.mockReset().mockResolvedValue({
+      crew: { id: "crew-a", name: "Crew A", logo: "" },
+      assetContext: { capabilities: { view: true } },
+    });
     shared.add.mockReset();
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -108,6 +122,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
 
   afterEach(async () => {
     await act(async () => root.unmount());
+    client.clear();
     document.body.replaceChildren();
   });
 
@@ -219,7 +234,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
       onSelect,
     });
 
-    await click(buttonByLabel("Select Video 1"));
+    await click(await waitForButton("Select Video 1"));
 
     expect(document.body.textContent).toContain("Original video is no longer available.");
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
@@ -297,7 +312,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });
-    await click(buttonByLabel("Select Video 1"));
+    await click(await waitForButton("Select Video 1"));
     expect(shared.add).toHaveBeenCalledWith(
       "story-project",
       otherVideoCandidate.asset.id,
@@ -336,7 +351,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 20));
       });
-      const button = buttonByLabel("Select Video 1");
+      const button = await waitForButton("Select Video 1");
       await act(async () => {
         button.click();
         button.click();
@@ -387,12 +402,60 @@ describe("StoryCandidateAssetPickerDialog", () => {
     await act(async () => finish());
     expect(onOpenChange).not.toHaveBeenCalledWith(false);
   });
+  it("replaces Crew files on relink and removes them on unlink", async () => {
+    shared.list.mockResolvedValue([
+      {
+        id: "crew-file",
+        name: "Shared clip",
+        kind: "file",
+        parentId: null,
+        media: otherVideoCandidate.asset,
+      },
+    ]);
+    await renderDialog({ projectId: "story-project", allowedKinds: ["video"] });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 40));
+    });
+    expect(buttonByLabel("Select Video 1")).toBeDefined();
+    shared.list.mockImplementationOnce(() => new Promise(() => {}));
+    await act(async () => {
+      client.setQueryData(
+        ["project-crew-assets", "story:story-project", "context", shared.userId],
+        { crew: { id: "crew-b" }, assetContext: { capabilities: { view: true } } }
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(document.querySelector('button[aria-label="Select Video 1"]')).toBeNull();
+    expect(shared.list).toHaveBeenCalledTimes(2);
+    const signal = shared.list.mock.calls[1]![1] as AbortSignal;
+    await act(async () => {
+      client.setQueryData(
+        ["project-crew-assets", "story:story-project", "context", shared.userId],
+        { crew: null, assetContext: null }
+      );
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(signal.aborted).toBe(true);
+    expect(shared.list).toHaveBeenCalledTimes(2);
+    expect(document.querySelector('button[aria-label="Select Video 1"]')).toBeNull();
+  });
+  it("keeps project candidates available when no Crew is linked", async () => {
+    shared.context.mockResolvedValue({ crew: null, assetContext: null });
+    await renderDialog({
+      projectId: "story-project",
+      items: [otherVideoCandidate],
+      allowedKinds: ["video"],
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    expect(buttonByLabel("Select Video 1")).toBeDefined();
+    expect(shared.list).not.toHaveBeenCalled();
+  });
   async function renderDialog(overrides: Partial<StoryCandidateAssetPickerDialogProps> = {}) {
     await act(async () => {
       root.render(
-        <QueryClientProvider
-          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-        >
+        <QueryClientProvider client={client}>
           <NextIntlClientProvider locale="en-US" messages={messages}>
             <StoryCandidateAssetPickerDialog
               open
@@ -477,4 +540,15 @@ function buttonByText(text: string): HTMLButtonElement {
   );
   if (!(button instanceof HTMLButtonElement)) throw new Error(`Button not found: ${text}`);
   return button;
+}
+
+async function waitForButton(label: string): Promise<HTMLButtonElement> {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const button = document.querySelector(`button[aria-label="${label}"]`);
+    if (button instanceof HTMLButtonElement) return button;
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+  }
+  return buttonByLabel(label);
 }

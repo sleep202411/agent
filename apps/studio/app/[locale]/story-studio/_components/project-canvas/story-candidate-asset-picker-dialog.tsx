@@ -2,7 +2,10 @@
 
 import { useAuth } from "@/app/_components/auth-provider";
 import { useQuery } from "@tanstack/react-query";
-import { listAllProjectCrewAssets } from "@/lib/collab/project-crew-assets-api";
+import {
+  getProjectCrewAssetContext,
+  listAllProjectCrewAssets,
+} from "@/lib/collab/project-crew-assets-api";
 import {
   useLayoutEffect,
   useMemo,
@@ -99,16 +102,23 @@ function CrewCandidateDialog(
   props: StoryCandidateAssetPickerDialogProps & { projectId: string; userId: string }
 ) {
   const { projectId, open, items: suppliedItems } = props;
-  const crew = useQuery({
-    queryKey: ["project-crew-assets", `story:${projectId}`, "picker", props.userId],
-    queryFn: ({ signal }) => listAllProjectCrewAssets(`story:${projectId}`, signal),
+  const context = useQuery({
+    queryKey: ["project-crew-assets", `story:${projectId}`, "context", props.userId],
+    queryFn: ({ signal }) => getProjectCrewAssetContext(`story:${projectId}`, signal),
     enabled: open && Boolean(projectId && props.userId),
+    retry: false,
+  });
+  const crewId = context.data?.crew?.id;
+  const crew = useQuery({
+    queryKey: ["project-crew-assets", `story:${projectId}`, "picker", props.userId, crewId],
+    queryFn: ({ signal }) => listAllProjectCrewAssets(`story:${projectId}`, signal),
+    enabled: open && Boolean(projectId && props.userId && crewId) && !context.isError,
     retry: false,
   });
   const items = useMemo(() => {
     const result = [...suppliedItems];
     const ids = new Set(result.map((item) => item.asset.id));
-    for (const node of crew.data ?? []) {
+    for (const node of context.isError ? [] : (crew.data ?? [])) {
       if (!node.media || ids.has(node.media.id)) continue;
       ids.add(node.media.id);
       result.push({
@@ -124,16 +134,18 @@ function CrewCandidateDialog(
       });
     }
     return result;
-  }, [suppliedItems, crew.data]);
+  }, [suppliedItems, crew.data, context.isError]);
   return (
     <CandidateDialog
+      key={`${crewId}:${context.isError}`}
       {...props}
       items={items}
-      loading={props.loading || crew.isLoading}
-      error={props.error ?? (crew.error instanceof Error ? crew.error.message : null)}
+      loading={props.loading || context.isLoading || crew.isLoading}
+      error={props.error ?? context.error?.message ?? crew.error?.message ?? null}
       onRetry={() => {
         props.onRetry?.();
-        void crew.refetch();
+        if (context.isError) void context.refetch();
+        else if (crewId) void crew.refetch();
       }}
       onSelect={async (candidate, signal) => {
         signal?.throwIfAborted();

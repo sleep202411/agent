@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import {
@@ -17,10 +18,11 @@ import { StoryCandidateAssetPickerDialog } from "./project-canvas/story-candidat
  * remains `@stableKey`, so renaming an asset never breaks a saved prompt.
  */
 export function useStoryAssetMentions(projectId: string, chapterId: string): MentionItem[] {
+  const { user } = useAuth();
   const assetsQuery = useQuery({
-    queryKey: storyProductionKeys.assets(projectId, chapterId),
+    queryKey: [...storyProductionKeys.assets(projectId, chapterId), user?.id],
     queryFn: ({ signal }) => listStoryAssetSpecs(projectId, chapterId, signal),
-    enabled: Boolean(chapterId),
+    enabled: Boolean(projectId && chapterId && user?.id),
     retry: false,
   });
   return useMemo(
