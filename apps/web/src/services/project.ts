@@ -71,19 +71,20 @@ export interface MyProjectsResponse {
   sum: number;
 }
 
-export const getMyProjects = (page = 1, pageSize = 10) =>
+export const getMyProjects = (page = 1, pageSize = 10, signal?: AbortSignal) =>
   api.postForm<MyProjectsResponse>(
     "/project/myprojects",
     { page: String(page), pageSize: String(pageSize) },
-    { raw: true }
+    { raw: true, signal }
   );
 
 /** 我加入的项目 */
-export const getMyJoinedProjects = (page = 1, pageSize = 10) =>
-  api.postForm<Project[]>("/project/myjoined", {
-    page: String(page),
-    pageSize: String(pageSize),
-  });
+export const getMyJoinedProjects = (page = 1, pageSize = 10, signal?: AbortSignal) =>
+  api.postForm<Project[]>(
+    "/project/myjoined",
+    { page: String(page), pageSize: String(pageSize) },
+    { signal }
+  );
 
 /** 个人作品（视频） */
 export interface PersonalWork {
@@ -97,11 +98,12 @@ export interface PersonalWork {
   createTime?: string;
 }
 
-export const getMyPersonalWorks = (page = 1, pageSize = 10) =>
-  api.postForm<PersonalWork[]>("/vedio/query/mypersonal", {
-    page: String(page),
-    pageSize: String(pageSize),
-  });
+export const getMyPersonalWorks = (page = 1, pageSize = 10, signal?: AbortSignal) =>
+  api.postForm<PersonalWork[]>(
+    "/vedio/query/mypersonal",
+    { page: String(page), pageSize: String(pageSize) },
+    { signal }
+  );
 
 /** 人才库 详情页：某用户的个人作品集（视频） */
 export const getUserPersonalWorks = (userId: number | string, page = 1, pageSize = 10) =>
@@ -259,8 +261,11 @@ export async function getProjectJobs(projectId: number | string): Promise<Projec
 }
 
 /** 获取分润信息 */
-export const getProjectProfits = (projectId: number | string) =>
-  api.post<ProfitInfo>("/project/profit/query/all", { data: { projectId: Number(projectId) } });
+export const getProjectProfits = (projectId: number | string, signal?: AbortSignal) =>
+  api.post<ProfitInfo>("/project/profit/query/all", {
+    data: { projectId: Number(projectId) },
+    signal,
+  });
 
 /** 编辑 IP */
 export const updateProject = (data: {
