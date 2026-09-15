@@ -3272,7 +3272,6 @@ export class IpCommerceService {
     const targetType = input.targetType as IpTargetType;
     // The dialog sends the encoded public id; entitlements store the raw id.
     const targetUserId = decodeUserId(input.userId);
-    const now = new Date();
     const ip = await this.prisma.ip.findFirst({
       where: { id: input.ipId, deletedAt: null },
       include: {
@@ -3313,7 +3312,6 @@ export class IpCommerceService {
         ipId: ip.id,
         targetType,
         episodeId: input.episodeId ?? null,
-        now,
       });
       if (existing) {
         return {
@@ -3325,6 +3323,9 @@ export class IpCommerceService {
         };
       }
 
+      const [{ now }] = await tx.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT clock_timestamp() AS now`;
       const entitlement = await tx.ipContentEntitlement.create({
         data: {
           userId: targetUserId,
@@ -3367,43 +3368,48 @@ export class IpCommerceService {
     entitlementId: string,
     input: RevokeAdminIpEntitlementInput,
   ) {
-    const entitlement = await this.prisma.ipContentEntitlement.findUnique({
-      where: { id: entitlementId },
-      include: commerceEntitlementInclude,
-    });
-    if (!entitlement) {
-      throw new NotFoundException({
-        code: 'IP_ENTITLEMENT_NOT_FOUND',
-        msg: 'IP entitlement not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_content_entitlements WHERE id = ${entitlementId}::uuid FOR UPDATE`;
+      const entitlement = await tx.ipContentEntitlement.findUnique({
+        where: { id: entitlementId },
+        include: commerceEntitlementInclude,
       });
-    }
-    if (entitlement.status === IpEntitlementStatus.revoked) {
-      return {
-        entitlement: commerceEntitlementDto(
-          entitlement,
-          entitlement.ip.sourceLocale,
-        ),
-        alreadyRevoked: true,
-      };
-    }
-    if (entitlement.status !== IpEntitlementStatus.active) {
-      throw new BadRequestException({
-        code: 'IP_ENTITLEMENT_NOT_ACTIVE',
-        msg: 'Only active IP entitlements can be revoked.',
-      });
-    }
+      if (!entitlement) {
+        throw new NotFoundException({
+          code: 'IP_ENTITLEMENT_NOT_FOUND',
+          msg: 'IP entitlement not found.',
+        });
+      }
+      if (entitlement.status === IpEntitlementStatus.revoked) {
+        return {
+          entitlement: commerceEntitlementDto(
+            entitlement,
+            entitlement.ip.sourceLocale,
+          ),
+          alreadyRevoked: true,
+        };
+      }
+      if (entitlement.status !== IpEntitlementStatus.active) {
+        throw new BadRequestException({
+          code: 'IP_ENTITLEMENT_NOT_ACTIVE',
+          msg: 'Only active IP entitlements can be revoked.',
+        });
+      }
 
-    const now = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
+      const [{ now }] = await tx.$queryRaw<
+        Array<{ now: Date }>
+      >`SELECT clock_timestamp() AS now`;
       const row = await tx.ipContentEntitlement.update({
         where: { id: entitlement.id },
         data: {
           status: IpEntitlementStatus.revoked,
           revokedAt: now,
           endsAt:
-            entitlement.endsAt && entitlement.endsAt < now
+            now <= entitlement.startsAt
               ? entitlement.endsAt
-              : now,
+              : entitlement.endsAt && entitlement.endsAt < now
+                ? entitlement.endsAt
+                : now,
           metadata: {
             ...(isRecord(entitlement.metadata) ? entitlement.metadata : {}),
             revokeReason: input.reason,
@@ -3424,13 +3430,11 @@ export class IpCommerceService {
           removedAt: now,
         },
       });
-      return row;
+      return {
+        entitlement: commerceEntitlementDto(row, row.ip.sourceLocale),
+        alreadyRevoked: false,
+      };
     });
-
-    return {
-      entitlement: commerceEntitlementDto(updated, updated.ip.sourceLocale),
-      alreadyRevoked: false,
-    };
   }
 
   async updateAdminIpPublication(
@@ -4839,7 +4843,6 @@ export class IpCommerceService {
         ipId: input.ipId,
         targetType: input.targetType,
         episodeId: input.episodeId ?? null,
-        now,
       });
       if (existingEntitlement) {
         await ensureCollectionItemTx(tx, user.userId, existingEntitlement);
@@ -6090,9 +6093,12 @@ async function findCurrentOrPendingEntitlementTx(
     ipId: string;
     targetType: IpTargetType;
     episodeId: string | null;
-    now: Date;
   },
 ) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ip:entitlement:${input.userId}:${input.ipId}`})::bigint)`;
+  const [{ now }] = await tx.$queryRaw<
+    Array<{ now: Date }>
+  >`SELECT clock_timestamp() AS now`;
   const titleEntitlement = await tx.ipContentEntitlement.findFirst({
     where: {
       userId: input.userId,
@@ -6100,7 +6106,7 @@ async function findCurrentOrPendingEntitlementTx(
       targetType: IpTargetType.ip,
       episodeId: null,
       status: IpEntitlementStatus.active,
-      ...currentOrPendingEntitlementWhere(input.now),
+      ...currentOrPendingEntitlementWhere(now),
     },
   });
   if (titleEntitlement) return titleEntitlement;
@@ -6113,7 +6119,7 @@ async function findCurrentOrPendingEntitlementTx(
       episodeId: input.episodeId,
       targetType: IpTargetType.episode,
       status: IpEntitlementStatus.active,
-      ...currentOrPendingEntitlementWhere(input.now),
+      ...currentOrPendingEntitlementWhere(now),
     },
   });
 }
