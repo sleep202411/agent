@@ -1,6 +1,8 @@
 import { appEnv, resolveAssetUrl } from "@/config";
 import { api, ApiRequestError, type ApiResponse } from "@/lib/api-client";
 
+import { sendAuthCode } from "./send-auth-code";
+
 import type {
   AuthResult,
   AuthSession,
@@ -162,10 +164,12 @@ async function sendGetCode(
   identifier: NormalizedIdentifier,
   resetPassword: boolean
 ): Promise<void> {
-  await api.get<ApiResponse<unknown>>("/user/new/getCode", {
-    params: { type: identifier.kind, account: identifier.account, resetPassword },
-    retry: false,
-  });
+  await sendAuthCode(identifier, resetPassword ? "reset" : "signin", () =>
+    api.get<ApiResponse<unknown>>("/user/new/getCode", {
+      params: { type: identifier.kind, account: identifier.account, resetPassword },
+      retry: false,
+    })
+  );
 }
 
 /** Sign-in / auto-register OTP (`resetPassword=false`). */
