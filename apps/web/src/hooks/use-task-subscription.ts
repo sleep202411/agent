@@ -2,10 +2,10 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { api } from "@/src/lib/api";
-import { useAppSelector, useAppDispatch } from "@/src/store";
+import { store, useAppDispatch } from "@/src/store";
 import {
   addTask,
-  setTasks,
+  reconcileTaskSnapshot,
   applyEvent,
   type Task,
   type TaskEvent,
@@ -21,15 +21,22 @@ export function useTaskFetch(userId: string | undefined) {
   useEffect(() => {
     if (!userId || fetchedRef.current) return;
     fetchedRef.current = true;
+    const controller = new AbortController();
+    const baseline = store.getState().task.tasks;
 
     api
-      .get<Task[]>("/aurora/api/tasks")
+      .get<Task[]>("/aurora/api/tasks", { signal: controller.signal })
       .then((tasks) => {
-        dispatch(setTasks(tasks));
+        if (!controller.signal.aborted) dispatch(reconcileTaskSnapshot({ tasks, baseline }));
       })
       .catch((err) => {
+        if (controller.signal.aborted) return;
         console.warn("[useTaskFetch] Failed to fetch tasks:", err);
       });
+    return () => {
+      controller.abort();
+      fetchedRef.current = false;
+    };
   }, [userId, dispatch]);
 }
 

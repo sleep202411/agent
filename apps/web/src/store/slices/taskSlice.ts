@@ -1,6 +1,7 @@
 import {
   createAsyncThunk,
   createSelector,
+  original,
   createSlice,
   type PayloadAction,
 } from "@reduxjs/toolkit";
@@ -146,6 +147,28 @@ export const taskSlice = createSlice({
       for (const t of action.payload) state.tasks[t.id] = t;
     },
 
+    reconcileTaskSnapshot: (
+      state,
+      action: PayloadAction<{ tasks: Task[]; baseline: Record<string, Task> }>
+    ) => {
+      const { tasks, baseline } = action.payload;
+      const current = original(state.tasks)!;
+      const next: Record<string, Task> = {};
+      for (const task of tasks) {
+        // A removed task must not be resurrected by an older in-flight read.
+        if (baseline[task.id] && !current[task.id]) continue;
+        const existing = current[task.id];
+        next[task.id] =
+          existing && (existing.source === "local" || existing !== baseline[task.id])
+            ? existing
+            : task;
+      }
+      for (const task of Object.values(current)) {
+        if (task.source === "local" || task !== baseline[task.id]) next[task.id] = task;
+      }
+      state.tasks = next;
+    },
+
     removeTask: (state, action: PayloadAction<string>) => {
       delete state.tasks[action.payload];
     },
@@ -229,6 +252,7 @@ export const {
   cancelTask,
   retryTask,
   setTasks,
+  reconcileTaskSnapshot,
   removeTask,
   clearCompleted,
   applyEvent,
