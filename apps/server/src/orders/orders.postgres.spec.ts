@@ -526,6 +526,77 @@ jest.setTimeout(15000);
     const y = await conversations.sendProposal(a.id, owner, legacy);
     expect(x.id).not.toBe(y.id);
   });
+  it.each(['price', 'questions'] as const)(
+    'rejects stale displayed service versions after a preceding %s edit',
+    async (mode) => {
+      const request = { ...input('stale-offer'), expectedServiceVersion: 1 };
+      await expect(
+        afterHeldEdit(
+          async (tx) => {
+            await tx.creatorService.update({
+              where: { id },
+              data: { version: { increment: 1 } },
+            });
+            if (mode === 'price')
+              await tx.servicePackage.updateMany({
+                where: { serviceId: id },
+                data: { priceAmount: 2000n },
+              });
+            else
+              await tx.serviceRequirementQuestion.updateMany({
+                where: { serviceId: id },
+                data: { prompt: 'Changed question' },
+              });
+          },
+          () => svc.submit(buyer, request),
+        ),
+      ).rejects.toMatchObject({
+        response: { field: 'expectedServiceVersion' },
+      });
+      expect(await db.serviceOrder.count({ where: { buyerId: buyer } })).toBe(
+        0,
+      );
+      expect(messageBroadcast).not.toHaveBeenCalled();
+      const accepted = await svc.submit(buyer, {
+        ...request,
+        expectedServiceVersion: 2,
+      });
+      expect(accepted.packageSnapshot).toMatchObject({
+        price: mode === 'price' ? 20 : 10,
+      });
+    },
+  );
+  it.each(['paused', 'archived'] as const)(
+    'recovers an accepted order after its service is %s',
+    async (status) => {
+      const request = { ...input('recover-offer'), expectedServiceVersion: 1 };
+      const order = await svc.submit(buyer, request);
+      const creators = new CreatorServicesService(db as never);
+      if (status === 'paused') await creators.pause(id, owner);
+      else await creators.archive(id, owner);
+      messageBroadcast.mockClear();
+      contextBroadcast.mockClear();
+      expect((await svc.submit(buyer, request)).id).toBe(order.id);
+      expect(messageBroadcast).not.toHaveBeenCalled();
+      expect(contextBroadcast).not.toHaveBeenCalled();
+      await expect(
+        svc.submit(buyer, {
+          ...request,
+          idempotencyKey: 'different-order-key',
+        }),
+      ).rejects.toBeInstanceOf(
+        status === 'paused' ? ConflictException : NotFoundException,
+      );
+    },
+  );
+  it('does not reuse another service’s order receipt for a new request', async () => {
+    const request = input('wrong-service');
+    await svc.submit(buyer, request);
+    await expect(
+      svc.submit(buyer, { ...request, serviceId: randomUUID() }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(await db.serviceOrder.count({ where: { buyerId: buyer } })).toBe(1);
+  });
   it('concurrent retries retain one order, conversation, message pair and broadcast set', async () => {
     await conversations.openServiceConversation({
       serviceId: id,

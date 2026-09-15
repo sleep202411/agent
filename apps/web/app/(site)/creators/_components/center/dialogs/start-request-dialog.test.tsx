@@ -169,3 +169,18 @@ it.each([false, true])("handles a failed request with abandoned=%s", async (aban
     expect(mocks.push).toHaveBeenCalledOnce();
   }
 });
+
+it("submits the displayed service version and retains it during a failed retry", async () => {
+  mocks.submit.mockRejectedValue(new Error("Service changed"));
+  await act(async () => render());
+  await fill();
+  await act(async () => submit().click());
+  await act(async () => submit().click());
+  expect(mocks.submit.mock.calls[0]![0].expectedServiceVersion).toBe(service.version);
+  expect(mocks.submit.mock.calls[1]![0].expectedServiceVersion).toBe(service.version);
+  expect(mocks.submit.mock.calls[1]![0].idempotencyKey).toBe(
+    mocks.submit.mock.calls[0]![0].idempotencyKey
+  );
+  expect(close).not.toHaveBeenCalled();
+  expect(container.querySelector("textarea")!.value).toBe("Alice draft");
+});

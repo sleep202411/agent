@@ -106,6 +106,20 @@ export class OrdersService {
         // Owner edits take FOR UPDATE on this row. Read availability, package
         // and questionnaire only after admission, preserving one coherent offer.
         await tx.$queryRaw`SELECT id FROM creator_services WHERE id = ${input.serviceId} FOR SHARE`;
+        // Idempotent retry: if (buyer, idempotencyKey) already maps to
+        // an order, return it without re-creating. The partial-unique
+        // index in the migration also gives us DB-level protection
+        // against a race that beats this check.
+        if (input.idempotencyKey) {
+          const existing = await tx.serviceOrder.findFirst({
+            where: { buyerId, idempotencyKey: input.idempotencyKey },
+          });
+          if (existing) {
+            this.assertOrderReceiptService(existing, input.serviceId);
+            return existing;
+          }
+        }
+
         const service = await tx.creatorService.findUnique({
           where: { id: input.serviceId },
           select: {
@@ -114,6 +128,7 @@ export class OrdersService {
             status: true,
             deletedAt: true,
             title: true,
+            version: true,
           },
         });
         if (!service || service.deletedAt) {
@@ -128,15 +143,16 @@ export class OrdersService {
           throw new BadRequestException('Cannot order your own service');
         }
 
-        // Idempotent retry: if (buyer, idempotencyKey) already maps to
-        // an order, return it without re-creating. The partial-unique
-        // index in the migration also gives us DB-level protection
-        // against a race that beats this check.
-        if (input.idempotencyKey) {
-          const existing = await tx.serviceOrder.findFirst({
-            where: { buyerId, idempotencyKey: input.idempotencyKey },
+        if (
+          input.expectedServiceVersion !== undefined &&
+          service.version !== input.expectedServiceVersion
+        ) {
+          throw new ConflictException({
+            message:
+              'The service offer has changed. Reload it and review the package and questions before submitting.',
+            field: 'expectedServiceVersion',
+            actual: service.version,
           });
-          if (existing) return existing;
         }
 
         const pkg = await tx.servicePackage.findFirst({
@@ -255,6 +271,7 @@ export class OrdersService {
             where: { buyerId, idempotencyKey: input.idempotencyKey },
           });
           if (existing) {
+            this.assertOrderReceiptService(existing, input.serviceId);
             // These arrays belong to the failed transaction, not the winning
             // order. Its rolled-back messages must never reach realtime clients.
             pendingMessages.length = 0;
@@ -661,6 +678,14 @@ export class OrdersService {
       await this.conversations.broadcastMessage(m);
     }
     return updated;
+  }
+
+  private assertOrderReceiptService(order: ServiceOrder, serviceId: string) {
+    if (order.serviceId !== serviceId) {
+      throw new ConflictException(
+        'Order retry key was already used for a different service',
+      );
+    }
   }
 
   private async requireOrder(orderId: string): Promise<ServiceOrder> {

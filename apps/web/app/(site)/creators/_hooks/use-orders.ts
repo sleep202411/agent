@@ -89,6 +89,7 @@ const api = {
 // ─── Wire bodies ───────────────────────────────────────────
 
 export interface SubmitOrderBody {
+  expectedServiceVersion?: number;
   serviceId: string;
   packageTier: ServiceTier;
   answers?: { questionId: string; answer: string }[];

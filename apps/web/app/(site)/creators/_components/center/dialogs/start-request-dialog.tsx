@@ -165,6 +165,7 @@ function StartRequestDialogContent({
     try {
       const order = await submit.mutateAsync({
         serviceId: service.id,
+        expectedServiceVersion: service.version,
         packageTier: tier,
         answers: service.requirementQuestions.map((q) => ({
           questionId: q.id,
