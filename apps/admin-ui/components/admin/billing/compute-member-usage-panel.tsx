@@ -3,7 +3,7 @@
 // Cross-workspace compute consumption: who spent how much from which
 // workspace pot. Backed by GET /billing/usage/member-compute.
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   IconChevronDown,
   IconChevronRight,
@@ -31,6 +31,8 @@ const KIND_TABS: { key: AdminComputeMemberUsageData["workspaceKind"]; label: str
   { key: "personal", label: "个人默认池" },
 ];
 
+const ROW_GRID = "grid-cols-[minmax(0,1.4fr)_120px_88px_88px_88px] gap-3";
+
 const emptyUsage: AdminComputeMemberUsageData = {
   rangeDays: 30,
   workspaceKind: "all",
@@ -56,7 +58,7 @@ export function BillingComputeMemberUsagePanel({
   const [workspaceKind, setWorkspaceKind] = useState<AdminComputeMemberUsageData["workspaceKind"]>(
     initialData?.workspaceKind ?? "all"
   );
-  const [workspaceId, setWorkspaceId] = useState("");
+  const [workspaceFilter, setWorkspaceFilter] = useState("");
   const [userQuery, setUserQuery] = useState("");
   const [data, setData] = useState<AdminComputeMemberUsageData>(initialData ?? emptyUsage);
   const [previousInitialData, setPreviousInitialData] = useState(initialData);
@@ -78,7 +80,15 @@ export function BillingComputeMemberUsagePanel({
         workspaceKind: nextKind,
         limit: "100",
       });
-      if (workspaceId.trim()) params.set("workspaceId", workspaceId.trim());
+      if (workspaceFilter.trim()) {
+        const trimmed = workspaceFilter.trim();
+        // Exact UUID → workspaceId; anything else → fuzzy name match.
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) {
+          params.set("workspaceId", trimmed);
+        } else {
+          params.set("workspaceQuery", trimmed);
+        }
+      }
       if (userQuery.trim()) {
         // Prefer explicit id when the field looks like one; otherwise treat as
         // phone/email for legacy bridge resolution.
@@ -107,13 +117,6 @@ export function BillingComputeMemberUsagePanel({
     setPreviousInitialData(initialData);
     if (initialData) setData(initialData);
   }
-
-  const maxCredits = useMemo(() => {
-    return data.members.reduce((max, row) => {
-      const credits = BigInt(row.totalCredits || "0");
-      return credits > max ? credits : max;
-    }, BigInt(0));
-  }, [data.members]);
 
   function toggle(userId: string) {
     setExpanded((prev) => {
@@ -213,9 +216,9 @@ export function BillingComputeMemberUsagePanel({
           </div>
           <div className="min-w-[220px] flex-1">
             <TextInput
-              value={workspaceId}
-              onChange={(event) => setWorkspaceId(event.target.value)}
-              placeholder="工作区 UUID（可选）"
+              value={workspaceFilter}
+              onChange={(event) => setWorkspaceFilter(event.target.value)}
+              placeholder="工作区名 / UUID"
               onKeyDown={(event) => {
                 if (event.key === "Enter") void refresh();
               }}
@@ -229,11 +232,14 @@ export function BillingComputeMemberUsagePanel({
       </section>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
-        <div className="grid grid-cols-[minmax(0,1.4fr)_120px_100px_minmax(0,1fr)] gap-3 border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-[11px] font-medium tracking-wide text-slate-500 uppercase">
+        <div
+          className={`grid ${ROW_GRID} border-b border-slate-100 bg-slate-50/80 px-4 py-2 text-[11px] font-medium tracking-wide text-slate-500 uppercase`}
+        >
           <span>成员</span>
           <span className="text-right">积分</span>
           <span className="text-right">次数</span>
-          <span>占比</span>
+          <span className="text-right">生视频</span>
+          <span className="text-right">生图</span>
         </div>
 
         {data.members.length === 0 ? (
@@ -246,7 +252,6 @@ export function BillingComputeMemberUsagePanel({
               <MemberRow
                 key={member.userId}
                 member={member}
-                maxCredits={maxCredits}
                 open={expanded.has(member.userId)}
                 onToggle={() => toggle(member.userId)}
               />
@@ -260,17 +265,13 @@ export function BillingComputeMemberUsagePanel({
 
 function MemberRow({
   member,
-  maxCredits,
   open,
   onToggle,
 }: {
   member: AdminComputeMemberUsageMember;
-  maxCredits: bigint;
   open: boolean;
   onToggle: () => void;
 }) {
-  const credits = BigInt(member.totalCredits || "0");
-  const ratio = maxCredits > BigInt(0) ? Number((credits * BigInt(1000)) / maxCredits) / 10 : 0;
   const title =
     member.nickName?.trim() ||
     member.phone ||
@@ -289,7 +290,7 @@ function MemberRow({
       <button
         type="button"
         onClick={onToggle}
-        className="grid w-full grid-cols-[minmax(0,1.4fr)_120px_100px_minmax(0,1fr)] gap-3 px-4 py-3 text-left hover:bg-slate-50/80"
+        className={`grid w-full ${ROW_GRID} px-4 py-3 text-left hover:bg-slate-50/80`}
       >
         <div className="flex min-w-0 items-start gap-2">
           <span className="mt-0.5 text-slate-400">
@@ -311,17 +312,12 @@ function MemberRow({
           {formatInteger(member.totalCredits)}
         </p>
         <p className="text-right text-[13px] tabular-nums text-slate-700">{member.totalJobs}</p>
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-            <div
-              className="h-full rounded-full bg-slate-900/80"
-              style={{ width: `${Math.max(ratio, credits > BigInt(0) ? 2 : 0)}%` }}
-            />
-          </div>
-          <span className="w-10 text-right text-[11px] tabular-nums text-slate-500">
-            {ratio.toFixed(0)}%
-          </span>
-        </div>
+        <p className="text-right text-[13px] tabular-nums text-slate-700">
+          {member.totalVideoJobs ?? 0}
+        </p>
+        <p className="text-right text-[13px] tabular-nums text-slate-700">
+          {member.totalImageJobs ?? 0}
+        </p>
       </button>
 
       {open ? (
@@ -329,7 +325,7 @@ function MemberRow({
           {member.workspaces.map((ws) => (
             <li
               key={`${member.userId}:${ws.workspaceId}`}
-              className="grid grid-cols-[minmax(0,1.4fr)_120px_100px_minmax(0,1fr)] gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+              className={`grid ${ROW_GRID} rounded-lg border border-slate-200 bg-white px-3 py-2`}
             >
               <div className="min-w-0 pl-6">
                 <p className="truncate text-[13px] font-medium text-slate-900">
@@ -351,7 +347,12 @@ function MemberRow({
                 {formatInteger(ws.credits)}
               </p>
               <p className="text-right text-[13px] tabular-nums text-slate-700">{ws.jobs}</p>
-              <div />
+              <p className="text-right text-[13px] tabular-nums text-slate-700">
+                {ws.videoJobs ?? 0}
+              </p>
+              <p className="text-right text-[13px] tabular-nums text-slate-700">
+                {ws.imageJobs ?? 0}
+              </p>
             </li>
           ))}
         </ul>

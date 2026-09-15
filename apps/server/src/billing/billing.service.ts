@@ -878,6 +878,10 @@ export class BillingService {
         : query.workspaceKind === 'shared'
           ? Prisma.sql`AND w.default_for_user_id IS NULL`
           : Prisma.empty;
+    const workspaceNeedle = query.workspaceQuery?.trim();
+    const workspaceNameFilter = workspaceNeedle
+      ? Prisma.sql`AND w.name ILIKE ${likeContainsPattern(workspaceNeedle)} ESCAPE '\\'`
+      : Prisma.empty;
     // Cap raw pairs so a busy window cannot blow memory before rollup.
     const pairLimit = Math.min(query.limit * 20, 2000);
 
@@ -887,17 +891,24 @@ export class BillingService {
         workspaceId: string;
         credits: bigint;
         jobs: bigint;
+        imageJobs: bigint;
+        videoJobs: bigint;
       }>
     >(Prisma.sql`
       SELECT t.actor_user_id AS "actorUserId",
              a.owner_id AS "workspaceId",
              SUM(e.amount)::bigint AS credits,
-             COUNT(*)::bigint AS jobs
+             COUNT(*)::bigint AS jobs,
+             COUNT(*) FILTER (WHERE j.type::text = 'image')::bigint AS "imageJobs",
+             COUNT(*) FILTER (WHERE j.type::text = 'video')::bigint AS "videoJobs"
       FROM wallet_ledger_entries e
       JOIN wallet_transactions t ON t.id = e.transaction_id
       JOIN wallet_accounts a ON a.id = e.account_id
       -- owner_id is varchar; workspaces.id is uuid — cast before comparing.
       JOIN workspaces w ON w.id::text = a.owner_id AND w.deleted_at IS NULL
+      LEFT JOIN ai_jobs j
+        ON t.source_type = 'ai_job'
+       AND j.id::text = t.source_id
       WHERE a.owner_type::text = 'workspace'
         AND a.currency::text = 'compute_point'
         AND a.balance_kind::text = 'consumable'
@@ -906,6 +917,7 @@ export class BillingService {
         ${workspaceIdFilter}
         ${actorFilter}
         ${kindFilter}
+        ${workspaceNameFilter}
       GROUP BY t.actor_user_id, a.owner_id
       ORDER BY credits DESC
       LIMIT ${pairLimit}
@@ -974,11 +986,15 @@ export class BillingService {
       workspaceId: string;
       credits: bigint;
       jobs: number;
+      imageJobs: number;
+      videoJobs: number;
     };
     type MemberAgg = {
       rawUserId: string;
       totalCredits: bigint;
       totalJobs: number;
+      totalImageJobs: number;
+      totalVideoJobs: number;
       workspaces: WorkspaceAgg[];
     };
     const byMember = new Map<string, MemberAgg>();
@@ -990,17 +1006,25 @@ export class BillingService {
           rawUserId,
           totalCredits: 0n,
           totalJobs: 0,
+          totalImageJobs: 0,
+          totalVideoJobs: 0,
           workspaces: [],
         };
         byMember.set(rawUserId, member);
       }
       const jobs = Number(row.jobs);
+      const imageJobs = Number(row.imageJobs);
+      const videoJobs = Number(row.videoJobs);
       member.totalCredits += row.credits;
       member.totalJobs += jobs;
+      member.totalImageJobs += imageJobs;
+      member.totalVideoJobs += videoJobs;
       member.workspaces.push({
         workspaceId: row.workspaceId,
         credits: row.credits,
         jobs,
+        imageJobs,
+        videoJobs,
       });
     }
 
@@ -1022,6 +1046,8 @@ export class BillingService {
           email: legacy?.email ?? null,
           totalCredits: member.totalCredits.toString(),
           totalJobs: member.totalJobs,
+          totalImageJobs: member.totalImageJobs,
+          totalVideoJobs: member.totalVideoJobs,
           workspaces: member.workspaces
             .sort((a, b) => (b.credits > a.credits ? 1 : -1))
             .map((ws) => {
@@ -1033,6 +1059,8 @@ export class BillingService {
                 isPersonal: Boolean(meta?.defaultForUserId),
                 credits: ws.credits.toString(),
                 jobs: ws.jobs,
+                imageJobs: ws.imageJobs,
+                videoJobs: ws.videoJobs,
               };
             }),
         };
@@ -9175,4 +9203,9 @@ function allowedReturnOrigins(): Set<string> {
   origins.add('https://studio.fizzdragon.com');
   origins.add('https://fizzdragon.fizzspace.cn');
   return origins;
+}
+
+/** Escape `\`, `%`, `_` so user input is treated as a literal ILIKE substring. */
+function likeContainsPattern(raw: string): string {
+  return `%${raw.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')}%`;
 }

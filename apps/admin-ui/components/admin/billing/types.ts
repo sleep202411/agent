@@ -663,6 +663,8 @@ export type AdminComputeMemberUsageWorkspace = {
   isPersonal: boolean;
   credits: string;
   jobs: number;
+  imageJobs: number;
+  videoJobs: number;
 };
 
 export type AdminComputeMemberUsageMember = {
@@ -672,6 +674,8 @@ export type AdminComputeMemberUsageMember = {
   email: string | null;
   totalCredits: string;
   totalJobs: number;
+  totalImageJobs: number;
+  totalVideoJobs: number;
   workspaces: AdminComputeMemberUsageWorkspace[];
 };
 
