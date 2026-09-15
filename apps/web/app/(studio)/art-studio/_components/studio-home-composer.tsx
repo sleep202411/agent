@@ -1,6 +1,7 @@
 "use client";
 
 import { useLayoutEffect, useRef, useState, type ComponentType, type SVGProps } from "react";
+import { useCurrentUser } from "@/src/hooks/use-user";
 import { useRouter } from "next/navigation";
 import {
   IconArrowUp,
@@ -127,6 +128,10 @@ const STUDIO_AGENT_PILLS: {
 ];
 
 export function StudioHomeComposer() {
+  const { user } = useCurrentUser();
+  return <StudioHomeComposerForm key={user?.id ?? "guest"} />;
+}
+function StudioHomeComposerForm() {
   const t = useTranslations("workspace");
   const tp = useTranslations("project");
   const tc = useTranslations("common");
@@ -147,6 +152,18 @@ export function StudioHomeComposer() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const personaPrefixRef = useRef<HTMLSpanElement>(null);
 
+  const active = useRef(true);
+  const operation = useRef<AbortController | null>(null);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+      operation.current?.abort();
+      operation.current = null;
+    };
+  }, []);
+  const owns = (run: AbortController) =>
+    active.current && operation.current === run && !run.signal.aborted;
   const canSubmit =
     !submitting && !scriptUploading && (prompt.trim().length > 0 || scriptAttachment !== null);
 
@@ -175,7 +192,7 @@ export function StudioHomeComposer() {
   const handleScriptChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.currentTarget.value = "";
-    if (!file) return;
+    if (!file || !active.current || operation.current) return;
 
     if (!isSupportedScript(file)) {
       toast.warning(tc("unsupportedFileType"));
@@ -186,6 +203,8 @@ export function StudioHomeComposer() {
       return;
     }
 
+    const run = new AbortController();
+    operation.current = run;
     setScriptFile(file);
     setScriptAttachment(null);
     setScriptUploading(true);
@@ -195,7 +214,9 @@ export function StudioHomeComposer() {
       // has to carry the ref across the navigation — no OSS round-trip.
       const uploaded = await uploadChatAttachment(file, {
         maxSize: MAX_SCRIPT_SIZE,
+        signal: run.signal,
       });
+      if (!owns(run)) return;
       setScriptAttachment({
         ref: uploaded.ref,
         name: file.name,
@@ -204,15 +225,20 @@ export function StudioHomeComposer() {
         excerpt: uploaded.excerpt,
       });
     } catch (err) {
+      if (!owns(run)) return;
       console.warn("[StudioHomeComposer] script upload failed", err);
       toast.error(tc("uploadFailed"));
       setScriptFile(null);
     } finally {
-      setScriptUploading(false);
+      if (owns(run)) {
+        operation.current = null;
+        setScriptUploading(false);
+      }
     }
   };
 
   const handleScriptRemove = () => {
+    if (!active.current || operation.current) return;
     setScriptFile(null);
     setScriptAttachment(null);
   };
@@ -220,7 +246,9 @@ export function StudioHomeComposer() {
   // ─── Submit ───────────────────────────────────────────
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || !active.current || operation.current) return;
+    const run = new AbortController();
+    operation.current = run;
     console.info("[studio-composer] submit", {
       agent,
       hasPrompt: !!prompt.trim(),
@@ -228,7 +256,8 @@ export function StudioHomeComposer() {
     });
     setSubmitting(true);
     try {
-      const { worldId, projectId } = await quickCreateWorldProduct(tp("unnamedWorld"));
+      const { worldId, projectId } = await quickCreateWorldProduct(tp("unnamedWorld"), run.signal);
+      if (!owns(run)) return;
       console.info("[studio-composer] quick-create ok", { worldId, projectId });
       // Stash the composer payload in sessionStorage so the project
       // workspace can pick it up on mount and bootstrap the first turn.
@@ -255,6 +284,8 @@ export function StudioHomeComposer() {
       }
       router.push(localizedProjectWorkspaceHref(projectId));
     } catch (err) {
+      if (!owns(run)) return;
+      operation.current = null;
       console.warn("[studio-composer] quick-create failed", err);
       toast.error(tc("uploadFailed"));
       setSubmitting(false);
