@@ -16,6 +16,7 @@ import {
   MediaObjectPlacementStatus,
   MediaStorageProvider,
   ProjectMemberRole,
+  WorkspaceMemberRole,
   Prisma,
 } from '@prisma/client';
 import { CURRENT_CELL } from '../../common/region/current-cell';
@@ -115,7 +116,11 @@ export class CrewAssetsService {
     const project = await this.prisma.platformProject.findUnique({
       where: { id: projectId },
       select: {
-        studioCrew: { select: { id: true, name: true, logo: true } },
+        workspace: {
+          select: {
+            studioCrew: { select: { id: true, name: true, logo: true } },
+          },
+        },
         productionCrew: { select: { id: true, name: true, logo: true } },
         crewTaskCanvas: {
           select: {
@@ -125,7 +130,7 @@ export class CrewAssetsService {
       },
     });
     return (
-      project?.studioCrew ??
+      project?.workspace.studioCrew ??
       project?.productionCrew ??
       project?.crewTaskCanvas?.crew ??
       null
@@ -137,7 +142,22 @@ export class CrewAssetsService {
     if (!crew) return { crew: null, assetContext: null };
     return {
       crew,
-      assetContext: await this.context(crew.id, userId),
+      canSaveFromCanvas: Boolean(
+        await this.prisma.platformProject.findFirst({
+          where: {
+            id: projectId,
+            workspace: { studioCrew: { id: crew.id, deletedAt: null } },
+          },
+          select: { id: true },
+        }),
+      ),
+      assetContext: (await this.authorization.resolve(crew.id, userId))
+        ? await this.context(crew.id, userId)
+        : {
+            capabilities: {
+              view: await this.access.canReadLinkedWorkspace(crew.id, userId),
+            },
+          },
     };
   }
 
@@ -153,7 +173,220 @@ export class CrewAssetsService {
         message: 'This project is not linked to a crew.',
       });
     }
-    return this.list(crew.id, userId, query);
+    return this.list(crew.id, userId, query, true);
+  }
+
+  async saveFromCanvas(
+    documentId: string,
+    userId: string,
+    mediaAssetId: string,
+  ) {
+    const document = await this.prisma.studioDocument.findFirst({
+      where: {
+        id: documentId,
+        type: 'canvas',
+        status: 'active',
+        deletedAt: null,
+      },
+      select: { platformProjectId: true },
+    });
+    if (!document?.platformProjectId)
+      throw new NotFoundException('Canvas project not found.');
+    const projectId = document.platformProjectId;
+    await this.workspacePermissions.requireProjectRole(
+      userId,
+      projectId,
+      ProjectMemberRole.editor,
+    );
+    const crew = await this.projectCrew(projectId, userId);
+    if (!crew)
+      throw new NotFoundException(
+        'Link a Crew to this workspace before saving assets.',
+      );
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-workspace:${crew.id}`})::bigint)`;
+      await lockCrewAssetUploads(tx, [mediaAssetId]);
+      await this.lockAssetTree(tx, crew.id);
+      await this.workspacePermissions.requireProjectRole(
+        userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
+      const project = await tx.platformProject.findFirst({
+        where: {
+          id: projectId,
+          status: 'active',
+          deletedAt: null,
+          workspace: {
+            studioCrew: { id: crew.id, deletedAt: null },
+            status: 'active',
+            deletedAt: null,
+          },
+        },
+        select: { id: true, name: true, workspaceId: true },
+      });
+      if (!project)
+        throw new ConflictException(
+          'The Crew workspace link changed. Refresh and try again.',
+        );
+      const actor = await this.authorization.resolve(crew.id, userId, tx);
+      if (actor && !actor.permissions.includes('assets.upload'))
+        throw new ForbiddenException('You cannot add Crew assets.');
+      if (
+        !actor &&
+        !(await this.access.canReadLinkedWorkspace(crew.id, userId, tx))
+      )
+        throw new ForbiddenException('Workspace membership required.');
+      await tx.$queryRaw`SELECT id FROM media_assets WHERE id = ${mediaAssetId}::uuid FOR UPDATE`;
+      const media = await tx.mediaAsset.findFirst({
+        where: {
+          id: mediaAssetId,
+          workspaceId: project.workspaceId,
+          kind: { in: ['image', 'video'] },
+          status: 'ready',
+          deletedAt: null,
+          moderationStatus: { not: 'blocked' },
+        },
+        select: { id: true, metadata: true, kind: true, createdByUserId: true },
+      });
+      if (!media)
+        throw new ForbiddenException(
+          'Only ready images and videos in this workspace can be saved to Crew.',
+        );
+      if (media.createdByUserId !== userId) {
+        await this.workspacePermissions.requireWorkspaceRole(
+          userId,
+          project.workspaceId,
+          WorkspaceMemberRole.editor,
+          tx,
+        );
+      }
+      const currentDocument = await tx.studioDocument.findFirst({
+        where: {
+          id: documentId,
+          platformProjectId: projectId,
+          workspaceId: project.workspaceId,
+          type: 'canvas',
+          status: 'active',
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!currentDocument)
+        throw new ConflictException(
+          'The canvas changed. Refresh and try again.',
+        );
+      const metadata =
+        media.metadata &&
+        typeof media.metadata === 'object' &&
+        !Array.isArray(media.metadata)
+          ? media.metadata
+          : {};
+      if (
+        metadata.crewId ||
+        metadata.uploadKind === 'crew_expense_receipt' ||
+        metadata.uploadKind === 'crew_agreement_archive'
+      )
+        throw new ForbiddenException(
+          'Private or Crew-managed media cannot be shared through this action.',
+        );
+      let folder = await tx.crewAssetNode.findFirst({
+        where: { crewId: crew.id, sourceCanvasProjectId: projectId },
+      });
+      if (folder) {
+        if (folder.status !== 'active')
+          throw new ConflictException(
+            'Restore the project folder in Crew before saving more assets.',
+          );
+        await this.access.requireNodePermission(
+          crew.id,
+          folder.id,
+          userId,
+          actor ? CrewAssetPermission.upload : CrewAssetPermission.view,
+          tx,
+        );
+      } else {
+        await lockCrewAssetFolderNames(tx, crew.id, null);
+        const siblings = await tx.crewAssetNode.findMany({
+          where: { crewId: crew.id, parentId: null, status: 'active' },
+          select: { name: true },
+        });
+        folder = await tx.crewAssetNode.create({
+          data: {
+            crewId: crew.id,
+            kind: 'folder',
+            name: availableCrewAssetName(
+              project.name,
+              new Set(siblings.map((n) => n.name.toLowerCase())),
+            ),
+            sourceCanvasProjectId: projectId,
+            createdByUserId: userId,
+            updatedByUserId: userId,
+          },
+        });
+      }
+      const existing = await tx.crewAssetNode.findFirst({
+        where: { crewId: crew.id, parentId: folder.id, mediaAssetId },
+      });
+      if (existing) {
+        if (existing.status !== 'active')
+          throw new ConflictException(
+            'Restore this asset in Crew before saving it again.',
+          );
+        await this.access.requireNodePermission(
+          crew.id,
+          existing.id,
+          userId,
+          CrewAssetPermission.view,
+          tx,
+        );
+        return { id: existing.id, folderName: folder.name, created: false };
+      }
+      const names = await tx.crewAssetNode.findMany({
+        where: { crewId: crew.id, parentId: folder.id, status: 'active' },
+        select: { name: true },
+      });
+      const node = await tx.crewAssetNode.create({
+        data: {
+          crewId: crew.id,
+          parentId: folder.id,
+          kind: 'file',
+          sharedFromStudio: true,
+          mediaAssetId,
+          name: availableCrewAssetName(
+            `${media.kind}-${mediaAssetId.slice(0, 8)}`,
+            new Set(names.map((n) => n.name.toLowerCase())),
+          ),
+          createdByUserId: userId,
+          updatedByUserId: userId,
+        },
+      });
+      await this.workspacePermissions.requireProjectRole(
+        userId,
+        projectId,
+        ProjectMemberRole.editor,
+        tx,
+      );
+      if (actor)
+        await this.authorization.require(crew.id, userId, 'assets.upload', tx);
+      await this.access.requireNodePermission(
+        crew.id,
+        folder.id,
+        userId,
+        actor ? CrewAssetPermission.upload : CrewAssetPermission.view,
+        tx,
+      );
+      return { id: node.id, folderName: folder.name, created: true };
+    });
+    if (result.created)
+      await this.conversations.broadcastCrewAssetChange(
+        crew.id,
+        result.id,
+        'created',
+        userId,
+      );
+    return result;
   }
 
   async cleanupUploadReservations() {
@@ -239,8 +472,22 @@ export class CrewAssetsService {
     };
   }
 
-  async list(crewId: string, userId: string, query: ListCrewAssetsQuery) {
-    await this.authorization.require(crewId, userId, 'assets.view');
+  async list(
+    crewId: string,
+    userId: string,
+    query: ListCrewAssetsQuery,
+    fromProject = false,
+  ) {
+    const workspaceReader =
+      fromProject &&
+      !(await this.authorization.resolve(crewId, userId)) &&
+      (await this.access.canReadLinkedWorkspace(crewId, userId));
+    if (!workspaceReader)
+      await this.authorization.require(crewId, userId, 'assets.view');
+    if (workspaceReader && !['all', 'recent'].includes(query.source))
+      throw new ForbiddenException(
+        'Only active Crew assets are shared with Studio.',
+      );
     if (query.source === 'all' && query.parentId) {
       await this.access.requireNodePermission(
         crewId,
@@ -261,6 +508,24 @@ export class CrewAssetsService {
         `
         : [];
     const where: Prisma.CrewAssetNodeWhereInput = {
+      ...(fromProject
+        ? {
+            AND: [
+              {
+                OR: [
+                  { kind: 'folder' },
+                  {
+                    mediaAsset: {
+                      status: 'ready',
+                      deletedAt: null,
+                      moderationStatus: { not: 'blocked' },
+                    },
+                  },
+                ],
+              },
+            ],
+          }
+        : {}),
       crewId,
       status:
         query.source === 'trash'

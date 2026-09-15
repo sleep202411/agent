@@ -1,3 +1,4 @@
+import { CrewAuthorizationService } from '../crew-authorization.service';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
@@ -6,8 +7,6 @@ import {
 } from '@repo/shared';
 import { randomUUID } from 'node:crypto';
 import type { PrismaService } from '../../infra/db/db.module';
-import { WorkspacePermissionService } from '../../workspaces/workspace-permission.service';
-import { CrewAuthorizationService } from '../crew-authorization.service';
 import { CrewProductionService } from './production.service';
 
 const databaseUrl =
@@ -97,180 +96,18 @@ suite('Studio linking authorization on PostgreSQL', () => {
     }
   });
 
-  it.each([
-    'crew',
-    'project',
-    'workspace',
-    'after-write',
-    'authorized',
-  ] as const)(
-    '%s authority preserves the link and activity transaction',
-    async (mode) => {
-      const crewId = randomUUID(),
-        ownerId = randomUUID(),
-        actorId = randomUUID(),
-        memberId = randomUUID();
-      const workspaceId = randomUUID(),
-        projectId = randomUUID();
-      let unlock: () => void = () => {};
-      let holder: Promise<unknown> | undefined;
-      let result: Promise<{ value?: unknown; error?: unknown }> | undefined;
-      const broadcast = jest.fn().mockResolvedValue(undefined);
-      try {
-        await db.crew.create({
-          data: {
-            id: crewId,
-            name: 'Link fixture',
-            description: '',
-            logo: 'fixture',
-            createdByUserId: ownerId,
-          },
-        });
-        await db.crewMember.create({
-          data: {
-            id: memberId,
-            crewId,
-            userId: actorId,
-            joinedVia: 'invitation',
-          },
-        });
-        await db.crewOwnership.create({ data: { crewId, memberId } });
-        await db.workspace.create({
-          data: {
-            id: workspaceId,
-            name: 'Link fixture',
-            ownerUserId: ownerId,
-            createdById: ownerId,
-          },
-        });
-        await db.platformProject.create({
-          data: {
-            id: projectId,
-            workspaceId,
-            name: 'Linked project',
-            createdById: ownerId,
-          },
-        });
-        if (mode === 'workspace') {
-          await db.workspaceMember.create({
-            data: {
-              workspaceId,
-              userId: actorId,
-              role: 'editor',
-              invitedById: ownerId,
-            },
-          });
-        } else {
-          await db.projectMember.create({
-            data: {
-              projectId,
-              userId: actorId,
-              role: 'editor',
-              grantedById: ownerId,
-            },
-          });
-        }
-        const client =
-          mode === 'after-write'
-            ? db.$extends({
-                query: {
-                  crew: {
-                    async update({ args, query }) {
-                      const value = await query(args);
-                      await db.projectMember.updateMany({
-                        where: { projectId, userId: actorId },
-                        data: { role: 'viewer' },
-                      });
-                      return value;
-                    },
-                  },
-                },
-              })
-            : db;
-        const service = new CrewProductionService(
-          client as PrismaService,
-          new CrewAuthorizationService(db as PrismaService),
-          {} as never,
-          { broadcastCrewTaskProjectChange: broadcast } as never,
-          new WorkspacePermissionService(db as PrismaService),
-        );
-        let ready!: (pid: number) => void;
-        const entered = new Promise<number>((resolve) => {
-          ready = resolve;
-        });
-        const release = new Promise<void>((resolve) => {
-          unlock = resolve;
-        });
-        holder = db.$transaction(
-          async (tx) => {
-            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-project:${crewId}`})::bigint)`;
-            const [row] = await tx.$queryRaw<
-              Array<{ pid: number }>
-            >`SELECT pg_backend_pid() AS pid`;
-            ready(row.pid);
-            await release;
-          },
-          { timeout: 15000 },
-        );
-        const pid = await entered;
-        result = service.linkStudioProject(crewId, actorId, { projectId }).then(
-          (value) => ({ value }),
-          (error) => ({ error: error as unknown }),
-        );
-        let waiting = false;
-        for (let i = 0; i < 200; i++) {
-          const [row] = await db.$queryRaw<
-            Array<{ waiting: boolean }>
-          >`SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE ${pid} = ANY(pg_blocking_pids(pid))) AS waiting`;
-          if (row.waiting) {
-            waiting = true;
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-        expect(waiting).toBe(true);
-        if (mode === 'crew')
-          await db.crewMember.update({
-            where: { id: memberId },
-            data: { status: 'removed', removedAt: new Date() },
-          });
-        if (mode === 'project')
-          await db.projectMember.updateMany({
-            where: { projectId, userId: actorId },
-            data: { role: 'viewer' },
-          });
-        if (mode === 'workspace')
-          await db.workspaceMember.updateMany({
-            where: { workspaceId, userId: actorId },
-            data: { role: 'viewer' },
-          });
-        unlock();
-        await holder;
-        const outcome = await result;
-        const crew = await db.crew.findUniqueOrThrow({ where: { id: crewId } });
-        const activities = await db.crewProductionActivity.count({
-          where: { crewId },
-        });
-        if (mode === 'authorized') {
-          expect(outcome).toHaveProperty('value');
-          expect(crew.studioProjectId).toBe(projectId);
-          expect(activities).toBe(1);
-          expect(broadcast).toHaveBeenCalledTimes(1);
-        } else {
-          expect(outcome).toMatchObject({ error: { status: 403 } });
-          expect(crew.studioProjectId).toBeNull();
-          expect(activities).toBe(0);
-          expect(broadcast).not.toHaveBeenCalled();
-        }
-      } finally {
-        unlock();
-        await holder;
-        await result;
-        await db.crewOwnership.deleteMany({ where: { crewId } });
-        await db.crew.deleteMany({ where: { id: crewId } });
-        await db.workspace.deleteMany({ where: { id: workspaceId } });
-      }
-    },
-    20000,
-  );
+  it('rejects legacy project-link writes without changing data', async () => {
+    const service = new CrewProductionService(
+      db as PrismaService,
+      { require: jest.fn().mockResolvedValue({}) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+    await expect(
+      service.linkStudioProject(randomUUID(), randomUUID(), {
+        projectId: randomUUID(),
+      }),
+    ).rejects.toThrow('Single-project linking has been replaced');
+  });
 });

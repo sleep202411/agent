@@ -100,7 +100,9 @@ function build() {
         { total: 100000000000n, used: 0n, reserved: 0n, unknown: 0n },
       ]),
     platformProject: {
+      findFirst: jest.fn().mockResolvedValue(null),
       findUnique: jest.fn().mockResolvedValue({
+        workspace: { studioCrew: null },
         productionCrew: null,
         crewTaskCanvas: {
           crew: { id: CREW_ID, name: 'Production crew', logo: '/crew.png' },
@@ -165,6 +167,7 @@ function build() {
   };
   const authorization = {
     require: jest.fn().mockResolvedValue(authorizationContext),
+    resolve: jest.fn().mockResolvedValue(authorizationContext),
   };
   const workspacePermissions = {
     requireProjectRole: jest.fn(),
@@ -226,10 +229,12 @@ describe('CrewAssetsService', () => {
   it('prefers the explicitly linked Studio crew over internal canvas ownership', async () => {
     const t = build();
     t.prisma.platformProject.findUnique.mockResolvedValue({
-      studioCrew: {
-        id: CREW_ID,
-        name: 'Linked Studio crew',
-        logo: '/linked-crew.png',
+      workspace: {
+        studioCrew: {
+          id: CREW_ID,
+          name: 'Linked Studio crew',
+          logo: '/linked-crew.png',
+        },
       },
       productionCrew: {
         id: 'internal-crew',
@@ -258,6 +263,7 @@ describe('CrewAssetsService', () => {
 
     const result = await t.service.projectContext(PROJECT_ID, USER_ID);
 
+    expect(result.canSaveFromCanvas).toBe(false);
     expect(t.workspacePermissions.requireProjectRole).toHaveBeenCalledWith(
       USER_ID,
       PROJECT_ID,

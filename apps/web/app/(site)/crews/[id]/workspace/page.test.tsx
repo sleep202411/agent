@@ -17,6 +17,7 @@ vi.mock("@/app/(site)/crews/_components/crew-unread-marker", () => ({
 
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import CrewWorkspacePage from "@/app/(crew-workspace)/crews/[id]/workspace/page";
@@ -70,6 +71,21 @@ vi.mock("next/link", () => ({
     <a href={href}>{children}</a>
   ),
 }));
+
+// The workbench header renders the Studio workspace link picker, whose
+// viewer identity and options query are out of scope for these URL/tab
+// routing tests.
+vi.mock("@/src/hooks/use-user", () => ({
+  useCurrentUser: () => ({ user: { id: "viewer" }, isLoading: false }),
+}));
+vi.mock(
+  "@/app/(site)/crews/[id]/workspace/_components/workbench/crew-studio-workspace-picker",
+  () => ({
+    // Structural stand-in: the header keeps this affordance mounted across
+    // surface switches — asserted below by its aria-label.
+    CrewStudioWorkspacePicker: () => <button aria-label="Link workspace" />,
+  })
+);
 
 // Real en-US copy, so a tab label that never landed in the message
 // files shows up as a bare `tabChat` and fails the queries below.
@@ -264,12 +280,25 @@ function render() {
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  act(() => root!.render(<CrewWorkspacePage />));
+  mount();
 }
 
 /** Re-mount against whatever the router wrote to the URL — a reload. */
 function reload() {
-  act(() => root!.render(<CrewWorkspacePage />));
+  mount();
+}
+
+function mount() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  act(() =>
+    root!.render(
+      <QueryClientProvider client={queryClient}>
+        <CrewWorkspacePage />
+      </QueryClientProvider>
+    )
+  );
 }
 
 function pane(): string | null {
@@ -363,7 +392,7 @@ describe("crew workspace tabs", () => {
       expect(document.querySelectorAll('header[aria-label="Crew header"]')).toHaveLength(1);
       expect(document.querySelector('header[aria-label="Crew header"]')).toBe(header);
       expect(header?.textContent).toContain(label);
-      expect(document.querySelectorAll('button[aria-label="Link Canvas"]')).toHaveLength(1);
+      expect(document.querySelectorAll('button[aria-label="Link workspace"]')).toHaveLength(1);
     }
   });
 

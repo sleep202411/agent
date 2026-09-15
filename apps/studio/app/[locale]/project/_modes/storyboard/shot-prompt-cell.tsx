@@ -36,7 +36,8 @@ export function ShotPromptCell({
   onNavigate?: (direction: "next" | "prev" | "down" | "up") => void;
 }) {
   const { owner } = useProjectContext();
-  const crewProjectId = owner.kind === "platform_project" ? owner.projectId : "";
+  const crewProjectId =
+    owner.kind === "platform_project" ? owner.projectId : `story:${owner.projectId}`;
   const { assets } = useProjectAssets(crewProjectId);
   const mentions = useMemo<MentionItem[]>(
     () => assets.map((asset) => projectAssetToMentionItem(asset, assets)),

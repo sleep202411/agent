@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import {
   Body,
   Controller,
@@ -278,6 +279,32 @@ export class ProjectCrewAssetsController {
         parseIdParam(projectIdRaw, 'projectId'),
         user.userId,
         query,
+      ),
+    };
+  }
+}
+
+@Controller('documents/:documentId/crew-assets')
+export class CanvasCrewAssetsController {
+  constructor(private readonly assets: CrewAssetsService) {}
+  @Post()
+  async save(
+    @Param('documentId', new ZodValidationPipe(z.string().uuid()))
+    documentId: string,
+    @CurrentUser() user: AuthUser,
+    @Body(
+      new ZodValidationPipe(
+        z.object({ mediaAssetId: z.string().uuid() }).strict(),
+      ),
+    )
+    body: { mediaAssetId: string },
+  ) {
+    return {
+      code: 200,
+      data: await this.assets.saveFromCanvas(
+        parseIdParam(documentId, 'documentId'),
+        user.userId,
+        parseIdParam(body?.mediaAssetId ?? '', 'mediaAssetId'),
       ),
     };
   }

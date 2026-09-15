@@ -9495,7 +9495,9 @@
     "notPlaying": "Not playing",
     "loadingChannel": "Loading next channel…",
     "episodeSelector": "Choose episode",
-    "preview": "IP preview"
+    "preview": "Trailer",
+    "lockedEpisode": "Locked",
+    "episodeAccess": "Open the IP page to check access to this episode."
   },
   "creatorEarnings": {
     "title": "Earnings",
@@ -9628,7 +9630,7 @@
     "awardPoints": "Verify contribution and award points",
     "previous": "Previous",
     "next": "Next",
-    "page": "Page {{page}}",
+    "page": "Page {page}",
     "saved": "Recorded",
     "contextRequired": "Describe the contribution, reason or handover with specific details.",
     "scheduleChanges": "Schedule changes"
@@ -9966,5 +9968,16 @@
     "options": "More options",
     "speed": "Playback speed",
     "normal": "Normal (1×)"
+  },
+  "crewWorkspaceLink": {
+    "link": "Link workspace",
+    "description": "Only Crew admins can link a workspace they own. Its projects can use shared Crew assets; restricted folders keep their permissions.",
+    "failed": "Could not save the workspace link.",
+    "retry": "Retry",
+    "search": "Search your workspaces",
+    "loading": "Loading workspaces…",
+    "empty": "No owned workspaces available",
+    "unlink": "Unlink workspace",
+    "open": "Open in Studio"
   }
 }

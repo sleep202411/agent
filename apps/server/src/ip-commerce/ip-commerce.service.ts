@@ -8336,6 +8336,34 @@ function regionDisplayLabel(
   return sharedRegionLabel(code, requestedLocale?.trim() || 'en-US');
 }
 
+/**
+ * Display-owner fallback chain: the authored copyright line wins; otherwise
+ * credit the creator via their public contributor snapshot. Derived purely
+ * from data the DTO already ships (no live Java user lookup — public list
+ * endpoints must not depend on session-scoped calls or extra fan-out), so
+ * guest viewers see a real name instead of "anonymous creator" whenever the
+ * optional copyright field was never filled. A private creator credit is
+ * never leaked; the display simply keeps its client-side fallback.
+ */
+export function resolveIpOwnerName(title: {
+  copyrightOwner?: string | null;
+  createdById?: string | null;
+  contributors: ReadonlyArray<{
+    userId: string | null;
+    displayName: string;
+    isPublic: boolean;
+  }>;
+}): string | null {
+  const owner = title.copyrightOwner?.trim();
+  if (owner) return owner;
+  if (!title.createdById) return null;
+  const creator = title.contributors.find(
+    (contributor) =>
+      contributor.userId === title.createdById && contributor.isPublic,
+  );
+  return creator?.displayName?.trim() || null;
+}
+
 function ipDto(
   title: IpWithCommerce,
   requestedLocale?: string | null,
@@ -8368,7 +8396,10 @@ function ipDto(
     sourceLocale: title.sourceLocale,
     localization: copy.meta,
     ...taxonomy,
-    copyrightOwner: title.copyrightOwner,
+    // Display-ready owner line: the authored copyright text, else the
+    // creator's public credit (see resolveIpOwnerName). Clients render
+    // this directly before any "anonymous" fallback.
+    copyrightOwner: resolveIpOwnerName(title),
     createdById: title.createdById,
     contributors: title.contributors.map((contributor) => ({
       id: contributor.id,

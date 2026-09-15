@@ -268,7 +268,7 @@ export function TvIpList({
                       </span>
                     )}
                     {item.genre && <span className="truncate">{item.genre}</span>}
-                    <IpProductionStage ipId={item.id} compact />
+                    <IpProductionStage ipId={item.id} compact showLabel />
                   </span>
                 </span>
                 {active && item.trailer && (

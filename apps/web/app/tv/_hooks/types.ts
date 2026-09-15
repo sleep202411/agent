@@ -11,9 +11,18 @@ export interface TvItem {
   description: string;
   cover: string;
   trailer: string;
+  trailerType?: string;
   ownerName: string;
   episodeCount: number;
-  episodes?: { id: string; number: number; title: string; video: string; published: boolean }[];
+  episodes?: {
+    id: string;
+    number: number;
+    title: string;
+    video: string;
+    videoType?: string;
+    published: boolean;
+    locked?: boolean;
+  }[];
   /** Operator "For you" placement — shown with a Hot stamp. */
   hot?: boolean;
 }

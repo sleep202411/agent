@@ -40,6 +40,7 @@ const RAIL_ICONS: Record<WorkspaceTabId, typeof IconHome> = {
 };
 
 interface CrewWorkbenchShellProps {
+  embedded?: boolean;
   activeChatChannel: "team" | "community";
   activeTab: WorkspaceTabId;
   tabs: readonly WorkspaceTab[];
@@ -57,6 +58,7 @@ interface CrewWorkbenchShellProps {
 }
 
 export function CrewWorkbenchShell({
+  embedded = false,
   activeChatChannel,
   activeTab,
   tabs,
@@ -79,8 +81,14 @@ export function CrewWorkbenchShell({
   const tc = useTranslations("crewCommunityChat");
   const hasChat = tabs.some((tab) => tab.id === "chat");
   return (
-    <div className="grid h-dvh min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)]">
+    <div
+      className={cn(
+        "grid min-h-0 grid-cols-[52px_minmax(0,1fr)] overflow-hidden bg-[#07080a] text-[#f5f5f6] md:grid-cols-[60px_220px_minmax(0,1fr)]",
+        embedded ? "h-full" : "h-dvh"
+      )}
+    >
       <CrewSwitcherRail
+        embedded={embedded}
         currentCrew={{ id: crewId, logo: crewLogo ?? "", name: crewName }}
         currentCrewHref={currentCrewHref}
       />
