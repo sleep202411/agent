@@ -178,6 +178,83 @@ jest.setTimeout(15000);
         await db.creatorService.findUnique({ where: { id } }),
       ).toMatchObject({ status: 'listed', version: 3 });
     });
+    it('rejects removal of a listed service’s last package without changing its fields', async () => {
+      await svc.publish(id, owner);
+      const before = await svc.detail(id, owner);
+      await expect(
+        svc.update(id, owner, {
+          title: 'Must not change',
+          packages: [],
+          requirementQuestions: [],
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(await svc.detail(id, owner)).toEqual(before);
+    });
+    it('allows empty paused drafts but requires a restored package before resuming', async () => {
+      const original = await svc.detail(id, owner);
+      await svc.publish(id, owner);
+      await svc.pause(id, owner);
+      const paused = await svc.update(id, owner, { packages: [] });
+      await expect(svc.resume(id, owner)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(await svc.detail(id, owner)).toEqual(paused);
+      await svc.update(id, owner, {
+        packages: CreateServiceSchema.parse({
+          title: original.title,
+          summary: original.summary,
+          category: original.category,
+          packages: [
+            {
+              tier: 'basic',
+              title: 'Restored',
+              description: 'Restored',
+              currency: 'CNY',
+              price: 10,
+              deliveryDays: 1,
+            },
+          ],
+        }).packages,
+      });
+      const resumed = await svc.resume(id, owner);
+      expect(resumed.status).toBe('listed');
+      expect(resumed.publishedAt).toEqual(paused.publishedAt);
+      expect(resumed.packages).toHaveLength(1);
+    });
+    it('rejects resume after a preceding paused edit removes the packages', async () => {
+      await svc.publish(id, owner);
+      await svc.pause(id, owner);
+      const results = await competing(
+        () => svc.update(id, owner, { packages: [] }),
+        () => svc.resume(id, owner),
+      );
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1]).toMatchObject({
+        status: 'rejected',
+        reason: expect.any(BadRequestException) as unknown,
+      });
+      expect(await svc.detail(id, owner)).toMatchObject({
+        status: 'paused',
+        version: 3,
+        packages: [],
+      });
+    });
+    it('rejects an empty edit after a preceding resume makes the service listed', async () => {
+      await svc.publish(id, owner);
+      await svc.pause(id, owner);
+      const results = await competing(
+        () => svc.resume(id, owner),
+        () => svc.update(id, owner, { packages: [] }),
+      );
+      expect(results[0].status).toBe('fulfilled');
+      expect(results[1]).toMatchObject({
+        status: 'rejected',
+        reason: expect.any(BadRequestException) as unknown,
+      });
+      const listed = await svc.detail(id, owner);
+      expect(listed).toMatchObject({ status: 'listed', version: 3 });
+      expect(listed.packages).toHaveLength(1);
+    });
     it('preserves ownership and missing-service denials', async () => {
       await expect(
         svc.update(id, randomUUID(), { title: 'Intruder' }),

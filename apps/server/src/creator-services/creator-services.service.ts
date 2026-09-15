@@ -22,7 +22,7 @@
  *
  *   draft   → listed   (publish, requires ≥ 1 package)
  *   listed  → paused   (pause)
- *   paused  → listed   (resume)
+ *   paused  → listed   (resume, requires ≥ 1 package)
  *   any     → archived (archive — one-way; soft-delete)
  *
  *   first publish sets `publishedAt`; subsequent pause/resume leave
@@ -241,8 +241,15 @@ export class CreatorServicesService {
     const row = await this.prisma.$transaction(async (tx) => {
       const existing = await this.requireOwned(id, actorId, tx);
       this.assertVersionMatches(existing, input.expectedVersion);
-      if (input.packages !== undefined)
+      if (input.packages !== undefined) {
         this.assertPackagesValid(input.packages);
+        if (existing.status === 'listed' && input.packages.length === 0) {
+          throw new BadRequestException({
+            message: 'Pause the service before removing its last package',
+            field: 'packages',
+          });
+        }
+      }
       await tx.creatorService.update({
         where: { id },
         data: {
@@ -319,15 +326,7 @@ export class CreatorServicesService {
       if (existing.status === 'archived') {
         throw new ConflictException('archived services cannot be republished');
       }
-      const pkgCount = await tx.servicePackage.count({
-        where: { serviceId: id },
-      });
-      if (pkgCount === 0) {
-        throw new BadRequestException({
-          message: 'Cannot publish a service with no packages',
-          field: 'packages',
-        });
-      }
+      await this.requirePackage(id, tx);
       await tx.creatorService.update({
         where: { id },
         data: {
@@ -362,6 +361,7 @@ export class CreatorServicesService {
       if (existing.status !== 'paused') {
         throw new ConflictException('only paused services can be resumed');
       }
+      await this.requirePackage(id, tx);
       await tx.creatorService.update({
         where: { id },
         data: { status: 'listed', version: { increment: 1 } },
@@ -392,6 +392,16 @@ export class CreatorServicesService {
   }
 
   // ─── Helpers ─────────────────────────────────────────────
+
+  private async requirePackage(id: string, tx: Prisma.TransactionClient) {
+    const count = await tx.servicePackage.count({ where: { serviceId: id } });
+    if (count === 0) {
+      throw new BadRequestException({
+        message: 'Cannot publish a service with no packages',
+        field: 'packages',
+      });
+    }
+  }
 
   private async requireOwned(
     id: string,
