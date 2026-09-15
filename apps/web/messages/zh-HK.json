@@ -7767,6 +7767,7 @@
     "proposalSentToast": "報價已傳送。",
     "proposalSendFailed": "傳送報價失敗。",
     "proposalPriceInvalid": "請填寫有效價格。",
+    "proposalNumberInvalid": "請為{field}輸入允許範圍內的整數。",
     "proposalScopePlaceholder": "一行一條，列出包含內容。",
     "proposalScopeHint": "會展示在報價卡片上，寫具體一點。",
     "proposalNoteLabel": "備註（可選）",

@@ -7767,6 +7767,7 @@
     "proposalSentToast": "报价已发送。",
     "proposalSendFailed": "发送报价失败。",
     "proposalPriceInvalid": "请填写有效价格。",
+    "proposalNumberInvalid": "请为{field}输入允许范围内的整数。",
     "proposalScopePlaceholder": "一行一条，列出包含内容。",
     "proposalScopeHint": "会展示在报价卡片上，写具体一点。",
     "proposalNoteLabel": "备注（可选）",

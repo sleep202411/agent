@@ -7767,6 +7767,7 @@
     "proposalSentToast": "Proposal sent.",
     "proposalSendFailed": "Failed to send proposal.",
     "proposalPriceInvalid": "Enter a valid price.",
+    "proposalNumberInvalid": "Enter a whole number within the allowed range for {field}.",
     "proposalScopePlaceholder": "One bullet per line. What's included.",
     "proposalScopeHint": "Visible on the proposal card. Keep it concrete.",
     "proposalNoteLabel": "Note (optional)",
