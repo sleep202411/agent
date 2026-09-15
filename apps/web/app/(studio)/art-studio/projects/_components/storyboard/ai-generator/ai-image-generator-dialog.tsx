@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   IconArrowsMaximize,
   IconBrush,
@@ -27,6 +27,7 @@ import type { ToolbarAction } from "@/components/ui/floating-toolbar";
 import { MediaPreviewPanel } from "./media-preview-panel";
 import { PromptInput } from "./prompt-input";
 import { usePromptAutosave } from "./use-prompt-autosave";
+import { useEpisodePromptAutosave } from "./use-episode-prompt-autosave";
 import {
   ReferenceMapProvider,
   type ReferenceMap,
@@ -37,7 +38,6 @@ import {
   removeMentionsByUrls,
 } from "@/app/(studio)/art-studio/projects/_components/storyboard/editor/build-reference-map";
 import { ResultGallery } from "./result-gallery";
-import { backendApi } from "@/src/lib/api";
 import { submitImageTask, retryImageTask } from "@/src/lib/ai-image-queue";
 import { useTranslations } from "@/src/i18n/i18n";
 import { useAppSelector } from "@/src/store";
@@ -54,7 +54,6 @@ import {
   type ResultItem,
   selectActiveEpisode as selectActiveProjectEpisode,
   selectCurrentInstance,
-  setEpisodes,
 } from "@/src/store/slices/projectSlice";
 
 interface AiImageGeneratorDialogProps {
@@ -105,45 +104,16 @@ export function AiImageGeneratorDialog({
   const [imageMode, setImageMode] = useState("imageGenerate");
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
 
-  const promptSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Sync from store when episode prompts change externally
+  const episodeAutosave = useEpisodePromptAutosave();
+  const saveEpisodePrompts = episodeAutosave.schedule;
   const storeFront = String(activeEpisode?.frontPrompt ?? "");
   const storeBehind = String(activeEpisode?.behindPrompt ?? "");
   useEffect(() => {
-    if (!promptSaveTimerRef.current) setPrefixPrompt(storeFront);
-  }, [storeFront]);
+    if (!episodeAutosave.isPending()) setPrefixPrompt(storeFront);
+  }, [storeFront, activeEpisode?.id, episodeAutosave]);
   useEffect(() => {
-    if (!promptSaveTimerRef.current) setSuffixPrompt(storeBehind);
-  }, [storeBehind]);
-
-  const saveEpisodePrompts = useCallback((front: string, behind: string) => {
-    if (promptSaveTimerRef.current) clearTimeout(promptSaveTimerRef.current);
-    promptSaveTimerRef.current = setTimeout(() => {
-      const episode = selectActiveProjectEpisode(store.getState());
-      if (!episode?.id) return;
-      store.dispatch(
-        setEpisodes(
-          selectCurrentInstance(store.getState()).episodes.map((item) =>
-            String(item.id ?? "") === String(episode.id)
-              ? { ...item, frontPrompt: front.trim(), behindPrompt: behind.trim() }
-              : item
-          )
-        )
-      );
-      const projectId = selectCurrentInstance(store.getState()).detail?.id;
-      backendApi
-        .post("/api/user/world/update/episode", {
-          data: {
-            id: episode.id,
-            projectId,
-            frontPrompt: front.trim(),
-            behindPrompt: behind.trim(),
-          },
-        })
-        .catch((err) => console.warn("[AiImageGeneratorDialog] save prompts failed:", err));
-    }, 500);
-  }, []);
+    if (!episodeAutosave.isPending()) setSuffixPrompt(storeBehind);
+  }, [storeBehind, activeEpisode?.id, episodeAutosave]);
 
   const handlePrefixChange = (value: string) => {
     setPrefixPrompt(value);
