@@ -1,3 +1,4 @@
+import { workspaceTestDatabase } from './__tests__/workspace-test-database';
 import { StoryProjectsService } from '../../story-studio/story-projects.service';
 import { StoryCrewAssetsController } from '../assets/story-crew-assets.controller';
 import { StoryPermissionService } from '../../story-studio/story-permission.service';
@@ -15,7 +16,7 @@ import { CrewAssetsService } from '../assets/assets.service';
 import { CrewProductionService } from './production.service';
 import { CrewStudioWorkspaceService } from './studio-workspace.service';
 
-const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
+const url = workspaceTestDatabase(process.env);
 (url ? describe : describe.skip)(
   'Crew workspace asset loop (PostgreSQL)',
   () => {
@@ -33,13 +34,6 @@ const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
     let assets: CrewAssetsService;
     let access: CrewAssetAccessService;
     beforeAll(async () => {
-      const target = new URL(url!);
-      if (
-        target.hostname !== '127.0.0.1' ||
-        target.port !== '55480' ||
-        target.pathname !== '/crew_workspace_loop_test'
-      )
-        throw new Error('Dedicated local Crew database required');
       db = new PrismaClient({
         adapter: new PrismaPg({ connectionString: url }),
         transactionOptions: { timeout: 15000 },
@@ -124,10 +118,13 @@ const url = process.env.CREW_WORKSPACE_TEST_DATABASE_URL;
     });
     afterAll(async () => {
       if (!db) return;
-      await db.crew.deleteMany({ where: { id: crewId } });
-      await db.mediaAsset.deleteMany({ where: { id: mediaId } });
-      await db.workspace.deleteMany({ where: { id: workspaceId } });
-      await db.$disconnect();
+      try {
+        await db.crew.deleteMany({ where: { id: crewId } });
+        await db.mediaAsset.deleteMany({ where: { id: mediaId } });
+        await db.workspace.deleteMany({ where: { id: workspaceId } });
+      } finally {
+        await db.$disconnect();
+      }
     });
     it('allows only a Crew admin who owns the workspace and audits the link', async () => {
       await expect(links.link(crewId, reader, workspaceId)).rejects.toThrow();
