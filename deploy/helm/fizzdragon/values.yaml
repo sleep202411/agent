@@ -394,7 +394,7 @@ server:
   # Graceful drain window: the preStop sleep deregisters the pod from the Service,
   # then the WS gateway closes sockets so clients reconnect to a healthy pod.
   terminationGracePeriodSeconds: 45
-  migrateOnStart: false
+  migrateOnStart: true
   migrationJob:
     enabled: false
     revision: ""
