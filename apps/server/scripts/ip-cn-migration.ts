@@ -21,12 +21,10 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { PrismaClient, IpContributorRole } from '@prisma/client';
 import mysql from 'mysql2/promise';
 import { config as loadDotenv } from 'dotenv';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '../../..');
 loadDotenv({
   path: resolve(repoRoot, 'apps/server/.env.legacy.cn.local'),
@@ -435,7 +433,8 @@ async function push(opts: {
     return;
   }
 
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma: PrismaClient = buildPrisma();
@@ -768,7 +767,8 @@ function parseArgs(argv: string[]) {
   return o;
 }
 async function checkPg() {
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma: PrismaClient = buildPrisma();
@@ -794,7 +794,8 @@ async function checkPg() {
 // Clears import-owned rows so a re-run starts clean. Safe only because the
 // ip-commerce target was verified EMPTY before the first write.
 async function reset() {
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma: PrismaClient = buildPrisma();
@@ -816,7 +817,8 @@ async function reset() {
 // Counts rows matching the live public-feed filter (PUBLIC_IP_STATUSES +
 // listingVisibility=public + a published localization) — should equal 69.
 async function verify() {
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma: PrismaClient = buildPrisma();

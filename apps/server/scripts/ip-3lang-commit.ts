@@ -109,7 +109,8 @@ async function main() {
   const container = process.env.AZURE_BLOB_CONTAINER?.trim();
   if (!container) throw new Error('AZURE_BLOB_CONTAINER unset');
 
-  const { buildPrisma } = (await import('../src/infra/db/db.module')) as {
+  const { buildPrisma } = (await import('../src/infra/db/db.module.js'))
+    .default as {
     buildPrisma: () => PrismaClient;
   };
   const prisma = buildPrisma();
