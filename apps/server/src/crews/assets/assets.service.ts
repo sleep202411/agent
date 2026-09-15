@@ -122,11 +122,18 @@ export class CrewAssetsService {
         },
         workspace: {
           select: {
-            studioCrew: { select: { id: true, name: true, logo: true } },
+            studioCrew: {
+              where: { deletedAt: null },
+              select: { id: true, name: true, logo: true },
+            },
           },
         },
-        productionCrew: { select: { id: true, name: true, logo: true } },
+        productionCrew: {
+          where: { deletedAt: null },
+          select: { id: true, name: true, logo: true },
+        },
         crewTaskCanvas: {
+          where: { deletedAt: null, crew: { deletedAt: null } },
           select: {
             crew: { select: { id: true, name: true, logo: true } },
           },

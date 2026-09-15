@@ -150,6 +150,105 @@ const url = workspaceTestDatabase(process.env);
         1,
       );
     });
+    it('removes deleted Crew context from every linked workspace project', async () => {
+      await db.crew.update({
+        where: { id: crewId },
+        data: { deletedAt: new Date() },
+      });
+      try {
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+        expect(
+          (await assets.projectContext(otherProjectId, reader)).crew,
+        ).toBeNull();
+        await expect(
+          assets.listForProject(otherProjectId, reader, {
+            source: 'all',
+            sort: 'modified',
+          }),
+        ).rejects.toThrow();
+      } finally {
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: null },
+        });
+      }
+    });
+    it('ignores deleted internal-production Crew links without affecting project access', async () => {
+      await db.crew.update({
+        where: { id: crewId },
+        data: { studioWorkspaceId: null, productionProjectId: projectId },
+      });
+      try {
+        expect((await assets.projectContext(projectId, owner)).crew?.id).toBe(
+          crewId,
+        );
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: new Date() },
+        });
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+      } finally {
+        await db.crew.update({
+          where: { id: crewId },
+          data: {
+            deletedAt: null,
+            productionProjectId: null,
+            studioWorkspaceId: workspaceId,
+          },
+        });
+      }
+    });
+    it('ignores deleted task and Crew associations for a task Canvas', async () => {
+      const state = await db.crewTaskWorkflowState.create({
+        data: {
+          crewId,
+          name: 'Fixture',
+          color: '#ffffff',
+          semantic: 'open',
+          createdByUserId: owner,
+        },
+      });
+      const task = await db.crewTask.create({
+        data: {
+          crewId,
+          number: 100,
+          title: 'Fixture task',
+          workflowStateId: state.id,
+          canvasProjectId: projectId,
+          createdByUserId: owner,
+        },
+      });
+      await db.crew.update({
+        where: { id: crewId },
+        data: { studioWorkspaceId: null },
+      });
+      try {
+        expect((await assets.projectContext(projectId, owner)).crew?.id).toBe(
+          crewId,
+        );
+        await db.crewTask.update({
+          where: { id: task.id },
+          data: { deletedAt: new Date() },
+        });
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+        await db.crewTask.update({
+          where: { id: task.id },
+          data: { deletedAt: null },
+        });
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: new Date() },
+        });
+        expect((await assets.projectContext(projectId, owner)).crew).toBeNull();
+      } finally {
+        await db.crewTask.delete({ where: { id: task.id } });
+        await db.crewTaskWorkflowState.delete({ where: { id: state.id } });
+        await db.crew.update({
+          where: { id: crewId },
+          data: { deletedAt: null, studioWorkspaceId: workspaceId },
+        });
+      }
+    });
     it('concurrent canvas saves reuse one named folder and one file, visible from a second project', async () => {
       const results = await Promise.all(
         Array.from({ length: 4 }, () =>
