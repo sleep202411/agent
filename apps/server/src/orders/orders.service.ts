@@ -89,72 +89,6 @@ export class OrdersService {
     buyerId: string,
     input: SubmitOrderInput,
   ): Promise<ServiceOrder> {
-    const service = await this.prisma.creatorService.findUnique({
-      where: { id: input.serviceId },
-      select: {
-        id: true,
-        creatorId: true,
-        status: true,
-        deletedAt: true,
-        title: true,
-      },
-    });
-    if (!service || service.deletedAt) {
-      throw new NotFoundException('Service not found');
-    }
-    if (service.status !== 'listed') {
-      throw new ConflictException('Service is not currently accepting orders');
-    }
-    if (service.creatorId === buyerId) {
-      throw new BadRequestException('Cannot order your own service');
-    }
-
-    // Idempotent retry: if (buyer, idempotencyKey) already maps to
-    // an order, return it without re-creating. The partial-unique
-    // index in the migration also gives us DB-level protection
-    // against a race that beats this check.
-    if (input.idempotencyKey) {
-      const existing = await this.prisma.serviceOrder.findFirst({
-        where: { buyerId, idempotencyKey: input.idempotencyKey },
-      });
-      if (existing) return existing;
-    }
-
-    const pkg = await this.prisma.servicePackage.findFirst({
-      where: { serviceId: service.id, tier: input.packageTier },
-    });
-    if (!pkg) {
-      throw new BadRequestException(
-        `Package tier '${input.packageTier}' not offered for this service`,
-      );
-    }
-
-    // Materialize the questionnaire snapshot from current service
-    // questions + buyer answers.
-    const questions = await this.prisma.serviceRequirementQuestion.findMany({
-      where: { serviceId: service.id },
-      orderBy: { displayOrder: 'asc' },
-    });
-    const answerById = new Map(
-      input.answers.map((a) => [a.questionId, a.answer]),
-    );
-    const questionnaire: OrderQuestionnaireEntry[] = questions.map((q) => ({
-      prompt: q.prompt,
-      required: q.required,
-      answer: (answerById.get(q.id) ?? '').trim(),
-    }));
-    for (const entry of questionnaire) {
-      if (entry.required && entry.answer.length === 0) {
-        throw new BadRequestException({
-          message: `Required answer missing: ${entry.prompt}`,
-          field: 'answers',
-        });
-      }
-    }
-
-    this.assertBindingsBelongToBuyer(buyerId, input.bindings);
-
-    const snapshot = packageToSnapshot(pkg);
     const orderId = newShortId();
 
     // Collect WS broadcasts to fire AFTER $transaction commits so a
@@ -165,6 +99,81 @@ export class OrdersService {
 
     const order = await this.prisma
       .$transaction(async (tx) => {
+        // One buyer/service inquiry becomes one order at a time. Subsequent
+        // deliberate orders open a fresh inquiry after the first one evolves.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`service-order:${buyerId}:${input.serviceId}`}, 0))`;
+        // Owner edits take FOR UPDATE on this row. Read availability, package
+        // and questionnaire only after admission, preserving one coherent offer.
+        await tx.$queryRaw`SELECT id FROM creator_services WHERE id = ${input.serviceId} FOR SHARE`;
+        const service = await tx.creatorService.findUnique({
+          where: { id: input.serviceId },
+          select: {
+            id: true,
+            creatorId: true,
+            status: true,
+            deletedAt: true,
+            title: true,
+          },
+        });
+        if (!service || service.deletedAt) {
+          throw new NotFoundException('Service not found');
+        }
+        if (service.status !== 'listed') {
+          throw new ConflictException(
+            'Service is not currently accepting orders',
+          );
+        }
+        if (service.creatorId === buyerId) {
+          throw new BadRequestException('Cannot order your own service');
+        }
+
+        // Idempotent retry: if (buyer, idempotencyKey) already maps to
+        // an order, return it without re-creating. The partial-unique
+        // index in the migration also gives us DB-level protection
+        // against a race that beats this check.
+        if (input.idempotencyKey) {
+          const existing = await tx.serviceOrder.findFirst({
+            where: { buyerId, idempotencyKey: input.idempotencyKey },
+          });
+          if (existing) return existing;
+        }
+
+        const pkg = await tx.servicePackage.findFirst({
+          where: { serviceId: service.id, tier: input.packageTier },
+        });
+        if (!pkg) {
+          throw new BadRequestException(
+            `Package tier '${input.packageTier}' not offered for this service`,
+          );
+        }
+
+        // Materialize the questionnaire snapshot from current service
+        // questions + buyer answers.
+        const questions = await tx.serviceRequirementQuestion.findMany({
+          where: { serviceId: service.id },
+          orderBy: { displayOrder: 'asc' },
+        });
+        const answerById = new Map(
+          input.answers.map((a) => [a.questionId, a.answer]),
+        );
+        const questionnaire: OrderQuestionnaireEntry[] = questions.map((q) => ({
+          prompt: q.prompt,
+          required: q.required,
+          answer: (answerById.get(q.id) ?? '').trim(),
+        }));
+        for (const entry of questionnaire) {
+          if (entry.required && entry.answer.length === 0) {
+            throw new BadRequestException({
+              message: `Required answer missing: ${entry.prompt}`,
+              field: 'answers',
+            });
+          }
+        }
+
+        this.assertBindingsBelongToBuyer(buyerId, input.bindings);
+
+        const snapshot = packageToSnapshot(pkg);
+
         // 1. Open the inquiry conversation (or resume an existing one
         //    for this triple — likely cold but allow warm).
         const conv = await this.conversations.openServiceConversation(
@@ -244,7 +253,13 @@ export class OrdersService {
           const existing = await this.prisma.serviceOrder.findFirst({
             where: { buyerId, idempotencyKey: input.idempotencyKey },
           });
-          if (existing) return existing;
+          if (existing) {
+            // These arrays belong to the failed transaction, not the winning
+            // order. Its rolled-back messages must never reach realtime clients.
+            pendingMessages.length = 0;
+            pendingContextChanges.length = 0;
+            return existing;
+          }
         }
         throw err;
       });
@@ -651,17 +666,6 @@ export class OrdersService {
     }
   }
 
-  /**
-   * Best-effort existence check on FD-binding ids the buyer
-   * provided. Some of these tables are Java-owned, so we don't
-   * have direct FK enforcement — we validate the buyer's right to
-   * bind here.
-   *
-   * Phase 1b: accept any non-empty string. Hardening (look up the
-   * IP/episode/crew and verify the buyer's permission to bind) is
-   * tracked as follow-up — these are optional fields today, so a
-   * bad value is at worst a dangling pointer.
-   */
   /**
    * Phase 1b: bindings are rejected at the Zod layer via
    * `BindingsSchema.refine` in dto.ts, so by the time we reach
