@@ -112,7 +112,11 @@ export default function IpDiscoveryScreen() {
   const browseVersion = useBrowseVersion();
   const hasDataRef = useRef(restored !== undefined);
   // Stops a fling from queuing a second page-2 fetch before the first resolves.
-  const loadingMoreRef = useRef(false);
+  const loadingMoreRef = useRef<object | null>(null);
+  const loadSequenceRef = useRef(0);
+  const gridSequenceRef = useRef(0);
+  const replacingGridRef = useRef(false);
+  const loadedGenreRef = useRef<string | undefined>(undefined);
 
   const selectedGenreCode = genreIndex > 0 ? genres[genreIndex - 1]?.code : undefined;
   const activeGenreLabel =
@@ -122,93 +126,109 @@ export default function IpDiscoveryScreen() {
     [genres, t]
   );
 
-  // First page of the grid for the active genre. Featured/trending come from
-  // discovery and are only refreshed on a full (re)load, not on genre switch.
-  const loadGridFirstPage = useCallback(async (genreCode: string | undefined) => {
-    const page = await getIpCatalogPage({ genreCode, limit: PAGE_SIZE });
-    setGridIps(page.items);
-    setNextCursor(page.nextCursor);
-    // The taxonomy list rides along with each catalog page.
-    if (page.genres.length) setGenres(page.genres);
-    return page;
-  }, []);
-
   const load = useCallback(async () => {
-    // Skeleton only when there is nothing to show yet — refetches (locale
-    // switch, browse invalidation) swap the lists in place.
+    const seq = ++loadSequenceRef.current;
+    const gridSeq = ++gridSequenceRef.current;
+    const locale = getLocale();
+    replacingGridRef.current = true;
+    loadingMoreRef.current = null;
+    setLoadingMore(false);
+    setRefreshing(false);
     setLoading(hasDataRef.current === false);
     setError(undefined);
     try {
       const [data, page, gameList] = await Promise.all([
         getIpDiscovery(),
-        loadGridFirstPage(selectedGenreCode),
+        getIpCatalogPage({ genreCode: selectedGenreCode, limit: PAGE_SIZE }),
         listPublishedInteractiveFilms({ page: 1, pageSize: GAMES_RAIL_SIZE }).catch(
           () => [] as ExperienceGameSummary[]
         ),
       ]);
+      if (seq !== loadSequenceRef.current) return;
       hasDataRef.current = true;
       setDiscovery(data);
       setGames(gameList);
-      // Prefer the discovery taxonomy (full list) once it lands.
-      const taxonomy = data.genres.length ? data.genres : page.genres;
-      if (data.genres.length) setGenres(data.genres);
-      // Only the unfiltered view is restorable — a remount always starts there.
-      if (!selectedGenreCode) {
-        homeSnapshot = {
-          locale: getLocale(),
-          discovery: data,
-          games: gameList,
-          gridIps: page.items,
-          genres: taxonomy,
-          nextCursor: page.nextCursor,
-        };
+      // A genre selection made during this full read owns the grid independently.
+      if (gridSeq === gridSequenceRef.current) {
+        loadedGenreRef.current = selectedGenreCode;
+        setGridIps(page.items);
+        setNextCursor(page.nextCursor);
+        const taxonomy = data.genres.length ? data.genres : page.genres;
+        if (taxonomy.length) setGenres(taxonomy);
+        if (!selectedGenreCode) {
+          homeSnapshot = {
+            locale,
+            discovery: data,
+            games: gameList,
+            gridIps: page.items,
+            genres: taxonomy,
+            nextCursor: page.nextCursor,
+          };
+        }
       }
     } catch (loadError) {
-      // A failed background refetch keeps the list we already have; the
-      // full-screen error is reserved for an empty first load.
-      if (!hasDataRef.current) {
+      if (seq === loadSequenceRef.current && !hasDataRef.current) {
         setError(loadError instanceof Error ? loadError.message : t("home.loadError"));
       }
     } finally {
-      setLoading(false);
+      if (seq === loadSequenceRef.current) setLoading(false);
+      if (gridSeq === gridSequenceRef.current) replacingGridRef.current = false;
     }
-  }, [loadGridFirstPage, selectedGenreCode, t]);
+  }, [selectedGenreCode, t]);
 
   useEffect(() => {
+    // Starts the locale/version-bound network read and resets its loading indicators.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
-    // `load` intentionally excluded: it closes over selectedGenreCode, but the
-    // genre switch is handled by its own effect below to avoid refetching the
-    // carousel + rail on every chip tap.
+    return () => {
+      loadSequenceRef.current += 1;
+      gridSequenceRef.current += 1;
+      loadingMoreRef.current = null;
+      replacingGridRef.current = false;
+    };
+    // Genre changes reload only the grid in the effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [browseVersion, t]);
 
-  // Genre switch → reload just the grid (keep the carousel + rail in place).
-  const didMountRef = useRef(false);
+  const previousGenreRef = useRef(selectedGenreCode);
   useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
-    let alive = true;
+    if (previousGenreRef.current === selectedGenreCode) return;
+    previousGenreRef.current = selectedGenreCode;
+    const seq = ++gridSequenceRef.current;
+    replacingGridRef.current = true;
+    loadingMoreRef.current = null;
+    // Discard the abandoned page indicator while this filter read replaces its list.
+    setLoadingMore(false);
     async function swapGrid() {
       try {
         const page = await getIpCatalogPage({ genreCode: selectedGenreCode, limit: PAGE_SIZE });
-        if (!alive) return;
+        if (seq !== gridSequenceRef.current) return;
+        loadedGenreRef.current = selectedGenreCode;
         setGridIps(page.items);
         setNextCursor(page.nextCursor);
       } catch {
-        // Keep the current grid on a failed genre switch.
+        // Keep the current grid; its old cursor cannot be used with the new genre.
+      } finally {
+        if (seq === gridSequenceRef.current) replacingGridRef.current = false;
       }
     }
     void swapGrid();
     return () => {
-      alive = false;
+      if (seq === gridSequenceRef.current) gridSequenceRef.current += 1;
     };
   }, [selectedGenreCode]);
 
   const loadMore = useCallback(async () => {
-    if (!nextCursor || loadingMoreRef.current) return;
-    loadingMoreRef.current = true;
+    if (
+      !nextCursor ||
+      replacingGridRef.current ||
+      loadingMoreRef.current ||
+      loadedGenreRef.current !== selectedGenreCode
+    )
+      return;
+    const seq = gridSequenceRef.current;
+    const operation = {};
+    loadingMoreRef.current = operation;
     setLoadingMore(true);
     try {
       const page = await getIpCatalogPage({
@@ -216,23 +236,37 @@ export default function IpDiscoveryScreen() {
         genreCode: selectedGenreCode,
         limit: PAGE_SIZE,
       });
+      if (seq !== gridSequenceRef.current) return;
       setGridIps((current) => {
         const seen = new Set(current.map((ip) => ip.id));
-        return [...current, ...page.items.filter((ip) => !seen.has(ip.id))];
+        return [
+          ...current,
+          ...page.items.filter((ip) => {
+            if (seen.has(ip.id)) return false;
+            seen.add(ip.id);
+            return true;
+          }),
+        ];
       });
       setNextCursor(page.nextCursor);
+    } catch {
+      // Keep the grid and cursor for the next pagination retry.
     } finally {
-      loadingMoreRef.current = false;
-      setLoadingMore(false);
+      if (loadingMoreRef.current === operation) {
+        loadingMoreRef.current = null;
+        setLoadingMore(false);
+      }
     }
   }, [nextCursor, selectedGenreCode]);
 
   const onRefresh = useCallback(async () => {
+    const pending = load();
+    const seq = loadSequenceRef.current;
     setRefreshing(true);
     try {
-      await load();
+      await pending;
     } finally {
-      setRefreshing(false);
+      if (seq === loadSequenceRef.current) setRefreshing(false);
     }
   }, [load]);
 
