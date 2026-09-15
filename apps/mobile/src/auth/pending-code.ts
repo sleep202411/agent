@@ -10,6 +10,7 @@
 
 import { deleteStoredString, getStoredString, setStoredString } from "@/lib/persistent-storage";
 
+import { withCodeStorage } from "./code-storage-queue";
 import { readResendDeadline } from "./resend-clock";
 import type { NormalizedIdentifier } from "./auth-service";
 
@@ -23,12 +24,15 @@ export type PendingCode = {
 };
 
 let pending: PendingCode | null = null;
+let revision = 0;
 let hydratePromise: Promise<void> | undefined;
 
 export async function hydratePendingCode(): Promise<void> {
   if (!hydratePromise) {
     hydratePromise = (async () => {
-      const raw = await getStoredString(STORAGE_KEY);
+      const owner = revision;
+      const raw = await withCodeStorage(() => getStoredString(STORAGE_KEY));
+      if (revision !== owner) return;
       if (!raw) return;
       try {
         pending = parse(JSON.parse(raw));
@@ -42,18 +46,29 @@ export async function hydratePendingCode(): Promise<void> {
 
 export function readPendingCode(now: number = Date.now()): PendingCode | null {
   if (readResendDeadline() > now) return pending;
-  clearPendingCode();
+  if (pending !== null) clearPendingCode();
   return null;
 }
 
 export function writePendingCode(next: PendingCode): void {
-  pending = next;
-  void setStoredString(STORAGE_KEY, JSON.stringify(next)).catch(() => undefined);
+  revision += 1;
+  pending = { mode: next.mode, account: { ...next.account } };
+  const serialized = JSON.stringify(pending);
+  void withCodeStorage(() => setStoredString(STORAGE_KEY, serialized)).catch(() => undefined);
 }
 
 export function clearPendingCode(): void {
+  revision += 1;
   pending = null;
-  void deleteStoredString(STORAGE_KEY).catch(() => undefined);
+  void withCodeStorage(() => deleteStoredString(STORAGE_KEY)).catch(() => undefined);
+}
+
+/** A send accepted after login/clear must not resurrect an old pending identity. */
+export function capturePendingCodeRecorder() {
+  const owner = revision;
+  return (next: PendingCode) => {
+    if (revision === owner) writePendingCode(next);
+  };
 }
 
 function parse(value: unknown): PendingCode | null {
