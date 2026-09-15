@@ -157,29 +157,29 @@ export class IpGameAssociationController {
   constructor(private readonly links: IpGameAssociationService) {}
   @Get('me/ips/:ipId/owned-games')
   @Header('Cache-Control', 'private, no-store')
-  candidates(
+  async candidates(
     @CurrentUser() u: AuthUser,
     @Param('ipId', ParseUUIDPipe) ipId: string,
     @Query(new ZodValidationPipe(pageSchema)) q: z.infer<typeof pageSchema>,
   ) {
-    return this.links.candidates(ipId, u, q.cursor);
+    return { code: 200, ...(await this.links.candidates(ipId, u, q.cursor)) };
   }
   @Post('me/ips/:ipId/games/:gameId')
-  save(
+  async save(
     @CurrentUser() u: AuthUser,
     @Param('ipId', ParseUUIDPipe) ipId: string,
     @Param('gameId', ParseUUIDPipe) gameId: string,
     @Body(new ZodValidationPipe(saveSchema)) b: z.infer<typeof saveSchema>,
   ) {
-    return this.links.save(ipId, gameId, u, b);
+    return { code: 200, ...(await this.links.save(ipId, gameId, u, b)) };
   }
   @Public()
   @Get('games/:gameId/ip')
   @Header('Cache-Control', 'private, no-store')
-  resolve(
+  async resolve(
     @Param('gameId', ParseUUIDPipe) gameId: string,
     @CurrentUser() u?: AuthUser,
   ) {
-    return this.links.resolve(gameId, u);
+    return { code: 200, ...(await this.links.resolve(gameId, u)) };
   }
 }

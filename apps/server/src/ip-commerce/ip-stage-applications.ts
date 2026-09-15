@@ -173,19 +173,19 @@ export class IpStageApplicationsService {
 @Controller('ip-commerce/me/ips/:ipId/stage-applications')
 export class IpStageApplicationsController {
   constructor(private readonly service: IpStageApplicationsService) {}
-  @Get() list(
+  @Get() async list(
     @Param(new ZodValidationPipe(Params)) p: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.service.list(p.ipId, user);
+    return { code: 200, ...(await this.service.list(p.ipId, user)) };
   }
-  @Post() submit(
+  @Post() async submit(
     @Param(new ZodValidationPipe(Params)) p: z.infer<typeof Params>,
     @CurrentUser() user: AuthUser,
     @Body(new ZodValidationPipe(StageApplicationInput))
     input: z.infer<typeof StageApplicationInput>,
   ) {
-    return this.service.submit(p.ipId, user, input);
+    return { code: 200, ...(await this.service.submit(p.ipId, user, input)) };
   }
 }
 @Public()
