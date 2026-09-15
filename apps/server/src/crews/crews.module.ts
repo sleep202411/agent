@@ -1,3 +1,6 @@
+import { StoryAccessModule } from '../story-studio/story-access.module';
+import { StoryCrewAssetsController } from './assets/story-crew-assets.controller';
+import { CrewStudioWorkspaceService } from './production/studio-workspace.service';
 import { CrewAccountabilityController } from './accountability/accountability.controller';
 import { CrewAccountabilityService } from './accountability/accountability.service';
 import {
@@ -32,6 +35,7 @@ import { ApplicationsService } from './applications.service';
 import {
   CrewAssetsController,
   ProjectCrewAssetsController,
+  CanvasCrewAssetsController,
 } from './assets/assets.controller';
 import { CrewAssetAccessModule } from './assets/asset-access.module';
 import { CrewAssetsService } from './assets/assets.service';
@@ -79,6 +83,7 @@ import { CrewProductionService } from './production/production.service';
  */
 @Module({
   imports: [
+    StoryAccessModule,
     AuthModule,
     NotificationModule,
     UsersModule,
@@ -89,6 +94,7 @@ import { CrewProductionService } from './production/production.service';
     CrewAssetAccessModule,
   ],
   controllers: [
+    StoryCrewAssetsController,
     CrewAccountabilityController,
     CrewTrustAppealController,
     CrewExpenseReceiptController,
@@ -106,6 +112,7 @@ import { CrewProductionService } from './production/production.service';
     MembersController,
     CrewAssetsController,
     ProjectCrewAssetsController,
+    CanvasCrewAssetsController,
     CrewInvitationsController,
     CrewTasksController,
     CrewProductionController,
@@ -114,6 +121,7 @@ import { CrewProductionService } from './production/production.service';
     CrewPayoutsController,
   ],
   providers: [
+    CrewStudioWorkspaceService,
     CrewAccountabilityService,
     CrewTrustAppealService,
     CrewExpenseReceiptService,

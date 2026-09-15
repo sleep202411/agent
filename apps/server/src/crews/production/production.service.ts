@@ -109,6 +109,7 @@ export class CrewProductionService {
         this.prisma.crew.findUniqueOrThrow({
           where: { id: crewId },
           select: {
+            studioWorkspace: { select: { id: true, name: true } },
             studioProject: {
               select: {
                 id: true,
@@ -127,11 +128,15 @@ export class CrewProductionService {
       labelOptions: labelOptions.map(productionLabelDto),
       resources: resources.map(productionResourceDto),
       latestUpdate: latestUpdate ? productionActivityDto(latestUpdate) : null,
+      studioWorkspace: crew.studioWorkspace,
       studioProject: crew.studioProject
         ? studioProjectSummary(crew.studioProject)
         : null,
       capabilities: {
         manage: context.permissions.includes('production.manage'),
+        linkWorkspace:
+          context.permissions.includes('production.manage') &&
+          (context.isOwner || context.policyKeys.includes('admin')),
       },
     };
   }
@@ -210,118 +215,10 @@ export class CrewProductionService {
     input: LinkCrewStudioProjectInput,
   ) {
     await this.authorization.require(crewId, userId, 'production.manage');
-    if (input.projectId) {
-      await this.workspacePermissions.requireProjectRole(
-        userId,
-        input.projectId,
-        ProjectMemberRole.editor,
-      );
-    }
-
-    let linked: {
-      id: string;
-      name: string;
-      workspace: { id: string; name: string };
-    } | null;
-    try {
-      linked = await this.prisma.$transaction(async (tx) => {
-        await tx.$executeRaw`
-          SELECT pg_advisory_xact_lock(hashtext(${`crew:studio-project:${crewId}`})::bigint)
-        `;
-        const recheckAuthority = async () => {
-          await this.authorization.require(
-            crewId,
-            userId,
-            'production.manage',
-            tx,
-          );
-          if (input.projectId) {
-            await this.workspacePermissions.requireProjectRole(
-              userId,
-              input.projectId,
-              ProjectMemberRole.editor,
-              tx,
-            );
-          }
-        };
-        await recheckAuthority();
-        const crew = await tx.crew.findFirstOrThrow({
-          where: { id: crewId, deletedAt: null },
-          select: { studioProjectId: true },
-        });
-        let project: {
-          id: string;
-          name: string;
-          workspace: { id: string; name: string };
-        } | null = null;
-
-        if (input.projectId) {
-          const candidate = await tx.platformProject.findFirst({
-            where: { id: input.projectId, status: 'active', deletedAt: null },
-            select: {
-              id: true,
-              name: true,
-              workspace: { select: { id: true, name: true } },
-              studioCrew: { select: { id: true, name: true } },
-            },
-          });
-          if (!candidate)
-            throw new NotFoundException('Studio project not found.');
-          if (candidate.studioCrew && candidate.studioCrew.id !== crewId) {
-            throw new ConflictException({
-              code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',
-              message: `This project is already linked to ${candidate.studioCrew.name}.`,
-            });
-          }
-          project = candidate;
-        }
-
-        if (crew.studioProjectId !== (project?.id ?? null)) {
-          await tx.crew.update({
-            where: { id: crewId },
-            data: { studioProjectId: project?.id ?? null },
-          });
-          await tx.crewProductionActivity.create({
-            data: {
-              crewId,
-              kind: CrewProductionActivityKind.properties_changed,
-              payload: {
-                changes: [
-                  {
-                    field: 'studio_project_id',
-                    from: crew.studioProjectId,
-                    to: project?.id ?? null,
-                  },
-                ],
-              },
-              createdByUserId: userId,
-            },
-          });
-        }
-        await recheckAuthority();
-        return project;
-      });
-    } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new ConflictException({
-          code: 'CREW_STUDIO_PROJECT_ALREADY_LINKED',
-          message: 'This Studio project is already linked to another crew.',
-        });
-      }
-      throw error;
-    }
-
-    await this.conversations.broadcastCrewTaskProjectChange(
-      crewId,
-      'production_project',
-      crewId,
-      'updated',
-      userId,
+    void input;
+    throw new BadRequestException(
+      'Single-project linking has been replaced. Link a workspace from Crew instead.',
     );
-    return { studioProject: linked ? studioProjectSummary(linked) : null };
   }
 
   async updateDocument(

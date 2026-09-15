@@ -18,7 +18,7 @@ export async function crewStorageUsage(
   >(Prisma.sql`
     WITH ids AS (
       SELECT id FROM media_assets WHERE deleted_at IS NULL AND metadata->>'crewId'=${crewId}
-      UNION SELECT media_asset_id FROM crew_asset_nodes WHERE crew_id=${crewId} AND media_asset_id IS NOT NULL
+      UNION SELECT media_asset_id FROM crew_asset_nodes WHERE crew_id=${crewId} AND media_asset_id IS NOT NULL AND shared_from_studio=false
     ), usage AS (
       SELECT COALESCE(SUM(m.size_bytes),0)::bigint AS used,
         COUNT(*) FILTER (WHERE m.size_bytes IS NULL)::bigint AS unknown

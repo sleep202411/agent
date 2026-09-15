@@ -9968,5 +9968,16 @@
     "options": "更多選項",
     "speed": "播放速度",
     "normal": "正常（1×）"
+  },
+  "crewWorkspaceLink": {
+    "link": "關聯工作區",
+    "description": "僅劇組管理員可關聯自己擁有的工作區。其中的專案可使用共享劇組資產；受限資料夾保留原有權限。",
+    "failed": "工作區關聯儲存失敗。",
+    "retry": "重試",
+    "search": "搜尋你的工作區",
+    "loading": "正在載入工作區…",
+    "empty": "沒有可用的自有工作區",
+    "unlink": "取消關聯",
+    "open": "在 Studio 中開啟"
   }
 }

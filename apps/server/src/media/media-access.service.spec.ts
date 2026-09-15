@@ -36,6 +36,7 @@ function readyAsset(overrides: Record<string, unknown> = {}) {
 
 function allowCrewAssetAccess() {
   return {
+    canReadStudioReference: jest.fn().mockResolvedValue(false),
     requireNodePermission: jest
       .fn()
       .mockResolvedValue(CrewAssetPermission.view),

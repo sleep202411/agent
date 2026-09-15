@@ -9968,5 +9968,16 @@
     "options": "更多选项",
     "speed": "播放速度",
     "normal": "正常（1×）"
+  },
+  "crewWorkspaceLink": {
+    "link": "关联工作区",
+    "description": "仅剧组管理员可关联自己拥有的工作区。其中的项目可使用共享剧组资产；受限文件夹保留原有权限。",
+    "failed": "工作区关联保存失败。",
+    "retry": "重试",
+    "search": "搜索你的工作区",
+    "loading": "正在加载工作区…",
+    "empty": "没有可用的自有工作区",
+    "unlink": "取消关联",
+    "open": "在 Studio 中打开"
   }
 }

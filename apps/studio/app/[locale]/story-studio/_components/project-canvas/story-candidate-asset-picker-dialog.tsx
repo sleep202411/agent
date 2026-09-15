@@ -1,5 +1,8 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+import { useQuery } from "@tanstack/react-query";
+import { listAllProjectCrewAssets } from "@/lib/collab/project-crew-assets-api";
 import {
   useEffect,
   useMemo,
@@ -27,6 +30,7 @@ import {
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import {
+  addStoryCandidateAsset,
   storyApiErrorMessage,
   type MediaAssetSummary,
   type StoryCandidateAsset,
@@ -41,6 +45,7 @@ export type StoryCandidateAssetUploadState =
 const CANDIDATE_PENDING_FEEDBACK_DELAY_MS = 180;
 
 export interface StoryCandidateAssetPickerDialogProps {
+  projectId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   items: StoryCandidateAsset[];
@@ -70,7 +75,75 @@ export interface StoryCandidateAssetPickerDialogProps {
  * Each consumer owns only the media kinds and eligibility rules that its
  * product slot can actually accept.
  */
-export function StoryCandidateAssetPickerDialog({
+export function StoryCandidateAssetPickerDialog(props: StoryCandidateAssetPickerDialogProps) {
+  const { user } = useAuth();
+  return props.projectId ? (
+    <CrewCandidateDialog
+      key={`${props.projectId}:${user?.id}`}
+      {...props}
+      projectId={props.projectId}
+      userId={user ? String(user.id) : ""}
+    />
+  ) : (
+    <CandidateDialog {...props} />
+  );
+}
+function CrewCandidateDialog(
+  props: StoryCandidateAssetPickerDialogProps & { projectId: string; userId: string }
+) {
+  const { projectId, open, items: suppliedItems } = props;
+  const crew = useQuery({
+    queryKey: ["project-crew-assets", `story:${projectId}`, "picker", props.userId],
+    queryFn: ({ signal }) => listAllProjectCrewAssets(`story:${projectId}`, signal),
+    enabled: open && Boolean(projectId && props.userId),
+    retry: false,
+  });
+  const items = useMemo(() => {
+    const result = [...suppliedItems];
+    const ids = new Set(result.map((item) => item.asset.id));
+    for (const node of crew.data ?? []) {
+      if (!node.media || ids.has(node.media.id)) continue;
+      ids.add(node.media.id);
+      result.push({
+        asset: {
+          ...node.media,
+          status: "ready",
+          moderationStatus: "unreviewed",
+          checksumSha256: null,
+        },
+        videoVariant: null,
+        addedAt: "",
+        addedByUserId: "",
+      });
+    }
+    return result;
+  }, [suppliedItems, crew.data]);
+  return (
+    <CandidateDialog
+      {...props}
+      items={items}
+      loading={props.loading || crew.isLoading}
+      error={props.error ?? (crew.error instanceof Error ? crew.error.message : null)}
+      onRetry={() => {
+        props.onRetry?.();
+        void crew.refetch();
+      }}
+      onSelect={async (candidate) => {
+        // Register the selected shared asset through the existing authorized import
+        // path before binding it to a film/game production slot.
+        if (!suppliedItems.some((item) => item.asset.id === candidate.asset.id)) {
+          const imported = await addStoryCandidateAsset(projectId, candidate.asset.id);
+          await props.onSelect(imported);
+          return;
+        }
+        await props.onSelect(candidate);
+      }}
+    />
+  );
+}
+
+function CandidateDialog({
+  projectId,
   open,
   onOpenChange,
   items,
@@ -286,7 +359,7 @@ export function StoryCandidateAssetPickerDialog({
                 {t("title")}
               </DialogTitle>
               <DialogDescription className="mt-1 max-w-[58ch] text-[11px] leading-5 text-white/42">
-                {t("description")}
+                {t(projectId ? "sharedDescription" : "description")}
               </DialogDescription>
             </div>
           </div>
