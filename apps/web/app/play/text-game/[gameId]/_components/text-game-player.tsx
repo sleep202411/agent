@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -82,19 +83,36 @@ import {
   startTextGameSession,
 } from "../../_lib/text-game-player-api";
 
+import { useCurrentUser } from "@/src/hooks/use-user";
+
 import { TextGameStreamBody } from "./text-game-stream-body";
 
 type StoryModelId = "qwen" | "kimi" | "deepseek" | "glm";
 
 const STORY_MODELS: StoryModelId[] = ["qwen", "kimi", "deepseek", "glm"];
 
-export function TextGamePlayer({
+type PlayerProps = { game: TextGameDetail; catalogue: TextGameSummary[] };
+
+export function TextGamePlayer(props: PlayerProps) {
+  const { user, isLoading } = useCurrentUser();
+  const locale = useLocale();
+  const viewerId = user?.id ?? null;
+  return (
+    <TextGamePlayerView
+      key={JSON.stringify([viewerId, props.game.gameId, locale])}
+      {...props}
+      viewerId={viewerId}
+      ready={!isLoading}
+    />
+  );
+}
+
+function TextGamePlayerView({
   game,
   catalogue,
-}: {
-  game: TextGameDetail;
-  catalogue: TextGameSummary[];
-}) {
+  viewerId,
+  ready,
+}: PlayerProps & { viewerId: string | null; ready: boolean }) {
   const locale = useLocale() as Locale;
   const t = useTranslations("textGame.player");
   const queryClient = useQueryClient();
@@ -114,16 +132,36 @@ export function TextGamePlayer({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const sendingRef = useRef(false);
   const restartingRef = useRef(false);
+  const lifetime = useRef(new AbortController());
+  const operationToasts = useRef(new Set<string | number>());
+  useLayoutEffect(() => {
+    if (lifetime.current.signal.aborted) lifetime.current = new AbortController();
+    const controller = lifetime.current;
+    const toasts = operationToasts.current;
+    return () => {
+      controller.abort();
+      for (const id of toasts) toast.dismiss(id);
+      toasts.clear();
+    };
+  }, []);
   const content = game.content;
 
   const sessionQuery = useQuery({
-    queryKey: playerTextGameKeys.session(game.gameId, locale),
-    queryFn: () =>
+    queryKey: playerTextGameKeys.session(viewerId, game.gameId, locale),
+    enabled: ready,
+    queryFn: ({ signal }) =>
       loadOrStartTextGameSession(game.gameId, locale, {
-        onSession: (next) =>
-          queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), next),
+        signal,
+        onSession: (next) => {
+          if (!signal.aborted)
+            queryClient.setQueryData(
+              playerTextGameKeys.session(viewerId, game.gameId, locale),
+              next
+            );
+        },
       }),
     staleTime: Number.POSITIVE_INFINITY,
+    gcTime: 0,
     retry: false,
   });
 
@@ -187,14 +225,18 @@ export function TextGamePlayer({
   );
 
   const toggleSound = useCallback(async () => {
+    const signal = lifetime.current.signal;
+    if (signal.aborted) return;
     const audio = audioRef.current;
     if (!audio) return;
     if (audio.paused) {
       try {
         await audio.play();
+        if (signal.aborted) return;
         setSoundNeedsActivation(false);
         setSoundPlaying(true);
       } catch (error) {
+        if (signal.aborted) return;
         setSoundNeedsActivation(true);
         toast.error(error instanceof Error ? error.message : t("soundUnavailable"));
       }
@@ -206,6 +248,8 @@ export function TextGamePlayer({
   }, [t]);
 
   async function submitAction() {
+    const signal = lifetime.current.signal;
+    if (signal.aborted) return;
     const value = draft.trim();
     if (!value || !session || sendingRef.current || restartingRef.current) return;
 
@@ -220,7 +264,7 @@ export function TextGamePlayer({
     setDraft("");
     setSending(true);
     queryClient.setQueryData<TextGamePlaySession>(
-      playerTextGameKeys.session(game.gameId, locale),
+      playerTextGameKeys.session(viewerId, game.gameId, locale),
       (current) =>
         current
           ? {
@@ -240,9 +284,11 @@ export function TextGamePlayer({
     );
     try {
       await sendTextGameAction(session.sessionId, value, locale, {
+        signal,
         onUserMessage: (userMessage) => {
+          if (signal.aborted) return;
           queryClient.setQueryData<TextGamePlaySession>(
-            playerTextGameKeys.session(game.gameId, locale),
+            playerTextGameKeys.session(viewerId, game.gameId, locale),
             (current) =>
               current
                 ? {
@@ -255,8 +301,9 @@ export function TextGamePlayer({
           );
         },
         onAssistantDelta: (text) => {
+          if (signal.aborted) return;
           queryClient.setQueryData<TextGamePlaySession>(
-            playerTextGameKeys.session(game.gameId, locale),
+            playerTextGameKeys.session(viewerId, game.gameId, locale),
             (current) =>
               current
                 ? {
@@ -271,8 +318,9 @@ export function TextGamePlayer({
           );
         },
         onAssistantDone: (assistantMessage) => {
+          if (signal.aborted) return;
           queryClient.setQueryData<TextGamePlaySession>(
-            playerTextGameKeys.session(game.gameId, locale),
+            playerTextGameKeys.session(viewerId, game.gameId, locale),
             (current) =>
               current
                 ? {
@@ -286,13 +334,18 @@ export function TextGamePlayer({
         },
       });
     } catch (error) {
+      if (signal.aborted) return;
       try {
-        const recovered = await getPlayingTextGameSession(game.gameId);
+        const recovered = await getPlayingTextGameSession(game.gameId, signal);
+        if (signal.aborted) return;
         if (recovered) {
-          queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), recovered);
+          queryClient.setQueryData(
+            playerTextGameKeys.session(viewerId, game.gameId, locale),
+            recovered
+          );
         } else {
           queryClient.setQueryData<TextGamePlaySession>(
-            playerTextGameKeys.session(game.gameId, locale),
+            playerTextGameKeys.session(viewerId, game.gameId, locale),
             (current) =>
               current
                 ? {
@@ -307,35 +360,54 @@ export function TextGamePlayer({
           setDraft(value);
         }
       } catch {
+        if (signal.aborted) return;
         setDraft(value);
       }
       toast.error(error instanceof Error ? error.message : t("sendFailed"));
     } finally {
-      sendingRef.current = false;
-      setSending(false);
-      window.requestAnimationFrame(() => inputRef.current?.focus());
+      if (!signal.aborted) {
+        sendingRef.current = false;
+        setSending(false);
+        window.requestAnimationFrame(() => {
+          if (!signal.aborted) inputRef.current?.focus();
+        });
+      }
     }
   }
 
   async function restart() {
+    const signal = lifetime.current.signal;
+    if (signal.aborted) return;
     if (!session || restartingRef.current || sendingRef.current) return;
     restartingRef.current = true;
     setRestarting(true);
     const toastId = toast.loading(t("restartingStory"));
+    operationToasts.current.add(toastId);
     try {
       const next = await startTextGameSession(game.gameId, locale, {
-        onSession: (sessionNext) =>
-          queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), sessionNext),
+        signal,
+        onSession: (sessionNext) => {
+          if (!signal.aborted)
+            queryClient.setQueryData(
+              playerTextGameKeys.session(viewerId, game.gameId, locale),
+              sessionNext
+            );
+        },
       });
-      queryClient.setQueryData(playerTextGameKeys.session(game.gameId, locale), next);
+      if (signal.aborted) return;
+      queryClient.setQueryData(playerTextGameKeys.session(viewerId, game.gameId, locale), next);
       setDraft("");
       setStillIndex(0);
       toast.success(t("restartComplete"), { id: toastId });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t("restartFailed"), { id: toastId });
+      if (!signal.aborted)
+        toast.error(error instanceof Error ? error.message : t("restartFailed"), { id: toastId });
     } finally {
-      restartingRef.current = false;
-      setRestarting(false);
+      operationToasts.current.delete(toastId);
+      if (!signal.aborted) {
+        restartingRef.current = false;
+        setRestarting(false);
+      }
     }
   }
 
@@ -347,6 +419,8 @@ export function TextGamePlayer({
   }
 
   async function shareStory() {
+    const signal = lifetime.current.signal;
+    if (signal.aborted) return;
     const shareData = {
       title: content.name || t("untitled"),
       text: content.synopsis || t("shareDescription"),
@@ -358,10 +432,11 @@ export function TextGamePlayer({
         await navigator.share(shareData);
       } else {
         await navigator.clipboard.writeText(shareData.url);
+        if (signal.aborted) return;
         toast.success(t("linkCopied"));
       }
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) return;
       toast.error(error instanceof Error ? error.message : t("shareFailed"));
     }
   }

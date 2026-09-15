@@ -18,8 +18,8 @@ import { readTextGameSse } from "./text-game-sse";
 
 export const playerTextGameKeys = {
   all: ["player-text-game"] as const,
-  session: (gameId: string, locale: TextGameLocale) =>
-    [...playerTextGameKeys.all, "session", gameId, locale] as const,
+  session: (viewerId: string | null, gameId: string, locale: TextGameLocale) =>
+    [...playerTextGameKeys.all, "session", viewerId, gameId, locale] as const,
 };
 
 export type TextGameSessionStreamHandlers = {
