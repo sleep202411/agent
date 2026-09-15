@@ -777,9 +777,12 @@ export class IpCommerceService {
   // IP discovery placements (IP Plaza hero / for-you / pinned recommendations)
   // -------------------------------------------------------------------------
 
-  async listAdminDiscovery(query: ListAdminIpDiscoveryQuery) {
+  async listAdminDiscovery(
+    query: ListAdminIpDiscoveryQuery,
+    tx: Prisma.TransactionClient = this.prisma,
+  ) {
     const locale = normalizeLocale(query.locale);
-    const rows = await this.prisma.ipDiscoveryRecommendation.findMany({
+    const rows = await tx.ipDiscoveryRecommendation.findMany({
       where: {
         ...(query.placementKey
           ? { placementKey: query.placementKey as IpDiscoveryPlacementKey }
@@ -886,47 +889,48 @@ export class IpCommerceService {
     recommendationId: string,
     input: UpdateAdminIpDiscoveryInput,
   ) {
-    const existing = await this.prisma.ipDiscoveryRecommendation.findUnique({
-      where: { id: recommendationId },
-      select: {
-        id: true,
-        placementKey: true,
-        status: true,
-        imageAssetId: true,
-        ipId: true,
-      },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
-        msg: 'Discovery recommendation not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_discovery_recommendations WHERE id=${recommendationId}::uuid FOR UPDATE`;
+      const existing = await tx.ipDiscoveryRecommendation.findUnique({
+        where: { id: recommendationId },
+        select: {
+          id: true,
+          placementKey: true,
+          status: true,
+          imageAssetId: true,
+          ipId: true,
+        },
       });
-    }
-
-    if (input.ipId !== undefined && input.ipId !== existing.ipId) {
-      const ip = await this.prisma.ip.findFirst({
-        where: { id: input.ipId, deletedAt: null },
-        select: { id: true },
-      });
-      if (!ip) {
+      if (!existing) {
         throw new NotFoundException({
-          code: 'IP_NOT_FOUND',
-          msg: 'IP not found.',
+          code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
+          msg: 'Discovery recommendation not found.',
         });
       }
-    }
 
-    const nextStatus = input.status ?? existing.status;
-    const nextIpId = input.ipId ?? existing.ipId;
-    const nextPlacementKey =
-      (input.placementKey as IpDiscoveryPlacementKey | undefined) ??
-      existing.placementKey;
-    const nextImageAssetId =
-      input.imageAssetId !== undefined
-        ? input.imageAssetId
-        : existing.imageAssetId;
+      if (input.ipId !== undefined && input.ipId !== existing.ipId) {
+        const ip = await tx.ip.findFirst({
+          where: { id: input.ipId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!ip) {
+          throw new NotFoundException({
+            code: 'IP_NOT_FOUND',
+            msg: 'IP not found.',
+          });
+        }
+      }
 
-    const rec = await this.prisma.$transaction(async (tx) => {
+      const nextStatus = input.status ?? existing.status;
+      const nextIpId = input.ipId ?? existing.ipId;
+      const nextPlacementKey =
+        (input.placementKey as IpDiscoveryPlacementKey | undefined) ??
+        existing.placementKey;
+      const nextImageAssetId =
+        input.imageAssetId !== undefined
+          ? input.imageAssetId
+          : existing.imageAssetId;
+
       if (input.localizations?.length) {
         for (const localization of normalizeDiscoveryLocalizations(
           input.localizations,
@@ -969,7 +973,7 @@ export class IpCommerceService {
         });
       }
 
-      return tx.ipDiscoveryRecommendation.update({
+      const rec = await tx.ipDiscoveryRecommendation.update({
         where: { id: recommendationId },
         data: {
           ...(input.placementKey !== undefined
@@ -1006,57 +1010,71 @@ export class IpCommerceService {
         },
         include: adminIpDiscoveryInclude,
       });
+      return {
+        recommendation: adminIpDiscoveryDto(
+          rec,
+          input.localizations?.[0]?.locale,
+        ),
+      };
     });
-
-    return {
-      recommendation: adminIpDiscoveryDto(
-        rec,
-        input.localizations?.[0]?.locale,
-      ),
-    };
   }
 
   async deleteAdminDiscovery(user: AuthUser, recommendationId: string) {
-    const existing = await this.prisma.ipDiscoveryRecommendation.findUnique({
-      where: { id: recommendationId },
-      select: { id: true, placementKey: true, ipId: true },
-    });
-    if (!existing) {
-      throw new NotFoundException({
-        code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
-        msg: 'Discovery recommendation not found.',
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM ip_discovery_recommendations WHERE id=${recommendationId}::uuid FOR UPDATE`;
+      const existing = await tx.ipDiscoveryRecommendation.findUnique({
+        where: { id: recommendationId },
+        select: { id: true, placementKey: true, ipId: true },
       });
-    }
-
-    await this.prisma.ipDiscoveryRecommendation.delete({
-      where: { id: recommendationId },
+      if (!existing)
+        throw new NotFoundException({
+          code: 'IP_DISCOVERY_RECOMMENDATION_NOT_FOUND',
+          msg: 'Discovery recommendation not found.',
+        });
+      await tx.ipDiscoveryRecommendation.delete({
+        where: { id: recommendationId },
+      });
+      return {
+        deleted: true,
+        id: existing.id,
+        placementKey: existing.placementKey,
+        ipId: existing.ipId,
+        deletedById: user.userId,
+      };
     });
-
-    return {
-      deleted: true,
-      id: existing.id,
-      placementKey: existing.placementKey,
-      ipId: existing.ipId,
-      deletedById: user.userId,
-    };
   }
 
   async reorderAdminDiscovery(
     user: AuthUser,
     input: ReorderAdminIpDiscoveryInput,
   ) {
-    await this.prisma.$transaction(async (tx) => {
+    if (
+      !input.orderedIds.length ||
+      new Set(input.orderedIds).size !== input.orderedIds.length
+    )
+      throw new BadRequestException(
+        'Discovery order must contain distinct recommendation IDs.',
+      );
+    return this.prisma.$transaction(async (tx) => {
+      const locked = await tx.$queryRaw<
+        { id: string }[]
+      >`SELECT id FROM ip_discovery_recommendations WHERE id IN (${Prisma.join(input.orderedIds.map((id) => Prisma.sql`${id}::uuid`))}) AND placement_key::text=${input.placementKey} ORDER BY id FOR UPDATE`;
+      if (locked.length !== input.orderedIds.length)
+        throw new BadRequestException(
+          'Every recommendation must exist in the selected placement.',
+        );
       for (let index = 0; index < input.orderedIds.length; index += 1) {
-        await tx.ipDiscoveryRecommendation.updateMany({
-          where: {
-            id: input.orderedIds[index],
-            placementKey: input.placementKey as IpDiscoveryPlacementKey,
+        await tx.ipDiscoveryRecommendation.update({
+          where: { id: input.orderedIds[index] },
+          data: {
+            sortOrder: index,
+            updatedById: user.userId,
+            version: { increment: 1 },
           },
-          data: { sortOrder: index, updatedById: user.userId },
         });
       }
+      return this.listAdminDiscovery({ placementKey: input.placementKey }, tx);
     });
-    return this.listAdminDiscovery({ placementKey: input.placementKey });
   }
 
   async listPublicDiscovery(
