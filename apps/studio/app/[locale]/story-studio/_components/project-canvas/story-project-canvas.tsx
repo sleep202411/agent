@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import {
   createContext,
   useCallback,
@@ -323,7 +325,8 @@ export function StoryProjectCanvas({
   // chapter. Chapter projections are swapped inside the mounted shell so a
   // query-param navigation cannot tear down the viewport and flash the cold
   // loading surface.
-  const scopeKey = projectId;
+  const { user } = useAuth();
+  const scopeKey = JSON.stringify([projectId, user?.id ?? null]);
 
   return (
     <ReactFlowProvider key={scopeKey}>
@@ -339,6 +342,7 @@ function StoryProjectCanvasInner({
   projectId: string;
   requestedChapterId?: string;
 }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.canvas");
   const commonT = useTranslations("storyStudio");
   const canvasT = useTranslations("canvas");
@@ -508,15 +512,17 @@ function StoryProjectCanvasInner({
   }, [reconcileCanvasFocus]);
 
   const workbenchQueryKey = useMemo(
-    () => storyProjectionQueryKey("workbench", projectId, requestedChapterId ?? null),
-    [projectId, requestedChapterId]
+    () =>
+      storyProjectionQueryKey("workbench", projectId, requestedChapterId ?? null, user?.id ?? null),
+    [projectId, requestedChapterId, user?.id]
   );
   const workbenchQuery = useQuery({
     ...storyProjectionQueryOptions({
       kind: "workbench",
       projectId,
       chapterId: requestedChapterId ?? null,
-      queryFn: () => getStoryWorkbench(projectId, requestedChapterId),
+      viewerId: user?.id ?? null,
+      queryFn: ({ signal }) => getStoryWorkbench(projectId, requestedChapterId, signal),
     }),
   });
   // Prefer the URL target over kept-previous workbench data. Otherwise the
@@ -527,15 +533,16 @@ function StoryProjectCanvasInner({
   // not migrated yet. It comes from the authorized project, never ambient UI.
   const workspaceId = workbenchQuery.data?.project.workspaceId ?? null;
   const layoutQueryKey = useMemo(
-    () => storyProjectionQueryKey("canvas-layout", projectId, resolvedChapterId),
-    [projectId, resolvedChapterId]
+    () => storyProjectionQueryKey("canvas-layout", projectId, resolvedChapterId, user?.id ?? null),
+    [projectId, resolvedChapterId, user?.id]
   );
   const layoutQuery = useQuery(
     storyProjectionQueryOptions({
       kind: "canvas-layout",
       projectId,
       chapterId: resolvedChapterId,
-      queryFn: () => getStoryCanvasLayout(projectId, resolvedChapterId as string),
+      viewerId: user?.id ?? null,
+      queryFn: ({ signal }) => getStoryCanvasLayout(projectId, resolvedChapterId as string, signal),
     })
   );
   /**

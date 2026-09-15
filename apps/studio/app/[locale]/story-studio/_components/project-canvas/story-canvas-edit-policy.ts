@@ -1,4 +1,4 @@
-import { keepPreviousData } from "@tanstack/react-query";
+import { keepPreviousData, type QueryFunctionContext } from "@tanstack/react-query";
 
 /**
  * Capability checks that are true before transient canvas state is applied.
@@ -62,9 +62,10 @@ export function isStoryChapterProjectionPairReady({
 export function storyProjectionQueryKey(
   kind: "workbench" | "canvas-layout",
   projectId: string,
-  chapterId: string | null
+  chapterId: string | null,
+  viewerId: string | number | null = null
 ) {
-  return ["story-studio", kind, projectId, "chapter", chapterId ?? "default"] as const;
+  return ["story-studio", kind, projectId, "chapter", chapterId ?? "default", viewerId] as const;
 }
 
 /**
@@ -72,8 +73,8 @@ export function storyProjectionQueryKey(
  * chapter) for a project. Used to invalidate the canvas when an out-of-band
  * mutation may have bumped the draft revision, so it refetches instead of
  * showing a stale draft/layout — see `requiresStoryProjectionReconcile` for the
- * triggers. Project IDs are globally unique, so no ambient scope belongs in
- * this canonical key.
+ * triggers. The invalidation prefix covers all account-specific projections; exact
+ * cache entries also include the viewer because capabilities are user-specific.
  */
 export function matchesStoryProjectionQueryKey(
   queryKey: readonly unknown[],
@@ -99,10 +100,16 @@ export function storyProjectionQueryOptions<TData>(input: {
   kind: "workbench" | "canvas-layout";
   projectId: string;
   chapterId: string | null;
-  queryFn: () => Promise<TData>;
+  viewerId?: string | number | null;
+  queryFn: (context: QueryFunctionContext) => Promise<TData>;
 }) {
   return {
-    queryKey: storyProjectionQueryKey(input.kind, input.projectId, input.chapterId),
+    queryKey: storyProjectionQueryKey(
+      input.kind,
+      input.projectId,
+      input.chapterId,
+      input.viewerId ?? null
+    ),
     queryFn: input.queryFn,
     enabled: input.kind === "workbench" || Boolean(input.chapterId),
     retry: false,

@@ -589,11 +589,12 @@ export async function archiveStoryChapter(
 
 export async function getStoryCanvasLayout(
   projectId: string,
-  chapterId: string
+  chapterId: string,
+  signal?: AbortSignal
 ): Promise<StoryCanvasLayout> {
   return api.get<StoryCanvasLayout>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/chapters/${encodeURIComponent(chapterId)}/canvas-layout`,
-    { requestScope: "project" }
+    { requestScope: "project", signal }
   );
 }
 
