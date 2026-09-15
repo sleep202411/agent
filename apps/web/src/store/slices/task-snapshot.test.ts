@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/src/lib/api", () => ({ backendApi: {} }));
 import {
   taskSlice,
+  setTaskOwner,
   setTasks,
   reconcileTaskSnapshot,
   applyEvent,
@@ -66,4 +67,21 @@ describe("task snapshot reconciliation", () => {
     expect(state.tasks.local.source).toBe("local");
     expect(state.tasks.local.input.prompt).toBe("draft");
   });
+});
+
+it("keeps same-account local work across panel remount and clears it on account change", () => {
+  let state = reduce(undefined, setTaskOwner("a"));
+  state = reduce(state, addTask({ id: "local", type: "image", input: {} }));
+  const before = state;
+  state = reduce(state, setTaskOwner("a"));
+  expect(state).toBe(before);
+  state = reduce(state, setTaskOwner("b"));
+  expect(state.tasks).toEqual({});
+  expect(state.ownerId).toBe("b");
+});
+it("clears owned tasks on logout", () => {
+  let state = reduce(undefined, setTaskOwner("a"));
+  state = reduce(state, setTasks([task("a")]));
+  state = reduce(state, setTaskOwner(null));
+  expect(state.tasks).toEqual({});
 });

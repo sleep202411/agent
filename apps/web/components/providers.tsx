@@ -14,6 +14,7 @@ import { StoreProvider } from "@/src/store/provider";
 import { useEntityEventsSession } from "@/src/lib/entity-events/use-entity-events-session";
 import { ConversationsProvider } from "@/src/lib/conversations/provider";
 import { AuthInterceptor } from "@/components/layout/auth-interceptor";
+import { TaskAccountBoundary } from "@/components/workspace/task-account-boundary";
 import { AuthDialogProvider } from "@/components/auth/auth-dialog-provider";
 
 /**
@@ -76,6 +77,7 @@ export function Providers({
                 dialog in place instead of navigating to /login. */}
             <AuthDialogProvider>
               <AuthInterceptor />
+              <TaskAccountBoundary />
               <EntityEventsSession>
                 <ConversationsProvider>{children}</ConversationsProvider>
               </EntityEventsSession>

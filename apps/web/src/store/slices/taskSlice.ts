@@ -62,10 +62,12 @@ export function createTaskId(): string {
 // ─── State ──────────────────────────────────────────────
 
 interface TaskState {
+  ownerId: string | null;
   tasks: Record<string, Task>;
 }
 
 const initialState: TaskState = {
+  ownerId: null,
   tasks: {},
 };
 
@@ -75,6 +77,11 @@ export const taskSlice = createSlice({
   name: "task",
   initialState,
   reducers: {
+    setTaskOwner: (state, action: PayloadAction<string | null>) => {
+      if (state.ownerId === action.payload) return;
+      state.ownerId = action.payload;
+      state.tasks = {};
+    },
     addTask: (
       state,
       action: PayloadAction<
@@ -245,6 +252,7 @@ export const taskSlice = createSlice({
 });
 
 export const {
+  setTaskOwner,
   addTask,
   startTask,
   completeTask,
