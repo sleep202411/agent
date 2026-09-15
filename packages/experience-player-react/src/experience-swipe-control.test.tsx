@@ -30,6 +30,7 @@ const scene = {
       directions: ["right"],
       minimumDistance: 0.1,
       maximumDurationMs: 10000,
+      activeWindow: { startMs: 0, endMs: 1000 },
     },
   ],
 } as unknown as Props["scene"];
@@ -58,6 +59,17 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   onEvents.mockClear();
+  render();
+  container.querySelector("button")!.setPointerCapture = vi.fn();
+});
+afterEach(() => {
+  act(() => root.unmount());
+  container.remove();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+function render(sceneTimeMs = 0) {
   act(() =>
     root.render(
       <ExperienceSpatialLayer
@@ -70,7 +82,7 @@ beforeEach(() => {
         }
         scene={scene}
         runtimeState={{} as Props["runtimeState"]}
-        sceneTimeMs={0}
+        sceneTimeMs={sceneTimeMs}
         locale="en-US"
         orientation="landscape"
         onEvents={onEvents}
@@ -78,14 +90,7 @@ beforeEach(() => {
       />
     )
   );
-  container.querySelector("button")!.setPointerCapture = vi.fn();
-});
-afterEach(() => {
-  act(() => root.unmount());
-  container.remove();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
-});
+}
 
 function pointer(type: string, id: number, x = 0) {
   const event = new MouseEvent(type, { bubbles: true, button: 0, clientX: x });
@@ -113,6 +118,28 @@ it("cancels the owning pointer and allows a fresh swipe", () => {
   pointer("pointercancel", 1);
   expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.cancelled" })]);
   onEvents.mockClear();
+  pointer("pointerdown", 2);
+  pointer("pointerup", 2, 50);
+  expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.completed" })]);
+});
+
+it("does not complete a captured swipe after its active window closes", () => {
+  pointer("pointerdown", 1);
+  render(1001);
+  pointer("pointerup", 1, 50);
+  expect(onEvents.mock.calls.flatMap((call) => call[0])).not.toContainEqual(
+    expect.objectContaining({ type: "gesture.completed" })
+  );
+});
+
+it("abandons a swipe when focus leaves", () => {
+  pointer("pointerdown", 1);
+  act(() =>
+    container.querySelector("button")!.dispatchEvent(new FocusEvent("focusout", { bubbles: true }))
+  );
+  onEvents.mockClear();
+  pointer("pointerup", 1, 50);
+  expect(onEvents).not.toHaveBeenCalled();
   pointer("pointerdown", 2);
   pointer("pointerup", 2, 50);
   expect(onEvents).toHaveBeenCalledWith([expect.objectContaining({ type: "gesture.completed" })]);

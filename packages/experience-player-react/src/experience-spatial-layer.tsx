@@ -469,9 +469,9 @@ function SwipeControl({
   );
 
   const cancelPointer = useCallback(
-    (event: PointerEvent<HTMLButtonElement>) => {
+    (pointerId?: number) => {
       const pointer = pointerRef.current;
-      if (!pointer || pointer.pointerId !== event.pointerId) return;
+      if (!pointer || (pointerId !== undefined && pointer.pointerId !== pointerId)) return;
       pointerRef.current = null;
       emit("gesture.cancelled", {
         reason: "pointer-cancelled",
@@ -485,6 +485,7 @@ function SwipeControl({
     const pointer = pointerRef.current;
     if (!pointer || pointer.pointerId !== event.pointerId) return;
     pointerRef.current = null;
+    if (!presentation.available) return;
     const durationMs = Math.max(0, Math.round(performance.now() - pointer.startedAt));
     const deltaX = event.clientX - pointer.x;
     const deltaY = event.clientY - pointer.y;
@@ -546,8 +547,9 @@ function SwipeControl({
         event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerUp={completePointer}
-      onPointerCancel={cancelPointer}
-      onLostPointerCapture={cancelPointer}
+      onPointerCancel={(event) => cancelPointer(event.pointerId)}
+      onLostPointerCapture={(event) => cancelPointer(event.pointerId)}
+      onBlur={() => cancelPointer()}
       onKeyDown={handleKeyDown}
       onClick={(event) => event.preventDefault()}
     >
