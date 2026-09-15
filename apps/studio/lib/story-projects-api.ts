@@ -521,11 +521,13 @@ export async function listStoryProjects(query: {
 
 export async function getStoryWorkbench(
   projectId: string,
-  chapterId?: string
+  chapterId?: string,
+  signal?: AbortSignal
 ): Promise<StoryWorkbench> {
   const workbench = await api.get<StoryWorkbench>(
     `/aurora/story-projects/${encodeURIComponent(projectId)}/workbench`,
     {
+      signal,
       params: chapterId ? { chapterId } : undefined,
       requestScope: "project",
     }
