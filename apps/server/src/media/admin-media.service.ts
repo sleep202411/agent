@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { CDN_PURGE_LOCK_TTL_MS } from './media-worker-leases';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   MediaModerationActionStatus,
   MediaModerationActionType,
@@ -184,20 +189,31 @@ export class AdminMediaService {
   }
 
   async retryModerationAction(actionId: string) {
-    const existing = await this.prisma.mediaModerationAction.findUnique({
-      where: { id: actionId },
-      include: { placement: true },
-    });
-    if (!existing) throw new NotFoundException('媒体治理任务不存在。');
-    if (existing.actionType !== MediaModerationActionType.purge_cdn) {
-      throw new NotFoundException('该媒体治理任务不支持重试。');
-    }
-
-    const [action] = await this.prisma.$transaction([
-      this.prisma.mediaModerationAction.update({
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM media_moderation_actions WHERE id=${actionId}::uuid FOR UPDATE`;
+      const existing = await tx.mediaModerationAction.findUnique({
+        where: { id: actionId },
+        include: { placement: true },
+      });
+      if (!existing) throw new NotFoundException('媒体治理任务不存在。');
+      if (existing.actionType !== MediaModerationActionType.purge_cdn)
+        throw new NotFoundException('该媒体治理任务不支持重试。');
+      const [clock] = await tx.$queryRaw<
+        { nowMs: number }[]
+      >`SELECT extract(epoch FROM clock_timestamp())::double precision * 1000 AS "nowMs"`;
+      if (
+        existing.status !== MediaModerationActionStatus.failed ||
+        (existing.lockedAt &&
+          existing.lockedAt.getTime() >= clock.nowMs - CDN_PURGE_LOCK_TTL_MS)
+      )
+        throw new ConflictException(
+          'The moderation action is no longer available for retry. Refresh and retry if it fails again.',
+        );
+      await tx.mediaModerationAction.update({
         where: { id: actionId },
         data: {
           status: MediaModerationActionStatus.pending,
+          attempt: 0,
           nextAttemptAt: null,
           lockedAt: null,
           lockedBy: null,
@@ -205,17 +221,18 @@ export class AdminMediaService {
           deadAt: null,
         },
         include: { asset: true, placement: true, case: true },
-      }),
-      ...(existing.placement
-        ? [
-            this.prisma.mediaObjectPlacement.update({
-              where: { id: existing.placement.id },
-              data: { status: MediaObjectPlacementStatus.purging },
-            }),
-          ]
-        : []),
-    ]);
-    return serializeModerationAction(action);
+      });
+      if (existing.placement)
+        await tx.mediaObjectPlacement.update({
+          where: { id: existing.placement.id },
+          data: { status: MediaObjectPlacementStatus.purging },
+        });
+      const refreshed = await tx.mediaModerationAction.findUniqueOrThrow({
+        where: { id: actionId },
+        include: { asset: true, placement: true, case: true },
+      });
+      return serializeModerationAction(refreshed);
+    });
   }
 
   async updateAssetModeration(
@@ -277,7 +294,7 @@ export class AdminMediaService {
       priority: input.priority,
       input: (input.input ?? {}) as Prisma.InputJsonObject,
       // Stable per-asset keys for single-output job types so an admin re-request
-      // (backfill / retry) UPSERTS the canonical job — via enqueueJob's reset
+      // (backfill / retry) restarts the canonical idle job — via the explicit reset
       // branch — instead of forking a parallel one (e.g. two hls_stream jobs
       // submitting concurrent IMM tasks onto the same hls/{assetId}/ prefix).
       idempotencyKey:
@@ -289,7 +306,9 @@ export class AdminMediaService {
       createdByAdminId: adminId,
     };
     return serializeProcessingJob(
-      await this.processing.enqueueJob(enqueueInput),
+      await this.prisma.$transaction((tx) =>
+        this.processing.enqueueJobTx(enqueueInput, tx, true),
+      ),
     );
   }
 
