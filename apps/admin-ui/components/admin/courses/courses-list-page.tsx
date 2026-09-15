@@ -1,5 +1,6 @@
 "use client";
 
+import { useAdminOperation } from "../use-admin-operation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
@@ -50,22 +51,26 @@ function instructorChipClass(userId: string, index: number): string {
   return INSTRUCTOR_CHIP_TONES[(hash + index) % INSTRUCTOR_CHIP_TONES.length];
 }
 
-async function fetchCoursesList(params: {
-  q: string;
-  published: PublishedFilter;
-  page: number;
-  pageSize: number;
-}): Promise<AdminCoursesListData> {
+async function fetchCoursesList(
+  params: {
+    q: string;
+    published: PublishedFilter;
+    page: number;
+    pageSize: number;
+  },
+  signal?: AbortSignal
+): Promise<AdminCoursesListData> {
   const search = new URLSearchParams();
   if (params.q) search.set("q", params.q);
   if (params.published !== "all") search.set("published", params.published);
   search.set("page", String(params.page));
   search.set("pageSize", String(params.pageSize));
-  const response = await fetch(`/api/admin/courses?${search.toString()}`);
+  const response = await fetch(`/api/admin/courses?${search.toString()}`, { signal });
   const body = (await response.json().catch(() => null)) as
     | AdminCoursesListData
     | { error?: string }
     | null;
+  signal?.throwIfAborted();
   if (!response.ok) {
     throw new Error(
       body && "error" in body && body.error ? body.error : `加载失败：${response.status}`
@@ -104,74 +109,106 @@ export function CoursesListPage({
   const [searchInput, setSearchInput] = useState(initialQ);
   const [published, setPublished] = useState<PublishedFilter>(initialPublished);
   const [page, setPage] = useState(initialPage);
-  const [loading, setLoading] = useState(false);
+  const { busy: loading, begin } = useAdminOperation();
   const [error, setError] = useState<string | null>(loadError);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Course | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const applyData = useCallback(
+    (data: AdminCoursesListData, next: { q: string; published: PublishedFilter; page: number }) => {
+      setItems(data.items);
+      setStats(data.stats);
+      setTotal(data.total);
+      setQ(next.q);
+      setPublished(next.published);
+      setPage(next.page);
+    },
+    []
+  );
   const reload = useCallback(
     async (next: { q: string; published: PublishedFilter; page: number }) => {
-      setLoading(true);
+      const operation = begin("read");
+      if (!operation) return;
       setError(null);
       try {
-        const data = await fetchCoursesList({ ...next, pageSize });
-        setItems(data.items);
-        setStats(data.stats);
-        setTotal(data.total);
-        setQ(next.q);
-        setPublished(next.published);
-        setPage(next.page);
+        const data = await fetchCoursesList({ ...next, pageSize }, operation.signal);
+        if (operation.current()) applyData(data, next);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "加载课程列表失败。");
+        if (operation.current())
+          setError(err instanceof Error ? err.message : "加载课程列表失败。");
       } finally {
-        setLoading(false);
+        operation.finish();
       }
     },
-    [pageSize]
+    [pageSize, begin, applyData]
   );
 
   useEffect(() => {
-    if (searchInput === q) return;
+    if (busyId !== null || searchInput === q) return;
     const timer = setTimeout(() => {
       void reload({ q: searchInput, published, page: 1 });
     }, 400);
     return () => clearTimeout(timer);
-  }, [searchInput, q, published, reload]);
+  }, [searchInput, q, published, reload, busyId]);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
 
-  async function togglePublish(course: Course) {
-    setActionError(null);
-    setBusyId(course.id);
-    try {
-      const response = await fetch(`/api/admin/courses/${course.id}/publish`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ published: !course.published }),
-      });
-      const body = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(body?.error ?? `操作失败：${response.status}`);
-      await reload({ q, published, page });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "更新发布状态失败。");
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const togglePublish = useCallback(
+    async (course: Course) => {
+      const operation = begin();
+      if (!operation) return;
+      setActionError(null);
+      setBusyId(course.id);
+      try {
+        const response = await fetch(`/api/admin/courses/${course.id}/publish`, {
+          method: "PATCH",
+          signal: operation.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ published: !course.published }),
+        });
+        const body = (await response.json().catch(() => null)) as { error?: string } | null;
+        if (!operation.current()) return;
+        if (!response.ok) throw new Error(body?.error ?? `操作失败：${response.status}`);
+        const next = { q, published, page };
+        const data = await fetchCoursesList({ ...next, pageSize }, operation.signal);
+        if (operation.current()) applyData(data, next);
+      } catch (err) {
+        if (operation.current())
+          setActionError(err instanceof Error ? err.message : "更新发布状态失败。");
+      } finally {
+        if (operation.current()) setBusyId(null);
+        operation.finish();
+      }
+    },
+    [begin, q, published, page, pageSize, applyData]
+  );
 
   async function confirmDelete() {
     if (!deleteTarget) return;
+    const operation = begin();
+    if (!operation) throw new Error("An operation is already in progress.");
     setActionError(null);
+    setBusyId(deleteTarget.id);
     try {
-      const response = await fetch(`/api/admin/courses/${deleteTarget.id}`, { method: "DELETE" });
+      const response = await fetch(`/api/admin/courses/${deleteTarget.id}`, {
+        method: "DELETE",
+        signal: operation.signal,
+      });
       const body = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!operation.current()) return;
       if (!response.ok) throw new Error(body?.error ?? `删除失败：${response.status}`);
       setDeleteTarget(null);
-      await reload({ q, published, page });
+      const next = { q, published, page };
+      const data = await fetchCoursesList({ ...next, pageSize }, operation.signal);
+      if (operation.current()) applyData(data, next);
     } catch (err) {
+      if (!operation.current()) return;
       setActionError(err instanceof Error ? err.message : "删除失败。");
       throw err;
+    } finally {
+      if (operation.current()) setBusyId(null);
+      operation.finish();
     }
   }
 
@@ -278,7 +315,7 @@ export function CoursesListPage({
         meta: { pin: "right", cellClassName: "w-[280px]" },
         cell: ({ row }) => {
           const course = row.original;
-          const busy = busyId === course.id;
+          const busy = busyId !== null;
           return (
             <div className="flex flex-wrap items-center gap-1.5">
               <Button variant="outline" size="sm" asChild>
@@ -319,7 +356,7 @@ export function CoursesListPage({
         },
       },
     ],
-    [busyId]
+    [busyId, togglePublish]
   );
 
   return (
@@ -352,6 +389,7 @@ export function CoursesListPage({
           <div className="relative min-w-[220px] flex-1">
             <IconSearch className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-slate-400" />
             <Input
+              disabled={busyId !== null}
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder="按标题搜索…"
@@ -359,6 +397,7 @@ export function CoursesListPage({
             />
           </div>
           <Select
+            disabled={busyId !== null}
             value={published}
             onValueChange={(value) => {
               const next = value as PublishedFilter;
@@ -410,6 +449,7 @@ export function CoursesListPage({
       </section>
 
       <ConfirmDialog
+        key={deleteTarget?.id ?? "closed"}
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
