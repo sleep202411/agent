@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaClient, type Prisma } from '@prisma/client';
@@ -241,6 +242,98 @@ jest.setTimeout(15000);
     expect(
       (await svc.list(owner, { role: 'creator', limit: 24 })).items[0]
         ._unreadCount,
+    ).toBe(0);
+  });
+  it.each(['departed', 'role', 'context'] as const)(
+    'rejects a proposal after a preceding %s change without messages or outbox rows',
+    async (mode) => {
+      const conv = await conversations.openServiceConversation({
+        serviceId: id,
+        buyerId: buyer,
+        creatorId: owner,
+      });
+      const proposal = {
+        note: 'Offer',
+        packageTier: 'basic' as const,
+        price: 10,
+        currency: 'CNY' as const,
+        deliveryDays: 1,
+        revisions: 0,
+        scope: [],
+      };
+      const send = afterHeldEdit(
+        async (tx) => {
+          if (mode === 'context')
+            await tx.conversation.update({
+              where: { id: conv.id },
+              data: { contextType: 'order', contextId: 'already-converted' },
+            });
+          else
+            await tx.conversationParticipant.update({
+              where: {
+                conversationId_userId: {
+                  conversationId: conv.id,
+                  userId: owner,
+                },
+              },
+              data:
+                mode === 'departed'
+                  ? { leftAt: new Date() }
+                  : { role: 'buyer' },
+            });
+        },
+        () => conversations.sendProposal(conv.id, owner, proposal),
+      );
+      await expect(send).rejects.toBeInstanceOf(
+        mode === 'departed'
+          ? NotFoundException
+          : mode === 'role'
+            ? ForbiddenException
+            : ConflictException,
+      );
+      expect(
+        await db.message.count({ where: { conversationId: conv.id } }),
+      ).toBe(0);
+      expect(
+        await db.conversationRealtimeOutbox.count({
+          where: { message: { conversationId: conv.id } },
+        }),
+      ).toBe(0);
+      expect(messageBroadcast).not.toHaveBeenCalled();
+    },
+  );
+  it('rolls back proposal messages and outbox rows with the caller transaction', async () => {
+    const conv = await conversations.openServiceConversation({
+      serviceId: id,
+      buyerId: buyer,
+      creatorId: owner,
+    });
+    await expect(
+      db.$transaction(async (tx) => {
+        await conversations.persistProposal(
+          conv.id,
+          owner,
+          {
+            note: 'Offer',
+            packageTier: 'basic',
+            price: 10,
+            currency: 'CNY',
+            deliveryDays: 1,
+            revisions: 0,
+            scope: [],
+          },
+          tx,
+        );
+        throw new Error('Caller failed');
+      }),
+    ).rejects.toThrow('Caller failed');
+    expect(await db.message.count({ where: { conversationId: conv.id } })).toBe(
+      0,
+    );
+    expect(
+      await db.conversationRealtimeOutbox.count({
+        where: { message: { conversationId: conv.id } },
+      }),
     ).toBe(0);
   });
   it('concurrent retries retain one order, conversation, message pair and broadcast set', async () => {

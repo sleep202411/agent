@@ -856,6 +856,43 @@ export class ConversationsService {
     input: SendProposalInput,
     db: DbClient = this.prisma,
   ): Promise<PrismaMessage> {
+    await this.assertProposalContext(conversationId, authorId, db);
+    const proposal: ProposalPayload = {
+      status: 'open',
+      packageTier: input.packageTier,
+      price: input.price,
+      currency: input.currency,
+      deliveryDays: input.deliveryDays,
+      revisions: input.revisions,
+      scope: input.scope,
+      note: input.note,
+    };
+    const payload: MessagePayload = { kind: 'proposal', proposal };
+    return this.runInTx(db, async (tx) => {
+      // Match order admission's participant-before-conversation lock order.
+      // Hold both through persistence so departure, role changes and inquiry
+      // conversion cannot slip between the eligibility check and the write.
+      await tx.$queryRaw`SELECT user_id FROM conversation_participants WHERE conversation_id = ${conversationId} AND user_id = ${authorId} FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM conversations WHERE id = ${conversationId} FOR UPDATE`;
+      await this.assertProposalContext(conversationId, authorId, tx);
+      return (
+        await this.persist(
+          conversationId,
+          authorId,
+          'proposal',
+          input.note,
+          payload,
+          tx,
+        )
+      ).message;
+    });
+  }
+
+  private async assertProposalContext(
+    conversationId: string,
+    authorId: string,
+    db: DbClient,
+  ) {
     const participant = await this.assertParticipant(
       conversationId,
       authorId,
@@ -871,27 +908,6 @@ export class ConversationsService {
     if (!conv || conv.contextType !== 'service') {
       throw new ConflictException('Proposals only valid on service inquiries');
     }
-    const proposal: ProposalPayload = {
-      status: 'open',
-      packageTier: input.packageTier,
-      price: input.price,
-      currency: input.currency,
-      deliveryDays: input.deliveryDays,
-      revisions: input.revisions,
-      scope: input.scope,
-      note: input.note,
-    };
-    const payload: MessagePayload = { kind: 'proposal', proposal };
-    return (
-      await this.persist(
-        conversationId,
-        authorId,
-        'proposal',
-        input.note,
-        payload,
-        db,
-      )
-    ).message;
   }
 
   /**
