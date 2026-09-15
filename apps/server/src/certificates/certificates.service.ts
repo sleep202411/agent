@@ -223,18 +223,23 @@ export class CertificatesService {
     // store it verbatim. The unique index is the source of truth — a clash
     // surfaces as a clear conflict instead of silently re-generating.
     if (input.certNo) {
+      const pinnedCertNo = input.certNo;
       try {
-        const cert = await this.prisma.userCertificate.create({
-          data: {
-            userId,
-            certNo: input.certNo,
-            title: input.title,
-            issuer: input.issuer,
-            credentialType: input.credentialType ?? 'general',
-            imageAssetId: input.imageAssetId,
-            issuedAt,
-          },
-          include: { imageAsset: true },
+        const cert = await this.certificateWrite(undefined, async (tx) => {
+          await tx.$queryRaw`SELECT id FROM media_assets WHERE id=${input.imageAssetId}::uuid FOR SHARE`;
+          await this.assertUsableImageAsset(input.imageAssetId, tx);
+          return tx.userCertificate.create({
+            data: {
+              userId,
+              certNo: pinnedCertNo,
+              title: input.title,
+              issuer: input.issuer,
+              credentialType: input.credentialType ?? 'general',
+              imageAssetId: input.imageAssetId,
+              issuedAt,
+            },
+            include: { imageAsset: true },
+          });
         });
         return this.adminCertificateDto(cert);
       } catch (err) {
@@ -254,17 +259,21 @@ export class CertificatesService {
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const certNo = generateCertNo('GEN', issuedAt);
       try {
-        const cert = await this.prisma.userCertificate.create({
-          data: {
-            userId,
-            certNo,
-            title: input.title,
-            issuer: input.issuer,
-            credentialType: input.credentialType ?? 'general',
-            imageAssetId: input.imageAssetId,
-            issuedAt,
-          },
-          include: { imageAsset: true },
+        const cert = await this.certificateWrite(undefined, async (tx) => {
+          await tx.$queryRaw`SELECT id FROM media_assets WHERE id=${input.imageAssetId}::uuid FOR SHARE`;
+          await this.assertUsableImageAsset(input.imageAssetId, tx);
+          return tx.userCertificate.create({
+            data: {
+              userId,
+              certNo,
+              title: input.title,
+              issuer: input.issuer,
+              credentialType: input.credentialType ?? 'general',
+              imageAssetId: input.imageAssetId,
+              issuedAt,
+            },
+            include: { imageAsset: true },
+          });
         });
         return this.adminCertificateDto(cert);
       } catch (err) {
@@ -286,59 +295,68 @@ export class CertificatesService {
     id: string,
     input: UpdateAdminCertificateInput,
   ): Promise<AdminCertificateDTO> {
-    await this.getCertOrThrow(id);
-    if (input.imageAssetId)
-      await this.assertUsableImageAsset(input.imageAssetId);
+    return this.certificateWrite(id, async (tx) => {
+      await this.getCertOrThrow(id, tx);
+      if (input.imageAssetId) {
+        await tx.$queryRaw`SELECT id FROM media_assets WHERE id=${input.imageAssetId}::uuid FOR SHARE`;
+        await this.assertUsableImageAsset(input.imageAssetId, tx);
+      }
 
-    const cert = await this.prisma.userCertificate.update({
-      where: { id },
-      data: {
-        ...(input.credentialType !== undefined
-          ? { credentialType: input.credentialType }
-          : {}),
-        ...(input.title !== undefined ? { title: input.title } : {}),
-        ...(input.issuer !== undefined ? { issuer: input.issuer } : {}),
-        ...(input.imageAssetId !== undefined
-          ? { imageAssetId: input.imageAssetId }
-          : {}),
-        ...(input.issuedAt !== undefined ? { issuedAt: input.issuedAt } : {}),
-      },
-      include: { imageAsset: true },
+      const cert = await tx.userCertificate.update({
+        where: { id },
+        data: {
+          ...(input.credentialType !== undefined
+            ? { credentialType: input.credentialType }
+            : {}),
+          ...(input.title !== undefined ? { title: input.title } : {}),
+          ...(input.issuer !== undefined ? { issuer: input.issuer } : {}),
+          ...(input.imageAssetId !== undefined
+            ? { imageAssetId: input.imageAssetId }
+            : {}),
+          ...(input.issuedAt !== undefined ? { issuedAt: input.issuedAt } : {}),
+        },
+        include: { imageAsset: true },
+      });
+      return this.adminCertificateDto(cert);
     });
-    return this.adminCertificateDto(cert);
   }
 
   async revokeAdmin(
     id: string,
     reason: string | null,
   ): Promise<AdminCertificateDTO> {
-    const existing = await this.getCertOrThrow(id);
-    const cert = await this.prisma.userCertificate.update({
-      where: { id },
-      // Preserve the original revocation timestamp if it's already revoked;
-      // only (re)set the reason. Otherwise stamp now.
-      data: {
-        revokedAt: existing.revokedAt ?? new Date(),
-        revokedReason: reason,
-      },
-      include: { imageAsset: true },
+    return this.certificateWrite(id, async (tx) => {
+      const existing = await this.getCertOrThrow(id, tx);
+      const cert = await tx.userCertificate.update({
+        where: { id },
+        // Preserve the original revocation timestamp if it's already revoked;
+        // only (re)set the reason. Otherwise stamp now.
+        data: {
+          revokedAt: existing.revokedAt ?? new Date(),
+          revokedReason: reason,
+        },
+        include: { imageAsset: true },
+      });
+      return this.adminCertificateDto(cert);
     });
-    return this.adminCertificateDto(cert);
   }
 
   async restoreAdmin(id: string): Promise<AdminCertificateDTO> {
-    await this.getCertOrThrow(id);
-    const cert = await this.prisma.userCertificate.update({
-      where: { id },
-      data: { revokedAt: null, revokedReason: null },
-      include: { imageAsset: true },
+    return this.certificateWrite(id, async (tx) => {
+      await this.getCertOrThrow(id, tx);
+      const cert = await tx.userCertificate.update({
+        where: { id },
+        data: { revokedAt: null, revokedReason: null },
+        include: { imageAsset: true },
+      });
+      return this.adminCertificateDto(cert);
     });
-    return this.adminCertificateDto(cert);
   }
 
   async deleteAdmin(id: string): Promise<{ id: string }> {
-    const cert = await this.getCertOrThrow(id);
-    await this.prisma.$transaction(async (tx) => {
+    await this.certificateWrite(id, async (tx) => {
+      const cert = await this.getCertOrThrow(id, tx);
+      await tx.$queryRaw`SELECT id FROM media_assets WHERE id=${cert.imageAssetId}::uuid FOR UPDATE`;
       await tx.userCertificate.delete({ where: { id } });
       // The image FK is onDelete:Restrict, so the cert row must go first.
       // Soft-delete the image only if no other cert still references it.
@@ -427,8 +445,22 @@ export class CertificatesService {
     };
   }
 
-  private async getCertOrThrow(id: string) {
-    const cert = await this.prisma.userCertificate.findUnique({
+  private async certificateWrite<T>(
+    id: string | undefined,
+    work: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return this.prisma.$transaction(async (tx) => {
+      if (id)
+        await tx.$queryRaw`SELECT id FROM user_certificates WHERE id=${id}::uuid FOR UPDATE`;
+      return work(tx);
+    });
+  }
+
+  private async getCertOrThrow(
+    id: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ) {
+    const cert = await db.userCertificate.findUnique({
       where: { id },
     });
     if (!cert) {
@@ -440,8 +472,11 @@ export class CertificatesService {
     return cert;
   }
 
-  private async assertUsableImageAsset(imageAssetId: string): Promise<void> {
-    const asset = await this.prisma.mediaAsset.findUnique({
+  private async assertUsableImageAsset(
+    imageAssetId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    const asset = await db.mediaAsset.findUnique({
       where: { id: imageAssetId },
       select: { id: true, kind: true, status: true, deletedAt: true },
     });
