@@ -50,7 +50,7 @@ import { MediaPreviewPanel } from "../media-preview-panel";
 import { ResultGallery } from "../result-gallery";
 import { GenerateButton } from "@/components/ui/generate-button";
 import { backendApi } from "@/src/lib/api";
-import { useAppDispatch, useAppSelector, store } from "@/src/store";
+import { useAppDispatch, useAppSelector } from "@/src/store";
 import {
   selectCurrentInstance,
   initVideoInstance,

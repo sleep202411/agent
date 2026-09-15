@@ -1,42 +1,44 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { backendApi } from "@/src/lib/api";
 import { store } from "@/src/store";
 import { selectCurrentInstance, setEpisodes } from "@/src/store/slices/projectSlice";
 
 /** Keep a delayed episode edit attached to the episode that admitted it. */
 export function useEpisodePromptAutosave() {
+  const stateRef = useRef<{
+    timer: ReturnType<typeof setTimeout> | null;
+    pending: (() => void) | null;
+    owns: (() => boolean) | null;
+    active: boolean;
+  }>({ timer: null, pending: null, owns: null, active: false });
   const autosave = useMemo(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let pending: (() => void) | null = null;
-    let owns: (() => boolean) | null = null;
-    let active = false;
     const cancel = () => {
-      if (timer !== null) clearTimeout(timer);
-      timer = null;
-      pending = null;
-      owns = null;
+      if (stateRef.current.timer !== null) clearTimeout(stateRef.current.timer);
+      stateRef.current.timer = null;
+      stateRef.current.pending = null;
+      stateRef.current.owns = null;
     };
     const flush = () => {
-      const save = owns?.() ? pending : null;
+      const save = stateRef.current.owns?.() ? stateRef.current.pending : null;
       cancel();
       save?.();
     };
     return {
       start() {
-        active = true;
+        stateRef.current.active = true;
       },
       stop() {
         flush();
-        active = false;
+        stateRef.current.active = false;
       },
       check() {
-        if (owns && !owns()) cancel();
+        if (stateRef.current.owns && !stateRef.current.owns()) cancel();
       },
-      isPending: () => timer !== null,
+      isPending: () => stateRef.current.timer !== null,
       schedule(front: string, behind: string) {
-        if (!active) return;
+        if (!stateRef.current.active) return;
         cancel();
         const state = store.getState();
         const projectId = state.project.currentProjectId;
@@ -52,7 +54,7 @@ export function useEpisodePromptAutosave() {
         )
           return;
         const detailId = instance.detail.id;
-        owns = () => {
+        stateRef.current.owns = () => {
           const current = store.getState();
           const next = selectCurrentInstance(current);
           return (
@@ -62,7 +64,7 @@ export function useEpisodePromptAutosave() {
             next.episodes.some((item) => String(item.id) === String(episode.id))
           );
         };
-        pending = () => {
+        stateRef.current.pending = () => {
           const prompts = { frontPrompt: front.trim(), behindPrompt: behind.trim() };
           store.dispatch(
             setEpisodes(
@@ -77,7 +79,7 @@ export function useEpisodePromptAutosave() {
             })
             .catch((error) => console.warn("[EpisodePromptAutosave] save prompts failed:", error));
         };
-        timer = setTimeout(flush, 500);
+        stateRef.current.timer = setTimeout(flush, 500);
       },
     };
   }, []);

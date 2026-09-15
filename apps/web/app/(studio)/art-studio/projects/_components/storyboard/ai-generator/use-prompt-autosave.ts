@@ -4,7 +4,8 @@ import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 /** Trailing autosave. A pending edit retains the callback for its own cell. */
 export function usePromptAutosave(save: (value: string) => void, delay = 800, scope = "") {
-  const lifetime = useMemo(() => ({ scope, active: false }), [scope]);
+  const lifetime = useMemo(() => ({ scope }), [scope]);
+  const activeRef = useRef<typeof lifetime | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pending = useRef<{ value: string; save: (value: string) => void } | null>(null);
 
@@ -20,7 +21,7 @@ export function usePromptAutosave(save: (value: string) => void, delay = 800, sc
 
   const schedule = useCallback(
     (value: string) => {
-      if (!lifetime.active) return;
+      if (activeRef.current !== lifetime) return;
       pending.current = { value, save };
       if (timer.current !== null) clearTimeout(timer.current);
       timer.current = setTimeout(flush, delay);
@@ -30,9 +31,9 @@ export function usePromptAutosave(save: (value: string) => void, delay = 800, sc
 
   // Shot navigation flushes the departing cell before admitting the next one.
   useLayoutEffect(() => {
-    lifetime.active = true;
+    activeRef.current = lifetime;
     return () => {
-      lifetime.active = false;
+      if (activeRef.current === lifetime) activeRef.current = null;
       flush();
     };
   }, [flush, lifetime]);
