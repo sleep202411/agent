@@ -1,15 +1,12 @@
 "use client";
 
-import Link from "next/link";
-import { localizePath } from "@/src/i18n/locale-url";
-import { useLocale } from "@/src/i18n/i18n";
 import { IconCube, IconLink } from "@tabler/icons-react";
 import { toast } from "sonner";
 
 import { useCrewProductionOverview } from "@/app/(site)/crews/_hooks/use-production";
 import { Button } from "@/components/ui/button";
 import { useTranslations } from "@/src/i18n/i18n";
-import { CrewStudioProjectPicker } from "./crew-studio-project-picker";
+import { CrewStudioWorkspacePicker } from "./crew-studio-workspace-picker";
 
 export function CrewWorkbenchHeader({
   crewId,
@@ -22,7 +19,6 @@ export function CrewWorkbenchHeader({
   pageTitle: string;
   showProductionActions: boolean;
 }) {
-  const locale = useLocale();
   const t = useTranslations("crewTaskProject");
   const tw = useTranslations("crewWorkbench");
   const overview = useCrewProductionOverview(crewId, showProductionActions);
@@ -55,23 +51,12 @@ export function CrewWorkbenchHeader({
       </div>
       <div className="ml-auto flex min-w-0 max-w-full shrink-0 items-center gap-2">
         {showProductionActions ? (
-          <CrewStudioProjectPicker
+          <CrewStudioWorkspacePicker
             key={crewId}
             crewId={crewId}
-            value={overview.data?.studioProject ?? null}
-            disabled={!overview.data?.capabilities.manage}
+            value={overview.data?.studioWorkspace ?? null}
+            disabled={!overview.data?.capabilities.linkWorkspace}
           />
-        ) : null}
-        {showProductionActions && overview.data?.studioProject ? (
-          <Link
-            className="rounded-md px-2 py-2 text-xs text-[#858a95] hover:text-white"
-            href={localizePath(
-              `/fizzstudio/billing?${new URLSearchParams({ workspaceId: overview.data.studioProject.workspace.id, projectId: overview.data.studioProject.id })}`,
-              locale === "zh-CN" || locale === "zh-HK" ? locale : "en-US"
-            )}
-          >
-            {tw("projectUsage")}
-          </Link>
         ) : null}
         <Button
           color="muted"

@@ -1,12 +1,14 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useCanvasGraphContext } from "@/lib/canvas-core/canvas-graph-context";
 import type { AssetCategory, CanvasAsset } from "@/lib/canvas-core/types";
 import {
   getProjectCrewAssetContext,
-  listProjectCrewAssets,
+  listAllProjectCrewAssets,
 } from "@/lib/collab/project-crew-assets-api";
 import { mentionLabel, type MentionItem } from "@/lib/prompt-mentions";
 
@@ -60,7 +62,7 @@ function matchesFilter(asset: ProjectAsset, filter: AssetFilter): boolean {
  * Single inventory for the asset picker + library generated/uploaded tabs.
  *
  * - Canvas graph assets → `origin` from `source`, `category` defaulting to general
- * - Crew files (top-level flat list only) → `origin: "crew"`, category general
+ * - Crew files (all folders) → `origin: "crew"`, category general
  *
  * Folder navigation stays in `ProjectCrewAssetLibrary`; the dialog only needs
  * a flat list. Crew query keys match the library so react-query shares cache.
@@ -75,20 +77,21 @@ export function useProjectAssets(projectId: string): {
   const { assets: canvasAssets } = useCanvasGraphContext();
   const [filter, setFilter] = useState<AssetFilter>("all");
 
+  const { user } = useAuth();
   const context = useQuery({
-    queryKey: ["project-crew-assets", projectId, "context"],
+    queryKey: ["project-crew-assets", projectId, "context", user?.id],
     queryFn: () => getProjectCrewAssetContext(projectId),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId && user?.id),
     staleTime: 30_000,
     retry: false,
   });
 
-  // Flat root listing only — no folder walk (dialog doesn't need navigation).
+  // Load every folder and page so canvas saves are available in production pickers.
   // Distinct key from ProjectCrewAssetLibrary's infinite query so cache shapes
   // never collide (infinite pages vs a single page).
   const crewList = useQuery({
-    queryKey: ["project-crew-assets", projectId, "flat-root"],
-    queryFn: () => listProjectCrewAssets(projectId, {}),
+    queryKey: ["project-crew-assets", projectId, "all-folders", user?.id],
+    queryFn: async ({ signal }) => ({ items: await listAllProjectCrewAssets(projectId, signal) }),
     enabled: Boolean(projectId) && Boolean(context.data?.crew),
     staleTime: 30_000,
     retry: false,

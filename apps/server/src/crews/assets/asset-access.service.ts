@@ -29,6 +29,55 @@ export class CrewAssetAccessService {
     private readonly authorization: CrewAuthorizationService,
   ) {}
 
+  async canReadStudioReference(userId: string, mediaAssetId: string) {
+    const references = await this.prisma.crewAssetNode.findMany({
+      where: {
+        mediaAssetId,
+        sharedFromStudio: true,
+        status: 'active',
+        crew: { deletedAt: null },
+      },
+      select: { id: true, crewId: true },
+    });
+    for (const reference of references) {
+      if (
+        await this.resolveNodePermission(reference.crewId, reference.id, userId)
+      )
+        return true;
+    }
+    return false;
+  }
+
+  // Workspace linking shares inherited library content for reading only.
+  // Explicit Crew denials and restricted folder boundaries still take precedence.
+  async canReadLinkedWorkspace(
+    crewId: string,
+    userId: string,
+    db: Db = this.prisma,
+  ) {
+    return Boolean(
+      await db.crew.findFirst({
+        where: {
+          id: crewId,
+          deletedAt: null,
+          studioWorkspace: {
+            status: 'active',
+            deletedAt: null,
+            members: {
+              some: {
+                userId,
+                status: 'active',
+                removedAt: null,
+                accessScope: 'workspace',
+              },
+            },
+          },
+        },
+        select: { id: true },
+      }),
+    );
+  }
+
   /**
    * Resolve the effective permission through every ACL boundary from the crew
    * root to the node. A restricted descendant cannot bypass a restricted
@@ -42,7 +91,17 @@ export class CrewAssetAccessService {
     db: Db = this.prisma,
   ): Promise<CrewAssetPermission | null> {
     const context = await this.authorization.resolve(crewId, userId, db);
-    if (!context?.permissions.includes('assets.view')) return null;
+    if (!context?.permissions.includes('assets.view')) {
+      if (context || !(await this.canReadLinkedWorkspace(crewId, userId, db)))
+        return null;
+      const permission = await this.resolveMemberNodePermission(
+        crewId,
+        nodeId,
+        userId,
+        db,
+      );
+      return permission ? CrewAssetPermission.view : null;
+    }
     if (context.permissions.includes('assets.manage')) {
       return CrewAssetPermission.manage;
     }
@@ -101,7 +160,9 @@ export class CrewAssetAccessService {
         uniqueIds.map((nodeId) => [nodeId, CrewAssetPermission.manage]),
       );
     }
-    if (!context?.permissions.includes('assets.view')) {
+    const workspaceReader =
+      !context && (await this.canReadLinkedWorkspace(crewId, userId, db));
+    if (!context?.permissions.includes('assets.view') && !workspaceReader) {
       return new Map(uniqueIds.map((nodeId) => [nodeId, null]));
     }
 
@@ -187,7 +248,9 @@ export class CrewAssetAccessService {
       [...states].map(
         ([nodeId, state]): [string, CrewAssetPermission | null] => {
           if (state.invalid) return [nodeId, null];
-          let effective: CrewAssetPermission = CrewAssetPermission.edit;
+          let effective: CrewAssetPermission = workspaceReader
+            ? CrewAssetPermission.view
+            : CrewAssetPermission.edit;
           for (const node of state.lineage) {
             if (node.accessMode !== CrewAssetAccessMode.restricted) continue;
             const permission = grantsByNode.get(node.id);

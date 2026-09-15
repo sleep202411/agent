@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { useDeferredValue, useMemo, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
@@ -136,15 +138,16 @@ export function ProjectCrewAssetLibrary({
   const [path, setPath] = useState<FolderCrumb[]>([]);
   const parentId = path.at(-1)?.id;
 
+  const { user } = useAuth();
   const context = useQuery({
-    queryKey: ["project-crew-assets", projectId, "context"],
+    queryKey: ["project-crew-assets", projectId, "context", user?.id],
     queryFn: () => getProjectCrewAssetContext(projectId),
     staleTime: 30_000,
     retry: false,
   });
   const listing = useInfiniteQuery({
-    queryKey: ["project-crew-assets", projectId, parentId ?? "root", deferredQuery],
-    enabled: Boolean(context.data?.crew),
+    queryKey: ["project-crew-assets", projectId, parentId ?? "root", deferredQuery, user?.id],
+    enabled: Boolean(context.data?.crew && user?.id),
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam }) =>
       listProjectCrewAssets(projectId, {

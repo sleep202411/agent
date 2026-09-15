@@ -1,5 +1,6 @@
 "use client";
 
+import { CrewSaveActions } from "@/components/canvas/authoring/crew-save-actions";
 import { useCallback, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { ReactFlowProvider } from "@xyflow/react";
@@ -22,7 +23,7 @@ import { createWorkflowPresets } from "@/app/[locale]/canvas/_lib/workflow-prese
 function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
   const t = useTranslations("canvas");
   const tCanvasControls = useTranslations("canvasControls");
-  const { setShellInset, uploadKinds, catalog } = useProjectContext();
+  const { projectId, setShellInset, uploadKinds, catalog } = useProjectContext();
   // The canvas doc connection is owned by the shell (single connection for the
   // whole workspace). Read doc/awareness/provider from there — do NOT call
   // another document hook here (that would open a second connection).
@@ -81,56 +82,64 @@ function CollaborativeCanvasInner({ canEdit }: { canEdit: boolean }) {
       provider={provider}
       currentUserId={user?.id != null ? String(user.id) : undefined}
     >
-      <MediaAuthoringCanvas
-        canEdit={canEdit}
-        ready={documentStatus === "ready" && connectionStatus === "synced"}
+      <CrewSaveActions
+        key={`${user?.id}:${projectId}:${documentId}`}
+        userId={String(user?.id ?? "")}
+        projectId={projectId}
         documentId={documentId}
-        scopeKey={documentId}
-        uploadKinds={uploadKinds}
-        addNodeActions={PROJECT_CANVAS_ADD_NODE_ACTIONS}
-        initialFocusNodeId={focusNodeId}
-        grouping={grouping}
-        onDrawerInsetChange={reportDrawerInset}
-        onCanvasPointerMove={publishCursor}
-        onCanvasPointerLeave={clearCursor}
-        renderViewportLayers={(nodes) => (
-          <>
-            <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
-            <CommentsLayer nodes={nodes} />
-          </>
-        )}
-        panels={null}
-        loadingOverlay={
-          documentStatus === "loading" ? (
-            <div className="absolute inset-0 z-50 grid place-items-center">
-              <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
-            </div>
-          ) : null
-        }
-        renderErrorOverlay={() =>
-          documentStatus === "error" ? (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
-              <p className="text-sm text-muted-foreground">{t("openError")}</p>
-            </div>
-          ) : null
-        }
-        renderEmptyState={({ openAddMenu }) =>
-          documentStatus !== "error" ? (
-            canEdit ? (
-              <CanvasEmptyState
-                presets={workflowPresets}
-                catalogReady={Boolean(catalog.data && catalog.data.models.length > 0)}
-                onAddNode={openAddMenu}
-                onApplyPreset={applyPreset}
-              />
-            ) : (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <p className="text-sm text-muted-foreground">{t("emptyReadOnly")}</p>
+        canEdit={canEdit}
+      >
+        <MediaAuthoringCanvas
+          canEdit={canEdit}
+          ready={documentStatus === "ready" && connectionStatus === "synced"}
+          documentId={documentId}
+          scopeKey={documentId}
+          uploadKinds={uploadKinds}
+          addNodeActions={PROJECT_CANVAS_ADD_NODE_ACTIONS}
+          initialFocusNodeId={focusNodeId}
+          grouping={grouping}
+          onDrawerInsetChange={reportDrawerInset}
+          onCanvasPointerMove={publishCursor}
+          onCanvasPointerLeave={clearCursor}
+          renderViewportLayers={(nodes) => (
+            <>
+              <CollabCursors awareness={awareness} localClientId={doc?.clientID} />
+              <CommentsLayer nodes={nodes} />
+            </>
+          )}
+          panels={null}
+          loadingOverlay={
+            documentStatus === "loading" ? (
+              <div className="absolute inset-0 z-50 grid place-items-center">
+                <IconLoader2 className="size-7 animate-spin text-white/40" stroke={1.5} />
               </div>
-            )
-          ) : null
-        }
-      />
+            ) : null
+          }
+          renderErrorOverlay={() =>
+            documentStatus === "error" ? (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/60 backdrop-blur-sm">
+                <p className="text-sm text-muted-foreground">{t("openError")}</p>
+              </div>
+            ) : null
+          }
+          renderEmptyState={({ openAddMenu }) =>
+            documentStatus !== "error" ? (
+              canEdit ? (
+                <CanvasEmptyState
+                  presets={workflowPresets}
+                  catalogReady={Boolean(catalog.data && catalog.data.models.length > 0)}
+                  onAddNode={openAddMenu}
+                  onApplyPreset={applyPreset}
+                />
+              ) : (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <p className="text-sm text-muted-foreground">{t("emptyReadOnly")}</p>
+                </div>
+              )
+            ) : null
+          }
+        />
+      </CrewSaveActions>
     </CommentsProvider>
   );
 }

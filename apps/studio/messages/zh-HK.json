@@ -1468,6 +1468,11 @@
         "generated": "此專案中的生成結果會顯示在這裡。",
         "uploaded": "你上載到此專案的媒體會顯示在這裡。"
       }
+    },
+    "crewSave": {
+      "save": "儲存至劇組資產",
+      "saved": "已儲存至 {folder}",
+      "failed": "儲存失敗，請重試。"
     }
   },
   "canvasOps": {
@@ -3610,7 +3615,8 @@
         "clear": "取消選擇",
         "metadataIncomplete": "資訊不完整 · 仍可使用",
         "selectError": "無法套用此候選素材。",
-        "clearError": "無法取消選擇目前素材。"
+        "clearError": "無法取消選擇目前素材。",
+        "sharedDescription": "選擇本項目媒體或已關聯劇組的素材，或上傳檔案。"
       },
       "mediaCreation": "素材創作",
       "interactionEditor": {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { act } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
 import { NextIntlClientProvider } from "next-intl";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +11,16 @@ import {
   type StoryCandidateAssetPickerDialogProps,
 } from "./story-candidate-asset-picker-dialog";
 
+vi.mock("@/app/_components/auth-provider", () => ({
+  useAuth: () => ({ user: { id: "review-user" } }),
+}));
+const shared = vi.hoisted(() => ({ list: vi.fn(), add: vi.fn() }));
+vi.mock("@/lib/collab/project-crew-assets-api", () => ({ listAllProjectCrewAssets: shared.list }));
+vi.mock("@/lib/story-projects-api", async (original) => ({
+  ...(await original<object>()),
+  addStoryCandidateAsset: shared.add,
+}));
+
 const messages = {
   common: { close: "Close" },
   storyStudio: {
@@ -17,6 +28,7 @@ const messages = {
       candidatePicker: {
         title: "Choose media",
         description: "Choose from candidate media, or upload a local file.",
+        sharedDescription: "Choose project or Crew media, or upload a file.",
         upload: {
           prompt: "Drag a file here, or choose one from your device.",
           hint: "The current media type determines which files are accepted.",
@@ -266,20 +278,46 @@ describe("StoryCandidateAssetPickerDialog", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("imports a Crew video before selecting its canonical playable variant", async () => {
+    shared.list.mockResolvedValue([
+      {
+        id: "crew-file",
+        name: "Shared clip",
+        kind: "file",
+        parentId: null,
+        media: otherVideoCandidate.asset,
+      },
+    ]);
+    shared.add.mockResolvedValue(otherVideoCandidate);
+    const onSelect = vi.fn().mockResolvedValue(undefined);
+    await renderDialog({ projectId: "story-project", allowedKinds: ["video"], onSelect });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+    await click(buttonByLabel("Select Video 1"));
+    expect(shared.add).toHaveBeenCalledWith("story-project", otherVideoCandidate.asset.id);
+    expect(onSelect).toHaveBeenCalledWith(otherVideoCandidate);
+    expect(onSelect.mock.calls[0][0].videoVariant).not.toBeNull();
+  });
+
   async function renderDialog(overrides: Partial<StoryCandidateAssetPickerDialogProps> = {}) {
     await act(async () => {
       root.render(
-        <NextIntlClientProvider locale="en-US" messages={messages}>
-          <StoryCandidateAssetPickerDialog
-            open
-            onOpenChange={vi.fn()}
-            items={[]}
-            allowedKinds={["image", "video"]}
-            canSelect
-            onSelect={vi.fn().mockResolvedValue(undefined)}
-            {...overrides}
-          />
-        </NextIntlClientProvider>
+        <QueryClientProvider
+          client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+        >
+          <NextIntlClientProvider locale="en-US" messages={messages}>
+            <StoryCandidateAssetPickerDialog
+              open
+              onOpenChange={vi.fn()}
+              items={[]}
+              allowedKinds={["image", "video"]}
+              canSelect
+              onSelect={vi.fn().mockResolvedValue(undefined)}
+              {...overrides}
+            />
+          </NextIntlClientProvider>
+        </QueryClientProvider>
       );
     });
   }
