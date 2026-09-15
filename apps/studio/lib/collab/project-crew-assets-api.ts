@@ -42,8 +42,9 @@ function crewAssetPath(projectId: string) {
     : `/aurora/projects/${encodeURIComponent(projectId)}/crew-assets`;
 }
 
-export function getProjectCrewAssetContext(projectId: string) {
+export function getProjectCrewAssetContext(projectId: string, signal?: AbortSignal) {
   return api.get<ProjectCrewAssetContext>(`${crewAssetPath(projectId)}/context`, {
+    signal,
     requestScope: "project",
   });
 }
