@@ -1,3 +1,4 @@
+import { createInstance } from "i18next";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
@@ -238,4 +239,20 @@ it("preserves feedback while changing its rating and submits the chosen rating o
     path: "/crews/crew/peer-feedback",
     body: { subjectUserId: "bob", rating: 4, comment: "Careful and reliable delivery" },
   });
+});
+
+it.each([
+  ["en-US", en],
+  ["zh-CN", cn],
+  ["zh-HK", hk],
+] as const)("interpolates history page numbers in %s", async (locale, messages) => {
+  const instance = createInstance();
+  await instance.init({
+    lng: locale,
+    resources: { [locale]: { translation: messages } },
+    interpolation: { prefix: "{", suffix: "}" },
+  });
+  const label = instance.t("crewAccountability.page", { page: 2 });
+  expect(label).toContain("2");
+  expect(label).not.toMatch(/[{}]/);
 });

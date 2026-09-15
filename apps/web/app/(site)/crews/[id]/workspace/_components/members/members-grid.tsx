@@ -153,7 +153,7 @@ function MembersGridSession({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="min-w-0 space-y-5">
       <ProjectAccountability crewId={crewId} members={members} />
       {/* This is a toolbar, not a second page title: the workspace header
           already establishes "Member management" above the scroll pane. */}

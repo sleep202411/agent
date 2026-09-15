@@ -9618,7 +9618,7 @@
     "awardPoints": "验证贡献并发放积分",
     "previous": "上一页",
     "next": "下一页",
-    "page": "第 {{page}} 页",
+    "page": "第 {page} 页",
     "saved": "已记录",
     "contextRequired": "请具体说明贡献、原因或交接情况。",
     "scheduleChanges": "计划变更"
