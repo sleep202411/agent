@@ -545,6 +545,50 @@ describe("TV IP list", () => {
     await waitForSource("ip-1");
   });
 
+  it.each(["resolve", "reject"] as const)(
+    "abandons pending channel navigation when search changes (%s)",
+    async (outcome) => {
+      let resolvePage!: (value: unknown) => void;
+      let rejectPage!: (error: Error) => void;
+      harness.list
+        .mockReset()
+        .mockImplementation((config: { params: { q?: string; cursor?: string } }) => {
+          if (config.params.q)
+            return Promise.resolve({
+              items: [makeIp("new-ip", "Search result")],
+              nextCursor: null,
+            });
+          if (!config.params.cursor)
+            return Promise.resolve({ items: [ips[0]], nextCursor: "page-2" });
+          return new Promise((resolve, reject) => {
+            resolvePage = resolve;
+            rejectPage = reject;
+          });
+        });
+      await render();
+      await waitForSource("ip-1");
+      act(() => player().trigger("ended"));
+      expect(container.textContent).toContain("tv.loadingChannel");
+      const input = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+      act(() => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set?.call(
+          input,
+          "new"
+        );
+        input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "new" }));
+      });
+      expect(container.textContent).not.toContain("tv.loadingChannel");
+      await act(async () => {
+        if (outcome === "resolve") resolvePage({ items: [ips[1]], nextCursor: null });
+        else rejectPage(new Error("Abandoned navigation failure"));
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      });
+      await waitForText("Search result");
+      expect(container.textContent).not.toContain("Abandoned navigation failure");
+      expect(selected()).toContain("Search result");
+    }
+  );
+
   it("surfaces a next-page failure and lets the viewer retry without losing the channel", async () => {
     harness.list
       .mockReset()
