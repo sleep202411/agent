@@ -31,9 +31,9 @@ export function StoryScriptDocument({ projectId }: { projectId: string }) {
   const activeChapterId = useStoryProjectUiStore((state) => state.activeChapterId);
 
   const workbenchQuery = useQuery({
-    queryKey: ["story-studio", "script-workbench", projectId, activeChapterId],
-    queryFn: () => getStoryWorkbench(projectId, activeChapterId as string),
-    enabled: Boolean(activeChapterId),
+    queryKey: ["story-studio", "script-workbench", projectId, activeChapterId, user?.id ?? null],
+    queryFn: ({ signal }) => getStoryWorkbench(projectId, activeChapterId as string, signal),
+    enabled: Boolean(projectId && activeChapterId && user),
     retry: false,
   });
   const canEdit = workbenchQuery.data?.project.capabilities.includes("story.edit") ?? false;

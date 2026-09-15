@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslations } from "next-intl";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +40,7 @@ type BibleOverlay = Partial<Record<StoryFoundationField, string>>;
  * typed text and retries against a refetched head.
  */
 export function StoryWorldDock({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.canvas");
   const queryClient = useQueryClient();
   const setSidePanel = useStoryProjectUiStore((state) => state.setSidePanel);
@@ -46,8 +49,8 @@ export function StoryWorldDock({ projectId }: { projectId: string }) {
   const workbenchQuery = useStoryChapterWorkbench(projectId);
   const { chapterId: activeChapterId } = workbenchQuery;
   const workbenchQueryKey = useMemo(
-    () => storyChapterWorkbenchQueryKey(projectId, activeChapterId),
-    [projectId, activeChapterId]
+    () => storyChapterWorkbenchQueryKey(projectId, activeChapterId, user?.id ?? null),
+    [projectId, activeChapterId, user?.id]
   );
   const workbench = workbenchQuery.data ?? null;
   const canEdit = workbench?.project.capabilities.includes("story.edit") ?? false;

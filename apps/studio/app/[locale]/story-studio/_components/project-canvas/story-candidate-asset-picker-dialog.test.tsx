@@ -413,10 +413,7 @@ describe("StoryCandidateAssetPickerDialog", () => {
       },
     ]);
     await renderDialog({ projectId: "story-project", allowedKinds: ["video"] });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 40));
-    });
-    expect(buttonByLabel("Select Video 1")).toBeDefined();
+    expect(await waitForButton("Select Video 1")).toBeDefined();
     shared.list.mockImplementationOnce(() => new Promise(() => {}));
     await act(async () => {
       client.setQueryData(

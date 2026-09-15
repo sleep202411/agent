@@ -1,5 +1,7 @@
 "use client";
 
+import { useAuth } from "@/app/_components/auth-provider";
+
 import { IconAlertTriangle, IconPlus, IconRefresh } from "@tabler/icons-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
@@ -37,6 +39,7 @@ import { StorySourceReviewNotes } from "./story-source-review-notes";
  * (from the catalog or the canvas) scrolls to its section.
  */
 export function StoryStoryboardView({ projectId }: { projectId: string }) {
+  const { user } = useAuth();
   const t = useTranslations("storyStudio.storyboardPage");
   const queryClient = useQueryClient();
   const chapterId = useStoryProjectUiStore((state) => state.activeChapterId);
@@ -123,12 +126,12 @@ export function StoryStoryboardView({ projectId }: { projectId: string }) {
         queryKey: storyProductionKeys.storyboard(projectId, chapterId),
       });
       queryClient.setQueryData(
-        storyChapterWorkbenchQueryKey(projectId, chapterId),
+        storyChapterWorkbenchQueryKey(projectId, chapterId, user?.id ?? null),
         (current: typeof workbenchQuery.data) => (current ? { ...current, draft } : current)
       );
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: storyChapterWorkbenchQueryKey(projectId, chapterId),
+          queryKey: storyChapterWorkbenchQueryKey(projectId, chapterId, user?.id ?? null),
         }),
         queryClient.invalidateQueries({
           queryKey: storyProductionKeys.state(projectId, chapterId),
