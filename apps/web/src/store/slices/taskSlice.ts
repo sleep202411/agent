@@ -9,9 +9,9 @@ import { backendApi } from "@/src/lib/api";
 
 // ─── Types ──────────────────────────────────────────────
 
-export type TaskType = "image" | "video" | "audio" | "fusion" | "lip_sync";
+export type TaskType = "image" | "video" | "audio" | "fusion" | "lip_sync" | "agent" | "production";
 
-export type TaskStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type TaskStatus = "pending" | "running" | "waiting" | "completed" | "failed" | "cancelled";
 
 /** Task origin: "local" = created by frontend queue, "server" = synced from backend */
 export type TaskSource = "local" | "server";
@@ -156,9 +156,13 @@ export const taskSlice = createSlice({
 
     reconcileTaskSnapshot: (
       state,
-      action: PayloadAction<{ tasks: Task[]; baseline: Record<string, Task> }>
+      action: PayloadAction<{
+        tasks: Task[];
+        baseline: Record<string, Task>;
+        managedIdPrefixes?: string[];
+      }>
     ) => {
-      const { tasks, baseline } = action.payload;
+      const { tasks, baseline, managedIdPrefixes } = action.payload;
       const current = original(state.tasks)!;
       const next: Record<string, Task> = {};
       for (const task of tasks) {
@@ -171,7 +175,10 @@ export const taskSlice = createSlice({
             : task;
       }
       for (const task of Object.values(current)) {
-        if (task.source === "local" || task !== baseline[task.id]) next[task.id] = task;
+        const outsideSnapshot =
+          managedIdPrefixes && !managedIdPrefixes.some((prefix) => task.id.startsWith(prefix));
+        if (outsideSnapshot || task.source === "local" || task !== baseline[task.id])
+          next[task.id] = task;
       }
       state.tasks = next;
     },
@@ -433,7 +440,7 @@ export const selectTasksByType = (state: { task: TaskState }, type: TaskType) =>
 // Memoized selectors — safe for useSelector
 export const selectActiveTasks = createSelector([selectTasks], (tasks) =>
   Object.values(tasks)
-    .filter((t) => t.status === "pending" || t.status === "running")
+    .filter((t) => t.status === "pending" || t.status === "running" || t.status === "waiting")
     .sort((a, b) => b.createdAt - a.createdAt)
 );
 
@@ -449,7 +456,7 @@ export const selectHasActiveTasks = (
   shotColumnId?: string
 ) =>
   Object.values(state.task.tasks).some((t) => {
-    if (t.status !== "pending" && t.status !== "running") return false;
+    if (t.status !== "pending" && t.status !== "running" && t.status !== "waiting") return false;
     if (shotId && t.shotId !== shotId) return false;
     if (shotColumnId && t.shotColumnId !== shotColumnId) return false;
     return true;

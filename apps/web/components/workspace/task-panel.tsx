@@ -24,6 +24,7 @@ const STATUS_CONFIG: Record<
   TaskStatus,
   { icon: React.ComponentType<{ className?: string }>; labelKey: string; color: string }
 > = {
+  waiting: { icon: IconClock, labelKey: "taskWaiting", color: "text-muted-foreground" },
   pending: { icon: IconClock, labelKey: "taskPending", color: "text-muted-foreground" },
   running: { icon: IconLoader2, labelKey: "taskRunning", color: "text-blue-400" },
   completed: { icon: IconCircleCheck, labelKey: "taskCompleted", color: "text-green-400" },
@@ -35,6 +36,8 @@ const TYPE_CONFIG: Record<
   TaskType,
   { icon: React.ComponentType<{ className?: string }>; labelKey: string }
 > = {
+  agent: { icon: IconWand, labelKey: "taskAgent" },
+  production: { icon: IconWand, labelKey: "taskProduction" },
   image: { icon: IconPhoto, labelKey: "taskImage" },
   video: { icon: IconVideo, labelKey: "taskVideo" },
   audio: { icon: IconMicrophone, labelKey: "taskAudio" },
@@ -94,13 +97,15 @@ interface TaskPanelProps {
 
 export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
   const t = useTranslations("workspace");
-  useTaskFetch(userId);
+  const { error, retry } = useTaskFetch(userId);
 
   const tasks = useAppSelector((s) => s.task.tasks);
 
   const { activeTasks, tasksToShow } = useMemo(() => {
     const all = Object.values(tasks).sort((a, b) => b.createdAt - a.createdAt);
-    const active = all.filter((t) => t.status === "pending" || t.status === "running");
+    const active = all.filter(
+      (t) => t.status === "pending" || t.status === "running" || t.status === "waiting"
+    );
     const toShow =
       active.length > 0
         ? active
@@ -108,12 +113,20 @@ export function TaskPanel({ userId, className, onSelectTask }: TaskPanelProps) {
     return { activeTasks: active, tasksToShow: toShow };
   }, [tasks]);
 
-  if (tasksToShow.length === 0) {
+  if (tasksToShow.length === 0 && error === null) {
     return null;
   }
 
   return (
     <div className={cn("space-y-3", className)}>
+      {error !== null && (
+        <div role="status" className="text-sm text-muted-foreground">
+          {t("taskLoadError")}{" "}
+          <button type="button" className="underline" onClick={retry}>
+            {t("taskRetry")}
+          </button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">
           {activeTasks.length > 0

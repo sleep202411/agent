@@ -85,3 +85,18 @@ it("clears owned tasks on logout", () => {
   state = reduce(state, setTaskOwner(null));
   expect(state.tasks).toEqual({});
 });
+
+it("keeps Java/server tasks outside a recent-work snapshot's namespaces", () => {
+  let state = reduce(undefined, setTasks([task("java-image-1"), task("agent:gone")]));
+  const baseline = state.tasks;
+  state = reduce(
+    state,
+    reconcileTaskSnapshot({
+      tasks: [],
+      baseline,
+      managedIdPrefixes: ["ai:", "agent:", "production:", "build:"],
+    })
+  );
+  expect(state.tasks["java-image-1"]).toBeDefined();
+  expect(state.tasks["agent:gone"]).toBeUndefined();
+});

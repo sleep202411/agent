@@ -103,3 +103,25 @@ it("does not display an old account's failed read in its replacement", async () 
   expect(status.error).toBeNull();
   expect(status.isLoading).toBe(true);
 });
+
+it("refreshes settled snapshots without overlapping reads and clears its timer on logout", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  try {
+    await render();
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(pending).toHaveLength(1);
+    await act(async () => pending[0].resolve([]));
+    await act(async () => vi.advanceTimersByTime(30_000));
+    expect(pending).toHaveLength(2);
+    await act(async () => pending[1].resolve([]));
+    s.user = undefined;
+    await render();
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(pending).toHaveLength(2);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    visibility.mockRestore();
+    vi.useRealTimers();
+  }
+});

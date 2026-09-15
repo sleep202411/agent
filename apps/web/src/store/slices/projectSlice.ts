@@ -368,6 +368,7 @@ export const defaultSizeOptions: AiSizeOption[] = [
 function taskStatusToLegacy(status: ReduxTaskStatus): ResultStatus {
   switch (status) {
     case "pending":
+    case "waiting":
       return "waiting";
     case "running":
       return "generating";
@@ -541,6 +542,7 @@ type VideoResultStatus = "waiting" | "generating" | "success" | "failed";
 function taskStatusToVideoStatus(status: ReduxTaskStatus): VideoResultStatus {
   switch (status) {
     case "pending":
+    case "waiting":
       return "waiting";
     case "running":
       return "generating";

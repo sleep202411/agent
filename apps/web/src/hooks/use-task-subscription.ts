@@ -22,13 +22,30 @@ export function useTaskFetch(userId: string | undefined) {
     if (!userId) return;
     const controller = new AbortController();
     pending.current = controller;
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRefresh = () => {
+      refreshTimer = setTimeout(() => {
+        if (controller.signal.aborted) return;
+        if (document.visibilityState === "hidden") {
+          scheduleRefresh();
+          return;
+        }
+        setRevision((value) => value + 1);
+      }, 30_000);
+    };
     const baseline = store.getState().task.tasks;
 
     api
-      .get<Task[]>("/aurora/api/tasks", { signal: controller.signal })
+      .get<Task[]>("/aurora/api/tasks", { signal: controller.signal, cache: "no-store" })
       .then((tasks) => {
         if (controller.signal.aborted) return;
-        dispatch(reconcileTaskSnapshot({ tasks, baseline }));
+        dispatch(
+          reconcileTaskSnapshot({
+            tasks,
+            baseline,
+            managedIdPrefixes: ["ai:", "agent:", "production:", "build:"],
+          })
+        );
         pending.current = null;
         setStatus({ userId, revision, error: null });
       })
@@ -36,9 +53,13 @@ export function useTaskFetch(userId: string | undefined) {
         if (controller.signal.aborted) return;
         pending.current = null;
         setStatus({ userId, revision, error: err instanceof Error ? err.message : "" });
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) scheduleRefresh();
       });
     return () => {
       controller.abort();
+      clearTimeout(refreshTimer);
       if (pending.current === controller) pending.current = null;
     };
   }, [userId, dispatch, revision]);
