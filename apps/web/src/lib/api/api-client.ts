@@ -143,8 +143,20 @@ function buildUrl(path: string, params?: ApiRequestConfig["params"]): string {
   const entries = Object.entries(params).filter(([, v]) => v !== undefined);
   if (entries.length === 0) return base;
 
-  const qs = new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString();
-  return `${base}?${qs}`;
+  const hashIndex = base.indexOf("#");
+  const fragment = hashIndex < 0 ? "" : base.slice(hashIndex);
+  const address = hashIndex < 0 ? base : base.slice(0, hashIndex);
+  const queryIndex = address.indexOf("?");
+  const pathname = queryIndex < 0 ? address : address.slice(0, queryIndex);
+  const search = new URLSearchParams(queryIndex < 0 ? "" : address.slice(queryIndex + 1));
+  for (const [key, value] of entries) search.set(key, String(value));
+  return `${pathname}?${search.toString()}${fragment}`;
+}
+
+function mergeHeaders(defaults: Record<string, string>, overrides?: HeadersInit): Headers {
+  const headers = new Headers(defaults);
+  new Headers(overrides).forEach((value, key) => headers.set(key, value));
+  return headers;
 }
 
 function workspaceHeaders(path: string): Record<string, string> {
@@ -240,12 +252,14 @@ async function request<T>(method: string, path: string, config: ApiRequestConfig
 
   const init: RequestInit = {
     method,
-    headers: {
-      "Content-Type": defaultContentType,
-      "accept-language": getAcceptLanguage(),
-      ...workspaceHeaders(path),
-      ...customHeaders,
-    },
+    headers: mergeHeaders(
+      {
+        "Content-Type": defaultContentType,
+        "accept-language": getAcceptLanguage(),
+        ...workspaceHeaders(path),
+      },
+      customHeaders
+    ),
     credentials: "include",
     ...rest,
   };
@@ -341,21 +355,23 @@ async function upload<T>(
   fieldName = "file",
   config: ApiRequestConfig = {}
 ): Promise<T> {
-  const { timeout = 120_000, headers: customHeaders, ...rest } = config;
+  const { timeout = 120_000, headers: customHeaders, params, ...rest } = config;
   const formData = new FormData();
   formData.append(fieldName, file);
 
   return withRequestSignal(config.signal, timeout, async (signal) => {
     let response: Response;
     try {
-      response = await fetch(buildUrl(path), {
+      response = await fetch(buildUrl(path, params), {
         method: "POST",
         credentials: "include",
-        headers: {
-          "accept-language": getAcceptLanguage(),
-          ...workspaceHeaders(path),
-          ...(customHeaders as Record<string, string>),
-        },
+        headers: mergeHeaders(
+          {
+            "accept-language": getAcceptLanguage(),
+            ...workspaceHeaders(path),
+          },
+          customHeaders
+        ),
         body: formData,
         ...rest,
         signal,
