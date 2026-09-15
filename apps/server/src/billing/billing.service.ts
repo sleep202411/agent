@@ -3111,6 +3111,7 @@ export class BillingService {
 
     const { order, promotionReservation } = await this.prisma.$transaction(
       async (tx) => {
+        await this.lockCheckoutWorkspace(tx, user, subject);
         if (isMembershipProductType(price.item.productType)) {
           const now = new Date();
           const productTypes = membershipProductAxis(price.item.productType);
@@ -3286,6 +3287,7 @@ export class BillingService {
             data: { redemptionCount: { increment: 1 } },
           });
         }
+        await this.checkCheckoutWorkspace(tx, user, subject);
         return { order, promotionReservation };
       },
     );
@@ -3505,6 +3507,7 @@ export class BillingService {
     const subtotalAmountMinor = price.amountMinor;
     const txResult = await this.prisma
       .$transaction(async (tx) => {
+        await this.lockCheckoutWorkspace(tx, user, subject);
         const promotionReservation = input.promotionCode
           ? await this.reserveCheckoutPromotionTx(tx, {
               userId: user.userId,
@@ -3622,6 +3625,7 @@ export class BillingService {
             data: { redemptionCount: { increment: 1 } },
           });
         }
+        await this.checkCheckoutWorkspace(tx, user, subject);
         return { order, promotionReservation };
       })
       // Lost the (userId, idempotencyKey) race with a concurrent first-time
@@ -3891,49 +3895,54 @@ export class BillingService {
     const requestId = randomUUID();
     const orderNo = createOrderNo();
 
-    const order = await this.prisma.billingOrder
-      .create({
-        data: {
-          orderNo,
-          idempotencyKey: input.idempotencyKey,
-          userId: user.userId,
-          workspaceId: subject.workspaceId,
-          subjectType: subject.subjectType,
-          subjectId: subject.subjectId,
-          orderType,
-          status: BillingOrderStatus.pending_payment,
-          itemId: anchor.itemId,
-          priceId: anchor.id,
-          providerBindingId: null,
-          provider,
-          currency: anchor.currency,
-          subtotalAmountMinor: amountMinor,
-          discountAmountMinor: 0n,
-          amountMinor,
-          quantity: 1,
-          grantsWalletAmount: grantSnapshot,
-          grantsWalletCurrency: anchor.grantsWalletCurrency,
-          grantsWalletBalanceKind:
-            anchor.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
-          description: anchor.item.name,
-          expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-          metadata: {
-            checkout: {
-              successUrl: input.successUrl,
-              backUrl: input.backUrl,
+    const order = await this.prisma
+      .$transaction(async (tx) => {
+        await this.lockCheckoutWorkspace(tx, user, subject);
+        const created = await tx.billingOrder.create({
+          data: {
+            orderNo,
+            idempotencyKey: input.idempotencyKey,
+            userId: user.userId,
+            workspaceId: subject.workspaceId,
+            subjectType: subject.subjectType,
+            subjectId: subject.subjectId,
+            orderType,
+            status: BillingOrderStatus.pending_payment,
+            itemId: anchor.itemId,
+            priceId: anchor.id,
+            providerBindingId: null,
+            provider,
+            currency: anchor.currency,
+            subtotalAmountMinor: amountMinor,
+            discountAmountMinor: 0n,
+            amountMinor,
+            quantity: 1,
+            grantsWalletAmount: grantSnapshot,
+            grantsWalletCurrency: anchor.grantsWalletCurrency,
+            grantsWalletBalanceKind:
+              anchor.grantsWalletBalanceKind ?? WalletBalanceKind.consumable,
+            description: anchor.item.name,
+            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+            metadata: {
+              checkout: {
+                successUrl: input.successUrl,
+                backUrl: input.backUrl,
+              },
+              customRecharge: {
+                amountDollars: input.amountDollars,
+                currency: input.currency,
+                shopperCountry: country,
+              },
+              // AppLovin (Axon) ad-attribution, read back at payment success to
+              // build the S2S conversion report. Omitted when no attribution was
+              // supplied; purely additive — never affects pricing/fulfilment.
+              ...appLovinMetadataPatch(input.attribution),
             },
-            customRecharge: {
-              amountDollars: input.amountDollars,
-              currency: input.currency,
-              shopperCountry: country,
-            },
-            // AppLovin (Axon) ad-attribution, read back at payment success to
-            // build the S2S conversion report. Omitted when no attribution was
-            // supplied; purely additive — never affects pricing/fulfilment.
-            ...appLovinMetadataPatch(input.attribution),
           },
-        },
-        include: { price: true },
+          include: { price: true },
+        });
+        await this.checkCheckoutWorkspace(tx, user, subject);
+        return created;
       })
       // Lost the (userId, idempotencyKey) race with a concurrent first-time
       // request: the order now exists, so replay through the idempotency branch
@@ -7475,6 +7484,30 @@ export class BillingService {
       },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  private async lockCheckoutWorkspace(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    subject: { subjectType: BillingSubjectType; subjectId: string },
+  ): Promise<void> {
+    if (subject.subjectType !== BillingSubjectType.workspace) return;
+    await tx.$queryRaw`SELECT id FROM workspaces WHERE id = ${subject.subjectId}::uuid FOR SHARE`;
+    await this.checkCheckoutWorkspace(tx, user, subject);
+  }
+
+  private async checkCheckoutWorkspace(
+    tx: Prisma.TransactionClient,
+    user: AuthUser,
+    subject: { subjectType: BillingSubjectType; subjectId: string },
+  ): Promise<void> {
+    if (subject.subjectType !== BillingSubjectType.workspace) return;
+    await this.permissions.requireWorkspaceRole(
+      user.userId,
+      subject.subjectId,
+      WorkspaceMemberRole.billing,
+      tx,
+    );
   }
 
   private async resolveCheckoutSubject(
