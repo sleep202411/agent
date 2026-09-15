@@ -52,16 +52,16 @@ export type StoryAgentRunDto = {
       blocks?: unknown[];
     };
     assetPlan?: {
-      assetSpecs?: Array<{ kind?: string }>;
+      assetSpecs?: { kind?: string }[];
     };
     storyboardPlan?: {
-      storyboardSequences?: Array<{
+      storyboardSequences?: {
         plotNodeId?: string;
         title?: string;
         description?: string;
         durationMs?: number;
         clips?: unknown[];
-      }>;
+      }[];
     };
   };
 };

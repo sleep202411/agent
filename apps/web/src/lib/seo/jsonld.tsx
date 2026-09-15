@@ -64,7 +64,6 @@ export function JsonLd({ data }: JsonLdProps) {
           // a real case but the suffix keeps React happy regardless.
           key={`${(entry as { "@type"?: string })["@type"] ?? "ld"}-${idx}`}
           type="application/ld+json"
-          // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(entry).replace(/</g, "\\u003c"),
           }}

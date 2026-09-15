@@ -41,7 +41,6 @@ export default function NewsScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [tagOptions, setTagOptions] = useState<NewsTag[]>([]);
@@ -89,14 +88,12 @@ export default function NewsScreen() {
         const allFeed = await getNewsFeed(locale, { page: 1, pageSize: NEWS_PAGE_SIZE });
         if (seq !== requestSeqRef.current) return;
         setArticles(allFeed.articles);
-        setTotal(allFeed.total);
         setPage(1);
         setHasMore(pageHasMore(allFeed.articles.length, allFeed.articles, allFeed.total));
         return;
       }
 
       setArticles(feed.articles);
-      setTotal(feed.total);
       setPage(1);
       setHasMore(pageHasMore(feed.articles.length, feed.articles, feed.total));
     } catch (loadError) {
@@ -131,7 +128,6 @@ export default function NewsScreen() {
 
       if (feed.articles.length === 0) {
         setHasMore(false);
-        setTotal(feed.total);
         return;
       }
 
@@ -142,7 +138,6 @@ export default function NewsScreen() {
         nextLength = merged.length;
         return merged;
       });
-      setTotal(feed.total);
       setPage(nextPage);
       setHasMore(pageHasMore(nextLength, feed.articles, feed.total));
     } finally {
@@ -175,7 +170,6 @@ export default function NewsScreen() {
         });
         if (seq !== requestSeqRef.current) return;
         setArticles(feed.articles);
-        setTotal(feed.total);
         setPage(1);
         setHasMore(pageHasMore(feed.articles.length, feed.articles, feed.total));
       } catch {

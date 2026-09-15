@@ -98,7 +98,7 @@ function plotPreviewMarks(model: StoryPlotPreviewModel) {
       },
     ];
   });
-  const handles: Array<{ key: string; x: number; y: number; fill: string }> = [];
+  const handles: { key: string; x: number; y: number; fill: string }[] = [];
   for (const node of model.nodes) {
     const inbound = plotPreviewHandle(node, "in");
     handles.push({

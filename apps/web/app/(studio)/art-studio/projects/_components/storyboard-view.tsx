@@ -487,7 +487,6 @@ export function StoryboardView() {
         }
       }
 
-      // eslint-disable-next-line no-console
       console.info("[storyboard reorder] payload", {
         storyBoardId: String(activeEpisodeId),
         currentTheShotId: movedShotId,
@@ -498,7 +497,6 @@ export function StoryboardView() {
         await updateShotOrder(String(activeEpisodeId), movedShotId, beforeShotId);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        // eslint-disable-next-line no-console
         console.warn("[storyboard reorder] backend save failed:", err);
         toast.error(`${t("reorderFailed")}: ${msg}`);
         dispatch(setRows(original));

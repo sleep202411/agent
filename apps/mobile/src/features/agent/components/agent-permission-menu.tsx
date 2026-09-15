@@ -13,12 +13,12 @@ import { AgentComposerMenuSheet } from "./agent-composer-menu-sheet";
 const MUTED = "rgba(255,255,255,0.72)";
 const FULL = "rgba(254,202,202,0.88)";
 
-const MODES: Array<{
+const MODES: {
   id: AgentOsPermissionMode;
   labelKey: MessageKey;
   hintKey: MessageKey;
   Icon: ComponentType<{ size?: number; color?: string; strokeWidth?: number }>;
-}> = [
+}[] = [
   {
     id: "ask",
     labelKey: "agent.composer.permAsk",

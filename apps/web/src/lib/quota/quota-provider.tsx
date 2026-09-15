@@ -80,7 +80,6 @@ export function QuotaProvider({ enabled = true, children }: QuotaProviderProps) 
     } catch (err) {
       // Quota fetch failing is non-fatal — UI just doesn't render
       // the badge. Don't pop a toast; the user didn't do anything.
-      // eslint-disable-next-line no-console
       console.warn("[quota] GET /aurora/quota failed:", err);
     } finally {
       setLoading(false);
