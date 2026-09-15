@@ -100,10 +100,14 @@ integration('IP episode feedback (local PostgreSQL)', () => {
 
   it('shows the public production stage without audit metadata and rejects private IPs', async () => {
     expect(await publicStage.read({ ipId }, viewer)).toEqual({
-      stage: 'testing',
+      code: 200,
+      data: { stage: 'testing' },
     });
     await prisma.$executeRaw`INSERT INTO ip_production_stages(ip_id,stage,version) VALUES (${ipId}::uuid,'production',1)`;
-    expect(await publicStage.read({ ipId })).toEqual({ stage: 'production' });
+    expect(await publicStage.read({ ipId })).toEqual({
+      code: 200,
+      data: { stage: 'production' },
+    });
     await prisma.ip.update({
       where: { id: ipId },
       data: { listingVisibility: 'private' },

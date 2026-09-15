@@ -47,15 +47,23 @@ it("cancels abandoned scopes and uses the originating workspace, project and cur
     await act(async () => {
       await latest.refetch();
     });
-    // Query completion precedes the scheduled React observer notification.
-    await vi.waitFor(async () => {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
+    const settled = async (assertion: () => void) =>
+      vi.waitFor(async () => {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        });
+        assertion();
       });
+    await settled(() => {
       expect(latest.data?.pages.flatMap((p) => p.entries)).toEqual([]);
+      expect(latest.isFetching).toBe(false);
     });
     await act(async () => {
       await latest.fetchNextPage();
+    });
+    await settled(() => {
+      expect(latest.data?.pages.length).toBe(2);
+      expect(latest.isFetching).toBe(false);
     });
     expect(getComputeWalletLedger).toHaveBeenLastCalledWith(
       50,
@@ -65,10 +73,8 @@ it("cancels abandoned scopes and uses the originating workspace, project and cur
     await act(async () => {
       await latest.fetchNextPage();
     });
-    await vi.waitFor(async () => {
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      });
+    await settled(() => {
+      expect(latest.isFetchNextPageError).toBe(true);
       expect(latest.data?.pages.length).toBe(2);
     });
   } finally {
