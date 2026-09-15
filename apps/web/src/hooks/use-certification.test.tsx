@@ -3,6 +3,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+  useCertificationRoles,
   useMyCertifications,
   useSubmitCertification,
   useUpdateCertification,
@@ -10,11 +11,15 @@ import {
 const s = vi.hoisted(() => ({
   user: "a" as string | null,
   works: vi.fn(),
+  roles: vi.fn(),
+  locale: "en-US",
 
   create: vi.fn(),
 }));
+vi.mock("@/src/i18n/i18n", () => ({ useLocale: () => s.locale }));
 vi.mock("./use-user", () => ({ useCurrentUser: () => ({ user: s.user ? { id: s.user } : null }) }));
 vi.mock("@/src/services/certification", () => ({
+  getCertificationRoles: s.roles,
   getMyCertifications: s.works,
 
   submitCertification: s.create,
@@ -22,13 +27,16 @@ vi.mock("@/src/services/certification", () => ({
 }));
 let root: Root;
 let client: QueryClient;
+let roles: ReturnType<typeof useCertificationRoles>;
 let works: ReturnType<typeof useMyCertifications>;
 let create: ReturnType<typeof useSubmitCertification>;
 function View() {
+  const r = useCertificationRoles();
   const w = useMyCertifications();
   const c = useSubmitCertification();
   useUpdateCertification();
   useLayoutEffect(() => {
+    roles = r;
     works = w;
     create = c;
   });
@@ -49,6 +57,8 @@ async function render() {
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   s.user = "a";
+  s.locale = "en-US";
+  s.roles.mockReset().mockResolvedValue({ "1": "Director" });
   for (const fn of [s.works, s.create]) fn.mockReset();
   s.works.mockResolvedValue([{ id: 1 }]);
 
@@ -95,4 +105,18 @@ it("invalidates only the originating account after a delayed creation", async ()
   });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["certification", "my", "a"] });
   expect(s.works).toHaveBeenCalledTimes(2);
+});
+
+it("refetches localized roles and cancels the abandoned locale request", async () => {
+  s.roles.mockImplementationOnce(() => new Promise(() => {}));
+  await render();
+  const signal = s.roles.mock.calls[0][0] as AbortSignal;
+  s.locale = "zh-CN";
+  s.roles.mockResolvedValue({ "1": "导演" });
+  await render();
+  expect(signal.aborted).toBe(true);
+  expect(roles.data).toEqual({ "1": "导演" });
+  expect(s.roles).toHaveBeenCalledTimes(2);
+  expect(client.getQueryData(["certification", "roles", "en-US"])).toBeUndefined();
+  expect(client.getQueryData(["certification", "roles", "zh-CN"])).toEqual({ "1": "导演" });
 });

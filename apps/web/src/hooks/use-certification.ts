@@ -1,3 +1,5 @@
+"use client";
+
 import { useCurrentUser } from "./use-user";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,16 +9,19 @@ import {
   updateCertification,
   type Certification,
 } from "@/src/services/certification";
+import { useLocale } from "@/src/i18n/i18n";
 
 export const certKeys = {
   roles: ["certification", "roles"] as const,
+  rolesOf: (locale: string) => ["certification", "roles", locale] as const,
   my: ["certification", "my"] as const,
 };
 
 /** 可选认证角色列表（AI工程师、导演等） */
 export function useCertificationRoles() {
+  const locale = useLocale();
   return useQuery<Record<string, string>>({
-    queryKey: certKeys.roles,
+    queryKey: certKeys.rolesOf(locale),
     queryFn: ({ signal }) => getCertificationRoles(signal),
     staleTime: 30 * 60 * 1000, // 30 min, rarely changes
   });

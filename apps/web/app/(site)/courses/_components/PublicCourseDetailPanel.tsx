@@ -46,29 +46,29 @@ export function PublicCourseDetailPanel({ detail, onVideoSelect }: PublicCourseD
         ) : null}
 
         {detail.instructors.length > 0 ? (
-          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span className="shrink-0 text-[11px] font-medium text-[#6f7585]">
-              {t("instructors")}
-            </span>
-            {detail.instructors.map((instructor) => {
-              const name = instructor.nickName.trim() || t("unknownInstructor");
-              return (
-                <Link
-                  key={instructor.userId}
-                  href={localizePath(`/creators/${encodeUserId(instructor.userId)}`, locale)}
-                  className="inline-flex max-w-[46%] items-center gap-1.5 text-[12px] font-medium text-[#d5dbe8] transition-colors hover:text-white"
-                >
-                  <UserAvatar
-                    src={instructor.avatar}
-                    seed={instructor.userId}
-                    name={name}
-                    size={22}
-                    className="size-[22px] shrink-0"
-                  />
-                  <span className="truncate">{name}</span>
-                </Link>
-              );
-            })}
+          <div className="mt-3 flex flex-col gap-1.5">
+            <span className="text-[11px] font-medium text-[#6f7585]">{t("instructors")}</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              {detail.instructors.map((instructor) => {
+                const name = instructor.nickName.trim() || t("unknownInstructor");
+                return (
+                  <Link
+                    key={instructor.userId}
+                    href={localizePath(`/creators/${encodeUserId(instructor.userId)}`, locale)}
+                    className="inline-flex max-w-[46%] items-center gap-1.5 text-[12px] font-medium text-[#d5dbe8] transition-colors hover:text-white"
+                  >
+                    <UserAvatar
+                      src={instructor.avatar}
+                      seed={instructor.userId}
+                      name={name}
+                      size={22}
+                      className="size-[22px] shrink-0"
+                    />
+                    <span className="truncate">{name}</span>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         ) : null}
 

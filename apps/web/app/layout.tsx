@@ -6,7 +6,7 @@ import { AxonRouteTracker } from "@/components/analytics/axon-route-tracker";
 import { RootLayoutClient } from "@/app/root-layout-client";
 import { getServerQueryClient } from "@/src/lib/react-query/server";
 import { fetchUserInfoServerSide } from "@/src/lib/auth/server-user";
-import { userKeys } from "@/src/hooks/use-user";
+import { userKeys } from "@/src/hooks/user-keys";
 import { CANONICAL_HOST, JsonLd, buildOrganization, buildWebSite } from "@/src/lib/seo";
 import { detectCountry } from "@/src/lib/region/country";
 import { RegionProvider } from "@/src/lib/region/provider";
@@ -79,9 +79,9 @@ export default async function RootLayout({
   // SSR's only job is to make sure that decision sees real data, not
   // a cold cache.
   const queryClient = getServerQueryClient();
-  const userInfo = await fetchUserInfoServerSide();
+  const userInfo = await fetchUserInfoServerSide(locale);
   if (userInfo) {
-    queryClient.setQueryData(userKeys.info, userInfo);
+    queryClient.setQueryData(userKeys.infoOf(locale), userInfo);
   }
   const dehydratedState = dehydrate(queryClient);
 

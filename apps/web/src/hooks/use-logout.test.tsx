@@ -33,6 +33,9 @@ it.each(["failure", "pending"])(
     });
     client = new QueryClient();
     client.setQueryData(["user", "info"], { id: "alice" });
+    for (const locale of ["en-US", "zh-CN", "zh-HK"]) {
+      client.setQueryData(["user", "info", locale], { id: "alice" });
+    }
     client.setQueryData(["user", "credits", "alice"], 100);
     client.setQueryData(["user", "credits", "bob"], 200);
     client.setQueryData(["kyc", "auth-status"], { verified: true });
@@ -53,6 +56,9 @@ it.each(["failure", "pending"])(
     expect(sentCookie).toContain("satoken=current-session");
     expect(document.cookie).not.toContain("satoken=");
     expect(client.getQueryData(["user", "info"])).toBeNull();
+    for (const locale of ["en-US", "zh-CN", "zh-HK"]) {
+      expect(client.getQueryData(["user", "info", locale])).toBeNull();
+    }
     expect(client.getQueriesData({ queryKey: ["user", "credits"] })).toEqual([]);
     expect(client.getQueryData(["kyc", "auth-status"])).toBeUndefined();
     expect(mocks.replace).toHaveBeenCalledTimes(1);

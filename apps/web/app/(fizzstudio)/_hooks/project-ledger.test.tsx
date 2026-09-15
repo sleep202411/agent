@@ -47,7 +47,13 @@ it("cancels abandoned scopes and uses the originating workspace, project and cur
     await act(async () => {
       await latest.refetch();
     });
-    expect(latest.data?.pages.flatMap((p) => p.entries)).toEqual([]);
+    // Query completion precedes the scheduled React observer notification.
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(latest.data?.pages.flatMap((p) => p.entries)).toEqual([]);
+    });
     await act(async () => {
       await latest.fetchNextPage();
     });
@@ -59,7 +65,12 @@ it("cancels abandoned scopes and uses the originating workspace, project and cur
     await act(async () => {
       await latest.fetchNextPage();
     });
-    expect(latest.data?.pages.length).toBe(2);
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(latest.data?.pages.length).toBe(2);
+    });
   } finally {
     act(() => root.unmount());
     client.clear();

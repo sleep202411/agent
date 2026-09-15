@@ -50,7 +50,7 @@ interface UserInfoEnvelope {
  * Next's rewrite layer back through itself), so we prepend the
  * server-only `JAVA_CONTENT_URL` env here.
  */
-export async function fetchUserInfoServerSide(): Promise<UserInfoResolved | null> {
+export async function fetchUserInfoServerSide(locale?: string): Promise<UserInfoResolved | null> {
   const cookieStore = await cookies();
   const satoken = cookieStore.get("satoken")?.value;
   if (!satoken) return null;
@@ -68,6 +68,7 @@ export async function fetchUserInfoServerSide(): Promise<UserInfoResolved | null
       headers: {
         Cookie: `satoken=${satoken}`,
         Accept: "application/json",
+        ...(locale ? { "Accept-Language": locale } : {}),
       },
       // SSR — never cache. Each request reflects the current cookie.
       cache: "no-store",

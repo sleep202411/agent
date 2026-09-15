@@ -168,10 +168,13 @@ function workspaceHeaders(path: string): Record<string, string> {
 function getCookieLocale(): Locale | null {
   if (typeof document === "undefined") return null;
 
-  const match = document.cookie.match(/(?:^|;\s*)locale=([^;]+)/);
-  const locale = match?.[1];
-  if (locale && locales.includes(locale as Locale)) {
-    return locale as Locale;
+  // Prefer NEXT_LOCALE (written by setLanguage) over the legacy `locale` cookie.
+  for (const name of ["NEXT_LOCALE", "locale"] as const) {
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+    const locale = match?.[1] ? decodeURIComponent(match[1]) : null;
+    if (locale && locales.includes(locale as Locale)) {
+      return locale as Locale;
+    }
   }
   return null;
 }

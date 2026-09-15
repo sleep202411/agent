@@ -302,7 +302,7 @@ export function IpDiscoveryPanel({
       <PageHeader
         eyebrow={`${siteLabel} · ${databaseLabel}`}
         title="IP 广场运营位"
-        description="配置 IP Plaza Hero、For You 和列表置顶。Hero 支持运营素材和文案，轻量推荐位使用 IP 原生卡片数据。"
+        description="配置 IP Plaza Banner、TV Recommendation 和列表置顶。Banner 支持运营素材和文案，轻量推荐位使用 IP 原生卡片数据。"
         icon={<IconLayoutCards className="size-4" />}
         actions={
           <div className="flex items-center gap-2">
@@ -331,14 +331,14 @@ export function IpDiscoveryPanel({
       ) : null}
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label="推荐条目" value={metrics.total} helper="Hero / For You / 置顶" />
+        <Metric label="推荐条目" value={metrics.total} helper="Banner / TV / 置顶" />
         <Metric label="生效中" value={metrics.active} helper="当前可展示" />
         <Metric label="待生效" value={metrics.pending} helper="未来上线" />
         <Metric
           label="待补字段"
           value={metrics.incomplete}
           tone={metrics.incomplete ? "warn" : "default"}
-          helper="Hero 文案或素材不完整"
+          helper="Banner 文案或素材不完整"
         />
       </section>
 
@@ -346,24 +346,24 @@ export function IpDiscoveryPanel({
         <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-950">推荐位列表</h3>
-            <p className="mt-0.5 text-[12px] text-slate-500">运营排序、上下线状态、Hero 完整度</p>
+            <p className="mt-0.5 text-[12px] text-slate-500">运营排序、上下线状态、Banner 完整度</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={placementFilter}
               onValueChange={(value) => setPlacementFilter(value as "all" | PlacementKey)}
             >
-              <SelectTrigger size="sm" className="w-[148px]">
+              <SelectTrigger size="sm" className="min-w-[200px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">全部位置</SelectItem>
-                <SelectItem value="ip_plaza_hero">Hero</SelectItem>
-                <SelectItem value="ip_plaza_for_you">For You</SelectItem>
+                <SelectItem value="ip_plaza_hero">IP Plaza Banner</SelectItem>
+                <SelectItem value="ip_plaza_for_you">TV Recommendation</SelectItem>
                 <SelectItem value="ip_plaza_list_pinned">列表置顶</SelectItem>
               </SelectContent>
             </Select>
-            <div className="relative w-60">
+            <div className="relative w-56">
               <IconSearch className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
               <Input
                 value={query}
@@ -376,7 +376,18 @@ export function IpDiscoveryPanel({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
+          <table className="w-full min-w-[960px] table-fixed border-separate border-spacing-0 text-left">
+            <colgroup>
+              <col className="w-[168px]" />
+              <col className="w-[22%]" />
+              <col className="w-[88px]" />
+              <col className="w-[56px]" />
+              <col className="w-[120px]" />
+              <col className="w-[120px]" />
+              <col className="w-[100px]" />
+              <col className="w-[108px]" />
+              <col className="w-[132px]" />
+            </colgroup>
             <thead>
               <tr>
                 <TableHead>位置</TableHead>
@@ -396,41 +407,47 @@ export function IpDiscoveryPanel({
 
                 return (
                   <tr key={item.id} className="group hover:bg-slate-50/60">
-                    <TableCell>
-                      <p className="font-medium text-slate-950">
-                        {placementLabel(item.placementKey)}
-                      </p>
+                    <TableCell className="align-middle">
+                      <PlacementChip placementKey={item.placementKey} />
                     </TableCell>
-                    <TableCell>
-                      <p className="max-w-[220px] truncate font-medium text-slate-950">
+                    <TableCell className="align-middle">
+                      <p className="truncate text-[13px] font-medium text-slate-950">
                         {item.ipTitle}
                       </p>
-                      <p className="mt-0.5 font-mono text-[11px] text-slate-500">
+                      <p className="mt-0.5 truncate font-mono text-[11px] text-slate-500">
                         Room {item.ipRoomNumber}
                       </p>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-middle">
                       <StatusPill tone={statusTone(displayStatus)}>
-                        {statusLabel(displayStatus)}
+                        <span className="whitespace-nowrap">{statusLabel(displayStatus)}</span>
                       </StatusPill>
                     </TableCell>
-                    <TableCell>#{item.sortOrder}</TableCell>
-                    <TableCell>
+                    <TableCell className="align-middle tabular-nums text-slate-700">
+                      #{item.sortOrder}
+                    </TableCell>
+                    <TableCell className="align-middle">
                       <CopyCompleteness item={item} />
                     </TableCell>
-                    <TableCell>
-                      <p className="text-[12px] text-slate-700">{formatDate(item.startsAt)}</p>
-                      <p className="text-[11px] text-slate-500">至 {formatDate(item.endsAt)}</p>
+                    <TableCell className="align-middle">
+                      <ScheduleCell startsAt={item.startsAt} endsAt={item.endsAt} />
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="align-middle">
                       <AssetCompleteness item={item} />
                     </TableCell>
-                    <TableCell>
-                      <p className="text-[12px] text-slate-700">{item.updatedBy}</p>
-                      <p className="text-[11px] text-slate-500">{formatDate(item.updatedAt)}</p>
+                    <TableCell className="align-middle">
+                      <p
+                        className="truncate font-mono text-[11px] text-slate-600"
+                        title={item.updatedBy}
+                      >
+                        {formatActor(item.updatedBy)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        {formatDate(item.updatedAt)}
+                      </p>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <div className="inline-flex items-center gap-1.5">
+                    <TableCell className="align-middle text-right">
+                      <div className="inline-flex items-center gap-1">
                         <Button
                           variant="outline"
                           size="sm"
@@ -455,7 +472,6 @@ export function IpDiscoveryPanel({
                               aria-label="删除"
                             >
                               <IconTrash className="size-3.5" />
-                              删除
                             </Button>
                           }
                         />
@@ -573,7 +589,7 @@ function RecommendationDrawer({
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field
                   label="位置"
-                  tooltip="推荐位类型:Hero 大图轮播 / For You 推荐 / 列表置顶。决定渲染方式,只有 Hero 需要自定义素材与文案。"
+                  tooltip="推荐位类型:IP Plaza Banner 大图轮播 / TV Recommendation / 列表置顶。决定渲染方式,只有 Banner 需要自定义素材与文案。"
                 >
                   {(id) => (
                     <Select
@@ -591,8 +607,8 @@ function RecommendationDrawer({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ip_plaza_hero">IP Plaza Hero</SelectItem>
-                        <SelectItem value="ip_plaza_for_you">For You 推荐</SelectItem>
+                        <SelectItem value="ip_plaza_hero">IP Plaza Banner</SelectItem>
+                        <SelectItem value="ip_plaza_for_you">TV Recommendation</SelectItem>
                         <SelectItem value="ip_plaza_list_pinned">列表置顶</SelectItem>
                       </SelectContent>
                     </Select>
@@ -626,7 +642,7 @@ function RecommendationDrawer({
                 <Field
                   label="IP"
                   className="sm:col-span-2"
-                  tooltip="绑定的 IP。公开端点击跳转到该 IP;For You 与置顶复用 IP 原生卡片(标题/封面/简介)。"
+                  tooltip="绑定的 IP。公开端点击跳转到该 IP;TV Recommendation 与置顶复用 IP 原生卡片(标题/封面/简介)。"
                 >
                   <IpCombobox
                     open={open}
@@ -693,7 +709,7 @@ function RecommendationDrawer({
                   <div className="grid gap-3">
                     <AssetUploadField
                       label="桌面图 / 默认封面"
-                      tooltip="桌面端 Hero 背景图,也作为缺少移动图时的回退。需为已就绪(ready)的图片素材。"
+                      tooltip="桌面端 Banner 背景图,也作为缺少移动图时的回退。需为已就绪(ready)的图片素材。"
                       key={JSON.stringify([draft.ipId, draft.desktopMediaUrl])}
                       value={draft.desktopMediaUrl}
                       disabled={saving}
@@ -707,7 +723,7 @@ function RecommendationDrawer({
                     />
                     <AssetUploadField
                       label="移动图"
-                      tooltip="移动端 Hero 背景图(竖屏适配)。缺省时回退到桌面图。需为已就绪(ready)的图片素材。"
+                      tooltip="移动端 Banner 背景图(竖屏适配)。缺省时回退到桌面图。需为已就绪(ready)的图片素材。"
                       key={JSON.stringify([draft.ipId, draft.mobileMediaUrl])}
                       value={draft.mobileMediaUrl}
                       disabled={saving}
@@ -724,7 +740,7 @@ function RecommendationDrawer({
                     />
                     <AssetUploadField
                       label="Trailer 视频"
-                      tooltip="Hero 预告视频,鼠标悬停或点击播放。需为已就绪(ready)的视频素材。"
+                      tooltip="Banner 预告视频,鼠标悬停或点击播放。需为已就绪(ready)的视频素材。"
                       key={JSON.stringify([draft.ipId, draft.trailerUrl])}
                       value={draft.trailerUrl}
                       disabled={saving}
@@ -771,7 +787,7 @@ function RecommendationDrawer({
                         />
                       )}
                     </Field>
-                    <Field label="标题" tooltip="Hero 主标题,覆盖 IP 原生标题。Hero 建议必填。">
+                    <Field label="标题" tooltip="Banner 主标题,覆盖 IP 原生标题。Banner 建议必填。">
                       {(id) => (
                         <Input
                           id={id}
@@ -1104,7 +1120,7 @@ function TableHead({ className, children }: { className?: string; children: Reac
   return (
     <th
       className={cn(
-        "border-b border-slate-200 bg-slate-50 px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500",
+        "border-b border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500",
         className
       )}
     >
@@ -1115,10 +1131,47 @@ function TableHead({ className, children }: { className?: string; children: Reac
 
 function TableCell({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <td className={cn("border-b border-slate-100 px-3 py-3 text-sm text-slate-700", className)}>
+    <td className={cn("border-b border-slate-100 px-3 py-2.5 text-sm text-slate-700", className)}>
       {children}
     </td>
   );
+}
+
+function PlacementChip({ placementKey }: { placementKey: PlacementKey }) {
+  const label = placementLabel(placementKey);
+  return (
+    <span
+      title={label}
+      className={cn(
+        "inline-flex max-w-full items-center truncate rounded-md border px-1.5 py-0.5 text-[11px] font-medium whitespace-nowrap",
+        placementKey === "ip_plaza_hero" && "border-sky-200 bg-sky-50 text-sky-800",
+        placementKey === "ip_plaza_for_you" && "border-violet-200 bg-violet-50 text-violet-800",
+        placementKey === "ip_plaza_list_pinned" && "border-slate-200 bg-slate-50 text-slate-700"
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function ScheduleCell({ startsAt, endsAt }: { startsAt: string; endsAt: string }) {
+  if (!startsAt && !endsAt) {
+    return <p className="text-[12px] text-slate-500">长期有效</p>;
+  }
+  return (
+    <div>
+      <p className="text-[12px] text-slate-700">{formatDate(startsAt) || "—"}</p>
+      <p className="text-[11px] text-slate-500">至 {formatDate(endsAt) || "—"}</p>
+    </div>
+  );
+}
+
+function formatActor(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "—";
+  if (/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(trimmed)) return trimmed.slice(0, 8);
+  if (trimmed.length > 12) return `${trimmed.slice(0, 8)}…`;
+  return trimmed;
 }
 
 function NativeIpCardNotice({ placementKey }: { placementKey: PlacementKey }) {
@@ -1136,17 +1189,12 @@ function NativeIpCardNotice({ placementKey }: { placementKey: PlacementKey }) {
 
 function CopyCompleteness({ item }: { item: RecommendationItem }) {
   if (!isHeroPlacement(item.placementKey)) {
-    return (
-      <div>
-        <p className="text-[12px] text-slate-700">IP 原生</p>
-        <p className="text-[11px] text-slate-500">跟随 IP 多语言</p>
-      </div>
-    );
+    return <p className="text-[12px] text-slate-500">IP 原生 · 多语言</p>;
   }
 
   return (
-    <div className="flex items-center gap-1.5">
-      <IconLanguage className="size-3.5 text-slate-400" />
+    <div className="flex items-center gap-1">
+      <IconLanguage className="size-3.5 shrink-0 text-slate-400" />
       {LOCALES.map((locale) => {
         const complete = isLocaleComplete(item.locale[locale.code]);
         return (
@@ -1169,12 +1217,7 @@ function CopyCompleteness({ item }: { item: RecommendationItem }) {
 
 function AssetCompleteness({ item }: { item: RecommendationItem }) {
   if (!isHeroPlacement(item.placementKey)) {
-    return (
-      <div>
-        <p className="text-[12px] text-slate-700">IP 原生</p>
-        <p className="text-[11px] text-slate-500">封面 / 简介</p>
-      </div>
-    );
+    return <p className="text-[12px] text-slate-500">封面 / 简介</p>;
   }
 
   return (
@@ -1226,8 +1269,8 @@ function nextSortOrder(items: RecommendationItem[], placementKey: PlacementKey) 
 
 function placementLabel(placementKey: PlacementKey) {
   const labels: Record<PlacementKey, string> = {
-    ip_plaza_hero: "Hero",
-    ip_plaza_for_you: "For You",
+    ip_plaza_hero: "IP Plaza Banner",
+    ip_plaza_for_you: "TV Recommendation",
     ip_plaza_list_pinned: "列表置顶",
   };
   return labels[placementKey];
