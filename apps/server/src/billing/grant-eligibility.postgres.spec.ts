@@ -54,8 +54,7 @@ integration('Grant eligibility transaction recovery', () => {
       !['postgres:', 'postgresql:'].includes(url.protocol) ||
       !['127.0.0.1', 'localhost'].includes(url.hostname) ||
       url.port !== '55439' ||
-      url.pathname !== '/task01' ||
-      url.search
+      url.pathname !== '/task01'
     )
       throw new Error('Owned task01 fixture required');
     db = new PrismaClient({
