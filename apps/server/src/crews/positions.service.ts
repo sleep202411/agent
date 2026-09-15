@@ -275,37 +275,40 @@ export class PositionsService {
     status: CrewModerationStatus,
     opts: { adminId: string; reason?: string },
   ) {
-    const position = await this.prisma.crewPosition.findFirst({
-      where: { id: positionId, deletedAt: null },
-      select: { id: true },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM crew_positions WHERE id=${positionId} FOR UPDATE`;
+      const position = await tx.crewPosition.findFirst({
+        where: { id: positionId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!position) throw new NotFoundException('Position not found');
+      const reason = opts.reason?.trim() || null;
+      const updated = await tx.crewPosition.update({
+        where: { id: positionId },
+        data: {
+          moderationStatus: status,
+          moderatedAt: new Date(),
+          moderatedByAdminId: opts.adminId,
+          moderationReason: status === 'taken_down' ? reason : null,
+        },
+        include: { crew: { select: { id: true, name: true, logo: true } } },
+      });
+      return {
+        id: updated.id,
+        crewId: updated.crewId,
+        crewName: updated.crew.name,
+        crewLogo: resolveCrewLogoUrl(updated.crew.logo),
+        positionType: updated.positionType,
+        description: updated.description,
+        status: updated.status,
+        moderationStatus: updated.moderationStatus,
+        moderationReason: updated.moderationReason,
+        moderatedAt: updated.moderatedAt
+          ? updated.moderatedAt.toISOString()
+          : null,
+        createdAt: updated.createdAt.toISOString(),
+      };
     });
-    if (!position) throw new NotFoundException('Position not found');
-    const reason = opts.reason?.trim() || null;
-    const updated = await this.prisma.crewPosition.update({
-      where: { id: positionId },
-      data: {
-        moderationStatus: status,
-        moderatedAt: new Date(),
-        moderatedByAdminId: opts.adminId,
-        moderationReason: status === 'taken_down' ? reason : null,
-      },
-      include: { crew: { select: { id: true, name: true, logo: true } } },
-    });
-    return {
-      id: updated.id,
-      crewId: updated.crewId,
-      crewName: updated.crew.name,
-      crewLogo: resolveCrewLogoUrl(updated.crew.logo),
-      positionType: updated.positionType,
-      description: updated.description,
-      status: updated.status,
-      moderationStatus: updated.moderationStatus,
-      moderationReason: updated.moderationReason,
-      moderatedAt: updated.moderatedAt
-        ? updated.moderatedAt.toISOString()
-        : null,
-      createdAt: updated.createdAt.toISOString(),
-    };
   }
 
   async create(crewId: string, ownerId: string, input: CreatePositionInput) {

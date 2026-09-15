@@ -345,25 +345,30 @@ export class CrewsService {
     status: CrewModerationStatus,
     opts: { adminId: string; reason?: string },
   ) {
-    const crew = await this.prisma.crew.findFirst({
-      where: { id: crewId, deletedAt: null },
-      select: { id: true, moderationStatus: true },
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM crews WHERE id=${crewId} FOR UPDATE`;
+      const crew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { id: true, moderationStatus: true },
+      });
+      if (!crew) throw new NotFoundException('Crew not found');
+      const isTakedown = status === 'taken_down';
+      const reason = opts.reason?.trim() || null;
+      const updated = await tx.crew.update({
+        where: { id: crewId },
+        data: {
+          moderationStatus: status,
+          moderatedAt: new Date(),
+          moderatedByAdminId: opts.adminId,
+          moderationReason: isTakedown ? reason : null,
+        },
+        include: CREW_OWNER_INCLUDE,
+      });
+      const memberCount = await tx.crewMember.count({
+        where: { crewId, status: CrewMembershipStatus.active },
+      });
+      return toAdminCrewDTO(updated, memberCount);
     });
-    if (!crew) throw new NotFoundException('Crew not found');
-    const isTakedown = status === 'taken_down';
-    const reason = opts.reason?.trim() || null;
-    const updated = await this.prisma.crew.update({
-      where: { id: crewId },
-      data: {
-        moderationStatus: status,
-        moderatedAt: new Date(),
-        moderatedByAdminId: opts.adminId,
-        moderationReason: isTakedown ? reason : null,
-      },
-      include: CREW_OWNER_INCLUDE,
-    });
-    const counts = await this.countsFor([crewId]);
-    return toAdminCrewDTO(updated, counts.members.get(crewId) ?? 0);
   }
 
   /**
@@ -723,6 +728,11 @@ export class CrewsService {
       await tx.$executeRaw`
         SELECT pg_advisory_xact_lock(hashtext(${`crew:ownership:${crewId}`})::bigint)
       `;
+      const currentCrew = await tx.crew.findFirst({
+        where: { id: crewId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!currentCrew) throw new NotFoundException('Crew not found');
       const lockedOwner = await tx.crewOwnership.findUnique({
         where: { crewId },
         include: {
@@ -814,10 +824,11 @@ export class CrewsService {
           });
         }
       } else {
-        await tx.crew.update({
-          where: { id: crewId },
+        const changed = await tx.crew.updateMany({
+          where: { id: crewId, deletedAt: null },
           data: { version: { increment: 1 } },
         });
+        if (!changed.count) throw new NotFoundException('Crew not found');
       }
 
       await tx.crewOwnership.update({

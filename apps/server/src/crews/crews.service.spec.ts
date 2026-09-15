@@ -78,6 +78,7 @@ function build(
   const tx = {
     $queryRaw: jest.fn(),
     crew: {
+      findFirst: jest.fn().mockResolvedValue(crewRow),
       create: jest.fn((args: { data: Record<string, unknown> }) => {
         void args;
         return Promise.resolve(crewRow);
