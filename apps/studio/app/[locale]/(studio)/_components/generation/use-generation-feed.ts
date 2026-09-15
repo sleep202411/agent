@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getFizzAiJob,
@@ -134,12 +135,36 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
   const historySeq = useRef(0);
   const pollInFlight = useRef(false);
   const activeIdsRef = useRef<string[]>([]);
+  const { user } = useAuth();
+  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
+  const epoch = useMemo(
+    () => ({ userId: user?.id, workspaceId, type, sourceSurface }),
+    [user?.id, workspaceId, type, sourceSurface]
+  );
+  const activeEpoch = useRef<typeof epoch | null>(null);
+  const retries = useRef(new Set<string>());
+  const isCurrent = useCallback(() => activeEpoch.current === epoch, [epoch]);
+  useLayoutEffect(() => {
+    activeEpoch.current = epoch;
+    activeIdsRef.current = [];
+    const retryClaims = retries.current;
+    return () => {
+      activeEpoch.current = null;
+      setJobs([]);
+      setHistoryLoading(true);
+      setRealtimeConnected(false);
+      historySeq.current += 1;
+      pollInFlight.current = false;
+      retryClaims.clear();
+    };
+  }, [epoch]);
 
   const reconcileHistory = useCallback(async () => {
+    if (!isCurrent()) return;
     const seq = ++historySeq.current;
     try {
       const response = await listFizzAiJobs({ limit: HISTORY_LIMIT, sourceSurface, type });
-      if (seq !== historySeq.current) return;
+      if (!isCurrent() || seq !== historySeq.current) return;
       setJobs((prev) => {
         let next = prev;
         for (const job of response.jobs) next = mergeIntoList(next, jobToFeedJob(job));
@@ -148,9 +173,9 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     } catch {
       // History is non-critical chrome — the page still composes/generates.
     } finally {
-      if (seq === historySeq.current) setHistoryLoading(false);
+      if (isCurrent() && seq === historySeq.current) setHistoryLoading(false);
     }
-  }, [sourceSurface, type]);
+  }, [isCurrent, sourceSurface, type]);
 
   // Initial history load.
   useEffect(() => {
@@ -167,17 +192,20 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
   // to the project's PAYER workspace, not the global active selection: always a
   // workspace I am a member of (negotiate never 403s) and the one carrying this
   // project's job + wallet channels when I belong to the project's workspace.
-  const workspaceId = useProjectPayerWorkspace()?.id ?? null;
   useEffect(() => {
     const client = getAssetsRealtimeKernel({
       workspaceId: workspaceId ?? undefined,
     }).subscribe({
       onConnected: () => {
+        if (!isCurrent()) return;
         setRealtimeConnected(true);
         void reconcileHistory();
       },
-      onDisconnected: () => setRealtimeConnected(false),
+      onDisconnected: () => {
+        if (isCurrent()) setRealtimeConnected(false);
+      },
       onEvent: (event) => {
+        if (!isCurrent()) return;
         if (event.kind === "media_asset_moderation_changed") {
           if (event.action === "blocked") {
             setJobs((prev) => removeMediaAssetFromList(prev, event.assetId));
@@ -206,7 +234,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
       },
     });
     return () => client.close();
-  }, [queryClient, reconcileHistory, sourceSurface, type, workspaceId]);
+  }, [isCurrent, queryClient, reconcileHistory, sourceSurface, type, workspaceId]);
 
   // Non-terminal jobs still awaiting updates — input for the disconnected-only
   // polling bridge below.
@@ -231,12 +259,14 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
     // the canvas). Only while the channel is down does the interval bridge.
     if (realtimeConnected) return;
     const poll = async () => {
+      if (!isCurrent()) return;
       const ids = activeIdsRef.current;
       if (ids.length === 0) return;
       if (pollInFlight.current) return;
       pollInFlight.current = true;
       try {
         const results = await Promise.allSettled(ids.map((id) => getFizzAiJob(id)));
+        if (!isCurrent()) return;
         setJobs((prev) => {
           let next = prev;
           for (const result of results) {
@@ -247,12 +277,12 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
           return next;
         });
       } finally {
-        pollInFlight.current = false;
+        if (isCurrent()) pollInFlight.current = false;
       }
     };
     const timer = setInterval(() => void poll(), DISCONNECTED_FALLBACK_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [activeIds, realtimeConnected]);
+  }, [isCurrent, activeIds, realtimeConnected]);
 
   // Tab refocus → reconcile (catches anything missed while hidden).
   useEffect(() => {
@@ -270,6 +300,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
   /** Submit a generation; insert a card only after the server accepts it. */
   const submit = useCallback(
     async (params: SubmitFeedJob): Promise<{ ok: boolean; error?: string; jobId?: string }> => {
+      if (!isCurrent()) return { ok: false };
       try {
         const response = await submitFizzAiJob({
           context: { documentBlockId: crypto.randomUUID(), sourceSurface },
@@ -280,6 +311,7 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
           modelId: params.modelId,
           schemaVersion: params.schemaVersion,
         });
+        if (!isCurrent()) return { ok: false };
         const raw = generationStatusFromRaw(response.status);
         setJobs((prev) =>
           mergeIntoList(prev, {
@@ -301,54 +333,63 @@ export function useGenerationFeed(type: FizzAiJobType, sourceSurface: string) {
         void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
         return { ok: true, jobId: response.request_id };
       } catch (error) {
+        if (!isCurrent()) return { ok: false };
         const message = normalizeFizzAiError(error, "Generation failed");
         return { ok: false, error: message };
       }
     },
-    [queryClient, sourceSurface]
+    [isCurrent, queryClient, sourceSurface]
   );
 
   /** Retry a failed row: server-side when it has a jobId, else resubmit. */
   const retry = useCallback(
     async (row: FeedJob, modelMeta?: { schemaVersion: string }) => {
-      if (row.jobId) {
-        try {
-          const response = await retryFizzAiJob(row.jobId);
-          setJobs((prev) => prev.filter((r) => r.localId !== row.localId));
-          setJobs((prev) =>
-            mergeIntoList(prev, {
-              ...row,
-              localId: response.request_id,
-              jobId: response.request_id,
-              status: generationStatusFromRaw(response.status),
-              stage: response.stage ?? "queued",
-              progress: response.progress ?? null,
-              queuePosition: response.queue_position ?? null,
-              etaSeconds: response.estimated_total_seconds ?? null,
-              outputs: [],
-              error: undefined,
-              createdAtMs: Date.now(),
-            })
-          );
-          void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
-        } catch (error) {
-          patchRow(row.localId, {
-            error: normalizeFizzAiError(error, "Retry failed"),
+      if (!isCurrent() || retries.current.has(row.localId)) return;
+      retries.current.add(row.localId);
+      try {
+        if (row.jobId) {
+          try {
+            const response = await retryFizzAiJob(row.jobId);
+            if (!isCurrent()) return;
+            setJobs((prev) => prev.filter((r) => r.localId !== row.localId));
+            setJobs((prev) =>
+              mergeIntoList(prev, {
+                ...row,
+                localId: response.request_id,
+                jobId: response.request_id,
+                status: generationStatusFromRaw(response.status),
+                stage: response.stage ?? "queued",
+                progress: response.progress ?? null,
+                queuePosition: response.queue_position ?? null,
+                etaSeconds: response.estimated_total_seconds ?? null,
+                outputs: [],
+                error: undefined,
+                createdAtMs: Date.now(),
+              })
+            );
+            void queryClient.invalidateQueries({ queryKey: computeWalletBalanceQueryKey });
+          } catch (error) {
+            if (!isCurrent()) return;
+            patchRow(row.localId, {
+              error: normalizeFizzAiError(error, "Retry failed"),
+            });
+          }
+          return;
+        }
+        // Never reached the server — local resubmit from the stored input.
+        if (row.modelId && modelMeta) {
+          await submit({
+            prompt: row.prompt,
+            modelId: row.modelId,
+            schemaVersion: modelMeta.schemaVersion,
+            input: row.input,
           });
         }
-        return;
-      }
-      // Never reached the server — local resubmit from the stored input.
-      if (row.modelId && modelMeta) {
-        await submit({
-          prompt: row.prompt,
-          modelId: row.modelId,
-          schemaVersion: modelMeta.schemaVersion,
-          input: row.input,
-        });
+      } finally {
+        if (isCurrent()) retries.current.delete(row.localId);
       }
     },
-    [patchRow, queryClient, submit]
+    [isCurrent, patchRow, queryClient, submit]
   );
 
   const hasActiveJobs = useMemo(

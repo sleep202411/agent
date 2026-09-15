@@ -1,7 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useProjectPayerWorkspace } from "@/app/[locale]/project/_components/project-context";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useAuth } from "@/app/_components/auth-provider";
+import {
+  useOptionalProjectContext,
+  useProjectPayerWorkspace,
+} from "@/app/[locale]/project/_components/project-context";
 import type {
   FizzAiReferenceKind,
   PromptReferenceRowLike,
@@ -65,60 +69,75 @@ export function useReferenceUploads() {
   // workspace-membership gated, so this is always a workspace I can write to,
   // never the global active selection a second tab may have switched away.
   const workspaceId = useProjectPayerWorkspace()?.id ?? null;
+  const project = useOptionalProjectContext();
+  const { user } = useAuth();
+  const canEdit = project?.canEdit ?? true;
+  const scope = JSON.stringify([
+    user?.id ?? null,
+    project?.projectId ?? null,
+    workspaceId,
+    canEdit,
+  ]);
+  const activeScope = useRef<string | null>(null);
   const [items, setItems] = useState<ReferenceUpload[]>([]);
   const aborts = useRef(new Map<string, AbortController>());
-  const itemsRef = useRef(items);
-
-  useEffect(() => {
-    itemsRef.current = items;
-  }, [items]);
-
-  // Revoke every preview URL on unmount.
-  useEffect(
-    () => () => {
-      itemsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      aborts.current.forEach((controller) => controller.abort());
-    },
-    []
-  );
+  const previews = useRef(new Map<string, string>());
+  const labels = useRef({ image: 0, video: 0, audio: 0 });
+  const releasePreview = useCallback((id: string) => {
+    const url = previews.current.get(id);
+    if (url) {
+      URL.revokeObjectURL(url);
+      previews.current.delete(id);
+    }
+  }, []);
+  useLayoutEffect(() => {
+    activeScope.current = scope;
+    const controllers = aborts.current;
+    const urls = previews.current;
+    return () => {
+      activeScope.current = null;
+      controllers.forEach((controller) => controller.abort());
+      controllers.clear();
+      urls.forEach((url) => URL.revokeObjectURL(url));
+      urls.clear();
+      labels.current = { image: 0, video: 0, audio: 0 };
+      setItems([]);
+    };
+  }, [scope]);
 
   const addFiles = useCallback(
     (field: string, kind: FizzAiReferenceKind, files: File[]) => {
+      if (activeScope.current !== scope || !canEdit) return;
       for (const file of files) {
         const id = crypto.randomUUID();
         const controller = new AbortController();
+        // Allocate resources outside state updaters: React can replay an updater.
+        const previewUrl = URL.createObjectURL(file);
         aborts.current.set(id, controller);
-        setItems((prev) => {
-          const count = prev.filter((item) => item.kind === kind).length;
-          return [
-            ...prev,
-            {
-              id,
-              field,
-              kind,
-              name: file.name,
-              previewUrl: URL.createObjectURL(file),
-              uploading: true,
-              progress: 0,
-              label: `${LABEL_PREFIX[kind]}${count + 1}`,
-            },
-          ];
-        });
+        previews.current.set(id, previewUrl);
+        const label = `${LABEL_PREFIX[kind]}${++labels.current[kind]}`;
+        setItems((prev) => [
+          ...prev,
+          { id, field, kind, name: file.name, previewUrl, uploading: true, progress: 0, label },
+        ]);
         void Promise.all([
           uploadFileViaSignedUrl(file, {
             kind: UPLOAD_KIND_BY_REFERENCE[kind],
             ...(workspaceId ? { workspaceId } : {}),
             signal: controller.signal,
-            onProgress: (percent) =>
+            onProgress: (percent) => {
+              if (controller.signal.aborted) return;
               setItems((prev) =>
                 prev.map((item) => (item.id === id ? { ...item, progress: percent } : item))
-              ),
+              );
+            },
           }),
           kind === "video" || kind === "audio"
-            ? probeMediaDurationSeconds(file, kind)
+            ? probeMediaDurationSeconds(file, kind, controller.signal)
             : Promise.resolve(null as number | null),
         ])
-          .then(([result, durationSeconds]) =>
+          .then(([result, durationSeconds]) => {
+            if (controller.signal.aborted) return;
             setItems((prev) =>
               prev.map((item) =>
                 item.id === id
@@ -133,13 +152,16 @@ export function useReferenceUploads() {
                     }
                   : item
               )
-            )
-          )
+            );
+          })
           .catch((error: unknown) => {
-            if (isUploadAbort(error)) {
+            if (controller.signal.aborted || isUploadAbort(error)) {
+              controller.abort();
+              releasePreview(id);
               setItems((prev) => prev.filter((item) => item.id !== id));
               return;
             }
+            controller.abort();
             setItems((prev) =>
               prev.map((item) =>
                 item.id === id
@@ -155,25 +177,25 @@ export function useReferenceUploads() {
           .finally(() => aborts.current.delete(id));
       }
     },
-    [workspaceId]
+    [workspaceId, releasePreview, scope, canEdit]
   );
 
-  const remove = useCallback((id: string) => {
-    aborts.current.get(id)?.abort();
-    setItems((prev) => {
-      const removed = prev.find((item) => item.id === id);
-      if (removed) URL.revokeObjectURL(removed.previewUrl);
-      return prev.filter((item) => item.id !== id);
-    });
-  }, []);
+  const remove = useCallback(
+    (id: string) => {
+      aborts.current.get(id)?.abort();
+      aborts.current.delete(id);
+      releasePreview(id);
+      setItems((prev) => prev.filter((item) => item.id !== id));
+    },
+    [releasePreview]
+  );
 
   const clear = useCallback(() => {
     aborts.current.forEach((controller) => controller.abort());
     aborts.current.clear();
-    setItems((prev) => {
-      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-      return [];
-    });
+    previews.current.forEach((url) => URL.revokeObjectURL(url));
+    previews.current.clear();
+    setItems([]);
   }, []);
 
   return { items, addFiles, remove, clear };
