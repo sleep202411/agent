@@ -1,9 +1,9 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useLayoutEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { IconAlertTriangle, IconLink, IconLoader2, IconUsers } from "@tabler/icons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,10 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
  */
 export default function InviteAcceptPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
+  const { user } = useAuth();
+  return <InviteAcceptView key={JSON.stringify([token, user?.id])} token={token} />;
+}
+function InviteAcceptView({ token }: { token: string }) {
   const t = useTranslations("invite");
   const tc = useTranslations("common");
   const router = useRouter();
@@ -37,27 +41,55 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
   const previewQ = useQuery<InvitePreview, ApiRequestError>({
     queryKey: ["invite-preview", token, user?.id ?? null],
     enabled: !authLoading && Boolean(user),
-    queryFn: () => previewInvite(token),
+    queryFn: ({ signal }) => previewInvite(token, signal),
     retry: false,
   });
 
   const [joining, setJoining] = useState(false);
-  const acceptMut = useMutation({
-    mutationFn: () => acceptInvite(token),
-    onSuccess: (result: AcceptedInvite) => {
-      toast.success(
-        result.scope === "workspace"
-          ? t("joinedTeam")
-          : result.scope === "story-project"
-            ? t("joinedStory")
-            : t("joinedProject")
-      );
-      enterTarget(result);
-    },
-    onError: (e) => toast.error(e instanceof ApiRequestError ? e.message : t("acceptFailed")),
-  });
+  const [accepting, setAccepting] = useState(false);
+  const active = useRef<AbortController | null>(null);
+  const mounted = useRef(false);
+  const navigating = useRef(false);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      active.current?.abort();
+      active.current = null;
+    };
+  }, []);
+  function accept() {
+    if (!mounted.current || !user || active.current || navigating.current) return;
+    const operation = new AbortController();
+    active.current = operation;
+    setAccepting(true);
+    const current = () => mounted.current && active.current === operation;
+    void (async () => {
+      try {
+        const result = await acceptInvite(token, operation.signal);
+        if (!current()) return;
+        toast.success(
+          result.scope === "workspace"
+            ? t("joinedTeam")
+            : result.scope === "story-project"
+              ? t("joinedStory")
+              : t("joinedProject")
+        );
+        enterTarget(result);
+      } catch (error) {
+        if (current()) toast.error(error instanceof Error ? error.message : t("acceptFailed"));
+      } finally {
+        if (current()) {
+          active.current = null;
+          setAccepting(false);
+        }
+      }
+    })();
+  }
 
   function enterTarget(result: AcceptedInvite) {
+    if (!mounted.current || navigating.current) return;
+    navigating.current = true;
     setJoining(true);
     void queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
     void queryClient.invalidateQueries({ queryKey: ["home-recent-projects"] });
@@ -170,12 +202,8 @@ export default function InviteAcceptPage({ params }: { params: Promise<{ token: 
         title={t("joinTitle", { name: preview.targetName })}
         body={t("joinBody", { scope: scopeWord, role: cap(preview.role) })}
       >
-        <Button
-          className="w-full"
-          disabled={acceptMut.isPending || joining}
-          onClick={() => acceptMut.mutate()}
-        >
-          {acceptMut.isPending || joining ? <IconLoader2 className="size-4 animate-spin" /> : null}
+        <Button className="w-full" disabled={accepting || joining} onClick={accept}>
+          {accepting || joining ? <IconLoader2 className="size-4 animate-spin" /> : null}
           {t("acceptInvitation")}
         </Button>
       </Shell>
