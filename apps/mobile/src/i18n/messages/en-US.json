@@ -513,6 +513,7 @@
   "paywall.purchaseFailed": "Purchase failed",
   "paywall.tryAgainLater": "Please try again later.",
   "paywall.restoreOkTitle": "Restore complete",
+  "paywall.restoreEmpty": "No purchases to restore.",
   "paywall.restoreOkMock": "Mock restore succeeded. Memberships will sync from RevenueCat after the SDK is in the binary.",
   "paywall.restoreOkLive": "Restored. Refresh if membership is not visible yet.",
   "paywall.restoreFailed": "Restore failed",

@@ -513,6 +513,7 @@
   "paywall.purchaseFailed": "购买失败",
   "paywall.tryAgainLater": "请稍后重试",
   "paywall.restoreOkTitle": "恢复完成",
+  "paywall.restoreEmpty": "暂无购买可恢复。",
   "paywall.restoreOkMock": "模拟恢复成功。接入 RevenueCat SDK 后才会同步会员。",
   "paywall.restoreOkLive": "已恢复。若会员未显示请下拉刷新。",
   "paywall.restoreFailed": "恢复失败",

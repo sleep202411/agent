@@ -246,8 +246,15 @@ export function PaywallScreen() {
     };
   }, []);
 
+  const canRestore = channel === "apple_iap" || channel === "google_play_iap";
+
   const notifyUnavailable = () => {
     Alert.alert(t("paywall.tryAgainLater"), undefined, [{ text: t("common.ok") }]);
+  };
+
+  /** Interim restore UX for App Store 3.1.1 — visible interaction until StoreKit is live. */
+  const notifyRestore = () => {
+    Alert.alert(t("paywall.restoreOkTitle"), t("paywall.restoreEmpty"), [{ text: t("common.ok") }]);
   };
 
   const heroPoints =
@@ -314,6 +321,13 @@ export function PaywallScreen() {
               : `${t("paywall.payNow")} ${product?.displayPrice ?? ""}`}
         </ThemedText>
       </Pressable>
+      {canRestore ? (
+        <Pressable accessibilityRole="button" onPress={notifyRestore} style={styles.restore}>
+          <ThemedText type="small" themeColor="textSecondary" style={styles.restoreLabel}>
+            {t("paywall.restore")}
+          </ThemedText>
+        </Pressable>
+      ) : null}
     </View>
   );
 
@@ -659,7 +673,9 @@ const styles = StyleSheet.create({
     flexDirection: "column",
   },
   footerCopyStacked: {
+    flexBasis: "auto",
     flexGrow: 0,
+    flexShrink: 0,
   },
   footerCopy: {
     flex: 1,
@@ -772,8 +788,14 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
   },
   restore: {
-    alignSelf: "flex-start",
+    alignItems: "center",
+    alignSelf: "center",
+    justifyContent: "center",
+    minHeight: 44,
     paddingVertical: Spacing.one,
+  },
+  restoreLabel: {
+    textDecorationLine: "underline",
   },
   unsupported: {
     flex: 1,
